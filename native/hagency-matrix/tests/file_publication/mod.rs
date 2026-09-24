@@ -60,11 +60,12 @@ async fn native_file_publication_recipient() {
         let content = &plain["content"];
         assert_eq!(content["msgtype"], "m.file");
         assert_eq!(content["body"], caption.unwrap_or("结果.txt"));
-        if caption.is_some() {
-            assert_eq!(content["filename"], "结果.txt");
-        }
+        // TS parity (lib/matrix-file.js:21-22 + bridge-matrix.js:3240-3243):
+        // the mimetype is guessed from the filename — 结果.txt is text/plain,
+        // never a fixed application/octet-stream.
+        assert_eq!(content["filename"], "结果.txt");
         assert_eq!(content["info"]["size"], DATA.len());
-        assert_eq!(content["info"]["mimetype"], "application/octet-stream");
+        assert_eq!(content["info"]["mimetype"], "text/plain");
         assert_eq!(
             content["m.relates_to"]["event_id"],
             if direct {

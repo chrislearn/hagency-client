@@ -192,11 +192,17 @@ pub(super) fn corrupt(attempt: &mut Attempt, variant: u8) {
     match variant {
         10 => {
             binding.metadata.filename.push_str("-changed");
-            if binding.metadata.caption.is_some() {
-                attempt.content["filename"] = json!(binding.metadata.filename);
-            } else {
+            attempt.content["filename"] = json!(binding.metadata.filename);
+            if binding.metadata.caption.is_none() {
                 attempt.content["body"] = json!(binding.metadata.filename);
             }
+            // The envelope now derives info.mimetype from the filename (TS
+            // parity), so a coherent corruption must guess again for the new
+            // name or reopen validation fails on a stale mime, not metadata.
+            attempt.content["info"]["mimetype"] =
+                json!(hagency_media::mime::guess_mime_type_from_name(
+                    &binding.metadata.filename
+                ));
         }
         11 => binding.captured.sha256 = "f".repeat(64),
         12 => {
