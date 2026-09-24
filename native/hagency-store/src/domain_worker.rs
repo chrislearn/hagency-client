@@ -2250,6 +2250,38 @@ impl DomainStore {
         })
         .await
     }
+    /// #21 operator stop: fence + settle + durable stopped row
+    /// (backend-v2.js:12577-12708 parity).
+    pub async fn stop_agent(
+        &self,
+        engagement: String,
+        operator: String,
+        now: u64,
+    ) -> Result<serde_json::Value, Error> {
+        self.call(weight(&(&engagement, &operator))?, move |db| {
+            db.stop_agent(&engagement, &operator, now)
+        })
+        .await
+    }
+    /// #21 operator start: re-arm serving (backend-v2.js:12712 parity).
+    pub async fn start_agent(&self, engagement: String, now: u64) -> Result<(), Error> {
+        self.call(weight(&engagement)?, move |db| {
+            db.start_agent(&engagement, now)
+        })
+        .await
+    }
+    /// #21 preset (resource) rebind (backend-v2.js:11484 parity).
+    pub async fn rebind_agent_resource(
+        &self,
+        engagement: String,
+        preset: String,
+        now: u64,
+    ) -> Result<serde_json::Value, Error> {
+        self.call(weight(&(&engagement, &preset))?, move |db| {
+            db.rebind_agent_resource(&engagement, &preset, now)
+        })
+        .await
+    }
     /// The host supplies an already inspected result, never a runner assertion.
     pub async fn settle_conversation_stop(
         &self,

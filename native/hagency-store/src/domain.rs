@@ -18,6 +18,7 @@ use serde_json::{Value, json};
 use std::{fs::File, path::Path};
 pub(crate) mod accounts;
 mod agent_fences;
+mod agent_lifecycle;
 pub use agent_fences::{AgentFence, FenceReason};
 mod approvals;
 mod engagement_retention;
@@ -616,7 +617,7 @@ impl DomainRepository {
                 name: "domain.sqlite3",
                 lock: "domain.lock",
                 application_id: 0x48414732,
-                version: 39,
+                version: 40,
                 migrations: &[
                     (2, include_str!("migrations/002-role-publication.sql")),
                     (3, include_str!("migrations/003-task-dispatch.sql")),
@@ -678,9 +679,11 @@ impl DomainRepository {
                     ),
                     (38, include_str!("migrations/038-agent-fences.sql")),
                     (39, include_str!("migrations/039-attempt-over-budget.sql")),
+                    (40, include_str!("migrations/049-agent-lifecycle.sql")),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
+                    "SELECT engagement_id,stopped_at,reason,operator,started_at FROM agent_lifecycle LIMIT 0",
                     "SELECT id,engagement_id,dispatch_id,fence,reason,created_at,cleared_at,cleared_by FROM agent_fences LIMIT 0",
                     "SELECT dispatch_id,fence,seq,at_ms,phase,detail FROM runner_attempt_events LIMIT 0",
                     "SELECT dispatch_id,fence,started_at,parked_at,last_renew_at,settled_at,terminal_reason FROM runner_attempts LIMIT 0",
