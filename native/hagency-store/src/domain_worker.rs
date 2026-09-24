@@ -3195,6 +3195,30 @@ impl DomainStore {
         self.call(weight(&registration)?, move |db| db.register(&registration))
             .await
     }
+    /// Task #13: issue an appservice registration for one project side —
+    /// the CLI and the console route are both thin callers. The clock is
+    /// the worker's, the same as the other writer jobs, so `issued_at`
+    /// and `pending_at` carry the job's time, never the caller's.
+    pub async fn issue_side_registration(
+        &self,
+        request: crate::IssueSideRegistrationRequest,
+    ) -> Result<crate::IssueSideRegistration, Error> {
+        self.call(64, move |db| {
+            db.issue_side_registration(&request, writer_time()?)
+        })
+        .await
+    }
+    /// Task #13 read: the live credential the appservice transport
+    /// authenticates with — never a staged spare.
+    pub async fn side_credential_for_transport(
+        &self,
+        side: String,
+    ) -> Result<Option<crate::SideCredential>, Error> {
+        self.call(weight(&side)?, move |db| {
+            db.side_credential_for_transport(&side)
+        })
+        .await
+    }
     pub async fn provisioning_registration(
         &self,
         fleet_id: String,
