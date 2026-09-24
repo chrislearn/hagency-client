@@ -107,6 +107,69 @@ async fn native_file_publication_recipient() {
 }
 
 #[tokio::test]
+async fn native_file_publication_image_msgtype_and_mime() {
+    // TS parity (bridge-matrix.js:10998-11036 + :3240-3251): an agent-sent
+    // image arrives as m.image with the mimetype guessed from its name, so
+    // clients render it as a preview instead of an octet-stream download.
+    let _serial = serial().lock().await;
+    let mut f = Fixture::new().await;
+    let Some((original, identity, ciphertext)) =
+        accepted_named(&mut f, "image-kind", None, "图表.png").await
+    else {
+        f.finish().await;
+        return;
+    };
+    let (claim, send) = publication(&f, identity.clone()).await;
+    let mut op = original
+        .prepare_file_publication(claim, send)
+        .map_err(|e| e.error())
+        .unwrap();
+    let peer = f
+        .collector
+        .inner
+        .owner
+        .lock()
+        .await
+        .as_ref()
+        .unwrap()
+        .outgoing_fixture(true)
+        .await;
+    let cancel = CancellationToken::new();
+    let (result, plain) = common::scripted(op.run(&cancel), async {
+        let (request, content) =
+            wire(&mut f.fake, &peer, ruma::room_id!("!direct:example.test")).await;
+        request.json(200, json!({"event_id":"$image-accepted"}));
+        content
+    })
+    .await;
+    assert_eq!(result.unwrap().state, OutgoingState::Delivered);
+    let content = &plain["content"];
+    assert_eq!(content["msgtype"], "m.image");
+    assert_eq!(content["filename"], "图表.png");
+    assert_eq!(content["body"], "图表.png");
+    assert_eq!(content["info"]["mimetype"], "image/png");
+    assert_eq!(content["info"]["size"], DATA.len());
+    // Encrypted room: the ciphertext descriptor still carries the bytes.
+    let mut descriptor = content["file"].clone();
+    assert_eq!(
+        descriptor.as_object_mut().unwrap().remove("url").unwrap(),
+        "mxc://remote.test/original"
+    );
+    let descriptor = hagency_media::Descriptor::from_private_event_json(
+        &serde_json::to_vec(&descriptor).unwrap(),
+    )
+    .unwrap();
+    let codec = hagency_media::Codec::new(hagency_media::Limits::new(4096, 2).unwrap());
+    assert_eq!(
+        codec.decrypt(&descriptor, &ciphertext).unwrap().bytes(),
+        DATA
+    );
+    f.fake.quiesced(f.fake.requests(), &common::limits()).await;
+    drop(op);
+    f.finish().await;
+}
+
+#[tokio::test]
 async fn native_file_publication_association() {
     let _serial = serial().lock().await;
     let mut f = Fixture::new().await;

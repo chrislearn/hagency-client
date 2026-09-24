@@ -6,7 +6,15 @@ pub(super) async fn accepted(
     id: &str,
     caption: Option<&str>,
 ) -> Option<(UploadOperation, FileDeliveryIdentity, Vec<u8>)> {
-    let (input, identity, ciphertext) = f.file_input(id, caption).await?;
+    accepted_named(f, id, caption, "结果.txt").await
+}
+pub(super) async fn accepted_named(
+    f: &mut Fixture,
+    id: &str,
+    caption: Option<&str>,
+    filename: &str,
+) -> Option<(UploadOperation, FileDeliveryIdentity, Vec<u8>)> {
+    let (input, identity, ciphertext) = f.file_input_named(id, caption, filename).await?;
     let mut original = f.admit(input);
     let cancel = CancellationToken::new();
     let (receipt, ()) =

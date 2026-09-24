@@ -250,6 +250,14 @@ impl Fixture {
         id: &str,
         caption: Option<&str>,
     ) -> Option<(StagedUpload, hagency_store::FileDeliveryIdentity, Vec<u8>)> {
+        self.file_input_named(id, caption, "结果.txt").await
+    }
+    pub async fn file_input_named(
+        &mut self,
+        id: &str,
+        caption: Option<&str>,
+        filename: &str,
+    ) -> Option<(StagedUpload, hagency_store::FileDeliveryIdentity, Vec<u8>)> {
         let file = self
             .base
             .store
@@ -258,7 +266,7 @@ impl Fixture {
                 hagency_core::file_delivery::FileDeliveryRequest {
                     call_id: id.into(),
                     request_digest: "1".repeat(64),
-                    filename: "结果.txt".into(),
+                    filename: filename.into(),
                     caption: caption.map(str::to_owned),
                 },
             )
