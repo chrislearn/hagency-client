@@ -32,8 +32,6 @@ pub(super) const OUTCOME_UNKNOWN_NOTICE: &str = "Result uncertain: the runner st
 pub(super) const SESSION_QUARANTINED_NOTICE: &str = "Waiting: a previous runner in this session stopped after work may have started. An operator must inspect and resolve that outcome before another turn can run.";
 
 /// The retained product's explanation in the thread when someone other than
-
-/// The retained product's explanation in the thread when someone other than
 /// the original requester (or an old message) tries to continue a completed
 /// task (`router/src/store.ts` `claimDispatch`, the `completed_task_followup`
 /// branch).
@@ -54,6 +52,16 @@ pub(super) const THREAD_DELIVERY_FAILED_NOTICE: &str = "Task creation failed: th
 /// with `thread_dispatch_failed` (`router/src/store.ts`
 /// `recordTaskDispatchFailure`): the thread exists but no runner launched.
 pub(super) const THREAD_DISPATCH_FAILED_NOTICE: &str = "Task thread created, but execution could not start. No coding runner was launched; inspect the agent and workspace configuration before retrying.";
+
+/// The retained product's words when the workspace a queued dispatch needs is
+/// quarantined by an unresolved previous run (`router/src/store.ts`
+/// `claimDispatch`, the dirty-resource skip).
+pub(super) const WORKSPACE_QUARANTINED_NOTICE: &str = "Waiting: this workspace is quarantined because a previous runner stopped after work may have started. An operator must inspect and resolve that outcome before another writer can run.";
+
+/// The retained product's words when a queued dispatch waits on a workspace
+/// held by a parked task (`router/src/store.ts` `claimDispatch`, the
+/// leased-resource skip).
+pub(super) const WAITING_FOR_APPROVAL_NOTICE: &str = "Waiting: this task is queued because its workspace is held by another task awaiting owner approval.";
 
 /// A request into a quarantined session runs nothing until an operator
 /// resolves the unknown outcome; the retained product says so in the thread
@@ -195,15 +203,16 @@ pub(super) fn waiting_notice(
     let Some(root) = root else {
         return Ok(());
     };
-    let id = notice_id(dispatch, kind)?;
+    let task = execution::task(tx, &task_id)?;
+    // One notice per task per kind: the id `add_notice` will insert, checked
+    // before the work of resolving the thread root is done.
     if tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM task_notices WHERE id=?1)",
-        [&id],
+        [&notice_id(&task_id, kind)?],
         |r| r.get::<_, bool>(0),
     )? {
         return Ok(());
     }
-    let task = execution::task(tx, &task_id)?;
     let root = super::verified_ingress::input_message(tx, &session, root)?;
     add_notice(tx, &task, &root, kind, body.into(), now)?;
     Ok(())
@@ -221,6 +230,48 @@ pub(super) fn launch_retry_notice(
         Ok(()) => tx.execute_batch("RELEASE launch_retry_notice")?,
         Err(_) => {
             tx.execute_batch("ROLLBACK TO launch_retry_notice; RELEASE launch_retry_notice")?
+        }
+    }
+    Ok(())
+}
+/// The claim's skip explanations, said while scanning (`router/src/store.ts`
+/// `claimDispatch`, the dirty-workspace and held-workspace skip branches).
+/// A queued dispatch needing a workspace that is dirty (unresolved previous
+/// run) or leased by a parked dispatch cannot be a claim candidate, exactly
+/// the rows the candidate predicate below already excludes — so every row
+/// this finds is one the claim skips. Best effort per notice in its own
+/// savepoint: a claim never fails because an explanation could not be
+/// addressed.
+pub(super) fn claim_skip_notices(tx: &Transaction<'_>, now: u64) -> Result<(), Error> {
+    let skipped: Vec<(String, bool)> = tx
+        .prepare(
+            "SELECT d.id,w.dirty=1 FROM runner_dispatches d \
+             JOIN dispatch_resources dr ON dr.dispatch_id=d.id \
+             JOIN workspace_resources w ON w.id=dr.resource_id \
+             WHERE d.state='queued' AND (w.dirty=1 OR EXISTS(SELECT 1 FROM resource_leases l WHERE l.resource_id=dr.resource_id AND l.dispatch_id<>d.id AND (l.exclusive=1 OR dr.exclusive=1) AND EXISTS(SELECT 1 FROM runner_dispatches h WHERE h.id=l.dispatch_id AND h.state='parked')))",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<Vec<_>, _>>()?;
+    for (dispatch, dirty) in skipped {
+        tx.execute_batch("SAVEPOINT claim_skip_notice")?;
+        let said = waiting_notice(
+            tx,
+            &dispatch,
+            if dirty {
+                "workspace_quarantined"
+            } else {
+                "waiting_for_approval"
+            },
+            if dirty {
+                WORKSPACE_QUARANTINED_NOTICE
+            } else {
+                WAITING_FOR_APPROVAL_NOTICE
+            },
+            now,
+        );
+        match said {
+            Ok(()) => tx.execute_batch("RELEASE claim_skip_notice")?,
+            Err(_) => tx.execute_batch("ROLLBACK TO claim_skip_notice; RELEASE claim_skip_notice")?,
         }
     }
     Ok(())

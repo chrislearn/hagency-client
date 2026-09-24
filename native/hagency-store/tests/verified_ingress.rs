@@ -1261,3 +1261,150 @@ fn native_outcome_resolved_continue_notice() {
         "Operator inspection completed. A new recovery dispatch was queued from an explicit recovery instruction; the previous dispatch remains outcome_unknown and was not replayed."
     );
 }
+
+/// The retained product says in the thread when a queued dispatch waits on a
+/// workspace quarantined by an unresolved previous run
+/// (`router/src/store.ts` `claimDispatch`, the dirty-resource skip).
+#[test]
+fn native_workspace_quarantined_notice() {
+    let mut f = Fixture::new(false);
+    let (_, seq, task) = setup_task(&mut f);
+    f.activate(1013);
+    f.db.register_workspace("ws").unwrap();
+    let mut first = dispatch("first", &task);
+    first.resources = vec![ResourceLease {
+        id: "ws".into(),
+        exclusive: true,
+    }];
+    f.db.enqueue_inbox_dispatch(&first, &[seq]).unwrap();
+    let cap = f
+        .db
+        .claim_dispatch("fixture_runner", 1015, 60_000, 120_000, 8)
+        .unwrap()
+        .unwrap();
+    f.db.start_dispatch(&cap, 1016).unwrap();
+    // A different session's task needs the same workspace: its dispatch is
+    // enqueued while the workspace is still clean (enqueue refuses a dirty
+    // workspace, the claim is what waits).
+    let event = f.event("b", "root_b", None, &["@b:example.test"], 1017);
+    let source = f.db.admit_matrix_event(&event, 1018).unwrap();
+    let other = f
+        .db
+        .create_verified_task_intent(&f.intent("b", "request", source.sequence), 1019)
+        .unwrap();
+    while let Some(claim) = f.db.claim_verified_task_notice(1020, 1000).unwrap() {
+        f.db
+            .begin_verified_task_notice_send(&claim.claim.notice.id, &claim.claim.token, 1020)
+            .unwrap();
+        f.db
+            .deliver_verified_task_notice(
+                &claim.claim.notice.id,
+                &claim.claim.token,
+                &notice_delivery(&claim),
+                1021,
+            )
+            .unwrap();
+    }
+    let mut second = dispatch("second", &other);
+    second.resources = vec![ResourceLease {
+        id: "ws".into(),
+        exclusive: true,
+    }];
+    f.db
+        .enqueue_inbox_dispatch(&second, &[source.sequence])
+        .unwrap();
+    // The lease lapses: the sweep settles the started dispatch as
+    // outcome_unknown and marks its exclusive workspace dirty.
+    f.db.claim_dispatch("sweeper", 61_016, 60_000, 120_000, 8)
+        .unwrap();
+    // The queued dispatch is not a claim candidate, and the thread hears why.
+    assert!(
+        f.db
+            .claim_dispatch("fixture_runner", 62_025, 60_000, 120_000, 8)
+            .unwrap()
+            .is_none()
+    );
+    let (kind, body): (String, String) = f
+        .sql()
+        .query_row(
+            "SELECT json_extract(config,'$.kind'),json_extract(config,'$.body') FROM task_notices WHERE json_extract(config,'$.kind')='workspace_quarantined'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(kind, "workspace_quarantined");
+    assert_eq!(
+        body,
+        "Waiting: this workspace is quarantined because a previous runner stopped after work may have started. An operator must inspect and resolve that outcome before another writer can run."
+    );
+}
+
+/// The retained product says in the thread when a queued dispatch waits on a
+/// workspace held by a parked task (`router/src/store.ts` `claimDispatch`,
+/// the leased-resource skip).
+#[test]
+fn native_waiting_for_approval_notice() {
+    let mut f = Fixture::new(false);
+    let (_, seq, task) = setup_task(&mut f);
+    f.activate(1013);
+    f.db.register_workspace("ws").unwrap();
+    let mut first = dispatch("first", &task);
+    first.resources = vec![ResourceLease {
+        id: "ws".into(),
+        exclusive: true,
+    }];
+    f.db.enqueue_inbox_dispatch(&first, &[seq]).unwrap();
+    let cap = f
+        .db
+        .claim_dispatch("fixture_runner", 1015, 60_000, 120_000, 8)
+        .unwrap()
+        .unwrap();
+    f.db.start_dispatch(&cap, 1016).unwrap();
+    f.db.park_dispatch(&cap, true, 1017).unwrap();
+    let event = f.event("b", "root_b", None, &["@b:example.test"], 1018);
+    let source = f.db.admit_matrix_event(&event, 1019).unwrap();
+    let other = f
+        .db
+        .create_verified_task_intent(&f.intent("b", "request", source.sequence), 1020)
+        .unwrap();
+    while let Some(claim) = f.db.claim_verified_task_notice(1021, 1000).unwrap() {
+        f.db
+            .begin_verified_task_notice_send(&claim.claim.notice.id, &claim.claim.token, 1021)
+            .unwrap();
+        f.db
+            .deliver_verified_task_notice(
+                &claim.claim.notice.id,
+                &claim.claim.token,
+                &notice_delivery(&claim),
+                1022,
+            )
+            .unwrap();
+    }
+    let mut second = dispatch("second", &other);
+    second.resources = vec![ResourceLease {
+        id: "ws".into(),
+        exclusive: true,
+    }];
+    f.db
+        .enqueue_inbox_dispatch(&second, &[source.sequence])
+        .unwrap();
+    assert!(
+        f.db
+            .claim_dispatch("fixture_runner", 1026, 60_000, 120_000, 8)
+            .unwrap()
+            .is_none()
+    );
+    let (kind, body): (String, String) = f
+        .sql()
+        .query_row(
+            "SELECT json_extract(config,'$.kind'),json_extract(config,'$.body') FROM task_notices WHERE json_extract(config,'$.kind')='waiting_for_approval'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(kind, "waiting_for_approval");
+    assert_eq!(
+        body,
+        "Waiting: this task is queued because its workspace is held by another task awaiting owner approval."
+    );
+}

@@ -876,6 +876,10 @@ impl DomainRepository {
         super::graphs::reconcile(&tx, now)?;
         super::matrix_routes::reconcile(&tx, now)?;
         expire(&tx, now, "claim")?;
+        // The retained product explains in the thread why a queued dispatch
+        // did not start (`router/src/store.ts` `claimDispatch` skip
+        // branches): dirty workspace, or one held by a parked dispatch.
+        super::task_intents::claim_skip_notices(&tx, now)?;
         // A stopped process can leave an unresolved task/workspace behind.
         // Only the original exact-attempt host receipt distinguishes that
         // state from an unknown physical owner. This changes occupancy only:
