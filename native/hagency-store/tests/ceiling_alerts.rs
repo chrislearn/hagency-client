@@ -788,7 +788,7 @@ fn native_ceiling_alert_schema_upgrade() {
     // dispatch_inputs.
     sql.execute_batch("ALTER TABLE approval_verdict_receipts DROP COLUMN denial_reason; ALTER TABLE runner_attempts DROP COLUMN park_reason; ALTER TABLE dispatch_inputs DROP COLUMN addressed; DROP TABLE IF EXISTS dispatch_conversation_reads; ALTER TABLE runner_attempts DROP COLUMN started_at; ALTER TABLE runner_attempts DROP COLUMN parked_at; ALTER TABLE runner_attempts DROP COLUMN last_renew_at; ALTER TABLE runner_attempts DROP COLUMN settled_at; ALTER TABLE runner_attempts DROP COLUMN terminal_reason; DROP TABLE IF EXISTS runner_attempt_events; DROP TABLE IF EXISTS agent_fences;")
         .unwrap();
-    sql.pragma_update(None, "user_version", 24).unwrap();
+    sql.execute_batch("DROP TABLE IF EXISTS agent_lifecycle; PRAGMA user_version=24;").unwrap();
     drop(sql);
     for _ in 0..2 {
         let db = DomainRepository::open(&state).unwrap();
