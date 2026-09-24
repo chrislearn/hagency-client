@@ -1864,6 +1864,30 @@ impl DomainStore {
         self.call(weight(&task)?, move |db| db.approval_for_task(&task))
             .await
     }
+    /// The runner's own read leg (ADR-064 amendment, PC-C3): the by-task
+    /// lookup, gated on the presented capability so the agent can only read
+    /// the approval of the task its own dispatch holds.
+    pub async fn approval_for_runner(
+        &self,
+        cap: RunnerCapability,
+    ) -> Result<Option<hagency_core::approvals::ApprovalSummary>, Error> {
+        self.call(weight(&cap)?, move |db| {
+            db.approval_for_runner_clock(&cap, writer_time)
+        })
+        .await
+    }
+    /// The runner's own consume leg (ADR-064 amendment, PC-C3): task-bound, so
+    /// the agent never names an approval id. The clock is taken inside the
+    /// writer, after queueing, exactly like every other runner command.
+    pub async fn consume_approval_for_task(
+        &self,
+        cap: RunnerCapability,
+    ) -> Result<serde_json::Value, Error> {
+        self.call(weight(&cap)?, move |db| {
+            db.consume_owner_approval_for_task_clock(&cap, writer_time)
+        })
+        .await
+    }
     /// The C2a bounded read (ADR-138): one worker job per page, the same
     /// `after`/`limit` contract as `engagements`, with the 1..=100 cap
     /// enforced inside the store so no console caller can widen it.
@@ -2464,6 +2488,13 @@ impl DomainStore {
                 }
                 RunnerCommand::Task { id } => {
                     serde_json::to_value(db.runner_task(&cap, &id, now)?)?
+                }
+                RunnerCommand::Approval => {
+                    serde_json::to_value(db.approval_for_runner_clock(&cap, || Ok(now))?)?
+                }
+                RunnerCommand::ConsumeApproval { call_id } => {
+                    let _ = call_id;
+                    db.consume_owner_approval_for_task_clock(&cap, || Ok(now))?
                 }
                 RunnerCommand::Tasks { after, limit } => {
                     serde_json::to_value(db.runner_tasks(&cap, &after, limit, now)?)?
