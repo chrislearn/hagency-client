@@ -207,12 +207,15 @@ async fn native_console_agent_detail_observation() {
     // Current dispatch: the same live dispatch, agent-wide.
     assert_eq!(value["dispatch"]["dispatch_state"], "started");
     assert_eq!(value["dispatch"]["room_id"], "!project:example.test");
-    // Recent tasks: the one seeded canonical task, newest first.
+    // Recent tasks: the one seeded canonical task, newest first. The
+    // fixture claimed and STARTED its dispatch, so the task's TS-visible
+    // state is in_progress — the state a started dispatch reports
+    // (backend-v2.js:13332 serves the store's task verbatim).
     let tasks = value["tasks"].as_array().unwrap();
     assert_eq!(tasks.len(), 1);
     assert_eq!(tasks[0]["id"], "private_task");
     assert_eq!(tasks[0]["title"], "Usage");
-    assert_eq!(tasks[0]["status"], "created");
+    assert_eq!(tasks[0]["status"], "in_progress");
     f.close().await;
 }
 
