@@ -52,7 +52,7 @@ mod notice_custody;
 mod operator_tasks;
 pub use operator_tasks::{
     MAX_TASK_COMMENTS, MAX_TASK_PAGE, OperatorTask, OperatorTaskComment, TASK_GRANULARITIES,
-    TASK_PRIORITIES, TASK_STATUSES, TaskFilters,
+    TASK_PRIORITIES, TASK_STATUSES, TaskFilters, operator_transitions,
 };
 mod outcome_resolution;
 mod owned_completion;
@@ -621,7 +621,7 @@ impl DomainRepository {
                 name: "domain.sqlite3",
                 lock: "domain.lock",
                 application_id: 0x48414732,
-                version: 40,
+                version: 44,
                 migrations: &[
                     (2, include_str!("migrations/002-role-publication.sql")),
                     (3, include_str!("migrations/003-task-dispatch.sql")),
@@ -683,12 +683,14 @@ impl DomainRepository {
                     ),
                     (38, include_str!("migrations/038-agent-fences.sql")),
                     (39, include_str!("migrations/039-attempt-over-budget.sql")),
-                    // The board's entry #23 names 044; the live head in this
-                    // clone is 39 and `database::open` walks the chain one
-                    // number at a time, so 044 with 40..43 absent would make
-                    // every open fail `Error::Schema`. The next free number is
-                    // used and the deviation is named in `.peer/report-23.md`.
-                    (40, include_str!("migrations/040-operator-tasks.sql")),
+                    // Board #23 assigns 044 (the number is held for this lane
+                    // so sibling lanes' 040-043 cannot collide with it at
+                    // integration). NOTE the chain constraint: `database::open`
+                    // walks 2..=version one number at a time and requires
+                    // exactly one file per number, so this branch alone does
+                    // NOT open — the 040-043 gap is filled by the sibling
+                    // slices at integration. Named in `.peer/report-23.md`.
+                    (44, include_str!("migrations/044-operator-tasks.sql")),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[

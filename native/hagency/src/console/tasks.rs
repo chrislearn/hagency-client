@@ -19,7 +19,7 @@
 //! store has no native counterpart) and the board's Matrix-derived columns.
 use super::{Error, Session, body, console, failed, recheck, usage::query};
 use crate::{refusal, resources::domain};
-use hagency_store::TaskFilters;
+use hagency_store::{OperatorTask, TaskFilters, operator_transitions};
 use salvo::prelude::*;
 use serde_json::{Value, json};
 
@@ -102,6 +102,23 @@ fn permissions(depot: &Depot) -> Value {
     json!({"configureResource": configure})
 }
 
+/// One task on the wire: the store's row plus `next`, the statuses the SERVER
+/// allows from its current one. The page renders a transition control only
+/// from this array, so a client-side map can never disagree with the store's
+/// (`lib/task-store.js:8-13` is the one map, served from
+/// `hagency_store::operator_transitions`) — the same contract the alerts read
+/// uses for its own `next`.
+fn wire(task: OperatorTask) -> Value {
+    let mut value = serde_json::to_value(&task).unwrap_or(Value::Null);
+    if let Some(object) = value.as_object_mut() {
+        object.insert(
+            "next".to_owned(),
+            serde_json::to_value(operator_transitions(&task.status)).unwrap_or(Value::Null),
+        );
+    }
+    value
+}
+
 /// A JSON body, exactly one `content-type: application/json` header, bounded.
 async fn json_body(req: &mut Request, res: &mut Response, maximum: usize) -> Option<Value> {
     if req.headers().get_all("content-type").iter().count() != 1
@@ -182,7 +199,7 @@ async fn list(req: &mut Request, depot: &mut Depot, res: &mut Response) {
             "at_ms": now_ms(),
             "permissions": permissions(depot),
             "unavailable": UNAVAILABLE,
-            "tasks": tasks,
+            "tasks": tasks.into_iter().map(wire).collect::<Vec<_>>(),
         }))),
         Err(error) => store_error(res, error),
     }
@@ -205,7 +222,7 @@ async fn create(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         return;
     }
     match result {
-        Ok(task) => res.render(Json(json!({"ok": true, "task": task}))),
+        Ok(task) => res.render(Json(json!({"ok": true, "task": wire(task)}))),
         Err(error) => store_error(res, error),
     }
 }
@@ -229,7 +246,7 @@ async fn get(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         return;
     }
     match result {
-        Ok(task) => res.render(Json(task)),
+        Ok(task) => res.render(Json(wire(task))),
         Err(error) => store_error(res, error),
     }
 }
@@ -255,7 +272,7 @@ async fn patch(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         return;
     }
     match result {
-        Ok(task) => res.render(Json(json!({"ok": true, "task": task}))),
+        Ok(task) => res.render(Json(json!({"ok": true, "task": wire(task)}))),
         Err(error) => store_error(res, error),
     }
 }
@@ -282,7 +299,7 @@ async fn delete(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         return;
     }
     match result {
-        Ok(Some(task)) => res.render(Json(json!({"ok": true, "task": task}))),
+        Ok(Some(task)) => res.render(Json(json!({"ok": true, "task": wire(task)}))),
         // The retained route answers its own 404 for a missing id
         // (`backend-v2.js:13288-13289`).
         Ok(None) => refusal(res, StatusCode::NOT_FOUND, "not_found"),
@@ -313,7 +330,7 @@ async fn accept(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         return;
     }
     match result {
-        Ok(task) => res.render(Json(json!({"ok": true, "task": task}))),
+        Ok(task) => res.render(Json(json!({"ok": true, "task": wire(task)}))),
         Err(error) => store_error(res, error),
     }
 }
@@ -353,7 +370,7 @@ async fn transition(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         return;
     }
     match result {
-        Ok(task) => res.render(Json(json!({"ok": true, "task": task}))),
+        Ok(task) => res.render(Json(json!({"ok": true, "task": wire(task)}))),
         Err(error) => store_error(res, error),
     }
 }
@@ -379,7 +396,7 @@ async fn comment(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         return;
     }
     match result {
-        Ok(task) => res.render(Json(json!({"ok": true, "task": task}))),
+        Ok(task) => res.render(Json(json!({"ok": true, "task": wire(task)}))),
         Err(error) => store_error(res, error),
     }
 }
@@ -418,7 +435,7 @@ async fn agent_tasks(req: &mut Request, depot: &mut Depot, res: &mut Response) {
             "at_ms": now_ms(),
             "permissions": permissions(depot),
             "unavailable": UNAVAILABLE,
-            "tasks": tasks,
+            "tasks": tasks.into_iter().map(wire).collect::<Vec<_>>(),
         }))),
         Err(error) => store_error(res, error),
     }

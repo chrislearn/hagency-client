@@ -48,8 +48,12 @@ const PARENT_MAX: usize = 64;
 const LABEL_MAX: usize = 64;
 const LABELS_MAX: usize = 20;
 
-/// The legal status pairs (`TRANSITIONS`, `lib/task-store.js:8-13`).
-pub fn allowed_transitions(status: &str) -> &'static [&'static str] {
+/// The legal status pairs (`TRANSITIONS`, `lib/task-store.js:8-13`). Served to
+/// the console on every task row as `next`, so the page renders a transition
+/// control only where the server allowed one — the one server-owned map, the
+/// same contract the alerts read uses. Named `operator_transitions` because
+/// `allowed_transitions` is already the ceiling-alert map.
+pub fn operator_transitions(status: &str) -> &'static [&'static str] {
     match status {
         "created" => &["accepted"],
         "accepted" => &["in_progress"],
@@ -603,7 +607,7 @@ impl DomainRepository {
         let Some(stored) = current else {
             return Err(Error::NotFound);
         };
-        if !allowed_transitions(&stored.3).contains(&status) {
+        if !operator_transitions(&stored.3).contains(&status) {
             return Err(invalid("invalid_transition"));
         }
         let started = match status {
@@ -810,12 +814,12 @@ mod tests {
     /// The one server-owned transition map must stay the retained map.
     #[test]
     fn native_operator_task_transitions_match_retained_store() {
-        assert_eq!(allowed_transitions("created"), ["accepted"]);
-        assert_eq!(allowed_transitions("accepted"), ["in_progress"]);
-        assert_eq!(allowed_transitions("in_progress"), ["blocked", "done"]);
-        assert_eq!(allowed_transitions("blocked"), ["in_progress"]);
-        assert!(allowed_transitions("done").is_empty());
-        assert!(allowed_transitions("nonsense").is_empty());
+        assert_eq!(operator_transitions("created"), ["accepted"]);
+        assert_eq!(operator_transitions("accepted"), ["in_progress"]);
+        assert_eq!(operator_transitions("in_progress"), ["blocked", "done"]);
+        assert_eq!(operator_transitions("blocked"), ["in_progress"]);
+        assert!(operator_transitions("done").is_empty());
+        assert!(operator_transitions("nonsense").is_empty());
     }
 
     /// `new Date(ms).toISOString()` spelling, including the leap-year and

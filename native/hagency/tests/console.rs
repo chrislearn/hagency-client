@@ -30,6 +30,8 @@ mod resources;
 #[path = "console/status_strip.rs"]
 #[cfg(feature = "native-console-browser")]
 mod status_strip;
+#[path = "console/tasks.rs"]
+mod tasks;
 use fixture::*;
 use salvo::{
     prelude::*,

@@ -33,7 +33,7 @@ pub use domain::{
     UploadPreparation, UploadSend, UsageCeiling, UsageEvidence, UsagePeriod, UsagePeriodKind,
     UsageReceipt, UsageReport, UsageSource, UsageSummary, allowed_transitions,
     over_budget_notice_body, MAX_TASK_COMMENTS, MAX_TASK_PAGE, OperatorTask, OperatorTaskComment,
-    TASK_GRANULARITIES, TASK_PRIORITIES, TASK_STATUSES, TaskFilters,
+    TASK_GRANULARITIES, TASK_PRIORITIES, TASK_STATUSES, TaskFilters, operator_transitions,
 };
 pub use domain::{OutcomeAction, OutcomeResolution};
 pub use domain_worker::DomainStore;
