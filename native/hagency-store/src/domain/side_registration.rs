@@ -362,7 +362,8 @@ impl crate::DomainRepository {
         // as unverified — the state TS stages over. A staged row never
         // disturbs the live one; promotion on verify is owed separately.
         let has_credential: bool = tx.query_row(
-            "SELECT credential IS NOT NULL FROM side_registrations WHERE fleet_id=?1",
+            "SELECT EXISTS(SELECT 1 FROM side_registrations WHERE fleet_id=?1 \
+             AND credential IS NOT NULL)",
             [&fleet],
             |r| r.get(0),
         )?;
@@ -543,5 +544,73 @@ mod tests {
         let expected: String = digest[..4].iter().map(|b| format!("{b:02x}")).collect();
         assert_eq!(fingerprint(&token), expected);
         assert_eq!(fingerprint(&token).len(), 8);
+    }
+
+    /// The full store path against a real seeded registration row: the
+    /// migration ran, the files landed, the transport read returns the
+    /// stored tokens — the acceptance's "the service reads the stored
+    /// token" arm, at the store layer.
+    #[test]
+    fn issue_side_registration_end_to_end_at_the_store() {
+        let root = tempfile::tempdir().unwrap();
+        let state = root.path().join("state");
+        let mut db = crate::DomainRepository::open(&state).unwrap();
+        let registration = serde_json::from_value::<hagency_core::authority::Registration>(
+            serde_json::json!({
+                "fleetId": "hf_0123456789abcdef0123456789abcdef",
+                "generation": 1,
+                "serverName": "example.test",
+                "receptionRoomId": "!reception:example.test",
+                "representativeMxid": "@hf_0123456789abcdef0123456789abcdef_representative:example.test",
+                "approvalBotMxid": "@approval:example.test",
+            }),
+        )
+        .unwrap();
+        db.register(&registration).unwrap();
+        let issued = db
+            .issue_side_registration(&request("http://127.0.0.1:13443///"), 1000)
+            .unwrap();
+        assert!(!issued.staged);
+        assert_eq!(issued.registration_id, "hagency-example.test");
+        let yaml = std::fs::read_to_string(state.join("registrations/example.test.yaml")).unwrap();
+        assert!(yaml.contains("url: \"http://127.0.0.1:13443\"\n"));
+        let as_token = yaml_field(&yaml, "as_token");
+        let stored =
+            String::from_utf8(std::fs::read(state.join("matrix.appservice_token")).unwrap())
+                .unwrap();
+        assert_eq!(stored, as_token);
+        let credential = db
+            .side_credential_for_transport("EXAMPLE.TEST")
+            .unwrap()
+            .expect("live credential");
+        assert_eq!(credential.as_token, as_token);
+        // The reissue stages and leaves the live token alone.
+        let second = db
+            .issue_side_registration(&request("http://127.0.0.1:14443"), 2000)
+            .unwrap();
+        assert!(second.staged);
+        let after =
+            String::from_utf8(std::fs::read(state.join("matrix.appservice_token")).unwrap())
+                .unwrap();
+        assert_eq!(after, as_token);
+    }
+
+    #[test]
+    fn issue_side_registration_unknown_side_is_not_found() {
+        let root = tempfile::tempdir().unwrap();
+        let state = root.path().join("state");
+        let mut db = crate::DomainRepository::open(&state).unwrap();
+        assert!(matches!(
+            db.issue_side_registration(&request("https://x"), 1000),
+            Err(Error::NotFound)
+        ));
+    }
+
+    fn yaml_field(yaml: &str, key: &str) -> String {
+        yaml.lines()
+            .find_map(|l| l.strip_prefix(&format!("{key}: ")))
+            .expect("key present")
+            .trim_matches('"')
+            .to_owned()
     }
 }
