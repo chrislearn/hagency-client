@@ -9,6 +9,10 @@ use hagency_core::approvals::{
 };
 use hagency_core::{
     allocation::Budget,
+    commands::{
+        CommandNoticeClaimed, CommandNoticeReceipt, CommandNoticeRequest,
+        CommandNoticeSend,
+    },
     authority::{Registration, VerifiedRequest},
     messages::{InboundMessage, InboxItem, MessageReceipt, MessageTarget},
     project::{CatalogResource, ConfiguredResource, Engagement, Resource, Seat},
@@ -2076,6 +2080,99 @@ impl DomainStore {
     ) -> Result<IntentResult, Error> {
         self.call(weight(&(&id, &token, &input))?, move |db| {
             db.deliver_verified_task_notice(&id, &token, &input, writer_time()?)
+        })
+        .await
+    }
+
+    /// Host-authored answer to a `!` line this session received. The command
+    /// layer renders it; there is no task and no approval behind it.
+    pub async fn submit_command_notice(
+        &self,
+        input: CommandNoticeRequest,
+    ) -> Result<CommandNoticeReceipt, Error> {
+        self.call(weight(&input)?, move |db| {
+            db.submit_command_notice(&input, writer_time()?)
+        })
+        .await
+    }
+    pub async fn claim_command_notice_for_session(
+        &self,
+        session: String,
+        lease_ms: u64,
+    ) -> Result<Option<CommandNoticeClaimed>, Error> {
+        self.call(weight(&session)?, move |db| {
+            db.claim_command_notice_for_session(&session, writer_time()?, lease_ms)
+        })
+        .await
+    }
+    pub async fn begin_command_notice_send(
+        &self,
+        id: String,
+        token: String,
+    ) -> Result<CommandNoticeSend, Error> {
+        self.call(weight(&(&id, &token))?, move |db| {
+            db.begin_command_notice_send(&id, &token, writer_time()?)
+        })
+        .await
+    }
+    pub async fn validate_command_notice_send(
+        &self,
+        id: String,
+        token: String,
+        fence: u64,
+    ) -> Result<(), Error> {
+        self.call(weight(&(&id, &token))?, move |db| {
+            db.validate_command_notice_send(&id, &token, fence, writer_time()?)
+        })
+        .await
+    }
+    pub async fn deliver_command_notice(
+        &self,
+        id: String,
+        token: String,
+        input: ReplyDeliveryObservation,
+    ) -> Result<CommandNoticeReceipt, Error> {
+        self.call(weight(&(&id, &token, &input))?, move |db| {
+            db.deliver_command_notice(&id, &token, &input, writer_time()?)
+        })
+        .await
+    }
+    pub async fn command_notice_receipt(
+        &self,
+        id: String,
+    ) -> Result<CommandNoticeReceipt, Error> {
+        self.call(weight(&id)?, move |db| db.command_notice_receipt(&id))
+            .await
+    }
+    /// The admitted `!` lines in this session with no answer queued yet.
+    pub async fn pending_command_lines(
+        &self,
+        session: String,
+        limit: i64,
+    ) -> Result<Vec<hagency_core::commands::CommandLine>, Error> {
+        self.call(weight(&session)?, move |db| {
+            db.pending_command_lines(&session, limit)
+        })
+        .await
+    }
+    pub async fn command_notice_history_conflicts(
+        &self,
+        id: String,
+        fence: u64,
+    ) -> Result<bool, Error> {
+        self.call(weight(&(&id, fence))?, move |db| {
+            db.command_notice_history_conflicts(&id, fence)
+        })
+        .await
+    }
+    pub async fn reconcile_command_notice(
+        &self,
+        id: String,
+        fence: u64,
+        input: ReplyReconciliation,
+    ) -> Result<CommandNoticeReceipt, Error> {
+        self.call(weight(&(&id, &input))?, move |db| {
+            db.reconcile_command_notice(&id, fence, &input, writer_time()?)
         })
         .await
     }

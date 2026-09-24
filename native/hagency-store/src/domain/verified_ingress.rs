@@ -664,12 +664,11 @@ impl DomainRepository {
             // A `!` line is a bot command, never agent input. The retained
             // bridge checked `cmdBody.startsWith('!')` on text only, BEFORE any
             // routing, so a command was dispatched and never became a prompt
-            // (bridge-matrix.js:7111-7125). Native has no dispatcher yet, so the
-            // half this store can hold is the one with a blast radius: the event
-            // is still admitted and recorded, and it wakes nobody. A DM `!…`
-            // used to be an ordinary direct message and so woke the agent — the
-            // side effect the parity table called out at
-            // `verified_ingress.rs:650-651`.
+            // (bridge-matrix.js:7111-7125). The event is still admitted and
+            // recorded — the dispatcher reads it back from `session_inputs` —
+            // and it wakes nobody. A DM `!…` used to be an ordinary direct
+            // message and so woke the agent — the side effect the parity table
+            // called out at `verified_ingress.rs:650-651`.
             && !is_bot_command(event);
         let task = bound_intent(&tx, &route.session_id)?;
         if let Some((id, state, root)) = &task {

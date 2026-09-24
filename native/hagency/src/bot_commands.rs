@@ -535,6 +535,77 @@ pub fn is_command(body: &str, kind: &str) -> bool {
     matches!(kind, "m.text") && body.trim_start().starts_with('!')
 }
 
+// ── Dispatch ────────────────────────────────────────────────────────
+
+/// What the observed native host can say for the reads. Each field is the same
+/// tri-state TS read: `None` is "the source did not answer", which TS rendered
+/// as `unavailable` / `?` / a `Tmux note:` line rather than as an empty result.
+#[derive(Debug, Clone, Default)]
+pub struct HostObservation {
+    pub status: StatusObservation,
+    pub agents: AgentsObservation,
+    /// `Some(items)` when tmux answered, `None` when it did not — with
+    /// `installed` deciding which of TS's two first answers applies (:803-812).
+    pub sessions: Option<Vec<SessionItem>>,
+    pub tmux_installed: bool,
+    pub offer: OfferBook,
+}
+
+/// The outcome of running one parsed line. `Unrenderable` is a command native
+/// parsed and authorized but has no renderer for — the tier-2/3 terminal verbs,
+/// and `!request`, which TS dispatches as a project-side act rather than a local
+/// answer. The caller must NOT invent text for it: the retained product's words
+/// came from a handler that does not exist here.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Dispatched {
+    Answer(Reply),
+    Unrenderable,
+}
+
+/// `handleCommand` (:322-390): no-command, the tier-0-only refusal, the ACL
+/// decision, then the switch. The order is the retained product's and is load
+/// bearing — a refusal must not be reachable by a command that would have been
+/// refused anyway, and an ACL denial must precede any mutation.
+pub fn dispatch(
+    text: &str,
+    sender_mxid: &str,
+    acl: &Acl,
+    tier0_only: bool,
+    observed: &HostObservation,
+) -> Dispatched {
+    let Some(parsed) = parse(text) else {
+        return Dispatched::Answer(no_command_reply());
+    };
+    let command = parsed.command.as_str();
+    let tier = classify(command);
+    if tier0_only && tier > 0 {
+        return Dispatched::Answer(tier0_only_refusal(command));
+    }
+    match acl.authorize(sender_mxid, tier) {
+        Ok(_grant) => {}
+        Err(reason) => return Dispatched::Answer(acl_refusal(command, reason)),
+    }
+    match command {
+        "!help" => Dispatched::Answer(help()),
+        "!offer" => Dispatched::Answer(offer(&observed.offer)),
+        "!status" => Dispatched::Answer(status(&observed.status)),
+        "!agents" => Dispatched::Answer(agents(
+            &observed.agents,
+            parsed.args.first().is_some_and(|arg| arg == "all"),
+        )),
+        "!sessions" => Dispatched::Answer(match &observed.sessions {
+            Some(items) => sessions(items),
+            None => sessions_unavailable(observed.tmux_installed),
+        }),
+        // Parsed and authorized, but native has no renderer. `!request` is a
+        // project-side act in TS (:365) and the rest are terminal verbs.
+        "!request" | "!groups" | "!group" | "!agent" | "!mcp" | "!bridge" | "!mkgroup"
+        | "!bindroom" | "!addmember" | "!rmember" | "!joingroup" | "!dm" | "!identity"
+        | "!spy" | "!rmgroup" | "!agentctl" | "!ctl" => Dispatched::Unrenderable,
+        _ => Dispatched::Answer(unknown_command(command)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -872,15 +943,65 @@ mod tests {
         assert!(no_room.plain.contains("reviewer — nothing currently qualifies"));
     }
 
-    /// The command predicate that keeps a `!` line out of agent input
-    /// (bridge-matrix.js:7120-7122).
-    #[test]
-    fn native_bot_command_predicate() {
+/// The command predicate that keeps a `!` line out of agent input
+/// (`bridge-matrix.js:7120-7122`).
+#[test]
+fn native_bot_command_predicate() {
         assert!(is_command("!help", "m.text"));
         assert!(is_command("  !status  ", "m.text"));
         assert!(!is_command("hello !help", "m.text"));
         assert!(!is_command("!help", "m.image"));
         assert!(!is_command("!help", "m.file"));
         assert!(!is_command("", "m.text"));
+    }
+
+    /// `handleCommand` (:322-390) end to end: the no-command reply, tier-0
+    /// commands answering with no ACL configured at all, the ACL denial of a
+    /// tier-1 read on an unconfigured deployment, the unknown-command reply, and
+    /// a parsed-but-unrenderable verb producing no invented words.
+    #[test]
+    fn native_bot_command_dispatch() {
+        let empty = Acl::new(Vec::new(), Vec::new(), false);
+        let observed = HostObservation::default();
+        // Not a command at all (:324-326).
+        assert_eq!(
+            dispatch("hello", "@a:example.test", &empty, false, &observed),
+            Dispatched::Answer(no_command_reply())
+        );
+        // Tier 0 answers even with an empty (unconfigured) ACL: public.
+        assert_eq!(
+            dispatch("!help", "@a:example.test", &empty, false, &observed),
+            Dispatched::Answer(help())
+        );
+        assert_eq!(
+            dispatch("!offer", "@a:example.test", &empty, false, &observed),
+            Dispatched::Answer(offer(&observed.offer))
+        );
+        // A tier-1 read on a deployment with no ACL configured is refused with
+        // its own distinct reason, exactly as TS (:84-101).
+        assert_eq!(
+            dispatch("!status", "@a:example.test", &empty, false, &observed),
+            Dispatched::Answer(acl_refusal("!status", "acl_unconfigured"))
+        );
+        let operator = Acl::new(vec!["@a:example.test".to_owned()], Vec::new(), false);
+        // An unknown command reached by an operator gets the TS words, and a
+        // typo is not a free pass: it defaults to tier 1 (:61-63, :388).
+        assert_eq!(
+            dispatch("!nonsense", "@a:example.test", &operator, false, &observed),
+            Dispatched::Answer(unknown_command("!nonsense"))
+        );
+        for command in ["!bindroom g", "!dm someone", "!request r 1000"] {
+            assert_eq!(
+                dispatch(command, "@a:example.test", &operator, false, &observed),
+                Dispatched::Unrenderable,
+                "{command}"
+            );
+        }
+        // A bridge running without a bot refuses a privileged command before
+        // any mutation (:338-345).
+        assert_eq!(
+            dispatch("!status", "@a:example.test", &operator, true, &observed),
+            Dispatched::Answer(tier0_only_refusal("!status"))
+        );
     }
 }

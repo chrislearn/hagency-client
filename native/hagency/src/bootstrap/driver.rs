@@ -1,3 +1,5 @@
+#[path = "commands.rs"]
+mod commands;
 #[path = "inbox.rs"]
 mod inbox;
 #[path = "notice.rs"]
@@ -605,7 +607,7 @@ async fn run(input: Attempt<'_>) -> Result<Option<Completed>, Failure> {
     };
     if !intake_sessions.is_empty() {
         status.phase("receiving");
-        let plan = HostIntakePlan::new(intake_sessions).map_err(|_| Failure::Config)?;
+        let plan = HostIntakePlan::new(intake_sessions.clone()).map_err(|_| Failure::Config)?;
         collector.intake(plan, cancel).await.map_err(|error| {
             status.matrix_refusal(&error);
             tracing::warn!(error = ?error, "Matrix inbox intake refused");
@@ -617,6 +619,13 @@ async fn run(input: Attempt<'_>) -> Result<Option<Completed>, Failure> {
                 Failure::Refresh
             }
         })?;
+    }
+    // A `!` line is never agent input, so nothing downstream answers it. The
+    // agent that received it says the answer in the room (it is the member with
+    // an authenticated transport), as the retained bridge did. Bounded per
+    // attempt: unanswered lines wait for the next poll.
+    if !intake_sessions.is_empty() {
+        commands::deliver(domain, collector, &intake_sessions, cancel, status).await?;
     }
     // ADR180 delegation is inline-factory only: an ordinary host owns no
     // engagement a notice could be scoped to. The assignee posts its own notice
