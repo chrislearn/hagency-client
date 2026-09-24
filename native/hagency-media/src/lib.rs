@@ -2,6 +2,7 @@
 //! Descriptor provenance must come from an authenticated encrypted Matrix event.
 mod descriptor;
 pub use descriptor::Descriptor;
+pub mod mime;
 use hagency_files::Snapshot;
 use matrix_sdk_crypto::{AttachmentDecryptor, AttachmentEncryptor};
 use sha2::{Digest, Sha256};
