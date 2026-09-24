@@ -1,19 +1,22 @@
-//! The read-only agent roster (ADR-126): a bounded observation of the
-//! engagement projections, mounted under the API sub-router's
-//! `authenticate` hoop with NO scope — the same read class as
+//! The read-only agent roster (ADR-126, widened by board #22): a bounded
+//! observation of the engagement projections, mounted under the API
+//! sub-router's `authenticate` hoop with NO scope — the same read class as
 //! `engagements` and the resources list: scope facts are a payload on
 //! reads, never a gate (only the mutations consult a scope). The wire
-//! item carries EXACTLY seven scalar keys derived at the store
+//! item carries EXACTLY nine scalar keys derived at the store
 //! (`DomainRepository::agent_roster`): no credential home, no workdir,
 //! no state dir, no workspace path, no tmux target, no pane buffer, no
 //! token — and no nested object at all, so nothing can hide inside one.
-//! The client validator refuses an eighth key, so a future widening
+//! The client validator refuses a tenth key, so a future widening
 //! fails the whole read instead of leaking silently (fail-closed).
 //!
-//! `last_activity_ms` is "last dispatch activity" — the newest
-//! `runner_attempts.created_at` among the engagement's sessions'
-//! dispatches — NOT last seen: native has no heartbeat model. An
-//! engagement with no attempt row reports `null`, never zero.
+//! One row per AGENT, the TS roster's shape (`backend-v2.js:11696`
+//! serializes every agent record): an agent whose engagements all ended
+//! still appears. `online` is REAL worker state — a live dispatch
+//! (`leased`/`started`/`parked`) in one of the agent's sessions — and
+//! `last_seen_ms` is the newest `runner_attempts.created_at` the agent
+//! produced: null, never zero, when it never attempted. `last_activity_ms`
+//! keeps "last dispatch activity" of the representative engagement.
 //! `unavailable` is server-owned, like the alert transition map: the
 //! page renders whatever the server names, so a future source turns a
 //! column on by removing its name here, not by a client edit.
@@ -27,6 +30,7 @@ use serde::{Deserialize, Serialize};
 pub(super) fn router() -> Router {
     Router::with_path("agents")
         .get(list)
+        .push(Router::with_path("{name}").get(super::agent_detail::detail))
         .push(Router::with_path("{id}/start").post(start))
         .push(Router::with_path("{id}/stop").post(stop))
         .push(Router::with_path("{id}/preset").post(preset))
@@ -45,8 +49,11 @@ pub(super) fn router() -> Router {
         .push(Router::with_path("{id}/refuse").post(refuse))
 }
 
-/// Exactly seven keys, in the ADR-126 order. Every key except `name` is
-/// nullable at the source; `null` means "unknown", rendered as such.
+/// Exactly nine keys, in the ADR-126 order extended by board #22. Every
+/// key except `name`, `framework`, `role`, `state`, `engagement_id`,
+/// `requested_tokens` and `online` is nullable at the source; `null`
+/// means "unknown", rendered as such. One row per AGENT (TS parity:
+/// `backend-v2.js:11696` serializes every agent record).
 #[derive(Serialize)]
 struct RosterItem {
     name: String,
@@ -55,17 +62,19 @@ struct RosterItem {
     state: EngagementState,
     engagement_id: String,
     requested_tokens: u64,
+    online: bool,
+    last_seen_ms: Option<u64>,
     last_activity_ms: Option<u64>,
 }
 
 /// Every retained roster column native has no source for in this slice:
 /// per-agent consumed usage (the ceiling report is keyed by resource),
-/// last-seen/online, the tmux target and pane, the credential home and
-/// workspace path (private by omission, named as unavailable), the seat.
-const UNAVAILABLE: [&str; 8] = [
+/// the tmux target and pane, the credential home and workspace path
+/// (private by omission, named as unavailable), the seat. `online` and
+/// `last_seen` are SOURCED now (board #22): a live dispatch and the
+/// newest attempt clock are real worker state, so they render as columns.
+const UNAVAILABLE: [&str; 6] = [
     "consumed",
-    "last_seen",
-    "online",
     "tmux",
     "pane",
     "credential_home",
@@ -107,6 +116,8 @@ async fn list(req: &mut Request, depot: &mut Depot, res: &mut Response) {
                     state: row.state,
                     engagement_id: row.engagement_id,
                     requested_tokens: row.requested_tokens,
+                    online: row.online,
+                    last_seen_ms: row.last_seen_ms,
                     last_activity_ms: row.last_activity_ms,
                 })
                 .collect();

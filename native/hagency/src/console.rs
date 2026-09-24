@@ -1,5 +1,6 @@
 //! Read-only browser facade. Native operator/runner authentication is unchanged.
 mod accounts;
+mod agent_detail;
 mod agents;
 mod alerts;
 mod approvals;
