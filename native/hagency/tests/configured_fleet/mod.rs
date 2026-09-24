@@ -89,16 +89,20 @@ impl Fixture {
         Self::profile(application_service, media, false).await
     }
     pub async fn profile(application_service: bool, media: bool, local: bool) -> Self {
-        Self::configured(application_service, media, local, false, None, false).await
+        Self::configured(application_service, media, local, false, None, false, 2).await
     }
     pub async fn paced_startup(sdk_ms: Option<u64>) -> Self {
-        Self::configured(false, false, true, true, sdk_ms, false).await
+        Self::configured(false, false, true, true, sdk_ms, false, 2).await
     }
     /// ADR180's coordination group on. It runs the local-Codex profile because
     /// a delegating dispatch holds an owner approval round trip inside its own
     /// operation budget, which the default 30 s budget has no room for.
     pub async fn delegating() -> Self {
-        Self::configured(false, false, true, false, None, true).await
+        Self::configured(false, false, true, false, None, true, 2).await
+    }
+    /// Three factory agents: the restart acceptance count (board #30).
+    pub async fn three_agents() -> Self {
+        Self::configured(false, false, false, false, None, false, 3).await
     }
     async fn configured(
         application_service: bool,
@@ -107,6 +111,7 @@ impl Fixture {
         paced_startup: bool,
         sdk_ms: Option<u64>,
         coordination: bool,
+        count: usize,
     ) -> Self {
         let one_fleet = ONE_FLEET.clone().lock_owned().await;
         let root = tempfile::tempdir().unwrap();
@@ -197,7 +202,8 @@ impl Fixture {
         db.register_workspace("root_work").unwrap();
         drop(db);
         let fake = matrix::Fake::start(true).await;
-        let mut peer = Peer::new(application_service, media, fake.endpoint.clone()).await;
+        let mut peer =
+            Peer::new(application_service, media, fake.endpoint.clone(), count).await;
         peer.provision_targets = !paced_startup;
         let reserve = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = reserve.local_addr().unwrap();
@@ -604,6 +610,7 @@ impl Fixture {
             .timeout(Duration::from_secs(3))
             .build()
             .unwrap();
+        let backends = 1 + self.peer.agents.len();
         let read = async {
             let token = fs::read_to_string(self.state.join("operator.token")).unwrap();
             let until = tokio::time::Instant::now() + Duration::from_secs(10);
@@ -621,7 +628,7 @@ impl Fixture {
                 let snapshot: Value =
                     serde_json::from_str(&response.text().await.unwrap()).unwrap();
                 assert_eq!(snapshot["factory_service"]["failed"], false);
-                if snapshot["factory_service"]["registered_backends"] == 3 {
+                if snapshot["factory_service"]["registered_backends"] == backends {
                     break;
                 }
                 assert!(tokio::time::Instant::now() < until);
@@ -639,6 +646,7 @@ impl Fixture {
             .timeout(Duration::from_secs(3))
             .build()
             .unwrap();
+        let n = self.peer.agents.len();
         let read = async {
             let response = client
                 .get(format!("http://{}/ready", self.address))
@@ -660,12 +668,9 @@ impl Fixture {
                 assert_eq!(response.status(), 200);
                 let snapshot: Value =
                     serde_json::from_str(&response.text().await.unwrap()).unwrap();
-                // ADR-182 decision 2: the refusal is the attempt's, recorded
-                // and kept in the status; the worker is on its backoff, not
-                // gone, and the fleet is not failed.
                 assert_eq!(snapshot["factory_service"]["failed"], false);
                 let agents = snapshot["factory_service"]["agents"].as_array().unwrap();
-                for index in 0..2 {
+                for index in 0..n {
                     let status = &agents
                         .iter()
                         .find(|a| a["engagement_id"] == engagement(index))
@@ -692,7 +697,7 @@ impl Fixture {
     fn diagnostic(&self) -> String {
         // Only disposable synthetic fixture data. Never used with live state.
         let mut diagnostic = fs::read_to_string(self.root.path().join("native.stderr")).unwrap();
-        for index in 0..2 {
+        for index in 0..self.peer.agents.len() {
             let work = self.work(index);
             let requests: Vec<String> = fs::read_to_string(work.join("owned-mcp.requests"))
                 .unwrap_or_default()
@@ -720,6 +725,7 @@ impl Fixture {
             .timeout(Duration::from_secs(3))
             .build()
             .unwrap();
+        let n = self.peer.agents.len();
         let read = async {
             let response = client
                 .get(format!("http://{}/ready", self.address))
@@ -755,11 +761,11 @@ impl Fixture {
             assert_eq!(response.status(), 200);
             let snapshot: Value = serde_json::from_str(&response.text().await.unwrap()).unwrap();
             let fleet = &snapshot["factory_service"];
-            assert_eq!(fleet["registered_backends"], 3);
+            assert_eq!(fleet["registered_backends"], 1 + n);
             assert_eq!(fleet["failed"], false);
             let agents = fleet["agents"].as_array().unwrap();
-            assert_eq!(agents.len(), 3);
-            for index in 0..2 {
+            assert_eq!(agents.len(), n);
+            for index in 0..n {
                 let agent = agents
                     .iter()
                     .find(|a| a["engagement_id"] == engagement(index))
@@ -892,11 +898,11 @@ struct Interleave {
     join: Option<matrix::Request>,
 }
 impl Peer {
-    async fn new(application_service: bool, media: bool, endpoint: String) -> Self {
+    async fn new(application_service: bool, media: bool, endpoint: String, count: usize) -> Self {
         let mut approval =
             crypto::Peer::for_sender(&reg().approval_bot_mxid, "APPROVAL_DEVICE").await;
         let mut agents = Vec::new();
-        for index in 0..2 {
+        for index in 0..count {
             let peer = approval.additional_sender(
                 &format!("@{}_{}:example.test", reg().fleet_id, engagement(index)),
                 &format!("DEVICE_{}", engagement(index)),
@@ -1152,7 +1158,7 @@ impl Peer {
             } else if path.ends_with("/sync") {
                 let mut events = Vec::new();
                 if self.provision_targets && self.root_sync == 1 {
-                    for index in 0..2 {
+                    for index in 0..self.agents.len() {
                         events.push(json!({"event_id":format!("$fleet_request_{index}"),"sender":OWNER,"type":"m.room.message","origin_server_ts":now(),"content":{"msgtype":"com.hagency.engagement.request.v1","body":json!({"requestId":format!("fleet_target_{index}"),"requester":OWNER,"project":"factory_project","projectRoomId":PROJECT,"role":"coding","requestedTokens":250,"ratePerDay":null,"agent":format!("FleetAgent{index}"),"context":{"agentDefinition":{"resourceId":"resource_27cac5503836765cd10751d2"}}}).to_string()}}));
                         events.push(json!({"event_id":format!("$fleet_approve_{index}"),"sender":reg().representative_mxid,"type":"m.room.message","origin_server_ts":now(),"content":{"msgtype":"com.hagency.engagement.approval.v1","body":json!({"requestId":format!("fleet_target_{index}"),"decision":"approve"}).to_string()}}));
                     }
@@ -1266,7 +1272,7 @@ impl Peer {
             }
         } else if actor == Some(format!("Bearer {HUMAN_TOKEN}")) {
             assert!(path.contains("/join/") && request.method == "POST");
-            let index = (0..2)
+            let index = (0..self.agents.len())
                 .find(|i| request.target.contains(&format!("fleet_dm_{i}")))
                 .unwrap();
             let agent = &mut self.agents[index];
@@ -1382,7 +1388,7 @@ impl Peer {
             }
         };
         let join = if path.ends_with("/state") {
-            (0..2).find(|i| {
+            (0..self.agents.len()).find(|i| {
                 request.target.contains(&format!("fleet_dm_{i}"))
                     && self.agents[*i].owner_job.is_none()
             })
