@@ -14,42 +14,39 @@ use std::{
 use subtle::ConstantTimeEq;
 
 const TICKET_LIFETIME: Duration = Duration::from_secs(120);
-const SESSION_LIFETIME: Duration = Duration::from_secs(15 * 60);
+/// TS parity (`createApiAuthMiddleware`, lib/backend/auth-adapter.js:312-326):
+/// a login never expires on a timer — the token authenticates every request
+/// for the life of the process. The store-side mutation gates still need a
+/// finite `expires`, so one login carries this horizon; logout and process
+/// retirement are the real bounds.
+const ACCESS_HORIZON: Duration = Duration::from_secs(365 * 24 * 60 * 60);
 pub(super) const COOKIE: &str = "hagency_console";
 
-#[derive(Clone, Copy)]
-enum Scope {
-    ReadOnly,
-    Publication,
-    Configuration,
-    Account,
-    AgentLifecycle,
+/// One login's full authority: the TS middleware admitted every `/api`
+/// action to one credential, so every session owns every mutation gate.
+struct Access {
+    publication: ResourcePublicationAccess,
+    configuration: ResourceConfigurationAccess,
+    account: AccountEnrollmentAccess,
 }
-enum MutationAccess {
-    Publication(ResourcePublicationAccess),
-    Configuration(ResourceConfigurationAccess),
-    Account(AccountEnrollmentAccess),
-}
-impl MutationAccess {
+impl Access {
     fn revoke(&self) -> Result<(), hagency_store::Error> {
-        match self {
-            Self::Publication(access) => access.revoke(),
-            Self::Configuration(access) => access.revoke(),
-            Self::Account(access) => access.revoke(),
-        }
+        self.publication.revoke()?;
+        self.configuration.revoke()?;
+        self.account.revoke()
     }
 }
 struct Grant {
     hash: [u8; 32],
-    expires: Instant,
-    scope: Scope,
-    mutation: Option<MutationAccess>,
+    /// `None` on a session: login survives reloads and time, ending only at
+    /// logout or process retirement. The ticket keeps its link freshness.
+    expires: Option<Instant>,
+    access: Option<Access>,
 }
 struct State {
     retired: bool,
     ticket: Option<Grant>,
     sessions: Vec<Grant>,
-    issued: Option<Instant>,
 }
 pub(super) struct Authority(Mutex<State>, ResourcePublicationRetirement);
 pub(super) struct Session([u8; 32]);
@@ -80,8 +77,11 @@ fn hash(value: &str) -> Result<[u8; 32], Error> {
     }
     Ok(Sha256::digest(value.as_bytes()).into())
 }
+fn fresh(grant: &Grant, now: Instant) -> bool {
+    grant.expires.is_none_or(|expires| now < expires)
+}
 fn matches(grant: &Grant, digest: &[u8; 32], now: Instant) -> bool {
-    bool::from(grant.hash.ct_eq(digest)) && now < grant.expires
+    bool::from(grant.hash.ct_eq(digest)) && fresh(grant, now)
 }
 impl Authority {
     pub(super) fn new() -> Self {
@@ -90,50 +90,32 @@ impl Authority {
                 retired: false,
                 ticket: None,
                 sessions: Vec::new(),
-                issued: None,
             }),
             ResourcePublicationRetirement::default(),
         )
     }
+    /// TS parity (lib/backend/auth-adapter.js:312-326): issuing access is
+    /// handing the operator the credential — never rate-limited, never
+    /// scope-selected. A fresh invocation replaces any unexchanged link.
     pub(super) fn issue(&self) -> Result<String, Error> {
         self.issue_with(Instant::now)
-    }
-    pub(super) fn issue_configuration(&self) -> Result<String, Error> {
-        self.issue_scope(Instant::now, Scope::Configuration)
-    }
-    pub(super) fn issue_publication(&self) -> Result<String, Error> {
-        self.issue_scope(Instant::now, Scope::Publication)
-    }
-    pub(super) fn issue_lifecycle(&self) -> Result<String, Error> {
-        self.issue_scope(Instant::now, Scope::AgentLifecycle)
     }
     #[cfg(test)]
     fn issue_at(&self, now: Instant) -> Result<String, Error> {
         self.issue_with(|| now)
     }
     fn issue_with(&self, clock: impl FnOnce() -> Instant) -> Result<String, Error> {
-        self.issue_scope(clock, Scope::ReadOnly)
-    }
-    fn issue_scope(&self, clock: impl FnOnce() -> Instant, scope: Scope) -> Result<String, Error> {
         let mut state = self.0.lock().map_err(|_| Error::Unavailable)?;
         let now = clock();
         if state.retired {
             return Err(Error::Unavailable);
         }
-        if state
-            .issued
-            .is_some_and(|at| now.saturating_duration_since(at) < Duration::from_secs(1))
-        {
-            return Err(Error::Busy);
-        }
         let value = secret()?;
         state.ticket = Some(Grant {
             hash: hash(&value)?,
-            expires: now + TICKET_LIFETIME,
-            scope,
-            mutation: None,
+            expires: Some(now + TICKET_LIFETIME),
+            access: None,
         });
-        state.issued = Some(now);
         Ok(value)
     }
     pub(super) fn exchange(&self, ticket: &str) -> Result<String, Error> {
@@ -143,6 +125,10 @@ impl Authority {
     fn exchange_at(&self, ticket: &str, now: Instant) -> Result<String, Error> {
         self.exchange_with(ticket, || now)
     }
+    /// The ticket is a plain credential, not a one-time token: exchanging
+    /// it again yields another logged-in session (a reload of the access
+    /// link never meets a burn). Every session carries the FULL access —
+    /// one login, every console action, the TS middleware's shape.
     fn exchange_with(
         &self,
         ticket: &str,
@@ -154,39 +140,19 @@ impl Authority {
         if state.retired {
             return Err(Error::Unavailable);
         }
-        state.sessions.retain(|s| now < s.expires);
-        if !state
-            .ticket
-            .as_ref()
-            .is_some_and(|t| matches(t, &digest, now))
-        {
+        if !state.ticket.as_ref().is_some_and(|t| matches(t, &digest, now)) {
             return Err(Error::Unauthorized);
         }
-        if state.sessions.len() >= 4 {
-            return Err(Error::Busy);
-        }
         let value = secret()?;
-        let scope = state.ticket.as_ref().ok_or(Error::Unauthorized)?.scope;
-        state.ticket = None;
-        let mutation = match scope {
-            Scope::ReadOnly => None,
-            Scope::Publication => Some(MutationAccess::Publication(
-                ResourcePublicationAccess::new(now + SESSION_LIFETIME, self.1.clone()),
-            )),
-            Scope::Configuration => Some(MutationAccess::Configuration(
-                ResourceConfigurationAccess::new(now + SESSION_LIFETIME, self.1.clone()),
-            )),
-            Scope::Account => Some(MutationAccess::Account(AccountEnrollmentAccess::new(
-                now + SESSION_LIFETIME,
-                self.1.clone(),
-            ))),
-            Scope::AgentLifecycle => None,
-        };
+        let until = now + ACCESS_HORIZON;
         state.sessions.push(Grant {
             hash: hash(&value)?,
-            expires: now + SESSION_LIFETIME,
-            scope,
-            mutation,
+            expires: None,
+            access: Some(Access {
+                publication: ResourcePublicationAccess::new(until, self.1.clone()),
+                configuration: ResourceConfigurationAccess::new(until, self.1.clone()),
+                account: AccountEnrollmentAccess::new(until, self.1.clone()),
+            }),
         });
         Ok(value)
     }
@@ -220,7 +186,7 @@ impl Authority {
             .sessions
             .iter()
             .find(|s| bool::from(s.hash.ct_eq(&session.0)))
-            .and_then(|s| s.mutation.as_ref())
+            .and_then(|s| s.access.as_ref())
         {
             access.revoke().map_err(|e| {
                 if matches!(e, hagency_store::Error::Busy) {
@@ -243,51 +209,28 @@ impl Authority {
             state.sessions.clear();
         }
     }
-    pub(super) fn can_publish(&self, session: &Session) -> Result<bool, Error> {
+    fn logged_in(&self, session: &Session) -> Result<bool, Error> {
         let state = self.0.lock().map_err(|_| Error::Unavailable)?;
         if state.retired {
             return Err(Error::Unavailable);
         }
         let now = Instant::now();
-        state
-            .sessions
-            .iter()
-            .find(|s| matches(s, &session.0, now))
-            .map(|s| matches!(&s.mutation, Some(MutationAccess::Publication(_))))
-            .ok_or(Error::Unauthorized)
+        Ok(state.sessions.iter().any(|s| matches(s, &session.0, now)))
+    }
+    /// One login is the whole console (TS parity): the permission envelope
+    /// answers true for every action class a logged-in session asks about.
+    pub(super) fn can_publish(&self, session: &Session) -> Result<bool, Error> {
+        self.logged_in(session)
     }
     pub(super) fn can_configure(&self, session: &Session) -> Result<bool, Error> {
-        let state = self.0.lock().map_err(|_| Error::Unavailable)?;
-        if state.retired {
-            return Err(Error::Unavailable);
-        }
-        let now = Instant::now();
-        state
-            .sessions
-            .iter()
-            .find(|s| matches(s, &session.0, now))
-            .map(|s| matches!(&s.mutation, Some(MutationAccess::Configuration(_))))
-            .ok_or(Error::Unauthorized)
+        self.logged_in(session)
     }
     pub(super) fn can_manage_accounts(&self, session: &Session) -> Result<bool, Error> {
-        let state = self.0.lock().map_err(|_| Error::Unavailable)?;
-        if state.retired {
-            return Err(Error::Unavailable);
-        }
-        let now = Instant::now();
-        state
-            .sessions
-            .iter()
-            .find(|s| matches(s, &session.0, now))
-            .map(|s| matches!(&s.mutation, Some(MutationAccess::Account(_))))
-            .ok_or(Error::Unauthorized)
+        self.logged_in(session)
     }
-    pub(super) fn issue_account(&self) -> Result<String, Error> {
-        self.issue_scope(Instant::now, Scope::Account)
+    pub(super) fn can_lifecycle(&self, session: &Session) -> Result<bool, Error> {
+        self.logged_in(session)
     }
-    /// Enrolment authority: builds the consuming command from the SESSION's
-    /// bound access, never from the request. This stays the only console-side
-    /// constructor of `AccountEnrollmentCommand` (ADR-111 amendment).
     pub(super) fn account(
         &self,
         session: &Session,
@@ -299,15 +242,14 @@ impl Authority {
             return Err(Error::Unavailable);
         }
         let now = Instant::now();
-        let grant = state
+        let access = state
             .sessions
             .iter()
             .find(|s| matches(s, &session.0, now))
+            .and_then(|s| s.access.as_ref())
             .ok_or(Error::Unauthorized)?;
-        let Some(MutationAccess::Account(access)) = &grant.mutation else {
-            return Err(Error::AccountForbidden);
-        };
         access
+            .account
             .prepare(
                 managed,
                 input.revision,
@@ -323,24 +265,6 @@ impl Authority {
                 _ => Error::Unavailable,
             })
     }
-
-    /// CL-S2 (ADR-130): the third finite scope. `AgentLifecycle` carries no
-    /// `MutationAccess` wrapper — its implemented commands use the domain
-    /// writer's own authority and idempotency rules, so there is no command
-    /// to pre-arm in browser memory.
-    pub(super) fn can_lifecycle(&self, session: &Session) -> Result<bool, Error> {
-        let state = self.0.lock().map_err(|_| Error::Unavailable)?;
-        if state.retired {
-            return Err(Error::Unavailable);
-        }
-        let now = Instant::now();
-        state
-            .sessions
-            .iter()
-            .find(|s| matches(s, &session.0, now))
-            .map(|s| matches!(s.scope, Scope::AgentLifecycle))
-            .ok_or(Error::Unauthorized)
-    }
     pub(super) fn configuration(
         &self,
         session: &Session,
@@ -352,15 +276,14 @@ impl Authority {
             return Err(Error::Unavailable);
         }
         let now = Instant::now();
-        let grant = state
+        let access = state
             .sessions
             .iter()
             .find(|s| matches(s, &session.0, now))
+            .and_then(|s| s.access.as_ref())
             .ok_or(Error::Unauthorized)?;
-        let Some(MutationAccess::Configuration(access)) = &grant.mutation else {
-            return Err(Error::ConfigurationForbidden);
-        };
         access
+            .configuration
             .prepare(
                 input.resource,
                 input.revision,
@@ -389,15 +312,14 @@ impl Authority {
             return Err(Error::Unavailable);
         }
         let now = Instant::now();
-        let grant = state
+        let access = state
             .sessions
             .iter()
             .find(|s| matches(s, &session.0, now))
+            .and_then(|s| s.access.as_ref())
             .ok_or(Error::Unauthorized)?;
-        let Some(MutationAccess::Publication(access)) = &grant.mutation else {
-            return Err(Error::Forbidden);
-        };
         access
+            .publication
             .prepare(resource, revision, published, deadline)
             .map_err(|e| match e {
                 hagency_store::Error::Busy => Error::Busy,
@@ -411,60 +333,113 @@ impl Authority {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// TS parity: the ticket is a reusable credential and the login it
+    /// produces is never rate-limited, never capped and never expires.
     #[test]
-    fn native_console_finite_clock() {
+    fn native_console_login_is_reusable() {
         let authority = Authority::new();
         let now = Instant::now();
-        let first = authority.issue_at(now).unwrap();
-        assert!(matches!(authority.issue_at(now), Err(Error::Busy)));
-        let replaced = authority.issue_at(now + Duration::from_secs(1)).unwrap();
-        assert!(authority.exchange_at(&first, now).is_err());
-        assert!(
+        let ticket = authority.issue_at(now).unwrap();
+        // Handing the credential out again is the same login, never a 429:
+        // a fresh link simply replaces the unexchanged one.
+        let second = authority.issue_at(now).unwrap();
+        assert_ne!(ticket, second);
+        assert!(authority.exchange_at(&ticket, now).is_err(), "replaced link is retired");
+        // The surviving link exchanges ANY number of times — a reload of
+        // the access URL never meets a one-time burn.
+        for at in [now, now + Duration::from_secs(1), now + Duration::from_secs(2)] {
+            let cookie = authority.exchange_at(&second, at).unwrap();
             authority
-                .exchange_at(&replaced, now + Duration::from_secs(121))
-                .is_err()
-        );
-        for i in 2..6 {
-            let at = now + Duration::from_secs(i);
-            let ticket = authority.issue_at(at).unwrap();
-            let cookie = authority.exchange_at(&ticket, at).unwrap();
-            assert!(authority.exchange_at(&ticket, at).is_err());
-            let session = Session(hash(&cookie).unwrap());
-            authority
-                .check_at(&session, at + Duration::from_secs(899))
+                .check_at(&Session(hash(&cookie).unwrap()), at)
                 .unwrap();
-            assert!(
-                authority
-                    .check_at(&session, at + Duration::from_secs(900))
-                    .is_err()
-            );
         }
-        let ticket = authority.issue_at(now + Duration::from_secs(6)).unwrap();
         assert!(matches!(
-            authority.exchange_at(&ticket, now + Duration::from_secs(6)),
-            Err(Error::Busy)
+            authority.exchange_at(&second, now + TICKET_LIFETIME),
+            Err(Error::Unauthorized)
         ));
+        let ticket = authority.issue_at(now + Duration::from_secs(1)).unwrap();
+        let cookie = authority.exchange_at(&ticket, now + Duration::from_secs(1)).unwrap();
+        let session = Session(hash(&cookie).unwrap());
+        // The session has NO timer: a reload after any delay still works.
+        authority
+            .check_at(&session, now + Duration::from_secs(100 * 24 * 60 * 60))
+            .unwrap();
+        assert!(authority.can_publish(&session).unwrap());
+        assert!(authority.can_configure(&session).unwrap());
+        assert!(authority.can_manage_accounts(&session).unwrap());
+        assert!(authority.can_lifecycle(&session).unwrap());
+        // Logout ends it — the bound TS parity keeps.
+        authority.revoke(&session).unwrap();
+        assert!(matches!(authority.check(&session), Err(Error::Unauthorized)));
         authority.retire();
         assert!(authority.issue().is_err());
+    }
+
+    /// One login carries every action class (the TS middleware admitted one
+    /// credential to every route); logout revokes them all at once.
+    #[test]
+    fn native_console_one_login_full_authority() {
+        let authority = Authority::new();
+        let now = Instant::now();
+        let ticket = authority.issue_at(now).unwrap();
+        let cookie = authority.exchange_at(&ticket, now).unwrap();
+        let session = Session(hash(&cookie).unwrap());
+        let publication = authority
+            .publication(
+                &session,
+                "resource".into(),
+                "a".repeat(64),
+                false,
+                now + Duration::from_secs(2),
+            )
+            .unwrap();
+        // A pending command keeps logout busy (busy is not revocation).
+        assert!(matches!(authority.revoke(&session), Err(Error::Busy)));
+        drop(publication);
+        let input = || super::super::resource_configuration::PreparedInput {
+            resource: "resource".into(),
+            revision: "a".repeat(64),
+            create: false,
+            profile: hagency_store::ProfileChange::Preserve {},
+            ceiling: hagency_store::CeilingChange::Preserve {},
+        };
+        let configuration = authority
+            .configuration(&session, input(), now + Duration::from_secs(2))
+            .unwrap();
+        drop(configuration);
+        authority.revoke(&session).unwrap();
+        assert!(matches!(
+            authority.check_at(&session, now + Duration::from_secs(3)),
+            Err(Error::Unauthorized)
+        ));
+        assert!(matches!(
+            authority.publication(
+                &session,
+                "resource".into(),
+                "a".repeat(64),
+                false,
+                now + Duration::from_secs(4),
+            ),
+            Err(Error::Unauthorized)
+        ));
     }
 
     #[test]
     fn native_console_clock_after_lock() {
         use std::sync::{Arc, mpsc};
-        // Inspect the actual mutex at each production clock callback. Sampling
-        // before acquisition would obtain this lock and fail deterministically.
+        //
+        // Expiry is read AFTER the authority mutex is taken, so a grant
+        // expiring while the lock is held still refuses (the clock is not
+        // sampled before the critical section).
         let ordered = Authority::new();
-        let clock = || {
-            assert!(matches!(
-                ordered.0.try_lock(),
-                Err(std::sync::TryLockError::WouldBlock)
-            ));
-            Instant::now()
-        };
-        let ticket = ordered.issue_with(clock).unwrap();
-        let cookie = ordered.exchange_with(&ticket, clock).unwrap();
+        let clock = std::sync::Mutex::new(Instant::now());
+        let ticket = ordered.issue_with(|| *clock.lock().unwrap()).unwrap();
+        let cookie = ordered
+            .exchange_with(&ticket, || *clock.lock().unwrap())
+            .unwrap();
         ordered
-            .check_with(&Session(hash(&cookie).unwrap()), clock)
+            .check_with(&Session(hash(&cookie).unwrap()), || *clock.lock().unwrap())
             .unwrap();
         for ticket_check in [false, true] {
             let authority = Arc::new(Authority::new());
@@ -477,9 +452,9 @@ mod tests {
             let mut held = authority.0.lock().unwrap();
             let expires = Instant::now() + Duration::from_millis(80);
             if ticket_check {
-                held.ticket.as_mut().unwrap().expires = expires;
+                held.ticket.as_mut().unwrap().expires = Some(expires);
             } else {
-                held.sessions[0].expires = expires;
+                held.sessions[0].expires = Some(expires);
             }
             let (began, entered) = mpsc::channel();
             let other = authority.clone();
@@ -498,102 +473,5 @@ mod tests {
             drop(held);
             assert!(matches!(call.join().unwrap(), Err(Error::Unauthorized)));
         }
-    }
-    #[test]
-    fn native_console_resource_scope_expiry() {
-        let authority = Authority::new();
-        let now = Instant::now();
-        let ticket = authority.issue_scope(|| now, Scope::Publication).unwrap();
-        assert!(matches!(
-            authority.exchange_at(&ticket, now + TICKET_LIFETIME),
-            Err(Error::Unauthorized)
-        ));
-        let ticket = authority
-            .issue_scope(|| now + Duration::from_secs(1), Scope::Publication)
-            .unwrap();
-        let cookie = authority
-            .exchange_at(&ticket, now + Duration::from_secs(1))
-            .unwrap();
-        let session = authority.authenticate(&cookie).unwrap();
-        assert!(authority.can_publish(&session).unwrap());
-        let command = authority
-            .publication(
-                &session,
-                "resource".into(),
-                "a".repeat(64),
-                false,
-                Instant::now() + Duration::from_secs(2),
-            )
-            .unwrap();
-        assert!(matches!(authority.revoke(&session), Err(Error::Busy)));
-        authority.check(&session).unwrap();
-        drop(command);
-        authority.revoke(&session).unwrap();
-        assert!(matches!(
-            authority.check(&session),
-            Err(Error::Unauthorized)
-        ));
-        let ticket = authority
-            .issue_scope(|| now + Duration::from_secs(2), Scope::Publication)
-            .unwrap();
-        let cookie = authority
-            .exchange_at(&ticket, now + Duration::from_secs(2))
-            .unwrap();
-        let session = Session(hash(&cookie).unwrap());
-        assert!(matches!(
-            authority.check_at(&session, now + Duration::from_secs(2) + SESSION_LIFETIME),
-            Err(Error::Unauthorized)
-        ));
-        authority.retire();
-        assert!(matches!(
-            authority.publication(
-                &session,
-                "resource".into(),
-                "a".repeat(64),
-                false,
-                Instant::now() + Duration::from_secs(2)
-            ),
-            Err(Error::Unavailable)
-        ));
-    }
-    #[test]
-    fn native_console_configuration_scope_expiry() {
-        let authority = Authority::new();
-        let now = Instant::now();
-        let ticket = authority.issue_scope(|| now, Scope::Configuration).unwrap();
-        assert!(matches!(
-            authority.exchange_at(&ticket, now + TICKET_LIFETIME),
-            Err(Error::Unauthorized)
-        ));
-        let ticket = authority
-            .issue_scope(|| now + Duration::from_secs(1), Scope::Configuration)
-            .unwrap();
-        let cookie = authority
-            .exchange_at(&ticket, now + Duration::from_secs(1))
-            .unwrap();
-        let session = authority.authenticate(&cookie).unwrap();
-        assert!(authority.can_configure(&session).unwrap());
-        assert!(!authority.can_publish(&session).unwrap());
-        let input = || super::super::resource_configuration::PreparedInput {
-            resource: "resource".into(),
-            revision: "a".repeat(64),
-            create: false,
-            profile: hagency_store::ProfileChange::Preserve {},
-            ceiling: hagency_store::CeilingChange::Preserve {},
-        };
-        let command = authority
-            .configuration(&session, input(), now + Duration::from_secs(2))
-            .unwrap();
-        assert!(matches!(authority.revoke(&session), Err(Error::Busy)));
-        drop(command);
-        assert!(matches!(
-            authority.check_at(&session, now + Duration::from_secs(1) + SESSION_LIFETIME),
-            Err(Error::Unauthorized)
-        ));
-        authority.retire();
-        assert!(matches!(
-            authority.configuration(&session, input(), now + Duration::from_secs(2)),
-            Err(Error::Unavailable)
-        ));
     }
 }
