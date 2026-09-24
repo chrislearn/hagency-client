@@ -34,7 +34,7 @@ pub use media_upload::{
 pub use outgoing::{OutgoingState, OutgoingSummary};
 pub use provisioning::{ProvisionedAgent, TokenProvisioningHost};
 pub use receive::{ReceiveError, ReceivedAttachment, ReceivedScope};
-pub use retire::{RetireClient, RetireVerdict};
+pub use retire::{AgentRetirement, RetireClient, RetireVerdict};
 pub use token_provision::{
     ApplicationServiceCredential, ProvisionedTokenAccount, TokenAccountProvision,
 };
