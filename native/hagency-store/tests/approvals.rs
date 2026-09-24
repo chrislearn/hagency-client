@@ -446,9 +446,29 @@ fn native_runner_approval_reads_and_consumes_its_own_task() {
     let read = f.db.approval_for_runner(&f.caps[0], 1011).unwrap().unwrap();
     assert_eq!(read.id, a.id);
     assert_eq!(read.state, "pending");
-    // A sibling capability cannot read this approval: its dispatch holds a
-    // different task, so the derivation refuses before any row is named.
-    assert!(f.db.approval_for_runner(&f.caps[1], 1011).is_err());
+    // ISOLATION: a capability for a different task/dispatch must not see this
+    // approval. The read is scoped to the capability's own dispatch+fence (the
+    // same scope `consume` enforces), so the sibling gets None — never a
+    // summary of somebody else's approval.
+    let sibling = f.db.approval_for_runner(&f.caps[1], 1011).unwrap();
+    assert!(
+        sibling.is_none(),
+        "a sibling capability must not read this approval, got {sibling:?}"
+    );
+    // And it cannot consume it either: no approval of its own to consume.
+    let sibling_consume =
+        f.db.consume_owner_approval_for_task(&f.caps[1], 1011)
+            .unwrap();
+    assert_eq!(sibling_consume["ok"], json!(false));
+    assert_eq!(sibling_consume["code"], json!("not_found"));
+    // The owner's approval is untouched by the sibling's attempts.
+    assert_eq!(
+        f.db.approval_for_runner(&f.caps[0], 1011)
+            .unwrap()
+            .unwrap()
+            .id,
+        a.id
+    );
     // An undecided approval is not consumable: the generic refusal, no code.
     assert!(
         f.db.consume_owner_approval_for_task(&f.caps[0], 1011)
