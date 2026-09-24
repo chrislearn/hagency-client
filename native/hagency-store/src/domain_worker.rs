@@ -3108,6 +3108,55 @@ impl DomainStore {
         })
         .await
     }
+    /// The retained list read (`backend-v2.js:16074-16082`): filters ride
+    /// the call; pagination stays in the store.
+    pub async fn list_alerts(
+        &self,
+        filter: crate::AlertListFilter,
+    ) -> Result<Vec<CeilingAlert>, Error> {
+        self.call(weight(&filter.limit)?, move |db| db.list_alerts(&filter))
+            .await
+    }
+    /// One alert plus its notes history (`backend-v2.js:16088-16091`).
+    pub async fn get_alert(
+        &self,
+        key: String,
+    ) -> Result<(CeilingAlert, Vec<crate::AlertNote>), Error> {
+        self.call(weight(&key)?, move |db| db.get_alert(&key)).await
+    }
+    /// The retained stats read (`backend-v2.js:16084-16086`).
+    pub async fn alert_stats(&self) -> Result<crate::AlertStats, Error> {
+        self.call(64, |db| db.alert_stats()).await
+    }
+    /// The retained note append (`backend-v2.js:16129-16138`).
+    pub async fn add_alert_note(
+        &self,
+        key: String,
+        author: String,
+        text: String,
+        now: u64,
+    ) -> Result<(CeilingAlert, Vec<crate::AlertNote>), Error> {
+        self.call(weight(&(&key, &author, &text))?, move |db| {
+            db.add_alert_note(&key, &author, &text, now)
+        })
+        .await
+    }
+    /// The retained PATCH (`backend-v2.js:16140-16147`).
+    pub async fn update_alert(
+        &self,
+        key: String,
+        patch: crate::AlertPatch,
+    ) -> Result<CeilingAlert, Error> {
+        self.call(weight(&(&key, &patch.tags))?, move |db| {
+            db.update_alert(&key, &patch)
+        })
+        .await
+    }
+    /// The retained DELETE (`backend-v2.js:16149-16157`).
+    pub async fn delete_alert(&self, key: String) -> Result<CeilingAlert, Error> {
+        self.call(weight(&key)?, move |db| db.delete_alert(&key))
+            .await
+    }
     /// Host-only concrete publication command; never part of RunnerCommand.
     pub async fn resource_configuration(
         &self,
