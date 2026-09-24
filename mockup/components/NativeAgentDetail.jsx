@@ -16,10 +16,22 @@ import { useT } from '@/components/Prefs';
 import { fmtTokens } from '@/lib/mock-data';
 import { fetchAgentDetail } from '@/lib/native-api';
 
-export default function NativeAgentDetail({ name }) {
+export default function NativeAgentDetail({ name, onBack }) {
   const t = useT();
   const [phase, setPhase] = useState('loading');
   const [detail, setDetail] = useState(null);
+  /*
+   * The roster renders this in place (the packaged console serves one static
+   * HTML per route with no fallback, so /agents/<name> would 404 in
+   * production); an in-place caller passes `onBack` and gets a control that
+   * clears its selection. The routed dev page (AgentDetail) passes nothing
+   * and keeps the link back to the roster.
+   */
+  const back = onBack ? (
+    <button className="btn" onClick={onBack}>{t('na.detailBack')}</button>
+  ) : (
+    <Link className="btn" href="/agents">{t('na.detailBack')}</Link>
+  );
 
   useEffect(() => {
     let live = true;
@@ -47,7 +59,7 @@ export default function NativeAgentDetail({ name }) {
     return (
       <div className="empty">
         <div className="big">{t('na.detailNotFound', { name })}</div>
-        <Link className="btn" href="/agents">{t('na.detailBack')}</Link>
+        {back}
       </div>
     );
   }
@@ -55,7 +67,7 @@ export default function NativeAgentDetail({ name }) {
     return (
       <section className="panel" role="alert">
         <p>{t('na.detailFailed')}</p>
-        <Link className="btn" href="/agents">{t('na.detailBack')}</Link>
+        {back}
       </section>
     );
   }
@@ -149,7 +161,7 @@ export default function NativeAgentDetail({ name }) {
       </section>
 
       <div className="btn-row" style={{ marginTop: 14 }}>
-        <Link className="btn" href="/agents">{t('na.detailBack')}</Link>
+        {back}
       </div>
     </div>
   );

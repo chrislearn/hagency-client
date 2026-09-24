@@ -14,7 +14,11 @@
  * not widen what it narrowed. The lifecycle scope exposes stop and a
  * separate private stopped-task review. Start and preset rebinding remain
  * absent because their server routes fail closed; a button that can only
- * refuse would lie. Clicking an agent's name opens its detail page.
+ * refuse would lie. Clicking an agent's name opens its detail IN PLACE: the
+ * packaged native console serves one static HTML per route with no fallback
+ * (the manifest carries only agents/index.html), so a link to /agents/<name>
+ * would 404 in production — the href stays only for the dev route and for
+ * open-in-new-tab.
  */
 import { useState } from 'react';
 import Link from 'next/link';
@@ -23,6 +27,7 @@ import { useData } from '@/components/Data';
 import { fmtTokens } from '@/lib/mock-data';
 import { stopAgent } from '@/lib/native-api';
 import NativeStoppedWork from '@/components/NativeStoppedWork';
+import NativeAgentDetail from '@/components/NativeAgentDetail';
 
 export default function NativeAgents() {
   const t = useT();
@@ -31,6 +36,7 @@ export default function NativeAgents() {
   const manageLifecycle = permissions.manageLifecycle === true;
   const [review, setReview] = useState(null);
   const [hold, setHold] = useState(false);
+  const [selected, setSelected] = useState(null);
 
   if (phase === 'error') {
     return (
@@ -42,6 +48,7 @@ export default function NativeAgents() {
     );
   }
   if (phase === 'access') return null;
+  if (selected) return <NativeAgentDetail name={selected} onBack={() => setSelected(null)} />;
 
   return (
     <div data-native-state={phase} aria-busy={refreshing === true}>
@@ -79,7 +86,7 @@ export default function NativeAgents() {
             <tbody>
               {agents.map((a) => (
                 <tr key={a.name} data-engagement-id={a.engagement_id} data-agent-name={a.name}>
-                  <td><Link href={`/agents/${encodeURIComponent(a.name)}`}>{a.name}</Link></td>
+                  <td><Link href={`/agents/${encodeURIComponent(a.name)}`} onClick={(e) => { e.preventDefault(); setSelected(a.name); }}>{a.name}</Link></td>
                   <td className="dim">{a.framework}</td>
                   <td>{a.role}</td>
                   <td>{a.state}</td>
