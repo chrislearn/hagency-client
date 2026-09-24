@@ -32,14 +32,12 @@ impl DomainRepository {
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let dirty: Option<bool> = tx
-            .query_row(
-                "SELECT dirty FROM workspace_resources WHERE id=?1",
-                [id],
-                |r| r.get(0),
-            )
-            .optional()?;
-        if dirty.is_none() {
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM workspace_resources WHERE id=?1)",
+            [id],
+            |r| r.get(0),
+        )?;
+        if !exists {
             return Err(Error::NotFound);
         }
         // TS's quarantine guard is `if (row.dirty_dispatch_id) return
@@ -56,12 +54,16 @@ impl DomainRepository {
         if quarantined {
             return Err(Error::Quarantined);
         }
-        // The release receipt TS writes: `inspected_at`, and dirty back to 0.
-        // `dirty_generation` is deliberately NOT reset: it is the precondition
-        // token a later inspection checks, exactly as TS leaves it
-        // (store.ts:3312 updates only dirty/reason/dispatch_id/inspected_at).
         let released = tx.execute(
-            "UPDATE workspace_resources SET dirty=0, inspected_at=?2 WHERE id=?1 AND dirty=1",
+            "UPDATE workspace_resources SET dirty=0 WHERE id=?1 AND dirty=1",
+            [id],
+        )?;
+        // The release receipt TS writes (`inspected_at`, store.ts:3312). Written
+        // whenever the release is permitted, so a replay re-stamps the same row
+        // rather than failing on the primary key.
+        tx.execute(
+            "INSERT INTO workspace_dirty_releases(resource_id,inspected_at) VALUES(?1,?2) \
+             ON CONFLICT(resource_id) DO UPDATE SET inspected_at=?2",
             params![id, now],
         )?;
         tx.commit()?;
