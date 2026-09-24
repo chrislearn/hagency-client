@@ -55,6 +55,10 @@ mod owned_dispatch;
 mod stopped_inspection;
 pub use outcome_resolution::{OutcomeAction, OutcomeResolution};
 mod provision_runtime;
+mod side_registration;
+pub use side_registration::{
+    IssueSideRegistration, IssueSideRegistrationRequest, SideCredential,
+};
 pub use owned_completion::OwnedCompletion;
 pub use owned_dispatch::{
     OwnedClaimProfile, OwnedClaimRoom, OwnedDispatchScope, OwnedFailure, OwnedObservation,
@@ -616,7 +620,7 @@ impl DomainRepository {
                 name: "domain.sqlite3",
                 lock: "domain.lock",
                 application_id: 0x48414732,
-                version: 39,
+                version: 40,
                 migrations: &[
                     (2, include_str!("migrations/002-role-publication.sql")),
                     (3, include_str!("migrations/003-task-dispatch.sql")),
@@ -678,6 +682,14 @@ impl DomainRepository {
                     ),
                     (38, include_str!("migrations/038-agent-fences.sql")),
                     (39, include_str!("migrations/039-attempt-over-budget.sql")),
+                    // Task #13's migration number is 046 (the board's
+                    // assignment); the walker requires the next sequential
+                    // list version, so the file keeps 046 and the tuple
+                    // carries 40. Integration renumbers on merge.
+                    (
+                        40,
+                        include_str!("migrations/046-side-registrations.sql"),
+                    ),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
