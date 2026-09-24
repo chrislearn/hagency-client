@@ -63,7 +63,9 @@ async fn list(req: &mut Request, depot: &mut Depot, res: &mut Response) {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Decide {
-    #[serde(alias = "project_room_id")]
+    /// The TS backend's own camelCase key is primary; the bridge's
+    /// snake_case spelling is accepted too (`backend-v2.js:10837`).
+    #[serde(rename = "projectRoomId", alias = "project_room_id")]
     project_room_id: Option<String>,
     agent: Option<String>,
     accept: Option<bool>,

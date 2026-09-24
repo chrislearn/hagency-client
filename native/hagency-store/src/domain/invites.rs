@@ -28,6 +28,7 @@ use serde::Serialize;
 pub struct PendingInvite {
     #[serde(rename = "projectRoomId")]
     pub room_id: String,
+    #[serde(rename = "agent")]
     pub agent_name: String,
     pub inviter: Option<String>,
     #[serde(rename = "projectServer")]

@@ -17,6 +17,8 @@ mod engagements;
 mod engagements_retire;
 #[path = "console/fixture.rs"]
 mod fixture;
+#[path = "console/invites.rs"]
+mod invites;
 #[path = "console/origin.rs"]
 mod origin;
 #[path = "console/project_sides.rs"]
