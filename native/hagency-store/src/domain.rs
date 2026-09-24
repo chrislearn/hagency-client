@@ -678,6 +678,7 @@ impl DomainRepository {
                     ),
                     (38, include_str!("migrations/038-agent-fences.sql")),
                     (39, include_str!("migrations/039-attempt-over-budget.sql")),
+                    (62, include_str!("migrations/062-workspace-dirty-release.sql")),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
