@@ -137,6 +137,23 @@ fn grant_context(c: &Context) -> Result<String, Error> {
         c.resource
     ]))?)
 }
+/// The newest approval at the LIVE dispatch's current fence for `task`, or
+/// `None` when the task has no live approval. `approval_context_dispatch` is
+/// non-unique and `owner_approvals` has no unique `context_id` (013:30,:32), so
+/// the tie-break is explicit: newest `id` wins.
+fn task_approval_id(db: &Connection, task: &str) -> Result<Option<String>, Error> {
+    Ok(db
+        .query_row(
+            "SELECT a.id FROM owner_approvals a \
+             JOIN approval_contexts c ON c.id=a.context_id \
+             JOIN runner_dispatches d ON d.id=c.dispatch_id AND d.fence=c.fence \
+             WHERE d.task_id=?1 AND d.state IN ('started','parked') \
+             ORDER BY a.id DESC LIMIT 1",
+            [task],
+            |r| r.get(0),
+        )
+        .optional()?)
+}
 fn summary(db: &Connection, id: &str) -> Result<ApprovalSummary, Error> {
     let (state, scope, choice): (String, bool, Option<String>) = db
         .query_row(
@@ -467,22 +484,110 @@ impl DomainRepository {
     /// and the NEWEST approval at that fence. Read-only; bounded to one row.
     pub fn approval_for_task(&self, task: &str) -> Result<Option<ApprovalSummary>, Error> {
         identifier(task, 128)?;
-        let id: Option<String> = self
-            .db
-            .query_row(
-                "SELECT a.id FROM owner_approvals a \
-                 JOIN approval_contexts c ON c.id=a.context_id \
-                 JOIN runner_dispatches d ON d.id=c.dispatch_id AND d.fence=c.fence \
-                 WHERE d.task_id=?1 AND d.state IN ('started','parked') \
-                 ORDER BY a.id DESC LIMIT 1",
-                [task],
-                |r| r.get(0),
-            )
-            .optional()?;
-        Ok(match id {
+        Ok(match task_approval_id(&self.db, task)? {
             Some(id) => Some(summary(&self.db, &id)?),
             None => None,
         })
+    }
+    /// The runner's own approval (ADR-064 amendment, PC-C3): the same
+    /// task→live-dispatch→context→newest lookup, gated on the presented
+    /// capability so a helper cannot read a sibling task's approval merely by
+    /// naming it. `parked` counts as live here for the same reason the consume
+    /// does: an approval request is exactly what parks the dispatch, so a
+    /// `started`-only gate would refuse at the one moment the read is for.
+    /// The runner's own read leg (ADR-064 amendment, PC-C3): the by-task
+    /// lookup, gated on the presented capability so the agent can only read
+    /// the approval of the task its own dispatch holds. The task is DERIVED
+    /// from the capability — the caller cannot name one.
+    pub fn approval_for_runner(
+        &self,
+        cap: &RunnerCapability,
+        now: u64,
+    ) -> Result<Option<ApprovalSummary>, Error> {
+        self.approval_for_runner_clock(cap, || Ok(now))
+    }
+
+    pub(crate) fn approval_for_runner_clock(
+        &self,
+        cap: &RunnerCapability,
+        sample: impl FnOnce() -> Result<u64, Error>,
+    ) -> Result<Option<ApprovalSummary>, Error> {
+        let now = sample()?;
+        clock(now)?;
+        // The task is DERIVED from the capability, never named by the caller:
+        // task → live dispatch → newest approval at the live fence.
+        // `parked` is live here because an approval request is exactly what
+        // parks the dispatch — a `started`-only gate would refuse at the one
+        // moment this read is for.
+        let d = execution::authorize(&self.db, cap, now, &["started", "parked"])?;
+        let task = d.task_id.ok_or(Error::RunnerAuthority)?;
+        self.approval_for_task(&task)
+    }
+    /// The runner's own consume (ADR-064 amendment, PC-C3): task-bound exactly
+    /// like the read above, so the caller never names an approval. Returns TS's
+    /// outcome body (`{ok, decision, approval}` or `{ok:false, code, approval}`)
+    /// — the settled-state refusals are NAMED (`already_consumed`,
+    /// `not_consumable`), so the agent learns what happened to its approval
+    /// rather than being told it was disallowed. An undecided `pending` keeps
+    /// the generic refusal: the request is not yet decided.
+    pub fn consume_owner_approval_for_task(
+        &mut self,
+        cap: &RunnerCapability,
+        now: u64,
+    ) -> Result<Value, Error> {
+        self.consume_owner_approval_for_task_clock(cap, || Ok(now))
+    }
+
+    pub(crate) fn consume_owner_approval_for_task_clock(
+        &mut self,
+        cap: &RunnerCapability,
+        sample: impl FnOnce() -> Result<u64, Error>,
+    ) -> Result<Value, Error> {
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let now = sample()?; // The original writer queue and SQLite lock waits have ended.
+        clock(now)?;
+        // The task is DERIVED from the capability, never named by the caller.
+        // `parked` is live here because an approval request is exactly what
+        // parks the dispatch.
+        let d = execution::authorize(&tx, cap, now, &["started", "parked"])?;
+        let task = d.task_id.ok_or(Error::RunnerAuthority)?;
+        let Some(id) = task_approval_id(&tx, &task)? else {
+            return Ok(json!({"ok": false, "code": "not_found", "approval": null}));
+        };
+        // The store's own settled-state gate already produces exactly the two
+        // named refusals the ADR-064 amendment ratifies — `already_consumed`
+        // (`applying`/`applied`) and `not_consumable` (`invalidated` /
+        // `not_applied` / `uncertain`) — while an undecided `pending` keeps the
+        // generic refusal. So the gate is NOT duplicated here: it is mapped.
+        //
+        // The named words ride a SUCCESS-status body rather than a refusal
+        // status, because the runner client never reads a refusal body
+        // (transport.rs): a bare non-2xx would collapse to `Refused(u16)` and
+        // lose the word the amendment exists to deliver.
+        let application = match consume(&tx, cap, &id, now) {
+            Ok(application) => application,
+            Err(error) => {
+                let code = match error {
+                    Error::AlreadyConsumed => "already_consumed",
+                    Error::NotConsumable => "not_consumable",
+                    // An undecided `pending`, a foreign capability or a stale
+                    // fence all keep the generic refusal, never a fabrication.
+                    error => return Err(error),
+                };
+                let approval = summary(&tx, &id)?;
+                tx.commit()?;
+                return Ok(json!({"ok": false, "code": code, "approval": approval}));
+            }
+        };
+        let result = json!({
+            "ok": true,
+            "approval": summary(&tx, &id)?,
+            "decision": if application.allow { "allow" } else { "deny" },
+        });
+        tx.commit()?;
+        Ok(result)
     }
     /// PC-C5 (ADR-110 amendment): the operator-facing fate of an undeliverable
     /// card — permanent-uncertain — is read from the store side alone:

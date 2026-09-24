@@ -423,10 +423,54 @@ impl Session {
         // task-binding gate above (their `id` is the assigned task, never an
         // approval id), and neither accepts any extra key — no `choice` (the
         // decision is the owner's), no `action`, no approval id, owner or room.
-        // The helper process reaches the store only through the runner host
-        // API, whose approval leg is the deferred piece (the same boundary the
-        // readiness memo's surface list draws); the arms enforce every gate
-        // they own and name that leg rather than silently fabricating data.
+        // The host leg is the runner API's `approval` route; the service
+        // derives the approval from the presented capability alone.
+        if name == task_client::approval::READ {
+            if call_id.is_some() || !args.is_empty() {
+                return Ok(tool_error("Read tools take the assigned task id only"));
+            }
+            return Ok(
+                match task_client::approval::read(&self.context, task_client::DEFAULT_DEADLINE)
+                    .await
+                {
+                    Ok(approval) => {
+                        let structured = serde_json::to_value(json!({"approval": approval}))
+                            .map_err(|_| Error::Protocol("approval tool projection failed"))?;
+                        json!({"content":[{"type":"text","text":structured.to_string()}],"structuredContent":structured,"isError":false})
+                    }
+                    Err(e) => tool_error(&e.to_string()),
+                },
+            );
+        }
+        if name == task_client::approval::CONSUME {
+            let Some(call_id) = call_id else {
+                return Ok(tool_error("Missing stable call_id"));
+            };
+            if !args.is_empty() {
+                return Ok(tool_error("Unsupported approval fields"));
+            }
+            return Ok(
+                match task_client::approval::consume(
+                    &self.context,
+                    call_id,
+                    task_client::DEFAULT_DEADLINE,
+                )
+                .await
+                {
+                    Ok(value) => {
+                        // TS answers an undecided or already-settled approval with
+                        // `ok:false` and a named code (backend-v2.js:10968). That
+                        // is a refusal the agent must see, so it is surfaced as a
+                        // tool error carrying the same structured detail.
+                        let is_error = value.get("ok").and_then(Value::as_bool) != Some(true);
+                        let structured = serde_json::to_value(value)
+                            .map_err(|_| Error::Protocol("approval tool projection failed"))?;
+                        json!({"content":[{"type":"text","text":structured.to_string()}],"structuredContent":structured,"isError":is_error})
+                    }
+                    Err(e) => tool_error(&e.to_string()),
+                },
+            );
+        }
         // The frozen discussion the payload points at. It inherits the same
         // task-binding gate above and takes no target of its own: the window
         // belongs to this runner's current dispatch, not to a named room.
@@ -458,25 +502,6 @@ impl Session {
                     Err(error) => tool_error(&error.to_string()),
                 },
             );
-        }
-        if name == "get_approval" {
-            if call_id.is_some() || !args.is_empty() {
-                return Ok(tool_error("Read tools take the assigned task id only"));
-            }
-            return Ok(tool_error(
-                "Approval host leg is not wired; the read is catalogued and task-bound",
-            ));
-        }
-        if name == "consume_approval" {
-            let Some(_call_id) = call_id else {
-                return Ok(tool_error("Missing stable call_id"));
-            };
-            if !args.is_empty() {
-                return Ok(tool_error("Unsupported approval fields"));
-            }
-            return Ok(tool_error(
-                "Approval host leg is not wired; the consume is catalogued and task-bound",
-            ));
         }
         let action = match name {
             "get_task" if args.is_empty() && call_id.is_none() => None,

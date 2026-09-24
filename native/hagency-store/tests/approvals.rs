@@ -427,6 +427,58 @@ fn native_owner_approval_context() {
     f.choose(&a.id, ApprovalChoice::Once);
     assert!(f.apply(0, &a.id).allow);
 }
+/// The runner's own approval leg (task #25, ADR-064 amendment PC-C3): the task
+/// is DERIVED from the capability, so the caller never names an approval; the
+/// settled-state refusals come back as TS's named codes (`consumeDecision`,
+/// backend-v2.js:10968) rather than as errors, so the agent learns what
+/// happened to its approval.
+#[test]
+fn native_runner_approval_reads_and_consumes_its_own_task() {
+    let mut f = Fixture::new(true);
+    // No approval exists yet: the read is `None`, never a fabrication.
+    assert!(
+        f.db.approval_for_runner(&f.caps[0], 1009)
+            .unwrap()
+            .is_none()
+    );
+    let a = f.admit(0, 1);
+    // The read serves the assigned task's live approval, by capability alone.
+    let read = f.db.approval_for_runner(&f.caps[0], 1011).unwrap().unwrap();
+    assert_eq!(read.id, a.id);
+    assert_eq!(read.state, "pending");
+    // A sibling capability cannot read this approval: its dispatch holds a
+    // different task, so the derivation refuses before any row is named.
+    assert!(f.db.approval_for_runner(&f.caps[1], 1011).is_err());
+    // An undecided approval is not consumable: the generic refusal, no code.
+    assert!(
+        f.db.consume_owner_approval_for_task(&f.caps[0], 1011)
+            .is_err()
+    );
+    // The owner decides; the runner consumes and gets the decision word.
+    f.choose(&a.id, ApprovalChoice::Once);
+    let consumed =
+        f.db.consume_owner_approval_for_task(&f.caps[0], 1013)
+            .unwrap();
+    assert_eq!(consumed["ok"], json!(true));
+    assert_eq!(consumed["decision"], json!("allow"));
+    assert_eq!(consumed["approval"]["id"], json!(a.id));
+    assert_eq!(consumed["approval"]["state"], json!("applying"));
+    // At-most-once: the second consume repeats the outcome, never a new one.
+    let replay =
+        f.db.consume_owner_approval_for_task(&f.caps[0], 1014)
+            .unwrap();
+    assert_eq!(replay["ok"], json!(false));
+    assert_eq!(replay["code"], json!("already_consumed"));
+    // A deny decision is carried as `deny`, not as an error.
+    let b = f.admit(0, 2);
+    f.choose(&b.id, ApprovalChoice::Deny);
+    let denied =
+        f.db.consume_owner_approval_for_task(&f.caps[0], 1015)
+            .unwrap();
+    assert_eq!(denied["ok"], json!(true));
+    assert_eq!(denied["decision"], json!("deny"));
+}
+
 #[test]
 fn native_owner_approval_application() {
     let mut f = Fixture::new(true);
