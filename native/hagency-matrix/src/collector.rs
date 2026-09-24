@@ -99,6 +99,13 @@ impl Collector {
         self.close_with_permit(_permit).await
     }
 
+    /// The engagement this collector's transport belongs to — task #12's
+    /// invite poll keys records by the engagement's agent NAME, resolved
+    /// from this id through the store.
+    pub fn engagement_id(&self) -> &str {
+        &self.inner.config.identity.transport.engagement_id
+    }
+
     /// Task #12: one lightweight invite sync — `timeline limit 0`, the TS
     /// poll's exact filter (`bridge-matrix.js:7903`) — parsed into the
     /// invitations addressed to THIS collector's sender mxid. A bounded

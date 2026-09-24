@@ -19,38 +19,25 @@ use crate::Error;
 use rusqlite::OptionalExtension;
 use serde::Serialize;
 
-/// The two settled decisions plus the waiting state — the TS store's
-/// exact vocabulary (`state.pendingInvites` rows).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InviteState {
-    Pending,
-    Accepted,
-    Declined,
-}
-
-impl InviteState {
-    fn as_str(self) -> &'static str {
-        match self {
-            InviteState::Pending => "pending",
-            InviteState::Accepted => "accepted",
-            InviteState::Declined => "declined",
-        }
-    }
-}
-
 /// One pending-invitation row, camelCase on the wire exactly as the TS
-/// store renders it (`bridge-matrix.js:2399-2409`): `roomId`, `agentName`,
-/// `inviter` (nullable), `projectServer`, `state`, `seenAt`, and the
-/// decision columns when settled.
+/// backend renders it (`lib/pending-invite-store.js:142-149`): exactly
+/// `projectRoomId`, `agent`, `inviter` (nullable), `projectServer`,
+/// `state`, `seenAt`, `decidedAt`, `decidedBy` — no more keys, none
+/// renamed differently.
 #[derive(Debug, Clone, Serialize)]
 pub struct PendingInvite {
+    #[serde(rename = "projectRoomId")]
     pub room_id: String,
     pub agent_name: String,
     pub inviter: Option<String>,
+    #[serde(rename = "projectServer")]
     pub project_server: String,
     pub state: &'static str,
+    #[serde(rename = "seenAt")]
     pub seen_at: i64,
+    #[serde(rename = "decidedAt")]
     pub decided_at: Option<i64>,
+    #[serde(rename = "decidedBy")]
     pub decided_by: Option<String>,
 }
 
@@ -223,7 +210,7 @@ impl crate::DomainRepository {
             return Err(hagency_core::InvalidInput("invalid decider").into());
         }
         let changed = self.db.execute(
-            "UPDATE pending_invites SET state=?3,decided_at=?4,decided_by=?5,join_pending=?6 \
+            "UPDATE pending_invites SET state=?3,decided_at=?4,decided_by=?5,join_pending=?6,leave_pending=?7 \
              WHERE room_id=?1 AND agent=?2",
             rusqlite::params![
                 room_id,
@@ -231,7 +218,8 @@ impl crate::DomainRepository {
                 if accepted { "accepted" } else { "declined" },
                 now_ms,
                 by,
-                if accepted && !joined { 1 } else { 0 }
+                if accepted && !joined { 1 } else { 0 },
+                if accepted { 0 } else { 1 }
             ],
         )?;
         if changed == 0 {
@@ -265,6 +253,50 @@ impl crate::DomainRepository {
             [room_id, agent],
         )?;
         Ok(changed == 1)
+    }
+
+    /// The leave happened (best-effort, `bridge-matrix.js:9135-9147`):
+    /// clear the owed flag so the poll stops retrying it.
+    pub fn mark_invite_left(&mut self, room_id: &str, agent: &str) -> Result<bool, Error> {
+        validate_invite_key(room_id, agent)?;
+        let changed = self.db.execute(
+            "UPDATE pending_invites SET leave_pending=0 WHERE room_id=?1 AND agent=?2",
+            [room_id, agent],
+        )?;
+        Ok(changed == 1)
+    }
+
+    /// Every declined invitation whose leave is still owed, oldest first.
+    pub fn leave_pending_invites(&self, agent: &str) -> Result<Vec<(String, String)>, Error> {
+        if agent.is_empty() || agent.len() > 255 {
+            return Err(hagency_core::InvalidInput("invalid agent").into());
+        }
+        let mut query = self.db.prepare(
+            "SELECT room_id,agent FROM pending_invites \
+             WHERE agent=?1 AND state='declined' AND leave_pending=1 \
+             ORDER BY seen_at, room_id",
+        )?;
+        let rows = query.query_map([agent], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Error::from)
+    }
+
+    /// The project owner recorded for a room, when the room is one: the
+    /// store-held equivalent of TS's trusted-inviter set
+    /// (`MATRIX_TRUSTED_INVITER_MXIDS`, `bridge-matrix.js:2841-2851`) —
+    /// provisioning wrote exactly this owner, so an invitation from them
+    /// is the trusted-inviter arm; anyone else is a pending decision.
+    pub fn room_owner(&self, room_id: &str) -> Result<Option<String>, Error> {
+        if room_id.is_empty() || room_id.len() > 256 {
+            return Err(hagency_core::InvalidInput("invalid room id").into());
+        }
+        self.db
+            .query_row(
+                "SELECT owner_mxid FROM projects WHERE room_id=?1 ORDER BY generation DESC LIMIT 1",
+                [room_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(Error::from)
     }
 
     /// The agent name an engagement's collector syncs under — the invite

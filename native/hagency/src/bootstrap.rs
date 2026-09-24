@@ -5,6 +5,7 @@ mod config;
 mod driver;
 pub mod fleet;
 pub mod intake_refusal;
+mod invites;
 pub(crate) mod palpo;
 pub mod provision;
 pub mod registration;
@@ -1605,6 +1606,14 @@ impl Bootstrap {
         let sweep = std::sync::Arc::new(ceiling_sweep);
         self.ceiling_sweep = Some(sweep.clone());
         self.app = self.app.clone().with_ceiling_sweep(sweep, sweep_tick);
+        // Task #12: the agent-invite poller, beside the sweeps — the same
+        // Shared (collector + domain) the file and receive services use,
+        // the same shutdown token. The task exits on cancellation and a
+        // refused round backs off, never terminates (ADR-183). Only a
+        // Matrix-configured bootstrap polls.
+        if let Some(shared) = self.shared.clone() {
+            invites::start(shared, shutdown.clone());
+        }
         // The ONE retention sweep task (tick contract §1.5), beside the
         // ceiling task — same `start_*_sweep` shape, its own period and its
         // own watch channel; slice 1 lands the `messages` phase only.

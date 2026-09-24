@@ -50,6 +50,7 @@ pub use execution::{
 pub use messages::{CorpusSweepOutcome, MESSAGE_RETENTION_FLOOR, RetentionStatus};
 mod notice_custody;
 mod invites;
+pub use invites::PendingInvite;
 mod outcome_resolution;
 mod owned_completion;
 mod owned_dispatch;
