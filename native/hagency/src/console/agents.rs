@@ -644,7 +644,7 @@ async fn continue_stopped_dispatch(req: &mut Request, depot: &mut Depot, res: &m
 /// resource (the claim selector reads the provision effect's resource
 /// payload, which the store rewrites in the same transaction).
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct Preset {
     preset_id: String,
 }

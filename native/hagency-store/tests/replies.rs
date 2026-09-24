@@ -1363,7 +1363,7 @@ fn native_matrix_transport_migration_missing_structure_and_rollback() {
                 .unwrap();
         } else {
             remove_matrix_transport_schema(&sql);
-            sql.execute_batch("ALTER TABLE matrix_transports ADD COLUMN invalidation TEXT; PRAGMA user_version=14;").unwrap();
+            sql.execute_batch("ALTER TABLE matrix_transports ADD COLUMN invalidation TEXT; DROP TABLE IF EXISTS agent_lifecycle; PRAGMA user_version=14;").unwrap();
         }
         assert!(DomainRepository::open(&root.path().join("state")).is_err());
         if damaged == "partial_upgrade" {

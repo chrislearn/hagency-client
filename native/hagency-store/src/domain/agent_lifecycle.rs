@@ -219,9 +219,10 @@ impl DomainRepository {
             "UPDATE engagements SET resource_id=?2,preset_id=?3,seat_id=?4 WHERE id=?1",
             params![engagement, resource.id(), resource.preset_id, resource.seat_id],
         )?;
+        // `json()` takes JSON text — a bare id string is malformed JSON.
         tx.execute(
             "UPDATE engagements SET projection=json_set(projection,'$.resourceId',json(?2)) WHERE id=?1",
-            params![engagement, resource.id()],
+            params![engagement, serde_json::json!(resource.id()).to_string()],
         )?;
         // The claim selector's account gate reads this payload's resource —
         // the single place "the next dispatch uses it" is decided.
