@@ -459,6 +459,17 @@ impl DomainRepository {
         identifier(id, 128)?;
         summary(&self.db, id)
     }
+    /// Read-only: the task thread root this approval's dispatch belongs to, or
+    /// `None` when the approval is not thread-scoped. The retained side reads
+    /// the same fact from the router store (`approvalThreadOrigin`,
+    /// router/src/store.ts:2198) and omits the relation when it is absent
+    /// (bridge-matrix.js:2581-2593). Never a route, a room or a send grant —
+    /// only the thread the notice must land in.
+    pub fn approval_thread_root(&self, id: &str) -> Result<Option<String>, Error> {
+        identifier(id, 128)?;
+        let (c, _) = request(&self.db, id)?;
+        Ok(c.route.thread_root)
+    }
     /// The by-task lookup (ADR-064 amendment, PC-C3): task → the live
     /// dispatch → `approval_contexts(dispatch_id, fence)` →
     /// `owner_approvals(context_id)`, pinned deterministically because

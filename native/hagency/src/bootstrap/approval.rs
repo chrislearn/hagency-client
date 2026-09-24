@@ -220,6 +220,26 @@ impl Pump {
                 .await
                 .map_err(|_| Failure::OutcomeUnknown)?;
             let notice_card = card.clone();
+            // The task thread the notice belongs in, read from the approval's
+            // own recorded route — never inferred from the newest room message.
+            // `None` is TS's no-thread case (bridge-matrix.js:2593 omits the
+            // relation) and also covers a legacy approval with no matching
+            // origin, which keeps its room notice (spec: approval status
+            // follows the originating task thread).
+            let public_thread = match self
+                .domain
+                .approval_thread_root(notice.request_id.clone())
+                .await
+            {
+                Ok(root) => root,
+                Err(error) => {
+                    tracing::warn!(
+                        "[approval] thread root read refused for {}: {error}; notice without relation",
+                        notice.request_id
+                    );
+                    None
+                }
+            };
             match self
                 .collector
                 .send_private_approval_card(card, &cancel)
@@ -241,7 +261,7 @@ impl Pump {
                     // the room signal.
                     if let Err(error) = self
                         .collector
-                        .send_private_approval_notice(notice_card, None, &cancel)
+                        .send_private_approval_notice(notice_card, public_thread, &cancel)
                         .await
                     {
                         tracing::warn!(

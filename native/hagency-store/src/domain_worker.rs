@@ -1851,6 +1851,10 @@ impl DomainStore {
         self.call(weight(&id)?, move |db| db.approval_summary(&id))
             .await
     }
+    pub async fn approval_thread_root(&self, id: String) -> Result<Option<String>, Error> {
+        self.call(weight(&id)?, move |db| db.approval_thread_root(&id))
+            .await
+    }
     /// The PC-C3 by-task lookup (ADR-064 amendment): task → live dispatch →
     /// context → newest approval at the live fence. Read-only, one row.
     pub async fn approval_for_task(
