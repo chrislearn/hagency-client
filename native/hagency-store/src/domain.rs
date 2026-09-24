@@ -95,6 +95,9 @@ pub struct DomainRepository {
     approval_owner: std::sync::Arc<()>,
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
+/// Current domain schema version (the last sequential migration).
+pub const DOMAIN_SCHEMA_VERSION: i32 = 41;
+
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
         use crate::shutdown::{Phase, SqliteCloseScope};
@@ -621,7 +624,7 @@ impl DomainRepository {
                 name: "domain.sqlite3",
                 lock: "domain.lock",
                 application_id: 0x48414732,
-                version: 41,
+                version: DOMAIN_SCHEMA_VERSION,
                 migrations: &[
                     (2, include_str!("migrations/002-role-publication.sql")),
                     (3, include_str!("migrations/003-task-dispatch.sql")),

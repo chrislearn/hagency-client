@@ -6,6 +6,7 @@ pub use domain::resource_configuration::{
 pub mod agent_home;
 mod database;
 mod domain;
+pub use domain::DOMAIN_SCHEMA_VERSION;
 mod domain_worker;
 pub mod private;
 pub mod task_context;
