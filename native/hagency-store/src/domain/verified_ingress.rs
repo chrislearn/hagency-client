@@ -64,6 +64,16 @@ fn scope_digest(route: &ReplyRoute) -> Result<String, Error> {
 fn service_sender(db: &Connection, sender: &str) -> Result<bool, Error> {
     Ok(db.query_row("SELECT EXISTS(SELECT 1 FROM matrix_transports WHERE sender_mxid=?1) OR EXISTS(SELECT 1 FROM registrations WHERE json_extract(config,'$.representativeMxid')=?1 OR json_extract(config,'$.approvalBotMxid')=?1)",[sender],|r|r.get(0))?)
 }
+/// A `!` line is a bot command rather than agent input, exactly as the retained
+/// bridge decided before routing (`bridge-matrix.js`): a non-file/image message
+/// whose trimmed body begins with `!`. Kept local because the store cannot
+/// depend on the console crate that owns the command table
+/// (`hagency::bot_commands`); the rule is one line and is asserted on both
+/// sides.
+fn is_bot_command(event: &InboundMessage) -> bool {
+    !matches!(event.kind.as_str(), "m.file" | "m.image")
+        && event.body.trim_start().starts_with('!')
+}
 fn record_message(
     tx: &Transaction<'_>,
     input: &InboundMessage,
@@ -650,7 +660,17 @@ impl DomainRepository {
             && match &route.privacy {
                 RoomPrivacy::Direct { human_mxid } => &event.sender_mxid == human_mxid,
                 RoomPrivacy::Group {} => input.mentions.contains(&route.sender_mxid),
-            };
+            }
+            // A `!` line is a bot command, never agent input. The retained
+            // bridge checked `cmdBody.startsWith('!')` on text only, BEFORE any
+            // routing, so a command was dispatched and never became a prompt
+            // (bridge-matrix.js:7111-7125). Native has no dispatcher yet, so the
+            // half this store can hold is the one with a blast radius: the event
+            // is still admitted and recorded, and it wakes nobody. A DM `!…`
+            // used to be an ordinary direct message and so woke the agent — the
+            // side effect the parity table called out at
+            // `verified_ingress.rs:650-651`.
+            && !is_bot_command(event);
         let task = bound_intent(&tx, &route.session_id)?;
         if let Some((id, state, root)) = &task {
             if state == "closed" {

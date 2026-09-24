@@ -321,6 +321,45 @@ fn native_verified_ingress_policy() {
     assert!(dm.db.admit_matrix_event(&bad, 1013).is_err());
 }
 
+/// A `!` line is a bot command, never agent input: the retained bridge checked
+/// `cmdBody.startsWith('!')` before routing (`bridge-matrix.js:7111-7125`), so a
+/// command was dispatched and never became a prompt. The event stays admitted
+/// (it is a fact in the room), and it wakes nobody — in a DM, where a bare line
+/// used to wake the agent, and in a group, where a mention used to be enough.
+#[test]
+fn native_bot_command_lines_never_wake() {
+    for direct in [false, true] {
+        let mut f = Fixture::new(direct);
+        let mentions: Vec<&str> = if direct { vec![] } else { vec!["@a:example.test"] };
+        // The same shape that DOES wake, so the difference is the `!` alone.
+        let mut ordinary = f.event("a", "ordinary", None, &mentions, 1010);
+        if direct {
+            assert!(f.db.admit_matrix_event(&ordinary, 1011).unwrap().wake);
+        } else {
+            assert!(f.db.admit_matrix_event(&ordinary, 1011).unwrap().wake);
+        }
+        let mut command = f.event("a", "command", None, &mentions, 1012);
+        command.event.body = "!help\n".into();
+        let receipt = f.db.admit_matrix_event(&command, 1013).unwrap();
+        // Admitted, recorded — and silent.
+        assert!(receipt.created);
+        assert!(!receipt.wake);
+        // A leading space is still a command; TS trimmed before the check.
+        let mut spaced = f.event("a", "spaced", None, &mentions, 1014);
+        spaced.event.body = "   !status".into();
+        assert!(!f.db.admit_matrix_event(&spaced, 1015).unwrap().wake);
+        // An `!` that is not at the start is ordinary text and still wakes.
+        let mut trailing = f.event("a", "trailing", None, &mentions, 1016);
+        trailing.event.body = "please run !status".into();
+        assert!(f.db.admit_matrix_event(&trailing, 1017).unwrap().wake);
+        // A file is never a command, even when named like one (:7122).
+        let mut file = f.event("a", "file", None, &mentions, 1018);
+        file.event.body = "!help".into();
+        file.event.kind = "m.file".into();
+        assert!(f.db.admit_matrix_event(&file, 1019).unwrap().wake);
+    }
+}
+
 #[test]
 fn native_verified_ingress_task_activation() {
     for direct in [false, true] {
