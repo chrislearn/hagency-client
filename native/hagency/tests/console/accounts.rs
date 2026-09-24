@@ -598,3 +598,55 @@ async fn native_console_account_readiness_is_observed_not_asserted() {
     assert_eq!(count(), before, "a read never writes a fact");
     f.close().await;
 }
+
+/// The first-resource act end to end: on an empty service the operator
+/// prepares an account, enrols it through the console route, and the created
+/// resource is visible on the resources read — the same outcome the TS
+/// account/credential enrolment flow reaches through POST
+/// /api/framework-presets (backend-v2.js:15842).
+#[tokio::test]
+async fn native_console_account_enrollment_creates_the_first_resource() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let manager = management(&service).await;
+    // Empty service: no resources at all.
+    let mut empty = read(&manager, "/console/api/resources?limit=16").send(&service).await;
+    let empty_body: Value = serde_json::from_str(&empty.take_string().await.unwrap()).unwrap();
+    assert_eq!(
+        empty_body["resources"].as_array().unwrap().len(),
+        0,
+        "the empty service lists no resource"
+    );
+    // Prepare the account (the "Add account" act).
+    let mut prepared = command("/console/api/accounts", &manager)
+        .json(&json!({"profile":ACCOUNT_PROFILE}))
+        .send(&service)
+        .await;
+    assert_eq!(prepared.status_code, Some(StatusCode::OK));
+    let prepared: Value = serde_json::from_str(&prepared.take_string().await.unwrap()).unwrap();
+    let row = &prepared["account"];
+    let id = row["id"].as_str().unwrap().to_owned();
+    // Enrol: the only mutation carrying the row's expected revision.
+    let mut enrolled = command(&format!("/console/api/accounts/{id}/enrollment"), &manager)
+        .json(&json!({"model":"gpt-5.6-sol","reasoning":"medium","expectedRevision":row["revision"].as_str().unwrap()}))
+        .send(&service)
+        .await;
+    let enrolled_body = enrolled.take_string().await.unwrap_or_default();
+    assert_eq!(
+        enrolled.status_code,
+        Some(StatusCode::OK),
+        "enrollment refused: {enrolled_body}"
+    );
+    // The created resource is listed on the resources read the console's
+    // Resources page consumes — the first resource, created in the console.
+    let mut listed = read(&manager, "/console/api/resources?limit=16").send(&service).await;
+    assert_eq!(listed.status_code, Some(StatusCode::OK));
+    let listed: Value = serde_json::from_str(&listed.take_string().await.unwrap()).unwrap();
+    let resources = listed["resources"].as_array().unwrap();
+    assert_eq!(resources.len(), 1, "enrollment created the first resource");
+    assert_eq!(resources[0]["framework"], "codex");
+    assert_eq!(resources[0]["model"], "gpt-5.6-sol");
+    assert_eq!(resources[0]["reasoning"], "medium");
+    assert_eq!(resources[0]["published"], true);
+    f.close().await;
+}
