@@ -25,8 +25,11 @@ async fn ready(private: bool) -> (common::Fixture, common::Fake, Collector) {
 }
 fn malformed() -> Vec<Value> {
     let mut values = vec![];
+    // "media" left this list: TS parity (bridge-matrix.js:6799-6831) admits a
+    // plaintext room's m.file/m.image as a visible message, so a plaintext url
+    // attachment is no longer a malformed-shape rejection.
     for kind in [
-        "body", "sender", "id", "relation", "mentions", "media", "oversize",
+        "body", "sender", "id", "relation", "mentions", "oversize",
     ] {
         let mut value = event(kind, "Rejected", &["@worker:example.test"], None);
         match kind {
@@ -291,7 +294,9 @@ async fn native_matrix_rejection_custody_actual_receipt_rollback_and_sdk_uncerta
         .await
         .unwrap();
     let batch = owner.batch().await.unwrap().unwrap();
-    assert_eq!(batch.rejected(), 7);
+    // "media" left malformed() (plaintext url attachments are admitted now,
+    // TS bridge-matrix.js:6799-6831), so the malformed count is 6.
+    assert_eq!(batch.rejected(), 6);
     let sql =
         rusqlite::Connection::open(f.root.path().join("sdk/matrix-sdk-state.sqlite3")).unwrap();
     sql.execute_batch("CREATE TRIGGER reject_receipt BEFORE INSERT ON kv_blob BEGIN SELECT RAISE(ABORT,'controlled rollback'); END;").unwrap();
@@ -299,7 +304,7 @@ async fn native_matrix_rejection_custody_actual_receipt_rollback_and_sdk_uncerta
         owner.intake_finish(batch.digest.clone()).await,
         Err(Error::OutcomeUnknown)
     );
-    assert_eq!(owner.batch().await.unwrap().unwrap().rejected(), 7);
+    assert_eq!(owner.batch().await.unwrap().unwrap().rejected(), 6);
     assert_eq!(owner.cursor().await.unwrap().as_deref(), Some("bootstrap"));
     sql.execute_batch("DROP TRIGGER reject_receipt").unwrap();
     drop(sql);

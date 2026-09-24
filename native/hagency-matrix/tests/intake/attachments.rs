@@ -118,6 +118,38 @@ async fn finish(c: Collector, f: common::Fixture, fake: common::Fake) {
 }
 
 #[tokio::test]
+async fn native_matrix_attachment_plaintext_room_admitted() {
+    // TS parity (bridge-matrix.js:6799-6831): a plaintext room's m.image /
+    // m.file is archived like any other message — the room's lack of
+    // encryption is not a refusal. Wire shape follows lib/matrix-file.js:38:
+    // plaintext carries content.url, not content.file.
+    let f = common::Fixture::new();
+    let mut fake = common::Fake::start(true).await;
+    let c = Collector::new(
+        config(&f, &fake.endpoint, f.identity.clone(), 1, false),
+        f.store.clone(),
+    )
+    .unwrap();
+    prime(&c, &f, &mut fake, false).await;
+    let value = json!({"event_id":"$plain_image","sender":"@owner:example.test","type":"m.room.message","origin_server_ts":now(),
+        "content":{"msgtype":"m.image","body":"photo.png","filename":"photo.png",
+            "url":"mxc://example.test/photo","info":{"mimetype":"image/png","size":12}}});
+    let result = run(&c, &mut fake, sync("plain", vec![value]), false)
+        .await
+        .unwrap();
+    assert_eq!((result.admitted, result.rejected), (1, 0));
+    // The message is visible to the agent's session like any timeline event.
+    let inbox = f.store.inbox("root".into(), 0, 100, None).await.unwrap();
+    assert_eq!(inbox.len(), 1);
+    // Encrypted-only manifest custody is untouched by a plaintext event.
+    assert_eq!(rows(&f, "matrix_attachments"), 0);
+    assert!(manifests(&c).await.is_empty());
+    assert_eq!(status(&c, &mut fake).await.stage, "idle");
+    fake.quiesced(fake.requests(), &common::limits()).await;
+    finish(c, f, fake).await;
+}
+
+#[tokio::test]
 async fn native_matrix_attachment_verified_metadata() {
     for direct in [true, false] {
         let (f, mut fake, c) = ready(direct).await;

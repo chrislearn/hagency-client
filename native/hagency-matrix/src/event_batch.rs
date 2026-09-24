@@ -495,26 +495,34 @@ impl Batch {
             }
         }
         let attachment = if matches!(kind, "m.file" | "m.image") {
-            let Proof::Verified {
-                device, session, ..
-            } = &proof
-            else {
-                return Err(CryptoIneligible);
-            };
-            if !target.encrypted {
-                return Err(Unsupported);
+            match (&proof, target.encrypted) {
+                (Proof::Verified { device, session, .. }, true) => Some(
+                    crate::attachments::Manifest::new(
+                        &self.sdk_identity,
+                        target,
+                        original,
+                        &value["content"],
+                        device,
+                        session,
+                    )
+                    .map_err(|_| Malformed)?,
+                ),
+                // TS parity (bridge-matrix.js:6799-6831): a plaintext room's
+                // m.file/m.image is archived like any other message — the room's
+                // lack of encryption is not a refusal. The TS receiver accepts
+                // `content.file?.url || content.url` (lib/matrix-file.js:38).
+                // This slice's manifest custody is encrypted-only, so the event
+                // is admitted as a visible message without a crypto manifest;
+                // full receive_file custody for plaintext needs the manifest and
+                // core observation types relaxed (outside this task's file list).
+                (Proof::Plain, false) => None,
+                // An encrypted event against a target recorded plaintext is a
+                // state desync, not TS behaviour; keep the original refusal.
+                (Proof::Verified { .. }, false) => return Err(Unsupported),
+                // Unreachable in practice: a plain proof against an encrypted
+                // target is already refused as PlaintextEncrypted above.
+                (Proof::Plain, true) => return Err(CryptoIneligible),
             }
-            Some(
-                crate::attachments::Manifest::new(
-                    &self.sdk_identity,
-                    target,
-                    original,
-                    &value["content"],
-                    device,
-                    session,
-                )
-                .map_err(|_| Malformed)?,
-            )
         } else {
             None
         };
