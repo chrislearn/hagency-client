@@ -38,6 +38,7 @@ pub use ceiling_alerts::{
 };
 mod conversation_lifecycle;
 mod conversations;
+mod exec_policy;
 mod execution;
 mod graphs;
 mod matrix_routes;
@@ -616,7 +617,7 @@ impl DomainRepository {
                 name: "domain.sqlite3",
                 lock: "domain.lock",
                 application_id: 0x48414732,
-                version: 39,
+                version: 40,
                 migrations: &[
                     (2, include_str!("migrations/002-role-publication.sql")),
                     (3, include_str!("migrations/003-task-dispatch.sql")),
@@ -678,11 +679,18 @@ impl DomainRepository {
                     ),
                     (38, include_str!("migrations/038-agent-fences.sql")),
                     (39, include_str!("migrations/039-attempt-over-budget.sql")),
-                    (62, include_str!("migrations/062-workspace-dirty-release.sql")),
+                    // #27 lands next in landing order: base head 39 + 1.
+                    // Integration renumbers again if another slice lands first.
+                    (
+                        40,
+                        include_str!("migrations/040-workspace-dirty-release.sql"),
+                    ),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
                     "SELECT id,engagement_id,dispatch_id,fence,reason,created_at,cleared_at,cleared_by FROM agent_fences LIMIT 0",
+                    "SELECT id,dirty,dirty_generation,inspected_at FROM workspace_resources LIMIT 0",
+                    "SELECT engagement_id,yolo,updated_at FROM agent_execution_policies LIMIT 0",
                     "SELECT dispatch_id,fence,seq,at_ms,phase,detail FROM runner_attempt_events LIMIT 0",
                     "SELECT dispatch_id,fence,started_at,parked_at,last_renew_at,settled_at,terminal_reason FROM runner_attempts LIMIT 0",
                     "SELECT dispatch_id,message_sequence,addressed FROM dispatch_inputs LIMIT 0",
