@@ -110,6 +110,13 @@ extern crate self as hagency_matrix;
 
 mod approval_batch;
 
+mod presence;
+pub use presence::AgentWork;
+pub use presence::{
+    AGENT_ACK_REACTION, AGENT_TYPING_MAX_MS, AGENT_TYPING_REFRESH_MS, AGENT_TYPING_TIMEOUT_MS,
+};
+pub use presence::{ack_request, typing_request};
+
 mod approval_intake;
 pub use approval_intake::{
     ApprovalCollector, ApprovalCustodyStage, ApprovalCustodyStatus, ApprovalIntakeSummary,

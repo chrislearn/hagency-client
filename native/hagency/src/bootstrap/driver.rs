@@ -628,10 +628,22 @@ async fn run(input: Attempt<'_>) -> Result<Option<Completed>, Failure> {
     } else {
         None
     };
+    let mut agent_work: Vec<hagency_matrix::AgentWork> = Vec::new();
     if !agent_inboxes.is_empty() {
         status.phase("scheduling");
         for plan in agent_inboxes {
+            // Read the trigger BEFORE selection: selection binds the input to a
+            // dispatch, after which it is no longer an unprocessed trigger. The
+            // signals are sent only once the store has accepted the message and
+            // minted the dispatch, so neither can claim a delivery that did not
+            // happen (TS `beginAgentWork`, bridge-matrix.js:10603).
+            let target = collector.agent_work_target(&plan.session_id).await;
             match domain.select_agent_inbox(plan.clone()).await {
+                Ok(hagency_core::agent_inbox::AgentInboxSelection::Selected { .. }) => {
+                    if let Some((room_id, event_id)) = target {
+                        agent_work.push(collector.begin_agent_work(&room_id, &event_id));
+                    }
+                }
                 Ok(_) => {}
                 // This poll's own intake can observe a membership change that
                 // advances a shared project's generation (ADR153) and retires
@@ -814,9 +826,11 @@ async fn run(input: Attempt<'_>) -> Result<Option<Completed>, Failure> {
                 operation.wait_boxed().await.map_err(|_| Failure::Worker)?
             }
     };
-    finish_attempt(domain, capability, report, collector, cancel, status)
-        .await
-        .map(Some)
+    finish_attempt(
+        domain, capability, report, collector, cancel, status, agent_work,
+    )
+    .await
+    .map(Some)
 }
 
 fn now_ms() -> u64 {
@@ -856,6 +870,7 @@ async fn finish_attempt(
     collector: &Collector,
     cancel: &CancellationToken,
     status: &StatusHandle,
+    agent_work: Vec<hagency_matrix::AgentWork>,
 ) -> Result<Completed, Failure> {
     status.result(&capability.dispatch_id, &report);
     // The attempt's last records (ADR-181): the full status, uncollapsed, as
@@ -924,6 +939,13 @@ async fn finish_attempt(
             .map_err(|_| Failure::OutcomeUnknown)?;
         if delivered.state != hagency_matrix::OutgoingState::Delivered {
             return Err(Failure::OutcomeUnknown);
+        }
+        // THE AGENT SPOKE HERE, so the wait ends here (`sendAsAgentContent`,
+        // bridge-matrix.js:10884-10885). Every outbound agent message converges
+        // on this function, so this is the one place that cannot be forgotten.
+        // Any other exit path ends the wait from `AgentWork::drop`.
+        for work in agent_work {
+            work.end().await;
         }
         status.phase("delivered");
     }
@@ -1476,9 +1498,17 @@ pub(super) mod tests {
         );
         let cancel = CancellationToken::new();
         let status = StatusHandle::new(true);
-        let completed = finish_attempt(&f.store, a, report, &shared.collector, &cancel, &status)
-            .await
-            .unwrap();
+        let completed = finish_attempt(
+            &f.store,
+            a,
+            report,
+            &shared.collector,
+            &cancel,
+            &status,
+            Vec::new(),
+        )
+        .await
+        .unwrap();
         assert_eq!(
             count("SELECT COUNT(*) FROM dispatch_stops WHERE settled_at IS NULL"),
             2,
@@ -1494,9 +1524,17 @@ pub(super) mod tests {
         let report = second.wait_boxed().await.unwrap();
         assert_eq!(report.protocol, hagency_execution::Protocol::NotStarted);
         drop(
-            finish_attempt(&f.store, b, report, &shared.collector, &cancel, &status)
-                .await
-                .unwrap(),
+            finish_attempt(
+                &f.store,
+                b,
+                report,
+                &shared.collector,
+                &cancel,
+                &status,
+                Vec::new(),
+            )
+            .await
+            .unwrap(),
         );
         assert_eq!(
             count("SELECT COUNT(*) FROM dispatch_stops WHERE settled_at IS NULL"),
