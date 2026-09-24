@@ -26,8 +26,10 @@ fn native_matrix_presence_constants_match_retained_product() {
     assert_eq!(AGENT_TYPING_REFRESH_MS, 30_000);
     assert_eq!(AGENT_TYPING_MAX_MS, 2 * 60_000);
     assert_eq!(AGENT_ACK_REACTION, "\u{1F440}");
-    assert!(AGENT_TYPING_REFRESH_MS < AGENT_TYPING_TIMEOUT_MS);
-    assert!(AGENT_TYPING_TIMEOUT_MS < AGENT_TYPING_MAX_MS);
+    // A refresh must sit comfortably under the timeout or the notification
+    // flickers off between refreshes (`bridge-matrix.js:352-353`).
+    const { assert!(AGENT_TYPING_REFRESH_MS < AGENT_TYPING_TIMEOUT_MS) };
+    const { assert!(AGENT_TYPING_TIMEOUT_MS < AGENT_TYPING_MAX_MS) };
 }
 
 /// `setAgentTyping` (`:10527`): ephemeral, addressed as the agent, with a

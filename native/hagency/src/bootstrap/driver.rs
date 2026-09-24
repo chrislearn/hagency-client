@@ -1498,9 +1498,17 @@ pub(super) mod tests {
         );
         let cancel = CancellationToken::new();
         let status = StatusHandle::new(true);
-        let completed = finish_attempt(&f.store, a, report, &shared.collector, &cancel, &status)
-            .await
-            .unwrap();
+        let completed = finish_attempt(
+            &f.store,
+            a,
+            report,
+            &shared.collector,
+            &cancel,
+            &status,
+            Vec::new(),
+        )
+        .await
+        .unwrap();
         assert_eq!(
             count("SELECT COUNT(*) FROM dispatch_stops WHERE settled_at IS NULL"),
             2,
@@ -1516,9 +1524,17 @@ pub(super) mod tests {
         let report = second.wait_boxed().await.unwrap();
         assert_eq!(report.protocol, hagency_execution::Protocol::NotStarted);
         drop(
-            finish_attempt(&f.store, b, report, &shared.collector, &cancel, &status)
-                .await
-                .unwrap(),
+            finish_attempt(
+                &f.store,
+                b,
+                report,
+                &shared.collector,
+                &cancel,
+                &status,
+                Vec::new(),
+            )
+            .await
+            .unwrap(),
         );
         assert_eq!(
             count("SELECT COUNT(*) FROM dispatch_stops WHERE settled_at IS NULL"),
