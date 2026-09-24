@@ -157,6 +157,7 @@ impl ApprovalCollector {
     pub async fn send_private_approval_notice(
         &self,
         card: Arc<PrivateApprovalCard>,
+        thread_root: Option<String>,
         cancel: &CancellationToken,
     ) -> Result<(), Error> {
         let permit = self.delivery_permit(false)?;
@@ -167,7 +168,7 @@ impl ApprovalCollector {
         {
             return Err(Error::Config);
         }
-        let notice = public::PublicFrozen::new(&card)?;
+        let notice = public::PublicFrozen::new(&card, thread_root)?;
         let inner = self.inner.clone();
         let engagement = card.target().authority.engagement_id.clone();
         let cancel = cancel.child_token();
@@ -181,22 +182,14 @@ impl ApprovalCollector {
                 return Err(Error::Generation);
             }
             let content = notice.content()?;
+            // The exact TS path (sendAsAgentContent, bridge-matrix.js:10823-10825):
+            // rooms/{roomId}/send/m.room.message/{txnId} — the msgtype is a
+            // content field, never the PUT event-type segment.
+            let segments = notice.segments(&authority.project_room_id);
+            let segments: Vec<&str> = segments.iter().map(String::as_str).collect();
             inner
                 .http
-                .put(
-                    &[
-                        "_matrix",
-                        "client",
-                        "v3",
-                        "rooms",
-                        &authority.project_room_id,
-                        "send",
-                        notice.msgtype(),
-                        &notice.transaction(),
-                    ],
-                    content,
-                    &cancel,
-                )
+                .put(&segments, content, &cancel)
                 .await?
                 .success()?;
             Ok(Value::Unit)

@@ -219,6 +219,7 @@ impl Pump {
                 .service_turn(&cancel)
                 .await
                 .map_err(|_| Failure::OutcomeUnknown)?;
+            let notice_card = card.clone();
             match self
                 .collector
                 .send_private_approval_card(card, &cancel)
@@ -230,6 +231,24 @@ impl Pump {
                             "[approval] card {} replayed (already retained)",
                             notice.request_id
                         );
+                    }
+                    // TS parity (bridge-matrix.js:9377-9390): once the private
+                    // card is delivered, the redacted public status notice goes
+                    // to the project room. TS resolves the send as the AGENT; a
+                    // failure there fails the whole publish, so this is not a
+                    // best-effort extra — an outcome-unknown here restarts the
+                    // pump (the card replays from custody) rather than dropping
+                    // the room signal.
+                    if let Err(error) = self
+                        .collector
+                        .send_private_approval_notice(notice_card, None, &cancel)
+                        .await
+                    {
+                        tracing::warn!(
+                            "[approval] public status notice for {}: {error}",
+                            notice.request_id
+                        );
+                        return Err(Failure::OutcomeUnknown);
                     }
                     pending.insert(notice.request_id, notice.owner_expires_at);
                 }
