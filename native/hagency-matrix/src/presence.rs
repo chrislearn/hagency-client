@@ -231,6 +231,9 @@ pub struct AgentWork {
 impl AgentWork {
     /// The agent spoke, so it is no longer working for this room
     /// (`endAgentWork`, bridge-matrix.js:10634).
+    ///
+    /// The withdrawal below is the LAST thing this wait ever sends: the `Drop`
+    /// that follows this call sends nothing.
     pub async fn end(mut self) {
         self.stop.cancel();
         if let Some(task) = self.task.take() {
@@ -244,24 +247,17 @@ impl AgentWork {
 
 impl Drop for AgentWork {
     fn drop(&mut self) {
-        // Never hold the process open for a cosmetic signal, and never leave a
-        // refresh running behind a dropped handle.
+        // A wait the host abandoned (a failure, a cancel, a superseded plan)
+        // stops refreshing and lets the homeserver expire the notification by
+        // itself. That IS the retained product's stated failure mode: the
+        // timeout exists so a crash "cannot leave the agent typing forever …
+        // which makes the failure mode silence rather than a permanent false
+        // 'still working'" (`setAgentTyping`, bridge-matrix.js:10548-10552).
+        // Nothing is sent here, because TS clears typing in exactly one place —
+        // the agent's own send (`:10884-10885`), which `end()` performs.
         self.stop.cancel();
         if let Some(task) = self.task.take() {
             task.abort();
-        }
-        // An abandoned wait still ends its notification: the room must not be
-        // left showing "typing" for the whole homeserver timeout because the
-        // host took an early exit. Best effort, and never on a thread without a
-        // runtime (a test teardown after the runtime is gone).
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            let inner = self.inner.clone();
-            let room = self.room_id.clone();
-            handle.spawn(async move {
-                inner
-                    .presence_typing(&room, false, &CancellationToken::new())
-                    .await;
-            });
         }
     }
 }

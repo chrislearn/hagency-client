@@ -157,7 +157,6 @@ async fn native_matrix_presence_work_acknowledges_then_ends() {
     request.json(200, json!({}));
 
     // The agent spoke: the wait ends and the notification is withdrawn.
-    let since = fake.requests();
     let ((), ()) = common::scripted(work.end(), async {
         let request = fake.next().await;
         assert_eq!(request.method, "PUT");
@@ -172,6 +171,7 @@ async fn native_matrix_presence_work_acknowledges_then_ends() {
         request.json(200, json!({}));
     })
     .await;
-    // No 30 s refresh fired inside the window.
-    fake.quiesced(since, &common::limits()).await;
+    // Nothing is sent AFTER the end. `end` itself is the last word — no
+    // refresh, and no second withdrawal from the dropped handle.
+    fake.quiesced(fake.requests(), &common::limits()).await;
 }
