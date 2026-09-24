@@ -105,6 +105,13 @@ fn post(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
         .add_header("sec-fetch-site", "same-origin", true)
         .add_header("cookie", cookie, true)
 }
+fn put(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
+    TestClient::put(format!("{BASE}{path}"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .add_header("origin", BASE, true)
+        .add_header("sec-fetch-site", "same-origin", true)
+        .add_header("cookie", cookie, true)
+}
 async fn lifecycle_session(service: &Service) -> String {
     let ticket = lifecycle_issue(service).await;
     let response = exchange(service, &ticket).await;
