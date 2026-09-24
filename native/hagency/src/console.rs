@@ -10,6 +10,7 @@ mod engagements;
 mod project_sides;
 mod resource_configuration;
 mod resources;
+mod tasks;
 mod usage;
 use crate::{App, refusal};
 use authority::{Authority, COOKIE, Session};
@@ -76,7 +77,9 @@ pub(crate) fn router() -> Router {
                 .push(approvals::router())
                 .push(resources::router())
                 .push(accounts::router())
-                .push(resource_configuration::router()),
+                .push(resource_configuration::router())
+                .push(tasks::router())
+                .push(tasks::extra_router()),
         )
         .push(Router::with_path("{**asset}").get(asset))
 }
