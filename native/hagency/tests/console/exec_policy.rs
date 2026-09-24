@@ -65,7 +65,7 @@ async fn native_console_clear_dirty_releases_the_dirty_workspace() {
     // The gate holds the workspace dirty (the state a lost dispatch leaves).
     let sql = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3")).unwrap();
     sql.execute(
-        "UPDATE workspace_resources SET dirty=1, dirty_generation=dirty_generation+1 WHERE id='private_workspace'",
+        "UPDATE workspace_resources SET dirty=1 WHERE id='private_workspace'",
         [],
     )
     .unwrap();
