@@ -68,7 +68,12 @@ async fn native_private_approval_public_status_notice() {
     let mut posted = Vec::new();
     drive_with(
         f.collector
-            .send_private_approval_notice(card, Some(root.into()), &CancellationToken::new()),
+            .send_private_approval_notice(
+                card,
+                Some(root.into()),
+                None,
+                &CancellationToken::new(),
+            ),
         &mut f.fake,
         &mut f.peer,
         |r, _, _| posted.push((r.method.clone(), r.target.clone(), r.body.clone())),

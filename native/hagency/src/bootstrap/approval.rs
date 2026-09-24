@@ -24,8 +24,8 @@
 use super::Failure;
 use hagency_execution::{ApprovalNotice, ApprovalRequests};
 use hagency_matrix::{
-    ApprovalCollector, CancellationToken, HostApprovalConfig, HostApprovalPlan, HostConfig,
-    PrivateApprovalDeliveryState,
+    ApprovalCollector, CancellationToken, Collector, HostApprovalConfig, HostApprovalPlan,
+    HostConfig, PrivateApprovalDeliveryState,
 };
 use hagency_store::DomainStore;
 use std::{
@@ -89,6 +89,10 @@ impl Sources {
 /// The authority boundary in one place: everything the pump may know.
 pub(crate) struct Pump {
     collector: Arc<ApprovalCollector>,
+    /// The ordinary agent transport the driver's replies already use, reused
+    /// for the public notice (TS `agentSenderFor`, bridge-matrix.js:9377).
+    /// `None` in an approval-only host, which then keeps the bot's transport.
+    agent: Option<Arc<Collector>>,
     domain: DomainStore,
 }
 
@@ -132,8 +136,16 @@ pub(crate) fn collector(
 }
 
 impl Pump {
-    pub(crate) fn new(collector: Arc<ApprovalCollector>, domain: DomainStore) -> Self {
-        Self { collector, domain }
+    pub(crate) fn new(
+        collector: Arc<ApprovalCollector>,
+        agent: Option<Arc<Collector>>,
+        domain: DomainStore,
+    ) -> Self {
+        Self {
+            collector,
+            agent,
+            domain,
+        }
     }
 
     /// Explicit configured Matrix SDK enrollment, not provider credential login.
@@ -261,7 +273,12 @@ impl Pump {
                     // the room signal.
                     if let Err(error) = self
                         .collector
-                        .send_private_approval_notice(notice_card, public_thread, &cancel)
+                        .send_private_approval_notice(
+                            notice_card,
+                            public_thread,
+                            self.agent.clone(),
+                            &cancel,
+                        )
                         .await
                     {
                         tracing::warn!(
