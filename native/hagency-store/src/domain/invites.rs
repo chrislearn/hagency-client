@@ -202,14 +202,19 @@ impl crate::DomainRepository {
 
     /// TS `settlePendingInvite` (`:2438-2447`): mark a decision. Returns
     /// None when no record exists (the TS null). `by` names the decider —
-    /// `trusted-inviter` for the stale-record reconcile (the agent is
-    /// already in the room, so the invitation WAS answered by policy, with
-    /// no human at a screen), the operator name for console decisions.
+    /// `trusted-inviter` for the auto-join and the stale-record reconcile
+    /// (the agent is in the room, so the invitation WAS answered by
+    /// policy, with no human at a screen), the operator name for console
+    /// decisions. `joined` records whether the join already happened:
+    /// an accept that has not joined yet raises `join_pending` so the
+    /// invite poll performs the join and retries on refusal (ADR-183);
+    /// the auto-join and reconcile paths pass true.
     pub fn settle_pending_invite(
         &mut self,
         room_id: &str,
         agent: &str,
         accepted: bool,
+        joined: bool,
         by: &str,
         now_ms: i64,
     ) -> Result<Option<PendingInvite>, Error> {
@@ -218,20 +223,65 @@ impl crate::DomainRepository {
             return Err(hagency_core::InvalidInput("invalid decider").into());
         }
         let changed = self.db.execute(
-            "UPDATE pending_invites SET state=?3,decided_at=?4,decided_by=?5 \
+            "UPDATE pending_invites SET state=?3,decided_at=?4,decided_by=?5,join_pending=?6 \
              WHERE room_id=?1 AND agent=?2",
             rusqlite::params![
                 room_id,
                 agent,
                 if accepted { "accepted" } else { "declined" },
                 now_ms,
-                by
+                by,
+                if accepted && !joined { 1 } else { 0 }
             ],
         )?;
         if changed == 0 {
             return Ok(None);
         }
         self.pending_invite(room_id, agent)
+    }
+
+    /// Every accepted invitation whose join is still owed: the invite
+    /// poll's worklist. A join refused by the homeserver stays here and
+    /// is retried next round — never terminal (ADR-183).
+    pub fn join_pending_invites(&self, agent: &str) -> Result<Vec<(String, String)>, Error> {
+        if agent.is_empty() || agent.len() > 255 {
+            return Err(hagency_core::InvalidInput("invalid agent").into());
+        }
+        let mut query = self.db.prepare(
+            "SELECT room_id,agent FROM pending_invites \
+             WHERE agent=?1 AND state='accepted' AND join_pending=1 \
+             ORDER BY seen_at, room_id",
+        )?;
+        let rows = query.query_map([agent], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Error::from)
+    }
+
+    /// The join happened: clear the owed flag. Called only after the
+    /// homeserver answered the join with a room id.
+    pub fn mark_invite_joined(&mut self, room_id: &str, agent: &str) -> Result<bool, Error> {
+        validate_invite_key(room_id, agent)?;
+        let changed = self.db.execute(
+            "UPDATE pending_invites SET join_pending=0 WHERE room_id=?1 AND agent=?2",
+            [room_id, agent],
+        )?;
+        Ok(changed == 1)
+    }
+
+    /// The agent name an engagement's collector syncs under — the invite
+    /// record's `agent` key (TS keys records by agent NAME,
+    /// `bridge-matrix.js:2391`).
+    pub fn engagement_agent(&self, engagement_id: &str) -> Result<Option<String>, Error> {
+        if engagement_id.is_empty() || engagement_id.len() > 128 {
+            return Err(hagency_core::InvalidInput("invalid engagement").into());
+        }
+        self.db
+            .query_row(
+                "SELECT name FROM engagements WHERE id=?1",
+                [engagement_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(Error::from)
     }
 
     /// The settled mode/since pair a join consumes: the DM binding facts
@@ -294,7 +344,7 @@ mod tests {
         assert_eq!(list[0].project_server, "a.test");
         assert_eq!(list[0].state, "pending");
         assert_eq!(list[0].seen_at, 100);
-        db.settle_pending_invite("!room:a.test", "Worker", false, "operator", 300)
+        db.settle_pending_invite("!room:a.test", "Worker", false, true, "operator", 300)
             .unwrap();
         // The poll sees the invitation again — it must not resurrect it.
         assert!(!db
@@ -329,7 +379,7 @@ mod tests {
         assert!(!db
             .backfill_pending_invite_inviter("!room:a.test", "Worker", "@other:a.test")
             .unwrap());
-        db.settle_pending_invite("!room:a.test", "Worker", true, "trusted-inviter", 200)
+        db.settle_pending_invite("!room:a.test", "Worker", true, true, "trusted-inviter", 200)
             .unwrap();
         assert!(!db
             .backfill_pending_invite_inviter("!room:a.test", "Worker", "@third:a.test")
@@ -344,7 +394,7 @@ mod tests {
         db.remember_pending_invite("!old:a.test", "A", None, "group", 1, 100).unwrap();
         db.remember_pending_invite("!new:a.test", "B", None, "group", 2, 300).unwrap();
         db.remember_pending_invite("!mid:a.test", "C", None, "group", 3, 200).unwrap();
-        db.settle_pending_invite("!mid:a.test", "C", true, "trusted-inviter", 250).unwrap();
+        db.settle_pending_invite("!mid:a.test", "C", true, true, "trusted-inviter", 250).unwrap();
         let list = db.pending_invites().unwrap();
         let order: Vec<&str> = list.iter().map(|r| r.room_id.as_str()).collect();
         assert_eq!(order, ["!new:a.test", "!old:a.test"]);
@@ -358,7 +408,7 @@ mod tests {
         db.remember_pending_invite("!room:a.test", "Worker", Some("@owner:a.test"), "direct", 42, 100)
             .unwrap();
         let settled = db
-            .settle_pending_invite("!room:a.test", "Worker", true, "trusted-inviter", 500)
+            .settle_pending_invite("!room:a.test", "Worker", true, true, "trusted-inviter", 500)
             .unwrap()
             .expect("record exists");
         assert_eq!(settled.state, "accepted");
@@ -372,9 +422,49 @@ mod tests {
         assert_eq!(since, 42);
         // Settling an unknown invitation answers None, the TS null.
         assert!(db
-            .settle_pending_invite("!none:a.test", "Worker", true, "operator", 600)
+            .settle_pending_invite("!none:a.test", "Worker", true, false, "operator", 600)
             .unwrap()
             .is_none());
+    }
+
+    /// The console decide / poll join split: an operator accept that has
+    /// not joined yet sits on the worklist; the poll joins and clears it;
+    /// a join the homeserver refused stays listed and is retried next
+    /// round — never terminal (ADR-183). The TS bridge answers the join
+    /// inline in the decide, where a failure overstates the decision; the
+    /// worklist is the native shape of "queued", which is what the TS
+    /// decide route's response already says (`backend-v2.js:10844-10852`).
+    #[test]
+    fn console_accept_queues_the_join_and_the_poll_clears_it() {
+        let (_root, mut db) = open();
+        db.remember_pending_invite("!one:a.test", "Worker", Some("@owner:a.test"), "group", 1, 100)
+            .unwrap();
+        db.remember_pending_invite("!two:a.test", "Worker", Some("@owner:a.test"), "group", 2, 200)
+            .unwrap();
+        db.settle_pending_invite("!one:a.test", "Worker", true, false, "operator", 300)
+            .unwrap();
+        db.settle_pending_invite("!two:a.test", "Worker", true, false, "operator", 300)
+            .unwrap();
+        // Both accepted-not-yet-joined joins are owed, oldest seen first.
+        let owed: Vec<(String, String)> = db.join_pending_invites("Worker").unwrap();
+        assert_eq!(
+            owed.iter().map(|(r, a)| (r.as_str(), a.as_str())).collect::<Vec<_>>(),
+            [("!one:a.test", "Worker"), ("!two:a.test", "Worker")]
+        );
+        // The poll joins one; the homeserver refused the other (still owed).
+        assert!(db.mark_invite_joined("!one:a.test", "Worker").unwrap());
+        let owed = db.join_pending_invites("Worker").unwrap();
+        assert_eq!(owed.len(), 1);
+        assert_eq!(owed[0].0, "!two:a.test");
+        // Next round retries the refused join and clears it.
+        assert!(db.mark_invite_joined("!two:a.test", "Worker").unwrap());
+        assert!(db.join_pending_invites("Worker").unwrap().is_empty());
+        // Another agent's owed join is not on this agent's worklist.
+        db.remember_pending_invite("!three:a.test", "Other", None, "group", 3, 400).unwrap();
+        db.settle_pending_invite("!three:a.test", "Other", true, false, "operator", 500)
+            .unwrap();
+        assert!(db.join_pending_invites("Worker").unwrap().is_empty());
+        assert_eq!(db.join_pending_invites("Other").unwrap().len(), 1);
     }
 
     /// The TS 400s: an invalid mode or a negative history boundary.

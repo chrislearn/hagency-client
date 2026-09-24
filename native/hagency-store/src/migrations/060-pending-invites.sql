@@ -7,6 +7,10 @@
 -- one would forge ownership. `mode` is the TS binding's direct/group
 -- (from is_direct); `since_ts` is the admission boundary the TS
 -- direct-rooms POST records.
+-- `join_pending` splits 'accepted' into DECIDED vs JOINED: the console
+-- records the decision, the invite poll performs the join and clears the
+-- flag — so a refused join is retried next round (ADR-183: never
+-- terminal) instead of being lost after one attempt.
 CREATE TABLE pending_invites (
     room_id TEXT NOT NULL,
     agent TEXT NOT NULL,
@@ -15,6 +19,7 @@ CREATE TABLE pending_invites (
     mode TEXT NOT NULL CHECK(mode IN ('direct','group')),
     since_ts INTEGER NOT NULL,
     state TEXT NOT NULL CHECK(state IN ('pending','accepted','declined')),
+    join_pending INTEGER NOT NULL DEFAULT 0,
     seen_at INTEGER NOT NULL,
     decided_at INTEGER,
     decided_by TEXT,
