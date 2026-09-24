@@ -24,6 +24,9 @@ pub enum Command {
         #[arg(long)]
         file: PathBuf,
     },
+    /// Bind the fleet reception room from a verified probe event, replacing
+    /// the offline step (TS parity: `lib/fleet-protocol.js:132-153`).
+    Probe(super::probe::BindArgs),
 }
 
 pub fn run(state: &Path, command: Command) -> Result<(), hagency_store::Error> {
@@ -57,5 +60,7 @@ pub fn run(state: &Path, command: Command) -> Result<(), hagency_store::Error> {
             // advance. Nothing here softens or pre-empts it.
             domain.register(&registration)
         }
+        Command::Probe(args) => super::probe::run(state, args)
+            .map_err(|_| hagency_store::Error::Invalid(hagency_core::InvalidInput("probe refused"))),
     }
 }

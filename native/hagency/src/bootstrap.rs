@@ -7,6 +7,7 @@ pub mod fleet;
 pub mod intake_refusal;
 pub(crate) mod palpo;
 pub mod provision;
+pub mod probe;
 pub mod registration;
 pub(crate) mod workspace;
 use approval::Pump;

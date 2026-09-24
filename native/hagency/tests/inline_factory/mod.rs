@@ -745,7 +745,7 @@ impl Peer {
             member("@worker:example.test"),
         ];
         events.extend(rules(json!({OWNER:100,reg().representative_mxid:50})));
-        events.push(json!({"type":"com.hagency.project.binding.v1","state_key":"","content":{"v":1,"purpose":"project","authVersion":1,
+        events.push(json!({"type":"com.hagency.admin.binding.v1","state_key":reg().fleet_id,"content":{"v":1,"purpose":"project","authVersion":1,
             "fleetId":reg().fleet_id,"projectId":"factory_project","ownerMxid":OWNER}}));
         if self.invited {
             events.push(json!({"type":"m.room.member","state_key":self.user,"content":{"membership":if self.joined {"join"} else {"invite"}}}));
