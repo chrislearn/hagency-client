@@ -3080,6 +3080,11 @@ impl DomainStore {
         self.call(weight(&after)?, move |db| db.engagements(&after, limit))
             .await
     }
+    /// Single-engagement read for the console verdict surface: a call-only
+    /// wrapper over the repository's own `get`; no new semantics.
+    pub async fn engagement(&self, id: String) -> Result<Engagement, Error> {
+        self.call(weight(&id)?, move |db| db.get(&id)).await
+    }
     /// The read-only agent roster (ADR-126): one writer job, one bounded
     /// read — the projection is computed at the store, so the console route
     /// adds no second arithmetic path.
