@@ -617,7 +617,7 @@ impl DomainRepository {
                 name: "domain.sqlite3",
                 lock: "domain.lock",
                 application_id: 0x48414732,
-                version: 39,
+                version: 40,
                 migrations: &[
                     (2, include_str!("migrations/002-role-publication.sql")),
                     (3, include_str!("migrations/003-task-dispatch.sql")),
@@ -679,7 +679,18 @@ impl DomainRepository {
                     ),
                     (38, include_str!("migrations/038-agent-fences.sql")),
                     (39, include_str!("migrations/039-attempt-over-budget.sql")),
-                    (45, include_str!("migrations/045-alert-parity.sql")),
+                    // The retained alert store (lane alerts, task #24) lands at
+                    // the next free number after the base head 39, exactly like
+                    // migration 031's landing-order rule below: the task's
+                    // provisional "045" is the INTEGRATION number, and
+                    // integration renumbers this slot, its file and the
+                    // `version` above to 045 once the slices that claim
+                    // 040-044 land first. The runner
+                    // (`database.rs` migration loop) steps `current + 1` and
+                    // requires exactly one match at EVERY number, so a
+                    // non-contiguous slot is a startup `Error::Schema` — the
+                    // number must be the base head + 1, never the final one.
+                    (40, include_str!("migrations/040-alert-parity.sql")),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[

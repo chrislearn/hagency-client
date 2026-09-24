@@ -500,6 +500,8 @@ fn transition(
         to,
         actor: "operator".into(),
         note: note.map(str::to_owned),
+        assignee: None,
+        suppress_until_ms: None,
         now: 2_000_000,
     })
 }
@@ -574,6 +576,8 @@ fn native_ceiling_alert_transitions_follow_one_legal_map() {
             to: "acknowledged",
             actor: "operator".into(),
             note: None,
+            assignee: None,
+            suppress_until_ms: None,
             now: 1,
         }),
         Err(Error::NotFound)
@@ -584,6 +588,8 @@ fn native_ceiling_alert_transitions_follow_one_legal_map() {
             to: "acknowledged",
             actor: "a".repeat(129),
             note: None,
+            assignee: None,
+            suppress_until_ms: None,
             now: 1,
         }),
         Err(Error::Invalid(_))
