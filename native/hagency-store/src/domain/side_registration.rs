@@ -59,8 +59,10 @@ pub struct IssueSideRegistrationRequest {
 
 /// The operator-facing result: the TS response body minus `ok`, which the
 /// callers render. NEVER carries `as_token`/`hs_token` — fingerprints
-/// only, exactly the TS keys (`backend-v2.js:10110-10168`).
+/// only, exactly the TS keys (`backend-v2.js:10110-10168`):
+/// camelCase, like every field the TS route returns.
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IssueSideRegistration {
     pub staged: bool,
     /// The YAML file's path on this host.
@@ -73,6 +75,8 @@ pub struct IssueSideRegistration {
     pub url: String,
     pub as_token_fingerprint: String,
     pub hs_token_fingerprint: String,
+    /// The TS `nextSteps` array, verbatim — rendered by both callers.
+    pub next_steps: [&'static str; 5],
     /// TS renders `stagedNote` only when the issue was staged, verbatim.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub staged_note: Option<String>,
@@ -82,6 +86,24 @@ pub struct IssueSideRegistration {
 pub const STAGED_NOTE: &str = "The credential this side is USING has not changed. This new one is held until you \
      install it and verification proves the homeserver accepts it, so nothing breaks in the \
      meantime — and if you generated it by mistake, ignore the file and nothing happens.";
+
+/// The TS `nextSteps` array, verbatim from `backend-v2.js:10143-10165` —
+/// including the Palpo-verified TOML trap and the power-level warning.
+pub const NEXT_STEPS: [&str; 5] = [
+    "Put this file where your homeserver reads appservice registrations. The key differs by software: \
+     Synapse takes `app_service_config_files` (a list of FILES); Palpo takes \
+     `appservice_registration_dir` (a DIRECTORY, so the file goes inside it).",
+    "In a TOML config the key must be TOP-LEVEL, above every [section]. Verified on Palpo: placed \
+     after a section header it becomes `<that section>.appservice_registration_dir` and is silently \
+     ignored — everything then fails as though the token were wrong.",
+    "Restart the homeserver once. Registrations load at startup only, so nothing happens until it \
+     does.",
+    "Replacing tokens later needs more than replacing this file: Palpo persists registrations in its \
+     database keyed by id, and a restart will not update an existing row.",
+    "The representative above arrives with users_default power. A default Matrix room requires power \
+     50 to invite, so either grant it that or invite each agent yourself — the approval response \
+     names which agent it assigned.",
+];
 
 /// The credential the appservice transport reads. Deliberately NOT
 /// `Serialize`: this type is consumed, never projected — the console
@@ -384,6 +406,7 @@ impl crate::DomainRepository {
             url: generated.url.clone(),
             as_token_fingerprint: fingerprint(&generated.as_token),
             hs_token_fingerprint: fingerprint(&generated.hs_token),
+            next_steps: NEXT_STEPS,
             staged_note: staged.then(|| STAGED_NOTE.to_owned()),
         })
     }
