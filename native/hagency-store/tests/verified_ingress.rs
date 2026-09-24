@@ -1098,3 +1098,166 @@ fn native_matrix_intake_rotation_historical_receipt_is_content_bound_read_only()
         .unwrap();
     assert_eq!(n, 1);
 }
+
+/// The retained product says the launch retry in the thread
+/// (`router/src/store.ts` `requeueBeforeStart`).
+#[test]
+fn native_runner_launch_retry_notice() {
+    let mut f = Fixture::new(false);
+    let (_, seq, task) = setup_task(&mut f);
+    f.activate(1013);
+    f.db.enqueue_inbox_dispatch(&dispatch("first", &task), &[seq])
+        .unwrap();
+    let cap = f
+        .db
+        .claim_dispatch("fixture_runner", 1015, 60000, 120000, 8)
+        .unwrap()
+        .unwrap();
+    f.db.fail_before_start(&cap, 1016, 1000).unwrap();
+    let (kind, body): (String, String) = f
+        .sql()
+        .query_row(
+            "SELECT json_extract(config,'$.kind'),json_extract(config,'$.body') FROM task_notices WHERE json_extract(config,'$.kind')='runner_launch_retry'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(kind, "runner_launch_retry");
+    assert_eq!(
+        body,
+        "Runner could not start, but no work was executed and no input was lost. The dispatch remains queued and will retry automatically."
+    );
+}
+
+/// The retained product posts the new status into the task thread on every
+/// non-replayed transition (`router/src/store.ts` `taskOperation`).
+#[test]
+fn native_task_status_notice() {
+    let mut f = Fixture::new(false);
+    let (_, seq, task) = setup_task(&mut f);
+    f.activate(1013);
+    let cap = f.start("first", &task, &[seq], 1015);
+    f.db.mutate_task(
+        &cap,
+        &task.task_id,
+        "hold",
+        &TaskMutation::Transition {
+            status: TaskState::Blocked,
+            waiting_reason: Some("awaiting review".into()),
+            waiting_until: Some("2026-09-25T09:00:00Z".into()),
+        },
+        1017,
+    )
+    .unwrap();
+    f.db.mutate_task(
+        &cap,
+        &task.task_id,
+        "resume",
+        &TaskMutation::Transition {
+            status: TaskState::InProgress,
+            waiting_reason: None,
+            waiting_until: None,
+        },
+        1018,
+    )
+    .unwrap();
+    let bodies: Vec<String> = f
+        .sql()
+        .prepare("SELECT json_extract(config,'$.body') FROM task_notices WHERE json_extract(config,'$.body') LIKE 'Task status: %' ORDER BY rowid")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(bodies, ["Task status: blocked", "Task status: in_progress"]);
+}
+
+/// The retained product explains in the thread why a completed task did not
+/// continue when the follow-up lacks the requester's fresh authority
+/// (`router/src/store.ts` `claimDispatch`, `completed_task_followup`).
+#[test]
+fn native_completed_task_followup_notice() {
+    let mut f = Fixture::new(false);
+    let (_, seq, task) = setup_task(&mut f);
+    f.activate(1013);
+    let cap = f.start("first", &task, &[seq], 1015);
+    f.done(&cap, &task, 1017);
+    f.db.complete_dispatch(&cap, &json!({"done":true}), 1018)
+        .unwrap();
+    // A member who is not the original requester mentions the agent in the
+    // task thread: the turn does not start, and the thread hears why.
+    let mut event = f.event(
+        &task.session_id,
+        "other",
+        Some("$root"),
+        &["@a:example.test"],
+        1019,
+    );
+    event.event.sender_mxid = "@other:example.test".into();
+    assert!(!f.db.admit_matrix_event(&event, 1020).unwrap().wake);
+    let (kind, body): (String, String) = f
+        .sql()
+        .query_row(
+            "SELECT json_extract(config,'$.kind'),json_extract(config,'$.body') FROM task_notices WHERE json_extract(config,'$.kind')='completed_task_followup'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(kind, "completed_task_followup");
+    assert_eq!(
+        body,
+        "This task is complete. To continue it, the original requester must send a new message mentioning the agent in this thread. Other project members can start a new task by mentioning the agent in the main room."
+    );
+    // Said once per task: a second non-requester mention queues no duplicate.
+    let mut again = f.event(
+        &task.session_id,
+        "other2",
+        Some("$root"),
+        &["@a:example.test"],
+        1021,
+    );
+    again.event.sender_mxid = "@other:example.test".into();
+    f.db.admit_matrix_event(&again, 1022).unwrap();
+    let n: u64 = f
+        .sql()
+        .query_row(
+            "SELECT COUNT(*) FROM task_notices WHERE json_extract(config,'$.kind')='completed_task_followup'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(n, 1);
+}
+
+/// The retained product says the operator's continue-resolution in the thread
+/// (`router/src/store.ts` `resolveOutcome`, the `continue` branch).
+#[test]
+fn native_outcome_resolved_continue_notice() {
+    let mut f = Fixture::new(false);
+    let (_, seq, task) = setup_task(&mut f);
+    f.activate(1013);
+    // The lease lapses; the next claim's expiry sweep settles the started
+    // dispatch as outcome_unknown (`lose` via `expire`, the state the
+    // operator resolution path requires).
+    let _cap = f.start("first", &task, &[seq], 1015);
+    f.db.claim_dispatch("sweeper", 61_016, 60_000, 120_000, 8)
+        .unwrap();
+    let mut next = dispatch("recovery", &task);
+    next.payload =
+        json!({"instruction":"Inspect previous partial output and finish only remaining work"});
+    f.db.recover_dispatch("first", &next, "Inspected result", 61_020)
+        .unwrap();
+    let (kind, body): (String, String) = f
+        .sql()
+        .query_row(
+            "SELECT json_extract(config,'$.kind'),json_extract(config,'$.body') FROM task_notices WHERE json_extract(config,'$.kind')='outcome_resolved'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(kind, "outcome_resolved");
+    assert_eq!(
+        body,
+        "Operator inspection completed. A new recovery dispatch was queued from an explicit recovery instruction; the previous dispatch remains outcome_unknown and was not replayed."
+    );
+}

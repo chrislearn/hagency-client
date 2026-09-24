@@ -31,6 +31,30 @@ pub(super) const OUTCOME_UNKNOWN_NOTICE: &str = "Result uncertain: the runner st
 /// run ended unknown (`router/src/store.ts` `claimDispatch`).
 pub(super) const SESSION_QUARANTINED_NOTICE: &str = "Waiting: a previous runner in this session stopped after work may have started. An operator must inspect and resolve that outcome before another turn can run.";
 
+/// The retained product's explanation in the thread when someone other than
+
+/// The retained product's explanation in the thread when someone other than
+/// the original requester (or an old message) tries to continue a completed
+/// task (`router/src/store.ts` `claimDispatch`, the `completed_task_followup`
+/// branch).
+pub(super) const COMPLETED_TASK_FOLLOWUP_NOTICE: &str = "This task is complete. To continue it, the original requester must send a new message mentioning the agent in this thread. Other project members can start a new task by mentioning the agent in the main room.";
+
+/// The retained product's words when a leased dispatch's runner cannot start
+/// and the dispatch stays queued for an automatic retry (`router/src/store.ts`
+/// `requeueBeforeStart`).
+pub(super) const RUNNER_LAUNCH_RETRY_NOTICE: &str = "Runner could not start, but no work was executed and no input was lost. The dispatch remains queued and will retry automatically.";
+
+/// The retained product's words for a notice claim that settled as failed
+/// with `thread_delivery_failed` (`router/src/store.ts`
+/// `recordTaskThreadDeliveryFailure`): the task thread could not be created,
+/// no work started.
+pub(super) const THREAD_DELIVERY_FAILED_NOTICE: &str = "Task creation failed: the Matrix task thread could not be created. No coding work was started.";
+
+/// The retained product's words for a notice claim that settled as failed
+/// with `thread_dispatch_failed` (`router/src/store.ts`
+/// `recordTaskDispatchFailure`): the thread exists but no runner launched.
+pub(super) const THREAD_DISPATCH_FAILED_NOTICE: &str = "Task thread created, but execution could not start. No coding runner was launched; inspect the agent and workspace configuration before retrying.";
+
 /// A request into a quarantined session runs nothing until an operator
 /// resolves the unknown outcome; the retained product says so in the thread
 /// and keeps the request queued. Here the request stays where it is, unread,
@@ -135,6 +159,70 @@ pub(super) fn outcome_unknown_notice(
         OUTCOME_UNKNOWN_NOTICE.into(),
         now,
     )?;
+    Ok(())
+}
+/// The thread-visible "waiting" notice for a queued dispatch that cannot run
+/// yet, said at its session's thread root with the retained product's exact
+/// words (`router/src/store.ts` `claimDispatch` skip branches). One notice
+/// per dispatch per kind; a dispatch with no task or no admitted request in
+/// its session has nowhere to say it and says nothing, like the TS notice
+/// loop, which runs only for Matrix-driven sessions.
+pub(super) fn waiting_notice(
+    tx: &Transaction<'_>,
+    dispatch: &str,
+    kind: &str,
+    body: &str,
+    now: u64,
+) -> Result<(), Error> {
+    let bound: Option<(Option<String>, String)> = tx
+        .query_row(
+            "SELECT task_id,session_id FROM runner_dispatches WHERE id=?1",
+            [dispatch],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let Some((Some(task_id), session)) = bound else {
+        return Ok(());
+    };
+    // The newest input the dispatch carries roots the notice in its thread.
+    // No `addressed` filter: `transfer_inputs` copies a recovery dispatch's
+    // inputs without the flag, and a recovery notice still has to be said.
+    let root: Option<u64> = tx.query_row(
+        "SELECT MAX(message_sequence) FROM dispatch_inputs WHERE dispatch_id=?1",
+        [dispatch],
+        |r| r.get(0),
+    )?;
+    let Some(root) = root else {
+        return Ok(());
+    };
+    let id = notice_id(dispatch, kind)?;
+    if tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM task_notices WHERE id=?1)",
+        [&id],
+        |r| r.get::<_, bool>(0),
+    )? {
+        return Ok(());
+    }
+    let task = execution::task(tx, &task_id)?;
+    let root = super::verified_ingress::input_message(tx, &session, root)?;
+    add_notice(tx, &task, &root, kind, body.into(), now)?;
+    Ok(())
+}
+/// Say a launch retry in the thread, best effort in its own savepoint: the
+/// settlement that requeues the dispatch never fails because its notice could
+/// not be addressed (the same rule as `outcome_unknown_notice`).
+pub(super) fn launch_retry_notice(
+    tx: &Transaction<'_>,
+    dispatch: &str,
+    now: u64,
+) -> Result<(), Error> {
+    tx.execute_batch("SAVEPOINT launch_retry_notice")?;
+    match waiting_notice(tx, dispatch, "runner_launch_retry", RUNNER_LAUNCH_RETRY_NOTICE, now) {
+        Ok(()) => tx.execute_batch("RELEASE launch_retry_notice")?,
+        Err(_) => {
+            tx.execute_batch("ROLLBACK TO launch_retry_notice; RELEASE launch_retry_notice")?
+        }
+    }
     Ok(())
 }
 pub(super) fn add_notice(
@@ -425,7 +513,7 @@ pub(super) fn project_inputs(tx: &Transaction<'_>, task_id: &str) -> Result<(), 
     super::attachments::project_task_inputs(tx, task_id, &session)?;
     Ok(())
 }
-fn binding(db: &Connection, id: &str) -> Result<Option<(String, u64)>, Error> {
+pub(super) fn binding(db: &Connection, id: &str) -> Result<Option<(String, u64)>, Error> {
     Ok(db
         .query_row(
             "SELECT state,root_sequence FROM task_intents WHERE task_id=?1",
@@ -751,6 +839,37 @@ impl DomainRepository {
             return Err(Error::RunnerAuthority);
         }
         tx.execute("UPDATE task_notices SET state=?2,claim_hash=NULL,claim_until=NULL,error_code=?3,not_before=?4 WHERE id=?1",params![id,if permanent{"failed"}else{"pending"},code,now.saturating_add(1000)])?;
+        // A permanent thread-delivery or dispatch-launch failure is terminal
+        // for the task's activation: the retained product says so in the
+        // thread (`router/src/store.ts` `recordTaskThreadDeliveryFailure`,
+        // `recordTaskDispatchFailure`). Rooted at the task's own intent root.
+        if permanent {
+            let n = notice(&tx, id)?;
+            tx.execute_batch("SAVEPOINT terminal_notice")?;
+            let queued = (|| -> Result<(), Error> {
+                let Some((_, root)) = binding(&tx, &n.task_id)? else {
+                    return Ok(());
+                };
+                let root = super::verified_ingress::task_message(&tx, &n.task_id, root)?;
+                let (kind, body) = match code {
+                    "thread_delivery_failed" => {
+                        ("thread_delivery_failed", THREAD_DELIVERY_FAILED_NOTICE)
+                    }
+                    "thread_dispatch_failed" => {
+                        ("thread_dispatch_failed", THREAD_DISPATCH_FAILED_NOTICE)
+                    }
+                    _ => return Ok(()),
+                };
+                add_notice(&tx, &execution::task(&tx, &n.task_id)?, &root, kind, body.into(), now)?;
+                Ok(())
+            })();
+            match queued {
+                Ok(()) => tx.execute_batch("RELEASE terminal_notice")?,
+                Err(_) => {
+                    tx.execute_batch("ROLLBACK TO terminal_notice; RELEASE terminal_notice")?
+                }
+            }
+        }
         tx.commit()?;
         Ok(())
     }

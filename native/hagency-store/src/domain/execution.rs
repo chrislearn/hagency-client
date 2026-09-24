@@ -680,6 +680,41 @@ pub(super) fn mutate_in_transaction(
     }
     save_task(tx, &t, kind)?;
     tx.execute("INSERT INTO task_operation_receipts(dispatch_id,call_id,digest,response) VALUES(?1,?2,?3,?4)",params![cap.dispatch_id,call_id,digest,serialize(&t)?])?;
+    // The retained product posts the new status into the task thread on every
+    // non-replayed transition (`router/src/store.ts` `taskOperation`). Best
+    // effort in its own savepoint: the recorded transition never rolls back
+    // because its notice could not be addressed.
+    if kind == "transition" {
+        tx.execute_batch("SAVEPOINT status_notice")?;
+        let queued = (|| -> Result<(), Error> {
+            let Some((_, root)) = super::task_intents::binding(tx, &t.id)? else {
+                // A host-created task has no Matrix activation to address.
+                return Ok(());
+            };
+            let root = super::verified_ingress::task_message(tx, &t.id, root)?;
+            super::task_intents::add_notice(
+                tx,
+                &t,
+                &root,
+                // Keyed per operation call, like the retained product
+                // (`task_operation:${dispatchId}:${toolCallId}`,
+                // router/src/store.ts:3314-3315): two transitions in one
+                // epoch each say their status; a replayed call returns at
+                // the receipt check above and never reaches here.
+                &format!("task_operation:{}:{}", cap.dispatch_id, call_id),
+                format!(
+                    "Task status: {}",
+                    serde_json::to_value(t.status)?.as_str().ok_or(Error::Schema)?
+                ),
+                now,
+            )?;
+            Ok(())
+        })();
+        match queued {
+            Ok(()) => tx.execute_batch("RELEASE status_notice")?,
+            Err(_) => tx.execute_batch("ROLLBACK TO status_notice; RELEASE status_notice")?,
+        }
+    }
     Ok(MutationResult {
         task: t,
         replayed: false,
@@ -1018,6 +1053,10 @@ impl DomainRepository {
             "UPDATE runner_attempts SET outcome='spawn_failed' WHERE dispatch_id=?1 AND fence=?2",
             params![cap.dispatch_id, cap.fence],
         )?;
+        // The retained product says the retry in the thread
+        // (`router/src/store.ts` `requeueBeforeStart`): nothing ran, nothing
+        // was lost, the dispatch stays queued.
+        super::task_intents::launch_retry_notice(&tx, &cap.dispatch_id, now)?;
         tx.commit()?;
         Ok(())
     }
@@ -1436,6 +1475,25 @@ pub(super) fn recover_dispatch_in_transaction(
     // ADR-182 decision 3: the operator's resolution of the fenced dispatch is
     // the one thing that clears its fence. Most originals fenced nothing.
     super::agent_fences::clear_fences_for_dispatch(tx, original, cleared_by, now)?;
+    // The retained product says the operator's continue-resolution in the
+    // thread (`router/src/store.ts` `resolveOutcome`, the `continue` branch).
+    // Rooted at the recovery dispatch that carries the resolution's authority;
+    // best effort so the settlement never fails because its notice could not
+    // be addressed.
+    tx.execute_batch("SAVEPOINT outcome_resolved_notice")?;
+    let resolved_notice = super::task_intents::waiting_notice(
+        tx,
+        &replacement.id,
+        "outcome_resolved",
+        "Operator inspection completed. A new recovery dispatch was queued from an explicit recovery instruction; the previous dispatch remains outcome_unknown and was not replayed.",
+        now,
+    );
+    match resolved_notice {
+        Ok(()) => tx.execute_batch("RELEASE outcome_resolved_notice")?,
+        Err(_) => {
+            tx.execute_batch("ROLLBACK TO outcome_resolved_notice; RELEASE outcome_resolved_notice")?
+        }
+    }
     Ok(())
 }
 

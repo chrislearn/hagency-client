@@ -651,6 +651,10 @@ impl DomainRepository {
                 RoomPrivacy::Direct { human_mxid } => &event.sender_mxid == human_mxid,
                 RoomPrivacy::Group {} => input.mentions.contains(&route.sender_mxid),
             };
+        // The event was a request at all: like the retained product, only a
+        // turn that was actually asked for gets an explanation when it does
+        // not start — background chatter in a done task's thread stays quiet.
+        let addressed = wake;
         let task = bound_intent(&tx, &route.session_id)?;
         if let Some((id, state, root)) = &task {
             if state == "closed" {
@@ -662,6 +666,42 @@ impl DomainRepository {
                 wake &= event.sender_mxid == root.sender_mxid
                     && t.completed_at
                         .is_some_and(|done| event.origin_ts > done && now > done);
+                // The retained product explains in the thread why the turn
+                // did not start when a completed task is mentioned again
+                // without the requester's fresh authority (`router/src/store.ts`
+                // `claimDispatch`, `completed_task_followup`). Said once per
+                // task; best effort in its own savepoint so admission never
+                // fails because its explanation could not be addressed.
+                if addressed && !wake && human && kind {
+                    let notice_id = format!(
+                        "notice_{}",
+                        canonical::digest(&json!([id, "completed_task_followup"]))?
+                    );
+                    let said: bool = tx.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM task_notices WHERE id=?1)",
+                        [&notice_id],
+                        |r| r.get(0),
+                    )?;
+                    if !said {
+                        tx.execute_batch("SAVEPOINT followup_notice")?;
+                        let queued = super::task_intents::add_notice(
+                            &tx,
+                            &t,
+                            &root,
+                            "completed_task_followup",
+                            super::task_intents::COMPLETED_TASK_FOLLOWUP_NOTICE.into(),
+                            now,
+                        );
+                        match queued {
+                            Ok(_) => tx.execute_batch("RELEASE followup_notice")?,
+                            Err(_) => {
+                                tx.execute_batch(
+                                    "ROLLBACK TO followup_notice; RELEASE followup_notice",
+                                )?
+                            }
+                        }
+                    }
+                }
             }
         }
         let pending: u64 = tx.query_row(
