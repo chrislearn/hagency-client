@@ -1,19 +1,23 @@
 'use client';
 
 /*
- * Native agent roster (ADR-126): a READ-ONLY observation of the engagement
- * projections, one row per engagement. The seven columns render exactly
- * what /console/api/agents serves; the columns the SERVER names in
- * `unavailable` render as unknown — never zero, never invented — and the
- * list is server-owned, so a future source turns a column on by removing
- * its name server-side, not by editing this page. There is deliberately no
- * work item, progress, queue, task count or utilisation column: the
- * retained roster withdrew them on principle and native does not widen
- * what it narrowed. The lifecycle scope exposes stop and a separate private
- * stopped-task review. Start and preset rebinding remain absent because their server
- * routes fail closed; a button that can only refuse would lie.
+ * Native agent roster (ADR-126, widened by board #22): a READ-ONLY
+ * observation of the engagement projections, one row per AGENT — the TS
+ * roster's shape, so every agent the service knows appears. The columns
+ * render exactly what /console/api/agents serves; the columns the SERVER
+ * names in `unavailable` render as unknown — never zero, never invented —
+ * and the list is server-owned, so a future source turns a column on by
+ * removing its name server-side, not by editing this page. `online` and
+ * `last_seen_ms` are real worker state served per agent. There is
+ * deliberately no work item, progress, queue, task count or utilisation
+ * column: the retained roster withdrew them on principle and native does
+ * not widen what it narrowed. The lifecycle scope exposes stop and a
+ * separate private stopped-task review. Start and preset rebinding remain
+ * absent because their server routes fail closed; a button that can only
+ * refuse would lie. Clicking an agent's name opens its detail page.
  */
 import { useState } from 'react';
+import Link from 'next/link';
 import { useT } from '@/components/Prefs';
 import { useData } from '@/components/Data';
 import { fmtTokens } from '@/lib/mock-data';
@@ -67,13 +71,15 @@ export default function NativeAgents() {
                 <th>{t('na.engagement')}</th>
                 <th className="num">{t('col.requested')}</th>
                 <th>{t('na.lastActivity')}</th>
+                <th>{t('na.online')}</th>
+                <th>{t('na.lastSeen')}</th>
                 {manageLifecycle && <th>{t('na.controls')}</th>}
               </tr>
             </thead>
             <tbody>
               {agents.map((a) => (
-                <tr key={a.engagement_id} data-engagement-id={a.engagement_id}>
-                  <td>{a.name}</td>
+                <tr key={a.name} data-engagement-id={a.engagement_id} data-agent-name={a.name}>
+                  <td><Link href={`/agents/${encodeURIComponent(a.name)}`}>{a.name}</Link></td>
                   <td className="dim">{a.framework}</td>
                   <td>{a.role}</td>
                   <td>{a.state}</td>
@@ -82,6 +88,12 @@ export default function NativeAgents() {
                   {/* Last dispatch activity, not last seen; null is unknown,
                       rendered as the word — never a zero clock. */}
                   <td className="dim">{a.last_activity_ms === null ? t('nu.unknown') : new Date(a.last_activity_ms).toISOString()}</td>
+                  {/* Real worker state: a live dispatch in one of the
+                      agent's sessions. */}
+                  <td>{a.online ? t('na.online') : t('na.offline')}</td>
+                  {/* Newest attempt clock the agent produced; null is
+                      unknown, never zero. */}
+                  <td className="dim">{a.last_seen_ms === null ? t('nu.unknown') : new Date(a.last_seen_ms).toISOString()}</td>
                   {manageLifecycle && (
                     <td>
                       <button className="btn" data-lifecycle-action="stop" disabled={hold} onClick={() => stopAgent(a.engagement_id)}>{t('na.stop')}</button>
