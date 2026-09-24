@@ -1,0 +1,23 @@
+-- Task #12: pending invitations to agents (TS bridge-matrix.js
+-- state.pendingInvites, 2391-2455, + backend-v2.js:10813-10855 routes).
+-- One row per (room, agent). 'declined' is REMEMBERED so the invite poll
+-- cannot resurrect it; 'accepted' records that the join has happened.
+-- `inviter` is NULL when the invite state named no sender — surfaced,
+-- never guessed, because the inviter IS the owner (ADR-002) and inventing
+-- one would forge ownership. `mode` is the TS binding's direct/group
+-- (from is_direct); `since_ts` is the admission boundary the TS
+-- direct-rooms POST records.
+CREATE TABLE pending_invites (
+    room_id TEXT NOT NULL,
+    agent TEXT NOT NULL,
+    inviter TEXT,
+    project_server TEXT NOT NULL,
+    mode TEXT NOT NULL CHECK(mode IN ('direct','group')),
+    since_ts INTEGER NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('pending','accepted','declined')),
+    seen_at INTEGER NOT NULL,
+    decided_at INTEGER,
+    decided_by TEXT,
+    PRIMARY KEY(room_id,agent)
+) STRICT;
+CREATE INDEX pending_invite_decisions ON pending_invites(state, seen_at);

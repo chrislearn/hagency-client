@@ -49,6 +49,7 @@ pub use execution::{
 };
 pub use messages::{CorpusSweepOutcome, MESSAGE_RETENTION_FLOOR, RetentionStatus};
 mod notice_custody;
+mod invites;
 mod outcome_resolution;
 mod owned_completion;
 mod owned_dispatch;
@@ -616,7 +617,7 @@ impl DomainRepository {
                 name: "domain.sqlite3",
                 lock: "domain.lock",
                 application_id: 0x48414732,
-                version: 39,
+                version: 40,
                 migrations: &[
                     (2, include_str!("migrations/002-role-publication.sql")),
                     (3, include_str!("migrations/003-task-dispatch.sql")),
@@ -678,6 +679,14 @@ impl DomainRepository {
                     ),
                     (38, include_str!("migrations/038-agent-fences.sql")),
                     (39, include_str!("migrations/039-attempt-over-budget.sql")),
+                    // Task #12's migration number is 060 (the board's
+                    // assignment); the walker requires the next sequential
+                    // list version, so the file keeps 060 and the tuple
+                    // carries 40. Integration renumbers on merge.
+                    (
+                        40,
+                        include_str!("migrations/060-pending-invites.sql"),
+                    ),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
