@@ -599,24 +599,45 @@ async fn native_console_account_readiness_is_observed_not_asserted() {
     f.close().await;
 }
 
-/// The first-resource act end to end: on an empty service the operator
-/// prepares an account, enrols it through the console route, and the created
-/// resource is visible on the resources read — the same outcome the TS
-/// account/credential enrolment flow reaches through POST
-/// /api/framework-presets (backend-v2.js:15842).
+/// The first-resource act end to end: the operator prepares an account,
+/// enrols it through the console route, and the created account-bound
+/// resource appears on the resources read — the outcome the TS account/
+/// credential enrolment flow reaches through POST /api/framework-presets
+/// (backend-v2.js:15842).
+///
+/// PRECONDITION HONESTY: the shared fixture seed is NOT an empty service —
+/// `fixture::seed` pre-loads `private_usage_pool` and `private_alert_pool`,
+/// so the pre-state is two resources with NO account-owned resource
+/// (`resource_accounts` empty). The assertions are the DELTA (exactly one
+/// resource added, none removed) and the new resource's IDENTITY (framework,
+/// model, reasoning, published) — never a length-0 premise that the seed
+/// falsifies.
 #[tokio::test]
 async fn native_console_account_enrollment_creates_the_first_resource() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
     let manager = management(&service).await;
-    // Empty service: no resources at all.
-    let mut empty = read(&manager, "/console/api/resources?limit=16").send(&service).await;
-    let empty_body: Value = serde_json::from_str(&empty.take_string().await.unwrap()).unwrap();
+    // Pre-state: the seeded resources exist and none is account-owned.
+    let mut before = read(&manager, "/console/api/resources?limit=16").send(&service).await;
+    let before_body: Value = serde_json::from_str(&before.take_string().await.unwrap()).unwrap();
+    let before_ids: Vec<String> = before_body["resources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_str().unwrap().to_owned())
+        .collect();
     assert_eq!(
-        empty_body["resources"].as_array().unwrap().len(),
-        0,
-        "the empty service lists no resource"
+        before_ids.len(),
+        2,
+        "the shared fixture seeds exactly two resources (usage + alert pools), none account-owned: {before_body}"
     );
+    {
+        let sql = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3")).unwrap();
+        let account_owned: u32 = sql
+            .query_row("SELECT COUNT(*) FROM resource_accounts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(account_owned, 0, "no account-owned resource before enrollment");
+    }
     // Prepare the account (the "Add account" act).
     let mut prepared = command("/console/api/accounts", &manager)
         .json(&json!({"profile":ACCOUNT_PROFILE}))
@@ -638,15 +659,28 @@ async fn native_console_account_enrollment_creates_the_first_resource() {
         "enrollment refused: {enrolled_body}"
     );
     // The created resource is listed on the resources read the console's
-    // Resources page consumes — the first resource, created in the console.
+    // Resources page consumes — the first account-owned resource, created in
+    // the console. Assert the DELTA and the new resource's IDENTITY.
     let mut listed = read(&manager, "/console/api/resources?limit=16").send(&service).await;
     assert_eq!(listed.status_code, Some(StatusCode::OK));
     let listed: Value = serde_json::from_str(&listed.take_string().await.unwrap()).unwrap();
     let resources = listed["resources"].as_array().unwrap();
-    assert_eq!(resources.len(), 1, "enrollment created the first resource");
-    assert_eq!(resources[0]["framework"], "codex");
-    assert_eq!(resources[0]["model"], "gpt-5.6-sol");
-    assert_eq!(resources[0]["reasoning"], "medium");
-    assert_eq!(resources[0]["published"], true);
+    assert_eq!(
+        resources.len(),
+        before_ids.len() + 1,
+        "enrollment added exactly one resource"
+    );
+    let after_ids: Vec<&str> = resources.iter().map(|r| r["id"].as_str().unwrap()).collect();
+    for id in &before_ids {
+        assert!(after_ids.contains(&id.as_str()), "seeded resource {id} untouched");
+    }
+    let new = resources
+        .iter()
+        .find(|r| !before_ids.iter().any(|b| b == r["id"].as_str().unwrap()))
+        .expect("the enrollment-created resource is listed");
+    assert_eq!(new["framework"], "codex");
+    assert_eq!(new["model"], "gpt-5.6-sol");
+    assert_eq!(new["reasoning"], "medium");
+    assert_eq!(new["published"], true);
     f.close().await;
 }
