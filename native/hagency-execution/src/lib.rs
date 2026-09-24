@@ -18,12 +18,12 @@ pub use host::{Host, Limits, SharedHost};
 pub use inspection::StopInspectionStatus;
 pub use local_codex::LocalCodex;
 pub use operation::{
-    AuthorityCause, AuthoritySite, Failure, Operation, Protocol, Report, RuntimeObservation,
-    RuntimeStage, RuntimeWriteObservation, Settlement, SettlementCause,
+    AuthorityCause, AuthoritySite, BudgetWatch, Failure, Operation, OverBudget, Protocol, Report,
+    RuntimeObservation, RuntimeStage, RuntimeWriteObservation, Settlement, SettlementCause,
 };
 pub use registration::{LaunchAck, RegistrationError, WorkspaceRegistration};
 pub use usage::{UsageFailure, UsageStatus};
-pub use warm::{WarmLimits, WarmRuntime};
+pub use warm::{WarmIdleStatus, WarmLimits, WarmRuntime};
 pub use workspace::{
     StartedWorkspace, WorkspaceError, WorkspaceReceive, WorkspaceReceiveError, ordinary_launch_path,
 };

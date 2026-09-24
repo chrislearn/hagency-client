@@ -30,6 +30,11 @@ import NativeStatusStrip from '@/components/NativeStatusStrip';
  */
 
 const STEPS = ['framework', 'model', 'reasoning', 'budget'];
+// A configuration derived from an existing resource cannot change its
+// framework — it is the source's — so that step held nothing to decide and
+// opened the flow on a screen whose only control was Next. The native flow
+// starts at the first real choice; the source's framework is stated above it.
+const NATIVE_STEPS = ['model', 'reasoning', 'budget'];
 
 /** Codex thinking levels, from the real enumeration's `reasoning` values. */
 function reasoningChoices(roleCapacity, framework) {
@@ -64,7 +69,7 @@ export default function WizardPage() {
   const data = useData(); const t = useT();
   if (!data.nativeConsole) return <WizardForm />;
   return <>
-    <PageHead title={t(data.editing ? 'nc.edit' : 'nc.create')} sub={t('nc.scope')}><NativeStatusStrip /></PageHead>
+    <PageHead title={t(data.editing ? 'nc.edit' : 'nc.pageTitle')} sub={t('nc.scope')}><NativeStatusStrip /><a className="btn" href="/console/resources/">{t('wz.cancel')}</a></PageHead>
     <NativeAccessNotice />
     {data.phase === 'loading' && <p role="status">{t('nr.loading')}</p>}
     {data.phase === 'error' && <section className="notice" role="alert"><p>{t('nr.failed')}</p><button className="btn" onClick={data.refresh}>{t('nu.refresh')}</button></section>}
@@ -76,7 +81,7 @@ export default function WizardPage() {
     </section>}
     {['ready', 'stale'].includes(data.phase) && (data.editor
       ? <div data-native-configuration-id={data.editor.resource.id} aria-busy={data.refreshing === true}><WizardForm key={`${data.editing}:${data.editor.resource.id}`} native={data} /></div>
-      : <section className="panel"><PageHead title={t('nc.create')} sub={t('nc.scope')}><NativeStatusStrip /></PageHead><p>{t('nc.noSource')}</p><a className="btn" href="/console/resources/">{t('wz.cancel')}</a></section>)}
+      : <section className="panel"><p>{t('nc.noSource')}</p></section>)}
   </>;
 }
 const validNativeTokens = (value) => /^[0-9]+$/.test(String(value)) && Number.isSafeInteger(Number(value)) && Number(value) >= 0;
@@ -91,6 +96,8 @@ function WizardForm({ native = null }) {
   const live = provenance.presets === 'live';
   const [toast, say] = useToast();
   const [step, setStep] = useState(0);
+  const steps = native ? NATIVE_STEPS : STEPS;
+  const at = steps[step];
   const [draft, setDraft] = useState(() => native ? nativeDraft(base) : { name: '', framework: null, provider: null, model: null, reasoning: null, tokens: 1_000_000, rateCapPerDay: 50_000, yolo: false });
   const router = useRouter();
   const set = (patch) => setDraft((d) => ({ ...d, ...patch, ...(native && ('model' in patch || 'reasoning' in patch) ? { profileKind: 'select' } : {}) }));
@@ -111,13 +118,17 @@ function WizardForm({ native = null }) {
   };
   return (
     <>
-      <PageHead title={t(native ? native.editing ? 'nc.edit' : 'nc.create' : 'wz.title')} sub={t(native ? 'nc.scope' : 'wz.sub')}>
-        {native && <NativeStatusStrip />}
-        {native ? <a className="btn" href="/console/resources/">{t('wz.cancel')}</a> : <Link className="btn" href="/resources">{t('wz.cancel')}</Link>}
-      </PageHead>
+      {/* The native console's page draws the one header (title, scope, status
+          strip and cancel) above this form; drawing another here rendered
+          every one of them twice. The standalone wizard is the whole page,
+          so it keeps its own. */}
+      {!native && <PageHead title={t('wz.title')} sub={t('wz.sub')}>
+        <Link className="btn" href="/resources">{t('wz.cancel')}</Link>
+      </PageHead>}
 
       {native ? <>
         <p>{t('nc.association')}</p>
+        <p>{t('nc.pageHint')}</p>
         {native.refreshing && <p role="status">{t('nr.refreshing')}</p>}
         {native.phase === 'stale' && <p role="alert">{t('nr.stale')}</p>}
         {!native.permissions?.configureResource && <div className="notice"><p>{t('nc.readOnly')}</p><code>hagency console-access --state-dir &lt;state&gt; --listen &lt;address&gt; --manage-resource-configuration</code></div>}
@@ -127,7 +138,7 @@ function WizardForm({ native = null }) {
       {/* Progress is a list of steps with the current one marked, not a bar: the
           reader needs to know which decision they are on, not a percentage. */}
       <ol className="steps wizard">
-        {STEPS.map((s, i) => (
+        {steps.map((s, i) => (
           <li key={s} className={i === step ? 'on' : i < step ? 'done' : ''}>
             <span className="n">{i + 1}</span>
             <span>{t(`wz.step.${s}`)}</span>
@@ -135,7 +146,7 @@ function WizardForm({ native = null }) {
         ))}
       </ol>
 
-      {step === 0 && native && <section className="panel"><h3 className="sub">{t('nc.source')}</h3>
+      {native && <section className="panel"><h3 className="sub">{t('nc.source')}</h3>
         {!native.editing && <div className="field"><label htmlFor="configuration-source">{t('nc.source')}</label><select id="configuration-source" value={base.id} onChange={(event) => native.choose(event.target.value)}>
           {!native.resources.some((r) => r.id === base.id) && <option value={base.id}>{t('nr.outsidePage')}</option>}
           {native.resources.map((r) => <option key={r.id} value={r.id}>{[r.framework, r.model, r.reasoning].filter(Boolean).join(' · ')}</option>)}
@@ -143,7 +154,7 @@ function WizardForm({ native = null }) {
         <dl className="kv"><dt>{t('wz.step.framework')}</dt><dd>{base.framework}</dd><dt>{t('col.provider')}</dt><dd>{base.provider ?? t('nu.unknown')}</dd><dt>{t('col.model')}</dt><dd>{base.model}</dd></dl>
         <TechnicalDetails><code>{base.id}</code></TechnicalDetails>
       </section>}
-      {step === 0 && !native && (
+      {at === 'framework' && (
         <div className="panel">
           <h3 className="sub">{t('wz.pickFramework')}</h3>
           <div className="fw-grid">
@@ -245,7 +256,7 @@ function WizardForm({ native = null }) {
         </div>
       )}
 
-      {step === 1 && (
+      {at === 'model' && (
         <div className="panel">
           <h3 className="sub">{t('wz.pickModel')}</h3>
           {models.length === 0 ? (
@@ -286,7 +297,7 @@ function WizardForm({ native = null }) {
         </div>
       )}
 
-      {step === 2 && (
+      {at === 'reasoning' && (
         <div className="panel">
           <h3 className="sub">{t('wz.pickReasoning')}</h3>
           {reasonings.length === 0 ? (
@@ -314,7 +325,7 @@ function WizardForm({ native = null }) {
         </div>
       )}
 
-      {step === 3 && (
+      {at === 'budget' && (
         <div className="panel">
           <h3 className="sub">{t('wz.setBudget')}</h3>
           <p className="notice">{t(native ? 'nc.localCatalog' : 'rs.definitionHelp')}</p>
@@ -393,10 +404,10 @@ function WizardForm({ native = null }) {
         <button className="btn" disabled={step === 0} onClick={() => setStep((s) => Math.max(0, s - 1))}>
           {t('wz.back')}
         </button>
-        {step < STEPS.length - 1 ? (
+        {step < steps.length - 1 ? (
           <button
             className="btn primary"
-            disabled={step === 0 ? !draft.framework : step === 1 ? !draft.model : false}
+            disabled={at === 'framework' ? !draft.framework : at === 'model' ? !draft.model : false}
             onClick={() => setStep((s) => s + 1)}
           >
             {t('wz.next')}

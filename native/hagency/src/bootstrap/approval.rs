@@ -138,17 +138,15 @@ impl Pump {
 
     /// Explicit configured Matrix SDK enrollment, not provider credential login.
     /// The original Complete path validates existing custody without new keys.
-    pub(crate) async fn initialize(&self, shutdown: &CancellationToken) -> Result<(), Failure> {
-        let result = async {
-            let _turn = self.collector.service_turn(shutdown).await?;
-            self.collector.observe(shutdown).await?;
-            self.collector.enroll_fresh_account(shutdown).await
-        }
-        .await;
-        result.map_err(|error| {
-            tracing::error!("approval startup refused: {error}");
-            Failure::Startup
-        })
+    /// Refuses with the Matrix error itself: the service does not exit on it
+    /// (ADR-183 decision 0) but records the word and retries.
+    pub(crate) async fn initialize(
+        &self,
+        shutdown: &CancellationToken,
+    ) -> Result<(), hagency_matrix::Error> {
+        let _turn = self.collector.service_turn(shutdown).await?;
+        self.collector.observe(shutdown).await?;
+        self.collector.enroll_fresh_account(shutdown).await
     }
 
     /// Original run receivers are the only source of request plans. The global

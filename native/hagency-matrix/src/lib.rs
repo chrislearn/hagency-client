@@ -118,6 +118,6 @@ pub use approval_intake::{
 
 mod approval_delivery;
 pub use approval_delivery::{
-    PrivateApprovalDeliveryStage, PrivateApprovalDeliveryState, PrivateApprovalDeliveryStatus,
-    PrivateApprovalDeliverySummary,
+    ApprovalRoomRecipients, PrivateApprovalDeliveryStage, PrivateApprovalDeliveryState,
+    PrivateApprovalDeliveryStatus, PrivateApprovalDeliverySummary,
 };

@@ -12,10 +12,10 @@ async fn native_matrix_transport_identity_authenticated_https_and_sdk_restart() 
     let cancel = CancellationToken::new();
     let untrusted = Collector::new(f.config(&fake.endpoint), f.store.clone()).unwrap();
     assert_eq!(untrusted.collect(&cancel).await, Err(Error::Transport));
-    assert!(!f.available().await);
+    // ADR-183 (ADR-047 amendment): a refused read fences nothing, so the same
+    // incarnation continues below — no new generation is needed.
     assert!(!f.root.path().join("sdk").exists());
     drop(untrusted);
-    f.identity.transport.generation = 2;
     let c = Collector::new(
         f.config(&fake.endpoint)
             .with_root_pem(include_bytes!("fixtures/ca.pem"))
@@ -139,7 +139,10 @@ async fn native_matrix_transport_identity_wrong_account_device_or_missing_device
             fake.next().await.json(200, body);
         });
         assert_eq!(result, Err(Error::Identity));
-        assert!(!f.available().await);
+        assert!(
+            f.available().await,
+            "ADR-183: an identity refusal is returned, not turned into a retired incarnation"
+        );
         assert!(!f.root.path().join("sdk").exists());
         fake.quiesced(fake.requests(), &common::limits()).await;
         f.store.shutdown().await.unwrap();
@@ -207,15 +210,11 @@ async fn native_matrix_transport_bounds_json_framing_status_and_deadlines() {
                 response(200, &serde_json::to_vec(&who()).unwrap()),
             )]);
         }
-        task.abort(); // The bounded owned operation must still settle negative authority.
-        tokio::time::timeout(Duration::from_secs(2), async {
-            while f.available().await {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .unwrap();
-        assert!(!f.available().await);
+        task.abort();
+        // ADR-183: a read that ran out of time proves nothing about the
+        // incarnation; it stays available for the next attempt.
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(f.available().await);
         f.store.shutdown().await.unwrap();
         fake.close().await;
     }
@@ -246,7 +245,9 @@ async fn native_matrix_transport_rooms_full_snapshots_refuse_unsafe_or_conflicti
             fake.next().await.json(200, v);
         }).await;
         assert!(result.is_err(), "{variant}");
-        assert!(!f.available().await);
+        // ADR-183: the unsafe room is the room route's matter; the
+        // incarnation that read it stays available.
+        assert!(f.available().await, "{variant}");
         c.close().await.unwrap();
         f.store.shutdown().await.unwrap();
         fake.close().await;
@@ -312,7 +313,13 @@ async fn native_matrix_transport_bounds_sync_scopes_events_and_cancel() {
   }
         }).await;
         assert!(result.is_err(), "{variant}");
-        assert!(!f.available().await);
+        // ADR-183: a refused read fences nothing — so whatever row exists is
+        // the one the collection itself wrote, never a retired one. The
+        // incarnation is published only after the sync is accepted, so only
+        // `foreign` (whose foreign room is scoped out and which then fails at
+        // the room read) has a row; the others refused or cancelled before
+        // that write and simply never made one.
+        assert_eq!(f.available().await, variant == "foreign", "{variant}");
         c.close().await.unwrap();
         f.store.shutdown().await.unwrap();
         fake.close().await;

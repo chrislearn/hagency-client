@@ -588,9 +588,12 @@ async fn native_matrix_approval_observation_owner_lifecycle() {
     common::shutdown_domain(&f.store, "approval lifecycle cleanup").await;
     fake.close().await;
 }
+/// The Agent purpose cannot adopt the approval SDK, and a whoami naming
+/// another device is returned as `Identity` for the pump to park on
+/// (ADR-183): a refused read fences nothing — neither the Agent transport
+/// nor the approval room, which the next good observation admits again.
 #[tokio::test]
-async fn native_matrix_approval_identity_wrong_device_fences_only_approval_and_purpose_cannot_adopt()
- {
+async fn native_matrix_approval_identity_wrong_device_parks_and_purpose_cannot_adopt() {
     let (f, mut fake, c, _) = ready().await;
     let owner = c.inner.owner.lock().await.take().unwrap();
     owner.close().await.unwrap();
@@ -599,6 +602,17 @@ async fn native_matrix_approval_identity_wrong_device_fences_only_approval_and_p
         Err(Error::Identity)
     ));
     *c.inner.owner.lock().await = Some(Owner::open_existing(&c.inner.config).await.unwrap());
+    let authority = f
+        .store
+        .approval_room_authority(f.identity.transport.engagement_id.clone())
+        .await
+        .unwrap();
+    let before = f
+        .store
+        .approval_room_capture(authority.clone())
+        .await
+        .unwrap()
+        .unwrap();
     let cancel = CancellationToken::new();
     let (r, ()) = common::scripted(c.observe(&cancel), async {
         fake.next().await.json(
@@ -609,19 +623,21 @@ async fn native_matrix_approval_identity_wrong_device_fences_only_approval_and_p
     .await;
     assert_eq!(r, Err(Error::Identity));
     assert!(f.available().await);
-    let authority = f
+    let after = f
         .store
-        .approval_room_authority(f.identity.transport.engagement_id.clone())
+        .approval_room_capture(authority)
         .await
+        .unwrap()
         .unwrap();
-    assert!(
-        !f.store
-            .approval_room_capture(authority)
-            .await
-            .unwrap()
-            .unwrap()
-            .available
-    );
+    assert!(after.available, "a refused read fences no approval room");
+    assert_eq!(after.digest, before.digest);
+    let cancel = CancellationToken::new();
+    let (r, ()) = common::scripted(c.observe(&cancel), async {
+        fake.next().await.json(200, who());
+        fake.next().await.json(200, state());
+    })
+    .await;
+    assert_eq!(r, Ok(()));
     shutdown(f, fake, c).await;
 }
 #[tokio::test]
@@ -710,13 +726,18 @@ async fn native_matrix_approval_scope_third_member_and_fresh_malformed_keys_fenc
             .approval_room_authority(target.authority.engagement_id.clone())
             .await
             .unwrap();
-        assert!(
-            !f.store
+        // ADR-183 C: a third member is negative evidence about the room and
+        // fences it; malformed owner keys are a recipient refusal of this
+        // intake and fence nothing.
+        assert_eq!(
+            f.store
                 .approval_room_capture(a)
                 .await
                 .unwrap()
                 .unwrap()
-                .available
+                .available,
+            variant == 1,
+            "variant {variant}"
         );
         assert_eq!(
             f.store

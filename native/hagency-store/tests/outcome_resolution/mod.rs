@@ -509,7 +509,7 @@ fn native_outcome_resolution_schema35_upgrade() {
         assert_eq!(
             sql.pragma_query_value(None, "user_version", |r| r.get::<_, u64>(0))
                 .unwrap(),
-            38
+            39
         );
         assert_eq!(
             sql.query_row("SELECT COUNT(*) FROM resource_leases", [], |r| r

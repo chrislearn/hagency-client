@@ -31,7 +31,7 @@ fn native_stopped_inspection_schema34_upgrade() {
         assert_eq!(
             sql.pragma_query_value(None, "user_version", |r| r.get::<_, u64>(0))
                 .unwrap(),
-            38
+            39
         );
         assert_eq!(
             sql.query_row(
@@ -114,7 +114,7 @@ fn native_account_schema22() {
     assert_eq!(
         sql.query_row("PRAGMA user_version", [], |r| r.get::<_, u64>(0))
             .unwrap(),
-        38
+        39
     );
     assert_eq!(before, snapshot(&sql));
     drop(sql);

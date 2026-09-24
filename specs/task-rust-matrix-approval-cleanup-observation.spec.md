@@ -43,10 +43,10 @@ the original verdicts; their backend causes remain unproven.
 Scenario: Wrong-device cleanup retains its original shutdown result
   Level: integration
   Test Double: actual authenticated local TLS refusal and domain writer
-  Test: native_matrix_approval_identity_wrong_device_fences_only_approval_and_purpose_cannot_adopt
+  Test: native_matrix_approval_identity_wrong_device_parks_and_purpose_cannot_adopt
   Given the original approval identity and ordinary-route assertions
   When original approval cleanup returns or fails
-  Then its fixed SDK and repository destruction observations accompany the unchanged result
+  Then its fixed SDK and repository destruction observations accompany the unchanged result, the refusal is returned as Identity, and the approval room stays available
 
 Scenario: Framing refusal identifies original SDK bootstrap and fixed variant
   Level: integration
@@ -140,3 +140,15 @@ Scenario: Extended snapshots remain finite and independent
 
 Production timing corrections backend root-cause claims broader approval intake
 instrumentation hosted reruns workflow changes and Windows durability upgrades.
+
+## Note (ADR-183, 2026-09-24)
+
+The wrong-device scenario's selector was
+`native_matrix_approval_identity_wrong_device_fences_only_approval_and_purpose_cannot_adopt`
+and pinned that a whoami naming another device fenced the approval room. ADR-183
+makes a refused read fence nothing — the pump parks with the `Identity` word
+for a human — so the selector is now
+`native_matrix_approval_identity_wrong_device_parks_and_purpose_cannot_adopt`:
+the "purpose cannot adopt" half and the shutdown observations are unchanged; the
+fence half became "the refusal is returned as Identity, the approval room stays
+available, and the next good observation is admitted".

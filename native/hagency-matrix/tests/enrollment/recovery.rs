@@ -423,7 +423,10 @@ async fn native_matrix_enrollment_unknown() {
             // Historical completion cannot undo the original failed readiness.
             assert_eq!(f.run().await, Err(Error::OutcomeUnknown));
         } else {
-            assert!(matches!(reopened, Err(Error::OutcomeUnknown)));
+            // ADR-183: the lost reply is the registry's uncertainty, not the
+            // ledger's — the record stands at a prepared write that never
+            // crossed the wire, so the SDK reports it resumable.
+            assert!(matches!(reopened, Ok(View::Write(_))));
         }
         f.fake.quiesced(f.fake.requests(), &common::limits()).await;
         f.close().await;

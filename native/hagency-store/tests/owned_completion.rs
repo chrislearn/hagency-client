@@ -690,7 +690,7 @@ fn native_owned_completion_migration() {
     assert_eq!(
         sql.query_row("PRAGMA user_version", [], |r| r.get::<_, u64>(0))
             .unwrap(),
-        38
+        39
     );
     assert_eq!(
         sql.query_row("SELECT COUNT(*) FROM owned_task_completions", [], |r| r

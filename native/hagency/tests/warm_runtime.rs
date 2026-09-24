@@ -3,7 +3,9 @@
 mod common;
 use common::*;
 use hagency_core::{replies::*, tasks::*};
-use hagency_execution::{ApprovalHost, Failure, Host, Limits, Protocol, WarmLimits, WarmRuntime};
+use hagency_execution::{
+    ApprovalHost, Failure, Host, Limits, Protocol, WarmIdleStatus, WarmLimits, WarmRuntime,
+};
 use hagency_store::{
     DomainRepository, DomainStore, Effect, EffectOutcome, ManagedAccount, OwnedProvisionScope,
     agent_home::{HomeProject, ManagedAgentHome, ManagedHomePlan, ProjectMode},
@@ -858,13 +860,27 @@ async fn native_warm_local_codex_custody() {
                 fs::rename(&codex, codex.with_file_name("original-provider")).unwrap();
                 fs::create_dir(&codex).unwrap();
             }
-            assert!(matches!(
-                tokio::time::timeout(Duration::from_secs(3), warm.ready())
-                    .await
-                    .unwrap()
-                    .err(),
-                Some(Failure::LostAuthority { .. })
-            ));
+            if case == "initialize" {
+                // Still initializing: the pre-ready check is the warm start's
+                // own admission and refuses as before.
+                assert!(matches!(
+                    tokio::time::timeout(Duration::from_secs(3), warm.ready())
+                        .await
+                        .unwrap()
+                        .err(),
+                    Some(Failure::LostAuthority { .. })
+                ));
+            } else {
+                // Idle (ADR-183 decision D, warm rule): the provider check's
+                // refusal is recorded and re-checked, readiness still answers
+                // and the child is kept; the next handoff's own admission is
+                // what decides a dispatch.
+                let recorded = idle_status(&warm, |status| status.failures >= 1).await;
+                assert_eq!(recorded.last_site, Some("local_codex_check"));
+                assert_eq!(recorded.last_cause, Some("io"));
+                warm.ready().await.unwrap();
+                assert!(!warm.is_finished());
+            }
             drop(warm);
             assert!(
                 !f.requests()
@@ -881,6 +897,108 @@ async fn native_warm_local_codex_custody() {
         ));
         f.close().await;
     }
+}
+
+/// The idle status once `accept` holds, polled under a 3 s bound: the checks
+/// run every 100 ms, so a state that never arrives is a failed scenario.
+async fn idle_status(
+    warm: &WarmRuntime,
+    accept: impl Fn(&WarmIdleStatus) -> bool,
+) -> WarmIdleStatus {
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let status = warm.idle_status();
+            if accept(&status) {
+                break status;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the idle status never reached the expected state")
+}
+
+/// Scenario "The idle re-qualification records and never stops" (ADR-183
+/// decision D, warm rule). The local provider directory becomes
+/// group-writable while the warm child idles — the same revocation the
+/// fleet fixture uses — so every 100 ms check refuses `local_codex_check`:
+/// the refusal is counted and named, the worker stays up, readiness still
+/// answers, the child keeps its pid; once the directory is private again the
+/// failing run ends and the next dispatch is admitted to that same child.
+#[cfg(unix)]
+#[tokio::test]
+async fn native_idle_qualification_failure_is_recorded_not_fatal() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut f = Fixture::new(false).await;
+    let local = local_profile(&f, "seat");
+    let codex = f.root.path().canonicalize().unwrap().join("provider-codex");
+    fs::write(codex.join("auth.json"), b"opaque offline sentinel").unwrap();
+    fs::set_permissions(codex.join("auth.json"), fs::Permissions::from_mode(0o000)).unwrap();
+    let host = f
+        .build_host(None)
+        .with_local_codex(local)
+        .unwrap()
+        .into_shared();
+    let mut warm = WarmRuntime::start(
+        f.domain.clone(),
+        f.scope.clone(),
+        f.home.clone(),
+        host,
+        "work".into(),
+        warm_limits(),
+    )
+    .unwrap();
+    warm.ready().await.unwrap();
+    f.initialized().await;
+    let original = f.receipt("warm-initialized")["pid"].clone();
+    assert_eq!(warm.idle_status(), WarmIdleStatus::default());
+    // The transient refusal.
+    fs::set_permissions(&codex, fs::Permissions::from_mode(0o777)).unwrap();
+    let recorded = idle_status(&warm, |status| status.failures >= 2).await;
+    assert_eq!(recorded.last_site, Some("local_codex_check"));
+    assert_eq!(recorded.last_cause, Some("io"));
+    assert!(recorded.failing_since_ms.is_some());
+    assert!(recorded.last_failed_at_ms >= recorded.failing_since_ms);
+    // Recorded, not a verdict: the worker is up, readiness answers, the
+    // child is the same one, and nothing was dispatched to it.
+    assert!(!warm.is_finished());
+    warm.ready().await.unwrap();
+    assert_eq!(f.receipt("warm-initialized")["pid"], original);
+    f.no_task_io();
+    // The check passes again: the failing run ends, the history stays.
+    fs::set_permissions(&codex, fs::Permissions::from_mode(0o700)).unwrap();
+    let passed = idle_status(&warm, |status| status.failing_since_ms.is_none()).await;
+    assert!(passed.failures >= recorded.failures);
+    assert_eq!(passed.last_site, Some("local_codex_check"));
+    assert_eq!(f.receipt("warm-initialized")["pid"], original);
+    // ...and the next dispatch is admitted to the same child.
+    let cap = f.activate(90_000).await;
+    let mut operation = warm
+        .dispatch(
+            cap,
+            Limits {
+                operation_ms: 60_000,
+                response_ms: 2000,
+            },
+        )
+        .unwrap();
+    let report = operation.wait().await.unwrap();
+    assert_eq!(
+        report.protocol,
+        Protocol::Completed,
+        "{:?} {:?}",
+        report.failure,
+        report.runtime_observation()
+    );
+    assert_eq!(f.receipt("warm-thread")["pid"], original);
+    assert_eq!(f.receipt("warm-initialized")["pid"], original);
+    let hagency_runtime::owned::Cleanup::Observed(cleanup) = &report.cleanup else {
+        panic!("original cleanup required");
+    };
+    assert!(cleanup.scope.whole_tree_stopped);
+    drop(report);
+    drop(operation);
+    f.close().await;
 }
 
 #[cfg(unix)]

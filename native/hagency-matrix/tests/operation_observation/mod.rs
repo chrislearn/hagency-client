@@ -160,7 +160,7 @@ async fn native_matrix_operation_observation_primary_fence() {
         .await
         .unwrap();
     let c = Collector::new(f.config(&fake.endpoint), f.store.clone()).unwrap();
-    let trace = Trace::new("original refusal with failed fence", None, None);
+    let trace = Trace::new("original read refusal fences nothing", None, None);
     let cancel = CancellationToken::new();
     let result = observed(trace.clone(), async {
         let (result, ()) = common::scripted(c.collect(&cancel), async {
@@ -175,10 +175,14 @@ async fn native_matrix_operation_observation_primary_fence() {
         result
     })
     .await;
-    assert_eq!(result, Err(Error::OutcomeUnknown));
+    // ADR-183 (ADR-047 amendment): a refused read is not evidence about the
+    // incarnation and fences nothing — so a stopped writer cannot turn the
+    // refusal into an unknown outcome either. The primary word is returned as
+    // it is; no fence phase is recorded.
+    assert_eq!(result, Err(Error::Identity));
     let snapshot = trace.snapshot();
     assert_eq!(snapshot.primary.unwrap().error, Some(Error::Identity));
-    assert_eq!(snapshot.fence.unwrap().error, Some(Error::Domain));
+    assert!(snapshot.fence.is_none(), "a read refusal records no fence");
     assert!(trace.has(Phase::Whoami));
     assert!(!trace.has(Phase::OpenOwner));
     // A clean close writes nothing to the domain, so a stopped writer cannot fail it.

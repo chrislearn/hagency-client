@@ -43,26 +43,62 @@ async fn native_private_approval_enrollment_refusals() {
         if variant == "anchor" {
             f.peer = crypto::Peer::for_sender(BOT, DEVICE).await;
         }
-        let result=drive_with(f.collector.enroll_fresh_account(&CancellationToken::new()),&mut f.fake,&mut f.peer,|request,peer,reply|{
-            if variant=="versions"&&request.target.ends_with("/versions"){reply.1=json!({"versions":["v9.99"]});}
-            if request.target.ends_with("/keys/query") {
-                if variant=="existing"&&peer.writes.is_empty(){reply.1["master_keys"][BOT]=reply.1["master_keys"][crypto::HUMAN].clone();}
-                if variant=="signature"&&peer.writes.is_empty(){reply.1["device_keys"][crypto::HUMAN][crypto::HUMAN_DEVICE]["signatures"]=json!({});}
-                if variant=="fresh_device"&&!peer.writes.is_empty(){reply.1["device_keys"][BOT][DEVICE]["keys"][format!("ed25519:{DEVICE}")]=json!("A".repeat(43));}
+        let mut change = |request: &common::Request,
+                          peer: &mut crypto::Peer,
+                          reply: &mut (u16, Value)| {
+            if variant == "versions" && request.target.ends_with("/versions") {
+                reply.1 = json!({"versions":["v9.99"]});
             }
-            if variant=="claim"&&request.target.ends_with("/keys/claim"){reply.1["one_time_keys"]=json!({});}
-            if variant=="uia"&&request.target.ends_with("/device_signing/upload"){reply.0=401;reply.1=json!({"flows":[{"stages":["m.login.password"]}],"session":"disposable-uia"});}
-        }).await;
+            if request.target.ends_with("/keys/query") {
+                if variant == "existing" && peer.writes.is_empty() {
+                    reply.1["master_keys"][BOT] = reply.1["master_keys"][crypto::HUMAN].clone();
+                }
+                if variant == "signature" && peer.writes.is_empty() {
+                    reply.1["device_keys"][crypto::HUMAN][crypto::HUMAN_DEVICE]["signatures"] =
+                        json!({});
+                }
+                if variant == "fresh_device" && !peer.writes.is_empty() {
+                    reply.1["device_keys"][BOT][DEVICE]["keys"][format!("ed25519:{DEVICE}")] =
+                        json!("A".repeat(43));
+                }
+            }
+            if variant == "claim" && request.target.ends_with("/keys/claim") {
+                reply.1["one_time_keys"] = json!({});
+            }
+            if variant == "uia" && request.target.ends_with("/device_signing/upload") {
+                reply.0 = 401;
+                reply.1 =
+                    json!({"flows":[{"stages":["m.login.password"]}],"session":"disposable-uia"});
+            }
+        };
+        let result = drive_with(
+            f.collector.enroll_fresh_account(&CancellationToken::new()),
+            &mut f.fake,
+            &mut f.peer,
+            &mut change,
+        )
+        .await;
         assert!(result.is_err(), "{variant}");
         let writes = f.peer.writes.len();
         let claims = f.peer.claims;
-        assert_eq!(
-            f.collector
-                .enroll_fresh_account(&CancellationToken::new())
-                .await,
-            result,
-            "non-rearmable {variant}"
-        );
+        // ADR-183: a refusal does not retire the collector. Called again from
+        // the top while the fact persists, the enrollment refuses the same way
+        // without a new write; a write that may have crossed the wire (the
+        // claim answered without keys, the signing upload refused) is the
+        // SDK's own custody and reads as OutcomeUnknown until the operator
+        // looks.
+        let again = drive_with(
+            f.collector.enroll_fresh_account(&CancellationToken::new()),
+            &mut f.fake,
+            &mut f.peer,
+            &mut change,
+        )
+        .await;
+        let expected = match variant {
+            "claim" | "uia" => Err(Error::OutcomeUnknown),
+            _ => result,
+        };
+        assert_eq!(again, expected, "retry from the top: {variant}");
         f.fake.quiesced(f.fake.requests(), &fixture::limits()).await;
         assert_eq!(f.peer.writes.len(), writes);
         assert_eq!(f.peer.claims, claims);
@@ -133,13 +169,6 @@ async fn native_private_approval_enrollment_refusals_original_custody() {
             .await
             .unwrap();
         drop(permit);
-        assert!(
-            f.collector
-                .enroll_fresh_account(&CancellationToken::new())
-                .await
-                .is_err()
-        );
-        f.fake.quiesced(f.fake.requests(), &fixture::limits()).await;
         assert_eq!(
             f.peer.writes.len(),
             match phase {
@@ -149,6 +178,15 @@ async fn native_private_approval_enrollment_refusals_original_custody() {
                 _ => unreachable!(),
             }
         );
+        // ADR-183: the cancelled caller lost nothing the ledger did not keep.
+        // The held command completed inside the owner, so the record stands
+        // at a prepared write (phase 1), an applied write (phase 2) or
+        // Complete (phase 3), and the next call from the top finishes it —
+        // no fence, no retired collector.
+        f.enroll().await.unwrap();
+        f.fake.quiesced(f.fake.requests(), &fixture::limits()).await;
+        assert_eq!(f.peer.writes.len(), 5);
+        assert_eq!(f.peer.claims, 1);
         f.collector.close().await.unwrap();
         let owner = Owner::open_existing(&f.collector.inner.config)
             .await
@@ -157,14 +195,10 @@ async fn native_private_approval_enrollment_refusals_original_custody() {
             .enrollment_handle_for(Purpose::Approval)
             .command(Enroll::Status)
             .await;
-        if phase == 3 {
-            assert!(matches!(
-                history,
-                Ok(crate::enrollment::state::View::Complete)
-            ));
-        } else {
-            assert!(matches!(history, Err(Error::OutcomeUnknown)));
-        }
+        assert!(matches!(
+            history,
+            Ok(crate::enrollment::state::View::Complete)
+        ));
         f.fake.quiesced(f.fake.requests(), &fixture::limits()).await;
         owner.close().await.unwrap();
         common::shutdown_domain(&f.base.store, "approval-enrollment-original").await;

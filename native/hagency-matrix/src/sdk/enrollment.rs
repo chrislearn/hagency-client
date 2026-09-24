@@ -1,3 +1,4 @@
+pub(crate) use super::keys::same_anchor;
 use super::{Owner, Sdk};
 use crate::{Error, enrollment::state::*};
 use matrix_sdk_base::BaseClient;
@@ -13,7 +14,7 @@ use ruma::{
     },
 };
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use tokio::sync::oneshot;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -104,10 +105,20 @@ pub(crate) enum Command {
     Accept(usize, Value),
     Verify(Value),
     Finish,
+    /// The per-user recipient census of a completed enrollment (ADR-183 B):
+    /// how many of the user's known devices the accepted identity has signed
+    /// and how many it has not. A status word, never authority; an absent or
+    /// incomplete enrollment answers with an empty census.
+    Recipients(oneshot::Sender<BTreeMap<String, Recipients>>),
     #[cfg(test)]
     Fault(u8),
     #[cfg(test)]
     HoldReply(ReplyHold),
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct Recipients {
+    pub recipients: u32,
+    pub unverified: u32,
 }
 
 /// One actual completed SDK command retains its original result and owner lock
@@ -188,6 +199,21 @@ impl Sdk {
         if !purpose.matches(self.approval) || self.enrollment_profile.is_none() {
             return Err(Error::Config);
         }
+        // The recipient census is a read of the SDK's device view for status.
+        // It runs ahead of the custody gates below: a retained delivery
+        // attempt or a poisoned record must stay observable, not hide the
+        // count behind OutcomeUnknown.
+        let command = match command {
+            Command::Recipients(reply) => {
+                let client = self.client.clone();
+                let guard = client.olm_machine().await;
+                let machine = guard.as_ref().ok_or(Error::Storage)?;
+                let census = self.recipient_census(machine).await?;
+                let _ = reply.send(census);
+                return Ok(View::Unit);
+            }
+            other => other,
+        };
         if self.enrollment_poisoned
             || (self.approval
                 && (self.approval_poisoned
@@ -214,8 +240,34 @@ impl Sdk {
                     completed(machine, record).await?;
                     Ok(View::Complete)
                 }
+                // ADR-183 (retry before fence): a record the previous pass
+                // left at a point no write may have crossed the wire resumes
+                // from the top of that step — a refused verify redoes Query
+                // then Verify; a prepared write is posted; a ready record
+                // finishes. Anything with a write possibly in flight stays
+                // the honest uncertainty it always was.
+                Some(record) if record.phase == Phase::Query => Ok(View::Verify),
+                Some(record) if record.phase == Phase::Ready => Ok(View::Ready),
+                Some(record) if record.phase == Phase::Writing => {
+                    match record
+                        .writes
+                        .iter()
+                        .enumerate()
+                        .find(|(_, w)| w.phase != WritePhase::Applied)
+                    {
+                        Some((index, w)) if w.phase == WritePhase::Prepared => {
+                            Ok(View::Write(Packet {
+                                index,
+                                kind: w.kind,
+                                body: w.body.clone(),
+                            }))
+                        }
+                        _ => Err(Error::OutcomeUnknown),
+                    }
+                }
                 Some(_) => Err(Error::OutcomeUnknown),
             },
+            Command::Recipients(_) => unreachable!(),
             Command::Query(users) => {
                 self.enrollment_profile
                     .as_ref()
@@ -246,6 +298,25 @@ impl Sdk {
                 match record.phase {
                     Phase::Query => Ok(View::Verify),
                     Phase::Ready => Ok(View::Ready),
+                    // A completed enrollment has nothing left to write unless
+                    // a transient claim (ADR-183 B) is waiting for its POST.
+                    Phase::Complete => match &self.enrollment_claim {
+                        Some((_, claim)) => {
+                            let known = claim
+                                .one_time_keys
+                                .iter()
+                                .flat_map(|(u, ds)| {
+                                    ds.keys().map(move |d| (u.to_string(), d.to_string()))
+                                })
+                                .collect::<BTreeSet<_>>();
+                            Ok(View::Write(Packet {
+                                index: record.writes.len(),
+                                kind: Kind::Claim,
+                                body: encode(&claim_body(claim, &known)?, FIELD)?,
+                            }))
+                        }
+                        None => Ok(View::Complete),
+                    },
                     Phase::Writing => {
                         let (index, w) = record
                             .writes
@@ -267,6 +338,15 @@ impl Sdk {
             }
             Command::Possible(index) => {
                 let record = self.enrollment.as_mut().ok_or(Error::Storage)?;
+                if record.phase == Phase::Complete {
+                    // The transient claim is not a ledger write: there is no
+                    // phase to persist, only the index to agree on.
+                    return if self.enrollment_claim.is_some() && index == record.writes.len() {
+                        Ok(View::Unit)
+                    } else {
+                        Err(Error::Conflict)
+                    };
+                }
                 if record.phase != Phase::Writing
                     || record
                         .writes
@@ -285,6 +365,13 @@ impl Sdk {
                 Ok(View::Unit)
             }
             Command::Accept(index, response) => {
+                let record = self.enrollment.as_ref().ok_or(Error::Storage)?;
+                if record.phase == Phase::Complete {
+                    if self.enrollment_claim.is_none() || index != record.writes.len() {
+                        return Err(Error::Conflict);
+                    }
+                    return self.accept_transient_claim(machine, response).await;
+                }
                 self.accept_enrollment(machine, index, response).await
             }
             Command::Verify(response) => self.verify_enrollment(machine, response).await,
@@ -595,45 +682,81 @@ impl Sdk {
             .iter()
             .map(|u| OwnedUserId::try_from(u.as_str()).map_err(|_| Error::Wire))
             .collect::<Result<Vec<_>, _>>()?;
-        let recipients = super::keys::accept(machine, &users, &query.id, &response).await?;
+        let accepted = super::keys::accept_counted(machine, &users, &query.id, &response).await?;
         check_anchors(record, &response)?;
         if public_identity(machine).await? != *record.public.as_ref().ok_or(Error::Storage)? {
             return Err(Error::Identity);
         }
         if complete {
+            // ADR-183 B: the recorded response is the anchor record, not a
+            // device list. The fresh response must carry the same master and
+            // self-signing keys for every enrolled user (a changed anchor is
+            // still `Recipients`); its device list may differ. A signed
+            // device that appeared since the enrollment needs an Olm session
+            // before a card can be encrypted to it, so the SDK's claim for
+            // the devices it now knows is handed to the caller as a transient
+            // write: nothing in the ledger changes, and a lost response costs
+            // the server one one-time key that the next verify claims again.
             let old = record
                 .verified
                 .as_ref()
                 .and_then(|q| q.response.as_ref())
                 .ok_or(Error::Storage)?;
-            for field in [
-                "device_keys",
-                "master_keys",
-                "self_signing_keys",
-                "user_signing_keys",
-            ] {
-                if old.get(field) != response.get(field) {
-                    return Err(Error::Recipients);
-                }
+            if !super::keys::same_anchor(old, &response, record.users.iter().map(String::as_str)) {
+                return Err(Error::Recipients);
             }
-            completed(machine, record).await?;
-            return Ok(View::Complete);
+            self.enrollment_claim = None;
+            let claim = machine
+                .get_missing_sessions(users.iter().map(|u| u.as_ref()))
+                .await
+                .map_err(|_| Error::OutcomeUnknown)?;
+            let Some((id, claim)) = claim else {
+                completed(machine, record).await?;
+                return Ok(View::Complete);
+            };
+            let known = accepted
+                .recipients
+                .union(&accepted.unverified)
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            let body = claim_body(&claim, &known)?;
+            let packet = Packet {
+                index: record.writes.len(),
+                kind: Kind::Claim,
+                body: encode(&body, FIELD)?,
+            };
+            self.enrollment_claim = Some((id, claim));
+            return Ok(View::Write(packet));
         }
         query.response = Some(response);
         size(&query, QUERY)?;
+        // The ledger's sessions are the devices this SDK holds an Olm session
+        // with — every device of the enrolled users that can do Olm, signed
+        // or not (ADR-183 B): the SDK claims for all of them, and whether a
+        // card is shared with one is the SDK's trust decision at encryption
+        // time, never this record's. At least one signed recipient exists,
+        // or `accept_counted` would have refused.
         let mut sessions = Vec::new();
-        for (user, device) in recipients {
+        for (user, device) in accepted.recipients.iter().chain(&accepted.unverified) {
             let parsed: OwnedUserId = user.as_str().try_into().map_err(|_| Error::Wire)?;
-            let keys = machine
+            let Some(keys) = machine
                 .get_device(&parsed, device.as_str().into(), None)
                 .await
                 .map_err(|_| Error::Storage)?
-                .ok_or(Error::Recipients)?;
-            let curve = keys.curve25519_key().ok_or(Error::Recipients)?.to_base64();
+            else {
+                continue;
+            };
+            let Some(curve) = keys.curve25519_key() else {
+                continue;
+            };
+            if !keys.supports_olm() {
+                continue;
+            }
+            let curve = curve.to_base64();
             let ids = session_ids(machine, &curve).await?;
             sessions.push(Session {
-                user,
-                device,
+                user: user.clone(),
+                device: device.clone(),
                 curve,
                 before_ids: ids.clone(),
                 ids,
@@ -662,16 +785,10 @@ impl Sdk {
                     .iter()
                     .flat_map(|(u, ds)| ds.keys().map(move |d| (u.to_string(), d.to_string())))
                     .collect::<BTreeSet<_>>();
-                if actual != missing
-                    || missing.is_empty()
-                    || claim
-                        .one_time_keys
-                        .values()
-                        .any(|ds| ds.values().any(|a| a.as_str() != "signed_curve25519"))
-                {
+                if actual != missing || missing.is_empty() {
                     return Err(Error::Recipients);
                 }
-                let body = json!({"one_time_keys":claim.one_time_keys,"timeout":claim.timeout.map(|d|d.as_millis() as u64)});
+                let body = claim_body(claim, &actual)?;
                 let write = Write::new(Kind::Claim, id.to_string(), body)?;
                 let record = self.enrollment.as_mut().ok_or(Error::Storage)?;
                 record.writes.push(write);
@@ -687,6 +804,53 @@ impl Sdk {
         // errors. Only its committed bounded representation replaces this custody.
         self.enrollment_claim = None;
         Ok(View::Unit)
+    }
+    /// The transient claim of a completed enrollment (ADR-183 B): the caller
+    /// posted the claim `verify_enrollment` handed it and brings the actual
+    /// response. The SDK builds the sessions; the ledger is untouched.
+    async fn accept_transient_claim(
+        &mut self,
+        machine: &OlmMachine,
+        response: Value,
+    ) -> Result<View, Error> {
+        let (id, claim) = self.enrollment_claim.take().ok_or(Error::Conflict)?;
+        let record = self.enrollment.as_ref().ok_or(Error::Storage)?;
+        if !response.is_object()
+            || response
+                .get("failures")
+                .is_some_and(|v| v.as_object().is_none_or(|m| !m.is_empty()))
+        {
+            return Err(Error::Recipients);
+        }
+        let expected = claim
+            .one_time_keys
+            .iter()
+            .flat_map(|(u, ds)| ds.keys().map(move |d| (u.to_string(), d.to_string())))
+            .collect::<BTreeSet<_>>();
+        let body = encode(&claim_body(&claim, &expected)?, FIELD)?;
+        claim_members(&body, &response)?;
+        let bytes = encode(&response, FIELD)?.into_bytes();
+        let parsed = claim_keys::v3::Response::try_from_http_response(http::Response::new(bytes))
+            .map_err(|_| Error::Wire)?;
+        machine
+            .mark_request_as_sent(id.as_str().into(), &parsed)
+            .await
+            .map_err(|_| Error::OutcomeUnknown)?;
+        let users = record
+            .users
+            .iter()
+            .map(|u| OwnedUserId::try_from(u.as_str()).map_err(|_| Error::Wire))
+            .collect::<Result<Vec<_>, _>>()?;
+        if machine
+            .get_missing_sessions(users.iter().map(|u| u.as_ref()))
+            .await
+            .map_err(|_| Error::OutcomeUnknown)?
+            .is_some()
+        {
+            return Err(Error::Recipients);
+        }
+        completed(machine, record).await?;
+        Ok(View::Complete)
     }
     async fn persist_enrollment(&mut self) -> Result<(), Error> {
         let result = async {
@@ -792,7 +956,14 @@ pub(super) async fn completed(machine: &OlmMachine, record: &Ledger) -> Result<(
         .iter()
         .map(|s| (s.user.as_str(), s.device.as_str(), s.curve.as_str()))
         .collect::<BTreeSet<_>>();
-    if recipients != retained || retained.len() != record.sessions.len() {
+    // ADR-183 B: the recorded response is the anchor record. Every retained
+    // session names a device that response listed; the response may list
+    // devices this SDK holds no session with (no Olm support), and the live
+    // device list may since have grown or shrunk without touching the ledger.
+    if retained.is_empty()
+        || retained.len() != record.sessions.len()
+        || !retained.is_subset(&recipients)
+    {
         return Err(Error::Recipients);
     }
     for session in &record.sessions {
@@ -805,6 +976,64 @@ pub(super) async fn completed(machine: &OlmMachine, record: &Ledger) -> Result<(
         }
     }
     Ok(())
+}
+/// The bounded body of an SDK one-time-key claim, refused when it names a
+/// device the fresh response did not list or an algorithm other than the
+/// signed Curve25519 key this enrollment encrypts to.
+fn claim_body(
+    claim: &claim_keys::v3::Request,
+    known: &BTreeSet<(String, String)>,
+) -> Result<Value, Error> {
+    for (user, devices) in &claim.one_time_keys {
+        for (device, algorithm) in devices {
+            if algorithm.as_str() != "signed_curve25519"
+                || !known.contains(&(user.to_string(), device.to_string()))
+            {
+                return Err(Error::Recipients);
+            }
+        }
+    }
+    if claim.one_time_keys.is_empty() {
+        return Err(Error::Recipients);
+    }
+    Ok(
+        json!({"one_time_keys":claim.one_time_keys,"timeout":claim.timeout.map(|d|d.as_millis() as u64)}),
+    )
+}
+impl Sdk {
+    /// ADR-183 B status word: per enrolled user, the devices the accepted
+    /// identity has signed and the devices it has not. Empty until the
+    /// enrollment is complete; never a trust decision.
+    async fn recipient_census(
+        &self,
+        machine: &OlmMachine,
+    ) -> Result<BTreeMap<String, Recipients>, Error> {
+        let mut census = BTreeMap::new();
+        let Some(record) = self
+            .enrollment
+            .as_ref()
+            .filter(|r| r.phase == Phase::Complete)
+        else {
+            return Ok(census);
+        };
+        for user in record.users.iter().filter(|u| **u != record.context.user) {
+            let parsed: OwnedUserId = user.as_str().try_into().map_err(|_| Error::Wire)?;
+            let devices = machine
+                .get_user_devices(&parsed, None)
+                .await
+                .map_err(|_| Error::OutcomeUnknown)?;
+            let mut counts = Recipients::default();
+            for device in devices.devices() {
+                if device.is_verified() && device.is_cross_signed_by_owner() {
+                    counts.recipients += 1;
+                } else {
+                    counts.unverified += 1;
+                }
+            }
+            census.insert(user.clone(), counts);
+        }
+        Ok(census)
+    }
 }
 fn check_anchors(record: &Ledger, response: &Value) -> Result<(), Error> {
     let public = record.public.as_ref().ok_or(Error::Storage)?;

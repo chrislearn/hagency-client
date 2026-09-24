@@ -377,6 +377,19 @@ impl ApprovalCollector {
         }
     }
 }
+/// ADR-183 C: the refresh failures that are negative evidence about the
+/// approval room row — the only ones that write `available=0`: a safe
+/// snapshot that changed at the same generation, a row the observation itself
+/// retired, an unsafe snapshot, a domain refusal. Everything a refused read
+/// produces — cancellation, timeout, transport, wire, a 5xx, a refused token,
+/// a whoami naming another account or device — is returned, not fenced: the
+/// worker or pump parks with that word for a human (ADR-183 A).
+fn room_evidence(error: &Error) -> bool {
+    matches!(
+        error,
+        Error::Conflict | Error::Generation | Error::UnsafeSnapshot(_) | Error::Domain
+    )
+}
 impl Inner {
     pub(crate) async fn approval_rooms(&self, engagements: &[String]) -> Result<Vec<Room>, Error> {
         let primary = self
@@ -463,7 +476,8 @@ impl Inner {
                     snapshots.insert(configured.room_id.clone(), observation.clone());
                     observation
                 };
-                self.domain
+                let domain: &DomainStore = &self.domain;
+                domain
                     .observe_approval_room(ApprovalRoomObservation {
                         engagement_id: r.authority.engagement_id.clone(),
                         registration_generation: r.authority.registration_generation,
@@ -492,9 +506,15 @@ impl Inner {
         }
         .await;
         if let Err(error) = result {
-            // This refresh only reads (whoami, room state): the caller's own
-            // cancellation is not evidence about the room.
-            if error == Error::Cancelled {
+            // This refresh only reads (whoami, room state). ADR-183: a fence
+            // is written only on negative evidence about the room row — a
+            // safe snapshot that changed at the same generation (Conflict),
+            // a row the observation itself retired (Generation), an unsafe
+            // snapshot, a domain refusal. A refused read is not evidence: the
+            // caller's cancellation, a timeout, a 5xx, a transport or wire
+            // failure, a refused token and a whoami naming another device are
+            // returned as they are, and the last good observation stands.
+            if !room_evidence(&error) {
                 return Err(error);
             }
             let mut failed = false;
@@ -509,14 +529,6 @@ impl Inner {
                 }
             }
             return Err(if failed { Error::OutcomeUnknown } else { error });
-        }
-        Ok(())
-    }
-    pub(crate) async fn fence_approval_candidates(&self, rooms: &[Room]) -> Result<(), Error> {
-        for r in rooms {
-            self.domain
-                .fence_approval_room(r.authority.clone(), r.device.clone(), r.generation, None)
-                .await?;
         }
         Ok(())
     }
@@ -615,16 +627,10 @@ impl Inner {
                 )?)))
                 .await?;
             if view.batch.is_some() {
-                view = match owner.approval(Command::Apply).await {
-                    Ok(view) => view,
-                    Err(error @ (Error::Recipients | Error::Identity | Error::Wire)) => {
-                        if let Some(batch) = &view.batch {
-                            self.fence_approval_candidates(&batch.rooms).await?;
-                        }
-                        return Err(error);
-                    }
-                    Err(error) => return Err(error),
-                };
+                // ADR-183 B/C: a recipient, identity or wire refusal of the
+                // batch's keys refuses the intake and fences nothing; the
+                // batch keeps its own custody word.
+                view = owner.approval(Command::Apply).await?;
             }
         }
         let Some(batch) = view.batch else {
@@ -736,19 +742,22 @@ impl Inner {
                                 .post(&["_matrix", "client", "v3", "keys", "query"], body, cancel)
                                 .await?
                                 .success()?;
-                            if crate::approval_batch::hash(&current)?
-                                != crate::approval_batch::hash(&batch.keys)?
-                            {
-                                for room in &batch.rooms {
-                                    self.domain
-                                        .fence_approval_room(
-                                            room.authority.clone(),
-                                            room.device.clone(),
-                                            room.generation,
-                                            None,
-                                        )
-                                        .await?;
-                                }
+                            // ADR-183 B: the fresh proof is the anchor — the
+                            // owner's and bot's master and self-signing keys
+                            // are the ones the verdict was decrypted under.
+                            // The device list may have changed; a changed
+                            // anchor refuses the grant and fences nothing.
+                            let users = batch
+                                .rooms
+                                .iter()
+                                .flat_map(|r| {
+                                    [
+                                        r.authority.owner_mxid.as_str(),
+                                        r.authority.bot_mxid.as_str(),
+                                    ]
+                                })
+                                .collect::<BTreeSet<_>>();
+                            if !crate::sdk::enrollment::same_anchor(&batch.keys, &current, users) {
                                 return Err(Error::Recipients);
                             }
                             if cancel.is_cancelled() {

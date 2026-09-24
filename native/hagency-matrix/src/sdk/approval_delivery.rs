@@ -355,7 +355,7 @@ impl Sdk {
         let guard = self.client.olm_machine().await;
         let machine = guard.as_ref().ok_or(Error::Storage)?;
         let response = a.query_response.as_ref().ok_or(Error::Storage)?;
-        let writes = super::encrypted_message::prepare(
+        let (writes, recipients) = super::encrypted_message::prepare(
             machine,
             super::encrypted_message::Input {
                 users: &users,
@@ -383,6 +383,10 @@ impl Sdk {
             .as_mut()
             .ok_or(Error::Storage)?;
         a.writes = writes;
+        // ADR-183 B-1: the devices this card was actually encrypted to — the
+        // owner's, as signed by the pinned identity. The validator compares
+        // the sent messages against this, and this against the server's list.
+        a.recipients = recipients;
         a.keys_digest = Some(keys);
         a.phase = Phase::Ready;
         Ok(())

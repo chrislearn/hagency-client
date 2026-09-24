@@ -320,7 +320,23 @@ impl Owner {
                                     _ => 0,
                                 };
                                 let result = sdk.enrollment(purpose, command).await;
-                                if result.is_err() && sdk.enrollment.as_ref().is_some_and(|r| r.phase != crate::enrollment::state::Phase::Complete) {
+                                // ADR-183: a refusal poisons the enrollment only when it
+                                // leaves the ledger mid-mutation — the cross-signing
+                                // bootstrap in flight, or a write that may have crossed
+                                // the wire. A record at a redoable step (a refused verify,
+                                // a prepared write, a ready record) is retried from the
+                                // top; a failed persist already poisoned itself.
+                                if result.is_err() && sdk.enrollment.as_ref().is_some_and(|r| {
+                                    r.phase == crate::enrollment::state::Phase::Preparing
+                                        || r.writes.iter().any(|w| {
+                                            matches!(
+                                                w.phase,
+                                                crate::enrollment::state::WritePhase::Possible
+                                                    | crate::enrollment::state::WritePhase::Response
+                                                    | crate::enrollment::state::WritePhase::Applying
+                                            )
+                                        })
+                                }) {
                                     sdk.enrollment_poisoned = true;
                                 }
                                 #[cfg(test)]

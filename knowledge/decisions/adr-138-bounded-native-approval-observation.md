@@ -119,3 +119,18 @@ path, and a scripted second-identity enrollment of the approval collector
 against the shared fake peer — leaving the production launch shape, the pin,
 and every production code path untouched. The wiring selector binds in that
 spec; this spec's own selectors are unchanged.
+
+## Amendment (ADR-183, 2026-09-24): `recipients` and `unverified_devices` are status words
+
+The deployment-wide delivery status (`PrivateApprovalDeliveryStatus`) gains
+one key, `rooms`: per approval room, keyed by the engagement id the room
+serves — no room id, no account id, no key material; the withheld sets above
+are unchanged — two fixed labels: `recipients`, the number of the owner's
+devices the pinned identity has signed (the devices a card is encrypted to),
+and `unverified_devices`, the number it has not (excluded, never an outage).
+They come from the SDK's device view after the last accepted `/keys/query`
+(`sdk::enrollment::Command::Recipients`, a read that runs ahead of the custody
+gates so a retained attempt does not hide it) and read zero for a room whose
+enrollment is not complete. The console route this ADR deferred serves the
+struct as-is, so when it lands it carries six keys, not five; no other key
+changes. `ApprovalCustodyStatus` is untouched.

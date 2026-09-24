@@ -192,3 +192,17 @@ ADR-046's approval traces are; a production build compiles none of it.
   the retained product does without one.
 - *Keep the retained owner and make only shutdown exit.* Rejected: the owner
   is exactly what makes the exit impossible, and it is not durable.
+
+## Amendment (ADR-183, 2026-09-24): `Failure::Refresh` no longer ends a worker
+
+The constraint "a worker … ends only on cancellation, on
+`Failure::Refresh`/`Startup`/`OutcomeUnknown` from the Matrix and enrollment
+paths (the next slice), or on a worker panic" is superseded for the first
+two: under the operator's rule that the bridge never decides anything is
+done, a refused refresh or SDK enrollment is retried with the retained
+product's backoff (1 s → 60 s, reset on success), and a refusal that is
+evidence about the transport itself (identity, generation, unauthorized)
+parks the worker as `awaiting_operator` and re-checks the same way. The
+`OutcomeUnknown` sites outside the refresh path remain the authority-
+decoupling slice's (G3). Readiness reports a retrying or parked owner as
+`refusing`.

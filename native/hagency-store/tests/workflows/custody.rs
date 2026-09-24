@@ -323,7 +323,7 @@ fn native_graph_cancellation_schema9_custody() {
         inspect
             .pragma_query_value(None, "user_version", |r| r.get::<_, u64>(0))
             .unwrap(),
-        38
+        39
     );
     assert_eq!(leases(&inspect), ["legacy_reader"]);
     assert_eq!(state(&inspect, "completed_reader"), "completed");

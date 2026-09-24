@@ -106,3 +106,41 @@ through the normal path.
   forbids.
 - Reconstruct the packet for a retry — rejected: ADR-110's
   no-reconstruction rule; the card is validated as sent, never rebuilt.
+
+## Amendment (ADR-183, 2026-09-24): the recipients are the anchor's signed devices, and a failed send fences nothing
+
+**What changes.** The fail-closed denial stands as written: a private send
+that does not reach `Accepted` denies the request with a named reason, at
+most once, no retry, no reconstruction. Two things around it change.
+
+1. *Who the recipients are.* The card is encrypted to the owner's devices
+   that the owner's cross-signing identity — the identity whose master key
+   provisioning pinned (`check_anchors`) — has signed, as of the send's own
+   fresh `/keys/query`. A device the identity has not signed is excluded and
+   counted (`unverified_devices`), never a refusal; a signed device that
+   appeared since the enrollment gets its Olm session claimed by the send
+   itself and joins that card's recipient set without a restart; a changed
+   master or self-signing key is still `Recipients`. Only when the owner has
+   no signed device at all is the card refused with `Recipients` — and that
+   refusal is this ADR's denial: the request is denied fail-closed, nothing
+   else happens. The byte-for-byte equality of the recorded `/keys/query`
+   (device list included) and the per-write digest compare of a second
+   `/keys/query` are gone: both refused on any device-list change, which the
+   retained product never did (`RustEngine.js:64-105` encrypts to every
+   joined device of a fresh query). Measured live 2026-09-23: the owner's
+   second Matrix login made the next startup refuse `Recipients`.
+2. *What a failure touches.* A failed or refused send — transport,
+   recipients, identity, wire — writes nothing to `approval_rooms`. The
+   fence (`available=0`) is written only by negative evidence about the
+   room's own state (ADR-047's amendment of the same date); a card that
+   could not be sent is not evidence about the room. Live, the refusal above
+   fenced the approval room and nothing could unfence it.
+
+**Unchanged.** D-PC-FC and D-PC-C5; `Frozen`; the kind-deny receipt row and
+its reason; the public status notice; ADR-112's retained attempt after a
+write that may have crossed the wire.
+
+Pinned by `native_new_signed_device_joins_recipients`,
+`native_unsigned_device_is_excluded_not_fatal`,
+`native_no_verified_device_refuses_the_card_only`,
+`native_changed_anchor_is_refused` and `native_delivery_failure_fences_nothing`.

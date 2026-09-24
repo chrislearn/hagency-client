@@ -199,6 +199,10 @@ pub enum ComponentState {
     /// A wiring bug: a sweep handle exists but no tick channel does. Not
     /// ready — the honest word for an impossible configuration (F3).
     NotStarted,
+    /// A live owner retrying or parked on a Matrix or component refusal
+    /// (ADR-183): not serving, so not ready, and not a settled failure —
+    /// the bridge never ends it; the fact changing or a human clears it.
+    Refusing,
 }
 
 /// The sweep tick's outcome, decoupled from liveness (F1): a refused tick
@@ -233,6 +237,7 @@ impl ComponentState {
             ComponentState::Unavailable => "unavailable",
             ComponentState::OutcomeUnknown => "outcome_unknown",
             ComponentState::NotStarted => "not_started",
+            ComponentState::Refusing => "refusing",
         }
     }
     /// The ONE ready predicate (F1): a component is ready unless it is a
@@ -249,6 +254,7 @@ impl ComponentState {
                 | ComponentState::Unavailable
                 | ComponentState::OutcomeUnknown
                 | ComponentState::NotStarted
+                | ComponentState::Refusing
         )
     }
 }
@@ -388,6 +394,14 @@ fn readiness(depot: &mut Depot, res: &mut Response, refuse: bool) {
     let owner_state = |configured: bool, state: &'static str| -> ComponentState {
         if !configured {
             ComponentState::Disabled
+        } else if matches!(
+            state,
+            "refresh_refused" | "awaiting_operator" | "approval_refused"
+        ) {
+            // ADR-183: a live owner retrying or parked on a Matrix or
+            // component refusal. Not serving, so readiness refuses — and
+            // not a settled failure either: the word says it is still there.
+            ComponentState::Refusing
         } else if matches!(state, "unavailable" | "outcome_unknown" | "stopped") {
             match state {
                 "unavailable" => ComponentState::Unavailable,

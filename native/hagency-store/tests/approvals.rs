@@ -981,7 +981,7 @@ fn native_owner_approval_recovery_schema12() {
         assert_eq!(
             sql.pragma_query_value(None, "user_version", |r| r.get::<_, u64>(0))
                 .unwrap(),
-            38
+            39
         );
         assert_eq!(count(&sql, "approval_bindings"), 0);
         assert_eq!(count(&sql, "approval_grants"), 0);
@@ -1011,6 +1011,18 @@ fn native_owner_approval_binding_same_generation_negative() {
                 .is_err()
         );
         f.db.observe_approval_room(&negative, 1014).unwrap();
+        if change == "missing" {
+            // ADR-183 C: this fence was written over the intact room state,
+            // so the same-generation good observation heals the row; the
+            // grant the fence revoked stays revoked.
+            f.db.observe_approval_room(&old, 1015).unwrap();
+            assert!(f.grants(0)[0].revoked);
+            // The binding is current again, so the owner's recorded decision
+            // on this request applies; only the standing grant is gone.
+            f.db.consume_owner_approval(&f.caps[0], &a.id, 1016)
+                .unwrap();
+            continue;
+        }
         assert!(f.db.observe_approval_room(&old, 1015).is_err());
         assert!(f.db.private_approval(&a.id, 1015).is_err());
         let mut restored = old;

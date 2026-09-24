@@ -148,6 +148,15 @@ pub(crate) struct Attempt {
     pub keys_digest: Option<String>,
     pub writes: Vec<Write>,
     pub index: usize,
+    /// ADR-183 B-1: the devices this card was encrypted to — the owner's, as
+    /// signed by the identity the SDK accepted at encryption time. The proof
+    /// that a card went only where it was meant to is measured against THIS,
+    /// not against every device the server listed: an owner device the
+    /// pinned identity has not signed is excluded (decision B), so the
+    /// server's list is a superset by design. Absent before the encryption
+    /// step, and on a record written before this field existed.
+    #[serde(default)]
+    pub recipients: BTreeSet<(String, String)>,
 }
 impl Attempt {
     pub fn new(card: Frozen, identity: String) -> Self {
@@ -161,6 +170,7 @@ impl Attempt {
             keys_digest: None,
             writes: vec![],
             index: 0,
+            recipients: BTreeSet::new(),
         }
     }
     pub fn query(&self) -> Value {
@@ -310,7 +320,21 @@ impl Attempt {
                 validate_response(w.room, response)?;
             }
         }
-        if prepared && actual_recipients != expected_recipients {
+        // ADR-183 B-1: the card's recipients are the ones recorded at
+        // encryption time — the owner's devices the accepted identity signed.
+        // Every one of them must be a device the server listed (the record
+        // can never name a device out of thin air), at least one must exist
+        // (a card with no recipient is never sent, ADR-137 fail-closed), and
+        // the messages actually written must be exactly that set. Before the
+        // encryption step nothing is recorded and nothing is written.
+        if prepared {
+            if self.recipients.is_empty()
+                || !self.recipients.is_subset(&expected_recipients)
+                || actual_recipients != self.recipients
+            {
+                return Err(Error::Storage);
+            }
+        } else if !self.recipients.is_empty() {
             return Err(Error::Storage);
         }
         size(self, state::MAX_ATTEMPT)

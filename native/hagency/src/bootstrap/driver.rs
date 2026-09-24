@@ -305,6 +305,10 @@ struct Completed {
 async fn run_continuous(input: Attempt<'_>) -> Result<Option<Box<Report>>, Failure> {
     let mut first = true;
     let engagement = input.profile.engagement_id().to_owned();
+    // ADR-183 A: the pause before the next refresh after a refused one —
+    // the retained product's 1 s → 60 s, reset by the first pass that got
+    // through its refresh.
+    let mut refresh_backoff = super::RETRY_BACKOFF_MIN;
     loop {
         if input.cancel.is_cancelled() {
             return Ok(None);
@@ -339,9 +343,40 @@ async fn run_continuous(input: Attempt<'_>) -> Result<Option<Box<Report>>, Failu
         })
         .await;
         first = false;
+        if outcome.is_ok() {
+            refresh_backoff = super::RETRY_BACKOFF_MIN;
+        }
         let Some(mut completed) = (match outcome {
             Ok(value) => value,
             Err(Failure::Cancelled) if input.cancel.is_cancelled() => return Ok(None),
+            // ADR-183 A: the bridge never ends a worker over its own view of
+            // the transport. A refused refresh or SDK enrollment is retried
+            // with backoff; a refusal that is evidence about the transport
+            // itself (another account, a retired generation, an
+            // authentication rejection) parks the worker with the reason and
+            // re-checks the same way — a human changes that fact.
+            Err(Failure::Refresh | Failure::Startup) => {
+                let parked = matches!(
+                    input.status.matrix_error(),
+                    Some("identity" | "generation" | "unauthorized")
+                );
+                if parked {
+                    input.status.parked();
+                } else {
+                    input.status.refresh_refused();
+                }
+                tracing::warn!(
+                    parked,
+                    retry_in_ms = refresh_backoff.as_millis() as u64,
+                    "Matrix refresh refused; the worker retries"
+                );
+                tokio::select! {
+                    _ = input.cancel.cancelled() => return Ok(None),
+                    _ = tokio::time::sleep(refresh_backoff) => {}
+                }
+                refresh_backoff = (refresh_backoff * 2).min(super::RETRY_BACKOFF_MAX);
+                continue;
+            }
             // A refused handoff is that attempt's failure (ADR-182): it is
             // recorded, and the worker goes on after the retained product's
             // flat launch backoff.
@@ -521,6 +556,8 @@ async fn run(input: Attempt<'_>) -> Result<Option<Completed>, Failure> {
             Failure::Refresh
         }
     })?;
+    // The first successful refresh clears the retry count (ADR-183 A).
+    status.refresh_recovered();
     if enrollment {
         status.phase("enrolling");
         collector

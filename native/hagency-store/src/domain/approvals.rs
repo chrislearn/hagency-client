@@ -180,6 +180,17 @@ pub(super) fn recover(tx: &Transaction<'_>) -> Result<(), Error> {
     tx.execute("UPDATE approval_grants SET revoked=1 WHERE revoked=0 AND (NOT EXISTS(SELECT 1 FROM current_approval_bindings b JOIN approval_bindings binding ON binding.engagement_id=b.engagement_id WHERE b.engagement_id=approval_grants.engagement_id AND binding.incarnation=approval_grants.binding_generation) OR (mode='task' AND NOT EXISTS(SELECT 1 FROM canonical_tasks t WHERE t.id=approval_grants.task_id AND json_extract(t.config,'$.status')<>'done' AND json_extract(t.config,'$.execution_epoch')=approval_grants.task_epoch)))",[])?;
     Ok(())
 }
+/// The room-state parts of a stored approval-room snapshot (ADR-183 C): the
+/// joined set, the join rule and the encryption flag. `available` is the fence
+/// word and is deliberately not part of this comparison.
+fn same_room_state(stored: &str, fresh: &Value) -> bool {
+    let Ok(stored) = serde_json::from_str::<Value>(stored) else {
+        return false;
+    };
+    ["joined", "invite_only", "encrypted"]
+        .iter()
+        .all(|key| stored.get(*key).is_some() && stored.get(*key) == fresh.get(*key))
+}
 impl DomainRepository {
     pub fn observe_approval_room(
         &mut self,
@@ -233,19 +244,42 @@ impl DomainRepository {
             input.encrypted,
             input.available
         ]))?;
-        let old:Option<(u64,String,String,String)>=tx.query_row("SELECT generation,digest,fleet_id,project_id FROM approval_rooms WHERE server_name=?1 AND room_id=?2",params![reg.server_name,room],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional()?;
-        let update = if let Some((generation, prior, fleet, old_project)) = old {
+        let old:Option<(u64,String,String,String,bool,String,String)>=tx.query_row("SELECT generation,digest,fleet_id,project_id,available,device_id,config FROM approval_rooms WHERE server_name=?1 AND room_id=?2",params![reg.server_name,room],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?,r.get(6)?))).optional()?;
+        let update = if let Some((
+            generation,
+            prior,
+            fleet,
+            old_project,
+            was_available,
+            old_device,
+            old_config,
+        )) = old
+        {
             if fleet != reg.fleet_id || old_project != project {
                 return Err(Error::RunnerAuthority);
             }
             if generation == input.generation {
                 // Current negative evidence retires authority immediately even if
                 // the adapter has not advanced its observation generation yet.
-                // Positive changes and restoration still need a new generation.
-                if prior != digest && safe {
-                    return Err(Error::Conflict);
+                // ADR-183 C: a fenced row (available=0) heals on a good
+                // observation at the same generation when the fresh snapshot
+                // (joined, invite_only, encrypted) and the bot device equal the
+                // snapshot the fence was written over — the stored `config`
+                // parts are compared, because the digest also covers
+                // `available`. A safe snapshot that differs at the same
+                // generation is still negative evidence: Conflict, no write.
+                let fenced_state_intact = !was_available
+                    && safe
+                    && old_device == input.device_id
+                    && same_room_state(&old_config, &snapshot);
+                if fenced_state_intact {
+                    true
+                } else {
+                    if prior != digest && safe {
+                        return Err(Error::Conflict);
+                    }
+                    prior != digest
                 }
-                prior != digest
             } else {
                 if input.generation != generation.checked_add(1).ok_or(Error::Capacity)? {
                     return Err(Error::Generation);

@@ -146,3 +146,15 @@ place, so parity is the reason and the bound is the limit.
 - *Free-text reasons.* Rejected: ADR-175's fixed-category rule stands; the
   only bounded text admitted is the stderr tail, exactly as the retained
   product keeps it.
+
+## Amendments
+
+- 2026-09-23, ADR-183 decision D: the phase list of point 1 gains
+  `over_budget`, visited at most once, during the turn, when the operation
+  budget elapses while Codex is still working. Its `detail` is
+  `{budget_ms, elapsed_ms, notice}` where `notice` is one of `queued`,
+  `already_queued`, `no_thread`, `refused` — what queuing the thread notice
+  found. The 037 CHECK enumerated fourteen words, so migration 039 rebuilds
+  `runner_attempt_events` with fifteen. Nothing else in this record changes:
+  the phase authorizes nothing and never changes a verdict; the budget is
+  notify-only once the turn has started.

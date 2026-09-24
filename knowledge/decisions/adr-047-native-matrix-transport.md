@@ -300,3 +300,73 @@ and `native_matrix_cancelled_read_retires_nothing` (a collection cancelled with
 its whoami in flight leaves the transport available, and the same incarnation
 collects again at the same generation). All three fail against the previous
 code.
+
+## Amendment (ADR-183, 2026-09-24): a refused read fences nothing
+
+**Reverses** "Every other error fences" for observation that only reads the
+homeserver (whoami, sync, room state; `Collector::fence_read`). Measured live
+on 2026-09-23: one refresh timeout — the endpoint answered again 61 ms later —
+invalidated all three agents' transport incarnations, which retired their
+sessions and every standing grant, and every later refresh refused
+`Generation` for good. A read that failed sent nothing and proves nothing
+about the incarnation; the last complete collection stands, as it would
+after a crash at that instant. The retained product retries every transport
+error (`matrix-bot-sdk` 5–15 s forever, `appservice-sync` 1 s → 60 s reset on
+success) and treats only 401/403 as final — and even that marks the agent as
+needing provisioning; it retires nothing. So: the collector's read path
+returns the error and fences nothing; the worker retries it with backoff
+(ADR-183 A), or parks on an authentication or identity refusal for the human
+to act on. The unsafe-snapshot verdict still reaches the domain invalidation
+path — it is evidence about the room, not a failed read. `fence_observation`
+on a path with a write in flight is unchanged (ADR-064's uncertainty is a
+write's).
+
+## Amendment (ADR-183, 2026-09-24): the approval room fence heals on a good observation, and a refused read or send does not write it
+
+The approval room row (`approval_rooms.available`, schema 13) still followed
+"same-generation positive replay cannot restore unavailable state" — the rule
+the 2026-09-21 amendment above reversed for the transport and which the
+recipients fence kept: live on 2026-09-23 one `Recipients` refusal fenced the
+room and nothing could unfence it. Three changes.
+
+1. **Healing.** `observe_approval_room` at the same generation with
+   `available: true` restores a row whose `available=0` when the fresh
+   snapshot equals the one the fence was written over — the joined set, the
+   join rule and the encryption flag (the stored `config` parts; the digest
+   also covers `available`, so it is not the thing compared) and the bot
+   device. The startup refresh is exactly that observation, so a fenced room
+   whose state is intact is admitted on the next start without an operator
+   editing a generation. A safe snapshot that differs at the same generation
+   (another bot device) is still `Conflict`; a fence written by a changed
+   snapshot (a third member) is not healed by the original one, because that
+   is not the snapshot it was written over; a new generation works as before.
+   Healing restores availability, not grants: what the fence's trigger
+   revoked stays revoked.
+2. **What writes the fence.** Only negative evidence about the room row: a
+   snapshot the safety predicate rejects (written by the observation itself),
+   a safe snapshot that changed at the same generation, a row the observation
+   retired, a domain refusal. The approval refresh no longer fences on a
+   refused read — cancellation (2026-09-22), timeout, transport, wire, a 5xx,
+   a refused token, a whoami naming another account or device — one rule
+   with the amendment above (the pump parks with the word for a human); and
+   no recipient, identity or delivery failure on the card path or the intake
+   writes it (`fence_approval_candidates` is gone). A refused approval
+   enrollment does not retire its collector either: the SDK ledger says what
+   the next call may redo (a refused verify: fresh Query, then Verify) and
+   what stays uncertain (a write that may have crossed the wire).
+3. **`fenced_reason`** (ADR-183 C) needs a column and therefore a migration;
+   not done in this slice — the reason travels in the refusing caller's log,
+   as the first amendment above already says for unsafe snapshots.
+
+Pinned by `native_fenced_approval_room_heals_on_a_good_observation` (store)
+and `native_delivery_failure_fences_nothing`,
+`native_no_verified_device_refuses_the_card_only`,
+`native_enrollment_retries_after_a_refusal` (matrix).
+`native_matrix_approval_identity_candidate_fence_covers_lost_positive_without_agent_rotation`
+and the `missing` variant of `native_owner_approval_binding_same_generation_negative`
+now pin the healed row instead of the refused replay; variant 1 of
+`native_matrix_approval_scope_third_member_and_fresh_malformed_keys_fence_private_grants`
+now pins that malformed owner keys fence nothing; and
+`native_matrix_approval_identity_wrong_device_parks_and_purpose_cannot_adopt`
+(renamed from `..._fences_only_approval_...`) pins that a whoami naming
+another device is returned as `Identity` and fences no approval room.

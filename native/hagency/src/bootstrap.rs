@@ -9,6 +9,7 @@ pub(crate) mod palpo;
 pub mod provision;
 pub mod registration;
 pub(crate) mod workspace;
+use approval::Pump;
 use hagency_matrix::{CancellationToken, Collector};
 use hagency_store::{
     DomainRepository, DomainStore, PEER_RETENTION_CEILING, Repository, Store, private,
@@ -456,6 +457,13 @@ pub struct LastFailure {
     stop_cause: Option<&'static str>,
     at_ms: u64,
 }
+/// The retained product's retry shape for a transient fault (ADR-183 A;
+/// `lib/appservice-sync.js`): 1 s doubling to a 60 s cap, reset by the first
+/// success. Used by the worker's refresh retry and the service's component
+/// startup retry.
+pub(crate) const RETRY_BACKOFF_MIN: Duration = Duration::from_secs(1);
+pub(crate) const RETRY_BACKOFF_MAX: Duration = Duration::from_secs(60);
+
 #[derive(Clone, Serialize)]
 pub struct Status {
     mode: &'static str,
@@ -482,6 +490,13 @@ pub struct Status {
     /// failed. Fixed labels only.
     #[serde(skip_serializing_if = "Option::is_none")]
     last_failure: Option<LastFailure>,
+    /// Consecutive Matrix refresh failures this worker is retrying or parked
+    /// through (ADR-183 A), and when they began. The bridge never ends a
+    /// worker over them; the first successful refresh clears both.
+    #[serde(skip_serializing_if = "is_zero")]
+    refresh_failures: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    refresh_since_ms: Option<u64>,
     /// A provision whose rooms exist, waiting for the owner to join the
     /// agent's DM since this wall-clock millisecond. Status only: nothing
     /// reads it to decide anything, and the wait has no deadline.
@@ -527,6 +542,8 @@ impl StatusHandle {
             unresolved_dispatches: 0,
             fenced: None,
             last_failure: None,
+            refresh_failures: 0,
+            refresh_since_ms: None,
             awaiting_owner_since_ms: None,
             settlement: None,
             error: None,
@@ -560,6 +577,48 @@ impl StatusHandle {
             status.state = "fenced";
         }
         status.fenced = fenced;
+    }
+    /// A Matrix refresh the worker is retrying through (ADR-183 A): a
+    /// transient refusal. The state word says so; the count and the clock
+    /// say for how long. `matrix_error` already carries the refusal's word.
+    fn refresh_refused(&self) {
+        let mut status = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        status.state = "refresh_refused";
+        status.refresh_failures = status.refresh_failures.saturating_add(1);
+        status.refresh_since_ms.get_or_insert_with(wall_ms);
+    }
+    /// A Matrix refusal that is evidence about the transport itself (another
+    /// account answered whoami, the store retired this generation, an
+    /// authentication rejection): the worker parks and re-checks; only a
+    /// human changes the fact (ADR-183 A). Never an exit.
+    fn parked(&self) {
+        let mut status = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        status.state = "awaiting_operator";
+        status.refresh_failures = status.refresh_failures.saturating_add(1);
+        status.refresh_since_ms.get_or_insert_with(wall_ms);
+    }
+    /// The first successful refresh after failures clears the count.
+    fn refresh_recovered(&self) {
+        let mut status = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        status.refresh_failures = 0;
+        status.refresh_since_ms = None;
+    }
+    /// The word of the last Matrix refusal, for the driver's transient-or-
+    /// parked classification (ADR-183 A).
+    fn matrix_error(&self) -> Option<&'static str> {
+        self.0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .matrix_error
+    }
+    /// The approval component refused to start (ADR-183 decision 0): the
+    /// service keeps serving, readiness names it, and the startup is retried.
+    fn approval_refused(&self, error: &hagency_matrix::Error) {
+        let mut status = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        status.state = "approval_refused";
+        status.matrix_error = Some(matrix_error_label(error));
+        status.refresh_failures = status.refresh_failures.saturating_add(1);
+        status.refresh_since_ms.get_or_insert_with(wall_ms);
     }
     /// A known factory agent a restart did not bring back. It is shown, with
     /// the Matrix cause when there is one, and is deliberately not an `error`:
@@ -1154,7 +1213,7 @@ pub struct Bootstrap {
     /// PC-C0: the approval bot's own collector (never the pooled ordinary
     /// one) and the pump's handoff channel. The pump is built at open; the
     /// forwarder is spawned on THIS service runtime in `serve`.
-    approval: Option<Arc<approval::Pump>>,
+    approval: Option<Arc<Pump>>,
     approval_sender: Option<tokio::sync::mpsc::Sender<hagency_execution::ApprovalRequests>>,
     approval_pump: Option<Arc<tokio::task::JoinHandle<()>>>,
     files: Option<crate::file_service::FileOwner>,
@@ -1582,13 +1641,35 @@ impl Bootstrap {
             ));
         }
         if let Some(pump) = self.approval.as_ref() {
-            self.status.phase("enrolling");
-            // Keep the actual listener/router polled while the original bot
-            // establishes its private Matrix binding and encryption custody.
-            // A failed startup cannot admit a runner or be retried here.
-            tokio::select! {
-                result = &mut serving => {result.map_err(|_| Failure::Server)?; return Err(Failure::Server);},
-                result = pump.initialize(shutdown) => result?,
+            // ADR-183 decision 0: a component refusal does not exit the
+            // process. The listener/router stay polled while the approval
+            // bot establishes its private Matrix binding; a refusal is
+            // recorded in the status (readiness names it) and the startup is
+            // retried with the retained product's backoff until it succeeds
+            // or the operator stops the service. Agents start only once the
+            // approval bot is up: no card is ever silently undeliverable.
+            let mut backoff = RETRY_BACKOFF_MIN;
+            loop {
+                self.status.phase("enrolling");
+                let attempt = tokio::select! {
+                    result = &mut serving => {result.map_err(|_| Failure::Server)?; return Err(Failure::Server);},
+                    _ = shutdown.cancelled() => break,
+                    result = pump.initialize(shutdown) => result,
+                };
+                match attempt {
+                    Ok(()) => break,
+                    Err(error) => {
+                        self.status.approval_refused(&error);
+                        tracing::error!(error = ?error, retry_in_ms = backoff.as_millis() as u64,
+                            "approval startup refused; the service keeps serving and retries");
+                        tokio::select! {
+                            result = &mut serving => {result.map_err(|_| Failure::Server)?; return Err(Failure::Server);},
+                            _ = shutdown.cancelled() => break,
+                            _ = tokio::time::sleep(backoff) => {}
+                        }
+                        backoff = (backoff * 2).min(RETRY_BACKOFF_MAX);
+                    }
+                }
             }
         }
         if !shutdown.is_cancelled()

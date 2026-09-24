@@ -320,28 +320,49 @@ async fn native_private_approval_startup_wrong_anchor() {
     let different_owner = support::crypto::Peer::for_sender(support::BOT, support::DEVICE).await;
     assert_ne!(peer.anchor(), different_owner.anchor());
     fresh_approval(&f, different_owner.anchor());
-    let mut command = tokio::process::Command::from(f.command(true));
-    command
-        .kill_on_drop(true)
-        .stderr(std::process::Stdio::piped());
-    let result = tokio::time::timeout(STARTUP_WATCHDOG, async {
-        let output = command.output();
-        tokio::pin!(output);
-        loop {
-            tokio::select! {
-                result = &mut output => break result.unwrap(),
-                request = f.fake.next() => {
-                    assert!(support::is_approval(&request), "driver must not start before enrollment");
-                    support::respond(request, &mut peer).await;
+    let mut child = f.launch(true);
+    // ADR-183 decision 0: a wrong anchor is a refusal the bridge never turns
+    // into an exit. The service keeps serving, names the refusal in its
+    // status and readiness, and re-checks with backoff — the anchor is the
+    // operator's to correct; no agent is admitted meanwhile.
+    let until = tokio::time::Instant::now() + STARTUP_WATCHDOG;
+    let refused = loop {
+        tokio::select! {
+            request = f.fake.next() => {
+                assert!(support::is_approval(&request), "driver must not start before enrollment");
+                support::respond(request, &mut peer).await;
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_millis(20)) => {
+                let status = f.capabilities().await;
+                if status["development_execution"]["state"] == "approval_refused" {
+                    break status["development_execution"].clone();
                 }
+                assert!(
+                    tokio::time::Instant::now() < until,
+                    "the refusal never reached the status: {status}"
+                );
             }
         }
-    }).await.unwrap();
-    assert!(!result.status.success());
-    assert!(String::from_utf8_lossy(&result.stderr).contains("approval startup refused"));
+    };
+    assert_eq!(refused["matrix_error"], "recipients", "{refused}");
+    assert!(child.still_owned(), "the service keeps serving");
+    assert_eq!(
+        f.ready().await,
+        503,
+        "readiness names the refusing component"
+    );
+    assert!(
+        String::from_utf8_lossy(
+            &std::fs::read(f.root.path().join("native.stderr")).unwrap_or_default()
+        )
+        .contains("approval startup refused"),
+        "the refusal is named in the log"
+    );
     assert_eq!(f.attempts(), 0);
     assert!(peer.events.is_empty());
     assert!(!f.work.join("approval-mcp.requests").exists());
+    child.request_shutdown();
+    child.exited().await;
     f.fake.close().await;
 }
 
@@ -588,4 +609,87 @@ async fn native_private_approval_delivery_wiring_refuses_without_enrollment() {
         "refusal was not the named enrollment failure: {stderr}"
     );
     f.fake.no_request().await;
+}
+
+/// ADR-183 decision 0: a component refusal does not exit the process. The
+/// approval bot's startup is refused by the homeserver twice; the service
+/// keeps serving with the refusal in its status and readiness, retries with
+/// backoff, and once the homeserver answers the roundtrip completes as if
+/// nothing had happened.
+#[tokio::test]
+async fn native_component_refusal_does_not_exit_the_process() {
+    let mut f = Fixture::new(false).await;
+    let mut peer = support::crypto::Peer::for_sender(support::BOT, support::DEVICE).await;
+    fresh_approval_waiting(&f, peer.anchor(), 10_000);
+    let mut child = f.launch(true);
+    let until = tokio::time::Instant::now() + STARTUP_WATCHDOG + std::time::Duration::from_secs(10);
+    let response_path = f.work.join("approval-mcp.response");
+    let mut refused = 0u32;
+    let mut refusal_seen: Option<(Value, u16)> = None;
+    let mut encrypted_sent = false;
+    let mut polls = 0;
+    while !response_path.exists() && tokio::time::Instant::now() < until {
+        let request = tokio::select! {
+            request = f.fake.next() => request,
+            _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => {
+                if refused > 0 && refusal_seen.is_none() {
+                    let status = f.capabilities().await;
+                    if status["development_execution"]["state"] == "approval_refused" {
+                        assert!(child.still_owned(), "the process is still serving");
+                        refusal_seen = Some((status["development_execution"].clone(), f.ready().await));
+                    }
+                }
+                continue;
+            }
+        };
+        if support::is_approval(&request) && request.target.ends_with("/whoami") && refused < 2 {
+            // The homeserver refuses the approval bot's startup, twice.
+            refused += 1;
+            request.json(503, json!({"errcode":"M_UNKNOWN","error":"fixture fault"}));
+            continue;
+        }
+        if !support::is_approval(&request) {
+            ordinary(request).await;
+        } else if request.target.contains("/sync?") && !peer.events.is_empty() {
+            polls += 1;
+            let detail = &peer.events[0]["content"]["com.agentchat.approval"];
+            let verdict = json!({"msgtype":"com.agentchat.approval.verdict.v1","body":"Owner button action",
+                "com.agentchat.approval":{"version":1,"kind":"verdict","agent":detail["agent"],"project":detail["project"],
+                    "project_room_id":detail["project_room_id"],"request_id":detail["request_id"],"input_digest":detail["input_digest"],"action":"approve_once"}});
+            let mut sync = json!({"next_batch":format!("owner-poll-{polls}"),"to_device":{"events":[]},
+                "rooms":{"join":{support::ROOM:{"timeline":{"events":[],"limited":false},"state":{"events":[]}}}}});
+            if !encrypted_sent {
+                let room = support::ROOM.try_into().unwrap();
+                sync["to_device"] = peer.inbound_room_key(room).await["to_device"].clone();
+                sync["rooms"]["join"][support::ROOM]["timeline"]["events"] =
+                    json!([peer.owner_event(room, verdict).await]);
+                encrypted_sent = true;
+            }
+            request.json(200, sync);
+        } else {
+            support::respond(request, &mut peer).await;
+        }
+    }
+    assert_eq!(refused, 2, "both refusals were served");
+    let (status, ready) =
+        refusal_seen.expect("the refusal was visible in the status while it lasted");
+    assert_eq!(status["matrix_error"], "remote", "{status}");
+    assert!(
+        status["refresh_failures"].as_u64().is_some_and(|n| n >= 1),
+        "{status}"
+    );
+    assert_eq!(ready, 503, "readiness named the refusing component");
+    assert!(
+        response_path.exists(),
+        "the roundtrip completed after the refusals cleared: cards={}\n{}",
+        peer.events.len(),
+        String::from_utf8_lossy(
+            &std::fs::read(f.root.path().join("native.stderr")).unwrap_or_default()
+        )
+    );
+    let response: Value = serde_json::from_slice(&std::fs::read(response_path).unwrap()).unwrap();
+    assert_eq!(response, json!({"id":7,"result":{"decision":"accept"}}));
+    assert!(child.still_owned());
+    drop(child);
+    f.fake.close().await;
 }

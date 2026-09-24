@@ -121,3 +121,14 @@ therefore always observed as the connect failure it is, and is redialled.
 the shipped tie and for both orderings. Still not covered offline: a real
 black-holed dial, which needs a saturated listener and is not deterministic on
 hosted runners.
+
+## Amendment (ADR-183, 2026-09-24): the worker-level retry above the transport redial
+
+The transport keeps this ADR's bounded 429 retries and the 2026-09-19
+connect-phase redial. Above them, the worker no longer treats a refused
+refresh as fatal: `run_continuous` retries the whole refresh with the
+retained product's backoff (`lib/appservice-sync.js`: 1 s doubling to 60 s,
+reset by the first success), shows `refresh_refused` with the failure count
+and the clock, and is never fenced by it. "No transport error retries" in the
+2026-09-19 amendment described the transport layer only; the worker's
+patience is this amendment's.

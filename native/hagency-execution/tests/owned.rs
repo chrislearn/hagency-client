@@ -245,6 +245,31 @@ impl Fixture {
         )
         .unwrap()
     }
+    /// A host whose probe is TOLD a different budget than the operation is
+    /// GRANTED. The probe derives every wait from the value it is told, so a
+    /// larger one keeps its turn open past a smaller granted budget — the
+    /// over-budget scenario (ADR-183 decision D) — while the operation's own
+    /// `Limits` stay the ones under test.
+    fn host_budget(&self, mode: &str, probe_budget_ms: u64) -> Host {
+        let mut environment = BTreeMap::from([
+            ("PATH".into(), "".into()),
+            ("HAGENCY_OFFLINE_MODE".into(), mode.into()),
+            (
+                "HAGENCY_OPERATION_BUDGET_MS".into(),
+                probe_budget_ms.to_string().into(),
+            ),
+        ]);
+        if let Some(system) = std::env::var_os("SystemRoot") {
+            environment.insert("SystemRoot".into(), system);
+        }
+        Host::new(
+            binary(),
+            binary(),
+            environment,
+            BTreeMap::from([("work".into(), self.work.clone())]),
+        )
+        .unwrap()
+    }
     fn account_ids(&self) -> Vec<String> {
         self.sql()
             .prepare("SELECT id FROM managed_accounts ORDER BY ordinal")

@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 /// The phases an attempt can visit, in the order it can visit them.
+/// `OverBudget` (ADR-183 decision D) is visited at most once, during the
+/// turn, when the operation budget elapses while Codex is still working: the
+/// budget is notify-only, so the phase records the fact and nothing acts on it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AttemptPhase {
@@ -19,6 +22,7 @@ pub enum AttemptPhase {
     SpawnDone,
     Initialized,
     TurnStarted,
+    OverBudget,
     ApprovalRequested,
     ApprovalDecided,
     Parked,
@@ -30,12 +34,13 @@ pub enum AttemptPhase {
     Lost,
 }
 impl AttemptPhase {
-    const ALL: [Self; 14] = [
+    const ALL: [Self; 15] = [
         Self::Claimed,
         Self::SpawnStarted,
         Self::SpawnDone,
         Self::Initialized,
         Self::TurnStarted,
+        Self::OverBudget,
         Self::ApprovalRequested,
         Self::ApprovalDecided,
         Self::Parked,
@@ -46,7 +51,7 @@ impl AttemptPhase {
         Self::Failed,
         Self::Lost,
     ];
-    /// The stored word; the 037 CHECK constraint lists exactly these.
+    /// The stored word; the 039 CHECK constraint lists exactly these.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Claimed => "claimed",
@@ -54,6 +59,7 @@ impl AttemptPhase {
             Self::SpawnDone => "spawn_done",
             Self::Initialized => "initialized",
             Self::TurnStarted => "turn_started",
+            Self::OverBudget => "over_budget",
             Self::ApprovalRequested => "approval_requested",
             Self::ApprovalDecided => "approval_decided",
             Self::Parked => "parked",
@@ -119,9 +125,50 @@ pub struct AttemptClockRow {
     pub terminal_reason: Option<String>,
 }
 
-/// At most this many events per (dispatch, fence): fourteen phases, a few
+/// At most this many events per (dispatch, fence): fifteen phases, a few
 /// approval and park cycles, and the host's repeats after a lost reply.
 const EVENT_LIMIT: u32 = 256;
+/// The notice kind of the one thread message an over-budget turn earns
+/// (ADR-183 decision D); with the task it names the notice's id, so a second
+/// queue of the same attempt finds the first.
+pub const OVER_BUDGET_NOTICE_KIND: &str = "over_budget";
+
+/// What queuing the over-budget notice found (ADR-183 decision D). Fixed
+/// labels for the attempt event's `notice` key; never authority.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OverBudgetNotice {
+    /// One notice is now pending for the dispatch's thread.
+    Queued,
+    /// The same task already has one; nothing is added.
+    AlreadyQueued,
+    /// The dispatch answers no verified thread (no task, no addressed
+    /// request, or a session without a Matrix route): nowhere to say it.
+    NoThread,
+}
+impl OverBudgetNotice {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::AlreadyQueued => "already_queued",
+            Self::NoThread => "no_thread",
+        }
+    }
+}
+/// The notice body: fixed words around the elapsed time, never free text.
+/// It names the stop that exists in this port — the operator's stop of the
+/// agent — not a thread command the port does not take (checked in the
+/// retained product on 2026-09-23: no owner "stop" intake in the thread).
+pub fn over_budget_notice_body(elapsed_ms: u64) -> String {
+    let elapsed = if elapsed_ms >= 60_000 {
+        format!("{} min", elapsed_ms / 60_000)
+    } else {
+        format!("{} s", elapsed_ms / 1_000)
+    };
+    format!(
+        "Still running after {elapsed}. It continues until the runner finishes its turn; an operator can stop the agent from the console."
+    )
+}
 /// The serialized `detail` bound.
 const DETAIL_LIMIT: usize = 8192;
 /// Every string inside `detail` is cut here, on a char boundary.
@@ -276,6 +323,66 @@ impl DomainRepository {
         tx.commit()?;
         Ok(seq)
     }
+    /// ADR-183 decision D: the one thread message an over-budget turn earns.
+    /// Queued once per task, for a verified session only, rooted at the
+    /// request the dispatch was answering — the same route and custody as
+    /// `outcome_unknown_notice`, so the driver's existing notice delivery
+    /// posts it. A dispatch with no task, no addressed request or no Matrix
+    /// route has nowhere to say it and says nothing (`NoThread`). Its own
+    /// transaction; the host records what it found and never lets a refusal
+    /// change the turn.
+    pub fn queue_over_budget_notice(
+        &mut self,
+        dispatch_id: &str,
+        elapsed_ms: u64,
+        now: u64,
+    ) -> Result<OverBudgetNotice, Error> {
+        identifier(dispatch_id, 128)?;
+        clock(now)?;
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let bound: Option<(Option<String>, String, bool)> = tx
+            .query_row(
+                "SELECT d.task_id,d.session_id,s.matrix_generation>0 FROM runner_dispatches d JOIN runner_sessions s ON s.id=d.session_id WHERE d.id=?1",
+                [dispatch_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        let (task_id, session) = match bound {
+            None => return Err(Error::NotFound),
+            Some((Some(task_id), session, true)) => (task_id, session),
+            Some(_) => return Ok(OverBudgetNotice::NoThread),
+        };
+        let root: Option<u64> = tx.query_row(
+            "SELECT MAX(message_sequence) FROM dispatch_inputs WHERE dispatch_id=?1 AND addressed=1",
+            [dispatch_id],
+            |r| r.get(0),
+        )?;
+        let Some(root) = root else {
+            return Ok(OverBudgetNotice::NoThread);
+        };
+        let existing: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM task_notices WHERE task_id=?1 AND json_extract(config,'$.kind')=?2)",
+            params![task_id, OVER_BUDGET_NOTICE_KIND],
+            |r| r.get(0),
+        )?;
+        if existing {
+            return Ok(OverBudgetNotice::AlreadyQueued);
+        }
+        let task = super::execution::task(&tx, &task_id)?;
+        let root = super::verified_ingress::input_message(&tx, &session, root)?;
+        super::task_intents::add_notice(
+            &tx,
+            &task,
+            &root,
+            OVER_BUDGET_NOTICE_KIND,
+            over_budget_notice_body(elapsed_ms),
+            now,
+        )?;
+        tx.commit()?;
+        Ok(OverBudgetNotice::Queued)
+    }
     /// The attempt's event log in visit order. Operator-private evidence;
     /// no runtime route reads it.
     pub fn attempt_events(
@@ -296,7 +403,7 @@ impl DomainRepository {
             })?
             .map(|row| {
                 let (seq, at_ms, phase, detail) = row?;
-                // The 037 CHECK admits only the fourteen words; a row outside
+                // The 039 CHECK admits only the fifteen words; a row outside
                 // them is a schema fault, not a phase.
                 let phase = AttemptPhase::parse(&phase).ok_or(Error::Schema)?;
                 Ok(AttemptEventRow {

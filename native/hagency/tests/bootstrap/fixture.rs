@@ -69,6 +69,22 @@ pub struct Fixture {
     /// Requests the generic responder has answered (`serve_until`).
     #[cfg_attr(not(any(target_os = "linux", target_os = "macos")), allow(dead_code))]
     served: u64,
+    /// What the responder does to the worker's whoami while set (ADR-183):
+    /// a remote refusal or another account's identity. The harness's fault,
+    /// injected at the homeserver, never in the product.
+    #[cfg_attr(not(any(target_os = "linux", target_os = "macos")), allow(dead_code))]
+    pub fault: Option<Fault>,
+    /// When each whoami arrived, for the backoff scenario.
+    #[cfg_attr(not(any(target_os = "linux", target_os = "macos")), allow(dead_code))]
+    pub whoami_at: Vec<std::time::Instant>,
+}
+/// A fault the fixture's homeserver answers with (ADR-183 scenarios).
+#[derive(Clone, Copy, Debug)]
+pub enum Fault {
+    /// Every whoami answers this HTTP status.
+    Remote(u16),
+    /// whoami names another account.
+    Identity,
 }
 fn now() -> u64 {
     SystemTime::now()
@@ -258,6 +274,8 @@ impl Fixture {
             fake,
             address,
             served: 0,
+            fault: None,
+            whoami_at: Vec::new(),
         }
     }
     pub fn command(&self, enabled: bool) -> Command {
@@ -526,7 +544,18 @@ impl Fixture {
         self.served += 1;
         let target = request.target.clone();
         if target.ends_with("/account/whoami") {
-            request.json(200, common::who());
+            self.whoami_at.push(std::time::Instant::now());
+            match self.fault {
+                Some(Fault::Remote(status)) => request.json(
+                    status,
+                    json!({"errcode":"M_UNKNOWN","error":"fixture fault"}),
+                ),
+                Some(Fault::Identity) => request.json(
+                    200,
+                    json!({"user_id":"@other:example.test","device_id":"DEVICE_1","is_guest":false}),
+                ),
+                None => request.json(200, common::who()),
+            }
         } else if target.starts_with("/_matrix/client/v3/sync?") {
             request.json(200, common::sync(&format!("served-{}", self.served)));
         } else if target.ends_with("/state") {
@@ -558,6 +587,31 @@ impl Fixture {
                 _ = tokio::time::sleep(Duration::from_millis(50)) => {}
             }
         }
+    }
+    /// The readiness boundary's status code (`/ready`: 503 while any
+    /// component is not serving, 200 otherwise).
+    pub async fn ready(&self) -> u16 {
+        let mut stream = tokio::net::TcpStream::connect(self.address).await.unwrap();
+        stream
+            .write_all(
+                format!(
+                    "GET /ready HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+                    self.address
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        let mut bytes = Vec::new();
+        tokio::time::timeout(Duration::from_secs(2), stream.read_to_end(&mut bytes))
+            .await
+            .unwrap()
+            .unwrap();
+        let head = String::from_utf8_lossy(&bytes);
+        head.split_whitespace()
+            .nth(1)
+            .and_then(|code| code.parse().ok())
+            .unwrap_or_else(|| panic!("no status line in {head}"))
     }
     /// Keep the worker served for a while: for asserting that nothing
     /// happened, which no predicate can wait for.

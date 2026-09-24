@@ -1252,3 +1252,131 @@ async fn native_bootstrap_custody_shutdown() {
         drop(hagency_store::Repository::open(&f.state_dir).unwrap());
     }
 }
+
+/// ADR-183 A: the bridge never ends a worker over its own view of the
+/// transport. A refused refresh is retried with backoff; the status says so,
+/// readiness refuses while it lasts, and the first success clears it.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[tokio::test]
+async fn native_refresh_failure_is_retried_not_fatal() {
+    let mut f = Fixture::new(false).await;
+    f.seed_second_session();
+    f.configure_continuous();
+    let mut child = f.launch_agent_driver(None);
+    f.serve_until("first dispatch completed", |f, _| f.state() == "completed")
+        .await;
+    assert_eq!(f.ready().await, 200);
+    f.fault = Some(Fault::Remote(503));
+    f.serve_until("refresh refused and retried", |_, status| {
+        let status = &status["development_execution"];
+        status["state"] == "refresh_refused"
+            && status["refresh_failures"].as_u64().is_some_and(|n| n >= 2)
+    })
+    .await;
+    assert!(child.still_owned(), "the worker outlives the refusal");
+    assert_eq!(f.ready().await, 503, "readiness names a refusing owner");
+    let status = f.capabilities().await;
+    let status = &status["development_execution"];
+    assert_eq!(status["matrix_error"], "remote", "{status}");
+    assert!(status["refresh_since_ms"].is_u64(), "{status}");
+    assert!(
+        status["error"].is_null(),
+        "a retrying worker is not a failed one: {status}"
+    );
+    f.fault = None;
+    f.serve_until(
+        "recovered: the other session's dispatch ran",
+        |f, status| {
+            f.text("SELECT state FROM runner_dispatches WHERE id='dispatch-3'") == "completed"
+                && status["development_execution"]["refresh_failures"].is_null()
+        },
+    )
+    .await;
+    assert_eq!(f.ready().await, 200);
+    child.request_shutdown();
+    child.exited().await;
+}
+
+/// ADR-183 A: the retained product's backoff — 1 s doubling to a cap, reset
+/// by the first success — measured at the homeserver.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[tokio::test]
+async fn native_refresh_retry_backoff() {
+    fn gaps(at: &[std::time::Instant]) -> Vec<f64> {
+        at.windows(2)
+            .map(|w| w[1].duration_since(w[0]).as_secs_f64())
+            .collect()
+    }
+    let mut f = Fixture::new(false).await;
+    f.configure_continuous();
+    let mut child = f.launch_agent_driver(None);
+    f.serve_until("first dispatch completed", |f, _| f.state() == "completed")
+        .await;
+    f.fault = Some(Fault::Remote(503));
+    f.whoami_at.clear();
+    f.serve_until("four refused refreshes", |f, _| f.whoami_at.len() >= 4)
+        .await;
+    let seen = gaps(&f.whoami_at);
+    assert!(
+        (0.8..1.8).contains(&seen[0])
+            && (1.7..3.6).contains(&seen[1])
+            && (3.4..7.0).contains(&seen[2]),
+        "the pauses double from 1 s: {seen:?}"
+    );
+    f.fault = None;
+    f.serve_until("recovered", |_, status| {
+        status["development_execution"]["refresh_failures"].is_null()
+            && status["development_execution"]["state"] != "refresh_refused"
+    })
+    .await;
+    f.fault = Some(Fault::Remote(503));
+    f.whoami_at.clear();
+    f.serve_until("two refused refreshes after the recovery", |f, _| {
+        f.whoami_at.len() >= 2
+    })
+    .await;
+    let again = gaps(&f.whoami_at);
+    assert!(
+        (0.8..1.8).contains(&again[0]),
+        "the first success reset the backoff to 1 s: {again:?}"
+    );
+    f.fault = None;
+    f.serve_until("recovered again", |_, status| {
+        status["development_execution"]["refresh_failures"].is_null()
+    })
+    .await;
+    child.request_shutdown();
+    child.exited().await;
+}
+
+/// ADR-183 A: a refusal that is evidence about the transport itself parks
+/// the worker with the reason — it does not end it — and the worker
+/// re-checks until the fact changes.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[tokio::test]
+async fn native_refresh_identity_rejection_parks() {
+    let mut f = Fixture::new(false).await;
+    f.seed_second_session();
+    f.configure_continuous();
+    let mut child = f.launch_agent_driver(None);
+    f.serve_until("first dispatch completed", |f, _| f.state() == "completed")
+        .await;
+    f.fault = Some(Fault::Identity);
+    f.serve_until("parked on the identity refusal", |_, status| {
+        let status = &status["development_execution"];
+        status["state"] == "awaiting_operator" && status["matrix_error"] == "identity"
+    })
+    .await;
+    assert!(child.still_owned(), "a parked worker is still there");
+    assert_eq!(f.ready().await, 503);
+    assert!(f.capabilities().await["development_execution"]["error"].is_null());
+    f.fault = None;
+    f.serve_until("the fact changed: re-checked and working", |f, status| {
+        f.text("SELECT state FROM runner_dispatches WHERE id='dispatch-3'") == "completed"
+            && status["development_execution"]["state"] != "awaiting_operator"
+    })
+    .await;
+    assert_eq!(f.ready().await, 200);
+    child.request_shutdown();
+    child.exited().await;
+}

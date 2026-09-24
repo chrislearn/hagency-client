@@ -359,6 +359,12 @@ impl FactoryRuntime {
     pub async fn ready(&mut self) -> Result<(), Failure> {
         self.warm.as_mut().ok_or(Failure::Admission)?.ready().await
     }
+    /// What the warm child's idle re-qualification recorded (ADR-183
+    /// decision D, warm rule); `None` once the child was handed off. For the
+    /// host to project; never authority.
+    pub fn idle_status(&self) -> Option<crate::WarmIdleStatus> {
+        self.warm.as_ref().map(WarmRuntime::idle_status)
+    }
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::Release);
         if let Some(warm) = &self.warm {

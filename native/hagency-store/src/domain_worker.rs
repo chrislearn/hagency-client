@@ -1597,6 +1597,20 @@ impl DomainStore {
         })
         .await
     }
+    /// ADR-183 decision D: queue the one thread notice of an over-budget
+    /// turn. Observation-class like the events above: the host records what
+    /// it found and never lets a refusal change the turn.
+    pub async fn queue_over_budget_notice(
+        &self,
+        dispatch_id: String,
+        elapsed_ms: u64,
+        now: u64,
+    ) -> Result<crate::OverBudgetNotice, Error> {
+        self.call(weight(&(&dispatch_id, elapsed_ms, now))?, move |db| {
+            db.queue_over_budget_notice(&dispatch_id, elapsed_ms, now)
+        })
+        .await
+    }
     pub async fn set_attempt_clock(
         &self,
         dispatch_id: String,

@@ -545,56 +545,34 @@ impl Fixture {
             tokio::select! {request=self.fake.next()=>self.peer.respond(request).await,_=tokio::time::sleep(Duration::from_millis(10))=>{}}
         }
     }
-    pub async fn startup_result(&mut self) -> bool {
+    /// Whether the service became ready, serving the fake meanwhile.
+    /// ADR-183 decision 0: a refused component no longer exits the process,
+    /// so the only two outcomes are "ready" and "still refusing when the
+    /// harness ran out of patience" — never an exit.
+    pub async fn became_ready(&mut self) -> bool {
         let until = tokio::time::Instant::now() + Duration::from_secs(75);
         loop {
-            if let Some(status) = self.child.0.try_wait().unwrap() {
-                assert!(!status.success());
-                assert!(
-                    self.diagnostic()
-                        .contains("approval startup refused: Matrix operation cancelled"),
-                    "{}",
-                    self.diagnostic()
-                );
-                return false;
-            }
+            assert!(
+                self.child.0.try_wait().unwrap().is_none(),
+                "the service exited on a component refusal: {}",
+                self.diagnostic()
+            );
             if self.diagnostic().contains("native service ready;") {
                 return true;
             }
-            assert!(
-                tokio::time::Instant::now() < until,
-                "paced startup observer expired: {}",
-                self.diagnostic()
-            );
+            if tokio::time::Instant::now() >= until {
+                return false;
+            }
             tokio::select! {request=self.fake.next()=>self.peer.respond(request).await,_=tokio::time::sleep(Duration::from_millis(10))=>{}}
         }
     }
-    fn diagnostic(&self) -> String {
-        // Only disposable synthetic fixture data. Never used with live state.
-        let mut diagnostic = fs::read_to_string(self.root.path().join("native.stderr")).unwrap();
-        for index in 0..2 {
-            let work = self.work(index);
-            let requests: Vec<String> = fs::read_to_string(work.join("owned-mcp.requests"))
-                .unwrap_or_default()
-                .lines()
-                .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-                .filter_map(|request| request["method"].as_str().map(str::to_owned))
-                .collect();
-            let mut stages: Vec<String> = fs::read_dir(&work)
-                .into_iter()
-                .flatten()
-                .filter_map(Result::ok)
-                .filter_map(|entry| entry.file_name().into_string().ok())
-                .filter(|name| name.starts_with("owned-mcp."))
-                .collect();
-            stages.sort();
-            diagnostic.push_str(&format!(
-                "\nsynthetic agent {index}: requests={requests:?}, receipts={stages:?}"
-            ));
-        }
-        diagnostic
+    /// How many times the approval component's startup was refused and
+    /// retried (ADR-183 decision 0), from the service's own log.
+    pub fn approval_refusals(&self) -> usize {
+        self.diagnostic()
+            .matches("approval startup refused")
+            .count()
     }
-    #[cfg(unix)]
     pub fn revoke_local_provider_permissions(&self) {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(
@@ -710,6 +688,31 @@ impl Fixture {
         loop {
             tokio::select! {_=&mut read=>break,request=self.fake.next()=>self.peer.respond(request).await}
         }
+    }
+    fn diagnostic(&self) -> String {
+        // Only disposable synthetic fixture data. Never used with live state.
+        let mut diagnostic = fs::read_to_string(self.root.path().join("native.stderr")).unwrap();
+        for index in 0..2 {
+            let work = self.work(index);
+            let requests: Vec<String> = fs::read_to_string(work.join("owned-mcp.requests"))
+                .unwrap_or_default()
+                .lines()
+                .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                .filter_map(|request| request["method"].as_str().map(str::to_owned))
+                .collect();
+            let mut stages: Vec<String> = fs::read_dir(&work)
+                .into_iter()
+                .flatten()
+                .filter_map(Result::ok)
+                .filter_map(|entry| entry.file_name().into_string().ok())
+                .filter(|name| name.starts_with("owned-mcp."))
+                .collect();
+            stages.sort();
+            diagnostic.push_str(&format!(
+                "\nsynthetic agent {index}: requests={requests:?}, receipts={stages:?}"
+            ));
+        }
+        diagnostic
     }
     pub async fn assert_ready(&mut self) {
         let client = reqwest::Client::builder()

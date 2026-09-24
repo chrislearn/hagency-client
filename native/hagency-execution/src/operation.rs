@@ -18,9 +18,18 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    sync::oneshot,
+    sync::{oneshot, watch},
     time::{Instant, MissedTickBehavior, interval},
 };
+
+/// ADR-183 decision D: the turn has no bridge-side bound. The only lifetime a
+/// running turn keeps is the runtime transport's own protocol ceiling
+/// (`hagency-runtime` refuses a longer one and checks it on every read); the
+/// host grants the transport that ceiling instead of the budget, and hands
+/// the same instant to every turn-phase and post-turn wait, so that only
+/// cancellation (SIGTERM, the owner's stop) and the runtime's own ceiling end
+/// them. Not a budget: the budget is notify-only once the turn has started.
+pub(crate) const TURN_CEILING_MS: u64 = hagency_runtime::codex::MAX_REQUEST_MS;
 
 /// The check whose refusal produced a lost authority. Fixed labels only
 /// (ADR-175); diagnostic, never authority.
@@ -390,11 +399,46 @@ impl RuntimeObservation {
     }
 }
 
+/// ADR-183 decision D: the operation budget elapsed while the turn was still
+/// running. Recorded as the attempt's `over_budget` event, notified once to
+/// the thread and shown by the host as the fixed status word `over_budget`;
+/// nothing acts on it. `elapsed_ms` is the attempt's age when the budget
+/// elapsed, then its whole age once the turn has ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+pub struct OverBudget {
+    pub budget_ms: u64,
+    pub elapsed_ms: u64,
+}
+/// The host's live view of the budget while the operation runs: `None` until
+/// the budget elapses during the turn, then the fact. Taken before `wait`
+/// pins the operation, like the approval requests; it grants nothing.
+pub struct BudgetWatch(watch::Receiver<Option<OverBudget>>);
+impl BudgetWatch {
+    pub fn current(&self) -> Option<OverBudget> {
+        *self.0.borrow()
+    }
+    /// Resolves once the budget has elapsed during the turn (at once if it
+    /// already has); `None` when the operation ended without that.
+    pub async fn exceeded(&mut self) -> Option<OverBudget> {
+        loop {
+            if let Some(over) = *self.0.borrow_and_update() {
+                return Some(over);
+            }
+            if self.0.changed().await.is_err() {
+                return *self.0.borrow();
+            }
+        }
+    }
+}
+
 /// Private host result: no Serialize/Debug or automatic console/Matrix projection.
 /// An unresolved owner remains retained here; retrying stop never clears a lease.
 pub struct Report {
     pub protocol: Protocol,
     pub cleanup: Cleanup,
+    /// ADR-183 decision D: set when the budget elapsed during the turn; the
+    /// host projects it as `over_budget` with the elapsed time.
+    pub over_budget: Option<OverBudget>,
     pub canonical_status: Option<TaskState>,
     pub settlement: Settlement,
     /// Diagnostic only: which store refusal was observed first. Set once,
@@ -440,6 +484,7 @@ impl Report {
         Self {
             protocol: Protocol::NotStarted,
             cleanup: Cleanup::Pending,
+            over_budget: None,
             exit_identity: None,
             stderr_tail: String::new(),
             guardian_stderr_tail: String::new(),
@@ -596,6 +641,7 @@ pub struct Operation {
     registration: RegistrationSlot,
     approvals: Option<crate::ApprovalRequests>,
     continuation: Arc<Continuation>,
+    budget: watch::Receiver<Option<OverBudget>>,
 }
 /// Private original result custody. Neither Report mutation nor a caller's
 /// cleanup/status metadata can populate this slot or acknowledge its worker.
@@ -731,10 +777,15 @@ impl Operation {
         if !limits.validate() {
             return Err(Failure::Admission);
         }
-        let until = Instant::now() + Duration::from_millis(limits.operation_ms);
-        let expires_at = crate::approval::state::wall_now()?
-            .checked_add(limits.operation_ms)
-            .ok_or(Failure::Deadline)?;
+        let started = Instant::now();
+        let until = started + Duration::from_millis(limits.operation_ms);
+        let (budget_signal, budget) = watch::channel(None);
+        let clock = Budget {
+            started,
+            until,
+            budget_ms: limits.operation_ms,
+            signal: budget_signal,
+        };
         let (live, approval_run, approval_requests) = if let Some(policy) = &host.0.approvals {
             if !policy.fits(limits) {
                 return Err(Failure::Admission);
@@ -792,7 +843,7 @@ impl Operation {
                     host.0,
                     limits,
                     &signal,
-                    Deadline { until, expires_at },
+                    &clock,
                     &mut report,
                 ))
             }))
@@ -873,12 +924,18 @@ impl Operation {
                 registration,
                 approvals: approval_requests,
                 continuation,
+                budget,
             },
             work,
         ))
     }
     pub(crate) fn continuation(&self) -> Arc<Continuation> {
         self.continuation.clone()
+    }
+    /// The live budget view (ADR-183 decision D), for the host to project
+    /// `over_budget` and post the thread notice while the turn still runs.
+    pub fn budget_watch(&self) -> BudgetWatch {
+        BudgetWatch(self.budget.clone())
     }
     pub(crate) fn adopt_worker(&mut self, worker: JoinHandle<()>) {
         self.worker = Some(worker);
@@ -947,6 +1004,13 @@ impl Drop for WaitGuard<'_> {
     }
 }
 
+/// `Failure::Deadline` is the operation budget's own verdict, and since
+/// ADR-183 decision D it belongs to the phases before the turn only: store
+/// admission and start, the workspace handoff, the spawn handshake (ADR-053
+/// amendment), initialize, the task MCP bind, thread/start and turn/start,
+/// plus the warm runtime's initialize and idle budgets. Every wait during and
+/// after the turn is bounded by `TURN_CEILING_MS` instead, so a `Deadline`
+/// there is the runtime's own lifetime, never the budget.
 fn checkpoint(cancel: &AtomicBool, until: Instant) -> Result<(), Failure> {
     if cancel.load(Ordering::Acquire) {
         Err(Failure::Cancelled)
@@ -954,6 +1018,83 @@ fn checkpoint(cancel: &AtomicBool, until: Instant) -> Result<(), Failure> {
         Err(Failure::Deadline)
     } else {
         Ok(())
+    }
+}
+/// The attempt's clock (ADR-183 decision D). `until` is the operation
+/// budget: it bounds every wait that is not the turn. Once the turn has
+/// started the budget is notify-only: `watch` lets it elapse under the turn,
+/// records the fact once and keeps polling the turn until Codex ends it or
+/// the host is cancelled.
+pub(crate) struct Budget {
+    started: Instant,
+    until: Instant,
+    budget_ms: u64,
+    signal: watch::Sender<Option<OverBudget>>,
+}
+impl Budget {
+    fn elapsed_ms(&self) -> u64 {
+        u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX)
+    }
+    /// Drive the turn. If the budget elapses first: the attempt event
+    /// `over_budget`, the one thread notice (queued in the store, posted by
+    /// the driver's notice delivery), the live signal for the host, a WARN
+    /// with the same labels — and then the turn is awaited exactly as before.
+    /// The records are best effort and run beside the turn, never instead of
+    /// polling it; nothing here stops, cancels or signals the child.
+    async fn watch<F: Future>(
+        &self,
+        future: F,
+        domain: &DomainStore,
+        cap: &RunnerCapability,
+    ) -> (F::Output, Option<OverBudget>) {
+        tokio::pin!(future);
+        tokio::select! {
+            biased;
+            result = &mut future => return (result, None),
+            _ = tokio::time::sleep_until(self.until) => {}
+        }
+        let mut over = OverBudget {
+            budget_ms: self.budget_ms,
+            elapsed_ms: self.elapsed_ms(),
+        };
+        tracing::warn!(
+            dispatch_id = %cap.dispatch_id,
+            fence = cap.fence,
+            budget_ms = over.budget_ms,
+            elapsed_ms = over.elapsed_ms,
+            "operation budget elapsed; the turn continues until Codex ends it or a human stops it"
+        );
+        let _ = self.signal.send(Some(over));
+        let record = async {
+            let notice = match domain
+                .queue_over_budget_notice(cap.dispatch_id.clone(), over.elapsed_ms, now_ms())
+                .await
+            {
+                Ok(outcome) => outcome.as_str(),
+                Err(error) => {
+                    tracing::warn!(
+                        dispatch_id = %cap.dispatch_id,
+                        error = ?error,
+                        "over-budget notice not queued"
+                    );
+                    "refused"
+                }
+            };
+            note(
+                domain,
+                cap,
+                hagency_store::AttemptPhase::OverBudget,
+                serde_json::json!({
+                    "budget_ms": over.budget_ms,
+                    "elapsed_ms": over.elapsed_ms,
+                    "notice": notice,
+                }),
+            )
+            .await;
+        };
+        let (result, ()) = tokio::join!(&mut future, record);
+        over.elapsed_ms = self.elapsed_ms();
+        (result, Some(over))
     }
 }
 fn now_ms() -> u64 {
@@ -1183,10 +1324,14 @@ async fn execute(
     host: Arc<Host>,
     limits: Limits,
     cancel: &Arc<AtomicBool>,
-    deadline: Deadline,
+    budget: &Budget,
     report: &mut Report,
 ) -> Result<(), Failure> {
-    let Deadline { until, expires_at } = deadline;
+    // The budget bounds everything before the turn (see `checkpoint`). The
+    // approval scope's own clock (`bind_owned_approval_context` checks it on
+    // every maintenance call) follows the turn instead: an approval Codex
+    // raises after the budget is admitted like any other.
+    let until = budget.until;
     let scope = bounded(domain.owned_dispatch_scope(cap.clone()), cancel, until)
         .await?
         .map_err(|_| Failure::Admission)?;
@@ -1309,6 +1454,25 @@ async fn execute(
     if let Some(live) = &mut report.live {
         live.possible();
     }
+    // ADR-183 decision D: the transport's lifetime and its wait for the next
+    // unsolicited event are the runtime's ceiling, not the budget. The host
+    // prepared both as `operation_ms` ("the original operation deadline
+    // still bound every quiet turn"); the transport refuses every read past
+    // the lifetime and ends a quiet turn at the event wait — the budget by
+    // another name, so both follow the turn now. The write timeout stays the
+    // RPC response bound (`response_ms`): a request the child does not
+    // accept is a transport fact, not the budget. `ceiling` is the same
+    // instant on this side, the bound of every wait from the turn on;
+    // `ceiling_expires_at` is its wall-clock twin for the approval scope.
+    let io_limits = hagency_runtime::codex::transport::Limits {
+        event_wait_ms: TURN_CEILING_MS,
+        lifetime_ms: TURN_CEILING_MS,
+        ..io_limits
+    };
+    let ceiling = Instant::now() + Duration::from_millis(TURN_CEILING_MS);
+    let ceiling_expires_at = crate::approval::state::wall_now()?
+        .checked_add(TURN_CEILING_MS)
+        .ok_or(Failure::Deadline)?;
     if report.owner.is_none() {
         note(
             domain,
@@ -1335,7 +1499,7 @@ async fn execute(
             .owner
             .as_mut()
             .ok_or(Failure::SpawnFailed)?
-            .consume_warm_idle(io_limits, limits.response_ms, until)
+            .consume_warm_idle(io_limits, limits.response_ms, ceiling)
             .map_err(|_| Failure::Protocol)?;
     }
     // The actual child owner is retained before initialize or any startup await.
@@ -1457,7 +1621,10 @@ async fn execute(
                     cap,
                     &expected,
                     context,
-                    Deadline { until, expires_at },
+                    Deadline {
+                        until: ceiling,
+                        expires_at: ceiling_expires_at,
+                    },
                     runner,
                 )
                 .await?;
@@ -1468,7 +1635,7 @@ async fn execute(
                         domain,
                         cap,
                         cancel,
-                        until,
+                        until: ceiling,
                         status: &mut report.canonical_status,
                         usage,
                         observation: &mut report.runtime_observation,
@@ -1486,14 +1653,14 @@ async fn execute(
                 cap,
                 &expected,
                 cancel,
-                until,
+                ceiling,
                 &mut report.canonical_status,
             )
             .await?;
             if usage.observe(&observation) {
                 // Storage refusal closes capture only. Cancellation/deadline
                 // still reaches the existing retained process cleanup path.
-                let _ = bounded(usage.record_pending(), cancel, until).await?;
+                let _ = bounded(usage.record_pending(), cancel, ceiling).await?;
             }
             match update {
                 Update::TurnEnded => break,
@@ -1505,10 +1672,17 @@ async fn execute(
         }
         Ok(())
     };
-    let drive = match local_codex {
-        Some(local) => local.watch(drive).await,
-        None => drive.await,
+    let drive = async move {
+        match local_codex {
+            Some(local) => local.watch(drive).await,
+            None => drive.await,
+        }
     };
+    // ADR-183 decision D: the budget may elapse under the turn; it is
+    // recorded and notified, and the turn is awaited until Codex ends it or
+    // the host is cancelled. Nothing below this line reads the budget.
+    let (drive, over_budget) = budget.watch(drive, domain, cap).await;
+    report.over_budget = over_budget;
     // Capture before coordinator stop/removal. The runtime's own failure guard
     // may already have stopped it; its first transport cause remains retained.
     // Observation cannot alter the original drive or cleanup result.
@@ -1587,7 +1761,10 @@ async fn execute(
         // use this status as execution, release, retry or reply authority.
         report.canonical_status = observed_canonical_status(domain, cap, &scope).await;
     }
-    checkpoint(cancel, until)?;
+    // Post-turn (ADR-183 decision D): the settlement of a turn Codex ended is
+    // bounded by cancellation and the runtime's ceiling, never by the budget —
+    // a turn that ran over it is still settled from what the store committed.
+    checkpoint(cancel, ceiling)?;
     // A matching explicit Done+body is completion custody, not a renewed task
     // epoch or permission to continue this process. The same runner was stopped
     // above. Scope is the opaque successful Start response, never admission data.
@@ -1618,7 +1795,7 @@ async fn execute(
         // (ADR-053); a drive that ended in a settlement verdict never reaches
         // this block, so no unknown-fate frame is ever reported as Done.
         report.canonical_status = Some(TaskState::Done);
-        checkpoint(cancel, until)?;
+        checkpoint(cancel, ceiling)?;
         if !stopped(report.cleanup) {
             // Cleanup uncertainty is reported BESIDE the held completion
             // custody, never instead of it: the row is retained for
@@ -1639,10 +1816,10 @@ async fn execute(
                 started,
                 reference,
                 cancel.clone(),
-                until.into_std(),
+                ceiling.into_std(),
             )
             .await
-            .map_err(|error| match checkpoint(cancel, until).err() {
+            .map_err(|error| match checkpoint(cancel, ceiling).err() {
                 Some(refused) => refused,
                 None => settlement_failure(report, &error),
             })?;
@@ -1659,7 +1836,7 @@ async fn execute(
         return Ok(());
     }
     drive?;
-    checkpoint(cancel, until)?;
+    checkpoint(cancel, ceiling)?;
     if report.protocol != Protocol::Completed {
         return Err(Failure::Protocol);
     }

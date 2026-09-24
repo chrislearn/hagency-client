@@ -198,6 +198,7 @@ fn native_health_readiness_enumerates_every_state() {
         (ComponentState::Unavailable, "unavailable", false),
         (ComponentState::OutcomeUnknown, "outcome_unknown", false),
         (ComponentState::NotStarted, "not_started", false),
+        (ComponentState::Refusing, "refusing", false),
     ];
     for (state, word, is_ready) in every {
         assert!(state.is_ready() == is_ready, "{word} readiness mismatch");

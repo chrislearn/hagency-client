@@ -1,18 +1,41 @@
 //! Fresh authenticated key-query validation shared by outgoing and approval intake.
 use crate::Error;
-use matrix_sdk_crypto::{OlmMachine, UserIdentity};
+use matrix_sdk_crypto::{Device, OlmMachine, UserIdentity};
 use ruma::{
     OwnedUserId,
     api::{IncomingResponse, client::keys::get_keys},
 };
 use serde_json::Value;
 use std::collections::BTreeSet;
+
+/// What a fresh `/keys/query` response was accepted as (ADR-183 B). The
+/// recipients are the devices the recipient's cross-signing identity — the
+/// identity the SDK accepted, whose master key `check_anchors` pins — has
+/// signed. Every other device the response listed is excluded and counted,
+/// never a refusal: an unverified device is not an outage. A recipient user
+/// with no signed device at all refuses (`Recipients`, fail-closed).
+pub(super) struct Accepted {
+    pub recipients: BTreeSet<(String, String)>,
+    pub unverified: BTreeSet<(String, String)>,
+}
+
 pub(super) async fn accept(
     machine: &OlmMachine,
     users: &[OwnedUserId],
     query_id: &str,
     response: &Value,
 ) -> Result<BTreeSet<(String, String)>, Error> {
+    Ok(accept_counted(machine, users, query_id, response)
+        .await?
+        .recipients)
+}
+
+pub(super) async fn accept_counted(
+    machine: &OlmMachine,
+    users: &[OwnedUserId],
+    query_id: &str,
+    response: &Value,
+) -> Result<Accepted, Error> {
     validate_keys_shape(users, response)?;
     let query = get_keys::v3::Response::try_from_http_response(http::Response::new(
         response.to_string().into_bytes(),
@@ -37,6 +60,8 @@ pub(super) async fn accept(
         .await
         .map_err(|_| Error::OutcomeUnknown)?;
     let mut recipients = BTreeSet::new();
+    let mut unverified = BTreeSet::new();
+    let mut own_seen = false;
     for user in users {
         let identity = machine
             .get_identity(user, None)
@@ -77,46 +102,63 @@ pub(super) async fn accept(
             .as_object()
             .ok_or(Error::Wire)?;
         let mut seen = BTreeSet::new();
+        let mut verified = 0usize;
         for device in devices.devices() {
             let id = device.device_id().as_str();
-            if !device.is_verified() || !device.is_cross_signed_by_owner() {
-                return Err(Error::Recipients);
-            }
-            let raw = fresh.get(id).ok_or(Error::Recipients)?;
-            let accepted =
-                serde_json::to_value(device.as_device_keys()).map_err(|_| Error::Storage)?;
-            if !same_fields(
-                raw,
-                &accepted,
-                &["user_id", "device_id", "algorithms", "keys", "signatures"],
-            ) || raw["user_id"].as_str() != Some(user.as_str())
-                || raw["device_id"].as_str() != Some(id)
-            {
-                return Err(Error::Recipients);
-            }
             seen.insert(id.to_string());
+            let consistent = match fresh.get(id) {
+                Some(raw) => consistent_device(raw, &device, user.as_str(), id)?,
+                None => false,
+            };
+            let signed = device.is_verified() && device.is_cross_signed_by_owner();
             if user == machine.user_id() && device.device_id() == machine.device_id() {
+                // The SDK's own device is identity, not a recipient: anything
+                // other than the exact accepted keys is an identity refusal.
                 let own = machine.identity_keys();
-                if device.curve25519_key() != Some(own.curve25519)
+                if !consistent
+                    || !signed
+                    || device.curve25519_key() != Some(own.curve25519)
                     || device.ed25519_key() != Some(own.ed25519)
                 {
                     return Err(Error::Identity);
                 }
-            } else {
+                own_seen = true;
+            } else if consistent && signed {
                 recipients.insert((user.to_string(), id.to_string()));
+                verified += 1;
+            } else {
+                unverified.insert((user.to_string(), id.to_string()));
             }
         }
-        if seen.len() != fresh.len() || seen.is_empty() {
+        // A fresh entry the SDK did not keep (malformed, badly signed) is a
+        // device the identity has not signed either: excluded and counted.
+        for id in fresh.keys().filter(|id| !seen.contains(*id)) {
+            unverified.insert((user.to_string(), id.clone()));
+        }
+        if verified == 0 && user != machine.user_id() {
             return Err(Error::Recipients);
         }
     }
-    if response["device_keys"][machine.user_id().as_str()]
-        .get(machine.device_id().as_str())
-        .is_none()
+    if !own_seen
+        || response["device_keys"][machine.user_id().as_str()]
+            .get(machine.device_id().as_str())
+            .is_none()
     {
         return Err(Error::Identity);
     }
-    Ok(recipients)
+    Ok(Accepted {
+        recipients,
+        unverified,
+    })
+}
+fn consistent_device(raw: &Value, device: &Device, user: &str, id: &str) -> Result<bool, Error> {
+    let accepted = serde_json::to_value(device.as_device_keys()).map_err(|_| Error::Storage)?;
+    Ok(same_fields(
+        raw,
+        &accepted,
+        &["user_id", "device_id", "algorithms", "keys", "signatures"],
+    ) && raw["user_id"].as_str() == Some(user)
+        && raw["device_id"].as_str() == Some(id))
 }
 fn validate_keys_shape(users: &[OwnedUserId], value: &Value) -> Result<(), Error> {
     if value
@@ -161,6 +203,26 @@ pub(super) fn same_fields(fresh: &Value, accepted: &Value, fields: &[&str]) -> b
         && fields
             .iter()
             .all(|key| fresh.get(*key).is_some() && fresh.get(*key) == accepted.get(*key))
+}
+
+/// The trust anchor of two `/keys/query` responses is the same (ADR-183 B):
+/// for every named user the master and self-signing keys are equal. Device
+/// keys and user-signing keys are allowed to differ — the device list may
+/// change without a restart.
+pub(crate) fn same_anchor<'a>(
+    recorded: &Value,
+    fresh: &Value,
+    users: impl IntoIterator<Item = &'a str>,
+) -> bool {
+    users.into_iter().all(|user| {
+        ["master_keys", "self_signing_keys"].iter().all(|field| {
+            same_fields(
+                &fresh[*field][user],
+                &recorded[*field][user],
+                &["user_id", "usage", "keys"],
+            )
+        })
+    })
 }
 
 /// Only the explicit fresh-account enrollment calls this pre-verification
@@ -243,35 +305,37 @@ pub(super) async fn anchored_initial(
         let fresh = response["device_keys"][user.as_str()]
             .as_object()
             .ok_or(Error::Recipients)?;
-        let mut seen = BTreeSet::new();
+        let mut signed = 0usize;
         for device in devices.devices() {
             let id = device.device_id().as_str();
-            let raw = fresh.get(id).ok_or(Error::Recipients)?;
-            let accepted =
-                serde_json::to_value(device.as_device_keys()).map_err(|_| Error::Storage)?;
-            let algorithms = raw["algorithms"].as_array().ok_or(Error::Recipients)?;
-            if !device.is_cross_signed_by_owner()
-                || !same_fields(
-                    raw,
-                    &accepted,
-                    &["user_id", "device_id", "algorithms", "keys", "signatures"],
-                )
-                || raw["user_id"].as_str() != Some(user.as_str())
-                || raw["device_id"].as_str() != Some(id)
-                || algorithms.len() != 2
-                || !algorithms.contains(&serde_json::json!("m.olm.v1.curve25519-aes-sha2"))
-                || !algorithms.contains(&serde_json::json!("m.megolm.v1.aes-sha2"))
-                || [&master, &signing].iter().any(|key| {
-                    key["keys"]
-                        .as_object()
-                        .is_none_or(|keys| keys.values().any(|v| v.as_str() == Some(id)))
-                })
-            {
+            // Identity material that names a device id is malformed, not an
+            // unsigned device: still a refusal.
+            if [&master, &signing].iter().any(|key| {
+                key["keys"]
+                    .as_object()
+                    .is_none_or(|keys| keys.values().any(|v| v.as_str() == Some(id)))
+            }) {
                 return Err(Error::Recipients);
             }
-            seen.insert(id.to_owned());
+            let Some(raw) = fresh.get(id) else {
+                continue;
+            };
+            let algorithms = raw["algorithms"].as_array();
+            let usable = algorithms.is_some_and(|algorithms| {
+                algorithms.len() == 2
+                    && algorithms.contains(&serde_json::json!("m.olm.v1.curve25519-aes-sha2"))
+                    && algorithms.contains(&serde_json::json!("m.megolm.v1.aes-sha2"))
+            });
+            // ADR-183 B: a device the anchor has not signed is excluded, never
+            // a refusal; the enrollment needs at least one signed device.
+            if device.is_cross_signed_by_owner()
+                && usable
+                && consistent_device(raw, &device, user.as_str(), id)?
+            {
+                signed += 1;
+            }
         }
-        if seen.is_empty() || seen.len() != fresh.len() {
+        if signed == 0 {
             return Err(Error::Recipients);
         }
     }

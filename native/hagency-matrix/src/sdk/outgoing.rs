@@ -263,7 +263,11 @@ impl Sdk {
             .as_str()
             .try_into()
             .map_err(|_| Error::Wire)?;
-        let writes = super::encrypted_message::prepare(
+        // The outgoing leg's own validator still measures against the
+        // response's device list (its recipients are the room's members, not
+        // an owner's trusted devices); ADR-183 B-1 changes the approval card
+        // only, so the recipient set is not recorded here.
+        let (writes, _recipients) = super::encrypted_message::prepare(
             machine,
             super::encrypted_message::Input {
                 users: &users,

@@ -15,7 +15,16 @@ async fn native_configured_paced_startup() {
     for budget in [None, Some(60_000)] {
         let mut f = Fixture::paced_startup(budget).await;
         let started = tokio::time::Instant::now();
-        assert_eq!(f.startup_result().await, budget.is_some());
+        // ADR-183 decision 0: the too-small SDK budget still expires the
+        // first enrollment — but that refusal no longer ends the process.
+        // The service keeps serving and retries, so BOTH budgets end ready;
+        // only the small one was refused on the way there.
+        assert!(f.became_ready().await, "the service became ready");
+        assert_eq!(
+            f.approval_refusals() > 0,
+            budget.is_none(),
+            "only the too-small budget refused first"
+        );
         assert!(started.elapsed() >= std::time::Duration::from_secs(20));
         assert_eq!(f.count("SELECT COUNT(*) FROM runner_dispatches"), 0);
         assert_eq!(f.count("SELECT COUNT(*) FROM canonical_tasks"), 0);
@@ -26,11 +35,13 @@ async fn native_configured_paced_startup() {
                 5,
                 "one original enrollment, no replay"
             );
-            f.stop().await;
         } else {
-            assert!(!f.peer.approval.writes.is_empty());
-            assert!(f.peer.approval.writes.len() < 5);
+            // The retry redoes the query leg it could not finish; the
+            // completed writes themselves are never replayed (the ledger's
+            // own rule, pinned by the enrollment suite).
+            assert!(f.peer.approval.writes.len() >= 5);
         }
+        f.stop().await;
         f.fake.close().await;
     }
 }

@@ -107,7 +107,24 @@ impl Collector {
 }
 
 impl Inner {
-    async fn enrollment_handle(&self, scope: Scope<'_>) -> Result<Handle, Error> {
+    /// ADR-183 B: re-derive a completed enrollment's recipient set now — the
+    /// same pass a startup makes (anchor pinned, unsigned devices excluded
+    /// and counted, an Olm session claimed for any signed device that
+    /// appeared since). Only a completed enrollment is re-verified; an
+    /// absent or partial one is not enrolled from here.
+    pub(crate) async fn reverify(
+        &self,
+        scope: Scope<'_>,
+        cancel: &CancellationToken,
+        deadline: Instant,
+    ) -> Result<(), Error> {
+        let owner = self.enrollment_handle(scope).await?;
+        if !matches!(owner.command(Command::Status).await?, View::Complete) {
+            return Err(Error::OutcomeUnknown);
+        }
+        self.enroll(scope, cancel, deadline).await
+    }
+    pub(crate) async fn enrollment_handle(&self, scope: Scope<'_>) -> Result<Handle, Error> {
         let mut guard = self.owner.lock().await;
         if guard.is_none() {
             *guard = Some(match scope {
@@ -192,9 +209,14 @@ impl Inner {
             checkpoint(cancel, deadline)?;
         }
         let owner = self.enrollment_handle(scope).await?;
-        let complete = match owner.command(Command::Status).await? {
-            View::Absent => false,
-            View::Complete => true,
+        // ADR-183: a refusal is retried from the top, never fenced. A record
+        // the previous pass left at a redoable step (a refused verify, a
+        // prepared write, a ready record) resumes at that step; a write that
+        // may have crossed the wire stays the SDK's honest uncertainty.
+        let status = match owner.command(Command::Status).await? {
+            View::Absent => Status::Absent,
+            View::Complete => Status::Complete,
+            View::Verify | View::Ready | View::Write(_) => Status::Resume,
             _ => return Err(Error::Storage),
         };
         let users = self.enrollment_current_for(scope, cancel).await?;
@@ -217,18 +239,30 @@ impl Inner {
         {
             return Err(Error::Unsupported);
         }
-        let query = self.enrollment_query(&owner, &users, cancel).await?;
-        if complete {
-            let View::Complete = owner.command(Command::Verify(query)).await? else {
-                return Err(Error::Storage);
-            };
-            if self.enrollment_current_for(scope, cancel).await? != users {
-                return Err(Error::Recipients);
+        match status {
+            Status::Absent => {
+                let query = self.enrollment_query(&owner, &users, cancel).await?;
+                owner.command(Command::Prepare(query)).await?;
             }
-            checkpoint(cancel, deadline)?;
-            return Ok(());
+            Status::Complete => {
+                let query = self.enrollment_query(&owner, &users, cancel).await?;
+                match owner.command(Command::Verify(query)).await? {
+                    View::Complete => {
+                        if self.enrollment_current_for(scope, cancel).await? != users {
+                            return Err(Error::Recipients);
+                        }
+                        checkpoint(cancel, deadline)?;
+                        return Ok(());
+                    }
+                    // ADR-183 B: a device that appeared since the enrollment
+                    // needs an Olm session; the loop below posts the SDK's
+                    // transient claim and the verify completes on its response.
+                    View::Write(_) => {}
+                    _ => return Err(Error::Storage),
+                }
+            }
+            Status::Resume => {}
         }
-        owner.command(Command::Prepare(query)).await?;
         loop {
             checkpoint(cancel, deadline)?;
             match owner.command(Command::Next).await? {
@@ -272,10 +306,23 @@ impl Inner {
                     checkpoint(cancel, deadline)?;
                     return Ok(());
                 }
+                View::Complete => {
+                    if self.enrollment_current_for(scope, cancel).await? != users {
+                        return Err(Error::Recipients);
+                    }
+                    checkpoint(cancel, deadline)?;
+                    return Ok(());
+                }
                 _ => return Err(Error::OutcomeUnknown),
             }
         }
     }
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Status {
+    Absent,
+    Complete,
+    Resume,
 }
 pub(crate) fn checkpoint(cancel: &CancellationToken, deadline: Instant) -> Result<(), Error> {
     if cancel.is_cancelled() {

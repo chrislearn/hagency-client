@@ -172,7 +172,7 @@ impl Inner {
         }) {
             return Err(Error::Generation);
         }
-        let expected = prior.map_or_else(|| t.clone(), |p| p.observation);
+        drop(prior);
         let result = async {
             observe!(Whoami);
             self.whoami(cancel).await?;
@@ -243,9 +243,7 @@ impl Inner {
         }
         .await;
         if let Err(error) = result {
-            #[cfg(test)]
-            observation::primary(error.clone());
-            return self.fence_read(expected, error).await;
+            return self.refused_read(error).await;
         }
         result
     }
@@ -267,10 +265,29 @@ impl Inner {
         Ok(prior.map_or_else(|| t.clone(), |p| p.observation))
     }
     /// For observation that only reads the homeserver (whoami, sync, room
-    /// state). There the caller's own cancellation is not evidence: nothing was
-    /// refused and nothing was sent, so the last complete collection stands, as
-    /// it would after a crash at this instant. Every other error fences. A path
-    /// that may have a write in flight must call `fence_observation` directly.
+    /// state). A read that failed is not evidence about the transport: nothing
+    /// was sent, and the last complete collection stands, as it would after a
+    /// crash at this instant. So a refused read never fences (ADR-183, the
+    /// operator's rule that the bridge decides nothing is done; the retained
+    /// product retries every transport error and treats only an
+    /// authentication rejection as final — and even that parks the worker for
+    /// the human, it does not retire the incarnation). An unsafe room
+    /// snapshot is evidence about the ROOM, and the room path retires that
+    /// room's route on its own generation; it is not evidence about this
+    /// incarnation either. `collect` sends no outbound Matrix write — whoami,
+    /// sync and room state are reads, and its domain writes are local, whose
+    /// outcome the next pass simply re-reads — so every refusal of it comes
+    /// here. A path that DOES have an outbound write in flight keeps
+    /// `fence_observation` (ADR-064's uncertainty is a write's), and the
+    /// intake path keeps `fence_read` until this rule is carried there too.
+    pub(crate) async fn refused_read<T>(&self, error: Error) -> Result<T, Error> {
+        #[cfg(test)]
+        observation::primary(error.clone());
+        Err(error)
+    }
+    /// The pre-ADR-183 read fence, still used by the intake path: a refused
+    /// read retires the incarnation unless it was the caller's own
+    /// cancellation. Carrying `refused_read` there is the next slice's.
     pub(crate) async fn fence_read<T>(
         &self,
         expected: MatrixTransportObservation,
@@ -875,7 +892,7 @@ mod tests {
         f.store.shutdown().await.unwrap();
     }
     #[tokio::test]
-    async fn native_matrix_transport_generation_lost_positive_response_fences_attempted_identity() {
+    async fn native_matrix_transport_generation_lost_positive_response_retires_nothing() {
         let mut fake = common::Fake::start(false).await;
         let mut f = common::Fixture::new();
         f.store
@@ -899,13 +916,19 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
+        // ADR-183 (ADR-047 amendment): the write itself committed — the
+        // store holds generation 2 — and only its RESPONSE was lost. The
+        // collection reports the uncertainty to its caller and retires
+        // nothing: `collect` sends no outbound Matrix write, and the next
+        // pass simply re-reads this local row. So the incarnation is
+        // available and re-observing it is accepted.
         assert_eq!(state.observation.generation, 2);
-        assert!(!state.available);
+        assert!(state.available);
         assert!(
             f.store
                 .observe_matrix_transport(f.identity.transport.clone())
                 .await
-                .is_err()
+                .is_ok()
         );
         c.close().await.unwrap();
         f.store.shutdown().await.unwrap();

@@ -2,11 +2,20 @@ use super::jobs::Value;
 use crate::{
     ApprovalCollector, CancellationToken, Error, collector::Inner, enrollment::Scope, sdk::Owner,
 };
-use std::collections::BTreeSet;
+use std::{
+    collections::BTreeSet,
+    sync::{Arc, atomic::AtomicBool},
+};
 use tokio::time::Instant;
 impl ApprovalCollector {
     /// Explicit fresh ordinary-user account enrollment for this approval purpose.
     /// No Agent transport, permission decision or card transmission is admitted.
+    ///
+    /// ADR-183: a refusal — recipients, identity, transport, anything — fences
+    /// nothing and does not retire this collector. The SDK's own ledger says
+    /// what the next call may redo (a refused verify: fresh Query then Verify)
+    /// and what stays uncertain (a write that may have crossed the wire), so
+    /// the caller retries from the top once the fact changes.
     pub async fn enroll_fresh_account(&self, cancel: &CancellationToken) -> Result<(), Error> {
         if self.inner.config.enrollment.is_none() {
             return Err(Error::Config);
@@ -16,8 +25,10 @@ impl ApprovalCollector {
         let inner = self.inner.clone();
         let engagements = self.engagements.snapshot()?;
         let cancel = cancel.child_token();
-        let job=self.jobs.start(false,false,permit,async move{
-            let original_rooms=inner.approval_rooms(&engagements).await?;
+        // The enrollment's custody lives in the SDK ledger, not in this job
+        // registry: a returned refusal never blocks the next attempt.
+        let retryable = Arc::new(AtomicBool::new(false));
+        let job=self.jobs.start_classified(false,false,permit,retryable,async move{
             let work=async{
                 inner.approval_enrollment_current(&engagements,&cancel).await?;
                 let mut guard=inner.owner.lock().await;
@@ -27,12 +38,7 @@ impl ApprovalCollector {
             };
             tokio::pin!(work);
             let result=tokio::select!{r=&mut work=>r,_=tokio::time::sleep_until(deadline)=>{cancel.cancel();work.await}};
-            match result {
-                Ok(())=>Ok(Value::Unit),
-                Err(error)=>match inner.fence_approval_candidates(&original_rooms).await {
-                    Ok(())=>Err(error),Err(_)=>Err(Error::OutcomeUnknown),
-                },
-            }
+            result.map(|()| Value::Unit)
         })?;
         match job.wait().await? {
             Value::Unit => Ok(()),

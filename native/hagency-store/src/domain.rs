@@ -28,6 +28,7 @@ mod catalog_publication;
 pub use attachments::AttachmentTicket;
 pub use attempt_events::{
     AttemptClock, AttemptClockRow, AttemptEvent, AttemptEventRow, AttemptPhase,
+    OVER_BUDGET_NOTICE_KIND, OverBudgetNotice, over_budget_notice_body,
 };
 pub use catalog_publication::PublishedCatalog;
 mod ceiling_alerts;
@@ -615,7 +616,7 @@ impl DomainRepository {
                 name: "domain.sqlite3",
                 lock: "domain.lock",
                 application_id: 0x48414732,
-                version: 38,
+                version: 39,
                 migrations: &[
                     (2, include_str!("migrations/002-role-publication.sql")),
                     (3, include_str!("migrations/003-task-dispatch.sql")),
@@ -676,6 +677,7 @@ impl DomainRepository {
                         include_str!("migrations/037-runner-attempt-evidence.sql"),
                     ),
                     (38, include_str!("migrations/038-agent-fences.sql")),
+                    (39, include_str!("migrations/039-attempt-over-budget.sql")),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[

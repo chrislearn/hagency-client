@@ -17,6 +17,7 @@ use hagency_store::PrivateApprovalCard;
 use jobs::Value;
 use state::{Frozen, Phase, View};
 use std::{
+    collections::BTreeMap,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -48,6 +49,15 @@ pub enum PrivateApprovalDeliveryStage {
     Complete,
     Quarantined,
 }
+/// ADR-183 B status words for one approval room, keyed by its engagement in
+/// the status: `recipients` is the number of the owner's devices the pinned
+/// identity has signed (the devices a card is encrypted to), and
+/// `unverified_devices` the number it has not (excluded, never an outage).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ApprovalRoomRecipients {
+    pub recipients: u32,
+    pub unverified_devices: u32,
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrivateApprovalDeliveryStatus {
     pub stage: PrivateApprovalDeliveryStage,
@@ -55,6 +65,9 @@ pub struct PrivateApprovalDeliveryStatus {
     pub writes: usize,
     pub accepted: usize,
     pub retained_bytes: usize,
+    /// Per approval room (by engagement id), the owner's recipient census as
+    /// the SDK knows it after the last accepted `/keys/query`.
+    pub rooms: BTreeMap<String, ApprovalRoomRecipients>,
 }
 impl ApprovalCollector {
     pub(crate) fn delivery_permit(&self, historical: bool) -> Result<OwnedSemaphorePermit, Error> {
@@ -95,6 +108,7 @@ impl ApprovalCollector {
         let blocks_after_error = Arc::new(AtomicBool::new(true));
         let original_classification = blocks_after_error.clone();
         let denial_request_id = card.target().request_id.clone();
+        let engagements = self.engagements.snapshot()?;
         let job=self.jobs.start_classified(false,false,permit,blocks_after_error,async move{
             // ADR-149: a budget overrun is a Timeout, never a manufactured
             // cancellation — the arm returns, it does not cancel a token the
@@ -102,7 +116,7 @@ impl ApprovalCollector {
             // inner hold must not hang the job). The token is the caller's own
             // parent, so shutdown propagation survives; the jobs registry owns
             // this task's lifetime, not the pump.
-            let work=inner.deliver_private_card(card,frozen,&cancel,deadline,&original_classification);tokio::pin!(work);
+            let work=inner.deliver_private_card(card,frozen,&engagements,&cancel,deadline,&original_classification);tokio::pin!(work);
             let result=tokio::select!{biased;_ = cancel.cancelled() => Err(Error::Cancelled),_ = tokio::time::sleep_until(deadline) => Err(Error::Timeout),r=&mut work=>r};
             result.map(Value::Delivery)
         })?;
@@ -214,8 +228,27 @@ impl ApprovalCollector {
     ) -> Result<PrivateApprovalDeliveryStatus, Error> {
         let permit = self.delivery_permit(true)?;
         let inner = self.inner.clone();
+        let engagements = self.engagements.snapshot()?;
         let job = self.jobs.start(false, true, permit, async move {
             let view = inner.card_handle().await?.command(Command::Read).await?;
+            // ADR-183 B: the recipient census per approval room, from the
+            // SDK's device view; a room whose owner the census does not
+            // name yet (enrollment not complete) reads as zero and zero.
+            let census = inner.recipient_census().await?;
+            let mut rooms = BTreeMap::new();
+            for room in inner.approval_rooms(&engagements).await? {
+                let counts = census
+                    .get(&room.authority.owner_mxid)
+                    .copied()
+                    .unwrap_or_default();
+                rooms.insert(
+                    room.authority.engagement_id.clone(),
+                    ApprovalRoomRecipients {
+                        recipients: counts.recipients,
+                        unverified_devices: counts.unverified,
+                    },
+                );
+            }
             let (stage, writes, accepted, bytes) = match view.attempt {
                 None => (PrivateApprovalDeliveryStage::Idle, 0, 0, 0),
                 Some(a) => {
@@ -248,6 +281,7 @@ impl ApprovalCollector {
                 writes,
                 accepted,
                 retained_bytes: bytes,
+                rooms,
             }))
         })?;
         match job.wait().await? {
@@ -257,6 +291,18 @@ impl ApprovalCollector {
     }
 }
 impl Inner {
+    async fn recipient_census(
+        &self,
+    ) -> Result<BTreeMap<String, crate::sdk::enrollment::Recipients>, Error> {
+        let handle = self
+            .enrollment_handle(crate::enrollment::Scope::Approval(&[]))
+            .await?;
+        let (send, receive) = tokio::sync::oneshot::channel();
+        handle
+            .command(crate::sdk::enrollment::Command::Recipients(send))
+            .await?;
+        receive.await.map_err(|_| Error::OutcomeUnknown)
+    }
     async fn card_handle(&self) -> Result<Handle, Error> {
         let mut guard = self.owner.lock().await;
         if guard.is_none() {
@@ -303,6 +349,7 @@ impl Inner {
         &self,
         card: Arc<PrivateApprovalCard>,
         frozen: Frozen,
+        engagements: &[String],
         cancel: &CancellationToken,
         deadline: Instant,
         blocks_after_error: &AtomicBool,
@@ -336,7 +383,20 @@ impl Inner {
             return Err(Error::Capacity);
         }
         checkpoint(cancel, deadline)?;
-        self.card_current(&card, cancel, None).await?;
+        // ADR-183 B: the recipient set is derived fresh for every card — the
+        // owner's devices signed by the pinned anchor, as of now. The same
+        // pass a startup makes pins the anchor, excludes and counts unsigned
+        // devices, and claims an Olm session for any signed device that
+        // appeared since the last card, so it joins this card's recipients
+        // without a restart. A refusal here denies this card only (ADR-137,
+        // fail-closed) and fences nothing.
+        self.reverify(
+            crate::enrollment::Scope::Approval(engagements),
+            cancel,
+            deadline,
+        )
+        .await?;
+        self.card_current(&card, cancel).await?;
         // Set before even submitting the original SDK command: a lost queue or
         // result acknowledgment cannot be classified as a no-effect refusal.
         blocks_after_error.store(true, Ordering::Release);
@@ -354,21 +414,15 @@ impl Inner {
             .await?
             .success()?;
         wire::encode(&keys, wire::MAX_QUERY)?;
-        let encrypted = owner.command(Command::Encrypt(keys)).await;
-        let mut attempt = match encrypted {
-            Ok(v) => v.attempt.ok_or(Error::Storage)?,
-            Err(error) => {
-                if matches!(error, Error::Identity | Error::Recipients | Error::Wire) {
-                    let r = crate::approval_batch::Room {
-                        authority: card.target().authority.clone(),
-                        device: card.target().device_id.clone(),
-                        generation: card.target().room_generation,
-                    };
-                    self.fence_approval_candidates(&[r]).await?;
-                }
-                return Err(error);
-            }
-        };
+        // ADR-183 B/C: a recipient, identity or wire refusal at encryption
+        // refuses this card (the caller denies it fail-closed, ADR-137) and
+        // writes nothing to the room row — a device the owner has not
+        // verified is not evidence about the room.
+        let mut attempt = owner
+            .command(Command::Encrypt(keys))
+            .await?
+            .attempt
+            .ok_or(Error::Storage)?;
         loop {
             let index = attempt.index;
             if attempt.phase == Phase::Complete {
@@ -378,12 +432,7 @@ impl Inner {
             let write = attempt.writes.get(index).ok_or(Error::Storage)?;
             owner.command(Command::Possible(index)).await?;
             let acceptance = owner.acceptance()?;
-            self.card_current(
-                &card,
-                cancel,
-                Some((&attempt.query_body, &attempt.keys_digest)),
-            )
-            .await?;
+            self.card_current(&card, cancel).await?;
             checkpoint(cancel, deadline)?;
             let response = if write.room {
                 self.http
@@ -435,11 +484,17 @@ impl Inner {
             false,
         ))
     }
+    /// The room, its generation and the card's own store gate, re-checked
+    /// before the send starts and before each write. ADR-183 B removed the
+    /// per-write `/keys/query` digest compare that used to sit here: it
+    /// refused (and fenced) on ANY byte of the response changing, i.e. it was
+    /// a device-list equality; the anchor is pinned by the SDK at encryption
+    /// (`accept`, `check_anchors`) and nothing between Encrypt and the PUT
+    /// re-derives the recipients, so a second query could only refuse.
     async fn card_current(
         &self,
         card: &Arc<PrivateApprovalCard>,
         cancel: &CancellationToken,
-        keys: Option<(&Option<String>, &Option<String>)>,
     ) -> Result<(), Error> {
         let t = card.target();
         let rooms = self
@@ -453,23 +508,6 @@ impl Inner {
             return Err(Error::Generation);
         }
         self.refresh_approval_rooms(&rooms, cancel).await?;
-        if let Some((body, digest)) = keys {
-            let response = self
-                .http
-                .post(
-                    &["_matrix", "client", "v3", "keys", "query"],
-                    body.as_ref().ok_or(Error::Storage)?.clone(),
-                    cancel,
-                )
-                .await?
-                .success()?;
-            if wire::hash(wire::encode(&response, wire::MAX_QUERY)?.as_bytes())
-                != *digest.as_ref().ok_or(Error::Storage)?
-            {
-                self.fence_approval_candidates(&rooms).await?;
-                return Err(Error::Recipients);
-            }
-        }
         self.domain
             .check_private_approval_card(card.clone())
             .await

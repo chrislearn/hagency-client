@@ -12,4 +12,5 @@ mod journal;
 mod overrun;
 mod pc_c1;
 mod privacy;
+mod recipients;
 use fixture::*;

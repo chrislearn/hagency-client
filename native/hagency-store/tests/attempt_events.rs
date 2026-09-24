@@ -12,13 +12,15 @@ use hagency_store::{
 };
 use serde_json::{Value, json};
 
-/// The fourteen phases in the order an attempt can visit them.
-const PHASES: [AttemptPhase; 14] = [
+/// The fifteen phases in the order an attempt can visit them (`over_budget`
+/// since ADR-183 decision D).
+const PHASES: [AttemptPhase; 15] = [
     AttemptPhase::Claimed,
     AttemptPhase::SpawnStarted,
     AttemptPhase::SpawnDone,
     AttemptPhase::Initialized,
     AttemptPhase::TurnStarted,
+    AttemptPhase::OverBudget,
     AttemptPhase::ApprovalRequested,
     AttemptPhase::ApprovalDecided,
     AttemptPhase::Parked,
@@ -118,7 +120,7 @@ impl Fixture {
 }
 
 /// Scenario "An attempt's phases are recorded in order with their clock",
-/// the store half: fourteen phases read back in seq order with their clock;
+/// the store half: fifteen phases read back in seq order with their clock;
 /// the detail bound (control characters replaced, strings cut at 4 KiB,
 /// the object refused past 8 KiB, keys and depth checked); the 256-event
 /// cap; an unknown dispatch; and a refused write leaving the next one whole.
@@ -138,7 +140,7 @@ fn native_attempt_events_store_bounds() {
         assert_eq!(seq, i as u64 + 1);
     }
     let rows = f.db.attempt_events("first", 1).unwrap();
-    assert_eq!(rows.len(), 14);
+    assert_eq!(rows.len(), 15);
     for (i, (row, phase)) in rows.iter().zip(PHASES).enumerate() {
         assert_eq!(row.seq, i as u64 + 1);
         assert_eq!(row.at_ms, 3000 + i as u64);
@@ -148,8 +150,10 @@ fn native_attempt_events_store_bounds() {
     // The bound is applied on the way in, so the row carries the clean copy.
     assert_eq!(rows[0].detail["note"], "a\u{fffd}b\u{fffd}c");
     assert_eq!(rows[0].detail["engagement"], "a");
-    assert_eq!(rows[10].detail["stderr_tail"].as_str().unwrap().len(), 4096);
-    assert_eq!(rows[10].detail["rows"][0]["exe"], "node");
+    // `stop_reported` is the twelfth phase since `over_budget` joined.
+    assert_eq!(rows[11].phase, AttemptPhase::StopReported);
+    assert_eq!(rows[11].detail["stderr_tail"].as_str().unwrap().len(), 4096);
+    assert_eq!(rows[11].detail["rows"][0]["exe"], "node");
     assert!(f.db.attempt_events("first", 2).unwrap().is_empty());
     // Refusals: an object over 8 KiB after the string cut, a non-object, a
     // key that is not an identifier, a container three deep. Each is
@@ -192,12 +196,12 @@ fn native_attempt_events_store_bounds() {
             4001
         )
         .unwrap(),
-        15
+        16
     );
-    assert_eq!(f.db.attempt_events("first", 1).unwrap().len(), 15);
+    assert_eq!(f.db.attempt_events("first", 1).unwrap().len(), 16);
     // The cap: 256 events per (dispatch, fence); the 257th is refused and
     // the log is unchanged.
-    for n in 16..=256 {
+    for n in 17..=256 {
         assert_eq!(
             f.record(&cap, AttemptPhase::Resumed, json!({"n":n}), 4000 + n)
                 .unwrap(),

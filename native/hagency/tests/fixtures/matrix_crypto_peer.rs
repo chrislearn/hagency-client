@@ -8,7 +8,7 @@ use matrix_sdk_crypto::{
 };
 use ruma::{RoomId, api::client::keys::get_keys, device_id, serde::Raw, user_id};
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub const SENDER: &str = "@worker:example.test";
 pub const DEVICE: &str = "DEVICE_1";
@@ -27,6 +27,16 @@ pub struct Peer {
     one_time: BTreeMap<String, Value>,
     sender_master: Option<Value>,
     recipient_trusted: bool,
+    /// The owner's other devices (ADR-183 B): each is its own independent
+    /// machine with its own one-time keys; `signed` names the ones the
+    /// owner's self-signing key has signed. A device the fixture parks is
+    /// absent from `/keys/query` until restored.
+    extra: BTreeMap<String, OlmMachine>,
+    extra_one_time: BTreeMap<String, BTreeMap<String, Value>>,
+    signed: BTreeSet<String>,
+    parked: BTreeMap<String, Value>,
+    /// Every owner device a room key was shared with, across all shares.
+    pub shared_devices: BTreeSet<String>,
 }
 
 impl Peer {
@@ -84,7 +94,90 @@ impl Peer {
             one_time,
             sender_master: None,
             recipient_trusted: false,
+            extra: BTreeMap::new(),
+            extra_one_time: BTreeMap::new(),
+            signed: BTreeSet::from([HUMAN_DEVICE.to_owned()]),
+            parked: BTreeMap::new(),
+            shared_devices: BTreeSet::new(),
         }
+    }
+
+    /// The owner logs in on another device (ADR-183 B). Its keys and one-time
+    /// keys come from its own real machine; when `signed`, the owner's
+    /// self-signing key signs it exactly as a verified login would be, and
+    /// otherwise it stays an unverified device the pinned identity never
+    /// signed. Nothing here touches the service SDK.
+    pub async fn add_device(&mut self, id: &str, signed: bool) {
+        let machine = OlmMachine::new(user_id!("@owner:example.test"), id.into()).await;
+        let outgoing = machine.outgoing_requests().await.unwrap();
+        let upload = outgoing
+            .iter()
+            .find_map(|r| match r.request() {
+                AnyOutgoingRequest::KeysUpload(upload) => Some(upload.clone()),
+                _ => None,
+            })
+            .expect("fresh device upload");
+        let device = serde_json::to_value(upload.device_keys.as_ref().unwrap()).unwrap();
+        let one_time = upload
+            .one_time_keys
+            .iter()
+            .map(|(k, v)| (k.to_string(), serde_json::to_value(v).unwrap()))
+            .collect::<BTreeMap<_, _>>();
+        assert!(!one_time.is_empty());
+        self.query["device_keys"][HUMAN][id] = device;
+        self.extra_one_time.insert(id.to_owned(), one_time);
+        self.extra.insert(id.to_owned(), machine);
+        if signed {
+            let response = query_response(&self.query);
+            let (request_id, _) = self.human.query_keys_for_users([self.human.user_id()]);
+            self.human
+                .mark_request_as_sent(&request_id, &response)
+                .await
+                .unwrap();
+            let device = self
+                .human
+                .get_device(self.human.user_id(), id.into(), None)
+                .await
+                .unwrap()
+                .expect("owner sees its new device");
+            let signature = device.verify().await.unwrap();
+            merge_signatures(
+                &mut self.query,
+                &serde_json::to_value(signature.signed_keys).unwrap(),
+            );
+            self.signed.insert(id.to_owned());
+        }
+    }
+
+    /// The owner removes (logs out) a device: it leaves `/keys/query`.
+    pub fn park_device(&mut self, id: &str) {
+        let entry = self.query["device_keys"][HUMAN]
+            .as_object_mut()
+            .unwrap()
+            .remove(id)
+            .expect("parked device exists");
+        self.parked.insert(id.to_owned(), entry);
+    }
+    /// The parked device is listed again exactly as it was.
+    pub fn restore_device(&mut self, id: &str) {
+        let entry = self.parked.remove(id).expect("device was parked");
+        self.query["device_keys"][HUMAN][id] = entry;
+    }
+
+    /// The owner resets their cross-signing identity: a new master key that
+    /// the pinned anchor no longer names, properly self-signed and signing
+    /// the owner's device.
+    pub async fn reset_identity(&mut self) {
+        let bootstrap = self.human.bootstrap_cross_signing(true).await.unwrap();
+        let signing = bootstrap.upload_signing_keys_req;
+        self.query["master_keys"][HUMAN] = json!(signing.master_key.unwrap());
+        self.query["self_signing_keys"][HUMAN] = json!(signing.self_signing_key.unwrap());
+        self.query["user_signing_keys"][HUMAN] = json!(signing.user_signing_key.unwrap());
+        merge_signatures(
+            &mut self.query,
+            &serde_json::to_value(bootstrap.upload_signatures_req.signed_keys).unwrap(),
+        );
+        self.recipient_trusted = false;
     }
 
     pub fn anchor(&self) -> String {
@@ -128,6 +221,11 @@ impl Peer {
             one_time,
             sender_master: None,
             recipient_trusted: false,
+            extra: BTreeMap::new(),
+            extra_one_time: BTreeMap::new(),
+            signed: BTreeSet::from([HUMAN_DEVICE.to_owned()]),
+            parked: BTreeMap::new(),
+            shared_devices: BTreeSet::new(),
         }
     }
 
@@ -242,19 +340,38 @@ impl Peer {
                 Some((200, json!({"failures":{}})))
             }
             "/_matrix/client/v3/keys/claim" => {
-                assert_eq!(self.writes.len(), 4);
-                assert_eq!(self.claims, 0, "fresh session claim must be single");
-                assert_eq!(
-                    body["one_time_keys"],
-                    json!({HUMAN:{HUMAN_DEVICE:"signed_curve25519"}})
-                );
-                let (id, key) = self.one_time.pop_first().unwrap();
+                if self.claims == 0 {
+                    assert_eq!(
+                        self.writes.len(),
+                        4,
+                        "the first claim follows the key writes"
+                    );
+                }
+                // One claim per device that lacks a session: the original
+                // owner device on the first claim, and any device the owner
+                // added since (ADR-183 B) on a later one. Every claimed
+                // device is one the owner really has; each key is issued once.
+                let requested = body["one_time_keys"].as_object().unwrap();
+                assert_eq!(requested.keys().collect::<Vec<_>>(), vec![HUMAN]);
+                let mut keys = serde_json::Map::new();
+                for (device, algorithm) in requested[HUMAN].as_object().unwrap() {
+                    assert_eq!(algorithm, "signed_curve25519");
+                    assert!(
+                        self.query["device_keys"][HUMAN].get(device).is_some(),
+                        "claim for a device the owner does not have: {device}"
+                    );
+                    let pool = if device == HUMAN_DEVICE {
+                        &mut self.one_time
+                    } else {
+                        self.extra_one_time.get_mut(device).unwrap()
+                    };
+                    let (id, key) = pool.pop_first().unwrap();
+                    keys.insert(device.clone(), json!({ id: key }));
+                }
+                assert!(!keys.is_empty());
                 self.claims += 1;
                 self.writes.push((target.into(), body.clone()));
-                Some((
-                    200,
-                    json!({"one_time_keys":{HUMAN:{HUMAN_DEVICE:{id:key}}},"failures":{}}),
-                ))
+                Some((200, json!({"one_time_keys":{HUMAN:keys},"failures":{}})))
             }
             _ => None,
         }
@@ -381,35 +498,47 @@ impl Peer {
     pub async fn share(&mut self, value: Value) {
         self.trust_original_sender().await;
         assert_eq!(value["messages"].as_object().unwrap().len(), 1);
-        assert_eq!(value["messages"][HUMAN].as_object().unwrap().len(), 1);
-        let content = &value["messages"][HUMAN][HUMAN_DEVICE];
-        assert!(content.is_object());
-        let raw = Raw::from_json_string(
-            json!({"type":"m.room.encrypted","sender":self.sender.as_str(),"content":content})
-                .to_string(),
-        )
-        .unwrap();
-        let (_, keys) = self
-            .human
-            .receive_sync_changes(
-                EncryptionSyncChanges {
-                    to_device_events: vec![raw],
-                    changed_devices: &Default::default(),
-                    one_time_keys_counts: &Default::default(),
-                    unused_fallback_keys: None,
-                    next_batch_token: None,
-                },
-                &DecryptionSettings {
-                    sender_device_trust_requirement: TrustRequirement::CrossSigned,
-                },
+        let devices = value["messages"][HUMAN].as_object().unwrap();
+        assert!(!devices.is_empty());
+        for (device, content) in devices {
+            assert!(content.is_object());
+            // ADR-183 B: a room key reaches only devices the owner signed.
+            assert!(
+                self.signed.contains(device),
+                "room key shared with a device the owner never signed: {device}"
+            );
+            let raw = Raw::from_json_string(
+                json!({"type":"m.room.encrypted","sender":self.sender.as_str(),"content":content})
+                    .to_string(),
             )
-            .await
             .unwrap();
-        assert_eq!(
-            keys.len(),
-            1,
-            "actual signed Olm claim must deliver a decryptable Megolm key"
-        );
+            let machine = if device == HUMAN_DEVICE {
+                &self.human
+            } else {
+                &self.extra[device]
+            };
+            let (_, keys) = machine
+                .receive_sync_changes(
+                    EncryptionSyncChanges {
+                        to_device_events: vec![raw],
+                        changed_devices: &Default::default(),
+                        one_time_keys_counts: &Default::default(),
+                        unused_fallback_keys: None,
+                        next_batch_token: None,
+                    },
+                    &DecryptionSettings {
+                        sender_device_trust_requirement: TrustRequirement::CrossSigned,
+                    },
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                keys.len(),
+                1,
+                "actual signed Olm claim must deliver a decryptable Megolm key to {device}"
+            );
+            self.shared_devices.insert(device.clone());
+        }
         self.shares += 1;
     }
 
@@ -437,6 +566,32 @@ impl Peer {
         let event = serde_json::from_str(plain.event.json().get()).unwrap();
         self.events.push(event);
         self.events.last().unwrap().clone()
+    }
+
+    /// The last room event, decrypted on one of the owner's other devices:
+    /// the proof that the card was encrypted to that device too. That device
+    /// has not verified the service identity itself, so the sender-trust
+    /// requirement is not applied here — only the key's presence is proven.
+    pub async fn decrypt_on(&self, device: &str, value: Value, room: &RoomId) -> Value {
+        let raw = Raw::from_json_string(
+            json!({
+                "type":"m.room.encrypted", "sender":self.sender.as_str(), "event_id":"$on_device",
+                "origin_server_ts":1, "content":value
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let plain = self.extra[device]
+            .decrypt_room_event(
+                &raw,
+                room,
+                &DecryptionSettings {
+                    sender_device_trust_requirement: TrustRequirement::Untrusted,
+                },
+            )
+            .await
+            .unwrap();
+        serde_json::from_str(plain.event.json().get()).unwrap()
     }
 }
 

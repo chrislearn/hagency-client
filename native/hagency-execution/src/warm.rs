@@ -35,9 +35,36 @@ impl WarmLimits {
             && (100..=hagency_runtime::codex::MAX_REQUEST_MS).contains(&self.idle_ms)
     }
 }
+/// ADR-183 decision D, the warm rule: what the idle re-qualification
+/// recorded. Fixed labels only; the host projects them. A failing check
+/// stops nothing: it is counted, named and re-checked on the next tick, and
+/// the next handoff's own admission decides that dispatch (ADR-182 decision
+/// 2). `failing_since_ms` names the current failing run and clears when a
+/// check passes again; the counters keep the history.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+pub struct WarmIdleStatus {
+    /// Idle checks that failed since the child became ready.
+    pub failures: u64,
+    /// Wall-clock ms of the first failure of the current failing run; `None`
+    /// while the checks pass.
+    pub failing_since_ms: Option<u64>,
+    pub last_failed_at_ms: Option<u64>,
+    /// The check (`AuthoritySite` word, or `warm_idle` for a check that
+    /// exceeded its own response bound) and the cause of the last failure.
+    pub last_site: Option<&'static str>,
+    pub last_cause: Option<&'static str>,
+}
 struct Ready {
     result: Mutex<Option<Result<(), Failure>>>,
     changed: Notify,
+    idle: Mutex<WarmIdleStatus>,
+    /// The idle check that is failing RIGHT NOW, kept beside the counted
+    /// history (ADR-183 decision D, warm rule). It never ends the child; it
+    /// is what a handoff asks before admitting the next dispatch, so a
+    /// check failing at that moment refuses THAT dispatch (ADR-182 decision
+    /// 2) instead of starting a turn the operation's own admission would
+    /// refuse a moment later. Cleared by the next passing check.
+    idle_failure: Mutex<Option<Failure>>,
 }
 impl Ready {
     fn read(&self) -> Result<Option<Result<(), Failure>>, Failure> {
@@ -55,6 +82,98 @@ impl Ready {
             }
         }
         self.changed.notify_one();
+    }
+    fn idle_status(&self) -> WarmIdleStatus {
+        self.idle.lock().map(|idle| *idle).unwrap_or_default()
+    }
+    /// The currently failing idle check, for a handoff to refuse on.
+    fn idle_refusal(&self) -> Option<Failure> {
+        self.idle_failure.lock().ok().and_then(|f| f.clone())
+    }
+    /// One transient idle refusal: counted, named, logged with the same
+    /// labels (ADR-181 point 7). The child is untouched.
+    fn idle_failed(&self, failure: &Failure) {
+        let (site, cause) = match failure {
+            Failure::LostAuthority { site, cause } => (site.as_str(), cause.as_str()),
+            Failure::Deadline => ("warm_idle", "timed_out"),
+            _ => ("warm_idle", "other"),
+        };
+        if let Ok(mut current) = self.idle_failure.lock() {
+            *current = Some(failure.clone());
+        }
+        let now = wall_ms();
+        let failures = if let Ok(mut idle) = self.idle.lock() {
+            idle.failures = idle.failures.saturating_add(1);
+            idle.failing_since_ms.get_or_insert(now);
+            idle.last_failed_at_ms = Some(now);
+            idle.last_site = Some(site);
+            idle.last_cause = Some(cause);
+            idle.failures
+        } else {
+            0
+        };
+        tracing::warn!(
+            site,
+            cause,
+            failures,
+            "warm idle check failed; recorded, the child is kept and re-checked"
+        );
+    }
+    /// A passing check ends the failing run; the history stays.
+    fn idle_passed(&self) {
+        if let Ok(mut current) = self.idle_failure.lock() {
+            *current = None;
+        }
+        if let Ok(mut idle) = self.idle.lock()
+            && idle.failing_since_ms.take().is_some()
+        {
+            tracing::info!(failures = idle.failures, "warm idle check passes again");
+        }
+    }
+}
+fn wall_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|d| u64::try_from(d.as_millis()).ok())
+        .unwrap_or_default()
+}
+/// The negative evidence that still ends the warm child while it idles
+/// (ADR-183 decision D, warm rule): cancellation; the idle budget itself
+/// (the child's own lifetime, `WarmLimits::idle_ms`, which the transport
+/// enforces too); the leader observed gone or unobservable (`WarmQualify`:
+/// the child's own exit); a workspace root or home directory that is no
+/// longer there (`WarmRoot`/`WarmScope` with the path missing — proven
+/// gone, unlike a permission or identity refusal on a path that exists);
+/// and the store retiring the scope (`WarmProvision` revoked, generation
+/// or not found). Everything else is transient and only recorded: a local
+/// provider directory that fails its mode or identity check
+/// (`LocalCodexCheck` — its paths are the provider's own, so a missing one
+/// is caught at the next handoff's admission, not here), a root or home
+/// refusal on a present path, an account binding refusal, a busy, timed-out
+/// or unavailable writer, and a check slower than its own response bound.
+fn fatal_idle(failure: &Failure, binding: &Binding, idle_until: Instant) -> bool {
+    use crate::{AuthorityCause, AuthoritySite};
+    fn gone(path: &std::path::Path) -> bool {
+        matches!(std::fs::symlink_metadata(path), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+    }
+    match failure {
+        Failure::Cancelled => true,
+        Failure::Deadline => Instant::now() >= idle_until,
+        Failure::LostAuthority { site, cause } => match site {
+            AuthoritySite::WarmQualify => true,
+            AuthoritySite::WarmRoot => gone(binding.root.path()),
+            AuthoritySite::WarmScope => {
+                binding.home.workdir_path().is_ok_and(|path| gone(&path))
+                    || binding.home.home_path().is_ok_and(|path| gone(&path))
+            }
+            AuthoritySite::WarmProvision => matches!(
+                cause,
+                AuthorityCause::Revoked | AuthorityCause::Generation | AuthorityCause::NotFound
+            ),
+            _ => false,
+        },
+        _ => false,
     }
 }
 /// Owning, non-cloneable handle. A dropped ready wait leaves this exact worker
@@ -235,6 +354,8 @@ impl WarmRuntime {
         let ready = Arc::new(Ready {
             result: Mutex::new(None),
             changed: Notify::new(),
+            idle: Mutex::new(WarmIdleStatus::default()),
+            idle_failure: Mutex::new(None),
         });
         let notice = ready.clone();
         let source = domain.clone();
@@ -332,6 +453,11 @@ impl WarmRuntime {
     /// handoff leaves the factory with. It carries no process and no failure.
     pub(crate) fn binding(&self) -> Binding {
         self.binding.clone()
+    }
+    /// What the idle re-qualification recorded (ADR-183 decision D, warm
+    /// rule): for the host to project; never authority.
+    pub fn idle_status(&self) -> WarmIdleStatus {
+        self.ready.idle_status()
     }
     /// Only the concrete factory bridge requests activation after checking its
     /// original enrolled SDK. The original worker qualifies its physical owner
@@ -472,6 +598,15 @@ impl WarmRuntime {
             Some(Err(failure)) => return Err(failure),
             None => return Err(Failure::Admission),
         }
+        // ADR-183 decision D (warm rule): an idle check that failed does not
+        // end the child, but one that is failing right now refuses this
+        // handoff — nothing has started, so the driver requeues the dispatch
+        // with its launch backoff and the worker continues (ADR-182 decision
+        // 2). Admitting it here would start a turn the operation's own
+        // admission refuses a moment later, which would cost the dispatch.
+        if let Some(failure) = self.ready.idle_refusal() {
+            return Err(failure);
+        }
         let until = Instant::now() + Duration::from_millis(limits.operation_ms);
         let (mut operation, work) = Operation::prepare(
             self.domain.clone(),
@@ -529,10 +664,11 @@ struct Controls<'owner> {
     ready: &'owner Ready,
     receive: &'owner mut mpsc::Receiver<Command>,
 }
-async fn qualify(
+/// The scope half of a qualification: the binding's current checks and the
+/// account binding. Its refusal is the transient class while idle.
+async fn scope_current(
     domain: &DomainStore,
     binding: &Binding,
-    owner: &mut OwnedSession,
     account: Option<&hagency_store::ManagedLaunch>,
     cancel: &AtomicBool,
     until: Instant,
@@ -543,27 +679,73 @@ async fn qualify(
             .check()
             .map_err(|error| Failure::lost(crate::AuthoritySite::AccountCheck, &error))?;
     }
-    let remaining = until
+    Ok(())
+}
+/// The full qualification, strict: every refusal is returned. Used at
+/// activation and at the handoff (the dispatch's own admission, ADR-182
+/// decision 2); the idle tick wraps it in `requalify`. The leader
+/// observation — the child's own evidence — runs whatever the scope checks
+/// said, on a bound taken at entry, so a slow scope check cannot starve it.
+async fn qualify(
+    domain: &DomainStore,
+    binding: &Binding,
+    owner: &mut OwnedSession,
+    account: Option<&hagency_store::ManagedLaunch>,
+    cancel: &AtomicBool,
+    until: Instant,
+) -> Result<(), Failure> {
+    let owner_bound = until
         .checked_duration_since(Instant::now())
         .filter(|duration| !duration.is_zero())
-        .ok_or(Failure::Deadline)?;
+        .ok_or(Failure::Deadline)?
+        .min(Duration::from_secs(5));
+    let before = scope_current(domain, binding, account, cancel, until).await;
     owner
-        .qualify_ready_owner(remaining.min(Duration::from_secs(5)))
+        .qualify_ready_owner(owner_bound)
         .map_err(|_| Failure::lost_io(crate::AuthoritySite::WarmQualify))?;
     // Actual physical IO precedes the final original writer observation.
-    binding.current(domain, cancel, until).await?;
-    if let Some(account) = account {
-        account
-            .check()
-            .map_err(|error| Failure::lost(crate::AuthoritySite::AccountCheck, &error))?;
-    }
+    let after = scope_current(domain, binding, account, cancel, until).await;
     if cancel.load(Ordering::Acquire) {
         return Err(Failure::Cancelled);
     }
+    before?;
+    after?;
     if Instant::now() >= until {
         return Err(Failure::Deadline);
     }
     Ok(())
+}
+/// One idle tick's bounds and record (ADR-183 decision D, warm rule):
+/// `until` is this check's own bound, `idle_until` the child's idle budget
+/// that still ends it, `ready` where a transient refusal is recorded.
+struct IdleTick<'owner> {
+    until: Instant,
+    idle_until: Instant,
+    ready: &'owner Ready,
+}
+/// One idle re-qualification (ADR-183 decision D, warm rule): the same checks
+/// as `qualify`, with the transient class recorded on `ready` instead of
+/// returned, so the worker keeps the child and re-checks on the next tick.
+/// Only `fatal_idle`'s evidence comes back as an error.
+async fn requalify(
+    domain: &DomainStore,
+    binding: &Binding,
+    owner: &mut OwnedSession,
+    account: Option<&hagency_store::ManagedLaunch>,
+    cancel: &AtomicBool,
+    tick: IdleTick<'_>,
+) -> Result<(), Failure> {
+    match qualify(domain, binding, owner, account, cancel, tick.until).await {
+        Ok(()) => {
+            tick.ready.idle_passed();
+            Ok(())
+        }
+        Err(failure) if fatal_idle(&failure, binding, tick.idle_until) => Err(failure),
+        Err(failure) => {
+            tick.ready.idle_failed(&failure);
+            Ok(())
+        }
+    }
 }
 async fn retain(
     domain: &DomainStore,
@@ -624,14 +806,21 @@ async fn retain(
         .enter_warm_idle(idle_until)
         .map_err(|_| Failure::Protocol)?;
     ready.set(Ok(()));
+    // The idle loop (ADR-183 decision D, warm rule): every 100 ms the child
+    // is re-qualified, and a transient refusal is recorded on `ready` and
+    // re-checked, never a stop; `fatal_idle` names what still ends it. The
+    // readiness inspection (`Observe`) is the same check on the host's own
+    // bound and answers Ok while the child is up, with the refusal in the
+    // idle status. Activation and the handoff keep the strict `qualify`: they
+    // are admissions of their own, not idle re-qualification.
     let wait = async {
         let mut tick = interval(Duration::from_millis(100));
         tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
         loop {
             tokio::select! {
                 biased;
-                _=tick.tick()=>qualify(domain,binding,owner,report.account.as_ref(),cancel,
-                    idle_until.min(Instant::now()+Duration::from_millis(limits.initialize.response_ms))).await?,
+                _=tick.tick()=>requalify(domain,binding,owner,report.account.as_ref(),cancel,IdleTick {
+                    until: idle_until.min(Instant::now()+Duration::from_millis(limits.initialize.response_ms)),idle_until,ready}).await?,
                 command=receive.recv()=>match command.ok_or(Failure::Cancelled)? {
                     Command::Dispatch {work,until}=>{
                         // Transfer the closure out of the cancellable wait
@@ -639,7 +828,7 @@ async fn retain(
                         return Ok((work,until));
                     },
                     Command::Observe {until,reply}=>{
-                        let result=qualify(domain,binding,owner,report.account.as_ref(),cancel,until.min(idle_until)).await;
+                        let result=requalify(domain,binding,owner,report.account.as_ref(),cancel,IdleTick {until: until.min(idle_until),idle_until,ready}).await;
                         let failure=result.clone().err();let _=reply.send(result);
                         if let Some(failure)=failure {return Err(failure);}
                     },
@@ -688,6 +877,8 @@ mod tests {
         let ready = Ready {
             result: Mutex::new(None),
             changed: Notify::new(),
+            idle: Mutex::new(WarmIdleStatus::default()),
+            idle_failure: Mutex::new(None),
         };
         ready.set(Ok(()));
         assert_eq!(ready.read().unwrap(), Some(Ok(())));

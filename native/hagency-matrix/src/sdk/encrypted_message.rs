@@ -14,7 +14,15 @@ pub(super) struct Input<'a> {
     pub query_id: &'a str,
     pub response: &'a Value,
 }
-pub(super) async fn prepare(machine: &OlmMachine, input: Input<'_>) -> Result<Vec<Write>, Error> {
+/// The prepared writes and the recipient set they were shared with: the
+/// owner's devices the accepted identity has signed (ADR-183 B-1). The
+/// caller records that set on its attempt, because it — not the server's
+/// device list — is what the attempt's own validator measures the sent
+/// messages against.
+pub(super) async fn prepare(
+    machine: &OlmMachine,
+    input: Input<'_>,
+) -> Result<(Vec<Write>, BTreeSet<(String, String)>), Error> {
     let Input {
         users,
         room,
@@ -50,6 +58,13 @@ pub(super) async fn prepare(machine: &OlmMachine, input: Input<'_>) -> Result<Ve
     let mut actual = BTreeSet::new();
     let mut writes = Vec::new();
     for share in shares {
+        // ADR-183 B: for every device the accepted identity has not signed,
+        // the SDK's trusted-only strategy withholds the key and drafts an
+        // `m.room_key.withheld` notice. An excluded device gets neither the
+        // key nor the notice: the share is skipped, never a refusal.
+        if share.event_type.to_string() == "m.room_key.withheld" {
+            continue;
+        }
         if share.event_type.to_string() != "m.room.encrypted" {
             return Err(Error::Recipients);
         }
@@ -85,5 +100,5 @@ pub(super) async fn prepare(machine: &OlmMachine, input: Input<'_>) -> Result<Ve
         serde_json::to_value(encrypted.content).map_err(|_| Error::Storage)?,
         true,
     )?);
-    Ok(writes)
+    Ok((writes, recipients))
 }
