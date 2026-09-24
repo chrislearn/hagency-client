@@ -321,6 +321,30 @@ fn native_verified_ingress_policy() {
     assert!(dm.db.admit_matrix_event(&bad, 1013).is_err());
 }
 
+/// TS:bridge-matrix.js:3310 admits `m.notice` in the same breath as `m.text`, so
+/// a human notice is TEXT for every purpose — including waking the agent it
+/// addresses. The port admitted it but never let it wake. A notice that
+/// addresses nobody still does not wake, exactly as a text that addresses
+/// nobody does: the notice's msgtype changes nothing about the mention rule.
+#[test]
+fn native_verified_ingress_human_notice_wakes_like_text() {
+    let mut f = Fixture::new(false);
+    for (id, kind, mentions, expected) in [
+        ("notice_addressed", "m.notice", vec!["@a:example.test"], true),
+        ("text_addressed", "m.text", vec!["@a:example.test"], true),
+        ("notice_unaddressed", "m.notice", vec![], false),
+        ("text_unaddressed", "m.text", vec![], false),
+    ] {
+        let mut event = f.event("a", id, None, &mentions, 1010);
+        event.event.kind = kind.into();
+        assert_eq!(
+            f.db.admit_matrix_event(&event, 1011).unwrap().wake,
+            expected,
+            "{id}"
+        );
+    }
+}
+
 #[test]
 fn native_verified_ingress_task_activation() {
     for direct in [false, true] {
