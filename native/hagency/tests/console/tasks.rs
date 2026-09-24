@@ -352,9 +352,24 @@ async fn native_console_agent_tasks_and_project_board() {
     assert!(board["generatedAt"].as_str().unwrap().ends_with('Z'));
     assert_eq!(board["staleAfterMs"], 300_000);
     assert_eq!(board["activityLimit"], 20);
-    assert_eq!(board["totals"]["projects"], 0);
-    assert_eq!(board["totals"]["tasks"]["created"], 2);
-    assert_eq!(board["projects"], json!([]));
+    // The console fixture admits an approved engagement on `project_one`, so
+    // the board reports exactly that one project and its one active member.
+    assert_eq!(board["totals"]["projects"], 1);
+    assert_eq!(board["totals"]["agents"], 1);
+    assert_eq!(board["totals"]["tasks"]["created"], 2, "both new tasks are created");
+    let projects = board["projects"].as_array().unwrap();
+    assert_eq!(projects.len(), 1);
+    assert_eq!(projects[0]["id"], "project_one");
+    assert_eq!(projects[0]["agents"], json!(["UsageWorker"]));
+    // The lane counts only tasks whose ASSIGNEE is a project member: the two
+    // tasks above name Aria/Octos, who are not on `project_one`, so every lane
+    // is 0 while the global totals still see both tasks. That difference is
+    // the point of lanes.
+    assert_eq!(projects[0]["taskLanes"]["created"], 0);
+    assert_eq!(
+        projects[0]["taskLanes"]["done"], 0,
+        "an empty lane is served as 0, not omitted"
+    );
     let unavailable = board["unavailable"].as_array().unwrap();
     for column in ["health", "repositories", "worktrees", "activity"] {
         assert!(

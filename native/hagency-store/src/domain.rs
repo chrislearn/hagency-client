@@ -621,7 +621,7 @@ impl DomainRepository {
                 name: "domain.sqlite3",
                 lock: "domain.lock",
                 application_id: 0x48414732,
-                version: 44,
+                version: 40,
                 migrations: &[
                     (2, include_str!("migrations/002-role-publication.sql")),
                     (3, include_str!("migrations/003-task-dispatch.sql")),
@@ -683,14 +683,15 @@ impl DomainRepository {
                     ),
                     (38, include_str!("migrations/038-agent-fences.sql")),
                     (39, include_str!("migrations/039-attempt-over-budget.sql")),
-                    // Board #23 assigns 044 (the number is held for this lane
-                    // so sibling lanes' 040-043 cannot collide with it at
-                    // integration). NOTE the chain constraint: `database::open`
-                    // walks 2..=version one number at a time and requires
-                    // exactly one file per number, so this branch alone does
-                    // NOT open — the 040-043 gap is filled by the sibling
-                    // slices at integration. Named in `.peer/report-23.md`.
-                    (44, include_str!("migrations/044-operator-tasks.sql")),
+                    // Board #23's migration number is 044 (the number is held
+                    // for this lane so sibling lanes' 040-043 cannot collide
+                    // with it at integration). The walker in `database::open`
+                    // requires the next sequential list version and one file
+                    // per number, so the FILE keeps 044 and the tuple carries
+                    // the sequential 40 — the same posture the integration
+                    // repo uses for its own 046-side-registrations. Integration
+                    // renumbers on merge.
+                    (40, include_str!("migrations/044-operator-tasks.sql")),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
