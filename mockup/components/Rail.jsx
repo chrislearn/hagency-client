@@ -75,24 +75,6 @@ const SECTIONS = [
 // reader experiences as being lost.
 const isUnder = (pathname, href) => pathname.startsWith(`${href}/`);
 
-/*
- * Native-only rail rows (parity finding #3): accounts, approvals and
- * project-sides are built and served by the native console but had no nav
- * entry, reachable only by typing the URL. They live under 机群/Fleet —
- * they observe the fleet's accounts, pending decisions and registered
- * project sides, none of which is a resource, capability or engagement.
- * Capability, projects and config stay greyed: no native page exists for
- * those workflows, and a link that can only 404 would lie.
- */
-const NATIVE_FLEET_ROWS = [
-  { href: '/accounts', key: 'accounts', icon: '◍' },
-  { href: '/approvals', key: 'approvals', icon: '✓' },
-  { href: '/project-sides', key: 'projectSides', icon: '⛓' },
-];
-const NATIVE_SECTIONS = SECTIONS.map((sec) => sec.head === 'rail.secFleet'
-  ? { ...sec, rows: [...sec.rows, ...NATIVE_FLEET_ROWS] }
-  : sec);
-
 export default function Rail() {
   const data = useData();
   return data.nativeConsole ? <NativeRail /> : <LegacyRail />;
@@ -103,10 +85,10 @@ function NativeRail() {
   const pathname = usePathname();
   return <nav className="rail" aria-label={t('rail.nav')}>
     <div className="rail-brand"><b>HAGENCY</b><span>{t('nr.nativeConsole')}</span></div>
-    <div className="rail-fleet">{NATIVE_SECTIONS.map((sec) => <div key={sec.head}>
+    <div className="rail-fleet">{SECTIONS.map((sec) => <div key={sec.head}>
       <h2 className="rail-sec">{t(sec.head)}</h2>
       <ul className="rail-list">{sec.rows.map((row) => <li key={row.key}>
-        {['usage', 'resources', 'alerts', 'engagements', 'workforce', 'accounts', 'approvals', 'project-sides'].includes(row.key) ? <a className="fleet-row" href={row.key === 'workforce' ? '/console/agents/' : `/console/${row.key}/`} aria-current={pathname.endsWith(`/${row.key}`) || pathname.endsWith(`/${row.key}/`) || (row.key === 'workforce' ? /^\/console\/agents\/?$/.test(pathname) : pathname.startsWith(`/console/${row.key}/`)) ? 'page' : undefined}><span className="ico">{row.icon}</span><span className="grow">{t(`nav.${row.key}`)}</span></a>
+        {['usage', 'resources', 'alerts', 'engagements', 'workforce'].includes(row.key) ? <a className="fleet-row" href={row.key === 'workforce' ? '/console/agents/' : `/console/${row.key}/`} aria-current={pathname.endsWith(`/${row.key}`) || pathname.endsWith(`/${row.key}/`) || (row.key === 'workforce' ? /^\/console\/agents\/?$/.test(pathname) : pathname.startsWith(`/console/${row.key}/`)) ? 'page' : undefined}><span className="ico">{row.icon}</span><span className="grow">{t(`nav.${row.key}`)}</span></a>
           : <span className="fleet-row" aria-disabled="true" title={t('nu.unavailableRoute')}><span className="ico">{row.icon}</span><span className="grow">{t(`nav.${row.key}`)}</span><span>—</span></span>}
       </li>)}</ul>
     </div>)}</div>
