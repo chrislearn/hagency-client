@@ -15,6 +15,8 @@ mod configuration;
 mod engagements;
 #[path = "console/engagements_retire.rs"]
 mod engagements_retire;
+#[path = "console/engagements_verdict.rs"]
+mod engagements_verdict;
 #[path = "console/fixture.rs"]
 mod fixture;
 #[path = "console/origin.rs"]
