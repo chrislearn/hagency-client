@@ -22,7 +22,7 @@
 //! `bridge-matrix.js:7926-7945`: the agent is in the room, so the
 //! invitation WAS answered — by policy, never credited to a person).
 use super::Shared;
-use hagency_matrix::CancellationToken;
+use hagency_matrix::{CancellationToken, Collector};
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 
@@ -45,7 +45,7 @@ pub(super) fn start(shared: Shared, shutdown: CancellationToken) -> tokio::task:
                 _ = shutdown.cancelled() => return,
                 _ = tokio::time::sleep(POLL_PERIOD) => {}
             }
-            match poll_once(&shared, &shutdown).await {
+            match poll_round(&shared.collector, &shared.domain, &shutdown).await {
                 Ok(()) => backoff = BACKOFF_MIN,
                 Err(reason) => {
                     tracing::warn!(
@@ -67,12 +67,11 @@ pub(super) fn start(shared: Shared, shutdown: CancellationToken) -> tokio::task:
 /// One poll round. Every failure is reported, never acted on terminally:
 /// the next round re-reads the same state, so a transient fault costs a
 /// tick, not an invitation.
-pub(super) async fn poll_once(
-    shared: &Shared,
+pub async fn poll_round(
+    collector: &Collector,
+    domain: &hagency_store::DomainStore,
     cancel: &CancellationToken,
 ) -> Result<(), &'static str> {
-    let collector = shared.collector.clone();
-    let domain = shared.domain.clone();
     // The record key is the agent NAME (TS `rememberPendingInvite`'s
     // second argument); the engagement owns that name.
     let agent = domain

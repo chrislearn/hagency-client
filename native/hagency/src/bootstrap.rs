@@ -5,7 +5,7 @@ mod config;
 mod driver;
 pub mod fleet;
 pub mod intake_refusal;
-mod invites;
+pub mod invites;
 pub(crate) mod palpo;
 pub mod provision;
 pub mod registration;
