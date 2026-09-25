@@ -54,8 +54,11 @@ export default function NativeResources() {
     {/* Creating a resource needs a SOURCE resource to derive from, so with none
         configured this link landed on `nc.noSource` — a dead end two clicks in.
         The empty state below names the real first step (enroll an account), so
-        the create control appears only when it can actually be completed. */}
-    {['ready', 'stale'].includes(phase) && (resources.length > 0 || selected) && <div className="btn-row"><a className="btn primary" href={`/console/resources/new/${selected ? `?source_resource_id=${selected}` : ''}`}>{t('nc.create')}</a></div>}
+        the create control appears only when it can actually be completed
+        (#44 item 11).
+        Item 3 (lane nav): the list link names the destination; the wizard's own
+        submit keeps "Create another configuration" as the action. Both hold. */}
+    {['ready', 'stale'].includes(phase) && (resources.length > 0 || selected) && <div className="btn-row"><a className="btn primary" href={`/console/resources/new/${selected ? `?source_resource_id=${selected}` : ''}`}>{t('nr.createLink')}</a></div>}
     {phase === 'loading' && <p role="status">{t('nr.loading')}</p>}
     <NativeAccessNotice />
     {action && <section className="notice" data-resource-action={action.kind} role={action.kind === 'pending' || action.kind === 'saved' ? 'status' : 'alert'}>

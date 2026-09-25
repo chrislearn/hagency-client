@@ -3,6 +3,7 @@ use super::{DomainRepository, bounded_row, execution, matrix_routes, serialize};
 use crate::Error;
 use hagency_core::{
     JSON_SAFE_MAX, canonical,
+    messages::Message,
     project::identifier,
     replies::*,
     tasks::{RunnerCapability, TaskState, clock, text},
@@ -38,18 +39,40 @@ fn current(db: &Connection, id: &str) -> Result<(), Error> {
     Ok(())
 }
 fn snapshot(db: &Connection, id: &str) -> Result<ReplySend, Error> {
-    let (transaction_id, digest, route, body): (String, String, String, String) = db.query_row(
-        "SELECT transaction_id,digest,route,body FROM final_replies WHERE id=?1",
-        [id],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-    )?;
+    let (transaction_id, digest, route, body, dispatch): (String, String, String, String, String) = db
+        .query_row(
+            "SELECT transaction_id,digest,route,body,source_dispatch_id FROM final_replies WHERE id=?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+        )?;
     Ok(ReplySend {
         id: id.into(),
         transaction_id,
         digest,
         route: serde_json::from_str(&route)?,
         body,
+        reply_to: question_event(db, &dispatch)?,
     })
+}
+/// TS:bridge-matrix.js:3318-3393 — an answer names the message it answers. That
+/// question is this dispatch's newest ADDRESSED input: the wake event that
+/// minted the dispatch, which `task_intents` reads as the request a dispatch
+/// answers (`task_intents.rs:112`). Read from the frozen window rather than a
+/// stored column because the window is already durable for exactly as long as
+/// the reply is.
+fn question_event(db: &Connection, dispatch: &str) -> Result<Option<String>, Error> {
+    let encoded: Option<String> = db
+        .query_row(
+            "SELECT CASE WHEN s.matrix_generation>0 THEN i.config ELSE m.config END FROM dispatch_inputs d JOIN admitted_messages m ON m.sequence=d.message_sequence JOIN runner_dispatches r ON r.id=d.dispatch_id JOIN runner_sessions s ON s.id=r.session_id JOIN session_inputs i ON i.session_id=r.session_id AND i.message_sequence=m.sequence WHERE d.dispatch_id=?1 AND d.addressed=1 ORDER BY m.sequence DESC LIMIT 1",
+            [dispatch],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(encoded) = encoded else {
+        return Ok(None);
+    };
+    let message: Message = serde_json::from_str(&encoded)?;
+    Ok(Some(message.event_id))
 }
 fn claim_state(db: &Connection, claim: &ReplyClaim, now: u64) -> Result<String, Error> {
     identifier(&claim.id, 128)?;
