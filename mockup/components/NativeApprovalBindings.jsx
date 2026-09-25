@@ -1,35 +1,46 @@
 'use client';
 
 /*
- * The read-only approval-bindings list (board #52, TS `GET
- * /api/approval-bindings` at backend-v2.js:9051-9082, the plain-list
- * branch): every live binding, derived from the native store's own
- * observation-driven tables — never an operator assertion, so no unbind
- * control exists here. The TS write half (PUT bind, PUT membership, DELETE
- * unbind) asserts facts native derives from room observations instead, and
- * the unbind-revokes semantics already exist natively at the right moment:
- * the approval_room_retire_grants trigger revokes every grant of a binding's
- * engagement the instant its room observation goes unsafe.
+ * The approval-bindings surface (board #52, TS `GET /api/approval-bindings`
+ * at backend-v2.js:9051-9082 plus `DELETE
+ * /api/approval-bindings/:agent/:roomId` at :9030-9046).
+ *
+ * The LIST is an observation: every live binding is derived from the native
+ * store's own room observations (`observe_approval_room` +
+ * `current_approval_bindings`), never asserted by the operator — so no "bind"
+ * control exists here. The TS BIND half (`PUT /api/approval-bindings`, PUT
+ * membership) asserts a governance fact native derives instead, and has no
+ * faithful native writer.
+ *
+ * The UNBIND half does have a durable native effect and is ported: it removes
+ * the derived binding row AND revokes the approval grants that binding
+ * carried, in one transaction — the TS `removeBinding` +
+ * `revokeScopesByBinding` pair. It is a mutation, so the control renders ONLY
+ * from the served `permissions.manageBindings` boolean: a read-only ticket is
+ * never shown a button whose only possible answer is a refusal.
  *
  * Rows carry exactly the nine keys the route serves; membership status,
- * `active` and the authority id have no native source and are never
- * invented.
+ * `active` and the authority id have no native source and are never invented.
  */
 import { useEffect, useState } from 'react';
 import { useT } from '@/components/Prefs';
-import { fetchApprovalBindings } from '@/lib/native-api';
+import { fetchApprovalBindings, unbindApprovalBinding } from '@/lib/native-api';
 
 export default function NativeApprovalBindings() {
   const t = useT();
   const [phase, setPhase] = useState('loading');
   const [error, setError] = useState(null);
   const [rows, setRows] = useState([]);
+  const [manageBindings, setManageBindings] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [hold, setHold] = useState(false);
+  const [action, setAction] = useState(null);
 
   const load = async () => {
     try {
       const value = await fetchApprovalBindings();
       setRows(value.bindings);
+      setManageBindings(value.permissions.manageBindings === true);
       setError(null);
       setPhase('ready');
     } catch (err) {
@@ -43,6 +54,28 @@ export default function NativeApprovalBindings() {
   const refresh = async () => {
     setRefreshing(true);
     try { await load(); } finally { setRefreshing(false); }
+  };
+
+  const unbind = async (row) => {
+    if (hold) return;
+    setHold(true);
+    setAction({ engagementId: row.engagementId, kind: 'pending' });
+    try {
+      await unbindApprovalBinding(row.agent, row.roomId);
+      setAction({ engagementId: row.engagementId, kind: 'unbound' });
+      await load();
+    } catch (err) {
+      // The refusal word is surfaced, never swallowed: a scope refusal and a
+      // 404 mean different things to the operator, and an unconfirmed
+      // mutation is reported as unknown rather than as success.
+      const kind = err.message === 'not_found' ? 'notFound'
+        : err.message === 'agent_lifecycle_scope_required' ? 'scope'
+        : ['outcome_unknown', 'native_unavailable', 'invalid_native_response'].includes(err.message) ? 'unknown'
+        : 'refused';
+      setAction({ engagementId: row.engagementId, kind, error: err.message });
+    } finally {
+      setHold(false);
+    }
   };
 
   if (phase === 'error') {
@@ -61,6 +94,14 @@ export default function NativeApprovalBindings() {
       <h2 style={{ marginTop: 0 }}>
         {t('ab.title')}<span className="note"> {t('ab.readonly')}</span>
       </h2>
+      {action && ['unbound', 'unknown', 'refused', 'scope', 'notFound'].includes(action.kind) && (
+        <p role="status" className="small faint">
+          {action.kind === 'unbound' ? t('ab.unbound')
+            : action.kind === 'unknown' ? t('ab.unbindUnknown')
+            : action.kind === 'scope' ? t('ab.unbindScope')
+            : t('ab.unbindRefused')}
+        </p>
+      )}
       {rows.length === 0 ? (
         <div className="empty">
           <div className="big">{t('ab.none')}</div>
@@ -75,6 +116,7 @@ export default function NativeApprovalBindings() {
               <th>{t('ab.room')}</th>
               <th>{t('ab.owner')}</th>
               <th className="num">{t('ab.generation')}</th>
+              {manageBindings && <th>{t('ab.controls')}</th>}
             </tr>
           </thead>
           <tbody>
@@ -85,6 +127,19 @@ export default function NativeApprovalBindings() {
                 <td className="faint" style={{ fontSize: 11 }}>{r.roomId}</td>
                 <td className="dim" style={{ fontSize: 11 }}>{r.ownerMxid}</td>
                 <td className="num dim">{r.roomGeneration}.{r.incarnation}</td>
+                {manageBindings && (
+                  <td>
+                    <button
+                      className="btn"
+                      data-bindings-action="unbind"
+                      disabled={hold}
+                      onClick={() => unbind(r)}
+                    >
+                      {action?.engagementId === r.engagementId && action.kind === 'pending'
+                        ? t('ab.unbindPending') : t('ab.unbind')}
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

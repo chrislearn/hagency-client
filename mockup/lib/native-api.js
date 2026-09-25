@@ -341,12 +341,28 @@ const bindingRow = (v) => object(v, ['engagementId', 'agent', 'fleetId', 'projec
   && text(v.serverName, 256) && text(v.roomId, 256) && text(v.ownerMxid, 256)
   && number(v.roomGeneration) && number(v.incarnation);
 export function validateApprovalBindings(v) {
-  if (!object(v, ['at_ms', 'bindings']) || !Array.isArray(v.bindings) || v.bindings.length > 100
-    || v.bindings.some((b) => !bindingRow(b))) throw new Error('invalid_native_response');
+  if (!object(v, ['at_ms', 'bindings', 'permissions']) || !Array.isArray(v.bindings) || v.bindings.length > 100
+    || v.bindings.some((b) => !bindingRow(b))
+    || !object(v.permissions, ['manageBindings']) || typeof v.permissions.manageBindings !== 'boolean') throw new Error('invalid_native_response');
   return v;
 }
 export async function fetchApprovalBindings() {
   return validateApprovalBindings(await request('/api/approval-bindings'));
+}
+
+/*
+ * The operator unbind (board #52, TS `DELETE
+ * /api/approval-bindings/:agent/:roomId` at backend-v2.js:9030-9046). The
+ * route revokes the grants the binding carried and removes it, so this is a
+ * mutation and the read-only ticket's call is refused with
+ * `agent_lifecycle_scope_required` — a word the caller must surface, not
+ * swallow. Both ids are percent-encoded path segments; the server validates
+ * the room shape, so a malformed value is a refusal, never a silent success.
+ */
+export async function unbindApprovalBinding(agent, roomId) {
+  const v = await request(`/api/approval-bindings/${encodeURIComponent(agent)}/${encodeURIComponent(roomId)}`, { method: 'DELETE' });
+  if (!object(v, ['ok', 'binding']) || v.ok !== true || !bindingRow(v.binding)) throw new Error('invalid_native_response');
+  return v.binding;
 }
 
 const revision = (v) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);

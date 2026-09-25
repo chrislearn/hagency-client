@@ -119,7 +119,7 @@ async fn native_console_approval_bindings_list() {
         "/console/api/approval-bindings?includeInactive=true",
         "/console/api/approval-bindings?projectRoomId=!private:example.test",
     ] {
-        let mut response = get(path, &cookie).send(&service).await;
+        let response = get(path, &cookie).send(&service).await;
         assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST), "{path}");
     }
     f.close().await;
@@ -137,6 +137,147 @@ async fn native_console_approval_bindings_empty() {
         .await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let value: Value = response.take_json().await.unwrap();
+    assert_eq!(value["bindings"].as_array().unwrap().len(), 0);
+    f.close().await;
+}
+
+/// Seed one live grant under the seeded binding's engagement, the same SQL
+/// discipline the approvals test uses for its revocation case: the grant is
+/// the authority the TS unbind revokes (`revokeScopesByBinding`), so the test
+/// can assert the durable effect next to the row removal.
+fn seed_grant(state: &std::path::Path, engagement: &str) {
+    let db = rusqlite::Connection::open(state.join("domain.sqlite3")).unwrap();
+    db.execute(
+        "INSERT INTO approval_grants(id,engagement_id,binding_generation,scope_key,scope_kind,mode,task_id,task_epoch,context_key,revoked) \
+         VALUES('grant_binding_unbind',?1,1,'task:echo','\"exact_command\"','always',NULL,NULL,'ctx_unbind',0)",
+        [engagement],
+    )
+    .unwrap();
+}
+
+/// The live-grant predicate the store's `authorize` matches on: `revoked=0`
+/// is the row's only authority, so revocation must remove it from this set.
+fn grant_authorizes(state: &std::path::Path, engagement: &str) -> bool {
+    let db = rusqlite::Connection::open(state.join("domain.sqlite3")).unwrap();
+    db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM approval_grants WHERE engagement_id=?1 AND binding_generation=1 AND scope_key='task:echo' AND context_key='ctx_unbind' AND revoked=0 AND mode='always')",
+        [engagement],
+        |r| r.get::<_, bool>(0),
+    )
+    .unwrap()
+}
+
+fn binding_count(state: &std::path::Path) -> u64 {
+    let db = rusqlite::Connection::open(state.join("domain.sqlite3")).unwrap();
+    db.query_row("SELECT COUNT(*) FROM approval_bindings", [], |r| r.get(0))
+        .unwrap()
+}
+
+/// The operator unbind (board #52, TS `DELETE
+/// /api/approval-bindings/:agent/:roomId` at backend-v2.js:9030-9046): the
+/// binding row goes AND the authority it carried is revoked — the TS
+/// `removeBinding` + `revokeScopesByBinding` pair. A read-only ticket is
+/// refused with the console's named word and changes nothing; a lifecycle
+/// ticket removes the row and revokes the grant it carried; an unknown pair
+/// is a 404.
+#[tokio::test]
+async fn native_console_approval_binding_unbind_revokes() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let state = f.root.path().join("state");
+    seed_binding(&state, &f.engagement);
+    seed_grant(&state, &f.engagement);
+    let service = f.service();
+    let path = "/console/api/approval-bindings/UsageWorker/!private%3Aexample.test";
+    // The read-only ticket renders no unbind control and its call is refused:
+    // the mutation needs `Scope::AgentLifecycle`, and nothing changed.
+    let read_only = session(&service).await;
+    let mut refused = TestClient::delete(format!("{BASE}{path}"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .add_header("origin", BASE, true)
+        .add_header("sec-fetch-site", "same-origin", true)
+        .add_header("cookie", &read_only, true)
+        .send(&service)
+        .await;
+    assert_eq!(refused.status_code, Some(StatusCode::FORBIDDEN));
+    let refusal: Value = refused.take_json().await.unwrap();
+    assert_eq!(refusal["code"], "agent_lifecycle_scope_required");
+    assert_eq!(binding_count(&state), 1, "the refusal removed nothing");
+    assert!(
+        grant_authorizes(&state, &f.engagement),
+        "the refusal revoked nothing"
+    );
+    // The unbind control renders ONLY from the served capability word.
+    let mut listed = get("/console/api/approval-bindings", &read_only)
+        .send(&service)
+        .await;
+    assert_eq!(listed.status_code, Some(StatusCode::OK));
+    let value: Value = listed.take_json().await.unwrap();
+    assert_eq!(value["permissions"]["manageBindings"], false);
+    // Ticket issuance is rate-limited to one per second (authority.rs
+    // `issued` slot), so the scoped ticket waits. ONE scoped ticket serves
+    // both the 404 probe and the unbind: the scope gate runs BEFORE the store
+    // lookup, so a read-only ticket answers 403 even for an unknown pair and
+    // could never observe the 404 the route owes.
+    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+    let cookie = lifecycle_session(&service).await;
+    // An unknown pair is a 404, as TS returns.
+    let missing = TestClient::delete(format!(
+        "{BASE}/console/api/approval-bindings/UsageWorker/!nope%3Aexample.test"
+    ))
+    .add_header("host", "127.0.0.1:13300", true)
+    .add_header("origin", BASE, true)
+    .add_header("sec-fetch-site", "same-origin", true)
+    .add_header("cookie", &cookie, true)
+    .send(&service)
+    .await;
+    assert_eq!(missing.status_code, Some(StatusCode::NOT_FOUND));
+    let mut response = TestClient::delete(format!("{BASE}{path}"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .add_header("origin", BASE, true)
+        .add_header("sec-fetch-site", "same-origin", true)
+        .add_header("cookie", &cookie, true)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value: Value = response.take_json().await.unwrap();
+    assert_eq!(value["ok"], true);
+    // The returned binding is the nine-key projection the list serves.
+    let binding = &value["binding"];
+    let mut keys: Vec<&str> = binding
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        [
+            "agent",
+            "engagementId",
+            "fleetId",
+            "incarnation",
+            "ownerMxid",
+            "projectId",
+            "roomGeneration",
+            "roomId",
+            "serverName"
+        ]
+    );
+    assert_eq!(binding["agent"], "UsageWorker");
+    assert_eq!(binding["roomId"], "!private:example.test");
+    // The binding is gone from the list and from the table — TS is a hard
+    // delete — and the grant it carried no longer authorizes.
+    assert_eq!(binding_count(&state), 0, "the binding row was removed");
+    assert!(
+        !grant_authorizes(&state, &f.engagement),
+        "the grant the binding carried no longer authorizes"
+    );
+    let mut listed = get("/console/api/approval-bindings", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(listed.status_code, Some(StatusCode::OK));
+    let value: Value = listed.take_json().await.unwrap();
     assert_eq!(value["bindings"].as_array().unwrap().len(), 0);
     f.close().await;
 }
