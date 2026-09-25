@@ -108,7 +108,17 @@ impl crate::Collector {
     /// the retained backoff instead of waiting out the hour. Ends only on
     /// `cancel` — a bridge-side fault is never terminal (operator rule 1).
     pub async fn membership_sweep_loop(self: std::sync::Arc<Self>, cancel: CancellationToken) {
-        let mut interval = tokio::time::interval(MEMBERSHIP_SWEEP_INTERVAL);
+        // FIRST SWEEP AFTER ONE FULL PERIOD, like the retained schedule:
+        // `setInterval` (`trackLifecycleInterval`, backend-v2.js:17422-17426,
+        // called at :17511-17517) fires its first callback only after the
+        // whole interval, so the retained service makes no invite in its
+        // first hour. `tokio::time::interval`'s first tick completes
+        // IMMEDIATELY, so the start instant is offset — a service boot must
+        // not reach a customer's homeserver before the hour it always waited.
+        let mut interval = tokio::time::interval_at(
+            tokio::time::Instant::now() + MEMBERSHIP_SWEEP_INTERVAL,
+            MEMBERSHIP_SWEEP_INTERVAL,
+        );
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut backoff = SWEEP_BACKOFF_MIN;
         loop {
