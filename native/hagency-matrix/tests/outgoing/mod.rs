@@ -66,16 +66,36 @@ async fn ready_named(
     callsite: &'static str,
     variant: Option<&'static str>,
 ) -> (common::Fixture, common::Fake, Collector) {
+    ready_named_limits(encrypted, direct, callsite, variant, common::limits()).await
+}
+/// #81: the recovery-restore family shares one runtime with the fake peer;
+/// the tight tier's headers=400ms was crossed by scheduler starvation, not
+/// by the product (the under-load trace: collector Err(Timeout) after
+/// 467ms, script progress 0). The load tier stays strictly below
+/// `Limits::default()`, so a real transport refusal still fails. The
+/// bounds-wire-failures family KEEPS the tight tier via plain
+/// `ready_named` — its slow_headers/slow_body variants ARE deliberate
+/// deadline tests (700ms headers vs the 400ms bound; a 400ms body gap vs
+/// the 200ms body-idle).
+async fn ready_named_under_load(
+    encrypted: bool,
+    direct: bool,
+    callsite: &'static str,
+    variant: Option<&'static str>,
+) -> (common::Fixture, common::Fake, Collector) {
+    ready_named_limits(encrypted, direct, callsite, variant, common::load_limits()).await
+}
+async fn ready_named_limits(
+    encrypted: bool,
+    direct: bool,
+    callsite: &'static str,
+    variant: Option<&'static str>,
+    limits: crate::Limits,
+) -> (common::Fixture, common::Fake, Collector) {
     let f = common::Fixture::new();
     let mut fake = common::Fake::start(true).await;
-    // #81: service-level scripted() fixtures — the tight tier's
-    // headers=400ms was crossed by scheduler starvation before this
-    // suite's script could answer (the #59 under-load trace: collector
-    // Err(Timeout) after 467ms, script progress 0). The load tier keeps
-    // every bound strictly below Limits::default(); no test in this file
-    // asserts a deliberate tight-bound timeout.
     let mut config = config(&f, &fake.endpoint, f.identity.clone(), direct);
-    config.limits = common::load_limits();
+    config.limits = limits;
     let c = Collector::new(config, f.store.clone()).unwrap();
     let cancel = CancellationToken::new();
     let (r, ()) = scripted(callsite, variant, c.collect(&cancel), async {
@@ -1144,7 +1164,7 @@ async fn native_matrix_outgoing_recovery_restore_rejects_inconsistent_protected_
             ][usize::from(variant)],
         );
         let (f, mut fake, c) =
-            ready_named(true, false, "protected history bootstrap", variant_label).await;
+            ready_named_under_load(true, false, "protected history bootstrap", variant_label).await;
         let claim = final_claim(&f).await;
         let peer = c
             .inner
