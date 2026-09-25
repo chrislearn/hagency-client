@@ -17,6 +17,11 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::DomainRepository;
+use crate::Error;
+use hagency_core::project::identifier;
+use rusqlite::{OptionalExtension, TransactionBehavior, params};
+
 /// The retained usage line (`backend-v2.js:2143`), verbatim.
 pub const THREAD_DIRECTIVE_USAGE: &str =
     "usage: /thread model <name|default> | /thread mode <plan|auto>";
@@ -50,11 +55,17 @@ pub enum ThreadDirective {
 /// notice (usage or model refusal), never a delivery failure.
 pub fn parse(body: &str) -> Option<Result<ThreadDirective, String>> {
     let body = strip_address(body);
-    if !body.starts_with("/thread") {
+    // TS `/^\/thread\b/i`: `/thread` must end at a word boundary, so `/threadfoo`
+    // is chat, not a directive. The boundary holds when the next char is
+    // whitespace or the string ends.
+    let Some(rest) = body.strip_prefix("/thread") else {
+        return None;
+    };
+    if !rest.is_empty() && !rest.starts_with(char::is_whitespace) {
         return None;
     }
     // `/thread\s+(\S+)(?:\s+(\S+))?\s*$` — the whole trimmed body, two tokens max.
-    let rest = body["/thread".len()..].trim();
+    let rest = rest.trim();
     if rest.is_empty() {
         return Some(Err(THREAD_DIRECTIVE_USAGE.into()));
     }
@@ -175,4 +186,169 @@ fn strip_address(body: &str) -> String {
         stripped = after.trim_start();
     }
     stripped.to_owned()
+}
+
+/// The persisted session override (mirrors `router/src/store.ts:81-82`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SessionOverrides {
+    pub model: Option<String>,
+    pub mode: Option<ThreadMode>,
+}
+
+impl DomainRepository {
+    /// Read the session's current overrides. `None` rows become `None` fields,
+    /// matching the TS `?? null` projection (`store.ts:388-389`).
+    pub fn session_overrides(&self, session: &str) -> Result<SessionOverrides, Error> {
+        identifier(session, 128)?;
+        let (model, mode): (Option<String>, Option<String>) = self
+            .db
+            .query_row(
+                "SELECT model_override,mode_override FROM runner_sessions WHERE id=?1",
+                [session],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?
+            .ok_or(Error::NotFound)?;
+        let mode = match mode.as_deref() {
+            Some("plan") => Some(ThreadMode::Plan),
+            Some("auto") => Some(ThreadMode::Auto),
+            _ => None,
+        };
+        Ok(SessionOverrides { model, mode })
+    }
+
+    /// Apply an override, mirroring `setSessionOverrides` (`store.ts:656-695`):
+    /// an undefined field keeps the existing override; a `default|reset|clear`
+    /// verb arrives as `None` and clears it. The parser already refused a
+    /// malformed model/mode, so this only persists a validated value.
+    pub fn set_session_overrides(
+        &mut self,
+        session: &str,
+        directive: &ThreadDirective,
+    ) -> Result<SessionOverrides, Error> {
+        identifier(session, 128)?;
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let existing: (Option<String>, Option<String>) = tx
+            .query_row(
+                "SELECT model_override,mode_override FROM runner_sessions WHERE id=?1",
+                [session],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?
+            .ok_or(Error::NotFound)?;
+        let (model, mode) = match directive {
+            ThreadDirective::Model(Some(m)) => (Some(m.clone()), existing.1),
+            ThreadDirective::Model(None) => (None, existing.1),
+            ThreadDirective::Mode(Some(ThreadMode::Plan)) => (existing.0, Some("plan".into())),
+            ThreadDirective::Mode(Some(ThreadMode::Auto)) => (existing.0, Some("auto".into())),
+            ThreadDirective::Mode(None) => (existing.0, None),
+        };
+        tx.execute(
+            "UPDATE runner_sessions SET model_override=?2,mode_override=?3 WHERE id=?1",
+            params![session, model, mode],
+        )?;
+        tx.commit()?;
+        self.session_overrides(session)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn model(body: &str) -> Option<Result<ThreadDirective, String>> {
+        parse(body)
+    }
+
+    #[test]
+    fn native_thread_directive_model_parses() {
+        assert_eq!(
+            model("/thread model claude-sonnet-5"),
+            Some(Ok(ThreadDirective::Model(Some("claude-sonnet-5".into()))))
+        );
+        // Mention pill + bare @name are stripped so the directive leads.
+        assert_eq!(
+            model("[@coordinator](https://matrix.to/#/@coordinator) /thread model claude-haiku-4-5"),
+            Some(Ok(ThreadDirective::Model(Some("claude-haiku-4-5".into()))))
+        );
+        assert_eq!(
+            model("@coordinator /thread model claude-haiku-4-5"),
+            Some(Ok(ThreadDirective::Model(Some("claude-haiku-4-5".into()))))
+        );
+        // default|reset|clear clears the override.
+        for verb in ["default", "reset", "clear", "DEFAULT", "Clear"] {
+            assert_eq!(
+                model(&format!("/thread model {verb}")),
+                Some(Ok(ThreadDirective::Model(None))),
+                "{verb}"
+            );
+        }
+    }
+
+    #[test]
+    fn native_thread_directive_mode_parses() {
+        assert_eq!(
+            model("/thread mode auto"),
+            Some(Ok(ThreadDirective::Mode(Some(ThreadMode::Auto))))
+        );
+        assert_eq!(
+            model("/thread mode plan"),
+            Some(Ok(ThreadDirective::Mode(Some(ThreadMode::Plan))))
+        );
+        assert_eq!(
+            model("/thread mode default"),
+            Some(Ok(ThreadDirective::Mode(None)))
+        );
+    }
+
+    #[test]
+    fn native_thread_directive_malformed_is_usage_or_refusal() {
+        // `/thread` alone answers with usage, not a delivery failure.
+        assert_eq!(model("/thread"), Some(Err(THREAD_DIRECTIVE_USAGE.into())));
+        assert_eq!(model("/thread model"), Some(Err(THREAD_DIRECTIVE_USAGE.into())));
+        assert_eq!(model("/thread mode maybe"), Some(Err(THREAD_DIRECTIVE_USAGE.into())));
+        // A single-token model with shell metacharacters is refused with the
+        // model refusal (TS `THREAD_DIRECTIVE_MODEL_PATTERN`).
+        assert_eq!(
+            model("/thread model sonnet;rm"),
+            Some(Err(THREAD_DIRECTIVE_MODEL_REFUSAL.into()))
+        );
+        // A multi-token model does not match `/thread\s+(\S+)(?:\s+(\S+))?\s*$`
+        // → usage (the `; rm -rf /` case collapses to the two-token shape).
+        assert_eq!(
+            model("/thread model a b c"),
+            Some(Err(THREAD_DIRECTIVE_USAGE.into()))
+        );
+    }
+
+    #[test]
+    fn native_thread_directive_not_a_directive_is_none() {
+        assert_eq!(model("please take notes"), None);
+        assert_eq!(model("thread model x"), None);
+        // `/thread` must end at a word boundary (TS `/^\/thread\b/`).
+        assert_eq!(model("/threadfoo"), None);
+        assert_eq!(model("/threaded model x"), None);
+    }
+
+    #[test]
+    fn native_thread_directive_confirmation_matches_ts() {
+        assert_eq!(
+            confirmation(Some("claude-sonnet-5"), None),
+            "Thread session updated: model=claude-sonnet-5, mode=default (read-only)."
+        );
+        assert_eq!(
+            confirmation(None, None),
+            "Thread session updated: model=default, mode=default (read-only)."
+        );
+        assert_eq!(
+            confirmation(None, Some(ThreadMode::Auto)),
+            "Thread session updated: model=default, mode=auto. Runners in this thread may now write to the agent workspace (writes stay serialized by workspace lease)."
+        );
+        assert_eq!(
+            confirmation(Some("claude-haiku-4-5"), Some(ThreadMode::Plan)),
+            "Thread session updated: model=claude-haiku-4-5, mode=plan."
+        );
+    }
 }
