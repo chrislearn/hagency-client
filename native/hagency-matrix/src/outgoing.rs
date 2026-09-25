@@ -5,7 +5,7 @@ use hagency_core::{
     commands::CommandNoticeClaimed, ingress::VerifiedNoticeClaim, replies::*,
 };
 use hagency_matrix_format::MatrixContent;
-use serde_json::json;
+use serde_json::{Value, json};
 use state::{Attempt, Command, Kind, Phase};
 use std::{collections::BTreeSet, time::Duration};
 
@@ -27,6 +27,42 @@ pub(crate) enum Source {
     Command(Box<CommandNoticeClaimed>),
     File(Box<crate::upload::publication::FileSource>),
     Resume,
+}
+
+/// Parse an activity notice's kind into its dispatch id and, when the
+/// send should EDIT an earlier revision, the anchor event id. The kind is
+/// `activity:<dispatch_id>:<revision>[:<anchor>]` (task #1): dispatch ids
+/// are colon-free (`identifier()`), the revision is numeric, and the
+/// anchor — a Matrix event id — may itself contain colons, so it is taken
+/// as the remainder. Every other notice kind parses to None.
+fn parse_activity_notice(kind: &str) -> Option<(String, Option<String>)> {
+    let rest = kind.strip_prefix("activity:")?;
+    let (dispatch, rest) = rest.split_once(':')?;
+    let anchor = rest
+        .split_once(':')
+        .map(|(_revision, anchor)| anchor.to_owned());
+    Some((dispatch.to_owned(), anchor))
+}
+
+/// The activity envelope (lib/matrix-activity.js:4-13): the notice always
+/// carries `io.hagency.activity: {dispatch_id}`; when an anchor exists the
+/// send becomes an EDIT — body prefixed `* `, `m.new_content` the plain
+/// content, `m.relates_to` the replace relation (which replaces the thread
+/// relation, exactly as the TS override does).
+fn apply_activity_envelope(
+    mut content: Value,
+    dispatch_id: &str,
+    anchor: Option<&str>,
+) -> Value {
+    content["io.hagency.activity"] = json!({"dispatch_id": dispatch_id});
+    if let Some(anchor) = anchor {
+        let plain = content.clone();
+        let starred = format!("* {}", content["body"].as_str().unwrap_or_default());
+        content["body"] = json!(starred);
+        content["m.new_content"] = plain;
+        content["m.relates_to"] = json!({"rel_type":"m.replace","event_id":anchor});
+    }
+    content
 }
 impl Collector {
     /// Existing host claim only. No caller-selected Matrix path or content.
@@ -142,6 +178,7 @@ impl Inner {
         if view.attempt.is_some() {
             return Err(Error::OutcomeUnknown);
         }
+        let mut activity: Option<(String, Option<String>)> = None;
         let (kind, id, fence, domain_digest, route, transaction_id, body, reply_to) = match &source {
             Source::Final(claim) => {
                 let historical = owner
@@ -208,6 +245,7 @@ impl Inner {
                 if receipt.state != "claimed" {
                     return Err(Error::Domain);
                 }
+                activity = parse_activity_notice(&claim.claim.notice.kind);
                 (
                     Kind::Notice,
                     claim.claim.notice.id.clone(),
@@ -307,6 +345,9 @@ impl Inner {
                 matches!(route.privacy, hagency_core::replies::RoomPrivacy::Group {}),
             ) {
                 content["m.relates_to"] = relation;
+            }
+            if let Some((dispatch, anchor)) = &activity {
+                content = apply_activity_envelope(content, dispatch, anchor.as_deref());
             }
             let content = MatrixContent::new(content)
                 .and_then(|c| c.formatted())
