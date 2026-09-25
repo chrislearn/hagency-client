@@ -12,6 +12,7 @@ mod http;
 pub use http::UploadResponse;
 mod identity_polish;
 mod intake;
+pub mod join_backfill;
 mod media_download;
 mod media_upload;
 mod outgoing;
