@@ -327,4 +327,53 @@ mod tests {
             Invite::Failed("invite answered HTTP 502".to_owned())
         );
     }
+
+    /// The TS-VISIBLE outcome, on the wire (retained
+    /// tests/api-engagement-room-admission.test.js:449-490): one invite POST
+    /// per live (agent, room), addressed to the composed agent mxid, on the
+    /// collector's own credential — and a 200 read as a REAL re-admission
+    /// rather than the already-present answer. The two tests above pin the
+    /// pair dedup and the verdict classification in isolation; this one is
+    /// the behaviour an operator's homeserver actually sees.
+    #[tokio::test]
+    async fn native_sweep_invites_once_per_pair_on_the_wire() {
+        use crate::collector::fixtures as common;
+        let f = common::Fixture::new();
+        let mut fake = common::Fake::start(false).await;
+        let c = crate::Collector::new(f.config(&fake.endpoint), f.store.clone()).unwrap();
+        let cancel = CancellationToken::new();
+        let fleet = common::domain::registration().fleet_id;
+        let engagement = f.identity.transport.engagement_id.clone();
+        let (outcome, ()) = tokio::join!(
+            c.sweep_project_room_membership(&cancel),
+            async {
+                let request = fake.next().await;
+                assert_eq!(request.method, "POST");
+                // ONE path segment, the same spelling every other ported room
+                // call sends (retire.rs's leave asserts the identical shape).
+                assert_eq!(
+                    request.target,
+                    "/_matrix/client/v3/rooms/!project:example.test/invite"
+                );
+                assert_eq!(
+                    request.headers["authorization"],
+                    format!("Bearer {}", common::TOKEN)
+                );
+                let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                assert_eq!(
+                    body["user_id"],
+                    format!("@{fleet}_{engagement}:example.test"),
+                    "the composed provisioned-account identity"
+                );
+                request.json(200, json!({}));
+            }
+        );
+        assert_eq!(
+            outcome.invited, 1,
+            "a 200 is a real re-admission, not the already-present answer: {outcome:?}"
+        );
+        assert_eq!(outcome.pairs, 1, "one live pair, one call — never per engagement");
+        assert_eq!(outcome.failed, 0);
+        fake.close().await;
+    }
 }
