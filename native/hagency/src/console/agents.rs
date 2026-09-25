@@ -84,12 +84,17 @@ const UNAVAILABLE: [&str; 6] = [
 
 #[handler]
 async fn list(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    // A roster takes no selection: any query parameter is refused, the
-    // same hygiene the alerts read applies to its own allowlist.
-    if query(req, &[], 0).is_err() {
+    // The roster takes ONE selection — `view`, whose only meaningful value
+    // is `names` (TS `backend-v2.js:11698`, the name-only arm the console's
+    // pickers use). Every other query parameter is refused, the same
+    // hygiene the alerts read applies to its own allowlist.
+    if query(req, &["view"], 64).is_err() {
         failed(res, Error::Invalid);
         return;
     }
+    let names_only = req
+        .query::<String>("view")
+        .is_some_and(|v| v.trim().eq_ignore_ascii_case("names"));
     let Some(store) = domain(depot, res) else {
         return;
     };
@@ -100,6 +105,21 @@ async fn list(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     }
     match result {
         Ok(rows) => {
+            // TS answers `names` as a sorted bare array of non-empty name
+            // strings, filtered to agents that are not retired
+            // (`backend-v2.js:11699-11704`). Native has no agent-delete
+            // route, so nothing carries a `retiredAt`; every roster row
+            // qualifies — the same set the envelope below would carry.
+            if names_only {
+                let mut names: Vec<String> = rows
+                    .into_iter()
+                    .map(|row| row.name)
+                    .filter(|name| !name.is_empty())
+                    .collect();
+                names.sort();
+                res.render(Json(names));
+                return;
+            }
             // Statement time, as the alerts read does: the roster has no
             // clock parameter to honor.
             let at_ms = std::time::SystemTime::now()
