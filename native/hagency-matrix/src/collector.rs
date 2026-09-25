@@ -8,6 +8,17 @@ use std::{
 };
 use tokio::sync::{Mutex, Semaphore};
 
+/// Wall-clock milliseconds for the profile-reconcile throttle (the retained
+/// `Date.now()`). A missing clock reads 0, which the throttle treats as
+/// "never checked" — so a clock fault never suppresses a reconcile.
+fn profile_clock_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|d| u64::try_from(d.as_millis()).ok())
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 pub(crate) mod observation;
 macro_rules! observe {
@@ -38,6 +49,10 @@ pub(crate) struct Inner {
     /// Verification-time-only room snapshots + authority facts (ADR-095),
     /// captured at intake and read by the provisioning hook; never stored.
     pub(crate) room_facts: Mutex<BTreeMap<String, (MatrixRoomObservation, RoomAuthorityFacts)>>,
+    /// When this agent's display name was last reconciled, in wall-clock ms;
+    /// 0 is "never". The 300 s throttle of `reconcile_agent_profile`
+    /// (bridge-matrix.js:5939-5940).
+    pub(crate) profile_checked_at: std::sync::atomic::AtomicU64,
     #[cfg(test)]
     pub(crate) handoff_fault: std::sync::atomic::AtomicU8,
     #[cfg(test)]
@@ -102,6 +117,48 @@ impl Collector {
             .map_err(|_| Error::Busy)?;
         self.close_with_permit(_permit).await
     }
+    /// Reconcile this agent's Matrix display name from its own definition,
+    /// throttled to the retained 300 s per agent (`reconcileAgentProfile`,
+    /// bridge-matrix.js:5938-5955). The control plane is this port's local
+    /// store — the name is the engagement's own `agentName`, which the
+    /// provision request's agent definition set — never an outbound backend
+    /// fetch. The throttle is written only after a completed reconcile, so a
+    /// refused one is retried on the next cycle exactly as the retained
+    /// bridge retries it on its next registration poll; the caller warns and
+    /// never ends the worker over it.
+    pub async fn reconcile_agent_profile(
+        &self,
+        engagement: &str,
+        cancel: &CancellationToken,
+    ) -> Result<bool, Error> {
+        let inner = &self.inner;
+        let now = profile_clock_ms();
+        let last = inner
+            .profile_checked_at
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if last != 0
+            && now.saturating_sub(last) < crate::identity_polish::PROFILE_RECONCILE_INTERVAL_MS
+        {
+            return Ok(false);
+        }
+        let name = inner
+            .domain
+            .engagement(engagement.to_owned())
+            .await?
+            .agent_name;
+        let changed = crate::identity_polish::reconcile_display_name(
+            &inner.http,
+            &inner.config.identity.transport.sender_mxid,
+            name.as_str(),
+            name.as_str(),
+            cancel,
+        )
+        .await?;
+        inner
+            .profile_checked_at
+            .store(profile_clock_ms(), std::sync::atomic::Ordering::Relaxed);
+        Ok(changed)
+    }
     pub(crate) async fn close_with_permit(
         &self,
         _permit: tokio::sync::OwnedSemaphorePermit,
@@ -146,6 +203,7 @@ impl Inner {
             receiver: crate::receive::Receiver::new(),
             uploads: crate::upload::Registry::new(),
             room_facts: Mutex::new(BTreeMap::new()),
+            profile_checked_at: std::sync::atomic::AtomicU64::new(0),
             #[cfg(test)]
             handoff_fault: std::sync::atomic::AtomicU8::new(0),
             #[cfg(test)]

@@ -900,6 +900,10 @@ pub struct Agent {
     sync: u64,
     pending: Option<Value>,
     pub project_events: Vec<Value>,
+    /// The Matrix profile display name this account currently holds; the
+    /// production reconcile (`reconcileAgentProfile`, bridge-matrix.js:5938-
+    /// 5955) GETs it, PUTs the agent definition's name and reads it back.
+    displayname: Option<String>,
 }
 impl Agent {
     fn new(index: usize, crypto: crypto::Peer) -> Self {
@@ -924,6 +928,7 @@ impl Agent {
             sync: 0,
             pending: None,
             project_events: Vec::new(),
+            displayname: None,
         }
     }
     fn dm_state(&self) -> Value {
@@ -1380,6 +1385,17 @@ impl Peer {
                     200,
                     json!({"user_id":agent.user,"device_id":agent.device,"is_guest":false}),
                 )
+            } else if path.ends_with("/displayname") {
+                // The display-name reconcile (bridge-matrix.js:5938-5955):
+                // GET the current name, PUT the agent definition's, read it
+                // back — with the agent's own credential only.
+                if request.method == "GET" {
+                    (200, json!({"displayname": agent.displayname}))
+                } else {
+                    assert_eq!(request.method, "PUT");
+                    agent.displayname = body["displayname"].as_str().map(str::to_owned);
+                    (200, json!({}))
+                }
             } else if path.ends_with("/state") {
                 if request.target.contains("factory_project") {
                     (200, project)

@@ -12,6 +12,12 @@
 use crate::{CancellationToken, Error, http::Http};
 use serde_json::{Value, json};
 
+/// The retained bridge's per-agent profile-reconcile throttle
+/// (`reconcileAgentProfile`, bridge-matrix.js:5938-5940): `Date.now() - last
+/// < 300_000` returns early, so at most one display-name reconcile per agent
+/// every 5 minutes.
+pub const PROFILE_RECONCILE_INTERVAL_MS: u64 = 300_000;
+
 /// The machine-generated names a reconciliation may overwrite
 /// (lib/matrix-agent-profile.js:22): a user's custom profile always wins.
 pub fn is_machine_generated(current: &str, mxid: &str, agent_name: &str) -> bool {
