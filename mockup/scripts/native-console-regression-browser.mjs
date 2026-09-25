@@ -1,0 +1,208 @@
+/* The #56 regression lane: ONE login walks every rail entry and proves the
+ * key operator actions end to end on fixture data. It receives the same
+ * ticket stream every lane receives (never a token) and the harness mints
+ * each scoped link on request — one outstanding ticket at a time. */
+import assert from 'node:assert/strict';
+import { createInterface } from 'node:readline';
+import { chromium } from 'playwright-core';
+const lines = createInterface({ input: process.stdin })[Symbol.asyncIterator]();
+const config = JSON.parse((await lines.next()).value);
+async function fixture(command) { console.log(command); return JSON.parse((await lines.next()).value); }
+
+const browser = await chromium.launch({ executablePath: process.env.HAGENCY_BROWSER_CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true,
+  args: ['--disable-background-networking', '--disable-component-update', '--no-default-browser-check'] });
+
+try {
+  const context = await browser.newContext({ serviceWorkers: 'block' });
+  const page = await context.newPage();
+  const failures = []; const urls = [];
+  page.on('pageerror', (error) => failures.push(error.message));
+  // "No console error" excludes two structural noises of the PACKAGED
+  // export, pinned by the wire assertion below — not a blanket weakening:
+  // (a) the favicon 404 the static export cannot ship; (b) Next Link's
+  // HEAD prefetches against the GET-only asset server (the roster's
+  // drill-down Links — their destinations are not even in the package).
+  page.on('console', (message) => {
+    if (message.type() !== 'error') return;
+    if (/favicon/i.test(message.text())) return;
+    if (/status of 405 \(Method Not Allowed\)/.test(message.text())) return;
+    // The stream EventSource's 401 connect — exempted on the wire below and
+    // named there; its console mirror is the same single event.
+    if (/status of 401 \(Unauthorized\)/.test(message.text())) return;
+    failures.push(message.text());
+  });
+  // The wire assertion that keeps the filter honest: EVERY refused response
+  // is named. Only HEAD prefetches to app routes and the EventSource's 401
+  // stream connect are noise; any other 4xx/5xx fails the walk by name.
+  const refused = [];
+  page.on('response', (response) => {
+    if (response.status() < 400) return;
+    const method = response.request().method();
+    const path = response.url().replace(config.base, '');
+    if (method === 'HEAD' && !path.startsWith('/console/api/')) return;
+    if (method === 'GET' && path === '/console/api/stream' && response.status() === 401) return;
+    refused.push(`${response.status()} ${method} ${path}`);
+  });
+  await context.route('**/*', async (route) => {
+    const url = new URL(route.request().url()); urls.push(url.toString());
+    if (url.origin !== config.base) { failures.push('unexpected external request'); await route.abort(); }
+    else await route.continue();
+  });
+
+  // The login: one read-only ticket, exchanged once; every walk below rides
+  // the same session cookie.
+  await page.goto(config.url);
+  await page.locator('[data-native-state="ready"]').waitFor();
+  assert(!/private_|operator\.token/.test(await page.locator('main').innerText()), 'no credential value on screen');
+
+  /* --- Part 1: every rail entry opens its page (heading, no blank, no error). */
+  const PAGES = [
+    ['usage', /usage|用量/],
+    ['resources', /resources|资源/],
+    ['alerts', /alert|告警/],
+    ['engagements', /engagement|接洽/],
+    ['agents', /workforce|员工名册|roster|projections/],
+  ];
+  const headings = {};
+  for (const [key, pattern] of PAGES) {
+    await page.locator(`nav.rail a[href$="/${key}/"]`).click();
+    // The resources page marks readiness on its own panel attribute; every
+    // other page uses the generic one. Either proves the page painted.
+    await page.locator('[data-native-state], [data-native-resource-state]').first().waitFor();
+    const head = await page.locator('.page-head h1').innerText();
+    assert(head && head.trim().length > 0, `${key}: the page renders an h1 heading`);
+    assert(pattern.test(head) || pattern.test(await page.locator('main').innerText()), `${key}: heading matches its page`);
+    assert((await page.locator('main').innerText()).trim().length > 0, `${key}: not a blank page`);
+    headings[key] = head;
+  }
+  assert.equal(new Set(Object.values(headings)).size, PAGES.length, 'each rail entry opens a distinct page');
+
+  /* A loading state, not "no rows": throttle the page's API reads so the
+   * fetch is in flight while the paint happens, then release. */
+  await page.route('**/console/api/**', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    await route.continue();
+  });
+  await page.locator('nav.rail a[href$="/engagements/"]').click();
+  await page.locator('p[role="status"]').first().waitFor();
+  await page.unroute('**/console/api/**');
+  await page.locator('[data-native-state="ready"]').waitFor();
+
+  /* --- Part 2: the key actions, each asserting its visible result text. */
+
+  /* (a) APPROVE a pending engagement (lifecycle scope). The harness seeded
+   * PendingWorker1 before the walk; the verdict panel lists pending rows by
+   * AGENT NAME (the row never shows the engagement id). */
+  const lifecycleUrl = (await fixture('LIFECYCLE_TICKET')).url;
+  await page.goto(lifecycleUrl);
+  await page.locator('[data-native-state="ready"]').waitFor();
+  await page.goto(`${config.base}/console/engagements/`);
+  await page.locator('[data-native-state="ready"]').waitFor();
+  await page.locator('[data-verdict-panel] tr', { hasText: config.pendingAgent }).getByRole('button', { name: /^(Approve|批准)$/ }).click();
+  await page.locator('[data-verdict-panel] p[role="status"]').filter({ hasText: /approved — provisioning enqueued|已批准/ }).waitFor();
+
+  /* (b) REFUSE another pending engagement: the harness admits one on request. */
+  const second = (await fixture('REFUSE_ENGAGEMENT')).agent;
+  await page.locator('[data-verdict-panel]').waitFor();
+  await page.getByRole('button', { name: /^(Refresh|刷新)$/ }).first().click();
+  await page.locator('[data-verdict-panel] tr', { hasText: second }).waitFor();
+  await page.locator('[data-verdict-panel] tr', { hasText: second }).getByRole('button', { name: /^(Reject|拒绝)$/ }).click();
+  // Refuse is TWO steps by design: Reject arms an inline confirmation
+  // (NativeVerdict.jsx renders nv.confirmRefuse + Confirm/Cancel), and
+  // only Confirm posts the decision.
+  await page.locator('[data-verdict-panel] tr', { hasText: second }).getByRole('button', { name: /^(Confirm|确认)$/ }).click();
+  // A refused POST renders its error word in the row (role=alert), not a
+  // flash — dump the panel so the failure mode is named, not guessed.
+  try {
+    await page.locator('[data-verdict-panel] p[role="status"]').filter({ hasText: /refused — the engagement is rejected|已拒绝/ }).waitFor({ timeout: 15_000 });
+  } catch (error) {
+    const panel = await page.locator('[data-verdict-panel]').innerText().catch(() => '(no verdict panel)');
+    throw new Error(`refused flash never rendered; verdict panel says:\n${panel}\n${error.message}`);
+  }
+
+  /* (c) STOP an agent (same lifecycle scope): the roster's stop control with
+   * its #43 feedback notice. The seeded UsageWorker holds a live started
+   * dispatch, so the stop is accepted and the notice says so.
+   * (d) START: the server route fails closed (agents.rs `start`, 501) and
+   * the roster renders no start control — asserted as absence, never
+   * clicked, the honest bound for this build. */
+  await page.goto(`${config.base}/console/agents/`);
+  await page.locator('[data-native-state="ready"]').waitFor();
+  assert((await page.locator('[data-lifecycle-action="start"]').count()) === 0, 'the roster offers no start control');
+  await page.locator(`[data-engagement-id="${config.engagement}"] [data-lifecycle-action="stop"]`).click();
+  await page.locator('[data-stop-action="saved"]').waitFor();
+
+  /* (e) GENERATE a side registration (download, lifecycle scope): the
+   * written host path, mode and fingerprints render; no token value does. */
+  await page.goto(`${config.base}/console/project-sides/`);
+  await page.locator('[data-native-state="ready"]').waitFor();
+  await page.locator('[data-side-registration] input').first().fill(config.registrationUrl);
+  // The side selector's state locks to '' when the panel mounts before the
+  // sides read lands (useState captures the empty list and never re-runs);
+  // an operator picks the side from the dropdown — so does the driver,
+  // rather than depending on a default that never arrives.
+  await page.locator('[data-side-registration] select').selectOption({ index: 0 });
+  await page.getByRole('button', { name: /^(Generate registration|生成注册文件)$/ }).click();
+  // The issue failure renders as a note naming the server's refusal word —
+  // dump the panel so the failure mode is named, not guessed.
+  try {
+    await page.locator('[data-side-registration] .mono-s').first().waitFor({ timeout: 15_000 });
+  } catch (error) {
+    const panel = await page.locator('[data-side-registration]').innerText().catch(() => '(no registration panel)');
+    throw new Error(`the issued registration never rendered; panel says:\n${panel}\n${error.message}`);
+  }
+  const registrationText = await page.locator('[data-side-registration]').innerText();
+  assert(/state\/registrations\//.test(registrationText), 'the written host path renders');
+  assert(/0600|Staged|暂存/.test(registrationText), 'the issue outcome renders — written at 0600, or staged behind the live credential');
+  assert(!/(as|hs)_token_/.test(registrationText), 'no token VALUE renders, only fingerprints');
+
+  /* (f) CLEAR-DIRTY on the configuration wizard (configuration scope): edit
+   * the draft's ceiling, then Reload discards it and restores the observed
+   * value — the seeded source's own 5000-token ceiling. */
+  const configurationUrl = (await fixture('CONFIGURATION_TICKET')).url;
+  await page.goto(configurationUrl);
+  await page.locator('[data-native-resource-state="ready"]').waitFor();
+  await page.goto(`${config.base}/console/resources/new/?resource_id=${config.resource}`);
+  await page.locator(`[data-native-configuration-id="${config.resource}"][aria-busy="false"]`).waitFor();
+  await page.getByRole('button', { name: /^(Next|下一步)$/ }).click();
+  await page.getByRole('button', { name: /^(Next|下一步)$/ }).click();
+  await page.locator('#configuration-ceiling').selectOption('monthly');
+  await page.locator('#wz-tokens').fill('777777');
+  await page.getByRole('button', { name: /(Reload configuration and discard draft|重新读取配置并放弃草稿)/ }).click();
+  await page.locator(`[data-native-configuration-id="${config.resource}"][aria-busy="false"]`).waitFor();
+  // The tokens input carries its value only under the monthly arm — the
+  // same select-then-read the configuration lane uses after its reload.
+  await page.locator('#configuration-ceiling').selectOption('monthly');
+  assert.equal(await page.locator('#wz-tokens').inputValue(), '5000', 'the draft was discarded and the observed ceiling restored');
+
+  /* (g) ALERT TRANSITION (configuration scope): the fixture's open ceiling
+   * alert resolves; the row leaves the open list and the no-open state
+   * renders — the terminal case of the server-owned transition map. */
+  await page.goto(`${config.base}/console/alerts/`);
+  await page.locator('[data-native-state="ready"]').waitFor();
+  await page.locator('tbody tr').first().click();
+  await page.locator('[data-transition="resolved"]').click();
+  await page.locator('tbody tr').first().waitFor({ state: 'detached' });
+  await page.locator('main').getByText(/No open alerts|没有未解决的告警/).waitFor();
+
+  /* (h) TASK CREATE: native serves no task-creation console route (the
+   * audit's finding; no tasks POST exists in console.rs) and the agent
+   * detail renders its task rows read-only — asserted as absence, the
+   * honest bound of what this build can prove. */
+  await page.goto(`${config.base}/console/agents/`);
+  await page.locator('[data-native-state="ready"]').waitFor();
+  await page.locator(`[data-agent-name="${config.agent}"] a`).first().click();
+  await page.locator('[data-agent-name]').first().waitFor();
+  assert((await page.locator('[data-task-id]').count()) >= 1, 'the detail renders its read-only task rows');
+  assert((await page.getByRole('button', { name: /(create|new).*(task|任务)/i }).count()) === 0, 'no task-create control: the route does not exist in this build');
+
+  // No console error, no external request, no ticket value in a URL — and
+  // the wire assertion backing the console filters above: every refused
+  // response was one of the two named structural noises, anything else
+  // fails here by name.
+  assert.deepEqual(failures, [], `console errors: ${failures.join(' | ')}`);
+  assert.deepEqual(refused, [], `refused responses beyond the named noises: ${refused.join(' | ')}`);
+  assert(urls.every((url) => !url.includes('access=')), 'no ticket value in a request URL');
+  console.log('PASS native console regression browser');
+} finally { await browser.close(); }
+process.exit(0);

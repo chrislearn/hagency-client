@@ -92,6 +92,88 @@ pub fn send_retry_warning(room_id: &str, reason: &str) -> String {
     format!("sendAsAgent failed in room {room_id} (after auto-join retry): {reason}")
 }
 
+/// What the representative can do in a room (lib/matrix-representative.js:1005-1030):
+/// `required = invite ?? 0`, `mine = users[actor] ?? users_default`, `can = mine >= required`.
+///
+/// A read that did not establish the answer is `known: false` — never a guess.
+/// `backend-v2.js:14492` says why: "A guess here would be worse than the bare
+/// error: it would name a cause we did not establish."
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvitePower {
+    pub known: bool,
+    pub can: bool,
+    pub required: u64,
+    pub mine: u64,
+}
+
+/// Classify a power-levels read for `actor_mxid`. `None`, or a value that is not
+/// an object, is the unreadable case: `known: false`, and the caller leaves the
+/// original refusal alone.
+pub fn representative_invite_power(power_levels: Option<&Value>, actor_mxid: &str) -> InvitePower {
+    let unreadable = InvitePower {
+        known: false,
+        can: false,
+        required: 0,
+        mine: 0,
+    };
+    let Some(levels) = power_levels.and_then(Value::as_object) else {
+        return unreadable;
+    };
+    let field = |key: &str| levels.get(key).and_then(Value::as_u64).unwrap_or(0);
+    let required = field("invite");
+    let mine = levels
+        .get("users")
+        .and_then(Value::as_object)
+        .and_then(|users| users.get(actor_mxid))
+        .and_then(Value::as_u64)
+        .unwrap_or_else(|| field("users_default"));
+    InvitePower {
+        known: true,
+        can: mine >= required,
+        required,
+        mine,
+    }
+}
+
+/// The remedy that belongs to the PROJECT (backend-v2.js:14477-14480), verbatim.
+/// Naming it matters: a bare 403 sends an operator to check the credential, which
+/// is the one thing that was working.
+pub fn invite_power_remedy(mine: u64, required: u64, room_id: &str, agent_mxid: &str) -> String {
+    format!(
+        "our representative holds power {mine} in {room_id} and inviting needs {required}. \
+         The project side either grants it that power or invites {agent_mxid} itself; \
+         nothing on our side can raise it."
+    )
+}
+
+/// The owner-membership verdict (`bridge-matrix.js:9271-9292`). Present ⇒
+/// silence; absent ⇒ one warning; unreadable ⇒ silence, because "I could not ask"
+/// is not "the owner is absent" (`:9264-9265`) and conflating the two would make
+/// the alert untrustworthy the first time a homeserver was slow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OwnerVerdict {
+    Present,
+    Absent,
+    Unreadable,
+}
+
+/// Classify a joined-member read for `owner_mxid` (`bridge-matrix.js:9271-9292`).
+/// The comparison is case-insensitive because Matrix localparts are (`:9289`),
+/// and a read that produced NO member list says nothing rather than reporting an
+/// absence (`:9264`).
+pub fn owner_membership_verdict(joined: Option<&[String]>, owner_mxid: &str) -> OwnerVerdict {
+    let Some(joined) = joined else {
+        return OwnerVerdict::Unreadable;
+    };
+    let owner = owner_mxid.to_lowercase();
+    if joined.iter().any(|m| m.to_lowercase() == owner) {
+        OwnerVerdict::Present
+    } else {
+        OwnerVerdict::Absent
+    }
+}
+
+
 /// The agent's own rejoin (bridge-matrix.js:10936-10943, the join half of the
 /// retained invite-then-join pair): POST /join/{roomId} as the agent. A kicked
 /// member needs a fresh invite no agent can mint for itself — the caller
@@ -209,6 +291,63 @@ mod tests {
         let mut extra = expected.clone();
         extra["history_visibility"] = json!("shared");
         assert!(!power_levels_differ(Some(&extra), &expected));
+    }
+
+    /// TS `api-engagement-room-admission.test.js:537-556`: too little power is
+    /// named, with the remedy that belongs to the project.
+    #[test]
+    fn invite_power_classifies_and_names_the_project_remedy() {
+        // The test's own fixture: invite 50, users_default 0, representative absent.
+        let levels = json!({"invite": 50, "users_default": 0, "users": {"@someone:palpo.test": 100}});
+        let power = representative_invite_power(Some(&levels), "@hagency:palpo.test");
+        assert!(power.known && !power.can);
+        assert_eq!((power.mine, power.required), (0, 50));
+        let remedy = invite_power_remedy(power.mine, power.required, "!room:palpo.test", "@ac_x:palpo.test");
+        assert!(remedy.contains("holds power 0"), "{remedy}");
+        assert!(remedy.contains("needs 50"), "{remedy}");
+        assert!(remedy.contains("grants it that power or invites"), "{remedy}");
+        assert!(remedy.contains("nothing on our side can raise it"), "{remedy}");
+
+        // `:561` — with enough power the diagnosis must NOT fire: same 403,
+        // different problem, and mislabelling it sends the project to change a
+        // setting that is already right.
+        let enough = json!({"invite": 50, "users_default": 0, "users": {"@hagency:palpo.test": 50}});
+        assert!(representative_invite_power(Some(&enough), "@hagency:palpo.test").can);
+
+        // `:577` — an unreadable read names no cause.
+        let unreadable = representative_invite_power(None, "@hagency:palpo.test");
+        assert!(!unreadable.known, "\"I could not ask\" is not a verdict");
+        assert!(unreadable.required == 0 && unreadable.mine == 0);
+        // Absent `users_default` falls back to 0, as the TS `?? 0` does.
+        let bare = representative_invite_power(Some(&json!({"invite": 50})), "@hagency:palpo.test");
+        assert!(bare.known && !bare.can && bare.mine == 0);
+    }
+
+    /// TS `approval-owner-can-see-it.test.js:82-165`: present ⇒ silence; absent ⇒
+    /// the warning; unreadable ⇒ silence, and the mxid comparison is
+    /// case-insensitive.
+    #[test]
+    fn owner_membership_verdict_keeps_the_retained_three_way() {
+        let present = vec!["@owner:example.test".to_owned(), "@other:example.test".to_owned()];
+        assert_eq!(
+            owner_membership_verdict(Some(&present), "@owner:example.test"),
+            OwnerVerdict::Present
+        );
+        // `:103` — Matrix localparts are case-insensitive, so the comparison is.
+        assert_eq!(
+            owner_membership_verdict(Some(&present), "@OWNER:EXAMPLE.TEST"),
+            OwnerVerdict::Present
+        );
+        let absent = vec!["@someone:else.test".to_owned()];
+        assert_eq!(
+            owner_membership_verdict(Some(&absent), "@owner:example.test"),
+            OwnerVerdict::Absent
+        );
+        // `:110` — a read that produced no member list says nothing.
+        assert_eq!(
+            owner_membership_verdict(None, "@owner:example.test"),
+            OwnerVerdict::Unreadable
+        );
     }
 
     #[test]

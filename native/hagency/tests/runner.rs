@@ -1190,7 +1190,7 @@ async fn native_runner_http_task_lifecycle() {
         assert_eq!(response.status_code, Some(StatusCode::FORBIDDEN));
         assert_eq!(
             response.take_json::<Value>().await.unwrap(),
-            json!({"ok":false,"code":"task_scope_required"})
+            json!({"ok":false,"code":"task_scope_required","error":"task management scope is required"})
         );
         assert_eq!(
             post(

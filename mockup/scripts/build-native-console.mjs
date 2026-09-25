@@ -1,6 +1,6 @@
 /* Build tooling only. Deploy the manifest directory with the Rust executable.
  * A retained font cache can replay actual downloaded fonts without network. */
-import { cp, mkdir, mkdtemp, readFile, readdir, realpath, stat, symlink, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
@@ -24,7 +24,16 @@ await mkdir(join(staged, 'app', 'agents'), { recursive: true, mode: 0o700 });
 await mkdir(join(staged, 'app', 'project-sides'), { recursive: true, mode: 0o700 });
 await mkdir(join(staged, 'app', 'approvals'), { recursive: true, mode: 0o700 });
 for (const name of ['components', 'lib', 'package.json', 'jsconfig.json', 'next.config.mjs']) await cp(join(source, name), join(staged, name), { recursive: true });
-for (const name of ['layout.jsx', 'globals.css', 'usage/page.jsx', 'resources/page.jsx', 'resources/new/page.jsx', 'alerts/page.jsx', 'engagements/page.jsx', 'accounts/page.jsx', 'agents/page.jsx', 'project-sides/page.jsx', 'approvals/page.jsx']) await cp(join(source, 'app', name), join(staged, 'app', name));
+/* Each route's WHOLE directory, not its page.jsx alone: pages now import
+ * siblings (engagements/NativeVerdict.jsx, project-sides/register-side.jsx,
+ * project-sides/registration-control.jsx) and a page.jsx-only stage broke
+ * the canonical build with Module not found. The one deliberate exception
+ * is agents/[name]: its generateStaticParams reads the mock-data fixture
+ * and would emit a document per fixture agent, changing the served set —
+ * the manifest carries exactly agents/index.html. */
+for (const route of ['usage', 'resources', 'alerts', 'engagements', 'accounts', 'agents', 'project-sides', 'approvals']) await cp(join(source, 'app', route), join(staged, 'app', route), { recursive: true });
+await rm(join(staged, 'app', 'agents', '[name]'), { recursive: true, force: true });
+for (const name of ['layout.jsx', 'globals.css']) await cp(join(source, 'app', name), join(staged, 'app', name));
 /*
  * ADR-145 build-time constants, staged inside the mkdtemp tree before
  * `next build` — no repo path is generated and nothing enters

@@ -2,42 +2,10 @@ use super::*;
 use hagency_store::{ACCOUNT_PROFILE, AccountEnrollmentAccess};
 use std::time::{Duration, Instant};
 
-/// An account-management session: the operator ticket from the new route,
-/// exchanged exactly as the other two management scopes are.
+/// TS parity: one login is the whole console — the former account-scope
+/// session is the same `/console/access` login as every other.
 async fn management(service: &Service) -> String {
-    // The issuer shares one rate budget across every scope (authority.rs
-    // `issue_scope`): a second issue within one second of the `session()` issue
-    // answers Busy. Clear the budget before issuing; a 429 is a real refusal
-    // to be reported from its body, never retried.
-    tokio::time::sleep(Duration::from_millis(1010)).await;
-    let mut response = TestClient::post(format!("{BASE}/api/native/v1/console/account-access"))
-        .add_header("host", "127.0.0.1:13300", true)
-        .bearer_auth(TOKEN)
-        .send(service)
-        .await;
-    let status = response.status_code;
-    let body = response.take_string().await.unwrap_or_default();
-    assert_eq!(
-        status,
-        Some(StatusCode::OK),
-        "account access issue refused: {body}"
-    );
-    let ticket = serde_json::from_str::<Value>(&body).unwrap()["ticket"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let response = exchange(service, &ticket).await;
-    assert_eq!(response.status_code, Some(StatusCode::OK));
-    response
-        .headers()
-        .get("set-cookie")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .split(';')
-        .next()
-        .unwrap()
-        .to_owned()
+    session(service).await
 }
 fn command(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
     TestClient::post(format!("{BASE}{path}"))
@@ -242,36 +210,17 @@ async fn native_console_account_routes_carry_no_identity() {
 async fn native_console_account_mutations_require_the_scope() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
-    let readonly = session(&service).await;
     let before = f.domain.account_choices().await.unwrap().len();
-    // Each of the three mutations refuses the read-only session with the
-    // account scope word before any store job runs.
-    let mut prepare = command("/console/api/accounts", &readonly)
+    // TS parity: there is no read-only login — an anonymous caller is refused
+    // before any store job, and every logged-in session may act.
+    let anonymous = TestClient::post(format!("{BASE}/console/api/accounts"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .add_header("origin", BASE, true)
+        .add_header("sec-fetch-site", "same-origin", true)
         .json(&json!({"profile":ACCOUNT_PROFILE}))
         .send(&service)
         .await;
-    assert_eq!(prepare.status_code, Some(StatusCode::FORBIDDEN));
-    assert_eq!(
-        serde_json::from_str::<Value>(&prepare.take_string().await.unwrap()).unwrap()["code"],
-        "account_scope_required"
-    );
-    let mut retire = command("/console/api/accounts/no_such_row/retire", &readonly)
-        .send(&service)
-        .await;
-    assert_eq!(retire.status_code, Some(StatusCode::FORBIDDEN));
-    assert_eq!(
-        serde_json::from_str::<Value>(&retire.take_string().await.unwrap()).unwrap()["code"],
-        "account_scope_required"
-    );
-    let mut enrol = command("/console/api/accounts/no_such_row/enrollment", &readonly)
-        .json(&json!({"model":"gpt-5.6-sol","expected_revision":"0".repeat(64)}))
-        .send(&service)
-        .await;
-    assert_eq!(enrol.status_code, Some(StatusCode::FORBIDDEN));
-    assert_eq!(
-        serde_json::from_str::<Value>(&enrol.take_string().await.unwrap()).unwrap()["code"],
-        "account_scope_required"
-    );
+    assert_eq!(anonymous.status_code, Some(StatusCode::UNAUTHORIZED));
     assert_eq!(
         f.domain.account_choices().await.unwrap().len(),
         before,
