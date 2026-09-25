@@ -519,3 +519,68 @@ export async function enrollAccountResource(id, model, reasoning, expectedRevisi
   if (!object(v, ['account']) || !validAccount(v.account)) throw new Error('invalid_native_response');
   return v.account;
 }
+
+/* Board #48: the requester-facing reads. Each validator pins the EXACT key set
+ * the server serves, so a stale server or client fails loudly with
+ * `invalid_native_response` instead of rendering half a page.
+ *
+ * `whitelisted` is tri-state on purpose and validated as such: `null` is "no
+ * room was identified" (the retained route publishes room trust to a requester
+ * never at all), which is NOT `false` ("this room is not trusted"). Collapsing
+ * the two would turn "we did not ask" into an accusation.
+ *
+ * The three offer caps are `null` — the retained store's own "unset" encoding
+ * (`lib/engagement-store.js:451-454`), never `0`. The page must render them as
+ * an unstated cap, not as "zero tokens". */
+const TIERS = ['lightweight', 'medium', 'strong'];
+const OFFER_SERVING_KEYS = ['agent', 'framework', 'model', 'reasoning', 'tier', 'provisioningRequired'];
+const OFFER_ROLE_KEYS = ['role', 'crossFamilyOk', 'budgetCapPerEngagement', 'rateCap', 'count', 'runningNow', 'serving', 'resources'];
+const OFFER_RESOURCE_KEYS = ['id', 'name', 'framework', 'model', 'reasoning', 'tier'];
+const validOffering = (v) => v === null || (object(v, OFFER_SERVING_KEYS)
+  && optionalText(v.agent, 128) && optionalText(v.framework, 64) && optionalText(v.model, 256)
+  && optionalText(v.reasoning, 128) && (v.tier === null || TIERS.includes(v.tier))
+  && typeof v.provisioningRequired === 'boolean');
+export function validateOfferBook(v) {
+  if (!object(v, ['roles', 'whitelisted', 'projectRoomId']) || !Array.isArray(v.roles) || v.roles.length > 64
+    || !(v.whitelisted === null || typeof v.whitelisted === 'boolean')
+    || !optionalText(v.projectRoomId, 256)
+    || v.roles.some((r) => !object(r, OFFER_ROLE_KEYS)
+      || !text(r.role, 64) || typeof r.crossFamilyOk !== 'boolean'
+      || !(r.budgetCapPerEngagement === null || number(r.budgetCapPerEngagement))
+      || !(r.rateCap === null || number(r.rateCap))
+      || !(r.count === null || number(r.count)) || !number(r.runningNow)
+      || !validOffering(r.serving)
+      || !Array.isArray(r.resources) || r.resources.length > 64
+      || r.resources.some((x) => !object(x, OFFER_RESOURCE_KEYS)
+        || !text(x.id, 128) || !text(x.name, 256) || !text(x.framework, 64) || !text(x.model, 256)
+        || !optionalText(x.reasoning, 128) || !(x.tier === null || TIERS.includes(x.tier))))) throw new Error('invalid_native_response');
+  return v;
+}
+export async function fetchOfferBook(roomId = null) {
+  return validateOfferBook(await request(`/api/offer-book${roomId ? `?projectRoomId=${encodeURIComponent(roomId)}` : ''}`));
+}
+const CONTRIBUTION_KEYS = ['agent', 'project', 'projectRoomId', 'ownerMxid', 'active', 'agentJoined', 'membershipCheckedAt'];
+export function validateContributions(v) {
+  if (!object(v, ['contributions']) || !Array.isArray(v.contributions) || v.contributions.length > 200
+    || v.contributions.some((c) => !object(c, CONTRIBUTION_KEYS)
+      || !text(c.agent, 128) || !text(c.project, 128) || !text(c.projectRoomId, 256) || !text(c.ownerMxid, 256)
+      || typeof c.active !== 'boolean'
+      || !(c.agentJoined === null || typeof c.agentJoined === 'boolean')
+      || !(c.membershipCheckedAt === null || number(c.membershipCheckedAt)))) throw new Error('invalid_native_response');
+  return v;
+}
+export async function fetchContributions() {
+  return validateContributions(await request('/api/contributions'));
+}
+const ROUTES = ['notWhitelisted', 'crossFamilyUnavailable', 'overOffer', 'overCeiling', 'autoJoin'];
+export function validatePreview(v) {
+  if (!object(v, ['route', 'autoJoin', 'agent', 'agentRemainingTokens'])
+    || !ROUTES.includes(v.route) || typeof v.autoJoin !== 'boolean'
+    || !optionalText(v.agent, 128)
+    || !(v.agentRemainingTokens === null || number(v.agentRemainingTokens))) throw new Error('invalid_native_response');
+  return v;
+}
+export async function fetchPreview(role, requestedTokens = null) {
+  const query = `role=${encodeURIComponent(role)}${requestedTokens === null ? '' : `&requestedTokens=${encodeURIComponent(requestedTokens)}`}`;
+  return validatePreview(await request(`/api/engagements/preview?${query}`));
+}

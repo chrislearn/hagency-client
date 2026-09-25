@@ -52,6 +52,10 @@ pub use execution::{
 };
 pub use messages::{CorpusSweepOutcome, MESSAGE_RETENTION_FLOOR, RetentionStatus};
 mod notice_custody;
+mod offer_book;
+pub use offer_book::{
+    Contribution, OfferBook, OfferResource, OfferRole, OfferServing, Preview,
+};
 mod outcome_resolution;
 mod owned_completion;
 mod owned_dispatch;

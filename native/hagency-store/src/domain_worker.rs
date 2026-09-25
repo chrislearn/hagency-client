@@ -3159,6 +3159,24 @@ impl DomainStore {
         self.call(weight(&id)?, move |db| db.resource_headroom(&id, at))
             .await
     }
+    /// The requester-facing offer book (board #48): one writer job, one bounded
+    /// read — the projection (published roles, serving resource, resources,
+    /// runningNow) is computed at the store, so the console route adds no second
+    /// arithmetic path.
+    pub async fn offer_book(&self, room: Option<String>) -> Result<crate::OfferBook, Error> {
+        self.call(weight(&room)?, move |db| db.offer_book(room.as_deref()))
+            .await
+    }
+    /// The requester-facing contributions list (board #48): the real
+    /// agent<->project relationships, one bounded read.
+    pub async fn contributions(&self) -> Result<Vec<crate::Contribution>, Error> {
+        self.call(1, |db| db.contributions()).await
+    }
+    /// The engagement preview (board #48): a DRY RUN. A read-only job — it
+    /// decides nothing and writes nothing.
+    pub async fn preview(&self, role: String) -> Result<crate::Preview, Error> {
+        self.call(weight(&role)?, move |db| db.preview(&role)).await
+    }
     /// Ceiling overrun alarm sweep (ADR-124 slice a): takes the clock from the
     /// caller so tests drive it directly; no timer is attached in this slice.
     pub async fn sweep_ceiling_overruns(&self, now: u64) -> Result<SweepOutcome, Error> {
