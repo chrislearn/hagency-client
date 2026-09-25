@@ -254,6 +254,23 @@ async fn native_console_assets() {
         let alias = f.root.path().canonicalize().unwrap().join("alias");
         std::os::unix::fs::symlink(&path, &alias).unwrap();
         assert!(hagency::console::Console::load(&alias).is_err());
+        // Board #84: an ANCESTOR spelled through a relative symlink is a
+        // legitimate path, not a bait — this host's own worktree alias is
+        // `hl -> hl.noindex`. The old component-by-component nofollow walk
+        // refused it and killed the executable suite (`Error: Assets`).
+        // Only the asset directory ITSELF must be a real directory.
+        use std::os::unix::fs::PermissionsExt;
+        let anchor = path.parent().unwrap();
+        let real = anchor.join("real");
+        std::fs::create_dir(&real).unwrap();
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assets(&real.join("bundle"));
+        std::os::unix::fs::symlink("real", anchor.join("aliasdir")).unwrap();
+        let through_alias = anchor.join("aliasdir").join("bundle");
+        assert!(
+            hagency::console::Console::load(&through_alias).is_ok(),
+            "a bundle behind an ancestor symlink must load"
+        );
         std::fs::remove_file(path.join("usage/index.html")).unwrap();
         std::os::unix::fs::symlink(path.join("manifest.json"), path.join("usage/index.html"))
             .unwrap();
