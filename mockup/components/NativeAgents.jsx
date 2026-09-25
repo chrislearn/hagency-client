@@ -12,11 +12,12 @@
  * deliberately no work item, progress, queue, task count or utilisation
  * column: the retained roster withdrew them on principle and native does
  * not widen what it narrowed. The lifecycle scope exposes stop and a
- * separate private stopped-task review. Start and preset rebinding remain
- * absent because their server routes fail closed; a button that can only
- * refuse would lie. Clicking an agent's name opens its detail IN PLACE: the
- * packaged native console serves one static HTML per route with no fallback
- * (the manifest carries only agents/index.html), so a link to /agents/<name>
+ * separate private stopped-task review. #21: the server routes now also
+ * complete start and preset (resource) rebind, so those controls are
+ * offered and render the server's own outcome words. Clicking an agent's
+ * name opens its detail IN PLACE: the packaged native console serves one
+ * static HTML per route with no fallback (the manifest carries only
+ * agents/index.html), so a link to /agents/<name>
  * would 404 in production — the href stays only for the dev route and for
  * open-in-new-tab.
  */
@@ -25,7 +26,7 @@ import Link from 'next/link';
 import { useT } from '@/components/Prefs';
 import { useData } from '@/components/Data';
 import { fmtTokens } from '@/lib/mock-data';
-import { stopAgent } from '@/lib/native-api';
+import { rebindAgentResource, startAgent, stopAgent } from '@/lib/native-api';
 import NativeStoppedWork from '@/components/NativeStoppedWork';
 import NativeAgentDetail from '@/components/NativeAgentDetail';
 
@@ -37,6 +38,44 @@ export default function NativeAgents() {
   const [review, setReview] = useState(null);
   const [hold, setHold] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [result, setResult] = useState(null);
+  const [presetFor, setPresetFor] = useState(null);
+  const [presetId, setPresetId] = useState('');
+
+  // #21: each control renders the server's own outcome word; a refusal
+  // renders its error text, never an invented success.
+  const act = async (engagement, action) => {
+    setHold(true);
+    try {
+      if (action === 'stop') await stopAgent(engagement);
+      else await startAgent(engagement);
+      setResult({
+        engagement,
+        text: action === 'stop' ? t('na.stopResult') : t('na.startResult'),
+      });
+      data.refresh();
+    } catch (e) {
+      setResult({ engagement, text: String(e?.message || e) });
+    } finally {
+      setHold(false);
+    }
+  };
+  const applyPreset = async (engagement) => {
+    const id = presetId.trim();
+    if (!id) return;
+    setHold(true);
+    try {
+      const outcome = await rebindAgentResource(engagement, id);
+      setResult({ engagement, text: t('na.presetResult', { id: outcome.preset_id }) });
+      setPresetFor(null);
+      setPresetId('');
+      data.refresh();
+    } catch (e) {
+      setResult({ engagement, text: String(e?.message || e) });
+    } finally {
+      setHold(false);
+    }
+  };
 
   if (phase === 'error') {
     return (
@@ -103,8 +142,30 @@ export default function NativeAgents() {
                   <td className="dim">{a.last_seen_ms === null ? t('nu.unknown') : new Date(a.last_seen_ms).toISOString()}</td>
                   {manageLifecycle && (
                     <td>
-                      <button className="btn" data-lifecycle-action="stop" disabled={hold} onClick={() => stopAgent(a.engagement_id)}>{t('na.stop')}</button>
+                      <button className="btn" data-lifecycle-action="stop" disabled={hold} onClick={() => act(a.engagement_id, 'stop')}>{t('na.stop')}</button>
+                      <button className="btn" data-lifecycle-action="start" disabled={hold} onClick={() => act(a.engagement_id, 'start')}>{t('na.start')}</button>
+                      <button className="btn" data-lifecycle-action="preset" disabled={hold} onClick={() => setPresetFor(presetFor === a.engagement_id ? null : a.engagement_id)}>{t('na.preset')}</button>
                       <button className="btn" data-lifecycle-action="review" disabled={hold} onClick={() => setReview(a)}>{t('nrec.open')}</button>
+                      {presetFor === a.engagement_id && (
+                        <form
+                          data-lifecycle-form="preset"
+                          onSubmit={(e) => { e.preventDefault(); applyPreset(a.engagement_id); }}
+                          style={{ display: 'flex', gap: 6, marginTop: 6 }}
+                        >
+                          <input
+                            aria-label={t('na.presetId')}
+                            data-lifecycle-input="preset-id"
+                            value={presetId}
+                            onChange={(e) => setPresetId(e.target.value)}
+                            placeholder={t('na.presetId')}
+                            style={{ minWidth: 160 }}
+                          />
+                          <button className="btn" type="submit" disabled={hold || !presetId.trim()}>{t('na.preset')}</button>
+                        </form>
+                      )}
+                      {result?.engagement === a.engagement_id && (
+                        <p className="note" role="status" data-lifecycle-result>{result.text}</p>
+                      )}
                     </td>
                   )}
                 </tr>

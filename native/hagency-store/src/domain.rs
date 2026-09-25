@@ -18,6 +18,7 @@ use serde_json::{Value, json};
 use std::{fs::File, path::Path};
 pub(crate) mod accounts;
 mod agent_fences;
+mod agent_lifecycle;
 pub use agent_fences::{AgentFence, FenceReason};
 mod approvals;
 mod engagement_retention;
@@ -100,7 +101,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 41;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 42;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -739,9 +740,14 @@ impl DomainRepository {
                         include_str!("migrations/046-side-registrations.sql"),
                     ),
                     (41, include_str!("migrations/040-command-notices.sql")),
+                    // Integration of lane/agentctl: its board-assigned number
+                    // was 049; it lands as the next sequential tuple 42 (file
+                    // name kept).
+                    (42, include_str!("migrations/049-agent-lifecycle.sql")),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
+                    "SELECT engagement_id,stopped_at,reason,operator,started_at FROM agent_lifecycle LIMIT 0",
                     "SELECT id,engagement_id,dispatch_id,fence,reason,created_at,cleared_at,cleared_by FROM agent_fences LIMIT 0",
                     "SELECT id,session_id,transaction_id,digest,body,html,route,source_event_id,state,cancel_requested,fence,claim_hash,claim_until,event_id,observation,created_at,updated_at FROM command_notices LIMIT 0",
                     "SELECT id FROM current_command_notices LIMIT 0",

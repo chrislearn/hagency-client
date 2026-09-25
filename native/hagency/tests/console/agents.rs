@@ -434,12 +434,17 @@ async fn native_console_agent_lifecycle_is_scoped() {
     let lifecycle = lifecycle_session(&service).await;
     let id = &f.engagement;
     // Read-only: all three compatibility routes refuse before store work.
+    // Preset is PUT (TS parity: backend-v2.js:11484 `app.put`).
     for path in [
         format!("/console/api/agents/{id}/start"),
         format!("/console/api/agents/{id}/stop"),
         format!("/console/api/agents/{id}/preset"),
     ] {
-        let mut builder = post(&path, &readonly);
+        let mut builder = if path.ends_with("/preset") {
+            put(&path, &readonly)
+        } else {
+            post(&path, &readonly)
+        };
         if path.ends_with("/preset") {
             builder = builder.json(&json!({"presetId":"private_usage_pool"}));
         }
@@ -471,15 +476,15 @@ async fn native_console_agent_lifecycle_is_scoped() {
         "the engagement row survives the refusals"
     );
     drop(raw);
-    // Start has no durable native transition. It must refuse every authorized
-    // call instead of reporting a successful no-op.
+    // Start refuses an agent that never stopped — TS parity 409
+    // `agent already online` (backend-v2.js:12717).
     let mut response = post(&format!("/console/api/agents/{id}/start"), &lifecycle)
         .send(&service)
         .await;
-    assert_eq!(response.status_code, Some(StatusCode::NOT_IMPLEMENTED));
+    assert_eq!(response.status_code, Some(StatusCode::CONFLICT));
     assert_eq!(
         response.take_json::<Value>().await.unwrap()["code"],
-        "agent_start_unavailable"
+        "agent_already_online"
     );
     // Neighbouring mutations refuse the lifecycle session with THEIR words.
     let source = native_resource("private_lifecycle_scope_source");
@@ -532,24 +537,18 @@ async fn native_console_agent_lifecycle_is_scoped() {
     f.close().await;
 }
 
-/// CL-S2 (ADR-130) at-most-once selector, driven at the HTTP surface: start
-/// fails closed because no durable native start transition exists; two stops
-/// resolve the SAME dispatch id and fence through the unsettled stop row,
-/// writing no second row, and both still report `stop_pending`.
+/// #21 acceptance: stop completes and start re-arms — TS parity
+/// `stopManagedAgent` (backend-v2.js:12577-12708, success object
+/// `{ok:true,stopped:true,...cancelledDispatches}` at :12690) and start
+/// (backend-v2.js:12712, the return to serving). Idempotency follows the
+/// retained stop: a second stop answers `stopped:true` again, writing no
+/// second row.
 #[tokio::test]
 async fn native_console_agent_start_stop_is_at_most_once() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
     let lifecycle = lifecycle_session(&service).await;
     let id = &f.engagement;
-    let mut response = post(&format!("/console/api/agents/{id}/start"), &lifecycle)
-        .send(&service)
-        .await;
-    assert_eq!(response.status_code, Some(StatusCode::NOT_IMPLEMENTED));
-    assert_eq!(
-        response.take_json::<Value>().await.unwrap()["code"],
-        "agent_start_unavailable"
-    );
     let stop = || async {
         let mut response = post(&format!("/console/api/agents/{id}/stop"), &lifecycle)
             .send(&service)
@@ -558,19 +557,21 @@ async fn native_console_agent_start_stop_is_at_most_once() {
         response.take_json::<Value>().await.unwrap()
     };
     let first = stop().await;
-    for key in ["stopped", "stop_pending", "dispatch_id", "fence", "state"] {
-        assert!(
-            first.get(key).is_some(),
-            "the stop wire object carries {key}"
-        );
-    }
-    assert_eq!(first["stop_pending"], true);
-    assert_eq!(first["stopped"], false);
+    assert_eq!(first["ok"], true);
+    assert_eq!(first["stopped"], true, "the stop completes");
+    assert_eq!(first["state"], "stopped");
+    assert_eq!(
+        first["cancelled_dispatches"].as_array().map(Vec::len),
+        Some(1),
+        "the live dispatch is the retained cancelledDispatches"
+    );
     let second = stop().await;
-    assert_eq!(second["dispatch_id"], first["dispatch_id"]);
-    assert_eq!(second["fence"], first["fence"]);
-    assert_eq!(second["stop_pending"], true);
-    assert_eq!(second["stopped"], false);
+    assert_eq!(second["stopped"], true);
+    assert_eq!(
+        second["cancelled_dispatches"].as_array().map(Vec::len),
+        Some(0),
+        "the second stop is idempotent"
+    );
     let raw = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3")).unwrap();
     let count: i64 = raw
         .query_row("SELECT COUNT(*) FROM dispatch_stops", [], |r| r.get(0))
@@ -578,44 +579,115 @@ async fn native_console_agent_start_stop_is_at_most_once() {
     assert_eq!(count, 1, "the second stop writes no second row");
     let settled: Option<u64> = raw
         .query_row(
-            "SELECT settled_at FROM dispatch_stops WHERE dispatch_id=?1",
-            [first["dispatch_id"].as_str().unwrap()],
+            "SELECT settled_at FROM dispatch_stops WHERE dispatch_id='private_dispatch'",
+            [],
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(settled, None, "no production path settles the stop");
+    assert!(settled.is_some(), "the operator stop settles the stop row");
+    let stopped: Option<u64> = raw
+        .query_row(
+            "SELECT stopped_at FROM agent_lifecycle WHERE engagement_id=?1",
+            [&*id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(stopped.is_some(), "the durable stopped row exists");
     drop(raw);
+    // Start brings the agent back to serving (backend-v2.js:12712-12775).
+    let mut response = post(&format!("/console/api/agents/{id}/start"), &lifecycle)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let body = response.take_json::<Value>().await.unwrap();
+    assert_eq!(body["ok"], true);
+    assert_eq!(body["state"], "launching");
+    let started: Option<u64> = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3"))
+        .unwrap()
+        .query_row(
+            "SELECT started_at FROM agent_lifecycle WHERE engagement_id=?1",
+            [&*id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(started.is_some(), "serving is re-armed durably");
+    // A second start hits the retained `agent already online` (409).
+    let mut response = post(&format!("/console/api/agents/{id}/start"), &lifecycle)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::CONFLICT));
+    assert_eq!(
+        response.take_json::<Value>().await.unwrap()["code"],
+        "agent_already_online"
+    );
     f.close().await;
 }
 
-/// CL-S2 (ADR-130) preset selector: native has no agent registry independent
-/// of engagements, and an engagement's resource owns budget, account and
-/// provision effects. The route therefore refuses rather than pretending an
-/// in-memory pointer changed that durable association.
+/// #21 preset (resource) rebind — TS parity `PUT /api/agents/:name/preset`
+/// (backend-v2.js:11484-11522): binding, ceiling and profile move together,
+/// the response reports ceiling/remaining beside the binding, and the NEXT
+/// dispatch the host claims reads the new resource from the provision
+/// effect's payload. An unknown preset is refused with 400 and the previous
+/// binding survives (tests/api-agent-preset-binding.test.js parity).
 #[tokio::test]
 async fn native_console_agent_preset_apply_refuses_without_durable_transition() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
     let lifecycle = lifecycle_session(&service).await;
     let id = &f.engagement;
-    let before = f
-        .domain
-        .agent_roster()
-        .await
-        .unwrap()
-        .into_iter()
-        .find(|row| row.engagement_id == *id)
-        .unwrap();
-    let mut response = post(&format!("/console/api/agents/{id}/preset"), &lifecycle)
-        .json(&json!({"presetId": "private_preset_apply_published"}))
+    // A second published resource to rebind onto.
+    let other = native_resource("private_preset_apply_published");
+    f.domain.put_resource(other.clone()).await.unwrap();
+    let mut response = put(&format!("/console/api/agents/{id}/preset"), &lifecycle)
+        .json(&json!({"presetId": other.preset_id}))
         .send(&service)
         .await;
-    assert_eq!(response.status_code, Some(StatusCode::NOT_IMPLEMENTED));
+    let probe = response.take_json::<Value>().await.unwrap();
+    assert_eq!(
+        response.status_code,
+        Some(StatusCode::OK),
+        "rebind failed: {probe}"
+    );
+    let body = probe;
+    assert_eq!(body["ok"], true);
+    assert_eq!(body["preset_id"], other.preset_id);
+    assert_eq!(body["resource_id"], other.id());
+    // The retained `remaining` question, answered beside the binding.
+    assert_eq!(body["ceiling_tokens"], 5000);
+    let remaining = body["remaining"].as_u64().expect("remaining is a number");
+    assert!(remaining <= 5000, "remaining never exceeds the ceiling");
+    // The durable association moved: row, projection and the provision
+    // effect's resource payload — the one the claim selector reads.
+    let raw = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3")).unwrap();
+    let (row_resource, projected): (String, String) = raw
+        .query_row(
+            "SELECT resource_id,json_extract(projection,'$.resourceId') FROM engagements WHERE id=?1",
+            [&*id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(row_resource, other.id(), "the engagement row moved");
+    assert_eq!(projected, other.id(), "the projection moved");
+    let payload: String = raw
+        .query_row(
+            "SELECT json_extract(payload,'$.resource.presetId') FROM effects WHERE engagement_id=?1 AND kind='provision'",
+            [&*id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(payload, other.preset_id, "the next dispatch reads this payload");
+    drop(raw);
+    // Unknown preset: 400, and the binding survives (TS parity).
+    let mut response = put(&format!("/console/api/agents/{id}/preset"), &lifecycle)
+        .json(&json!({"presetId": "no_such_preset"}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST));
     assert_eq!(
         response.take_json::<Value>().await.unwrap()["code"],
-        "agent_preset_unavailable"
+        "unknown_preset"
     );
-    let after = f
+    let survived = f
         .domain
         .agent_roster()
         .await
@@ -623,9 +695,7 @@ async fn native_console_agent_preset_apply_refuses_without_durable_transition() 
         .into_iter()
         .find(|row| row.engagement_id == *id)
         .unwrap();
-    assert_eq!(after.framework, before.framework);
-    assert_eq!(after.state, before.state);
-    assert_eq!(after.requested_tokens, before.requested_tokens);
+    assert_eq!(survived.framework, other.framework, "the binding survives");
     f.close().await;
 }
 

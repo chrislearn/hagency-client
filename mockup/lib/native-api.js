@@ -247,12 +247,24 @@ export async function fetchAgentDetail(name) {
   return validateAgentDetail(await request(`/api/agents/${encodeURIComponent(name)}`), name);
 }
 
-/* CL-S2 (ADR-130): expose only the lifecycle mutation that has a durable
- * domain effect. Start and preset rebinding fail closed at the server until
- * their complete state transitions exist; the browser must not offer buttons
- * that can only refuse. */
+/* #21 lifecycle mutations (TS parity: backend-v2.js:12577-12775 stop/start,
+ * :11484-11522 preset). The browser offers only what the server does:
+ * stop completes, start re-arms serving, preset rebinds the resource the
+ * next dispatch claims. Every outcome answer is validated exact-key. */
 export async function stopAgent(id) {
   return request(`/api/agents/${id}/stop`, { method: 'POST' });
+}
+export async function startAgent(id) {
+  const value = await request(`/api/agents/${id}/start`, { method: 'POST' });
+  if (!object(value, ['ok', 'state']) || value.ok !== true || value.state !== 'launching') throw new Error('invalid_native_response');
+  return value;
+}
+export async function rebindAgentResource(id, presetId) {
+  const value = await request(`/api/agents/${id}/preset`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ presetId }) });
+  if (!object(value, ['ok', 'engagement_id', 'preset_id', 'resource_id', 'previous_preset_id', 'ceiling_tokens', 'remaining', 'tier'])
+    || value.ok !== true || value.engagement_id !== id || !text(value.preset_id, 128) || !text(value.resource_id, 128)
+    || !(value.ceiling_tokens === null || number(value.ceiling_tokens)) || !(value.remaining === null || number(value.remaining))) throw new Error('invalid_native_response');
+  return value;
 }
 
 /* The project-sides read (ADR-132): one row per fleet registration — the

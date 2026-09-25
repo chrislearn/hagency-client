@@ -1050,7 +1050,7 @@ fn native_verified_ingress_recovery_schema_eleven_has_unknown_boundary() {
     drop(f.db);
     let sql = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3")).unwrap();
     remove_ingress_schema(&sql);
-    sql.pragma_update(None, "user_version", 11).unwrap();
+    sql.execute_batch("DROP TABLE IF EXISTS agent_lifecycle; PRAGMA user_version=11;").unwrap();
     drop(sql);
     f.db = DomainRepository::open(&f.root.path().join("state")).unwrap();
     assert!(f.db.matrix_ingress_scope("a").is_err());
