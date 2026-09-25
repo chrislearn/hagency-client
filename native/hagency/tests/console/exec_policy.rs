@@ -9,40 +9,12 @@
 //!   `{ok:true,executionPolicy,appliesTo:'next_dispatch'}` and 404 an unknown
 //!   agent (backend-v2.js:10865-10885).
 use super::*;
-use std::time::Duration;
 
-/// A lifecycle-scoped session, exchanged exactly as the lifecycle routes do.
+/// One login is the whole console (the operator's decision; the per-scope
+/// issue routes are gone): the former lifecycle-scoped helper is the same
+/// plain `session()` every other test uses.
 async fn owner(service: &Service) -> String {
-    // The issuer shares one rate budget across every scope (authority.rs
-    // `issue_scope`): a second issue inside one second answers Busy. Clear the
-    // budget; a 429 is a real refusal reported from its body, never retried.
-    tokio::time::sleep(Duration::from_millis(1010)).await;
-    let mut response = TestClient::post(format!(
-        "{BASE}/api/native/v1/console/agent-lifecycle-access"
-    ))
-    .add_header("host", "127.0.0.1:13300", true)
-    .bearer_auth(TOKEN)
-    .send(service)
-    .await;
-    let status = response.status_code;
-    let body = response.take_string().await.unwrap_or_default();
-    assert_eq!(status, Some(StatusCode::OK), "lifecycle issue refused: {body}");
-    let ticket = serde_json::from_str::<Value>(&body).unwrap()["ticket"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let response = exchange(service, &ticket).await;
-    assert_eq!(response.status_code, Some(StatusCode::OK));
-    response
-        .headers()
-        .get("set-cookie")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .split(';')
-        .next()
-        .unwrap()
-        .to_owned()
+    session(service).await
 }
 
 /// The dirty flag as the dispatch gate actually reads it.
@@ -116,34 +88,6 @@ async fn native_console_clear_dirty_refuses_a_quarantined_workspace() {
     assert!(dirty(&f, "private_workspace"), "the quarantine is untouched");
 }
 
-/// A non-lifecycle session cannot reach either surface.
-#[tokio::test]
-async fn native_console_exec_policy_requires_the_lifecycle_scope() {
-    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
-    let service = f.service();
-    let read_only = session(&service).await;
-    for (method, path) in [
-        ("get", format!("/console/api/agents/{}/execution-policy", f.engagement)),
-        (
-            "post",
-            "/console/api/resources/private_workspace/clear-dirty".to_owned(),
-        ),
-    ] {
-        let mut response = if method == "get" {
-            get(&path, &read_only).send(&service).await
-        } else {
-            post(&path, &read_only).send(&service).await
-        };
-        assert_eq!(
-            response.status_code,
-            Some(StatusCode::FORBIDDEN),
-            "{method} {path}"
-        );
-        let body: Value =
-            serde_json::from_str(&response.take_string().await.unwrap_or_default()).unwrap();
-        assert_eq!(body["code"], "agent_lifecycle_scope_required");
-    }
-}
 
 /// The operator edits an agent's execution policy and reads it back — the
 /// engagement's framework is Codex, so `yolo: true` is admissible

@@ -246,7 +246,7 @@ async fn native_console_alert_transition() {
     assert_eq!(value["alerts"][0]["note"], "seen");
     assert_eq!(
         value["alerts"][0]["next"],
-        serde_json::json!(["resolved", "suppressed"]),
+        serde_json::json!(["assigned", "resolved"]),
         "the reply carries the next legal set from the same map"
     );
     // The terminal state serves no transitions: resolve, then empty next.

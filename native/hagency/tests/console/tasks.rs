@@ -4,29 +4,11 @@ use hagency_store::{MAX_TASK_COMMENTS, MAX_TASK_PAGE};
 /// Issue one scoped console ticket and exchange it for a cookie, the same
 /// finite-ticket flow `configuration.rs` uses. The authority throttles ticket
 /// issuance, so callers space their calls by `throttle()`.
-async fn scoped(service: &Service, scope: &str) -> String {
-    let mut response = TestClient::post(format!("{BASE}/api/native/v1/console/{scope}"))
-        .add_header("host", "127.0.0.1:13300", true)
-        .bearer_auth(TOKEN)
-        .send(service)
-        .await;
-    assert_eq!(response.status_code, Some(StatusCode::OK));
-    let ticket = response.take_json::<Value>().await.unwrap()["ticket"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let response = exchange(service, &ticket).await;
-    assert_eq!(response.status_code, Some(StatusCode::OK));
-    response
-        .headers()
-        .get("set-cookie")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .split(';')
-        .next()
-        .unwrap()
-        .to_owned()
+/// One login is the whole console (the operator's decision; integ's typing
+/// #41 removed the per-scope issue routes): the former scoped helper is the
+/// same plain `session()` every other test uses.
+async fn scoped(service: &Service, _scope: &str) -> String {
+    session(service).await
 }
 
 /// One configurable session: the scope the task writes require.
@@ -275,32 +257,14 @@ async fn native_console_tasks_authority_matrix() {
             Some(StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN)
         ));
     }
-    // A read-only session lists — and reads `permissions.configureResource:false`,
-    // which is what makes the page render no control it would be refused.
+    // One login lists and carries the configure permission (the operator's
+    // one-login decision; `can_configure` is `logged_in`).
     let mut response = get("/console/api/tasks", &readonly).send(&service).await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let value = response.take_json::<Value>().await.unwrap();
-    assert_eq!(value["permissions"]["configureResource"], false);
+    assert_eq!(value["permissions"]["configureResource"], true);
     assert_eq!(value["tasks"], json!([]));
     assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
-
-    // Every write refuses a read-only session with the console's own word,
-    // before any store job.
-    for (request, path) in [
-        (post("/console/api/tasks", &readonly), "/console/api/tasks"),
-        (patch("/console/api/tasks/task_x", &readonly), "/console/api/tasks/task_x"),
-        (delete("/console/api/tasks/task_x", &readonly), "/console/api/tasks/task_x"),
-        (post("/console/api/tasks/task_x/transition", &readonly), "/console/api/tasks/task_x/transition"),
-        (post("/console/api/tasks/task_x/comments", &readonly), "/console/api/tasks/task_x/comments"),
-    ] {
-        let mut response = request.json(&json!({"title":"x","status":"accepted","text":"x"})).send(&service).await;
-        assert_eq!(response.status_code, Some(StatusCode::FORBIDDEN), "{path}");
-        assert_eq!(
-            response.take_json::<Value>().await.unwrap()["code"],
-            "resource_configuration_scope_required",
-            "{path}"
-        );
-    }
     f.close().await;
 }
 

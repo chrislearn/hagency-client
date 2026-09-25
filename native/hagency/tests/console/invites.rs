@@ -59,15 +59,8 @@ async fn native_console_pending_invites_list_and_decide() {
     assert_eq!(row["decidedAt"], Value::Null);
     assert_eq!(row["decidedBy"], Value::Null);
 
-    // A read-only session cannot decide: the lifecycle scope gate.
-    let refused = post("/console/api/matrix/pending-invites/decide", &read_only)
-        .json(&json!({"projectRoomId": ROOM, "agent": AGENT, "accept": true}))
-        .send(&service)
-        .await;
-    assert_eq!(refused.status_code, Some(StatusCode::FORBIDDEN));
-
-    // Ticket issuance is rate-limited to one per second.
-    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+    // One login carries the decide permission (the operator's one-login
+    // decision); anonymous callers are refused by the shared hoop.
     let cookie = lifecycle_session(&service).await;
 
     // TS 400s: room and agent are required.

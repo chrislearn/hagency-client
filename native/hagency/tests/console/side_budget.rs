@@ -9,37 +9,11 @@ use super::*;
 /// third admitted-but-pending one commits nothing, and exactly one of the
 /// three agents carries observed usage.
 
-/// The configuration-scoped session the resource writes use (brief 28's
-/// one-concept-one-scope: the allocation is an operator budget decision).
-/// Ticket issuance is rate-limited to one per second (authority.rs
-/// `issue_scope`), so the second issuance waits the 1010ms the
-/// configuration tests sleep between scopes.
+/// One login is the whole console (the operator's decision; the per-scope
+/// issue routes are gone): the former configuration-scoped helper is the
+/// same plain `session()` every other test uses.
 async fn configuration(service: &Service) -> String {
-    tokio::time::sleep(std::time::Duration::from_millis(1010)).await;
-    let mut response = TestClient::post(format!(
-        "{BASE}/api/native/v1/console/resource-configuration-access"
-    ))
-    .add_header("host", "127.0.0.1:13300", true)
-    .bearer_auth(TOKEN)
-    .send(service)
-    .await;
-    assert_eq!(response.status_code, Some(StatusCode::OK));
-    let ticket = response.take_json::<Value>().await.unwrap()["ticket"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let response = exchange(service, &ticket).await;
-    assert_eq!(response.status_code, Some(StatusCode::OK));
-    response
-        .headers()
-        .get("set-cookie")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .split(';')
-        .next()
-        .unwrap()
-        .to_owned()
+    session(service).await
 }
 
 fn put(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
@@ -50,26 +24,15 @@ fn put(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
         .add_header("cookie", cookie, true)
 }
 
-/// The allocation write is a configuration decision: the plain read-only
-/// console session is refused, the configuration-scoped one sets and
-/// clears, and the reply carries the SAME six-key side record the list
-/// serves beside the budget (backend-v2.js:9545 `{ok, side, budget}`).
+/// The allocation write and read: one login sets and clears, and the reply
+/// carries the SAME six-key side record the list serves beside the budget
+/// (backend-v2.js:9545 `{ok, side, budget}`).
 #[tokio::test]
 async fn native_console_side_allocation_write_and_read() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
-    let readonly = session(&service).await;
-    let body = json!({"allocated_tokens": 500});
-    assert_eq!(
-        put("/console/api/project-sides/example.test/allocation", &readonly)
-            .json(&body)
-            .send(&service)
-            .await
-            .status_code,
-        Some(StatusCode::FORBIDDEN),
-        "the write takes the configuration scope"
-    );
     let operator = configuration(&service).await;
+    let body = json!({"allocated_tokens": 500});
     let mut response = put("/console/api/project-sides/example.test/allocation", &operator)
         .json(&body)
         .send(&service)
@@ -112,7 +75,7 @@ async fn native_console_side_allocation_write_and_read() {
 
     // The read spreads the budget FLAT beside sideId — the retained route's
     // own spread (backend-v2.js:9571) — with no nested budget key.
-    let mut response = get("/console/api/project-sides/example.test/budget", &readonly)
+    let mut response = get("/console/api/project-sides/example.test/budget", &operator)
         .send(&service)
         .await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
@@ -146,7 +109,7 @@ async fn native_console_side_allocation_write_and_read() {
         Some(StatusCode::NOT_FOUND)
     );
     assert_eq!(
-        get("/console/api/project-sides/nope.test/budget", &readonly)
+        get("/console/api/project-sides/nope.test/budget", &operator)
             .send(&service)
             .await
             .status_code,
@@ -155,7 +118,7 @@ async fn native_console_side_allocation_write_and_read() {
     // A list observation takes no selection: the budget reads likewise
     // refuse every query parameter.
     assert_eq!(
-        get("/console/api/project-sides/example.test/budget?limit=1", &readonly)
+        get("/console/api/project-sides/example.test/budget?limit=1", &operator)
             .send(&service)
             .await
             .status_code,
