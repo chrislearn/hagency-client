@@ -713,3 +713,62 @@ async fn native_mcp_approval_is_bound_to_the_assigned_task() {
         assert!(reply["result"].get("structuredContent").is_none());
     }
 }
+
+/// The host leg is WIRED (task #25). Before this task both tools answered
+/// "Approval host leg is not wired"; now a correctly-shaped call reaches the
+/// runner API. This session's capability points at `127.0.0.1:9` where nothing
+/// listens, so the call must fail on TRANSPORT — proving the request was
+/// actually dispatched — and must never again name the unwired leg.
+#[tokio::test]
+async fn native_mcp_approval_tools_reach_the_host_leg() {
+    let mut s = session();
+    request(&mut s, init(json!("1"))).await.unwrap();
+    assert!(
+        request(
+            &mut s,
+            json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
+        )
+        .await
+        .is_none()
+    );
+    // The read: assigned task only, no extra keys.
+    let read = request(
+        &mut s,
+        json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_approval","arguments":{"id":"task"}}}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(read["result"]["isError"], true);
+    let text = read["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.contains("native runner service unavailable"),
+        "the read dispatched to the host leg and failed on transport, got: {text}"
+    );
+    assert!(!text.contains("not wired"), "the leg is wired now: {text}");
+    // The consume: id plus its stable call_id.
+    let consume = request(
+        &mut s,
+        json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"consume_approval","arguments":{"id":"task","call_id":"stable_call_one"}}}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(consume["result"]["isError"], true);
+    let text = consume["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.contains("native runner service unavailable"),
+        "the consume dispatched to the host leg and failed on transport, got: {text}"
+    );
+    assert!(!text.contains("not wired"), "the leg is wired now: {text}");
+    // The consume without its receipt is still refused before any dispatch.
+    let bare = request(
+        &mut s,
+        json!({"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"consume_approval","arguments":{"id":"task"}}}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(bare["result"]["isError"], true);
+    assert_eq!(
+        bare["result"]["content"][0]["text"],
+        "Missing stable call_id"
+    );
+}

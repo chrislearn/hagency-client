@@ -82,7 +82,7 @@ pub(crate) fn settlement_lookup(
     ] {
         generation(value)?;
     }
-    if route.server_name.len() > 255 || !route.encrypted {
+    if route.server_name.len() > 255 {
         return Err(hagency_core::InvalidInput("invalid historical upload route").into());
     }
     matrix_room(&route.room_id, &route.server_name)?;
@@ -331,9 +331,9 @@ fn current_scope(
         return Err(Error::RunnerAuthority);
     }
     let route = matrix_routes::route(db, &scope.input().session_id)?;
-    if !route.encrypted {
-        return Err(Error::RunnerAuthority);
-    }
+    // TS parity (lib/matrix-file.js:30-33): plaintext rooms deliver files too;
+    // the room's transport choice is not runner authority (architect approval
+    // on board #8, 2026-09-24).
     Ok((scope.fingerprint().into(), route))
 }
 fn current(db: &Connection, cap: &RunnerCapability, row: &Row, now: u64) -> Result<(), Error> {

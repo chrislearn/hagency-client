@@ -34,28 +34,39 @@ pub(crate) struct Manifest {
     sender_device: String,
     session: String,
 }
-fn parts(content: &Value) -> Result<(AttachmentMetadata, MediaId, Descriptor), Error> {
+fn parts(content: &Value) -> Result<(AttachmentMetadata, MediaId, Option<Descriptor>), Error> {
     let object = content.as_object().ok_or(Error::Wire)?;
     if !matches!(
         object.get("msgtype").and_then(Value::as_str),
         Some("m.file" | "m.image")
-    ) || object.contains_key("url")
-    {
+    ) {
         return Err(Error::Unsupported);
     }
-    let mut file = object
-        .get("file")
-        .and_then(Value::as_object)
-        .cloned()
-        .ok_or(Error::Wire)?;
-    let url = file
-        .remove("url")
-        .and_then(|v| v.as_str().map(str::to_owned))
-        .ok_or(Error::Wire)?;
-    let media = MediaId::new(&url).map_err(|_| Error::Wire)?;
-    let descriptor =
-        Descriptor::from_private_event_json(&serde_json::to_vec(&file).map_err(|_| Error::Wire)?)
+    // TS parity (lib/matrix-file.js:38): `content.file?.url || content.url` —
+    // the encrypted descriptor wins when present, otherwise a plaintext room's
+    // content.url is the media reference and no descriptor exists.
+    let (url, descriptor) = match object.get("file").and_then(Value::as_object).cloned() {
+        Some(mut file) => {
+            let url = file
+                .remove("url")
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .ok_or(Error::Wire)?;
+            let descriptor = Descriptor::from_private_event_json(
+                &serde_json::to_vec(&file).map_err(|_| Error::Wire)?,
+            )
             .map_err(|_| Error::Wire)?;
+            (url, Some(descriptor))
+        }
+        None => {
+            let url = object
+                .get("url")
+                .and_then(Value::as_str)
+                .ok_or(Error::Wire)?
+                .to_owned();
+            (url, None)
+        }
+    };
+    let media = MediaId::new(&url).map_err(|_| Error::Wire)?;
     let filename = object
         .get("filename")
         .or_else(|| object.get("body"))
@@ -128,15 +139,24 @@ impl Manifest {
         Ok(value)
     }
     pub(crate) fn validate(&self, sdk: &str, user: &str, device: &str) -> Result<(), Error> {
+        // TS parity (bridge-matrix.js:6799-6831): a plaintext room's attachment
+        // is retained with the same custody shape; its source is an
+        // m.room.message and it has no crypto device/session evidence.
+        let transport_ok = if self.route.encrypted {
+            !self.sender_device.is_empty()
+                && self.sender_device.len() <= 255
+                && !self.session.is_empty()
+                && self.session.len() <= 255
+                && self.source.get("type").and_then(Value::as_str) == Some("m.room.encrypted")
+        } else {
+            self.sender_device.is_empty()
+                && self.session.is_empty()
+                && self.source.get("type").and_then(Value::as_str) == Some("m.room.message")
+        };
         if serde_json::to_vec(self).map_err(|_| Error::Storage)?.len() > MAX_MANIFEST_BYTES
-            || !self.route.encrypted
+            || !transport_ok
             || self.route.sender_mxid != user
             || self.route.device_id != device
-            || self.sender_device.is_empty()
-            || self.sender_device.len() > 255
-            || self.session.is_empty()
-            || self.session.len() > 255
-            || self.source.get("type").and_then(Value::as_str) != Some("m.room.encrypted")
             || self.source.get("unsigned").is_some()
             || self.sdk_identity != identity(sdk)?
             || self.content_digest
@@ -198,7 +218,9 @@ impl Manifest {
             || self.content.get("msgtype").and_then(Value::as_str)
                 != Some(event.event.kind.as_str())
             || !event.scope.matches(&self.route)
-            || !event.encrypted
+        // TS parity (board #8 approval): a plaintext-room event's manifest is a
+        // valid attachment observation; `event.encrypted` is no longer required
+        // (core MatrixAttachmentObservation::validate checks the kind only).
         {
             return Err(Error::Conflict);
         }
@@ -237,15 +259,22 @@ impl Manifest {
 pub struct AttachmentHandle {
     _manifest: Manifest,
     media: MediaId,
-    descriptor: Descriptor,
+    descriptor: Option<Descriptor>,
     _permit: OwnedSemaphorePermit,
 }
 impl AttachmentHandle {
     pub fn media_id(&self) -> &MediaId {
         &self.media
     }
-    pub fn descriptor(&self) -> &Descriptor {
-        &self.descriptor
+    /// The ciphertext descriptor for an encrypted room; `None` in a plaintext
+    /// room, where the media download is the original bytes (TS parity,
+    /// lib/matrix-file.js:38).
+    pub fn descriptor(&self) -> Option<&Descriptor> {
+        self.descriptor.as_ref()
+    }
+    /// True when this attachment came from a plaintext-room event.
+    pub fn plaintext(&self) -> bool {
+        self.descriptor.is_none()
     }
 }
 impl Collector {

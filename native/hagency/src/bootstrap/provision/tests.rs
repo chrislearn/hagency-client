@@ -26,7 +26,7 @@ fn states(room: &RoomObservation) -> Value {
     }
     if let Some(binding) = &room.binding {
         events.push(
-            json!({"type":"com.hagency.project.binding.v1","state_key":"","content":binding}),
+            json!({"type":"com.hagency.admin.binding.v1","state_key":binding.get("fleetId").cloned().unwrap_or_default(),"content":binding}),
         );
     }
     if let Some(name) = &room.name {

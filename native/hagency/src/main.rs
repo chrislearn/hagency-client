@@ -56,6 +56,29 @@ enum Command {
         #[command(subcommand)]
         command: hagency::bootstrap::registration::Command,
     },
+    /// Issue a project side's appservice registration (task #13): random
+    /// tokens, the YAML under <state>/registrations/, and the stored
+    /// credential the appservice profile reads — no hand-placed files.
+    SideRegistration {
+        #[arg(long)]
+        state_dir: PathBuf,
+        /// The project side — its Matrix server name.
+        #[arg(long)]
+        side: String,
+        /// The address this side's homeserver reaches Hagency at; cannot be
+        /// derived, only asked.
+        #[arg(long)]
+        url: String,
+        #[arg(long)]
+        registration_id: Option<String>,
+        #[arg(long)]
+        sender_localpart: Option<String>,
+        #[arg(long)]
+        user_namespace: Option<String>,
+        /// true unless explicitly false, matching the TS body contract.
+        #[arg(long)]
+        exclusive: Option<bool>,
+    },
     /// Admit an externally created agent only after fresh authenticated Matrix observations.
     Provision {
         #[arg(long, global = true)]
@@ -264,6 +287,27 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             let state_dir = state_dir.ok_or("registration commands require --state-dir")?;
             hagency::bootstrap::registration::run(&state_dir, command)?;
             println!("{}", serde_json::json!({"ok": true}));
+        }
+        Command::SideRegistration {
+            state_dir,
+            side,
+            url,
+            registration_id,
+            sender_localpart,
+            user_namespace,
+            exclusive,
+        } => {
+            hagency::console::side_registration::run_cli(
+                &state_dir,
+                hagency_store::IssueSideRegistrationRequest {
+                    side,
+                    url,
+                    registration_id,
+                    sender_localpart,
+                    user_namespace,
+                    exclusive,
+                },
+            )?;
         }
         Command::Provision { state_dir, command } => {
             let state_dir = state_dir.ok_or("provision commands require --state-dir")?;

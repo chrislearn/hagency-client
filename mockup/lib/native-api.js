@@ -184,17 +184,20 @@ export async function fetchAlerts() {
 }
 export function alertsView(location) { return /^\/console\/alerts\/?$/.test(location.pathname); }
 
-/* The agent roster (ADR-126): one row per engagement, EXACTLY seven
- * scalar keys — the server's RosterItem set — with the same exact-key
+/* The agent roster (ADR-126, widened by board #22): one row per AGENT —
+ * the TS roster's shape, every agent the service knows — with EXACTLY
+ * nine scalar keys, the server's RosterItem set, and the same exact-key
  * contract every other native read carries: an added server key (a
  * tmux target, a workspace path) fails the whole read rather than
  * rendering. No nested object exists on a roster item, so nothing can
- * hide inside one. `last_activity_ms` is "last dispatch activity", not
- * last seen; `null` (not zero) when the engagement has no attempt row.
- * `unavailable` is SERVER-OWNED: whatever columns the server names are
- * rendered as unknown, so a future source turns a column on by removing
- * its name server-side, never by a client edit. */
-const ROSTER_KEYS = ['name', 'framework', 'role', 'state', 'engagement_id', 'requested_tokens', 'last_activity_ms'];
+ * hide inside one. `online` is REAL worker state (a live dispatch in
+ * one of the agent's sessions); `last_seen_ms` is the newest attempt
+ * clock the agent produced — null, never zero, when it never attempted;
+ * `last_activity_ms` keeps the representative engagement's attempt
+ * clock. `unavailable` is SERVER-OWNED: whatever columns the server
+ * names are rendered as unknown, so a future source turns a column on
+ * by removing its name server-side, never by a client edit. */
+const ROSTER_KEYS = ['name', 'framework', 'role', 'state', 'engagement_id', 'requested_tokens', 'online', 'last_seen_ms', 'last_activity_ms'];
 export function validateAgents(v) {
   if (!object(v, ['at_ms', 'unavailable', 'agents', 'permissions']) || !number(v.at_ms)
     || !Array.isArray(v.unavailable) || v.unavailable.length > 32 || v.unavailable.some((n) => !text(n, 64))
@@ -203,13 +206,46 @@ export function validateAgents(v) {
     || v.agents.some((a) => !object(a, ROSTER_KEYS)
       || !text(a.name, 128) || !text(a.framework, 64) || !text(a.role, 128)
       || !STATES.includes(a.state) || !id(a.engagement_id)
-      || !number(a.requested_tokens) || !(a.last_activity_ms === null || number(a.last_activity_ms)))) throw new Error('invalid_native_response');
+      || !number(a.requested_tokens) || typeof a.online !== 'boolean'
+      || !(a.last_seen_ms === null || number(a.last_seen_ms))
+      || !(a.last_activity_ms === null || number(a.last_activity_ms)))) throw new Error('invalid_native_response');
   return v;
 }
 export async function fetchAgents() {
   return validateAgents(await request('/api/agents'));
 }
 export function agentsView(location) { return /^\/console\/agents\/?$/.test(location.pathname); }
+
+/* The agent detail (board #22, TS backend-v2.js:12155): the agent-keyed
+ * identity plus the resource it works from, the rooms its sessions bind,
+ * its current live dispatch and its recent tasks — EXACTLY the declared
+ * keys, same fail-closed contract: a widened server payload fails the
+ * whole read. `dispatch` is null when nothing is live; `tasks` carries
+ * the ten most recently touched canonical tasks, newest first. The agent
+ * name comes from the URL, not the payload, so a served record naming a
+ * DIFFERENT agent also fails the read. */
+const ROOM_KEYS = ['session_id', 'room_id', 'dispatch_state', 'dispatch_id'];
+const TASK_STATES = ['created', 'accepted', 'in_progress', 'blocked', 'done'];
+const detailRoom = (v) => v !== null && object(v, ROOM_KEYS) && id(v.session_id) && text(v.room_id, 256)
+  && (v.dispatch_state === null || ['queued', 'leased', 'started', 'parked', 'completed', 'outcome_unknown', 'superseded'].includes(v.dispatch_state))
+  && (v.dispatch_id === null || id(v.dispatch_id));
+export function validateAgentDetail(v, name) {
+  if (!object(v, ['name', 'framework', 'role', 'state', 'engagement_id', 'requested_tokens', 'online', 'last_seen_ms', 'resource_id', 'project_id', 'engagements', 'rooms', 'dispatch', 'tasks'])
+    || v.name !== name || !text(v.name, 128) || !text(v.framework, 64) || !text(v.role, 128)
+    || !STATES.includes(v.state) || !id(v.engagement_id) || !number(v.requested_tokens)
+    || typeof v.online !== 'boolean' || !(v.last_seen_ms === null || number(v.last_seen_ms))
+    || !id(v.resource_id) || !id(v.project_id) || !number(v.engagements)
+    || !Array.isArray(v.rooms) || v.rooms.length > 100 || v.rooms.some((r) => !detailRoom(r))
+    || !detailRoom(v.dispatch)
+    || !Array.isArray(v.tasks) || v.tasks.length > 10
+    || v.tasks.some((task) => !object(task, ['id', 'session_id', 'creator_session_id', 'title', 'description', 'priority', 'granularity', 'labels', 'parent_id', 'status', 'execution_epoch', 'created_at', 'updated_at', 'started_at', 'completed_at', 'heartbeat_at', 'waiting_reason', 'waiting_until'])
+      || !id(task.id) || !id(task.session_id) || !text(task.title, 1024) || !TASK_STATES.includes(task.status)
+      || !number(task.execution_epoch) || !number(task.created_at) || !number(task.updated_at))) throw new Error('invalid_native_response');
+  return v;
+}
+export async function fetchAgentDetail(name) {
+  return validateAgentDetail(await request(`/api/agents/${encodeURIComponent(name)}`), name);
+}
 
 /* CL-S2 (ADR-130): expose only the lifecycle mutation that has a durable
  * domain effect. Start and preset rebinding fail closed at the server until

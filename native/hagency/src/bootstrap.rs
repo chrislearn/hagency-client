@@ -3,10 +3,12 @@ pub mod accounts;
 mod approval;
 mod config;
 mod driver;
+pub(crate) mod engagement_notice;
 pub mod fleet;
 pub mod intake_refusal;
 pub(crate) mod palpo;
 pub mod provision;
+pub mod probe;
 pub mod registration;
 pub(crate) mod workspace;
 use approval::Pump;
@@ -260,7 +262,13 @@ mod custody_tests {
             owner.domain.clone(),
         )
         .unwrap();
-        let original = Arc::new(approval::Pump::new(collector.clone(), owner.domain.clone()));
+        // Approval-only oracle fixture: no ordinary agent transport exists
+        // here, so the notice keeps the approval bot's own sender.
+        let original = Arc::new(approval::Pump::new(
+            collector.clone(),
+            None,
+            owner.domain.clone(),
+        ));
         owner.approval = Some(original.clone());
         // This is a real, network-free close failure: an original service turn
         // is still held when the close arrives, so the bounded close cannot
@@ -1368,8 +1376,19 @@ impl Bootstrap {
             .as_mut()
             .map(|p| Shared::new(p.matrix.take().ok_or(Failure::Config)?, domain.clone()))
             .transpose()?;
+        // TS parity (bridge-matrix.js:9377): the public notice is spoken by the
+        // AGENT. Reuse the ordinary collector the driver's replies already use
+        // — never mint a second login. An approval-only host has no ordinary
+        // agent transport and passes `None`, keeping the bot's own sender.
+        let agent_transport = shared.as_ref().map(|shared| shared.collector.clone());
         let approval = approval_collector
-            .map(|collector| Arc::new(approval::Pump::new(collector, domain.clone())));
+            .map(|collector| {
+                Arc::new(approval::Pump::new(
+                    collector,
+                    agent_transport,
+                    domain.clone(),
+                ))
+            });
         tracing::trace!(target: "hagency_startup_observation", "native startup boundary: files_entered");
         let files = match (&shared, prepared.as_mut().and_then(|p| p.files.take())) {
             (Some(shared), Some(setup)) => Some(

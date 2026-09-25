@@ -2,6 +2,8 @@
 mod accounts;
 #[path = "console/agents.rs"]
 mod agents;
+#[path = "console/stream.rs"]
+mod stream;
 #[path = "console/alerts.rs"]
 mod alerts;
 #[path = "console/approvals.rs"]
@@ -15,6 +17,8 @@ mod configuration;
 mod engagements;
 #[path = "console/engagements_retire.rs"]
 mod engagements_retire;
+#[path = "console/engagements_verdict.rs"]
+mod engagements_verdict;
 #[path = "console/fixture.rs"]
 mod fixture;
 #[path = "console/origin.rs"]
@@ -27,6 +31,8 @@ mod real_agent;
 mod registration;
 #[path = "console/resources.rs"]
 mod resources;
+#[path = "console/side_registration.rs"]
+mod side_registration;
 #[path = "console/status_strip.rs"]
 #[cfg(feature = "native-console-browser")]
 mod status_strip;
