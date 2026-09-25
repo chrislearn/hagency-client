@@ -14,6 +14,11 @@ use disposition::{Decision, Disposition, Rejection, Source};
 
 pub(crate) const MAX_TIMELINE: usize = 100;
 pub(crate) const MAX_TARGETS: usize = 64;
+/// A bounded retention of raw `m.room.encrypted` envelopes whose room key had
+/// not arrived yet (TS `bridge-matrix.js:6646` `pendingEncryptedEventStore`).
+/// Capacity refuses rather than evicting: an unresolved custody is never
+/// silently dropped (TS throws and the durable sync token does not advance).
+pub(crate) const MAX_PENDING_UNDECRYPTABLE: usize = 64;
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Phase {
@@ -38,6 +43,10 @@ pub(crate) struct Batch {
     /// idempotent on `request_id`), and are never disposition rows.
     #[serde(default)]
     pub pre_project: Vec<PreProjectEvent>,
+    /// ADR-065 reverted to TS (board #10): raw undecryptable envelopes retained
+    /// for a later sync. Never a disposition row, never archived, bounded.
+    #[serde(default)]
+    pub pending: Vec<PendingEnvelope>,
     pub acknowledgements: Vec<Acknowledgement>,
     pub filtered: usize,
     #[serde(default)]
@@ -71,6 +80,33 @@ impl PreProjectEvent {
 enum Candidate {
     Target(Box<Event>),
     PreProject(Box<PreProjectEvent>),
+}
+/// A raw `m.room.encrypted` envelope retained because its room key had not
+/// arrived (TS `bridge-matrix.js:6646-6658`). Unlike a terminal tombstone, the
+/// source stays recoverable: a later sync retries decryption and, when the key
+/// arrives, the message becomes input exactly once.
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct PendingEnvelope {
+    pub room: String,
+    pub raw: Value,
+}
+impl PendingEnvelope {
+    pub(crate) fn validate(&self) -> Result<(), Error> {
+        if self.room.is_empty() || !self.raw.is_object() {
+            return Err(Error::Storage);
+        }
+        Ok(())
+    }
+}
+/// A retained envelope whose room key has since arrived, decrypted by the
+/// owned SDK and handed to `derive_with_history` (board #10). It has no raw
+/// counterpart in this sync, so it becomes a candidate with the next index and
+/// is admitted exactly once by the ordinary handoff.
+pub(crate) struct Recovered {
+    pub room: String,
+    pub original: Value,
+    pub value: Value,
+    pub kind: TimelineEventKind,
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct Message {
@@ -215,6 +251,7 @@ impl Batch {
             reason: None,
             events: vec![],
             pre_project: vec![],
+            pending: vec![],
             acknowledgements: vec![],
             filtered: 0,
             dispositions: Some(vec![]),
@@ -222,13 +259,14 @@ impl Batch {
     }
     #[cfg(test)]
     pub(crate) fn derive(&mut self, sync: SyncResponse, history: &[Receipt]) -> Result<(), Error> {
-        self.derive_with_history(sync, history, &[])
+        self.derive_with_history(sync, history, &[], &[])
     }
     pub(crate) fn derive_with_history(
         &mut self,
         sync: SyncResponse,
         history: &[Receipt],
         archived: &[Disposition],
+        recovered: &[Recovered],
     ) -> Result<(), Error> {
         if sync
             .rooms
@@ -253,6 +291,7 @@ impl Batch {
         }
         let mut events = vec![];
         let mut dispositions = vec![];
+        let mut pending = vec![];
         let mut filtered = 0;
         let mut seen = BTreeSet::new();
         for ((room, original), (actual_room, timeline)) in raw.iter().zip(returned) {
@@ -288,6 +327,29 @@ impl Batch {
                 .or_else(|| Disposition::prior(&source, history))
             {
                 prior
+            } else if let TimelineEventKind::UnableToDecrypt { utd_info, .. } = &timeline.kind {
+                // Board #10 (TS `bridge-matrix.js:6646` `onFailedRoomDecryption`):
+                // a failure to decrypt because the room KEY has not arrived yet
+                // is NOT terminal — retain the raw envelope so a later sync can
+                // recover it, and never write the immutable tombstone that would
+                // stop that. Only `is_missing_room_key()` qualifies; a permanent
+                // trust refusal (untrusted/forged sender, malformed) stays an
+                // immediate rejection exactly as before. One row per raw event
+                // is still exact (validate_restored's raw.len() == values.len()).
+                if !utd_info.reason.is_missing_room_key() {
+                    Decision::Rejected {
+                        reason: Rejection::CryptoIneligible,
+                    }
+                } else {
+                    if pending.len() >= MAX_PENDING_UNDECRYPTABLE {
+                        return Err(Error::Capacity);
+                    }
+                    pending.push(PendingEnvelope {
+                        room: room.clone(),
+                        raw: original.clone(),
+                    });
+                    Decision::Deferred
+                }
             } else if timeline.raw().deserialize().is_err() {
                 Decision::Rejected {
                     reason: Rejection::Malformed,
@@ -320,8 +382,27 @@ impl Batch {
                 decision,
             )?);
         }
+        // Board #10: events recovered from the durable pending store (the room
+        // key arrived on a later sync) are appended as ordinary candidates.
+        // They are not in `raw`, so they hold no prior source row; their
+        // indices continue after the raw candidates and the handoff admits
+        // them exactly once (idempotent on the domain receipt).
+        for entry in recovered {
+            match self.event(&entry.room, &entry.original, &entry.value, &entry.kind) {
+                Ok(Some(Candidate::Target(event))) => {
+                    let index = events.len();
+                    events.push(*event);
+                    dispositions.push(Disposition::new(
+                        Source::new(&entry.room, &entry.original)?,
+                        serde_json::to_value(&entry.kind).map_err(|_| Error::Storage)?,
+                        Decision::Candidate { index },
+                    )?);
+                }
+                _ => {}
+            }
+        }
         // Candidate content plus the complete private disposition ledger is bounded.
-        if serde_json::to_vec(&(&events, &self.pre_project, &dispositions))
+        if serde_json::to_vec(&(&events, &self.pre_project, &dispositions, &pending))
             .map_err(|_| Error::Storage)?
             .len()
             > 1024 * 1024
@@ -331,6 +412,7 @@ impl Batch {
         self.events = events;
         self.filtered = filtered;
         self.dispositions = Some(dispositions);
+        self.pending = pending;
         self.phase = Phase::Derived;
         Ok(())
     }
@@ -595,18 +677,40 @@ impl Batch {
         if matches!(self.phase, Phase::Prepared | Phase::Applying)
             && (!self.events.is_empty()
                 || !self.pre_project.is_empty()
+                || !self.pending.is_empty()
                 || !self.acknowledgements.is_empty()
                 || self.filtered != 0
                 || self.dispositions.as_ref().is_some_and(|v| !v.is_empty()))
         {
             return Err(Error::Storage);
         }
+        // Board #10: retained raw envelopes awaiting a room key are bounded and
+        // must belong to a target room. They are never a candidate or a
+        // terminal source, so they carry no disposition row.
+        if self.pending.len() > MAX_PENDING_UNDECRYPTABLE {
+            return Err(Error::Storage);
+        }
+        for envelope in &self.pending {
+            envelope.validate()?;
+            if !self.targets.iter().any(|t| t.room_id == envelope.room) {
+                return Err(Error::Storage);
+            }
+        }
         if let Some(values) = &self.dispositions {
             disposition::validate(values, self.events.len(), self.filtered)?;
             if self.phase == Phase::Derived || !values.is_empty() {
                 let raw = disposition::raw_events(&self.raw).map_err(|_| Error::Storage)?;
-                if raw.len() != values.len() {
+                // Board #10: recovered candidates (from the retained pending
+                // store) are appended after the raw rows, so the ledger may be
+                // longer than the raw timeline. The raw rows must still match
+                // exactly; every extra row must be a candidate.
+                if values.len() < raw.len() {
                     return Err(Error::Storage);
+                }
+                for value in &values[raw.len()..] {
+                    if !matches!(value.decision, Decision::Candidate { .. }) {
+                        return Err(Error::Storage);
+                    }
                 }
                 for ((room, event), value) in raw.iter().zip(values) {
                     if !value.matches(room, event).map_err(|_| Error::Storage)? {
