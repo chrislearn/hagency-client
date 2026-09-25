@@ -2229,6 +2229,33 @@ impl DomainStore {
         })
         .await
     }
+    pub async fn pending_thread_directives(
+        &self,
+        session: String,
+        limit: i64,
+    ) -> Result<Vec<hagency_core::commands::CommandLine>, Error> {
+        self.call(weight(&session)?, move |db| {
+            db.pending_thread_directives(&session, limit)
+        })
+        .await
+    }
+    pub async fn session_overrides(
+        &self,
+        session: String,
+    ) -> Result<crate::SessionOverrides, Error> {
+        self.call(weight(&session)?, move |db| db.session_overrides(&session))
+            .await
+    }
+    pub async fn set_session_overrides(
+        &self,
+        session: String,
+        directive: crate::ThreadDirective,
+    ) -> Result<crate::SessionOverrides, Error> {
+        self.call(weight(&session)?, move |db| {
+            db.set_session_overrides(&session, &directive)
+        })
+        .await
+    }
     pub async fn command_notice_history_conflicts(
         &self,
         id: String,

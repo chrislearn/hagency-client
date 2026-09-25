@@ -149,6 +149,14 @@ impl Acl {
         Self::new(list("MATRIX_OPERATOR_MXIDS"), list("MATRIX_ADMIN_MXIDS"), allow)
     }
 
+    /// Whether `sender` is an operator, for the `/thread` directive gate
+    /// (TS `msg.trustLevel === 'operator'`, backend-v2.js:2265). Admin is not
+    /// operator: the directive answers only to the operator list, exactly as TS
+    /// derives `trustLevel` from `MATRIX_OPERATOR_MXIDS` alone.
+    pub fn is_operator(&self, sender: &str) -> bool {
+        self.operator.contains(sender)
+    }
+
     /// `authorizeCommand` (:84-101). `Ok(reason)` carries the reason TS logged;
     /// `Err(reason)` is the refusal key the caller turns into words. Tier 0 is
     /// decided first and is never refused.
@@ -749,6 +757,18 @@ mod tests {
         }
         // `classifyCommand` defaults an UNKNOWN command to operator tier (:61-63).
         assert_eq!(classify("!nonsense"), 1);
+    }
+
+    /// `is_operator` gates the `/thread` directive (TS `msg.trustLevel ===
+    /// 'operator'`, backend-v2.js:2265, derived from `MATRIX_OPERATOR_MXIDS`
+    /// alone): an admin who is not an operator is NOT trusted for it.
+    #[test]
+    fn native_thread_directive_operator_gate() {
+        let acl = Acl::new(["@alex:test".to_owned()], ["@admin:test".to_owned()], false);
+        assert!(acl.is_operator("@alex:test"));
+        assert!(!acl.is_operator("@admin:test"));
+        assert!(!acl.is_operator("@mallory:test"));
+        assert!(!acl.is_operator(""));
     }
 
     /// `parse` (:306-310): trimming, the lowercased first token, arguments.
