@@ -176,7 +176,7 @@ async fn native_console_agent_detail_observation() {
     let keys = [
         "name", "framework", "role", "state", "engagement_id", "requested_tokens",
         "online", "last_seen_ms", "resource_id", "project_id", "engagements",
-        "rooms", "dispatch", "tasks",
+        "rooms", "dispatch", "tasks", "reminders",
     ];
     let object = value.as_object().unwrap();
     assert_eq!(object.len(), keys.len(), "exactly the declared detail keys");

@@ -249,7 +249,7 @@ async fn native_console_alert_transition() {
     assert_eq!(alert["status"], "open");
     assert_eq!(
         alert["next"],
-        serde_json::json!(["acknowledged", "resolved", "suppressed"]),
+        serde_json::json!(["acknowledged", "assigned", "resolved", "suppressed"]),
         "the served map is the store's, in its order"
     );
     let key = alert["dedupe_key"].as_str().unwrap().to_owned();
