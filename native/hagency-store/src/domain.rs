@@ -112,7 +112,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 47;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 48;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -472,15 +472,21 @@ const DECISION_PRUNE_RETRY_KIND: &str = "retry_cleanup";
 /// inserts a `phase='decisions'` receipt row.
 const RETENTION_RECEIPT_LIMIT: u64 = 100;
 
+/// The audit's own facts ride the decisions row itself (board #16, parity
+/// lib/engagement-store.js:299-321 `record`): the kind word is the deciding
+/// command's own — the call sites pass the retained `engagement.*` word —
+/// and the clock is the deciding moment. Rows written before 047 keep NULL
+/// and render as unknown.
 fn record_decision(
     tx: &Transaction<'_>,
     id: &str,
     digest: &str,
     value: &Engagement,
+    audit_word: Option<&str>,
 ) -> Result<(), Error> {
     tx.execute(
-        "INSERT INTO decisions(id,digest,result) VALUES(?1,?2,?3)",
-        params![id, digest, serialize(value)?],
+        "INSERT INTO decisions(id,digest,result,kind,at) VALUES(?1,?2,?3,?4,?5)",
+        params![id, digest, serialize(value)?, audit_word, graphs::now_ms()?],
     )?;
     // The in-write trim runs after the insert, in the same transaction, so a
     // rolled-back verdict carries neither the prune nor a receipt.
@@ -782,6 +788,14 @@ impl DomainRepository {
                         47,
                         include_str!("migrations/040-workspace-dirty-release.sql"),
                     ),
+                    // Integration of lane/verdict: its board-assigned number
+                    // was 047; its 040-046 walker placeholders are deleted
+                    // (the board instruction) and the real migration lands as
+                    // the next sequential tuple 48 (file name kept).
+                    (
+                        48,
+                        include_str!("migrations/047-engagement-verdict-audit.sql"),
+                    ),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
@@ -1070,6 +1084,45 @@ impl DomainRepository {
     }
     pub fn get(&self, id: &str) -> Result<Engagement, Error> {
         read_engagement(&self.db, id)
+    }
+    /// The console verdict audit (parity: backend-v2.js:14980-14983 →
+    /// lib/engagement-store.js:804-806 `listAudit`): the newest `limit`
+    /// recorded decisions, newest-first. Entry shape is the retained
+    /// `{type, at, ...detail}` — `type` is the deciding command's own word,
+    /// `at` the deciding moment, and the detail carries the engagement id and
+    /// the state the verdict produced. Rows recorded before migration 047
+    /// have no word/clock and surface as unknown, never invented.
+    /// The console verdict audit (parity: backend-v2.js:14980-14983 →
+    /// lib/engagement-store.js:804-806 `listAudit`): the newest `limit`
+    /// recorded decisions, newest-first. Entry shape is the retained
+    /// `{type, at, ...detail}` — `type` is the deciding command's own word,
+    /// `at` the deciding moment, and the detail carries the engagement id and
+    /// the state the verdict produced. Rows recorded before migration 047
+    /// have no word/clock and surface as unknown, never invented. The limit
+    /// clamps exactly like the retained store — `Math.max(1, Math.min(limit,
+    /// AUDIT_LIMIT))` — no failure state TS did not have.
+    pub fn decisions_audit(&self, limit: usize) -> Result<Vec<serde_json::Value>, Error> {
+        let limit = limit.clamp(1, 2000);
+        let mut query = self
+            .db
+            .prepare("SELECT kind,at,result FROM decisions ORDER BY rowid DESC LIMIT ?1")?;
+        let rows = query
+            .query_map([limit as i64], |r| {
+                Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, String>(2)?))
+            })?
+            .collect::<Result<Vec<_>, rusqlite::Error>>()?;
+        rows.into_iter()
+            .map(|(kind, at, result)| {
+                let engagement: Engagement =
+                    serde_json::from_str(&result).map_err(|_| Error::Schema)?;
+                Ok(serde_json::json!({
+                    "type": kind,
+                    "at": at,
+                    "engagementId": engagement.id,
+                    "state": engagement.state,
+                }))
+            })
+            .collect()
     }
     /// The read-only project-sides projection (ADR-132): one row per fleet
     /// registration — the id IS the server name (ADR-016) — LEFT JOINed to
@@ -1588,7 +1641,7 @@ impl DomainRepository {
         )?;
         let payload = json!({"request":request,"registrationGeneration":generation,"runtimeName":value.runtime_name,"resource":resource,"approvalEvidence":proof.audit()});
         tx.execute("INSERT INTO effects(id,engagement_id,kind,state,payload) VALUES(?1,?2,'provision','pending',?3)", params![format!("provision_{id}"),id,serialize(&payload)?])?;
-        record_decision(&tx, command_id, &digest, &value)?;
+        record_decision(&tx, command_id, &digest, &value, Some("engagement.approved"))?;
         tx.commit()?;
         Ok(value)
     }
@@ -1616,7 +1669,7 @@ impl DomainRepository {
         if changed != 1 {
             return Err(Error::State);
         }
-        record_decision(&tx, command_id, &digest, &value)?;
+        record_decision(&tx, command_id, &digest, &value, None)?;
         tx.commit()?;
         Ok(value)
     }
@@ -1666,7 +1719,17 @@ impl DomainRepository {
         )?;
         graphs::reconcile(&tx, graphs::now_ms()?)?;
         matrix_routes::reconcile(&tx, graphs::now_ms()?)?;
-        record_decision(&tx, command_id, &digest, &value)?;
+        record_decision(
+            &tx,
+            command_id,
+            &digest,
+            &value,
+            Some(if revoke {
+                "engagement.revoked"
+            } else {
+                "engagement.rejected"
+            }),
+        )?;
         tx.commit()?;
         Ok(value)
     }

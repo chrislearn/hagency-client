@@ -3183,7 +3183,6 @@ impl DomainStore {
     pub async fn engagement(&self, id: String) -> Result<Engagement, Error> {
         self.call(weight(&id)?, move |db| db.get(&id)).await
     }
-
     // Task #19 TS parity: the five operator surfaces ported with their TS
     // routes' shapes. All run on the single writer (weight by role/room/id)
     // like every other console read/write.
@@ -3261,6 +3260,15 @@ impl DomainStore {
             )
         })
         .await
+    }
+    /// Console verdict audit (backend-v2.js:14980-14983): call-only wrapper
+    /// over the repository's own bounded `listAudit` read; no new semantics.
+    pub async fn decisions_audit(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<serde_json::Value>, Error> {
+        self.call(weight(&limit)?, move |db| db.decisions_audit(limit))
+            .await
     }
     /// The read-only agent roster (ADR-126): one writer job, one bounded
     /// read — the projection is computed at the store, so the console route

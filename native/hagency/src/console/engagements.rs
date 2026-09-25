@@ -17,7 +17,7 @@
 //! read-only session changes nothing. The wire answer is the bounded decision
 //! receipt — `id`, `state`, `cleanup` — never the full engagement
 //! row and no project, room, resource or token field.
-use super::{Error, Session, body, console, failed, recheck};
+use super::{Error, Session, body, console, failed, recheck, usage::query};
 use crate::{refusal, resources::domain};
 use hagency_core::project::{Engagement, EngagementState, identifier};
 use salvo::prelude::*;
@@ -29,6 +29,7 @@ pub(super) fn router() -> Router {
         .push(Router::with_path("engagements/{id}/cleanup-retry").post(cleanup_retry))
         .push(Router::with_path("engagements/{id}/candidates").get(candidates))
         .push(Router::with_path("engagements/{id}/approve").post(approve))
+        .push(Router::with_path("engagements/audit").get(audit))
 }
 
 fn verdict_store_error(res: &mut Response, error: hagency_store::Error) {
@@ -441,4 +442,46 @@ fn rebuild_verified(
         owner_room: room(observation.get("owner_room")?)?,
     };
     hagency_core::authority::verify_request(registration, request, observation).ok()
+}
+
+/// The console verdict audit (parity: backend-v2.js:14980-14983,
+/// `GET /api/engagements/audit?limit=`): the newest decisions newest-first,
+/// default limit 16, the retained entry shape `{type, at, ...detail}`. A
+/// read — any authenticated session may read it; no lifecycle scope needed.
+#[handler]
+async fn audit(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    if query(req, &["limit"], 24).is_err() {
+        failed(res, Error::Invalid);
+        return;
+    }
+    let limit = match req.query::<String>("limit") {
+        None => 200,
+        // The retained `Number(req.query.limit) || 200` word: a zero value
+        // falls back to the default, never a failure state TS did not have;
+        // the store clamps the upper bound to AUDIT_LIMIT (2000).
+        Some(v) if v.bytes().all(|c| c.is_ascii_digit()) => match v.parse::<usize>() {
+            Ok(value) => if value == 0 { 200 } else { value },
+            Err(_) => {
+                failed(res, Error::Invalid);
+                return;
+            }
+        },
+        _ => {
+            failed(res, Error::Invalid);
+            return;
+        }
+    };
+    let Some(store) = domain(depot, res) else {
+        return;
+    };
+    let result = store.decisions_audit(limit).await;
+    if let Err(error) = recheck(depot) {
+        failed(res, error);
+        return;
+    }
+    match result {
+        Ok(rows) => res.render(Json(serde_json::json!({"audit": rows}))),
+        Err(hagency_store::Error::Invalid(_)) => failed(res, Error::Invalid),
+        Err(error) => verdict_store_error(res, error),
+    }
 }
