@@ -849,7 +849,7 @@ fn native_retained_peer_corpus_migration_replays_after_rewind() {
         assert_eq!(
             sql.pragma_query_value(None, "user_version", |r| r.get::<_, u64>(0))
                 .unwrap(),
-            39
+            43
         );
         let index: u64 = sql
             .query_row("SELECT COUNT(*) FROM retained_peer_index", [], |r| r.get(0))
@@ -908,7 +908,7 @@ fn native_retained_peer_corpus_migration_head_is_current() {
         assert_eq!(
             sql.pragma_query_value(None, "user_version", |r| r.get::<_, u64>(0))
                 .unwrap(),
-            39
+            43
         );
         // 025 is NOT idempotent (ALTER TABLE ... ADD COLUMN status): a
         // deeper rewind to 24 replays it over a table that already carries
@@ -932,7 +932,7 @@ fn native_retained_peer_corpus_migration_head_is_current() {
         assert_eq!(
             sql.pragma_query_value(None, "user_version", |r| r.get::<_, u64>(0))
                 .unwrap(),
-            39,
+            43,
             "every reopen lands at the current head"
         );
     }

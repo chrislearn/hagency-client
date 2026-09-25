@@ -1,0 +1,4 @@
+-- Reserved for sibling lanes (see .peer/report-19.md): lane/offers was
+-- assigned migration 043 while the local chain ended at 039. These placeholders
+-- keep the strictly contiguous migration loop satisfiable; the outer loop can
+-- renumber at integration if a sibling lands a real 040-042.

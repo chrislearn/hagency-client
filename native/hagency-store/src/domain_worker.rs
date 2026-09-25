@@ -1,6 +1,7 @@
 use crate::{
     CeilingAlert, DomainRepository, Effect, EffectOutcome, Error, ShutdownOutcome,
     ShutdownSnapshot, SweepOutcome,
+    {AgentDefinition, RoleOffer, WhitelistEntry},
     shutdown::{Phase, Probe, mark},
 };
 use hagency_core::approvals::{
@@ -2982,6 +2983,84 @@ impl DomainStore {
     pub async fn engagements(&self, after: String, limit: usize) -> Result<Vec<Engagement>, Error> {
         self.call(weight(&after)?, move |db| db.engagements(&after, limit))
             .await
+    }
+    // Task #19 TS parity: the five operator surfaces ported with their TS
+    // routes' shapes. All run on the single writer (weight by role/room/id)
+    // like every other console read/write.
+    pub async fn offers(&self) -> Result<Vec<serde_json::Value>, Error> {
+        self.call(64, |db| db.offers()).await
+    }
+    pub async fn set_offer(
+        &self,
+        role: String,
+        count: Option<i64>,
+        budget_cap_per_engagement: Option<i64>,
+        rate_cap: Option<i64>,
+        published: bool,
+        now: u64,
+    ) -> Result<RoleOffer, Error> {
+        self.call(weight(&role)?, move |db| {
+            db.set_offer(
+                &role,
+                count,
+                budget_cap_per_engagement,
+                rate_cap,
+                published,
+                "operator",
+                now,
+            )
+        })
+        .await
+    }
+    pub async fn whitelist(&self) -> Result<Vec<WhitelistEntry>, Error> {
+        self.call(64, |db| db.whitelist()).await
+    }
+    pub async fn add_whitelist(
+        &self,
+        project_room_id: String,
+        display_name: Option<String>,
+        added_by: Option<String>,
+        now: u64,
+    ) -> Result<WhitelistEntry, Error> {
+        self.call(weight(&project_room_id)?, move |db| {
+            db.add_whitelist(&project_room_id, display_name.as_deref(), added_by.as_deref(), now)
+        })
+        .await
+    }
+    pub async fn remove_whitelist(&self, project_room_id: String) -> Result<(String, Vec<String>), Error> {
+        self.call(weight(&project_room_id)?, move |db| {
+            db.remove_whitelist(&project_room_id)
+        })
+        .await
+    }
+    pub async fn delete_resource(&self, id: String) -> Result<CatalogResource, Error> {
+        self.call(weight(&id)?, move |db| db.delete_resource(&id)).await
+    }
+    pub async fn delete_seat(&self, id: String) -> Result<(), Error> {
+        self.call(weight(&id)?, move |db| db.delete_seat(&id)).await
+    }
+    pub async fn agent_definitions(&self, resource_id: String) -> Result<Vec<serde_json::Value>, Error> {
+        self.call(weight(&resource_id)?, move |db| {
+            db.agent_definitions(&resource_id)
+        })
+        .await
+    }
+    pub async fn edit_agent_definition(
+        &self,
+        resource_id: String,
+        definition_id: Option<String>,
+        input: Option<serde_json::Value>,
+        now: u64,
+    ) -> Result<Option<AgentDefinition>, Error> {
+        self.call(weight(&(&resource_id, &definition_id))?, move |db| {
+            db.edit_agent_definition(
+                &resource_id,
+                definition_id.as_deref(),
+                input.as_ref(),
+                now,
+            )
+        })
+        .await
     }
     /// The read-only agent roster (ADR-126): one writer job, one bounded
     /// read — the projection is computed at the store, so the console route

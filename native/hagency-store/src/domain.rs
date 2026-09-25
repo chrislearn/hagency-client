@@ -21,6 +21,7 @@ mod agent_fences;
 pub use agent_fences::{AgentFence, FenceReason};
 mod approvals;
 mod engagement_retention;
+mod engagement_terms;
 pub use approvals::card::PrivateApprovalCard;
 mod attachments;
 mod attempt_events;
@@ -43,6 +44,7 @@ mod graphs;
 mod matrix_routes;
 mod messages;
 pub use engagement_retention::{ENDED_LIMIT, EngagementPruneOutcome, EngagementRetentionStatus};
+pub use engagement_terms::{AgentDefinition, RoleOffer, WhitelistEntry};
 pub use execution::{
     EXECUTION_RETENTION_BATCH, EXECUTION_RETENTION_DISPATCHES, EXECUTION_RETENTION_ROWS,
     ExecutionPruneOutcome,
@@ -616,7 +618,7 @@ impl DomainRepository {
                 name: "domain.sqlite3",
                 lock: "domain.lock",
                 application_id: 0x48414732,
-                version: 39,
+                version: 43,
                 migrations: &[
                     (2, include_str!("migrations/002-role-publication.sql")),
                     (3, include_str!("migrations/003-task-dispatch.sql")),
@@ -678,6 +680,17 @@ impl DomainRepository {
                     ),
                     (38, include_str!("migrations/038-agent-fences.sql")),
                     (39, include_str!("migrations/039-attempt-over-budget.sql")),
+                    // Task #19 (board entry names 043): the local chain ended at
+                    // 039 and the loop above requires strictly contiguous numbers,
+                    // so 040-042 are recorded placeholders. Integration renumbers
+                    // if a sibling lane lands a real migration there.
+                    (40, include_str!("migrations/040-reserved.sql")),
+                    (41, include_str!("migrations/041-reserved.sql")),
+                    (42, include_str!("migrations/042-reserved.sql")),
+                    (
+                        43,
+                        include_str!("migrations/043-offers-whitelist-agent-definitions.sql"),
+                    ),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
@@ -1149,7 +1162,63 @@ impl DomainRepository {
         if collision {
             return Err(Error::Conflict);
         }
+        /*
+         * Task #19 TS parity (lib/engagement-store.js:546-566): the routing
+         * verdict is RECORDED, never used to refuse — TS stores the request
+         * with its `route` and `autoJoined` so the queue can show why it did
+         * not auto-join. `remainingTokens` is computed exactly like the
+         * approve() check but with `for_auto_join=true` (the retained JS
+         * `remainingFor(agent, { forAutoJoin: true })`), and a seat period
+         * mismatch nulls the whole figure (backend-v2.js:14057) rather than
+         * erroring, because routing must name `overCeiling`, not refuse.
+         */
+        let whitelisted = tx
+            .query_row(
+                "SELECT 1 FROM room_whitelist WHERE project_room_id=?1",
+                [&request.target_room_id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        let cross_family_ok = role_available(&tx, &request.role, Some(&request.fleet_id))?;
+        let offer = engagement_terms::read_offer(&tx, &request.role)?;
+        let report = usage::ceiling_report(&tx, &resource.id(), now)?;
+        let spent_budget = budget(&tx, &resource, None, true)?;
+        let seat_ok = spent_budget.seat.status != allocation::SeatStatus::PeriodMismatch;
+        let by_ceiling = report.ceiling_tokens.map(|c| c.saturating_sub(report.drawn));
+        let remaining = [
+            by_ceiling,
+            seat_ok
+                .then(|| spent_budget.seat.remaining)
+                .flatten()
+                .map(u64::from),
+            spent_budget.pool.remaining.map(u64::from),
+        ]
+        .into_iter()
+        .flatten()
+        .min();
+        // TS holdsAllocation: an engagement that has a live allocation — in
+        // this store that is reserved/active with a non-failed provision.
+        // `role` lives in the context JSON, not a column.
+        let active_for_role: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM engagements e WHERE json_extract(e.context,'$.role')=?1 \
+             AND e.state IN ('reserved','active') \
+             AND NOT EXISTS(SELECT 1 FROM effects f WHERE f.engagement_id=e.id AND f.kind='provision' AND f.state='failed')",
+            [&request.role],
+            |r| r.get(0),
+        )?;
+        let (route, auto_joined) = engagement_terms::route_request(
+            whitelisted,
+            cross_family_ok,
+            offer.as_ref(),
+            u64::from(request.requested_tokens),
+            request.rate_per_day.map(u64::from),
+            remaining,
+            active_for_role,
+        );
         let value = Engagement {
+            route: Some(route.to_owned()),
+            auto_joined,
             id,
             request_id: request.request_id.clone(),
             project_id: request.target_project_id.clone(),
