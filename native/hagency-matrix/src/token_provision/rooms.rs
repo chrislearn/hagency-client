@@ -304,7 +304,16 @@ impl Operation {
         {
             return Err(Error::Recipients);
         }
-        let joined = room.joined.len() == 2 && room.joined.contains(owner);
+        // The retained three-way verdict (`bridge-matrix.js:9271-9292`), named
+        // here so this read's outcome is the RETAINED vocabulary rather than a
+        // bare boolean: `Present` is the owner joined, `Absent` the owner
+        // provably not in the room. A room whose shape is wrong is refused below
+        // — that is the retained Unreadable case, expressed as an error because
+        // "I could not ask" must never be reported as an absence (`:9264`).
+        let members: Vec<String> = room.joined.iter().cloned().collect();
+        let verdict = crate::identity_polish::owner_membership_verdict(Some(&members), owner);
+        let joined = verdict == crate::identity_polish::OwnerVerdict::Present
+            && room.joined.len() == 2;
         if !joined
             && !events.iter().any(|e| {
                 e["type"] == "m.room.member"

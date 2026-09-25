@@ -146,6 +146,33 @@ pub fn invite_power_remedy(mine: u64, required: u64, room_id: &str, agent_mxid: 
     )
 }
 
+/// The owner-membership verdict (`bridge-matrix.js:9271-9292`). Present ⇒
+/// silence; absent ⇒ one warning; unreadable ⇒ silence, because "I could not ask"
+/// is not "the owner is absent" (`:9264-9265`) and conflating the two would make
+/// the alert untrustworthy the first time a homeserver was slow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OwnerVerdict {
+    Present,
+    Absent,
+    Unreadable,
+}
+
+/// Classify a joined-member read for `owner_mxid` (`bridge-matrix.js:9271-9292`).
+/// The comparison is case-insensitive because Matrix localparts are (`:9289`),
+/// and a read that produced NO member list says nothing rather than reporting an
+/// absence (`:9264`).
+pub fn owner_membership_verdict(joined: Option<&[String]>, owner_mxid: &str) -> OwnerVerdict {
+    let Some(joined) = joined else {
+        return OwnerVerdict::Unreadable;
+    };
+    let owner = owner_mxid.to_lowercase();
+    if joined.iter().any(|m| m.to_lowercase() == owner) {
+        OwnerVerdict::Present
+    } else {
+        OwnerVerdict::Absent
+    }
+}
+
 
 /// The agent's own rejoin (bridge-matrix.js:10936-10943, the join half of the
 /// retained invite-then-join pair): POST /join/{roomId} as the agent. A kicked
@@ -294,6 +321,33 @@ mod tests {
         // Absent `users_default` falls back to 0, as the TS `?? 0` does.
         let bare = representative_invite_power(Some(&json!({"invite": 50})), "@hagency:palpo.test");
         assert!(bare.known && !bare.can && bare.mine == 0);
+    }
+
+    /// TS `approval-owner-can-see-it.test.js:82-165`: present ⇒ silence; absent ⇒
+    /// the warning; unreadable ⇒ silence, and the mxid comparison is
+    /// case-insensitive.
+    #[test]
+    fn owner_membership_verdict_keeps_the_retained_three_way() {
+        let present = vec!["@owner:example.test".to_owned(), "@other:example.test".to_owned()];
+        assert_eq!(
+            owner_membership_verdict(Some(&present), "@owner:example.test"),
+            OwnerVerdict::Present
+        );
+        // `:103` — Matrix localparts are case-insensitive, so the comparison is.
+        assert_eq!(
+            owner_membership_verdict(Some(&present), "@OWNER:EXAMPLE.TEST"),
+            OwnerVerdict::Present
+        );
+        let absent = vec!["@someone:else.test".to_owned()];
+        assert_eq!(
+            owner_membership_verdict(Some(&absent), "@owner:example.test"),
+            OwnerVerdict::Absent
+        );
+        // `:110` — a read that produced no member list says nothing.
+        assert_eq!(
+            owner_membership_verdict(None, "@owner:example.test"),
+            OwnerVerdict::Unreadable
+        );
     }
 
     #[test]
