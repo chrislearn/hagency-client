@@ -124,7 +124,9 @@ impl Identity {
             || self.route.engagement_id != context.engagement
             || self.route.registration_generation != context.registration_generation
             || !context.rooms.contains(&self.route.room_id)
-            || !self.route.encrypted
+        // TS parity (lib/matrix-file.js:30-33, board #8 approval): a plaintext
+        // room's route is a valid upload identity; the room's transport choice
+        // is not identity evidence.
         {
             return Err(Error::Identity);
         }

@@ -1,5 +1,5 @@
 use crate::{
-    CeilingAlert, DomainRepository, Effect, EffectOutcome, Error, ShutdownOutcome,
+    CeilingAlert, DomainRepository, Effect, EffectOutcome, EngagementLabel, Error, ShutdownOutcome,
     ShutdownSnapshot, SweepOutcome,
     shutdown::{Phase, Probe, mark},
 };
@@ -9,6 +9,10 @@ use hagency_core::approvals::{
 };
 use hagency_core::{
     allocation::Budget,
+    commands::{
+        CommandNoticeClaimed, CommandNoticeReceipt, CommandNoticeRequest,
+        CommandNoticeSend,
+    },
     authority::{Registration, VerifiedRequest},
     messages::{InboundMessage, InboxItem, MessageReceipt, MessageTarget},
     project::{CatalogResource, ConfiguredResource, Engagement, Resource, Seat},
@@ -1851,6 +1855,10 @@ impl DomainStore {
         self.call(weight(&id)?, move |db| db.approval_summary(&id))
             .await
     }
+    pub async fn approval_thread_root(&self, id: String) -> Result<Option<String>, Error> {
+        self.call(weight(&id)?, move |db| db.approval_thread_root(&id))
+            .await
+    }
     /// The PC-C3 by-task lookup (ADR-064 amendment): task → live dispatch →
     /// context → newest approval at the live fence. Read-only, one row.
     pub async fn approval_for_task(
@@ -1859,6 +1867,30 @@ impl DomainStore {
     ) -> Result<Option<hagency_core::approvals::ApprovalSummary>, Error> {
         self.call(weight(&task)?, move |db| db.approval_for_task(&task))
             .await
+    }
+    /// The runner's own read leg (ADR-064 amendment, PC-C3): the by-task
+    /// lookup, gated on the presented capability so the agent can only read
+    /// the approval of the task its own dispatch holds.
+    pub async fn approval_for_runner(
+        &self,
+        cap: RunnerCapability,
+    ) -> Result<Option<hagency_core::approvals::ApprovalSummary>, Error> {
+        self.call(weight(&cap)?, move |db| {
+            db.approval_for_runner_clock(&cap, writer_time)
+        })
+        .await
+    }
+    /// The runner's own consume leg (ADR-064 amendment, PC-C3): task-bound, so
+    /// the agent never names an approval id. The clock is taken inside the
+    /// writer, after queueing, exactly like every other runner command.
+    pub async fn consume_approval_for_task(
+        &self,
+        cap: RunnerCapability,
+    ) -> Result<serde_json::Value, Error> {
+        self.call(weight(&cap)?, move |db| {
+            db.consume_owner_approval_for_task_clock(&cap, writer_time)
+        })
+        .await
     }
     /// The C2a bounded read (ADR-138): one worker job per page, the same
     /// `after`/`limit` contract as `engagements`, with the 1..=100 cap
@@ -2076,6 +2108,99 @@ impl DomainStore {
     ) -> Result<IntentResult, Error> {
         self.call(weight(&(&id, &token, &input))?, move |db| {
             db.deliver_verified_task_notice(&id, &token, &input, writer_time()?)
+        })
+        .await
+    }
+
+    /// Host-authored answer to a `!` line this session received. The command
+    /// layer renders it; there is no task and no approval behind it.
+    pub async fn submit_command_notice(
+        &self,
+        input: CommandNoticeRequest,
+    ) -> Result<CommandNoticeReceipt, Error> {
+        self.call(weight(&input)?, move |db| {
+            db.submit_command_notice(&input, writer_time()?)
+        })
+        .await
+    }
+    pub async fn claim_command_notice_for_session(
+        &self,
+        session: String,
+        lease_ms: u64,
+    ) -> Result<Option<CommandNoticeClaimed>, Error> {
+        self.call(weight(&session)?, move |db| {
+            db.claim_command_notice_for_session(&session, writer_time()?, lease_ms)
+        })
+        .await
+    }
+    pub async fn begin_command_notice_send(
+        &self,
+        id: String,
+        token: String,
+    ) -> Result<CommandNoticeSend, Error> {
+        self.call(weight(&(&id, &token))?, move |db| {
+            db.begin_command_notice_send(&id, &token, writer_time()?)
+        })
+        .await
+    }
+    pub async fn validate_command_notice_send(
+        &self,
+        id: String,
+        token: String,
+        fence: u64,
+    ) -> Result<(), Error> {
+        self.call(weight(&(&id, &token))?, move |db| {
+            db.validate_command_notice_send(&id, &token, fence, writer_time()?)
+        })
+        .await
+    }
+    pub async fn deliver_command_notice(
+        &self,
+        id: String,
+        token: String,
+        input: ReplyDeliveryObservation,
+    ) -> Result<CommandNoticeReceipt, Error> {
+        self.call(weight(&(&id, &token, &input))?, move |db| {
+            db.deliver_command_notice(&id, &token, &input, writer_time()?)
+        })
+        .await
+    }
+    pub async fn command_notice_receipt(
+        &self,
+        id: String,
+    ) -> Result<CommandNoticeReceipt, Error> {
+        self.call(weight(&id)?, move |db| db.command_notice_receipt(&id))
+            .await
+    }
+    /// The admitted `!` lines in this session with no answer queued yet.
+    pub async fn pending_command_lines(
+        &self,
+        session: String,
+        limit: i64,
+    ) -> Result<Vec<hagency_core::commands::CommandLine>, Error> {
+        self.call(weight(&session)?, move |db| {
+            db.pending_command_lines(&session, limit)
+        })
+        .await
+    }
+    pub async fn command_notice_history_conflicts(
+        &self,
+        id: String,
+        fence: u64,
+    ) -> Result<bool, Error> {
+        self.call(weight(&(&id, fence))?, move |db| {
+            db.command_notice_history_conflicts(&id, fence)
+        })
+        .await
+    }
+    pub async fn reconcile_command_notice(
+        &self,
+        id: String,
+        fence: u64,
+        input: ReplyReconciliation,
+    ) -> Result<CommandNoticeReceipt, Error> {
+        self.call(weight(&(&id, &input))?, move |db| {
+            db.reconcile_command_notice(&id, fence, &input, writer_time()?)
         })
         .await
     }
@@ -2367,6 +2492,13 @@ impl DomainStore {
                 }
                 RunnerCommand::Task { id } => {
                     serde_json::to_value(db.runner_task(&cap, &id, now)?)?
+                }
+                RunnerCommand::Approval => {
+                    serde_json::to_value(db.approval_for_runner_clock(&cap, || Ok(now))?)?
+                }
+                RunnerCommand::ConsumeApproval { call_id } => {
+                    let _ = call_id;
+                    db.consume_owner_approval_for_task_clock(&cap, || Ok(now))?
                 }
                 RunnerCommand::Tasks { after, limit } => {
                     serde_json::to_value(db.runner_tasks(&cap, &after, limit, now)?)?
@@ -2983,11 +3115,57 @@ impl DomainStore {
         self.call(weight(&after)?, move |db| db.engagements(&after, limit))
             .await
     }
+    /// The console engagements list with its server-side `state` filter
+    /// (board #60 item 3): one writer job, one bounded read — the projection
+    /// and the remaining-tokens arithmetic are computed at the store, so the
+    /// console route adds no second path.
+    pub async fn engagement_labels(
+        &self,
+        after: String,
+        state: Option<String>,
+        limit: usize,
+    ) -> Result<Vec<EngagementLabel>, Error> {
+        self.call(weight(&(&after, &state))?, move |db| {
+            db.engagement_labels(&after, state.as_deref(), limit)
+        })
+        .await
+    }
+    /// Single-engagement read for the console verdict surface: a call-only
+    /// wrapper over the repository's own `get`; no new semantics.
+    pub async fn engagement(&self, id: String) -> Result<Engagement, Error> {
+        self.call(weight(&id)?, move |db| db.get(&id)).await
+    }
     /// The read-only agent roster (ADR-126): one writer job, one bounded
     /// read — the projection is computed at the store, so the console route
     /// adds no second arithmetic path.
     pub async fn agent_roster(&self) -> Result<Vec<crate::AgentRosterRow>, Error> {
         self.call(64, |db| db.agent_roster()).await
+    }
+    /// #26 console change feed: one bounded read, one fingerprint per
+    /// category — the SSE route's poll source, never a second projection.
+    pub async fn console_feed(&self) -> Result<serde_json::Value, Error> {
+        self.call(64, |db| db.console_feed()).await
+    }
+    /// #59 named-event entity read: the rows behind the TS broadcastSSE
+    /// vocabulary — the SSE route diffs two snapshots into named events
+    /// with entity payloads. One writer job, one bounded read.
+    pub async fn console_entities(&self) -> Result<serde_json::Value, Error> {
+        self.call(64, |db| db.console_entities()).await
+    }
+    /// The read-only agent detail (board #22): one writer job, one bounded
+    /// agent-keyed read — the projection is computed at the store, so the
+    /// console route adds no second arithmetic path. `None` is the route's
+    /// 404: no engagement names the agent.
+    pub async fn agent_detail(&self, name: &str) -> Result<Option<crate::AgentDetail>, Error> {
+        let name = name.to_owned();
+        self.call(64, move |db| db.agent_detail(&name)).await
+    }
+    /// The agent's active engagement ids (board #58): the force-delete
+    /// route's revoke list, read in one writer job so the route adds no
+    /// second arithmetic path.
+    pub async fn agent_active_engagements(&self, name: String) -> Result<Vec<String>, Error> {
+        self.call(weight(&name)?, move |db| db.agent_active_engagements(&name))
+            .await
     }
     /// The read-only project-sides projection (ADR-132): one writer job,
     /// one bounded read; the route adds no second projection.
@@ -3008,6 +3186,24 @@ impl DomainStore {
     ) -> Result<(Budget, crate::CeilingReport), Error> {
         self.call(weight(&id)?, move |db| db.resource_headroom(&id, at))
             .await
+    }
+    /// The requester-facing offer book (board #48): one writer job, one bounded
+    /// read — the projection (published roles, serving resource, resources,
+    /// runningNow) is computed at the store, so the console route adds no second
+    /// arithmetic path.
+    pub async fn offer_book(&self, room: Option<String>) -> Result<crate::OfferBook, Error> {
+        self.call(weight(&room)?, move |db| db.offer_book(room.as_deref()))
+            .await
+    }
+    /// The requester-facing contributions list (board #48): the real
+    /// agent<->project relationships, one bounded read.
+    pub async fn contributions(&self) -> Result<Vec<crate::Contribution>, Error> {
+        self.call(1, |db| db.contributions()).await
+    }
+    /// The engagement preview (board #48): a DRY RUN. A read-only job — it
+    /// decides nothing and writes nothing.
+    pub async fn preview(&self, role: String) -> Result<crate::Preview, Error> {
+        self.call(weight(&role)?, move |db| db.preview(&role)).await
     }
     /// Ceiling overrun alarm sweep (ADR-124 slice a): takes the clock from the
     /// caller so tests drive it directly; no timer is attached in this slice.
@@ -3221,6 +3417,30 @@ impl DomainStore {
     pub async fn register(&self, registration: Registration) -> Result<(), Error> {
         self.call(weight(&registration)?, move |db| db.register(&registration))
             .await
+    }
+    /// Task #13: issue an appservice registration for one project side —
+    /// the CLI and the console route are both thin callers. The clock is
+    /// the worker's, the same as the other writer jobs, so `issued_at`
+    /// and `pending_at` carry the job's time, never the caller's.
+    pub async fn issue_side_registration(
+        &self,
+        request: crate::IssueSideRegistrationRequest,
+    ) -> Result<crate::IssueSideRegistration, Error> {
+        self.call(64, move |db| {
+            db.issue_side_registration(&request, writer_time()?)
+        })
+        .await
+    }
+    /// Task #13 read: the live credential the appservice transport
+    /// authenticates with — never a staged spare.
+    pub async fn side_credential_for_transport(
+        &self,
+        side: String,
+    ) -> Result<Option<crate::SideCredential>, Error> {
+        self.call(weight(&side)?, move |db| {
+            db.side_credential_for_transport(&side)
+        })
+        .await
     }
     pub async fn provisioning_registration(
         &self,

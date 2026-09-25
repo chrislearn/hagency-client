@@ -24,8 +24,8 @@
 use super::Failure;
 use hagency_execution::{ApprovalNotice, ApprovalRequests};
 use hagency_matrix::{
-    ApprovalCollector, CancellationToken, HostApprovalConfig, HostApprovalPlan, HostConfig,
-    PrivateApprovalDeliveryState,
+    ApprovalCollector, CancellationToken, Collector, HostApprovalConfig, HostApprovalPlan,
+    HostConfig, PrivateApprovalDeliveryState,
 };
 use hagency_store::DomainStore;
 use std::{
@@ -89,6 +89,10 @@ impl Sources {
 /// The authority boundary in one place: everything the pump may know.
 pub(crate) struct Pump {
     collector: Arc<ApprovalCollector>,
+    /// The ordinary agent transport the driver's replies already use, reused
+    /// for the public notice (TS `agentSenderFor`, bridge-matrix.js:9377).
+    /// `None` in an approval-only host, which then keeps the bot's transport.
+    agent: Option<Arc<Collector>>,
     domain: DomainStore,
 }
 
@@ -141,8 +145,16 @@ pub(crate) fn collector(
 }
 
 impl Pump {
-    pub(crate) fn new(collector: Arc<ApprovalCollector>, domain: DomainStore) -> Self {
-        Self { collector, domain }
+    pub(crate) fn new(
+        collector: Arc<ApprovalCollector>,
+        agent: Option<Arc<Collector>>,
+        domain: DomainStore,
+    ) -> Self {
+        Self {
+            collector,
+            agent,
+            domain,
+        }
     }
 
     /// Explicit configured Matrix SDK enrollment, not provider credential login.
@@ -228,6 +240,27 @@ impl Pump {
                 .service_turn(&cancel)
                 .await
                 .map_err(|_| Failure::OutcomeUnknown)?;
+            let notice_card = card.clone();
+            // The task thread the notice belongs in, read from the approval's
+            // own recorded route — never inferred from the newest room message.
+            // `None` is TS's no-thread case (bridge-matrix.js:2593 omits the
+            // relation) and also covers a legacy approval with no matching
+            // origin, which keeps its room notice (spec: approval status
+            // follows the originating task thread).
+            let public_thread = match self
+                .domain
+                .approval_thread_root(notice.request_id.clone())
+                .await
+            {
+                Ok(root) => root,
+                Err(error) => {
+                    tracing::warn!(
+                        "[approval] thread root read refused for {}: {error}; notice without relation",
+                        notice.request_id
+                    );
+                    None
+                }
+            };
             match self
                 .collector
                 .send_private_approval_card(card, &cancel)
@@ -239,6 +272,29 @@ impl Pump {
                             "[approval] card {} replayed (already retained)",
                             notice.request_id
                         );
+                    }
+                    // TS parity (bridge-matrix.js:9377-9390): once the private
+                    // card is delivered, the redacted public status notice goes
+                    // to the project room. TS resolves the send as the AGENT; a
+                    // failure there fails the whole publish, so this is not a
+                    // best-effort extra — an outcome-unknown here restarts the
+                    // pump (the card replays from custody) rather than dropping
+                    // the room signal.
+                    if let Err(error) = self
+                        .collector
+                        .send_private_approval_notice(
+                            notice_card,
+                            public_thread,
+                            self.agent.clone(),
+                            &cancel,
+                        )
+                        .await
+                    {
+                        tracing::warn!(
+                            "[approval] public status notice for {}: {error}",
+                            notice.request_id
+                        );
+                        return Err(Failure::OutcomeUnknown);
                     }
                     pending.insert(notice.request_id, notice.owner_expires_at);
                 }

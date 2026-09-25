@@ -98,13 +98,19 @@ async fn native_console_roster_shows_an_ingress_provisioned_agent() {
             .map(String::as_str)
             .collect();
         keys.sort_unstable();
+        // Board #60 item 2: `liveness` (the live dispatch's own word) and
+        // `consumed` (observed tokens, null when unmeasured) are served now.
         assert_eq!(
             keys,
             [
+                "consumed",
                 "engagement_id",
                 "framework",
                 "last_activity_ms",
+                "last_seen_ms",
+                "liveness",
                 "name",
+                "online",
                 "requested_tokens",
                 "role",
                 "state"

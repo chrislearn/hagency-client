@@ -1190,7 +1190,7 @@ async fn native_runner_http_task_lifecycle() {
         assert_eq!(response.status_code, Some(StatusCode::FORBIDDEN));
         assert_eq!(
             response.take_json::<Value>().await.unwrap(),
-            json!({"ok":false,"code":"task_scope_required"})
+            json!({"ok":false,"code":"task_scope_required","error":"task management scope is required"})
         );
         assert_eq!(
             post(
@@ -1522,6 +1522,53 @@ async fn native_late_output_survives_restart() {
     drop(service);
     domain.shutdown_observed().await.0.unwrap();
     custody.shutdown_observed().await.0.unwrap();
+}
+
+/// Task #25 (ADR-064 amendment PC-C3): the runner API's approval leg. An agent
+/// reads and consumes ITS OWN approval through these routes; the task is
+/// derived from the presented capability, so no approval id is ever named. TS
+/// parity: `GET /api/approvals/:id` and `POST /api/approvals/:id/consume`
+/// (backend-v2.js:10912, :10968), whose settled-state answer carries a named
+/// code rather than a bare status.
+#[tokio::test]
+async fn native_runner_approval_routes() {
+    let f = Fixture::new(true).await;
+    // The assigned task has no approval yet: the read is `null`, never a
+    // fabricated card — the same honest empty the store returns.
+    let mut read = get("approval", &f.cap).send(&f.service).await;
+    assert_eq!(read.status_code, Some(StatusCode::OK));
+    assert_eq!(read.take_json::<Value>().await.unwrap(), Value::Null);
+    // With no approval derived, the consume answers TS's `not_found` code.
+    let consume = |body: Value| {
+        auth(
+            TestClient::post(format!("{BASE}/runner/approval/consume")),
+            &f.cap,
+        )
+        .json(&body)
+    };
+    let mut absent = consume(json!({"call_id":"approval_call_one"}))
+        .send(&f.service)
+        .await;
+    assert_eq!(absent.status_code, Some(StatusCode::OK));
+    let body: Value = absent.take_json().await.unwrap();
+    assert_eq!(body["ok"], json!(false));
+    assert_eq!(body["code"], json!("not_found"));
+    assert_eq!(body["approval"], Value::Null);
+    // A missing receipt is refused before any dispatch happens.
+    assert_eq!(
+        consume(json!({})).send(&f.service).await.status_code,
+        Some(StatusCode::BAD_REQUEST)
+    );
+    // An unauthenticated call never reaches the leg.
+    assert_eq!(
+        TestClient::get(format!("{BASE}/runner/approval"))
+            .add_header("host", "127.0.0.1:13300", true)
+            .send(&f.service)
+            .await
+            .status_code,
+        Some(StatusCode::UNAUTHORIZED)
+    );
+    f.close().await;
 }
 
 /// G12: the route is registered on the production router — an
