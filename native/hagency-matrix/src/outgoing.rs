@@ -63,24 +63,74 @@ impl Collector {
             .map_err(|_| Error::Busy)?;
         let inner = self.inner.clone();
         let cancel = cancel.child_token();
+        let resuming = matches!(source, Source::Resume);
         #[cfg(test)]
         let observation = crate::collector::observation::current();
         let job = async move {
             let _permit = permit;
-            let work = inner.outgoing(source, &cancel);
-            tokio::pin!(work);
-            tokio::select! {
-                result = &mut work => result,
-                _ = tokio::time::sleep(Duration::from_secs(45)) => {
-                    cancel.cancel();
-                    // Accepted results still finish bounded SDK journal custody.
-                    work.await
-                },
+            // Task #9 (ADR-183, TS pollOneRouterOutbox bridge-matrix.js:6036-
+            // 6055): a resume re-sends the journaled write with the SAME
+            // transaction id once. A first send stays bounded at 45 s and parks
+            // in WritePossible for the next resume to finish. The retry loop is
+            // NOT here: TS polls the outbox again on a later pass, and this
+            // collector's resume is likewise one pass. A non-permanent failure
+            // (lost connection, timeout, 429 that outlived its in-request
+            // tries, 5xx) must not loop in-process — the send stays `sending`,
+            // so the resume parks it `Uncertain` for the next pass to re-send.
+            // A permanent verdict (4xx other than 429) or a local refusal
+            // surfaces to the caller.
+            if resuming {
+                match inner.outgoing(Source::Resume, &cancel).await {
+                    Ok(summary) => Ok(summary),
+                    Err(Error::Cancelled) => Err(Error::Cancelled),
+                    Err(error) if retryable(&error) => Ok(OutgoingSummary {
+                        id: None,
+                        state: OutgoingState::Uncertain,
+                        replayed: false,
+                    }),
+                    Err(error) => Err(error),
+                }
+            } else {
+                let work = inner.outgoing(source, &cancel);
+                tokio::pin!(work);
+                tokio::select! {
+                    result = &mut work => result,
+                    _ = tokio::time::sleep(Duration::from_secs(45)) => {
+                        cancel.cancel();
+                        // Accepted results still finish bounded SDK journal custody.
+                        work.await
+                    },
+                }
             }
         };
         #[cfg(test)]
         let job = crate::collector::observation::owned(observation, job);
         tokio::spawn(job).await.map_err(|_| Error::OutcomeUnknown)?
+    }
+}
+/// Task #9 (TS `isPermanentRouterMatrixFailure`, bridge-matrix.js:6029-6033):
+/// did this write attempt end in a failure the retained product re-sends? A
+/// permanent Matrix verdict is an HTTP 4xx other than 429 (`M_FORBIDDEN` 403,
+/// `M_BAD_JSON` 400, `M_NOT_FOUND` 404, `401`); it surfaces to the caller and
+/// stops the retry loop, exactly as TS posts it to `../failed`. Everything
+/// else about the transport — a connection that never dialled, a timeout, a
+/// 429 that outlived its in-request tries, a 5xx, or a 200 the client could
+/// not accept — is non-permanent and is re-sent with the same transaction id,
+/// which Matrix dedups. A local custody fault (storage, SDK poisoning,
+/// generation, recipients) is not classified here: it surfaces, and the
+/// driver parks it as an unknown outcome just as a parked retry would.
+fn retryable(error: &Error) -> bool {
+    match error {
+        Error::Transport
+        | Error::Timeout
+        | Error::InvalidJson
+        | Error::Wire
+        | Error::Headers
+        | Error::BodyTooLarge
+        | Error::Redirect => true,
+        Error::Remote(status) => *status == 429 || !(400..=499).contains(status),
+        Error::Unauthorized => false,
+        _ => false,
     }
 }
 impl Inner {
@@ -115,6 +165,21 @@ impl Inner {
             return match view.attempt {
                 Some(attempt) if attempt.phase == Phase::Complete => {
                     self.settle_outgoing(owner, attempt, true).await
+                }
+                // Task #9 (TS pollOneRouterOutbox, bridge-matrix.js:6036-6055):
+                // a journaled send that never reached Complete is re-sent with
+                // the SAME transaction id until the homeserver accepts it —
+                // Matrix dedups the replay. Phases whose pending action is a
+                // Matrix write (or the idempotent keys query) are resumable;
+                // crypto-side uncertainties stay inspect-only, parked for a
+                // human, never silently redone.
+                Some(attempt)
+                    if matches!(
+                        attempt.phase,
+                        Phase::Ready | Phase::QueryPrepared | Phase::WritePossible
+                    ) =>
+                {
+                    self.resend_outgoing(owner, attempt, cancel).await
                 }
                 Some(attempt) => Ok(OutgoingSummary {
                     id: Some(attempt.id),
@@ -448,6 +513,150 @@ impl Inner {
             }
         }
         self.settle_outgoing(owner, attempt, false).await
+    }
+    /// Task #9 (TS `pollOneRouterOutbox`, bridge-matrix.js:6036-6055): a
+    /// journaled send that never reached Complete is re-sent with the SAME
+    /// journaled transaction id — Matrix dedups the replay — until it is
+    /// delivered. One bounded pass per resume; the caller's poll cadence and
+    /// 1 s -> 60 s backoff provide the "until delivered". A pending keys
+    /// query is an idempotent read and is replayed first. `ResponseStored`
+    /// (an accepted to-device leg awaiting local olm marking) stays
+    /// host-inspection custody: its journal continuation is not a Matrix
+    /// write and no command replays it.
+    async fn resend_outgoing(
+        &self,
+        owner: &Owner,
+        mut attempt: Attempt,
+        cancel: &CancellationToken,
+    ) -> Result<OutgoingSummary, Error> {
+        // Task #9 (TS pollOneRouterOutbox, bridge-matrix.js:6036-6055): the
+        // journaled write already carries its final ciphertext (or plaintext)
+        // and its transaction id, so a resume re-sends it with the SAME txn id
+        // and nothing else — no preflight and no keys re-query, which
+        // `collect()` already re-verified before this resume. The one
+        // genuinely resumable crypto state is QueryPrepared, where the keys
+        // query was prepared but its response never reached Encrypt: re-fetch
+        // it (an idempotent read), then fall through to the re-PUT. A keys or
+        // recipients uncertainty (CryptoApplying / Quarantined) is never
+        // resumed here; it stays parked for the human.
+        if attempt.phase == Phase::QueryPrepared {
+            observe!(OutgoingQueryHttp);
+            let response = self
+                .http
+                .post(
+                    &["_matrix", "client", "v3", "keys", "query"],
+                    attempt.query_body.clone().ok_or(Error::Storage)?,
+                    cancel,
+                )
+                .await?
+                .success()?;
+            attempt = match owner.outgoing(Command::Encrypt(response)).await {
+                Ok(view) => view.attempt.ok_or(Error::Storage)?,
+                Err(Error::Recipients) => {
+                    self.retire_outgoing_room(&attempt.route).await?;
+                    return Err(Error::Recipients);
+                }
+                Err(error) => return Err(error),
+            };
+        }
+        // Task #9: before re-putting, re-check that the journaled send is still
+        // authorized. A resume no longer holds the claim secret, so it asks the
+        // domain whether the row is still `sending` and uncancelled. A retirement
+        // or operator cancellation already moved it off `sending` (parked as
+        // `uncertain` for a human), so re-sending it would be exactly the
+        // silent redo ADR-059 forbids: park it instead. A file send keeps its
+        // own custody — an uncertain publication is settled by the publication
+        // pipeline from its receipts, never re-put here, so it parks too.
+        let send_current = match attempt.kind {
+            Kind::Final => {
+                self.domain
+                    .final_reply_send_current(attempt.id.clone(), attempt.fence)
+                    .await?
+            }
+            Kind::Notice => {
+                self.domain
+                    .verified_notice_send_current(attempt.id.clone(), attempt.fence)
+                    .await?
+            }
+            Kind::File => false,
+        };
+        if !send_current {
+            return Ok(OutgoingSummary {
+                id: Some(attempt.id),
+                state: OutgoingState::Uncertain,
+                replayed: true,
+            });
+        }
+        while attempt.index < attempt.writes.len() {
+            if cancel.is_cancelled() {
+                return Err(Error::Cancelled);
+            }
+            let index = attempt.index;
+            let write = attempt.writes[index].clone();
+            // Task #9 re-sends the room outbox (write.room), which Matrix
+            // dedups by transaction id. A to-device write is the olm key
+            // share: once it is durably WritePossible its send outcome is
+            // uncertain and must never be silently redone (ADR-059), so park
+            // it for a human instead of re-sending it.
+            if !write.room && attempt.phase == Phase::WritePossible {
+                return Ok(OutgoingSummary {
+                    id: Some(attempt.id),
+                    state: OutgoingState::Uncertain,
+                    replayed: true,
+                });
+            }
+            // A resumed WritePossible is already durably marked; a resumed
+            // Ready is marked now, exactly like a first send.
+            if attempt.phase == Phase::Ready {
+                owner.outgoing(Command::Possible(index)).await?;
+            }
+            observe!(OutgoingWriteHttp, Some(index));
+            let value = if write.room {
+                self.http
+                    .put(
+                        &[
+                            "_matrix",
+                            "client",
+                            "v3",
+                            "rooms",
+                            &attempt.route.room_id,
+                            "send",
+                            &write.event_type,
+                            &write.transaction_id,
+                        ],
+                        write.body,
+                        cancel,
+                    )
+                    .await?
+                    .success()?
+            } else {
+                self.http
+                    .put(
+                        &[
+                            "_matrix",
+                            "client",
+                            "v3",
+                            "sendToDevice",
+                            &write.event_type,
+                            &write.transaction_id,
+                        ],
+                        write.body,
+                        cancel,
+                    )
+                    .await?
+                    .success()?
+            };
+            // No cancellation gate between actual accepted response and custody.
+            attempt = owner
+                .outgoing(Command::Accept(index, value))
+                .await?
+                .attempt
+                .ok_or(Error::Storage)?;
+            if attempt.phase == Phase::Complete {
+                break;
+            }
+        }
+        self.settle_outgoing(owner, attempt, true).await
     }
     async fn validate_outgoing(&self, source: &Source, fence: u64) -> Result<(), Error> {
         observe!(OutgoingValidate);

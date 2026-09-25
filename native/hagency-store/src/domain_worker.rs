@@ -2048,6 +2048,15 @@ impl DomainStore {
         self.call(weight(&id)?, move |db| db.verified_notice_receipt(&id))
             .await
     }
+    /// Secret-free read used only by a resumed send (task #9): is this journaled
+    /// notice write still authorized to be re-put (still `sending`, not
+    /// retired/cancelled, same fence)? False means park as uncertain.
+    pub async fn verified_notice_send_current(&self, id: String, fence: u64) -> Result<bool, Error> {
+        self.call(weight(&(&id, fence))?, move |db| {
+            db.verified_notice_send_current(&id, fence)
+        })
+        .await
+    }
     pub async fn cancel_verified_task_notice(
         &self,
         id: String,
@@ -2182,6 +2191,16 @@ impl DomainStore {
     ) -> Result<bool, Error> {
         self.call(weight(&(&id, fence))?, move |db| {
             db.final_reply_history_conflicts(&id, fence)
+        })
+        .await
+    }
+    /// Secret-free read used only by a resumed send (task #9): is this journaled
+    /// write still authorized to be re-put (still `sending`, unfenced,
+    /// uncancelled, same fence)? A retirement/cancellation that moved it off
+    /// `sending` answers false so the resume parks instead of re-sending.
+    pub async fn final_reply_send_current(&self, id: String, fence: u64) -> Result<bool, Error> {
+        self.call(weight(&(&id, fence))?, move |db| {
+            db.final_reply_send_current(&id, fence)
         })
         .await
     }
