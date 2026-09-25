@@ -29,6 +29,7 @@ pub use domain::{
     MAX_USAGE_SOURCES, MESSAGE_RETENTION_FLOOR, OVER_BUDGET_NOTICE_KIND, OverBudgetNotice,
     OwnedClaimProfile, OwnedClaimRoom, OwnedCompletion, OwnedDispatchScope, OwnedFailure,
     OwnedObservation, OwnedProvisionScope, PEER_RECEIPT_CEILING, PEER_RETENTION_CEILING,
+    Reminder, ReminderReceipt, ReminderSweep,
     PEER_RETENTION_FLOOR, PeerRetentionStatus, PeerSweepOutcome, ProjectSide, RetentionStatus,
     SideProject, SourceUsage, SweepOutcome, UploadAdmission, UploadClaim, UploadIdentity,
     UploadPreparation, UploadSend, UsageCeiling, UsageEvidence, UsagePeriod, UsagePeriodKind,

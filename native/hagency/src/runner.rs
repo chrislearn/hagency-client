@@ -43,6 +43,7 @@ pub(super) fn router() -> Router {
                 .push(Router::with_path("approval/consume").post(consume_approval))
                 .push(Router::with_path("peer-messages").post(send_peer))
                 .push(Router::with_path("peer-inbox").get(peer_inbox))
+                .push(Router::with_path("reminders").post(schedule_reminder))
                 .push(workflows::router())
                 .push(replies::router()),
         )
@@ -83,6 +84,35 @@ async fn send_peer(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     match c
         .store
         .runner_command(c.cap, RunnerCommand::SendPeer(input))
+        .await
+    {
+        Ok(value) => res.render(Json(value)),
+        Err(error) => attributed_failure(res, Some(&c.store), error),
+    }
+}
+#[handler]
+async fn schedule_reminder(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Command {
+        msg: String,
+        delay_ms: u64,
+    }
+    let Some(c) = context(depot, res) else {
+        return;
+    };
+    let Some(command) = resources::body::<Command>(req, depot, res).await else {
+        return;
+    };
+    match c
+        .store
+        .runner_command(
+            c.cap,
+            RunnerCommand::ScheduleReminder {
+                msg: command.msg,
+                delay_ms: command.delay_ms,
+            },
+        )
         .await
     {
         Ok(value) => res.render(Json(value)),

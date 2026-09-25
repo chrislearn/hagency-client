@@ -37,6 +37,11 @@ pub(super) enum Operation<'a> {
     ApprovalConsume {
         call_id: &'a str,
     },
+    /// Schedule a self-reminder for this runner's own session (board #53).
+    ScheduleReminder {
+        msg: &'a str,
+        delay_ms: u64,
+    },
 }
 struct Prepared {
     path: String,
@@ -171,6 +176,18 @@ pub(super) async fn request(
                 Prepared {
                     path: "/api/native/v1/runner/approval/consume".into(),
                     body: serde_json::to_vec(&json!({"call_id":call_id}))
+                        .map_err(|_| Error::Invalid)?,
+                    method: "POST",
+                    mutation: true,
+                },
+                16 * 1024,
+            )
+        }
+        Operation::ScheduleReminder { msg, delay_ms } => {
+            (
+                Prepared {
+                    path: "/api/native/v1/runner/reminders".into(),
+                    body: serde_json::to_vec(&json!({"msg":msg,"delay_ms":delay_ms}))
                         .map_err(|_| Error::Invalid)?,
                     method: "POST",
                     mutation: true,

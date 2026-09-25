@@ -58,6 +58,8 @@ mod owned_dispatch;
 mod stopped_inspection;
 pub use outcome_resolution::{OutcomeAction, OutcomeResolution};
 mod provision_runtime;
+mod reminders;
+pub use reminders::{Reminder, ReminderReceipt, ReminderSweep};
 mod side_registration;
 pub use side_registration::{
     IssueSideRegistration, IssueSideRegistrationRequest, SideCredential,
@@ -101,7 +103,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 41;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 42;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -740,12 +742,18 @@ impl DomainRepository {
                         include_str!("migrations/046-side-registrations.sql"),
                     ),
                     (41, include_str!("migrations/040-command-notices.sql")),
+                    // Task #53's migration number is 066 (the board's
+                    // assignment); the walker requires the next sequential
+                    // list version, so the file keeps 066 and the tuple
+                    // carries 42. Integration renumbers on merge.
+                    (42, include_str!("migrations/066-reminders.sql")),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
                     "SELECT id,engagement_id,dispatch_id,fence,reason,created_at,cleared_at,cleared_by FROM agent_fences LIMIT 0",
                     "SELECT id,session_id,transaction_id,digest,body,html,route,source_event_id,state,cancel_requested,fence,claim_hash,claim_until,event_id,observation,created_at,updated_at FROM command_notices LIMIT 0",
                     "SELECT id FROM current_command_notices LIMIT 0",
+                    "SELECT id,engagement_id,session_id,msg,created_at,fire_at,fired_at FROM reminders LIMIT 0",
                     "SELECT dispatch_id,fence,seq,at_ms,phase,detail FROM runner_attempt_events LIMIT 0",
                     "SELECT dispatch_id,fence,started_at,parked_at,last_renew_at,settled_at,terminal_reason FROM runner_attempts LIMIT 0",
                     "SELECT dispatch_id,message_sequence,addressed FROM dispatch_inputs LIMIT 0",
