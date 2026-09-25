@@ -78,6 +78,13 @@ pub(crate) struct Attempt {
     pub keys_digest: Option<String>,
     pub writes: Vec<Write>,
     pub index: usize,
+    /// Task #9 (TS `isPermanentRouterMatrixFailure`, bridge-matrix.js:6029-6033):
+    /// set once a write attempt ended in a permanent refusal — an HTTP 4xx other
+    /// than 429. TS posts such a command to `../failed` and stops retrying, so a
+    /// resume parks this send for a human instead of re-putting it forever.
+    /// Defaulted so an attempt journaled before this field still loads.
+    #[serde(default)]
+    pub permanent_failure: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file: Option<crate::sdk::file_publication::Binding>,
 }
@@ -373,6 +380,8 @@ pub(crate) enum Command {
     Encrypt(Value),
     Possible(usize),
     Accept(usize, Value),
+    /// Task #9: record that this attempt's write got a permanent Matrix refusal.
+    Refused,
     Settle,
 }
 pub(crate) struct View {

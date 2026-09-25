@@ -108,6 +108,7 @@ pub(crate) enum SdkCommand {
     OutgoingEncrypt,
     OutgoingPossible,
     OutgoingAccept,
+    OutgoingRefused,
     OutgoingSettle,
     Cursor,
     Sync,

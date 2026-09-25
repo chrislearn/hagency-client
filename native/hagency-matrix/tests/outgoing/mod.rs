@@ -704,37 +704,48 @@ async fn native_matrix_outgoing_bounds_wire_failures_retain_possible_writes() {
         // Every other failure here — a body the client could not accept, a timeout,
         // a redirect or a 5xx — is non-permanent.
         let permanent = kind == "forbidden";
-        let (summary, ()) = scripted(
-            "wire refusal resume",
-            Some(kind),
-            c.resume_outgoing_custody(&cancel),
-            async {
-                let request = fake.next().await;
-                assert_eq!(request.method, "PUT");
-                assert!(
-                    request.target.ends_with(&format!("/{transaction}")),
-                    "{kind}: the resend kept its journaled transaction id"
-                );
-                if permanent {
-                    request.json(403, json!({"errcode":"M_FORBIDDEN"}));
-                } else {
-                    request.json(200, json!({"event_id":"$resent"}));
-                }
-            },
-        )
-        .await;
         if permanent {
             // TS posts a permanent rejection to `../failed` and stops retrying:
-            // the verdict surfaces to the caller and the send is not settled.
-            assert_eq!(summary, Err(Error::Unauthorized));
+            // the verdict surfaced to the caller above, and the journal carries
+            // the mark. Every later resume reads it and parks the send for a
+            // human — no HTTP write at all, so the refused send is never
+            // replayed, and the replay is refused again and again.
+            for _ in 0..2 {
+                assert_eq!(
+                    observed(
+                        Trace::new("wire refusal parked resume", Some(kind), None),
+                        c.resume_outgoing_custody(&cancel),
+                    )
+                    .await
+                    .unwrap()
+                    .state,
+                    OutgoingState::Uncertain
+                );
+            }
             assert_eq!(state(&f, &claim.id), "sending");
+            fake.quiesced(fake.requests(), &common::limits()).await;
         } else {
             // TS `pollOneRouterOutbox` re-sends the still-claimed command on a
             // later poll with the SAME transaction id; Matrix dedups the replay.
+            let (summary, ()) = scripted(
+                "wire refusal resume",
+                Some(kind),
+                c.resume_outgoing_custody(&cancel),
+                async {
+                    let request = fake.next().await;
+                    assert_eq!(request.method, "PUT");
+                    assert!(
+                        request.target.ends_with(&format!("/{transaction}")),
+                        "{kind}: the resend kept its journaled transaction id"
+                    );
+                    request.json(200, json!({"event_id":"$resent"}));
+                },
+            )
+            .await;
             assert_eq!(summary.unwrap().state, OutgoingState::Delivered);
             assert_eq!(state(&f, &claim.id), "delivered");
+            fake.quiesced(fake.requests(), &common::limits()).await;
         }
-        fake.quiesced(fake.requests(), &common::limits()).await;
         observed(
             Trace::new("wire refusal close", Some(kind), None),
             c.close(),

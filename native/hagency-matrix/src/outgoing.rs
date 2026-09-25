@@ -3,8 +3,8 @@ use crate::collector::observe;
 use crate::{CancellationToken, Collector, Error, collector::Inner, sdk::Owner};
 use hagency_core::{ingress::VerifiedNoticeClaim, replies::*};
 use hagency_matrix_format::MatrixContent;
-use serde_json::json;
-use state::{Attempt, Command, Kind, Phase};
+use serde_json::{Value, json};
+use state::{Attempt, Command, Kind, Phase, Write};
 use std::{collections::BTreeSet, time::Duration};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -132,6 +132,15 @@ fn retryable(error: &Error) -> bool {
         Error::Unauthorized => false,
         _ => false,
     }
+}
+/// Task #9 (TS `isPermanentRouterMatrixFailure`, bridge-matrix.js:6029-6033):
+/// a permanent Matrix verdict is an HTTP 4xx other than 429 — `M_FORBIDDEN`
+/// (403), `M_BAD_JSON` (400), `M_NOT_FOUND` (404), 401. Only this exact verdict
+/// is journalled as permanent; a cancellation, a local custody fault or a
+/// transport outcome is not, so it stays re-sendable.
+fn permanent_refusal(error: &Error) -> bool {
+    matches!(error, Error::Unauthorized)
+        || matches!(error, Error::Remote(status) if (400..=499).contains(status) && *status != 429)
 }
 impl Inner {
     pub(crate) async fn outgoing(
@@ -322,6 +331,7 @@ impl Inner {
                 keys_digest: None,
                 writes: vec![],
                 index: 0,
+                permanent_failure: false,
                 file: None,
             };
             owner
@@ -467,41 +477,9 @@ impl Inner {
             // the lease expired. Recheck after that await, immediately before IO.
             self.validate_outgoing(&source, attempt.fence).await?;
             observe!(OutgoingWriteHttp, Some(index));
-            let value = if write.room {
-                self.http
-                    .put(
-                        &[
-                            "_matrix",
-                            "client",
-                            "v3",
-                            "rooms",
-                            &attempt.route.room_id,
-                            "send",
-                            &write.event_type,
-                            &write.transaction_id,
-                        ],
-                        write.body,
-                        cancel,
-                    )
-                    .await?
-                    .success()?
-            } else {
-                self.http
-                    .put(
-                        &[
-                            "_matrix",
-                            "client",
-                            "v3",
-                            "sendToDevice",
-                            &write.event_type,
-                            &write.transaction_id,
-                        ],
-                        write.body,
-                        cancel,
-                    )
-                    .await?
-                    .success()?
-            };
+            let value = self
+                .write_outgoing(owner, &attempt.route, write, cancel)
+                .await?;
             // No cancellation gate between actual accepted response and custody.
             attempt = owner
                 .outgoing(Command::Accept(index, value))
@@ -587,6 +565,19 @@ impl Inner {
                 replayed: true,
             });
         }
+        // Task #9 (TS `isPermanentRouterMatrixFailure`, bridge-matrix.js:6029-6033):
+        // a write that already ended in a permanent refusal (an HTTP 4xx other than
+        // 429) is not re-put. TS posts such a command to `../failed` and stops
+        // retrying forever; the journaled mark is that stop, so a resume parks the
+        // send visibly for a human instead of replaying a verdict that will not
+        // change.
+        if attempt.permanent_failure {
+            return Ok(OutgoingSummary {
+                id: Some(attempt.id),
+                state: OutgoingState::Uncertain,
+                replayed: true,
+            });
+        }
         while attempt.index < attempt.writes.len() {
             if cancel.is_cancelled() {
                 return Err(Error::Cancelled);
@@ -611,41 +602,9 @@ impl Inner {
                 owner.outgoing(Command::Possible(index)).await?;
             }
             observe!(OutgoingWriteHttp, Some(index));
-            let value = if write.room {
-                self.http
-                    .put(
-                        &[
-                            "_matrix",
-                            "client",
-                            "v3",
-                            "rooms",
-                            &attempt.route.room_id,
-                            "send",
-                            &write.event_type,
-                            &write.transaction_id,
-                        ],
-                        write.body,
-                        cancel,
-                    )
-                    .await?
-                    .success()?
-            } else {
-                self.http
-                    .put(
-                        &[
-                            "_matrix",
-                            "client",
-                            "v3",
-                            "sendToDevice",
-                            &write.event_type,
-                            &write.transaction_id,
-                        ],
-                        write.body,
-                        cancel,
-                    )
-                    .await?
-                    .success()?
-            };
+            let value = self
+                .write_outgoing(owner, &attempt.route, write, cancel)
+                .await?;
             // No cancellation gate between actual accepted response and custody.
             attempt = owner
                 .outgoing(Command::Accept(index, value))
@@ -739,6 +698,69 @@ impl Inner {
             })
             .await
             .map_err(Error::from)
+    }
+    /// Task #9: one journaled write, with the permanent-refusal fact recorded.
+    /// A write answered with an HTTP 4xx other than 429 is what TS calls
+    /// `isPermanentRouterMatrixFailure` (bridge-matrix.js:6029-6033): TS posts
+    /// that command to `../failed` and stops retrying. Recording it on the
+    /// journal is the same stop, in the state a resume reads — a later resume
+    /// then parks the send for a human instead of re-putting it forever.
+    /// Everything else (a lost connection, a timeout, a 5xx, an unacceptable
+    /// 200) is left unmarked and is re-sent with the same transaction id, which
+    /// Matrix dedups.
+    async fn write_outgoing(
+        &self,
+        owner: &Owner,
+        route: &ReplyRoute,
+        write: Write,
+        cancel: &CancellationToken,
+    ) -> Result<Value, Error> {
+        let result = if write.room {
+            self.http
+                .put(
+                    &[
+                        "_matrix",
+                        "client",
+                        "v3",
+                        "rooms",
+                        &route.room_id,
+                        "send",
+                        &write.event_type,
+                        &write.transaction_id,
+                    ],
+                    write.body,
+                    cancel,
+                )
+                .await?
+                .success()
+        } else {
+            self.http
+                .put(
+                    &[
+                        "_matrix",
+                        "client",
+                        "v3",
+                        "sendToDevice",
+                        &write.event_type,
+                        &write.transaction_id,
+                    ],
+                    write.body,
+                    cancel,
+                )
+                .await?
+                .success()
+        };
+        match result {
+            Ok(value) => Ok(value),
+            Err(error) => {
+                if permanent_refusal(&error) {
+                    // Best effort: the permanent verdict is the fact the caller
+                    // must see; losing the marker only costs one deduped re-PUT.
+                    let _ = owner.outgoing(Command::Refused).await;
+                }
+                Err(error)
+            }
+        }
     }
     async fn settle_outgoing(
         &self,
