@@ -28,6 +28,10 @@ pub async fn account_access(state: &Path, address: SocketAddr) -> Result<String,
 pub async fn lifecycle_access(state: &Path, address: SocketAddr) -> Result<String, Error> {
     scoped_access(state, address, false, false, false, true).await
 }
+/// TS parity: every variant requests the SAME one login (the retained
+/// `createApiAuthMiddleware` admitted one credential to every `/api` route).
+/// The flags survive only as a landing-page preference for the operator's
+/// next click — they no longer narrow what the session may do.
 async fn scoped_access(
     state: &Path,
     address: SocketAddr,
@@ -84,17 +88,9 @@ async fn exchange(
     authorization.set_sensitive(true);
     let request = Request::builder()
         .method("POST")
-        .uri(if lifecycle {
-            "/api/native/v1/console/agent-lifecycle-access"
-        } else if configuration {
-            "/api/native/v1/console/resource-configuration-access"
-        } else if publication {
-            "/api/native/v1/console/resource-publication-access"
-        } else if account {
-            "/api/native/v1/console/account-access"
-        } else {
-            "/api/native/v1/console/access"
-        })
+        // One login route for every variant (TS parity): the flags only
+        // choose where the link lands, never what the session may do.
+        .uri("/api/native/v1/console/access")
         .header("host", address.to_string())
         .header("authorization", authorization)
         .header("connection", "close")
