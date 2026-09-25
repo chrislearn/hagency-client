@@ -52,6 +52,11 @@ pub use execution::{
 };
 pub use messages::{CorpusSweepOutcome, MESSAGE_RETENTION_FLOOR, RetentionStatus};
 mod notice_custody;
+mod operator_tasks;
+pub use operator_tasks::{
+    MAX_TASK_COMMENTS, MAX_TASK_PAGE, OperatorTask, OperatorTaskComment, TASK_GRANULARITIES,
+    TASK_PRIORITIES, TASK_STATUSES, TaskFilters, operator_transitions,
+};
 mod outcome_resolution;
 mod owned_completion;
 mod owned_dispatch;
@@ -101,7 +106,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 42;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 43;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -744,6 +749,10 @@ impl DomainRepository {
                     // was 049; it lands as the next sequential tuple 42 (file
                     // name kept).
                     (42, include_str!("migrations/049-agent-lifecycle.sql")),
+                    // Integration of lane/taskmgmt: its board-assigned number
+                    // was 044; it lands as the next sequential tuple 43 (file
+                    // name kept).
+                    (43, include_str!("migrations/044-operator-tasks.sql")),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
@@ -766,6 +775,8 @@ impl DomainRepository {
                     "SELECT account_id,attempt,started_at_ms,deadline_ms,state,receipt_id FROM account_login_attempts LIMIT 0",
                     "SELECT id,account_id,retired_at_ms,readiness,logout_detail FROM account_logout_receipts LIMIT 0",
                     "SELECT dedupe_key,resource_id,summary,detail,runbook,impact,recovery_condition,occurrences,first_seen_ms,last_seen_ms,resolved_at_ms,resolved_by,status,note,transitioned_at_ms,transitioned_by FROM ceiling_alerts LIMIT 0",
+                    "SELECT id,title,description,status,priority,granularity,assignee,created_by,created_at,updated_at,started_at,completed_at,heartbeat_at,waiting_reason,waiting_until,parent_id,labels FROM operator_tasks LIMIT 0",
+                    "SELECT sequence,task_id,author,body,created_at FROM operator_task_comments LIMIT 0",
                     "SELECT k.secret,k.deployment,k.root_identity,a.id,a.ordinal,a.generation,a.state,a.namespace_identity,a.identity_tuple,a.seat_id,r.preset_id,r.account_id,r.binding_generation FROM account_identity_key k CROSS JOIN managed_accounts a CROSS JOIN resource_accounts r LIMIT 0",
                     "SELECT request_id,context_id,capability_digest,decision_digest,state,write_accepted,authorized_at,response_started_at FROM approval_responses LIMIT 0",
                     "SELECT id,capability_digest,event_id,workspace_id,binding,binding_digest,byte_limit,facts,state,failure FROM received_files LIMIT 0",

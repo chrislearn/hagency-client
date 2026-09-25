@@ -476,3 +476,88 @@ export async function enrollAccountResource(id, model, reasoning, expectedRevisi
   if (!object(v, ['account']) || !validAccount(v.account)) throw new Error('invalid_native_response');
   return v.account;
 }
+
+/* Operator tasks (board #23, TS parity: backend-v2.js:13194-13332,
+ * lib/task-store.js). The five statuses and four priorities are the retained
+ * store's own sets, and they are NOT re-derived here: the server serves the
+ * legal next-status list on every row (`allowed_transitions`), so the page
+ * renders transitions only from what the server allowed, the same contract
+ * the alerts page uses for its `next` array. A timestamp is a non-empty
+ * string (the retained ISO-8601 wire spelling) or null. */
+const TASK_STATES = ['created', 'accepted', 'in_progress', 'blocked', 'done'];
+const TASK_PRIORITIES = ['p0', 'p1', 'p2', 'p3'];
+const TASK_GRANULARITIES = ['epic', 'task', 'subtask'];
+const stamp = (v) => v === null || text(v, 64);
+const taskComment = (c) => object(c, ['author', 'text', 'ts'])
+  && text(c.author, 128) && text(c.text, 4096) && text(c.ts, 64);
+/* `next` is the SERVER's legal-transition list (hagency_store::operator_transitions),
+ * so the page renders a move control only where the store allows one. It is
+ * part of the exact-key set: a server that stopped serving it fails the whole
+ * read rather than silently dropping the controls. */
+const validTask = (t) => object(t, ['id', 'title', 'description', 'status', 'priority', 'granularity',
+  'assignee', 'created_by', 'created_at', 'updated_at', 'started_at', 'completed_at', 'heartbeat_at',
+  'waiting_reason', 'waiting_until', 'parent_id', 'labels', 'comments', 'next'])
+  && id(t.id) && text(t.title, 255) && text(t.description, 4096)
+  && TASK_STATES.includes(t.status) && TASK_PRIORITIES.includes(t.priority)
+  && TASK_GRANULARITIES.includes(t.granularity)
+  && optionalText(t.assignee, 128) && optionalText(t.created_by, 128)
+  && text(t.created_at, 64) && text(t.updated_at, 64)
+  && stamp(t.started_at) && stamp(t.completed_at) && stamp(t.heartbeat_at)
+  && optionalText(t.waiting_reason, 1024) && optionalText(t.waiting_until, 64)
+  && optionalText(t.parent_id, 64)
+  && Array.isArray(t.labels) && t.labels.length <= 20 && t.labels.every((l) => text(l, 64))
+  && Array.isArray(t.comments) && t.comments.length <= 100 && t.comments.every(taskComment)
+  && Array.isArray(t.next) && t.next.length <= 2 && t.next.every((s) => TASK_STATES.includes(s));
+export function validateTasks(v) {
+  if (!object(v, ['at_ms', 'permissions', 'unavailable', 'tasks']) || !number(v.at_ms)
+    || !object(v.permissions, ['configureResource']) || typeof v.permissions.configureResource !== 'boolean'
+    || !Array.isArray(v.unavailable) || v.unavailable.length > 32 || v.unavailable.some((n) => !text(n, 64))
+    || !Array.isArray(v.tasks) || v.tasks.length > 500 || v.tasks.some((t) => !validTask(t))) throw new Error('invalid_native_response');
+  return v;
+}
+export function tasksView(location) { return /^\/console\/tasks\/?$/.test(location.pathname); }
+export function projectBoardView(location) { return /^\/console\/project-board\/?$/.test(location.pathname); }
+export async function fetchTasks() { return validateTasks(await request('/api/tasks')); }
+export async function fetchAgentTasks(name) {
+  if (!text(name, 128) || !name.trim()) throw new Error('invalid_selection');
+  return validateTasks(await request(`/api/agents/${encodeURIComponent(name)}/tasks`));
+}
+const oneTask = (v) => { if (!object(v, ['ok', 'task']) || v.ok !== true || !validTask(v.task)) throw new Error('invalid_native_response'); return v.task; };
+export async function createTask(body) {
+  return oneTask(await request('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
+}
+export async function updateTask(id, patch) {
+  if (!id(id)) throw new Error('invalid_selection');
+  return oneTask(await request(`/api/tasks/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) }));
+}
+export async function deleteTask(id) {
+  if (!id(id)) throw new Error('invalid_selection');
+  return oneTask(await request(`/api/tasks/${encodeURIComponent(id)}`, { method: 'DELETE' }));
+}
+export async function transitionTask(id, status, extra = {}) {
+  if (!id(id) || !TASK_STATES.includes(status)) throw new Error('invalid_selection');
+  return oneTask(await request(`/api/tasks/${encodeURIComponent(id)}/transition`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...extra, status }) }));
+}
+export async function commentTask(id, comment) {
+  if (!id(id)) throw new Error('invalid_selection');
+  return oneTask(await request(`/api/tasks/${encodeURIComponent(id)}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(comment) }));
+}
+/* The project board: the retained envelope (`lib/project-board.js:buildProjectBoardSnapshot`)
+ * carries `generatedAt`, `staleAfterMs`, `activityLimit`, `totals` and
+ * `projects`; native additionally serves `unavailable`, naming every retained
+ * column it has no source for. The board is validated structurally and its
+ * unavailability is passed through as text — the page renders what the server
+ * names, never a client-side guess at what is missing. */
+export function validateProjectBoard(v) {
+  if (!object(v, ['generatedAt', 'staleAfterMs', 'activityLimit', 'unavailable', 'totals', 'projects'])
+    || !text(v.generatedAt, 64) || !number(v.staleAfterMs) || !number(v.activityLimit)
+    || !Array.isArray(v.unavailable) || v.unavailable.length > 32 || v.unavailable.some((n) => !text(n, 64))
+    || !object(v.totals, ['projects', 'agents', 'tasks'])
+    || !number(v.totals.projects) || !number(v.totals.agents)
+    || !Array.isArray(v.projects) || v.projects.length > 512
+    || v.projects.some((p) => !object(p, ['id', 'name', 'agents', 'taskLanes']) || !text(p.id, 128) || !text(p.name, 128)
+      || !Array.isArray(p.agents) || p.agents.some((a) => !text(a, 128))
+      || !object(p.taskLanes, TASK_STATES) || TASK_STATES.some((s) => !number(p.taskLanes[s])))) throw new Error('invalid_native_response');
+  return v;
+}
+export async function fetchProjectBoard() { return validateProjectBoard(await request('/api/project-board')); }

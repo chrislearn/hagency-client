@@ -3293,6 +3293,92 @@ impl DomainStore {
         self.call(256, move |db| db.resource_configuration(&id))
             .await
     }
+
+    /// The operator's own task list (board #23). One writer job per command,
+    /// the same shape every other console read/write uses; the routes add no
+    /// second projection and hold no state of their own.
+    pub async fn operator_tasks(
+        &self,
+        filters: crate::TaskFilters,
+    ) -> Result<Vec<crate::OperatorTask>, Error> {
+        // The filters' own size is the byte weight; a list read carries no
+        // payload of its own.
+        let bytes = 1 + filters
+            .assignee
+            .as_deref()
+            .unwrap_or_default()
+            .len()
+            .saturating_add(filters.status.as_deref().unwrap_or_default().len())
+            .saturating_add(filters.priority.as_deref().unwrap_or_default().len())
+            .saturating_add(filters.label.as_deref().unwrap_or_default().len());
+        self.call(u32::try_from(bytes).unwrap_or(64).max(1), move |db| {
+            db.operator_tasks(&filters)
+        })
+        .await
+    }
+    pub async fn operator_task(&self, id: String) -> Result<crate::OperatorTask, Error> {
+        self.call(weight(&id)?, move |db| db.operator_task(&id)).await
+    }
+    pub async fn create_operator_task(
+        &self,
+        body: serde_json::Value,
+        now: u64,
+    ) -> Result<crate::OperatorTask, Error> {
+        self.call(weight(&body)?, move |db| {
+            db.create_operator_task(&body, now)
+        })
+        .await
+    }
+    pub async fn update_operator_task(
+        &self,
+        id: String,
+        patch: serde_json::Value,
+    ) -> Result<crate::OperatorTask, Error> {
+        self.call(weight(&(&id, &patch))?, move |db| {
+            db.update_operator_task(&id, &patch)
+        })
+        .await
+    }
+    pub async fn transition_operator_task(
+        &self,
+        id: String,
+        status: String,
+        extra: serde_json::Value,
+        now: u64,
+    ) -> Result<crate::OperatorTask, Error> {
+        self.call(weight(&(&id, &status))?, move |db| {
+            db.transition_operator_task(&id, &status, &extra, now)
+        })
+        .await
+    }
+    pub async fn comment_operator_task(
+        &self,
+        id: String,
+        comment: serde_json::Value,
+        now: u64,
+    ) -> Result<crate::OperatorTask, Error> {
+        self.call(weight(&(&id, &comment))?, move |db| {
+            db.comment_operator_task(&id, &comment, now)
+        })
+        .await
+    }
+    pub async fn delete_operator_task(
+        &self,
+        id: String,
+    ) -> Result<Option<crate::OperatorTask>, Error> {
+        self.call(weight(&id)?, move |db| db.delete_operator_task(&id))
+            .await
+    }
+    pub async fn operator_project_board(
+        &self,
+        now: u64,
+        activity_limit: u64,
+    ) -> Result<serde_json::Value, Error> {
+        self.call(64, move |db| {
+            db.operator_project_board(now, activity_limit)
+        })
+        .await
+    }
     pub async fn account_choices(&self) -> Result<Vec<crate::AccountChoice>, Error> {
         self.call(256, |db| db.account_choices()).await
     }
