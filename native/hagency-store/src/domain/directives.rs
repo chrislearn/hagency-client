@@ -206,9 +206,10 @@ pub(super) fn model_override(db: &rusqlite::Connection, session: &str) -> Result
     db.query_row(
         "SELECT model_override FROM runner_sessions WHERE id=?1",
         [session],
-        |r| r.get(0),
+        |r| r.get::<_, Option<String>>(0),
     )
     .optional()
+    .map(|found| found.flatten())
     .map_err(Error::from)
 }
 

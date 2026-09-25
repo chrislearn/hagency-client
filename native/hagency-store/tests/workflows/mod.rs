@@ -260,6 +260,7 @@ fn native_graph_transactions() {
     drop(db);
     let inspect = sql(&root);
     remove_graph_schema(&inspect);
+    inspect.execute_batch("ALTER TABLE runner_sessions DROP COLUMN model_override; ALTER TABLE runner_sessions DROP COLUMN mode_override; ").unwrap();
     inspect.pragma_update(None, "user_version", 9).unwrap();
     for _ in 0..2 {
         let db = DomainRepository::open(&root.path().join("state")).unwrap();

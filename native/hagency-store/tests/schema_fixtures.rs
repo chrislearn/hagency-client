@@ -9,7 +9,7 @@ fn native_stopped_inspection_schema34_upgrade() {
     db.put_resource(&resource).unwrap();
     drop(db);
     let sql = rusqlite::Connection::open(state.join("domain.sqlite3")).unwrap();
-    sql.execute_batch("DROP TABLE owned_stop_inspections; ALTER TABLE dispatch_inputs DROP COLUMN addressed; DROP TABLE IF EXISTS dispatch_conversation_reads; ALTER TABLE runner_attempts DROP COLUMN started_at; ALTER TABLE runner_attempts DROP COLUMN parked_at; ALTER TABLE runner_attempts DROP COLUMN last_renew_at; ALTER TABLE runner_attempts DROP COLUMN settled_at; ALTER TABLE runner_attempts DROP COLUMN terminal_reason; DROP TABLE IF EXISTS runner_attempt_events; DROP TABLE IF EXISTS agent_fences; DROP TABLE IF EXISTS side_registrations; DROP VIEW IF EXISTS current_command_notices; DROP TABLE IF EXISTS command_notice_inspections; DROP TABLE IF EXISTS command_notices; PRAGMA user_version=33;")
+    sql.execute_batch("DROP TABLE owned_stop_inspections; ALTER TABLE runner_sessions DROP COLUMN model_override; ALTER TABLE runner_sessions DROP COLUMN mode_override;  ALTER TABLE dispatch_inputs DROP COLUMN addressed; DROP TABLE IF EXISTS dispatch_conversation_reads; ALTER TABLE runner_attempts DROP COLUMN started_at; ALTER TABLE runner_attempts DROP COLUMN parked_at; ALTER TABLE runner_attempts DROP COLUMN last_renew_at; ALTER TABLE runner_attempts DROP COLUMN settled_at; ALTER TABLE runner_attempts DROP COLUMN terminal_reason; DROP TABLE IF EXISTS runner_attempt_events; DROP TABLE IF EXISTS agent_fences; DROP TABLE IF EXISTS side_registrations; DROP VIEW IF EXISTS current_command_notices; DROP TABLE IF EXISTS command_notice_inspections; DROP TABLE IF EXISTS command_notices; PRAGMA user_version=33;")
         .unwrap();
     let before: String = sql
         .query_row(
