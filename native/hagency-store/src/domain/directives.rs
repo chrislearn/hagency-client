@@ -269,6 +269,56 @@ impl DomainRepository {
         tx.commit()?;
         self.session_overrides(session)
     }
+
+    /// The admitted `/thread` lines in this session with no answer queued yet,
+    /// mirroring `pending_command_lines` (`command_notices.rs`) but gated on the
+    /// directive shape instead of `!`. The host parses each, applies the
+    /// override when authorized, and answers in-thread through the command-notice
+    /// path. A line already answered is not offered again.
+    pub fn pending_thread_directives(
+        &self,
+        session: &str,
+        limit: i64,
+    ) -> Result<Vec<hagency_core::commands::CommandLine>, Error> {
+        identifier(session, 128)?;
+        if !(1..=1024).contains(&limit) {
+            return Err(hagency_core::InvalidInput("invalid directive line limit").into());
+        }
+        let encoded: Vec<String> = self
+            .db
+            .prepare("SELECT CASE WHEN s.matrix_generation>0 THEN i.config ELSE m.config END FROM session_inputs i JOIN admitted_messages m ON m.sequence=i.message_sequence JOIN runner_sessions s ON s.id=i.session_id WHERE i.session_id=?1 ORDER BY i.message_sequence LIMIT ?2")?
+            .query_map(params![session, limit], |r| r.get(0))?
+            .collect::<Result<_, _>>()?;
+        let mut lines = Vec::new();
+        for encoded in encoded {
+            let message: hagency_core::messages::Message = serde_json::from_str(&encoded)?;
+            if !matches!(message.kind.as_str(), "m.text") || !is_directive(&message.body) {
+                continue;
+            }
+            let id = format!(
+                "cmdn_{}",
+                hagency_core::canonical::digest(&serde_json::json!([session, message.event_id]))?
+            );
+            let answered: bool = self.db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM command_notices WHERE id=?1)",
+                [&id],
+                |r| r.get(0),
+            )?;
+            if answered {
+                continue;
+            }
+            lines.push(hagency_core::commands::CommandLine {
+                session_id: session.to_owned(),
+                server_name: message.server_name,
+                room_id: message.room_id,
+                event_id: message.event_id,
+                thread_root: message.thread_root,
+                body: message.body,
+                sender_mxid: message.sender_mxid,
+            });
+        }
+        Ok(lines)
+    }
 }
 
 #[cfg(test)]
