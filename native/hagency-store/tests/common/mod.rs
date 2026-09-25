@@ -132,8 +132,8 @@ pub fn remove_approval_schema(db: &rusqlite::Connection) {
     // ALTER does not replay idempotently. 036 splits the frozen window the
     // same way: `addressed` exists only from schema 36 on. 037 adds the
     // attempt clock columns and the event table the same way.
-    db.execute_batch("ALTER TABLE runner_attempts DROP COLUMN park_reason; ALTER TABLE dispatch_inputs DROP COLUMN addressed; DROP TABLE IF EXISTS dispatch_conversation_reads; ALTER TABLE runner_attempts DROP COLUMN started_at; ALTER TABLE runner_attempts DROP COLUMN parked_at; ALTER TABLE runner_attempts DROP COLUMN last_renew_at; ALTER TABLE runner_attempts DROP COLUMN settled_at; ALTER TABLE runner_attempts DROP COLUMN terminal_reason; DROP TABLE IF EXISTS runner_attempt_events; DROP TABLE IF EXISTS agent_fences; DROP TABLE IF EXISTS side_registrations; DROP VIEW IF EXISTS current_command_notices; DROP TABLE IF EXISTS command_notice_inspections; DROP TABLE IF EXISTS command_notices;")
-        .unwrap();
+    db.execute_batch("ALTER TABLE runner_attempts DROP COLUMN park_reason; ALTER TABLE dispatch_inputs DROP COLUMN addressed; DROP TABLE IF EXISTS dispatch_conversation_reads; ALTER TABLE runner_attempts DROP COLUMN started_at; ALTER TABLE runner_attempts DROP COLUMN parked_at; ALTER TABLE runner_attempts DROP COLUMN last_renew_at; ALTER TABLE runner_attempts DROP COLUMN settled_at; ALTER TABLE runner_attempts DROP COLUMN terminal_reason; DROP TABLE IF EXISTS runner_attempt_events; DROP TABLE IF EXISTS agent_fences; DROP TABLE IF EXISTS pending_invites;  DROP TABLE IF EXISTS ceiling_alert_notes; DROP TABLE IF EXISTS agent_lifecycle; DROP TABLE IF EXISTS side_registrations; DROP VIEW IF EXISTS current_command_notices; DROP TABLE IF EXISTS command_notice_inspections; DROP TABLE IF EXISTS command_notices; DROP TABLE IF EXISTS operator_tasks; DROP TABLE IF EXISTS operator_task_comments; DROP TABLE IF EXISTS side_records; DROP TABLE IF EXISTS side_projects;  DROP TABLE IF EXISTS reminders; ")
+         .unwrap();
     db.execute_batch("DROP TRIGGER approval_room_retire_grants; DROP TRIGGER approval_project_retire; DROP TRIGGER approval_registration_retire; DROP TRIGGER approval_engagement_retire; DROP TRIGGER approval_task_retire; DROP VIEW current_approval_bindings; DROP TABLE approval_verdict_receipts; DROP TABLE approval_grants; DROP TABLE owner_approvals; DROP TABLE approval_contexts; DROP TABLE approval_bindings; DROP TABLE approval_rooms;").unwrap();
 }
 
@@ -191,7 +191,7 @@ pub fn remove_upload_schema(db: &rusqlite::Connection) {
     // rebuilt from 024 here; the fixtures that drop tables directly instead
     // of chaining (`approvals/responses.rs`, `file_delivery.rs`,
     // `received_files.rs`, `schema_fixtures.rs`) carry the same drop.
-    db.execute_batch("DROP TABLE IF EXISTS ceiling_alerts;")
+    db.execute_batch("DROP TABLE IF EXISTS ceiling_alerts; DROP TABLE IF EXISTS ceiling_alert_notes;")
         .unwrap();
     db.execute_batch("DROP TABLE IF EXISTS approval_responses; DROP TABLE IF EXISTS received_files; DROP TABLE IF EXISTS file_deliveries; DROP TABLE IF EXISTS file_uploads;")
         .unwrap();

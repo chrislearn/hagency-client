@@ -181,10 +181,14 @@ impl Attempt {
                     // m.image. Plaintext rooms receive unencrypted files
                     // (lib/matrix-file.js:30-33).
                     Kind::File if self.content["msgtype"] == "m.image" => "m.image",
-                    // A bot-command answer is a notice: the agent announcing
-                    // something rather than addressing a human, exactly as the
-                    // retained bridge sent it (`lib/bot-commands.js` reply).
-                    Kind::Command => "m.notice",
+                    // A bot-command answer is TEXT, exactly as the retained
+                    // bridge sent it: `reply` builds `{ msgtype: 'm.text', ... }`
+                    // (`lib/bot-commands.js:398`) and every command answer goes
+                    // out through it. The builder has always agreed
+                    // (`outgoing.rs:292`: only `Kind::Notice` is `m.notice`); a
+                    // validator demanding `m.notice` here refused every command
+                    // answer on the production send path.
+                    Kind::Command => "m.text",
                     Kind::File => "m.file",
                 }
             || (self.kind == Kind::File) != self.file.is_some()

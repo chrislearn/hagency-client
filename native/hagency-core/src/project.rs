@@ -286,4 +286,11 @@ pub struct Engagement {
     pub worktrees_dir: Option<String>,
     #[serde(default)]
     pub worktree_bootstrap: Vec<String>,
+    /// TS routeRequest verdict at admission (lib/engagement-store.js:178-232):
+    /// why this request did — or did not — auto-join. The routing is recorded,
+    /// never used to refuse: the request still lands in the queue.
+    #[serde(default)]
+    pub route: Option<String>,
+    #[serde(default)]
+    pub auto_joined: bool,
 }
