@@ -27,6 +27,8 @@ mod matrix_diag;
 mod origin;
 #[path = "console/offer_book.rs"]
 mod offer_book;
+#[path = "console/graphs.rs"]
+mod graphs;
 #[path = "console/project_sides.rs"]
 mod project_sides;
 #[path = "console/real_agent.rs"]
@@ -94,6 +96,20 @@ fn get(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
 }
 fn post(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
     TestClient::post(format!("{BASE}{path}"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .add_header("origin", BASE, true)
+        .add_header("sec-fetch-site", "same-origin", true)
+        .add_header("cookie", cookie, true)
+}
+fn delete(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
+    TestClient::delete(format!("{BASE}{path}"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .add_header("origin", BASE, true)
+        .add_header("sec-fetch-site", "same-origin", true)
+        .add_header("cookie", cookie, true)
+}
+fn patch(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
+    TestClient::patch(format!("{BASE}{path}"))
         .add_header("host", "127.0.0.1:13300", true)
         .add_header("origin", BASE, true)
         .add_header("sec-fetch-site", "same-origin", true)

@@ -185,8 +185,10 @@ impl Fixture {
         // macOS's temporary-directory spelling may traverse the /var alias.
         // Select its actual host path; production correctly refuses that alias.
         let actual_assets = built.unwrap_or(&asset_dir).canonicalize().unwrap();
-        let console = Console::load(&actual_assets).unwrap();
         let state = root.path().join("state");
+        // #47: production serves graphs from `<state>/task_graphs.json`; the
+        // fixture mirrors that so the routes reach a real document home.
+        let console = Console::load_with_state(&actual_assets, Some(&state)).unwrap();
         let custody = Store::start(Repository::open(&state).unwrap(), 16).unwrap();
         let (db, engagement) = seed(&state);
         let domain = DomainStore::start(db, 16).unwrap();

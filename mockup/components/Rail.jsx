@@ -65,6 +65,7 @@ const SECTIONS = [
     head: 'rail.secFleet',
     rows: [
       { href: '/alerts', key: 'alerts', icon: '◉', count: 'alertsOpen', unit: 'open', hot: true },
+      { href: '/task-graphs', key: 'taskGraphs', icon: '⧉', count: null },
       { href: '/config', key: 'config', icon: '⚙', count: null },
     ],
   },

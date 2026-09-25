@@ -619,3 +619,53 @@ export async function fetchPreview(role, requestedTokens = null) {
   const query = `role=${encodeURIComponent(role)}${requestedTokens === null ? '' : `&requestedTokens=${encodeURIComponent(requestedTokens)}`}`;
   return validatePreview(await request(`/api/engagements/preview?${query}`));
 }
+
+/* Operator task graphs (board #47): the native console's task-graph routes
+ * mirror the retained `/api/task-graphs` (backend-v2.js:15974-16020). A
+ * graph is the TS `normalizeGraph` shape — id/owner/label/status plus a
+ * `nodes` map keyed by node id with camelCase timestamps — served verbatim.
+ * Validators refuse an unexpected top-level shape rather than render it. */
+const GRAPH_STATUSES = ['active', 'complete', 'failed', 'cancelled'];
+const NODE_STATUSES = ['pending', 'dispatched', 'active', 'complete', 'failed', 'skipped', 'cancelled'];
+export function validateGraph(v) {
+  if (!object(v, ['id', 'owner', 'label', 'status', 'nodes', 'createdAt', 'updatedAt', 'completedAt'])
+    || !text(v.id, 255) || !text(v.owner, 255) || !text(v.label, 4000)
+    || !GRAPH_STATUSES.includes(v.status)
+    || !text(v.createdAt, 128) || !text(v.updatedAt, 128) || !optionalText(v.completedAt, 128)
+    || typeof v.nodes !== 'object' || v.nodes === null || Array.isArray(v.nodes)) throw new Error('invalid_native_response');
+  for (const n of Object.values(v.nodes)) {
+    if (!object(n, ['id', 'assignee', 'description', 'depends_on', 'status', 'result', 'error', 'condition', 'message_id', 'dispatchedAt', 'completedAt', 'startedAt'])
+      || !text(n.id, 255) || !text(n.assignee, 255) || !text(n.description, 4000)
+      || !Array.isArray(n.depends_on) || n.depends_on.some((d) => !text(d, 255))
+      || !NODE_STATUSES.includes(n.status)
+      || !optionalText(n.error, 4000) || !optionalText(n.message_id, 255)
+      || !optionalText(n.dispatchedAt, 128) || !optionalText(n.completedAt, 128) || !optionalText(n.startedAt, 128)) throw new Error('invalid_native_response');
+  }
+  return v;
+}
+export function validateGraphs(v) {
+  if (!Array.isArray(v) || v.length > 1024) throw new Error('invalid_native_response');
+  return v.map(validateGraph);
+}
+export async function fetchTaskGraphs(status = '') {
+  return validateGraphs(await request(`/api/task-graphs${status ? `?status=${encodeURIComponent(status)}` : ''}`));
+}
+export async function fetchTaskGraph(id) {
+  return validateGraph(await request(`/api/task-graphs/${encodeURIComponent(id)}`));
+}
+export async function createTaskGraph(body) {
+  const v = await request('/api/task-graphs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (v?.ok !== true) throw new Error('invalid_native_response');
+  return validateGraph(v.graph);
+}
+export async function deleteTaskGraph(id) {
+  const v = await request(`/api/task-graphs/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (v?.ok !== true) throw new Error('invalid_native_response');
+  return validateGraph(v.graph);
+}
+export async function updateTaskGraphNode(id, nodeId, patch) {
+  const v = await request(`/api/task-graphs/${encodeURIComponent(id)}/nodes/${encodeURIComponent(nodeId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+  if (v?.ok !== true) throw new Error('invalid_native_response');
+  return validateGraph(v.graph);
+}
+export function taskGraphsView(location) { return /^\/console\/task-graphs\/?$/.test(location.pathname); }

@@ -365,7 +365,11 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
         } => {
             let console = console_assets
                 .as_deref()
-                .map(hagency::console::Console::load)
+                .map(|assets| {
+                    // The graph routes persist `task_graphs.json` beside
+                    // `domain.sqlite3` (TS: the document in the data dir).
+                    hagency::console::Console::load_with_state(assets, Some(&state_dir))
+                })
                 .transpose()?;
             let mut bootstrap = hagency::bootstrap::Bootstrap::open_with_options(
                 &state_dir,
