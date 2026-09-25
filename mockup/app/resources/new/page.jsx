@@ -13,6 +13,8 @@ import { send } from '@/lib/api';
 import TechnicalDetails from '@/components/TechnicalDetails';
 import { NativeAccessNotice } from '@/components/NativeUsage';
 import NativeStatusStrip from '@/components/NativeStatusStrip';
+import SearchSelect from '@/components/SearchSelect';
+import { labelFor } from '@/lib/labels';
 
 /*
  * ② 配置向导 — four steps, and three of them write a field that already exists.
@@ -149,10 +151,14 @@ function WizardForm({ native = null }) {
       </ol>
 
       {native && <section className="panel"><h3 className="sub">{t('nc.source')}</h3>
-        {!native.editing && <div className="field"><label htmlFor="configuration-source">{t('nc.source')}</label><select id="configuration-source" value={base.id} onChange={(event) => native.choose(event.target.value)}>
-          {!native.resources.some((r) => r.id === base.id) && <option value={base.id}>{t('nr.outsidePage')}</option>}
-          {native.resources.map((r) => <option key={r.id} value={r.id}>{[r.framework, r.model, r.reasoning].filter(Boolean).join(' · ')}</option>)}
-        </select><div className="btn-row"><button className="btn" onClick={native.firstPage}>{t('nu.firstPage')}</button><button className="btn" disabled={!native.next_after} onClick={native.nextPage}>{t('nu.nextPage')}</button></div></div>}
+        {!native.editing && <div className="field"><label htmlFor="configuration-source">{t('nc.source')}</label><SearchSelect
+          id="configuration-source"
+          value={base.id}
+          onChange={(event) => native.choose(event.target.value)}
+          options={native.resources.map((r) => ({ value: r.id, label: [r.framework, r.model, r.reasoning].filter(Boolean).join(' · ') }))}
+          outside={labelFor(base.id) ?? t('nr.outsidePage')}
+          empty={t('nr.empty')}
+        /><div className="btn-row"><button className="btn" onClick={native.firstPage}>{t('nu.firstPage')}</button><button className="btn" disabled={!native.next_after} onClick={native.nextPage}>{t('nu.nextPage')}</button></div></div>}
         <dl className="kv"><dt>{t('wz.step.framework')}</dt><dd>{base.framework}</dd><dt>{t('col.provider')}</dt><dd>{base.provider ?? t('nu.unknown')}</dd><dt>{t('col.model')}</dt><dd>{base.model}</dd></dl>
         <TechnicalDetails><code>{base.id}</code></TechnicalDetails>
       </section>}

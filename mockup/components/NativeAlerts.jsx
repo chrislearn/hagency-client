@@ -121,7 +121,13 @@ export default function NativeAlerts() {
                     <td>
                       <div>{a.summary}</div>
                       <div className="faint" style={{ fontSize: 11 }}>
-                        {a.detail && typeof a.detail === 'object' ? a.detail.agent : a.resource_id} · ×{a.occurrences}
+                        {/* The row names an agent or a resource; the resource is a
+                            real drill-down (the resources document takes a
+                            resource_id), so the reader can act on what the alert
+                            is about instead of retyping the id. */}
+                        <a href={`/console/resources/?resource_id=${encodeURIComponent(a.resource_id)}`} onClick={(e) => e.stopPropagation()}>
+                          {a.detail && typeof a.detail === 'object' ? a.detail.agent : a.resource_id}
+                        </a> · ×{a.occurrences}
                       </div>
                     </td>
                     <td className="num dim">
