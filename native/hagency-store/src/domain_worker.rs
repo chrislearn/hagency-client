@@ -1,5 +1,5 @@
 use crate::{
-    CeilingAlert, DomainRepository, Effect, EffectOutcome, Error, ShutdownOutcome,
+    CeilingAlert, DomainRepository, Effect, EffectOutcome, EngagementLabel, Error, ShutdownOutcome,
     ShutdownSnapshot, SweepOutcome,
     shutdown::{Phase, Probe, mark},
 };
@@ -3114,6 +3114,21 @@ impl DomainStore {
     pub async fn engagements(&self, after: String, limit: usize) -> Result<Vec<Engagement>, Error> {
         self.call(weight(&after)?, move |db| db.engagements(&after, limit))
             .await
+    }
+    /// The console engagements list with its server-side `state` filter
+    /// (board #60 item 3): one writer job, one bounded read — the projection
+    /// and the remaining-tokens arithmetic are computed at the store, so the
+    /// console route adds no second path.
+    pub async fn engagement_labels(
+        &self,
+        after: String,
+        state: Option<String>,
+        limit: usize,
+    ) -> Result<Vec<EngagementLabel>, Error> {
+        self.call(weight(&(&after, &state))?, move |db| {
+            db.engagement_labels(&after, state.as_deref(), limit)
+        })
+        .await
     }
     /// Single-engagement read for the console verdict surface: a call-only
     /// wrapper over the repository's own `get`; no new semantics.

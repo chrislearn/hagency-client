@@ -55,10 +55,17 @@ export function validateEngagements(v) {
    * implementation accident of `slice`, not a designed rule; the native
    * verifier's scalar bound is the contract. */
   if (!object(v, ['engagements', 'next_after']) || !Array.isArray(v.engagements) || v.engagements.length > 16
-    || !(v.next_after === null || id(v.next_after)) || v.engagements.some((e) => !object(e, ['id', 'agentName', 'projectName', 'role', 'requestedTokens', 'state', 'cleanup'])
+    || !(v.next_after === null || id(v.next_after)) || v.engagements.some((e) => !object(e, ['id', 'agentName', 'projectName', 'role', 'requestedTokens', 'state', 'cleanup', 'agentRemainingTokens', 'ownerBindingRequired', 'createdAtMs', 'endedAtMs'])
       || !id(e.id) || typeof e.agentName !== 'string' || e.agentName.length > 128
       || !(e.projectName === null || (typeof e.projectName === 'string' && [...e.projectName].length <= 255))
-      || typeof e.role !== 'string' || e.role.length > 128 || !number(e.requestedTokens) || !STATES.includes(e.state) || !CLEANUP.includes(e.cleanup))) throw new Error('invalid_native_response');
+      || typeof e.role !== 'string' || e.role.length > 128 || !number(e.requestedTokens) || !STATES.includes(e.state) || !CLEANUP.includes(e.cleanup)
+      /* Board #60 item 3: the remaining allowance is null when no ceiling is
+       * declared (unknown, never a zero allowance), and the owner-binding
+       * flag is a real boolean — never coerce an absent one to false. */
+      || !(e.agentRemainingTokens === null || number(e.agentRemainingTokens))
+      || typeof e.ownerBindingRequired !== 'boolean'
+      || !(e.createdAtMs === null || number(e.createdAtMs))
+      || !(e.endedAtMs === null || number(e.endedAtMs)))) throw new Error('invalid_native_response');
   return v;
 }
 const RECOVERY_ERRORS = { agent_lifecycle_scope_required: 403, resolution_conflict: 409, dispatch_not_resolvable: 409, invalid_console_request: 400 };
@@ -209,8 +216,11 @@ export function alertsView(location) { return /^\/console\/alerts\/?$/.test(loca
  * `last_activity_ms` keeps the representative engagement's attempt
  * clock. `unavailable` is SERVER-OWNED: whatever columns the server
  * names are rendered as unknown, so a future source turns a column on
- * by removing its name server-side, never by a client edit. */
-const ROSTER_KEYS = ['name', 'framework', 'role', 'state', 'engagement_id', 'requested_tokens', 'online', 'last_seen_ms', 'last_activity_ms'];
+ * by removing its name server-side, never by a client edit. Board #60:
+ * `liveness` (the live dispatch's own word, distinct from the engagement
+ * `state`) and `consumed` (observed tokens, null when unmeasured) are
+ * served now, so this list is empty. */
+const ROSTER_KEYS = ['name', 'framework', 'role', 'state', 'engagement_id', 'requested_tokens', 'online', 'last_seen_ms', 'last_activity_ms', 'liveness', 'consumed'];
 export function validateAgents(v) {
   if (!object(v, ['at_ms', 'unavailable', 'agents', 'permissions']) || !number(v.at_ms)
     || !Array.isArray(v.unavailable) || v.unavailable.length > 32 || v.unavailable.some((n) => !text(n, 64))
@@ -221,7 +231,9 @@ export function validateAgents(v) {
       || !STATES.includes(a.state) || !id(a.engagement_id)
       || !number(a.requested_tokens) || typeof a.online !== 'boolean'
       || !(a.last_seen_ms === null || number(a.last_seen_ms))
-      || !(a.last_activity_ms === null || number(a.last_activity_ms)))) throw new Error('invalid_native_response');
+      || !(a.last_activity_ms === null || number(a.last_activity_ms))
+      || !(a.liveness === null || text(a.liveness, 32))
+      || !(a.consumed === null || number(a.consumed)))) throw new Error('invalid_native_response');
   return v;
 }
 export async function fetchAgents() {
