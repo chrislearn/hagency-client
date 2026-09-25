@@ -10,7 +10,10 @@ pub async fn run(state: &Path, digest: String) -> Result<usize, Failure> {
             .bytes()
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
     {
-        return Err(Failure::Config);
+        return Err(Failure::Config {
+            field: "--batch-digest",
+            fix: "use exactly 64 lowercase hex characters",
+        });
     }
     // Loading the production-shaped host/profile validates private paths and
     // profile binding, but no Driver/Operation or model is started.
@@ -22,10 +25,16 @@ pub async fn run(state: &Path, digest: String) -> Result<usize, Failure> {
     let repository = DomainRepository::open(state).map_err(|_| Failure::Startup)?;
     let domain = DomainStore::start(repository, 4).map_err(|_| Failure::Startup)?;
     let collector = Collector::new(
-        prepared.matrix.take().ok_or(Failure::Config)?,
+        prepared.matrix.take().ok_or(Failure::Config {
+            field: "development-driver.json: matrix block",
+            fix: "the intake refusal leg requires a configured matrix host",
+        })?,
         domain.clone(),
     )
-    .map_err(|_| Failure::Config)?;
+    .map_err(|_| Failure::Config {
+            field: "development-driver.json: matrix origin",
+            fix: "the collector must construct from the configured host origin and limits",
+        })?;
     let result = collector
         .refuse_stale_session_batch(digest)
         .await

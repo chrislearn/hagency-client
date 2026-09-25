@@ -21,6 +21,25 @@ use std::collections::BTreeSet;
 /// the same event stays idempotent on the derived id.
 pub(super) const KIND: &str = "delivery_feedback";
 
+/// TS default agent prefix (`bridge-matrix.js:371`, `MATRIX_AGENT_PREFIX`).
+const AGENT_PREFIX: &str = "ac_";
+
+/// The agent NAME a mention is rendered as, from the MXID this port stores.
+/// TS never renders an MXID here: `parseMentions` resolves each mention to a
+/// name (`bridge-matrix.js:3133-3152`) — `agentNameFromUserId` strips the
+/// `@`, the server and the agent prefix (`@ac_zoe:example.test` → `zoe`,
+/// :3075-3083), and the no-prefix fallback takes the localpart (`@zoe:…` →
+/// `zoe`, :3141-3143). The warnings then join those names (`:6492-6572`), so
+/// the room reads `@zoe` — never `@zoe:example.test`.
+fn agent_name(mxid: &str) -> String {
+    let localpart = mxid
+        .trim_start_matches('@')
+        .split(':')
+        .next()
+        .unwrap_or(mxid);
+    localpart.strip_prefix(AGENT_PREFIX).unwrap_or(localpart).to_string()
+}
+
 /// Resolve a human's group message against what THIS port can actually know.
 ///
 /// TS asks the backend's agent registry for `exists`/`online` (a tmux-pane
@@ -58,7 +77,7 @@ pub(super) fn group_feedback(
             |r| r.get(0),
         )?;
         states.push(MentionState {
-            target: mxid.clone(),
+            target: agent_name(mxid),
             known,
             online: true,
             member,
@@ -66,10 +85,12 @@ pub(super) fn group_feedback(
             reason: String::new(),
         });
     }
+    // `default_recipient` is the agent's own name, so the `not-in-group`
+    // comparison stays name-to-name (TS compares names, `:16820-16822`).
     Ok(DeliveryFeedback::warnings(
         None,
         &states,
-        &route.sender_mxid,
+        &agent_name(&route.sender_mxid),
     ))
 }
 
@@ -185,10 +206,11 @@ pub struct DeliveryFeedback {
 }
 
 /// TS renders `@${name}` because its mention targets are registry NAMES. This
-/// port's mention set holds full MXIDs, which already carry their own `@`, so
-/// the sigil is added only when absent: `bob` → `@bob` (the TS shape, which the
-/// pure text tests pin) and `@zoe:example.test` → the MXID unchanged, never
-/// `@@zoe`. The rendered text is always exactly one `@` per target.
+/// port's mention set holds full MXIDs, so `group_feedback` resolves each one
+/// to its name before building the warning (`agent_name`), and every caller
+/// here passes names — the pure text tests use the bare form, and the ported
+/// group path now does too. The sigil is still added only when absent, so a
+/// name whose text already begins with `@` is never doubled.
 fn at(target: &str) -> String {
     if target.starts_with('@') {
         target.to_owned()

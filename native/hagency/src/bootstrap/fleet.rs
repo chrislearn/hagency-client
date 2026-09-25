@@ -194,12 +194,21 @@ impl Service {
             || (setup.receive && hagency_core::received_files::receive_limit(setup.limit).is_err())
             || !setup.limits.validate()
         {
-            return Err(Failure::Config);
+            return Err(Failure::Config {
+                field: "factory-service.json",
+                fix: "receive limit must be a valid received-files limit, send limit within the file byte ceiling, and limits valid",
+            });
         }
-        hagency_store::private::directory(&setup.state).map_err(|_| Failure::Config)?;
+        hagency_store::private::directory(&setup.state).map_err(|_| Failure::Config {
+            field: "factory-service state directory",
+            fix: "the directory must exist, be owner-private (0700) and writable by the service",
+        })?;
         if setup.send {
             hagency_store::private::directory(&setup.state.join("factory-file-media"))
-                .map_err(|_| Failure::Config)?;
+                .map_err(|_| Failure::Config {
+                    field: "factory-file-media",
+                    fix: "the media directory must exist, be owner-private (0700) and writable by the service",
+                })?;
         }
         let routes = Routes {
             domain: domain.clone(),
@@ -272,7 +281,10 @@ impl Service {
                     "native_factory_file_storage_v1",
                     engagement
                 ]))
-                .map_err(|_| Failure::Config)?;
+                .map_err(|_| Failure::Config {
+                    field: "factory file storage namespace",
+                    fix: "canonical digest failed; the engagement id must stay ASCII",
+                })?;
                 owner.files = Some(
                     FileOwner::start(
                         owner.shared.clone(),

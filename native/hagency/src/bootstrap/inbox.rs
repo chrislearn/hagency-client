@@ -15,7 +15,10 @@ pub(super) async fn prepare(
         return Err(Failure::Cancelled);
     }
     status.phase("receiving_input");
-    let intake = HostIntakePlan::new(vec![plan.session_id.clone()]).map_err(|_| Failure::Config)?;
+    let intake = HostIntakePlan::new(vec![plan.session_id.clone()]).map_err(|_| Failure::Config {
+        field: "agent-driver.json: intake session ids",
+        fix: "each session id must be 1-128 chars of [A-Za-z0-9_-] and resolvable at intake time",
+    })?;
     collector.intake(intake, cancel).await.map_err(|error| {
         if error == hagency_matrix::Error::OutcomeUnknown {
             Failure::OutcomeUnknown

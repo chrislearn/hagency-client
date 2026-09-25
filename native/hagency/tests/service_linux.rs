@@ -87,6 +87,22 @@ fn refuse_not_linux() {
         exec_start.contains("127.0.0.1:13300"),
         "loopback listen is fixed"
     );
+    // The installed unit starts the FULL service (TS parity: the TS installer
+    // never installs a degraded backend): agent driver, Palpo transport lanes
+    // and the console assets are all named in ExecStart — no post-install
+    // hand-edit is ever needed.
+    assert!(
+        exec_start.contains("--agent-driver"),
+        "ExecStart enables the agent driver"
+    );
+    assert!(
+        exec_start.contains("--palpo-transport"),
+        "ExecStart enables the Palpo custody lanes"
+    );
+    assert!(
+        exec_start.contains("--console-assets"),
+        "ExecStart serves the native console"
+    );
     assert!(
         directive("ExecStop").is_empty(),
         "no ExecStop directive (F2)"
@@ -158,9 +174,12 @@ fn init_state(root: &Path) -> PathBuf {
 }
 fn spawn_service(state: &Path) -> Running {
     let addr = free_loopback();
-    // Exactly the argv shape the systemd unit renders (ADR-127): serve
-    // --state-dir <dir> --listen <loopback>. The workspace forbids unsafe
-    // code even in tests, so the signal below is the external kill helper,
+    // The foreground serve the unit's ExecStart names, on a minimal state
+    // this leg can seed honestly. The FULL ExecStart flags (agent driver,
+    // Palpo lanes, console assets) are pinned in refuse_not_linux's
+    // directive assertions: they need operator config and a reachable
+    // Matrix host CI cannot fabricate. The workspace forbids unsafe code
+    // even in tests, so the signal below is the external kill helper,
     // never libc::kill in-process.
     let child = Command::new(binary())
         .args([
