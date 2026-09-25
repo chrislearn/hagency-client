@@ -5,8 +5,8 @@ mod common;
 mod notice_custody;
 use common::*;
 use hagency_core::{ingress::*, messages::*, replies::*, task_intents::*, tasks::*};
-use hagency_store::{DomainRepository, EffectOutcome, Error};
-use serde_json::json;
+use hagency_store::{DomainRepository, EffectOutcome, Error, OutcomeAction, OutcomeResolution};
+use serde_json::{Value, json};
 use std::collections::BTreeSet;
 
 struct Fixture {
@@ -319,6 +319,133 @@ fn native_verified_ingress_policy() {
     let mut bad = dm.event("a", "unencrypted", None, &[], 1012);
     bad.encrypted = false;
     assert!(dm.db.admit_matrix_event(&bad, 1013).is_err());
+}
+
+/// TS:bridge-matrix.js:3310 admits `m.notice` in the same breath as `m.text`, so
+/// a human notice is TEXT for every purpose — including waking the agent it
+/// addresses. The port admitted it but never let it wake. A notice that
+/// addresses nobody still does not wake, exactly as a text that addresses
+/// nobody does: the notice's msgtype changes nothing about the mention rule.
+#[test]
+fn native_verified_ingress_human_notice_wakes_like_text() {
+    let mut f = Fixture::new(false);
+    for (id, kind, mentions, expected) in [
+        ("notice_addressed", "m.notice", vec!["@a:example.test"], true),
+        ("text_addressed", "m.text", vec!["@a:example.test"], true),
+        ("notice_unaddressed", "m.notice", vec![], false),
+        ("text_unaddressed", "m.text", vec![], false),
+    ] {
+        let mut event = f.event("a", id, None, &mentions, 1010);
+        event.event.kind = kind.into();
+        assert_eq!(
+            f.db.admit_matrix_event(&event, 1011).unwrap().wake,
+            expected,
+            "{id}"
+        );
+    }
+}
+
+/// TS:bridge-matrix.js:3318-3393, the store's half of the top-level case. A
+/// group session with no thread root answers at the room's top level; the reply
+/// must still name the message it answers. That question is the dispatch's own
+/// addressed input — read back from the frozen window, not guessed.
+#[test]
+fn native_verified_ingress_top_level_group_answer_names_the_question() {
+    let mut f = Fixture::new(false);
+    // Session "a" is the Group room observed with NO thread root, so its route is
+    // top-level: whatever the answer carries, it cannot be a thread relation.
+    let event = f.event("a", "root", None, &["@a:example.test"], 1010);
+    let source = f.db.admit_matrix_event(&event, 1011).unwrap();
+    f.db.create_canonical_task("t", "a", "Answer the question", 1012)
+        .unwrap();
+    f.db.enqueue_inbox_dispatch(
+        &DispatchInput {
+            id: "d".into(),
+            session_id: "a".into(),
+            task_id: Some("t".into()),
+            resources: vec![],
+            payload: json!({"instruction":"Answer it"}),
+        },
+        &[source.sequence],
+    )
+    .unwrap();
+    let cap = f
+        .db
+        .claim_dispatch("runner", 1013, 60_000, 120_000, 8)
+        .unwrap()
+        .unwrap();
+    f.db.start_dispatch(&cap, 1014).unwrap();
+    f.db.mutate_task(
+        &cap,
+        "t",
+        "done",
+        &TaskMutation::Transition {
+            status: TaskState::Done,
+            waiting_reason: None,
+            waiting_until: None,
+        },
+        1015,
+    )
+    .unwrap();
+    f.db.submit_final_reply(
+        &cap,
+        &FinalReply {
+            call_id: "final".into(),
+            body: "The answer".into(),
+        },
+        1016,
+    )
+    .unwrap();
+    let send = f.db.claim_final_reply(1017, 1000).unwrap().unwrap();
+    let output = f.db.begin_final_reply_send(&send, 1018).unwrap();
+    assert_eq!(
+        output.route.thread_root, None,
+        "a group answer with no source thread stays at the room's top level"
+    );
+    assert_eq!(
+        output.reply_to.as_deref(),
+        Some("$root"),
+        "it still names the question it answers"
+    );
+}
+
+/// A `!` line is a bot command, never agent input: the retained bridge checked
+/// `cmdBody.startsWith('!')` before routing (`bridge-matrix.js:7111-7125`), so a
+/// command was dispatched and never became a prompt. The event stays admitted
+/// (it is a fact in the room), and it wakes nobody — in a DM, where a bare line
+/// used to wake the agent, and in a group, where a mention used to be enough.
+#[test]
+fn native_bot_command_lines_never_wake() {
+    for direct in [false, true] {
+        let mut f = Fixture::new(direct);
+        let mentions: Vec<&str> = if direct { vec![] } else { vec!["@a:example.test"] };
+        // The same shape that DOES wake, so the difference is the `!` alone.
+        let ordinary = f.event("a", "ordinary", None, &mentions, 1010);
+        if direct {
+            assert!(f.db.admit_matrix_event(&ordinary, 1011).unwrap().wake);
+        } else {
+            assert!(f.db.admit_matrix_event(&ordinary, 1011).unwrap().wake);
+        }
+        let mut command = f.event("a", "command", None, &mentions, 1012);
+        command.event.body = "!help\n".into();
+        let receipt = f.db.admit_matrix_event(&command, 1013).unwrap();
+        // Admitted, recorded — and silent.
+        assert!(receipt.created);
+        assert!(!receipt.wake);
+        // A leading space is still a command; TS trimmed before the check.
+        let mut spaced = f.event("a", "spaced", None, &mentions, 1014);
+        spaced.event.body = "   !status".into();
+        assert!(!f.db.admit_matrix_event(&spaced, 1015).unwrap().wake);
+        // An `!` that is not at the start is ordinary text and still wakes.
+        let mut trailing = f.event("a", "trailing", None, &mentions, 1016);
+        trailing.event.body = "please run !status".into();
+        assert!(f.db.admit_matrix_event(&trailing, 1017).unwrap().wake);
+        // A file is never a command, even when named like one (:7122).
+        let mut file = f.event("a", "file", None, &mentions, 1018);
+        file.event.body = "!help".into();
+        file.event.kind = "m.file".into();
+        assert!(f.db.admit_matrix_event(&file, 1019).unwrap().wake);
+    }
 }
 
 #[test]
@@ -1097,4 +1224,476 @@ fn native_matrix_intake_rotation_historical_receipt_is_content_bound_read_only()
         .query_row("SELECT COUNT(*) FROM admitted_messages", [], |r| r.get(0))
         .unwrap();
     assert_eq!(n, 1);
+}
+
+/// The retained product says the launch retry in the thread
+/// (`router/src/store.ts` `requeueBeforeStart`).
+#[test]
+fn native_runner_launch_retry_notice() {
+    let mut f = Fixture::new(false);
+    let (_, seq, task) = setup_task(&mut f);
+    f.activate(1013);
+    f.db.enqueue_inbox_dispatch(&dispatch("first", &task), &[seq])
+        .unwrap();
+    let cap = f
+        .db
+        .claim_dispatch("fixture_runner", 1015, 60000, 120000, 8)
+        .unwrap()
+        .unwrap();
+    f.db.fail_before_start(&cap, 1016, 1000).unwrap();
+    let (kind, body): (String, String) = f
+        .sql()
+        .query_row(
+            "SELECT json_extract(config,'$.kind'),json_extract(config,'$.body') FROM task_notices WHERE json_extract(config,'$.kind')='runner_launch_retry'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(kind, "runner_launch_retry");
+    assert_eq!(
+        body,
+        "Runner could not start, but no work was executed and no input was lost. The dispatch remains queued and will retry automatically."
+    );
+}
+
+/// The retained product posts the new status into the task thread on every
+/// non-replayed transition (`router/src/store.ts` `taskOperation`).
+#[test]
+fn native_task_status_notice() {
+    let mut f = Fixture::new(false);
+    let (_, seq, task) = setup_task(&mut f);
+    f.activate(1013);
+    let cap = f.start("first", &task, &[seq], 1015);
+    f.db.mutate_task(
+        &cap,
+        &task.task_id,
+        "hold",
+        &TaskMutation::Transition {
+            status: TaskState::Blocked,
+            waiting_reason: Some("awaiting review".into()),
+            waiting_until: Some("2026-09-25T09:00:00Z".into()),
+        },
+        1017,
+    )
+    .unwrap();
+    f.db.mutate_task(
+        &cap,
+        &task.task_id,
+        "resume",
+        &TaskMutation::Transition {
+            status: TaskState::InProgress,
+            waiting_reason: None,
+            waiting_until: None,
+        },
+        1018,
+    )
+    .unwrap();
+    let bodies: Vec<String> = f
+        .sql()
+        .prepare("SELECT json_extract(config,'$.body') FROM task_notices WHERE json_extract(config,'$.body') LIKE 'Task status: %' ORDER BY rowid")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(bodies, ["Task status: blocked", "Task status: in_progress"]);
+}
+
+/// The retained product explains in the thread why a completed task did not
+/// continue when the follow-up lacks the requester's fresh authority
+/// (`router/src/store.ts` `claimDispatch`, `completed_task_followup`).
+#[test]
+fn native_completed_task_followup_notice() {
+    let mut f = Fixture::new(false);
+    let (_, seq, task) = setup_task(&mut f);
+    f.activate(1013);
+    let cap = f.start("first", &task, &[seq], 1015);
+    f.done(&cap, &task, 1017);
+    f.db.complete_dispatch(&cap, &json!({"done":true}), 1018)
+        .unwrap();
+    // A member who is not the original requester mentions the agent in the
+    // task thread: the turn does not start, and the thread hears why.
+    let mut event = f.event(
+        &task.session_id,
+        "other",
+        Some("$root"),
+        &["@a:example.test"],
+        1019,
+    );
+    event.event.sender_mxid = "@other:example.test".into();
+    assert!(!f.db.admit_matrix_event(&event, 1020).unwrap().wake);
+    let (kind, body): (String, String) = f
+        .sql()
+        .query_row(
+            "SELECT json_extract(config,'$.kind'),json_extract(config,'$.body') FROM task_notices WHERE json_extract(config,'$.kind')='completed_task_followup'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(kind, "completed_task_followup");
+    assert_eq!(
+        body,
+        "This task is complete. To continue it, the original requester must send a new message mentioning the agent in this thread. Other project members can start a new task by mentioning the agent in the main room."
+    );
+    // Each refused attempt is explained, like the retained product's
+    // per-dispatch keys: a second distinct non-requester mention queues its
+    // own explanation.
+    let mut again = f.event(
+        &task.session_id,
+        "other2",
+        Some("$root"),
+        &["@a:example.test"],
+        1021,
+    );
+    again.event.sender_mxid = "@other:example.test".into();
+    f.db.admit_matrix_event(&again, 1022).unwrap();
+    let n: u64 = f
+        .sql()
+        .query_row(
+            "SELECT COUNT(*) FROM task_notices WHERE json_extract(config,'$.kind')='completed_task_followup'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(n, 2);
+}
+
+/// The retained product says the operator's continue-resolution in the thread
+/// (`router/src/store.ts` `resolveOutcome`, the `continue` branch).
+#[test]
+fn native_outcome_resolved_continue_notice() {
+    let mut f = Fixture::new(false);
+    let (_, seq, task) = setup_task(&mut f);
+    f.activate(1013);
+    // The lease lapses; the next claim's expiry sweep settles the started
+    // dispatch as outcome_unknown (`lose` via `expire`, the state the
+    // operator resolution path requires).
+    let _cap = f.start("first", &task, &[seq], 1015);
+    f.db.claim_dispatch("sweeper", 61_016, 60_000, 120_000, 8)
+        .unwrap();
+    let mut next = dispatch("recovery", &task);
+    next.payload =
+        json!({"instruction":"Inspect previous partial output and finish only remaining work"});
+    f.db.recover_dispatch("first", &next, "Inspected result", 61_020)
+        .unwrap();
+    let (kind, body): (String, String) = f
+        .sql()
+        .query_row(
+            "SELECT json_extract(config,'$.kind'),json_extract(config,'$.body') FROM task_notices WHERE json_extract(config,'$.kind')='outcome_resolved'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(kind, "outcome_resolved");
+    assert_eq!(
+        body,
+        "Operator inspection completed. A new recovery dispatch was queued from an explicit recovery instruction; the previous dispatch remains outcome_unknown and was not replayed."
+    );
+}
+
+/// The retained product says in the thread when a queued dispatch waits on a
+/// workspace quarantined by an unresolved previous run
+/// (`router/src/store.ts` `claimDispatch`, the dirty-resource skip).
+#[test]
+fn native_workspace_quarantined_notice() {
+    let mut f = Fixture::new(false);
+    let (_, seq, task) = setup_task(&mut f);
+    f.activate(1013);
+    f.db.register_workspace("ws").unwrap();
+    let mut first = dispatch("first", &task);
+    first.resources = vec![ResourceLease {
+        id: "ws".into(),
+        exclusive: true,
+    }];
+    f.db.enqueue_inbox_dispatch(&first, &[seq]).unwrap();
+    let cap = f
+        .db
+        .claim_dispatch("fixture_runner", 1015, 60_000, 120_000, 8)
+        .unwrap()
+        .unwrap();
+    f.db.start_dispatch(&cap, 1016).unwrap();
+    // A different session's task needs the same workspace: its dispatch is
+    // enqueued while the workspace is still clean (enqueue refuses a dirty
+    // workspace, the claim is what waits).
+    let event = f.event("b", "root_b", None, &["@b:example.test"], 1017);
+    let source = f.db.admit_matrix_event(&event, 1018).unwrap();
+    let other = f
+        .db
+        .create_verified_task_intent(&f.intent("b", "request", source.sequence), 1019)
+        .unwrap();
+    while let Some(claim) = f.db.claim_verified_task_notice(1020, 1000).unwrap() {
+        f.db
+            .begin_verified_task_notice_send(&claim.claim.notice.id, &claim.claim.token, 1020)
+            .unwrap();
+        f.db
+            .deliver_verified_task_notice(
+                &claim.claim.notice.id,
+                &claim.claim.token,
+                &notice_delivery(&claim),
+                1021,
+            )
+            .unwrap();
+    }
+    let mut second = dispatch("second", &other);
+    second.resources = vec![ResourceLease {
+        id: "ws".into(),
+        exclusive: true,
+    }];
+    f.db
+        .enqueue_inbox_dispatch(&second, &[source.sequence])
+        .unwrap();
+    // The lease lapses: the sweep settles the started dispatch as
+    // outcome_unknown and marks its exclusive workspace dirty.
+    f.db.claim_dispatch("sweeper", 61_016, 60_000, 120_000, 8)
+        .unwrap();
+    // The queued dispatch is not a claim candidate, and the thread hears why.
+    assert!(
+        f.db
+            .claim_dispatch("fixture_runner", 62_025, 60_000, 120_000, 8)
+            .unwrap()
+            .is_none()
+    );
+    let (kind, body): (String, String) = f
+        .sql()
+        .query_row(
+            "SELECT json_extract(config,'$.kind'),json_extract(config,'$.body') FROM task_notices WHERE json_extract(config,'$.kind')='workspace_quarantined'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(kind, "workspace_quarantined");
+    assert_eq!(
+        body,
+        "Waiting: this workspace is quarantined because a previous runner stopped after work may have started. An operator must inspect and resolve that outcome before another writer can run."
+    );
+}
+
+/// The retained product says in the thread when a queued dispatch waits on a
+/// workspace held by a parked task (`router/src/store.ts` `claimDispatch`,
+/// the leased-resource skip).
+#[test]
+fn native_waiting_for_approval_notice() {
+    let mut f = Fixture::new(false);
+    let (_, seq, task) = setup_task(&mut f);
+    f.activate(1013);
+    f.db.register_workspace("ws").unwrap();
+    let mut first = dispatch("first", &task);
+    first.resources = vec![ResourceLease {
+        id: "ws".into(),
+        exclusive: true,
+    }];
+    f.db.enqueue_inbox_dispatch(&first, &[seq]).unwrap();
+    let cap = f
+        .db
+        .claim_dispatch("fixture_runner", 1015, 60_000, 120_000, 8)
+        .unwrap()
+        .unwrap();
+    f.db.start_dispatch(&cap, 1016).unwrap();
+    f.db.park_dispatch(&cap, true, 1017).unwrap();
+    let event = f.event("b", "root_b", None, &["@b:example.test"], 1018);
+    let source = f.db.admit_matrix_event(&event, 1019).unwrap();
+    let other = f
+        .db
+        .create_verified_task_intent(&f.intent("b", "request", source.sequence), 1020)
+        .unwrap();
+    while let Some(claim) = f.db.claim_verified_task_notice(1021, 1000).unwrap() {
+        f.db
+            .begin_verified_task_notice_send(&claim.claim.notice.id, &claim.claim.token, 1021)
+            .unwrap();
+        f.db
+            .deliver_verified_task_notice(
+                &claim.claim.notice.id,
+                &claim.claim.token,
+                &notice_delivery(&claim),
+                1022,
+            )
+            .unwrap();
+    }
+    let mut second = dispatch("second", &other);
+    second.resources = vec![ResourceLease {
+        id: "ws".into(),
+        exclusive: true,
+    }];
+    f.db
+        .enqueue_inbox_dispatch(&second, &[source.sequence])
+        .unwrap();
+    assert!(
+        f.db
+            .claim_dispatch("fixture_runner", 1026, 60_000, 120_000, 8)
+            .unwrap()
+            .is_none()
+    );
+    let (kind, body): (String, String) = f
+        .sql()
+        .query_row(
+            "SELECT json_extract(config,'$.kind'),json_extract(config,'$.body') FROM task_notices WHERE json_extract(config,'$.kind')='waiting_for_approval'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(kind, "waiting_for_approval");
+    assert_eq!(
+        body,
+        "Waiting: this task is queued because its workspace is held by another task awaiting owner approval."
+    );
+}
+
+/// The retained product says the operator's inspection outcome in the thread
+/// (`router/src/store.ts` `resolveOutcome`): the accept_completed and
+/// keep_blocked branches, each with its own words.
+#[test]
+fn native_outcome_resolved_settlement_notices() {
+    for (action, expected) in [
+        (
+            OutcomeAction::AcceptCompleted,
+            "Operator inspection completed. The current result was accepted as complete; no dispatch was replayed.",
+        ),
+        (
+            OutcomeAction::KeepBlocked,
+            "Operator inspection completed. The task remains blocked; no dispatch was replayed.",
+        ),
+    ] {
+        let mut f = Fixture::new(false);
+        let (_, seq, task) = setup_task(&mut f);
+        f.activate(1013);
+        // An exclusive workspace: the unknown run's quarantine then dirties
+        // it, which is the operator-resolution precondition (`snapshot`'s
+        // `held` check).
+        f.db.register_workspace("ws").unwrap();
+        let mut first = dispatch("first", &task);
+        first.resources = vec![ResourceLease {
+            id: "ws".into(),
+            exclusive: true,
+        }];
+        f.db.enqueue_inbox_dispatch(&first, &[seq]).unwrap();
+        let cap = f
+            .db
+            .claim_dispatch("fixture_runner", 1015, 60_000, 120_000, 8)
+            .unwrap()
+            .unwrap();
+        f.db.start_dispatch(&cap, 1016).unwrap();
+        // The lease lapses: the sweep settles the started dispatch as
+        // outcome_unknown, quarantining the session and dirtying the
+        // exclusive workspace.
+        f.db.claim_dispatch("sweeper", 61_016, 60_000, 120_000, 8)
+            .unwrap();
+        // The guardian's stop was reported but unproven (ADR-182 decision 3):
+        // the open agent fence plus the recorded stop evidence are the
+        // inspection material; no host receipt exists to fingerprint.
+        f.sql()
+            .execute(
+                "INSERT INTO dispatch_stops(dispatch_id,fence,reason,created_at,evidence,settled_at) VALUES('first',1,'cleanup_unproven',61_017,NULL,NULL)",
+                [],
+            )
+            .unwrap();
+        f.sql()
+            .execute(
+                "INSERT INTO agent_fences(engagement_id,dispatch_id,fence,reason,created_at) VALUES(?1,'first',1,'cleanup_unproven',61_017)",
+                [&f.agents[0]],
+            )
+            .unwrap();
+        f.sql()
+            .execute(
+                "INSERT INTO runner_attempt_events(dispatch_id,fence,seq,at_ms,phase,detail) VALUES('first',1,(SELECT COALESCE(MAX(seq),0)+1 FROM runner_attempt_events WHERE dispatch_id='first' AND fence=1),61_017,'stop_reported','\"fixture guardian reported the stop\"')",
+                [],
+            )
+            .unwrap();
+        let inspection = f
+            .db
+            .begin_outcome_inspection(&f.agents[0], "first", 60_000, 61_030)
+            .unwrap();
+        let command = OutcomeResolution {
+            original: "first".into(),
+            request_id: "operator_resolution".into(),
+            inspection_id: inspection["inspectionId"].as_str().unwrap().into(),
+            inspection_token: inspection["inspectionToken"].as_str().unwrap().into(),
+            action,
+            operator_note: "Fixture inspection of the stopped run".into(),
+            replacement: None,
+        };
+        f.db
+            .resolve_stopped_dispatch(&f.agents[0], &command, 61_031)
+            .unwrap();
+        let (kind, body): (String, String) = f
+            .sql()
+            .query_row(
+                "SELECT json_extract(config,'$.kind'),json_extract(config,'$.body') FROM task_notices WHERE json_extract(config,'$.kind')='outcome_resolved'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(kind, "outcome_resolved");
+        assert_eq!(body, expected);
+    }
+}
+/// The delivery-feedback notice, end to end (task #5, bridge-matrix.js:6492-6572):
+/// a human's group message whose mention cannot reach its target must leave the
+/// TS notice text in the room, and the message must still be admitted - TS sends
+/// the notice after acceptance and `sendDeliveryNotice` swallows its own failure.
+#[test]
+fn native_verified_ingress_emits_delivery_feedback_notice() {
+    let mut f = Fixture::new(false);
+    let (_, _, task) = setup_task(&mut f);
+    let before = count(&f.sql(), "admitted_messages");
+    // `@zoe` has no transport (unknown) and is not in the joined set: the
+    // backend's `mentions_unknown` case (backend-v2.js:16817). A follow-up in
+    // this group thread is rooted at `$root`, exactly as
+    // `native_verified_ingress_followup` admits one.
+    let event = f.event(
+        &task.session_id,
+        "stranger",
+        Some("$root"),
+        &["@zoe:example.test"],
+        1014,
+    );
+    let receipt = f.db.admit_matrix_event(&event, 1015).unwrap();
+    assert!(receipt.projected);
+    // The message was still admitted: the notice is additive, never a refusal.
+    assert_eq!(count(&f.sql(), "admitted_messages"), before + 1);
+    let (kind, config): (String, String) = f
+        .sql()
+        .query_row(
+            "SELECT json_extract(config,'$.kind'), config FROM task_notices WHERE json_extract(config,'$.kind') LIKE 'delivery_feedback_%'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(kind, format!("delivery_feedback_{}", receipt.sequence));
+    let notice: Value = serde_json::from_str(&config).unwrap();
+    assert_eq!(notice["task_id"], json!(task.task_id));
+    assert_eq!(
+        notice["body"],
+        json!("⚠️ Mention targets not found in agent registry: @zoe:example.test.")
+    );
+    // Idempotent: re-admitting the same event adds no second notice.
+    assert!(!f.db.admit_matrix_event(&event, 1016).unwrap().created);
+    assert_eq!(
+        f.sql()
+            .query_row(
+                "SELECT COUNT(*) FROM task_notices WHERE json_extract(config,'$.kind') LIKE 'delivery_feedback_%'",
+                [],
+                |r| r.get::<_, u64>(0)
+            )
+            .unwrap(),
+        1
+    );
+    // A mention that IS a provisioned member says nothing at all.
+    let clean = f.event(
+        &task.session_id,
+        "clean",
+        Some("$root"),
+        &["@a:example.test"],
+        1017,
+    );
+    f.db.admit_matrix_event(&clean, 1018).unwrap();
+    assert_eq!(
+        f.sql()
+            .query_row(
+                "SELECT COUNT(*) FROM task_notices WHERE json_extract(config,'$.kind') LIKE 'delivery_feedback_%'",
+                [],
+                |r| r.get::<_, u64>(0)
+            )
+            .unwrap(),
+        1
+    );
 }

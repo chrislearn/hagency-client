@@ -39,6 +39,8 @@ pub(super) fn router() -> Router {
                 .push(Router::with_path("tasks/{id}/operations").post(mutate))
                 .push(Router::with_path("inbox").get(inbox))
                 .push(Router::with_path("conversation").get(conversation_page))
+                .push(Router::with_path("approval").get(approval))
+                .push(Router::with_path("approval/consume").post(consume_approval))
                 .push(Router::with_path("peer-messages").post(send_peer))
                 .push(Router::with_path("peer-inbox").get(peer_inbox))
                 .push(workflows::router())
@@ -417,6 +419,53 @@ async fn conversation_page(req: &mut Request, depot: &mut Depot, res: &mut Respo
     }
     .await;
     match result {
+        Ok(value) => res.render(Json(value)),
+        Err(error) => attributed_failure(res, Some(&c.store), error),
+    }
+}
+/// The assigned task's live approval (ADR-064 amendment, PC-C3). Task-bound and
+/// target-free: no approval id is addressable, because the store derives it
+/// from the presented capability alone.
+#[handler]
+async fn approval(_req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    let Some(c) = context(depot, res) else {
+        return;
+    };
+    match c.store.runner_command(c.cap, RunnerCommand::Approval).await {
+        Ok(value) => res.render(Json(value)),
+        Err(error) => attributed_failure(res, Some(&c.store), error),
+    }
+}
+/// Consume that approval. The body carries the helper's mutation receipt; the
+/// at-most-once rule itself is the store's settled-state machine, exactly as
+/// TS `consumeDecision` (which takes no receipt at all).
+#[handler]
+async fn consume_approval(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Command {
+        call_id: String,
+    }
+    let Some(c) = context(depot, res) else {
+        return;
+    };
+    let Some(command) = resources::body::<Command>(req, depot, res).await else {
+        return;
+    };
+    if hagency_core::project::identifier(&command.call_id, 512).is_err() {
+        refusal(res, StatusCode::BAD_REQUEST, "invalid_task_operation");
+        return;
+    }
+    match c
+        .store
+        .runner_command(
+            c.cap,
+            RunnerCommand::ConsumeApproval {
+                call_id: command.call_id,
+            },
+        )
+        .await
+    {
         Ok(value) => res.render(Json(value)),
         Err(error) => attributed_failure(res, Some(&c.store), error),
     }

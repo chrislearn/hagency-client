@@ -184,6 +184,16 @@ pub fn state() -> Value {
      {"type":"m.room.encryption","state_key":"","content":{"algorithm":"m.megolm.v1.aes-sha2"}}
     ])
 }
+/// A group room with no m.room.encryption event: the collector derives
+/// route.encrypted=false, so files travel unencrypted (TS parity,
+/// lib/matrix-file.js:30-33).
+pub fn state_plain() -> Value {
+    json!([
+     {"type":"m.room.member","state_key":"@worker:example.test","content":{"membership":"join"}},
+     {"type":"m.room.member","state_key":"@owner:example.test","content":{"membership":"join"}},
+     {"type":"m.room.join_rules","state_key":"","content":{"join_rule":"invite"}}
+    ])
+}
 pub async fn success(fake: &mut Fake, token: &str) {
     let request = fake.next().await;
     assert_eq!(request.method, "GET");
@@ -204,6 +214,26 @@ pub async fn success(fake: &mut Fake, token: &str) {
     assert!(request.target.starts_with("/_matrix/client/v3/rooms/"));
     assert!(request.target.ends_with("/state"));
     request.json(200, state());
+}
+/// success() against a plaintext group room.
+pub async fn success_plaintext(fake: &mut Fake, token: &str) {
+    let request = fake.next().await;
+    assert_eq!(request.method, "GET");
+    assert_eq!(request.target, "/_matrix/client/v3/account/whoami");
+    assert_eq!(request.headers["authorization"], format!("Bearer {TOKEN}"));
+    assert!(request.body.is_empty());
+    request.json(200, who());
+    let request = fake.next().await;
+    assert!(
+        request
+            .target
+            .starts_with("/_matrix/client/v3/sync?timeout=0&full_state=true&filter=")
+    );
+    request.json(200, sync(token));
+    let request = fake.next().await;
+    assert!(request.target.starts_with("/_matrix/client/v3/rooms/"));
+    assert!(request.target.ends_with("/state"));
+    request.json(200, state_plain());
 }
 /// A script must finish issuing its responses before collection settles. Report
 /// an early collector failure directly instead of waiting for an HTTP request

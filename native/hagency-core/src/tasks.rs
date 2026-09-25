@@ -256,6 +256,13 @@ pub enum RunnerCommand {
     ReadConversation {
         offset: u64,
     },
+    /// The assigned task's live approval (ADR-064 amendment, PC-C3). The task
+    /// is derived from the presented capability; no approval id is nameable.
+    Approval,
+    /// Consume that same approval. `call_id` is the helper's mutation receipt.
+    ConsumeApproval {
+        call_id: String,
+    },
     Mutate {
         id: String,
         call_id: String,

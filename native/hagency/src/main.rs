@@ -56,6 +56,29 @@ enum Command {
         #[command(subcommand)]
         command: hagency::bootstrap::registration::Command,
     },
+    /// Issue a project side's appservice registration (task #13): random
+    /// tokens, the YAML under <state>/registrations/, and the stored
+    /// credential the appservice profile reads — no hand-placed files.
+    SideRegistration {
+        #[arg(long)]
+        state_dir: PathBuf,
+        /// The project side — its Matrix server name.
+        #[arg(long)]
+        side: String,
+        /// The address this side's homeserver reaches Hagency at; cannot be
+        /// derived, only asked.
+        #[arg(long)]
+        url: String,
+        #[arg(long)]
+        registration_id: Option<String>,
+        #[arg(long)]
+        sender_localpart: Option<String>,
+        #[arg(long)]
+        user_namespace: Option<String>,
+        /// true unless explicitly false, matching the TS body contract.
+        #[arg(long)]
+        exclusive: Option<bool>,
+    },
     /// Admit an externally created agent only after fresh authenticated Matrix observations.
     Provision {
         #[arg(long, global = true)]
@@ -141,6 +164,33 @@ enum Command {
         /// Print the route's body verbatim instead of a table.
         #[arg(long)]
         json: bool,
+    },
+    /// Snapshot an initialized state directory into a new private directory.
+    /// Uses SQLite's online backup, so it runs while `serve` is up.
+    Backup {
+        #[arg(long)]
+        state_dir: PathBuf,
+        /// New directory to write; refused if it already exists.
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Restore a snapshot into an empty state directory. Never overwrites.
+    Restore {
+        #[arg(long)]
+        state_dir: PathBuf,
+        /// The snapshot directory to restore from.
+        #[arg(long)]
+        from: PathBuf,
+    },
+    /// Mint a replacement for a locally-held credential.
+    Rotate {
+        // clap forbids required global arguments; like the offline account
+        // commands, this accepts --state-dir before or after its verb and
+        // refuses without it.
+        #[arg(long, global = true)]
+        state_dir: Option<PathBuf>,
+        #[command(subcommand)]
+        command: hagency::ops::rotate::Command,
     },
     /// Run the isolated native API. Does not load .env or any existing Hagency state.
     Serve {
@@ -238,6 +288,27 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             hagency::bootstrap::registration::run(&state_dir, command)?;
             println!("{}", serde_json::json!({"ok": true}));
         }
+        Command::SideRegistration {
+            state_dir,
+            side,
+            url,
+            registration_id,
+            sender_localpart,
+            user_namespace,
+            exclusive,
+        } => {
+            hagency::console::side_registration::run_cli(
+                &state_dir,
+                hagency_store::IssueSideRegistrationRequest {
+                    side,
+                    url,
+                    registration_id,
+                    sender_localpart,
+                    user_namespace,
+                    exclusive,
+                },
+            )?;
+        }
         Command::Provision { state_dir, command } => {
             let state_dir = state_dir.ok_or("provision commands require --state-dir")?;
             let result = hagency::bootstrap::provision::run(&state_dir, command).await?;
@@ -253,6 +324,35 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                 "{}",
                 serde_json::json!({"rejected":rejected,"effects_retried":false})
             );
+        }
+        Command::Backup { state_dir, out } => {
+            let manifest = hagency::ops::backup::snapshot(&state_dir, &out)?;
+            println!(
+                "{}",
+                serde_json::json!({
+                    "ok": true,
+                    "out": out,
+                    "created_at_ms": manifest.created_at_ms,
+                    "files": manifest.entries.len(),
+                })
+            );
+        }
+        Command::Restore { state_dir, from } => {
+            let manifest = hagency::ops::backup::restore(&state_dir, &from)?;
+            println!(
+                "{}",
+                serde_json::json!({
+                    "ok": true,
+                    "from": from,
+                    "created_at_ms": manifest.created_at_ms,
+                    "files": manifest.entries.len(),
+                })
+            );
+        }
+        Command::Rotate { state_dir, command } => {
+            let state_dir = state_dir.ok_or("rotate commands require --state-dir")?;
+            let receipt = hagency::ops::rotate::run(&state_dir, command)?;
+            println!("{}", serde_json::to_string(&receipt)?);
         }
         Command::Serve {
             state_dir,

@@ -147,6 +147,38 @@ impl MediaDownloader {
             .await
     }
     /// A per-operation limit can only reduce the shared transport/codec bound.
+    /// TS parity (lib/matrix-file.js:38): a plaintext room's media download is
+    /// the original bytes — no descriptor decrypt, only a checked digest.
+    pub(crate) async fn download_plain_bounded_until(
+        &self,
+        id: &MediaId,
+        cancel: &CancellationToken,
+        deadline: Instant,
+        max_bytes: usize,
+    ) -> Result<CheckedBytes, MediaDownloadError> {
+        if max_bytes == 0 || max_bytes > self.0.limits.bytes {
+            return Err(MediaDownloadError::Config);
+        }
+        let deadline = deadline.min(Instant::now() + self.0.deadline);
+        checkpoint(cancel, deadline)?;
+        let _permit = self.0.active.try_acquire().map_err(|_| Error::Busy)?;
+        let bytes = self
+            .0
+            .http
+            .download(
+                &[
+                    "_matrix", "client", "v1", "media", "download", &id.server, &id.media,
+                ],
+                max_bytes,
+                deadline,
+                cancel,
+            )
+            .await?;
+        checkpoint(cancel, deadline)?;
+        let checked = self.0.codec.check(bytes)?;
+        checkpoint(cancel, deadline)?;
+        Ok(checked)
+    }
     pub(crate) async fn download_bounded_until(
         &self,
         id: &MediaId,

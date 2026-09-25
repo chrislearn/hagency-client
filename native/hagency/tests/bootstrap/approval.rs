@@ -83,7 +83,7 @@ fn fresh_approval_waiting(f: &Fixture, anchor: String, owner_wait_ms: u64) {
     // expiry. The wait plus its 5 s response reserve must fit in the operation
     // budget that remains at turn start, so both are raised together, as the
     // configured-fleet approval fixtures already do.
-    config["operation_ms"] = json!(20_000);
+    config["operation_ms"] = json!(APPROVAL_OPERATION_MS);
     config["approval_owner_wait_ms"] = json!(owner_wait_ms);
     config["approval"] = json!({
         "origin":f.fake.endpoint,"server_name":"example.test","registration_fingerprint":"a".repeat(64),
@@ -121,7 +121,95 @@ fn fresh_approval_waiting(f: &Fixture, anchor: String, owner_wait_ms: u64) {
     );
 }
 
-async fn ordinary(request: common::Request) {
+/// The public "waiting for owner" status notice (bridge-matrix.js:2578-2598,
+/// sent at :9377). It arrives on the ORDINARY leg — the AGENT's own transport,
+/// never the approval bot's — which is itself the (a) assertion: `is_approval`
+/// is false for it and true for the card's leg.
+const NOTICE_PREFIX: &str = "/send/m.room.message/approval_status_";
+
+fn is_notice(request: &common::Request) -> bool {
+    request.method == "PUT" && request.target.contains(NOTICE_PREFIX)
+}
+
+/// Answer the notice 200 and hand back the observed `(target, content, auth)`
+/// so the scenario asserts the exact TS packet rather than tolerating it.
+fn accept_notice(request: common::Request) -> (String, Value, String) {
+    let target = request.target.clone();
+    let auth = request
+        .headers
+        .get("authorization")
+        .cloned()
+        .unwrap_or_default();
+    let content: Value = serde_json::from_slice(&request.body).unwrap();
+    request.json(200, json!({"event_id": "$public_status"}));
+    (target, content, auth)
+}
+
+/// Derive the expected packet from the delivered CARD (never guess it): TS
+/// reuses `approval.agent`/`approval.project` verbatim (bridge-matrix.js:9377,
+/// :2583-2596), so the notice must carry the card's own identity pair, the
+/// task thread root, and `m.room.message` as the PUT event type.
+#[allow(clippy::too_many_arguments)]
+fn assert_public_notice(
+    card: &Value,
+    target: &str,
+    content: &Value,
+    auth: &str,
+    thread_root: &str,
+) {
+    let detail = &card["content"]["com.agentchat.approval"];
+    let agent = detail["agent"].as_str().unwrap();
+    let project = detail["project"].as_str().unwrap();
+    let expected = json!({
+        "msgtype": "com.agentchat.approval.status.v1",
+        "body": format!("Agent {agent} is waiting for approval from its owner."),
+        "com.agentchat.approval": {
+            "version": 1, "kind": "status", "agent": agent, "project": project,
+            "state": "waiting_for_owner",
+        },
+        "m.relates_to": {
+            "rel_type": "m.thread", "event_id": thread_root,
+            "is_falling_back": true, "m.in_reply_to": {"event_id": thread_root},
+        },
+    });
+    assert_eq!(
+        content, &expected,
+        "the exact TS packet (bridge-matrix.js:2583-2596)"
+    );
+    let path = "/_matrix/client/v3/rooms/!project:example.test/send/m.room.message/approval_status_";
+    assert!(
+        target.starts_with(path),
+        "the exact PUT path (bridge-matrix.js:10823): {target}"
+    );
+    // Sender = the AGENT, not the approval bot: the notice rides the ordinary
+    // agent token, never the approval bot's own.
+    assert_eq!(
+        auth,
+        format!("Bearer {}", common::TOKEN),
+        "the notice is spoken by the agent's own transport (bridge-matrix.js:9377)"
+    );
+}
+
+async fn ordinary_leg(request: common::Request, notice: &mut Option<(String, Value, String)>) {
+    if is_notice(&request) {
+        *notice = Some(accept_notice(request));
+        return;
+    }
+    if request.target.ends_with("/whoami") {
+        request.json(200, common::who());
+    } else if request.target.contains("/sync?") {
+        request.json(200, common::sync("bootstrap"));
+    } else if request.target.ends_with("/state") {
+        request.json(200, common::state());
+    } else {
+        panic!("unexpected ordinary-leg request: {}", request.target);
+    }
+}
+
+fn ordinary(request: common::Request) -> Option<(String, Value, String)> {
+    if is_notice(&request) {
+        return Some(accept_notice(request));
+    }
     if request.target.ends_with("/whoami") {
         request.json(200, common::who());
     } else if request.target.contains("/sync?") {
@@ -131,6 +219,7 @@ async fn ordinary(request: common::Request) {
     } else {
         panic!("unexpected ordinary request: {}", request.target);
     }
+    None
 }
 
 /// `action: None` means the OWNER NEVER ANSWERS: the card is delivered and
@@ -151,12 +240,6 @@ async fn roundtrip(plaintext_first: bool, action: Option<&str>) {
     let owner_wait_ms: u64 = if action.is_some() { 10_000 } else { 5_000 };
     fresh_approval_waiting(&f, peer.anchor(), owner_wait_ms);
     let child = f.launch(true);
-    // The drain must outlast the product's OWN configured budget, not a fixed
-    // constant. `fresh_approval_waiting` raises `operation_ms` to 20 s, and the
-    // owner wait plus the response reserve are the two product budgets that
-    // follow startup; a bound shorter than that sum fires before a loaded host
-    // can finish and the assert below reports a roundtrip the product would have
-    // completed (`cards=0` — the card had not even been issued yet).
     // The drain must outlast the product's OWN declared budget, not a fixed
     // constant. `fresh_approval_waiting` sets `operation_ms` to
     // `APPROVAL_OPERATION_MS`, the whole budget the service may take for this
@@ -172,6 +255,10 @@ async fn roundtrip(plaintext_first: bool, action: Option<&str>) {
     let mut encrypted_sent = false;
     let mut observed_startup = false;
     let mut polls = 0;
+    // The public status notice the AGENT sends once the card is accepted
+    // (bridge-matrix.js:9377). It rides the ordinary leg, so `ordinary`
+    // captures it; both exit paths assert the exact TS packet below.
+    let mut notice: Option<(String, Value, String)> = None;
     let response_path = f.work.join("approval-mcp.response");
     while !response_path.exists() && tokio::time::Instant::now() < until {
         let request = tokio::select! {
@@ -179,7 +266,9 @@ async fn roundtrip(plaintext_first: bool, action: Option<&str>) {
             _ = tokio::time::sleep(std::time::Duration::from_millis(10)) => continue,
         };
         if !support::is_approval(&request) {
-            ordinary(request).await;
+            if let Some(seen) = ordinary(request) {
+                notice = Some(seen);
+            }
         } else if request.target.contains("/sync?") && !peer.events.is_empty() {
             polls += 1;
             let Some(action) = action else {
@@ -277,6 +366,11 @@ async fn roundtrip(plaintext_first: bool, action: Option<&str>) {
             "the expiry is durably named, never inferred"
         );
         drop(sql);
+        // The agent's public status notice went with the card (bridge-matrix.js:9377).
+        let (target, content, auth) = notice
+            .as_ref()
+            .expect("the public status notice was sent with the card");
+        assert_public_notice(&peer.events[0], target, content, auth, "$task_thread");
         // Fixture process cleanup is not native shutdown or sandbox qualification.
         drop(child);
         f.fake.close().await;
@@ -308,6 +402,10 @@ async fn roundtrip(plaintext_first: bool, action: Option<&str>) {
     );
     assert_eq!(receipts, 1);
     drop(sql);
+    let (target, content, auth) = notice
+        .as_ref()
+        .expect("the public status notice was sent with the card");
+    assert_public_notice(&peer.events[0], target, content, auth, "$task_thread");
     // Fixture process cleanup is not native shutdown or sandbox qualification.
     drop(child);
     f.fake.close().await;
@@ -470,6 +568,7 @@ async fn native_private_approval_delivery_is_wired() {
     // The two borrows (fake mutable, capabilities immutable) alternate
     // rather than share one select — requests buffer in the peer's channel
     // during the brief status polls.
+    let mut notice: Option<(String, Value, String)> = None;
     let status = loop {
         let request = tokio::select! {
             request = f.fake.next() => Some(request),
@@ -478,14 +577,8 @@ async fn native_private_approval_delivery_is_wired() {
         if let Some(request) = request {
             if support::is_approval(&request) {
                 support::respond(request, &mut peer).await;
-            } else if request.target.ends_with("/whoami") {
-                request.json(200, common::who());
-            } else if request.target.contains("/sync?") {
-                request.json(200, common::sync("bootstrap"));
-            } else if request.target.ends_with("/state") {
-                request.json(200, common::state());
             } else {
-                panic!("unexpected ordinary-leg request: {}", request.target);
+                ordinary_leg(request, &mut notice).await;
             }
             continue;
         }
@@ -513,14 +606,8 @@ async fn native_private_approval_delivery_is_wired() {
         if let Some(request) = request {
             if support::is_approval(&request) {
                 support::respond(request, &mut peer).await;
-            } else if request.target.ends_with("/whoami") {
-                request.json(200, common::who());
-            } else if request.target.contains("/sync?") {
-                request.json(200, common::sync("bootstrap"));
-            } else if request.target.ends_with("/state") {
-                request.json(200, common::state());
             } else {
-                panic!("unexpected ordinary-leg request: {}", request.target);
+                ordinary_leg(request, &mut notice).await;
             }
         }
     }
@@ -648,6 +735,7 @@ async fn native_component_refusal_does_not_exit_the_process() {
     let mut refusal_seen: Option<(Value, u16)> = None;
     let mut encrypted_sent = false;
     let mut polls = 0;
+    let mut notice: Option<(String, Value, String)> = None;
     while !response_path.exists() && tokio::time::Instant::now() < until {
         let request = tokio::select! {
             request = f.fake.next() => request,
@@ -669,7 +757,7 @@ async fn native_component_refusal_does_not_exit_the_process() {
             continue;
         }
         if !support::is_approval(&request) {
-            ordinary(request).await;
+            ordinary_leg(request, &mut notice).await;
         } else if request.target.contains("/sync?") && !peer.events.is_empty() {
             polls += 1;
             let detail = &peer.events[0]["content"]["com.agentchat.approval"];
@@ -709,6 +797,12 @@ async fn native_component_refusal_does_not_exit_the_process() {
     );
     let response: Value = serde_json::from_slice(&std::fs::read(response_path).unwrap()).unwrap();
     assert_eq!(response, json!({"id":7,"result":{"decision":"accept"}}));
+    // The AGENT's public status notice went with the card, once the refusals
+    // cleared (bridge-matrix.js:9377).
+    let (target, content, auth) = notice
+        .as_ref()
+        .expect("the public status notice was sent with the card");
+    assert_public_notice(&peer.events[0], target, content, auth, "$task_thread");
     assert!(child.still_owned());
     drop(child);
     f.fake.close().await;
