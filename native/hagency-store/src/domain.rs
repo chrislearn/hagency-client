@@ -74,6 +74,8 @@ mod owned_dispatch;
 mod stopped_inspection;
 pub use outcome_resolution::{OutcomeAction, OutcomeResolution};
 mod provision_runtime;
+mod reminders;
+pub use reminders::{Reminder, ReminderReceipt, ReminderSweep};
 mod side_registration;
 pub use side_registration::{
     IssueSideRegistration, IssueSideRegistrationRequest, SideCredential,
@@ -121,7 +123,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 50;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 51;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -393,6 +395,10 @@ pub struct AgentDetail {
     pub rooms: Vec<AgentDetailRoom>,
     pub dispatch: Option<AgentDetailRoom>,
     pub tasks: Vec<hagency_core::tasks::Task>,
+    /// Board #53: this agent's self-reminders (every engagement the agent name
+    /// holds), oldest first. The reminder's `msg` is the agent's own text; no
+    /// credential or workspace path travels inside.
+    pub reminders: Vec<Reminder>,
 }
 fn role_available(db: &Connection, role: &str, fleet: Option<&str>) -> Result<bool, Error> {
     qualification::check_role(role)?;
@@ -860,6 +866,13 @@ impl DomainRepository {
                         50,
                         include_str!("migrations/040-side-credentials.sql"),
                     ),
+                    // Integration of ../provision task/53: its board-assigned
+                    // number was 066; it lands as the next sequential tuple 51
+                    // (file name kept).
+                    (
+                        51,
+                        include_str!("migrations/066-reminders.sql"),
+                    ),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
@@ -874,6 +887,7 @@ impl DomainRepository {
                     "SELECT resource_id,inspected_at FROM workspace_dirty_releases LIMIT 0",
                     "SELECT engagement_id,yolo,updated_at FROM agent_execution_policies LIMIT 0",
                     "SELECT room_id,agent,inviter,project_server,mode,since_ts,state,join_pending,leave_pending,seen_at,decided_at,decided_by FROM pending_invites LIMIT 0",
+                    "SELECT id,engagement_id,session_id,msg,created_at,fire_at,fired_at FROM reminders LIMIT 0",
                     "SELECT dispatch_id,fence,seq,at_ms,phase,detail FROM runner_attempt_events LIMIT 0",
                     "SELECT dispatch_id,fence,started_at,parked_at,last_renew_at,settled_at,terminal_reason FROM runner_attempts LIMIT 0",
                     "SELECT dispatch_id,message_sequence,addressed FROM dispatch_inputs LIMIT 0",
@@ -1563,6 +1577,27 @@ impl DomainRepository {
             .query_map([name], |row| row.get::<_, String>(0))?
             .map(|row| Ok(serde_json::from_str(&row?)?))
             .collect::<Result<_, Error>>()?;
+        // Board #53: the agent's own reminders, oldest first, across every
+        // engagement the agent name holds. Bounded to 100 rows, matching the
+        // rooms list's own bound.
+        let mut reminders_query = self.db.prepare(
+            "SELECT r.id,r.engagement_id,r.session_id,r.msg,r.created_at,r.fire_at,r.fired_at \
+             FROM reminders r JOIN engagements e ON e.id=r.engagement_id \
+             WHERE json_extract(e.projection,'$.agentName')=?1 ORDER BY r.id LIMIT 100",
+        )?;
+        let reminders: Vec<Reminder> = reminders_query
+            .query_map([name], |row| {
+                Ok(Reminder {
+                    id: row.get(0)?,
+                    engagement_id: row.get(1)?,
+                    session_id: row.get(2)?,
+                    msg: row.get(3)?,
+                    created_at: row.get(4)?,
+                    fire_at: row.get(5)?,
+                    fired_at: row.get(6)?,
+                })
+            })?
+            .collect::<Result<_, _>>()?;
         Ok(Some(AgentDetail {
             name: engagement.agent_name.as_str().to_owned(),
             framework: resource.framework,
@@ -1578,6 +1613,7 @@ impl DomainRepository {
             rooms,
             dispatch,
             tasks,
+            reminders,
         }))
     }
     /// The agent's ACTIVE engagement ids, newest first — the list a force

@@ -862,6 +862,18 @@ pub enum CeilingSweepTick {
     Refused(&'static str),
 }
 
+/// What one reminder due-tick observed (board #53). Diagnostic only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReminderSweepTick {
+    Swept(hagency_store::ReminderSweep),
+    Refused(&'static str),
+}
+
+/// The reminder due loop cadence (board #53): the TS delivery queue ran
+/// `processDueReminders` every 1 s (delivery-queue.js:1767). Native sweeps the
+/// same condition — a due reminder whose `fired_at` is NULL — on a 1 s period.
+pub const REMINDER_SWEEP_PERIOD: Duration = Duration::from_secs(1);
+
 /// Production ceiling-overrun sweep cadence (ADR-124 slice b): the condition
 /// is standing, so an hour is the retained default
 /// (`backend-v2.js:17499-17504`); tests inject a short one via
@@ -949,6 +961,59 @@ pub fn start_ceiling_sweep(
                         "[ceiling] sweep tick failed: {error}; waiting for the next tick"
                     );
                     CeilingSweepTick::Refused("failed")
+                }
+            };
+            let _ = sender.send(tick);
+        }
+    });
+    (handle, observed)
+}
+
+/// The reminder due loop (board #53, TS `processDueReminders` at 1 s):
+/// fire every due reminder whose `fired_at` is NULL, in one bounded writer
+/// transaction per tick. Same shape and refusal discipline as the ceiling
+/// sweep — a missed tick is harmless (the condition is standing), and a
+/// refusal is logged with the `[reminder]` prefix and retried next tick.
+pub fn start_reminder_sweep(
+    domain: DomainStore,
+    shutdown: CancellationToken,
+    period: Duration,
+) -> (
+    tokio::task::JoinHandle<()>,
+    tokio::sync::watch::Receiver<ReminderSweepTick>,
+) {
+    let (sender, observed) =
+        tokio::sync::watch::channel(ReminderSweepTick::Refused("unstarted"));
+    let handle = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(period);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tokio::select! {
+                _ = shutdown.cancelled() => break,
+                _ = interval.tick() => {}
+            }
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|d| u64::try_from(d.as_millis()).ok())
+                .unwrap_or_default();
+            let tick = match domain.fire_reminders(now, 512).await {
+                Ok(outcome) => ReminderSweepTick::Swept(outcome),
+                Err(hagency_store::Error::Busy) => {
+                    tracing::warn!("[reminder] sweep tick refused: busy; waiting for the next tick");
+                    ReminderSweepTick::Refused("busy")
+                }
+                Err(hagency_store::Error::OutcomeUnknown) => {
+                    tracing::warn!(
+                        "[reminder] sweep tick outcome unknown; waiting for the next tick"
+                    );
+                    ReminderSweepTick::Refused("outcome_unknown")
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        "[reminder] sweep tick failed: {error}; waiting for the next tick"
+                    );
+                    ReminderSweepTick::Refused("failed")
                 }
             };
             let _ = sender.send(tick);
@@ -1244,6 +1309,8 @@ pub struct Bootstrap {
     /// The one retention sweep task's handle (tick contract §1.5): kept to
     /// abort at shutdown, exactly the ceiling sweep's shape above.
     retention_sweep: Option<std::sync::Arc<tokio::task::JoinHandle<()>>>,
+    /// The reminder due loop's handle (board #53), kept to abort at shutdown.
+    reminder_sweep: Option<std::sync::Arc<tokio::task::JoinHandle<()>>>,
 }
 impl Bootstrap {
     /// Own fresh development state. No live repository, .env, arbitrary command
@@ -1464,6 +1531,7 @@ impl Bootstrap {
             retention_sweep_period: RETENTION_SWEEP_PERIOD,
             ceiling_sweep: None,
             retention_sweep: None,
+            reminder_sweep: None,
         })
     }
     pub fn status(&self) -> Status {
@@ -1517,6 +1585,10 @@ impl Bootstrap {
         // abort-on-shutdown its doc comment promises, the ceiling sweep's
         // shape.
         if let Some(sweep) = &mut self.retention_sweep {
+            sweep.abort();
+        }
+        // Board #53: the reminder due loop's handle, aborted at shutdown.
+        if let Some(sweep) = &mut self.reminder_sweep {
             sweep.abort();
         }
         if let Some(palpo) = &self.palpo {
@@ -1652,6 +1724,15 @@ impl Bootstrap {
             .app
             .clone()
             .with_retention_sweep(retention, retention_tick);
+        // Board #53: the reminder due loop, beside the ceiling and retention
+        // tasks — same `start_*_sweep` shape, 1 s cadence (the TS
+        // `processDueReminders` interval).
+        let (reminder_sweep, _reminder_tick) = start_reminder_sweep(
+            self.domain.clone(),
+            shutdown.clone(),
+            REMINDER_SWEEP_PERIOD,
+        );
+        self.reminder_sweep = Some(std::sync::Arc::new(reminder_sweep));
         tracing::trace!(target: "hagency_startup_observation", "native startup boundary: server_poll_entered");
         let server = Server::new(acceptor).max_connections(64);
         let handle = server.handle();

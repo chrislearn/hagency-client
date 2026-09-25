@@ -2580,6 +2580,9 @@ impl DomainStore {
                     call_id,
                     operation,
                 } => serde_json::to_value(db.mutate_task(&cap, &id, &call_id, &operation, now)?)?,
+                RunnerCommand::ScheduleReminder { msg, delay_ms } => {
+                    serde_json::to_value(db.schedule_reminder(&cap, &msg, delay_ms, now)?)?
+                }
             })
         })
         .await
@@ -3415,6 +3418,27 @@ impl DomainStore {
     /// second arithmetic path.
     pub async fn agent_active_engagements(&self, name: String) -> Result<Vec<String>, Error> {
         self.call(weight(&name)?, move |db| db.agent_active_engagements(&name))
+            .await
+    }
+    /// Board #53: list every reminder, for the operator console (the TS
+    /// `GET /api/reminders` read; `remaining_ms` is computed at render, not
+    /// stored — the route folds `fire_at - now`).
+    pub async fn list_reminders(&self) -> Result<Vec<crate::Reminder>, Error> {
+        self.call(64, |db| db.list_reminders()).await
+    }
+    /// Board #53: delete one reminder by integer id (the TS `DELETE
+    /// /api/reminders/:id` mutation).
+    pub async fn delete_reminder(&self, id: i64) -> Result<(), Error> {
+        self.call(weight(&id)?, move |db| db.delete_reminder(id)).await
+    }
+    /// Board #53: fire every due reminder (the delivery queue's 1 s due loop,
+    /// `processDueReminders`), in one bounded writer transaction.
+    pub async fn fire_reminders(
+        &self,
+        now: u64,
+        limit: u64,
+    ) -> Result<crate::ReminderSweep, Error> {
+        self.call(weight(&now)?, move |db| db.fire_reminders(now, limit))
             .await
     }
     /// The read-only project-sides projection (ADR-132): one writer job,

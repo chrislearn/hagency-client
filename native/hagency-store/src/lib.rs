@@ -32,6 +32,7 @@ pub use domain::{
     Contribution, OfferBook, OfferResource, OfferRole, OfferServing, Preview,
     OwnedClaimProfile, OwnedClaimRoom, OwnedCompletion, OwnedDispatchScope, OwnedFailure,
     OwnedObservation, OwnedProvisionScope, PEER_RECEIPT_CEILING, PEER_RETENTION_CEILING,
+    Reminder, ReminderReceipt, ReminderSweep,
     PEER_RETENTION_FLOOR, PeerRetentionStatus, PeerSweepOutcome, PendingInvite, ProjectSide, Representative,
     RetentionStatus, SideProject, SideProjectRecord, SideRecord, SourceUsage, SweepOutcome, SideBudget, SideCommitment, UploadAdmission, UploadClaim, UploadIdentity,
     UploadPreparation, UploadSend, UsageCeiling, UsageEvidence, UsagePeriod, UsagePeriodKind,

@@ -64,6 +64,12 @@ pub(super) fn list(file_tools: bool, receive_tools: bool) -> Value {
             json!({}),
             vec![],
         ),
+        (
+            "schedule_reminder",
+            "Schedule a self-reminder that later wakes this same session with the reminder text. msg is the exact text you will be reminded with; delay_ms is a positive delay in milliseconds.",
+            json!({"msg":{"type":"string","minLength":1,"maxLength":32768},"delay_ms":{"type":"integer","minimum":1,"maximum":9007199254740991_u64}}),
+            vec!["msg", "delay_ms"],
+        ),
     ] {
         let mut properties = extra.as_object().unwrap().clone();
         let mut fields = vec![];
@@ -73,6 +79,9 @@ pub(super) fn list(file_tools: bool, receive_tools: bool) -> Value {
             "get_task" => {
                 properties.insert("id".into(), json!({"type":"string","minLength":1,"maxLength":128,"description":"Task ID; the assigned task when omitted, or a task this session's dispatches created"}));
             }
+            // A reminder names the agent's own session (the presented capability),
+            // not a task: no id, no call_id — the store mints the reminder id.
+            "schedule_reminder" => {}
             _ => {
                 properties.insert("id".into(), id.clone());
                 fields.push("id");
