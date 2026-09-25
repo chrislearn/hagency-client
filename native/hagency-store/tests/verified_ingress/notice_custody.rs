@@ -298,6 +298,7 @@ fn native_notice_custody_migration() {
         // first (the 025 replay posture; cf. updated_at in file_delivery.rs).
         sql.execute_batch("ALTER TABLE approval_verdict_receipts DROP COLUMN denial_reason; ALTER TABLE runner_attempts DROP COLUMN park_reason; ALTER TABLE dispatch_inputs DROP COLUMN addressed; DROP TABLE IF EXISTS dispatch_conversation_reads; ALTER TABLE runner_attempts DROP COLUMN started_at; ALTER TABLE runner_attempts DROP COLUMN parked_at; ALTER TABLE runner_attempts DROP COLUMN last_renew_at; ALTER TABLE runner_attempts DROP COLUMN settled_at; ALTER TABLE runner_attempts DROP COLUMN terminal_reason; DROP TABLE IF EXISTS runner_attempt_events; DROP TABLE IF EXISTS agent_fences; DROP TABLE IF EXISTS side_registrations; DROP VIEW IF EXISTS current_command_notices; DROP TABLE IF EXISTS command_notice_inspections; DROP TABLE IF EXISTS command_notices;")
             .unwrap();
+        sql.execute_batch("ALTER TABLE runner_sessions DROP COLUMN model_override; ALTER TABLE runner_sessions DROP COLUMN mode_override;").unwrap();
         sql.pragma_update(None, "user_version", 13).unwrap();
         f.db = DomainRepository::open(&f.root.path().join("state")).unwrap();
         assert_eq!(
