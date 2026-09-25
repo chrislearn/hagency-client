@@ -226,11 +226,15 @@ export function agentsView(location) { return /^\/console\/agents\/?$/.test(loca
  * DIFFERENT agent also fails the read. */
 const ROOM_KEYS = ['session_id', 'room_id', 'dispatch_state', 'dispatch_id'];
 const TASK_STATES = ['created', 'accepted', 'in_progress', 'blocked', 'done'];
+const REMINDER_KEYS = ['id', 'engagement_id', 'session_id', 'msg', 'created_at', 'fire_at', 'fired_at'];
 const detailRoom = (v) => v !== null && object(v, ROOM_KEYS) && id(v.session_id) && text(v.room_id, 256)
   && (v.dispatch_state === null || ['queued', 'leased', 'started', 'parked', 'completed', 'outcome_unknown', 'superseded'].includes(v.dispatch_state))
   && (v.dispatch_id === null || id(v.dispatch_id));
+const detailReminder = (v) => v !== null && object(v, REMINDER_KEYS) && number(v.id) && id(v.engagement_id)
+  && id(v.session_id) && text(v.msg, 32768) && number(v.created_at) && number(v.fire_at)
+  && (v.fired_at === null || number(v.fired_at));
 export function validateAgentDetail(v, name) {
-  if (!object(v, ['name', 'framework', 'role', 'state', 'engagement_id', 'requested_tokens', 'online', 'last_seen_ms', 'resource_id', 'project_id', 'engagements', 'rooms', 'dispatch', 'tasks'])
+  if (!object(v, ['name', 'framework', 'role', 'state', 'engagement_id', 'requested_tokens', 'online', 'last_seen_ms', 'resource_id', 'project_id', 'engagements', 'rooms', 'dispatch', 'tasks', 'reminders'])
     || v.name !== name || !text(v.name, 128) || !text(v.framework, 64) || !text(v.role, 128)
     || !STATES.includes(v.state) || !id(v.engagement_id) || !number(v.requested_tokens)
     || typeof v.online !== 'boolean' || !(v.last_seen_ms === null || number(v.last_seen_ms))
@@ -240,7 +244,8 @@ export function validateAgentDetail(v, name) {
     || !Array.isArray(v.tasks) || v.tasks.length > 10
     || v.tasks.some((task) => !object(task, ['id', 'session_id', 'creator_session_id', 'title', 'description', 'priority', 'granularity', 'labels', 'parent_id', 'status', 'execution_epoch', 'created_at', 'updated_at', 'started_at', 'completed_at', 'heartbeat_at', 'waiting_reason', 'waiting_until'])
       || !id(task.id) || !id(task.session_id) || !text(task.title, 1024) || !TASK_STATES.includes(task.status)
-      || !number(task.execution_epoch) || !number(task.created_at) || !number(task.updated_at))) throw new Error('invalid_native_response');
+      || !number(task.execution_epoch) || !number(task.created_at) || !number(task.updated_at))
+    || !Array.isArray(v.reminders) || v.reminders.length > 100 || v.reminders.some((r) => !detailReminder(r))) throw new Error('invalid_native_response');
   return v;
 }
 export async function fetchAgentDetail(name) {

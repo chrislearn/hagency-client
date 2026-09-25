@@ -334,6 +334,10 @@ pub struct AgentDetail {
     pub rooms: Vec<AgentDetailRoom>,
     pub dispatch: Option<AgentDetailRoom>,
     pub tasks: Vec<hagency_core::tasks::Task>,
+    /// Board #53: this agent's self-reminders (every engagement the agent name
+    /// holds), oldest first. The reminder's `msg` is the agent's own text; no
+    /// credential or workspace path travels inside.
+    pub reminders: Vec<Reminder>,
 }
 fn role_available(db: &Connection, role: &str, fleet: Option<&str>) -> Result<bool, Error> {
     qualification::check_role(role)?;
@@ -1288,6 +1292,27 @@ impl DomainRepository {
             .query_map([name], |row| row.get::<_, String>(0))?
             .map(|row| Ok(serde_json::from_str(&row?)?))
             .collect::<Result<_, Error>>()?;
+        // Board #53: the agent's own reminders, oldest first, across every
+        // engagement the agent name holds. Bounded to 100 rows, matching the
+        // rooms list's own bound.
+        let mut reminders_query = self.db.prepare(
+            "SELECT r.id,r.engagement_id,r.session_id,r.msg,r.created_at,r.fire_at,r.fired_at \
+             FROM reminders r JOIN engagements e ON e.id=r.engagement_id \
+             WHERE json_extract(e.projection,'$.agentName')=?1 ORDER BY r.id LIMIT 100",
+        )?;
+        let reminders: Vec<Reminder> = reminders_query
+            .query_map([name], |row| {
+                Ok(Reminder {
+                    id: row.get(0)?,
+                    engagement_id: row.get(1)?,
+                    session_id: row.get(2)?,
+                    msg: row.get(3)?,
+                    created_at: row.get(4)?,
+                    fire_at: row.get(5)?,
+                    fired_at: row.get(6)?,
+                })
+            })?
+            .collect::<Result<_, _>>()?;
         Ok(Some(AgentDetail {
             name: engagement.agent_name.as_str().to_owned(),
             framework: resource.framework,
@@ -1303,6 +1328,7 @@ impl DomainRepository {
             rooms,
             dispatch,
             tasks,
+            reminders,
         }))
     }
     pub fn resource_budget(&self, id: &str) -> Result<Budget, Error> {
