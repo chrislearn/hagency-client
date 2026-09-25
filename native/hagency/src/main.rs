@@ -425,7 +425,14 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
         } => {
             let console = console_assets
                 .as_deref()
-                .map(hagency::console::Console::load)
+                .map(|path| {
+                    hagency::console::Console::load(path).map_err(|_| {
+                        hagency::bootstrap::Failure::Config {
+                            field: "--console-assets",
+                            fix: "the directory must be the bundle built by mockup/scripts/build-native-console.mjs, owner-private (0700) and reached without a symlink in any path component, with a manifest.json whose entries all match the files",
+                        }
+                    })
+                })
                 .transpose()?;
             let mut bootstrap = hagency::bootstrap::Bootstrap::open_with_options(
                 &state_dir,
