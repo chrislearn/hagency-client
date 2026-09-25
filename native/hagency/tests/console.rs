@@ -2,6 +2,8 @@
 mod accounts;
 #[path = "console/agents.rs"]
 mod agents;
+#[path = "console/stream.rs"]
+mod stream;
 #[path = "console/alerts.rs"]
 mod alerts;
 #[path = "console/approvals.rs"]

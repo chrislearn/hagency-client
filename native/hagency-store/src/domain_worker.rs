@@ -3126,6 +3126,11 @@ impl DomainStore {
     pub async fn agent_roster(&self) -> Result<Vec<crate::AgentRosterRow>, Error> {
         self.call(64, |db| db.agent_roster()).await
     }
+    /// #26 console change feed: one bounded read, one fingerprint per
+    /// category — the SSE route's poll source, never a second projection.
+    pub async fn console_feed(&self) -> Result<serde_json::Value, Error> {
+        self.call(64, |db| db.console_feed()).await
+    }
     /// The read-only agent detail (board #22): one writer job, one bounded
     /// agent-keyed read — the projection is computed at the store, so the
     /// console route adds no second arithmetic path. `None` is the route's
