@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{fs::File, path::Path};
 pub(crate) mod accounts;
+mod activity;
+pub use activity::{ActivityEvent, ActivityUpdate};
 mod agent_fences;
 mod agent_lifecycle;
 mod console_feed;
@@ -123,7 +125,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 51;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 52;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -873,6 +875,13 @@ impl DomainRepository {
                         51,
                         include_str!("migrations/066-reminders.sql"),
                     ),
+                    // Integration of lane/activity task/1: its board-assigned
+                    // number was 040; it lands as the next sequential tuple 52
+                    // (file name kept).
+                    (
+                        52,
+                        include_str!("migrations/040-dispatch-activity.sql"),
+                    ),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
@@ -881,6 +890,8 @@ impl DomainRepository {
                     "SELECT server_name,label,api_base_url,credential,pending_credential,pending_issued_at,representative,access_state,access_detail,access_checked_at,access_issued_at,allocated_tokens,active,created_at,updated_at FROM side_records LIMIT 0",
                     "SELECT server_name,id,name,room_id,note,archived,archived_at,created_at,updated_at FROM side_projects LIMIT 0",
                     "SELECT id,engagement_id,dispatch_id,fence,reason,created_at,cleared_at,cleared_by FROM agent_fences LIMIT 0",
+                    "SELECT dispatch_id,phase,kind,tools,finished,started_at,updated_at,queued_at,revision,anchor FROM dispatch_activity LIMIT 0",
+                    "SELECT dispatch_id,event_key FROM dispatch_activity_events LIMIT 0",
                     "SELECT id,session_id,transaction_id,digest,body,html,route,source_event_id,state,cancel_requested,fence,claim_hash,claim_until,event_id,observation,created_at,updated_at FROM command_notices LIMIT 0",
                     "SELECT id FROM current_command_notices LIMIT 0",
                     "SELECT id,dirty FROM workspace_resources LIMIT 0",

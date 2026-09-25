@@ -320,6 +320,40 @@ impl DomainRepository {
                 return Err(error);
             }
         };
+        // The activity projection rides the same transaction the TS
+        // lifecycle hooks do (store.ts:2004/2068/2252/2282/2644: each
+        // transition calls updateActivity inside its own store
+        // transaction), under its OWN savepoint: a refused activity (no
+        // task, no addressed root) leaves the event observation intact —
+        // the same best-effort contract the event itself carries.
+        let activity_event = match event.phase {
+            AttemptPhase::Initialized | AttemptPhase::TurnStarted => {
+                Some(super::activity::ActivityEvent::Started)
+            }
+            AttemptPhase::Parked => Some(super::activity::ActivityEvent::Waiting),
+            AttemptPhase::Resumed => Some(super::activity::ActivityEvent::Resumed),
+            AttemptPhase::Settled => Some(super::activity::ActivityEvent::Completed),
+            AttemptPhase::Failed | AttemptPhase::Lost => {
+                Some(super::activity::ActivityEvent::Interrupted)
+            }
+            AttemptPhase::Claimed
+            | AttemptPhase::SpawnStarted
+            | AttemptPhase::SpawnDone
+            | AttemptPhase::OverBudget
+            | AttemptPhase::ApprovalRequested
+            | AttemptPhase::ApprovalDecided
+            | AttemptPhase::StopRequested
+            | AttemptPhase::StopReported => None,
+        };
+        if let Some(activity) = activity_event {
+            tx.execute_batch("SAVEPOINT activity_notice")?;
+            match super::activity::update_and_enqueue(&tx, &event.dispatch_id, &activity, now) {
+                Ok(_) => tx.execute_batch("RELEASE activity_notice")?,
+                Err(_) => {
+                    tx.execute_batch("ROLLBACK TO activity_notice; RELEASE activity_notice")?;
+                }
+            }
+        }
         tx.commit()?;
         Ok(seq)
     }

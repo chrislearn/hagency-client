@@ -39,6 +39,7 @@ pub use domain::{
     UsageReceipt, UsageReport, UsageSource, UsageSummary, UsageTotals, allowed_transitions,
     over_budget_notice_body, MAX_TASK_COMMENTS, MAX_TASK_PAGE, OperatorTask, OperatorTaskComment,
     TASK_GRANULARITIES, TASK_PRIORITIES, TASK_STATUSES, TaskFilters, operator_transitions,
+    ActivityEvent, ActivityUpdate,
 };
 pub use domain::{DeliveryFeedback, DeliveryWarning, DirectTarget, MentionState, MentionTarget};
 pub use domain::{OutcomeAction, OutcomeResolution};
