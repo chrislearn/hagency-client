@@ -59,6 +59,12 @@ struct Config {
     approval: Option<ApprovalMatrix>,
     #[serde(default)]
     factory_service: Option<FactoryService>,
+    /// Per-thread worktree configuration (ADR-011). When present, owned Codex
+    /// dispatches whose sessions have thread roots resolve to per-thread git
+    /// worktrees instead of the shared engagement workspace — for both the
+    /// ordinary driver Host and the factory's per-agent Hosts.
+    #[serde(default)]
+    worktree: Option<Worktree>,
 }
 fn default_approval_wait() -> u64 {
     1000
@@ -182,6 +188,31 @@ mod approval_wait_tests {
 struct FactoryService {
     profile: String,
     idle_ms: u64,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Worktree {
+    repository_path: PathBuf,
+    worktrees_dir: PathBuf,
+    #[serde(default)]
+    bootstrap: Option<Vec<String>>,
+}
+impl Worktree {
+    fn to_execution(
+        &self,
+    ) -> Result<hagency_execution::WorktreeConfig, Failure> {
+        if !self.repository_path.is_absolute()
+            || !self.worktrees_dir.is_absolute()
+            || self.repository_path == self.worktrees_dir
+        {
+            return Err(Failure::Config);
+        }
+        Ok(hagency_execution::WorktreeConfig {
+            repository_path: self.repository_path.clone(),
+            worktrees_dir: self.worktrees_dir.clone(),
+            bootstrap: self.bootstrap.clone(),
+        })
+    }
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -534,7 +565,7 @@ impl Prepared {
                 .restrict_dispatch(plan.dispatch_id.clone())
                 .map_err(|_| Failure::Config)?;
         }
-        let mut host = Host::new(
+        let host = Host::new(
             own.clone(),
             config.executable.clone(),
             environment.clone(),
@@ -543,6 +574,16 @@ impl Prepared {
         .and_then(|h| h.with_file_limit(config.file_limit))
         .and_then(|h| h.with_task_helper(own.clone(), address))
         .map_err(|_| Failure::Config)?;
+        // ADR-011: the operator's worktree configuration enables per-thread
+        // worktrees for this driver's owned Codex dispatches. Absent config
+        // keeps the shared engagement workspace.
+        let mut host = match &config.worktree {
+            Some(worktree) => {
+                let config = worktree.to_execution().map_err(|_| Failure::Config)?;
+                host.with_worktree(config).map_err(|_| Failure::Config)?
+            }
+            None => host,
+        };
         let uses_local_codex = config.local_codex.is_some();
         if let Some(local) = config.local_codex {
             claim = claim
@@ -832,6 +873,18 @@ impl Prepared {
             )
             .and_then(|plan| {
                 plan.with_file_access(config.file_limit, config.send_file, config.receive_file)
+            })
+            .and_then(|plan| {
+                // ADR-011: the operator's worktree configuration enables
+                // per-thread worktrees for every per-agent Host this plan
+                // builds. Absent config keeps the shared engagement workspace.
+                match &config.worktree {
+                    Some(worktree) => match worktree.to_execution() {
+                        Ok(config) => plan.with_worktree(config),
+                        Err(_) => Err(hagency_execution::Failure::Admission),
+                    },
+                    None => Ok(plan),
+                }
             })
             .map(|plan| {
                 if config.coordination_tools {

@@ -30,6 +30,9 @@ pub struct WarmHostPlan {
     files: Option<(usize, bool, bool)>,
     coordination: bool,
     local_codex: Option<Arc<crate::LocalCodex>>,
+    /// Per-thread worktree configuration (ADR-011); applied to every per-agent
+    /// Host this plan builds. `None` keeps the shared engagement workspace.
+    worktree: Option<crate::workspace::WorktreeConfig>,
 }
 /// The fixed native task helper, loopback origin and retained private context
 /// root form one Host capability. No getters, cloning or serialization.
@@ -113,7 +116,21 @@ impl WarmHostPlan {
             files: None,
             coordination: false,
             local_codex: None,
+            worktree: None,
         })
+    }
+    /// Attach per-thread worktree configuration (ADR-011) for every per-agent
+    /// Host this plan builds. A threaded dispatch resolves its per-thread git
+    /// worktree; an unthreaded one keeps the shared engagement workspace.
+    pub fn with_worktree(
+        mut self,
+        config: crate::workspace::WorktreeConfig,
+    ) -> Result<Self, Failure> {
+        if self.worktree.is_some() {
+            return Err(Failure::Admission);
+        }
+        self.worktree = Some(config);
+        Ok(self)
     }
     /// Pass the original Host's provider-owned binding without reopening it or
     /// exporting a credential/path capability. Per-agent task roots stay local.
@@ -177,6 +194,7 @@ impl WarmHostPlan {
         let files = self.files;
         let coordination = self.coordination;
         let local_codex = self.local_codex.clone();
+        let worktree = self.worktree.clone();
         tokio::task::spawn_blocking(move || {
             if Instant::now() >= until {
                 return Err(Failure::Deadline);
@@ -206,6 +224,9 @@ impl WarmHostPlan {
             )?
             .with_task_helper(helper, address)?
             .with_approvals(approvals)?;
+            if let Some(worktree) = worktree {
+                host = host.with_worktree(worktree)?;
+            }
             if let Some((limit, send, receive)) = files {
                 host = host.with_file_limit(limit)?;
                 if send {
@@ -270,6 +291,7 @@ impl WarmHostPlan {
         let files = self.files;
         let coordination = self.coordination;
         let local_codex = self.local_codex.clone();
+        let worktree = self.worktree.clone();
         // A lost caller does not discard a possible owner on an HTTP worker:
         // this retained blocking task owns the returned WarmRuntime until handoff.
         tokio::task::spawn_blocking(move || {
@@ -314,6 +336,9 @@ impl WarmHostPlan {
             .with_task_helper(helper, address)?
             .with_retained_task_context(context)?
             .with_approvals(approvals)?;
+            if let Some(worktree) = worktree {
+                host = host.with_worktree(worktree)?;
+            }
             if let Some((limit, send, receive)) = files {
                 host = host.with_file_limit(limit)?;
                 if send {

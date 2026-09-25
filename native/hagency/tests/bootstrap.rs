@@ -1380,3 +1380,97 @@ async fn native_refresh_identity_rejection_parks() {
     child.request_shutdown();
     child.exited().await;
 }
+
+/// Board #78: with the operator's `worktree` configuration present in the
+/// SERVE configuration (agent-driver.json, the production path), two thread
+/// sessions of ONE agent run in DISTINCT per-thread git worktrees — not the
+/// shared engagement workspace — and neither sees the other's files.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[tokio::test]
+async fn native_worktree_production_config_two_threads() {
+    use std::path::Path;
+    let mut f = Fixture::new(false).await;
+    // The operator's git repository the per-thread worktrees branch from.
+    let base = f.root.path().canonicalize().unwrap();
+    let repo = base.join("wt-repo");
+    std::fs::create_dir_all(&repo).unwrap();
+    for args in [
+        vec!["init"],
+        vec!["config", "user.email", "t@e.com"],
+        vec!["config", "user.name", "T"],
+    ] {
+        let out = std::process::Command::new("git")
+            .args(&args)
+            .current_dir(&repo)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {:?}", out.stderr);
+    }
+    std::fs::write(repo.join("README.md"), "base\n").unwrap();
+    for args in [vec!["add", "README.md"], vec!["commit", "-m", "base"]] {
+        let out = std::process::Command::new("git")
+            .args(&args)
+            .current_dir(&repo)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {:?}", out.stderr);
+    }
+    let worktrees = base.join("worktrees");
+    // Inject the operator worktree configuration into the SERVE config the
+    // real binary loads (the production path, not a test-only Host builder).
+    let mut config: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(f.state_dir.join("development-driver.json")).unwrap(),
+    )
+    .unwrap();
+    config["worktree"] = json!({
+        "repository_path": repo.canonicalize().unwrap(),
+        "worktrees_dir": worktrees,
+    });
+    std::fs::write(
+        f.state_dir.join("development-driver.json"),
+        serde_json::to_vec(&config).unwrap(),
+    )
+    .unwrap();
+    // Two thread sessions of the SAME engagement (the fixture's second
+    // session seeds "session-2" on thread "$task_thread_2"; the original
+    // "session" is on "$task_thread"), each with its own queued dispatch.
+    f.seed_second_session();
+    f.configure_continuous();
+    let mut child = f.launch_agent_driver(None);
+    f.serve_until("both threaded dispatches completed", |f, _| {
+        f.text("SELECT state FROM runner_dispatches WHERE id='dispatch'") == "completed"
+            && f.text("SELECT state FROM runner_dispatches WHERE id='dispatch-3'") == "completed"
+    })
+    .await;
+    // Both receipts exist and live in DISTINCT per-thread worktrees under the
+    // operator's worktrees root — neither in a shared engagement workspace.
+    fn receipts(root: &Path) -> Vec<std::path::PathBuf> {
+        fn walk(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    walk(&path, out);
+                } else if path.file_name().is_some_and(|n| n == "owned-mcp.receipt") {
+                    out.push(path);
+                }
+            }
+        }
+        let mut out = Vec::new();
+        walk(root, &mut out);
+        out
+    }
+    let found = receipts(&worktrees);
+    assert_eq!(found.len(), 2, "two threads must leave two worktree receipts");
+    let first = found[0].parent().unwrap().to_path_buf();
+    let second = found[1].parent().unwrap().to_path_buf();
+    assert_ne!(first, second, "the two threads ran in distinct worktrees");
+    assert!(first != f.work && second != f.work, "not the shared workspace");
+    assert!(first != f.second_work() && second != f.second_work());
+    // No receipt leaked into a shared workspace.
+    assert!(receipts(&f.work).is_empty());
+    assert!(receipts(&f.second_work()).is_empty());
+    // The store settled both attempts cleanly.
+    assert_eq!(f.count("SELECT COUNT(*) FROM runner_attempts"), 2);
+    child.request_shutdown();
+    child.exited().await;
+}
