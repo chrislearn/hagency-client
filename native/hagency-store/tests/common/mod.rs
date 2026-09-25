@@ -199,5 +199,5 @@ pub fn remove_upload_schema(db: &rusqlite::Connection) {
 
 pub fn remove_attachment_schema(db: &rusqlite::Connection) {
     remove_upload_schema(db);
-    db.execute_batch("DROP TABLE IF EXISTS dispatch_attachment_windows; DROP TABLE IF EXISTS session_attachment_visibility; DROP TABLE IF EXISTS matrix_attachments;").unwrap();
+    db.execute_batch("DROP TABLE IF EXISTS dispatch_attachment_windows; DROP TABLE IF EXISTS session_attachment_visibility;  DROP TABLE IF EXISTS room_trust;").unwrap();
 }

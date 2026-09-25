@@ -62,6 +62,8 @@ mod owned_dispatch;
 mod stopped_inspection;
 pub use outcome_resolution::{OutcomeAction, OutcomeResolution};
 mod provision_runtime;
+mod room_trust;
+pub use room_trust::RoomTrustRecord;
 mod side_registration;
 pub use side_registration::{
     IssueSideRegistration, IssueSideRegistrationRequest, SideCredential,
@@ -105,7 +107,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 41;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 42;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -785,6 +787,11 @@ impl DomainRepository {
                         include_str!("migrations/046-side-registrations.sql"),
                     ),
                     (41, include_str!("migrations/040-command-notices.sql")),
+                    // Task #80's migration number is 073 (the board's
+                    // assignment); the walker requires the next sequential
+                    // list version, so the file keeps 073 and the tuple
+                    // carries 42. Integration renumbers on merge.
+                    (42, include_str!("migrations/073-room-trust.sql")),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
