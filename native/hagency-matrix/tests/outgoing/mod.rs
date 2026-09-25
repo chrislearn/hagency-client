@@ -168,6 +168,68 @@ async fn plain_wire(fake: &mut common::Fake) -> common::Request {
     );
     r
 }
+
+/// Task #1 send-side: the activity envelope's exact Matrix content
+/// (lib/matrix-activity.js:4-13). First send (no anchor) keeps the thread
+/// relation and the plain body; the edit (anchor) stars the body, moves
+/// the plain content into `m.new_content`, and swaps the relation to
+/// `m.replace` of the anchor — the "same event edited in place" wire shape.
+#[test]
+fn native_matrix_activity_envelope_first_send_and_edit() {
+    // First send: no anchor.
+    let first = apply_activity_envelope(
+        json!({"msgtype":"m.notice","body":"⏳ 已开始处理，等待运行器的下一步事件\n已运行 0 秒 · 工具调用 0 次，已返回 0 次",
+               "m.relates_to":{"rel_type":"m.thread","event_id":"$root","is_falling_back":true,"m.in_reply_to":{"event_id":"$root"}}}),
+        "run_1",
+        None,
+    );
+    assert_eq!(first["msgtype"], "m.notice");
+    assert_eq!(first["io.hagency.activity"]["dispatch_id"], "run_1");
+    assert_eq!(first["m.relates_to"]["rel_type"], "m.thread");
+    assert!(first.get("m.new_content").is_none());
+    assert!(first.get("m.replace").is_none());
+    assert!(!first["body"].as_str().unwrap().starts_with("* "));
+
+    // The edit: an anchor swaps the relation and stars the body.
+    let plain = json!({"msgtype":"m.notice","body":"⏳ 正在运行命令\n已运行 4 秒 · 工具调用 1 次，已返回 0 次",
+                       "m.relates_to":{"rel_type":"m.thread","event_id":"$root","is_falling_back":true,"m.in_reply_to":{"event_id":"$root"}}});
+    let edit = apply_activity_envelope(plain.clone(), "run_1", Some("$activity_first"));
+    assert_eq!(
+        edit["body"],
+        "* ⏳ 正在运行命令\n已运行 4 秒 · 工具调用 1 次，已返回 0 次"
+    );
+    // The replacement is the plain content: unstarred body, thread
+    // relation intact, activity key intact — no replace relation (TS
+    // matrix-activity.js builds `next` before adding the replace link).
+    assert_eq!(edit["m.new_content"]["body"], plain["body"]);
+    assert_eq!(edit["m.new_content"]["m.relates_to"]["rel_type"], "m.thread");
+    assert_eq!(edit["m.new_content"]["io.hagency.activity"]["dispatch_id"], "run_1");
+    assert!(edit["m.new_content"].get("m.replace").is_none());
+    assert_eq!(edit["m.relates_to"]["rel_type"], "m.replace");
+    assert_eq!(edit["m.relates_to"]["event_id"], "$activity_first");
+    assert_eq!(edit["io.hagency.activity"]["dispatch_id"], "run_1");
+}
+
+/// The kind shape `activity:<dispatch>:<revision>[:<anchor>]` (task #1):
+/// dispatch ids are colon-free, the revision is numeric, the anchor is the
+/// remainder (a Matrix event id may itself carry colons).
+#[test]
+fn native_matrix_activity_kind_parse() {
+    assert_eq!(
+        parse_activity_notice("activity:run_1:1"),
+        Some(("run_1".to_owned(), None))
+    );
+    assert_eq!(
+        parse_activity_notice("activity:run_1:2:$activity_first"),
+        Some(("run_1".to_owned(), Some("$activity_first".to_owned())))
+    );
+    assert_eq!(
+        parse_activity_notice("activity:run_1:3:$a:b:c"),
+        Some(("run_1".to_owned(), Some("$a:b:c".to_owned())))
+    );
+    assert_eq!(parse_activity_notice("ack"), None);
+    assert_eq!(parse_activity_notice("activity:run_1"), None);
+}
 fn state(f: &common::Fixture, id: &str) -> String {
     rusqlite::Connection::open(f.root.path().join("domain/domain.sqlite3"))
         .unwrap()

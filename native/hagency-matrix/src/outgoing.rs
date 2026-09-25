@@ -3,7 +3,7 @@ use crate::collector::observe;
 use crate::{CancellationToken, Collector, Error, collector::Inner, sdk::Owner};
 use hagency_core::{ingress::VerifiedNoticeClaim, replies::*};
 use hagency_matrix_format::MatrixContent;
-use serde_json::json;
+use serde_json::{Value, json};
 use state::{Attempt, Command, Kind, Phase};
 use std::{collections::BTreeSet, time::Duration};
 
@@ -39,6 +39,27 @@ fn parse_activity_notice(kind: &str) -> Option<(String, Option<String>)> {
         .split_once(':')
         .map(|(_revision, anchor)| anchor.to_owned());
     Some((dispatch.to_owned(), anchor))
+}
+
+/// The activity envelope (lib/matrix-activity.js:4-13): the notice always
+/// carries `io.hagency.activity: {dispatch_id}`; when an anchor exists the
+/// send becomes an EDIT — body prefixed `* `, `m.new_content` the plain
+/// content, `m.relates_to` the replace relation (which replaces the thread
+/// relation, exactly as the TS override does).
+fn apply_activity_envelope(
+    mut content: Value,
+    dispatch_id: &str,
+    anchor: Option<&str>,
+) -> Value {
+    content["io.hagency.activity"] = json!({"dispatch_id": dispatch_id});
+    if let Some(anchor) = anchor {
+        let plain = content.clone();
+        let starred = format!("* {}", content["body"].as_str().unwrap_or_default());
+        content["body"] = json!(starred);
+        content["m.new_content"] = plain;
+        content["m.relates_to"] = json!({"rel_type":"m.replace","event_id":anchor});
+    }
+    content
 }
 impl Collector {
     /// Existing host claim only. No caller-selected Matrix path or content.
@@ -251,24 +272,8 @@ impl Inner {
             if let Some(root) = &route.thread_root {
                 content["m.relates_to"] = json!({"rel_type":"m.thread","event_id":root,"is_falling_back":true,"m.in_reply_to":{"event_id":root}});
             }
-            // The activity arm (lib/matrix-activity.js:4-13): the notice
-            // carries `io.hagency.activity: {dispatch_id}`, and when an
-            // earlier revision of this dispatch was already delivered the
-            // send becomes an EDIT of that anchor event — `* ` body,
-            // `m.new_content` the plain content, `m.relates_to` the
-            // replace relation (which replaces the thread relation, as
-            // the TS override does).
             if let Some((dispatch, anchor)) = &activity {
-                content["io.hagency.activity"] = json!({"dispatch_id": dispatch});
-                if let Some(anchor) = anchor {
-                    let plain = content.clone();
-                    let starred =
-                        format!("* {}", content["body"].as_str().unwrap_or_default());
-                    content["body"] = json!(starred);
-                    content["m.new_content"] = plain;
-                    content["m.relates_to"] =
-                        json!({"rel_type":"m.replace","event_id":anchor});
-                }
+                content = apply_activity_envelope(content, dispatch, anchor.as_deref());
             }
             let content = MatrixContent::new(content)
                 .and_then(|c| c.formatted())
