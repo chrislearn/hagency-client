@@ -23,6 +23,7 @@ struct Server {
     as_created: bool,
     as_logged: bool,
     as_posts: usize,
+    displayname: Option<String>,
 }
 impl Server {
     async fn new() -> Self {
@@ -51,6 +52,7 @@ impl Server {
             as_created: false,
             as_logged: false,
             as_posts: 0,
+            displayname: None,
         }
     }
     fn project(&self) -> Value {
@@ -187,9 +189,28 @@ impl Server {
             self.owner_reads += 1;
             return (200, self.dm());
         }
+        if request.target.ends_with("/displayname") {
+            // The identity-polish reconcile (board #11, matrix-agent-profile.js):
+            // GET the current name, PUT the definition's, read back. Only the
+            // agent's own credential reaches here.
+            assert!(!rep && !human);
+            if request.method == "GET" {
+                return (200, json!({"displayname": self.displayname}));
+            }
+            assert_eq!(request.method, "PUT");
+            self.displayname = body["displayname"].as_str().map(str::to_owned);
+            return (200, json!({}));
+        }
         if request.target.ends_with("/createRoom") {
             assert!(!rep && !human && !self.created);
             assert_eq!(body["invite"], json!([OWNER]));
+            // The identity polish (board #11): the room name and the profile
+            // display name are the SAME definition name.
+            assert_eq!(
+                body["name"].as_str(),
+                self.displayname.as_deref(),
+                "the DM name and the reconciled display name are the agent definition's"
+            );
             assert_eq!(body["preset"], "private_chat");
             assert_eq!(body["is_direct"], true);
             assert_eq!(body["creation_content"]["m.federate"], false);
@@ -200,6 +221,28 @@ impl Server {
             assert_eq!(
                 body["initial_state"][1]["content"]["history_visibility"],
                 "invited"
+            );
+            let mut users = serde_json::Map::new();
+            users.insert(self.user.clone(), json!(100));
+            let lockdown = json!({
+                "type": "m.room.power_levels",
+                "state_key": "",
+                "content": {
+                    "ban": 100,
+                    "events_default": 0,
+                    "invite": 100,
+                    "kick": 100,
+                    "notifications": {"room": 100},
+                    "redact": 100,
+                    "state_default": 100,
+                    "users": Value::Object(users),
+                    "users_default": 0,
+                },
+            });
+            assert_eq!(
+                body["initial_state"][2],
+                lockdown,
+                "the approval DM carries the retained power-level lockdown"
             );
             self.created = true;
             self.posts += 1;

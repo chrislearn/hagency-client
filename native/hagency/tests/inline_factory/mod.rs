@@ -709,6 +709,8 @@ pub struct Peer {
     owner_job: Option<tokio::task::JoinHandle<()>>,
     /// Hold the owner's join back, to exercise the wait for a slow human.
     pub owner_join_delay: Option<Duration>,
+    /// The reconciled profile name (board #11): GET → PUT → readback.
+    displayname: Option<String>,
 }
 impl Peer {
     async fn new(application_service: bool, endpoint: String) -> Self {
@@ -736,6 +738,7 @@ impl Peer {
             account_posts: 0,
             owner_job: None,
             owner_join_delay: None,
+            displayname: None,
         }
     }
     fn project(&self) -> Value {
@@ -924,6 +927,18 @@ impl Peer {
                         json!({"user_id":self.user,"device_id":self.device,"is_guest":false})
                     },
                 )
+            } else if url.path().ends_with("/displayname") {
+                // The identity-polish reconcile (board #11): GET the current
+                // name, PUT the definition's, read back — before createRoom,
+                // with the agent's own credential only.
+                assert!(!rep && !human);
+                if request.method == "GET" {
+                    (200, json!({"displayname": self.displayname}))
+                } else {
+                    assert_eq!(request.method, "PUT");
+                    self.displayname = body["displayname"].as_str().map(str::to_owned);
+                    (200, json!({}))
+                }
             } else if url.path().ends_with("/state") {
                 if request.target.contains("factory_project") {
                     (200, self.project())
