@@ -228,8 +228,11 @@ async fn native_matrix_attachment_privacy_refusals() {
     let value = packet(&c, values, false, "unverified_file").await;
     assert_eq!(run(&c, &mut fake, value, true).await.unwrap().rejected, 1);
     let mut invalid = vec![];
+    // "plaintext_url" left this list: TS parity (lib/matrix-file.js:38,
+    // `content.file?.url || content.url`) — when an encrypted event also
+    // carries a top-level content.url the descriptor wins and the stray url is
+    // ignored, so it is no longer a refusal. Asserted positively below.
     for (i, mode) in [
-        "plaintext_url",
         "descriptor",
         "filename",
         "path",
@@ -242,7 +245,6 @@ async fn native_matrix_attachment_privacy_refusals() {
     {
         let mut value = file(&format!("bad_{i}"), false, false);
         match *mode {
-            "plaintext_url" => value["content"]["url"] = json!("mxc://evil/plain"),
             "descriptor" => value["content"]["file"]["key"]["alg"] = json!("none"),
             "filename" => value["content"]["filename"] = json!("../private"),
             "path" => value["content"]["file"]["url"] = json!("mxc://evil/%2e%2e"),
@@ -253,7 +255,7 @@ async fn native_matrix_attachment_privacy_refusals() {
         invalid.push(value);
     }
     let value = packet(&c, invalid, true, "malformed_files").await;
-    assert_eq!(run(&c, &mut fake, value, true).await.unwrap().rejected, 7);
+    assert_eq!(run(&c, &mut fake, value, true).await.unwrap().rejected, 6);
     let mut plain = file("plain", false, false);
     plain["sender"] = json!("@owner:example.test");
     plain["type"] = json!("m.room.message");
