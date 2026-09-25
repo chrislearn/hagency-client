@@ -1389,11 +1389,16 @@ async fn native_refresh_identity_rejection_parks() {
 #[tokio::test]
 async fn native_worktree_production_config_two_threads() {
     use std::path::Path;
-    let mut f = Fixture::new(false).await;
-    // The operator's git repository the per-thread worktrees branch from.
-    let base = f.root.path().canonicalize().unwrap();
-    let repo = base.join("wt-repo");
-    std::fs::create_dir_all(&repo).unwrap();
+    // The agent's own worktrees root, named on the AGENT RECORD before
+    // admission (the production path — the settings ride the verified
+    // request's agentDefinition, backend-v2.js:2994 + :2057-2075).
+    let external = tempfile::tempdir().unwrap();
+    let worktrees = external.path().join("worktrees");
+    let mut f = Fixture::with_worktree_agent(false, worktrees.clone(), Vec::new()).await;
+    // The per-thread worktrees branch from the AGENT's own workspace root
+    // (the TS repository = agent.workdir, backend-v2.js:2057), so that root
+    // is a git repository. The second session's workspace "work-2" is the
+    // repository for its dispatches the same way.
     for args in [
         vec!["init"],
         vec!["config", "user.email", "t@e.com"],
@@ -1401,40 +1406,46 @@ async fn native_worktree_production_config_two_threads() {
     ] {
         let out = std::process::Command::new("git")
             .args(&args)
-            .current_dir(&repo)
+            .current_dir(&f.work)
             .output()
             .unwrap();
         assert!(out.status.success(), "git {args:?}: {:?}", out.stderr);
     }
-    std::fs::write(repo.join("README.md"), "base\n").unwrap();
+    // `git worktree add` needs a HEAD: seed one commit on each repository.
+    std::fs::write(f.work.join("README.md"), "base\n").unwrap();
     for args in [vec!["add", "README.md"], vec!["commit", "-m", "base"]] {
         let out = std::process::Command::new("git")
             .args(&args)
-            .current_dir(&repo)
+            .current_dir(&f.work)
             .output()
             .unwrap();
         assert!(out.status.success(), "git {args:?}: {:?}", out.stderr);
     }
-    let worktrees = base.join("worktrees");
-    // Inject the operator worktree configuration into the SERVE config the
-    // real binary loads (the production path, not a test-only Host builder).
-    let mut config: serde_json::Value = serde_json::from_slice(
-        &std::fs::read(f.state_dir.join("development-driver.json")).unwrap(),
-    )
-    .unwrap();
-    config["worktree"] = json!({
-        "repository_path": repo.canonicalize().unwrap(),
-        "worktrees_dir": worktrees,
-    });
-    std::fs::write(
-        f.state_dir.join("development-driver.json"),
-        serde_json::to_vec(&config).unwrap(),
-    )
-    .unwrap();
-    // Two thread sessions of the SAME engagement (the fixture's second
-    // session seeds "session-2" on thread "$task_thread_2"; the original
-    // "session" is on "$task_thread"), each with its own queued dispatch.
+    // Two thread sessions of the SAME agent (the fixture's second session
+    // seeds "session-2" on thread "$task_thread_2"; the original "session"
+    // is on "$task_thread"), each with its own queued dispatch.
     f.seed_second_session();
+    for args in [
+        vec!["init"],
+        vec!["config", "user.email", "t@e.com"],
+        vec!["config", "user.name", "T"],
+    ] {
+        let out = std::process::Command::new("git")
+            .args(&args)
+            .current_dir(&f.second_work())
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {:?}", out.stderr);
+    }
+    std::fs::write(f.second_work().join("README.md"), "base\n").unwrap();
+    for args in [vec!["add", "README.md"], vec!["commit", "-m", "base"]] {
+        let out = std::process::Command::new("git")
+            .args(&args)
+            .current_dir(&f.second_work())
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}: {:?}", out.stderr);
+    }
     f.configure_continuous();
     let mut child = f.launch_agent_driver(None);
     f.serve_until("both threaded dispatches completed", |f, _| {

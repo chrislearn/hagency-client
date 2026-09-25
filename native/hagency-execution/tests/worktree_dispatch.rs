@@ -12,7 +12,8 @@
 mod common;
 use common::*;
 use hagency_core::tasks::*;
-use hagency_execution::{Host, Limits, Operation, Protocol, WorktreeConfig, ordinary_launch_path};
+use hagency_core::authority::ProjectRequest;
+use hagency_execution::{Host, Limits, Operation, Protocol, ordinary_launch_path};
 use hagency_store::{DomainRepository, DomainStore, EffectOutcome};
 use serde_json::json;
 use std::{
@@ -85,20 +86,18 @@ fn thread_cwd(requests: &Path) -> String {
 async fn native_worktree_two_threads_distinct_worktrees() {
     let root = tempfile::tempdir().unwrap();
 
-    // The shared engagement workspace (mode `shared`-equivalent default).
-    let work = root.path().join("shared-workspace");
+    // The agent's own workspace root. TS resolves the worktree repository from
+    // the agent workdir (backend-v2.js:2057 `agent.workdir || agent.homeDir`),
+    // so THIS directory is the repository `git worktree add` branches from.
+    let work = root.path().join("agent-workspace");
     hagency_store::private::directory(&work).unwrap();
     let work = work.canonicalize().unwrap();
-
-    // A git repository the per-thread worktrees branch from.
-    let repo = root.path().join("repo");
-    fs::create_dir_all(&repo).unwrap();
-    git(&repo, &["init"]);
-    git(&repo, &["config", "user.email", "t@e.com"]);
-    git(&repo, &["config", "user.name", "T"]);
-    fs::write(repo.join("README.md"), "base\n").unwrap();
-    git(&repo, &["add", "README.md"]);
-    git(&repo, &["commit", "-m", "base"]);
+    git(&work, &["init"]);
+    git(&work, &["config", "user.email", "t@e.com"]);
+    git(&work, &["config", "user.name", "T"]);
+    fs::write(work.join("README.md"), "base\n").unwrap();
+    git(&work, &["add", "README.md"]);
+    git(&work, &["commit", "-m", "base"]);
     let worktrees = root.path().join("worktrees");
 
     // One agent's store: register, admit, approve, provision.
@@ -106,7 +105,14 @@ async fn native_worktree_two_threads_distinct_worktrees() {
     db.register(&registration()).unwrap();
     let pool = resource("pool", "seat", 1000);
     db.put_resource(&pool).unwrap();
-    let proof = proof(&request("allocation", "Worker", &pool, 100));
+    // TS per-agent mode (backend-v2.js:2994, resolve at :2057-2075): the
+    // workspace settings ride the AGENT record through the production
+    // admission path — not a host or serve-level switch.
+    let mut value = serde_json::to_value(&request("allocation", "Worker", &pool, 100)).unwrap();
+    value["agentDefinition"]["workspaceMode"] = json!("worktree");
+    value["agentDefinition"]["worktreesDir"] = json!(worktrees.to_string_lossy().into_owned());
+    let request: ProjectRequest = serde_json::from_value(value).unwrap();
+    let proof = proof(&request);
     let engagement = db.admit(&proof, 1000).unwrap();
     db.approve("approved", &proof, 1000).unwrap();
     let effect = db.claim_effect().unwrap().unwrap();
@@ -146,12 +152,6 @@ async fn native_worktree_two_threads_distinct_worktrees() {
             env,
             BTreeMap::from([("work".into(), work.clone())]),
         )
-        .unwrap()
-        .with_worktree(WorktreeConfig {
-            repository_path: repo.clone(),
-            worktrees_dir: worktrees.clone(),
-            bootstrap: None,
-        })
         .unwrap()
     };
     let env = || {

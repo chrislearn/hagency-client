@@ -55,16 +55,6 @@ pub struct WorktreeInfo {
     pub created: bool,
 }
 
-/// Operator-owned worktree configuration (ADR-011): the git repository root, the
-/// worktrees directory, and the optional bootstrap argv. `agent_id` and the
-/// thread root are supplied per-dispatch from the owned scope, never stored here.
-#[derive(Clone, Debug)]
-pub struct WorktreeConfig {
-    pub repository_path: PathBuf,
-    pub worktrees_dir: PathBuf,
-    pub bootstrap: Option<Vec<String>>,
-}
-
 /// `segment` (router/src/worktree.ts:44-47): lowercase, every run of bytes
 /// outside `[a-z0-9._-]` becomes a single `-`, leading/trailing dashes trimmed,
 /// capped at 48; empty collapses to the fallback.

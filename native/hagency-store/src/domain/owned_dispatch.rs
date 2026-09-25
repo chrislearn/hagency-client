@@ -199,6 +199,13 @@ pub struct OwnedDispatchScope {
     /// `None` for a non-threaded (top-level) session, which keeps the shared
     /// engagement workspace. Already covered by the fingerprint via `session`.
     thread_root: Option<String>,
+    /// Per-agent workspace settings (board #78; the TS agent record,
+    /// backend-v2.js:2994, consumed at backend-v2.js:2057-2075), projected from
+    /// the engagement. `workspace_mode` normalizes to `worktree` or `shared`
+    /// (backend-v2.js:512); the repository is this agent's own workspace root.
+    workspace_mode: String,
+    worktrees_dir: Option<String>,
+    worktree_bootstrap: Vec<String>,
     started: Option<(String, u64, String)>,
 }
 impl OwnedDispatchScope {
@@ -213,6 +220,9 @@ impl OwnedDispatchScope {
             &self.fingerprint,
             &self.engagement_id,
             &self.thread_root,
+            &self.workspace_mode,
+            &self.worktrees_dir,
+            &self.worktree_bootstrap,
             &self.started,
         )
     }
@@ -250,6 +260,20 @@ impl OwnedDispatchScope {
     /// workspace.
     pub fn thread_root(&self) -> Option<&str> {
         self.thread_root.as_deref()
+    }
+    /// Per-agent workspace mode (board #78): `worktree` or `shared` (the TS
+    /// normalize, backend-v2.js:512), projected from the agent record.
+    pub fn workspace_mode(&self) -> &str {
+        &self.workspace_mode
+    }
+    /// The agent's own worktrees root (backend-v2.js:2994). `None` in worktree
+    /// mode is the TS 'workspace-unavailable' refusal (backend-v2.js:2008).
+    pub fn worktrees_dir(&self) -> Option<&str> {
+        self.worktrees_dir.as_deref()
+    }
+    /// The agent's declared bootstrap argv (backend-v2.js:516-524); empty = none.
+    pub fn worktree_bootstrap(&self) -> &[String] {
+        &self.worktree_bootstrap
     }
 }
 
@@ -391,6 +415,9 @@ fn project_dispatch(
         fingerprint,
         engagement_id: engagement.id,
         thread_root,
+        workspace_mode: engagement.workspace_mode,
+        worktrees_dir: engagement.worktrees_dir,
+        worktree_bootstrap: engagement.worktree_bootstrap,
         started: None,
     })
 }

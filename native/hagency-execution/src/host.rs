@@ -1,4 +1,4 @@
-use crate::workspace::{Root, WorktreeConfig, WorktreeManager, WorktreeSpec, Workspaces};
+use crate::workspace::{Root, WorktreeManager, WorktreeSpec, Workspaces};
 use hagency_core::tasks::RunnerCapability;
 use hagency_platform::Launch;
 use hagency_runtime::codex::{
@@ -79,10 +79,6 @@ pub struct Host {
     executable: PathBuf,
     environment: BTreeMap<OsString, OsString>,
     workspaces: Workspaces,
-    /// Per-thread worktree configuration (ADR-011). `None` keeps every
-    /// dispatch on the shared engagement workspace; `Some` resolves a
-    /// threaded dispatch to its per-thread worktree.
-    worktree: Option<WorktreeConfig>,
     managed_account: Option<hagency_store::ManagedAccount>,
     pub(crate) local_codex: Option<Arc<crate::LocalCodex>>,
     task_helper: Option<(PathBuf, SocketAddr)>,
@@ -167,7 +163,6 @@ impl Host {
             executable,
             environment,
             workspaces,
-            worktree: None,
             managed_account: None,
             local_codex: None,
             task_helper: None,
@@ -198,16 +193,6 @@ impl Host {
             return Err(super::Failure::Admission);
         }
         self.managed_account = Some(account);
-        Ok(self)
-    }
-    /// Attach per-thread worktree configuration (ADR-011). A dispatch whose
-    /// session has a thread root resolves to its per-thread worktree; a
-    /// dispatch without one keeps the shared engagement workspace.
-    pub fn with_worktree(mut self, config: WorktreeConfig) -> Result<Self, super::Failure> {
-        if self.worktree.is_some() {
-            return Err(super::Failure::Admission);
-        }
-        self.worktree = Some(config);
         Ok(self)
     }
     /// Explicit provider-owned local login, separate from managed readiness.
@@ -397,18 +382,27 @@ impl Host {
         if !workspace.exclusive || !limits.validate() {
             return Err(super::Failure::Admission);
         }
-        // ADR-011: a worktree-mode dispatch whose session has a thread root
-        // resolves to its per-thread worktree (created via WorktreeManager);
-        // a dispatch without a thread keeps the shared engagement workspace.
+        // ADR-011 (board #78, TS backend-v2.js:2057-2075): a dispatch whose
+        // AGENT record enables `worktree` mode and whose session has a thread
+        // root resolves to its per-thread worktree. The repository is the
+        // agent's own workspace root — the shared Root this dispatch already
+        // holds (backend-v2.js:2057 `agent.workdir || agent.homeDir`); a
+        // missing `worktrees_dir` is the TS 'workspace-unavailable' refusal
+        // (backend-v2.js:2008). Anything else keeps the shared workspace.
         // Failure to resolve parks/refuses (Admission), never a terminal state.
-        let root = match (&self.worktree, scope.thread_root()) {
-            (Some(config), Some(thread)) => {
+        let shared_root = self.workspaces.get(&workspace.id)?;
+        let root = match (scope.workspace_mode(), scope.thread_root()) {
+            ("worktree", Some(thread)) => {
+                let Some(worktrees_dir) = scope.worktrees_dir() else {
+                    return Err(super::Failure::Admission);
+                };
                 let spec = WorktreeSpec {
-                    repository_path: config.repository_path.to_string_lossy().into_owned(),
-                    worktrees_dir: config.worktrees_dir.to_string_lossy().into_owned(),
+                    repository_path: shared_root.path().to_string_lossy().into_owned(),
+                    worktrees_dir: worktrees_dir.to_string(),
                     agent_id: scope.engagement_id().to_string(),
                     thread_root_event_id: thread.to_string(),
-                    bootstrap: config.bootstrap.clone(),
+                    bootstrap: (!scope.worktree_bootstrap().is_empty())
+                        .then(|| scope.worktree_bootstrap().to_vec()),
                 };
                 let info = WorktreeManager::new()
                     .ensure(spec)
@@ -420,7 +414,7 @@ impl Host {
                 make_private_dir(info.path.as_path())?;
                 Arc::new(Root::open(info.path)?)
             }
-            _ => self.workspaces.get(&workspace.id)?,
+            _ => shared_root,
         };
         root.check().map_err(|_| super::Failure::Admission)?;
         // ADR-116 amendment: the session and process working directory string

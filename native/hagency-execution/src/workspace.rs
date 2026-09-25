@@ -7,9 +7,7 @@ mod received;
 mod worktree;
 pub use approval_path::ordinary_launch_path;
 pub use received::{WorkspaceReceive, WorkspaceReceiveError};
-pub use worktree::{
-    WorktreeConfig, WorktreeError, WorktreeInfo, WorktreeManager, WorktreeSpec,
-};
+pub use worktree::{WorktreeError, WorktreeInfo, WorktreeManager, WorktreeSpec};
 
 use crate::Failure;
 use cap_std::{ambient_authority, fs::Dir};
