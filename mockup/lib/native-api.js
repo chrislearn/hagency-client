@@ -430,9 +430,8 @@ const bindingRow = (v) => object(v, ['engagementId', 'agent', 'fleetId', 'projec
   && text(v.serverName, 256) && text(v.roomId, 256) && text(v.ownerMxid, 256)
   && number(v.roomGeneration) && number(v.incarnation);
 export function validateApprovalBindings(v) {
-  if (!object(v, ['at_ms', 'bindings', 'permissions']) || !Array.isArray(v.bindings) || v.bindings.length > 100
-    || v.bindings.some((b) => !bindingRow(b))
-    || !object(v.permissions, ['manageBindings']) || typeof v.permissions.manageBindings !== 'boolean') throw new Error('invalid_native_response');
+  if (!object(v, ['at_ms', 'bindings']) || !Array.isArray(v.bindings) || v.bindings.length > 100
+    || v.bindings.some((b) => !bindingRow(b))) throw new Error('invalid_native_response');
   return v;
 }
 export async function fetchApprovalBindings() {

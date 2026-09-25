@@ -174,12 +174,12 @@ fn binding_count(state: &std::path::Path) -> u64 {
 }
 
 /// The operator unbind (board #52, TS `DELETE
-/// /api/approval-bindings/:agent/:roomId` at backend-v2.js:9030-9046): the
+/// /api/approval-bindings/:agent/:roomId` at backend-v2.js:9032-9046): the
 /// binding row goes AND the authority it carried is revoked — the TS
-/// `removeBinding` + `revokeScopesByBinding` pair. A read-only ticket is
-/// refused with the console's named word and changes nothing; a lifecycle
-/// ticket removes the row and revokes the grant it carried; an unknown pair
-/// is a 404.
+/// `removeBinding` + `revokeScopesByBinding` pair. integ is SINGLE-LOGIN
+/// (operator decision): the `authenticate` hoop is the whole gate, so an
+/// ANONYMOUS caller is refused 401 and an ordinary authenticated session may
+/// unbind; an unknown pair is a 404.
 #[tokio::test]
 async fn native_console_approval_binding_unbind_revokes() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
@@ -188,38 +188,34 @@ async fn native_console_approval_binding_unbind_revokes() {
     seed_grant(&state, &f.engagement);
     let service = f.service();
     let path = "/console/api/approval-bindings/UsageWorker/!private%3Aexample.test";
-    // The read-only ticket renders no unbind control and its call is refused:
-    // the mutation needs `Scope::AgentLifecycle`, and nothing changed.
-    let read_only = session(&service).await;
-    let mut refused = TestClient::delete(format!("{BASE}{path}"))
+    // No cookie: the `authenticate` hoop refuses before any store work and
+    // nothing changed.
+    let mut anonymous = TestClient::delete(format!("{BASE}{path}"))
         .add_header("host", "127.0.0.1:13300", true)
         .add_header("origin", BASE, true)
         .add_header("sec-fetch-site", "same-origin", true)
-        .add_header("cookie", &read_only, true)
         .send(&service)
         .await;
-    assert_eq!(refused.status_code, Some(StatusCode::FORBIDDEN));
-    let refusal: Value = refused.take_json().await.unwrap();
-    assert_eq!(refusal["code"], "agent_lifecycle_scope_required");
+    assert_eq!(anonymous.status_code, Some(StatusCode::UNAUTHORIZED));
+    let refusal: Value = anonymous.take_json().await.unwrap();
+    assert_eq!(refusal["code"], "console_access_required");
     assert_eq!(binding_count(&state), 1, "the refusal removed nothing");
     assert!(
         grant_authorizes(&state, &f.engagement),
         "the refusal revoked nothing"
     );
-    // The unbind control renders ONLY from the served capability word.
-    let mut listed = get("/console/api/approval-bindings", &read_only)
+    // SINGLE-LOGIN: an ORDINARY authenticated session unbinds — no scope, no
+    // capability word. The list carries no `permissions` envelope at all.
+    let cookie = session(&service).await;
+    let mut listed = get("/console/api/approval-bindings", &cookie)
         .send(&service)
         .await;
     assert_eq!(listed.status_code, Some(StatusCode::OK));
     let value: Value = listed.take_json().await.unwrap();
-    assert_eq!(value["permissions"]["manageBindings"], false);
-    // Ticket issuance is rate-limited to one per second (authority.rs
-    // `issued` slot), so the scoped ticket waits. ONE scoped ticket serves
-    // both the 404 probe and the unbind: the scope gate runs BEFORE the store
-    // lookup, so a read-only ticket answers 403 even for an unknown pair and
-    // could never observe the 404 the route owes.
-    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
-    let cookie = lifecycle_session(&service).await;
+    assert!(
+        value.as_object().unwrap().get("permissions").is_none(),
+        "single-login serves no capability word"
+    );
     // An unknown pair is a 404, as TS returns.
     let missing = TestClient::delete(format!(
         "{BASE}/console/api/approval-bindings/UsageWorker/!nope%3Aexample.test"
