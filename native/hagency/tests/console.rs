@@ -271,6 +271,22 @@ async fn native_console_assets() {
             .unwrap()
             .contains("retained asset fixture")
     );
+    // Board #47: the task-graphs document must be SERVED, which needs the page
+    // admitted by `assets.rs` (an unlisted `task-graphs/index.html` makes
+    // `Console::load` fail outright, so a bundle carrying the page would be
+    // refused) at the URL the rail links to.
+    let mut graphs = TestClient::get(format!("{BASE}/console/task-graphs/"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .send(&f.service())
+        .await;
+    assert_eq!(graphs.status_code, Some(StatusCode::OK));
+    assert!(
+        graphs
+            .take_string()
+            .await
+            .unwrap()
+            .contains("task-graphs document fixture")
+    );
     for path in [
         "/console/operator.token",
         "/console/agents/FixtureName",

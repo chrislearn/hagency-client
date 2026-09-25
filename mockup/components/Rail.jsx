@@ -127,7 +127,7 @@ function NativeRail() {
     <div className="rail-fleet">{SECTIONS.map((sec) => <div key={sec.head}>
       <h2 className="rail-sec">{t(sec.head)}</h2>
       <ul className="rail-list">{sec.rows.map((row) => <li key={row.key}>
-        {['usage', 'resources', 'alerts', 'engagements', 'workforce', 'tasks'].includes(row.key) ? <a className="fleet-row" href={row.key === 'workforce' ? '/console/agents/' : `/console/${row.key}/`} aria-current={isCurrent(path, row) ? 'page' : undefined}><span className="ico">{row.icon}</span><span className="grow">{t(`nav.${row.key}`)}</span></a>
+        {['usage', 'resources', 'alerts', 'engagements', 'workforce', 'tasks', 'taskGraphs'].includes(row.key) ? <a className="fleet-row" href={row.key === 'workforce' ? '/console/agents/' : row.key === 'taskGraphs' ? '/console/task-graphs/' : `/console/${row.key}/`} aria-current={isCurrent(path, row) ? 'page' : undefined}><span className="ico">{row.icon}</span><span className="grow">{t(`nav.${row.key}`)}</span></a>
           : <span className="fleet-row" aria-disabled="true" title={t('nu.unavailableRoute')}><span className="ico">{row.icon}</span><span className="grow">{t(`nav.${row.key}`)}</span><span>—</span></span>}
       </li>)}</ul>
     </div>)}</div>
