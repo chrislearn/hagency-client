@@ -30,6 +30,36 @@ fn script() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../mockup/scripts/native-console-browser.mjs")
 }
+/// Wait for the spawned executable to admit on `address`; when it refuses
+/// to start, SAY WHY — the child's exit status and its stderr. A bare
+/// "process exited" line made #83 need this re-run at all. The stderr read
+/// uses a blocking thread: the pipe belongs to a dead child, so there is
+/// nothing left to await.
+async fn await_admission(server: &mut tokio::process::Child, address: SocketAddr) -> String {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        if tokio::net::TcpStream::connect(address).await.is_ok() {
+            return String::new();
+        }
+        if let Some(status) = server.try_wait().unwrap() {
+            // The child is dead, so the pipe reads to EOF immediately —
+            // awaiting it cannot hang; it just drains what was written.
+            let mut stderr = String::new();
+            if let Some(mut pipe) = server.stderr.take() {
+                use tokio::io::AsyncReadExt;
+                let _ = pipe.read_to_string(&mut stderr).await;
+            }
+            return format!(
+                "native console process exited before admission: {status}; stderr:\n{stderr}"
+            );
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "native console startup exceeded the 10s budget"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+}
 
 #[tokio::test]
 async fn native_console_browser() {
@@ -157,7 +187,8 @@ async fn native_console_executable() {
             }
             assert!(
                 server.try_wait().unwrap().is_none(),
-                "native console process exited before admission"
+                "{}",
+                await_admission(&mut server, address).await
             );
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -354,7 +385,8 @@ async fn native_console_resources_executable() {
             }
             assert!(
                 server.try_wait().unwrap().is_none(),
-                "native console process exited before admission"
+                "{}",
+                await_admission(&mut server, address).await
             );
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -571,7 +603,11 @@ async fn native_console_resource_configuration_executable() {
                 if tokio::net::TcpStream::connect(address).await.is_ok() {
                     break;
                 }
-                assert!(server.try_wait().unwrap().is_none());
+                assert!(
+                    server.try_wait().unwrap().is_none(),
+                    "{}",
+                    await_admission(&mut server, address).await
+                );
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
         })
@@ -892,9 +928,6 @@ async fn native_console_agent_lifecycle_browser() {
         while let Some(line) = lines.next_line().await.unwrap() {
             match line.as_str() {
                 "LIFECYCLE_TICKET" => {
-                    // Ticket issuance is limited to one per second; cached
-                    // browser assets can finish the read-only walk sooner.
-                    tokio::time::sleep(Duration::from_millis(1010)).await;
                     let lifecycle_url = hagency::console::client::lifecycle_access(
                         &f.root.path().join("state"),
                         address,

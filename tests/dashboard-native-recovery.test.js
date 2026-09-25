@@ -8,7 +8,7 @@ const task = { id: 'task', session_id: 'session', creator_session_id: null, titl
 const inspection = () => ({ inspectionId: 'a'.repeat(64), inspectionToken: 'b'.repeat(64), expiresAt: Date.now() + 900000,
   snapshot: { dispatchId: 'dispatch', fence: 1, receiptDigest: 'c'.repeat(64), observation: { scope: 'd'.repeat(64), workspace: 'work',
     inventory: { profile: 'stopped-content-inventory-v1', root: { platform: 'unix-v1', volume: '0000000000000001', object: Array(16).fill(0) },
-      entries: [{ path: '<img src=x onerror=alert(1)>', kind: 'file', bytes: 5, sha256: 'e'.repeat(64), readonly: false }] } }, task: { ...task }, route: null } });
+      entries: [{ path: '<img src=x onerror=alert(1)>', kind: 'file', bytes: 5, sha256: 'e'.repeat(64), readonly: false }] } }, fenced: false, task: { ...task }, route: null } });
 const page = { engagementId: 'agent', dispatches: [{ dispatchId: 'dispatch', sessionId: 'session', taskId: 'task', fence: 1, reason: 'owned_runner_failure', inspectionAvailable: true }], nextAfter: null };
 const response = (v, status = 200) => new Response(JSON.stringify(v), { status, headers: { 'Content-Type': 'application/json' } });
 afterEach(() => vi.unstubAllGlobals());

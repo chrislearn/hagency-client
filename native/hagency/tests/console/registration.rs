@@ -47,19 +47,19 @@ async fn native_registration_route_writes_the_fleet_row() {
         !before.iter().any(|(id, _)| id == &fleet),
         "the test fleet starts unregistered"
     );
-    // A read-only session cannot register: the mutation needs AgentLifecycle.
-    let read_only = session(&service).await;
-    let refused = post("/console/api/project-sides", &read_only)
+    // TS parity: an anonymous caller cannot register; one login can.
+    let refused = TestClient::post(format!("{BASE}/console/api/project-sides"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .add_header("origin", BASE, true)
+        .add_header("sec-fetch-site", "same-origin", true)
         .json(&registration_json(1))
         .send(&service)
         .await;
-    assert_eq!(refused.status_code, Some(StatusCode::FORBIDDEN));
+    assert_eq!(refused.status_code, Some(StatusCode::UNAUTHORIZED));
     assert!(
         !fleet_rows(&state).iter().any(|(id, _)| id == &fleet),
-        "a read-only session writes nothing"
+        "an anonymous request writes nothing"
     );
-    // Ticket issuance is rate-limited to one per second.
-    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
     let cookie = lifecycle_session(&service).await;
     let mut created = post("/console/api/project-sides", &cookie)
         .json(&registration_json(1))
