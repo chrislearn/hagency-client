@@ -159,9 +159,15 @@ async fn transition(req: &mut Request, depot: &mut Depot, res: &mut Response) {
             key: key.clone(),
             to,
             // Brief 28 (F3): the actor is the SESSION's identity, fixed by
-            // the server — never a body field.
+            // the server — never a body field. The console transition
+            // carries no assignee or suppression window: an operator
+            // assigning or windowing works the bearer route
+            // (`crate::alerts`), which accepts both like the retained
+            // `backend-v2.js:16118-16122`.
             actor: SESSION_ACTOR.to_owned(),
             note: input.note,
+            assignee: None,
+            suppress_until_ms: None,
             now,
         })
         .await;

@@ -120,9 +120,10 @@ async fn ts_owner_approval_unknown_id_denies_without_fallback() {
 async fn ts_approval_grant_revocation_is_a_bounded_receipt() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
-    // ONE login is the whole console: an ordinary session reaches the store.
+    // ONE login is the whole console (the operator's one-login decision):
+    // an ordinary session carries the grant-revocation permission, and an
+    // unknown grant is `not_found`, never a fabricated success.
     let cookie = session(&service).await;
-    // An unknown grant is `not_found`, never a fabricated success.
     let mut response = TestClient::delete(format!("{BASE}/console/api/approvals/grants/grant_ts"))
         .add_header("host", "127.0.0.1:13300", true)
         .add_header("origin", BASE, true)

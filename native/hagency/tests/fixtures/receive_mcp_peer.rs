@@ -111,6 +111,7 @@ fn helper(params: &Value, turn: &Value, progress: &mut impl Write) -> io::Result
                 "transition_task",
                 "complete_task_with_reply",
                 "read_conversation",
+                "schedule_reminder",
                 "list_received_files",
                 "receive_file"
             ])

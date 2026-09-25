@@ -21,8 +21,12 @@ mod engagements;
 mod engagements_retire;
 #[path = "console/engagements_verdict.rs"]
 mod engagements_verdict;
+#[path = "console/exec_policy.rs"]
+mod exec_policy;
 #[path = "console/fixture.rs"]
 mod fixture;
+#[path = "console/invites.rs"]
+mod invites;
 #[path = "console/matrix_diag.rs"]
 mod matrix_diag;
 #[path = "console/origin.rs"]
@@ -39,9 +43,15 @@ mod registration;
 mod resources;
 #[path = "console/side_registration.rs"]
 mod side_registration;
+#[path = "console/side_budget.rs"]
+mod side_budget;
+#[path = "console/side_lifecycle.rs"]
+mod side_lifecycle;
 #[path = "console/status_strip.rs"]
 #[cfg(feature = "native-console-browser")]
 mod status_strip;
+#[path = "console/tasks.rs"]
+mod tasks;
 #[path = "console/ts_oracle_approvals.rs"]
 mod ts_oracle_approvals;
 use fixture::*;
@@ -103,6 +113,14 @@ fn post(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
         .add_header("sec-fetch-site", "same-origin", true)
         .add_header("cookie", cookie, true)
 }
+fn put(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
+    TestClient::put(format!("{BASE}{path}"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .add_header("origin", BASE, true)
+        .add_header("sec-fetch-site", "same-origin", true)
+        .add_header("cookie", cookie, true)
+}
+
 /// TS parity: one login is the whole console — the scoped issue routes are
 /// gone, so every former "scoped session" is the same `session()`.
 async fn lifecycle_session(service: &Service) -> String {
@@ -392,4 +410,91 @@ async fn native_console_usage() {
         Some(StatusCode::SERVICE_UNAVAILABLE)
     );
     f.close().await;
+}
+
+/// Board #28: a refusal to start must SAY what is wrong and how to fix it —
+/// a bare `Error: Assets` (exit 1, no field, no fix) is a bug on its own.
+/// `Assets::load` deliberately walks every path component with
+/// `open_dir_nofollow` (the console never resolves a filesystem path at
+/// request time), so a bundle spelled through a symlinked ancestor — this
+/// host's `.../home/hl` -> `hl.noindex`, macOS's `/var` -> `/private/var` —
+/// is refused; the refusal must name `--console-assets` and the fix, and the
+/// same directory reached by its actual host path must still admit.
+#[tokio::test]
+async fn native_console_assets_refusal_names_field_and_fix() {
+    let root = tempfile::tempdir().unwrap();
+    let state = root.path().join("state");
+    let binary = env!("CARGO_BIN_EXE_hagency");
+    let init = std::process::Command::new(binary)
+        .args(["init", "--state-dir"])
+        .arg(&state)
+        .env("PATH", "")
+        .output()
+        .unwrap();
+    assert!(
+        init.status.success(),
+        "{}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+    let bundle = root.path().join("assets");
+    assets(&bundle);
+
+    // (a) The refusal: an alias path exits non-zero and names field AND fix.
+    // The child is polled to a deadline — `output()` would block forever if
+    // the refusal ever regressed into an admission.
+    #[cfg(unix)]
+    {
+        let alias = root.path().join("alias");
+        std::os::unix::fs::symlink(&bundle, &alias).unwrap();
+        let mut child = std::process::Command::new(binary)
+            .args(["serve", "--state-dir"])
+            .arg(&state)
+            .args(["--listen", "127.0.0.1:0", "--console-assets"])
+            .arg(&alias)
+            .env("PATH", "")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() {
+                break status;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "an aliased bundle was admitted instead of refused"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        assert!(
+            !status.success(),
+            "an aliased bundle must not be admitted"
+        );
+        let mut stderr = String::new();
+        if let Some(mut pipe) = child.stderr.take() {
+            use std::io::Read;
+            pipe.read_to_string(&mut stderr).unwrap();
+        }
+        assert!(
+            stderr.contains("Error: Config"),
+            "the assets refusal must ride the named config class, got: {stderr}"
+        );
+        assert!(
+            stderr.contains("--console-assets"),
+            "the refusal must name the field, got: {stderr}"
+        );
+        assert!(
+            stderr.contains("symlink"),
+            "the refusal must name the fix (the alias), got: {stderr}"
+        );
+    }
+
+    // (b) The same bytes by their actual host path are admitted — the
+    // refusal is the alias, not the bundle.
+    let actual = bundle.canonicalize().unwrap();
+    assert!(
+        hagency::console::Console::load(&actual).is_ok(),
+        "the real host path must admit"
+    );
 }
