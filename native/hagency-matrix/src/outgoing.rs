@@ -142,7 +142,7 @@ impl Inner {
         if view.attempt.is_some() {
             return Err(Error::OutcomeUnknown);
         }
-        let (kind, id, fence, domain_digest, route, transaction_id, body, reply_to) = match &source {
+        let (kind, id, fence, domain_digest, route, transaction_id, body, reply_to, incidental) = match &source {
             Source::Final(claim) => {
                 let historical = owner
                     .outgoing(Command::Lookup {
@@ -178,6 +178,7 @@ impl Inner {
                     send.transaction_id,
                     send.body,
                     send.reply_to,
+                    send.incidental,
                 )
             }
             Source::Notice(claim) => {
@@ -217,6 +218,7 @@ impl Inner {
                     claim.claim.notice.transaction_id.clone(),
                     claim.claim.notice.body.clone(),
                     None,
+                    false,
                 )
             }
             Source::Command(claimed) => {
@@ -258,6 +260,7 @@ impl Inner {
                     // A command answer names nobody: it renders from the route's
                     // thread root alone, exactly as the retained bridge sent it.
                     None,
+                    false,
                 )
             }
             Source::File(file) => {
@@ -274,6 +277,7 @@ impl Inner {
                     l.transaction_id.clone(),
                     String::new(),
                     None,
+                    false,
                 )
             }
             Source::Resume => unreachable!(),
@@ -305,6 +309,7 @@ impl Inner {
                 route.thread_root.as_deref(),
                 reply_to.as_deref(),
                 matches!(route.privacy, hagency_core::replies::RoomPrivacy::Group {}),
+                incidental,
             ) {
                 content["m.relates_to"] = relation;
             }
@@ -320,6 +325,7 @@ impl Inner {
                 domain_digest,
                 route,
                 reply_to,
+                incidental,
                 transaction_id,
                 content,
                 content_digest,

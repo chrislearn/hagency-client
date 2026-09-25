@@ -392,6 +392,7 @@ fn native_verified_ingress_top_level_group_answer_names_the_question() {
         &FinalReply {
             call_id: "final".into(),
             body: "The answer".into(),
+                        incidental: false,
         },
         1016,
     )
@@ -568,6 +569,7 @@ fn native_verified_ingress_task_activation() {
                 &FinalReply {
                     call_id: "final".into(),
                     body: "Actual intent completed".into(),
+                        incidental: false,
                 },
                 1020,
             )
@@ -596,6 +598,7 @@ fn native_verified_ingress_followup() {
                 &FinalReply {
                     call_id: "first".into(),
                     body: "First answer".into(),
+                        incidental: false,
                 },
                 1018,
             )
@@ -643,7 +646,8 @@ fn native_verified_ingress_followup() {
                 &cap,
                 &FinalReply {
                     call_id: "old".into(),
-                    body: "Old epoch".into()
+                    body: "Old epoch".into(),
+                    incidental: false,
                 },
                 1025
             )
@@ -667,6 +671,7 @@ fn native_verified_ingress_followup() {
                 &FinalReply {
                     call_id: "second".into(),
                     body: "Second answer".into(),
+                        incidental: false,
                 },
                 1027,
             )
@@ -1116,6 +1121,7 @@ fn native_verified_ingress_recovery() {
             &FinalReply {
                 call_id: "result".into(),
                 body: "Recovered activation".into(),
+                        incidental: false,
             },
             2011,
         )

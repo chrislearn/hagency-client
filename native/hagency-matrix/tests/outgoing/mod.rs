@@ -161,6 +161,7 @@ async fn final_claim_named(f: &common::Fixture, name: &str) -> ReplyClaim {
             RunnerCommand::SubmitFinalReply(FinalReply {
                 call_id: "final".into(),
                 body: "Answer **verified** 中文".into(),
+                incidental: false,
             }),
         )
         .await
@@ -255,6 +256,114 @@ async fn native_matrix_outgoing_kicked_agent_rejoins_and_the_message_is_delivere
     .await;
     assert_eq!(result.unwrap().state, OutgoingState::Delivered);
     assert_eq!(state(&f, &claim.id), "delivered");
+    fake.quiesced(fake.requests(), &common::limits()).await;
+    c.close().await.unwrap();
+    f.store.shutdown().await.unwrap();
+    fake.close().await;
+}
+
+/// Board #61 row 6 (TS bridge-matrix.js:3374-3385): an INCIDENTAL answer to a
+/// group question with no source thread STARTS a thread rooted at that
+/// question — root == reply target, falling back to a plain reply for clients
+/// without thread rendering. Goes through the real send path (submit → claim
+/// → send_final → sdk → the wire), with the question admitted as the
+/// dispatch's addressed input so the reply names it.
+#[tokio::test]
+async fn native_matrix_outgoing_incidental_group_answer_starts_a_thread_at_the_question() {
+    let (f, mut fake, c) = ready(false, false).await;
+    // Admit the question exactly as the notice intake does: a top-level group
+    // message addressing the agent, so its route has NO thread root.
+    let cancel = CancellationToken::new();
+    let event = json!({"event_id":"$question","sender":"@owner:example.test","type":"m.room.message","origin_server_ts":now(),"content":{"msgtype":"m.text","body":"Please implement","m.mentions":{"user_ids":["@worker:example.test"]}}});
+    let sync = json!({"next_batch":"question","rooms":{"join":{"!project:example.test":{"timeline":{"limited":false,"events":[event]},"state":{"events":[]}}}},"to_device":{"events":[]}});
+    let (r, ()) = scripted(
+        "incidental intake",
+        None,
+        c.intake(HostIntakePlan::new(vec!["root".into()]).unwrap(), &cancel),
+        async {
+            fake.next().await.json(200, common::who());
+            fake.next().await.json(200, sync);
+            fake.next().await.json(200, room(false));
+        },
+    )
+    .await;
+    r.unwrap();
+    let inbox = f.store.inbox("root".into(), 0, 10, None).await.unwrap();
+    let sequence = inbox[0].message.sequence;
+    f.store
+        .create_canonical_task("task".into(), "root".into(), "Finish result".into(), now())
+        .await
+        .unwrap();
+    f.store
+        .enqueue_inbox_dispatch(
+            DispatchInput {
+                id: "run_task".into(),
+                session_id: "root".into(),
+                task_id: Some("task".into()),
+                resources: vec![],
+                payload: json!({"instruction":"fixture"}),
+            },
+            vec![sequence],
+        )
+        .await
+        .unwrap();
+    let cap = f
+        .store
+        .claim_dispatch("runner".into(), now(), 60_000, 120_000, 1)
+        .await
+        .unwrap()
+        .unwrap();
+    f.store.start_dispatch(cap.clone(), now()).await.unwrap();
+    f.store
+        .mutate_task(
+            cap.clone(),
+            "task".into(),
+            "done".into(),
+            TaskMutation::Transition {
+                status: TaskState::Done,
+                waiting_reason: None,
+                waiting_until: None,
+            },
+            now(),
+        )
+        .await
+        .unwrap();
+    f.store
+        .runner_command(
+            cap.clone(),
+            RunnerCommand::SubmitFinalReply(FinalReply {
+                call_id: "final".into(),
+                body: "Progress: still working".into(),
+                incidental: true,
+            }),
+        )
+        .await
+        .unwrap();
+    f.store
+        .complete_dispatch(cap, json!({"observed":"fixture completed"}), now())
+        .await
+        .unwrap();
+    let claim = f.store.claim_final_reply(60_000).await.unwrap().unwrap();
+    let (result, body) = scripted(
+        "incidental send",
+        None,
+        c.send_final(claim.clone(), &cancel),
+        async {
+            let req = plain_wire(&mut fake).await;
+            let body: Value = serde_json::from_slice(&req.body).unwrap();
+            req.json(200, json!({"event_id":"$threaded"}));
+            body
+        },
+    )
+    .await;
+    assert_eq!(result.unwrap().state, OutgoingState::Delivered);
+    assert_eq!(state(&f, &claim.id), "delivered");
+    // The incidental shape: a NEW thread rooted at the question itself,
+    // falling back to a plain reply for thread-less clients.
+    assert_eq!(body["m.relates_to"]["rel_type"], "m.thread");
+    assert_eq!(body["m.relates_to"]["event_id"], "$question");
+    assert_eq!(body["m.relates_to"]["is_falling_back"], true);
+    assert_eq!(body["m.relates_to"]["m.in_reply_to"]["event_id"], "$question");
     fake.quiesced(fake.requests(), &common::limits()).await;
     c.close().await.unwrap();
     f.store.shutdown().await.unwrap();

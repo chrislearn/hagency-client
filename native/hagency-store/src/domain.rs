@@ -105,7 +105,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 41;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 42;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -785,6 +785,14 @@ impl DomainRepository {
                         include_str!("migrations/046-side-registrations.sql"),
                     ),
                     (41, include_str!("migrations/040-command-notices.sql")),
+                    // Task #61's migration number is 065 (the board's
+                    // assignment); the walker requires the next sequential
+                    // list version, so the file keeps 065 and the tuple
+                    // carries 42. Integration renumbers on merge.
+                    (
+                        42,
+                        include_str!("migrations/065-final-reply-incidental.sql"),
+                    ),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
@@ -831,6 +839,7 @@ impl DomainRepository {
                     "SELECT session_id FROM current_matrix_routes LIMIT 0",
                     "SELECT s.joined,s.invite_only,s.available,s.invalidation,m.transport_generation,f.cancel_requested,i.digest FROM matrix_room_scopes s CROSS JOIN matrix_room_memberships m CROSS JOIN final_replies f CROSS JOIN final_reply_inspections i LIMIT 0",
                     "SELECT id FROM current_final_replies LIMIT 0",
+                    "SELECT incidental FROM final_replies LIMIT 0",
                     "SELECT e.scope_digest,e.config,r.digest,s.ingress_since,s.parent_session_id,t.observed_at,room.visibility_since,si.config,ti.config,ti.wake,n.verified_route,n.content_digest FROM matrix_ingress_events e CROSS JOIN verified_task_requests r CROSS JOIN matrix_session_routes s CROSS JOIN matrix_transports t CROSS JOIN matrix_room_scopes room CROSS JOIN session_inputs si CROSS JOIN task_inputs ti CROSS JOIN task_notices n LIMIT 0",
                 ],
             },

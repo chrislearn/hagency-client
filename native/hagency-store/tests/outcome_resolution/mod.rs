@@ -492,7 +492,7 @@ fn native_outcome_resolution_schema35_upgrade() {
     drop(f.db);
     let sql = rusqlite::Connection::open(path.join("domain.sqlite3")).unwrap();
     sql.execute_batch(
-        "DROP TABLE outcome_resolutions; DROP TABLE outcome_inspections; ALTER TABLE dispatch_inputs DROP COLUMN addressed; DROP TABLE IF EXISTS dispatch_conversation_reads; ALTER TABLE runner_attempts DROP COLUMN started_at; ALTER TABLE runner_attempts DROP COLUMN parked_at; ALTER TABLE runner_attempts DROP COLUMN last_renew_at; ALTER TABLE runner_attempts DROP COLUMN settled_at; ALTER TABLE runner_attempts DROP COLUMN terminal_reason; DROP TABLE IF EXISTS runner_attempt_events; DROP TABLE IF EXISTS agent_fences; DROP TABLE IF EXISTS side_registrations; DROP VIEW IF EXISTS current_command_notices; DROP TABLE IF EXISTS command_notice_inspections; DROP TABLE IF EXISTS command_notices; PRAGMA user_version=34;",
+        "DROP TABLE outcome_resolutions; DROP TABLE outcome_inspections; ALTER TABLE dispatch_inputs DROP COLUMN addressed; DROP TABLE IF EXISTS dispatch_conversation_reads; ALTER TABLE runner_attempts DROP COLUMN started_at; ALTER TABLE runner_attempts DROP COLUMN parked_at; ALTER TABLE runner_attempts DROP COLUMN last_renew_at; ALTER TABLE runner_attempts DROP COLUMN settled_at; ALTER TABLE runner_attempts DROP COLUMN terminal_reason; DROP TABLE IF EXISTS runner_attempt_events; DROP TABLE IF EXISTS agent_fences; DROP TABLE IF EXISTS side_registrations; DROP VIEW IF EXISTS current_command_notices; DROP TABLE IF EXISTS command_notice_inspections; DROP TABLE IF EXISTS command_notices; ALTER TABLE final_replies DROP COLUMN incidental; PRAGMA user_version=34;",
     )
     .unwrap();
     drop(sql);

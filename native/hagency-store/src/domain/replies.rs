@@ -39,11 +39,27 @@ fn current(db: &Connection, id: &str) -> Result<(), Error> {
     Ok(())
 }
 fn snapshot(db: &Connection, id: &str) -> Result<ReplySend, Error> {
-    let (transaction_id, digest, route, body, dispatch): (String, String, String, String, String) = db
+    let (transaction_id, digest, route, body, dispatch, incidental): (
+        String,
+        String,
+        String,
+        String,
+        String,
+        bool,
+    ) = db
         .query_row(
-            "SELECT transaction_id,digest,route,body,source_dispatch_id FROM final_replies WHERE id=?1",
+            "SELECT transaction_id,digest,route,body,source_dispatch_id,incidental FROM final_replies WHERE id=?1",
             [id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                ))
+            },
         )?;
     Ok(ReplySend {
         id: id.into(),
@@ -52,6 +68,7 @@ fn snapshot(db: &Connection, id: &str) -> Result<ReplySend, Error> {
         route: serde_json::from_str(&route)?,
         body,
         reply_to: question_event(db, &dispatch)?,
+        incidental,
     })
 }
 /// TS:bridge-matrix.js:3318-3393 — an answer names the message it answers. That
@@ -140,12 +157,14 @@ pub(super) fn insert_intent(
     dispatch_id: &str,
     route: &ReplyRoute,
     body: &str,
+    incidental: bool,
     now: u64,
 ) -> Result<(String, bool), Error> {
     let session = &task.session_id;
     let task_id = &task.id;
     let epoch = task.execution_epoch;
-    let digest = canonical::payload_digest(&json!(["final_reply", task_id, epoch, route, body]))?;
+    let digest =
+        canonical::payload_digest(&json!(["final_reply", task_id, epoch, route, body, incidental]))?;
     let existing: Option<(String, String)> = tx
         .query_row(
             "SELECT id,digest FROM final_replies WHERE task_id=?1 AND execution_epoch=?2",
@@ -169,7 +188,7 @@ pub(super) fn insert_intent(
             return Err(Error::Capacity);
         }
         let transaction = format!("hagency_{id}");
-        tx.execute("INSERT INTO final_replies(id,session_id,task_id,execution_epoch,source_dispatch_id,transaction_id,digest,body,route,state,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'pending',?10,?10)",params![id,session,task_id,epoch,dispatch_id,transaction,digest,body,serialize(&route)?,now])?;
+        tx.execute("INSERT INTO final_replies(id,session_id,task_id,execution_epoch,source_dispatch_id,transaction_id,digest,body,route,state,incidental,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,'pending',?10,?11,?11)",params![id,session,task_id,epoch,dispatch_id,transaction,digest,body,serialize(&route)?,incidental,now])?;
         (id, false)
     };
     Ok((id, replayed))
@@ -194,7 +213,8 @@ impl DomainRepository {
             task.id,
             task.execution_epoch,
             route,
-            input.body
+            input.body,
+            input.incidental
         ]))?;
         let prior: Option<(String, String)> = tx
             .query_row(
@@ -209,7 +229,8 @@ impl DomainRepository {
             }
             return receipt(&tx, &id, true);
         }
-        let (id, replayed) = insert_intent(&tx, &task, &cap.dispatch_id, &route, &input.body, now)?;
+        let (id, replayed) =
+            insert_intent(&tx, &task, &cap.dispatch_id, &route, &input.body, input.incidental, now)?;
         let own: u64 = tx.query_row(
             "SELECT COUNT(*) FROM final_reply_calls WHERE dispatch_id=?1",
             [&cap.dispatch_id],

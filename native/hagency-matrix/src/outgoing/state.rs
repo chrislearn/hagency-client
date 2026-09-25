@@ -71,6 +71,10 @@ pub(crate) struct Attempt {
     /// domain from the dispatch's addressed input. Absent on a host-driven send.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reply_to: Option<String>,
+    /// bridge-matrix.js:3374-3385 — an incidental answer to a message with no
+    /// source thread starts a NEW thread rooted at that message.
+    #[serde(default)]
+    pub incidental: bool,
     pub transaction_id: String,
     pub content: Value,
     pub content_digest: String,
@@ -123,6 +127,7 @@ pub(crate) fn reply_relation(
     thread_root: Option<&str>,
     reply_to: Option<&str>,
     group: bool,
+    incidental: bool,
 ) -> Option<Value> {
     match (thread_root, reply_to) {
         (Some(root), target) => Some(serde_json::json!({
@@ -130,6 +135,15 @@ pub(crate) fn reply_relation(
             "event_id":root,
             "is_falling_back":true,
             "m.in_reply_to":{"event_id": target.unwrap_or(root)}
+        })),
+        // bridge-matrix.js:3374-3385 — no source thread and the message is
+        // incidental: start a NEW thread rooted at the message it answers,
+        // falling back to a plain reply for clients without thread rendering.
+        (None, Some(target)) if group && incidental => Some(serde_json::json!({
+            "rel_type":"m.thread",
+            "event_id":target,
+            "is_falling_back":true,
+            "m.in_reply_to":{"event_id":target}
         })),
         (None, Some(target)) if group => {
             Some(serde_json::json!({"m.in_reply_to":{"event_id":target}}))
@@ -170,6 +184,7 @@ impl Attempt {
             self.route.thread_root.as_deref(),
             self.reply_to.as_deref(),
             matches!(self.route.privacy, hagency_core::replies::RoomPrivacy::Group {}),
+            self.incidental,
         );
         if self.content.get("m.relates_to") != expected_relation.as_ref()
             || self.content["msgtype"]
@@ -437,20 +452,26 @@ mod reply_relation_tests {
     #[test]
     fn native_matrix_reply_relation_matches_ts() {
         assert_eq!(
-            reply_relation(Some("$root"), Some("$q"), true),
+            reply_relation(Some("$root"), Some("$q"), true, false),
             Some(json!({"rel_type":"m.thread","event_id":"$root","is_falling_back":true,"m.in_reply_to":{"event_id":"$q"}}))
         );
         // No question known: the thread root stands in, as it always has.
         assert_eq!(
-            reply_relation(Some("$root"), None, true),
+            reply_relation(Some("$root"), None, true, false),
             Some(json!({"rel_type":"m.thread","event_id":"$root","is_falling_back":true,"m.in_reply_to":{"event_id":"$root"}}))
         );
         assert_eq!(
-            reply_relation(None, Some("$q"), true),
+            reply_relation(None, Some("$q"), true, false),
             Some(json!({"m.in_reply_to":{"event_id":"$q"}}))
         );
+        // bridge-matrix.js:3374-3385: an INCIDENTAL answer with no source
+        // thread starts a NEW thread rooted at the message it answers.
+        assert_eq!(
+            reply_relation(None, Some("$q"), true, true),
+            Some(json!({"rel_type":"m.thread","event_id":"$q","is_falling_back":true,"m.in_reply_to":{"event_id":"$q"}}))
+        );
         // A direct room carries no relation at all.
-        assert_eq!(reply_relation(None, Some("$q"), false), None);
-        assert_eq!(reply_relation(None, None, true), None);
+        assert_eq!(reply_relation(None, Some("$q"), false, true), None);
+        assert_eq!(reply_relation(None, None, true, true), None);
     }
 }

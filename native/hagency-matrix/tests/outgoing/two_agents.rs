@@ -157,6 +157,7 @@ async fn final_claim_for(
             RunnerCommand::SubmitFinalReply(FinalReply {
                 call_id: "final".into(),
                 body: body.into(),
+                incidental: false,
             }),
         )
         .await
