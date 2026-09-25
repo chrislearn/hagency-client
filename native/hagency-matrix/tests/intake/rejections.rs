@@ -148,17 +148,65 @@ async fn native_matrix_rejection_crypto_missing_keys_and_later_verified_message(
     plain["encryption_info"] = json!({"verification_state":"verified"});
     events.insert(0, plain);
     let result = run(&c, &mut fake, no_keys, true).await.unwrap();
-    assert_eq!((result.admitted, result.rejected), (0, 2));
+    // TS `bridge-matrix.js:6646` (`onFailedRoomDecryption`) queues instead of
+    // dropping: the plaintext-in-an-encrypted-room is still refused, but the
+    // undecryptable envelope is RETAINED awaiting its room key, not rejected
+    // terminally. (The old native rule tombstoned it — board #10 reverts that.)
+    assert_eq!((result.admitted, result.rejected), (0, 1));
+    // Nothing is admitted while the key is missing.
+    assert_eq!(f.store.inbox("root".into(), 0, 10, None).await.unwrap().len(), 0);
     assert!(f.available().await);
-    // Same original ciphertext is now genuinely decryptable through actual key
-    // sharing, but its first refusal is terminal. The independently encrypted
-    // next message has a fresh ID/index and must still be admitted.
+    // The key now arrives and the same ciphertext is re-delivered. It becomes
+    // input EXACTLY ONCE, and the independently encrypted next message is
+    // admitted alongside it.
     encrypted["next_batch"] = json!("keys_arrived");
     let result = run(&c, &mut fake, encrypted, true).await.unwrap();
-    assert_eq!((result.admitted, result.rejected), (1, 1));
+    assert_eq!((result.admitted, result.rejected), (2, 0));
+    let inbox = f.store.inbox("root".into(), 0, 10, None).await.unwrap();
+    assert_eq!(inbox.len(), 2);
+    assert_eq!(inbox[0].message.event_id, "$encrypted");
+    assert_eq!(inbox[1].message.event_id, "$encrypted_new");
+    assert!(inbox.iter().all(|r| r.wake));
+    assert!(f.available().await);
+    c.close().await.unwrap();
+    f.store.shutdown().await.unwrap();
+    fake.close().await;
+}
+
+/// Board #10 acceptance: deliver the event BEFORE its room key, then deliver
+/// only the key on a later sync (the event is never re-delivered). TS
+/// `retryPendingApprovalDecryptions` (`bridge-matrix.js:6670-6705`) recovers the
+/// retained envelope then; the message becomes input exactly once.
+#[tokio::test]
+async fn native_matrix_retains_undecryptable_event_until_late_room_key() {
+    let (f, mut fake, c) = ready(true).await;
+    let encrypted = c
+        .inner
+        .owner
+        .lock()
+        .await
+        .as_ref()
+        .unwrap()
+        .crypto_messages(true, 1)
+        .await;
+    // First sync: the event arrives, but its room key does not.
+    let mut before_key = encrypted.clone();
+    before_key["next_batch"] = json!("before_key");
+    before_key["to_device"]["events"] = json!([]);
+    let result = run(&c, &mut fake, before_key, true).await.unwrap();
+    assert_eq!((result.admitted, result.rejected), (0, 0));
+    assert_eq!(f.store.inbox("root".into(), 0, 10, None).await.unwrap().len(), 0);
+    assert!(f.available().await);
+    // Second sync: ONLY the key arrives — the event is not re-delivered.
+    let mut late_key = encrypted.clone();
+    late_key["next_batch"] = json!("late_key");
+    late_key["rooms"]["join"]["!project:example.test"]["timeline"]["events"] = json!([]);
+    let result = run(&c, &mut fake, late_key, true).await.unwrap();
+    assert_eq!((result.admitted, result.rejected), (1, 0));
     let inbox = f.store.inbox("root".into(), 0, 10, None).await.unwrap();
     assert_eq!(inbox.len(), 1);
-    assert_eq!(inbox[0].message.event_id, "$encrypted_new");
+    assert_eq!(inbox[0].message.event_id, "$encrypted");
+    assert_eq!(inbox[0].message.body, "小白：已验证的私聊，无需提及");
     assert!(inbox[0].wake);
     assert!(f.available().await);
     c.close().await.unwrap();

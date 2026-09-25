@@ -80,12 +80,95 @@ pub struct IssueSideRegistration {
     /// TS renders `stagedNote` only when the issue was staged, verbatim.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub staged_note: Option<String>,
+    /// TS renders `replacedNote` only when the live credential was KNOWN
+    /// broken, verbatim (`backend-v2.js:10144-10147`) — "not staged" has
+    /// two causes (nothing was there, or what was there was broken) and
+    /// the operator should not have to infer which.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replaced_note: Option<String>,
 }
 
 /// The TS `stagedNote` text, quoted from `backend-v2.js:10130-10134`.
 pub const STAGED_NOTE: &str = "The credential this side is USING has not changed. This new one is held until you \
      install it and verification proves the homeserver accepts it, so nothing breaks in the \
      meantime — and if you generated it by mistake, ignore the file and nothing happens.";
+
+/// The side's access verdict — the TS `accessState` values this rule reads.
+/// TS only ever compares against two of them (`backend-v2.js:10060-10061`,
+/// `liveIsBroken = accessState === 'rejected' || 'blocked'`), so the pair
+/// that matters is spelled out here rather than left as bare strings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SideAccessVerdict {
+    /// A verify proved the homeserver accepts the live credential.
+    Accepted,
+    /// Nobody has asked yet. NOT a failure: TS protects this state
+    /// (`backend-v2.js:10057-10059` — "It means nobody has asked yet, not
+    /// that it fails").
+    Unverified,
+    /// A verify was refused; there is nothing working to protect.
+    Rejected,
+    /// A verify was blocked; there is nothing working to protect.
+    Blocked,
+}
+
+impl SideAccessVerdict {
+    /// The TS `liveIsBroken`: the two verdicts that mean the live
+    /// credential is known NOT to work, so a reissue replaces it in place
+    /// instead of staging behind it.
+    pub fn is_broken(self) -> bool {
+        matches!(self, Self::Rejected | Self::Blocked)
+    }
+    /// The word TS interpolates into `replacedNote`.
+    fn word(self) -> &'static str {
+        match self {
+            Self::Accepted => "accepted",
+            Self::Unverified => "unverified",
+            Self::Rejected => "rejected",
+            Self::Blocked => "blocked",
+        }
+    }
+}
+
+/// TS's staging predicate, isolated from the issue path so EVERY branch is
+/// testable — including the one native cannot reach yet (see
+/// `side_access_verdict`). `staging = Boolean(hasCredential) && !liveIsBroken`
+/// (`backend-v2.js:10061`).
+fn stages(has_credential: bool, verdict: SideAccessVerdict) -> bool {
+    has_credential && !verdict.is_broken()
+}
+
+/// The TS `replacedNote`, built from the verdict that made the live credential
+/// not worth protecting (`backend-v2.js:10144-10147`), verbatim.
+fn replaced_note(verdict: SideAccessVerdict) -> String {
+    format!(
+        "The previous credential was {} and has been replaced rather than held back \
+         — there was nothing working to protect.",
+        verdict.word()
+    )
+}
+
+/// The access verdict for the side's LIVE credential.
+///
+/// NATIVE RECORDS NO VERDICT TODAY, so this answers `Unverified` for every
+/// input — and that is the honest answer, not a placeholder: TS's
+/// `unverified` is exactly "nobody has asked yet" (`backend-v2.js:10057-10059`),
+/// which is the state a deployment that has never run a verify is in.
+/// `console/project_sides.rs:33-46` names `access_state` among the columns it
+/// has no source for, and the `verify` route that would write a verdict is
+/// the parity audit's separate MISSING item (row 37,
+/// `docs/parity/console-2026-09-24.md:66`).
+///
+/// So the TS rule above is already CORRECT today (it stages, which is what
+/// TS does for `unverified`), and this function is the single place a verdict
+/// lands when row 37 arrives. The `rejected`/`blocked` arm of `stages` is
+/// therefore exercised by the unit test rather than by an end-to-end path —
+/// and when a verdict becomes readable, the branch below is the only change.
+fn side_access_verdict(
+    _tx: &rusqlite::Transaction,
+    _fleet: &str,
+) -> Result<SideAccessVerdict, Error> {
+    Ok(SideAccessVerdict::Unverified)
+}
 
 /// The TS `nextSteps` array, verbatim from `backend-v2.js:10143-10165` —
 /// including the Palpo-verified TOML trap and the power-level warning.
@@ -356,18 +439,19 @@ impl crate::DomainRepository {
         };
         let generated = GeneratedRegistration::new(request, &server_name)?;
 
-        // STAGING: TS computes `staging = hasCredential && accessState not
-        // in {rejected, blocked}`. Native has no access verdicts (the
-        // ADR-132 unavailable list), so every existing credential counts
-        // as unverified — the state TS stages over. A staged row never
-        // disturbs the live one; promotion on verify is owed separately.
+        // STAGING, TS's rule (`backend-v2.js:10060-10061`): stage only when
+        // a credential exists AND the live one is not known broken. A
+        // staged row never disturbs the live one; promotion on verify is
+        // owed separately. See `side_access_verdict` for why the verdict
+        // reads `Unverified` today and why that is the honest answer.
         let has_credential: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM side_registrations WHERE fleet_id=?1 \
              AND credential IS NOT NULL)",
             [&fleet],
             |r| r.get(0),
         )?;
-        let staged = has_credential;
+        let verdict = side_access_verdict(&tx, &fleet)?;
+        let staged = stages(has_credential, verdict);
         if staged {
             tx.execute(
                 "INSERT INTO side_registrations(fleet_id,pending,pending_at) VALUES(?1,?2,?3) \
@@ -409,6 +493,7 @@ impl crate::DomainRepository {
             hs_token_fingerprint: fingerprint(&generated.hs_token),
             next_steps: NEXT_STEPS,
             staged_note: staged.then(|| STAGED_NOTE.to_owned()),
+            replaced_note: verdict.is_broken().then(|| replaced_note(verdict)),
         })
     }
 
@@ -519,6 +604,55 @@ mod tests {
     fn empty_url_is_refused_like_the_ts_400() {
         let error = GeneratedRegistration::new(&request("   "), "example.test").unwrap_err();
         assert!(matches!(error, Error::Invalid(_)));
+    }
+
+    /// The TS staging rule, both branches (`backend-v2.js:10060-10061`):
+    /// stage only when a credential exists AND the live one is not known
+    /// broken. TS's own words for why `unverified` stages rather than
+    /// replaces (`:10057-10059`): "It means nobody has asked yet, not that
+    /// it fails".
+    #[test]
+    fn staging_rule_matches_ts_for_every_verdict() {
+        // No credential: goes live, whatever the verdict says.
+        for verdict in [
+            SideAccessVerdict::Accepted,
+            SideAccessVerdict::Unverified,
+            SideAccessVerdict::Rejected,
+            SideAccessVerdict::Blocked,
+        ] {
+            assert!(
+                !stages(false, verdict),
+                "a first credential always goes live ({verdict:?})"
+            );
+        }
+        // A working-or-unexamined credential is protected: stage.
+        assert!(stages(true, SideAccessVerdict::Accepted));
+        assert!(
+            stages(true, SideAccessVerdict::Unverified),
+            "unverified is 'nobody has asked yet' — TS stages over it"
+        );
+        // A KNOWN-broken credential is replaced in place: `liveIsBroken`.
+        assert!(!stages(true, SideAccessVerdict::Rejected));
+        assert!(!stages(true, SideAccessVerdict::Blocked));
+        assert!(SideAccessVerdict::Rejected.is_broken());
+        assert!(SideAccessVerdict::Blocked.is_broken());
+        assert!(!SideAccessVerdict::Unverified.is_broken());
+    }
+
+    /// The TS `replacedNote`, verbatim (`backend-v2.js:10144-10147`),
+    /// naming the verdict that made the old credential not worth keeping.
+    #[test]
+    fn replaced_note_matches_ts_word_for_word() {
+        assert_eq!(
+            replaced_note(SideAccessVerdict::Rejected),
+            "The previous credential was rejected and has been replaced rather than held back \
+             — there was nothing working to protect."
+        );
+        assert_eq!(
+            replaced_note(SideAccessVerdict::Blocked),
+            "The previous credential was blocked and has been replaced rather than held back \
+             — there was nothing working to protect."
+        );
     }
 
     #[test]

@@ -20,6 +20,7 @@ import PageHead from '@/components/PageHead';
 import NativeStatusStrip from '@/components/NativeStatusStrip';
 import { NativeAccessNotice } from '@/components/NativeUsage';
 import { useT } from '@/components/Prefs';
+import { errorText } from '@/lib/i18n';
 import { useData } from '@/components/Data';
 import { fmtTokens } from '@/lib/mock-data';
 import { retireEngagement, retryEngagementCleanup } from '@/lib/native-api';
@@ -86,7 +87,7 @@ export default function NativeEngagements() {
     } catch (error) {
       setNote(error.message === 'agent_lifecycle_scope_required'
         ? t('ng.scopeRequired')
-        : `${t('ng.actionFailed')} (${error.message})`);
+        : `${t('ng.actionFailed')} (${errorText(t, error.message)})`);
     } finally {
       setBusy(false);
     }
@@ -168,6 +169,7 @@ export default function NativeEngagements() {
                 <th>{t('col.project')}</th>
                 <th>{t('col.role')}</th>
                 <th className="num">{t('col.requested')}</th>
+                <th className="num">{t('col.remaining')}</th>
                 <th>{t('col.action')}</th>
               </tr>
             </thead>
@@ -183,6 +185,16 @@ export default function NativeEngagements() {
                   <td>{e.projectName ?? '—'}</td>
                   <td>{e.role}</td>
                   <td className="num dim">{fmtTokens(e.requestedTokens)}</td>
+                  {/* Board #60 item 3: what is LEFT on the resource behind the
+                      agent, so over-commitment shows BEFORE the decision. Null
+                      is unknown (no ceiling declared), never a zero allowance;
+                      when it is under the ask the figure is marked, and a
+                      pending row with no owner binding says so. */}
+                  <td className="num dim" data-remaining={e.agentRemainingTokens === null ? 'unknown' : e.agentRemainingTokens}>
+                    {e.agentRemainingTokens === null ? t('nu.unknown') : fmtTokens(e.agentRemainingTokens)}
+                    {e.agentRemainingTokens !== null && e.agentRemainingTokens < e.requestedTokens && <span className="overqual" title={t('ng.overCommitted', { n: fmtTokens(e.agentRemainingTokens) })}> ⚠</span>}
+                    {e.ownerBindingRequired && <> <span className="stranded">{t('ng.ownerRequired')}</span></>}
+                  </td>
                   <td>
                     {/* #44 item 10 — the row links to its own usage detail. */}
                     <a href={`/console/usage/?engagement_id=${encodeURIComponent(e.id)}`}>{t('ng.viewUsage')}</a>{' '}
