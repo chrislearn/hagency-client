@@ -41,6 +41,7 @@ mod command_notices;
 mod conversation_lifecycle;
 mod conversations;
 mod delivery_feedback;
+mod directives;
 mod execution;
 mod graphs;
 mod matrix_routes;
@@ -105,7 +106,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 41;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 42;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -744,6 +745,14 @@ impl DomainRepository {
                         include_str!("migrations/046-side-registrations.sql"),
                     ),
                     (41, include_str!("migrations/040-command-notices.sql")),
+                    // Task #73's migration number is 069 (the board's
+                    // assignment); the walker requires the next sequential
+                    // list version, so the file keeps 069 and the tuple
+                    // carries 42. Integration renumbers on merge.
+                    (
+                        42,
+                        include_str!("migrations/069-thread-directives.sql"),
+                    ),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
