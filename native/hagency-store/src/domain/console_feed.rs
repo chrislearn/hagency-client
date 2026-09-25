@@ -218,8 +218,70 @@ impl super::DomainRepository {
                 }));
             }
         }
+        let mut graphs = Vec::new();
+        {
+            // #59 task-graph events (lib/task-graph.js:285-390): the native
+            // entities are migration 010's task_graphs and graph_nodes. The
+            // key is (graph, node) so a node transition diffs like a task
+            // status change; the graph's own state row keys the
+            // graph-level events.
+            let mut stmt = self.db.prepare(
+                "SELECT graph_id,node_id,state,completed_epoch FROM graph_nodes \
+                 ORDER BY graph_id,node_id LIMIT 500",
+            )?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<u64>>(3)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            for (graph_id, node_id, state, completed_epoch) in rows {
+                graphs.push(json!({
+                    "key": format!("{graph_id}/{node_id}"),
+                    "state": state,
+                    "updated_at": completed_epoch.unwrap_or_default(),
+                    "entity": {
+                        "graph_id": graph_id,
+                        "node_id": node_id,
+                        "status": state,
+                        "completed_at": completed_epoch,
+                    },
+                }));
+            }
+        }
+        let mut graph_heads = Vec::new();
+        {
+            let mut stmt = self.db.prepare(
+                "SELECT id,state,created_at FROM task_graphs ORDER BY id LIMIT 500",
+            )?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, u64>(2)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            for (id, state, created_at) in rows {
+                graph_heads.push(json!({
+                    "key": id,
+                    "state": state,
+                    "updated_at": created_at,
+                    "entity": {
+                        "graph_id": id,
+                        "status": state,
+                        "created_at": created_at,
+                    },
+                }));
+            }
+        }
         let version = hagency_core::canonical::digest(&json!([
-            &tasks, &alerts, &approvals, &fences, &messages,
+            &tasks, &alerts, &approvals, &fences, &messages, &graphs, &graph_heads,
         ]))?;
         Ok(json!({
             "version": version,
@@ -228,6 +290,8 @@ impl super::DomainRepository {
             "approvals": approvals,
             "fences": fences,
             "messages": messages,
+            "graphs": graphs,
+            "graph_heads": graph_heads,
         }))
     }
 }
