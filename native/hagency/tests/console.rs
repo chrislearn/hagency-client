@@ -21,6 +21,8 @@ mod engagements_verdict;
 mod fixture;
 #[path = "console/origin.rs"]
 mod origin;
+#[path = "console/offer_book.rs"]
+mod offer_book;
 #[path = "console/project_sides.rs"]
 mod project_sides;
 #[path = "console/real_agent.rs"]
