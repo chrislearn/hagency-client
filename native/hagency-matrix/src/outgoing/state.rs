@@ -66,6 +66,10 @@ pub(crate) struct Attempt {
     pub fence: u64,
     pub domain_digest: String,
     pub route: ReplyRoute,
+    /// The message this reply answers (`m.in_reply_to`), already resolved by the
+    /// domain from the dispatch's addressed input. Absent on a host-driven send.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reply_to: Option<String>,
     pub transaction_id: String,
     pub content: Value,
     pub content_digest: String,
@@ -108,6 +112,31 @@ pub(crate) fn receipt_key(id: &str, fence: u64) -> Result<String, Error> {
     canonical::transport_digest(&serde_json::json!(["settled_outgoing_receipt", id, fence]))
         .map_err(|_| Error::Storage)
 }
+/// TS:bridge-matrix.js:3318-3393 — exactly how an answer names what it answers.
+/// A threaded answer carries the thread root AND the reply target. A top-level
+/// answer (no source thread) stays in the timeline carrying the reply link
+/// alone — but only in a GROUP room: `resolveGroupReplyRelation` is group-only,
+/// and the direct-chat path strips `m.relates_to` from a non-group room
+/// (`lib/matrix-direct-chat.js:270`), so a DM answer names nobody.
+pub(crate) fn reply_relation(
+    thread_root: Option<&str>,
+    reply_to: Option<&str>,
+    group: bool,
+) -> Option<Value> {
+    match (thread_root, reply_to) {
+        (Some(root), target) => Some(serde_json::json!({
+            "rel_type":"m.thread",
+            "event_id":root,
+            "is_falling_back":true,
+            "m.in_reply_to":{"event_id": target.unwrap_or(root)}
+        })),
+        (None, Some(target)) if group => {
+            Some(serde_json::json!({"m.in_reply_to":{"event_id":target}}))
+        }
+        (None, _) => None,
+    }
+}
+
 impl Attempt {
     pub fn validate(&self, identity: &str, user: &str, device: &str) -> Result<(), Error> {
         if self.identity != identity
@@ -136,8 +165,11 @@ impl Attempt {
             return Err(Error::Storage);
         }
         self.validate_route()?;
-        let expected_relation = self.route.thread_root.as_ref().map(|root|
-            serde_json::json!({"rel_type":"m.thread","event_id":root,"is_falling_back":true,"m.in_reply_to":{"event_id":root}}));
+        let expected_relation = reply_relation(
+            self.route.thread_root.as_deref(),
+            self.reply_to.as_deref(),
+            matches!(self.route.privacy, hagency_core::replies::RoomPrivacy::Group {}),
+        );
         if self.content.get("m.relates_to") != expected_relation.as_ref()
             || self.content["msgtype"]
                 != match self.kind {
@@ -378,4 +410,34 @@ pub(crate) enum Command {
 pub(crate) struct View {
     pub attempt: Option<Attempt>,
     pub receipts: Vec<Receipt>,
+}
+
+#[cfg(test)]
+mod reply_relation_tests {
+    use super::reply_relation;
+    use serde_json::json;
+
+    /// bridge-matrix.js:3318-3393. A threaded answer names the root AND the
+    /// message it answers; a top-level GROUP answer names only the message; a
+    /// direct room is stripped of the relation entirely
+    /// (lib/matrix-direct-chat.js:270).
+    #[test]
+    fn native_matrix_reply_relation_matches_ts() {
+        assert_eq!(
+            reply_relation(Some("$root"), Some("$q"), true),
+            Some(json!({"rel_type":"m.thread","event_id":"$root","is_falling_back":true,"m.in_reply_to":{"event_id":"$q"}}))
+        );
+        // No question known: the thread root stands in, as it always has.
+        assert_eq!(
+            reply_relation(Some("$root"), None, true),
+            Some(json!({"rel_type":"m.thread","event_id":"$root","is_falling_back":true,"m.in_reply_to":{"event_id":"$root"}}))
+        );
+        assert_eq!(
+            reply_relation(None, Some("$q"), true),
+            Some(json!({"m.in_reply_to":{"event_id":"$q"}}))
+        );
+        // A direct room carries no relation at all.
+        assert_eq!(reply_relation(None, Some("$q"), false), None);
+        assert_eq!(reply_relation(None, None, true), None);
+    }
 }

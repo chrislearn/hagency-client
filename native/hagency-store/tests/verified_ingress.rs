@@ -345,6 +345,70 @@ fn native_verified_ingress_human_notice_wakes_like_text() {
     }
 }
 
+/// TS:bridge-matrix.js:3318-3393, the store's half of the top-level case. A
+/// group session with no thread root answers at the room's top level; the reply
+/// must still name the message it answers. That question is the dispatch's own
+/// addressed input — read back from the frozen window, not guessed.
+#[test]
+fn native_verified_ingress_top_level_group_answer_names_the_question() {
+    let mut f = Fixture::new(false);
+    // Session "a" is the Group room observed with NO thread root, so its route is
+    // top-level: whatever the answer carries, it cannot be a thread relation.
+    let event = f.event("a", "root", None, &["@a:example.test"], 1010);
+    let source = f.db.admit_matrix_event(&event, 1011).unwrap();
+    f.db.create_canonical_task("t", "a", "Answer the question", 1012)
+        .unwrap();
+    f.db.enqueue_inbox_dispatch(
+        &DispatchInput {
+            id: "d".into(),
+            session_id: "a".into(),
+            task_id: Some("t".into()),
+            resources: vec![],
+            payload: json!({"instruction":"Answer it"}),
+        },
+        &[source.sequence],
+    )
+    .unwrap();
+    let cap = f
+        .db
+        .claim_dispatch("runner", 1013, 60_000, 120_000, 8)
+        .unwrap()
+        .unwrap();
+    f.db.start_dispatch(&cap, 1014).unwrap();
+    f.db.mutate_task(
+        &cap,
+        "t",
+        "done",
+        &TaskMutation::Transition {
+            status: TaskState::Done,
+            waiting_reason: None,
+            waiting_until: None,
+        },
+        1015,
+    )
+    .unwrap();
+    f.db.submit_final_reply(
+        &cap,
+        &FinalReply {
+            call_id: "final".into(),
+            body: "The answer".into(),
+        },
+        1016,
+    )
+    .unwrap();
+    let send = f.db.claim_final_reply(1017, 1000).unwrap().unwrap();
+    let output = f.db.begin_final_reply_send(&send, 1018).unwrap();
+    assert_eq!(
+        output.route.thread_root, None,
+        "a group answer with no source thread stays at the room's top level"
+    );
+    assert_eq!(
+        output.reply_to.as_deref(),
+        Some("$root"),
+        "it still names the question it answers"
+    );
+}
+
 #[test]
 fn native_verified_ingress_task_activation() {
     for direct in [false, true] {
