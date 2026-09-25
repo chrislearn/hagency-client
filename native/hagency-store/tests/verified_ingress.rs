@@ -6,7 +6,7 @@ mod notice_custody;
 use common::*;
 use hagency_core::{ingress::*, messages::*, replies::*, task_intents::*, tasks::*};
 use hagency_store::{DomainRepository, EffectOutcome, Error, OutcomeAction, OutcomeResolution};
-use serde_json::json;
+use serde_json::{Value, json};
 use std::collections::BTreeSet;
 
 struct Fixture {
@@ -319,6 +319,45 @@ fn native_verified_ingress_policy() {
     let mut bad = dm.event("a", "unencrypted", None, &[], 1012);
     bad.encrypted = false;
     assert!(dm.db.admit_matrix_event(&bad, 1013).is_err());
+}
+
+/// A `!` line is a bot command, never agent input: the retained bridge checked
+/// `cmdBody.startsWith('!')` before routing (`bridge-matrix.js:7111-7125`), so a
+/// command was dispatched and never became a prompt. The event stays admitted
+/// (it is a fact in the room), and it wakes nobody — in a DM, where a bare line
+/// used to wake the agent, and in a group, where a mention used to be enough.
+#[test]
+fn native_bot_command_lines_never_wake() {
+    for direct in [false, true] {
+        let mut f = Fixture::new(direct);
+        let mentions: Vec<&str> = if direct { vec![] } else { vec!["@a:example.test"] };
+        // The same shape that DOES wake, so the difference is the `!` alone.
+        let ordinary = f.event("a", "ordinary", None, &mentions, 1010);
+        if direct {
+            assert!(f.db.admit_matrix_event(&ordinary, 1011).unwrap().wake);
+        } else {
+            assert!(f.db.admit_matrix_event(&ordinary, 1011).unwrap().wake);
+        }
+        let mut command = f.event("a", "command", None, &mentions, 1012);
+        command.event.body = "!help\n".into();
+        let receipt = f.db.admit_matrix_event(&command, 1013).unwrap();
+        // Admitted, recorded — and silent.
+        assert!(receipt.created);
+        assert!(!receipt.wake);
+        // A leading space is still a command; TS trimmed before the check.
+        let mut spaced = f.event("a", "spaced", None, &mentions, 1014);
+        spaced.event.body = "   !status".into();
+        assert!(!f.db.admit_matrix_event(&spaced, 1015).unwrap().wake);
+        // An `!` that is not at the start is ordinary text and still wakes.
+        let mut trailing = f.event("a", "trailing", None, &mentions, 1016);
+        trailing.event.body = "please run !status".into();
+        assert!(f.db.admit_matrix_event(&trailing, 1017).unwrap().wake);
+        // A file is never a command, even when named like one (:7122).
+        let mut file = f.event("a", "file", None, &mentions, 1018);
+        file.event.body = "!help".into();
+        file.event.kind = "m.file".into();
+        assert!(f.db.admit_matrix_event(&file, 1019).unwrap().wake);
+    }
 }
 
 #[test]
@@ -1498,4 +1537,75 @@ fn native_outcome_resolved_settlement_notices() {
         assert_eq!(kind, "outcome_resolved");
         assert_eq!(body, expected);
     }
+}
+/// The delivery-feedback notice, end to end (task #5, bridge-matrix.js:6492-6572):
+/// a human's group message whose mention cannot reach its target must leave the
+/// TS notice text in the room, and the message must still be admitted - TS sends
+/// the notice after acceptance and `sendDeliveryNotice` swallows its own failure.
+#[test]
+fn native_verified_ingress_emits_delivery_feedback_notice() {
+    let mut f = Fixture::new(false);
+    let (_, _, task) = setup_task(&mut f);
+    let before = count(&f.sql(), "admitted_messages");
+    // `@zoe` has no transport (unknown) and is not in the joined set: the
+    // backend's `mentions_unknown` case (backend-v2.js:16817). A follow-up in
+    // this group thread is rooted at `$root`, exactly as
+    // `native_verified_ingress_followup` admits one.
+    let event = f.event(
+        &task.session_id,
+        "stranger",
+        Some("$root"),
+        &["@zoe:example.test"],
+        1014,
+    );
+    let receipt = f.db.admit_matrix_event(&event, 1015).unwrap();
+    assert!(receipt.projected);
+    // The message was still admitted: the notice is additive, never a refusal.
+    assert_eq!(count(&f.sql(), "admitted_messages"), before + 1);
+    let (kind, config): (String, String) = f
+        .sql()
+        .query_row(
+            "SELECT json_extract(config,'$.kind'), config FROM task_notices WHERE json_extract(config,'$.kind') LIKE 'delivery_feedback_%'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(kind, format!("delivery_feedback_{}", receipt.sequence));
+    let notice: Value = serde_json::from_str(&config).unwrap();
+    assert_eq!(notice["task_id"], json!(task.task_id));
+    assert_eq!(
+        notice["body"],
+        json!("⚠️ Mention targets not found in agent registry: @zoe:example.test.")
+    );
+    // Idempotent: re-admitting the same event adds no second notice.
+    assert!(!f.db.admit_matrix_event(&event, 1016).unwrap().created);
+    assert_eq!(
+        f.sql()
+            .query_row(
+                "SELECT COUNT(*) FROM task_notices WHERE json_extract(config,'$.kind') LIKE 'delivery_feedback_%'",
+                [],
+                |r| r.get::<_, u64>(0)
+            )
+            .unwrap(),
+        1
+    );
+    // A mention that IS a provisioned member says nothing at all.
+    let clean = f.event(
+        &task.session_id,
+        "clean",
+        Some("$root"),
+        &["@a:example.test"],
+        1017,
+    );
+    f.db.admit_matrix_event(&clean, 1018).unwrap();
+    assert_eq!(
+        f.sql()
+            .query_row(
+                "SELECT COUNT(*) FROM task_notices WHERE json_extract(config,'$.kind') LIKE 'delivery_feedback_%'",
+                [],
+                |r| r.get::<_, u64>(0)
+            )
+            .unwrap(),
+        1
+    );
 }

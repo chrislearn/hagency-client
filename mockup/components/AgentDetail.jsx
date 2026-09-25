@@ -5,6 +5,7 @@ import AgentHeader from '@/components/AgentHeader';
 import AgentTabs from '@/components/AgentTabs';
 import AgentActions from '@/components/AgentActions';
 import AgentExecutionPermissions from '@/components/ExecutionPermissions';
+import NativeAgentDetail from '@/components/NativeAgentDetail';
 import { Provenance, useData } from '@/components/Data';
 import { useT } from '@/components/Prefs';
 
@@ -23,7 +24,15 @@ import { useT } from '@/components/Prefs';
  */
 export default function AgentDetail({ name }) {
   const t = useT();
-  const { agents, provenance, loading } = useData();
+  const data = useData();
+  const { agents, provenance, loading } = data;
+  /*
+   * The native console serves its own agent detail (board #22): the
+   * fixture roster standing in under it is a different read class, so
+   * the fixture's AgentHeader/AgentTabs never render against native
+   * state. The native page fetches the agent-keyed route itself.
+   */
+  if (data.nativeConsole) return <NativeAgentDetail name={name} />;
   const agent = agents.find((a) => a.name === name);
 
   if (!agent) {

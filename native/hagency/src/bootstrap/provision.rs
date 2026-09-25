@@ -197,11 +197,11 @@ impl Matrix {
             .await
     }
 
-    async fn room(&self, room: &str, server: &str) -> Result<ObservedRoom, Error> {
+    async fn room(&self, room: &str, server: &str, fleet: &str) -> Result<ObservedRoom, Error> {
         let value = self
             .get(&["_matrix", "client", "v3", "rooms", room, "state"])
             .await?;
-        ObservedRoom::parse(room, server, value)
+        ObservedRoom::parse(room, server, fleet, value)
     }
 }
 
@@ -217,7 +217,7 @@ struct ObservedRoom {
 }
 
 impl ObservedRoom {
-    fn parse(room: &str, server: &str, value: Value) -> Result<Self, Error> {
+    fn parse(room: &str, server: &str, fleet: &str, value: Value) -> Result<Self, Error> {
         let events = value.as_array().ok_or(Error::Matrix)?;
         if events.len() > 4096 {
             return Err(Error::Matrix);
@@ -303,8 +303,10 @@ impl ObservedRoom {
                         .and_then(Value::as_str)
                         .map(str::to_owned);
                 }
-                "com.hagency.project.binding.v1" => {
-                    if !key.is_empty() {
+                "com.hagency.admin.binding.v1" => {
+                    // TS parity (lib/fleet-protocol.js:52): the binding is a
+                    // per-fleet state event keyed by the fleet id.
+                    if key != fleet {
                         return Err(Error::Matrix);
                     }
                     binding = Some(Value::Object(content.clone()));
@@ -418,6 +420,7 @@ async fn adopt(
         .room(
             &input.request.source_room_id,
             &input.registration.server_name,
+            &input.registration.fleet_id,
         )
         .await?
         .authority(input.request.source_room_id.clone());
@@ -425,6 +428,7 @@ async fn adopt(
         .room(
             &input.request.target_room_id,
             &input.registration.server_name,
+            &input.registration.fleet_id,
         )
         .await?
         .authority(input.request.target_room_id.clone());
@@ -432,11 +436,16 @@ async fn adopt(
         .room(
             &input.request.owner_dm_room_id,
             &input.registration.server_name,
+            &input.registration.fleet_id,
         )
         .await?
         .authority(input.request.owner_dm_room_id.clone());
     let observed_agent_room = agent
-        .room(&input.agent_room_id, &input.registration.server_name)
+        .room(
+            &input.agent_room_id,
+            &input.registration.server_name,
+            &input.registration.fleet_id,
+        )
         .await?;
     let agent_room = MatrixRoomObservation {
         engagement_id: input.request.engagement_id().map_err(|_| Error::Document)?,
@@ -456,6 +465,7 @@ async fn adopt(
             .room(
                 &input.request.target_room_id,
                 &input.registration.server_name,
+                &input.registration.fleet_id,
             )
             .await?;
         if !observed.joined.contains(&input.agent_mxid)
