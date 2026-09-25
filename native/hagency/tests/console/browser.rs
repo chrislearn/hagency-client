@@ -13,7 +13,15 @@ use tokio::{
 };
 
 fn built() -> PathBuf {
-    std::env::var_os("HAGENCY_NATIVE_CONSOLE_ASSETS").map(PathBuf::from).expect("native console qualification requires HAGENCY_NATIVE_CONSOLE_ASSETS from build:native; not a skipped test")
+    let path = std::env::var_os("HAGENCY_NATIVE_CONSOLE_ASSETS").map(PathBuf::from).expect("native console qualification requires HAGENCY_NATIVE_CONSOLE_ASSETS from build:native; not a skipped test");
+    // The bundle may be spelled through a symlinked ancestor (this host's
+    // `.../home/hl` -> `hl.noindex`; macOS's `/var` -> `/private/var`). The
+    // product deliberately refuses such an alias — `Assets::load` walks every
+    // component with `open_dir_nofollow`, because HTTP never resolves a
+    // filesystem path — so the spawned executable is handed the actual host
+    // path. The in-process fixtures already canonicalize for the same reason.
+    path.canonicalize()
+        .expect("native console assets must resolve to an actual host path")
 }
 fn address() -> SocketAddr {
     StdListener::bind("127.0.0.1:0")

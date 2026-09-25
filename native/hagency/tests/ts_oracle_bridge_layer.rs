@@ -96,62 +96,161 @@ fn ts_oracle_invited_room_routing_direct_and_group_and_loop() {
 }
 
 /// TS `tests/join-backfill.test.js` — `pendingJoinBackfill`
-/// (bridge-matrix.js:2940). Native has no join-backfill window selector.
+/// (bridge-matrix.js:2940). **Covered since board #79**: the selector is
+/// ported 1:1 as `hagency_matrix::join_backfill::pending_join_backfill`, and
+/// all 13 TS cases are real green assertions in
+/// `native/hagency-matrix/src/join_backfill.rs::tests`
+/// (`ts_oracle_backfill_*`). This stub stays only as the map entry; see
+/// `.peer/report-79.md`.
 
 #[test]
-#[ignore = "parity gap: no native join-backfill selector (bridge pendingJoinBackfill)"]
-fn ts_oracle_join_backfill_timeline_order_and_window() {
-    // TS asserts: an older-in-timeline command with a NEWER timestamp is not
-    // admitted; commands sharing a millisecond keep timeline order; a command
-    // between invite and join is delivered; after-join is left to sync; no-join
-    // page = invite..end window.
-    let _ = ();
+fn ts_oracle_join_backfill_covered_in_hagency_matrix() {
+    use hagency_matrix::join_backfill::{pending_join_backfill, Boundary};
+    use serde_json::json;
+    // One smoke assertion per TS property group; the full 13-case port is the
+    // source module's own test set (same names, same fixtures).
+    let bot = "@bot:matrix.test";
+    let member = |kind: &str| {
+        json!({"type":"m.room.member","sender":"@o:m.test","origin_server_ts":1,
+            "state_key":bot,"content":{"membership":kind}})
+    };
+    // invite..end window (:141) and delivery between invite and join (:123).
+    let chunk = json!([
+        {"type":"m.room.message","event_id":"$b","sender":"@lin:m.test","origin_server_ts":2,"content":{"body":"b"}},
+        member("invite")
+    ]);
+    let window = pending_join_backfill(Some(&chunk), bot, None);
+    assert_eq!(window.events, vec!["$b".to_owned()]);
+    assert_eq!(window.boundary, Boundary::InviteToEnd);
+    // Fail-closed: no provable invite -> nothing routed (:150).
+    let none = json!([{"type":"m.room.message","event_id":"$x","sender":"@lin:m.test","origin_server_ts":1,"content":{"body":"x"}}]);
+    assert_eq!(pending_join_backfill(Some(&none), bot, None).boundary, Boundary::Unproven);
 }
 
+/// TS `tests/bot-commands-request.test.js` — `cmdRequest` reply half.
+/// **Covered since board #79**: `bot_commands.rs::request_reply` renders the
+/// TS text 1:1; `dispatch` returns `Dispatched::Request(args)` and
+/// `bootstrap/commands.rs` renders it through the production command-notice
+/// send path. The submit credential half (requester-token preference) has no
+/// native surface: admission is Matrix-event-verified
+/// (`authority.rs::verify_request` enforces request-id = authenticated event
+/// id, `source.event_id == request.source_event_id`, and requester = sender
+/// `source.sender == request.requester_mxid`, authority.rs:222-224), not an
+/// agent-token POST — that one row stays a gap.
+
+use hagency::bot_commands::{
+    Dispatched, HostObservation, OfferServing, RequestEngagement, RequestOutcome, Acl,
+    dispatch, request_reply,
+};
+use serde_json::json;
+
+/// TS `bot-commands-request.test.js:343` `a malformed token amount is refused
+/// without reaching the backend`: the reply names the offending word and no
+/// engagement is created — the validation is synchronous (:526-536).
 #[test]
-#[ignore = "parity gap: no native join-backfill selector (bridge pendingJoinBackfill)"]
-fn ts_oracle_join_backfill_fails_closed_and_filters() {
-    // TS asserts: no provable invite -> boundary 'unproven' and NOTHING routed;
-    // an earlier membership cycle is not replayed on re-invite; a foreign invite
-    // is not the bot's; a JOIN is not an invite; the bot's own messages are never
-    // fed back; seen events skipped; non-message/no-id events ignored; a missing
-    // or malformed page yields nothing rather than throwing.
-    let _ = ();
+fn ts_oracle_request_malformed_token_refused_before_backend() {
+    let reply = request_reply(&["coding".into(), "four-hundred-thousand".into()], None);
+    assert_eq!(reply.plain, "Not a token amount: four-hundred-thousand");
 }
 
-/// TS `tests/bot-commands-request.test.js` — `cmdRequest` submit path and the
-/// requester credential. Native has no `cmdRequest` renderer (bot_commands.rs
-/// `dispatch` returns `Unrenderable` for `!request`), and no HTTP
-/// `/api/engagements` submit with a requester-token preference: admission is
-/// Matrix-event-verified (`authority.rs` `verify_request`), not an agent-token
-/// POST. The request-id = authenticated-event-id half IS enforced natively at
-/// `verify_request` (`source.event_id == request.source_event_id`, authority.rs:222).
-
+/// TS `:365` `a pending request is told WHY, in the project's own terms` —
+/// `notWhitelisted` vs `overCeiling` are different next steps (:619-628).
 #[test]
-#[ignore = "parity gap: no native cmdRequest submit (requestId/requester body) renderer"]
-fn ts_oracle_request_id_is_event_id_and_requester_is_sender() {
-    // TS asserts: requestId = the authenticated event id (never an argument);
-    // with no event id NO requestId is sent; roomId from the room; requester from
-    // the authenticated sender. Native enforces these at verify_request, not in a
-    // cmdRequest renderer (bot_commands.rs dispatch -> Unrenderable for !request).
-    let _ = ();
+fn ts_oracle_request_pending_told_why() {
+    let pending = |route: &str| RequestOutcome {
+        engagement: Some(RequestEngagement {
+            role: "coding".into(),
+            requested_tokens: 400_000,
+            allocated_tokens: 0,
+            agent: "claude-agent".into(),
+            auto_joined: false,
+            route: Some(route.into()),
+        }),
+        ..RequestOutcome::default()
+    };
+    assert_eq!(
+        request_reply(&["coding".into(), "400000".into()], Some(&pending("notWhitelisted"))).plain,
+        "Requested coding for 400000 tokens — awaiting a decision, because this room is not on the contributor's whitelist."
+    );
+    assert_eq!(
+        request_reply(&["coding".into(), "400000".into()], Some(&pending("overCeiling"))).plain,
+        "Requested coding for 400000 tokens — awaiting a decision, because the amount is above what the serving agent has left."
+    );
+}
+
+/// TS `:295` `the reply names the framework, model and reasoning level`;
+/// `:312` a failure does NOT hand the project the provider's configuration
+/// (`HAGENCY_*` never appears); `:330` an unknown configuration degrades to
+/// the agent alone, not to a fabricated one (:596-612).
+#[test]
+fn ts_oracle_request_auto_join_disclosure() {
+    let base = RequestEngagement {
+        role: "coding".into(),
+        requested_tokens: 400_000,
+        allocated_tokens: 400_000,
+        agent: "claude-agent".into(),
+        auto_joined: true,
+        route: None,
+    };
+    let disclosed = RequestOutcome {
+        engagement: Some(base.clone()),
+        serving: Some(OfferServing {
+            framework: Some("claude".into()),
+            model: Some("claude-opus-5".into()),
+            reasoning: Some("high".into()),
+            tier: Some("strong".into()),
+            provisioning_required: true,
+        }),
+        ..RequestOutcome::default()
+    };
+    let reply = request_reply(&["coding".into(), "400000".into()], Some(&disclosed));
+    assert_eq!(
+        reply.plain,
+        "Joined automatically as coding — 400000 tokens, served by claude-agent running claude · claude-opus-5 (high) · strong."
+    );
+    // `serving: null` degrades to the agent alone, never a fabricated config.
+    let unknown = RequestOutcome {
+        engagement: Some(base),
+        serving: None,
+        ..RequestOutcome::default()
+    };
+    let reply = request_reply(&["coding".into(), "400000".into()], Some(&unknown));
+    assert_eq!(
+        reply.plain,
+        "Joined automatically as coding — 400000 tokens, served by claude-agent."
+    );
+    assert!(!reply.plain.contains("running"));
+    assert!(!reply.plain.contains("HAGENCY_"));
+}
+
+/// The dispatch half: a parsed `!request` line is authorized and handed to the
+/// caller with its arguments (TS `:365`).
+#[test]
+fn ts_oracle_request_dispatch_hands_args_to_caller() {
+    let acl = Acl::default();
+    let observed = HostObservation::default();
+    assert_eq!(
+        dispatch("!request coding 400000 20000", "@a:example.test", &acl, false, &observed),
+        Dispatched::Request(vec![
+            "coding".to_owned(),
+            "400000".to_owned(),
+            "20000".to_owned()
+        ])
+    );
+    assert_eq!(
+        json!(true),
+        json!(matches!(
+            dispatch("!request coding 400000", "@a:example.test", &acl, false, &observed),
+            Dispatched::Request(_)
+        ))
+    );
 }
 
 #[test]
 #[ignore = "parity gap: no native requester-token submit credential (no /api/engagements POST)"]
 fn ts_oracle_requester_token_preferred_over_operator() {
     // TS asserts: HAGENCY_REQUESTER_TOKEN is preferred over API_TOKEN for the
-    // submit. Native has no HTTP submit path to carry either token.
-    let _ = ();
-}
-
-#[test]
-#[ignore = "parity gap: no native cmdRequest reply renderer (framework/model/reasoning, malformed-token, pending-why, room-name)"]
-fn ts_oracle_request_reply_tells_what_the_project_got() {
-    // TS asserts: the reply names framework/model/reasoning; a failure does NOT
-    // leak the provider config (HAGENCY_*); unknown config degrades to the agent;
-    // a malformed token amount is refused before the backend; a pending request
-    // is told WHY; the room NAME labels the engagement. Native has no cmdRequest
-    // reply path (the offer() renderer covers the offer-side disclosure only).
+    // submit. Native has no HTTP submit path to carry either token; admission
+    // is Matrix-event-verified instead.
     let _ = ();
 }
