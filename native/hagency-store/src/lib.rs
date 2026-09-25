@@ -38,6 +38,10 @@ pub use domain::{
     over_budget_notice_body,
 };
 pub use domain::{DeliveryFeedback, DeliveryWarning, DirectTarget, MentionState, MentionTarget};
+pub use domain::{
+    SessionOverrides, THREAD_DIRECTIVE_OPERATOR_REFUSAL, ThreadDirective, ThreadMode, confirmation,
+    parse,
+};
 pub use domain::{OutcomeAction, OutcomeResolution};
 pub use domain_worker::DomainStore;
 pub mod outbound;

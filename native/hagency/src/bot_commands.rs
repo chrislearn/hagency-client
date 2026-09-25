@@ -149,6 +149,14 @@ impl Acl {
         Self::new(list("MATRIX_OPERATOR_MXIDS"), list("MATRIX_ADMIN_MXIDS"), allow)
     }
 
+    /// Whether `sender` is an operator, for the `/thread` directive gate
+    /// (TS `msg.trustLevel === 'operator'`, backend-v2.js:2265). Admin is not
+    /// operator: the directive answers only to the operator list, exactly as TS
+    /// derives `trustLevel` from `MATRIX_OPERATOR_MXIDS` alone.
+    pub fn is_operator(&self, sender: &str) -> bool {
+        self.operator.contains(sender)
+    }
+
     /// `authorizeCommand` (:84-101). `Ok(reason)` carries the reason TS logged;
     /// `Err(reason)` is the refusal key the caller turns into words. Tier 0 is
     /// decided first and is never refused.

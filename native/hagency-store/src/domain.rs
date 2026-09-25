@@ -42,6 +42,10 @@ mod conversation_lifecycle;
 mod conversations;
 mod delivery_feedback;
 mod directives;
+pub use directives::{
+    SessionOverrides, THREAD_DIRECTIVE_OPERATOR_REFUSAL, ThreadDirective, ThreadMode,
+    confirmation, parse,
+};
 mod execution;
 mod graphs;
 mod matrix_routes;
