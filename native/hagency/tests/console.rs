@@ -2,6 +2,8 @@
 mod accounts;
 #[path = "console/agents.rs"]
 mod agents;
+#[path = "console/stream.rs"]
+mod stream;
 #[path = "console/alerts.rs"]
 mod alerts;
 #[path = "console/approvals.rs"]
@@ -23,8 +25,12 @@ mod exec_policy;
 mod fixture;
 #[path = "console/invites.rs"]
 mod invites;
+#[path = "console/matrix_diag.rs"]
+mod matrix_diag;
 #[path = "console/origin.rs"]
 mod origin;
+#[path = "console/offer_book.rs"]
+mod offer_book;
 #[path = "console/project_sides.rs"]
 mod project_sides;
 #[path = "console/real_agent.rs"]

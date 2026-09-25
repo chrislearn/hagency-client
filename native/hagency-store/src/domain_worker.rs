@@ -1,5 +1,5 @@
 use crate::{
-    CeilingAlert, DomainRepository, Effect, EffectOutcome, Error, ShutdownOutcome,
+    CeilingAlert, DomainRepository, Effect, EffectOutcome, EngagementLabel, Error, ShutdownOutcome,
     ShutdownSnapshot, SweepOutcome,
     {AgentDefinition, RoleOffer, WhitelistEntry},
     shutdown::{Phase, Probe, mark},
@@ -3178,6 +3178,21 @@ impl DomainStore {
         self.call(weight(&after)?, move |db| db.engagements(&after, limit))
             .await
     }
+    /// The console engagements list with its server-side `state` filter
+    /// (board #60 item 3): one writer job, one bounded read — the projection
+    /// and the remaining-tokens arithmetic are computed at the store, so the
+    /// console route adds no second path.
+    pub async fn engagement_labels(
+        &self,
+        after: String,
+        state: Option<String>,
+        limit: usize,
+    ) -> Result<Vec<EngagementLabel>, Error> {
+        self.call(weight(&(&after, &state))?, move |db| {
+            db.engagement_labels(&after, state.as_deref(), limit)
+        })
+        .await
+    }
     /// Single-engagement read for the console verdict surface: a call-only
     /// wrapper over the repository's own `get`; no new semantics.
     pub async fn engagement(&self, id: String) -> Result<Engagement, Error> {
@@ -3275,6 +3290,17 @@ impl DomainStore {
     /// adds no second arithmetic path.
     pub async fn agent_roster(&self) -> Result<Vec<crate::AgentRosterRow>, Error> {
         self.call(64, |db| db.agent_roster()).await
+    }
+    /// #26 console change feed: one bounded read, one fingerprint per
+    /// category — the SSE route's poll source, never a second projection.
+    pub async fn console_feed(&self) -> Result<serde_json::Value, Error> {
+        self.call(64, |db| db.console_feed()).await
+    }
+    /// #59 named-event entity read: the rows behind the TS broadcastSSE
+    /// vocabulary — the SSE route diffs two snapshots into named events
+    /// with entity payloads. One writer job, one bounded read.
+    pub async fn console_entities(&self) -> Result<serde_json::Value, Error> {
+        self.call(64, |db| db.console_entities()).await
     }
     /// The read-only agent detail (board #22): one writer job, one bounded
     /// agent-keyed read — the projection is computed at the store, so the
@@ -3384,6 +3410,13 @@ impl DomainStore {
         })
         .await
     }
+    /// The agent's active engagement ids (board #58): the force-delete
+    /// route's revoke list, read in one writer job so the route adds no
+    /// second arithmetic path.
+    pub async fn agent_active_engagements(&self, name: String) -> Result<Vec<String>, Error> {
+        self.call(weight(&name)?, move |db| db.agent_active_engagements(&name))
+            .await
+    }
     /// The read-only project-sides projection (ADR-132): one writer job,
     /// one bounded read; the route adds no second projection.
     pub async fn project_sides(&self) -> Result<Vec<crate::ProjectSide>, Error> {
@@ -3428,6 +3461,24 @@ impl DomainStore {
     ) -> Result<(Budget, crate::CeilingReport), Error> {
         self.call(weight(&id)?, move |db| db.resource_headroom(&id, at))
             .await
+    }
+    /// The requester-facing offer book (board #48): one writer job, one bounded
+    /// read — the projection (published roles, serving resource, resources,
+    /// runningNow) is computed at the store, so the console route adds no second
+    /// arithmetic path.
+    pub async fn offer_book(&self, room: Option<String>) -> Result<crate::OfferBook, Error> {
+        self.call(weight(&room)?, move |db| db.offer_book(room.as_deref()))
+            .await
+    }
+    /// The requester-facing contributions list (board #48): the real
+    /// agent<->project relationships, one bounded read.
+    pub async fn contributions(&self) -> Result<Vec<crate::Contribution>, Error> {
+        self.call(1, |db| db.contributions()).await
+    }
+    /// The engagement preview (board #48): a DRY RUN. A read-only job — it
+    /// decides nothing and writes nothing.
+    pub async fn preview(&self, role: String) -> Result<crate::Preview, Error> {
+        self.call(weight(&role)?, move |db| db.preview(&role)).await
     }
     /// Ceiling overrun alarm sweep (ADR-124 slice a): takes the clock from the
     /// caller so tests drive it directly; no timer is attached in this slice.

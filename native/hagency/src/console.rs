@@ -2,6 +2,7 @@
 mod accounts;
 mod agent_detail;
 mod agents;
+mod stream;
 mod alerts;
 mod approvals;
 mod assets;
@@ -10,6 +11,8 @@ pub mod client;
 mod engagements;
 mod exec_policy;
 mod invites;
+mod matrix_diag;
+mod offer_book;
 mod project_sides;
 mod side_budget;
 mod side_lifecycle;
@@ -79,8 +82,10 @@ pub(crate) fn router() -> Router {
                 .push(alerts::router())
                 .push(agents::router())
                 .push(exec_policy::router())
+                .push(stream::router())
                 .push(engagements::router())
                 .push(invites::router())
+                .push(offer_book::router())
                 .push(project_sides::router())
                 .push(side_registration::router())
                 .push(side_budget::router())
@@ -88,6 +93,7 @@ pub(crate) fn router() -> Router {
                 .push(approvals::router())
                 .push(resources::router())
                 .push(accounts::router())
+                .push(matrix_diag::router())
                 .push(resource_configuration::router())
                 .push(tasks::router())
                 .push(tasks::extra_router()),

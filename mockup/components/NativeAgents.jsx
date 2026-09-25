@@ -23,7 +23,11 @@
  */
 import { useState } from 'react';
 import Link from 'next/link';
+import PageHead from '@/components/PageHead';
+import NativeStatusStrip from '@/components/NativeStatusStrip';
+import { NativeAccessNotice } from '@/components/NativeUsage';
 import { useT } from '@/components/Prefs';
+import { errorText } from '@/lib/i18n';
 import { useData } from '@/components/Data';
 import { fmtTokens } from '@/lib/mock-data';
 import { rebindAgentResource, startAgent, stopAgent } from '@/lib/native-api';
@@ -38,42 +42,23 @@ export default function NativeAgents() {
   const [review, setReview] = useState(null);
   const [hold, setHold] = useState(false);
   const [selected, setSelected] = useState(null);
-  const [result, setResult] = useState(null);
-  const [presetFor, setPresetFor] = useState(null);
-  const [presetId, setPresetId] = useState('');
+  /* Item 5: Stop is an awaited mutation with visible pending / success /
+   * error words, never a fire-and-forget click that can reject unhandled. */
+  const [stop, setStop] = useState(null);
 
-  // #21: each control renders the server's own outcome word; a refusal
-  // renders its error text, never an invented success.
-  const act = async (engagement, action) => {
-    setHold(true);
+  const stopOne = async (agent) => {
+    if (stop?.engagement === agent.engagement_id) return;
+    setStop({ engagement: agent.engagement_id, kind: 'pending' });
     try {
-      if (action === 'stop') await stopAgent(engagement);
-      else await startAgent(engagement);
-      setResult({
-        engagement,
-        text: action === 'stop' ? t('na.stopResult') : t('na.startResult'),
+      await stopAgent(agent.engagement_id);
+      setStop({ engagement: agent.engagement_id, kind: 'saved' });
+      await data.refresh();
+    } catch (error) {
+      setStop({
+        engagement: agent.engagement_id,
+        kind: ['busy', 'outcome_unknown', 'native_unavailable', 'invalid_native_response'].includes(error.message) ? 'unknown' : 'refused',
+        error: error.message,
       });
-      data.refresh();
-    } catch (e) {
-      setResult({ engagement, text: String(e?.message || e) });
-    } finally {
-      setHold(false);
-    }
-  };
-  const applyPreset = async (engagement) => {
-    const id = presetId.trim();
-    if (!id) return;
-    setHold(true);
-    try {
-      const outcome = await rebindAgentResource(engagement, id);
-      setResult({ engagement, text: t('na.presetResult', { id: outcome.preset_id }) });
-      setPresetFor(null);
-      setPresetId('');
-      data.refresh();
-    } catch (e) {
-      setResult({ engagement, text: String(e?.message || e) });
-    } finally {
-      setHold(false);
     }
   };
 
@@ -86,14 +71,24 @@ export default function NativeAgents() {
       </section>
     );
   }
-  if (phase === 'access') return null;
+  /* Item 6: an access need renders the page head and the notice with the
+   * CLI command — never a blank screen. */
+  if (phase === 'access') return <>
+    <PageHead title={t('nav.workforce')} sub={t('na.rosterSub')}><NativeStatusStrip /></PageHead>
+    <NativeAccessNotice />
+  </>;
   if (selected) return <NativeAgentDetail name={selected} onBack={() => setSelected(null)} />;
 
   return (
     <div data-native-state={phase} aria-busy={refreshing === true}>
       {refreshing && <p role="status">{t('nu.refreshing')}</p>}
 
-      <h2 style={{ marginTop: 0 }}>{t('nav.workforce')}<span className="note"> {t('na.readonly')}</span></h2>
+      {/* Items 2 and 4: one PageHead per page — h1, tab title and the
+       * status strip — and no heading that contradicts its buttons. The
+       * observation itself IS read-only, but with the lifecycle scope the
+       * page stops work, so the heading says observation. */}
+      <PageHead title={t('nav.workforce')} sub={t('na.rosterSub')}><NativeStatusStrip /></PageHead>
+      <NativeAccessNotice />
 
       {/* The server's own gap list, rendered verbatim: the page never
           decides which columns are unknown. */}
@@ -101,7 +96,11 @@ export default function NativeAgents() {
         {t('na.unavailable', { list: unavailable.join(', ') })}
       </p>
 
-      {agents.length === 0 ? (
+      {/* Item 7: the roster starts empty — "an agent appears once it is
+       * lent" is a ready-state fact, not a first paint. */}
+      {phase === 'loading' ? (
+        <p role="status">{t('na.loadingRoster')}</p>
+      ) : agents.length === 0 ? (
         <div className="empty">
           <div className="big">{t('na.none')}</div>
         </div>
@@ -114,8 +113,10 @@ export default function NativeAgents() {
                 <th>{t('col.framework')}</th>
                 <th>{t('col.role')}</th>
                 <th>{t('col.state')}</th>
+                <th>{t('na.liveness')}</th>
                 <th>{t('na.engagement')}</th>
                 <th className="num">{t('col.requested')}</th>
+                <th className="num">{t('na.consumed')}</th>
                 <th>{t('na.lastActivity')}</th>
                 <th>{t('na.online')}</th>
                 <th>{t('na.lastSeen')}</th>
@@ -129,8 +130,15 @@ export default function NativeAgents() {
                   <td className="dim">{a.framework}</td>
                   <td>{a.role}</td>
                   <td>{a.state}</td>
+                  {/* Board #60 item 2: the LIVE DISPATCH's word, a separate
+                      fact from the engagement lifecycle word beside it —
+                      null means no live dispatch, said as unknown. */}
+                  <td className="dim">{a.liveness === null ? t('nu.unknown') : t(`na.liveness.${a.liveness}`)}</td>
                   <td className="dim">{a.engagement_id}</td>
                   <td className="num dim">{fmtTokens(a.requested_tokens)}</td>
+                  {/* Tokens observed consumed; null when unmeasured, never
+                      rendered as a zero that would read as "used nothing". */}
+                  <td className="num dim">{a.consumed === null ? t('nu.unknown') : fmtTokens(a.consumed)}</td>
                   {/* Last dispatch activity, not last seen; null is unknown,
                       rendered as the word — never a zero clock. */}
                   <td className="dim">{a.last_activity_ms === null ? t('nu.unknown') : new Date(a.last_activity_ms).toISOString()}</td>
@@ -142,9 +150,7 @@ export default function NativeAgents() {
                   <td className="dim">{a.last_seen_ms === null ? t('nu.unknown') : new Date(a.last_seen_ms).toISOString()}</td>
                   {manageLifecycle && (
                     <td>
-                      <button className="btn" data-lifecycle-action="stop" disabled={hold} onClick={() => act(a.engagement_id, 'stop')}>{t('na.stop')}</button>
-                      <button className="btn" data-lifecycle-action="start" disabled={hold} onClick={() => act(a.engagement_id, 'start')}>{t('na.start')}</button>
-                      <button className="btn" data-lifecycle-action="preset" disabled={hold} onClick={() => setPresetFor(presetFor === a.engagement_id ? null : a.engagement_id)}>{t('na.preset')}</button>
+                      <button className="btn" data-lifecycle-action="stop" disabled={hold || stop?.kind === 'pending'} onClick={() => void stopOne(a)}>{t('na.stop')}</button>
                       <button className="btn" data-lifecycle-action="review" disabled={hold} onClick={() => setReview(a)}>{t('nrec.open')}</button>
                       {presetFor === a.engagement_id && (
                         <form
@@ -178,6 +184,12 @@ export default function NativeAgents() {
       <div className="btn-row" style={{ marginTop: 14 }}>
         <button className="btn" disabled={hold} onClick={data.refresh}>{t('nu.refresh')}</button>
       </div>
+      {stop && (
+        <section className="notice" data-stop-action={stop.kind} role={stop.kind === 'pending' || stop.kind === 'saved' ? 'status' : 'alert'}>
+          <p><b>{stop.engagement}</b> · {t(`na.stop.${stop.kind}`)}{stop.error ? ` (${errorText(t, stop.error)})` : ''}</p>
+          {stop.kind !== 'pending' && <button className="btn" onClick={data.refresh}>{t('nu.refresh')}</button>}
+        </section>
+      )}
       {manageLifecycle && review && <NativeStoppedWork key={review.engagement_id} agent={review} onHold={setHold} />}
     </div>
   );

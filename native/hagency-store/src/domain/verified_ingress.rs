@@ -64,6 +64,17 @@ fn scope_digest(route: &ReplyRoute) -> Result<String, Error> {
 fn service_sender(db: &Connection, sender: &str) -> Result<bool, Error> {
     Ok(db.query_row("SELECT EXISTS(SELECT 1 FROM matrix_transports WHERE sender_mxid=?1) OR EXISTS(SELECT 1 FROM registrations WHERE json_extract(config,'$.representativeMxid')=?1 OR json_extract(config,'$.approvalBotMxid')=?1)",[sender],|r|r.get(0))?)
 }
+/// TS:bridge-matrix.js:3310 admits `m.notice` in the same breath as `m.text`, so
+/// a human notice is TEXT for every purpose — including waking the agent it
+/// addresses. ADR-054-era ingress admitted a notice but would not let it wake;
+/// the msgtype changes nothing about which senders and kinds carry a request.
+fn human_waking_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "m.text" | "m.notice" | "m.file" | "m.image" | "m.audio" | "m.video"
+    )
+}
+
 /// A `!` line is a bot command rather than agent input, exactly as the retained
 /// bridge decided before routing (`bridge-matrix.js`): a non-file/image message
 /// whose trimmed body begins with `!`. Kept local because the store cannot
@@ -651,10 +662,7 @@ impl DomainRepository {
             return Ok(result);
         }
         let human = !service_sender(&tx, &event.sender_mxid)?;
-        let kind = matches!(
-            event.kind.as_str(),
-            "m.text" | "m.file" | "m.image" | "m.audio" | "m.video"
-        );
+        let kind = human_waking_kind(&event.kind);
         let mut wake = human
             && kind
             && match &route.privacy {
@@ -670,6 +678,10 @@ impl DomainRepository {
             // message and so woke the agent — the side effect the parity table
             // called out at `verified_ingress.rs:650-651`.
             && !is_bot_command(event);
+        // The event was a request at all: like the retained product, only a
+        // turn that was actually asked for gets an explanation when it does
+        // not start — background chatter in a done task's thread stays quiet.
+        let addressed = wake;
         let task = bound_intent(&tx, &route.session_id)?;
         if let Some((id, state, root)) = &task {
             if state == "closed" {
@@ -681,6 +693,47 @@ impl DomainRepository {
                 wake &= event.sender_mxid == root.sender_mxid
                     && t.completed_at
                         .is_some_and(|done| event.origin_ts > done && now > done);
+                // The retained product explains in the thread why the turn
+                // did not start when a completed task is mentioned again
+                // without the requester's fresh authority (`router/src/store.ts`
+                // `claimDispatch`, `completed_task_followup`). Keyed per
+                // triggering event, the Rust equivalent of TS's
+                // `${...}:${row.dispatch_id}:${task_id}` per-dispatch keys:
+                // each refused attempt is explained; best effort in its own
+                // savepoint so admission never fails because its explanation
+                // could not be addressed.
+                if addressed && !wake && human && kind {
+                    let id_key = format!("completed_task_followup:{}", event.event_id);
+                    let notice_id = format!(
+                        "notice_{}",
+                        canonical::digest(&json!([id, &id_key]))?
+                    );
+                    let said: bool = tx.query_row(
+                        "SELECT EXISTS(SELECT 1 FROM task_notices WHERE id=?1)",
+                        [&notice_id],
+                        |r| r.get(0),
+                    )?;
+                    if !said {
+                        tx.execute_batch("SAVEPOINT followup_notice")?;
+                        let queued = super::task_intents::add_keyed_notice(
+                            &tx,
+                            &t,
+                            &root,
+                            "completed_task_followup",
+                            &id_key,
+                            super::task_intents::COMPLETED_TASK_FOLLOWUP_NOTICE.into(),
+                            now,
+                        );
+                        match queued {
+                            Ok(_) => tx.execute_batch("RELEASE followup_notice")?,
+                            Err(_) => {
+                                tx.execute_batch(
+                                    "ROLLBACK TO followup_notice; RELEASE followup_notice",
+                                )?
+                            }
+                        }
+                    }
+                }
             }
         }
         let pending: u64 = tx.query_row(
@@ -927,5 +980,26 @@ impl DomainRepository {
         tx.execute("INSERT INTO verified_task_requests(source_session_id,request_key,digest,task_id) VALUES(?1,?2,?3,?4)",params![source_route.session_id,input.request_key,digest,result.task_id])?;
         tx.commit()?;
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod notice_kind_tests {
+    use super::human_waking_kind;
+
+    /// TS:bridge-matrix.js:3310. The TS-visible outcome is which msgtypes a human
+    /// sender can use to wake an agent; `m.notice` is admitted exactly like
+    /// `m.text`, and every other media kind the room can carry also wakes. A
+    /// msgtype outside that set never does.
+    #[test]
+    fn native_verified_ingress_notice_wakes_like_text() {
+        for kind in [
+            "m.text", "m.notice", "m.file", "m.image", "m.audio", "m.video",
+        ] {
+            assert!(human_waking_kind(kind), "{kind} wakes");
+        }
+        for kind in ["m.reaction", "m.room.member", "m.typing", "m.sticker"] {
+            assert!(!human_waking_kind(kind), "{kind} does not wake");
+        }
     }
 }

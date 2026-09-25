@@ -19,6 +19,7 @@ use std::{fs::File, path::Path};
 pub(crate) mod accounts;
 mod agent_fences;
 mod agent_lifecycle;
+mod console_feed;
 pub use agent_fences::{AgentFence, FenceReason};
 mod approvals;
 mod engagement_retention;
@@ -63,6 +64,10 @@ pub use operator_tasks::{
 };
 mod invites;
 pub use invites::PendingInvite;
+mod offer_book;
+pub use offer_book::{
+    Contribution, OfferBook, OfferResource, OfferRole, OfferServing, Preview,
+};
 mod outcome_resolution;
 mod owned_completion;
 mod owned_dispatch;
@@ -311,6 +316,47 @@ pub struct AgentRosterRow {
     pub online: bool,
     pub last_seen_ms: Option<u64>,
     pub last_activity_ms: Option<u64>,
+    /// The live dispatch's own word, separate from `state` (the engagement
+    /// lifecycle word): `running` (started), `waiting_approval` (parked),
+    /// `starting` (leased). `None` means native's dispatch record shows no
+    /// live dispatch — said as unknown, never guessed as `idle`.
+    pub liveness: Option<String>,
+    /// Tokens the agent's engagements were observed to consume:
+    /// `usage_sources.latest_counts` display volume summed the way the usage
+    /// report sums it. `None` when nothing was measured — unknown, not zero.
+    pub consumed: Option<u64>,
+}
+/// One console engagement row (board #60 item 3). The label the triage list
+/// already rendered, plus the figures TS's `/api/engagements`
+/// (`backend-v2.js:14964-14975`) carries and native was dropping:
+/// `remainingTokens` (what is LEFT on the resource behind the engagement),
+/// `ownerBindingRequired` (a pending request with no verified owner binding
+/// yet — TS's readiness rule), and the record's own timestamps.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngagementLabel {
+    pub id: String,
+    pub agent_name: String,
+    pub project_name: Option<String>,
+    pub role: String,
+    pub requested_tokens: u64,
+    pub state: EngagementState,
+    pub cleanup: CleanupState,
+    /// What is LEFT on the resource behind the agent, so the queue can show
+    /// over-commitment BEFORE the decision (TS `:14974`
+    /// `agentRemainingTokens`). The same `min` of the non-null limits the
+    /// admission decision uses. `None` when no ceiling is declared: unknown,
+    /// never rendered as a zero allowance.
+    pub agent_remaining_tokens: Option<u64>,
+    /// TS `:14972`: a PENDING request has no owner yet unless a verified
+    /// binding exists for it. Only pending rows can require one; a decided
+    /// row's readiness is no longer a question the queue asks.
+    pub owner_binding_required: bool,
+    /// When the request was observed (`evidence.observed_at_ms`, recorded at
+    /// admission) and, for an ended engagement, when it reached its terminal
+    /// state (`engagement_ends.ended_at`). Both optional: null is unknown.
+    pub created_at_ms: Option<u64>,
+    pub ended_at_ms: Option<u64>,
 }
 /// One session (room) of the agent detail read: the room the session's
 /// binding names plus its live dispatch state, when one exists. Exactly
@@ -1070,6 +1116,89 @@ impl DomainRepository {
             .map(|s| Ok(serde_json::from_str(&s?)?))
             .collect()
     }
+    /// The console engagements list (board #60 item 3): the label the triage
+    /// list already rendered, widened to the figures TS's `/api/engagements`
+    /// (`backend-v2.js:14964-14975`) carries and native was dropping, and a
+    /// server-side `state` filter (`:14965` `?state=`).
+    ///
+    /// `agent_remaining_tokens` is computed the way the ADMISSION decision
+    /// computes it — `min` of the non-null limits (`ceiling - drawn`, the
+    /// seat's remaining, the pool's remaining) — so the queue shows the
+    /// over-commitment the decision would refuse, before the decision. The
+    /// engagement's own reservation is NOT excluded (TS `remainingFor(e.agent)`
+    /// passes no exclusion here), so the figure is the agent's, not a
+    /// self-forgiving one.
+    ///
+    /// `owner_binding_required` is TS `:14972`: a PENDING request with no
+    /// owner binding yet. It reads `approval_bindings` directly rather than
+    /// the `current_approval_bindings` view, because that view is scoped to
+    /// `state='active'` engagements and so could never answer a pending row.
+    ///
+    /// `created_at_ms` is `evidence.observed_at_ms` — the request's own
+    /// observation instant, recorded at admission. Native keeps no separate
+    /// creation clock, so this is the closest true instant, never invented.
+    /// `ended_at_ms` is `engagement_ends.ended_at`, absent while live.
+    pub fn engagement_labels(
+        &self,
+        after: &str,
+        state: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<EngagementLabel>, Error> {
+        if limit == 0 || limit > 100 {
+            return Err(InvalidInput("page limit must be 1..100").into());
+        }
+        let at = graphs::now_ms()?;
+        let mut query = self.db.prepare(
+            "SELECT e.projection,e.resource_id, \
+             (SELECT ended_at FROM engagement_ends WHERE engagement_id=e.id), \
+             EXISTS(SELECT 1 FROM approval_bindings b JOIN approval_rooms room \
+              ON room.server_name=b.server_name AND room.room_id=b.room_id \
+               AND room.generation=b.room_generation AND room.available=1 \
+              WHERE b.engagement_id=e.id), \
+             json_extract(e.evidence,'$.observed_at_ms') \
+             FROM engagements e WHERE e.id>?1 AND (?2 IS NULL OR e.state=?2) \
+             ORDER BY e.id LIMIT ?3",
+        )?;
+        let rows: Vec<(String, String, Option<i64>, bool, Option<i64>)> = query
+            .query_map(params![after, state, limit as i64], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })?
+            .collect::<Result<_, _>>()?;
+        let mut labels = Vec::with_capacity(rows.len());
+        for (projection, resource_id, ended_at, has_binding, observed_at) in rows {
+            let engagement: Engagement = serde_json::from_str(&projection)?;
+            let resource = read_resource(&self.db, &resource_id)?;
+            let report = usage::ceiling_report(&self.db, &resource.id(), at)?;
+            let spent = budget(&self.db, &resource, None, false)?;
+            let by_ceiling = report
+                .ceiling_tokens
+                .map(|c| c.saturating_sub(report.drawn));
+            let agent_remaining_tokens = [
+                by_ceiling,
+                spent.seat.remaining.map(u64::from),
+                spent.pool.remaining.map(u64::from),
+            ]
+            .into_iter()
+            .flatten()
+            .min();
+            // Compare before the state moves into the label.
+            let pending = engagement.state == EngagementState::Pending;
+            labels.push(EngagementLabel {
+                id: engagement.id.clone(),
+                agent_name: engagement.agent_name.as_str().to_owned(),
+                project_name: engagement.project_name.clone(),
+                role: engagement.role.clone(),
+                requested_tokens: u64::from(engagement.requested_tokens),
+                state: engagement.state,
+                cleanup: engagement.cleanup,
+                agent_remaining_tokens,
+                owner_binding_required: pending && !has_binding,
+                created_at_ms: observed_at.and_then(|v| u64::try_from(v).ok()),
+                ended_at_ms: ended_at.and_then(|v| u64::try_from(v).ok()),
+            });
+        }
+        Ok(labels)
+    }
     /// The bounded approval observation read (ADR-138, C2a): pages
     /// `owner_approvals` by the opaque id cursor with the same hard cap as
     /// `engagements`, and names its `SELECT` columns so the projection cannot
@@ -1278,7 +1407,23 @@ impl DomainRepository {
               WHERE json_extract(e2.projection,'$.agentName')=json_extract(e.projection,'$.agentName')), \
              (SELECT MAX(a.created_at) FROM runner_sessions s \
               JOIN runner_dispatches d ON d.session_id=s.id \
-              JOIN runner_attempts a ON a.dispatch_id=d.id WHERE s.engagement_id=e.id) \
+              JOIN runner_attempts a ON a.dispatch_id=d.id WHERE s.engagement_id=e.id), \
+             (SELECT d.state FROM runner_sessions s JOIN runner_dispatches d ON d.session_id=s.id \
+              JOIN engagements e2 ON e2.id=s.engagement_id \
+              WHERE json_extract(e2.projection,'$.agentName')=json_extract(e.projection,'$.agentName') \
+              AND d.state IN ('leased','started','parked') \
+              ORDER BY CASE d.state WHEN 'started' THEN 3 WHEN 'parked' THEN 2 ELSE 1 END DESC, d.id LIMIT 1), \
+             (SELECT CASE \
+               WHEN COUNT(*)=0 THEN NULL \
+               WHEN MIN(CASE WHEN json_extract(u.latest_counts,'$.input') IS NULL \
+                              OR json_extract(u.latest_counts,'$.output') IS NULL \
+                              OR json_extract(u.latest_counts,'$.cacheWrite') IS NULL \
+                              OR json_extract(u.latest_counts,'$.cacheRead') IS NULL \
+                             THEN 0 ELSE 1 END)=0 THEN NULL \
+               ELSE SUM(json_extract(u.latest_counts,'$.input') + json_extract(u.latest_counts,'$.output') \
+               + json_extract(u.latest_counts,'$.cacheWrite') + json_extract(u.latest_counts,'$.cacheRead')) END \
+              FROM usage_sources u JOIN engagements e3 ON e3.id=u.engagement_id \
+              WHERE json_extract(e3.projection,'$.agentName')=json_extract(e.projection,'$.agentName')) \
              FROM engagements e JOIN resources r ON r.id=e.resource_id \
              WHERE NOT EXISTS (SELECT 1 FROM engagements b \
               WHERE json_extract(b.projection,'$.agentName')=json_extract(e.projection,'$.agentName') \
@@ -1294,12 +1439,24 @@ impl DomainRepository {
                     row.get::<_, bool>(2)?,
                     row.get::<_, Option<i64>>(3)?,
                     row.get::<_, Option<i64>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<i64>>(6)?,
                 ))
             })?
             .map(|row| {
-                let (projection, config, online, last_seen, last_activity) = row?;
+                let (projection, config, online, last_seen, last_activity, dispatch, consumed) =
+                    row?;
                 let engagement: Engagement = serde_json::from_str(&projection)?;
                 let resource: Resource = serde_json::from_str(&config)?;
+                // The live dispatch's own word, distinct from the engagement
+                // lifecycle word (TS `:6872` reads `machine.state`, a
+                // liveness value). `None` is said as unknown, never guessed.
+                let liveness = match dispatch.as_deref() {
+                    Some("started") => Some("running".to_owned()),
+                    Some("parked") => Some("waiting_approval".to_owned()),
+                    Some("leased") => Some("starting".to_owned()),
+                    _ => None,
+                };
                 Ok(AgentRosterRow {
                     name: engagement.agent_name.as_str().to_owned(),
                     framework: resource.framework,
@@ -1310,11 +1467,13 @@ impl DomainRepository {
                     online,
                     last_seen_ms: last_seen.and_then(|v| u64::try_from(v).ok()),
                     last_activity_ms: last_activity.and_then(|v| u64::try_from(v).ok()),
+                    liveness,
+                    consumed: consumed.and_then(|v| u64::try_from(v).ok()),
                 })
             })
             .collect()
     }
-    /// The read-only agent detail (board #22, TS `backend-v2.js:12155`):
+/// The read-only agent detail (board #22, TS `backend-v2.js:12155`):
     /// `None` when no engagement names the agent (the route's 404), else the
     /// agent-keyed identity — the same most-live representative engagement
     /// the roster picks — plus the resource id, project id, the rooms its
@@ -1420,6 +1579,24 @@ impl DomainRepository {
             dispatch,
             tasks,
         }))
+    }
+    /// The agent's ACTIVE engagement ids, newest first — the list a force
+    /// delete revokes (TS `backend-v2.js:12231-12238`: `engagementStore.list(
+    /// {state:'active'})` filtered to this agent, then revoked one by one).
+    /// An agent is a derived projection, so this is the only way to find the
+    /// commitments it holds; a commitment lives in the engagement's own state
+    /// (`pool_commitments`/`seat_commitments`), so revoking releases it.
+    /// Bounded, like the roster read.
+    pub fn agent_active_engagements(&self, name: &str) -> Result<Vec<String>, Error> {
+        let mut query = self.db.prepare(
+            "SELECT id FROM engagements \
+             WHERE json_extract(projection,'$.agentName')=?1 AND state='active' \
+             ORDER BY id LIMIT 100",
+        )?;
+        query
+            .query_map([name], |row| row.get::<_, String>(0))?
+            .map(|row| Ok(row?))
+            .collect::<Result<_, Error>>()
     }
     pub fn resource_budget(&self, id: &str) -> Result<Budget, Error> {
         budget(&self.db, &read_resource(&self.db, id)?, None, false)

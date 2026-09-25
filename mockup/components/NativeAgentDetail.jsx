@@ -14,12 +14,26 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useT } from '@/components/Prefs';
 import { fmtTokens } from '@/lib/mock-data';
-import { fetchAgentDetail } from '@/lib/native-api';
+import { deleteAgent, fetchAgentDetail } from '@/lib/native-api';
+import { useData } from '@/components/Data';
 
 export default function NativeAgentDetail({ name, onBack }) {
   const t = useT();
+  const data = useData();
+  const manageLifecycle = data?.permissions?.manageLifecycle === true;
   const [phase, setPhase] = useState('loading');
   const [detail, setDetail] = useState(null);
+  /* Board #58: the retained console's own destructive idiom (`AgentActions.jsx`)
+   * — the control sits in a `danger-zone` below everything else and asks for
+   * the agent's NAME rather than a click, "because a confirm dialog is a reflex
+   * whereas typing is a decision". Removal is `?force=true`, and the response
+   * must actually say `deleted`, so a caller cannot report success off `ok`
+   * alone (the retained route answers `ok:true, deprecated:true` for a SOFT
+   * delete while the agent stays). */
+  const [confirming, setConfirming] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [removing, setRemoving] = useState(null);
+  const [removed, setRemoved] = useState(false);
   /*
    * The roster renders this in place (the packaged console serves one static
    * HTML per route with no fallback, so /agents/<name> would 404 in
@@ -32,6 +46,24 @@ export default function NativeAgentDetail({ name, onBack }) {
   ) : (
     <Link className="btn" href="/agents">{t('na.detailBack')}</Link>
   );
+  /* A removal cannot be reflected by an in-place read — the agent is gone —
+   * so the page leaves for the roster, like the retained console does. */
+  const remove = async () => {
+    if (removing || typed !== name) return;
+    setRemoving('pending');
+    try {
+      const value = await deleteAgent(name, true);
+      if (value.deleted !== true) {
+        setRemoving('refused');
+        return;
+      }
+      setRemoving('saved');
+      setRemoved(true);
+      if (onBack) onBack();
+    } catch (error) {
+      setRemoving(['busy', 'outcome_unknown', 'native_unavailable', 'invalid_native_response'].includes(error?.message) ? 'unknown' : 'refused');
+    }
+  };
 
   useEffect(() => {
     let live = true;
@@ -163,6 +195,44 @@ export default function NativeAgentDetail({ name, onBack }) {
       <div className="btn-row" style={{ marginTop: 14 }}>
         {back}
       </div>
+
+      {removed && (
+        <section className="notice" data-agent-removed="true" role="status">
+          <p>{t('na.deleted', { name })}</p>
+        </section>
+      )}
+
+      {manageLifecycle && !removed && (
+        <div className="danger-zone">
+          <span className="lbl">{t('na.deleteAgent')}</span>
+          {confirming === null && (
+            <button className="btn danger" disabled={removing?.kind === 'pending'} onClick={() => { setConfirming(true); setTyped(''); }}>
+              {t('na.deleteAgent')}
+            </button>
+          )}
+          {confirming && (
+            <>
+              <span className="dim">{t('na.deleteConfirm', { name })}</span>
+              <input
+                value={typed}
+                onChange={(event) => setTyped(event.target.value)}
+                aria-label={t('na.deleteConfirm', { name })}
+                placeholder={name}
+              />
+              <button className="btn" onClick={() => { setConfirming(null); setTyped(''); }}>{t('act.cancel')}</button>
+              <button className="btn danger" disabled={typed !== name || removing?.kind === 'pending'} onClick={() => void remove()}>
+                {t('na.deletePermanently')}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {!manageLifecycle && <p className="dim" style={{ marginTop: 14 }}>{t('na.deleteLiveOnly')}</p>}
+      {removing && removing.kind !== 'pending' && (
+        <section className="notice" data-delete-action={removing.kind} role="alert">
+          <p>{t(`na.delete.${removing.kind}`)}</p>
+        </section>
+      )}
     </div>
   );
 }

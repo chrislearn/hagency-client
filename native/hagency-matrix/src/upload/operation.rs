@@ -21,8 +21,35 @@ pub(super) async fn run(
     if let Err(error) = inner.whoami(cancel).await {
         return fence(inner.clone(), job.clone(), error).await;
     }
+    // TS parity (lib/matrix-file.js:30-33): a plaintext room uploads the
+    // original bytes, not the encrypted blob, so the clear mxc the event
+    // references serves the real file. Staged custody stays the encrypted
+    // record; only this route's wire body is the checked plaintext.
+    let plaintext_room = state
+        .input
+        .send
+        .as_ref()
+        .is_some_and(|send| !send.route().encrypted);
+    let plaintext = if plaintext_room {
+        let codec = hagency_media::Codec::new(
+            hagency_media::Limits::new(hagency_core::uploads::MAX_UPLOAD_BYTES as usize, 1)
+                .map_err(|_| Error::Config)?,
+        );
+        Some(
+            codec
+                .decrypt(
+                    state.input.media.descriptor(),
+                    state.input.media.ciphertext(),
+                )
+                .map_err(|_| Error::Storage)?
+                .bytes()
+                .to_vec(),
+        )
+    } else {
+        None
+    };
     let request = inner.http.prepare_upload(
-        state.input.media.ciphertext(),
+        plaintext.as_deref().unwrap_or(state.input.media.ciphertext()),
         hagency_core::uploads::MAX_UPLOAD_BYTES as usize,
     )?;
     // Capture the durable identity and fence before the send is consumed, so

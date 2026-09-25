@@ -10,6 +10,7 @@ mod enrollment;
 mod event_batch;
 mod http;
 pub use http::UploadResponse;
+mod identity_polish;
 mod intake;
 mod invites;
 mod media_download;

@@ -261,11 +261,18 @@ fn native_notice_custody_fencing() {
         f.db.begin_verified_task_notice_send(&claim.claim.notice.id, &claim.claim.token, 1026)
             .is_err()
     );
-    assert!(
+    // The retained product posts the task's new status into its thread on
+    // every non-replayed transition (`router/src/store.ts` `taskOperation`,
+    // 3314-3315), so `done` above queued a `Task status: done` notice for the
+    // CURRENT epoch and it is claimable. The continuation notice itself is
+    // dead: only its body is gone — assert both facts by identity, not by an
+    // absolute "nothing claimable" that the parity port replaced.
+    let status =
         f.db.claim_verified_task_notice(1026, 1000)
             .unwrap()
-            .is_none()
-    );
+            .unwrap();
+    assert_eq!(status.claim.notice.kind, "task_operation:followup:done");
+    assert_ne!(status.claim.notice.id, claim.claim.notice.id);
     assert_eq!(state(&f, &claim.claim.notice.id), "cancelled");
 }
 
