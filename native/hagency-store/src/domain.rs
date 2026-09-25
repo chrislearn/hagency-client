@@ -35,8 +35,9 @@ pub use attempt_events::{
 pub use catalog_publication::PublishedCatalog;
 mod ceiling_alerts;
 pub use ceiling_alerts::{
-    ALERT_STATUSES, AlertTransition, CeilingAlert, MAX_OPEN_CEILING_ALERTS, SweepOutcome,
-    allowed_transitions,
+    ALERT_SEVERITIES, ALERT_SOURCES, ALERT_STATUSES, ALERT_SUPPRESS_DEFAULT_MS, AlertListFilter,
+    AlertNote, AlertPatch, AlertStats, AlertTransition, CeilingAlert, MAX_OPEN_CEILING_ALERTS,
+    SweepOutcome, allowed_transitions,
 };
 mod command_notices;
 mod conversation_lifecycle;
@@ -108,7 +109,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 44;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 45;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -763,6 +764,10 @@ impl DomainRepository {
                         44,
                         include_str!("migrations/043-offers-whitelist-agent-definitions.sql"),
                     ),
+                    // Integration of lane/alerts: its board-assigned number
+                    // was 045 (already the next sequential tuple; landing
+                    // order made them coincide).
+                    (45, include_str!("migrations/045-alert-parity.sql")),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
@@ -784,7 +789,8 @@ impl DomainRepository {
                     "SELECT id,account_id,account_generation,attempt,observed_at_ms,expires_at_ms,mode,provider_state,outcome FROM account_login_observations LIMIT 0",
                     "SELECT account_id,attempt,started_at_ms,deadline_ms,state,receipt_id FROM account_login_attempts LIMIT 0",
                     "SELECT id,account_id,retired_at_ms,readiness,logout_detail FROM account_logout_receipts LIMIT 0",
-                    "SELECT dedupe_key,resource_id,summary,detail,runbook,impact,recovery_condition,occurrences,first_seen_ms,last_seen_ms,resolved_at_ms,resolved_by,status,note,transitioned_at_ms,transitioned_by FROM ceiling_alerts LIMIT 0",
+                    "SELECT dedupe_key,resource_id,summary,detail,runbook,impact,recovery_condition,occurrences,first_seen_ms,last_seen_ms,resolved_at_ms,resolved_by,status,note,transitioned_at_ms,transitioned_by,alert_type,severity,source,source_agent,assignee,suppress_until_ms,linked_task_id,original_severity,missing_actionable_fields,owner,tags FROM ceiling_alerts LIMIT 0",
+                    "SELECT dedupe_key,seq,author,text,ts_ms FROM ceiling_alert_notes LIMIT 0",
                     "SELECT id,title,description,status,priority,granularity,assignee,created_by,created_at,updated_at,started_at,completed_at,heartbeat_at,waiting_reason,waiting_until,parent_id,labels FROM operator_tasks LIMIT 0",
                     "SELECT sequence,task_id,author,body,created_at FROM operator_task_comments LIMIT 0",
                     "SELECT k.secret,k.deployment,k.root_identity,a.id,a.ordinal,a.generation,a.state,a.namespace_identity,a.identity_tuple,a.seat_id,r.preset_id,r.account_id,r.binding_generation FROM account_identity_key k CROSS JOIN managed_accounts a CROSS JOIN resource_accounts r LIMIT 0",

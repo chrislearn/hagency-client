@@ -19,7 +19,8 @@ pub use domain::resource_publication::{
 };
 pub use domain::uploads::UploadSettlement;
 pub use domain::{
-    ALERT_STATUSES, AgentDefinition, AgentDetail, AgentDetailRoom, AgentFence, AgentRosterRow, AlertTransition, AttemptClock, RoleOffer, WhitelistEntry, AttachmentTicket,
+    ALERT_STATUSES, AgentDefinition, AgentDetail, AgentDetailRoom, AgentFence, AgentRosterRow, AlertListFilter, AlertNote, AlertPatch,
+    AlertStats, AlertTransition, AttemptClock, RoleOffer, WhitelistEntry, AttachmentTicket,
     AttemptClockRow, AttemptEvent, AttemptEventRow, AttemptPhase, CeilingAlert, CeilingReport,
     CorpusSweepOutcome, DomainRepository, ENDED_LIMIT, EXECUTION_RETENTION_BATCH,
     EXECUTION_RETENTION_DISPATCHES, EXECUTION_RETENTION_ROWS, Effect, EffectOutcome, EffectState,
