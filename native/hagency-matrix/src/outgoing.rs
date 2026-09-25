@@ -403,23 +403,67 @@ impl Inner {
             self.validate_outgoing(&source, attempt.fence).await?;
             observe!(OutgoingWriteHttp, Some(index));
             let value = if write.room {
-                self.http
-                    .put(
-                        &[
-                            "_matrix",
-                            "client",
-                            "v3",
-                            "rooms",
+                // The kick moment (board #11, parity bridge-matrix.js:10888-
+                // 10950): the retained bridge retries a send that failed on
+                // membership — re-invite, rejoin, resend. Native's kick fact
+                // surfaces here, at the write itself (403): the preflights
+                // still saw the agent joined, so nothing has retired the room
+                // scope, and the rejoin restores exactly the membership the
+                // route was drafted against. The retry reuses the same
+                // transaction id, so a server that somehow accepted before
+                // refusing dedupes. A 403 that is not membership (a dead
+                // token) fails the rejoin the same way and keeps the
+                // refusal — TS discriminates by error text; the rejoin POST
+                // is the native discriminator.
+                let send = [
+                    "_matrix",
+                    "client",
+                    "v3",
+                    "rooms",
+                    &attempt.route.room_id,
+                    "send",
+                    &write.event_type,
+                    &write.transaction_id,
+                ];
+                let result = self
+                    .http
+                    .put(&send, write.body.clone(), cancel)
+                    .await
+                    .and_then(|response| response.success());
+                match result {
+                    Ok(value) => value,
+                    Err(Error::Unauthorized) => {
+                        let restored = crate::identity_polish::agent_rejoin(
+                            &self.http,
                             &attempt.route.room_id,
-                            "send",
-                            &write.event_type,
-                            &write.transaction_id,
-                        ],
-                        write.body,
-                        cancel,
-                    )
-                    .await?
-                    .success()?
+                            cancel,
+                        )
+                        .await
+                        .is_ok();
+                        let retried = if restored {
+                            self.http
+                                .put(&send, write.body.clone(), cancel)
+                                .await
+                                .and_then(|response| response.success())
+                        } else {
+                            Err(Error::Unauthorized)
+                        };
+                        match retried {
+                            Ok(value) => value,
+                            Err(error) => {
+                                eprintln!(
+                                    "{}",
+                                    crate::identity_polish::send_retry_warning(
+                                        &attempt.route.room_id,
+                                        "membership was lost and the rejoin did not restore it",
+                                    )
+                                );
+                                return Err(error);
+                            }
+                        }
+                    }
+                    Err(error) => return Err(error),
+                }
             } else {
                 self.http
                     .put(
