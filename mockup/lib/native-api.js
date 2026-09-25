@@ -55,10 +55,17 @@ export function validateEngagements(v) {
    * implementation accident of `slice`, not a designed rule; the native
    * verifier's scalar bound is the contract. */
   if (!object(v, ['engagements', 'next_after']) || !Array.isArray(v.engagements) || v.engagements.length > 16
-    || !(v.next_after === null || id(v.next_after)) || v.engagements.some((e) => !object(e, ['id', 'agentName', 'projectName', 'role', 'requestedTokens', 'state', 'cleanup'])
+    || !(v.next_after === null || id(v.next_after)) || v.engagements.some((e) => !object(e, ['id', 'agentName', 'projectName', 'role', 'requestedTokens', 'state', 'cleanup', 'agentRemainingTokens', 'ownerBindingRequired', 'createdAtMs', 'endedAtMs'])
       || !id(e.id) || typeof e.agentName !== 'string' || e.agentName.length > 128
       || !(e.projectName === null || (typeof e.projectName === 'string' && [...e.projectName].length <= 255))
-      || typeof e.role !== 'string' || e.role.length > 128 || !number(e.requestedTokens) || !STATES.includes(e.state) || !CLEANUP.includes(e.cleanup))) throw new Error('invalid_native_response');
+      || typeof e.role !== 'string' || e.role.length > 128 || !number(e.requestedTokens) || !STATES.includes(e.state) || !CLEANUP.includes(e.cleanup)
+      /* Board #60 item 3: the remaining allowance is null when no ceiling is
+       * declared (unknown, never a zero allowance), and the owner-binding
+       * flag is a real boolean — never coerce an absent one to false. */
+      || !(e.agentRemainingTokens === null || number(e.agentRemainingTokens))
+      || typeof e.ownerBindingRequired !== 'boolean'
+      || !(e.createdAtMs === null || number(e.createdAtMs))
+      || !(e.endedAtMs === null || number(e.endedAtMs)))) throw new Error('invalid_native_response');
   return v;
 }
 const RECOVERY_ERRORS = { agent_lifecycle_scope_required: 403, resolution_conflict: 409, dispatch_not_resolvable: 409, invalid_console_request: 400 };
@@ -142,6 +149,27 @@ export async function fetchNative(selected, after = '', withReport = true) {
   for (const e of list.engagements) remember(e.id, [e.agentName, e.projectName, e.role].filter(Boolean).join(' · '));
   return { ...list, selected: chosen, report };
 }
+
+/* The usage page's fleet panels: the totals block plus every side's
+ * allocation/budget — the acceptance is "operator sets a side allocation
+ * and sees spend vs allocation". Budget reads are one per side, capped at
+ * 16 so a fleet registration burst cannot fan the page into an unbounded
+ * request storm; sides beyond the cap render from the list without budget
+ * figures. The engagement evidence itself stays on Data's own load. */
+export async function fetchFleetUsage() {
+  const [totals, sides] = await Promise.all([fetchUsageTotals(), fetchProjectSides()]);
+  const sideBudgets = {};
+  for (const side of sides.sides.slice(0, 16)) sideBudgets[side.id] = await fetchSideBudget(side.id);
+  return { totals, sides: sides.sides, sideBudgets };
+}
+
+/* The usage page's load: the engagement evidence fetchNative returns,
+ * beside the fleet panels. One combined reply so the page renders from one
+ * snapshot, the way every other view does. */
+export async function fetchUsageView(selected, after = '') {
+  const [base, fleet] = await Promise.all([fetchNative(selected, after), fetchFleetUsage()]);
+  return { ...base, ...fleet };
+}
 /* The triage document's own view test, beside its siblings: the engagements
  * read is selected from like the others, and the provider needs to tell it
  * apart from /usage to know whether a report is wanted at all. */
@@ -209,8 +237,11 @@ export function alertsView(location) { return /^\/console\/alerts\/?$/.test(loca
  * `last_activity_ms` keeps the representative engagement's attempt
  * clock. `unavailable` is SERVER-OWNED: whatever columns the server
  * names are rendered as unknown, so a future source turns a column on
- * by removing its name server-side, never by a client edit. */
-const ROSTER_KEYS = ['name', 'framework', 'role', 'state', 'engagement_id', 'requested_tokens', 'online', 'last_seen_ms', 'last_activity_ms'];
+ * by removing its name server-side, never by a client edit. Board #60:
+ * `liveness` (the live dispatch's own word, distinct from the engagement
+ * `state`) and `consumed` (observed tokens, null when unmeasured) are
+ * served now, so this list is empty. */
+const ROSTER_KEYS = ['name', 'framework', 'role', 'state', 'engagement_id', 'requested_tokens', 'online', 'last_seen_ms', 'last_activity_ms', 'liveness', 'consumed'];
 export function validateAgents(v) {
   if (!object(v, ['at_ms', 'unavailable', 'agents', 'permissions']) || !number(v.at_ms)
     || !Array.isArray(v.unavailable) || v.unavailable.length > 32 || v.unavailable.some((n) => !text(n, 64))
@@ -221,7 +252,9 @@ export function validateAgents(v) {
       || !STATES.includes(a.state) || !id(a.engagement_id)
       || !number(a.requested_tokens) || typeof a.online !== 'boolean'
       || !(a.last_seen_ms === null || number(a.last_seen_ms))
-      || !(a.last_activity_ms === null || number(a.last_activity_ms)))) throw new Error('invalid_native_response');
+      || !(a.last_activity_ms === null || number(a.last_activity_ms))
+      || !(a.liveness === null || text(a.liveness, 32))
+      || !(a.consumed === null || number(a.consumed)))) throw new Error('invalid_native_response');
   return v;
 }
 export async function fetchAgents() {
@@ -239,33 +272,53 @@ export function agentsView(location) { return /^\/console\/agents\/?$/.test(loca
  * DIFFERENT agent also fails the read. */
 const ROOM_KEYS = ['session_id', 'room_id', 'dispatch_state', 'dispatch_id'];
 const TASK_STATES = ['created', 'accepted', 'in_progress', 'blocked', 'done'];
+const REMINDER_KEYS = ['id', 'engagement_id', 'session_id', 'msg', 'created_at', 'fire_at', 'fired_at'];
 const detailRoom = (v) => v !== null && object(v, ROOM_KEYS) && id(v.session_id) && text(v.room_id, 256)
   && (v.dispatch_state === null || ['queued', 'leased', 'started', 'parked', 'completed', 'outcome_unknown', 'superseded'].includes(v.dispatch_state))
   && (v.dispatch_id === null || id(v.dispatch_id));
+const detailReminder = (v) => v !== null && object(v, REMINDER_KEYS) && number(v.id) && id(v.engagement_id)
+  && id(v.session_id) && text(v.msg, 32768) && number(v.created_at) && number(v.fire_at)
+  && (v.fired_at === null || number(v.fired_at));
 export function validateAgentDetail(v, name) {
-  if (!object(v, ['name', 'framework', 'role', 'state', 'engagement_id', 'requested_tokens', 'online', 'last_seen_ms', 'resource_id', 'project_id', 'engagements', 'rooms', 'dispatch', 'tasks'])
+  if (!object(v, ['name', 'framework', 'role', 'state', 'engagement_id', 'requested_tokens', 'online', 'last_seen_ms', 'resource_id', 'project_id', 'engagements', 'rooms', 'dispatch', 'tasks', 'reminders'])
     || v.name !== name || !text(v.name, 128) || !text(v.framework, 64) || !text(v.role, 128)
     || !STATES.includes(v.state) || !id(v.engagement_id) || !number(v.requested_tokens)
     || typeof v.online !== 'boolean' || !(v.last_seen_ms === null || number(v.last_seen_ms))
     || !id(v.resource_id) || !id(v.project_id) || !number(v.engagements)
     || !Array.isArray(v.rooms) || v.rooms.length > 100 || v.rooms.some((r) => !detailRoom(r))
-    || !detailRoom(v.dispatch)
+    // `dispatch` is null when nothing is live (domain.rs picks only
+    // leased/started/parked rooms; a stopped dispatch is outcome_unknown and
+    // yields none) — the read's own contract, not a malformed payload.
+    || !(v.dispatch === null || detailRoom(v.dispatch))
     || !Array.isArray(v.tasks) || v.tasks.length > 10
     || v.tasks.some((task) => !object(task, ['id', 'session_id', 'creator_session_id', 'title', 'description', 'priority', 'granularity', 'labels', 'parent_id', 'status', 'execution_epoch', 'created_at', 'updated_at', 'started_at', 'completed_at', 'heartbeat_at', 'waiting_reason', 'waiting_until'])
       || !id(task.id) || !id(task.session_id) || !text(task.title, 1024) || !TASK_STATES.includes(task.status)
-      || !number(task.execution_epoch) || !number(task.created_at) || !number(task.updated_at))) throw new Error('invalid_native_response');
+      || !number(task.execution_epoch) || !number(task.created_at) || !number(task.updated_at))
+    || !Array.isArray(v.reminders) || v.reminders.length > 100 || v.reminders.some((r) => !detailReminder(r))) throw new Error('invalid_native_response');
   return v;
 }
 export async function fetchAgentDetail(name) {
   return validateAgentDetail(await request(`/api/agents/${encodeURIComponent(name)}`), name);
 }
 
-/* CL-S2 (ADR-130): expose only the lifecycle mutation that has a durable
- * domain effect. Start and preset rebinding fail closed at the server until
- * their complete state transitions exist; the browser must not offer buttons
- * that can only refuse. */
+/* #21 lifecycle mutations (TS parity: backend-v2.js:12577-12775 stop/start,
+ * :11484-11522 preset). The browser offers only what the server does:
+ * stop completes, start re-arms serving, preset rebinds the resource the
+ * next dispatch claims. Every outcome answer is validated exact-key. */
 export async function stopAgent(id) {
   return request(`/api/agents/${id}/stop`, { method: 'POST' });
+}
+export async function startAgent(id) {
+  const value = await request(`/api/agents/${id}/start`, { method: 'POST' });
+  if (!object(value, ['ok', 'state']) || value.ok !== true || value.state !== 'launching') throw new Error('invalid_native_response');
+  return value;
+}
+export async function rebindAgentResource(id, presetId) {
+  const value = await request(`/api/agents/${id}/preset`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ presetId }) });
+  if (!object(value, ['ok', 'engagement_id', 'preset_id', 'resource_id', 'previous_preset_id', 'ceiling_tokens', 'remaining', 'tier'])
+    || value.ok !== true || value.engagement_id !== id || !text(value.preset_id, 128) || !text(value.resource_id, 128)
+    || !(value.ceiling_tokens === null || number(value.ceiling_tokens)) || !(value.remaining === null || number(value.remaining))) throw new Error('invalid_native_response');
+  return value;
 }
 
 /* Remove an agent (board #58, TS backend-v2.js:12164). The two shapes are
@@ -315,6 +368,74 @@ export async function fetchProjectSides() {
   return validateProjectSides(await request('/api/project-sides'));
 }
 export function projectSidesView(location) { return /^\/console\/project-sides\/?$/.test(location.pathname); }
+export function usageView(location) { return /^\/console\/usage\/?$/.test(location.pathname); }
+/* The side lifecycle mutations (board #14). Each reply is the same
+ * `{ok:true, side}` envelope the single-side read serves, so one validator
+ * governs every write AND the read — the page never re-derives a side. The
+ * credential VALUE is write-only (ADR-016 decision 8): no fetch returns it,
+ * and the projection carries only `credentialKind`/`hasCredential`, so a
+ * token can never reach the browser's memory from a read. */
+const SIDE_LIFECYCLE_KEYS = ['id', 'label', 'serverName', 'apiBaseUrl', 'credentialKind', 'hasCredential', 'awaitingInstall', 'awaitingInstallSince', 'senderLocalpart', 'appserviceUrl', 'namespace', 'accessIssuedAt', 'accessState', 'accessDetail', 'accessCheckedAt', 'allocatedTokens', 'representative', 'projects', 'active', 'createdAt', 'updatedAt'];
+const projectRow = (p) => object(p, ['id', 'name', 'roomId', 'note', 'archived', 'archivedAt', 'createdAt', 'updatedAt'])
+  && text(p.id, 128) && text(p.name, 255)
+  && (p.roomId === null || text(p.roomId, 256))
+  && (p.note === null || text(p.note, 1024))
+  && typeof p.archived === 'boolean' && (p.archivedAt === null || number(p.archivedAt))
+  && number(p.createdAt) && number(p.updatedAt);
+const validSideRecord = (s) => object(s, SIDE_LIFECYCLE_KEYS)
+  && text(s.id, 255) && text(s.label, 255) && text(s.serverName, 255)
+  && (s.apiBaseUrl === null || text(s.apiBaseUrl, 1024))
+  && (s.credentialKind === null || ['appservice', 'registrationToken'].includes(s.credentialKind))
+  && typeof s.hasCredential === 'boolean' && typeof s.awaitingInstall === 'boolean'
+  && (s.awaitingInstallSince === null || number(s.awaitingInstallSince))
+  && (s.senderLocalpart === null || text(s.senderLocalpart, 255))
+  && (s.appserviceUrl === null || text(s.appserviceUrl, 1024))
+  && (s.namespace === null || text(s.namespace, 255))
+  && (s.accessIssuedAt === null || number(s.accessIssuedAt))
+  && ['unverified', 'accepted', 'rejected', 'unreachable', 'blocked'].includes(s.accessState)
+  && (s.accessDetail === null || text(s.accessDetail, 1024))
+  && (s.accessCheckedAt === null || number(s.accessCheckedAt))
+  && (s.allocatedTokens === null || number(s.allocatedTokens))
+  && (s.representative === null || (object(s.representative, ['mxid', 'localpart', 'observedAt']) && text(s.representative.mxid, 255) && text(s.representative.localpart, 255) && number(s.representative.observedAt)))
+  && Array.isArray(s.projects) && s.projects.every(projectRow)
+  && typeof s.active === 'boolean' && number(s.createdAt) && number(s.updatedAt);
+function validSideEnvelope(v) {
+  if (!object(v, ['ok', 'side']) || v.ok !== true || !validSideRecord(v.side)) throw new Error('invalid_native_response');
+  return v.side;
+}
+export async function fetchSide(id) {
+  return validSideEnvelope(await request(`/api/project-sides/${encodeURIComponent(id)}`));
+}
+export async function setSideCredential(id, credential) {
+  return validSideEnvelope(await request(`/api/project-sides/${encodeURIComponent(id)}/credential`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential }),
+  }));
+}
+export async function verifySide(id) {
+  /* The verdict rides on the returned side; the `promoted` fact is the
+   * operator-visible "did my staged credential take effect". */
+  return request(`/api/project-sides/${encodeURIComponent(id)}/verify`, { method: 'POST' });
+}
+export async function addSideProject(id, input) {
+  return request(`/api/project-sides/${encodeURIComponent(id)}/projects`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+}
+export async function archiveSideProject(id, projectId, archived = true) {
+  return request(`/api/project-sides/${encodeURIComponent(id)}/projects/${encodeURIComponent(projectId)}/archive`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ archived }),
+  });
+}
+export async function deactivateSide(id) {
+  return validSideEnvelope(await request(`/api/project-sides/${encodeURIComponent(id)}/deactivate`, { method: 'POST' }));
+}
+export async function reactivateSide(id) {
+  return validSideEnvelope(await request(`/api/project-sides/${encodeURIComponent(id)}/reactivate`, { method: 'POST' }));
+}
+export async function removeSide(id, force = false) {
+  return request(`/api/project-sides/${encodeURIComponent(id)}${force ? '?force=true' : ''}`, { method: 'DELETE' });
+}
 /* The bounded decision receipt every engagement mutation answers — `id`,
  * `state`, `cleanup` and nothing else (engagements.rs `receipt()`). One
  * validator for approve, refuse's sibling reads and the retire pair,
@@ -400,6 +521,106 @@ export async function fetchApproval(key) {
   return validateApproval(await request(`/api/approvals/${encodeURIComponent(key)}`));
 }
 export function approvalsView(location) { return /^\/console\/approvals\/?$/.test(location.pathname); }
+
+/*
+ * The read-only approval-bindings list (board #52, TS `GET
+ * /api/approval-bindings` at backend-v2.js:9051-9082, the plain-list branch):
+ * exactly the nine keys the route serves, and nothing else — no
+ * `agentJoined`, no `active`, no authority id, because native derives a
+ * binding from its own room observations and none of those columns exist to
+ * serve. An extra key fails the whole read, the same discipline the
+ * approvals projection applies.
+ */
+const bindingRow = (v) => object(v, ['engagementId', 'agent', 'fleetId', 'projectId', 'serverName', 'roomId', 'ownerMxid', 'roomGeneration', 'incarnation'])
+  && id(v.engagementId) && text(v.agent, 128) && id(v.fleetId) && id(v.projectId)
+  && text(v.serverName, 256) && text(v.roomId, 256) && text(v.ownerMxid, 256)
+  && number(v.roomGeneration) && number(v.incarnation);
+export function validateApprovalBindings(v) {
+  if (!object(v, ['at_ms', 'bindings']) || !Array.isArray(v.bindings) || v.bindings.length > 100
+    || v.bindings.some((b) => !bindingRow(b))) throw new Error('invalid_native_response');
+  return v;
+}
+export async function fetchApprovalBindings() {
+  return validateApprovalBindings(await request('/api/approval-bindings'));
+}
+
+/*
+ * The operator unbind (board #52, TS `DELETE
+ * /api/approval-bindings/:agent/:roomId` at backend-v2.js:9032-9046). integ
+ * is SINGLE-LOGIN (operator decision): any authenticated session may unbind —
+ * no scope word, no capability word — while an anonymous caller is refused
+ * 401 before the route. Both ids are percent-encoded path segments; the
+ * server validates the room shape, so a malformed value is a refusal, never a
+ * silent success.
+ */
+export async function unbindApprovalBinding(agent, roomId) {
+  const v = await request(`/api/approval-bindings/${encodeURIComponent(agent)}/${encodeURIComponent(roomId)}`, { method: 'DELETE' });
+  if (!object(v, ['ok', 'binding']) || v.ok !== true || !bindingRow(v.binding)) throw new Error('invalid_native_response');
+  return v.binding;
+}
+
+/* The fleet usage totals (backend-v2.js:15700-15720): the numerator never
+ * travels without its denominator, and null means "not known", never zero.
+ * busySec and tasks are named in the server-owned unavailable list — the
+ * retained block sums them from the agents' busy clocks and the task
+ * store, which native has no source for; unknown is never zero. */
+export function validateUsageTotals(v) {
+  if (!object(v, ['ok', 'totals', 'unavailable']) || v.ok !== true
+    || !Array.isArray(v.unavailable) || v.unavailable.length > 8 || v.unavailable.some((n) => !text(n, 64))
+    || !object(v.totals, ['agents', 'tokensDrawn', 'tokensUsed', 'tokensMeasuredFor', 'tokensPartial'])
+    || !number(v.totals.agents) || !number(v.totals.tokensMeasuredFor)
+    || !(v.totals.tokensDrawn === null || number(v.totals.tokensDrawn))
+    || !(v.totals.tokensUsed === null || number(v.totals.tokensUsed))
+    || typeof v.totals.tokensPartial !== 'boolean') throw new Error('invalid_native_response');
+  return v;
+}
+export async function fetchUsageTotals() { return validateUsageTotals(await request('/api/usage/totals')); }
+
+/* The side budget (backend-v2.js:9254-9307, 9541, 9567). A side id is a
+ * MATRIX SERVER NAME — the retained store normalizes it through
+ * SERVER_NAME_RE (lib/project-side-store.js:48) — lowercase, dots and a
+ * possible port, which the console's own id() charset refuses by design.
+ * NULL allocated is unallocated, not unlimited; remaining is null with it. */
+const serverName = (v) => typeof v === 'string' && v.length <= 255 && /^[a-z0-9][a-z0-9.\-]*(:\d{1,5})?$/.test(v);
+const commitment = (v) => object(v, ['id', 'agent', 'role', 'project', 'projectName', 'allocatedTokens', 'agentExists'])
+  && id(v.id) && text(v.agent, 128) && text(v.role, 128) && id(v.project)
+  && optionalText(v.projectName, 255) && number(v.allocatedTokens) && typeof v.agentExists === 'boolean';
+const budgetFields = (b) => object(b, ['allocated', 'committed', 'remaining', 'commitments', 'poolCommitments', 'poolCommitted', 'totalCommitted', 'orphanedCommitted'])
+  && (b.allocated === null || number(b.allocated)) && number(b.committed)
+  && (b.remaining === null || number(b.remaining))
+  && Array.isArray(b.commitments) && b.commitments.length <= 1024 && b.commitments.every(commitment)
+  && Array.isArray(b.poolCommitments) && b.poolCommitments.length <= 1024 && b.poolCommitments.every(commitment)
+  && number(b.poolCommitted) && number(b.totalCommitted) && number(b.orphanedCommitted);
+/* GET spreads the budget and the breakdown FLAT beside sideId — the
+ * retained route's own spread (backend-v2.js:9571). */
+export function validateSideBudget(v, side) {
+  if (!object(v, ['ok', 'sideId', 'allocated', 'committed', 'remaining', 'commitments', 'poolCommitments', 'poolCommitted', 'totalCommitted', 'orphanedCommitted'])
+    || v.ok !== true || v.sideId !== side || !budgetFields(v)) throw new Error('invalid_native_response');
+  return v;
+}
+/* PUT replies {ok, side, budget} — the SAME six-key side record the list
+ * read serves and the SAME budget the GET spreads flat. */
+export function validateAllocationReply(v) {
+  if (!object(v, ['ok', 'side', 'budget']) || v.ok !== true
+    || !object(v.side, SIDE_KEYS) || !text(v.side.id, 255) || !text(v.side.representative, 255)
+    || !number(v.side.generation) || typeof v.side.registered !== 'boolean' || !room(v.side.reception_room_id)
+    || !Array.isArray(v.side.projects) || v.side.projects.length <= 64
+    || !v.side.projects.every((p) => object(p, ['id', 'room_id']) && text(p.id, 128) && room(p.room_id))
+    || !budgetFields(v.budget)) throw new Error('invalid_native_response');
+  return v;
+}
+export async function fetchSideBudget(side) {
+  if (!serverName(side)) throw new Error('invalid_selection');
+  return validateSideBudget(await request(`/api/project-sides/${encodeURIComponent(side)}/budget`), side);
+}
+export async function setSideAllocation(side, allocatedTokens) {
+  if (!serverName(side) || !(allocatedTokens === null || number(allocatedTokens))) throw new Error('invalid_selection');
+  return validateAllocationReply(await request(`/api/project-sides/${encodeURIComponent(side)}/allocation`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ allocated_tokens: allocatedTokens }),
+  }));
+}
 
 const revision = (v) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
 const text = (v, max) => typeof v === 'string' && v.length <= max;
@@ -540,6 +761,89 @@ export async function enrollAccountResource(id, model, reasoning, expectedRevisi
   return v.account;
 }
 
+/* Operator tasks (board #23, TS parity: backend-v2.js:13194-13332,
+ * lib/task-store.js). The five statuses and four priorities are the retained
+ * store's own sets, and they are NOT re-derived here: the server serves the
+ * legal next-status list on every row (`allowed_transitions`), so the page
+ * renders transitions only from what the server allowed, the same contract
+ * the alerts page uses for its `next` array. A timestamp is a non-empty
+ * string (the retained ISO-8601 wire spelling) or null. */
+const TASK_PRIORITIES = ['p0', 'p1', 'p2', 'p3'];
+const TASK_GRANULARITIES = ['epic', 'task', 'subtask'];
+const stamp = (v) => v === null || text(v, 64);
+const taskComment = (c) => object(c, ['author', 'text', 'ts'])
+  && text(c.author, 128) && text(c.text, 4096) && text(c.ts, 64);
+/* `next` is the SERVER's legal-transition list (hagency_store::operator_transitions),
+ * so the page renders a move control only where the store allows one. It is
+ * part of the exact-key set: a server that stopped serving it fails the whole
+ * read rather than silently dropping the controls. */
+const validTask = (t) => object(t, ['id', 'title', 'description', 'status', 'priority', 'granularity',
+  'assignee', 'created_by', 'created_at', 'updated_at', 'started_at', 'completed_at', 'heartbeat_at',
+  'waiting_reason', 'waiting_until', 'parent_id', 'labels', 'comments', 'next'])
+  && id(t.id) && text(t.title, 255) && text(t.description, 4096)
+  && TASK_STATES.includes(t.status) && TASK_PRIORITIES.includes(t.priority)
+  && TASK_GRANULARITIES.includes(t.granularity)
+  && optionalText(t.assignee, 128) && optionalText(t.created_by, 128)
+  && text(t.created_at, 64) && text(t.updated_at, 64)
+  && stamp(t.started_at) && stamp(t.completed_at) && stamp(t.heartbeat_at)
+  && optionalText(t.waiting_reason, 1024) && optionalText(t.waiting_until, 64)
+  && optionalText(t.parent_id, 64)
+  && Array.isArray(t.labels) && t.labels.length <= 20 && t.labels.every((l) => text(l, 64))
+  && Array.isArray(t.comments) && t.comments.length <= 100 && t.comments.every(taskComment)
+  && Array.isArray(t.next) && t.next.length <= 2 && t.next.every((s) => TASK_STATES.includes(s));
+export function validateTasks(v) {
+  if (!object(v, ['at_ms', 'permissions', 'unavailable', 'tasks']) || !number(v.at_ms)
+    || !object(v.permissions, ['configureResource']) || typeof v.permissions.configureResource !== 'boolean'
+    || !Array.isArray(v.unavailable) || v.unavailable.length > 32 || v.unavailable.some((n) => !text(n, 64))
+    || !Array.isArray(v.tasks) || v.tasks.length > 500 || v.tasks.some((t) => !validTask(t))) throw new Error('invalid_native_response');
+  return v;
+}
+export function tasksView(location) { return /^\/console\/tasks\/?$/.test(location.pathname); }
+export function projectBoardView(location) { return /^\/console\/project-board\/?$/.test(location.pathname); }
+export async function fetchTasks() { return validateTasks(await request('/api/tasks')); }
+export async function fetchAgentTasks(name) {
+  if (!text(name, 128) || !name.trim()) throw new Error('invalid_selection');
+  return validateTasks(await request(`/api/agents/${encodeURIComponent(name)}/tasks`));
+}
+const oneTask = (v) => { if (!object(v, ['ok', 'task']) || v.ok !== true || !validTask(v.task)) throw new Error('invalid_native_response'); return v.task; };
+export async function createTask(body) {
+  return oneTask(await request('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
+}
+export async function updateTask(id, patch) {
+  if (!id(id)) throw new Error('invalid_selection');
+  return oneTask(await request(`/api/tasks/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) }));
+}
+export async function deleteTask(id) {
+  if (!id(id)) throw new Error('invalid_selection');
+  return oneTask(await request(`/api/tasks/${encodeURIComponent(id)}`, { method: 'DELETE' }));
+}
+export async function transitionTask(id, status, extra = {}) {
+  if (!id(id) || !TASK_STATES.includes(status)) throw new Error('invalid_selection');
+  return oneTask(await request(`/api/tasks/${encodeURIComponent(id)}/transition`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...extra, status }) }));
+}
+export async function commentTask(id, comment) {
+  if (!id(id)) throw new Error('invalid_selection');
+  return oneTask(await request(`/api/tasks/${encodeURIComponent(id)}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(comment) }));
+}
+/* The project board: the retained envelope (`lib/project-board.js:buildProjectBoardSnapshot`)
+ * carries `generatedAt`, `staleAfterMs`, `activityLimit`, `totals` and
+ * `projects`; native additionally serves `unavailable`, naming every retained
+ * column it has no source for. The board is validated structurally and its
+ * unavailability is passed through as text — the page renders what the server
+ * names, never a client-side guess at what is missing. */
+export function validateProjectBoard(v) {
+  if (!object(v, ['generatedAt', 'staleAfterMs', 'activityLimit', 'unavailable', 'totals', 'projects'])
+    || !text(v.generatedAt, 64) || !number(v.staleAfterMs) || !number(v.activityLimit)
+    || !Array.isArray(v.unavailable) || v.unavailable.length > 32 || v.unavailable.some((n) => !text(n, 64))
+    || !object(v.totals, ['projects', 'agents', 'tasks'])
+    || !number(v.totals.projects) || !number(v.totals.agents)
+    || !Array.isArray(v.projects) || v.projects.length > 512
+    || v.projects.some((p) => !object(p, ['id', 'name', 'agents', 'taskLanes']) || !text(p.id, 128) || !text(p.name, 128)
+      || !Array.isArray(p.agents) || p.agents.some((a) => !text(a, 128))
+      || !object(p.taskLanes, TASK_STATES) || TASK_STATES.some((s) => !number(p.taskLanes[s])))) throw new Error('invalid_native_response');
+  return v;
+}
+export async function fetchProjectBoard() { return validateProjectBoard(await request('/api/project-board')); }
 /* Board #48: the requester-facing reads. Each validator pins the EXACT key set
  * the server serves, so a stale server or client fails loudly with
  * `invalid_native_response` instead of rendering half a page.
@@ -604,3 +908,53 @@ export async function fetchPreview(role, requestedTokens = null) {
   const query = `role=${encodeURIComponent(role)}${requestedTokens === null ? '' : `&requestedTokens=${encodeURIComponent(requestedTokens)}`}`;
   return validatePreview(await request(`/api/engagements/preview?${query}`));
 }
+
+/* Operator task graphs (board #47): the native console's task-graph routes
+ * mirror the retained `/api/task-graphs` (backend-v2.js:15974-16020). A
+ * graph is the TS `normalizeGraph` shape — id/owner/label/status plus a
+ * `nodes` map keyed by node id with camelCase timestamps — served verbatim.
+ * Validators refuse an unexpected top-level shape rather than render it. */
+const GRAPH_STATUSES = ['active', 'complete', 'failed', 'cancelled'];
+const NODE_STATUSES = ['pending', 'dispatched', 'active', 'complete', 'failed', 'skipped', 'cancelled'];
+export function validateGraph(v) {
+  if (!object(v, ['id', 'owner', 'label', 'status', 'nodes', 'createdAt', 'updatedAt', 'completedAt'])
+    || !text(v.id, 255) || !text(v.owner, 255) || !text(v.label, 4000)
+    || !GRAPH_STATUSES.includes(v.status)
+    || !text(v.createdAt, 128) || !text(v.updatedAt, 128) || !optionalText(v.completedAt, 128)
+    || typeof v.nodes !== 'object' || v.nodes === null || Array.isArray(v.nodes)) throw new Error('invalid_native_response');
+  for (const n of Object.values(v.nodes)) {
+    if (!object(n, ['id', 'assignee', 'description', 'depends_on', 'status', 'result', 'error', 'condition', 'message_id', 'dispatchedAt', 'completedAt', 'startedAt'])
+      || !text(n.id, 255) || !text(n.assignee, 255) || !text(n.description, 4000)
+      || !Array.isArray(n.depends_on) || n.depends_on.some((d) => !text(d, 255))
+      || !NODE_STATUSES.includes(n.status)
+      || !optionalText(n.error, 4000) || !optionalText(n.message_id, 255)
+      || !optionalText(n.dispatchedAt, 128) || !optionalText(n.completedAt, 128) || !optionalText(n.startedAt, 128)) throw new Error('invalid_native_response');
+  }
+  return v;
+}
+export function validateGraphs(v) {
+  if (!Array.isArray(v) || v.length > 1024) throw new Error('invalid_native_response');
+  return v.map(validateGraph);
+}
+export async function fetchTaskGraphs(status = '') {
+  return validateGraphs(await request(`/api/task-graphs${status ? `?status=${encodeURIComponent(status)}` : ''}`));
+}
+export async function fetchTaskGraph(id) {
+  return validateGraph(await request(`/api/task-graphs/${encodeURIComponent(id)}`));
+}
+export async function createTaskGraph(body) {
+  const v = await request('/api/task-graphs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (v?.ok !== true) throw new Error('invalid_native_response');
+  return validateGraph(v.graph);
+}
+export async function deleteTaskGraph(id) {
+  const v = await request(`/api/task-graphs/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (v?.ok !== true) throw new Error('invalid_native_response');
+  return validateGraph(v.graph);
+}
+export async function updateTaskGraphNode(id, nodeId, patch) {
+  const v = await request(`/api/task-graphs/${encodeURIComponent(id)}/nodes/${encodeURIComponent(nodeId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+  if (v?.ok !== true) throw new Error('invalid_native_response');
+  return validateGraph(v.graph);
+}
+export function taskGraphsView(location) { return /^\/console\/task-graphs\/?$/.test(location.pathname); }

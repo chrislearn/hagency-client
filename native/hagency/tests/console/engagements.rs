@@ -60,6 +60,8 @@ async fn native_console_engagements_read() {
     let rows = value["engagements"].as_array().unwrap();
     assert!(!rows.is_empty(), "the fixture's engagements publish");
     let row = &rows[0];
+    // Board #60 item 3: the row carries the figures TS's `/api/engagements`
+    // (`backend-v2.js:14964-14975`) carries and native was dropping.
     for key in [
         "id",
         "agentName",
@@ -68,9 +70,18 @@ async fn native_console_engagements_read() {
         "requestedTokens",
         "state",
         "cleanup",
+        "agentRemainingTokens",
+        "ownerBindingRequired",
+        "createdAtMs",
+        "endedAtMs",
     ] {
         assert!(row.get(key).is_some(), "missing wire key {key}");
     }
+    assert_eq!(
+        row.as_object().unwrap().len(),
+        11,
+        "exactly the eleven declared keys"
+    );
     assert!(row["requestedTokens"].as_u64().is_some());
     assert!(row["id"].as_str().is_some_and(|id| !id.is_empty()));
     // E4 on the wire: the astral project name. The verifier truncated the

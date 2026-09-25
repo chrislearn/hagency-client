@@ -20,6 +20,150 @@ use crate::resources::domain;
 use crate::refusal;
 use salvo::prelude::*;
 use serde_json::json;
+use std::collections::BTreeMap;
+
+/// One entity row of a `console_entities` snapshot, keyed for diffing.
+type EntityRow = (String, String, serde_json::Value);
+
+fn rows(feed: &serde_json::Value, category: &str) -> BTreeMap<String, EntityRow> {
+    feed[category]
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .map(|row| {
+                    (
+                        row["key"].as_str().unwrap_or_default().to_owned(),
+                        (
+                            row["key"].as_str().unwrap_or_default().to_owned(),
+                            row["state"].as_str().unwrap_or_default().to_owned(),
+                            row["entity"].clone(),
+                        ),
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// #59: diff two entity snapshots into the retained TS event vocabulary
+/// (backend-v2.js broadcastSSE sites): the payload IS the entity —
+/// `task_updated` broadcast the task row (:8577), `alert_created` the alert
+/// (lib/alert-store.js:332), `approval_requested` `{request_id, agent}`
+/// (:2518), `approval_verdict` the verdict fields (:10945),
+/// `agent_blocked`/`agent_recovered` the runtime fields (:5497/:5511),
+/// `message` the message row (:4554). Events with no native entity are not
+/// emitted (see report-59 for the list).
+fn diff_events(
+    previous: &serde_json::Value,
+    current: &serde_json::Value,
+) -> Vec<(String, serde_json::Value)> {
+    let mut out: Vec<(String, serde_json::Value)> = Vec::new();
+    let task_before = rows(previous, "tasks");
+    let task_now = rows(current, "tasks");
+    for (key, (_, state, entity)) in &task_now {
+        match task_before.get(key) {
+            None => out.push(("task_created".into(), entity.clone())),
+            Some((_, old, _)) if old != state => {
+                out.push(("task_updated".into(), entity.clone()))
+            }
+            _ => {}
+        }
+    }
+    for key in task_before.keys() {
+        if !task_now.contains_key(key) {
+            out.push((
+                "task_deleted".into(),
+                json!({"id": key, "deleted": true}),
+            ));
+        }
+    }
+    let alert_before = rows(previous, "alerts");
+    let alert_now = rows(current, "alerts");
+    for (key, (_, state, entity)) in &alert_now {
+        let was = alert_before.get(key).map(|(_, state, _)| state.as_str());
+        match was {
+            None => out.push(("alert_created".into(), entity.clone())),
+            Some(old) if old == "open" && state == "resolved" => {
+                out.push(("alert_resolved".into(), entity.clone()))
+            }
+            Some(old) if old != state => out.push(("alert_updated".into(), entity.clone())),
+            _ => {}
+        }
+    }
+    for key in alert_before.keys() {
+        if !alert_now.contains_key(key) {
+            out.push(("alert_deleted".into(), json!({"dedupe_key": key})));
+        }
+    }
+    let approval_before = rows(previous, "approvals");
+    let approval_now = rows(current, "approvals");
+    for (key, (_, state, entity)) in &approval_now {
+        match approval_before.get(key) {
+            None => out.push(("approval_requested".into(), entity.clone())),
+            Some((_, old, _)) if old != state => {
+                // The verdict fields TS broadcast: request_id, agent, status.
+                // The native approval names its engagement, not an agent
+                // word — `agent` carries the engagement id.
+                let mut payload = entity.clone();
+                if let Some(object) = payload.as_object_mut() {
+                    object.insert("agent".into(), json!(key));
+                }
+                out.push(("approval_verdict".into(), payload));
+            }
+            _ => {}
+        }
+    }
+    let fence_before = rows(previous, "fences");
+    let fence_now = rows(current, "fences");
+    for (key, (_, state, entity)) in &fence_now {
+        let was = fence_before.get(key).map(|(_, state, _)| state.as_str());
+        // Emit only on the transition — a still-blocked agent is not news.
+        match (was, state.as_str()) {
+            (None, "blocked") | (Some("recovered"), "blocked") => {
+                out.push(("agent_blocked".into(), entity.clone()))
+            }
+            (Some("blocked"), "recovered") => {
+                out.push(("agent_recovered".into(), entity.clone()))
+            }
+            _ => {}
+        }
+    }
+    let message_before = rows(previous, "messages");
+    let message_now = rows(current, "messages");
+    for (key, (_, _, entity)) in &message_now {
+        if !message_before.contains_key(key) {
+            out.push(("message".into(), entity.clone()));
+        }
+    }
+    // #59 task-graph events (lib/task-graph.js:285-390): node state moves
+    // name node_dispatched/node_completed; a graph row appearing names
+    // task_graph_created; its head reaching a terminal state names
+    // task_graph_completed. Payloads mirror the TS queueEvent shapes.
+    let graph_before = rows(previous, "graphs");
+    let graph_now = rows(current, "graphs");
+    for (key, (_, state, entity)) in &graph_now {
+        let was = graph_before.get(key).map(|(_, old, _)| old.as_str());
+        let moved = was != Some(state.as_str());
+        match state.as_str() {
+            "dispatched" if moved => out.push(("task_graph_node_dispatched".into(), entity.clone())),
+            "complete" if moved => out.push(("task_graph_node_completed".into(), entity.clone())),
+            _ => {}
+        }
+    }
+    let head_before = rows(previous, "graph_heads");
+    let head_now = rows(current, "graph_heads");
+    for (key, (_, state, entity)) in &head_now {
+        let was = head_before.get(key).map(|(_, old, _)| old.as_str());
+        match (was, state.as_str()) {
+            (None, _) => out.push(("task_graph_created".into(), entity.clone())),
+            (Some(old), "complete") if old != "complete" => {
+                out.push(("task_graph_completed".into(), entity.clone()))
+            }
+            _ => {}
+        }
+    }
+    out
+}
 
 pub(super) fn router() -> Router {
     Router::with_path("stream")
@@ -74,6 +218,14 @@ async fn stream(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         let _ = sender
             .send_data(format!("event: hello\ndata: {}\n\n", json!({"version": last})))
             .await;
+        // #59: the entity baseline. The first poll diffs against it, so a
+        // connect between two writes replays nothing and the next write
+        // emits its named event — the retained clients-set behaviour, where
+        // only live subscribers saw broadcasts.
+        let mut previous = match store.console_entities().await {
+            Ok(entities) => entities,
+            Err(_) => serde_json::Value::Null,
+        };
         // Poll cadence: the console page polled at 15 s; the feed read is
         // one bounded query, so 1 s keeps a live page tight without touching
         // any writer. The first interval tick fires immediately.
@@ -89,6 +241,24 @@ async fn stream(req: &mut Request, depot: &mut Depot, res: &mut Response) {
                     }
                 }
                 _ = poll.tick() => {
+                    // #59 named events first: the TS vocabulary with the
+                    // entity as the payload (task_updated :8577, message
+                    // :4554, approval_verdict :10945, agent_blocked :5497,
+                    // alert_created lib/alert-store.js:332, …). One bounded
+                    // entity read; the diff is in-memory.
+                    if let Ok(current) = store.console_entities().await {
+                        if current != previous {
+                            for (name, payload) in diff_events(&previous, &current) {
+                                let _ = sender
+                                    .send_data(format!(
+                                        "event: {name}\ndata: {}\n\n",
+                                        payload
+                                    ))
+                                    .await;
+                            }
+                            previous = current;
+                        }
+                    }
                     let Ok(feed) = store.console_feed().await else {
                         continue;
                     };

@@ -73,14 +73,20 @@ fn matrix_limits(
             .map(|ms| {
                 hagency_matrix::RequestPacing::new(origin, std::time::Duration::from_millis(ms))
                     .map(std::sync::Arc::new)
-                    .map_err(|_| Failure::Config)
+                    .map_err(|_| Failure::Config {
+                        field: "agent-driver.json: matrix.pacing_ms",
+                        fix: "the request pacing interval must be positive and fit the origin's budget",
+                    })
             })
             .transpose()?,
         ..hagency_matrix::Limits::default()
     };
     if let Some(ms) = sdk_ms {
         if !(10..=60_000).contains(&ms) {
-            return Err(Failure::Config);
+            return Err(Failure::Config {
+                field: "agent-driver.json: matrix.sdk_ms",
+                fix: "the SDK budget must be between 10 and 60000 milliseconds",
+            });
         }
         limits.sdk = std::time::Duration::from_millis(ms);
     }
@@ -95,9 +101,15 @@ fn approval_host(wait: u64, limits: Limits) -> Result<hagency_execution::Approva
         .checked_add(reserve)
         .is_none_or(|n| n > limits.operation_ms)
     {
-        return Err(Failure::Config);
+        return Err(Failure::Config {
+            field: "agent-driver.json: approval.wait_ms",
+            fix: "the owner wait plus the reply reserve must fit inside the operation budget",
+        });
     }
-    hagency_execution::ApprovalHost::new(8, 2, wait, reserve).map_err(|_| Failure::Config)
+    hagency_execution::ApprovalHost::new(8, 2, wait, reserve).map_err(|_| Failure::Config {
+        field: "agent-driver.json: approval block",
+        fix: "the approval host must construct from the wait and reserve budgets",
+    })
 }
 
 #[cfg(test)]
@@ -297,19 +309,32 @@ pub(super) struct Prepared {
     #[cfg(test)]
     pub discard_claim_reply: bool,
 }
-pub(super) fn read(path: &Path, limit: usize) -> Result<Vec<u8>, Failure> {
-    let file = private::open(path, false).map_err(|_| Failure::Config)?;
-    let length = usize::try_from(file.metadata().map_err(|_| Failure::Config)?.len())
-        .map_err(|_| Failure::Config)?;
+pub(super) fn read(path: &Path, limit: usize, field: &'static str) -> Result<Vec<u8>, Failure> {
+    // Every caller passes the literal file name it already used in the path,
+    // so the refusal names the exact file an operator can act on (TS parity
+    // names the file/setting, install-full.sh:292).
+    let refuse = || Failure::Config {
+        field,
+        fix: "the file must be present, owner-private (0600), a regular non-symlink file within its byte limit",
+    };
+    let file = private::open(path, false).map_err(|_| refuse())?;
+    let length = usize::try_from(file.metadata().map_err(|_| refuse())?.len())
+        .map_err(|_| refuse())?;
     if length > limit {
-        return Err(Failure::Config);
+        return Err(Failure::Config {
+            field,
+            fix: "the file is larger than its byte limit; trim it to the documented size",
+        });
     }
     let mut bytes = Vec::with_capacity(length);
     file.take(limit as u64 + 1)
         .read_to_end(&mut bytes)
-        .map_err(|_| Failure::Config)?;
+        .map_err(|_| refuse())?;
     if bytes.len() > limit {
-        return Err(Failure::Config);
+        return Err(Failure::Config {
+            field,
+            fix: "the file grew past its byte limit while being read; retry with a stable file",
+        });
     }
     Ok(bytes)
 }
@@ -324,38 +349,79 @@ fn verify_executable(path: &Path, expected: &str) -> Result<(), Failure> {
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
     {
-        return Err(Failure::Config);
+        return Err(Failure::Config {
+            field: "agent-driver.json: executable_sha256",
+            fix: "the digest must be 64 lowercase hex characters naming an absolute, canonicalized executable path",
+        });
     }
-    let before = std::fs::symlink_metadata(path).map_err(|_| Failure::Config)?;
+    let before = std::fs::symlink_metadata(path).map_err(|_| Failure::Config {
+        field: "agent-driver.json: executable",
+        fix: "the executable path must be statable by the service owner",
+    })?;
     if !before.is_file()
         || before.file_type().is_symlink()
         || before.len() == 0
         || before.len() > EXECUTABLE_BYTES
     {
-        return Err(Failure::Config);
+        return Err(Failure::Config {
+            field: "agent-driver.json: executable",
+            fix: "the executable must be a non-empty regular non-symlink file within the byte ceiling",
+        });
     }
-    let mut file = File::open(path).map_err(|_| Failure::Config)?;
-    let actual = file.metadata().map_err(|_| Failure::Config)?;
+    let mut file = File::open(path).map_err(|_| Failure::Config {
+        field: "agent-driver.json: executable",
+        fix: "the executable must be readable by the service owner",
+    })?;
+    let actual = file.metadata().map_err(|_| Failure::Config {
+        field: "agent-driver.json: executable",
+        fix: "the executable metadata must be readable after open",
+    })?;
     if !actual.is_file() || actual.len() != before.len() {
-        return Err(Failure::Config);
+        return Err(Failure::Config {
+            field: "agent-driver.json: executable",
+            fix: "the executable changed between stat and open; restart with a stable binary",
+        });
     }
     let mut hasher = Sha256::new();
     let mut buffer = [0u8; 32 * 1024];
     let mut total = 0u64;
     tracing::trace!(target: "hagency_startup_observation", "native startup boundary: executable_hash_entered");
     loop {
-        let count = file.read(&mut buffer).map_err(|_| Failure::Config)?;
+        let count = file.read(&mut buffer).map_err(|_| Failure::Config {
+            field: "agent-driver.json: executable",
+            fix: "hashing the executable failed mid-read; restart with a stable binary",
+        })?;
         if count == 0 {
             break;
         }
-        total = total.checked_add(count as u64).ok_or(Failure::Config)?;
+        total = total
+            .checked_add(count as u64)
+            .ok_or(Failure::Config {
+                field: "agent-driver.json: executable",
+                fix: "the executable byte count overflowed while hashing",
+            })?;
         if total > EXECUTABLE_BYTES || total > actual.len() {
-            return Err(Failure::Config);
+            return Err(Failure::Config {
+                field: "agent-driver.json: executable",
+                fix: "the executable grew past the byte ceiling while hashing",
+            });
         }
         hasher.update(&buffer[..count]);
     }
-    if total != actual.len() || file.metadata().map_err(|_| Failure::Config)?.len() != total {
-        return Err(Failure::Config);
+    if total != actual.len()
+        || file
+            .metadata()
+            .map_err(|_| Failure::Config {
+                field: "agent-driver.json: executable",
+                fix: "the executable metadata must be re-readable after hashing",
+            })?
+            .len()
+            != total
+    {
+        return Err(Failure::Config {
+            field: "agent-driver.json: executable",
+            fix: "the executable changed size while hashing; restart with a stable binary",
+        });
     }
     let digest: String = hasher
         .finalize()
@@ -364,7 +430,10 @@ fn verify_executable(path: &Path, expected: &str) -> Result<(), Failure> {
         .collect();
     tracing::trace!(target: "hagency_startup_observation", "native startup boundary: executable_hash_completed");
     if digest != expected {
-        return Err(Failure::Config);
+        return Err(Failure::Config {
+            field: "agent-driver.json: executable_sha256",
+            fix: "the running binary's digest does not match; reinstall the binary or update the digest",
+        });
     }
     Ok(())
 }
@@ -376,18 +445,36 @@ impl Prepared {
         if let Some(mut provisioning) = self.provisioning.take() {
             if let Some(warm) = self.warm.take() {
                 provisioning = provisioning
-                    .with_warm_runtime(warm, approvals.ok_or(Failure::Config)?)
-                    .map_err(|_| Failure::Config)?;
+                    .with_warm_runtime(
+                        warm,
+                        approvals.ok_or(Failure::Config {
+                            field: "agent-driver.json: factory_service",
+                            fix: "the warm runtime needs its approval collector built before attach",
+                        })?,
+                    )
+                    .map_err(|_| Failure::Config {
+                        field: "agent-driver.json: factory_service",
+                        fix: "the warm runtime must accept the provisioning host",
+                    })?;
             }
             self.matrix = Some(
                 self.matrix
                     .take()
-                    .ok_or(Failure::Config)?
+                    .ok_or(Failure::Config {
+                        field: "agent-driver.json: matrix block",
+                        fix: "token provisioning requires a configured matrix host",
+                    })?
                     .with_token_account_provisioning(provisioning)
-                    .map_err(|_| Failure::Config)?,
+                    .map_err(|_| Failure::Config {
+                        field: "agent-driver.json: matrix.token_provisioning",
+                        fix: "the matrix host must accept the token provisioning service",
+                    })?,
             );
         } else if self.warm.is_some() || self.fleet.is_some() {
-            return Err(Failure::Config);
+            return Err(Failure::Config {
+                field: "agent-driver.json: factory_service",
+                fix: "a warm runtime or fleet without token provisioning is not runnable; configure matrix.token_provisioning",
+            });
         }
         Ok(())
     }
@@ -401,9 +488,14 @@ impl Prepared {
                 ("development-driver.json", "codex_app_server_development_v1")
             }
             DriverMode::Continuous => ("agent-driver.json", "codex_app_server_agent_v1"),
-            DriverMode::Disabled => return Err(Failure::Config),
+            DriverMode::Disabled => {
+                return Err(Failure::Config {
+                    field: "serve --agent-driver/--development-driver",
+                    fix: "a driver configuration requires one of the driver flags; run serve with --agent-driver or --development-driver",
+                })
+            }
         };
-        let bytes = read(&state.join(file), CONFIG_BYTES)?;
+        let bytes = read(&state.join(file), CONFIG_BYTES, file)?;
         let mut config: Config = serde_json::from_slice(&bytes).map_err(|error| {
             // This document contains paths and public Matrix identities only;
             // credentials remain in separate private files. Retain serde's
@@ -414,13 +506,19 @@ impl Prepared {
                 column = error.column(),
                 "invalid agent driver configuration"
             );
-            Failure::Config
+            Failure::Config {
+                field: "agent-driver.json / development-driver.json",
+                fix: "repair the JSON at the logged line and column; the document must match the driver profile",
+            }
         })?;
         let enrollment = config.matrix.crypto_enrollment.is_some();
         if let Some(local) = &config.local_codex
             && (local.profile != "provider_owned_codex_v1" || config.managed_account.is_some())
         {
-            return Err(Failure::Config);
+            return Err(Failure::Config {
+                field: "agent-driver.json: local_codex",
+                fix: "local_codex requires profile provider_owned_codex_v1 and excludes managed_account",
+            });
         }
         if let Some(factory) = &config.factory_service
             && (mode != DriverMode::Continuous
@@ -435,7 +533,10 @@ impl Prepared {
                     )
                 ))
         {
-            return Err(Failure::Config);
+            return Err(Failure::Config {
+                field: "agent-driver.json: factory_service",
+                fix: "the inline factory requires --agent-driver, profile inline_factory_service_checkpoint_v1, idle_ms 100-1200000, an approval block and HomeRooms/AppserviceHomeRooms provisioning",
+            });
         }
         if config.profile != profile
             || config.workspaces.is_empty()
@@ -444,26 +545,44 @@ impl Prepared {
             || config.matrix.rooms.len() > 16
             || !config.matrix.origin.starts_with("https://")
         {
-            return Err(Failure::Config);
+            return Err(Failure::Config {
+                field: "agent-driver.json: profile, workspaces, matrix.rooms, matrix.origin",
+                fix: "profile must match the driver mode; 1-16 workspaces and rooms; origin must start with https://",
+            });
         }
         if mode == DriverMode::Continuous && config.receive_inbox.is_some() {
             // The fixed receive-inbox plan is deliberately one-dispatch-only;
             // it cannot be replayed as a scheduler input.
-            return Err(Failure::Config);
+            return Err(Failure::Config {
+                field: "agent-driver.json: receive_inbox",
+                fix: "receive_inbox is a one-attempt development input; remove it for --agent-driver",
+            });
         }
         if mode == DriverMode::OneAttempt && !config.agent_inboxes.is_empty() {
-            return Err(Failure::Config);
+            return Err(Failure::Config {
+                field: "agent-driver.json: agent_inboxes",
+                fix: "agent_inboxes is a continuous-driver input; remove it for --development-driver",
+            });
         }
         if config.agent_inboxes.len() > 16 {
-            return Err(Failure::Config);
+            return Err(Failure::Config {
+                field: "agent-driver.json: agent_inboxes",
+                fix: "at most 16 agent inbox plans are supported",
+            });
         }
         let mut inbox_sessions = std::collections::BTreeSet::new();
         for plan in &config.agent_inboxes {
-            plan.validate().map_err(|_| Failure::Config)?;
+            plan.validate().map_err(|_| Failure::Config {
+                field: "agent-driver.json: agent_inboxes",
+                fix: "each plan needs a valid session id, workspace id and dispatch constraint",
+            })?;
             if !config.workspaces.contains_key(&plan.workspace_id)
                 || !inbox_sessions.insert(&plan.session_id)
             {
-                return Err(Failure::Config);
+                return Err(Failure::Config {
+                    field: "agent-driver.json: agent_inboxes",
+                    fix: "each plan's workspace must be declared and session ids must be unique",
+                });
             }
         }
         let mut combined_sessions = config.intake_sessions.clone();
@@ -473,26 +592,40 @@ impl Prepared {
             }
         }
         if !combined_sessions.is_empty() {
-            hagency_matrix::HostIntakePlan::new(combined_sessions.clone())
-                .map_err(|_| Failure::Config)?;
+            hagency_matrix::HostIntakePlan::new(combined_sessions.clone()).map_err(|_| Failure::Config {
+                field: "agent-driver.json: intake_sessions/agent_inboxes",
+                fix: "every combined session id must be 1-128 chars of [A-Za-z0-9_-]",
+            })?;
         }
         config.intake_sessions = combined_sessions;
         if config.factory_service.is_some() && config.intake_sessions.is_empty() {
             // Reception provisioning is read by the coordinator's actual
             // intake. A fleet with no verified intake session cannot run it.
-            return Err(Failure::Config);
+            return Err(Failure::Config {
+                field: "agent-driver.json: intake_sessions",
+                fix: "the factory service needs at least one verified intake session",
+            });
         }
         tracing::trace!(target: "hagency_startup_observation", "native startup boundary: executable_verify_entered");
         verify_executable(&config.executable, &config.executable_sha256)?;
         tracing::trace!(target: "hagency_startup_observation", "native startup boundary: executable_verify_completed");
         let own = std::env::current_exe()
-            .map_err(|_| Failure::Config)?
+            .map_err(|_| Failure::Config {
+                field: "running executable path",
+                fix: "the process executable path must be resolvable",
+            })?
             .canonicalize()
-            .map_err(|_| Failure::Config)?;
+            .map_err(|_| Failure::Config {
+                field: "running executable path",
+                fix: "the process executable path must canonicalize (no broken symlink chain)",
+            })?;
         let mut environment = BTreeMap::new();
         if config.local_codex.is_none() {
             let runtime_home = state.join("runtime-home");
-            private::directory(&runtime_home).map_err(|_| Failure::Config)?;
+            private::directory(&runtime_home).map_err(|_| Failure::Config {
+                field: "state-dir runtime-home",
+                fix: "the runtime home must exist, be owner-private (0700) and writable",
+            })?;
             environment.insert("HOME".into(), runtime_home.clone().into_os_string());
             environment.insert("CODEX_HOME".into(), runtime_home.into_os_string());
         }
@@ -510,8 +643,12 @@ impl Prepared {
         let mut rooms = Vec::new();
         for room in config.matrix.rooms {
             claim_rooms.push(
-                OwnedClaimRoom::new(room.id.clone(), room.generation, room.privacy.clone())
-                    .map_err(|_| Failure::Config)?,
+                OwnedClaimRoom::new(room.id.clone(), room.generation, room.privacy.clone()).map_err(
+                    |_| Failure::Config {
+                        field: "agent-driver.json: matrix.rooms",
+                        fix: "each room needs a valid id, generation and privacy",
+                    },
+                )?,
             );
             rooms.push(HostRoom {
                 room_id: room.id,
@@ -524,15 +661,27 @@ impl Prepared {
             claim_rooms,
             config.workspaces.keys().cloned().collect(),
         )
-        .map_err(|_| Failure::Config)?;
+        .map_err(|_| Failure::Config {
+            field: "agent-driver.json: matrix block",
+            fix: "the owned claim profile must construct from the transport observation, rooms and workspaces",
+        })?;
         if let Some(plan) = &config.receive_inbox {
-            plan.validate().map_err(|_| Failure::Config)?;
+            plan.validate().map_err(|_| Failure::Config {
+                field: "agent-driver.json: receive_inbox",
+                fix: "the plan needs a valid session id, workspace id and dispatch constraint",
+            })?;
             if !config.workspaces.contains_key(&plan.workspace_id) {
-                return Err(Failure::Config);
+                return Err(Failure::Config {
+                    field: "agent-driver.json: receive_inbox.workspace_id",
+                    fix: "the plan's workspace must be declared in workspaces",
+                });
             }
             claim = claim
                 .restrict_dispatch(plan.dispatch_id.clone())
-                .map_err(|_| Failure::Config)?;
+                .map_err(|_| Failure::Config {
+                    field: "agent-driver.json: receive_inbox.dispatch_id",
+                    fix: "the dispatch constraint must apply to the claim profile",
+                })?;
         }
         let mut host = Host::new(
             own.clone(),
@@ -542,33 +691,54 @@ impl Prepared {
         )
         .and_then(|h| h.with_file_limit(config.file_limit))
         .and_then(|h| h.with_task_helper(own.clone(), address))
-        .map_err(|_| Failure::Config)?;
+        .map_err(|_| Failure::Config {
+            field: "agent-driver.json: executable/workspaces/file_limit",
+            fix: "the execution host must construct from the executable, workspaces and file limit",
+        })?;
         let uses_local_codex = config.local_codex.is_some();
         if let Some(local) = config.local_codex {
             claim = claim
                 .restrict_resource(local.preset.clone(), local.seat.clone())
-                .map_err(|_| Failure::Config)?;
+                .map_err(|_| Failure::Config {
+                    field: "agent-driver.json: local_codex",
+                    fix: "the preset/seat restriction must apply to the claim profile",
+                })?;
             let local = hagency_execution::LocalCodex::new(
                 local.preset,
                 local.seat,
                 local.home,
                 local.codex_home,
             )
-            .map_err(|_| Failure::Config)?;
-            host = host.with_local_codex(local).map_err(|_| Failure::Config)?;
+            .map_err(|_| Failure::Config {
+                field: "agent-driver.json: local_codex",
+                fix: "preset, seat, home and codex_home must form a valid local codex binding",
+            })?;
+            host = host.with_local_codex(local).map_err(|_| Failure::Config {
+                field: "agent-driver.json: local_codex",
+                fix: "the execution host must accept the local codex binding",
+            })?;
         }
         if config.send_file {
-            host = host.with_file_tools().map_err(|_| Failure::Config)?;
+            host = host.with_file_tools().map_err(|_| Failure::Config {
+                field: "agent-driver.json: send_file",
+                fix: "the file tools must install on the execution host",
+            })?;
         }
         if config.receive_file {
-            hagency_core::received_files::receive_limit(config.file_limit)
-                .map_err(|_| Failure::Config)?;
-            host = host.with_receive_tools().map_err(|_| Failure::Config)?;
+            hagency_core::received_files::receive_limit(config.file_limit).map_err(|_| Failure::Config {
+                field: "agent-driver.json: file_limit",
+                fix: "the receive limit must be valid for the received-files contract",
+            })?;
+            host = host.with_receive_tools().map_err(|_| Failure::Config {
+                field: "agent-driver.json: receive_file",
+                fix: "the receive tools must install on the execution host",
+            })?;
         }
         if config.coordination_tools {
-            host = host
-                .with_coordination_tools()
-                .map_err(|_| Failure::Config)?;
+            host = host.with_coordination_tools().map_err(|_| Failure::Config {
+                field: "agent-driver.json: coordination_tools",
+                fix: "the coordination tools must install on the execution host",
+            })?;
         }
         let namespace = hagency_core::canonical::digest(&serde_json::json!([
             "native_file_storage_v1",
@@ -580,17 +750,26 @@ impl Prepared {
             transport.sender_mxid,
             transport.device_id
         ]))
-        .map_err(|_| Failure::Config)?;
+        .map_err(|_| Failure::Config {
+            field: "agent-driver.json: file storage namespace",
+            fix: "the canonical digest must compute; keep matrix fields ASCII",
+        })?;
         let files = config.send_file.then(|| crate::file_service::Setup {
             directory: state.join("file-media"),
             namespace,
             limit: config.file_limit,
         });
-        let token = read(&state.join("matrix.access_token"), 4096)?;
-        let token = std::str::from_utf8(&token).map_err(|_| Failure::Config)?;
-        let key: [u8; 32] = read(&state.join("matrix.sdk_key"), 32)?
+        let token = read(&state.join("matrix.access_token"), 4096, "matrix.access_token")?;
+        let token = std::str::from_utf8(&token).map_err(|_| Failure::Config {
+            field: "matrix.access_token",
+            fix: "the token must be valid UTF-8",
+        })?;
+        let key: [u8; 32] = read(&state.join("matrix.sdk_key"), 32, "matrix.sdk_key")?
             .try_into()
-            .map_err(|_| Failure::Config)?;
+            .map_err(|_| Failure::Config {
+                field: "matrix.sdk_key",
+                fix: "the SDK key must be exactly 32 bytes",
+            })?;
         let matrix_limits = matrix_limits(
             &config.matrix.origin,
             config.matrix_request_interval_ms,
@@ -609,7 +788,10 @@ impl Prepared {
             rooms,
             matrix_limits.clone(),
         )
-        .map_err(|_| Failure::Config)?;
+        .map_err(|_| Failure::Config {
+            field: "agent-driver.json: matrix block",
+            fix: "the matrix host must construct from the identity, origin, token, key, rooms and limits",
+        })?;
         // Fail-closed: the pre-project reception room comes from the store's
         // recorded registration for this host's engagement. A host whose
         // engagement names no registration (or a registration with no
@@ -619,16 +801,25 @@ impl Prepared {
         {
             let engagement_id = matrix.engagement_id().to_owned();
             let registration = DomainRepository::open(state)
-                .map_err(|_| Failure::Config)?
+                .map_err(|_| Failure::Config {
+                    field: "state-dir domain store",
+                    fix: "the domain repository must open (check ownership and WAL files)",
+                })?
                 .provisioning_registration_for_engagement(&engagement_id)
-                .map_err(|_| Failure::Config)?;
+                .map_err(|_| Failure::Config {
+                    field: "registrations row",
+                    fix: "register the fleet first: hagency registration register --file <six-field JSON> (or POST /api/native/v1/project-sides)",
+                })?;
             matrix
                 .with_reception_room(HostRoom {
                     room_id: registration.reception_room_id.clone(),
                     generation: registration.generation,
                     privacy: RoomPrivacy::Group {},
                 })
-                .map_err(|_| Failure::Config)?;
+                .map_err(|_| Failure::Config {
+                    field: "registrations row: reception_room_id",
+                    fix: "the recorded reception room must bind to the matrix host",
+                })?;
             if let Some(profile) = config.matrix.token_provisioning {
                 let (peer_masters, home, as_namespace) = match profile {
                     TokenProvisioning::Account {} => (None, None, None),
@@ -643,20 +834,30 @@ impl Prepared {
                     } => (Some(peer_masters), Some(home), Some(namespace_prefix)),
                 };
                 let token = if as_namespace.is_some() {
-                    read(&state.join("matrix.appservice_token"), 4096)?
+                    read(&state.join("matrix.appservice_token"), 4096, "matrix.appservice_token")?
                 } else {
-                    read(&state.join("matrix.registration_token"), 64)?
+                    read(&state.join("matrix.registration_token"), 64, "matrix.registration_token")?
                 };
-                let token = std::str::from_utf8(&token).map_err(|_| Failure::Config)?;
-                let key: [u8; 32] = read(&state.join("matrix.provisioning_key"), 32)?
+                let token = std::str::from_utf8(&token).map_err(|_| Failure::Config {
+                    field: "matrix.appservice_token / matrix.registration_token",
+                    fix: "the provisioning token must be valid UTF-8",
+                })?;
+                let key: [u8; 32] = read(&state.join("matrix.provisioning_key"), 32, "matrix.provisioning_key")?
                     .try_into()
-                    .map_err(|_| Failure::Config)?;
+                    .map_err(|_| Failure::Config {
+                        field: "matrix.provisioning_key",
+                        fix: "the provisioning key must be exactly 32 bytes",
+                    })?;
                 let mut host = if let Some(namespace) = as_namespace {
                     hagency_matrix::TokenProvisioningHost::application_service(
                         registration.clone(),
                         &config.matrix.origin,
-                        hagency_matrix::ApplicationServiceCredential::new(token, &namespace)
-                            .map_err(|_| Failure::Config)?,
+                        hagency_matrix::ApplicationServiceCredential::new(token, &namespace).map_err(
+                            |_| Failure::Config {
+                                field: "agent-driver.json: namespace_prefix",
+                                fix: "the namespace must be lowercase letters, digits or underscore, max 128 chars",
+                            },
+                        )?,
                         state.to_owned(),
                         key,
                         matrix_limits.clone(),
@@ -671,10 +872,16 @@ impl Prepared {
                         matrix_limits.clone(),
                     )
                 }
-                .map_err(|_| Failure::Config)?;
+                .map_err(|_| Failure::Config {
+                    field: "agent-driver.json: matrix.token_provisioning",
+                    fix: "the provisioning host must construct from the registration, origin, token and key",
+                })?;
                 if let Some(peer_masters) = peer_masters {
-                    let token = read(&state.join("matrix.representative_token"), 4096)?;
-                    let token = std::str::from_utf8(&token).map_err(|_| Failure::Config)?;
+                    let token = read(&state.join("matrix.representative_token"), 4096, "matrix.representative_token")?;
+                    let token = std::str::from_utf8(&token).map_err(|_| Failure::Config {
+                        field: "matrix.representative_token",
+                        fix: "the token must be valid UTF-8",
+                    })?;
                     host = host
                         .with_agent_rooms_enrollment(
                             token,
@@ -683,7 +890,10 @@ impl Prepared {
                                 .map(|p| (p.user_id, p.master_key))
                                 .collect(),
                         )
-                        .map_err(|_| Failure::Config)?;
+                        .map_err(|_| Failure::Config {
+                            field: "agent-driver.json: token_provisioning peer_masters",
+                            fix: "the representative token must enroll the declared peer master keys",
+                        })?;
                 }
                 if let Some(home) = home {
                     let plan = hagency_store::agent_home::ManagedHomePlan::new(
@@ -691,21 +901,37 @@ impl Prepared {
                         home.projects,
                         home.task_client,
                     )
-                    .map_err(|_| Failure::Config)?;
-                    host = host.with_managed_homes(plan).map_err(|_| Failure::Config)?;
+                    .map_err(|_| Failure::Config {
+                        field: "agent-driver.json: token_provisioning home",
+                        fix: "root, projects and task_client must form a valid managed home plan",
+                    })?;
+                    host = host.with_managed_homes(plan).map_err(|_| Failure::Config {
+                        field: "agent-driver.json: token_provisioning home",
+                        fix: "the provisioning host must accept the managed home plan",
+                    })?;
                 }
                 let ca = state.join("matrix.ca.pem");
-                if ca.try_exists().map_err(|_| Failure::Config)? {
-                    host = host
-                        .with_root_pem(&read(&ca, 16 * 1024)?)
-                        .map_err(|_| Failure::Config)?;
+                if ca
+                    .try_exists()
+                    .map_err(|_| Failure::Config {
+                        field: "matrix.ca.pem",
+                        fix: "the CA file must be statable (permission or path error)",
+                    })?
+                {
+                    host = host.with_root_pem(&read(&ca, 16 * 1024, "matrix.ca.pem")?).map_err(|_| Failure::Config {
+                        field: "matrix.ca.pem",
+                        fix: "the CA bundle must be a usable PEM root (max 16 KiB)",
+                    })?;
                 }
                 provisioning = Some(host);
             }
         }
         if let Some(profile) = config.matrix.crypto_enrollment {
             if profile.profile != "fresh_own_account_v1" {
-                return Err(Failure::Config);
+                return Err(Failure::Config {
+                    field: "agent-driver.json: matrix.crypto_enrollment.profile",
+                    fix: "the only supported enrollment profile is fresh_own_account_v1",
+                });
             }
             matrix = matrix
                 .with_fresh_account_enrollment(
@@ -715,20 +941,30 @@ impl Prepared {
                         .map(|p| (p.user_id, p.master_key))
                         .collect(),
                 )
-                .map_err(|_| Failure::Config)?;
+                .map_err(|_| Failure::Config {
+                    field: "agent-driver.json: matrix.crypto_enrollment",
+                    fix: "the matrix host must accept the fresh-account enrollment",
+                })?;
         }
         let ca = state.join("matrix.ca.pem");
-        if ca.try_exists().map_err(|_| Failure::Config)? {
-            matrix = matrix
-                .with_root_pem(&read(&ca, 16 * 1024)?)
-                .map_err(|_| Failure::Config)?;
+        if ca.try_exists().map_err(|_| Failure::Config {
+            field: "matrix.ca.pem",
+            fix: "the CA file must be statable (permission or path error)",
+        })? {
+            matrix = matrix.with_root_pem(&read(&ca, 16 * 1024, "matrix.ca.pem")?).map_err(|_| Failure::Config {
+                field: "matrix.ca.pem",
+                fix: "the CA bundle must be a usable PEM root (max 16 KiB)",
+            })?;
         }
         let limits = Limits {
             operation_ms: config.operation_ms,
             response_ms: config.response_ms,
         };
         if !limits.validate() {
-            return Err(Failure::Config);
+            return Err(Failure::Config {
+                field: "agent-driver.json: operation_ms / response_ms",
+                fix: "the operation budget must be positive and dominate the response budget",
+            });
         }
         // The approval bot's own credential and the host's approval capacity
         // (PC-C0, plan v4 Q3): a SECOND identity set, never the pooled
@@ -748,7 +984,10 @@ impl Prepared {
                         .iter()
                         .all(|r| matches!(r.privacy, RoomPrivacy::Direct { .. }))
                 {
-                    return Err(Failure::Config);
+                    return Err(Failure::Config {
+                        field: "agent-driver.json: approval.rooms",
+                        fix: "1-16 direct-privacy rooms and an https:// origin are required",
+                    });
                 }
                 let transport = MatrixTransportObservation {
                     engagement_id: approval.engagement_id.clone(),
@@ -766,11 +1005,17 @@ impl Prepared {
                         privacy: room.privacy,
                     })
                     .collect();
-                let token = read(&state.join("approval.access_token"), 4096)?;
-                let token = std::str::from_utf8(&token).map_err(|_| Failure::Config)?;
-                let key: [u8; 32] = read(&state.join("approval.sdk_key"), 32)?
+                let token = read(&state.join("approval.access_token"), 4096, "approval.access_token")?;
+                let token = std::str::from_utf8(&token).map_err(|_| Failure::Config {
+                    field: "approval.access_token",
+                    fix: "the approval bot token must be valid UTF-8",
+                })?;
+                let key: [u8; 32] = read(&state.join("approval.sdk_key"), 32, "approval.sdk_key")?
                     .try_into()
-                    .map_err(|_| Failure::Config)?;
+                    .map_err(|_| Failure::Config {
+                        field: "approval.sdk_key",
+                        fix: "the approval SDK key must be exactly 32 bytes",
+                    })?;
                 let mut config = HostConfig::new(
                     HostIdentity {
                         server_name: approval.server_name,
@@ -784,19 +1029,32 @@ impl Prepared {
                     rooms,
                     matrix_limits.clone(),
                 )
-                .map_err(|_| Failure::Config)?;
+                .map_err(|_| Failure::Config {
+                    field: "agent-driver.json: approval block",
+                    fix: "the approval host must construct from the identity, origin, token, key, rooms and limits",
+                })?;
                 let ca = state.join("approval.ca.pem");
-                if ca.try_exists().map_err(|_| Failure::Config)? {
-                    config = config
-                        .with_root_pem(&read(&ca, 16 * 1024)?)
-                        .map_err(|_| Failure::Config)?;
+                if ca
+                    .try_exists()
+                    .map_err(|_| Failure::Config {
+                        field: "approval.ca.pem",
+                        fix: "the CA file must be statable (permission or path error)",
+                    })?
+                {
+                    config = config.with_root_pem(&read(&ca, 16 * 1024, "matrix.ca.pem")?).map_err(|_| Failure::Config {
+                        field: "approval.ca.pem",
+                        fix: "the CA bundle must be a usable PEM root (max 16 KiB)",
+                    })?;
                 }
                 // The capacity must fit the operation limits exactly as
                 // `ApprovalHost::fits` checks them, or `start_mode` refuses.
                 let host_approvals = approval_host(owner_wait_ms, limits)?;
                 host = host
                     .with_approvals(host_approvals.clone())
-                    .map_err(|_| Failure::Config)?;
+                    .map_err(|_| Failure::Config {
+                        field: "agent-driver.json: approval block",
+                        fix: "the execution host must accept the approval host attachment",
+                    })?;
                 runtime_approvals = Some(host_approvals);
                 Some(Approval {
                     config,
@@ -812,9 +1070,15 @@ impl Prepared {
         };
         let (warm, fleet) = if let Some(factory) = config.factory_service {
             let contexts = state.join("factory-task-contexts");
-            private::directory(&contexts).map_err(|_| Failure::Config)?;
+            private::directory(&contexts).map_err(|_| Failure::Config {
+                field: "state-dir factory-task-contexts",
+                fix: "the directory must exist, be owner-private (0700) and writable",
+            })?;
             let bridge = hagency_execution::WarmTaskBridge::new(own.clone(), address, contexts)
-                .map_err(|_| Failure::Config)?;
+                .map_err(|_| Failure::Config {
+                    field: "state-dir factory-task-contexts",
+                    fix: "the warm task bridge must construct from the executable, listen address and contexts directory",
+                })?;
             let initialize = Limits {
                 operation_ms: limits.operation_ms.min(30_000),
                 response_ms: limits.response_ms,
@@ -824,7 +1088,10 @@ impl Prepared {
                 config.executable,
                 environment,
                 bridge,
-                runtime_approvals.ok_or(Failure::Config)?,
+                runtime_approvals.ok_or(Failure::Config {
+                    field: "agent-driver.json: approval block",
+                    fix: "the inline factory requires the approval host built before the warm bridge",
+                })?,
                 hagency_execution::WarmLimits {
                     initialize,
                     idle_ms: factory.idle_ms,
@@ -840,11 +1107,15 @@ impl Prepared {
                     plan
                 }
             })
-            .map_err(|_| Failure::Config)?;
+            .map_err(|_| Failure::Config {
+                field: "agent-driver.json: factory_service plan",
+                fix: "the warm plan must apply the file, coordination and receive capabilities",
+            })?;
             if uses_local_codex {
-                warm = warm
-                    .with_local_codex_from_host(&host)
-                    .map_err(|_| Failure::Config)?;
+                warm = warm.with_local_codex_from_host(&host).map_err(|_| Failure::Config {
+                    field: "agent-driver.json: local_codex",
+                    fix: "the warm bridge must accept the host's local codex binding",
+                })?;
             }
             (
                 Some(warm),

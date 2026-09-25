@@ -9,6 +9,7 @@ mod usage {
     mod admission;
     mod bounds;
     mod ceiling;
+    mod ledger;
     mod vectors;
 }
 
@@ -343,9 +344,9 @@ fn native_usage_migration() {
     // 032's ADD COLUMN is not replay-idempotent: the rewind replays it
     // over a receipts table that already carries the column, so strip it
     // first (the 025 replay posture; cf. updated_at in file_delivery.rs).
-    sql.execute_batch("ALTER TABLE approval_verdict_receipts DROP COLUMN denial_reason; ALTER TABLE runner_sessions DROP COLUMN model_override; ALTER TABLE runner_sessions DROP COLUMN mode_override;  ALTER TABLE runner_attempts DROP COLUMN park_reason; ALTER TABLE dispatch_inputs DROP COLUMN addressed; DROP TABLE IF EXISTS dispatch_conversation_reads; ALTER TABLE runner_attempts DROP COLUMN started_at; ALTER TABLE runner_attempts DROP COLUMN parked_at; ALTER TABLE runner_attempts DROP COLUMN last_renew_at; ALTER TABLE runner_attempts DROP COLUMN settled_at; ALTER TABLE runner_attempts DROP COLUMN terminal_reason; DROP TABLE IF EXISTS runner_attempt_events; DROP TABLE IF EXISTS agent_fences; DROP TABLE IF EXISTS side_registrations; DROP VIEW IF EXISTS current_command_notices; DROP TABLE IF EXISTS command_notice_inspections; DROP TABLE IF EXISTS command_notices;")
-        .unwrap();
-    sql.pragma_update(None, "user_version", 16).unwrap();
+    sql.execute_batch("ALTER TABLE runner_sessions DROP COLUMN model_override; ALTER TABLE runner_sessions DROP COLUMN mode_override; ALTER TABLE approval_verdict_receipts DROP COLUMN denial_reason; ALTER TABLE runner_attempts DROP COLUMN park_reason; ALTER TABLE dispatch_inputs DROP COLUMN addressed; DROP TABLE IF EXISTS dispatch_conversation_reads; ALTER TABLE runner_attempts DROP COLUMN started_at; ALTER TABLE runner_attempts DROP COLUMN parked_at; ALTER TABLE runner_attempts DROP COLUMN last_renew_at; ALTER TABLE runner_attempts DROP COLUMN settled_at; ALTER TABLE runner_attempts DROP COLUMN terminal_reason; DROP TABLE IF EXISTS runner_attempt_events; DROP TABLE IF EXISTS agent_fences; DROP TABLE IF EXISTS dispatch_activity_events; DROP TABLE IF EXISTS dispatch_activity;  DROP TABLE IF EXISTS pending_invites;  DROP TABLE IF EXISTS ceiling_alert_notes; DROP TABLE IF EXISTS side_registrations; DROP VIEW IF EXISTS current_command_notices; DROP TABLE IF EXISTS command_notice_inspections; DROP TABLE IF EXISTS command_notices; DROP TABLE IF EXISTS operator_tasks; DROP TABLE IF EXISTS operator_task_comments; DROP TABLE IF EXISTS room_trust;")
+         .unwrap();
+    sql.execute_batch("DROP TABLE IF EXISTS agent_lifecycle; DROP TABLE IF EXISTS side_records; DROP TABLE IF EXISTS side_projects;  ALTER TABLE decisions DROP COLUMN kind; ALTER TABLE decisions DROP COLUMN at; DROP TABLE IF EXISTS reminders; DROP TABLE IF EXISTS room_trust;  PRAGMA user_version=16;").unwrap();
     drop(sql);
     for _ in 0..2 {
         let db = DomainRepository::open(&path).unwrap();
@@ -363,4 +364,57 @@ fn native_usage_migration() {
     .unwrap();
     drop(sql);
     assert!(matches!(DomainRepository::open(&path), Err(Error::Schema)));
+}
+
+/// The fleet totals' three states (backend-v2.js:15700-15720): null is "not
+/// known", never a zero claiming the fleet consumed nothing; the numerator
+/// never travels without its denominator.
+#[test]
+fn native_usage_totals_empty_bound_partial_and_measured() {
+    // Empty: no engagement rows at all — denominator 0, both figures null.
+    let dir = tempfile::tempdir().unwrap();
+    let mut db = DomainRepository::open(&dir.path().join("state")).unwrap();
+    db.register(&registration()).unwrap();
+    let totals = db.usage_totals().unwrap();
+    assert_eq!(totals.agents, 0);
+    assert_eq!(totals.tokens_drawn, None);
+    assert_eq!(totals.tokens_used, None);
+    assert_eq!(totals.tokens_measured_for, 0);
+    assert!(!totals.tokens_partial);
+
+    // Bound but never observed: the source's high water is all-unknown at
+    // bind, so the engagement is NOT measured and the fleet still reports
+    // null — the retained filter is `typeof tokensUsed === 'number'`
+    // (backend-v2.js:15702), and an unobserved agent joins neither sum nor
+    // denominator. Some(0) here would claim the fleet consumed nothing.
+    let mut f = Fixture::new(Framework::Claude);
+    let _ = f.start();
+    let totals = f.db.usage_totals().unwrap();
+    assert_eq!(totals.agents, 1);
+    assert_eq!(totals.tokens_drawn, None);
+    assert_eq!(totals.tokens_used, None);
+    assert_eq!(totals.tokens_measured_for, 0);
+    assert!(!totals.tokens_partial);
+
+    // Partial then measured: one observed agent beside one agent with no
+    // source at all. claude(10, 20, 30, 40) parses to input=10, output=20,
+    // cache_write=30, cache_read=40 (observation.rs counter mapping), so
+    // drawn = 10+20+30 = 60 (the ceiling kinds) and used = 100 (display).
+    let (_, _, source) = f.start();
+    f.db
+        .record_usage_observation(&source, "totals_call", &claude(10, 20, 30, 40), 2000)
+        .unwrap();
+    let mut pool = resource("usage_pool", "usage_seat", 1000);
+    pool.framework = "claude".into();
+    pool.model = "claude-sent-5".into();
+    pool.reasoning = None;
+    f.db
+        .admit(&proof(&request("totals_request", "SecondWorker", &pool, 100)), 1000)
+        .unwrap();
+    let totals = f.db.usage_totals().unwrap();
+    assert_eq!(totals.agents, 2, "the denominator counts both agents");
+    assert_eq!(totals.tokens_drawn, Some(60));
+    assert_eq!(totals.tokens_used, Some(100));
+    assert_eq!(totals.tokens_measured_for, 1);
+    assert!(totals.tokens_partial, "1 of 2 measured is partial");
 }

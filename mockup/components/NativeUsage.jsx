@@ -4,6 +4,7 @@ import NativeStatusStrip from '@/components/NativeStatusStrip';
 import TechnicalDetails from '@/components/TechnicalDetails';
 import { useData } from '@/components/Data';
 import { useT } from '@/components/Prefs';
+import { errorText } from '@/lib/i18n';
 import SearchSelect from '@/components/SearchSelect';
 import { labelFor } from '@/lib/labels';
 
@@ -71,6 +72,6 @@ export default function NativeUsage() {
         <Period period={report.daily} title={t('nu.daily')} /><Period period={report.monthly} title={t('nu.monthly')} />
       </div>}
     </div>}
-    <TechnicalDetails><p>{t('nu.limitations')}</p>{selected && <p>{t('nu.engagementId')}: <code>{selected}</code></p>}{error && <code>{error}</code>}</TechnicalDetails>
+    <TechnicalDetails><p>{t('nu.limitations')}</p>{selected && <p>{t('nu.engagementId')}: <code>{selected}</code></p>}{error && <code>{errorText(t, error)}</code>}</TechnicalDetails>
   </>;
 }

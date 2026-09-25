@@ -304,7 +304,16 @@ impl Operation {
         {
             return Err(Error::Recipients);
         }
-        let joined = room.joined.len() == 2 && room.joined.contains(owner);
+        // The retained three-way verdict (`bridge-matrix.js:9271-9292`), named
+        // here so this read's outcome is the RETAINED vocabulary rather than a
+        // bare boolean: `Present` is the owner joined, `Absent` the owner
+        // provably not in the room. A room whose shape is wrong is refused below
+        // — that is the retained Unreadable case, expressed as an error because
+        // "I could not ask" must never be reported as an absence (`:9264`).
+        let members: Vec<String> = room.joined.iter().cloned().collect();
+        let verdict = crate::identity_polish::owner_membership_verdict(Some(&members), owner);
+        let joined = verdict == crate::identity_polish::OwnerVerdict::Present
+            && room.joined.len() == 2;
         if !joined
             && !events.iter().any(|e| {
                 e["type"] == "m.room.member"
@@ -316,6 +325,76 @@ impl Operation {
         }
         self.writer(cancel, deadline).await?;
         Ok(joined)
+    }
+    /// On a REFUSED invite, read the room's power levels and — only when the read
+    /// ESTABLISHED that our representative cannot invite — name the cause and the
+    /// project's remedy (`backend-v2.js:14466-14482`). Read on the failure path
+    /// only and never matched on the error string, the two things the retained
+    /// comment insists on (`:14476`): "A guess here would be worse than the bare
+    /// error: it would name a cause we did not establish."
+    async fn refuse_invite<'a>(
+        &self,
+        response: &'a SavedResponse,
+        cancel: &CancellationToken,
+    ) -> Result<&'a Value, Error> {
+        // Classify only a credential/power refusal, and only then read the room.
+        if matches!(response.status, 401 | 403) {
+            let levels = self.read_power_levels(cancel).await;
+            let power = crate::identity_polish::representative_invite_power(
+                levels.as_ref(),
+                self.scope.registration.representative_mxid.as_str(),
+            );
+            // `power.known && power.can == false`, exactly TS's guard: a diagnosis
+            // that fired on every 403 would send the project to change a setting
+            // that is already right (`:14591-14593`).
+            if power.known && !power.can {
+                eprintln!(
+                    "{}",
+                    crate::identity_polish::invite_power_remedy(
+                        power.mine,
+                        power.required,
+                        &self.request.target_room_id,
+                        self.agent.config.identity.transport.sender_mxid.as_str(),
+                    )
+                );
+            }
+        }
+        // The error mapping is `success`'s, reused rather than restated, so a
+        // redirect stays a redirect and the classification cannot change which
+        // error the caller sees.
+        success(response)
+    }
+    /// The power-levels read the classification needs, taken with the
+    /// representative's credential. `None` is the UNREADABLE case — never an
+    /// absence, and never a reason to fail the invitation being checked.
+    async fn read_power_levels(&self, cancel: &CancellationToken) -> Option<Value> {
+        let response = self
+            .representative
+            .request(
+                &[
+                    "_matrix",
+                    "client",
+                    "v3",
+                    "rooms",
+                    &self.request.target_room_id,
+                    "state",
+                ],
+                None,
+                cancel,
+            )
+            .await
+            .ok()?;
+        if response.status != 200 {
+            return None;
+        }
+        let events = response.value?;
+        events
+            .as_array()?
+            .iter()
+            .find(|event| {
+                event["type"] == "m.room.power_levels" && event["state_key"].as_str() == Some("")
+            })
+            .map(|event| event["content"].clone())
     }
     async fn post(
         &self,
@@ -457,6 +536,10 @@ impl Operation {
                 serde_json::to_value(&response).map_err(|_| Error::Storage)?,
             )
             .await?;
+            // The refusal path (:14466-14482): classify, name the project remedy
+            // when the read ESTABLISHED too little power, then refuse exactly as
+            // `success()` would have.
+            self.refuse_invite(&response, cancel).await?;
             if success(&response)?
                 .as_object()
                 .is_none_or(|v| !v.is_empty())
@@ -519,11 +602,21 @@ impl Operation {
             if Instant::now() + std::time::Duration::from_secs(3) >= poll_until {
                 // The owner-absent warning (bridge-matrix.js:9267-9297): the
                 // request reached its DM, but nobody who can decide will see
-                // it until the owner joins — invited and never joined. Warned
-                // once on the first attempt's wait handoff; resumed turns
+                // it until the owner joins — invited and never joined.
+                //
+                // THE VERDICT IS ALREADY THE PROBE. `joined_dm` returning
+                // `Ok(false)` IS the retained membership read: it succeeded, the
+                // room's shape is right (created by us, invite-only, encrypted,
+                // history `invited`) and the owner is only `invite` — an
+                // ESTABLISHED absence, not a guess. A read that did not establish
+                // it is `Err(Recipients)` above and never reaches this warning,
+                // which is the retained "an unreadable membership says nothing"
+                // rule (:9264-9265). No second request is issued.
+                //
+                // Warned once on the first attempt's wait handoff; resumed turns
                 // re-check quietly (TS posts per delivery and native delivers
-                // once), and like the retained check it never takes the
-                // delivery it is checking down with it (:9293-9296).
+                // once), and like the retained check it never takes the delivery
+                // it is checking down with it (:9293-9296).
                 if !resumed {
                     eprintln!(
                         "{}",

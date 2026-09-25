@@ -128,6 +128,111 @@ async fn native_console_stream_emits_on_state_change() {
 }
 
 #[tokio::test]
+async fn native_console_stream_named_events_carry_entity_payloads() {
+    let acceptor = salvo::conn::TcpListener::new("127.0.0.1:0")
+        .try_bind()
+        .await
+        .unwrap();
+    let address = acceptor.local_addr().unwrap();
+    let f = Fixture::new(address, None);
+    let service = f.service();
+    let host = address.to_string();
+    let base = format!("http://{host}");
+    let cookie = stream_session(&service, &host, &base).await;
+    let server = salvo::Server::new(acceptor);
+    let handle = server.handle();
+    let app = f.app.clone();
+    let serve = tokio::spawn(async move {
+        server.try_serve(app.router()).await.unwrap();
+    });
+
+    let mut sock = tokio::net::TcpStream::connect(address).await.unwrap();
+    let request = format!(
+        "GET /console/api/stream HTTP/1.1\r\nhost: {host}\r\norigin: {base}\r\n\
+         sec-fetch-site: same-origin\r\ncookie: {cookie}\r\naccept: text/event-stream\r\n\r\n"
+    );
+    sock.write_all(request.as_bytes()).await.unwrap();
+    let mut wire = String::new();
+    read_until(&mut sock, &mut wire, "event: hello", "the hello frame").await;
+
+    // task_created — TS parity backend-v2.js:13197: the payload IS the task
+    // entity (`broadcastSSE('task_created', task)`), here the stored Task
+    // document the row keeps in canonical_tasks.config.
+    f.domain
+        .create_canonical_task(
+            "named_event_task".into(),
+            "private_session".into(),
+            "Named event title".into(),
+            now(),
+        )
+        .await
+        .unwrap();
+    read_until(
+        &mut sock,
+        &mut wire,
+        "event: task_created",
+        "the task_created named event",
+    )
+    .await;
+    let frame = wire
+        .split("event: task_created")
+        .last()
+        .unwrap()
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        frame.contains("named_event_task") && frame.contains("Named event title"),
+        "the payload is the task entity:\n{frame}"
+    );
+    assert!(
+        frame.contains("\"status\":\"created\""),
+        "the entity carries its state word:\n{frame}"
+    );
+
+    // alert_resolved — TS parity lib/alert-store.js:295/:352: the payload is
+    // the alert entity. The fixture seeds one open overrun; the operator
+    // transition moves it and the stream names it.
+    let open = f.domain.open_ceiling_alerts(10).await.unwrap();
+    let key = open[0].dedupe_key.clone();
+    f.domain
+        .transition_ceiling_alert(hagency_store::AlertTransition {
+            key: key.clone(),
+            to: "resolved",
+            actor: "operator".into(),
+            note: None,
+            assignee: None,
+            suppress_until_ms: None,
+            now: now(),
+        })
+        .await
+        .unwrap();
+    read_until(
+        &mut sock,
+        &mut wire,
+        "event: alert_resolved",
+        "the alert_resolved named event",
+    )
+    .await;
+    let frame = wire
+        .split("event: alert_resolved")
+        .last()
+        .unwrap()
+        .split("\n\n")
+        .next()
+        .unwrap();
+    assert!(
+        frame.contains(&key) && frame.contains("dedupe_key"),
+        "the payload is the alert entity:\n{frame}"
+    );
+
+    drop(sock);
+    handle.stop_graceful(Some(std::time::Duration::from_secs(1)));
+    let _ = serve.await;
+    f.close().await;
+}
+
+#[tokio::test]
 async fn native_console_stream_snapshot_and_events() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();

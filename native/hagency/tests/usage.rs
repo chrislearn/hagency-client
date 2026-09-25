@@ -70,7 +70,7 @@ async fn native_usage_api_authority() {
         assert_eq!(response.status_code, Some(StatusCode::UNAUTHORIZED));
         assert_eq!(
             response.take_json::<Value>().await.unwrap(),
-            json!({"ok":false,"code":"operator_auth_required"})
+            json!({"ok":false,"code":"operator_auth_required","error":"the operator token is required"})
         );
     }
     for (header, value) in [
@@ -87,7 +87,7 @@ async fn native_usage_api_authority() {
         assert_eq!(response.status_code, Some(StatusCode::FORBIDDEN));
         assert_eq!(
             response.take_json::<Value>().await.unwrap(),
-            json!({"ok":false,"code":"local_authority_required"})
+            json!({"ok":false,"code":"local_authority_required","error":"the request must reach this service directly"})
         );
     }
     for path in [
@@ -223,7 +223,7 @@ async fn native_usage_api_refusals() {
         );
         assert_eq!(
             response.take_json::<Value>().await.unwrap(),
-            json!({"ok":false,"code":"invalid_usage_query"})
+            json!({"ok":false,"code":"invalid_usage_query","error":"the usage query is invalid"})
         );
     }
     let mut missing = TestClient::get(format!(
@@ -236,7 +236,7 @@ async fn native_usage_api_refusals() {
     assert_eq!(missing.status_code, Some(StatusCode::NOT_FOUND));
     assert_eq!(
         missing.take_json::<Value>().await.unwrap(),
-        json!({"ok":false,"code":"not_found"})
+        json!({"ok":false,"code":"not_found","error":"the requested record was not found"})
     );
     f.domain.shutdown().await.unwrap();
     let mut closed = TestClient::get(f.url())
@@ -247,7 +247,7 @@ async fn native_usage_api_refusals() {
     assert_eq!(closed.status_code, Some(StatusCode::SERVICE_UNAVAILABLE));
     assert_eq!(
         closed.take_json::<Value>().await.unwrap(),
-        json!({"ok":false,"code":"usage_unavailable"})
+        json!({"ok":false,"code":"usage_unavailable","error":"the usage observation is unavailable"})
     );
     f.custody.shutdown().await.unwrap();
     let f = Fixture::new(&[], false, false);
@@ -259,7 +259,7 @@ async fn native_usage_api_refusals() {
     assert_eq!(missing.status_code, Some(StatusCode::SERVICE_UNAVAILABLE));
     assert_eq!(
         missing.take_json::<Value>().await.unwrap(),
-        json!({"ok":false,"code":"domain_unavailable"})
+        json!({"ok":false,"code":"domain_unavailable","error":"the domain store is unavailable"})
     );
     f.close().await;
 }

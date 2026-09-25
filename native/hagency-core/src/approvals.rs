@@ -146,6 +146,26 @@ pub struct GrantSummary {
     pub mode: ApprovalChoice,
     pub revoked: bool,
 }
+/// One live approval-room binding (board #52, the read-only list half of TS
+/// `GET /api/approval-bindings`): the engagement (native's binding key), the
+/// agent name it projects, and the room facts the binding is bound to. The TS
+/// write-side fields (`agentJoined`, `membershipCheckedAt`, `active`,
+/// `authorityId`) have no native source — the binding store derives liveness
+/// from room observations (`current_approval_bindings`), so they are absent
+/// rather than invented.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovalBindingSummary {
+    pub engagement_id: String,
+    pub agent: String,
+    pub fleet_id: String,
+    pub project_id: String,
+    pub server_name: String,
+    pub room_id: String,
+    pub owner_mxid: String,
+    pub room_generation: u64,
+    pub incarnation: u64,
+}
 
 impl ApprovalApplicationObservation {
     pub fn validate(&self) -> Result<(), InvalidInput> {

@@ -247,10 +247,29 @@ impl Inner {
             .get("requester")
             .and_then(serde_json::Value::as_str)
             .ok_or(Error::Wire)?;
+        // Board #71 (TS parity, lib/engagement-store.js:503-511 +
+        // lib/bot-commands.js:573): `requestId` is OPTIONAL on the
+        // console-shape body. The retained store records absence rather than
+        // papering over it — but on every Matrix-originated path the bridge
+        // itself supplies the id both sides already share: the source event
+        // id (the stated basis of PRD A-R0-1). Native's only surface for this
+        // body IS the Matrix intake, so absence derives the idempotency key
+        // from the source event exactly as the retained bridge would have:
+        // a distinct event with no id is a fresh ask (no dedup between two
+        // such events), while a replayed event derives the same key and the
+        // restored-batch replay stays idempotent. A present-but-invalid id
+        // still fails closed in `validate`.
+        let request_id = match body.get("requestId") {
+            None | Some(serde_json::Value::Null) => {
+                format!("ev_{}", hagency_core::project::hash(msg.event_id.as_bytes()))
+            }
+            Some(serde_json::Value::String(key)) => key.clone(),
+            Some(_) => return Err(Error::Wire),
+        };
         let request_value = serde_json::json!({
             "v": 1,
             "fleetId": reg.fleet_id,
-            "requestId": body.get("requestId").ok_or(Error::Wire)?,
+            "requestId": request_id,
             "requesterMxid": requester,
             "sourceRoomId": msg.room_id,
             "targetProjectId": body.get("project").ok_or(Error::Wire)?,

@@ -1,7 +1,7 @@
 use super::*;
 use crate::collector::observation::{Phase as ObservationPhase, Trace, observed};
 use crate::{HostConfig, HostIdentity, HostIntakePlan, HostRoom, collector::fixtures as common};
-use hagency_core::{ingress::VerifiedTaskRequest, task_intents::TaskDefinition, tasks::*};
+use hagency_core::{commands::CommandNoticeRequest, ingress::VerifiedTaskRequest, task_intents::TaskDefinition, tasks::*};
 use serde_json::{Value, json};
 use std::{
     sync::atomic::Ordering,
@@ -66,13 +66,37 @@ async fn ready_named(
     callsite: &'static str,
     variant: Option<&'static str>,
 ) -> (common::Fixture, common::Fake, Collector) {
+    ready_named_limits(encrypted, direct, callsite, variant, common::limits()).await
+}
+/// #81: the recovery-restore family shares one runtime with the fake peer;
+/// the tight tier's headers=400ms was crossed by scheduler starvation, not
+/// by the product (the under-load trace: collector Err(Timeout) after
+/// 467ms, script progress 0). The load tier stays strictly below
+/// `Limits::default()`, so a real transport refusal still fails. The
+/// bounds-wire-failures family KEEPS the tight tier via plain
+/// `ready_named` — its slow_headers/slow_body variants ARE deliberate
+/// deadline tests (700ms headers vs the 400ms bound; a 400ms body gap vs
+/// the 200ms body-idle).
+async fn ready_named_under_load(
+    encrypted: bool,
+    direct: bool,
+    callsite: &'static str,
+    variant: Option<&'static str>,
+) -> (common::Fixture, common::Fake, Collector) {
+    ready_named_limits(encrypted, direct, callsite, variant, common::load_limits()).await
+}
+async fn ready_named_limits(
+    encrypted: bool,
+    direct: bool,
+    callsite: &'static str,
+    variant: Option<&'static str>,
+    limits: crate::Limits,
+) -> (common::Fixture, common::Fake, Collector) {
     let f = common::Fixture::new();
     let mut fake = common::Fake::start(true).await;
-    let c = Collector::new(
-        config(&f, &fake.endpoint, f.identity.clone(), direct),
-        f.store.clone(),
-    )
-    .unwrap();
+    let mut config = config(&f, &fake.endpoint, f.identity.clone(), direct);
+    config.limits = limits;
+    let c = Collector::new(config, f.store.clone()).unwrap();
     let cancel = CancellationToken::new();
     let (r, ()) = scripted(callsite, variant, c.collect(&cancel), async {
         fake.next().await.json(200, common::who());
@@ -167,6 +191,68 @@ async fn plain_wire(fake: &mut common::Fake) -> common::Request {
         format!("Bearer {}", common::TOKEN)
     );
     r
+}
+
+/// Task #1 send-side: the activity envelope's exact Matrix content
+/// (lib/matrix-activity.js:4-13). First send (no anchor) keeps the thread
+/// relation and the plain body; the edit (anchor) stars the body, moves
+/// the plain content into `m.new_content`, and swaps the relation to
+/// `m.replace` of the anchor — the "same event edited in place" wire shape.
+#[test]
+fn native_matrix_activity_envelope_first_send_and_edit() {
+    // First send: no anchor.
+    let first = apply_activity_envelope(
+        json!({"msgtype":"m.notice","body":"⏳ 已开始处理，等待运行器的下一步事件\n已运行 0 秒 · 工具调用 0 次，已返回 0 次",
+               "m.relates_to":{"rel_type":"m.thread","event_id":"$root","is_falling_back":true,"m.in_reply_to":{"event_id":"$root"}}}),
+        "run_1",
+        None,
+    );
+    assert_eq!(first["msgtype"], "m.notice");
+    assert_eq!(first["io.hagency.activity"]["dispatch_id"], "run_1");
+    assert_eq!(first["m.relates_to"]["rel_type"], "m.thread");
+    assert!(first.get("m.new_content").is_none());
+    assert!(first.get("m.replace").is_none());
+    assert!(!first["body"].as_str().unwrap().starts_with("* "));
+
+    // The edit: an anchor swaps the relation and stars the body.
+    let plain = json!({"msgtype":"m.notice","body":"⏳ 正在运行命令\n已运行 4 秒 · 工具调用 1 次，已返回 0 次",
+                       "m.relates_to":{"rel_type":"m.thread","event_id":"$root","is_falling_back":true,"m.in_reply_to":{"event_id":"$root"}}});
+    let edit = apply_activity_envelope(plain.clone(), "run_1", Some("$activity_first"));
+    assert_eq!(
+        edit["body"],
+        "* ⏳ 正在运行命令\n已运行 4 秒 · 工具调用 1 次，已返回 0 次"
+    );
+    // The replacement is the plain content: unstarred body, thread
+    // relation intact, activity key intact — no replace relation (TS
+    // matrix-activity.js builds `next` before adding the replace link).
+    assert_eq!(edit["m.new_content"]["body"], plain["body"]);
+    assert_eq!(edit["m.new_content"]["m.relates_to"]["rel_type"], "m.thread");
+    assert_eq!(edit["m.new_content"]["io.hagency.activity"]["dispatch_id"], "run_1");
+    assert!(edit["m.new_content"].get("m.replace").is_none());
+    assert_eq!(edit["m.relates_to"]["rel_type"], "m.replace");
+    assert_eq!(edit["m.relates_to"]["event_id"], "$activity_first");
+    assert_eq!(edit["io.hagency.activity"]["dispatch_id"], "run_1");
+}
+
+/// The kind shape `activity:<dispatch>:<revision>[:<anchor>]` (task #1):
+/// dispatch ids are colon-free, the revision is numeric, the anchor is the
+/// remainder (a Matrix event id may itself carry colons).
+#[test]
+fn native_matrix_activity_kind_parse() {
+    assert_eq!(
+        parse_activity_notice("activity:run_1:1"),
+        Some(("run_1".to_owned(), None))
+    );
+    assert_eq!(
+        parse_activity_notice("activity:run_1:2:$activity_first"),
+        Some(("run_1".to_owned(), Some("$activity_first".to_owned())))
+    );
+    assert_eq!(
+        parse_activity_notice("activity:run_1:3:$a:b:c"),
+        Some(("run_1".to_owned(), Some("$a:b:c".to_owned())))
+    );
+    assert_eq!(parse_activity_notice("ack"), None);
+    assert_eq!(parse_activity_notice("activity:run_1"), None);
 }
 fn state(f: &common::Fixture, id: &str) -> String {
     rusqlite::Connection::open(f.root.path().join("domain/domain.sqlite3"))
@@ -1140,7 +1226,7 @@ async fn native_matrix_outgoing_recovery_restore_rejects_inconsistent_protected_
             ][usize::from(variant)],
         );
         let (f, mut fake, c) =
-            ready_named(true, false, "protected history bootstrap", variant_label).await;
+            ready_named_under_load(true, false, "protected history bootstrap", variant_label).await;
         let claim = final_claim(&f).await;
         let peer = c
             .inner
@@ -1463,6 +1549,57 @@ async fn native_matrix_outgoing_first_unsafe_snapshot_surfaces_the_safety_reason
             .unwrap()
             .is_none()
     );
+    c.close().await.unwrap();
+    f.store.shutdown().await.unwrap();
+    fake.close().await;
+}
+
+/// Task #61 row 1. A `!help` answer must actually reach the room. Review #54
+/// found the builder (`outgoing.rs:292`) drafts `m.text` — exactly TS
+/// (`lib/bot-commands.js:397-404`) — while the validator demanded `m.notice`,
+/// so `sdk/outgoing.rs:49` refused EVERY command answer and nothing was ever
+/// sent live. This drives the real send path end to end (submit -> claim ->
+/// send_command_notice -> sdk start/validate -> the wire), not a wire shape.
+#[tokio::test]
+async fn native_matrix_outgoing_command_answer_is_delivered_live() {
+    let (f, mut fake, c) = ready(false, false).await;
+    let cancel = CancellationToken::new();
+    f.store
+        .submit_command_notice(CommandNoticeRequest {
+            session_id: "root".into(),
+            body: "=== Agent Bridge Bot Commands ===".into(),
+            html: Some("<h3>Agent Bridge Bot Commands</h3>".into()),
+            source_event_id: "$command".into(),
+        })
+        .await
+        .unwrap();
+    let claimed = f
+        .store
+        .claim_command_notice_for_session("root".into(), 60_000)
+        .await
+        .unwrap()
+        .unwrap();
+    let (result, body) = common::scripted(c.send_command_notice(claimed.clone(), &cancel), async {
+        let req = plain_wire(&mut fake).await;
+        let body: Value = serde_json::from_slice(&req.body).unwrap();
+        req.json(200, json!({"event_id":"$answered"}));
+        body
+    })
+    .await;
+    // The whole point: it is DELIVERED, not refused by the validator.
+    assert_eq!(result.unwrap().state, OutgoingState::Delivered);
+    // TS lib/bot-commands.js:398 — the answer is TEXT, and carries the
+    // handler's own html verbatim (format + formatted_body, :399-402).
+    assert_eq!(body["msgtype"], "m.text");
+    assert_eq!(body["body"], "=== Agent Bridge Bot Commands ===");
+    assert_eq!(body["format"], "org.matrix.custom.html");
+    assert!(
+        body["formatted_body"]
+            .as_str()
+            .unwrap()
+            .contains("Agent Bridge Bot Commands")
+    );
+    fake.quiesced(fake.requests(), &common::limits()).await;
     c.close().await.unwrap();
     f.store.shutdown().await.unwrap();
     fake.close().await;

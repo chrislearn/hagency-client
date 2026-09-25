@@ -65,6 +65,14 @@ pub(super) async fn deliver(
                 &observation,
             ) {
                 crate::bot_commands::Dispatched::Answer(reply) => reply,
+                // Board #79: `!request` — render the TS reply from the line's
+                // arguments. The synchronous refusals (usage, malformed token)
+                // never reach any backend in TS either (:526-536); a
+                // well-formed line reports the honest no-engagement state
+                // until the submit seam is wired (see report-79).
+                crate::bot_commands::Dispatched::Request(args) => {
+                    crate::bot_commands::request_reply(&args, None)
+                }
                 crate::bot_commands::Dispatched::Unrenderable => continue,
             };
             let receipt = domain

@@ -183,10 +183,11 @@ async fn project_mentions(mut f: Fixture) {
         // TS:bridge-matrix.js:3318-3393. The question was asked at the project
         // room's top level (route thread_root is null above), so the answer
         // stays there — carrying `m.in_reply_to` to the message it answers,
-        // `$project_mention_{index}`, and opening no thread.
+        // `$project_mention_{index}_1` (round 1 of the fake's addressed
+        // mentions), and opening no thread.
         assert_eq!(
             event["content"]["m.relates_to"],
-            json!({"m.in_reply_to":{"event_id":format!("$project_mention_{index}")}})
+            json!({"m.in_reply_to":{"event_id":format!("$project_mention_{index}_1")}})
         );
         assert!(f.peer.agents[index].crypto.events.is_empty());
         for name in ["owned-mcp.fleet-release", "owned-mcp.fleet-ready"] {

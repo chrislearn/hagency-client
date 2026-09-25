@@ -2,6 +2,7 @@
 mod accounts;
 mod agent_detail;
 mod agents;
+mod approval_bindings;
 mod stream;
 mod alerts;
 mod approvals;
@@ -9,11 +10,18 @@ mod assets;
 mod authority;
 pub mod client;
 mod engagements;
+mod graphs;
+mod exec_policy;
+mod invites;
+mod matrix_diag;
 mod offer_book;
 mod project_sides;
+mod side_budget;
+mod side_lifecycle;
 mod resource_configuration;
 mod resources;
 pub mod side_registration;
+mod tasks;
 mod usage;
 use crate::{App, refusal};
 use authority::{Authority, COOKIE, Session};
@@ -48,6 +56,11 @@ struct Inner {
     assets: assets::Assets,
     authority: Authority,
     requests: Arc<Semaphore>,
+    /// Operator task graphs (#47): the TS `task_graphs.json` document on the
+    /// state directory, loaded at startup like the retained boot. `None` when
+    /// no state dir was provided (asset-only tests) — the routes then answer
+    /// `console_unavailable`, TS's `dispatch_unavailable` class.
+    graphs: Option<graphs::GraphStore>,
 }
 /// Clones retain the same finite authority and original immutable asset proofs.
 #[derive(Clone)]
@@ -55,11 +68,25 @@ pub struct Console(Arc<Inner>);
 impl Console {
     /// Synchronous startup only; no filesystem access occurs in HTTP handlers.
     pub fn load(path: &Path) -> Result<Self, Error> {
+        Self::load_with_state(path, None)
+    }
+    /// `load` plus the operator state directory (#47): the document home the
+    /// graph routes persist to (`<state>/task_graphs.json`). Production passes
+    /// the same `state_dir` `serve` opens; tests pass `None` for the legacy
+    /// asset-only shape.
+    pub fn load_with_state(path: &Path, state_dir: Option<&Path>) -> Result<Self, Error> {
         Ok(Self(Arc::new(Inner {
             assets: assets::Assets::load(path)?,
             authority: Authority::new(),
             requests: Arc::new(Semaphore::new(8)),
+            graphs: match state_dir {
+                Some(dir) => Some(graphs::GraphStore::open(dir)?),
+                None => None,
+            },
         })))
+    }
+    pub(super) fn graphs(&self) -> Option<&graphs::GraphStore> {
+        self.0.graphs.as_ref()
     }
     pub fn retire(&self) {
         self.0.authority.retire();
@@ -75,25 +102,34 @@ pub(crate) fn router() -> Router {
                 .push(usage::router())
                 .push(alerts::router())
                 .push(agents::router())
+                .push(exec_policy::router())
                 .push(stream::router())
                 .push(engagements::router())
+                .push(graphs::router())
+                .push(invites::router())
                 .push(offer_book::router())
                 .push(project_sides::router())
                 .push(side_registration::router())
+                .push(side_budget::router())
+                .push(side_lifecycle::router())
                 .push(approvals::router())
+                .push(approval_bindings::router())
                 .push(resources::router())
                 .push(accounts::router())
-                .push(resource_configuration::router()),
+                .push(matrix_diag::router())
+                .push(resource_configuration::router())
+                // Task #46: the operator-facing capability and framework reads
+                // (GET /api/capability, /api/frameworks, /api/frameworks/detect)
+                // are session-scoped reads, mounted under the console API so
+                // the native console reaches them without an operator bearer.
+                .push(crate::fleet_views::router())
+                .push(tasks::router())
+                .push(tasks::extra_router()),
         )
         .push(Router::with_path("{**asset}").get(asset))
 }
 pub(crate) fn operator_router() -> Router {
-    Router::new()
-        .push(Router::with_path("console/access").post(issue))
-        .push(Router::with_path("console/resource-publication-access").post(issue_publication))
-        .push(Router::with_path("console/resource-configuration-access").post(issue_configuration))
-        .push(Router::with_path("console/account-access").post(issue_account))
-        .push(Router::with_path("console/agent-lifecycle-access").post(issue_lifecycle))
+    Router::new().push(Router::with_path("console/access").post(issue))
 }
 fn console(depot: &Depot) -> Result<&Console, Error> {
     depot
@@ -245,23 +281,11 @@ async fn body(req: &mut Request, maximum: usize) -> Result<Vec<u8>, Error> {
         .map_err(|_| Error::Invalid)
 }
 #[handler]
-async fn issue(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    issue_scope(req, depot, res, false, false, false).await;
-}
-#[handler]
-async fn issue_publication(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    issue_scope(req, depot, res, true, false, false).await;
-}
-#[handler]
-async fn issue_configuration(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    issue_scope(req, depot, res, false, true, false).await;
-}
-#[handler]
-async fn issue_lifecycle(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    issue_scope(req, depot, res, false, false, true).await;
-}
-#[handler]
-async fn issue_account(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+async fn issue(req: &mut Request, depot: &Depot, res: &mut Response) {
+    // TS parity: one issue route, no scope selection — the operator asks
+    // for access and gets the whole console (`createApiAuthMiddleware`
+    // admitted one credential to every `/api` route). No rate limit: the
+    // TS middleware never throttled re-authentication.
     let result = async {
         let c = console(depot)?;
         let _permit =
@@ -272,42 +296,7 @@ async fn issue_account(req: &mut Request, depot: &mut Depot, res: &mut Response)
         if req.uri().query().is_some() || !body(req, 1).await?.is_empty() {
             return Err(Error::Invalid);
         }
-        let value = c.0.authority.issue_account()?;
-        Ok(serde_json::json!({"ticket":value,"expires_in":120}))
-    }
-    .await;
-    match result {
-        Ok(value) => res.render(Json(value)),
-        Err(error) => failed(res, error),
-    }
-}
-async fn issue_scope(
-    req: &mut Request,
-    depot: &Depot,
-    res: &mut Response,
-    publication: bool,
-    configuration: bool,
-    lifecycle: bool,
-) {
-    let result = async {
-        let c = console(depot)?;
-        let _permit =
-            c.0.requests
-                .clone()
-                .try_acquire_owned()
-                .map_err(|_| Error::Busy)?;
-        if req.uri().query().is_some() || !body(req, 1).await?.is_empty() {
-            return Err(Error::Invalid);
-        }
-        let value = if lifecycle {
-            c.0.authority.issue_lifecycle()?
-        } else if configuration {
-            c.0.authority.issue_configuration()?
-        } else if publication {
-            c.0.authority.issue_publication()?
-        } else {
-            c.0.authority.issue()?
-        };
+        let value = c.0.authority.issue()?;
         Ok(serde_json::json!({"ticket":value,"expires_in":120}))
     }
     .await;
@@ -344,13 +333,16 @@ async fn exchange(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     .await;
     match result {
         Ok(value) => {
+            // No Max-Age: the login cookie lives for the browser session, so
+            // a reload never loses it (TS parity — the retained middleware
+            // never expired a credential on a timer; logout is the bound).
             res.headers_mut().insert(
                 "set-cookie",
-                format!("{COOKIE}={value}; HttpOnly; SameSite=Strict; Path=/console; Max-Age=900")
+                format!("{COOKIE}={value}; HttpOnly; SameSite=Strict; Path=/console")
                     .parse()
                     .expect("generated cookie"),
             );
-            res.render(Json(serde_json::json!({"ok":true,"expires_in":900})));
+            res.render(Json(serde_json::json!({"ok":true})));
         }
         Err(error) => failed(res, error),
     }

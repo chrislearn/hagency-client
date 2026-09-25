@@ -63,6 +63,13 @@ pub(super) const WORKSPACE_QUARANTINED_NOTICE: &str = "Waiting: this workspace i
 /// leased-resource skip).
 pub(super) const WAITING_FOR_APPROVAL_NOTICE: &str = "Waiting: this task is queued because its workspace is held by another task awaiting owner approval.";
 
+/// The retained product's words when a queued dispatch's own task is blocked
+/// and only an operator can resume it (`router/src/store.ts` `claimDispatch`,
+/// the `task_blocked` skip). TS says this AND skips the row; saying it while
+/// still starting a runner would be a lie, so the candidate predicate excludes
+/// a blocked task's dispatch and this explains why (`blocked_task_notices`).
+pub(super) const TASK_BLOCKED_NOTICE: &str = "Waiting: this task is blocked and must be explicitly resumed by an operator before another runner can start.";
+
 /// The retained product's words for an operator's inspection outcome
 /// (`router/src/store.ts` `resolveOutcome`); the `continue` text lives at the
 /// recovery kernel that queues the replacement.
@@ -284,6 +291,30 @@ pub(super) fn claim_skip_notices(tx: &Transaction<'_>, now: u64) -> Result<(), E
         match said {
             Ok(()) => tx.execute_batch("RELEASE claim_skip_notice")?,
             Err(_) => tx.execute_batch("ROLLBACK TO claim_skip_notice; RELEASE claim_skip_notice")?,
+        }
+    }
+    Ok(())
+}
+/// The explanation for a queued dispatch whose own task is blocked
+/// (`router/src/store.ts` `claimDispatch`, the `task_blocked` skip): only an
+/// operator can resume the task, so the runner must not start and the thread
+/// is told why. The candidate predicate excludes exactly these rows, so every
+/// row this finds is one the claim skips. Best effort in its own savepoint.
+pub(super) fn blocked_task_notices(tx: &Transaction<'_>, now: u64) -> Result<(), Error> {
+    let blocked: Vec<String> = tx
+        .prepare(
+            "SELECT d.id FROM runner_dispatches d \
+             JOIN canonical_tasks t ON t.id=d.task_id \
+             WHERE d.state='queued' AND json_extract(t.config,'$.status')='blocked'",
+        )?
+        .query_map([], |r| r.get(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    for dispatch in blocked {
+        tx.execute_batch("SAVEPOINT blocked_task_notice")?;
+        let said = waiting_notice(tx, &dispatch, "task_blocked", TASK_BLOCKED_NOTICE, now);
+        match said {
+            Ok(()) => tx.execute_batch("RELEASE blocked_task_notice")?,
+            Err(_) => tx.execute_batch("ROLLBACK TO blocked_task_notice; RELEASE blocked_task_notice")?,
         }
     }
     Ok(())
