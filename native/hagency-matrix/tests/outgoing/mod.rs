@@ -251,6 +251,55 @@ async fn stop_sdk(c: Collector) {
     drop(c);
 }
 #[tokio::test]
+async fn native_matrix_outgoing_kicked_agent_rejoins_and_the_message_is_delivered() {
+    // Board #11 acceptance: a send that fails on membership re-invites the
+    // path back — the agent rejoins and the message is delivered
+    // (bridge-matrix.js:10888-10950). The fixture state drives the exact
+    // moment: the draft preflight sees both joined, the loop preflight sees
+    // the agent kicked, the rejoin restores membership, the write proceeds.
+    let (f, mut fake, c) = ready(false, false).await;
+    let claim = final_claim(&f).await;
+    let cancel = CancellationToken::new();
+    let (result, ()) = common::scripted(c.send_final(claim.clone(), &cancel), async {
+        // Draft and loop preflights: membership intact on every read — the
+        // kick is invisible to the observations and surfaces at the write.
+        preflight(&mut fake, false).await;
+        preflight(&mut fake, false).await;
+        // The send: the server refuses the write on membership (the native
+        // form of the retained `e.message.includes('membership')` catch).
+        let refused = fake.next().await;
+        assert_eq!(refused.method, "PUT");
+        assert!(refused.target.contains("/send/m.room.message/"));
+        let transaction = refused.target.rsplit('/').next().unwrap().to_owned();
+        refused.json(403, json!({"errcode":"M_FORBIDDEN","error":"not in room"}));
+        // The rejoin (bridge-matrix.js:10936-10943, the join half of the
+        // retained invite-then-join pair): POST /join as the agent itself.
+        let r = fake.next().await;
+        assert_eq!(r.method, "POST");
+        assert!(r.target.contains("/_matrix/client/v3/join/!project:example.test"));
+        assert_eq!(r.headers["authorization"], format!("Bearer {}", common::TOKEN));
+        r.json(200, json!({"room_id": "!project:example.test"}));
+        // The resend: the very write the kick interrupted, SAME transaction
+        // id — a server that somehow accepted before refusing dedupes.
+        let resent = fake.next().await;
+        assert_eq!(resent.method, "PUT");
+        assert!(resent
+            .target
+            .ends_with(&format!("/send/m.room.message/{transaction}")));
+        let body: Value = serde_json::from_slice(&resent.body).unwrap();
+        resent.json(200, json!({"event_id": "$rejoined"}));
+        assert_eq!(body["body"], "Answer **verified** 中文");
+    })
+    .await;
+    assert_eq!(result.unwrap().state, OutgoingState::Delivered);
+    assert_eq!(state(&f, &claim.id), "delivered");
+    fake.quiesced(fake.requests(), &common::limits()).await;
+    c.close().await.unwrap();
+    f.store.shutdown().await.unwrap();
+    fake.close().await;
+}
+
+#[tokio::test]
 async fn native_matrix_outgoing_plain_final_actual_https_formatted_and_idempotent_receipt() {
     let (f, mut fake, c) = ready(false, false).await;
     let claim = final_claim(&f).await;
@@ -709,7 +758,16 @@ async fn native_matrix_outgoing_bounds_wire_failures_retain_possible_writes() {
                 "slow_headers"=>req.chunks(vec![(Duration::from_millis(700),common::response(200,b"{\"event_id\":\"$one\"}"))]),
                 "slow_body"=>req.chunks(vec![(Duration::ZERO,b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 19\r\nConnection: close\r\n\r\n".to_vec()),(Duration::from_millis(400),b"{\"event_id\":\"$one\"}".to_vec())]),
                 "redirect"=>req.raw(b"HTTP/1.1 307 Temporary Redirect\r\nLocation: https://invalid.example/secret\r\nContent-Length: 0\r\n\r\n".to_vec()),
-                "forbidden"=>req.json(403,json!({"errcode":"M_FORBIDDEN"})),
+                "forbidden"=>{req.json(403,json!({"errcode":"M_FORBIDDEN"}));
+                    // Board #11: a send refused on membership now re-joins once
+                    // before giving up — the refusal environment persists here
+                    // (the join itself is forbidden), so the same terminal
+                    // Unauthorized stands and the write stays retained.
+                    let join=fake.next().await;
+                    assert_eq!(join.method,"POST");
+                    assert!(join.target.contains("/_matrix/client/v3/join/"));
+                    join.json(403,json!({"errcode":"M_FORBIDDEN"}));
+                },
                 _=>req.json(500,json!({"errcode":"M_UNKNOWN"})),
             }
         }).await;

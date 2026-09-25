@@ -298,10 +298,13 @@ pub async fn respond_with(
     } else if request.method == "PUT"
         && request
             .target
-            .contains("/send/com.agentchat.approval.status.v1/")
+            .contains("/send/m.room.message/")
+        && request.target.contains("!project:example.test")
     {
-        // The redacted public status notice is a plaintext project-room send,
+        // The redacted public status notice is a plaintext PROJECT-ROOM send,
         // never an encrypted private-room event — its own branch, no decrypt.
+        // Both are `m.room.message` (TS parity: the msgtype is a content
+        // field, never the PUT path segment), so the room tells them apart.
         (200, json!({"event_id":"$status_notice"}))
     } else if request.method == "PUT" && request.target.contains("/send/") {
         peer.decrypt(body, ROOM.try_into().unwrap()).await;

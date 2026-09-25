@@ -1,11 +1,13 @@
 use hagency_core::custody::{Delivery, MAX_DELIVERY_BYTES};
 use hagency_store::{DomainStore, Error, Store};
 mod alerts;
+pub mod bot_commands;
 pub mod bootstrap;
 pub mod console;
 pub(crate) mod file_service;
 pub mod inspect;
 pub mod mcp;
+pub mod ops;
 pub(crate) mod receive_service;
 mod resources;
 mod runner;

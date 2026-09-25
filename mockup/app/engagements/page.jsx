@@ -15,6 +15,8 @@ import CredentialForm from '@/components/CredentialForm';
 import { allocationValue, approvalVerdict, projectLabel } from '@/lib/console-workflow';
 import { NATIVE_MODE } from '@/lib/native-api';
 import NativeEngagements from '@/components/NativeEngagements';
+import NativeOfferBook from '@/components/NativeOfferBook';
+import NativeVerdict from './NativeVerdict';
 
 /*
  * ④ 接洽 — what replaces dispatch.
@@ -453,7 +455,16 @@ function SideActions({ side, live, onDone }) {
 
 export default function EngagementsPage() {
   const data = useData();
-  return data.nativeConsole ? <NativeEngagements /> : <LegacyEngagements />;
+  if (data.nativeConsole) {
+    return (
+      <>
+        <NativeEngagements />
+        <NativeOfferBook />
+        <NativeVerdict />
+      </>
+    );
+  }
+  return <LegacyEngagements />;
 }
 
 function LegacyEngagements() {

@@ -517,7 +517,11 @@ async fn native_matrix_intake_authenticated_group_thread_and_exact_mentions() {
     );
     let inbox = f.store.inbox("root".into(), 0, 10, None).await.unwrap();
     assert_eq!(inbox.len(), 3);
-    assert!(!inbox[0].wake);
+    // This body carries "@worker" in plain text, which TS:bridge-matrix.js:3163-3169
+    // reads as a mention of the room's `@worker` when `m.mentions` is empty. The
+    // expectation here used to assert the ADR-054 narrowing (m.mentions only); the
+    // task restores TS, so the fallback wakes.
+    assert!(inbox[0].wake);
     assert!(!inbox[1].wake);
     assert!(inbox[2].wake);
     assert_eq!(rows(&f, "admitted_messages"), 3);
@@ -1541,4 +1545,45 @@ async fn native_matrix_intake_observed_reports_early_identity() {
         Some(&observation),
     )
     .await;
+}
+
+/// TS:bridge-matrix.js:3133-3174 — `m.mentions` is the first place a mention may
+/// live, not the only one. A client that sets no `m.mentions` at all still
+/// addresses a member with an HTML pill in `formatted_body`, or in plain text
+/// with `@name`; ADR-054 narrowed the port to `m.mentions` alone, so neither woke
+/// the agent. The room supplies the server for the localpart, exactly as an
+/// `m.mentions` entry would have carried it.
+#[tokio::test]
+async fn native_matrix_intake_pill_and_plain_mentions_wake_without_m_mentions() {
+    let f = common::Fixture::new();
+    let mut fake = common::Fake::start(false).await;
+    let c = Collector::new(
+        config(&f, &fake.endpoint, f.identity.clone(), 1, false),
+        f.store.clone(),
+    )
+    .unwrap();
+    prime(&c, &f, &mut fake, false).await;
+    let value = sync(
+        "fallback",
+        vec![
+            // No `m.mentions` key at all; the pill is the only address.
+            json!({"event_id":"$pill","sender":"@owner:example.test","type":"m.room.message","origin_server_ts":now(),
+                "content":{"msgtype":"m.text","body":"please answer","formatted_body":"<a href='https://matrix.to/#/@worker:example.test'>worker</a> please answer"}}),
+            // No `m.mentions`, no formatted_body; plain `@name` text addresses it.
+            json!({"event_id":"$plain","sender":"@owner:example.test","type":"m.room.message","origin_server_ts":now(),
+                "content":{"msgtype":"m.text","body":"@worker please answer"}}),
+            // Neither: an unaddressed message is admitted without waking.
+            json!({"event_id":"$quiet","sender":"@owner:example.test","type":"m.room.message","origin_server_ts":now(),
+                "content":{"msgtype":"m.text","body":"nobody is addressed here"}}),
+        ],
+    );
+    assert_eq!(run(&c, &mut fake, value, false).await.unwrap().admitted, 3);
+    let inbox = f.store.inbox("root".into(), 0, 10, None).await.unwrap();
+    assert_eq!(inbox.len(), 3);
+    assert!(inbox[0].wake, "the formatted_body pill addresses the agent");
+    assert!(inbox[1].wake, "plain @name text addresses the agent");
+    assert!(!inbox[2].wake, "an unaddressed message never wakes");
+    c.close().await.unwrap();
+    f.store.shutdown().await.unwrap();
+    fake.close().await;
 }

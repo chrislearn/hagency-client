@@ -732,8 +732,14 @@ impl Inner {
                         .and_then(Value::as_str)
                         .map(str::to_owned);
                 }
-                "com.hagency.project.binding.v1" => {
-                    if !key.is_empty() {
+                "com.hagency.admin.binding.v1" => {
+                    // TS parity (lib/fleet-protocol.js:52): the binding is a
+                    // per-fleet state event keyed by the fleet id (never the
+                    // empty key). TS reads the exact tuple
+                    // `state/<type>/<fleetId>`; an event under another key is
+                    // simply not this fleet's binding, and the fleet match is
+                    // decided from the binding content (`fleetId`) downstream.
+                    if key.is_empty() {
                         return Err(Error::Wire);
                     }
                     facts.binding = Some(Value::Object(content.clone()));

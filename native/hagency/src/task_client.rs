@@ -7,6 +7,7 @@ use hagency_core::{
 use serde::{Deserialize, Serialize};
 use std::{io::Read, net::SocketAddr, path::PathBuf, time::Duration};
 
+pub(crate) mod approval;
 pub(crate) mod completion;
 pub(crate) mod coordination;
 pub(crate) mod discussion;

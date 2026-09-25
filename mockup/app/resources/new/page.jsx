@@ -13,6 +13,8 @@ import { send } from '@/lib/api';
 import TechnicalDetails from '@/components/TechnicalDetails';
 import { NativeAccessNotice } from '@/components/NativeUsage';
 import NativeStatusStrip from '@/components/NativeStatusStrip';
+import SearchSelect from '@/components/SearchSelect';
+import { labelFor } from '@/lib/labels';
 
 /*
  * ② 配置向导 — four steps, and three of them write a field that already exists.
@@ -69,7 +71,9 @@ export default function WizardPage() {
   const data = useData(); const t = useT();
   if (!data.nativeConsole) return <WizardForm />;
   return <>
-    <PageHead title={t(data.editing ? 'nc.edit' : 'nc.pageTitle')} sub={t('nc.scope')}><NativeStatusStrip /><a className="btn" href="/console/resources/">{t('wz.cancel')}</a></PageHead>
+    {/* Item 3: the heading names what the page shows; the row button's
+     * "Edit configuration" stays the action that OPENS it. */}
+    <PageHead title={t(data.editing ? 'nc.editHead' : 'nc.pageTitle')} sub={t('nc.scope')}><NativeStatusStrip /><a className="btn" href="/console/resources/">{t('wz.cancel')}</a></PageHead>
     <NativeAccessNotice />
     {data.phase === 'loading' && <p role="status">{t('nr.loading')}</p>}
     {data.phase === 'error' && <section className="notice" role="alert"><p>{t('nr.failed')}</p><button className="btn" onClick={data.refresh}>{t('nu.refresh')}</button></section>}
@@ -81,7 +85,7 @@ export default function WizardPage() {
     </section>}
     {['ready', 'stale'].includes(data.phase) && (data.editor
       ? <div data-native-configuration-id={data.editor.resource.id} aria-busy={data.refreshing === true}><WizardForm key={`${data.editing}:${data.editor.resource.id}`} native={data} /></div>
-      : <section className="panel"><p>{t('nc.noSource')}</p></section>)}
+      : <section className="panel"><p>{t('nc.noSource')}</p><p><a className="btn primary" href="/console/accounts/">{t('nc.noSourceAccounts')}</a></p></section>)}
   </>;
 }
 const validNativeTokens = (value) => /^[0-9]+$/.test(String(value)) && Number.isSafeInteger(Number(value)) && Number(value) >= 0;
@@ -147,10 +151,14 @@ function WizardForm({ native = null }) {
       </ol>
 
       {native && <section className="panel"><h3 className="sub">{t('nc.source')}</h3>
-        {!native.editing && <div className="field"><label htmlFor="configuration-source">{t('nc.source')}</label><select id="configuration-source" value={base.id} onChange={(event) => native.choose(event.target.value)}>
-          {!native.resources.some((r) => r.id === base.id) && <option value={base.id}>{t('nr.outsidePage')}</option>}
-          {native.resources.map((r) => <option key={r.id} value={r.id}>{[r.framework, r.model, r.reasoning].filter(Boolean).join(' · ')}</option>)}
-        </select><div className="btn-row"><button className="btn" onClick={native.firstPage}>{t('nu.firstPage')}</button><button className="btn" disabled={!native.next_after} onClick={native.nextPage}>{t('nu.nextPage')}</button></div></div>}
+        {!native.editing && <div className="field"><label htmlFor="configuration-source">{t('nc.source')}</label><SearchSelect
+          id="configuration-source"
+          value={base.id}
+          onChange={(event) => native.choose(event.target.value)}
+          options={native.resources.map((r) => ({ value: r.id, label: [r.framework, r.model, r.reasoning].filter(Boolean).join(' · ') }))}
+          outside={labelFor(base.id) ?? t('nr.outsidePage')}
+          empty={t('nr.empty')}
+        /><div className="btn-row"><button className="btn" onClick={native.firstPage}>{t('nu.firstPage')}</button><button className="btn" disabled={!native.next_after} onClick={native.nextPage}>{t('nu.nextPage')}</button></div></div>}
         <dl className="kv"><dt>{t('wz.step.framework')}</dt><dd>{base.framework}</dd><dt>{t('col.provider')}</dt><dd>{base.provider ?? t('nu.unknown')}</dd><dt>{t('col.model')}</dt><dd>{base.model}</dd></dl>
         <TechnicalDetails><code>{base.id}</code></TechnicalDetails>
       </section>}
