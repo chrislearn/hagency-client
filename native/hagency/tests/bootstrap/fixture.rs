@@ -97,6 +97,25 @@ impl Fixture {
         Self::with_account(fenced, false).await
     }
     pub async fn with_account(fenced: bool, managed: bool) -> Self {
+        Self::with_settings(fenced, managed, None).await
+    }
+    /// An agent whose AGENT RECORD carries per-thread worktree settings
+    /// (board #78; TS backend-v2.js:2994 record fields, consumed at
+    /// backend-v2.js:2057-2075). The settings ride the production admission
+    /// path (`agentDefinition` on the verified request) — not a serve-level
+    /// or host-level switch.
+    pub async fn with_worktree_agent(
+        fenced: bool,
+        worktrees_dir: PathBuf,
+        bootstrap: Vec<String>,
+    ) -> Self {
+        Self::with_settings(fenced, false, Some((worktrees_dir, bootstrap))).await
+    }
+    async fn with_settings(
+        fenced: bool,
+        managed: bool,
+        workspace: Option<(PathBuf, Vec<String>)>,
+    ) -> Self {
         let root = tempfile::tempdir().unwrap();
         let state_dir = root.path().join("state");
         let init = Command::new(env!("CARGO_BIN_EXE_hagency"))
@@ -167,7 +186,19 @@ impl Fixture {
             db.put_resource(&resource).unwrap();
             resource
         };
-        let request = common::domain::request("bootstrap", "Worker", &resource, 100);
+        let mut request = common::domain::request("bootstrap", "Worker", &resource, 100);
+        if let Some((worktrees_dir, bootstrap)) = &workspace {
+            // Board #78: the agent record carries the per-agent workspace
+            // settings through the production admission path. Mutate BEFORE
+            // the observation is built, so the request digest and the
+            // observed content stay the same serialization.
+            let mut value = serde_json::to_value(&request).unwrap();
+            value["agentDefinition"]["workspaceMode"] = json!("worktree");
+            value["agentDefinition"]["worktreesDir"] =
+                json!(worktrees_dir.to_string_lossy().into_owned());
+            value["agentDefinition"]["worktreeBootstrap"] = json!(bootstrap);
+            request = serde_json::from_value(value).unwrap();
+        }
         let mut observation = common::domain::observation(&request);
         observation.observed_at_ms = now();
         let proof = hagency_core::authority::verify_request(

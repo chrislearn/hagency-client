@@ -269,6 +269,13 @@ impl Fixture {
         }
         if paced_startup {
             config["matrix_request_interval_ms"] = json!(1000);
+        } else {
+            // A busy host can keep the intake owner-lock wait (collector.rs:422)
+            // past the 20 s SDK default while another agent is mid
+            // cross-signing/Olm; a timeout then invalidates the transport and
+            // parks intake (error=Generation) for good. `paced_startup` is the
+            // one fixture whose SDK budget IS the subject — leave it alone.
+            config["matrix_sdk_timeout_ms"] = json!(60_000);
         }
         if let Some(ms) = sdk_ms {
             config["matrix_sdk_timeout_ms"] = json!(ms);
@@ -888,6 +895,10 @@ pub struct Agent {
     uploads: Vec<Vec<u8>>,
     incoming: Vec<Vec<u8>>,
     downloads: Vec<usize>,
+    /// The display name the agent has set on itself (identity reconciliation,
+    /// board #11): `None` until the agent PUTs one, so the first GET returns
+    /// an empty (machine-generated-equivalent) profile.
+    displayname: Option<String>,
     created: bool,
     invited: bool,
     joined: bool,
@@ -912,6 +923,7 @@ impl Agent {
             uploads: Vec::new(),
             incoming: Vec::new(),
             downloads: Vec::new(),
+            displayname: None,
             created: false,
             invited: false,
             joined: false,
@@ -1243,6 +1255,18 @@ impl Peer {
                     200,
                     json!({"next_batch":format!("root-{}",self.root_sync),"rooms":{"join":{ROOT:{"timeline":{"events":[],"limited":false},"state":{"events":[]}},"!reception:example.test":{"timeline":{"events":events,"limited":false},"state":{"events":[]}}}},"to_device":{"events":[]}}),
                 )
+            } else if request.method == "PUT" && path.contains("/send/") {
+                // The coordinator posts the approval-status notice in the
+                // project room (approval_status_*, a plaintext notice). The
+                // send is server-side; accept any m.room.message there.
+                assert!(
+                    request.target.contains("factory_project")
+                        && segments.contains(&"m.room.message")
+                );
+                (
+                    200,
+                    json!({"event_id":format!("$coordinator_send_{}", self.root_sync)}),
+                )
             } else {
                 assert!(path.ends_with("/state"));
                 if request.target.contains("factory_project") {
@@ -1380,6 +1404,19 @@ impl Peer {
                     200,
                     json!({"user_id":agent.user,"device_id":agent.device,"is_guest":false}),
                 )
+            } else if path.contains("/profile/") && path.ends_with("/displayname") {
+                // Identity reconciliation (board #11, token_provision/rooms.rs):
+                // the agent reads its profile before creating its DM room, and
+                // PUTs the agent-definition name when the current one is
+                // machine-generated (a fresh account reads empty). Serve both.
+                if request.method == "PUT" {
+                    assert_eq!(body["displayname"], json!(format!("FleetAgent{index}")));
+                    agent.displayname = Some(body["displayname"].as_str().unwrap().into());
+                }
+                (
+                    200,
+                    json!({"displayname": agent.displayname.clone().unwrap_or_default()}),
+                )
             } else if path.ends_with("/state") {
                 if request.target.contains("factory_project") {
                     (200, project)
@@ -1417,9 +1454,24 @@ impl Peer {
             } else if request.method == "PUT" && path.contains("/sendToDevice/") {
                 agent.crypto.share(body).await;
                 (200, json!({}))
+            } else if path.contains("/typing/") {
+                // Presence (board #11 parity, presence.rs): the typing
+                // indicator is a plaintext ephemeral server API, never an
+                // encrypted room event.
+                (200, json!({}))
             } else if request.method == "PUT" && path.contains("/send/") {
                 if request.target.contains("factory_project") {
-                    assert!(segments.contains(&"m.room.message"));
+                    if segments.contains(&"m.reaction") {
+                        // `ackAgentReceipt` (presence.rs): the 👀 annotation is
+                        // plaintext (m.reaction cannot carry encrypted content)
+                        // and the agent also sends it in the shared project.
+                        assert_eq!(body["m.relates_to"]["rel_type"], "m.annotation");
+                        (
+                            200,
+                            json!({"event_id":format!("$fleet_project_ack_{index}_{}",agent.project_events.len())}),
+                        )
+                    } else {
+                        assert!(segments.contains(&"m.room.message"));
                     // Two kinds of plaintext project event an agent may post in
                     // its own identity: its final reply, and the task notice
                     // that announces work another agent delegated to it.
@@ -1441,17 +1493,41 @@ impl Peer {
                         200,
                         json!({"event_id":format!("$fleet_project_reply_{index}_{}",agent.project_events.len())}),
                     )
+                    }
+                } else if path.contains("/typing/") {
+                    // Presence (board #11 parity, presence.rs): the typing
+                    // indicator is a plaintext ephemeral server API, never an
+                    // encrypted room event.
+                    (200, json!({}))
                 } else {
-                    assert!(
-                        request.target.contains(&format!("fleet_dm_{index}"))
-                            && segments.contains(&"m.room.encrypted")
-                    );
-                    let room: ruma::OwnedRoomId = agent.dm.clone().try_into().unwrap();
-                    agent.crypto.decrypt(body, &room).await;
-                    (
-                        200,
-                        json!({"event_id":format!("$fleet_reply_{index}_{}",agent.crypto.events.len())}),
-                    )
+                    if segments.contains(&"m.reaction") {
+                        // `ackAgentReceipt` (presence.rs): the 👀 annotation is
+                        // a plaintext server API too — m.reaction cannot be
+                        // encrypted content. Accept and answer.
+                        assert!(request.target
+                            .contains(&format!("fleet_dm_{index}")));
+                        assert_eq!(
+                            body["m.relates_to"]["rel_type"], "m.annotation"
+                        );
+                        (
+                            200,
+                            json!({"event_id":format!(
+                                "$fleet_ack_{index}_{}",
+                                agent.room_posts + agent.account_posts
+                            )}),
+                        )
+                    } else {
+                        assert!(
+                            request.target.contains(&format!("fleet_dm_{index}"))
+                                && segments.contains(&"m.room.encrypted")
+                        );
+                        let room: ruma::OwnedRoomId = agent.dm.clone().try_into().unwrap();
+                        agent.crypto.decrypt(body, &room).await;
+                        (
+                            200,
+                            json!({"event_id":format!("$fleet_reply_{index}_{}",agent.crypto.events.len())}),
+                        )
+                    }
                 }
             } else {
                 assert!(agent.created && agent.owner && agent.joined);
@@ -1459,7 +1535,12 @@ impl Peer {
                     .crypto
                     .protocol(&request.method, &request.target, &body)
                     .await
-                    .expect("original enrolled agent SDK protocol")
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "original enrolled agent SDK protocol: {} {}",
+                            request.method, request.target
+                        )
+                    })
             }
         };
         let join = if path.ends_with("/state") {
