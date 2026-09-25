@@ -169,23 +169,29 @@ export default function NativeEngagements() {
                     {/* Exile + confirm (AgentActions.jsx): the confirmation
                         names THIS row's id, so a slip on one row can never
                         retire another. */}
-                    {confirming?.id === e.id && confirming.kind === 'retire' ? (
+                    {confirming?.id === e.id ? (
                       <span className="btn-row tight">
-                        <span className="dim">{t('ng.confirmRetire')}</span>
+                        <span className="dim">{confirming.kind === 'retire' ? t('ng.confirmRetire') : t('ng.confirmRetry')}</span>
                         <button type="button" className="btn-s danger" disabled={busy}
-                          onClick={() => act(e.id, 'retire')}>{t('ng.confirm')}</button>
+                          onClick={() => act(e.id, confirming.kind)}>{t('ng.confirm')}</button>
                         <button type="button" className="btn-s" disabled={busy}
                           onClick={() => setConfirming(null)}>{t('ng.cancel')}</button>
                       </span>
-                    ) : retirable(e) ? (
-                      <button type="button" className="btn-s danger" disabled={busy}
-                        onClick={() => { setNote(null); setConfirming({ id: e.id, kind: 'retire' }); }}>
-                        {t('ng.retire')}
-                      </button>
-                    ) : null}
-                    {retryable(e) && !(confirming?.id === e.id) && (
-                      <button type="button" className="btn-s" disabled={busy}
-                        onClick={() => act(e.id, 'cleanup-retry')}>{t('ng.retryCleanup')}</button>
+                    ) : (
+                      <>
+                        {retirable(e) && (
+                          <button type="button" className="btn-s danger" disabled={busy}
+                            onClick={() => { setNote(null); setConfirming({ id: e.id, kind: 'retire' }); }}>
+                            {t('ng.retire')}
+                          </button>
+                        )}
+                        {retryable(e) && (
+                          <button type="button" className="btn-s" disabled={busy}
+                            onClick={() => { setNote(null); setConfirming({ id: e.id, kind: 'cleanup-retry' }); }}>
+                            {t('ng.retryCleanup')}
+                          </button>
+                        )}
+                      </>
                     )}
                   </td>
                 </tr>
