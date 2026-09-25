@@ -228,8 +228,8 @@ fn project_state() -> Value {
             "content": {"name": "实际项目名称"}
         },
         {
-            "type": "com.hagency.project.binding.v1",
-            "state_key": "",
+            "type": "com.hagency.admin.binding.v1",
+            "state_key": fleet_id(),
             "content": {
                 "v": 1,
                 "fleetId": fleet_id(),
@@ -749,7 +749,7 @@ async fn native_provisioning_inline_account_authority_changed() {
         fake.next().await.json(200, project_state());
         let mut changed = project_state();
         for event in changed.as_array_mut().unwrap() {
-            if event["type"] == "com.hagency.project.binding.v1" {
+            if event["type"] == "com.hagency.admin.binding.v1" {
                 event["content"]["ownerMxid"] = json!(representative());
             }
         }
@@ -964,7 +964,7 @@ async fn native_provisioning_ingress_refuses_unverified_before_admit() {
     let before = rows(&f, "engagements");
     let mut forged = project_state();
     for event in forged.as_array_mut().unwrap() {
-        if event["type"] == "com.hagency.project.binding.v1" {
+        if event["type"] == "com.hagency.admin.binding.v1" {
             event["content"]["fleetId"] = json!(format!("hf_{}", "b".repeat(32)));
         }
     }

@@ -49,7 +49,9 @@ export default function NativeResources() {
   return <>
     <PageHead title={t('rs.title')} sub={t('nr.sub')}><NativeStatusStrip /></PageHead>
     <p className="muted">{t('nr.localOnly')}</p>
-    {['ready', 'stale'].includes(phase) && <div className="btn-row"><a className="btn primary" href={`/console/resources/new/${selected ? `?source_resource_id=${selected}` : ''}`}>{t('nc.create')}</a></div>}
+    {/* Item 3: the list link names the destination; the wizard's own
+     * submit keeps "Create another configuration" as the action. */}
+    {['ready', 'stale'].includes(phase) && <div className="btn-row"><a className="btn primary" href={`/console/resources/new/${selected ? `?source_resource_id=${selected}` : ''}`}>{t('nr.createLink')}</a></div>}
     {phase === 'loading' && <p role="status">{t('nr.loading')}</p>}
     <NativeAccessNotice />
     {action && <section className="notice" data-resource-action={action.kind} role={action.kind === 'pending' || action.kind === 'saved' ? 'status' : 'alert'}>
@@ -65,7 +67,7 @@ export default function NativeResources() {
           {resources.length || selected ? <select id="native-resource" value={selected ?? ''} onChange={(event) => data.choose(event.target.value)}>
             {selected && !resources.some((r) => r.id === selected) && <option value={selected}>{t('nr.outsidePage')}</option>}
             {resources.map((r) => <option key={r.id} value={r.id}>{label(r)}</option>)}
-          </select> : <p>{t('nr.empty')}</p>}
+          </select> : <p>{t('nr.empty')} <a href="/console/accounts/">{t('nr.emptyAccounts')}</a></p>}
         </div>
         <div className="btn-row"><button className="btn" onClick={data.refresh}>{t('nu.refresh')}</button><button className="btn" onClick={data.firstPage}>{t('nu.firstPage')}</button><button className="btn" disabled={!data.next_after} onClick={data.nextPage}>{t('nu.nextPage')}</button><button className="btn" onClick={data.logout}>{t('nu.logout')}</button></div>
         {!data.permissions?.publishResource && <div className="notice"><p>{t(data.permissions?.configureResource ? 'nc.publicationSeparate' : 'nr.readOnly')}</p><code>hagency console-access --state-dir &lt;state&gt; --listen &lt;address&gt; --manage-resource-publication</code></div>}

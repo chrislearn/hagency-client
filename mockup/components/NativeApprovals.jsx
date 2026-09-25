@@ -13,6 +13,9 @@
  * and need their own reviewed decision; buttons that would 404 lie.
  */
 import { useEffect, useState } from 'react';
+import PageHead from '@/components/PageHead';
+import NativeStatusStrip from '@/components/NativeStatusStrip';
+import { NativeAccessNotice } from '@/components/NativeUsage';
 import { useT } from '@/components/Prefs';
 import { fetchApprovals } from '@/lib/native-api';
 
@@ -33,8 +36,10 @@ export default function NativeApprovals() {
       setError(null);
       setPhase('ready');
     } catch (err) {
+      /* Item 6: an access need is an access notice, not a generic "could
+       * not be read" — every other failure stays an error with a retry. */
       setError(err.message);
-      setPhase('error');
+      setPhase(err.message === 'console_access_required' ? 'access' : 'error');
     }
   };
 
@@ -54,6 +59,10 @@ export default function NativeApprovals() {
       </section>
     );
   }
+  if (phase === 'access') return <>
+    <PageHead title={t('nav.approvals')} sub={t('ap.readonly')}><NativeStatusStrip /></PageHead>
+    <NativeAccessNotice />
+  </>;
 
   const visible = rows.filter((r) => stateFilter === 'all' || r.state === stateFilter);
   const counts = Object.fromEntries(
@@ -65,7 +74,9 @@ export default function NativeApprovals() {
     <div data-native-state={phase} aria-busy={refreshing === true}>
       {refreshing && <p role="status">{t('ap.refreshing')}</p>}
 
-      <h2 style={{ marginTop: 0 }}>{t('nav.approvals')}<span className="note"> {t('ap.readonly')}</span></h2>
+      {/* Items 2 and 1: one PageHead per page — h1, tab title and the
+       * status strip — replacing the bare duplicate h2. */}
+      <PageHead title={t('nav.approvals')} sub={t('ap.readonly')}><NativeStatusStrip /></PageHead>
 
       <div className="cards">
         {Object.entries(counts).map(([s, n]) => (
@@ -84,11 +95,18 @@ export default function NativeApprovals() {
             {Object.keys(counts).map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </label>
+        {/* Item 16: a Refresh in the ready state — approvals change as
+         * decisions land; the page had no way to see new ones. */}
+        <button className="btn" onClick={refresh} disabled={refreshing}>{t('common.refresh')}</button>
         <span className="spacer" style={{ flex: 1 }} />
         <span className="sub dim" style={{ fontSize: 12 }}>{t('common.shown', { a: visible.length, b: rows.length })}</span>
       </div>
 
-      {visible.length === 0 ? (
+      {/* Item 7: the list starts empty — "no approvals" is a ready-state
+       * fact, not a first paint. */}
+      {phase === 'loading' ? (
+        <p role="status">{t('ap.loading')}</p>
+      ) : visible.length === 0 ? (
         <div className="empty">
           <div className="big">{t('ap.none')}</div>
           <p className="small">{t('ap.noneNote')}</p>

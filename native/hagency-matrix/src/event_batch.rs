@@ -576,27 +576,51 @@ impl Batch {
                 }
             }
         }
+        // TS:bridge-matrix.js:3133-3174 — `m.mentions` is only the FIRST place a
+        // mention may live. A client that sets none still addresses a member with
+        // an HTML pill in `formatted_body`, or in plain text with `@name`; both
+        // name a LOCALPART and the room supplies the server. ADR-054 narrowed this
+        // to `m.mentions` alone, so a client that omits it could not wake an agent
+        // at all; TS never narrowed it.
+        if mentions.is_empty() {
+            mentions = address_mentions(content, &target.server_name);
+        }
         let attachment = if matches!(kind, "m.file" | "m.image") {
-            let Proof::Verified {
-                device, session, ..
-            } = &proof
-            else {
-                return Err(CryptoIneligible);
-            };
-            if !target.encrypted {
-                return Err(Unsupported);
+            match (&proof, target.encrypted) {
+                (Proof::Verified { device, session, .. }, true) => Some(
+                    crate::attachments::Manifest::new(
+                        &self.sdk_identity,
+                        target,
+                        original,
+                        &value["content"],
+                        device,
+                        session,
+                    )
+                    .map_err(|_| Malformed)?,
+                ),
+                // TS parity (bridge-matrix.js:6799-6831): a plaintext room's
+                // m.file/m.image is archived like any other message — the room's
+                // lack of encryption is not a refusal. The TS receiver accepts
+                // `content.file?.url || content.url` (lib/matrix-file.js:38);
+                // the manifest carries content.url with no crypto device/session.
+                (Proof::Plain, false) => Some(
+                    crate::attachments::Manifest::new(
+                        &self.sdk_identity,
+                        target,
+                        original,
+                        &value["content"],
+                        "",
+                        "",
+                    )
+                    .map_err(|_| Malformed)?,
+                ),
+                // An encrypted event against a target recorded plaintext is a
+                // state desync, not TS behaviour; keep the original refusal.
+                (Proof::Verified { .. }, false) => return Err(Unsupported),
+                // Unreachable in practice: a plain proof against an encrypted
+                // target is already refused as PlaintextEncrypted above.
+                (Proof::Plain, true) => return Err(CryptoIneligible),
             }
-            Some(
-                crate::attachments::Manifest::new(
-                    &self.sdk_identity,
-                    target,
-                    original,
-                    &value["content"],
-                    device,
-                    session,
-                )
-                .map_err(|_| Malformed)?,
-            )
         } else {
             None
         };
@@ -812,5 +836,154 @@ impl Receipt {
     }
     pub(crate) fn lacks_filtered_history(&self) -> bool {
         self.filtered > 0 && self.dispositions.is_none()
+    }
+}
+
+/// TS:bridge-matrix.js:3150-3169, steps 2 and 3 of `parseMentions`: when a client
+/// set no `m.mentions`, the address is carried by an HTML pill in
+/// `formatted_body` or by plain `@name` text in the body. Both name a LOCALPART
+/// and the room supplies the server, so the localpart plus the route's
+/// `server_name` is exactly the MXID an `m.mentions` list would have carried.
+/// TS never fell back past a non-empty pill list, so neither does this.
+fn address_mentions(
+    content: &serde_json::Map<String, Value>,
+    server: &str,
+) -> BTreeSet<String> {
+    let mut found = BTreeSet::new();
+    if let Some(formatted) = content.get("formatted_body").and_then(Value::as_str) {
+        for localpart in pill_localparts(formatted) {
+            if let Some(mxid) = mention_mxid(&localpart, server) {
+                found.insert(mxid);
+            }
+            if found.len() == MENTION_CAP {
+                return found;
+            }
+        }
+    }
+    if !found.is_empty() {
+        return found;
+    }
+    if let Some(body) = content.get("body").and_then(Value::as_str) {
+        for localpart in plain_localparts(body) {
+            if let Some(mxid) = mention_mxid(&localpart, server) {
+                found.insert(mxid);
+            }
+            if found.len() == MENTION_CAP {
+                return found;
+            }
+        }
+    }
+    found
+}
+
+/// The same 64-entry ceiling `m.mentions.user_ids` is held to.
+const MENTION_CAP: usize = 64;
+/// TS's `[a-z0-9_-]` character class, matched case-insensitively.
+fn mention_localpart_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_' || c == '-'
+}
+/// A mention names a localpart; the room's own server completes the MXID. An
+/// entry that does not form a valid scoped user is dropped rather than failing
+/// the whole event, exactly as `agentNameFromUserId` returns null for one.
+fn mention_mxid(localpart: &str, server: &str) -> Option<String> {
+    if localpart.is_empty() || localpart.len() > 128 {
+        return None;
+    }
+    let mxid = format!("@{localpart}:{server}");
+    hagency_core::replies::matrix_user(&mxid, server).ok()?;
+    Some(mxid)
+}
+/// Localparts named by HTML pill hrefs, in order: TS's
+/// `matrix\.to/#/@(?:prefix)?([a-z0-9_-]+):` — the trailing colon is required, so
+/// a bare `matrix.to/#/@name` is not a pill.
+fn pill_localparts(formatted: &str) -> Vec<String> {
+    const NEEDLE: &str = "matrix.to/#/@";
+    let mut out = Vec::new();
+    let mut rest = formatted;
+    while let Some(at) = rest.find(NEEDLE) {
+        let after = &rest[at + NEEDLE.len()..];
+        let end = after
+            .find(|c: char| !mention_localpart_char(c))
+            .unwrap_or(after.len());
+        let localpart = &after[..end];
+        if !localpart.is_empty() && after[end..].starts_with(':') {
+            out.push(localpart.to_owned());
+        }
+        rest = &after[end.max(1)..];
+    }
+    out
+}
+/// Localparts named by plain `@name` text, in order: TS's global
+/// `@(?:prefix)?([a-z0-9_-]+)`.
+fn plain_localparts(body: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut chars = body.char_indices().peekable();
+    while let Some((_, c)) = chars.next() {
+        if c != '@' {
+            continue;
+        }
+        let mut localpart = String::new();
+        while let Some(&(_, next)) = chars.peek() {
+            if mention_localpart_char(next) {
+                localpart.push(next);
+                chars.next();
+            } else {
+                break;
+            }
+        }
+        if !localpart.is_empty() {
+            out.push(localpart);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod mention_fallback_tests {
+    use super::*;
+
+    fn content(value: serde_json::Value) -> serde_json::Map<String, Value> {
+        value.as_object().unwrap().clone()
+    }
+    fn mentioned(value: serde_json::Value, server: &str) -> Vec<String> {
+        address_mentions(&content(value), server).into_iter().collect()
+    }
+
+    /// TS:bridge-matrix.js:3133-3174. `m.mentions` is empty here, so the address
+    /// has to be recovered from the pill or from plain `@name` text; both name a
+    /// LOCALPART and the room completes the MXID. This is the TS-visible outcome
+    /// (which member an empty `m.mentions` still addresses), not an invariant.
+    #[test]
+    fn native_matrix_mention_fallback_reads_pills_and_plain_text() {
+        let server = "example.test";
+        assert_eq!(
+            mentioned(
+                serde_json::json!({"formatted_body":
+                    "<a href=\"https://matrix.to/#/@worker:example.test\">worker</a> please"}),
+                server
+            ),
+            vec!["@worker:example.test".to_string()],
+            "an HTML pill addresses the localpart"
+        );
+        assert_eq!(
+            mentioned(serde_json::json!({"body": "@worker please answer"}), server),
+            vec!["@worker:example.test".to_string()],
+            "plain @name text addresses the localpart"
+        );
+        assert!(
+            mentioned(serde_json::json!({"body": "nobody is addressed"}), server).is_empty(),
+            "an unaddressed message wakes nobody"
+        );
+        // A pill without the trailing server (`matrix.to/#/@worker`) is not a
+        // pill; TS then reads the plain-text body, which does name the agent.
+        assert_eq!(
+            mentioned(
+                serde_json::json!({"formatted_body":
+                    "<a href=\"https://matrix.to/#/@worker\">worker</a>", "body": "@worker"}),
+                server
+            ),
+            vec!["@worker:example.test".to_string()],
+            "a non-pill href falls through to the plain-text pass"
+        );
     }
 }

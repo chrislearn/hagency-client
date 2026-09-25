@@ -2,6 +2,8 @@
 
 import { useData } from '@/components/Data';
 import NativeProjectSides from '@/components/NativeProjectSides';
+import SideRegistrationControl from './registration-control';
+import RegisterSideControl from './register-side';
 
 /*
  * The native project-sides route (ADR-132). Deliberately a separate path
@@ -9,8 +11,25 @@ import NativeProjectSides from '@/components/NativeProjectSides';
  * and contributions, which a native console has no source for, so folding
  * a native branch into it would hide most of the page. This route exists
  * only in the native build (NATIVE_MODE), so there is no retained arm.
+ *
+ * Task #13: the read-only observation stays read-only; the registration
+ * issuer below it is the one action the TS dashboard exposes for a side,
+ * carried by its own component in this directory.
+ *
+ * Task #45: the register-a-side form (parity row #33) joins them — the
+ * server POST existed with no control reaching it.
  */
 export default function ProjectSidesPage() {
   const data = useData();
-  return data.nativeConsole ? <NativeProjectSides /> : null;
+  return (
+    <>
+      {data.nativeConsole && (
+        <RegisterSideControl />
+      )}
+      {data.nativeConsole && (
+        <SideRegistrationControl sides={data.sides ?? []} />
+      )}
+      {data.nativeConsole ? <NativeProjectSides /> : null}
+    </>
+  );
 }

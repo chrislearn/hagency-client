@@ -59,7 +59,7 @@ fn state(account: &crate::ProvisionedTokenAccount, project: bool) -> Value {
             .unwrap()
             .push(power_levels(json!({OWNER:100})));
         result.as_array_mut().unwrap().push(json!({
-            "type":"com.hagency.project.binding.v1", "state_key":"",
+            "type":"com.hagency.admin.binding.v1", "state_key":fleet_id(),
             "content":{"v":1,"purpose":"project","authVersion":1,"fleetId":fleet_id(),"projectId":"project_provision","ownerMxid":OWNER}
         }));
     }

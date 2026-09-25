@@ -118,6 +118,41 @@ async fn finish(c: Collector, f: common::Fixture, fake: common::Fake) {
 }
 
 #[tokio::test]
+async fn native_matrix_attachment_plaintext_room_admitted() {
+    // TS parity (bridge-matrix.js:6799-6831): a plaintext room's m.image /
+    // m.file is archived like any other message — the room's lack of
+    // encryption is not a refusal. Wire shape follows lib/matrix-file.js:38:
+    // plaintext carries content.url, not content.file.
+    let f = common::Fixture::new();
+    let mut fake = common::Fake::start(true).await;
+    let c = Collector::new(
+        config(&f, &fake.endpoint, f.identity.clone(), 1, false),
+        f.store.clone(),
+    )
+    .unwrap();
+    prime(&c, &f, &mut fake, false).await;
+    let value = json!({"event_id":"$plain_image","sender":"@owner:example.test","type":"m.room.message","origin_server_ts":now(),
+        "content":{"msgtype":"m.image","body":"photo.png","filename":"photo.png",
+            "url":"mxc://example.test/photo","info":{"mimetype":"image/png","size":12}}});
+    let result = run(&c, &mut fake, sync("plain", vec![value]), false)
+        .await
+        .unwrap();
+    assert_eq!((result.admitted, result.rejected), (1, 0));
+    // The message is visible to the agent's session like any timeline event.
+    let inbox = f.store.inbox("root".into(), 0, 100, None).await.unwrap();
+    assert_eq!(inbox.len(), 1);
+    // TS parity: the plaintext attachment is retained in manifest custody too
+    // (no crypto device/session), and its metadata reaches the ticket store.
+    assert_eq!(rows(&f, "matrix_attachments"), 1);
+    let retained = manifests(&c).await;
+    assert_eq!(retained.len(), 1);
+    assert!(retained[0].content_digest.len() == 64);
+    assert_eq!(status(&c, &mut fake).await.stage, "idle");
+    fake.quiesced(fake.requests(), &common::limits()).await;
+    finish(c, f, fake).await;
+}
+
+#[tokio::test]
 async fn native_matrix_attachment_verified_metadata() {
     for direct in [true, false] {
         let (f, mut fake, c) = ready(direct).await;
@@ -193,8 +228,11 @@ async fn native_matrix_attachment_privacy_refusals() {
     let value = packet(&c, values, false, "unverified_file").await;
     assert_eq!(run(&c, &mut fake, value, true).await.unwrap().rejected, 1);
     let mut invalid = vec![];
+    // "plaintext_url" left this list: TS parity (lib/matrix-file.js:38,
+    // `content.file?.url || content.url`) — when an encrypted event also
+    // carries a top-level content.url the descriptor wins and the stray url is
+    // ignored, so it is no longer a refusal. Asserted positively below.
     for (i, mode) in [
-        "plaintext_url",
         "descriptor",
         "filename",
         "path",
@@ -207,7 +245,6 @@ async fn native_matrix_attachment_privacy_refusals() {
     {
         let mut value = file(&format!("bad_{i}"), false, false);
         match *mode {
-            "plaintext_url" => value["content"]["url"] = json!("mxc://evil/plain"),
             "descriptor" => value["content"]["file"]["key"]["alg"] = json!("none"),
             "filename" => value["content"]["filename"] = json!("../private"),
             "path" => value["content"]["file"]["url"] = json!("mxc://evil/%2e%2e"),
@@ -218,7 +255,7 @@ async fn native_matrix_attachment_privacy_refusals() {
         invalid.push(value);
     }
     let value = packet(&c, invalid, true, "malformed_files").await;
-    assert_eq!(run(&c, &mut fake, value, true).await.unwrap().rejected, 7);
+    assert_eq!(run(&c, &mut fake, value, true).await.unwrap().rejected, 6);
     let mut plain = file("plain", false, false);
     plain["sender"] = json!("@owner:example.test");
     plain["type"] = json!("m.room.message");
@@ -353,13 +390,22 @@ async fn native_matrix_attachment_lookup_scope() {
     ));
     let first = held.pop().unwrap();
     assert_eq!(first.media_id().to_mxc(), "mxc://media.remote/fixture_file");
-    let descriptor = first.descriptor().private_event_json().to_vec();
+    let descriptor = first
+        .descriptor()
+        .expect("encrypted-room fixture carries a descriptor")
+        .private_event_json()
+        .to_vec();
     drop(first);
     let next = c
         .attachment_manifest(cap.clone(), ticket.clone(), &cancel)
         .await
         .unwrap();
-    assert_eq!(next.descriptor().private_event_json(), descriptor);
+    assert_eq!(
+        next.descriptor()
+            .expect("encrypted-room fixture carries a descriptor")
+            .private_event_json(),
+        descriptor
+    );
     drop(held);
     drop(next);
     let lock = c.inner.owner.lock().await;

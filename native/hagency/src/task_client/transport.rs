@@ -29,6 +29,14 @@ pub(super) enum Operation<'a> {
         after: &'a str,
         limit: usize,
     },
+    /// The assigned task's live approval (ADR-064 amendment, PC-C3). No
+    /// approval id is nameable: the service derives it from the capability.
+    ApprovalRead,
+    /// Consume that approval. `call_id` is the MCP mutation receipt; the
+    /// at-most-once rule itself is the store's settled-state machine.
+    ApprovalConsume {
+        call_id: &'a str,
+    },
 }
 struct Prepared {
     path: String,
@@ -144,6 +152,28 @@ pub(super) async fn request(
                     body: vec![],
                     method: "GET",
                     mutation: false,
+                },
+                16 * 1024,
+            )
+        }
+        Operation::ApprovalRead => (
+            Prepared {
+                path: "/api/native/v1/runner/approval".into(),
+                body: vec![],
+                method: "GET",
+                mutation: false,
+            },
+            16 * 1024,
+        ),
+        Operation::ApprovalConsume { call_id } => {
+            identifier(call_id, 512).map_err(|_| Error::Invalid)?;
+            (
+                Prepared {
+                    path: "/api/native/v1/runner/approval/consume".into(),
+                    body: serde_json::to_vec(&json!({"call_id":call_id}))
+                        .map_err(|_| Error::Invalid)?,
+                    method: "POST",
+                    mutation: true,
                 },
                 16 * 1024,
             )
