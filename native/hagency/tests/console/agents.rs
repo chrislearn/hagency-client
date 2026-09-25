@@ -2,12 +2,13 @@ use super::*;
 use hagency_core::tasks::SessionBinding;
 use hagency_store::resource_publication_revision;
 
-/// The agent roster observation (ADR-126): the read is a bounded
-/// projection of the engagement rows — every item carries EXACTLY the
-/// seven declared keys, no nested object, no private field — and the
-/// null-not-zero rule is pinned on the seeded rows with no attempt
-/// (`AlertWorker`, `PageWorker` are `pending` with `last_activity_ms:
-/// null`, while `UsageWorker` is `active` with the attempt clock).
+/// The agent roster observation (ADR-126, widened by board #22): the read
+/// is one row per AGENT — the TS roster's shape (`backend-v2.js:11696`) —
+/// every item carries EXACTLY the nine declared keys, no nested object, no
+/// private field — and the null-not-zero rule is pinned on the seeded
+/// agents with no attempt (`AlertWorker`, `PageWorker` report null
+/// `last_seen_ms`/`last_activity_ms`, while `UsageWorker` is online with
+/// the attempt clock: its live `started` dispatch is REAL worker state).
 #[tokio::test]
 async fn native_console_agent_roster_observation() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
@@ -49,18 +50,17 @@ async fn native_console_agent_roster_observation() {
         names,
         [
             "consumed",
-            "last_seen",
-            "online",
             "tmux",
             "pane",
             "credential_home",
             "workspace_path",
             "seat",
         ],
-        "the server names every column it has no source for"
+        "the server names every column it has no source for — online and \
+         last_seen are sourced now (board #22)"
     );
     let agents = value["agents"].as_array().unwrap();
-    assert_eq!(agents.len(), 3, "one row per seeded engagement");
+    assert_eq!(agents.len(), 3, "one row per agent the service knows");
     let keys = [
         "name",
         "framework",
@@ -68,6 +68,8 @@ async fn native_console_agent_roster_observation() {
         "state",
         "engagement_id",
         "requested_tokens",
+        "online",
+        "last_seen_ms",
         "last_activity_ms",
     ];
     let mut by_name: Vec<(String, &Value)> = agents
@@ -79,7 +81,7 @@ async fn native_console_agent_roster_observation() {
     assert_eq!(names, ["AlertWorker", "PageWorker", "UsageWorker"]);
     for (_, agent) in &by_name {
         let object = agent.as_object().unwrap();
-        assert_eq!(object.len(), keys.len(), "exactly seven keys");
+        assert_eq!(object.len(), keys.len(), "exactly nine keys");
         for key in keys {
             assert!(object.contains_key(key), "the wire item carries {key}");
             assert!(
@@ -103,6 +105,16 @@ async fn native_console_agent_roster_observation() {
         usage["last_activity_ms"], 1002,
         "the newest attempt clock — last dispatch activity, not last seen"
     );
+    // Real worker state: UsageWorker's `started` dispatch is live, so the
+    // agent is online and its newest attempt clock is its last seen.
+    assert_eq!(
+        usage["online"], true,
+        "a live dispatch in the agent's session is real worker state"
+    );
+    assert_eq!(
+        usage["last_seen_ms"], 1002,
+        "last seen is the agent's newest attempt clock"
+    );
     // The null-not-zero rule: engagements with no attempt row report
     // unknown, never an invented zero clock. AlertWorker was approved but
     // its effect was never observed (reserved); PageWorker is admit-only
@@ -117,8 +129,118 @@ async fn native_console_agent_roster_observation() {
             agent["last_activity_ms"].is_null(),
             "{name} carries null, not zero"
         );
+        assert_eq!(agent["online"], false, "{name} has no live dispatch");
+        assert!(
+            agent["last_seen_ms"].is_null(),
+            "{name} never attempted — null, not zero"
+        );
     }
     assert_private(&value);
+    f.close().await;
+}
+
+/// The agent detail route (board #22, TS `backend-v2.js:12155`
+/// `GET /api/agents/:name`): one agent the service knows — identity,
+/// resource, rooms, current dispatch, recent tasks — with the same
+/// read-class gating as the roster. An unknown agent is 404, an invalid
+/// name shape is 400 before any store work, and the seeded UsageWorker's
+/// live dispatch is its real online state.
+#[tokio::test]
+async fn native_console_agent_detail_observation() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let anonymous = TestClient::get(format!("{BASE}/console/api/agents/UsageWorker"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .send(&service)
+        .await;
+    assert_eq!(anonymous.status_code, Some(StatusCode::UNAUTHORIZED));
+    let cookie = session(&service).await;
+    // The detail takes no selection: query parameters are refused.
+    let response = get("/console/api/agents/UsageWorker?limit=1", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST));
+    // An agent the service never engaged is the TS route's 404.
+    let mut response = get("/console/api/agents/Nobody", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::NOT_FOUND));
+    assert_eq!(
+        response.take_json::<Value>().await.unwrap()["code"],
+        "agent_not_found"
+    );
+    let mut response = get("/console/api/agents/UsageWorker", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+    let value = response.take_json::<Value>().await.unwrap();
+    let keys = [
+        "name", "framework", "role", "state", "engagement_id", "requested_tokens",
+        "online", "last_seen_ms", "resource_id", "project_id", "engagements",
+        "rooms", "dispatch", "tasks",
+    ];
+    let object = value.as_object().unwrap();
+    assert_eq!(object.len(), keys.len(), "exactly the declared detail keys");
+    for key in keys {
+        assert!(object.contains_key(key), "the detail carries {key}");
+    }
+    assert_eq!(value["name"], "UsageWorker");
+    assert_eq!(value["framework"], "codex");
+    assert_eq!(value["role"], "coding");
+    assert_eq!(value["state"], "active");
+    assert_eq!(value["requested_tokens"], 100);
+    assert_eq!(value["engagements"], 1, "one engagement names the agent");
+    assert!(value["resource_id"].as_str().unwrap().len() <= 128);
+    assert!(value["project_id"].as_str().unwrap().len() <= 128);
+    // Real worker state: the seeded live `started` dispatch.
+    assert_eq!(value["online"], true);
+    assert_eq!(value["last_seen_ms"], 1002);
+    // Rooms: the one seeded session binds the project room and carries the
+    // live dispatch state.
+    let rooms = value["rooms"].as_array().unwrap();
+    assert_eq!(rooms.len(), 1);
+    assert_eq!(rooms[0]["session_id"], "private_session");
+    assert_eq!(rooms[0]["room_id"], "!project:example.test");
+    assert_eq!(rooms[0]["dispatch_state"], "started");
+    assert_eq!(rooms[0]["dispatch_id"], "private_dispatch");
+    // Current dispatch: the same live dispatch, agent-wide.
+    assert_eq!(value["dispatch"]["dispatch_state"], "started");
+    assert_eq!(value["dispatch"]["room_id"], "!project:example.test");
+    // Recent tasks: the one seeded canonical task, newest first. The
+    // fixture claimed and STARTED its dispatch, so the task's TS-visible
+    // state is in_progress — the state a started dispatch reports
+    // (backend-v2.js:13332 serves the store's task verbatim).
+    let tasks = value["tasks"].as_array().unwrap();
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks[0]["id"], "private_task");
+    assert_eq!(tasks[0]["title"], "Usage");
+    assert_eq!(tasks[0]["status"], "in_progress");
+    f.close().await;
+}
+
+/// The detail serves the TS-visible state even when the agent's work
+/// ended: an agent whose engagements are all retired still appears (the
+/// TS roster never dropped a record), with no live dispatch.
+#[tokio::test]
+async fn native_console_agent_detail_covers_an_ended_agent() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let cookie = session(&service).await;
+    // PageWorker is admit-only (pending): known to the service, never
+    // staffed a session.
+    let mut response = get("/console/api/agents/PageWorker", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["name"], "PageWorker");
+    assert_eq!(value["state"], "pending");
+    assert_eq!(value["online"], false, "no session means no live dispatch");
+    assert!(value["last_seen_ms"].is_null(), "never attempted: null, not zero");
+    assert!(value["dispatch"].is_null(), "no live dispatch");
+    assert!(value["rooms"].as_array().unwrap().is_empty());
+    assert!(value["tasks"].as_array().unwrap().is_empty());
     f.close().await;
 }
 
