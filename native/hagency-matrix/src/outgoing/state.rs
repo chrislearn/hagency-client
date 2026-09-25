@@ -144,6 +144,11 @@ impl Attempt {
                 != match self.kind {
                     Kind::Notice => "m.notice",
                     Kind::Final => "m.text",
+                    // TS parity: msgtype follows the attachment kind
+                    // (bridge-matrix.js:11026), so a File attempt may be
+                    // m.image. Plaintext rooms receive unencrypted files
+                    // (lib/matrix-file.js:30-33).
+                    Kind::File if self.content["msgtype"] == "m.image" => "m.image",
                     // A bot-command answer is a notice: the agent announcing
                     // something rather than addressing a human, exactly as the
                     // retained bridge sent it (`lib/bot-commands.js` reply).
@@ -151,7 +156,6 @@ impl Attempt {
                     Kind::File => "m.file",
                 }
             || (self.kind == Kind::File) != self.file.is_some()
-            || (self.kind == Kind::File && !self.route.encrypted)
         {
             return Err(Error::Storage);
         }

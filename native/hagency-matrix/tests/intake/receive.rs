@@ -156,6 +156,53 @@ async fn finish(f: common::Fixture, fake: common::Fake) {
 }
 
 #[tokio::test]
+async fn native_matrix_receive_plaintext_room_file() {
+    // TS parity (bridge-matrix.js:6799-6831 + lib/matrix-file.js:38): an
+    // attachment from a plaintext room reaches receive_file; its media GET
+    // returns the original bytes with no descriptor decrypt (Codec::check).
+    let f = common::Fixture::new();
+    let mut fake = common::Fake::start(true).await;
+    let mut cfg = config(&f, &fake.endpoint, f.identity.clone(), 1, false);
+    cfg.limits.request = Duration::from_secs(3);
+    cfg.limits.headers = Duration::from_secs(2);
+    let c = Collector::new(cfg, f.store.clone()).unwrap();
+    prime(&c, &f, &mut fake, false).await;
+    let value = json!({"event_id":"$plain_file","sender":"@owner:example.test","type":"m.room.message","origin_server_ts":now(),
+        "content":{"msgtype":"m.file","body":"说明.txt","filename":"说明.txt",
+            "url":"mxc://media.remote/plain_file","info":{"mimetype":"text/plain","size":300},
+            "m.mentions":{"user_ids":["@worker:example.test"]}}});
+    let result = run(&c, &mut fake, sync("plain", vec![value]), false)
+        .await
+        .unwrap();
+    assert_eq!((result.admitted, result.rejected), (1, 0));
+    fake.quiesced(fake.requests(), &c.inner.config.limits).await;
+    let cap = cap(&f, 60_000).await;
+    let cancel = CancellationToken::new();
+    let bytes: Vec<u8> = (0..300u32).map(|i| ((i * 37 + 11) % 256) as u8).collect();
+    {
+        let receive = c.receive_attachment(cap.clone(), "$plain_file".into(), &cancel);
+        tokio::pin!(receive);
+        let request = tokio::select! {
+            biased;
+            request = fake.next() => request,
+            result = &mut receive => panic!("receive completed before media GET: {:?}", result.err()),
+        };
+        assert_eq!(request.method, "GET");
+        assert_eq!(
+            request.target,
+            "/_matrix/client/v1/media/download/media.remote/plain_file"
+        );
+        assert_eq!(request.headers["authorization"], format!("Bearer {}", common::TOKEN));
+        request.raw(response(&bytes));
+        let attached = receive.await.unwrap();
+        assert_eq!(attached.bytes(), bytes);
+        assert_eq!(attached.metadata().filename, "说明.txt");
+        assert_eq!(attached.metadata().mime_type.as_deref(), Some("text/plain"));
+    }
+    close(c, f, fake).await;
+}
+
+#[tokio::test]
 async fn native_matrix_receive_verified() {
     for direct in [true, false] {
         let (f, mut fake, c) = ready(direct, vec![file("file", !direct)]).await;

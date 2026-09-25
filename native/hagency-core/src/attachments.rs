@@ -52,11 +52,11 @@ impl MatrixAttachmentObservation {
     pub fn validate(&self) -> Result<(), InvalidInput> {
         self.event.validate()?;
         self.metadata.validate()?;
-        if !self.event.encrypted || !matches!(self.event.event.kind.as_str(), "m.file" | "m.image")
-        {
-            return Err(InvalidInput(
-                "attachment requires authenticated encrypted file event",
-            ));
+        // TS parity (bridge-matrix.js:6799-6831, board #8 approval 2026-09-24):
+        // a plaintext room's file/image event is a valid attachment observation;
+        // only the event kind is fixed here. Transport custody differs per room.
+        if !matches!(self.event.event.kind.as_str(), "m.file" | "m.image") {
+            return Err(InvalidInput("attachment requires a file or image event"));
         }
         for value in [&self.sdk_identity, &self.manifest_id, &self.content_digest] {
             if value.len() != 64
