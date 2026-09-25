@@ -3251,6 +3251,31 @@ impl DomainStore {
     pub async fn project_sides(&self) -> Result<Vec<crate::ProjectSide>, Error> {
         self.call(64, |db| db.project_sides()).await
     }
+    /// `PUT /api/project-sides/:id/allocation` parity (backend-v2.js:9541):
+    /// the store owns the not-found verdict and the NULL-vs-zero
+    /// distinction; the route adds no guard of its own.
+    pub async fn set_side_allocation(
+        &self,
+        side: String,
+        allocated: Option<u64>,
+    ) -> Result<(), Error> {
+        self.call(weight(&(&side, allocated))?, move |db| {
+            db.set_side_allocation(&side, allocated)
+        })
+        .await
+    }
+    /// `GET /api/project-sides/:id/budget` parity (backend-v2.js:9567): one
+    /// writer job returning allocation, commitment and the breakdown
+    /// together, so the page never renders figures from two jobs.
+    pub async fn side_budget(&self, side: String) -> Result<crate::SideBudget, Error> {
+        self.call(weight(&side)?, move |db| db.side_budget(&side))
+            .await
+    }
+    /// The retained `GET /api/usage` totals block: the fleet figure and its
+    /// denominator in one read (backend-v2.js:15700-15720).
+    pub async fn usage_totals(&self) -> Result<crate::UsageTotals, Error> {
+        self.call(64, |db| db.usage_totals()).await
+    }
     pub async fn resource_budget(&self, id: String) -> Result<Budget, Error> {
         self.call(weight(&id)?, move |db| db.resource_budget(&id))
             .await

@@ -133,6 +133,27 @@ export async function fetchNative(selected, after = '') {
   const report = chosen === null ? null : validateReport(await request(`/api/engagements/${chosen}/usage`), chosen);
   return { ...list, selected: chosen, report };
 }
+
+/* The usage page's fleet panels: the totals block plus every side's
+ * allocation/budget — the acceptance is "operator sets a side allocation
+ * and sees spend vs allocation". Budget reads are one per side, capped at
+ * 16 so a fleet registration burst cannot fan the page into an unbounded
+ * request storm; sides beyond the cap render from the list without budget
+ * figures. The engagement evidence itself stays on Data's own load. */
+export async function fetchFleetUsage() {
+  const [totals, sides] = await Promise.all([fetchUsageTotals(), fetchProjectSides()]);
+  const sideBudgets = {};
+  for (const side of sides.sides.slice(0, 16)) sideBudgets[side.id] = await fetchSideBudget(side.id);
+  return { totals, sides: sides.sides, sideBudgets };
+}
+
+/* The usage page's load: the engagement evidence fetchNative returns,
+ * beside the fleet panels. One combined reply so the page renders from one
+ * snapshot, the way every other view does. */
+export async function fetchUsageView(selected, after = '') {
+  const [base, fleet] = await Promise.all([fetchNative(selected, after), fetchFleetUsage()]);
+  return { ...base, ...fleet };
+}
 /* The console's open ceiling alerts. Exactly fifteen keys per alert — the
  * server's ConsoleAlert set — because the exact-key contract is how a stale
  * server or client fails loudly instead of rendering half a page. The
@@ -294,6 +315,7 @@ export async function fetchProjectSides() {
   return validateProjectSides(await request('/api/project-sides'));
 }
 export function projectSidesView(location) { return /^\/console\/project-sides\/?$/.test(location.pathname); }
+export function usageView(location) { return /^\/console\/usage\/?$/.test(location.pathname); }
 export async function transitionAlert(key, to, note) {
   /* One display-state transition through the console session. The reply is
    * the SAME envelope the list read serves (one row), so the same validator
@@ -338,6 +360,69 @@ export async function fetchApproval(key) {
   return validateApproval(await request(`/api/approvals/${encodeURIComponent(key)}`));
 }
 export function approvalsView(location) { return /^\/console\/approvals\/?$/.test(location.pathname); }
+
+/* The fleet usage totals (backend-v2.js:15700-15720): the numerator never
+ * travels without its denominator, and null means "not known", never zero.
+ * busySec and tasks are named in the server-owned unavailable list — the
+ * retained block sums them from the agents' busy clocks and the task
+ * store, which native has no source for; unknown is never zero. */
+export function validateUsageTotals(v) {
+  if (!object(v, ['ok', 'totals', 'unavailable']) || v.ok !== true
+    || !Array.isArray(v.unavailable) || v.unavailable.length > 8 || v.unavailable.some((n) => !text(n, 64))
+    || !object(v.totals, ['agents', 'tokensDrawn', 'tokensUsed', 'tokensMeasuredFor', 'tokensPartial'])
+    || !number(v.totals.agents) || !number(v.totals.tokensMeasuredFor)
+    || !(v.totals.tokensDrawn === null || number(v.totals.tokensDrawn))
+    || !(v.totals.tokensUsed === null || number(v.totals.tokensUsed))
+    || typeof v.totals.tokensPartial !== 'boolean') throw new Error('invalid_native_response');
+  return v;
+}
+export async function fetchUsageTotals() { return validateUsageTotals(await request('/api/usage/totals')); }
+
+/* The side budget (backend-v2.js:9254-9307, 9541, 9567). A side id is a
+ * MATRIX SERVER NAME — the retained store normalizes it through
+ * SERVER_NAME_RE (lib/project-side-store.js:48) — lowercase, dots and a
+ * possible port, which the console's own id() charset refuses by design.
+ * NULL allocated is unallocated, not unlimited; remaining is null with it. */
+const serverName = (v) => typeof v === 'string' && v.length <= 255 && /^[a-z0-9][a-z0-9.\-]*(:\d{1,5})?$/.test(v);
+const commitment = (v) => object(v, ['id', 'agent', 'role', 'project', 'projectName', 'allocatedTokens', 'agentExists'])
+  && id(v.id) && text(v.agent, 128) && text(v.role, 128) && id(v.project)
+  && optionalText(v.projectName, 255) && number(v.allocatedTokens) && typeof v.agentExists === 'boolean';
+const budgetFields = (b) => object(b, ['allocated', 'committed', 'remaining', 'commitments', 'poolCommitments', 'poolCommitted', 'totalCommitted', 'orphanedCommitted'])
+  && (b.allocated === null || number(b.allocated)) && number(b.committed)
+  && (b.remaining === null || number(b.remaining))
+  && Array.isArray(b.commitments) && b.commitments.length <= 1024 && b.commitments.every(commitment)
+  && Array.isArray(b.poolCommitments) && b.poolCommitments.length <= 1024 && b.poolCommitments.every(commitment)
+  && number(b.poolCommitted) && number(b.totalCommitted) && number(b.orphanedCommitted);
+/* GET spreads the budget and the breakdown FLAT beside sideId — the
+ * retained route's own spread (backend-v2.js:9571). */
+export function validateSideBudget(v, side) {
+  if (!object(v, ['ok', 'sideId', 'allocated', 'committed', 'remaining', 'commitments', 'poolCommitments', 'poolCommitted', 'totalCommitted', 'orphanedCommitted'])
+    || v.ok !== true || v.sideId !== side || !budgetFields(v)) throw new Error('invalid_native_response');
+  return v;
+}
+/* PUT replies {ok, side, budget} — the SAME six-key side record the list
+ * read serves and the SAME budget the GET spreads flat. */
+export function validateAllocationReply(v) {
+  if (!object(v, ['ok', 'side', 'budget']) || v.ok !== true
+    || !object(v.side, SIDE_KEYS) || !text(v.side.id, 255) || !text(v.side.representative, 255)
+    || !number(v.side.generation) || typeof v.side.registered !== 'boolean' || !room(v.side.reception_room_id)
+    || !Array.isArray(v.side.projects) || v.side.projects.length <= 64
+    || !v.side.projects.every((p) => object(p, ['id', 'room_id']) && text(p.id, 128) && room(p.room_id))
+    || !budgetFields(v.budget)) throw new Error('invalid_native_response');
+  return v;
+}
+export async function fetchSideBudget(side) {
+  if (!serverName(side)) throw new Error('invalid_selection');
+  return validateSideBudget(await request(`/api/project-sides/${encodeURIComponent(side)}/budget`), side);
+}
+export async function setSideAllocation(side, allocatedTokens) {
+  if (!serverName(side) || !(allocatedTokens === null || number(allocatedTokens))) throw new Error('invalid_selection');
+  return validateAllocationReply(await request(`/api/project-sides/${encodeURIComponent(side)}/allocation`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ allocated_tokens: allocatedTokens }),
+  }));
+}
 
 const revision = (v) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
 const text = (v, max) => typeof v === 'string' && v.length <= max;

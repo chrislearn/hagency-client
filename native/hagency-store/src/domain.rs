@@ -85,6 +85,8 @@ pub(crate) mod received_files;
 mod replies;
 pub(crate) mod resource_configuration;
 pub(crate) mod resource_publication;
+mod side_budget;
+pub use side_budget::{SideBudget, SideCommitment, UsageTotals};
 mod task_intents;
 pub(crate) mod uploads;
 mod usage;
@@ -109,7 +111,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 45;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 46;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -768,9 +770,14 @@ impl DomainRepository {
                     // was 045 (already the next sequential tuple; landing
                     // order made them coincide).
                     (45, include_str!("migrations/045-alert-parity.sql")),
+                    // Integration of ../nav task/20: its board-assigned number
+                    // was 061; it lands as the next sequential tuple 46 (file
+                    // name kept).
+                    (46, include_str!("migrations/061-side-allocations.sql")),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
+                    "SELECT fleet_id,allocated_tokens,updated_at FROM side_allocations LIMIT 0",
                     "SELECT engagement_id,stopped_at,reason,operator,started_at FROM agent_lifecycle LIMIT 0",
                     "SELECT id,engagement_id,dispatch_id,fence,reason,created_at,cleared_at,cleared_by FROM agent_fences LIMIT 0",
                     "SELECT id,session_id,transaction_id,digest,body,html,route,source_event_id,state,cancel_requested,fence,claim_hash,claim_until,event_id,observation,created_at,updated_at FROM command_notices LIMIT 0",

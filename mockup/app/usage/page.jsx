@@ -11,6 +11,7 @@ import { fmtTokens, fmtSpanSec } from '@/lib/mock-data';
 import { useData, Provenance } from '@/components/Data';
 import { InfoTip, InfoTipList } from '@/components/InfoTip';
 import NativeUsage from '@/components/NativeUsage';
+import FleetUsagePanel from './fleet';
 
 /*
  * ⑤ 用量 — L4, and the layer where this design is most honest about what it
@@ -37,7 +38,7 @@ const GAP_KEYS = {
 
 export default function UsagePage() {
   const data = useData();
-  return data.nativeConsole ? <NativeUsage /> : <LegacyUsage />;
+  return data.nativeConsole ? <><NativeUsage /><FleetUsagePanel /></> : <LegacyUsage />;
 }
 
 function LegacyUsage() {

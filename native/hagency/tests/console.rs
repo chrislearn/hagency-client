@@ -31,6 +31,8 @@ mod registration;
 mod resources;
 #[path = "console/side_registration.rs"]
 mod side_registration;
+#[path = "console/side_budget.rs"]
+mod side_budget;
 #[path = "console/status_strip.rs"]
 #[cfg(feature = "native-console-browser")]
 mod status_strip;
