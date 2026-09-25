@@ -1256,6 +1256,73 @@ fn native_runner_launch_retry_notice() {
     );
 }
 
+/// Task #61 row 2. The retained product tells the thread why a queued dispatch
+/// did not start when its own task is blocked, and SKIPS it — only an operator
+/// can resume (`router/src/store.ts:1556-1563`). Review #54 found both halves
+/// missing: Rust claimed the dispatch and even started it, silently.
+#[test]
+fn native_blocked_task_dispatch_is_skipped_and_explained() {
+    let mut f = Fixture::new(false);
+    let (_, seq, task) = setup_task(&mut f);
+    f.activate(1013);
+    let cap = f.start("first", &task, &[seq], 1015);
+    // Block while the capability is live, then settle the first dispatch.
+    f.db.mutate_task(
+        &cap,
+        &task.task_id,
+        "hold",
+        &TaskMutation::Transition {
+            status: TaskState::Blocked,
+            waiting_reason: Some("awaiting review".into()),
+            waiting_until: Some("2026-09-25T09:00:00Z".into()),
+        },
+        1017,
+    )
+    .unwrap();
+    f.db.complete_dispatch(&cap, &json!({"text":"first done"}), 1018)
+        .unwrap();
+    assert_eq!(
+        f.db.canonical_task(&task.task_id).unwrap().status,
+        TaskState::Blocked
+    );
+    // A follow-up arrives and is queued for the still-blocked task.
+    let event = f.event(
+        &task.session_id,
+        "next",
+        Some("$root"),
+        &["@a:example.test"],
+        1019,
+    );
+    let next = f.db.admit_matrix_event(&event, 1020).unwrap();
+    let same = f
+        .db
+        .create_verified_task_intent(&f.intent(&task.session_id, "continue", next.sequence), 1021)
+        .unwrap();
+    assert_eq!(same.task_id, task.task_id);
+    f.db.enqueue_inbox_dispatch(&dispatch("second", &task), &[next.sequence])
+        .unwrap();
+    // The next host claim runs nothing: only an operator can resume the task.
+    assert!(
+        f.db.claim_dispatch("next_runner", 1030, 60_000, 120_000, 8)
+            .unwrap()
+            .is_none()
+    );
+    // ...and the thread is told why, in the retained product's own words.
+    let (kind, body): (String, String) = f
+        .sql()
+        .query_row(
+            "SELECT json_extract(config,'$.kind'),json_extract(config,'$.body') FROM task_notices WHERE json_extract(config,'$.kind')='task_blocked'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(kind, "task_blocked");
+    assert_eq!(
+        body,
+        "Waiting: this task is blocked and must be explicitly resumed by an operator before another runner can start."
+    );
+}
+
 /// The retained product posts the new status into the task thread on every
 /// non-replayed transition (`router/src/store.ts` `taskOperation`).
 #[test]
