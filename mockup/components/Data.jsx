@@ -127,8 +127,19 @@ function NativeDataProvider({ children }) {
    * "access required" while the session is fine. This promise resolves once
    * admission completes, so such a page waits instead of exchanging for itself.
    */
-  const resolveReady = useRef(() => {});
-  const ready = useRef(new Promise((resolve) => { resolveReady.current = resolve; }));
+  /*
+   * Created ONCE, in the body guarded by the null check: `useRef(new Promise(
+   * ...))` would run the executor on every render, so after the first re-render
+   * `settle` would point at a fresh orphan promise while the one the pages await
+   * never settles — the page would wait forever. The pair is kept together so
+   * the resolver and the promise it belongs to can never come apart.
+   */
+  const ready = useRef(null);
+  if (ready.current === null) {
+    let settle;
+    const promise = new Promise((resolve) => { settle = resolve; });
+    ready.current = { promise, settle };
+  }
   // Pages of the triage list already walked. Kept outside state because a new
   // page is a new requestKey, and the reset that follows would drop them.
   const triageRows = useRef([]);
@@ -207,7 +218,7 @@ function NativeDataProvider({ children }) {
       setState({ ...initial });
       try {
         await exchangeAccess(window.location, window.history, logoutPending.current);
-        if (!stopped && mine === generation.current) { admitted.current = true; resolveReady.current(); await load(''); }
+        if (!stopped && mine === generation.current) { admitted.current = true; ready.current.settle(); await load(''); }
       } catch (error) { if (!stopped && mine === generation.current) setState({ ...initial, phase: 'access', error: error.message }); }
       /*
        * Settle `ready` on BOTH outcomes. A page that reads for itself must not
@@ -215,7 +226,7 @@ function NativeDataProvider({ children }) {
        * denial in its own words. Leaving the promise pending on the failure arm
        * would strand approvals/accounts in `loading` with no explanation.
        */
-      finally { resolveReady.current(); }
+      finally { ready.current.settle(); }
     };
     void enter();
     const refresh = () => { if (!stopped && inFlight.current === 0 && document.visibilityState === 'visible') void load(); };
@@ -320,7 +331,7 @@ function NativeDataProvider({ children }) {
       if (error.message === 'console_access_required') { admitted.current = false; generation.current += 1; setState({ ...initial, phase: 'access', error: error.message }); }
     } finally { mutation.current = false; }
   };
-  return <DataContext.Provider value={{ ...state, action, publish, configure, transition, logoutStatus, ready: ready.current, choose, refresh: () => load(), nextPage: () => load(state.next_after), firstPage: () => load(''), logout }}>{children}</DataContext.Provider>;
+  return <DataContext.Provider value={{ ...state, action, publish, configure, transition, logoutStatus, ready: ready.current.promise, choose, refresh: () => load(), nextPage: () => load(state.next_after), firstPage: () => load(''), logout }}>{children}</DataContext.Provider>;
 }
 
 function LegacyDataProvider({ children }) {
