@@ -6,11 +6,38 @@ pub(super) async fn accepted(
     id: &str,
     caption: Option<&str>,
 ) -> Option<(UploadOperation, FileDeliveryIdentity, Vec<u8>)> {
-    let (input, identity, ciphertext) = f.file_input(id, caption).await?;
+    accepted_named(f, id, caption, "结果.txt").await
+}
+pub(super) async fn accepted_named(
+    f: &mut Fixture,
+    id: &str,
+    caption: Option<&str>,
+    filename: &str,
+) -> Option<(UploadOperation, FileDeliveryIdentity, Vec<u8>)> {
+    let (input, identity, ciphertext) = f.file_input_named(id, caption, filename).await?;
     let mut original = f.admit(input);
     let cancel = CancellationToken::new();
     let (receipt, ()) =
         common::scripted(original.run(&cancel), post(&mut f.fake, &ciphertext)).await;
+    assert_eq!(
+        receipt.unwrap().upload,
+        hagency_core::uploads::UploadState::Accepted
+    );
+    Some((original, identity, ciphertext))
+}
+/// accepted() against a plaintext group room: the upload POST carries the
+/// original bytes (TS parity, lib/matrix-file.js:30-33).
+pub(super) async fn accepted_plaintext(
+    f: &mut Fixture,
+    id: &str,
+    caption: Option<&str>,
+    filename: &str,
+) -> Option<(UploadOperation, FileDeliveryIdentity, Vec<u8>)> {
+    let (input, identity, ciphertext) = f.file_input_named(id, caption, filename).await?;
+    let mut original = f.admit(input);
+    let cancel = CancellationToken::new();
+    let (receipt, ()) =
+        common::scripted(original.run(&cancel), post_plaintext(&mut f.fake)).await;
     assert_eq!(
         receipt.unwrap().upload,
         hagency_core::uploads::UploadState::Accepted
@@ -43,6 +70,28 @@ pub(super) async fn preflight(fake: &mut common::Fake) {
     let request = fake.next().await;
     assert!(request.target.ends_with("/state"));
     request.json(200, common::state());
+}
+/// The plaintext-room wire: preflight serves the unencrypted room state, then
+/// the event goes straight to PUT m.room.message — no keys/query, no
+/// sendToDevice share, no ciphertext anywhere (TS parity, lib/matrix-file.js:30).
+pub(super) async fn wire_plaintext(fake: &mut common::Fake) -> (common::Request, Value) {
+    loop {
+        let request = fake.next().await;
+        match (request.method.as_str(), request.target.as_str()) {
+            ("GET", "/_matrix/client/v3/account/whoami") => {
+                request.json(200, common::who());
+            }
+            ("GET", target) if target.ends_with("/state") => {
+                request.json(200, common::state_plain());
+            }
+            ("PUT", target) => {
+                assert!(target.contains("/send/m.room.message/"));
+                let content: Value = serde_json::from_slice(&request.body).unwrap();
+                return (request, content);
+            }
+            (method, target) => panic!("unexpected plaintext wire request: {method} {target}"),
+        }
+    }
 }
 pub(super) async fn wire(
     fake: &mut common::Fake,

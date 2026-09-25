@@ -104,7 +104,9 @@ async fn native_console_roster_shows_an_ingress_provisioned_agent() {
                 "engagement_id",
                 "framework",
                 "last_activity_ms",
+                "last_seen_ms",
                 "name",
+                "online",
                 "requested_tokens",
                 "role",
                 "state"

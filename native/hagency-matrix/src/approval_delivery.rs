@@ -4,7 +4,7 @@ pub(crate) mod jobs;
 mod public;
 pub(crate) mod state;
 use crate::{
-    ApprovalCollector, CancellationToken, Error,
+    ApprovalCollector, CancellationToken, Collector, Error,
     collector::Inner,
     enrollment::checkpoint,
     outgoing::state as wire,
@@ -157,6 +157,14 @@ impl ApprovalCollector {
     pub async fn send_private_approval_notice(
         &self,
         card: Arc<PrivateApprovalCard>,
+        thread_root: Option<String>,
+        // The AGENT's own authenticated transport, when the host supplies it
+        // (TS `agentSenderFor`, bridge-matrix.js:9377): the same client the
+        // driver's final replies use, reused — never the approval bot's, and
+        // never a new login. `None` (no ordinary agent collector in this
+        // host, e.g. the approval-only oracle fixture) keeps the bot's own
+        // transport rather than sending nothing.
+        agent: Option<Arc<Collector>>,
         cancel: &CancellationToken,
     ) -> Result<(), Error> {
         let permit = self.delivery_permit(false)?;
@@ -167,7 +175,7 @@ impl ApprovalCollector {
         {
             return Err(Error::Config);
         }
-        let notice = public::PublicFrozen::new(&card)?;
+        let notice = public::PublicFrozen::new(&card, thread_root)?;
         let inner = self.inner.clone();
         let engagement = card.target().authority.engagement_id.clone();
         let cancel = cancel.child_token();
@@ -181,22 +189,19 @@ impl ApprovalCollector {
                 return Err(Error::Generation);
             }
             let content = notice.content()?;
-            inner
-                .http
-                .put(
-                    &[
-                        "_matrix",
-                        "client",
-                        "v3",
-                        "rooms",
-                        &authority.project_room_id,
-                        "send",
-                        notice.msgtype(),
-                        &notice.transaction(),
-                    ],
-                    content,
-                    &cancel,
-                )
+            // The exact TS path (sendAsAgentContent, bridge-matrix.js:10823-10825):
+            // rooms/{roomId}/send/m.room.message/{txnId} — the msgtype is a
+            // content field, never the PUT event-type segment.
+            let segments = notice.segments(&authority.project_room_id);
+            let segments: Vec<&str> = segments.iter().map(String::as_str).collect();
+            // The agent speaks; the bot's credential is not used for the
+            // public room (TS resolves the sender by the room's side, :10712).
+            let http = agent
+                .as_ref()
+                .map(|agent| &agent.inner.http)
+                .unwrap_or(&inner.http);
+            http
+                .put(&segments, content, &cancel)
                 .await?
                 .success()?;
             Ok(Value::Unit)

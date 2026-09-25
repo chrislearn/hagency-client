@@ -2,6 +2,7 @@
 //! Descriptor provenance must come from an authenticated encrypted Matrix event.
 mod descriptor;
 pub use descriptor::Descriptor;
+pub mod mime;
 use hagency_files::Snapshot;
 use matrix_sdk_crypto::{AttachmentDecryptor, AttachmentEncryptor};
 use sha2::{Digest, Sha256};
@@ -105,6 +106,17 @@ impl Codec {
                 held: AtomicUsize::new(0),
             }),
         }
+    }
+    /// TS parity (lib/matrix-file.js:38, :57-63): a plaintext room's media is
+    /// received as-is; only a checked digest is added, no descriptor decrypt.
+    pub fn check(&self, bytes: Vec<u8>) -> Result<CheckedBytes, Error> {
+        let permit = self.admit(bytes.len())?;
+        let digest = Sha256::digest(&bytes).into();
+        Ok(CheckedBytes {
+            bytes,
+            digest,
+            _permit: permit,
+        })
     }
     fn admit(&self, len: usize) -> Result<Permit, Error> {
         if len > self.pool.limits.max_bytes {

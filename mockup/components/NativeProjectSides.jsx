@@ -13,6 +13,9 @@
  */
 import { useT } from '@/components/Prefs';
 import { useData } from '@/components/Data';
+import PageHead from '@/components/PageHead';
+import NativeStatusStrip from '@/components/NativeStatusStrip';
+import { NativeAccessNotice } from '@/components/NativeUsage';
 
 export default function NativeProjectSides() {
   const t = useT();
@@ -28,13 +31,21 @@ export default function NativeProjectSides() {
       </section>
     );
   }
-  if (phase === 'access') return null;
+  /* Item 6: the access notice with the CLI command, not a blank screen. */
+  if (phase === 'access') return <>
+    <PageHead title={t('np.title')} sub={t('np.readonly')}><NativeStatusStrip /></PageHead>
+    <NativeAccessNotice />
+  </>;
 
   return (
     <div data-native-state={phase} aria-busy={refreshing === true}>
       {refreshing && <p role="status">{t('nu.refreshing')}</p>}
 
-      <h2 style={{ marginTop: 0 }}>{t('np.title')}<span className="note"> {t('np.readonly')}</span></h2>
+      {/* Items 1, 2 and 7: one PageHead (h1, tab title, status strip)
+       * instead of a bare h2, and a loading state before the fetch
+       * settles — "no sides" is a ready-state fact, not a first paint. */}
+      <PageHead title={t('np.title')} sub={t('np.readonly')}><NativeStatusStrip /></PageHead>
+      <NativeAccessNotice />
 
       {/* The server's own gap list, rendered verbatim: the page never
           decides which columns are unknown. */}
@@ -42,7 +53,9 @@ export default function NativeProjectSides() {
         {t('np.unavailable', { list: unavailable.join(', ') })}
       </p>
 
-      {sides.length === 0 ? (
+      {phase === 'loading' ? (
+        <p role="status">{t('np.loading')}</p>
+      ) : sides.length === 0 ? (
         <div className="empty">
           <div className="big">{t('np.none')}</div>
         </div>

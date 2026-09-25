@@ -1,15 +1,19 @@
 //! Read-only browser facade. Native operator/runner authentication is unchanged.
 mod accounts;
+mod agent_detail;
 mod agents;
+mod stream;
 mod alerts;
 mod approvals;
 mod assets;
 mod authority;
 pub mod client;
 mod engagements;
+mod offer_book;
 mod project_sides;
 mod resource_configuration;
 mod resources;
+pub mod side_registration;
 mod usage;
 use crate::{App, refusal};
 use authority::{Authority, COOKIE, Session};
@@ -71,8 +75,11 @@ pub(crate) fn router() -> Router {
                 .push(usage::router())
                 .push(alerts::router())
                 .push(agents::router())
+                .push(stream::router())
                 .push(engagements::router())
+                .push(offer_book::router())
                 .push(project_sides::router())
+                .push(side_registration::router())
                 .push(approvals::router())
                 .push(resources::router())
                 .push(accounts::router())
