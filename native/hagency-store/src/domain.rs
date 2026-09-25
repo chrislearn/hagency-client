@@ -1297,6 +1297,24 @@ impl DomainRepository {
             tasks,
         }))
     }
+    /// The agent's ACTIVE engagement ids, newest first — the list a force
+    /// delete revokes (TS `backend-v2.js:12231-12238`: `engagementStore.list(
+    /// {state:'active'})` filtered to this agent, then revoked one by one).
+    /// An agent is a derived projection, so this is the only way to find the
+    /// commitments it holds; a commitment lives in the engagement's own state
+    /// (`pool_commitments`/`seat_commitments`), so revoking releases it.
+    /// Bounded, like the roster read.
+    pub fn agent_active_engagements(&self, name: &str) -> Result<Vec<String>, Error> {
+        let mut query = self.db.prepare(
+            "SELECT id FROM engagements \
+             WHERE json_extract(projection,'$.agentName')=?1 AND state='active' \
+             ORDER BY id LIMIT 100",
+        )?;
+        query
+            .query_map([name], |row| row.get::<_, String>(0))?
+            .map(|row| Ok(row?))
+            .collect::<Result<_, Error>>()
+    }
     pub fn resource_budget(&self, id: &str) -> Result<Budget, Error> {
         budget(&self.db, &read_resource(&self.db, id)?, None, false)
     }
