@@ -11,6 +11,7 @@ import { InfoTip } from '@/components/InfoTip';
 // the fixture and the live backend reach this page through one implementation.
 import { fmtTokens } from '@/lib/mock-data';
 import { runtimeLabel, transportLabel, isOnDemand } from '@/lib/agent-detail';
+import { capabilityCount } from '@/lib/console-workflow';
 
 /*
  * 员工名册 — the workforce roster, PRD 6.4 R12 read through ADR-013.
@@ -109,9 +110,18 @@ const NO_ROLE_WHY = {
 
 export default function WorkforcePage() {
   const t = useT();
-  const { workforce, agents, roleCapacity, provenance } = useData();
+  const { workforce, agents, roleCapacity, provenance, capability, frameworks } = useData();
   const rows = workforce();
   const roleName = (key) => roleCapacity.roles[key]?.displayName ?? key;
+  /*
+   * Task #46: the fleet's capacity and framework surface, read through the
+   * same `capability` projection the catalogue page renders — the server's
+   * judgement when GET /api/capability answered, the local derivation
+   * otherwise. A role is "fillable" when it has at least one agent or
+   * provisionable preset AND (for review) two model families.
+   */
+  const fillableRoles = (capability() ?? []).filter((c) => capabilityCount(c) > 0 && c.crossFamilyOk);
+  const frameworkCount = Array.isArray(frameworks) ? frameworks.length : 0;
 
   /*
    * Two slices whose EMPTINESS is a claim, so the page checks where they came from
@@ -169,6 +179,14 @@ export default function WorkforcePage() {
 
       <div className="cards">
         <div className="card"><div className="cap">{t('wf.cAgents')}</div><div className="val">{agents.length}</div></div>
+        <div className="card">
+          <div className="cap">{t('wf.cCapacity')}</div>
+          <div className="val">{fillableRoles.length}<small> {t('rs.ofN', { n: (roleCapacity.roles ? Object.keys(roleCapacity.roles).length : 0) })}</small></div>
+        </div>
+        <div className="card">
+          <div className="cap">{t('wf.cFrameworks')}</div>
+          <div className="val">{frameworkCount}</div>
+        </div>
         <div className="card">
           <div className="cap">{t('wf.cHireable')}</div>
           <div className={`val${hireable.length < agents.length ? ' warn' : ''}`}>

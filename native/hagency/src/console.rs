@@ -79,7 +79,12 @@ pub(crate) fn router() -> Router {
                 .push(approvals::router())
                 .push(resources::router())
                 .push(accounts::router())
-                .push(resource_configuration::router()),
+                .push(resource_configuration::router())
+                // Task #46: the operator-facing capability and framework reads
+                // (GET /api/capability, /api/frameworks, /api/frameworks/detect)
+                // are session-scoped reads, mounted under the console API so
+                // the native console reaches them without an operator bearer.
+                .push(crate::fleet_views::router()),
         )
         .push(Router::with_path("{**asset}").get(asset))
 }
