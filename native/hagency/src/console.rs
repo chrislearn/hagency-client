@@ -8,6 +8,7 @@ mod assets;
 mod authority;
 pub mod client;
 mod engagements;
+mod exec_policy;
 mod project_sides;
 mod side_budget;
 mod resource_configuration;
@@ -75,6 +76,7 @@ pub(crate) fn router() -> Router {
                 .push(usage::router())
                 .push(alerts::router())
                 .push(agents::router())
+                .push(exec_policy::router())
                 .push(engagements::router())
                 .push(project_sides::router())
                 .push(side_registration::router())

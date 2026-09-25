@@ -43,6 +43,7 @@ mod command_notices;
 mod conversation_lifecycle;
 mod conversations;
 mod delivery_feedback;
+mod exec_policy;
 mod execution;
 mod graphs;
 mod matrix_routes;
@@ -111,7 +112,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 46;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 47;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -774,6 +775,13 @@ impl DomainRepository {
                     // was 061; it lands as the next sequential tuple 46 (file
                     // name kept).
                     (46, include_str!("migrations/061-side-allocations.sql")),
+                    // Integration of ../firstres task/27: its board-assigned
+                    // number was 040; it lands as the next sequential tuple 47
+                    // (file name kept).
+                    (
+                        47,
+                        include_str!("migrations/040-workspace-dirty-release.sql"),
+                    ),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
@@ -782,6 +790,9 @@ impl DomainRepository {
                     "SELECT id,engagement_id,dispatch_id,fence,reason,created_at,cleared_at,cleared_by FROM agent_fences LIMIT 0",
                     "SELECT id,session_id,transaction_id,digest,body,html,route,source_event_id,state,cancel_requested,fence,claim_hash,claim_until,event_id,observation,created_at,updated_at FROM command_notices LIMIT 0",
                     "SELECT id FROM current_command_notices LIMIT 0",
+                    "SELECT id,dirty FROM workspace_resources LIMIT 0",
+                    "SELECT resource_id,inspected_at FROM workspace_dirty_releases LIMIT 0",
+                    "SELECT engagement_id,yolo,updated_at FROM agent_execution_policies LIMIT 0",
                     "SELECT dispatch_id,fence,seq,at_ms,phase,detail FROM runner_attempt_events LIMIT 0",
                     "SELECT dispatch_id,fence,started_at,parked_at,last_renew_at,settled_at,terminal_reason FROM runner_attempts LIMIT 0",
                     "SELECT dispatch_id,message_sequence,addressed FROM dispatch_inputs LIMIT 0",

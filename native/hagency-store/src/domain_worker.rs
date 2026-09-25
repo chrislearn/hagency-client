@@ -2408,6 +2408,36 @@ impl DomainStore {
         })
         .await
     }
+    /// Release a dirty workspace (#27; TS parity: router/src/store.ts:3297).
+    /// Refuses `Quarantined` for an unresolved `outcome_unknown` workspace, the
+    /// same refusal TS spells `inspection_required`.
+    pub async fn clear_workspace_dirty(&self, id: String, now: u64) -> Result<bool, Error> {
+        self.call(weight(&(id.as_str(), now))?, move |db| {
+            db.clear_workspace_dirty(&id, now)
+        })
+        .await
+    }
+    /// The per-agent execution policy read (#27; TS parity:
+    /// backend-v2.js:10866-10869).
+    pub async fn execution_policy(&self, engagement: String) -> Result<serde_json::Value, Error> {
+        self.call(weight(&engagement)?, move |db| {
+            db.execution_policy(&engagement)
+        })
+        .await
+    }
+    /// The per-agent execution policy write (#27; TS parity:
+    /// backend-v2.js:10873-10884). Normalization is the store's single path.
+    pub async fn set_execution_policy(
+        &self,
+        engagement: String,
+        policy: Option<serde_json::Value>,
+        now: u64,
+    ) -> Result<bool, Error> {
+        self.call(weight(&(&engagement, &policy, now))?, move |db| {
+            db.set_execution_policy(&engagement, policy.as_ref(), now)
+        })
+        .await
+    }
     /// The host supplies an already inspected result, never a runner assertion.
     pub async fn settle_conversation_stop(
         &self,

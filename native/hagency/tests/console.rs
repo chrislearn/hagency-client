@@ -17,6 +17,8 @@ mod engagements;
 mod engagements_retire;
 #[path = "console/engagements_verdict.rs"]
 mod engagements_verdict;
+#[path = "console/exec_policy.rs"]
+mod exec_policy;
 #[path = "console/fixture.rs"]
 mod fixture;
 #[path = "console/origin.rs"]
