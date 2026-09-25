@@ -50,22 +50,27 @@ pub enum ThreadDirective {
     Mode(Option<ThreadMode>),
 }
 
+/// Whether a message body is a `/thread` directive at all (TS `/^\/thread\b/i`,
+/// after stripping the address). `parse` calls this; it is also the intake gate
+/// that keeps a directive from ever becoming chat input.
+pub fn is_directive(body: &str) -> bool {
+    let body = strip_address(body);
+    let Some(rest) = body.strip_prefix("/thread") else {
+        return false;
+    };
+    rest.is_empty() || rest.starts_with(char::is_whitespace)
+}
+
 /// The parse outcome. `None` means the body is not a `/thread` directive at
 /// all; `Err(body)` is a malformed directive whose `body` is the in-thread
 /// notice (usage or model refusal), never a delivery failure.
 pub fn parse(body: &str) -> Option<Result<ThreadDirective, String>> {
     let body = strip_address(body);
-    // TS `/^\/thread\b/i`: `/thread` must end at a word boundary, so `/threadfoo`
-    // is chat, not a directive. The boundary holds when the next char is
-    // whitespace or the string ends.
-    let Some(rest) = body.strip_prefix("/thread") else {
-        return None;
-    };
-    if !rest.is_empty() && !rest.starts_with(char::is_whitespace) {
+    if !is_directive(&body) {
         return None;
     }
     // `/thread\s+(\S+)(?:\s+(\S+))?\s*$` — the whole trimmed body, two tokens max.
-    let rest = rest.trim();
+    let rest = body["/thread".len()..].trim();
     if rest.is_empty() {
         return Some(Err(THREAD_DIRECTIVE_USAGE.into()));
     }
