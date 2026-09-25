@@ -15,13 +15,14 @@ pub const TASK_MCP_ENV: [&str; 3] = [
 /// `list_tasks` and `get_task` by id show a runner the tasks its own
 /// dispatches created (delegations), as the retained product's tools do;
 /// the service decides visibility, the helper selects nothing.
-pub const TASK_MCP_TOOLS: [&str; 6] = [
+pub const TASK_MCP_TOOLS: [&str; 7] = [
     "get_task",
     "list_tasks",
     "update_task_execution",
     "transition_task",
     "complete_task_with_reply",
     "read_conversation",
+    "schedule_reminder",
 ];
 /// Optional coordination group for an owned Codex dispatch (ADR180). The helper
 /// already serves these under the runner capability, which confines them to the

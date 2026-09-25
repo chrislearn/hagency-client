@@ -1,4 +1,4 @@
-use crate::workspace::{Root, Workspaces};
+use crate::workspace::{Root, WorktreeManager, WorktreeSpec, Workspaces};
 use hagency_core::tasks::RunnerCapability;
 use hagency_platform::Launch;
 use hagency_runtime::codex::{
@@ -8,6 +8,26 @@ use hagency_runtime::codex::{
 use hagency_store::OwnedDispatchScope;
 use std::sync::Arc;
 use std::{collections::BTreeMap, ffi::OsString, net::SocketAddr, path::PathBuf};
+
+/// A git worktree directory is created by `git worktree add` with default
+/// permissions; the retained workspace custody gate (`workspace::Root::open` →
+/// `private::check_handle`) requires a private (0700) directory owned by this
+/// uid. Tighten a freshly-created worktree to 0700 before opening it, failing
+/// closed on any refusal. The worktree is an untracked git checkout, so a mode
+/// change does not disturb the repository.
+fn make_private_dir(path: &std::path::Path) -> Result<(), crate::Failure> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+            .map_err(|_| crate::Failure::Admission)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        Ok(())
+    }
+}
 
 /// The exact argv the host ever passes to the Codex CLI (ADR-139): one
 /// argument, `app-server`. Sandbox policy and approval mode travel in the
@@ -362,7 +382,40 @@ impl Host {
         if !workspace.exclusive || !limits.validate() {
             return Err(super::Failure::Admission);
         }
-        let root = self.workspaces.get(&workspace.id)?;
+        // ADR-011 (board #78, TS backend-v2.js:2057-2075): a dispatch whose
+        // AGENT record enables `worktree` mode and whose session has a thread
+        // root resolves to its per-thread worktree. The repository is the
+        // agent's own workspace root — the shared Root this dispatch already
+        // holds (backend-v2.js:2057 `agent.workdir || agent.homeDir`); a
+        // missing `worktrees_dir` is the TS 'workspace-unavailable' refusal
+        // (backend-v2.js:2008). Anything else keeps the shared workspace.
+        // Failure to resolve parks/refuses (Admission), never a terminal state.
+        let shared_root = self.workspaces.get(&workspace.id)?;
+        let root = match (scope.workspace_mode(), scope.thread_root()) {
+            ("worktree", Some(thread)) => {
+                let Some(worktrees_dir) = scope.worktrees_dir() else {
+                    return Err(super::Failure::Admission);
+                };
+                let spec = WorktreeSpec {
+                    repository_path: shared_root.path().to_string_lossy().into_owned(),
+                    worktrees_dir: worktrees_dir.to_string(),
+                    agent_id: scope.engagement_id().to_string(),
+                    thread_root_event_id: thread.to_string(),
+                    bootstrap: (!scope.worktree_bootstrap().is_empty())
+                        .then(|| scope.worktree_bootstrap().to_vec()),
+                };
+                let info = WorktreeManager::new()
+                    .ensure(spec)
+                    .map_err(|_| super::Failure::Admission)?;
+                // `git worktree add` creates a directory with default
+                // permissions; the retained workspace custody gate requires a
+                // private (0700) directory owned by this uid. Tighten it before
+                // opening the root; fail closed on any refusal.
+                make_private_dir(info.path.as_path())?;
+                Arc::new(Root::open(info.path)?)
+            }
+            _ => shared_root,
+        };
         root.check().map_err(|_| super::Failure::Admission)?;
         // ADR-116 amendment: the session and process working directory string
         // is the ordinary projection of the retained root. On Windows the

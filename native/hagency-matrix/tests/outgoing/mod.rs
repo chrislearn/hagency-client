@@ -231,12 +231,86 @@ async fn plain_wire(fake: &mut common::Fake) -> common::Request {
     );
     r
 }
+
+/// Task #1 send-side: the activity envelope's exact Matrix content
+/// (lib/matrix-activity.js:4-13). First send (no anchor) keeps the thread
+/// relation and the plain body; the edit (anchor) stars the body, moves
+/// the plain content into `m.new_content`, and swaps the relation to
+/// `m.replace` of the anchor — the "same event edited in place" wire shape.
+#[test]
+fn native_matrix_activity_envelope_first_send_and_edit() {
+    // First send: no anchor.
+    let first = apply_activity_envelope(
+        json!({"msgtype":"m.notice","body":"⏳ 已开始处理，等待运行器的下一步事件\n已运行 0 秒 · 工具调用 0 次，已返回 0 次",
+               "m.relates_to":{"rel_type":"m.thread","event_id":"$root","is_falling_back":true,"m.in_reply_to":{"event_id":"$root"}}}),
+        "run_1",
+        None,
+    );
+    assert_eq!(first["msgtype"], "m.notice");
+    assert_eq!(first["io.hagency.activity"]["dispatch_id"], "run_1");
+    assert_eq!(first["m.relates_to"]["rel_type"], "m.thread");
+    assert!(first.get("m.new_content").is_none());
+    assert!(first.get("m.replace").is_none());
+    assert!(!first["body"].as_str().unwrap().starts_with("* "));
+
+    // The edit: an anchor swaps the relation and stars the body.
+    let plain = json!({"msgtype":"m.notice","body":"⏳ 正在运行命令\n已运行 4 秒 · 工具调用 1 次，已返回 0 次",
+                       "m.relates_to":{"rel_type":"m.thread","event_id":"$root","is_falling_back":true,"m.in_reply_to":{"event_id":"$root"}}});
+    let edit = apply_activity_envelope(plain.clone(), "run_1", Some("$activity_first"));
+    assert_eq!(
+        edit["body"],
+        "* ⏳ 正在运行命令\n已运行 4 秒 · 工具调用 1 次，已返回 0 次"
+    );
+    // The replacement is the plain content: unstarred body, thread
+    // relation intact, activity key intact — no replace relation (TS
+    // matrix-activity.js builds `next` before adding the replace link).
+    assert_eq!(edit["m.new_content"]["body"], plain["body"]);
+    assert_eq!(edit["m.new_content"]["m.relates_to"]["rel_type"], "m.thread");
+    assert_eq!(edit["m.new_content"]["io.hagency.activity"]["dispatch_id"], "run_1");
+    assert!(edit["m.new_content"].get("m.replace").is_none());
+    assert_eq!(edit["m.relates_to"]["rel_type"], "m.replace");
+    assert_eq!(edit["m.relates_to"]["event_id"], "$activity_first");
+    assert_eq!(edit["io.hagency.activity"]["dispatch_id"], "run_1");
+}
+
+/// The kind shape `activity:<dispatch>:<revision>[:<anchor>]` (task #1):
+/// dispatch ids are colon-free, the revision is numeric, the anchor is the
+/// remainder (a Matrix event id may itself carry colons).
+#[test]
+fn native_matrix_activity_kind_parse() {
+    assert_eq!(
+        parse_activity_notice("activity:run_1:1"),
+        Some(("run_1".to_owned(), None))
+    );
+    assert_eq!(
+        parse_activity_notice("activity:run_1:2:$activity_first"),
+        Some(("run_1".to_owned(), Some("$activity_first".to_owned())))
+    );
+    assert_eq!(
+        parse_activity_notice("activity:run_1:3:$a:b:c"),
+        Some(("run_1".to_owned(), Some("$a:b:c".to_owned())))
+    );
+    assert_eq!(parse_activity_notice("ack"), None);
+    assert_eq!(parse_activity_notice("activity:run_1"), None);
+}
 fn state(f: &common::Fixture, id: &str) -> String {
     rusqlite::Connection::open(f.root.path().join("domain/domain.sqlite3"))
         .unwrap()
         .query_row("SELECT state FROM final_replies WHERE id=?1", [id], |r| {
             r.get(0)
         })
+        .unwrap()
+}
+/// The journaled transaction id of a final reply, read straight from the
+/// domain row. Task #9 asserts a resumed send reuses this exact value.
+fn transaction_id(f: &common::Fixture, id: &str) -> String {
+    rusqlite::Connection::open(f.root.path().join("domain/domain.sqlite3"))
+        .unwrap()
+        .query_row(
+            "SELECT transaction_id FROM final_replies WHERE id=?1",
+            [id],
+            |r| r.get(0),
+        )
         .unwrap()
 }
 async fn stop_sdk(c: Collector) {
@@ -597,22 +671,55 @@ async fn native_matrix_outgoing_recovery_lost_http_and_begin_do_not_replay() {
             f.store.clone(),
         )
         .unwrap();
-        assert_eq!(
-            observed(
-                Trace::new("lost write recovery resume", variant_label, None),
-                c.resume_outgoing_custody(&cancel)
+        let transaction = transaction_id(&f, &claim.id);
+        if lost_begin {
+            // ADR-059: a lost begin result is inspect-only. No write was ever
+            // authorized — the journal is still BeforeBegin — so a resume parks
+            // it for a human and starts no HTTP write. #9 does not change this:
+            // there is no failed *send* to re-send.
+            assert_eq!(
+                observed(
+                    Trace::new("lost write recovery resume", variant_label, None),
+                    c.resume_outgoing_custody(&cancel)
+                )
+                .await
+                .unwrap()
+                .state,
+                OutgoingState::Uncertain
+            );
+            fake.quiesced(fake.requests(), &common::limits()).await;
+            assert_eq!(
+                c.send_final(claim, &cancel).await,
+                Err(Error::OutcomeUnknown)
+            );
+            fake.quiesced(fake.requests(), &common::limits()).await;
+        } else {
+            // Task #9 (TS `pollOneRouterOutbox`, bridge-matrix.js:6036-6055): a
+            // lost write leaves the row `sending` (journal WritePossible), which
+            // is non-permanent. The resume re-sends it with the SAME journaled
+            // transaction id — Matrix dedups the replay — and settles it
+            // delivered, exactly as TS retries the still-claimed command.
+            let (summary, ()) = scripted(
+                "lost write recovery resume",
+                variant_label,
+                c.resume_outgoing_custody(&cancel),
+                async {
+                    let request = fake.next().await;
+                    assert_eq!(request.method, "PUT");
+                    assert!(
+                        request.target.ends_with(&format!("/{transaction}")),
+                        "the resumed write kept its journaled transaction id"
+                    );
+                    request.json(200, json!({"event_id": "$resent"}));
+                },
             )
-            .await
-            .unwrap()
-            .state,
-            OutgoingState::Uncertain
-        );
-        fake.quiesced(fake.requests(), &common::limits()).await;
-        assert_eq!(
-            c.send_final(claim, &cancel).await,
-            Err(Error::OutcomeUnknown)
-        );
-        fake.quiesced(fake.requests(), &common::limits()).await;
+            .await;
+            assert_eq!(summary.unwrap().state, OutgoingState::Delivered);
+            assert_eq!(state(&f, &claim.id), "delivered");
+            fake.quiesced(fake.requests(), &common::limits()).await;
+            assert!(c.send_final(claim, &cancel).await.unwrap().replayed);
+            fake.quiesced(fake.requests(), &common::limits()).await;
+        }
         observed(
             Trace::new("lost write recovery close", variant_label, None),
             c.close(),
@@ -942,17 +1049,54 @@ async fn native_matrix_outgoing_bounds_wire_failures_retain_possible_writes() {
         }).await;
         assert!(r.is_err(), "{kind}");
         assert_eq!(state(&f, &claim.id), "sending");
-        assert_eq!(
-            observed(
-                Trace::new("wire refusal resume", Some(kind), None),
-                c.resume_outgoing_custody(&cancel)
+        let transaction = transaction_id(&f, &claim.id);
+        // Task #9 (TS `isPermanentRouterMatrixFailure`, bridge-matrix.js:6029-6033):
+        // only an HTTP 4xx other than 429 (here the M_FORBIDDEN 403) is permanent.
+        // Every other failure here — a body the client could not accept, a timeout,
+        // a redirect or a 5xx — is non-permanent.
+        let permanent = kind == "forbidden";
+        if permanent {
+            // TS posts a permanent rejection to `../failed` and stops retrying:
+            // the verdict surfaced to the caller above, and the journal carries
+            // the mark. Every later resume reads it and parks the send for a
+            // human — no HTTP write at all, so the refused send is never
+            // replayed, and the replay is refused again and again.
+            for _ in 0..2 {
+                assert_eq!(
+                    observed(
+                        Trace::new("wire refusal parked resume", Some(kind), None),
+                        c.resume_outgoing_custody(&cancel),
+                    )
+                    .await
+                    .unwrap()
+                    .state,
+                    OutgoingState::Uncertain
+                );
+            }
+            assert_eq!(state(&f, &claim.id), "sending");
+            fake.quiesced(fake.requests(), &common::limits()).await;
+        } else {
+            // TS `pollOneRouterOutbox` re-sends the still-claimed command on a
+            // later poll with the SAME transaction id; Matrix dedups the replay.
+            let (summary, ()) = scripted(
+                "wire refusal resume",
+                Some(kind),
+                c.resume_outgoing_custody(&cancel),
+                async {
+                    let request = fake.next().await;
+                    assert_eq!(request.method, "PUT");
+                    assert!(
+                        request.target.ends_with(&format!("/{transaction}")),
+                        "{kind}: the resend kept its journaled transaction id"
+                    );
+                    request.json(200, json!({"event_id":"$resent"}));
+                },
             )
-            .await
-            .unwrap()
-            .state,
-            OutgoingState::Uncertain
-        );
-        fake.quiesced(fake.requests(), &common::limits()).await;
+            .await;
+            assert_eq!(summary.unwrap().state, OutgoingState::Delivered);
+            assert_eq!(state(&f, &claim.id), "delivered");
+            fake.quiesced(fake.requests(), &common::limits()).await;
+        }
         observed(
             Trace::new("wire refusal close", Some(kind), None),
             c.close(),
@@ -991,10 +1135,30 @@ async fn native_matrix_outgoing_recovery_actual_journal_rollback_does_not_publis
         f.store.clone(),
     )
     .unwrap();
-    assert_eq!(
-        c.resume_outgoing_custody(&cancel).await.unwrap().state,
-        OutgoingState::Uncertain
-    );
+    // The 200 acceptance existed only in memory: its journal insert rolled back,
+    // so nothing durable claims delivery. Task #9: the durable phase is
+    // WritePossible and the row is still `sending`, so this is a non-permanent
+    // lost write — the resume re-sends it with the SAME journaled transaction id
+    // and settles only on a real accepted response. It never publishes the
+    // memory-only acceptance, which is what this test guards.
+    let transaction = transaction_id(&f, &claim.id);
+    let (summary, ()) = scripted(
+        "rollback recovery resume",
+        None,
+        c.resume_outgoing_custody(&cancel),
+        async {
+            let request = fake.next().await;
+            assert_eq!(request.method, "PUT");
+            assert!(
+                request.target.ends_with(&format!("/{transaction}")),
+                "the resumed write kept its journaled transaction id"
+            );
+            request.json(200, json!({"event_id": "$resent"}));
+        },
+    )
+    .await;
+    assert_eq!(summary.unwrap().state, OutgoingState::Delivered);
+    assert_eq!(state(&f, &claim.id), "delivered");
     fake.quiesced(fake.requests(), &common::limits()).await;
     c.close().await.unwrap();
     f.store.shutdown().await.unwrap();

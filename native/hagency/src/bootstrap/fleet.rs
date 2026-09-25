@@ -194,12 +194,21 @@ impl Service {
             || (setup.receive && hagency_core::received_files::receive_limit(setup.limit).is_err())
             || !setup.limits.validate()
         {
-            return Err(Failure::Config);
+            return Err(Failure::Config {
+                field: "factory-service.json",
+                fix: "receive limit must be a valid received-files limit, send limit within the file byte ceiling, and limits valid",
+            });
         }
-        hagency_store::private::directory(&setup.state).map_err(|_| Failure::Config)?;
+        hagency_store::private::directory(&setup.state).map_err(|_| Failure::Config {
+            field: "factory-service state directory",
+            fix: "the directory must exist, be owner-private (0700) and writable by the service",
+        })?;
         if setup.send {
             hagency_store::private::directory(&setup.state.join("factory-file-media"))
-                .map_err(|_| Failure::Config)?;
+                .map_err(|_| Failure::Config {
+                    field: "factory-file-media",
+                    fix: "the media directory must exist, be owner-private (0700) and writable by the service",
+                })?;
         }
         let routes = Routes {
             domain: domain.clone(),
@@ -272,7 +281,10 @@ impl Service {
                     "native_factory_file_storage_v1",
                     engagement
                 ]))
-                .map_err(|_| Failure::Config)?;
+                .map_err(|_| Failure::Config {
+                    field: "factory file storage namespace",
+                    fix: "canonical digest failed; the engagement id must stay ASCII",
+                })?;
                 owner.files = Some(
                     FileOwner::start(
                         owner.shared.clone(),
@@ -425,6 +437,24 @@ impl Service {
             }
         }
         let _running = Running(self.routes.running.clone());
+        // Board #71: the idle-agent membership sweep (TS parity,
+        // backend-v2.js:14192-14228 + :17511's hourly scheduling), started
+        // beside the fleet loop on the shared collector's own credential.
+        // The loop ends itself on the same shutdown token; the guard aborts
+        // it on every exit path so a closed service leaves no task behind.
+        // Never terminal: read failures retry with the retained 1 s -> 60 s
+        // backoff inside the loop, so no failure here can end the service.
+        struct SweepGuard(tokio::task::JoinHandle<()>);
+        impl Drop for SweepGuard {
+            fn drop(&mut self) {
+                self.0.abort();
+            }
+        }
+        let _sweep = SweepGuard(tokio::spawn(
+            self.coordinator
+                .clone()
+                .membership_sweep_loop(cancel.clone()),
+        ));
         self.reattach_known_agents(&notices, cancel).await;
         let mut tick = tokio::time::interval(Duration::from_millis(100));
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);

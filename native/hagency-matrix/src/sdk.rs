@@ -662,6 +662,7 @@ impl Owner {
                     Outgoing::Encrypt(..) => SdkCommand::OutgoingEncrypt,
                     Outgoing::Possible(..) => SdkCommand::OutgoingPossible,
                     Outgoing::Accept(..) => SdkCommand::OutgoingAccept,
+                    Outgoing::Refused => SdkCommand::OutgoingRefused,
                     Outgoing::Settle => SdkCommand::OutgoingSettle,
                 })
             }

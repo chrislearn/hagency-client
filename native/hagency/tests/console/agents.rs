@@ -42,7 +42,7 @@ async fn native_console_agent_roster_observation() {
     assert!(value["at_ms"].as_u64().unwrap() > 0);
     assert!(
         value["permissions"]["manageLifecycle"].as_bool() == Some(true),
-        "one login serves every console permission (TS parity)"
+        "one login carries the lifecycle permission (the operator's one-login decision)"
     );
     // Board #60 item 2: every column this console renders is now ANSWERED
     // from native state — seat (resources.config), consumed
@@ -176,7 +176,7 @@ async fn native_console_agent_detail_observation() {
     let keys = [
         "name", "framework", "role", "state", "engagement_id", "requested_tokens",
         "online", "last_seen_ms", "resource_id", "project_id", "engagements",
-        "rooms", "dispatch", "tasks",
+        "rooms", "dispatch", "tasks", "reminders",
     ];
     let object = value.as_object().unwrap();
     assert_eq!(object.len(), keys.len(), "exactly the declared detail keys");
@@ -413,80 +413,18 @@ async fn native_console_stop_dispatch_for_agent_is_at_most_once() {
     f.close().await;
 }
 
-/// TS parity: ONE login is the whole console — an anonymous caller is refused
-/// before any store work; the logged-in session reaches the lifecycle routes
-/// AND the neighbouring resource/account mutations without a second link.
-#[tokio::test]
-async fn native_console_agent_lifecycle_is_one_login() {
-    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
-    let service = f.service();
-    // TS parity: ONE login is the whole console. An anonymous caller is
-    // refused before any store work; the logged-in session may act on the
-    // lifecycle routes and the resource/account routes alike.
-    let id = &f.engagement;
-    for path in [
-        format!("/console/api/agents/{id}/start"),
-        format!("/console/api/agents/{id}/stop"),
-        format!("/console/api/agents/{id}/preset"),
-    ] {
-        let response = TestClient::post(format!("{BASE}{path}"))
-            .add_header("host", "127.0.0.1:13300", true)
-            .add_header("origin", BASE, true)
-            .add_header("sec-fetch-site", "same-origin", true)
-            .send(&service)
-            .await;
-        assert_eq!(response.status_code, Some(StatusCode::UNAUTHORIZED), "anonymous {path}");
-    }
-    let cookie = session(&service).await;
-    // Start has no durable native transition. It must refuse every authorized
-    // call instead of reporting a successful no-op.
-    let mut response = post(&format!("/console/api/agents/{id}/start"), &cookie)
-        .send(&service)
-        .await;
-    assert_eq!(response.status_code, Some(StatusCode::NOT_IMPLEMENTED));
-    assert_eq!(
-        response.take_json::<Value>().await.unwrap()["code"],
-        "agent_start_unavailable"
-    );
-    // The SAME login reaches the neighbouring mutation classes — no scope
-    // word, the store's own validation answers (revision conflict).
-    let source = native_resource("private_lifecycle_scope_source");
-    f.domain.put_resource(source.clone()).await.unwrap();
-    let revision = resource_publication_revision(&source).unwrap();
-    let response = post(
-        &format!("/console/api/resources/{}/publication", source.id()),
-        &cookie,
-    )
-    .json(&json!({"expectedRevision":revision,"published":false}))
-    .send(&service)
-    .await;
-    assert_eq!(response.status_code, Some(StatusCode::OK), "publication is not scope-refused");
-    let response = post("/console/api/accounts", &cookie)
-        .json(&json!({"profile":ACCOUNT_PROFILE}))
-        .send(&service)
-        .await;
-    assert_eq!(response.status_code, Some(StatusCode::OK), "account prepare is not scope-refused");
-    f.close().await;
-}
-
-/// CL-S2 (ADR-130) at-most-once selector, driven at the HTTP surface: start
-/// fails closed because no durable native start transition exists; two stops
-/// resolve the SAME dispatch id and fence through the unsettled stop row,
-/// writing no second row, and both still report `stop_pending`.
+/// #21 acceptance: stop completes and start re-arms — TS parity
+/// `stopManagedAgent` (backend-v2.js:12577-12708, success object
+/// `{ok:true,stopped:true,...cancelledDispatches}` at :12690) and start
+/// (backend-v2.js:12712, the return to serving). Idempotency follows the
+/// retained stop: a second stop answers `stopped:true` again, writing no
+/// second row.
 #[tokio::test]
 async fn native_console_agent_start_stop_is_at_most_once() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
     let lifecycle = lifecycle_session(&service).await;
     let id = &f.engagement;
-    let mut response = post(&format!("/console/api/agents/{id}/start"), &lifecycle)
-        .send(&service)
-        .await;
-    assert_eq!(response.status_code, Some(StatusCode::NOT_IMPLEMENTED));
-    assert_eq!(
-        response.take_json::<Value>().await.unwrap()["code"],
-        "agent_start_unavailable"
-    );
     let stop = || async {
         let mut response = post(&format!("/console/api/agents/{id}/stop"), &lifecycle)
             .send(&service)
@@ -495,19 +433,21 @@ async fn native_console_agent_start_stop_is_at_most_once() {
         response.take_json::<Value>().await.unwrap()
     };
     let first = stop().await;
-    for key in ["stopped", "stop_pending", "dispatch_id", "fence", "state"] {
-        assert!(
-            first.get(key).is_some(),
-            "the stop wire object carries {key}"
-        );
-    }
-    assert_eq!(first["stop_pending"], true);
-    assert_eq!(first["stopped"], false);
+    assert_eq!(first["ok"], true);
+    assert_eq!(first["stopped"], true, "the stop completes");
+    assert_eq!(first["state"], "stopped");
+    assert_eq!(
+        first["cancelled_dispatches"].as_array().map(Vec::len),
+        Some(1),
+        "the live dispatch is the retained cancelledDispatches"
+    );
     let second = stop().await;
-    assert_eq!(second["dispatch_id"], first["dispatch_id"]);
-    assert_eq!(second["fence"], first["fence"]);
-    assert_eq!(second["stop_pending"], true);
-    assert_eq!(second["stopped"], false);
+    assert_eq!(second["stopped"], true);
+    assert_eq!(
+        second["cancelled_dispatches"].as_array().map(Vec::len),
+        Some(0),
+        "the second stop is idempotent"
+    );
     let raw = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3")).unwrap();
     let count: i64 = raw
         .query_row("SELECT COUNT(*) FROM dispatch_stops", [], |r| r.get(0))
@@ -515,44 +455,115 @@ async fn native_console_agent_start_stop_is_at_most_once() {
     assert_eq!(count, 1, "the second stop writes no second row");
     let settled: Option<u64> = raw
         .query_row(
-            "SELECT settled_at FROM dispatch_stops WHERE dispatch_id=?1",
-            [first["dispatch_id"].as_str().unwrap()],
+            "SELECT settled_at FROM dispatch_stops WHERE dispatch_id='private_dispatch'",
+            [],
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(settled, None, "no production path settles the stop");
+    assert!(settled.is_some(), "the operator stop settles the stop row");
+    let stopped: Option<u64> = raw
+        .query_row(
+            "SELECT stopped_at FROM agent_lifecycle WHERE engagement_id=?1",
+            [&*id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(stopped.is_some(), "the durable stopped row exists");
     drop(raw);
+    // Start brings the agent back to serving (backend-v2.js:12712-12775).
+    let mut response = post(&format!("/console/api/agents/{id}/start"), &lifecycle)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let body = response.take_json::<Value>().await.unwrap();
+    assert_eq!(body["ok"], true);
+    assert_eq!(body["state"], "launching");
+    let started: Option<u64> = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3"))
+        .unwrap()
+        .query_row(
+            "SELECT started_at FROM agent_lifecycle WHERE engagement_id=?1",
+            [&*id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(started.is_some(), "serving is re-armed durably");
+    // A second start hits the retained `agent already online` (409).
+    let mut response = post(&format!("/console/api/agents/{id}/start"), &lifecycle)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::CONFLICT));
+    assert_eq!(
+        response.take_json::<Value>().await.unwrap()["code"],
+        "agent_already_online"
+    );
     f.close().await;
 }
 
-/// CL-S2 (ADR-130) preset selector: native has no agent registry independent
-/// of engagements, and an engagement's resource owns budget, account and
-/// provision effects. The route therefore refuses rather than pretending an
-/// in-memory pointer changed that durable association.
+/// #21 preset (resource) rebind — TS parity `PUT /api/agents/:name/preset`
+/// (backend-v2.js:11484-11522): binding, ceiling and profile move together,
+/// the response reports ceiling/remaining beside the binding, and the NEXT
+/// dispatch the host claims reads the new resource from the provision
+/// effect's payload. An unknown preset is refused with 400 and the previous
+/// binding survives (tests/api-agent-preset-binding.test.js parity).
 #[tokio::test]
 async fn native_console_agent_preset_apply_refuses_without_durable_transition() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
     let lifecycle = lifecycle_session(&service).await;
     let id = &f.engagement;
-    let before = f
-        .domain
-        .agent_roster()
-        .await
-        .unwrap()
-        .into_iter()
-        .find(|row| row.engagement_id == *id)
-        .unwrap();
-    let mut response = post(&format!("/console/api/agents/{id}/preset"), &lifecycle)
-        .json(&json!({"presetId": "private_preset_apply_published"}))
+    // A second published resource to rebind onto.
+    let other = native_resource("private_preset_apply_published");
+    f.domain.put_resource(other.clone()).await.unwrap();
+    let mut response = put(&format!("/console/api/agents/{id}/preset"), &lifecycle)
+        .json(&json!({"presetId": other.preset_id}))
         .send(&service)
         .await;
-    assert_eq!(response.status_code, Some(StatusCode::NOT_IMPLEMENTED));
+    let probe = response.take_json::<Value>().await.unwrap();
+    assert_eq!(
+        response.status_code,
+        Some(StatusCode::OK),
+        "rebind failed: {probe}"
+    );
+    let body = probe;
+    assert_eq!(body["ok"], true);
+    assert_eq!(body["preset_id"], other.preset_id);
+    assert_eq!(body["resource_id"], other.id());
+    // The retained `remaining` question, answered beside the binding.
+    assert_eq!(body["ceiling_tokens"], 5000);
+    let remaining = body["remaining"].as_u64().expect("remaining is a number");
+    assert!(remaining <= 5000, "remaining never exceeds the ceiling");
+    // The durable association moved: row, projection and the provision
+    // effect's resource payload — the one the claim selector reads.
+    let raw = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3")).unwrap();
+    let (row_resource, projected): (String, String) = raw
+        .query_row(
+            "SELECT resource_id,json_extract(projection,'$.resourceId') FROM engagements WHERE id=?1",
+            [&*id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(row_resource, other.id(), "the engagement row moved");
+    assert_eq!(projected, other.id(), "the projection moved");
+    let payload: String = raw
+        .query_row(
+            "SELECT json_extract(payload,'$.resource.presetId') FROM effects WHERE engagement_id=?1 AND kind='provision'",
+            [&*id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(payload, other.preset_id, "the next dispatch reads this payload");
+    drop(raw);
+    // Unknown preset: 400, and the binding survives (TS parity).
+    let mut response = put(&format!("/console/api/agents/{id}/preset"), &lifecycle)
+        .json(&json!({"presetId": "no_such_preset"}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST));
     assert_eq!(
         response.take_json::<Value>().await.unwrap()["code"],
-        "agent_preset_unavailable"
+        "unknown_preset"
     );
-    let after = f
+    let survived = f
         .domain
         .agent_roster()
         .await
@@ -560,9 +571,7 @@ async fn native_console_agent_preset_apply_refuses_without_durable_transition() 
         .into_iter()
         .find(|row| row.engagement_id == *id)
         .unwrap();
-    assert_eq!(after.framework, before.framework);
-    assert_eq!(after.state, before.state);
-    assert_eq!(after.requested_tokens, before.requested_tokens);
+    assert_eq!(survived.framework, other.framework, "the binding survives");
     f.close().await;
 }
 
@@ -712,28 +721,17 @@ async fn native_console_agent_recover_dispatch_agent_binding() {
     f.close().await;
 }
 
-/// A logged-in operator recovers the orphan: the route reaches recover_dispatch
+/// A lifecycle operator recovers the orphan: the route reaches recover_dispatch
 /// and the store clears the lease/quarantine/dirty, supersedes older queued work and
-/// writes the recovery record with the evidence. An anonymous caller is refused.
+/// writes the recovery record with the evidence. (One login carries the
+/// permission; anonymous callers are refused by the shared authenticate hoop.)
 #[tokio::test]
 async fn native_console_agent_recover_dispatch_recovers_orphan() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
     let state = f.root.path().join("state");
     seed_orphan_dispatch(&f, &f.engagement, false).await;
-    // An anonymous caller cannot recover.
-    let refused = TestClient::post(format!(
-        "{BASE}/console/api/agents/{}/recover-dispatch",
-        f.engagement
-    ))
-    .add_header("host", "127.0.0.1:13300", true)
-    .add_header("origin", BASE, true)
-    .add_header("sec-fetch-site", "same-origin", true)
-    .json(&recovery_body())
-    .send(&service)
-    .await;
-    assert_eq!(refused.status_code, Some(StatusCode::UNAUTHORIZED));
-    let cookie = session(&service).await;
+    let cookie = lifecycle_session(&service).await;
     let mut response = post(
         &format!("/console/api/agents/{}/recover-dispatch", f.engagement),
         &cookie,
@@ -857,35 +855,6 @@ async fn native_console_agent_recover_dispatch_refuses_stopped_dispatch() {
 
 #[tokio::test]
 async fn native_console_stopped_dispatch_continuation() {
-    {
-        let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
-        let service = f.service();
-        let cookie = session(&service).await;
-        let read = format!(
-            "/console/api/agents/{}/stopped-dispatches/orphan_dispatch/inspection",
-            f.engagement
-        );
-        let write = format!(
-            "/console/api/agents/{}/continue-stopped-dispatch",
-            f.engagement
-        );
-        // One login, no scope gate: the store's own validation answers —
-        // an unknown dispatch is never a scope word.
-        assert_eq!(
-            get(&read, &cookie).send(&service).await.status_code,
-            Some(StatusCode::NOT_FOUND)
-        );
-        assert_ne!(
-            post(&write, &cookie)
-                .json(&recovery_body())
-                .send(&service)
-                .await
-                .status_code,
-            Some(StatusCode::FORBIDDEN),
-            "no scope refusal on continue-stopped-dispatch"
-        );
-        f.close().await;
-    }
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
     seed_orphan_dispatch(&f, &f.engagement, true).await;
@@ -1055,18 +1024,6 @@ pub(super) async fn seed_inspected_failure(f: &Fixture) {
 
 #[tokio::test]
 async fn native_console_stopped_dispatch_list() {
-    {
-        let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
-        let service = f.service();
-        let cookie = session(&service).await;
-        let path = format!("/console/api/agents/{}/stopped-dispatches", f.engagement);
-        // One login reads the list — an empty roster is a valid empty page.
-        assert_eq!(
-            get(&path, &cookie).send(&service).await.status_code,
-            Some(StatusCode::OK)
-        );
-        f.close().await;
-    }
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     seed_inspected_failure(&f).await;
     let service = f.service();
@@ -1156,33 +1113,6 @@ async fn native_console_stopped_dispatch_list() {
 
 #[tokio::test]
 async fn native_console_outcome_resolution() {
-    {
-        let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
-        let service = f.service();
-        let cookie = session(&service).await;
-        for path in [
-            format!(
-                "/console/api/agents/{}/stopped-dispatches/resolution_dispatch/inspect",
-                f.engagement
-            ),
-            format!(
-                "/console/api/agents/{}/resolve-stopped-dispatch",
-                f.engagement
-            ),
-        ] {
-            // One login, no scope gate: an unknown dispatch is the store's
-            // named 404 (or its state word), never a scope word.
-            assert_ne!(
-                post(&path, &cookie)
-                    .json(&json!({}))
-                    .send(&service)
-                    .await
-                    .status_code,
-                Some(StatusCode::FORBIDDEN)
-            );
-        }
-        f.close().await;
-    }
     for action in ["continue", "accept_completed", "keep_blocked"] {
         let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
         seed_inspected_failure(&f).await;
@@ -1315,6 +1245,61 @@ async fn native_console_outcome_resolution() {
     }
 }
 
+/// The launch-env route (board #49, TS `backend-v2.js:12344`
+/// `GET /api/agents/:name/launch-env`): the runtime profile the agent would
+/// launch with, in the TS `normalizeRuntimeProfile` shape
+/// (`{runtimeProfile:{primary,supervisor}}`, `backend-v2.js:864-876`). The
+/// seeded UsageWorker's resource is codex/gpt-5.6-sol/medium with no
+/// provider, so `primary` carries exactly those four facts and `supervisor`
+/// is null — the TS shape when the stored record carries none. Unknown agent
+/// is the TS route's 404 `agent not found`; an invalid name shape is 400
+/// before any store work; a query parameter is refused.
+#[tokio::test]
+async fn native_console_agent_launch_env_observation() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let anonymous = TestClient::get(format!("{BASE}/console/api/agents/UsageWorker/launch-env"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .send(&service)
+        .await;
+    assert_eq!(anonymous.status_code, Some(StatusCode::UNAUTHORIZED));
+    let cookie = session(&service).await;
+    // The read takes no selection: query parameters are refused.
+    let response = get("/console/api/agents/UsageWorker/launch-env?agent=x", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST));
+    // An agent the service never engaged is the TS route's 404.
+    let mut response = get("/console/api/agents/Nobody/launch-env", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::NOT_FOUND));
+    assert_eq!(
+        response.take_json::<Value>().await.unwrap()["code"],
+        "agent_not_found"
+    );
+    let mut response = get("/console/api/agents/UsageWorker/launch-env", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+    let value = response.take_json::<Value>().await.unwrap();
+    // Exactly the TS envelope: one `runtimeProfile` key.
+    assert_eq!(value.as_object().unwrap().len(), 1);
+    let profile = value["runtimeProfile"].as_object().unwrap();
+    assert_eq!(profile.len(), 2, "TS normalizeRuntimeProfile: primary + supervisor");
+    let primary = value["runtimeProfile"]["primary"].as_object().unwrap();
+    assert_eq!(primary["framework"], "codex");
+    assert_eq!(primary["model"], "gpt-5.6-sol");
+    assert_eq!(primary["reasoning"], "medium");
+    assert!(primary["provider"].is_null(), "no provider on the seeded resource");
+    assert!(
+        value["runtimeProfile"]["supervisor"].is_null(),
+        "the port stores no supervisor profile: null, the TS shape when none"
+    );
+    f.close().await;
+}
+
 /// `DELETE /api/agents/:name` — the retained soft/force delete
 /// (`backend-v2.js:12164-12307`). SOFT is TS's reversible act: it reports
 /// `{ok, deprecated, message}` and changes nothing, because TS's own comment
@@ -1425,47 +1410,209 @@ async fn native_console_agent_delete_force_releases_active_engagements() {
         hagency_core::project::EngagementState::Revoked,
         "force released the commitment"
     );
-    f.close().await;
-}
-
-/// A delete is a lifecycle act. TS parity (#31): there is no read-only login —
-/// an anonymous caller is refused before any store job, and every logged-in
-/// session may delete. The anonymous caller is refused without a cookie; the
-/// logged-in session succeeds on the force arm.
-#[tokio::test]
-async fn native_console_agent_delete_refuses_without_lifecycle_scope() {
-    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
-    let service = f.service();
-    // Anonymous: no cookie, refused before any store job.
-    for path in [
-        "/console/api/agents/UsageWorker",
-        "/console/api/agents/UsageWorker?force=true",
-    ] {
-        let response = TestClient::delete(format!("{BASE}{path}"))
-            .add_header("host", "127.0.0.1:13300", true)
-            .add_header("origin", BASE, true)
-            .add_header("sec-fetch-site", "same-origin", true)
-            .send(&service)
-            .await;
-        assert_eq!(response.status_code, Some(StatusCode::UNAUTHORIZED), "{path}");
-    }
-    // The anonymous refusals left the commitment standing.
-    let engagement = f.domain.engagement(f.engagement.clone()).await.unwrap();
-    assert_eq!(
-        engagement.state,
-        hagency_core::project::EngagementState::Active,
-        "an anonymous delete changes nothing"
-    );
-    // Logged-in: one login is the whole console — the delete succeeds.
-    let cookie = lifecycle_session(&service).await;
-    let mut response = TestClient::delete(format!("{BASE}/console/api/agents/UsageWorker?force=true"))
-        .add_header("host", "127.0.0.1:13300", true)
-        .add_header("origin", BASE, true)
-        .add_header("sec-fetch-site", "same-origin", true)
-        .add_header("cookie", &cookie, true)
+    // The force-delete PERSISTED the tombstone `undelete` reverses — TS's
+    // `persistForceDeletedAgentState` (`backend-v2.js:4354`) is what makes
+    // re-registration conditional on an explicit undelete, so the delete
+    // route must have written it, not a test seeding it (RULES §3).
+    let raw = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3")).unwrap();
+    let reason: String = raw
+        .query_row(
+            "SELECT reason FROM agent_tombstones WHERE name='UsageWorker'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(reason, "force-delete", "TS's tombstone reason, verbatim");
+    drop(raw);
+    // And it is reversible through the #49 route: 200, the tombstone gone.
+    let mut response = post("/console/api/agents/UsageWorker/undelete", &cookie)
+        .json(&json!({}))
         .send(&service)
         .await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["undeleted"], true);
+    f.close().await;
+}
+
+/// The five remaining #49 leftover routes (TS `backend-v2.js:12308` undelete,
+/// `:16370` avatar, `:16988` delivery-events, `:16900` message, `:17002`
+/// suppress), served from the migration-067 tables. Every route is mounted
+/// behind the console `authenticate` hoop; each asserts the TS-visible body and
+/// status for its cases. The board is seeded through the store writers the
+/// routes read — no test-only seam.
+#[tokio::test]
+async fn native_console_agent_message_leftovers() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let anonymous = TestClient::get(format!("{BASE}/console/api/agents/UsageWorker/delivery-events"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .send(&service)
+        .await;
+    assert_eq!(anonymous.status_code, Some(StatusCode::UNAUTHORIZED));
+    let cookie = session(&service).await;
+
+    // ── undelete (TS :12308): 404 with no tombstone, 200 once one exists ──
+    let response = post("/console/api/agents/UsageWorker/undelete", &cookie)
+        .json(&json!({}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::NOT_FOUND));
+    f.domain
+        .record_agent_tombstone("UsageWorker".into(), "force-delete".into(), 1000)
+        .await
+        .unwrap();
+    let mut response = post("/console/api/agents/UsageWorker/undelete", &cookie)
+        .json(&json!({}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["undeleted"], true);
+    assert_eq!(value["name"], "UsageWorker");
+    // Removed for real: a second call is the 404 again.
+    let response = post("/console/api/agents/UsageWorker/undelete", &cookie)
+        .json(&json!({}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::NOT_FOUND));
+
+    // ── avatar (TS :16370): queued, with force/custom from body+query ──
+    let mut response = post("/console/api/agents/UsageWorker/avatar", &cookie)
+        .json(&json!({"image": "aGk="}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["queued"], true);
+    assert_eq!(value["name"], "UsageWorker");
+    assert_eq!(value["force"], false, "no generate and no ?force=true");
+    assert_eq!(value["custom"], true, "body.image present");
+    // `?force=true` (TS reads the query as well as body.generate).
+    let mut response = post("/console/api/agents/UsageWorker/avatar?force=true", &cookie)
+        .json(&json!({}))
+        .send(&service)
+        .await;
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["force"], true);
+    assert_eq!(value["custom"], false);
+
+    // ── message + suppress + delivery-events ──
+    // Unknown message id is the TS route's 404.
+    let mut response = get("/console/api/messages/msg_9999", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::NOT_FOUND));
+    assert_eq!(
+        response.take_json::<Value>().await.unwrap()["error"],
+        "message not found"
+    );
+    f.domain
+        .record_operator_message(hagency_store::NewOperatorMessage {
+            id: "msg_0001".into(),
+            sender: "operator".into(),
+            recipient: Some("UsageWorker".into()),
+            kind: "human".into(),
+            priority: "urgent".into(),
+            summary: "Review the build".into(),
+            full: "Please review the build output.".into(),
+            mentions: json!([]),
+            attachments: json!([]),
+            created_at: 1_000_000,
+            reply_to: None,
+            group: None,
+            source: "api".into(),
+            source_room: None,
+            source_event_id: None,
+            sender_mxid: None,
+            room_recipients: json!([]),
+            default_recipient: Some("UsageWorker".into()),
+            schema_kind: Some("review".into()),
+            schema_version: Some(2),
+            schema_payload: Some(json!({"verdict":"pending"}).to_string()),
+        })
+        .await
+        .unwrap();
+    let mut response = get("/console/api/messages/msg_0001", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["id"], "msg_0001");
+    assert_eq!(value["from"], "operator");
+    assert_eq!(value["to"], "UsageWorker");
+    assert_eq!(value["type"], "human");
+    assert_eq!(value["priority"], "urgent", "normalized priority");
+    assert_eq!(value["summary"], "Review the build");
+    assert_eq!(value["source"], "api");
+    // `schema` reduced to {kind,version[,payload]} (TS :4109).
+    assert_eq!(value["schema"]["kind"], "review");
+    assert_eq!(value["schema"]["version"], 2);
+    assert_eq!(value["schema"]["payload"]["verdict"], "pending");
+    assert!(value["ts"].is_null(), "TS serves ts: undefined");
+    assert!(
+        value["time"].as_str().unwrap().ends_with(" ago"),
+        "relativeTime shape"
+    );
+    assert_eq!(value["suppressedRecipients"].as_array().unwrap().len(), 0);
+
+    // suppress (TS :17002): the agent is added once and stays added.
+    let mut response = post("/console/api/messages/msg_0001/suppress", &cookie)
+        .json(&json!({"agent": "UsageWorker"}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["id"], "msg_0001");
+    assert_eq!(value["agent"], "UsageWorker");
+    assert_eq!(value["suppressed"], true);
+    assert_eq!(value["was_unread"], true);
+    assert_eq!(value["is_unread_now"], false);
+    assert_eq!(value["suppressedRecipients"], json!(["UsageWorker"]));
+    // Idempotent: a second call reports it was already suppressed.
+    let mut response = post("/console/api/messages/msg_0001/suppress", &cookie)
+        .json(&json!({"agent": "UsageWorker", "reason": "operator-ack"}))
+        .send(&service)
+        .await;
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["was_unread"], false, "already suppressed");
+    assert_eq!(value["suppressedRecipients"], json!(["UsageWorker"]));
+
+    // A message that does not target the agent is the TS route's 400.
+    let response = post("/console/api/messages/msg_0001/suppress", &cookie)
+        .json(&json!({"agent": "PageWorker"}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST));
+    // No agent named is the TS route's 400.
+    let response = post("/console/api/messages/msg_0001/suppress", &cookie)
+        .json(&json!({}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST));
+
+    // delivery-events (TS :16988): the suppress appended one, newest first.
+    let mut response = get("/console/api/agents/UsageWorker/delivery-events", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["agent"], "UsageWorker");
+    let events = value["events"].as_array().unwrap();
+    assert_eq!(events.len(), 1, "one suppress, one event");
+    assert_eq!(events[0]["type"], "message.suppressed");
+    assert_eq!(events[0]["agent"], "UsageWorker");
+    assert_eq!(events[0]["messageId"], "msg_0001");
+    assert_eq!(events[0]["reason"], "explicit-suppress");
+    // An agent the service never engaged is the TS route's 404.
+    let response = get("/console/api/agents/Nobody/delivery-events", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::NOT_FOUND));
     f.close().await;
 }
 
@@ -1505,5 +1652,64 @@ async fn native_console_agent_delete_not_found_and_invalid_name() {
         invalid.take_json::<Value>().await.unwrap()["code"],
         "invalid_console_request"
     );
+    f.close().await;
+}
+/// TS parity: ONE login is the whole console — an anonymous caller is refused
+/// before any store work; the logged-in session reaches the lifecycle routes
+/// AND the neighbouring resource/account mutations without a second link.
+#[tokio::test]
+async fn native_console_agent_lifecycle_is_one_login() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    // TS parity: ONE login is the whole console. An anonymous caller is
+    // refused before any store work; the logged-in session may act on the
+    // lifecycle routes and the resource/account routes alike.
+    let id = &f.engagement;
+    // Anonymous callers are refused before any store work. Preset is PUT
+    // (TS parity: backend-v2.js:11484 `app.put`) — the wrong-method POST is
+    // answered 405 by routing before auth, so use the route's own method.
+    for path in [
+        format!("/console/api/agents/{id}/start"),
+        format!("/console/api/agents/{id}/stop"),
+        format!("/console/api/agents/{id}/preset"),
+    ] {
+        let response = if path.ends_with("/preset") {
+            put(&path, "hagency_console=anonymous")
+        } else {
+            post(&path, "hagency_console=anonymous")
+        }
+        .send(&service)
+        .await;
+        assert_eq!(response.status_code, Some(StatusCode::UNAUTHORIZED), "anonymous {path}");
+    }
+    let cookie = session(&service).await;
+    // Start refuses an agent that never stopped — TS parity 409
+    // `agent already online` (backend-v2.js:12717).
+    let mut response = post(&format!("/console/api/agents/{id}/start"), &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::CONFLICT));
+    assert_eq!(
+        response.take_json::<Value>().await.unwrap()["code"],
+        "agent_already_online"
+    );
+    // The SAME login reaches the neighbouring mutation classes — no scope
+    // word, the store's own validation answers (revision conflict).
+    let source = native_resource("private_lifecycle_scope_source");
+    f.domain.put_resource(source.clone()).await.unwrap();
+    let revision = resource_publication_revision(&source).unwrap();
+    let response = post(
+        &format!("/console/api/resources/{}/publication", source.id()),
+        &cookie,
+    )
+    .json(&json!({"expectedRevision":revision,"published":false}))
+    .send(&service)
+    .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK), "publication is not scope-refused");
+    let response = post("/console/api/accounts", &cookie)
+        .json(&json!({"profile":ACCOUNT_PROFILE}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK), "account prepare is not scope-refused");
     f.close().await;
 }

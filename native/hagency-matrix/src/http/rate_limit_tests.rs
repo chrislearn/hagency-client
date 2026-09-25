@@ -91,12 +91,12 @@ async fn native_matrix_get_rate_limit_bounds() {
     let (fixture, mut fake, http) = client(Duration::from_millis(900)).await;
     let cancel = CancellationToken::new();
     let (result, ()) = tokio::join!(http.request(&["bounded"], None, &cancel), async {
-        for _ in 0..4 {
+        for _ in 0..RATE_LIMIT_TRIES {
             fake.next().await.json(429, json!({"retry_after_ms":0}));
         }
     });
     assert_eq!(result.unwrap().success(), Err(Error::Remote(429)));
-    assert_eq!(fake.requests(), 4);
+    assert_eq!(fake.requests(), RATE_LIMIT_TRIES as u64);
     fake.no_request().await;
     fixture.store.shutdown().await.unwrap();
     fake.close().await;
@@ -106,7 +106,7 @@ async fn native_matrix_get_rate_limit_bounds() {
     let cancel = CancellationToken::new();
     let (result, ()) = tokio::join!(http.request(&["bounded"], None, &cancel), async {
         for _ in 0..2 {
-            fake.next().await.json(429, json!({"retry_after_ms":150}));
+            fake.next().await.json(429, json!({"retry_after_ms":200}));
         }
     });
     assert_eq!(result.unwrap().success(), Err(Error::Remote(429)));
@@ -130,7 +130,9 @@ async fn native_matrix_get_rate_limit_bounds() {
 }
 
 #[tokio::test]
-async fn native_matrix_rate_limit_no_write_retry() {
+async fn native_matrix_write_rate_limit_retries_like_get() {
+    // Task #9 (TS fetchWithRateLimit): a write that gets 429 retries through
+    // the same six-try budget as a read, on the shared cooldown gate.
     for method in [reqwest::Method::POST, reqwest::Method::PUT] {
         let (fixture, mut fake, http) = client(Duration::from_secs(3)).await;
         let cancel = CancellationToken::new();
@@ -143,13 +145,18 @@ async fn native_matrix_rate_limit_no_write_retry() {
                 }
             },
             async {
-                let request = fake.next().await;
-                assert_eq!(request.method, method.as_str());
-                request.json(429, json!({"retry_after_ms":0}));
+                for _ in 0..(RATE_LIMIT_TRIES - 1) {
+                    let request = fake.next().await;
+                    assert_eq!(request.method, method.as_str());
+                    request.json(429, json!({"retry_after_ms":0}));
+                }
+                let last = fake.next().await;
+                assert_eq!(last.method, method.as_str());
+                last.json(200, json!({"event_id":"$ok"}));
             }
         );
-        assert_eq!(result.unwrap().success(), Err(Error::Remote(429)));
-        assert_eq!(fake.requests(), 1);
+        assert_eq!(result.unwrap().success().unwrap(), json!({"event_id":"$ok"}));
+        assert_eq!(fake.requests(), RATE_LIMIT_TRIES as u64);
         fake.no_request().await;
         fixture.store.shutdown().await.unwrap();
         fake.close().await;

@@ -1,7 +1,9 @@
 //! Read-only browser facade. Native operator/runner authentication is unchanged.
 mod accounts;
 mod agent_detail;
+mod agent_extras;
 mod agents;
+mod approval_bindings;
 mod stream;
 mod alerts;
 mod approvals;
@@ -9,12 +11,18 @@ mod assets;
 mod authority;
 pub mod client;
 mod engagements;
+mod graphs;
+mod exec_policy;
+mod invites;
 mod matrix_diag;
 mod offer_book;
 mod project_sides;
+mod side_budget;
+mod side_lifecycle;
 mod resource_configuration;
 mod resources;
 pub mod side_registration;
+mod tasks;
 mod usage;
 use crate::{App, refusal};
 use authority::{Authority, COOKIE, Session};
@@ -49,6 +57,11 @@ struct Inner {
     assets: assets::Assets,
     authority: Authority,
     requests: Arc<Semaphore>,
+    /// Operator task graphs (#47): the TS `task_graphs.json` document on the
+    /// state directory, loaded at startup like the retained boot. `None` when
+    /// no state dir was provided (asset-only tests) — the routes then answer
+    /// `console_unavailable`, TS's `dispatch_unavailable` class.
+    graphs: Option<graphs::GraphStore>,
 }
 /// Clones retain the same finite authority and original immutable asset proofs.
 #[derive(Clone)]
@@ -56,11 +69,25 @@ pub struct Console(Arc<Inner>);
 impl Console {
     /// Synchronous startup only; no filesystem access occurs in HTTP handlers.
     pub fn load(path: &Path) -> Result<Self, Error> {
+        Self::load_with_state(path, None)
+    }
+    /// `load` plus the operator state directory (#47): the document home the
+    /// graph routes persist to (`<state>/task_graphs.json`). Production passes
+    /// the same `state_dir` `serve` opens; tests pass `None` for the legacy
+    /// asset-only shape.
+    pub fn load_with_state(path: &Path, state_dir: Option<&Path>) -> Result<Self, Error> {
         Ok(Self(Arc::new(Inner {
             assets: assets::Assets::load(path)?,
             authority: Authority::new(),
             requests: Arc::new(Semaphore::new(8)),
+            graphs: match state_dir {
+                Some(dir) => Some(graphs::GraphStore::open(dir)?),
+                None => None,
+            },
         })))
+    }
+    pub(super) fn graphs(&self) -> Option<&graphs::GraphStore> {
+        self.0.graphs.as_ref()
     }
     pub fn retire(&self) {
         self.0.authority.retire();
@@ -76,16 +103,30 @@ pub(crate) fn router() -> Router {
                 .push(usage::router())
                 .push(alerts::router())
                 .push(agents::router())
+                .push(agent_extras::router())
+                .push(exec_policy::router())
                 .push(stream::router())
                 .push(engagements::router())
+                .push(graphs::router())
+                .push(invites::router())
                 .push(offer_book::router())
                 .push(project_sides::router())
                 .push(side_registration::router())
+                .push(side_budget::router())
+                .push(side_lifecycle::router())
                 .push(approvals::router())
+                .push(approval_bindings::router())
                 .push(resources::router())
                 .push(accounts::router())
                 .push(matrix_diag::router())
-                .push(resource_configuration::router()),
+                .push(resource_configuration::router())
+                // Task #46: the operator-facing capability and framework reads
+                // (GET /api/capability, /api/frameworks, /api/frameworks/detect)
+                // are session-scoped reads, mounted under the console API so
+                // the native console reaches them without an operator bearer.
+                .push(crate::fleet_views::router())
+                .push(tasks::router())
+                .push(tasks::extra_router()),
         )
         .push(Router::with_path("{**asset}").get(asset))
 }

@@ -15,7 +15,7 @@
 use super::{Failure, StatusHandle};
 use hagency_core::commands::CommandNoticeRequest;
 use hagency_matrix::{CancellationToken, Collector, OutgoingState};
-use hagency_store::DomainStore;
+use hagency_store::{DomainStore, ThreadDirective};
 
 /// The rest wait for the next poll; one attempt must not become a send loop.
 const MAX_ANSWERS: usize = 4;
@@ -65,6 +65,14 @@ pub(super) async fn deliver(
                 &observation,
             ) {
                 crate::bot_commands::Dispatched::Answer(reply) => reply,
+                // Board #79: `!request` — render the TS reply from the line's
+                // arguments. The synchronous refusals (usage, malformed token)
+                // never reach any backend in TS either (:526-536); a
+                // well-formed line reports the honest no-engagement state
+                // until the submit seam is wired (see report-79).
+                crate::bot_commands::Dispatched::Request(args) => {
+                    crate::bot_commands::request_reply(&args, None)
+                }
                 crate::bot_commands::Dispatched::Unrenderable => continue,
             };
             let receipt = domain
@@ -72,6 +80,46 @@ pub(super) async fn deliver(
                     session_id: line.session_id.clone(),
                     body: answer.plain,
                     html: answer.html,
+                    source_event_id: line.event_id,
+                })
+                .await
+                .map_err(|_| Failure::OutcomeUnknown)?;
+            if receipt.state != "delivered" {
+                queued += 1;
+            }
+        }
+        // `/thread` directives are consumed before routing (backend-v2.js:2254-2310):
+        // never chat input. A non-operator directive is answered with a refusal
+        // notice and not applied; a malformed one with the usage/refusal text;
+        // a valid operator one applies the override and answers with the
+        // confirmation. Every answer rides the same command-notice custody and
+        // send loop as a `!` command, so delivery never fails because of a
+        // directive.
+        let directives = domain
+            .pending_thread_directives(session.clone(), 16)
+            .await
+            .map_err(|_| Failure::OutcomeUnknown)?;
+        for line in directives {
+            let body = match hagency_store::parse(&line.body) {
+                None => continue,
+                Some(Err(notice)) => notice,
+                Some(Ok(directive)) => {
+                    if !acl.is_operator(&line.sender_mxid) {
+                        hagency_store::THREAD_DIRECTIVE_OPERATOR_REFUSAL.to_owned()
+                    } else {
+                        let overrides = domain
+                            .set_session_overrides(line.session_id.clone(), directive)
+                            .await
+                            .map_err(|_| Failure::OutcomeUnknown)?;
+                        hagency_store::confirmation(overrides.model.as_deref(), overrides.mode)
+                    }
+                }
+            };
+            let receipt = domain
+                .submit_command_notice(CommandNoticeRequest {
+                    session_id: line.session_id.clone(),
+                    body,
+                    html: None,
                     source_event_id: line.event_id,
                 })
                 .await
