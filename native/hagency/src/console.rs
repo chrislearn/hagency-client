@@ -9,6 +9,7 @@ mod assets;
 mod authority;
 pub mod client;
 mod engagements;
+mod matrix_diag;
 mod offer_book;
 mod project_sides;
 mod resource_configuration;
@@ -83,6 +84,7 @@ pub(crate) fn router() -> Router {
                 .push(approvals::router())
                 .push(resources::router())
                 .push(accounts::router())
+                .push(matrix_diag::router())
                 .push(resource_configuration::router()),
         )
         .push(Router::with_path("{**asset}").get(asset))
