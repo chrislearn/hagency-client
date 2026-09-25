@@ -8,6 +8,7 @@ pub(super) fn router() -> Router {
     Router::new()
         .push(Router::with_path("engagements").get(engagements))
         .push(Router::with_path("engagements/{id}/usage").get(report))
+        .push(Router::with_path("usage/totals").get(totals))
 }
 pub(super) fn query(req: &Request, allowed: &[&str], limit: usize) -> Result<(), Error> {
     if req
@@ -142,4 +143,39 @@ fn store_error(res: &mut Response, error: hagency_store::Error) {
         _ => (StatusCode::SERVICE_UNAVAILABLE, "usage_unavailable"),
     };
     refusal(res, status, code);
+}
+
+/// The retained `GET /api/usage` fleet `totals` block (backend-v2.js:15700-15720):
+/// the measured figures native actually holds (per-engagement known high
+/// water), summed, with the denominator attached — the numerator never
+/// travels without it, and null means "not known", never zero. Read class,
+/// no scope, no selection, same as the engagements list beside it.
+#[handler]
+async fn totals(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    if query(req, &[], 0).is_err() {
+        failed(res, Error::Invalid);
+        return;
+    }
+    let Some(store) = domain(depot, res) else {
+        return;
+    };
+    let result = store.usage_totals().await;
+    if let Err(error) = recheck(depot) {
+        failed(res, error);
+        return;
+    }
+    match result {
+        Ok(fleet) => res.render(Json(serde_json::json!({
+            "ok": true,
+            "totals": fleet,
+            // The retained totals block also carries busySec and tasks
+            // (backend-v2.js:15706-15708), summed from the agents' busy
+            // clocks and the task store. Native holds neither figure — the
+            // per-engagement evidence slice has no busy-time accounting —
+            // so the columns are named here the way the project-sides read
+            // names its own gaps: unknown is never zero and never invented.
+            "unavailable": ["busy_sec", "tasks"],
+        }))),
+        Err(error) => store_error(res, error),
+    }
 }

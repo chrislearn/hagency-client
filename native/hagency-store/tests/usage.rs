@@ -355,7 +355,10 @@ fn native_usage_migration() {
     assert_eq!(
         sql.pragma_query_value(None, "user_version", |r| r.get::<_, u64>(0))
             .unwrap(),
-        39
+        // The rewind replays every migration through the newest slot — the
+        // side-allocations table's 40 — so the landing version is the Schema
+        // definition's own `version`, not a hardcoded constant.
+        40
     );
     sql.execute_batch(
         "ALTER TABLE usage_receipts RENAME COLUMN observation TO missing_observation;",
@@ -363,4 +366,57 @@ fn native_usage_migration() {
     .unwrap();
     drop(sql);
     assert!(matches!(DomainRepository::open(&path), Err(Error::Schema)));
+}
+
+/// The fleet totals' three states (backend-v2.js:15700-15720): null is "not
+/// known", never a zero claiming the fleet consumed nothing; the numerator
+/// never travels without its denominator.
+#[test]
+fn native_usage_totals_empty_bound_partial_and_measured() {
+    // Empty: no engagement rows at all — denominator 0, both figures null.
+    let dir = tempfile::tempdir().unwrap();
+    let mut db = DomainRepository::open(&dir.path().join("state")).unwrap();
+    db.register(&registration()).unwrap();
+    let totals = db.usage_totals().unwrap();
+    assert_eq!(totals.agents, 0);
+    assert_eq!(totals.tokens_drawn, None);
+    assert_eq!(totals.tokens_used, None);
+    assert_eq!(totals.tokens_measured_for, 0);
+    assert!(!totals.tokens_partial);
+
+    // Bound but never observed: the source's high water is all-unknown at
+    // bind, so the engagement is NOT measured and the fleet still reports
+    // null — the retained filter is `typeof tokensUsed === 'number'`
+    // (backend-v2.js:15702), and an unobserved agent joins neither sum nor
+    // denominator. Some(0) here would claim the fleet consumed nothing.
+    let mut f = Fixture::new(Framework::Claude);
+    let _ = f.start();
+    let totals = f.db.usage_totals().unwrap();
+    assert_eq!(totals.agents, 1);
+    assert_eq!(totals.tokens_drawn, None);
+    assert_eq!(totals.tokens_used, None);
+    assert_eq!(totals.tokens_measured_for, 0);
+    assert!(!totals.tokens_partial);
+
+    // Partial then measured: one observed agent beside one agent with no
+    // source at all. claude(10, 20, 30, 40) parses to input=10, output=20,
+    // cache_write=30, cache_read=40 (observation.rs counter mapping), so
+    // drawn = 10+20+30 = 60 (the ceiling kinds) and used = 100 (display).
+    let (_, _, source) = f.start();
+    f.db
+        .record_usage_observation(&source, "totals_call", &claude(10, 20, 30, 40), 2000)
+        .unwrap();
+    let mut pool = resource("usage_pool", "usage_seat", 1000);
+    pool.framework = "claude".into();
+    pool.model = "claude-sent-5".into();
+    pool.reasoning = None;
+    f.db
+        .admit(&proof(&request("totals_request", "SecondWorker", &pool, 100)), 1000)
+        .unwrap();
+    let totals = f.db.usage_totals().unwrap();
+    assert_eq!(totals.agents, 2, "the denominator counts both agents");
+    assert_eq!(totals.tokens_drawn, Some(60));
+    assert_eq!(totals.tokens_used, Some(100));
+    assert_eq!(totals.tokens_measured_for, 1);
+    assert!(totals.tokens_partial, "1 of 2 measured is partial");
 }

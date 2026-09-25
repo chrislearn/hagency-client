@@ -27,6 +27,8 @@ mod real_agent;
 mod registration;
 #[path = "console/resources.rs"]
 mod resources;
+#[path = "console/side_budget.rs"]
+mod side_budget;
 #[path = "console/status_strip.rs"]
 #[cfg(feature = "native-console-browser")]
 mod status_strip;

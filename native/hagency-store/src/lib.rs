@@ -29,9 +29,9 @@ pub use domain::{
     OwnedClaimProfile, OwnedClaimRoom, OwnedCompletion, OwnedDispatchScope, OwnedFailure,
     OwnedObservation, OwnedProvisionScope, PEER_RECEIPT_CEILING, PEER_RETENTION_CEILING,
     PEER_RETENTION_FLOOR, PeerRetentionStatus, PeerSweepOutcome, ProjectSide, RetentionStatus,
-    SideProject, SourceUsage, SweepOutcome, UploadAdmission, UploadClaim, UploadIdentity,
+    SideProject, SourceUsage, SweepOutcome, SideBudget, SideCommitment, UploadAdmission, UploadClaim, UploadIdentity,
     UploadPreparation, UploadSend, UsageCeiling, UsageEvidence, UsagePeriod, UsagePeriodKind,
-    UsageReceipt, UsageReport, UsageSource, UsageSummary, allowed_transitions,
+    UsageReceipt, UsageReport, UsageSource, UsageSummary, UsageTotals, allowed_transitions,
     over_budget_notice_body,
 };
 pub use domain::{OutcomeAction, OutcomeResolution};

@@ -981,7 +981,9 @@ fn native_owner_approval_recovery_schema12() {
         assert_eq!(
             sql.pragma_query_value(None, "user_version", |r| r.get::<_, u64>(0))
                 .unwrap(),
-            39
+            // The replay walks to the Schema definition's newest slot — the
+            // side-allocations step (40) — not a hardcoded constant.
+            40
         );
         assert_eq!(count(&sql, "approval_bindings"), 0);
         assert_eq!(count(&sql, "approval_grants"), 0);
