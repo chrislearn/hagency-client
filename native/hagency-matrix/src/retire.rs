@@ -13,7 +13,19 @@
 //! retained `matrix_http_<status>` refusal, and a transport failure is
 //! `Unknown`: the bridge never decides it is done on its own view of the
 //! transport.
+//!
+//! Two callers, one rule:
+//!
+//! 1. **The live worker** ([`Collector::retire_agent`]) — the preferred route.
+//!    A running agent already holds an authenticated transport (the same client
+//!    its final replies use), so retirement rides it: leave every room the
+//!    config names, then log out. This is the retained product's own shape
+//!    (it uses the stored credential, then clears it).
+//! 2. **A standalone client** ([`RetireClient`]) — for a retirement with no
+//!    live worker, given the homeserver and the credential read back from the
+//!    account's custody.
 
+use crate::collector::Collector;
 use crate::http::Http;
 use crate::{Error, Limits};
 use reqwest::Url;
@@ -46,12 +58,135 @@ pub struct AgentRetirement {
     pub logout: RetireVerdict,
 }
 
-/// One bounded Matrix client for retirement acts against one homeserver,
-/// pinned to that host like every other `Http` (no ambient resolver).
+impl AgentRetirement {
+    /// A bounded, control-character-free receipt for the durable effect record
+    /// (the store refuses an empty, over-long or control-bearing receipt). It
+    /// names each room's outcome by index and the logout's, never a credential.
+    pub fn receipt(&self) -> String {
+        let mut receipt = String::from("retire:");
+        for (index, verdict) in self.leaves.iter().enumerate() {
+            receipt.push_str(&format!("room{index}={verdict:?};"));
+        }
+        receipt.push_str(&format!("logout={:?}", self.logout));
+        receipt.truncate(2048);
+        receipt
+    }
+
+    /// The retained product's word for a completed retirement: every room let
+    /// go (or already gone) and the device logged out.
+    pub fn complete(&self) -> bool {
+        self.leaves
+            .iter()
+            .all(|verdict| *verdict == RetireVerdict::Revoked)
+            && self.logout == RetireVerdict::Revoked
+    }
+}
+
+/// Leave one room through an already-authenticated client.
+pub(crate) async fn leave_room(
+    http: &Http,
+    room_id: &str,
+    cancel: &CancellationToken,
+) -> Result<RetireVerdict, Error> {
+    act(http, &["_matrix", "client", "v3", "rooms", room_id, "leave"], false, cancel).await
+}
+
+/// Log one device out through an already-authenticated client.
+pub(crate) async fn logout(
+    http: &Http,
+    cancel: &CancellationToken,
+) -> Result<RetireVerdict, Error> {
+    act(http, &["_matrix", "client", "v3", "logout"], true, cancel).await
+}
+
+/// Leave every room in `rooms` (in order), then log the device out.
+///
+/// A room that refuses or answers nothing does not abort the walk: the retained
+/// loop withdraws each membership independently and only then revokes the token
+/// (`lib/matrix-work-executor.js:40-49`), so one unreachable room can never
+/// strand the agent in the rest.
+pub(crate) async fn retire_rooms(
+    http: &Http,
+    rooms: &[String],
+    cancel: &CancellationToken,
+) -> Result<AgentRetirement, Error> {
+    let mut leaves = Vec::with_capacity(rooms.len());
+    for room_id in rooms {
+        leaves.push(leave_room(http, room_id, cancel).await?);
+    }
+    let logout = logout(http, cancel).await?;
+    Ok(AgentRetirement { leaves, logout })
+}
+
+async fn act(
+    http: &Http,
+    segments: &[&str],
+    logout: bool,
+    cancel: &CancellationToken,
+) -> Result<RetireVerdict, Error> {
+    let response = http.post(segments, "{}".to_owned(), cancel).await;
+    match response {
+        Ok(response) => Ok(verdict(response.status, response.value, logout)),
+        // A dial that never connected is the one retry the bounded client
+        // already exhausted; anything past that is unknown, never terminal.
+        Err(Error::Cancelled) => Err(Error::Cancelled),
+        Err(_) => Ok(RetireVerdict::Unknown),
+    }
+}
+
+/// The LIVE agent's retirement (route 1): the running worker already holds an
+/// authenticated transport, so it performs the acts itself — exactly the
+/// retained executor's "use the stored credential" arm. The rooms are the ones
+/// this host config names (`HostConfig.rooms`), i.e. every room the agent was
+/// given.
+impl Collector {
+    /// Leave every room this agent holds, then log its device out.
+    ///
+    /// The caller is the agent's own worker, between passes, so no other
+    /// collector job is in flight; this act is terminal for the credential and
+    /// is deliberately not pooled with the ordinary request permit.
+    pub async fn retire_agent(
+        &self,
+        cancel: &CancellationToken,
+    ) -> Result<AgentRetirement, Error> {
+        let rooms: Vec<String> = self
+            .inner
+            .config
+            .rooms
+            .iter()
+            .map(|room| room.room_id.clone())
+            .collect();
+        retire_rooms(&self.inner.http, &rooms, cancel).await
+    }
+}
+
+/// TS `matrix_http_<status>` parity: 2xx is revoked; a logout's 401 with
+/// `M_UNKNOWN_TOKEN` is revoked; anything else is the refusal word's status.
+fn verdict(status: u16, value: Option<Value>, logout: bool) -> RetireVerdict {
+    if (200..300).contains(&status) {
+        return RetireVerdict::Revoked;
+    }
+    if logout
+        && status == 401
+        && value
+            .as_ref()
+            .and_then(|v| v.get("errcode"))
+            .and_then(Value::as_str)
+            == Some("M_UNKNOWN_TOKEN")
+    {
+        return RetireVerdict::Revoked;
+    }
+    RetireVerdict::Refused(status)
+}
+
+/// A standalone retirement client (route 2): a homeserver plus the credential
+/// read back from an account's custody, for retiring an agent with no live
+/// worker. One bounded Matrix client pinned to that host like every other
+/// `Http` (no ambient resolver).
 pub struct RetireClient {
     http: Http,
     /// Retained so [`RetireClient::with_root_pem`] can rebuild the client with
-    /// added trust material; the same three facts every other host call holds.
+    /// added trust material; the same facts every other host call holds.
     base: Url,
     authorization: HeaderValue,
     limits: Limits,
@@ -120,77 +255,25 @@ impl RetireClient {
         room_id: &str,
         cancel: &CancellationToken,
     ) -> Result<RetireVerdict, Error> {
-        self.act(
-            &["_matrix", "client", "v3", "rooms", room_id, "leave"],
-            false,
-            cancel,
-        )
-        .await
+        leave_room(&self.http, room_id, cancel).await
     }
 
     /// `POST /_matrix/client/v3/logout` with body `{}`
     /// (matrix-work-executor.js:13-17, 42-43). A 401 answering with errcode
     /// `M_UNKNOWN_TOKEN` means the token is already revoked — `Revoked`.
     pub async fn logout(&self, cancel: &CancellationToken) -> Result<RetireVerdict, Error> {
-        self.act(&["_matrix", "client", "v3", "logout"], true, cancel)
-            .await
+        logout(&self.http, cancel).await
     }
 
-    /// Retire this credential: leave every room **one by one**, then log the
-    /// device out. The order is the retained one
-    /// (`backend-v2.js:10657,10663` enqueue the agent's room withdrawals before
-    /// `logout`), and a room that refuses (or answers nothing) does not abort
-    /// the walk: the retained loop withdraws each membership independently and
-    /// only then revokes the token, so one unreachable room can never strand the
-    /// agent in the rest. The returned per-room verdicts are in `rooms` order,
-    /// followed by the logout's.
-    pub async fn retire_agent(
+    /// Leave every room, then log out — the same sequence the live worker runs
+    /// (route 1), for a caller that has the credential but no worker.
+    pub async fn retire(
         &self,
         rooms: &[String],
         cancel: &CancellationToken,
     ) -> Result<AgentRetirement, Error> {
-        let mut leaves = Vec::with_capacity(rooms.len());
-        for room_id in rooms {
-            leaves.push(self.leave_room(room_id, cancel).await?);
-        }
-        let logout = self.logout(cancel).await?;
-        Ok(AgentRetirement { leaves, logout })
+        retire_rooms(&self.http, rooms, cancel).await
     }
-
-    async fn act(
-        &self,
-        segments: &[&str],
-        logout: bool,
-        cancel: &CancellationToken,
-    ) -> Result<RetireVerdict, Error> {
-        let response = self.http.post(segments, "{}".to_owned(), cancel).await;
-        match response {
-            Ok(response) => Ok(verdict(response.status, response.value, logout)),
-            // A dial that never connected is the one retry the bounded client
-            // already exhausted; anything past that is unknown, never terminal.
-            Err(Error::Cancelled) => Err(Error::Cancelled),
-            Err(_) => Ok(RetireVerdict::Unknown),
-        }
-    }
-}
-
-/// TS `matrix_http_<status>` parity: 2xx is revoked; a logout's 401 with
-/// `M_UNKNOWN_TOKEN` is revoked; anything else is the refusal word's status.
-fn verdict(status: u16, value: Option<Value>, logout: bool) -> RetireVerdict {
-    if (200..300).contains(&status) {
-        return RetireVerdict::Revoked;
-    }
-    if logout
-        && status == 401
-        && value
-            .as_ref()
-            .and_then(|v| v.get("errcode"))
-            .and_then(Value::as_str)
-            == Some("M_UNKNOWN_TOKEN")
-    {
-        return RetireVerdict::Revoked;
-    }
-    RetireVerdict::Refused(status)
 }
 
 #[cfg(test)]
@@ -228,6 +311,29 @@ mod tests {
         );
     }
 
+    /// The durable receipt the store accepts: non-empty, ≤2048 chars, no
+    /// control characters, and it names each room plus the logout.
+    #[test]
+    fn retirement_receipt_is_bounded_and_names_every_act() {
+        let retirement = AgentRetirement {
+            leaves: vec![RetireVerdict::Revoked, RetireVerdict::Refused(403)],
+            logout: RetireVerdict::Revoked,
+        };
+        let receipt = retirement.receipt();
+        assert!(!receipt.is_empty() && receipt.len() <= 2048);
+        assert!(!receipt.chars().any(char::is_control));
+        assert!(receipt.contains("room0=Revoked"));
+        assert!(receipt.contains("room1=Refused(403)"));
+        assert!(receipt.contains("logout=Revoked"));
+        assert!(!retirement.complete());
+
+        let complete = AgentRetirement {
+            leaves: vec![RetireVerdict::Revoked],
+            logout: RetireVerdict::Revoked,
+        };
+        assert!(complete.complete());
+    }
+
     /// The retained client is https-only with no embedded authority: the same
     /// refusal `HostConfig`/`TokenProvisioningHost` apply to their endpoints.
     #[test]
@@ -244,6 +350,8 @@ mod tests {
                 "endpoint must be refused: {endpoint}"
             );
         }
-        assert!(RetireClient::new("https://side.example.test", "synthetic-credential", &limits).is_ok());
+        assert!(
+            RetireClient::new("https://side.example.test", "synthetic-credential", &limits).is_ok()
+        );
     }
 }

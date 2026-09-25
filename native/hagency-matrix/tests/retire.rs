@@ -6,8 +6,8 @@
 //! revoked, a *logout*'s 401 `M_UNKNOWN_TOKEN` is already-revoked, a leave's is
 //! not, and anything else is the `matrix_http_<status>` refusal.
 mod common;
-use common::{Fake, TOKEN, limits};
-use hagency_matrix::{CancellationToken, RetireClient, RetireVerdict};
+use common::{Fake, Fixture, TOKEN, limits};
+use hagency_matrix::{CancellationToken, Collector, RetireClient, RetireVerdict};
 use serde_json::json;
 
 fn client(fake: &Fake, token: &str) -> RetireClient {
@@ -110,5 +110,52 @@ async fn native_retire_refusal_reports_ts_status_word() {
         }
     );
     assert_eq!(verdict.unwrap(), RetireVerdict::Refused(403));
+    fake.close().await;
+}
+
+/// Route (1) — the LIVE worker's retirement. The running agent already holds an
+/// authenticated transport, so its own `Collector` performs the acts: leave
+/// every room the host config names, then log out. This is the retained
+/// executor's "use the stored credential" arm (matrix-work-executor.js:40-49)
+/// and the architect's preferred route.
+#[tokio::test]
+async fn native_retire_live_worker_leaves_every_room_then_logs_out() {
+    let mut fake = Fake::start(true).await;
+    let f = Fixture::new();
+    let collector = Collector::new(
+        f.config(&fake.endpoint)
+            .with_root_pem(include_bytes!("fixtures/ca.pem"))
+            .unwrap(),
+        f.store.clone(),
+    )
+    .unwrap();
+    let cancel = CancellationToken::new();
+    let (retirement, ()) = tokio::join!(
+        collector.retire_agent(&cancel),
+        async {
+            // The one room this host config names (`Fixture::config`):
+            // `!direct:example.test`.
+            let leave = fake.next().await;
+            assert_eq!(leave.method, "POST");
+            assert_eq!(
+                leave.target,
+                "/_matrix/client/v3/rooms/!direct:example.test/leave"
+            );
+            assert_eq!(leave.headers["authorization"], format!("Bearer {TOKEN}"));
+            assert_eq!(leave.body, b"{}".to_vec());
+            leave.json(200, json!({}));
+            let logout = fake.next().await;
+            assert_eq!(logout.method, "POST");
+            assert_eq!(logout.target, "/_matrix/client/v3/logout");
+            assert_eq!(logout.headers["authorization"], format!("Bearer {TOKEN}"));
+            assert_eq!(logout.body, b"{}".to_vec());
+            logout.json(200, json!({}));
+        }
+    );
+    let retirement = retirement.unwrap();
+    assert_eq!(retirement.leaves, vec![RetireVerdict::Revoked]);
+    assert_eq!(retirement.logout, RetireVerdict::Revoked);
+    assert!(retirement.complete());
+    assert!(!retirement.receipt().is_empty());
     fake.close().await;
 }
