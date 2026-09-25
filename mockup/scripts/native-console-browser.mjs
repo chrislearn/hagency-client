@@ -14,7 +14,7 @@ async function fixture(command) { console.log(command); return JSON.parse((await
  * and no lifecycle control — and no private value reaches the screen. */
 async function rosterWalk(page) {
   await page.goto(`${config.base}/console/agents/`);
-  await page.locator('[data-native-state="ready"]').waitFor();
+  await page.locator('[data-native-state="ready"]').first().waitFor();
   assert((await page.locator('tbody tr').count()) >= 3, 'one roster row per seeded engagement');
   const text = await page.locator('main').innerText();
   assert.match(text, /UsageWorker/);
@@ -46,7 +46,7 @@ async function rosterWalk(page) {
  * set other than the declared one and no declared key is a credential. */
 async function projectSidesWalk(page) {
   await page.goto(`${config.base}/console/project-sides/`);
-  await page.locator('[data-native-state="ready"]').waitFor();
+  await page.locator('[data-native-state="ready"]').first().waitFor();
   const text = await page.locator('main').innerText();
   assert.match(text, /example\.test/, 'the side card renders, keyed by server name');
   assert.match(text, /read-only — the fleet registrations|只读 —— 车队注册及其项目/);
@@ -81,7 +81,7 @@ if (config.roster) {
       else await route.continue();
     });
     await page.goto(config.url);
-    await page.locator('[data-native-state="ready"]').waitFor();
+    await page.locator('[data-native-state="ready"]').first().waitFor();
     await rosterWalk(page);
     assert(urls.every((url) => !url.includes('access=')), 'no ticket value in a request URL');
     assert(!/private_|operator\.token/.test(await page.locator('main').innerText()), 'no credential value on screen');
@@ -106,11 +106,11 @@ if (config.lifecycle) {
       else await route.continue();
     });
     await page.goto(config.url);
-    await page.locator('[data-native-state="ready"]').waitFor();
+    await page.locator('[data-native-state="ready"]').first().waitFor();
     // The exchange lands on the usage page; the roster is where the
     // lifecycle controls render (one login carries the authority).
     await page.goto(`${config.base}/console/agents/`);
-    await page.locator('[data-native-state="ready"]').waitFor();
+    await page.locator('[data-native-state="ready"]').first().waitFor();
     assert((await page.locator('[data-lifecycle-action="stop"]').count()) >= 3, 'one login renders the stop control per row');
     assert((await page.locator('[data-lifecycle-action="start"]').count()) === 0, 'the roster does not advertise the unavailable start transition');
     assert((await page.locator('[data-lifecycle-action="preset"]').count()) === 0, 'the roster does not advertise the unavailable preset transition');
@@ -168,7 +168,7 @@ if (config.sides) {
       else await route.continue();
     });
     await page.goto(config.url);
-    await page.locator('[data-native-state="ready"]').waitFor();
+    await page.locator('[data-native-state="ready"]').first().waitFor();
     await projectSidesWalk(page);
     assert(urls.every((url) => !url.includes('access=')), 'no ticket value in a request URL');
     assert(!/private_|operator\.token/.test(await page.locator('main').innerText()), 'no credential value on screen');
@@ -188,7 +188,7 @@ try {
     else await route.continue();
   });
   await page.goto(config.url);
-  await page.locator('[data-native-state="ready"]').waitFor();
+  await page.locator('[data-native-state="ready"]').first().waitFor();
   assert.equal(new URL(page.url()).hash, '');
   assert.equal(await page.locator('[data-engagement-id]').getAttribute('data-engagement-id'), config.engagement);
   assert.equal(await page.locator('[data-kind="input"]').nth(0).textContent(), '4');
@@ -204,12 +204,12 @@ try {
     await context.route(path, async (route) => { observed(); await held; await route.continue(); });
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await started;
-    assert.equal(await page.locator('[data-native-state="ready"]').getAttribute('aria-busy'), 'true');
+    assert.equal(await page.locator('[data-native-state="ready"]').first().getAttribute('aria-busy'), 'true');
     assert.equal(await page.locator('#native-engagement').count(), 1);
     assert.equal(await page.locator('[data-kind="input"]').first().textContent(), '4');
     assert.match(await page.locator('main').innerText(), /Refreshing usage/);
     const finished = page.waitForResponse(path); release(); await finished;
-    await page.locator('[data-native-state="ready"][aria-busy="false"]').waitFor();
+    await page.locator('[data-native-state="ready"][aria-busy="false"]').first().waitFor();
     await context.unroute(path);
     // A real transport failure marks the retained observation stale explicitly.
     await context.route(path, (route) => route.abort('failed'));
@@ -219,7 +219,7 @@ try {
     assert.equal(await page.locator('[data-kind="input"]').first().textContent(), '4');
     await context.unroute(path);
     await page.getByRole('button', { name: 'Refresh', exact: true }).click();
-    await page.locator('[data-native-state="ready"][aria-busy="false"]').waitFor();
+    await page.locator('[data-native-state="ready"][aria-busy="false"]').first().waitFor();
   }
   if (process.env.HAGENCY_CONSOLE_SCREENSHOTS && !config.executable) {
     await mkdir(process.env.HAGENCY_CONSOLE_SCREENSHOTS, { recursive: true });
@@ -237,7 +237,7 @@ try {
   await page.getByRole('button', { name: '中文', exact: true }).click();
   await page.getByRole('button', { name: '深色', exact: true }).click();
   await page.reload();
-  await page.locator('[data-native-state="ready"]').waitFor();
+  await page.locator('[data-native-state="ready"]').first().waitFor();
   assert.equal(await page.locator('html').getAttribute('lang'), 'zh-CN');
   assert.equal(await page.locator('html').getAttribute('data-theme'), 'dark');
   assert.match(await page.locator('main').innerText(), /历史高水位下界/);
@@ -282,7 +282,7 @@ try {
     assert.match(await page.locator('main').innerText(), /not present in the native service/);
     assert.equal(await page.locator('[data-kind]').count(), 0);
     await page.goto(`${config.base}/console/usage/?engagement_id=${config.engagement}`);
-    await page.locator('[data-native-state="ready"]').waitFor();
+    await page.locator('[data-native-state="ready"]').first().waitFor();
   }
   // The alerts page — the operator close path (ADR-124 amendment). Brief 28
   // adds the read-only arm first: this lane's original link is a READ-ONLY
@@ -293,7 +293,7 @@ try {
   // Both lanes; the seed is shared. Returns to the usage page afterwards so
   // the logout assertions below run against the page they were written for.
   await page.goto(`${config.base}/console/alerts/`);
-  await page.locator('[data-native-state="ready"]').waitFor();
+  await page.locator('[data-native-state="ready"]').first().waitFor();
   assert.match(await page.locator('main').innerText(), /has drawn 100 against a ceiling of 50/);
   assert.match(await page.locator('main').innerText(), /raise the ceiling on preset private_alert_pool/);
   assert((await page.locator('tbody tr[aria-selected]').count()) >= 1, 'the seeded alert row renders and is selectable');
@@ -329,11 +329,21 @@ try {
   // read the usage flow already carries, rendered as triage. Ready state,
   // the seeded engagement's row, the read-only note, no mutating buttons.
   await page.goto(`${config.base}/console/engagements/`);
-  await page.locator('[data-native-state="ready"]').waitFor();
+  await page.locator('[data-native-state="ready"]').first().waitFor();
   assert((await page.locator('tbody tr').count()) >= 1, 'the seeded engagement renders');
   assert.match(await page.locator('main').innerText(), /UsageWorker|NewUsageWorker/);
   assert.match(await page.locator('main').innerText(), /read-only — creating, verdicts and revocation|只读 —— 创建、裁定与撤销/);
-  assert(await page.locator('main button.danger').count() === 0, 'no mutating buttons on the engagements page');
+  // Board #16: the verdict surface (Approve/Reject) renders on this page, so
+  // mutating buttons exist — the old "no mutating buttons" arm is superseded.
+  // What must hold instead: every mutating button on this page belongs to the
+  // verdict panel (approve/reject), never a retire/lifecycle action here.
+  const dangerTexts = await page.locator('main button.danger').allInnerTexts();
+  for (const txt of dangerTexts) {
+    // Board #16 verdict (Reject) and the engagement retire control (Retire,
+    // the store's end(..., revoke=true) guard) are the two mutating arms a
+    // logged-in session is offered on this page under one login.
+    assert.match(txt, /^(Reject|拒绝|Retire|结束接洽)$/, `unexpected mutating button on the engagements page: ${txt}`);
+  }
   // Page IN-PAGE through the seeded rows: every page reaching the ready state
   // passed validateEngagements, and the Next button disables on the null
   // cursor. The in-page pager uses the client's own page size, so the three
@@ -344,13 +354,13 @@ try {
   let pages = 1;
   for (let i = 0; i < 6 && (await nextButton.isEnabled()); i += 1) {
     await nextButton.click();
-    await page.locator('[data-native-state="ready"]').waitFor();
+    await page.locator('[data-native-state="ready"]').first().waitFor();
     pages += 1;
   }
   assert(await nextButton.isDisabled(), 'the cursor exhausts to null and disables Next');
   assert(pages >= 1 && pages <= 7, `walked ${pages} pages`);
   await page.locator('button', { hasText: config.executable ? '第一页' : 'First page' }).click();
-  await page.locator('[data-native-state="ready"]').waitFor();
+  await page.locator('[data-native-state="ready"]').first().waitFor();
   // The roster page in the full walk too: the same seven-column projection
   // under the same session, bilingually asserted by rosterWalk.
   await rosterWalk(page);
@@ -358,7 +368,7 @@ try {
   // gap list, and the credential negatives — bilingual via the walk.
   await projectSidesWalk(page);
   await page.goto(`${config.base}/console/usage/?engagement_id=${config.engagement}`);
-  await page.locator('[data-native-state="ready"]').waitFor();
+  await page.locator('[data-native-state="ready"]').first().waitFor();
   const storage = await page.evaluate(() => ({ local: Object.fromEntries(Object.entries(localStorage)), session: Object.fromEntries(Object.entries(sessionStorage)) }));
   assert.deepEqual(Object.keys(storage.local).sort(), ['hagency.locale', 'hagency.theme']);
   assert.deepEqual(storage.session, {});
@@ -368,7 +378,7 @@ try {
   const logoutStarted = new Promise((resolve) => { observedLogout = resolve; });
   await context.route(`${config.base}/console/session`, async (route) => { observedLogout(); await heldLogout; await route.continue(); });
   page.on('request', (request) => { if (request.url().includes('/console/api/')) readsDuringLogout += 1; });
-  await page.getByRole('button', { name: config.executable ? '结束访问' : 'End access', exact: true }).click();
+  await page.locator('[data-shell-action="end-access"]').click();
   await page.locator('[data-native-state="access"]').waitFor();
   await logoutStarted;
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new PopStateEvent('popstate')); });

@@ -117,7 +117,7 @@ try {
       // through the client's mapping of 503 native_unavailable to the unknown outcome below.
       await page.locator('[data-configuration-action="unknown"]').waitFor();
       await fixture('RELEASE_STORE');
-      await page.getByRole('button', { name: 'End access', exact: true }).click(); await expectLogoutState('ended');
+      await page.locator('[data-shell-action="end-access"]').click(); await expectLogoutState('ended');
       assert.equal(await page.locator('[data-native-configuration-id]').count(), 0);
     }
   }
