@@ -35,6 +35,7 @@ pub use domain::{
     UsageReceipt, UsageReport, UsageSource, UsageSummary, allowed_transitions,
     over_budget_notice_body,
 };
+pub use domain::{DeliveryFeedback, DeliveryWarning, DirectTarget, MentionState, MentionTarget};
 pub use domain::{OutcomeAction, OutcomeResolution};
 pub use domain_worker::DomainStore;
 pub mod outbound;

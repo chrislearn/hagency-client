@@ -39,6 +39,7 @@ pub use ceiling_alerts::{
 mod command_notices;
 mod conversation_lifecycle;
 mod conversations;
+mod delivery_feedback;
 mod execution;
 mod graphs;
 mod matrix_routes;
@@ -80,6 +81,9 @@ pub(crate) mod uploads;
 mod usage;
 pub use uploads::{UploadAdmission, UploadClaim, UploadIdentity, UploadPreparation, UploadSend};
 mod verified_ingress;
+pub use delivery_feedback::{
+    DeliveryFeedback, DeliveryWarning, DirectTarget, MentionState, MentionTarget,
+};
 pub use usage::{
     CeilingReport, KnownTokens, MAX_ENGAGEMENT_USAGE_PERIODS, MAX_ENGAGEMENT_USAGE_SOURCES,
     MAX_SOURCE_USAGE_RECEIPTS, MAX_USAGE_PERIODS, MAX_USAGE_RECEIPTS, MAX_USAGE_SOURCES,

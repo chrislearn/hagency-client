@@ -694,6 +694,29 @@ impl DomainRepository {
         tx.execute("INSERT INTO session_inputs(session_id,message_sequence,wake,config) VALUES(?1,?2,?3,?4)",params![route.session_id,message.sequence,wake,serialize(&message)?])?;
         if let Some((id, _, _)) = task {
             attach(&tx, &id, &message, wake)?;
+            // The room is owed the delivery-feedback notice when a human's
+            // mention could not reach its target (bridge-matrix.js:6492-6572).
+            // TS sends this AFTER the message is accepted, and
+            // `sendDeliveryNotice` swallows its own failure (:6487) — so a
+            // notice that cannot be stored must never cost the message its
+            // admission. Its own savepoint makes that exact: best effort, and
+            // the admission's outcome is untouched either way.
+            if matches!(route.privacy, RoomPrivacy::Group {}) && !input.mentions.is_empty() {
+                tx.execute_batch("SAVEPOINT delivery_feedback")?;
+                match super::delivery_feedback::emit(
+                    &tx,
+                    &id,
+                    &message,
+                    &input.mentions,
+                    message.sequence,
+                    now,
+                ) {
+                    Ok(()) => tx.execute_batch("RELEASE delivery_feedback")?,
+                    Err(_) => tx.execute_batch(
+                        "ROLLBACK TO delivery_feedback; RELEASE delivery_feedback",
+                    )?,
+                }
+            }
         }
         super::attachments::project_one(&tx, &route, &message)?;
         let result = MatrixIngressReceipt {
