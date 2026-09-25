@@ -427,6 +427,78 @@ fn native_owner_approval_context() {
     f.choose(&a.id, ApprovalChoice::Once);
     assert!(f.apply(0, &a.id).allow);
 }
+/// The runner's own approval leg (task #25, ADR-064 amendment PC-C3): the task
+/// is DERIVED from the capability, so the caller never names an approval; the
+/// settled-state refusals come back as TS's named codes (`consumeDecision`,
+/// backend-v2.js:10968) rather than as errors, so the agent learns what
+/// happened to its approval.
+#[test]
+fn native_runner_approval_reads_and_consumes_its_own_task() {
+    let mut f = Fixture::new(true);
+    // No approval exists yet: the read is `None`, never a fabrication.
+    assert!(
+        f.db.approval_for_runner(&f.caps[0], 1009)
+            .unwrap()
+            .is_none()
+    );
+    let a = f.admit(0, 1);
+    // The read serves the assigned task's live approval, by capability alone.
+    let read = f.db.approval_for_runner(&f.caps[0], 1011).unwrap().unwrap();
+    assert_eq!(read.id, a.id);
+    assert_eq!(read.state, "pending");
+    // ISOLATION: a capability for a different task/dispatch must not see this
+    // approval. The read is scoped to the capability's own dispatch+fence (the
+    // same scope `consume` enforces), so the sibling gets None — never a
+    // summary of somebody else's approval.
+    let sibling = f.db.approval_for_runner(&f.caps[1], 1011).unwrap();
+    assert!(
+        sibling.is_none(),
+        "a sibling capability must not read this approval, got {sibling:?}"
+    );
+    // And it cannot consume it either: no approval of its own to consume.
+    let sibling_consume =
+        f.db.consume_owner_approval_for_task(&f.caps[1], 1011)
+            .unwrap();
+    assert_eq!(sibling_consume["ok"], json!(false));
+    assert_eq!(sibling_consume["code"], json!("not_found"));
+    // The owner's approval is untouched by the sibling's attempts.
+    assert_eq!(
+        f.db.approval_for_runner(&f.caps[0], 1011)
+            .unwrap()
+            .unwrap()
+            .id,
+        a.id
+    );
+    // An undecided approval is not consumable: the generic refusal, no code.
+    assert!(
+        f.db.consume_owner_approval_for_task(&f.caps[0], 1011)
+            .is_err()
+    );
+    // The owner decides; the runner consumes and gets the decision word.
+    f.choose(&a.id, ApprovalChoice::Once);
+    let consumed =
+        f.db.consume_owner_approval_for_task(&f.caps[0], 1013)
+            .unwrap();
+    assert_eq!(consumed["ok"], json!(true));
+    assert_eq!(consumed["decision"], json!("allow"));
+    assert_eq!(consumed["approval"]["id"], json!(a.id));
+    assert_eq!(consumed["approval"]["state"], json!("applying"));
+    // At-most-once: the second consume repeats the outcome, never a new one.
+    let replay =
+        f.db.consume_owner_approval_for_task(&f.caps[0], 1014)
+            .unwrap();
+    assert_eq!(replay["ok"], json!(false));
+    assert_eq!(replay["code"], json!("already_consumed"));
+    // A deny decision is carried as `deny`, not as an error.
+    let b = f.admit(0, 2);
+    f.choose(&b.id, ApprovalChoice::Deny);
+    let denied =
+        f.db.consume_owner_approval_for_task(&f.caps[0], 1015)
+            .unwrap();
+    assert_eq!(denied["ok"], json!(true));
+    assert_eq!(denied["decision"], json!("deny"));
+}
+
 #[test]
 fn native_owner_approval_application() {
     let mut f = Fixture::new(true);
@@ -975,13 +1047,13 @@ fn native_owner_approval_recovery_schema12() {
     drop(db);
     let sql = rusqlite::Connection::open(directory.join("domain.sqlite3")).unwrap();
     remove_approval_schema(&sql);
-    sql.pragma_update(None, "user_version", 12).unwrap();
+    sql.execute_batch("DROP TABLE IF EXISTS agent_lifecycle; ALTER TABLE decisions DROP COLUMN kind; ALTER TABLE decisions DROP COLUMN at; PRAGMA user_version=12;").unwrap();
     for _ in 0..2 {
         let db = DomainRepository::open(&directory).unwrap();
         assert_eq!(
             sql.pragma_query_value(None, "user_version", |r| r.get::<_, u64>(0))
                 .unwrap(),
-            39
+            hagency_store::DOMAIN_SCHEMA_VERSION as u64
         );
         assert_eq!(count(&sql, "approval_bindings"), 0);
         assert_eq!(count(&sql, "approval_grants"), 0);

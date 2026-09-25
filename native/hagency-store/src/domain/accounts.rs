@@ -904,7 +904,7 @@ pub const DEFAULT_READINESS_TTL: u64 = 24 * 60 * 60 * 1000;
 /// The attempt window the host allocates when it begins a login.
 pub const LOGIN_DEADLINE_MS: u64 = 10 * 60 * 1000;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AccountReadinessMode {
     Subscription,
     ApiKey,
@@ -925,23 +925,34 @@ impl AccountReadiness {
         }
     }
 }
-/// The host-side attempt handle. Not a wire type (no Serialize): it exists
-/// only between `begin_account_login` and `settle_account_login`.
-#[derive(Debug, Clone)]
+/// The host-side attempt handle. It crosses exactly one wire (task #28's
+/// CLI-through-API login: `begin` hands it to the operator's CLI, `settle`
+/// takes it back) and carries no secret — an id and a number.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LoginAttempt {
     account_id: String,
     attempt: u64,
 }
+impl LoginAttempt {
+    /// The account this attempt was allocated for. Task #28's settle route
+    /// cross-checks the path id against this before settling, so a mismatched
+    /// attempt never settles a different account's row.
+    pub fn account_id(&self) -> &str {
+        &self.account_id
+    }
+}
 /// The parent's classification of the login child's exit, from a closed
 /// vocabulary — never the provider's verbatim words, never a credential.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LoginVerdict {
     pub mode: AccountReadinessMode,
     pub provider_state: String,
     pub outcome: LoginOutcome,
     pub expires_at_ms: Option<u64>,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LoginOutcome {
     Observed,
     Refused,

@@ -202,6 +202,41 @@ pub fn write_new(path: &Path, value: &[u8]) -> Result<(), Error> {
     Ok(())
 }
 
+/// Replace an existing private file's contents atomically, or create it.
+///
+/// Unlike `write_new` (create-only, so `init` can never clobber live state),
+/// this is the rotation path: the new bytes are written to a sibling temporary
+/// file, synced, and renamed over the target. A crash therefore leaves either
+/// the previous file or the new one — never a truncated credential that no
+/// caller would accept. The replacement must already satisfy the same private
+/// gate as the file it replaces, so a rotation cannot widen permissions.
+pub fn replace(path: &Path, value: &[u8]) -> Result<(), Error> {
+    let directory = path.parent().ok_or(Error::Private)?;
+    // A distinct free name in the SAME directory, so the rename below is a
+    // same-filesystem atomic replace rather than a copy.
+    let mut suffix = [0u8; 8];
+    getrandom::fill(&mut suffix).map_err(|_| Error::Private)?;
+    let temporary = directory.join(format!(".{}.tmp", hex(&suffix)));
+    {
+        let mut file = open(&temporary, true)?;
+        file.write_all(value)?;
+        file.sync_all()?;
+    }
+    // `open` already checked the temporary's mode/owner/regularity; re-check
+    // the destination after the swap, so a rotation that somehow landed a
+    // non-private file reports failure instead of leaving it live.
+    fs::rename(&temporary, path)?;
+    let replaced = open(path, false)?;
+    drop(replaced);
+    #[cfg(unix)]
+    File::open(directory)?.sync_all()?;
+    Ok(())
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 pub fn read_secret(path: &Path) -> Result<Vec<u8>, Error> {
     let file = open(path, false)?;
     if file.metadata()?.len() > 512 {

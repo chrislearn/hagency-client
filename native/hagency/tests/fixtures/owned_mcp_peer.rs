@@ -209,6 +209,8 @@ fn helper(
         // The payload holds only what addressed this agent, so the room
         // discussion it points at is always readable.
         "read_conversation",
+        // Board #53: the self-reminder tool rides the same pre-approved set.
+        "schedule_reminder",
     ];
     let mut approved = json!({
         "get_task":{"approval_mode":"approve"},
@@ -216,7 +218,8 @@ fn helper(
         "update_task_execution":{"approval_mode":"approve"},
         "transition_task":{"approval_mode":"approve"},
         "complete_task_with_reply":{"approval_mode":"approve"},
-        "read_conversation":{"approval_mode":"approve"}
+        "read_conversation":{"approval_mode":"approve"},
+        "schedule_reminder":{"approval_mode":"approve"}
     });
     if fleet_files || fleet_media {
         environment.extend(["HAGENCY_FILE_TOOLS", "HAGENCY_RECEIVE_FILE_TOOLS"]);

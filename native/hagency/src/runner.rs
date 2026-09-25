@@ -39,11 +39,59 @@ pub(super) fn router() -> Router {
                 .push(Router::with_path("tasks/{id}/operations").post(mutate))
                 .push(Router::with_path("inbox").get(inbox))
                 .push(Router::with_path("conversation").get(conversation_page))
+                .push(Router::with_path("approval").get(approval))
+                .push(Router::with_path("approval/consume").post(consume_approval))
                 .push(Router::with_path("peer-messages").post(send_peer))
                 .push(Router::with_path("peer-inbox").get(peer_inbox))
+                .push(Router::with_path("reminders").post(schedule_reminder))
                 .push(workflows::router())
-                .push(replies::router()),
+                .push(replies::router())
+                // The agent self-update surface (board #52, TS
+                // `PATCH /api/agents/:name` at backend-v2.js:11530-11560):
+                // native has no durable agent record to patch — the agent is
+                // a projection of its engagements — so the only faithful
+                // port today is the route's SAFETY half: the refusal that
+                // keeps an agent from choosing its own employer. Mounted
+                // under the runner's own `authenticate` hoop, so it is the
+                // agent's own capability that reaches it.
+                .push(Router::with_path("agent").patch(self_update)),
         )
+}
+/// The fail-closed half of the TS self-update (backend-v2.js:11537-11550):
+/// `projectSide` in the body is REFUSED rather than ignored, with the fixed
+/// refusal words and the pointer at the operator route that CAN set it.
+/// Native has no writable agent record, so any other field is refused the
+/// same way (`agent_record_not_writable`) — a 200-with-no-effect would be
+/// exactly the "accepted but not applied" failure the TS comment exists to
+/// prevent. The route writes nothing; it only fails honestly.
+#[handler]
+async fn self_update(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    let Some(_c) = context(depot, res) else {
+        return;
+    };
+    let raw = match req.payload_with_max_size(8 * 1024).await {
+        Ok(bytes) => bytes,
+        Err(_) => {
+            refusal(res, StatusCode::BAD_REQUEST, "invalid_agent_update");
+            return;
+        }
+    };
+    let body: serde_json::Value = match serde_json::from_slice(&raw) {
+        Ok(value) => value,
+        Err(_) => {
+            refusal(res, StatusCode::BAD_REQUEST, "invalid_agent_update");
+            return;
+        }
+    };
+    // The load-bearing refusal (TS :11537-11550, quoted near-verbatim — the
+    // agent-authenticated door must not move the employer): checked FIRST,
+    // before the not-writable refusal, so the operator pointer is the answer
+    // even on a body no other field of which could ever apply.
+    if body.get("projectSide").is_some() || body.get("project_side").is_some() {
+        refusal(res, StatusCode::BAD_REQUEST, "project_side_not_settable_here");
+        return;
+    }
+    refusal(res, StatusCode::CONFLICT, "agent_record_not_writable");
 }
 #[handler]
 async fn change_conversation(req: &mut Request, depot: &mut Depot, res: &mut Response) {
@@ -81,6 +129,35 @@ async fn send_peer(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     match c
         .store
         .runner_command(c.cap, RunnerCommand::SendPeer(input))
+        .await
+    {
+        Ok(value) => res.render(Json(value)),
+        Err(error) => attributed_failure(res, Some(&c.store), error),
+    }
+}
+#[handler]
+async fn schedule_reminder(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Command {
+        msg: String,
+        delay_ms: u64,
+    }
+    let Some(c) = context(depot, res) else {
+        return;
+    };
+    let Some(command) = resources::body::<Command>(req, depot, res).await else {
+        return;
+    };
+    match c
+        .store
+        .runner_command(
+            c.cap,
+            RunnerCommand::ScheduleReminder {
+                msg: command.msg,
+                delay_ms: command.delay_ms,
+            },
+        )
         .await
     {
         Ok(value) => res.render(Json(value)),
@@ -417,6 +494,53 @@ async fn conversation_page(req: &mut Request, depot: &mut Depot, res: &mut Respo
     }
     .await;
     match result {
+        Ok(value) => res.render(Json(value)),
+        Err(error) => attributed_failure(res, Some(&c.store), error),
+    }
+}
+/// The assigned task's live approval (ADR-064 amendment, PC-C3). Task-bound and
+/// target-free: no approval id is addressable, because the store derives it
+/// from the presented capability alone.
+#[handler]
+async fn approval(_req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    let Some(c) = context(depot, res) else {
+        return;
+    };
+    match c.store.runner_command(c.cap, RunnerCommand::Approval).await {
+        Ok(value) => res.render(Json(value)),
+        Err(error) => attributed_failure(res, Some(&c.store), error),
+    }
+}
+/// Consume that approval. The body carries the helper's mutation receipt; the
+/// at-most-once rule itself is the store's settled-state machine, exactly as
+/// TS `consumeDecision` (which takes no receipt at all).
+#[handler]
+async fn consume_approval(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Command {
+        call_id: String,
+    }
+    let Some(c) = context(depot, res) else {
+        return;
+    };
+    let Some(command) = resources::body::<Command>(req, depot, res).await else {
+        return;
+    };
+    if hagency_core::project::identifier(&command.call_id, 512).is_err() {
+        refusal(res, StatusCode::BAD_REQUEST, "invalid_task_operation");
+        return;
+    }
+    match c
+        .store
+        .runner_command(
+            c.cap,
+            RunnerCommand::ConsumeApproval {
+                call_id: command.call_id,
+            },
+        )
+        .await
+    {
         Ok(value) => res.render(Json(value)),
         Err(error) => attributed_failure(res, Some(&c.store), error),
     }

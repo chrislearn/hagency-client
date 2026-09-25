@@ -260,7 +260,7 @@ fn native_graph_transactions() {
     drop(db);
     let inspect = sql(&root);
     remove_graph_schema(&inspect);
-    inspect.pragma_update(None, "user_version", 9).unwrap();
+    inspect.execute_batch("DROP TABLE IF EXISTS agent_lifecycle; ALTER TABLE decisions DROP COLUMN kind; ALTER TABLE decisions DROP COLUMN at; PRAGMA user_version=9;").unwrap();
     for _ in 0..2 {
         let db = DomainRepository::open(&root.path().join("state")).unwrap();
         assert_eq!(
@@ -273,7 +273,7 @@ fn native_graph_transactions() {
             inspect
                 .pragma_query_value(None, "user_version", |r| r.get::<_, u32>(0))
                 .unwrap(),
-            39
+            hagency_store::DOMAIN_SCHEMA_VERSION as u32
         );
     }
 }

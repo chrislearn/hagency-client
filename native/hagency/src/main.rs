@@ -39,12 +39,18 @@ enum Command {
         #[arg(long)]
         state_dir: PathBuf,
     },
-    /// Prepare or inspect fresh host-owned Codex credential namespaces offline.
+    /// Prepare or inspect fresh host-owned Codex credential namespaces.
+    /// With --listen the command drives the RUNNING service's operator API;
+    /// without it, the offline store writer is used (service must be stopped).
     Account {
-        // clap forbids required global arguments; the offline account commands
-        // accept --state-dir before or after their verb and refuse without it.
+        // clap forbids required global arguments; the account commands accept
+        // --state-dir (and --listen) before or after their verb.
         #[arg(long, global = true)]
         state_dir: Option<PathBuf>,
+        /// Drive the running service at this loopback address instead of
+        /// opening the state directory a second time.
+        #[arg(long, global = true)]
+        listen: Option<SocketAddr>,
         #[command(subcommand)]
         command: hagency::bootstrap::accounts::Command,
     },
@@ -53,8 +59,35 @@ enum Command {
     Registration {
         #[arg(long, global = true)]
         state_dir: Option<PathBuf>,
+        /// Drive the running service at this loopback address instead of
+        /// opening the state directory a second time.
+        #[arg(long, global = true)]
+        listen: Option<SocketAddr>,
         #[command(subcommand)]
         command: hagency::bootstrap::registration::Command,
+    },
+    /// Issue a project side's appservice registration (task #13): random
+    /// tokens, the YAML under <state>/registrations/, and the stored
+    /// credential the appservice profile reads — no hand-placed files.
+    SideRegistration {
+        #[arg(long)]
+        state_dir: PathBuf,
+        /// The project side — its Matrix server name.
+        #[arg(long)]
+        side: String,
+        /// The address this side's homeserver reaches Hagency at; cannot be
+        /// derived, only asked.
+        #[arg(long)]
+        url: String,
+        #[arg(long)]
+        registration_id: Option<String>,
+        #[arg(long)]
+        sender_localpart: Option<String>,
+        #[arg(long)]
+        user_namespace: Option<String>,
+        /// true unless explicitly false, matching the TS body contract.
+        #[arg(long)]
+        exclusive: Option<bool>,
     },
     /// Admit an externally created agent only after fresh authenticated Matrix observations.
     Provision {
@@ -142,6 +175,33 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Snapshot an initialized state directory into a new private directory.
+    /// Uses SQLite's online backup, so it runs while `serve` is up.
+    Backup {
+        #[arg(long)]
+        state_dir: PathBuf,
+        /// New directory to write; refused if it already exists.
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Restore a snapshot into an empty state directory. Never overwrites.
+    Restore {
+        #[arg(long)]
+        state_dir: PathBuf,
+        /// The snapshot directory to restore from.
+        #[arg(long)]
+        from: PathBuf,
+    },
+    /// Mint a replacement for a locally-held credential.
+    Rotate {
+        // clap forbids required global arguments; like the offline account
+        // commands, this accepts --state-dir before or after its verb and
+        // refuses without it.
+        #[arg(long, global = true)]
+        state_dir: Option<PathBuf>,
+        #[command(subcommand)]
+        command: hagency::ops::rotate::Command,
+    },
     /// Run the isolated native API. Does not load .env or any existing Hagency state.
     Serve {
         #[arg(long)]
@@ -228,15 +288,86 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                 "Initialized native state. Operator token is in operator.token; keep it private."
             );
         }
-        Command::Account { state_dir, command } => {
+        Command::Account {
+            state_dir,
+            command,
+            listen,
+        } => {
             let state_dir = state_dir.ok_or("account commands require --state-dir")?;
-            let result = hagency::bootstrap::accounts::run(&state_dir, command)?;
+            let result = match listen {
+                // Task #28: drive the RUNNING service's operator API over
+                // loopback (the service stays up); offline fallback otherwise.
+                Some(address) => {
+                    match hagency::operator_cli::accounts(&state_dir, address, command).await {
+                        Ok(choices) => choices,
+                        Err(error) => {
+                            eprintln!("hagency: {}", error.describe());
+                            std::process::exit(error.exit_code());
+                        }
+                    }
+                }
+                None => hagency::bootstrap::accounts::run(&state_dir, command)?,
+            };
             println!("{}", serde_json::to_string(&result)?);
         }
-        Command::Registration { state_dir, command } => {
+        Command::Registration {
+            state_dir,
+            command,
+            listen,
+        } => {
             let state_dir = state_dir.ok_or("registration commands require --state-dir")?;
-            hagency::bootstrap::registration::run(&state_dir, command)?;
-            println!("{}", serde_json::json!({"ok": true}));
+            match command {
+                hagency::bootstrap::registration::Command::Register { file } => {
+                    match listen {
+                        Some(address) => {
+                            if let Err(error) =
+                                hagency::operator_cli::registration(&state_dir, address, &file)
+                                    .await
+                            {
+                                eprintln!("hagency: {}", error.describe());
+                                std::process::exit(error.exit_code());
+                            }
+                        }
+                        None => {
+                            hagency::bootstrap::registration::run(
+                                &state_dir,
+                                hagency::bootstrap::registration::Command::Register { file },
+                            )?;
+                        }
+                    }
+                    println!("{}", serde_json::json!({"ok": true}));
+                }
+                // integ's connection probe (#51): a local offline check —
+                // no running-service route exists for it, --listen or not.
+                hagency::bootstrap::registration::Command::Probe(args) => {
+                    hagency::bootstrap::registration::run(
+                        &state_dir,
+                        hagency::bootstrap::registration::Command::Probe(args),
+                    )?;
+                    println!("{}", serde_json::json!({"ok": true}));
+                }
+            }
+        }
+        Command::SideRegistration {
+            state_dir,
+            side,
+            url,
+            registration_id,
+            sender_localpart,
+            user_namespace,
+            exclusive,
+        } => {
+            hagency::console::side_registration::run_cli(
+                &state_dir,
+                hagency_store::IssueSideRegistrationRequest {
+                    side,
+                    url,
+                    registration_id,
+                    sender_localpart,
+                    user_namespace,
+                    exclusive,
+                },
+            )?;
         }
         Command::Provision { state_dir, command } => {
             let state_dir = state_dir.ok_or("provision commands require --state-dir")?;
@@ -254,6 +385,35 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                 serde_json::json!({"rejected":rejected,"effects_retried":false})
             );
         }
+        Command::Backup { state_dir, out } => {
+            let manifest = hagency::ops::backup::snapshot(&state_dir, &out)?;
+            println!(
+                "{}",
+                serde_json::json!({
+                    "ok": true,
+                    "out": out,
+                    "created_at_ms": manifest.created_at_ms,
+                    "files": manifest.entries.len(),
+                })
+            );
+        }
+        Command::Restore { state_dir, from } => {
+            let manifest = hagency::ops::backup::restore(&state_dir, &from)?;
+            println!(
+                "{}",
+                serde_json::json!({
+                    "ok": true,
+                    "from": from,
+                    "created_at_ms": manifest.created_at_ms,
+                    "files": manifest.entries.len(),
+                })
+            );
+        }
+        Command::Rotate { state_dir, command } => {
+            let state_dir = state_dir.ok_or("rotate commands require --state-dir")?;
+            let receipt = hagency::ops::rotate::run(&state_dir, command)?;
+            println!("{}", serde_json::to_string(&receipt)?);
+        }
         Command::Serve {
             state_dir,
             listen,
@@ -265,7 +425,16 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
         } => {
             let console = console_assets
                 .as_deref()
-                .map(hagency::console::Console::load)
+                .map(|assets| {
+                    // The graph routes persist `task_graphs.json` beside
+                    // `domain.sqlite3` (TS: the document in the data dir).
+                    hagency::console::Console::load_with_state(assets, Some(&state_dir)).map_err(
+                        |_| hagency::bootstrap::Failure::Config {
+                            field: "--console-assets",
+                            fix: "the directory must be the bundle built by mockup/scripts/build-native-console.mjs, owner-private (0700) and reached without a symlink in any path component, with a manifest.json whose entries all match the files",
+                        },
+                    )
+                })
                 .transpose()?;
             let mut bootstrap = hagency::bootstrap::Bootstrap::open_with_options(
                 &state_dir,

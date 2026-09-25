@@ -1,7 +1,9 @@
 pub(crate) mod state;
 use crate::collector::observe;
 use crate::{CancellationToken, Collector, Error, collector::Inner, sdk::Owner};
-use hagency_core::{ingress::VerifiedNoticeClaim, replies::*};
+use hagency_core::{
+    commands::CommandNoticeClaimed, ingress::VerifiedNoticeClaim, replies::*,
+};
 use hagency_matrix_format::MatrixContent;
 use serde_json::{Value, json};
 use state::{Attempt, Command, Kind, Phase, Write};
@@ -22,8 +24,45 @@ pub struct OutgoingSummary {
 pub(crate) enum Source {
     Final(ReplyClaim),
     Notice(Box<VerifiedNoticeClaim>),
+    Command(Box<CommandNoticeClaimed>),
     File(Box<crate::upload::publication::FileSource>),
     Resume,
+}
+
+/// Parse an activity notice's kind into its dispatch id and, when the
+/// send should EDIT an earlier revision, the anchor event id. The kind is
+/// `activity:<dispatch_id>:<revision>[:<anchor>]` (task #1): dispatch ids
+/// are colon-free (`identifier()`), the revision is numeric, and the
+/// anchor — a Matrix event id — may itself contain colons, so it is taken
+/// as the remainder. Every other notice kind parses to None.
+fn parse_activity_notice(kind: &str) -> Option<(String, Option<String>)> {
+    let rest = kind.strip_prefix("activity:")?;
+    let (dispatch, rest) = rest.split_once(':')?;
+    let anchor = rest
+        .split_once(':')
+        .map(|(_revision, anchor)| anchor.to_owned());
+    Some((dispatch.to_owned(), anchor))
+}
+
+/// The activity envelope (lib/matrix-activity.js:4-13): the notice always
+/// carries `io.hagency.activity: {dispatch_id}`; when an anchor exists the
+/// send becomes an EDIT — body prefixed `* `, `m.new_content` the plain
+/// content, `m.relates_to` the replace relation (which replaces the thread
+/// relation, exactly as the TS override does).
+fn apply_activity_envelope(
+    mut content: Value,
+    dispatch_id: &str,
+    anchor: Option<&str>,
+) -> Value {
+    content["io.hagency.activity"] = json!({"dispatch_id": dispatch_id});
+    if let Some(anchor) = anchor {
+        let plain = content.clone();
+        let starred = format!("* {}", content["body"].as_str().unwrap_or_default());
+        content["body"] = json!(starred);
+        content["m.new_content"] = plain;
+        content["m.relates_to"] = json!({"rel_type":"m.replace","event_id":anchor});
+    }
+    content
 }
 impl Collector {
     /// Existing host claim only. No caller-selected Matrix path or content.
@@ -40,6 +79,18 @@ impl Collector {
         cancel: &CancellationToken,
     ) -> Result<OutgoingSummary, Error> {
         self.outgoing_job(Source::Notice(Box::new(claim)), cancel)
+            .await
+    }
+    /// Answer a `!` command line in the room that carried it, as this agent.
+    /// Same custody and retry discipline as a final reply: the claim is
+    /// host-minted, one send per claim, and an unknown outcome is inspected
+    /// rather than re-sent (`lib/bot-commands.js` `reply`/`sendInto`).
+    pub async fn send_command_notice(
+        &self,
+        claimed: CommandNoticeClaimed,
+        cancel: &CancellationToken,
+    ) -> Result<OutgoingSummary, Error> {
+        self.outgoing_job(Source::Command(Box::new(claimed)), cancel)
             .await
     }
     /// Settles journaled acceptance. Uncertain/prepared work is inspect-only;
@@ -201,7 +252,8 @@ impl Inner {
         if view.attempt.is_some() {
             return Err(Error::OutcomeUnknown);
         }
-        let (kind, id, fence, domain_digest, route, transaction_id, body) = match &source {
+        let mut activity: Option<(String, Option<String>)> = None;
+        let (kind, id, fence, domain_digest, route, transaction_id, body, reply_to) = match &source {
             Source::Final(claim) => {
                 let historical = owner
                     .outgoing(Command::Lookup {
@@ -236,6 +288,7 @@ impl Inner {
                     send.route,
                     send.transaction_id,
                     send.body,
+                    send.reply_to,
                 )
             }
             Source::Notice(claim) => {
@@ -266,6 +319,7 @@ impl Inner {
                 if receipt.state != "claimed" {
                     return Err(Error::Domain);
                 }
+                activity = parse_activity_notice(&claim.claim.notice.kind);
                 (
                     Kind::Notice,
                     claim.claim.notice.id.clone(),
@@ -274,6 +328,48 @@ impl Inner {
                     claim.route.clone(),
                     claim.claim.notice.transaction_id.clone(),
                     claim.claim.notice.body.clone(),
+                    None,
+                )
+            }
+            Source::Command(claimed) => {
+                observe!(OutgoingPreview);
+                let receipt = self
+                    .domain
+                    .command_notice_receipt(claimed.claim.notice.id.clone())
+                    .await?;
+                let historical = owner
+                    .outgoing(Command::Lookup {
+                        id: receipt.id.clone(),
+                        fence: receipt.fence,
+                    })
+                    .await?;
+                if let Some(original) = historical.receipts.first() {
+                    if original.kind != Kind::Command {
+                        return Err(Error::Conflict);
+                    }
+                    if receipt.state != "delivered" {
+                        return Err(Error::Conflict);
+                    }
+                    return Ok(OutgoingSummary {
+                        id: Some(receipt.id),
+                        state: OutgoingState::Delivered,
+                        replayed: true,
+                    });
+                }
+                if receipt.state != "claimed" {
+                    return Err(Error::Domain);
+                }
+                (
+                    Kind::Command,
+                    claimed.claim.notice.id.clone(),
+                    receipt.fence,
+                    claimed.digest.clone(),
+                    claimed.route.clone(),
+                    claimed.claim.notice.transaction_id.clone(),
+                    claimed.claim.notice.body.clone(),
+                    // A command answer names nobody: it renders from the route's
+                    // thread root alone, exactly as the retained bridge sent it.
+                    None,
                 )
             }
             Source::File(file) => {
@@ -289,6 +385,7 @@ impl Inner {
                     l.route.clone(),
                     l.transaction_id.clone(),
                     String::new(),
+                    None,
                 )
             }
             Source::Resume => unreachable!(),
@@ -305,8 +402,26 @@ impl Inner {
         } else {
             let mut content =
                 json!({"msgtype":if kind==Kind::Notice {"m.notice"}else{"m.text"},"body":body});
-            if let Some(root) = &route.thread_root {
-                content["m.relates_to"] = json!({"rel_type":"m.thread","event_id":root,"is_falling_back":true,"m.in_reply_to":{"event_id":root}});
+            // The retained bridge attached the handler's own html rendering
+            // (`reply`, :397-404: `format` + `formatted_body` only when that
+            // handler had one). A command answer carries it through verbatim —
+            // a truthy `formatted_body` is trusted passthrough, never
+            // re-rendered (`hagency-matrix-format`).
+            if let Source::Command(claimed) = &source
+                && let Some(html) = &claimed.claim.notice.html
+            {
+                content["format"] = json!("org.matrix.custom.html");
+                content["formatted_body"] = json!(html);
+            }
+            if let Some(relation) = state::reply_relation(
+                route.thread_root.as_deref(),
+                reply_to.as_deref(),
+                matches!(route.privacy, hagency_core::replies::RoomPrivacy::Group {}),
+            ) {
+                content["m.relates_to"] = relation;
+            }
+            if let Some((dispatch, anchor)) = &activity {
+                content = apply_activity_envelope(content, dispatch, anchor.as_deref());
             }
             let content = MatrixContent::new(content)
                 .and_then(|c| c.formatted())
@@ -319,6 +434,7 @@ impl Inner {
                 fence,
                 domain_digest,
                 route,
+                reply_to,
                 transaction_id,
                 content,
                 content_digest,
@@ -359,6 +475,23 @@ impl Inner {
                 let begun = self
                     .domain
                     .begin_verified_task_notice_send(id.clone(), claim.claim.token.clone())
+                    .await?;
+                if begun.fence != fence
+                    || begun.digest != draft.domain_digest
+                    || begun.route != draft.route
+                    || begun.notice.transaction_id != draft.transaction_id
+                    || begun.notice.body != body
+                {
+                    return Err(Error::Conflict);
+                }
+            }
+            Source::Command(claimed) => {
+                let begun = self
+                    .domain
+                    .begin_command_notice_send(
+                        claimed.claim.notice.id.clone(),
+                        claimed.claim.token.clone(),
+                    )
                     .await?;
                 if begun.fence != fence
                     || begun.digest != draft.domain_digest
@@ -556,6 +689,11 @@ impl Inner {
                     .verified_notice_send_current(attempt.id.clone(), attempt.fence)
                     .await?
             }
+            Kind::Command => {
+                self.domain
+                    .command_notice_send_current(attempt.id.clone(), attempt.fence)
+                    .await?
+            }
             Kind::File => false,
         };
         if !send_current {
@@ -626,6 +764,15 @@ impl Inner {
                     .validate_verified_task_notice_send(
                         claim.claim.notice.id.clone(),
                         claim.claim.token.clone(),
+                        fence,
+                    )
+                    .await?
+            }
+            Source::Command(claimed) => {
+                self.domain
+                    .validate_command_notice_send(
+                        claimed.claim.notice.id.clone(),
+                        claimed.claim.token.clone(),
                         fence,
                     )
                     .await?
@@ -716,23 +863,65 @@ impl Inner {
         cancel: &CancellationToken,
     ) -> Result<Value, Error> {
         let result = if write.room {
-            self.http
-                .put(
-                    &[
-                        "_matrix",
-                        "client",
-                        "v3",
-                        "rooms",
+            // The kick moment (board #11, parity bridge-matrix.js:10888-10950):
+            // the retained bridge retries a send that failed on membership —
+            // re-invite, rejoin, resend. Native's kick fact surfaces here, at the
+            // write itself (403): the preflights still saw the agent joined, so
+            // nothing has retired the room scope, and the rejoin restores exactly
+            // the membership the route was drafted against. The retry reuses the
+            // same transaction id, so a server that somehow accepted before
+            // refusing dedupes. A 403 that is not membership (a dead token) fails
+            // the rejoin the same way and keeps the refusal — TS discriminates by
+            // error text; the rejoin POST is the native discriminator.
+            let send = [
+                "_matrix",
+                "client",
+                "v3",
+                "rooms",
+                &route.room_id,
+                "send",
+                &write.event_type,
+                &write.transaction_id,
+            ];
+            let sent = self
+                .http
+                .put(&send, write.body.clone(), cancel)
+                .await
+                .and_then(|response| response.success());
+            match sent {
+                Ok(value) => Ok(value),
+                Err(Error::Unauthorized) => {
+                    let restored = crate::identity_polish::agent_rejoin(
+                        &self.http,
                         &route.room_id,
-                        "send",
-                        &write.event_type,
-                        &write.transaction_id,
-                    ],
-                    write.body,
-                    cancel,
-                )
-                .await?
-                .success()
+                        cancel,
+                    )
+                    .await
+                    .is_ok();
+                    let retried = if restored {
+                        self.http
+                            .put(&send, write.body.clone(), cancel)
+                            .await
+                            .and_then(|response| response.success())
+                    } else {
+                        Err(Error::Unauthorized)
+                    };
+                    match retried {
+                        Ok(value) => Ok(value),
+                        Err(error) => {
+                            eprintln!(
+                                "{}",
+                                crate::identity_polish::send_retry_warning(
+                                    &route.room_id,
+                                    "membership was lost and the rejoin did not restore it",
+                                )
+                            );
+                            Err(error)
+                        }
+                    }
+                }
+                Err(error) => Err(error),
+            }
         } else {
             self.http
                 .put(
@@ -753,6 +942,9 @@ impl Inner {
         match result {
             Ok(value) => Ok(value),
             Err(error) => {
+                // Task #9: only a refusal that survived the membership retry is
+                // journalled as permanent. A lost dial, a timeout or a 5xx is
+                // left unmarked and re-sent with the same transaction id.
                 if permanent_refusal(&error) {
                     // Best effort: the permanent verdict is the fact the caller
                     // must see; losing the marker only costs one deduped re-PUT.
@@ -792,6 +984,11 @@ impl Inner {
             Kind::Notice => {
                 self.domain
                     .reconcile_verified_task_notice(attempt.id.clone(), attempt.fence, observation)
+                    .await?;
+            }
+            Kind::Command => {
+                self.domain
+                    .reconcile_command_notice(attempt.id.clone(), attempt.fence, observation)
                     .await?;
             }
             Kind::File => {

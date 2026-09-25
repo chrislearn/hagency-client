@@ -8,7 +8,7 @@ use crate::{
     outgoing::state::{self, Attempt, Kind, Phase},
 };
 use hagency_core::file_delivery::{
-    CapturedFile, FILE_MIME, FileDeliveryRequest, FilePublicationLocator,
+    CapturedFile, FileDeliveryRequest, FilePublicationLocator,
 };
 use hagency_store::FilePublicationSend;
 use serde::{Deserialize, Serialize};
@@ -66,6 +66,7 @@ impl Sdk {
             fence: l.fence,
             domain_digest: l.content_digest.clone(),
             route: l.route.clone(),
+            reply_to: None,
             transaction_id: l.transaction_id.clone(),
             content_digest: state::hash(state::encode(&content, state::MAX_EVENT)?.as_bytes()),
             content,
@@ -114,7 +115,7 @@ fn content(binding: &Binding, ledger: Option<&Ledger>, context: &Context) -> Res
     let l = &binding.locator;
     binding.metadata.validate().map_err(|_| Error::Storage)?;
     binding.captured.validate().map_err(|_| Error::Storage)?;
-    if !l.route.encrypted || binding.captured.size != l.stage.len {
+    if binding.captured.size != l.stage.len {
         return Err(Error::Storage);
     }
     let descriptor = hagency_media::Descriptor::from_private_event_json(&binding.descriptor)
@@ -149,13 +150,25 @@ fn content(binding: &Binding, ledger: Option<&Ledger>, context: &Context) -> Res
     {
         return Err(Error::Conflict);
     }
-    let mut file: Value =
-        serde_json::from_slice(descriptor.private_event_json()).map_err(|_| Error::Storage)?;
-    file["url"] = json!(response.mxc);
-    let mut result = json!({"msgtype":"m.file", "body":binding.metadata.caption.as_ref().unwrap_or(&binding.metadata.filename),
-        "file":file, "info":{"mimetype":FILE_MIME,"size":binding.captured.size}});
-    if binding.metadata.caption.is_some() {
-        result["filename"] = json!(binding.metadata.filename);
+    let name = binding.metadata.caption.as_ref().unwrap_or(&binding.metadata.filename);
+    let filename = &binding.metadata.filename;
+    // TS parity (lib/matrix-file.js:21-33): msgtype follows the file kind,
+    // info.mimetype is the real guessed MIME (not a fixed octet-stream; ADR-098
+    // reverted), filename is always present, and the room decides transport:
+    // encrypted rooms carry the ciphertext descriptor in content.file while
+    // plaintext rooms reference the clear upload in content.url.
+    let mime = hagency_media::mime::guess_mime_type_from_name(filename);
+    let kind = hagency_media::mime::infer_attachment_kind(None, Some(&mime), filename);
+    let msgtype = if kind == "image" { "m.image" } else { "m.file" };
+    let mut result = json!({"msgtype":msgtype, "body":name, "filename":filename,
+        "info":{"mimetype":mime,"size":binding.captured.size}});
+    if l.route.encrypted {
+        let mut file: Value =
+            serde_json::from_slice(descriptor.private_event_json()).map_err(|_| Error::Storage)?;
+        file["url"] = json!(response.mxc);
+        result["file"] = file;
+    } else {
+        result["url"] = json!(response.mxc);
     }
     if let Some(root) = &l.route.thread_root {
         result["m.relates_to"] = json!({"rel_type":"m.thread","event_id":root,"is_falling_back":true,"m.in_reply_to":{"event_id":root}});
@@ -181,11 +194,17 @@ pub(super) fn corrupt(attempt: &mut Attempt, variant: u8) {
     match variant {
         10 => {
             binding.metadata.filename.push_str("-changed");
-            if binding.metadata.caption.is_some() {
-                attempt.content["filename"] = json!(binding.metadata.filename);
-            } else {
+            attempt.content["filename"] = json!(binding.metadata.filename);
+            if binding.metadata.caption.is_none() {
                 attempt.content["body"] = json!(binding.metadata.filename);
             }
+            // The envelope now derives info.mimetype from the filename (TS
+            // parity), so a coherent corruption must guess again for the new
+            // name or reopen validation fails on a stale mime, not metadata.
+            attempt.content["info"]["mimetype"] =
+                json!(hagency_media::mime::guess_mime_type_from_name(
+                    &binding.metadata.filename
+                ));
         }
         11 => binding.captured.sha256 = "f".repeat(64),
         12 => {

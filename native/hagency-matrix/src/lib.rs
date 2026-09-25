@@ -10,11 +10,16 @@ mod enrollment;
 mod event_batch;
 mod http;
 pub use http::UploadResponse;
+mod identity_polish;
 mod intake;
+mod invites;
+pub mod join_backfill;
+mod membership_sweep;
 mod media_download;
 mod media_upload;
 mod outgoing;
 mod receive;
+mod retire;
 mod upload;
 pub use upload::{FilePublicationAdmissionFailure, FilePublicationOperation};
 pub use upload::{StagedUpload, UploadAdmissionFailure, UploadOperation};
@@ -26,6 +31,7 @@ pub use collector::{Collector, ObservationSummary};
 pub use config::{HostConfig, HostIdentity, HostRoom, Limits};
 pub use http::RequestPacing;
 pub use intake::{HostIntakePlan, IntakeStatus, IntakeSummary};
+pub use membership_sweep::{MEMBERSHIP_SWEEP_INTERVAL, SweepOutcome};
 pub use media_download::{MediaDownloadError, MediaDownloadLimits, MediaDownloader, MediaId};
 pub use media_upload::{
     MediaUploadError, MediaUploadLimits, MediaUploader, UploadAttempt, UploadState,
@@ -33,6 +39,7 @@ pub use media_upload::{
 pub use outgoing::{OutgoingState, OutgoingSummary};
 pub use provisioning::{ProvisionedAgent, TokenProvisioningHost};
 pub use receive::{ReceiveError, ReceivedAttachment, ReceivedScope};
+pub use retire::{AgentRetirement, RetireClient, RetireVerdict};
 pub use token_provision::{
     ApplicationServiceCredential, ProvisionedTokenAccount, TokenAccountProvision,
 };
@@ -109,6 +116,13 @@ impl From<hagency_store::Error> for Error {
 extern crate self as hagency_matrix;
 
 mod approval_batch;
+
+mod presence;
+pub use presence::AgentWork;
+pub use presence::{
+    AGENT_ACK_REACTION, AGENT_TYPING_MAX_MS, AGENT_TYPING_REFRESH_MS, AGENT_TYPING_TIMEOUT_MS,
+};
+pub use presence::{ack_request, typing_request};
 
 mod approval_intake;
 pub use approval_intake::{

@@ -235,6 +235,17 @@ async fn native_matrix_owned_notice_failure() {
                     drop(request)
                 } else {
                     request.json(403, json!({"errcode":"M_FORBIDDEN"}));
+                    // Board #11 (bridge-matrix.js:10888-10950): a room write that
+                    // fails on membership first attempts the rejoin and resends.
+                    // Here the rejoin itself is refused, so the membership is not
+                    // restorable and the 403 stands as the verdict.
+                    let rejoin = fake.next().await;
+                    assert_eq!(rejoin.method, "POST");
+                    assert_eq!(
+                        rejoin.target,
+                        format!("/_matrix/client/v3/join/{ROOM}")
+                    );
+                    rejoin.json(403, json!({"errcode":"M_FORBIDDEN"}));
                 }
             })
             .await;

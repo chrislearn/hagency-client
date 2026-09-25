@@ -15,15 +15,23 @@ async fn native_private_approval_public_status_notice() {
 
     // The packet is the exact status shape: three top-level keys, a five-key
     // status word, and no request material in any byte.
-    let notice = public::PublicFrozen::new(&card).unwrap();
+    let root = "$thread_root:example.test";
+    let notice = public::PublicFrozen::new(&card, Some(root.into())).unwrap();
     let content = notice.content().unwrap();
     let value: Value = serde_json::from_str(&content).unwrap();
     let obj = value.as_object().unwrap();
     let status = value[public::STATUS_KEY].as_object().unwrap();
-    assert_eq!(obj.len(), 3, "exactly three top-level keys: {content}");
+    // TS parity (bridge-matrix.js:2583-2596): the three fixed keys plus the
+    // `m.relates_to` thread relation when the approval has a task root.
+    assert_eq!(obj.len(), 4, "three keys plus the thread relation: {content}");
     assert_eq!(status.len(), 5, "exactly five status keys: {content}");
     assert_eq!(value["msgtype"], public::NOTICE_MSGTYPE);
     assert_eq!(value[public::STATUS_KEY]["state"], "waiting_for_owner");
+    assert_eq!(
+        value["m.relates_to"],
+        json!({"rel_type":"m.thread","event_id":root,"is_falling_back":true,
+            "m.in_reply_to":{"event_id":root}})
+    );
     for forbidden in [
         "request_id",
         "requestId",
@@ -60,21 +68,53 @@ async fn native_private_approval_public_status_notice() {
     let mut posted = Vec::new();
     drive_with(
         f.collector
-            .send_private_approval_notice(card, &CancellationToken::new()),
+            .send_private_approval_notice(
+                card,
+                Some(root.into()),
+                None,
+                &CancellationToken::new(),
+            ),
         &mut f.fake,
         &mut f.peer,
-        |r, _, _| posted.push((r.method.clone(), r.target.clone())),
+        |r, _, _| posted.push((r.method.clone(), r.target.clone(), r.body.clone())),
     )
     .await
     .unwrap();
     assert_eq!(posted.len(), 1, "notice sent exactly once");
     assert_eq!(posted[0].0, "PUT");
-    assert!(
-        posted[0].1.contains("/rooms/!project:example.test/send/"),
-        "{}",
-        posted[0].1
+    // The exact PUT path TS builds (sendAsAgentContent, bridge-matrix.js:10823):
+    // m.room.message is the EVENT TYPE, never the msgtype; the transaction id
+    // is deterministic per notice content.
+    let target = &posted[0].1;
+    let prefix = "/_matrix/client/v3/rooms/!project:example.test/send/m.room.message/approval_status_";
+    assert!(target.starts_with(prefix), "exact PUT path: {target}");
+    assert_eq!(
+        target.trim_start_matches(prefix).len(),
+        64,
+        "transaction id is the content digest: {target}"
     );
-    assert!(!posted[0].1.contains("!private"), "{}", posted[0].1);
+    assert!(!target.contains("!private"), "{target}");
+    // The exact body TS sends: the TS body text and the status detail under the
+    // SHARED approval key, with the thread relation.
+    let sent: Value = serde_json::from_slice(&posted[0].2).unwrap();
+    assert_eq!(
+        sent,
+        json!({
+            "msgtype": "com.agentchat.approval.status.v1",
+            "body": format!("Agent {} is waiting for approval from its owner.",
+                authority.engagement_id),
+            "com.agentchat.approval": {
+                "version": 1,
+                "kind": "status",
+                "agent": authority.engagement_id,
+                "project": authority.project_id,
+                "state": "waiting_for_owner",
+            },
+            "m.relates_to": {"rel_type":"m.thread","event_id":root,
+                "is_falling_back":true,"m.in_reply_to":{"event_id":root}},
+        }),
+        "exact notice body"
+    );
 
     // Reading the notice confers no grant and no authority: the request is
     // still pending and no decision was written.

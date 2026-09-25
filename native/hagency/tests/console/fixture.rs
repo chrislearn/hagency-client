@@ -31,10 +31,21 @@ pub fn assets(path: &Path) {
     private::write_new(&path.join("usage/index.html"), bytes).unwrap();
     let engagement_bytes = b"<!doctype html><html><body>engagements document fixture</body></html>";
     private::write_new(&path.join("engagements/index.html"), engagement_bytes).unwrap();
+    /* Board #47: the task-graphs document, staged the same way the production
+     * build does, so `/console/task-graphs/` is served by the fixture too. */
+    std::fs::create_dir(path.join("task-graphs")).unwrap();
+    let graphs_bytes = b"<!doctype html><html><body>task-graphs document fixture</body></html>";
+    private::write_new(&path.join("task-graphs/index.html"), graphs_bytes).unwrap();
+    /* The production build (build-native-console.mjs) always exports the
+     * front-door document; the fixture mirrors it so /console/ serves. */
+    let root_bytes = b"<!doctype html><html><body>front door fixture</body></html>";
+    private::write_new(&path.join("index.html"), root_bytes).unwrap();
     let mut assets = Vec::new();
-    let entries: [(&str, &[u8]); 2] = [
+    let entries: [(&str, &[u8]); 4] = [
         ("usage/index.html", bytes),
         ("engagements/index.html", engagement_bytes),
+        ("index.html", root_bytes),
+        ("task-graphs/index.html", graphs_bytes),
     ];
     for (path, bytes) in entries {
         let digest: String = Sha256::digest(bytes)
@@ -180,8 +191,10 @@ impl Fixture {
         // macOS's temporary-directory spelling may traverse the /var alias.
         // Select its actual host path; production correctly refuses that alias.
         let actual_assets = built.unwrap_or(&asset_dir).canonicalize().unwrap();
-        let console = Console::load(&actual_assets).unwrap();
         let state = root.path().join("state");
+        // #47: production serves graphs from `<state>/task_graphs.json`; the
+        // fixture mirrors that so the routes reach a real document home.
+        let console = Console::load_with_state(&actual_assets, Some(&state)).unwrap();
         let custody = Store::start(Repository::open(&state).unwrap(), 16).unwrap();
         let (db, engagement) = seed(&state);
         let domain = DomainStore::start(db, 16).unwrap();

@@ -77,6 +77,43 @@ pub(super) fn save_task(tx: &Transaction<'_>, value: &Task, kind: &str) -> Resul
         "INSERT INTO task_outbox(task_id,kind,task) VALUES(?1,?2,?3)",
         params![value.id, kind, value_json],
     )?;
+    // The retained product says the operator's inspection outcome in the
+    // thread (`router/src/store.ts` `resolveOutcome`, the accept_completed
+    // and keep_blocked branches; the continue branch speaks at the recovery
+    // kernel that queues the replacement). Best effort in its own savepoint:
+    // the recorded resolution never rolls back because its notice could not
+    // be addressed.
+    if matches!(kind, "operator_accept_completed" | "operator_keep_blocked") {
+        tx.execute_batch("SAVEPOINT operator_resolution_notice")?;
+        let queued = (|| -> Result<(), Error> {
+            let Some((_, root)) = super::task_intents::binding(tx, &value.id)? else {
+                // A host-created task has no Matrix activation to address.
+                return Ok(());
+            };
+            let root = super::verified_ingress::task_message(tx, &value.id, root)?;
+            super::task_intents::add_keyed_notice(
+                tx,
+                value,
+                &root,
+                "outcome_resolved",
+                &format!("outcome_resolved:{kind}"),
+                super::task_intents::operator_resolution_notice(
+                    kind.strip_prefix("operator_").unwrap_or(kind),
+                )
+                .into(),
+                // Both branches set `updated_at = now` immediately before
+                // `save_task`; the notice is due the moment it is queued.
+                value.updated_at,
+            )?;
+            Ok(())
+        })();
+        match queued {
+            Ok(()) => tx.execute_batch("RELEASE operator_resolution_notice")?,
+            Err(_) => tx.execute_batch(
+                "ROLLBACK TO operator_resolution_notice; RELEASE operator_resolution_notice",
+            )?,
+        }
+    }
     Ok(())
 }
 pub(super) struct Dispatch {
@@ -680,6 +717,41 @@ pub(super) fn mutate_in_transaction(
     }
     save_task(tx, &t, kind)?;
     tx.execute("INSERT INTO task_operation_receipts(dispatch_id,call_id,digest,response) VALUES(?1,?2,?3,?4)",params![cap.dispatch_id,call_id,digest,serialize(&t)?])?;
+    // The retained product posts the new status into the task thread on every
+    // non-replayed transition (`router/src/store.ts` `taskOperation`). Best
+    // effort in its own savepoint: the recorded transition never rolls back
+    // because its notice could not be addressed.
+    if kind == "transition" {
+        tx.execute_batch("SAVEPOINT status_notice")?;
+        let queued = (|| -> Result<(), Error> {
+            let Some((_, root)) = super::task_intents::binding(tx, &t.id)? else {
+                // A host-created task has no Matrix activation to address.
+                return Ok(());
+            };
+            let root = super::verified_ingress::task_message(tx, &t.id, root)?;
+            super::task_intents::add_notice(
+                tx,
+                &t,
+                &root,
+                // Keyed per operation call, like the retained product
+                // (`task_operation:${dispatchId}:${toolCallId}`,
+                // router/src/store.ts:3314-3315): two transitions in one
+                // epoch each say their status; a replayed call returns at
+                // the receipt check above and never reaches here.
+                &format!("task_operation:{}:{}", cap.dispatch_id, call_id),
+                format!(
+                    "Task status: {}",
+                    serde_json::to_value(t.status)?.as_str().ok_or(Error::Schema)?
+                ),
+                now,
+            )?;
+            Ok(())
+        })();
+        match queued {
+            Ok(()) => tx.execute_batch("RELEASE status_notice")?,
+            Err(_) => tx.execute_batch("ROLLBACK TO status_notice; RELEASE status_notice")?,
+        }
+    }
     Ok(MutationResult {
         task: t,
         replayed: false,
@@ -841,6 +913,14 @@ impl DomainRepository {
         super::graphs::reconcile(&tx, now)?;
         super::matrix_routes::reconcile(&tx, now)?;
         expire(&tx, now, "claim")?;
+        // The retained product explains in the thread why a queued dispatch
+        // did not start (`router/src/store.ts` `claimDispatch` skip
+        // branches): dirty workspace, or one held by a parked dispatch.
+        super::task_intents::claim_skip_notices(&tx, now)?;
+        // ...and the third skip branch: the dispatch's own task is blocked, so
+        // only an operator can resume it. TS says the same words and skips the
+        // row (`task_blocked`); the predicate below excludes it identically.
+        super::task_intents::blocked_task_notices(&tx, now)?;
         // A stopped process can leave an unresolved task/workspace behind.
         // Only the original exact-attempt host receipt distinguishes that
         // state from an unknown physical owner. This changes occupancy only:
@@ -859,7 +939,7 @@ impl DomainRepository {
         // candidate for the host. The development claim carries no profile
         // and is not fenced.
         let candidates: Vec<String> = {
-            let mut stmt=tx.prepare("SELECT d.id FROM runner_dispatches d JOIN runner_sessions s ON s.id=d.session_id JOIN engagements e ON e.id=s.engagement_id JOIN registrations g ON g.fleet_id=e.fleet_id WHERE (d.state='queued' OR (d.state='parked' AND d.fence=0)) AND (?2 IS NULL OR EXISTS(SELECT 1 FROM effects ae WHERE ae.engagement_id=e.id AND ae.kind='provision' AND ae.state='complete' AND ((json_extract(?2,'$.account') IS NULL AND NOT EXISTS(SELECT 1 FROM resource_accounts ra WHERE ra.preset_id=json_extract(ae.payload,'$.resource.presetId'))) OR EXISTS(SELECT 1 FROM resource_accounts ra JOIN managed_accounts ma ON ma.id=ra.account_id WHERE ra.preset_id=json_extract(ae.payload,'$.resource.presetId') AND ma.state='active' AND ma.id=json_extract(?2,'$.account.id') AND ma.generation=ra.binding_generation AND ma.generation=json_extract(?2,'$.account.generation') AND ma.seat_id=json_extract(?2,'$.account.seat') AND ma.seat_id=json_extract(ae.payload,'$.resource.seatId'))))) AND d.not_before<=?1 AND (?2 IS NULL OR json_extract(?2,'$.dispatch_id') IS NULL OR d.id=json_extract(?2,'$.dispatch_id')) AND (d.task_id IS NULL OR EXISTS(SELECT 1 FROM canonical_tasks t WHERE t.id=d.task_id AND (json_extract(t.config,'$.status')<>'done' OR EXISTS(SELECT 1 FROM task_followup_ready followup WHERE followup.dispatch_id=d.id AND followup.task_id=t.id)) AND NOT EXISTS(SELECT 1 FROM task_intents ti WHERE ti.task_id=t.id AND (ti.state<>'active' OR NOT EXISTS(SELECT 1 FROM task_dispatch_input_ready ready WHERE ready.dispatch_id=d.id AND ready.task_id=t.id))))) AND NOT EXISTS(SELECT 1 FROM task_intents current_task WHERE current_task.session_id=d.session_id AND (current_task.state<>'active' OR (current_task.task_id IS NOT d.task_id AND NOT EXISTS(SELECT 1 FROM current_recovery_reports cr WHERE cr.dispatch_id=d.id AND cr.task_id=current_task.task_id)))) AND (json_extract(s.binding,'$.kind') IS NULL OR (json_extract(s.binding,'$.kind')='internal' AND EXISTS(SELECT 1 FROM internal_participants ip JOIN internal_conversations ic ON ic.id=ip.conversation_id WHERE ip.session_id=s.id AND ip.engagement_id=e.id AND ip.conversation_id=json_extract(s.binding,'$.conversation_id') AND ic.state='active' AND ic.fleet_id=e.fleet_id AND ic.project_id=e.project_id AND ic.generation=e.generation))) AND NOT EXISTS(SELECT 1 FROM peer_dispatch_inputs pi WHERE pi.dispatch_id=d.id AND NOT EXISTS(SELECT 1 FROM admissible_dispatch_peer_inputs li WHERE li.dispatch_id=d.id AND li.message_sequence=pi.message_sequence)) AND NOT EXISTS(SELECT 1 FROM graph_nodes gn WHERE gn.task_id=d.task_id AND NOT EXISTS(SELECT 1 FROM graph_dispatch_ready gr WHERE gr.dispatch_id=d.id)) AND NOT EXISTS(SELECT 1 FROM dispatch_recovery_reports rr JOIN graph_nodes gn ON gn.task_id=rr.task_id WHERE rr.dispatch_id=d.id AND NOT EXISTS(SELECT 1 FROM graph_dispatch_scope gs WHERE gs.dispatch_id=d.id)) AND NOT EXISTS(SELECT 1 FROM dispatch_recovery_reports rr WHERE rr.dispatch_id=d.id AND NOT EXISTS(SELECT 1 FROM current_recovery_reports cr WHERE cr.dispatch_id=d.id)) AND (s.matrix_generation=0 OR EXISTS(SELECT 1 FROM current_matrix_routes cm WHERE cm.session_id=s.id)) AND s.quarantined=0 AND e.state='active' AND e.generation=g.generation AND NOT EXISTS(SELECT 1 FROM runner_dispatches live WHERE live.id<>d.id AND live.session_id=d.session_id AND live.state IN ('leased','started','parked')) AND NOT EXISTS(SELECT 1 FROM dispatch_resources dr JOIN workspace_resources w ON w.id=dr.resource_id WHERE dr.dispatch_id=d.id AND (w.dirty=1 OR EXISTS(SELECT 1 FROM resource_leases l WHERE l.resource_id=dr.resource_id AND (l.exclusive=1 OR dr.exclusive=1)))) AND (?2 IS NULL OR (EXISTS(SELECT 1 FROM canonical_tasks host_task WHERE host_task.id=d.task_id AND json_extract(host_task.config,'$.status')<>'done') AND NOT EXISTS(SELECT 1 FROM dispatch_recovery_reports host_report WHERE host_report.dispatch_id=d.id) AND NOT EXISTS(SELECT 1 FROM agent_fences af WHERE af.engagement_id=e.id AND af.cleared_at IS NULL) AND EXISTS(SELECT 1 FROM current_matrix_routes cm JOIN matrix_session_routes mr ON mr.session_id=cm.session_id WHERE cm.session_id=d.session_id AND json_extract(mr.config,'$.engagement_id')=json_extract(?2,'$.transport.engagement_id') AND json_extract(mr.config,'$.registration_generation')=json_extract(?2,'$.transport.registration_generation') AND json_extract(mr.config,'$.transport_generation')=json_extract(?2,'$.transport.generation') AND json_extract(mr.config,'$.sender_mxid')=json_extract(?2,'$.transport.sender_mxid') AND json_extract(mr.config,'$.device_id')=json_extract(?2,'$.transport.device_id') AND EXISTS(SELECT 1 FROM json_each(?2,'$.rooms') room WHERE (json_extract(mr.config,'$.encrypted')=1 OR (json_extract(room.value,'$.plaintext_project')=1 AND json_extract(mr.config,'$.privacy.kind')='group' AND EXISTS(SELECT 1 FROM projects host_project WHERE host_project.fleet_id=e.fleet_id AND host_project.id=e.project_id AND host_project.generation=e.generation AND host_project.room_id=json_extract(mr.config,'$.room_id')))) AND json_extract(room.value,'$.id')=json_extract(mr.config,'$.room_id') AND json_extract(room.value,'$.generation')=json_extract(mr.config,'$.room_generation') AND json_extract(room.value,'$.privacy.kind')=json_extract(mr.config,'$.privacy.kind') AND json_extract(room.value,'$.privacy.human_mxid') IS json_extract(mr.config,'$.privacy.human_mxid'))) AND (SELECT COUNT(*) FROM dispatch_resources dr WHERE dr.dispatch_id=d.id)=1 AND EXISTS(SELECT 1 FROM dispatch_resources dr JOIN json_each(?2,'$.workspaces') workspace ON workspace.value=dr.resource_id WHERE dr.dispatch_id=d.id AND dr.exclusive=1) AND EXISTS(SELECT 1 FROM effects effect WHERE effect.engagement_id=e.id AND effect.kind='provision' AND effect.state='complete' AND json_extract(effect.payload,'$.resource.framework')='codex' AND (json_extract(effect.payload,'$.resource.provider') IS NULL OR json_extract(effect.payload,'$.resource.provider')='openai') AND (json_extract(effect.payload,'$.resource.reasoning') IS NULL OR json_extract(effect.payload,'$.resource.reasoning') IN ('none','minimal','low','medium','high','xhigh'))))) ORDER BY d.rowid")?;
+            let mut stmt=tx.prepare("SELECT d.id FROM runner_dispatches d JOIN runner_sessions s ON s.id=d.session_id JOIN engagements e ON e.id=s.engagement_id JOIN registrations g ON g.fleet_id=e.fleet_id WHERE (d.state='queued' OR (d.state='parked' AND d.fence=0)) AND (?2 IS NULL OR EXISTS(SELECT 1 FROM effects ae WHERE ae.engagement_id=e.id AND ae.kind='provision' AND ae.state='complete' AND ((json_extract(?2,'$.account') IS NULL AND NOT EXISTS(SELECT 1 FROM resource_accounts ra WHERE ra.preset_id=json_extract(ae.payload,'$.resource.presetId'))) OR EXISTS(SELECT 1 FROM resource_accounts ra JOIN managed_accounts ma ON ma.id=ra.account_id WHERE ra.preset_id=json_extract(ae.payload,'$.resource.presetId') AND ma.state='active' AND ma.id=json_extract(?2,'$.account.id') AND ma.generation=ra.binding_generation AND ma.generation=json_extract(?2,'$.account.generation') AND ma.seat_id=json_extract(?2,'$.account.seat') AND ma.seat_id=json_extract(ae.payload,'$.resource.seatId'))))) AND d.not_before<=?1 AND (?2 IS NULL OR json_extract(?2,'$.dispatch_id') IS NULL OR d.id=json_extract(?2,'$.dispatch_id')) AND (d.task_id IS NULL OR EXISTS(SELECT 1 FROM canonical_tasks t WHERE t.id=d.task_id AND (json_extract(t.config,'$.status') NOT IN ('done','blocked') OR EXISTS(SELECT 1 FROM task_followup_ready followup WHERE followup.dispatch_id=d.id AND followup.task_id=t.id)) AND NOT EXISTS(SELECT 1 FROM task_intents ti WHERE ti.task_id=t.id AND (ti.state<>'active' OR NOT EXISTS(SELECT 1 FROM task_dispatch_input_ready ready WHERE ready.dispatch_id=d.id AND ready.task_id=t.id))))) AND NOT EXISTS(SELECT 1 FROM task_intents current_task WHERE current_task.session_id=d.session_id AND (current_task.state<>'active' OR (current_task.task_id IS NOT d.task_id AND NOT EXISTS(SELECT 1 FROM current_recovery_reports cr WHERE cr.dispatch_id=d.id AND cr.task_id=current_task.task_id)))) AND (json_extract(s.binding,'$.kind') IS NULL OR (json_extract(s.binding,'$.kind')='internal' AND EXISTS(SELECT 1 FROM internal_participants ip JOIN internal_conversations ic ON ic.id=ip.conversation_id WHERE ip.session_id=s.id AND ip.engagement_id=e.id AND ip.conversation_id=json_extract(s.binding,'$.conversation_id') AND ic.state='active' AND ic.fleet_id=e.fleet_id AND ic.project_id=e.project_id AND ic.generation=e.generation))) AND NOT EXISTS(SELECT 1 FROM peer_dispatch_inputs pi WHERE pi.dispatch_id=d.id AND NOT EXISTS(SELECT 1 FROM admissible_dispatch_peer_inputs li WHERE li.dispatch_id=d.id AND li.message_sequence=pi.message_sequence)) AND NOT EXISTS(SELECT 1 FROM graph_nodes gn WHERE gn.task_id=d.task_id AND NOT EXISTS(SELECT 1 FROM graph_dispatch_ready gr WHERE gr.dispatch_id=d.id)) AND NOT EXISTS(SELECT 1 FROM dispatch_recovery_reports rr JOIN graph_nodes gn ON gn.task_id=rr.task_id WHERE rr.dispatch_id=d.id AND NOT EXISTS(SELECT 1 FROM graph_dispatch_scope gs WHERE gs.dispatch_id=d.id)) AND NOT EXISTS(SELECT 1 FROM dispatch_recovery_reports rr WHERE rr.dispatch_id=d.id AND NOT EXISTS(SELECT 1 FROM current_recovery_reports cr WHERE cr.dispatch_id=d.id)) AND (s.matrix_generation=0 OR EXISTS(SELECT 1 FROM current_matrix_routes cm WHERE cm.session_id=s.id)) AND s.quarantined=0 AND e.state='active' AND NOT EXISTS(SELECT 1 FROM agent_lifecycle al WHERE al.engagement_id=e.id AND al.started_at IS NULL) AND e.generation=g.generation AND NOT EXISTS(SELECT 1 FROM runner_dispatches live WHERE live.id<>d.id AND live.session_id=d.session_id AND live.state IN ('leased','started','parked')) AND NOT EXISTS(SELECT 1 FROM dispatch_resources dr JOIN workspace_resources w ON w.id=dr.resource_id WHERE dr.dispatch_id=d.id AND (w.dirty=1 OR EXISTS(SELECT 1 FROM resource_leases l WHERE l.resource_id=dr.resource_id AND (l.exclusive=1 OR dr.exclusive=1)))) AND (?2 IS NULL OR (EXISTS(SELECT 1 FROM canonical_tasks host_task WHERE host_task.id=d.task_id AND json_extract(host_task.config,'$.status') NOT IN ('done','blocked')) AND NOT EXISTS(SELECT 1 FROM dispatch_recovery_reports host_report WHERE host_report.dispatch_id=d.id) AND NOT EXISTS(SELECT 1 FROM agent_fences af WHERE af.engagement_id=e.id AND af.cleared_at IS NULL) AND EXISTS(SELECT 1 FROM current_matrix_routes cm JOIN matrix_session_routes mr ON mr.session_id=cm.session_id WHERE cm.session_id=d.session_id AND json_extract(mr.config,'$.engagement_id')=json_extract(?2,'$.transport.engagement_id') AND json_extract(mr.config,'$.registration_generation')=json_extract(?2,'$.transport.registration_generation') AND json_extract(mr.config,'$.transport_generation')=json_extract(?2,'$.transport.generation') AND json_extract(mr.config,'$.sender_mxid')=json_extract(?2,'$.transport.sender_mxid') AND json_extract(mr.config,'$.device_id')=json_extract(?2,'$.transport.device_id') AND EXISTS(SELECT 1 FROM json_each(?2,'$.rooms') room WHERE (json_extract(mr.config,'$.encrypted')=1 OR (json_extract(room.value,'$.plaintext_project')=1 AND json_extract(mr.config,'$.privacy.kind')='group' AND EXISTS(SELECT 1 FROM projects host_project WHERE host_project.fleet_id=e.fleet_id AND host_project.id=e.project_id AND host_project.generation=e.generation AND host_project.room_id=json_extract(mr.config,'$.room_id')))) AND json_extract(room.value,'$.id')=json_extract(mr.config,'$.room_id') AND json_extract(room.value,'$.generation')=json_extract(mr.config,'$.room_generation') AND json_extract(room.value,'$.privacy.kind')=json_extract(mr.config,'$.privacy.kind') AND json_extract(room.value,'$.privacy.human_mxid') IS json_extract(mr.config,'$.privacy.human_mxid'))) AND (SELECT COUNT(*) FROM dispatch_resources dr WHERE dr.dispatch_id=d.id)=1 AND EXISTS(SELECT 1 FROM dispatch_resources dr JOIN json_each(?2,'$.workspaces') workspace ON workspace.value=dr.resource_id WHERE dr.dispatch_id=d.id AND dr.exclusive=1) AND EXISTS(SELECT 1 FROM effects effect WHERE effect.engagement_id=e.id AND effect.kind='provision' AND effect.state='complete' AND json_extract(effect.payload,'$.resource.framework')='codex' AND (json_extract(effect.payload,'$.resource.provider') IS NULL OR json_extract(effect.payload,'$.resource.provider')='openai') AND (json_extract(effect.payload,'$.resource.reasoning') IS NULL OR json_extract(effect.payload,'$.resource.reasoning') IN ('none','minimal','low','medium','high','xhigh'))))) ORDER BY d.rowid")?;
             stmt.query_map(params![now, profile], |r| r.get::<_, String>(0))?
                 .collect::<Result<Vec<_>, _>>()?
         };
@@ -1018,6 +1098,10 @@ impl DomainRepository {
             "UPDATE runner_attempts SET outcome='spawn_failed' WHERE dispatch_id=?1 AND fence=?2",
             params![cap.dispatch_id, cap.fence],
         )?;
+        // The retained product says the retry in the thread
+        // (`router/src/store.ts` `requeueBeforeStart`): nothing ran, nothing
+        // was lost, the dispatch stays queued.
+        super::task_intents::launch_retry_notice(&tx, &cap.dispatch_id, now)?;
         tx.commit()?;
         Ok(())
     }
@@ -1436,6 +1520,25 @@ pub(super) fn recover_dispatch_in_transaction(
     // ADR-182 decision 3: the operator's resolution of the fenced dispatch is
     // the one thing that clears its fence. Most originals fenced nothing.
     super::agent_fences::clear_fences_for_dispatch(tx, original, cleared_by, now)?;
+    // The retained product says the operator's continue-resolution in the
+    // thread (`router/src/store.ts` `resolveOutcome`, the `continue` branch).
+    // Rooted at the recovery dispatch that carries the resolution's authority;
+    // best effort so the settlement never fails because its notice could not
+    // be addressed.
+    tx.execute_batch("SAVEPOINT outcome_resolved_notice")?;
+    let resolved_notice = super::task_intents::waiting_notice(
+        tx,
+        &replacement.id,
+        "outcome_resolved",
+        "Operator inspection completed. A new recovery dispatch was queued from an explicit recovery instruction; the previous dispatch remains outcome_unknown and was not replayed.",
+        now,
+    );
+    match resolved_notice {
+        Ok(()) => tx.execute_batch("RELEASE outcome_resolved_notice")?,
+        Err(_) => {
+            tx.execute_batch("ROLLBACK TO outcome_resolved_notice; RELEASE outcome_resolved_notice")?
+        }
+    }
     Ok(())
 }
 

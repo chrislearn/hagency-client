@@ -316,14 +316,14 @@ fn native_graph_cancellation_schema9_custody() {
     // Reproduce that old state rather than pretending it has schema 10 custody.
     common::remove_graph_schema(&inspect);
     inspect
-        .execute_batch("DELETE FROM resource_leases; PRAGMA user_version=9;")
+        .execute_batch("DELETE FROM resource_leases; DROP TABLE IF EXISTS agent_lifecycle; ALTER TABLE decisions DROP COLUMN kind; ALTER TABLE decisions DROP COLUMN at; PRAGMA user_version=9;")
         .unwrap();
     db = DomainRepository::open(&root.path().join("state")).unwrap();
     assert_eq!(
         inspect
             .pragma_query_value(None, "user_version", |r| r.get::<_, u64>(0))
             .unwrap(),
-        39
+        hagency_store::DOMAIN_SCHEMA_VERSION as u64
     );
     assert_eq!(leases(&inspect), ["legacy_reader"]);
     assert_eq!(state(&inspect, "completed_reader"), "completed");

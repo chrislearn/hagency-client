@@ -4,10 +4,16 @@ use hagency_core::project::{CleanupState, EngagementState, identifier};
 use salvo::prelude::*;
 use serde::Serialize;
 
+/// The words `?state=` may name (board #60 item 3): the store's own
+/// engagement-state vocabulary (`domain.sql` `engagements.state` CHECK), so
+/// an unknown word is a 400 rather than a silently empty page.
+const ENGAGEMENT_STATES: [&str; 6] =
+    ["pending", "reserved", "active", "rejected", "revoked", "failed"];
 pub(super) fn router() -> Router {
     Router::new()
         .push(Router::with_path("engagements").get(engagements))
         .push(Router::with_path("engagements/{id}/usage").get(report))
+        .push(Router::with_path("usage/totals").get(totals))
 }
 pub(super) fn query(req: &Request, allowed: &[&str], limit: usize) -> Result<(), Error> {
     if req
@@ -48,10 +54,23 @@ struct Label {
     requested_tokens: u64,
     state: EngagementState,
     cleanup: CleanupState,
+    /// What is LEFT on the resource behind the agent (board #60 item 3; TS
+    /// `:14974` `agentRemainingTokens`): the same `min` of the non-null
+    /// limits the admission decision uses, so the queue shows over-commitment
+    /// before the decision. Null when no ceiling is declared.
+    agent_remaining_tokens: Option<u64>,
+    /// TS `:14972`: a pending request with no verified owner binding yet.
+    owner_binding_required: bool,
+    /// The request's own observation instant, and the terminal instant for an
+    /// ended engagement. Both null when unknown — never an invented clock.
+    created_at_ms: Option<u64>,
+    ended_at_ms: Option<u64>,
 }
 #[handler]
 async fn engagements(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    if query(req, &["after", "limit"], 192).is_err() {
+    // Board #60 item 3: the retained list takes `?state=` (`:14965`), so the
+    // allowlist admits it alongside the cursor and the page size.
+    if query(req, &["after", "limit", "state"], 224).is_err() {
         failed(res, Error::Invalid);
         return;
     }
@@ -61,6 +80,16 @@ async fn engagements(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         Some(v) if v.bytes().all(|c| c.is_ascii_digit()) => v.parse::<usize>().unwrap_or(0),
         _ => 0,
     };
+    // A state value must name a real engagement state; an unknown word is a
+    // bad request rather than a silently empty page.
+    let state = req.query::<String>("state");
+    if state
+        .as_deref()
+        .is_some_and(|value| !ENGAGEMENT_STATES.contains(&value))
+    {
+        failed(res, Error::Invalid);
+        return;
+    }
     if !(1..=16).contains(&limit) || (!after.is_empty() && identifier(&after, 128).is_err()) {
         failed(res, Error::Invalid);
         return;
@@ -68,7 +97,7 @@ async fn engagements(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     let Some(store) = domain(depot, res) else {
         return;
     };
-    let result = store.engagements(after, limit + 1).await;
+    let result = store.engagement_labels(after, state, limit + 1).await;
     if let Err(error) = recheck(depot) {
         failed(res, error);
         return;
@@ -81,12 +110,16 @@ async fn engagements(req: &mut Request, depot: &mut Depot, res: &mut Response) {
                 .into_iter()
                 .map(|e| Label {
                     id: e.id,
-                    agent_name: e.agent_name.as_str().to_owned(),
+                    agent_name: e.agent_name,
                     project_name: e.project_name,
                     role: e.role,
-                    requested_tokens: u64::from(e.requested_tokens),
+                    requested_tokens: e.requested_tokens,
                     state: e.state,
                     cleanup: e.cleanup,
+                    agent_remaining_tokens: e.agent_remaining_tokens,
+                    owner_binding_required: e.owner_binding_required,
+                    created_at_ms: e.created_at_ms,
+                    ended_at_ms: e.ended_at_ms,
                 })
                 .collect();
             res.render(Json(
@@ -142,4 +175,39 @@ fn store_error(res: &mut Response, error: hagency_store::Error) {
         _ => (StatusCode::SERVICE_UNAVAILABLE, "usage_unavailable"),
     };
     refusal(res, status, code);
+}
+
+/// The retained `GET /api/usage` fleet `totals` block (backend-v2.js:15700-15720):
+/// the measured figures native actually holds (per-engagement known high
+/// water), summed, with the denominator attached — the numerator never
+/// travels without it, and null means "not known", never zero. Read class,
+/// no scope, no selection, same as the engagements list beside it.
+#[handler]
+async fn totals(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    if query(req, &[], 0).is_err() {
+        failed(res, Error::Invalid);
+        return;
+    }
+    let Some(store) = domain(depot, res) else {
+        return;
+    };
+    let result = store.usage_totals().await;
+    if let Err(error) = recheck(depot) {
+        failed(res, error);
+        return;
+    }
+    match result {
+        Ok(fleet) => res.render(Json(serde_json::json!({
+            "ok": true,
+            "totals": fleet,
+            // The retained totals block also carries busySec and tasks
+            // (backend-v2.js:15706-15708), summed from the agents' busy
+            // clocks and the task store. Native holds neither figure — the
+            // per-engagement evidence slice has no busy-time accounting —
+            // so the columns are named here the way the project-sides read
+            // names its own gaps: unknown is never zero and never invented.
+            "unavailable": ["busy_sec", "tasks"],
+        }))),
+        Err(error) => store_error(res, error),
+    }
 }

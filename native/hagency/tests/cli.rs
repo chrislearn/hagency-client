@@ -801,3 +801,224 @@ fn native_logs_to_stderr_with_no_file_sink() {
     collect_log_names(directory.path(), &mut found);
     assert!(found.is_empty(), "a file log sink appeared: {found:?}");
 }
+
+/// Task #28 (c): account and registration verbs drive the RUNNING service's
+/// operator API over loopback, so the CLI works while the service runs (the
+/// offline writers need the store lock the service already holds). The same
+/// command shape the offline `native_account_cli` test uses, plus `--listen`.
+#[test]
+fn native_account_and_registration_cli_through_running_service() {
+    let root = tempfile::tempdir().unwrap();
+    let state = root.path().join("state");
+    let init = Command::new(env!("CARGO_BIN_EXE_hagency"))
+        .args(["init", "--state-dir"])
+        .arg(&state)
+        .env("PATH", "")
+        .output()
+        .unwrap();
+    assert!(init.status.success());
+    let token = fs::read_to_string(state.join("operator.token")).unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    drop(listener);
+    let running = launch(&state, address);
+
+    let invoke = |args: &[&str]| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_hagency"));
+        command
+            .args(args)
+            .arg("--state-dir")
+            .arg(&state)
+            .arg("--listen")
+            .arg(address.to_string())
+            .env("PATH", "")
+            .env("HOME", "/untrusted-fixture-home")
+            .env("CODEX_HOME", "/untrusted-fixture-codex")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        command.output().unwrap()
+    };
+
+    // Account prepare through the running service: succeeds despite the
+    // service holding the store (the offline writer would report Locked).
+    let prepared = invoke(&["account", "prepare"]);
+    assert!(
+        prepared.status.success(),
+        "prepare through the running service failed: {}",
+        String::from_utf8_lossy(&prepared.stderr)
+    );
+    let choices: Vec<serde_json::Value> =
+        serde_json::from_slice(&prepared.stdout).unwrap();
+    assert_eq!(choices.len(), 1, "one prepared account");
+    let id = choices[0]["id"].as_str().unwrap().to_owned();
+
+    // Inspect through the running service returns the same single row.
+    let inspect = invoke(&["account", "inspect"]);
+    assert!(
+        inspect.status.success(),
+        "inspect through the running service failed: {}",
+        String::from_utf8_lossy(&inspect.stderr)
+    );
+    let inspected: Vec<serde_json::Value> =
+        serde_json::from_slice(&inspect.stdout).unwrap();
+    assert_eq!(inspected.len(), 1);
+    assert_eq!(inspected[0]["id"], choices[0]["id"]);
+
+    // Retire through the running service.
+    let retired = invoke(&["account", "retire", "--id", &id]);
+    assert!(
+        retired.status.success(),
+        "retire through the running service failed: {}",
+        String::from_utf8_lossy(&retired.stderr)
+    );
+
+    // Registration through the running service: a valid six-field document.
+    let registration = serde_json::json!({
+        "fleetId": "hf_0123456789abcdef0123456789abcdef",
+        "generation": 1,
+        "serverName": "example.test",
+        "receptionRoomId": "!reception:example.test",
+        "representativeMxid": "@hf_0123456789abcdef0123456789abcdef_representative:example.test",
+        "approvalBotMxid": "@hf_0123456789abcdef0123456789abcdef_approval:example.test"
+    });
+    let reg_file = root.path().join("registration.json");
+    fs::write(&reg_file, registration.to_string()).unwrap();
+    let registered = invoke(&["registration", "register", "--file", reg_file.to_str().unwrap()]);
+    assert!(
+        registered.status.success(),
+        "registration through the running service failed: {}",
+        String::from_utf8_lossy(&registered.stderr)
+    );
+
+    // The service is still up — the whole point is that it never had to stop.
+    assert_eq!(
+        operator_get(address, &token, "/api/native/v1/resources?limit=100")
+            .starts_with('['),
+        true
+    );
+    drop(running);
+}
+
+/// Task #13: the `side-registration` CLI — the offline issuer an operator
+/// runs instead of hand-writing YAML and hand-placing `matrix.
+/// appservice_token`. Asserts the TS-visible outcome: the printed body's
+/// facts (path, fingerprints, `staged`), that NO token byte reaches
+/// stdout, and that the service's token file landed at the exact path the
+/// appservice profile reads (`bootstrap/config.rs:646`).
+#[test]
+fn native_cli_side_registration_issues_without_hand_placing() {
+    let root = tempfile::tempdir().unwrap();
+    let state = root.path().join("state");
+    let invoke = |args: &[&str]| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_hagency"));
+        command
+            .args(args)
+            .env("PATH", "")
+            .env("HOME", "/untrusted-fixture-home")
+            .env("CODEX_HOME", "/untrusted-fixture-codex")
+            .env("OPENAI_API_KEY", "offline-fixture-key");
+        command.output().unwrap()
+    };
+    let bare = |args: &[String]| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_hagency"));
+        command
+            .args(args)
+            .env("PATH", "")
+            .env("HOME", "/untrusted-fixture-home")
+            .env("CODEX_HOME", "/untrusted-fixture-codex")
+            .env("OPENAI_API_KEY", "offline-fixture-key");
+        command.output().unwrap()
+    };
+    assert!(invoke(&["init", "--state-dir", state.to_str().unwrap()]).status.success());
+    let document = root.path().join("fleet.json");
+    fs::write(
+        &document,
+        r#"{"fleetId":"hf_0123456789abcdef0123456789abcdef","generation":1,"serverName":"example.test","receptionRoomId":"!reception:example.test","representativeMxid":"@hf_0123456789abcdef0123456789abcdef_representative:example.test","approvalBotMxid":"@approval:example.test"}"#,
+    )
+    .unwrap();
+    let registered = bare(&[
+        "registration".into(),
+        "--state-dir".into(),
+        state.to_string_lossy().into_owned(),
+        "register".into(),
+        "--file".into(),
+        document.to_string_lossy().into_owned(),
+    ]);
+    assert!(
+        registered.status.success(),
+        "{}",
+        String::from_utf8_lossy(&registered.stderr)
+    );
+
+    let issue_args = |url: &str| {
+        vec![
+            "side-registration".to_owned(),
+            "--state-dir".to_owned(),
+            state.to_string_lossy().into_owned(),
+            "--side".to_owned(),
+            "example.test".to_owned(),
+            "--url".to_owned(),
+            url.to_owned(),
+        ]
+    };
+    let issued = bare(&issue_args("http://127.0.0.1:13443///"));
+    assert!(
+        issued.status.success(),
+        "{}",
+        String::from_utf8_lossy(&issued.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&issued.stdout).into_owned();
+    let body: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
+    assert_eq!(body["ok"], serde_json::json!(true));
+    assert_eq!(body["staged"], serde_json::json!(false));
+    assert_eq!(body["mode"], serde_json::json!("0600"));
+    assert_eq!(body["registrationId"], serde_json::json!("hagency-example.test"));
+    assert_eq!(body["representative"], serde_json::json!("@hagency:example.test"));
+    assert_eq!(body["namespace"], serde_json::json!("@ac_.*"));
+    assert_eq!(body["url"], serde_json::json!("http://127.0.0.1:13443"));
+
+    // The artefacts: the YAML for the operator's install, and the token at
+    // the exact path the appservice profile reads at startup.
+    let yaml_path = state.join("registrations/example.test.yaml");
+    let yaml = fs::read_to_string(&yaml_path).unwrap();
+    let as_token = yaml
+        .lines()
+        .find_map(|l| l.strip_prefix("as_token: "))
+        .unwrap()
+        .to_owned();
+    assert_eq!(as_token.len(), 64);
+    let token_file =
+        String::from_utf8(fs::read(state.join("matrix.appservice_token")).unwrap()).unwrap();
+    assert_eq!(token_file, as_token);
+    // The CLI never prints a token: only the fingerprints.
+    assert!(!stdout.contains(&as_token));
+    let hs_token = yaml
+        .lines()
+        .find_map(|l| l.strip_prefix("hs_token: "))
+        .unwrap()
+        .to_owned();
+    assert!(!stdout.contains(&hs_token));
+
+    // The reissue stages: the live credential the service reads is left
+    // alone until a verify promotes the staged one (TS's staging rule).
+    let staged = bare(&issue_args("http://127.0.0.1:14443"));
+    assert!(
+        staged.status.success(),
+        "{}",
+        String::from_utf8_lossy(&staged.stderr)
+    );
+    let staged_body: serde_json::Value =
+        serde_json::from_str(String::from_utf8_lossy(&staged.stdout).trim()).unwrap();
+    assert_eq!(staged_body["staged"], serde_json::json!(true));
+    let still_live =
+        String::from_utf8(fs::read(state.join("matrix.appservice_token")).unwrap()).unwrap();
+    assert_eq!(still_live, as_token);
+
+    // An unknown side names its refusal in the exit status, like the other
+    // offline commands.
+    let mut unknown = issue_args("http://127.0.0.1:13443");
+    unknown[4] = "nowhere.test".into();
+    assert!(!bare(&unknown).status.success());
+}

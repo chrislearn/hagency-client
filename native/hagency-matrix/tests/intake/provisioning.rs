@@ -99,6 +99,37 @@ fn request_event(event_id: &str, body: String) -> Value {
     })
 }
 
+/// The same request carried as the CUSTOM event type
+/// `com.hagency.engagement.request.v1` (top-level `type`, camelCase `content`,
+/// no `msgtype`/`body` — `lib/fleet-protocol.js:4,16-34`).
+fn custom_request_event(event_id: &str, request_id: &str, tokens: u64) -> Value {
+    json!({
+        "event_id": event_id,
+        "sender": OWNER,
+        "type": "com.hagency.engagement.request.v1",
+        "origin_server_ts": now(),
+        "content": {
+            "v": 1,
+            "fleetId": fleet_id(),
+            "requestId": request_id,
+            "requesterMxid": OWNER,
+            "sourceRoomId": RECEPTION,
+            "targetProjectId": "project_provision",
+            "targetRoomId": PROJECT,
+            "ownerMxid": OWNER,
+            "ownerDmRoomId": PRIVATE,
+            "role": "coding",
+            "requestedTokens": tokens,
+            "ratePerDay": null,
+            "authVersion": 1,
+            "agentDefinition": {
+                "name": "Provisioned",
+                "resourceId": "resource_27cac5503836765cd10751d2"
+            }
+        }
+    })
+}
+
 /// The provider's decision event: a separate pre-project admission carrying
 /// the request id it approves (ADR-095: the verdict is the separate `approve`
 /// write, never folded into the mint).
@@ -228,8 +259,8 @@ fn project_state() -> Value {
             "content": {"name": "实际项目名称"}
         },
         {
-            "type": "com.hagency.project.binding.v1",
-            "state_key": "",
+            "type": "com.hagency.admin.binding.v1",
+            "state_key": fleet_id(),
             "content": {
                 "v": 1,
                 "fleetId": fleet_id(),
@@ -749,7 +780,7 @@ async fn native_provisioning_inline_account_authority_changed() {
         fake.next().await.json(200, project_state());
         let mut changed = project_state();
         for event in changed.as_array_mut().unwrap() {
-            if event["type"] == "com.hagency.project.binding.v1" {
+            if event["type"] == "com.hagency.admin.binding.v1" {
                 event["content"]["ownerMxid"] = json!(representative());
             }
         }
@@ -876,6 +907,113 @@ async fn native_provisioning_ingress_admits_a_provider_approved_request() {
     c.close().await.unwrap();
 }
 
+/// A request sent as the CUSTOM event type `com.hagency.engagement.request.v1`
+/// is admitted exactly like the msgtype one: the camelCase `content` is
+/// translated to the console-shape body, then the same provision path runs.
+#[tokio::test]
+async fn native_provisioning_admits_a_custom_event_type_request() {
+    let (f, mut fake, c) = ready_provisioning().await;
+    let before = rows(&f, "engagements");
+    let result = run_provisioning(
+        &c,
+        &mut fake,
+        provisioning_sync(
+            "provision_custom",
+            vec![custom_request_event("$custom_request", "request_one", 250)],
+        ),
+    )
+    .await;
+    let stage = status(&c, &mut fake).await.stage;
+    let summary = result.unwrap_or_else(|e| panic!("intake failed: {e:?}, stage={stage}"));
+    assert_eq!(summary.admitted, 1);
+    assert_eq!(summary.replayed, 0);
+    assert_eq!(rows(&f, "engagements"), before + 1);
+    c.close().await.unwrap();
+}
+
+/// Board #71 (TS parity: lib/engagement-store.js:503-511 + lib/bot-commands.js:573):
+/// a request whose body omits `requestId` is accepted — the intake derives the
+/// idempotency key from the source event id, the exact key the retained bridge
+/// supplies. Two id-less asks are two engagements; re-delivering the same event
+/// replays the admission instead of minting a second engagement.
+#[tokio::test]
+async fn native_provisioning_ingress_admits_a_request_without_request_id() {
+    let (f, mut fake, c) = ready_provisioning().await;
+    let before = rows(&f, "engagements");
+    let idless = |event: &str, agent: &str| {
+        let mut body: Value = serde_json::from_str(&request_body("request_one", 250)).unwrap();
+        let object = body.as_object_mut().unwrap();
+        object.remove("requestId");
+        // A second live ask for the same (project, agent) hits the store's
+        // live-name uniqueness (unrelated to requestId), so the two asks name
+        // different agents — the TS case's `two.id !== one.id`, honestly.
+        object.insert("agent".into(), agent.into());
+        request_event(event, body.to_string())
+    };
+    let cancel = CancellationToken::new();
+    let intake = c.intake(plan(), &cancel);
+    let (result, ()) = common::scripted(intake, async {
+        fake.next().await.json(200, common::who());
+        let request = fake.next().await;
+        assert!(request.target.contains("sync?"));
+        request.json(
+            200,
+            provisioning_sync(
+                "provision",
+                vec![idless("$ask_one", "Provisioned"), idless("$ask_two", "Second")],
+            ),
+        );
+        fake.next().await.json(200, session_state());
+        fake.next().await.json(200, reception_state());
+        // The project room's /state is fetched once (the in-memory room-facts
+        // cache serves the second same-room admit; provision clears only a
+        // LATER verdict's cached entry, intake.rs:417-420).
+        fake.next().await.json(200, project_state());
+    })
+    .await;
+    let stage = status(&c, &mut fake).await.stage;
+    let summary = result.unwrap_or_else(|e| panic!("intake failed: {e:?}, stage={stage}"));
+    assert_eq!(summary.admitted, 2);
+    assert_eq!(summary.replayed, 0);
+    assert_eq!(rows(&f, "engagements"), before + 2);
+    // The stored key is the one the intake derived from the source event id —
+    // `ev_<sha256(event_id)>` — the TS bridge's event-id key.
+    let derived = format!("ev_{}", hagency_core::project::hash(b"$ask_one"));
+    let stored: String = rusqlite::Connection::open(f.root.path().join("domain/domain.sqlite3"))
+        .unwrap()
+        .query_row(
+            "SELECT request_id FROM engagements WHERE request_id=?1",
+            [&derived],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stored, derived);
+    // Re-delivering the same source event replays the admission: the derived
+    // key is stable, so the second intake reports a replay, not a mint. The
+    // project room's /state is cached from the first pass, so the script
+    // answers only the session and reception rooms.
+    let cancel = CancellationToken::new();
+    let intake = c.intake(plan(), &cancel);
+    let (replay, ()) = common::scripted(intake, async {
+        fake.next().await.json(200, common::who());
+        let request = fake.next().await;
+        assert!(request.target.contains("sync?"));
+        request.json(
+            200,
+            provisioning_sync("provision_replay", vec![idless("$ask_one", "Provisioned")]),
+        );
+        fake.next().await.json(200, session_state());
+        fake.next().await.json(200, reception_state());
+    })
+    .await;
+    let stage = status(&c, &mut fake).await.stage;
+    let replay = replay.unwrap_or_else(|e| panic!("replay intake failed: {e:?}, stage={stage}"));
+    assert_eq!(replay.admitted, 0);
+    assert_eq!(replay.replayed, 1);
+    assert_eq!(rows(&f, "engagements"), before + 2);
+    c.close().await.unwrap();
+}
+
 /// A lost writer response after a successful provision leaves the batch
 /// pending; the restored handoff replays the admission (idempotent on
 /// `request_id`) instead of minting a second engagement.
@@ -964,7 +1102,7 @@ async fn native_provisioning_ingress_refuses_unverified_before_admit() {
     let before = rows(&f, "engagements");
     let mut forged = project_state();
     for event in forged.as_array_mut().unwrap() {
-        if event["type"] == "com.hagency.project.binding.v1" {
+        if event["type"] == "com.hagency.admin.binding.v1" {
             event["content"]["fleetId"] = json!(format!("hf_{}", "b".repeat(32)));
         }
     }

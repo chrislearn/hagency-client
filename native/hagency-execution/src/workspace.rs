@@ -4,8 +4,10 @@
 mod approval_path;
 mod inspection;
 mod received;
+mod worktree;
 pub use approval_path::ordinary_launch_path;
 pub use received::{WorkspaceReceive, WorkspaceReceiveError};
+pub use worktree::{WorktreeError, WorktreeInfo, WorktreeManager, WorktreeSpec};
 
 use crate::Failure;
 use cap_std::{ambient_authority, fs::Dir};
@@ -47,7 +49,7 @@ pub(crate) struct Root {
     limit: usize,
 }
 impl Root {
-    fn open(path: PathBuf) -> Result<Self, Failure> {
+    pub(crate) fn open(path: PathBuf) -> Result<Self, Failure> {
         if path.as_os_str().as_encoded_bytes().len() > 4096
             || !path.is_absolute()
             || path.canonicalize().ok().as_ref() != Some(&path)

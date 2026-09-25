@@ -23,6 +23,7 @@ struct Server {
     as_created: bool,
     as_logged: bool,
     as_posts: usize,
+    displayname: Option<String>,
 }
 impl Server {
     async fn new() -> Self {
@@ -51,6 +52,7 @@ impl Server {
             as_created: false,
             as_logged: false,
             as_posts: 0,
+            displayname: None,
         }
     }
     fn project(&self) -> Value {
@@ -58,7 +60,7 @@ impl Server {
             member(OWNER),member(&representative()),
             {"type":"m.room.join_rules","state_key":"","content":{"join_rule":"invite"}},
             power_levels(json!({OWNER:100,representative():50})),
-            {"type":"com.hagency.project.binding.v1","state_key":"","content":{
+            {"type":"com.hagency.admin.binding.v1","state_key":fleet_id(),"content":{
                 "v":1,"purpose":"project","authVersion":1,"fleetId":fleet_id(),
                 "projectId":"project_provision","ownerMxid":OWNER}}
         ]);
@@ -187,9 +189,28 @@ impl Server {
             self.owner_reads += 1;
             return (200, self.dm());
         }
+        if request.target.ends_with("/displayname") {
+            // The identity-polish reconcile (board #11, matrix-agent-profile.js):
+            // GET the current name, PUT the definition's, read back. Only the
+            // agent's own credential reaches here.
+            assert!(!rep && !human);
+            if request.method == "GET" {
+                return (200, json!({"displayname": self.displayname}));
+            }
+            assert_eq!(request.method, "PUT");
+            self.displayname = body["displayname"].as_str().map(str::to_owned);
+            return (200, json!({}));
+        }
         if request.target.ends_with("/createRoom") {
             assert!(!rep && !human && !self.created);
             assert_eq!(body["invite"], json!([OWNER]));
+            // The identity polish (board #11): the room name and the profile
+            // display name are the SAME definition name.
+            assert_eq!(
+                body["name"].as_str(),
+                self.displayname.as_deref(),
+                "the DM name and the reconciled display name are the agent definition's"
+            );
             assert_eq!(body["preset"], "private_chat");
             assert_eq!(body["is_direct"], true);
             assert_eq!(body["creation_content"]["m.federate"], false);
@@ -200,6 +221,28 @@ impl Server {
             assert_eq!(
                 body["initial_state"][1]["content"]["history_visibility"],
                 "invited"
+            );
+            let mut users = serde_json::Map::new();
+            users.insert(self.user.clone(), json!(100));
+            let lockdown = json!({
+                "type": "m.room.power_levels",
+                "state_key": "",
+                "content": {
+                    "ban": 100,
+                    "events_default": 0,
+                    "invite": 100,
+                    "kick": 100,
+                    "notifications": {"room": 100},
+                    "redact": 100,
+                    "state_default": 100,
+                    "users": Value::Object(users),
+                    "users_default": 0,
+                },
+            });
+            assert_eq!(
+                body["initial_state"][2],
+                lockdown,
+                "the approval DM carries the retained power-level lockdown"
             );
             self.created = true;
             self.posts += 1;
@@ -495,7 +538,13 @@ async fn native_provisioning_inline_rooms_refusals() {
     // continues from the rooms without creating, inviting or joining again.
     let mut server = Server::new().await;
     let mut limits = common::load_limits();
-    limits.sdk = std::time::Duration::from_secs(4);
+    // #81: the attempt budget is the mechanism under test (owner absent → the
+    // wait expires → effect stays started), not a liveness bound for the whole
+    // intake. 4 s was barely above ONE starved provision step; the sibling
+    // guards on the same fixtures (:729, :1632) already use 15 s (#40's T4
+    // precedent). The expiry itself still happens — every assertion is
+    // unchanged.
+    limits.sdk = std::time::Duration::from_secs(15);
     let (f, mut fake, c) = ready_inline_limits(
         Some((REP_TOKEN, vec![(OWNER.into(), server.peer.anchor())])),
         limits,
@@ -678,7 +727,12 @@ async fn native_provisioning_inline_rooms_custody() {
         {
             let settled = c.inner.busy.clone().acquire_owned();
             tokio::pin!(settled);
-            let watchdog = tokio::time::sleep(std::time::Duration::from_secs(5));
+            // This permit is the job's real completion signal; the watchdog is
+            // only a liveness guard. The job makes several provision steps each
+            // bounded by the product's own 4 s SDK timeout (see the sibling
+            // guards at :1584 and :1663, which use 15 s for the same permit);
+            // a 5 s guard is barely above ONE step and a loaded host crossed it.
+            let watchdog = tokio::time::sleep(std::time::Duration::from_secs(15));
             tokio::pin!(watchdog);
             loop {
                 tokio::select! {

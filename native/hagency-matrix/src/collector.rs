@@ -98,6 +98,76 @@ impl Collector {
             .map_err(|_| Error::Busy)?;
         self.close_with_permit(_permit).await
     }
+
+    /// The engagement this collector's transport belongs to — task #12's
+    /// invite poll keys records by the engagement's agent NAME, resolved
+    /// from this id through the store.
+    pub fn engagement_id(&self) -> &str {
+        &self.inner.config.identity.transport.engagement_id
+    }
+
+    /// Task #12: one lightweight invite sync — `timeline limit 0`, the TS
+    /// poll's exact filter (`bridge-matrix.js:7903`) — parsed into the
+    /// invitations addressed to THIS collector's sender mxid. A bounded
+    /// owned job under the same busy permit as `collect`, so the two
+    /// never interleave on one HTTP identity.
+    pub async fn observe_invites(&self, cancel: &CancellationToken) -> Result<Vec<crate::invites::ObservedInvite>, Error> {
+        let permit = self
+            .inner
+            .busy
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| Error::Busy)?;
+        let inner = self.inner.clone();
+        let cancel = cancel.clone();
+        let job = async move {
+            let _permit = permit;
+            let sync = crate::invites::invite_sync(&inner.http, None, &cancel).await?;
+            Ok(crate::invites::parse_invites(
+                &sync,
+                &inner.config.identity.transport.sender_mxid,
+            ))
+        };
+        tokio::spawn(job).await.map_err(|_| Error::OutcomeUnknown)?
+    }
+
+    /// Task #12: accept an invitation by joining, returning the room id
+    /// the SERVER reports (`bridge-matrix.js:9073-9082`).
+    pub async fn join_room(&self, room_id: &str, cancel: &CancellationToken) -> Result<String, Error> {
+        let permit = self
+            .inner
+            .busy
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| Error::Busy)?;
+        let inner = self.inner.clone();
+        let room_id = room_id.to_owned();
+        let cancel = cancel.clone();
+        let job = async move {
+            let _permit = permit;
+            crate::invites::join_room(&inner.http, &room_id, &cancel).await
+        };
+        tokio::spawn(job).await.map_err(|_| Error::OutcomeUnknown)?
+    }
+
+    /// Task #12: decline by leaving — best-effort by design
+    /// (`bridge-matrix.js:9135-9147`); the decision is the record.
+    pub async fn leave_room(&self, room_id: &str, cancel: &CancellationToken) -> Result<(), Error> {
+        let permit = self
+            .inner
+            .busy
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| Error::Busy)?;
+        let inner = self.inner.clone();
+        let room_id = room_id.to_owned();
+        let cancel = cancel.clone();
+        let job = async move {
+            let _permit = permit;
+            crate::invites::leave_room(&inner.http, &room_id, &cancel).await
+        };
+        tokio::spawn(job).await.map_err(|_| Error::OutcomeUnknown)?
+    }
     pub(crate) async fn close_with_permit(
         &self,
         _permit: tokio::sync::OwnedSemaphorePermit,
@@ -732,8 +802,14 @@ impl Inner {
                         .and_then(Value::as_str)
                         .map(str::to_owned);
                 }
-                "com.hagency.project.binding.v1" => {
-                    if !key.is_empty() {
+                "com.hagency.admin.binding.v1" => {
+                    // TS parity (lib/fleet-protocol.js:52): the binding is a
+                    // per-fleet state event keyed by the fleet id (never the
+                    // empty key). TS reads the exact tuple
+                    // `state/<type>/<fleetId>`; an event under another key is
+                    // simply not this fleet's binding, and the fleet match is
+                    // decided from the binding content (`fleetId`) downstream.
+                    if key.is_empty() {
                         return Err(Error::Wire);
                     }
                     facts.binding = Some(Value::Object(content.clone()));

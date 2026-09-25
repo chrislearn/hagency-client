@@ -73,6 +73,17 @@ pub fn public_resource_id(preset: &str) -> String {
 pub struct AgentDefinition {
     pub name: AgentName,
     pub resource_id: String,
+    /// Per-agent workspace settings (board #78; the TS agent record,
+    /// backend-v2.js:2994): `workspaceMode` is `worktree` or `shared`
+    /// (normalize, backend-v2.js:512), `worktreesDir` the agent's own
+    /// worktrees root, `worktreeBootstrap` its bootstrap argv (backend-v2.js:516).
+    /// All optional/absent for existing records, which stay `shared`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktrees_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub worktree_bootstrap: Vec<String>,
 }
 impl AgentDefinition {
     pub fn validate(&self) -> Result<(), InvalidInput> {
@@ -264,4 +275,22 @@ pub struct Engagement {
     pub requested_tokens: Tokens,
     pub state: EngagementState,
     pub cleanup: CleanupState,
+    /// Per-agent workspace settings (board #78; the TS agent record,
+    /// backend-v2.js:2994): `workspaceMode` normalizes to `worktree` or
+    /// `shared` (backend-v2.js:512), `worktreesDir` is the agent's own
+    /// worktrees root, `worktreeBootstrap` its bootstrap argv. Absent in
+    /// older projections, which deserialize as the shared defaults.
+    #[serde(default)]
+    pub workspace_mode: String,
+    #[serde(default)]
+    pub worktrees_dir: Option<String>,
+    #[serde(default)]
+    pub worktree_bootstrap: Vec<String>,
+    /// TS routeRequest verdict at admission (lib/engagement-store.js:178-232):
+    /// why this request did — or did not — auto-join. The routing is recorded,
+    /// never used to refuse: the request still lands in the queue.
+    #[serde(default)]
+    pub route: Option<String>,
+    #[serde(default)]
+    pub auto_joined: bool,
 }

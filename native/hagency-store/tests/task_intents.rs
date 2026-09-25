@@ -380,7 +380,7 @@ fn native_completed_intent_report() {
     // Upgrade prior native report rows only using the original attempt's durable
     // done receipt, not an assertion in the replacement payload.
     remove_graph_schema(&inspect);
-    inspect.execute_batch("DROP VIEW unresolved_dispatches; DROP TABLE dispatch_stops; DROP TABLE conversation_operations; ALTER TABLE internal_conversations DROP COLUMN revision; DROP VIEW current_recovery_reports; DROP TABLE dispatch_recovery_reports; PRAGMA user_version=7;").unwrap();
+    inspect.execute_batch("DROP VIEW unresolved_dispatches; DROP TABLE dispatch_stops; DROP TABLE conversation_operations; ALTER TABLE internal_conversations DROP COLUMN revision; DROP VIEW current_recovery_reports; DROP TABLE dispatch_recovery_reports; DROP TABLE IF EXISTS agent_lifecycle; ALTER TABLE decisions DROP COLUMN kind; ALTER TABLE decisions DROP COLUMN at; PRAGMA user_version=7;").unwrap();
     drop(db);
     let db = DomainRepository::open(&root.path().join("state")).unwrap();
     assert_eq!(count(&inspect, "dispatch_recovery_reports"), 1);
@@ -1031,7 +1031,10 @@ fn native_task_human_followup() {
         assert_eq!(reopened.execution_epoch, epoch + 1);
         assert_eq!(reopened.completed_at, None);
         assert!(db.start_dispatch(&current, 2007).is_err());
-        assert_eq!(count(&inspect, "task_notices"), 2);
+        // Three notices now: task activation, the done transition's
+        // `Task status: done` (router/src/store.ts:3314-3315 parity), and
+        // the follow-up continuation.
+        assert_eq!(count(&inspect, "task_notices"), 3);
         assert!(
             db.mutate_task(
                 &old,
@@ -1049,6 +1052,58 @@ fn native_task_human_followup() {
                 .message
                 .sequence,
             next
+        );
+    }
+}
+
+/// The retained product says in the thread when the Matrix task thread could
+/// not be created (`router/src/store.ts` `recordTaskThreadDeliveryFailure`)
+/// or when the thread exists but no runner launched
+/// (`recordTaskDispatchFailure`): a permanent notice claim failure with the
+/// matching error code posts the words into the thread.
+#[test]
+fn native_thread_lifecycle_terminal_notices() {
+    for (code, expected) in [
+        (
+            "thread_delivery_failed",
+            "Task creation failed: the Matrix task thread could not be created. No coding work was started.",
+        ),
+        (
+            "thread_dispatch_failed",
+            "Task thread created, but execution could not start. No coding runner was launched; inspect the agent and workspace configuration before retrying.",
+        ),
+    ] {
+        let (root, mut db, agents, seq) = setup();
+        let task = db
+            .create_task_intent(&intent(&agents[0], seq), 1001)
+            .unwrap();
+        let claim = db.claim_task_notice(1002, 100).unwrap().unwrap();
+        db.fail_task_notice(&claim.notice.id, &claim.token, code, true, 1003)
+            .unwrap();
+        let sql = sql(&root);
+        let (kind, body): (String, String) = sql
+            .query_row(
+                &format!(
+                    "SELECT json_extract(config,'$.kind'),json_extract(config,'$.body') FROM task_notices WHERE json_extract(config,'$.kind')='{code}'"
+                ),
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(kind, code);
+        assert_eq!(body, expected);
+        // The explanation itself is now a claimable task notice (that is the
+        // feature): it must reach the thread. Claim it by identity, then the
+        // well is dry.
+        let said = db.claim_task_notice(4000, 100).unwrap().unwrap();
+        assert_eq!(said.notice.kind, code);
+        assert_eq!(said.notice.body, expected);
+        assert!(db.claim_task_notice(4001, 100).unwrap().is_none());
+        assert_eq!(
+            db.create_task_intent(&intent(&agents[0], seq), 4000)
+                .unwrap()
+                .task_id,
+            task.task_id
         );
     }
 }

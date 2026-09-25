@@ -4,6 +4,9 @@ import NativeStatusStrip from '@/components/NativeStatusStrip';
 import TechnicalDetails from '@/components/TechnicalDetails';
 import { useData } from '@/components/Data';
 import { useT } from '@/components/Prefs';
+import { errorText } from '@/lib/i18n';
+import SearchSelect from '@/components/SearchSelect';
+import { labelFor } from '@/lib/labels';
 
 const KINDS = ['input', 'output', 'cacheWrite', 'cacheRead'];
 export function NativeAccessNotice() {
@@ -43,12 +46,16 @@ export default function NativeUsage() {
     {['ready', 'stale'].includes(phase) && <div data-native-state={phase} aria-busy={data.refreshing === true}>
       {data.refreshing && <p role="status">{t('nu.refreshing')}</p>}
       {phase === 'stale' && <p role="alert">{t('nu.stale')}</p>}
-      <section className="panel"><div className="field"><label htmlFor="native-engagement">{t('nu.engagement')}</label>{engagements.length || selected ? <select id="native-engagement" value={selected ?? ''} onChange={(event) => data.choose(event.target.value)}>
-        {selected && !engagements.some((e) => e.id === selected) && <option value={selected}>{t('nu.outsidePage')}</option>}
-        {engagements.map((e) => <option key={e.id} value={e.id}>{e.agentName} · {e.projectName ?? t('nu.unnamedProject')} · {e.role}</option>)}
-      </select> : <p>{t('nu.empty')}</p>}</div>
+      <section className="panel"><div className="field"><label htmlFor="native-engagement">{t('nu.engagement')}</label><SearchSelect
+        id="native-engagement"
+        value={selected}
+        onChange={(event) => data.choose(event.target.value)}
+        options={engagements.map((e) => ({ value: e.id, label: `${e.agentName} · ${e.projectName ?? t('nu.unnamedProject')} · ${e.role}` }))}
+        outside={labelFor(selected) ?? t('nu.outsidePage')}
+        empty={t('nu.empty')}
+      /></div>
       <div className="btn-row"><button className="btn" onClick={data.refresh}>{t('nu.refresh')}</button><button className="btn" onClick={data.firstPage}>{t('nu.firstPage')}</button>
-      <button className="btn" onClick={data.nextPage} disabled={!data.next_after}>{t('nu.nextPage')}</button><button className="btn" onClick={data.logout}>{t('nu.logout')}</button></div>
+      <button className="btn" onClick={data.nextPage} disabled={!data.next_after}>{t('nu.nextPage')}</button></div>
       </section>
       {report && <div data-engagement-id={report.engagement_id}>
         <section className="panel"><h2 className="sec" style={{ marginTop: 0 }}>{t('nu.summary')}</h2><p>{t('nu.sources', { n: report.summary.sources })}</p>
@@ -65,6 +72,6 @@ export default function NativeUsage() {
         <Period period={report.daily} title={t('nu.daily')} /><Period period={report.monthly} title={t('nu.monthly')} />
       </div>}
     </div>}
-    <TechnicalDetails><p>{t('nu.limitations')}</p>{selected && <p>{t('nu.engagementId')}: <code>{selected}</code></p>}{error && <code>{error}</code>}</TechnicalDetails>
+    <TechnicalDetails><p>{t('nu.limitations')}</p>{selected && <p>{t('nu.engagementId')}: <code>{selected}</code></p>}{error && <code>{errorText(t, error)}</code>}</TechnicalDetails>
   </>;
 }

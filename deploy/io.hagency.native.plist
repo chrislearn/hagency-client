@@ -33,6 +33,10 @@
     <string>__STATE_DIR__</string>
     <string>--listen</string>
     <string>127.0.0.1:13300</string>
+    <string>--agent-driver</string>
+    <string>--palpo-transport</string>
+    <string>--console-assets</string>
+    <string>__CONSOLE_DIR__</string>
   </array>
 
   <key>RunAtLoad</key>

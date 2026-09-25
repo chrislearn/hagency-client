@@ -2,42 +2,10 @@ use super::*;
 use hagency_store::{ACCOUNT_PROFILE, AccountEnrollmentAccess};
 use std::time::{Duration, Instant};
 
-/// An account-management session: the operator ticket from the new route,
-/// exchanged exactly as the other two management scopes are.
+/// TS parity: one login is the whole console — the former account-scope
+/// session is the same `/console/access` login as every other.
 async fn management(service: &Service) -> String {
-    // The issuer shares one rate budget across every scope (authority.rs
-    // `issue_scope`): a second issue within one second of the `session()` issue
-    // answers Busy. Clear the budget before issuing; a 429 is a real refusal
-    // to be reported from its body, never retried.
-    tokio::time::sleep(Duration::from_millis(1010)).await;
-    let mut response = TestClient::post(format!("{BASE}/api/native/v1/console/account-access"))
-        .add_header("host", "127.0.0.1:13300", true)
-        .bearer_auth(TOKEN)
-        .send(service)
-        .await;
-    let status = response.status_code;
-    let body = response.take_string().await.unwrap_or_default();
-    assert_eq!(
-        status,
-        Some(StatusCode::OK),
-        "account access issue refused: {body}"
-    );
-    let ticket = serde_json::from_str::<Value>(&body).unwrap()["ticket"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let response = exchange(service, &ticket).await;
-    assert_eq!(response.status_code, Some(StatusCode::OK));
-    response
-        .headers()
-        .get("set-cookie")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .split(';')
-        .next()
-        .unwrap()
-        .to_owned()
+    session(service).await
 }
 fn command(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
     TestClient::post(format!("{BASE}{path}"))
@@ -242,36 +210,17 @@ async fn native_console_account_routes_carry_no_identity() {
 async fn native_console_account_mutations_require_the_scope() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
-    let readonly = session(&service).await;
     let before = f.domain.account_choices().await.unwrap().len();
-    // Each of the three mutations refuses the read-only session with the
-    // account scope word before any store job runs.
-    let mut prepare = command("/console/api/accounts", &readonly)
+    // TS parity: there is no read-only login — an anonymous caller is refused
+    // before any store job, and every logged-in session may act.
+    let anonymous = TestClient::post(format!("{BASE}/console/api/accounts"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .add_header("origin", BASE, true)
+        .add_header("sec-fetch-site", "same-origin", true)
         .json(&json!({"profile":ACCOUNT_PROFILE}))
         .send(&service)
         .await;
-    assert_eq!(prepare.status_code, Some(StatusCode::FORBIDDEN));
-    assert_eq!(
-        serde_json::from_str::<Value>(&prepare.take_string().await.unwrap()).unwrap()["code"],
-        "account_scope_required"
-    );
-    let mut retire = command("/console/api/accounts/no_such_row/retire", &readonly)
-        .send(&service)
-        .await;
-    assert_eq!(retire.status_code, Some(StatusCode::FORBIDDEN));
-    assert_eq!(
-        serde_json::from_str::<Value>(&retire.take_string().await.unwrap()).unwrap()["code"],
-        "account_scope_required"
-    );
-    let mut enrol = command("/console/api/accounts/no_such_row/enrollment", &readonly)
-        .json(&json!({"model":"gpt-5.6-sol","expected_revision":"0".repeat(64)}))
-        .send(&service)
-        .await;
-    assert_eq!(enrol.status_code, Some(StatusCode::FORBIDDEN));
-    assert_eq!(
-        serde_json::from_str::<Value>(&enrol.take_string().await.unwrap()).unwrap()["code"],
-        "account_scope_required"
-    );
+    assert_eq!(anonymous.status_code, Some(StatusCode::UNAUTHORIZED));
     assert_eq!(
         f.domain.account_choices().await.unwrap().len(),
         before,
@@ -596,5 +545,91 @@ async fn native_console_account_readiness_is_observed_not_asserted() {
     // A read never writes and never promotes: the observation ledger is
     // unchanged (no new row, no settled promotion) after every read.
     assert_eq!(count(), before, "a read never writes a fact");
+    f.close().await;
+}
+
+/// The first-resource act end to end: the operator prepares an account,
+/// enrols it through the console route, and the created account-bound
+/// resource appears on the resources read — the outcome the TS account/
+/// credential enrolment flow reaches through POST /api/framework-presets
+/// (backend-v2.js:15842).
+///
+/// PRECONDITION HONESTY: the shared fixture seed is NOT an empty service —
+/// `fixture::seed` pre-loads `private_usage_pool` and `private_alert_pool`,
+/// so the pre-state is two resources with NO account-owned resource
+/// (`resource_accounts` empty). The assertions are the DELTA (exactly one
+/// resource added, none removed) and the new resource's IDENTITY (framework,
+/// model, reasoning, published) — never a length-0 premise that the seed
+/// falsifies.
+#[tokio::test]
+async fn native_console_account_enrollment_creates_the_first_resource() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let manager = management(&service).await;
+    // Pre-state: the seeded resources exist and none is account-owned.
+    let mut before = read(&manager, "/console/api/resources?limit=16").send(&service).await;
+    let before_body: Value = serde_json::from_str(&before.take_string().await.unwrap()).unwrap();
+    let before_ids: Vec<String> = before_body["resources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(
+        before_ids.len(),
+        2,
+        "the shared fixture seeds exactly two resources (usage + alert pools), none account-owned: {before_body}"
+    );
+    {
+        let sql = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3")).unwrap();
+        let account_owned: u32 = sql
+            .query_row("SELECT COUNT(*) FROM resource_accounts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(account_owned, 0, "no account-owned resource before enrollment");
+    }
+    // Prepare the account (the "Add account" act).
+    let mut prepared = command("/console/api/accounts", &manager)
+        .json(&json!({"profile":ACCOUNT_PROFILE}))
+        .send(&service)
+        .await;
+    assert_eq!(prepared.status_code, Some(StatusCode::OK));
+    let prepared: Value = serde_json::from_str(&prepared.take_string().await.unwrap()).unwrap();
+    let row = &prepared["account"];
+    let id = row["id"].as_str().unwrap().to_owned();
+    // Enrol: the only mutation carrying the row's expected revision.
+    let mut enrolled = command(&format!("/console/api/accounts/{id}/enrollment"), &manager)
+        .json(&json!({"model":"gpt-5.6-sol","reasoning":"medium","expectedRevision":row["revision"].as_str().unwrap()}))
+        .send(&service)
+        .await;
+    let enrolled_body = enrolled.take_string().await.unwrap_or_default();
+    assert_eq!(
+        enrolled.status_code,
+        Some(StatusCode::OK),
+        "enrollment refused: {enrolled_body}"
+    );
+    // The created resource is listed on the resources read the console's
+    // Resources page consumes — the first account-owned resource, created in
+    // the console. Assert the DELTA and the new resource's IDENTITY.
+    let mut listed = read(&manager, "/console/api/resources?limit=16").send(&service).await;
+    assert_eq!(listed.status_code, Some(StatusCode::OK));
+    let listed: Value = serde_json::from_str(&listed.take_string().await.unwrap()).unwrap();
+    let resources = listed["resources"].as_array().unwrap();
+    assert_eq!(
+        resources.len(),
+        before_ids.len() + 1,
+        "enrollment added exactly one resource"
+    );
+    let after_ids: Vec<&str> = resources.iter().map(|r| r["id"].as_str().unwrap()).collect();
+    for id in &before_ids {
+        assert!(after_ids.contains(&id.as_str()), "seeded resource {id} untouched");
+    }
+    let new = resources
+        .iter()
+        .find(|r| !before_ids.iter().any(|b| b == r["id"].as_str().unwrap()))
+        .expect("the enrollment-created resource is listed");
+    assert_eq!(new["framework"], "codex");
+    assert_eq!(new["model"], "gpt-5.6-sol");
+    assert_eq!(new["reasoning"], "medium");
+    assert_eq!(new["published"], true);
     f.close().await;
 }

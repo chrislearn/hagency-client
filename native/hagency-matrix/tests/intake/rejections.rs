@@ -13,20 +13,32 @@ async fn stop_sdk(c: Collector) {
     drop(c);
 }
 async fn ready(private: bool) -> (common::Fixture, common::Fake, Collector) {
+    ready_limits(private, common::load_limits()).await
+}
+/// #81: these are service-level `scripted()` fixtures sharing one runtime
+/// with the fake peer; the tight tier's `sdk=10s` was crossed by scheduler
+/// starvation, not by the product (the #59 under-load trace shows every
+/// product step recorded done at 10.35 s). The load tier keeps every bound
+/// strictly below `Limits::default()`, so a real refusal still fails.
+/// `drive_with`-style deliberate-deadline tests keep using `ready`'s old
+/// tier via their own local fixtures — this local variant only serves
+/// `archived_terminal_source`.
+async fn ready_limits(private: bool, limits: crate::Limits) -> (common::Fixture, common::Fake, Collector) {
     let f = common::Fixture::new();
     let mut fake = common::Fake::start(true).await;
-    let c = Collector::new(
-        config(&f, &fake.endpoint, f.identity.clone(), 1, private),
-        f.store.clone(),
-    )
-    .unwrap();
+    let mut config = config(&f, &fake.endpoint, f.identity.clone(), 1, private);
+    config.limits = limits;
+    let c = Collector::new(config, f.store.clone()).unwrap();
     prime(&c, &f, &mut fake, private).await;
     (f, fake, c)
 }
 fn malformed() -> Vec<Value> {
     let mut values = vec![];
+    // "media" left this list: TS parity (bridge-matrix.js:6799-6831) admits a
+    // plaintext room's m.file/m.image as a visible message, so a plaintext url
+    // attachment is no longer a malformed-shape rejection.
     for kind in [
-        "body", "sender", "id", "relation", "mentions", "media", "oversize",
+        "body", "sender", "id", "relation", "mentions", "oversize",
     ] {
         let mut value = event(kind, "Rejected", &["@worker:example.test"], None);
         match kind {
@@ -145,17 +157,65 @@ async fn native_matrix_rejection_crypto_missing_keys_and_later_verified_message(
     plain["encryption_info"] = json!({"verification_state":"verified"});
     events.insert(0, plain);
     let result = run(&c, &mut fake, no_keys, true).await.unwrap();
-    assert_eq!((result.admitted, result.rejected), (0, 2));
+    // TS `bridge-matrix.js:6646` (`onFailedRoomDecryption`) queues instead of
+    // dropping: the plaintext-in-an-encrypted-room is still refused, but the
+    // undecryptable envelope is RETAINED awaiting its room key, not rejected
+    // terminally. (The old native rule tombstoned it — board #10 reverts that.)
+    assert_eq!((result.admitted, result.rejected), (0, 1));
+    // Nothing is admitted while the key is missing.
+    assert_eq!(f.store.inbox("root".into(), 0, 10, None).await.unwrap().len(), 0);
     assert!(f.available().await);
-    // Same original ciphertext is now genuinely decryptable through actual key
-    // sharing, but its first refusal is terminal. The independently encrypted
-    // next message has a fresh ID/index and must still be admitted.
+    // The key now arrives and the same ciphertext is re-delivered. It becomes
+    // input EXACTLY ONCE, and the independently encrypted next message is
+    // admitted alongside it.
     encrypted["next_batch"] = json!("keys_arrived");
     let result = run(&c, &mut fake, encrypted, true).await.unwrap();
-    assert_eq!((result.admitted, result.rejected), (1, 1));
+    assert_eq!((result.admitted, result.rejected), (2, 0));
+    let inbox = f.store.inbox("root".into(), 0, 10, None).await.unwrap();
+    assert_eq!(inbox.len(), 2);
+    assert_eq!(inbox[0].message.event_id, "$encrypted");
+    assert_eq!(inbox[1].message.event_id, "$encrypted_new");
+    assert!(inbox.iter().all(|r| r.wake));
+    assert!(f.available().await);
+    c.close().await.unwrap();
+    f.store.shutdown().await.unwrap();
+    fake.close().await;
+}
+
+/// Board #10 acceptance: deliver the event BEFORE its room key, then deliver
+/// only the key on a later sync (the event is never re-delivered). TS
+/// `retryPendingApprovalDecryptions` (`bridge-matrix.js:6670-6705`) recovers the
+/// retained envelope then; the message becomes input exactly once.
+#[tokio::test]
+async fn native_matrix_retains_undecryptable_event_until_late_room_key() {
+    let (f, mut fake, c) = ready(true).await;
+    let encrypted = c
+        .inner
+        .owner
+        .lock()
+        .await
+        .as_ref()
+        .unwrap()
+        .crypto_messages(true, 1)
+        .await;
+    // First sync: the event arrives, but its room key does not.
+    let mut before_key = encrypted.clone();
+    before_key["next_batch"] = json!("before_key");
+    before_key["to_device"]["events"] = json!([]);
+    let result = run(&c, &mut fake, before_key, true).await.unwrap();
+    assert_eq!((result.admitted, result.rejected), (0, 0));
+    assert_eq!(f.store.inbox("root".into(), 0, 10, None).await.unwrap().len(), 0);
+    assert!(f.available().await);
+    // Second sync: ONLY the key arrives — the event is not re-delivered.
+    let mut late_key = encrypted.clone();
+    late_key["next_batch"] = json!("late_key");
+    late_key["rooms"]["join"]["!project:example.test"]["timeline"]["events"] = json!([]);
+    let result = run(&c, &mut fake, late_key, true).await.unwrap();
+    assert_eq!((result.admitted, result.rejected), (1, 0));
     let inbox = f.store.inbox("root".into(), 0, 10, None).await.unwrap();
     assert_eq!(inbox.len(), 1);
-    assert_eq!(inbox[0].message.event_id, "$encrypted_new");
+    assert_eq!(inbox[0].message.event_id, "$encrypted");
+    assert_eq!(inbox[0].message.body, "小白：已验证的私聊，无需提及");
     assert!(inbox[0].wake);
     assert!(f.available().await);
     c.close().await.unwrap();
@@ -291,7 +351,9 @@ async fn native_matrix_rejection_custody_actual_receipt_rollback_and_sdk_uncerta
         .await
         .unwrap();
     let batch = owner.batch().await.unwrap().unwrap();
-    assert_eq!(batch.rejected(), 7);
+    // "media" left malformed() (plaintext url attachments are admitted now,
+    // TS bridge-matrix.js:6799-6831), so the malformed count is 6.
+    assert_eq!(batch.rejected(), 6);
     let sql =
         rusqlite::Connection::open(f.root.path().join("sdk/matrix-sdk-state.sqlite3")).unwrap();
     sql.execute_batch("CREATE TRIGGER reject_receipt BEFORE INSERT ON kv_blob BEGIN SELECT RAISE(ABORT,'controlled rollback'); END;").unwrap();
@@ -299,7 +361,7 @@ async fn native_matrix_rejection_custody_actual_receipt_rollback_and_sdk_uncerta
         owner.intake_finish(batch.digest.clone()).await,
         Err(Error::OutcomeUnknown)
     );
-    assert_eq!(owner.batch().await.unwrap().unwrap().rejected(), 7);
+    assert_eq!(owner.batch().await.unwrap().unwrap().rejected(), 6);
     assert_eq!(owner.cursor().await.unwrap().as_deref(), Some("bootstrap"));
     sql.execute_batch("DROP TRIGGER reject_receipt").unwrap();
     drop(sql);
