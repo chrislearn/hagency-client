@@ -5,8 +5,9 @@ use crate::collector::observation::{self, CommandTrace, Phase as ObservationPhas
 use crate::collector::observe;
 use crate::{
     Error, HostConfig,
-    event_batch::{Acknowledgement, Batch, Phase, Receipt},
+    event_batch::{Acknowledgement, Batch, PendingEnvelope, Phase, Receipt, Recovered},
 };
+use matrix_sdk_common::deserialized_responses::TimelineEventKind;
 use hagency_core::canonical;
 use hagency_core::replies::ReplyRoute;
 use hagency_store::private;
@@ -80,6 +81,12 @@ struct Journal {
     intake: Option<Batch>,
     #[serde(default)]
     intake_receipts: Vec<Receipt>,
+    /// Board #10 (TS `bridge-matrix.js:6646` `pendingEncryptedEventStore`):
+    /// raw `m.room.encrypted` envelopes whose room key had not arrived. Durable
+    /// across syncs (a batch's own list is folded in here before it is
+    /// finished), retried on every later sync, and never a terminal tombstone.
+    #[serde(default)]
+    undecryptable: Vec<PendingEnvelope>,
     #[serde(default)]
     outgoing: Option<crate::outgoing::state::Attempt>,
     #[serde(default)]
@@ -1217,6 +1224,15 @@ impl Sdk {
             if journal.pending.is_some() {
                 return Err(Error::OutcomeUnknown);
             }
+            // Board #10: durable retained envelopes are bounded, and every one
+            // must name a room this host observes (otherwise a restored journal
+            // could carry custody for a room the host no longer serves).
+            if journal.undecryptable.len() > crate::event_batch::MAX_PENDING_UNDECRYPTABLE {
+                return Err(Error::Storage);
+            }
+            for envelope in &journal.undecryptable {
+                envelope.validate()?;
+            }
             if journal
                 .intake
                 .as_ref()
@@ -1471,11 +1487,17 @@ impl Sdk {
         if std::mem::take(&mut self.apply_fault) {
             return Err(Error::OutcomeUnknown);
         }
+        // Board #10 (TS `bridge-matrix.js:6670-6705`): now that this sync has
+        // delivered any room keys, retry the envelopes retained from earlier
+        // syncs. Recovered messages are folded into this batch's candidates so
+        // the ordinary handoff admits them exactly once.
+        let recovered = self.retry_undecryptable().await;
         phase!(IntakeDerive);
         if let Err(error) = self.journal.intake.as_mut().unwrap().derive_with_history(
             processed,
             &self.journal.intake_receipts,
             &archived,
+            &recovered,
         ) {
             phase!(IntakeEventQuarantine);
             self.intake_quarantine("unsupported SDK event or incomplete timeline".into())
@@ -1506,6 +1528,82 @@ impl Sdk {
         files(&self.root)?;
         phase!(IntakeFinalFilesChecked);
         Ok(())
+    }
+    /// Board #10 (TS `bridge-matrix.js:6670-6705` `retryPendingApprovalDecryptions`):
+    /// retry decryption of every retained envelope now that a later sync may
+    /// have delivered its room key. A success is removed from the durable store
+    /// and returned for this batch to admit exactly once; a still-missing key
+    /// keeps the envelope retained (TS keeps the record and warns), and a room
+    /// that is no longer a target is dropped (TS removes it and skips).
+    async fn retry_undecryptable(&mut self) -> Vec<Recovered> {
+        let envelopes = std::mem::take(&mut self.journal.undecryptable);
+        if envelopes.is_empty() {
+            return vec![];
+        }
+        // An envelope re-delivered in this same sync's raw timeline is handled
+        // by the ordinary derive path (and re-retained there if still opaque),
+        // so it must not also be recovered here.
+        let mut present = std::collections::BTreeSet::new();
+        if let Some(batch) = &self.journal.intake {
+            for (_room, event) in
+                crate::event_batch::disposition::raw_events(&batch.raw).unwrap_or_default()
+            {
+                if let Some(id) = event.get("event_id").and_then(Value::as_str) {
+                    present.insert(id.to_owned());
+                }
+            }
+        }
+        let mut recovered = vec![];
+        let mut retained = vec![];
+        for envelope in envelopes {
+            let targeted = self
+                .journal
+                .intake
+                .as_ref()
+                .is_some_and(|batch| batch.targets.iter().any(|t| t.room_id == envelope.room));
+            if !targeted {
+                continue; // no longer a target room: drop, like TS.
+            }
+            let id = envelope
+                .raw
+                .get("event_id")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            if id.as_deref().is_some_and(|id| present.contains(id)) {
+                continue; // re-delivered this sync: the raw path owns it.
+            }
+            match self.decrypt_envelope(&envelope).await {
+                Some(entry) => recovered.push(entry),
+                None => retained.push(envelope),
+            }
+        }
+        self.journal.undecryptable = retained;
+        recovered
+    }
+    /// Re-decrypt one retained raw `m.room.encrypted` envelope through the owned
+    /// SDK. `None` means the key still has not arrived.
+    async fn decrypt_envelope(&self, envelope: &PendingEnvelope) -> Option<Recovered> {
+        let room = ruma::RoomId::parse(&envelope.room).ok()?;
+        let raw = ruma::serde::Raw::<
+            matrix_sdk_crypto::types::events::room::encrypted::EncryptedEvent,
+        >::from_json_string(envelope.raw.to_string())
+        .ok()?;
+        let guard = self.client.olm_machine().await;
+        let machine = guard.as_ref()?;
+        let settings = DecryptionSettings {
+            sender_device_trust_requirement: TrustRequirement::CrossSigned,
+        };
+        let decrypted = machine
+            .decrypt_room_event(&raw, &room, &settings)
+            .await
+            .ok()?;
+        let value = crate::wire::json(decrypted.event.json().get().as_bytes()).ok()?;
+        Some(Recovered {
+            room: envelope.room.clone(),
+            original: envelope.raw.clone(),
+            value,
+            kind: TimelineEventKind::Decrypted(decrypted),
+        })
     }
     async fn intake_ack(
         &mut self,
@@ -1561,7 +1659,19 @@ impl Sdk {
             return Err(Error::Conflict);
         }
         let receipt = batch.receipt()?;
+        // Board #10: hand this batch's still-opaque envelopes to the durable
+        // store before the batch is retired, so a later sync retries them. The
+        // capacity branch refuses (TS throws) rather than evicting an
+        // unresolved custody.
+        let carried = batch.pending.clone();
+        if self.journal.undecryptable.len() + carried.len()
+            > crate::event_batch::MAX_PENDING_UNDECRYPTABLE
+        {
+            return Err(Error::Capacity);
+        }
         let pending = self.journal.intake.take();
+        let retained = self.journal.undecryptable.len();
+        self.journal.undecryptable.extend(carried);
         self.journal
             .receipts
             .push((receipt.token.clone(), receipt.digest.clone()));
@@ -1569,6 +1679,7 @@ impl Sdk {
         if self.persist().await.is_err() {
             self.journal.receipts.pop();
             self.journal.intake_receipts.pop();
+            self.journal.undecryptable.truncate(retained);
             self.journal.intake = pending;
             return Err(Error::OutcomeUnknown);
         }

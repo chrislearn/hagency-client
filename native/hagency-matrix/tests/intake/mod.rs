@@ -742,7 +742,12 @@ async fn native_matrix_intake_crypto_verified_human_dm_no_mention_and_spoof_refu
         } else {
             let result = result.unwrap();
             assert_eq!(result.admitted, 0, "{variant}");
-            assert_eq!(result.rejected, 1, "{variant}");
+            // Board #10 (TS `bridge-matrix.js:6646` `onFailedRoomDecryption`):
+            // a missing room key is QUEUED for a later sync, not refused
+            // terminally. Every other variant (unverified, forged sender,
+            // plaintext-in-encrypted-room) is still an immediate refusal.
+            let expected_rejected = if variant == "missing_key" { 0 } else { 1 };
+            assert_eq!(result.rejected, expected_rejected, "{variant}");
             assert_eq!(rows(&f, "admitted_messages"), 0);
             assert_eq!(status(&c, &mut fake).await.stage, "idle");
             assert!(f.available().await);
