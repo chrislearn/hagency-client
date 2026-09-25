@@ -669,13 +669,17 @@ impl DomainRepository {
                 // The retained product explains in the thread why the turn
                 // did not start when a completed task is mentioned again
                 // without the requester's fresh authority (`router/src/store.ts`
-                // `claimDispatch`, `completed_task_followup`). Said once per
-                // task; best effort in its own savepoint so admission never
-                // fails because its explanation could not be addressed.
+                // `claimDispatch`, `completed_task_followup`). Keyed per
+                // triggering event, the Rust equivalent of TS's
+                // `${...}:${row.dispatch_id}:${task_id}` per-dispatch keys:
+                // each refused attempt is explained; best effort in its own
+                // savepoint so admission never fails because its explanation
+                // could not be addressed.
                 if addressed && !wake && human && kind {
+                    let id_key = format!("completed_task_followup:{}", event.event_id);
                     let notice_id = format!(
                         "notice_{}",
-                        canonical::digest(&json!([id, "completed_task_followup"]))?
+                        canonical::digest(&json!([id, &id_key]))?
                     );
                     let said: bool = tx.query_row(
                         "SELECT EXISTS(SELECT 1 FROM task_notices WHERE id=?1)",
@@ -684,11 +688,12 @@ impl DomainRepository {
                     )?;
                     if !said {
                         tx.execute_batch("SAVEPOINT followup_notice")?;
-                        let queued = super::task_intents::add_notice(
+                        let queued = super::task_intents::add_keyed_notice(
                             &tx,
                             &t,
                             &root,
                             "completed_task_followup",
+                            &id_key,
                             super::task_intents::COMPLETED_TASK_FOLLOWUP_NOTICE.into(),
                             now,
                         );

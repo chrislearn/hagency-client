@@ -5,7 +5,7 @@ mod common;
 mod notice_custody;
 use common::*;
 use hagency_core::{ingress::*, messages::*, replies::*, task_intents::*, tasks::*};
-use hagency_store::{DomainRepository, EffectOutcome, Error};
+use hagency_store::{DomainRepository, EffectOutcome, Error, OutcomeAction, OutcomeResolution};
 use serde_json::json;
 use std::collections::BTreeSet;
 
@@ -1208,7 +1208,9 @@ fn native_completed_task_followup_notice() {
         body,
         "This task is complete. To continue it, the original requester must send a new message mentioning the agent in this thread. Other project members can start a new task by mentioning the agent in the main room."
     );
-    // Said once per task: a second non-requester mention queues no duplicate.
+    // Each refused attempt is explained, like the retained product's
+    // per-dispatch keys: a second distinct non-requester mention queues its
+    // own explanation.
     let mut again = f.event(
         &task.session_id,
         "other2",
@@ -1226,7 +1228,7 @@ fn native_completed_task_followup_notice() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(n, 1);
+    assert_eq!(n, 2);
 }
 
 /// The retained product says the operator's continue-resolution in the thread
@@ -1407,4 +1409,93 @@ fn native_waiting_for_approval_notice() {
         body,
         "Waiting: this task is queued because its workspace is held by another task awaiting owner approval."
     );
+}
+
+/// The retained product says the operator's inspection outcome in the thread
+/// (`router/src/store.ts` `resolveOutcome`): the accept_completed and
+/// keep_blocked branches, each with its own words.
+#[test]
+fn native_outcome_resolved_settlement_notices() {
+    for (action, expected) in [
+        (
+            OutcomeAction::AcceptCompleted,
+            "Operator inspection completed. The current result was accepted as complete; no dispatch was replayed.",
+        ),
+        (
+            OutcomeAction::KeepBlocked,
+            "Operator inspection completed. The task remains blocked; no dispatch was replayed.",
+        ),
+    ] {
+        let mut f = Fixture::new(false);
+        let (_, seq, task) = setup_task(&mut f);
+        f.activate(1013);
+        // An exclusive workspace: the unknown run's quarantine then dirties
+        // it, which is the operator-resolution precondition (`snapshot`'s
+        // `held` check).
+        f.db.register_workspace("ws").unwrap();
+        let mut first = dispatch("first", &task);
+        first.resources = vec![ResourceLease {
+            id: "ws".into(),
+            exclusive: true,
+        }];
+        f.db.enqueue_inbox_dispatch(&first, &[seq]).unwrap();
+        let cap = f
+            .db
+            .claim_dispatch("fixture_runner", 1015, 60_000, 120_000, 8)
+            .unwrap()
+            .unwrap();
+        f.db.start_dispatch(&cap, 1016).unwrap();
+        // The lease lapses: the sweep settles the started dispatch as
+        // outcome_unknown, quarantining the session and dirtying the
+        // exclusive workspace.
+        f.db.claim_dispatch("sweeper", 61_016, 60_000, 120_000, 8)
+            .unwrap();
+        // The guardian's stop was reported but unproven (ADR-182 decision 3):
+        // the open agent fence plus the recorded stop evidence are the
+        // inspection material; no host receipt exists to fingerprint.
+        f.sql()
+            .execute(
+                "INSERT INTO dispatch_stops(dispatch_id,fence,reason,created_at,evidence,settled_at) VALUES('first',1,'cleanup_unproven',61_017,NULL,NULL)",
+                [],
+            )
+            .unwrap();
+        f.sql()
+            .execute(
+                "INSERT INTO agent_fences(engagement_id,dispatch_id,fence,reason,created_at) VALUES(?1,'first',1,'cleanup_unproven',61_017)",
+                [&f.agents[0]],
+            )
+            .unwrap();
+        f.sql()
+            .execute(
+                "INSERT INTO runner_attempt_events(dispatch_id,fence,seq,at_ms,phase,detail) VALUES('first',1,(SELECT COALESCE(MAX(seq),0)+1 FROM runner_attempt_events WHERE dispatch_id='first' AND fence=1),61_017,'stop_reported','\"fixture guardian reported the stop\"')",
+                [],
+            )
+            .unwrap();
+        let inspection = f
+            .db
+            .begin_outcome_inspection(&f.agents[0], "first", 60_000, 61_030)
+            .unwrap();
+        let command = OutcomeResolution {
+            original: "first".into(),
+            request_id: "operator_resolution".into(),
+            inspection_id: inspection["inspectionId"].as_str().unwrap().into(),
+            inspection_token: inspection["inspectionToken"].as_str().unwrap().into(),
+            action,
+            operator_note: "Fixture inspection of the stopped run".into(),
+            replacement: None,
+        };
+        f.db
+            .resolve_stopped_dispatch(&f.agents[0], &command, 61_031)
+            .unwrap();
+        let (kind, body): (String, String) = f
+            .sql()
+            .query_row(
+                "SELECT json_extract(config,'$.kind'),json_extract(config,'$.body') FROM task_notices WHERE json_extract(config,'$.kind')='outcome_resolved'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(kind, "outcome_resolved");
+        assert_eq!(body, expected);
+    }
 }

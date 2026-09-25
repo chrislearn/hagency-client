@@ -63,6 +63,17 @@ pub(super) const WORKSPACE_QUARANTINED_NOTICE: &str = "Waiting: this workspace i
 /// leased-resource skip).
 pub(super) const WAITING_FOR_APPROVAL_NOTICE: &str = "Waiting: this task is queued because its workspace is held by another task awaiting owner approval.";
 
+/// The retained product's words for an operator's inspection outcome
+/// (`router/src/store.ts` `resolveOutcome`); the `continue` text lives at the
+/// recovery kernel that queues the replacement.
+pub(super) fn operator_resolution_notice(action: &str) -> &'static str {
+    match action {
+        "accept_completed" => "Operator inspection completed. The current result was accepted as complete; no dispatch was replayed.",
+        "keep_blocked" => "Operator inspection completed. The task remains blocked; no dispatch was replayed.",
+        _ => "Operator inspection completed. A new recovery dispatch was queued from an explicit recovery instruction; the previous dispatch remains outcome_unknown and was not replayed.",
+    }
+}
+
 /// A request into a quarantined session runs nothing until an operator
 /// resolves the unknown outcome; the retained product says so in the thread
 /// and keeps the request queued. Here the request stays where it is, unread,
@@ -204,17 +215,18 @@ pub(super) fn waiting_notice(
         return Ok(());
     };
     let task = execution::task(tx, &task_id)?;
-    // One notice per task per kind: the id `add_notice` will insert, checked
-    // before the work of resolving the thread root is done.
+    // One notice per dispatch per kind, the retained product's
+    // `INSERT OR IGNORE` with `${kind}:${dispatchId}` keys.
+    let id_key = format!("{kind}:{dispatch}");
     if tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM task_notices WHERE id=?1)",
-        [&notice_id(&task_id, kind)?],
+        [&notice_id(&task_id, &id_key)?],
         |r| r.get::<_, bool>(0),
     )? {
         return Ok(());
     }
     let root = super::verified_ingress::input_message(tx, &session, root)?;
-    add_notice(tx, &task, &root, kind, body.into(), now)?;
+    add_keyed_notice(tx, &task, &root, kind, &id_key, body.into(), now)?;
     Ok(())
 }
 /// Say a launch retry in the thread, best effort in its own savepoint: the
@@ -284,8 +296,22 @@ pub(super) fn add_notice(
     body: String,
     now: u64,
 ) -> Result<TaskNotice, Error> {
+    add_keyed_notice(tx, task, root, kind, kind, body, now)
+}
+/// `add_notice` with an id distinct from the visible `kind`: the retained
+/// product keys some notices per dispatch or per action
+/// (`outcome_resolved:${dispatchId}`) while the thread still sees one kind.
+pub(super) fn add_keyed_notice(
+    tx: &Transaction<'_>,
+    task: &Task,
+    root: &Message,
+    kind: &str,
+    id_key: &str,
+    body: String,
+    now: u64,
+) -> Result<TaskNotice, Error> {
     let session = execution::matrix_admission_session(tx, &task.session_id)?;
-    let id = notice_id(&task.id, kind)?;
+    let id = notice_id(&task.id, id_key)?;
     let value = TaskNotice {
         id: id.clone(),
         task_id: task.id.clone(),

@@ -77,6 +77,43 @@ pub(super) fn save_task(tx: &Transaction<'_>, value: &Task, kind: &str) -> Resul
         "INSERT INTO task_outbox(task_id,kind,task) VALUES(?1,?2,?3)",
         params![value.id, kind, value_json],
     )?;
+    // The retained product says the operator's inspection outcome in the
+    // thread (`router/src/store.ts` `resolveOutcome`, the accept_completed
+    // and keep_blocked branches; the continue branch speaks at the recovery
+    // kernel that queues the replacement). Best effort in its own savepoint:
+    // the recorded resolution never rolls back because its notice could not
+    // be addressed.
+    if matches!(kind, "operator_accept_completed" | "operator_keep_blocked") {
+        tx.execute_batch("SAVEPOINT operator_resolution_notice")?;
+        let queued = (|| -> Result<(), Error> {
+            let Some((_, root)) = super::task_intents::binding(tx, &value.id)? else {
+                // A host-created task has no Matrix activation to address.
+                return Ok(());
+            };
+            let root = super::verified_ingress::task_message(tx, &value.id, root)?;
+            super::task_intents::add_keyed_notice(
+                tx,
+                value,
+                &root,
+                "outcome_resolved",
+                &format!("outcome_resolved:{kind}"),
+                super::task_intents::operator_resolution_notice(
+                    kind.strip_prefix("operator_").unwrap_or(kind),
+                )
+                .into(),
+                // Both branches set `updated_at = now` immediately before
+                // `save_task`; the notice is due the moment it is queued.
+                value.updated_at,
+            )?;
+            Ok(())
+        })();
+        match queued {
+            Ok(()) => tx.execute_batch("RELEASE operator_resolution_notice")?,
+            Err(_) => tx.execute_batch(
+                "ROLLBACK TO operator_resolution_notice; RELEASE operator_resolution_notice",
+            )?,
+        }
+    }
     Ok(())
 }
 pub(super) struct Dispatch {
