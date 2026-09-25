@@ -1428,40 +1428,44 @@ async fn native_console_agent_delete_force_releases_active_engagements() {
     f.close().await;
 }
 
-/// A delete is a lifecycle act: a read-only session is refused with the
-/// console's named word and NOTHING changes — not even under `?force=true`,
-/// which is the one arm that mutates.
+/// A delete is a lifecycle act. TS parity (#31): there is no read-only login —
+/// an anonymous caller is refused before any store job, and every logged-in
+/// session may delete. The anonymous caller is refused without a cookie; the
+/// logged-in session succeeds on the force arm.
 #[tokio::test]
 async fn native_console_agent_delete_refuses_without_lifecycle_scope() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
-    let readonly = session(&service).await;
+    // Anonymous: no cookie, refused before any store job.
     for path in [
         "/console/api/agents/UsageWorker",
         "/console/api/agents/UsageWorker?force=true",
     ] {
-        let mut response = TestClient::delete(format!("{BASE}{path}"))
+        let response = TestClient::delete(format!("{BASE}{path}"))
             .add_header("host", "127.0.0.1:13300", true)
             .add_header("origin", BASE, true)
             .add_header("sec-fetch-site", "same-origin", true)
-            .add_header("cookie", &readonly, true)
             .send(&service)
             .await;
-        assert_eq!(response.status_code, Some(StatusCode::FORBIDDEN), "{path}");
-        assert_eq!(
-            response.take_json::<Value>().await.unwrap()["code"],
-            "agent_lifecycle_scope_required",
-            "{path}"
-        );
+        assert_eq!(response.status_code, Some(StatusCode::UNAUTHORIZED), "{path}");
     }
-    // The refusal left the commitment standing (the force refusal above is
-    // the one that matters: it must not have half-deleted).
+    // The anonymous refusals left the commitment standing.
     let engagement = f.domain.engagement(f.engagement.clone()).await.unwrap();
     assert_eq!(
         engagement.state,
         hagency_core::project::EngagementState::Active,
-        "a refused delete changes nothing"
+        "an anonymous delete changes nothing"
     );
+    // Logged-in: one login is the whole console — the delete succeeds.
+    let cookie = lifecycle_session(&service).await;
+    let mut response = TestClient::delete(format!("{BASE}/console/api/agents/UsageWorker?force=true"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .add_header("origin", BASE, true)
+        .add_header("sec-fetch-site", "same-origin", true)
+        .add_header("cookie", &cookie, true)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
     f.close().await;
 }
 

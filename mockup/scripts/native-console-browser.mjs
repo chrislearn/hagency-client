@@ -35,7 +35,7 @@ async function rosterWalk(page) {
   // clock; a pending one renders the unknown word — never a zero.
   // Column 7 is the activity cell in both shapes of the roster (the
   // lifecycle controls column is the 8th, only when the login carries it).
-  const cells = await page.locator('tbody tr td:nth-child(7)').allInnerTexts();
+  const cells = await page.locator('tbody tr td:nth-child(9)').allInnerTexts();
   assert(cells.some((c) => /^\d{4}-\d{2}-\d{2}T/.test(c)), 'the active engagement carries its dispatch clock');
   assert(cells.some((c) => c === 'Unknown' || c === '未知'), 'an engagement with no attempt row renders unknown');
   assert(cells.every((c) => c !== '0'), 'unknown is never rendered as zero');
