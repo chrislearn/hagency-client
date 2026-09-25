@@ -58,9 +58,17 @@ fn root(path: &Path) -> Result<Dir, Error> {
         return Err(Error::Assets);
     }
     let mut dir = Dir::open_ambient_dir(anchor, ambient_authority()).map_err(|_| Error::Assets)?;
-    for name in parts {
-        dir = dir.open_dir_nofollow(name).map_err(|_| Error::Assets)?;
+    // Ancestors may be spelled through a symlink: the host's own worktree
+    // alias (`/Users/x/home/hl -> hl.noindex`, macOS `/tmp -> /private/tmp`)
+    // is a legitimate way to name the bundle, and following it cannot change
+    // which bytes the final handle proves. The asset directory ITSELF must be
+    // a real directory, never a link: a link can be repointed at any moment,
+    // so the proof handle would stop naming the bytes we validated.
+    let (last, ancestors) = parts.split_last().ok_or(Error::Assets)?;
+    for name in ancestors {
+        dir = dir.open_dir(name).map_err(|_| Error::Assets)?;
     }
+    dir = dir.open_dir_nofollow(last).map_err(|_| Error::Assets)?;
     // Existing helper validates owner and private permissions from the actual handle.
     hagency_store::private::check_handle(
         &dir.try_clone().map_err(|_| Error::Assets)?.into_std_file(),
