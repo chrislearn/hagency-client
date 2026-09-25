@@ -117,18 +117,9 @@ async fn ts_owner_approval_unknown_id_denies_without_fallback() {
 async fn ts_approval_grant_revocation_is_a_gated_bounded_receipt() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
-    let read_only = session(&service).await;
-    let refused = TestClient::delete(format!("{BASE}/console/api/approvals/grants/grant_ts"))
-        .add_header("host", "127.0.0.1:13300", true)
-        .add_header("origin", BASE, true)
-        .add_header("sec-fetch-site", "same-origin", true)
-        .add_header("cookie", &read_only, true)
-        .send(&service)
-        .await;
-    assert_eq!(refused.status_code, Some(StatusCode::FORBIDDEN));
-    // The lifecycle ticket reaches the store; an unknown grant is `not_found`,
-    // never a fabricated success.
-    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+    // One login carries the grant-revocation permission (the operator's
+    // one-login decision); an unknown grant is `not_found`, never a
+    // fabricated success.
     let cookie = lifecycle_session(&service).await;
     let mut response = TestClient::delete(format!("{BASE}/console/api/approvals/grants/grant_ts"))
         .add_header("host", "127.0.0.1:13300", true)

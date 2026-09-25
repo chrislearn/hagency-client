@@ -1047,7 +1047,7 @@ fn native_owner_approval_recovery_schema12() {
     drop(db);
     let sql = rusqlite::Connection::open(directory.join("domain.sqlite3")).unwrap();
     remove_approval_schema(&sql);
-    sql.pragma_update(None, "user_version", 12).unwrap();
+    sql.execute_batch("DROP TABLE IF EXISTS agent_lifecycle; ALTER TABLE decisions DROP COLUMN kind; ALTER TABLE decisions DROP COLUMN at; PRAGMA user_version=12;").unwrap();
     for _ in 0..2 {
         let db = DomainRepository::open(&directory).unwrap();
         assert_eq!(

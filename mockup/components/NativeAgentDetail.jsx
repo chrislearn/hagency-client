@@ -192,6 +192,28 @@ export default function NativeAgentDetail({ name, onBack }) {
         )}
       </section>
 
+      <section className="panel" aria-label={t('na.detailReminders')}>
+        <h3>{t('na.detailReminders')}</h3>
+        {detail.reminders.length === 0 ? (
+          <p className="dim">{t('na.detailNoReminders')}</p>
+        ) : (
+          <table>
+            <thead>
+              <tr><th>{t('na.detailReminders')}</th><th>{t('na.reminderFiresAt')}</th><th>{t('na.reminderState')}</th></tr>
+            </thead>
+            <tbody>
+              {detail.reminders.map((reminder) => (
+                <tr key={reminder.id} data-reminder-id={reminder.id}>
+                  <td>{reminder.msg}</td>
+                  <td className="dim">{new Date(reminder.fire_at).toISOString()}</td>
+                  <td>{reminder.fired_at === null ? t('na.reminderPending') : t('na.reminderFired')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
       <div className="btn-row" style={{ marginTop: 14 }}>
         {back}
       </div>

@@ -23,15 +23,17 @@ await mkdir(join(staged, 'app', 'accounts'), { recursive: true, mode: 0o700 });
 await mkdir(join(staged, 'app', 'agents'), { recursive: true, mode: 0o700 });
 await mkdir(join(staged, 'app', 'project-sides'), { recursive: true, mode: 0o700 });
 await mkdir(join(staged, 'app', 'approvals'), { recursive: true, mode: 0o700 });
+await mkdir(join(staged, 'app', 'tasks'), { recursive: true, mode: 0o700 });
+await mkdir(join(staged, 'app', 'project-board'), { recursive: true, mode: 0o700 });
 for (const name of ['components', 'lib', 'package.json', 'jsconfig.json', 'next.config.mjs']) await cp(join(source, name), join(staged, name), { recursive: true });
 /* Each route's WHOLE directory, not its page.jsx alone: pages now import
  * siblings (engagements/NativeVerdict.jsx, project-sides/register-side.jsx,
- * project-sides/registration-control.jsx) and a page.jsx-only stage broke
- * the canonical build with Module not found. The one deliberate exception
- * is agents/[name]: its generateStaticParams reads the mock-data fixture
- * and would emit a document per fixture agent, changing the served set —
- * the manifest carries exactly agents/index.html. */
-for (const route of ['usage', 'resources', 'alerts', 'engagements', 'accounts', 'agents', 'project-sides', 'approvals']) await cp(join(source, 'app', route), join(staged, 'app', route), { recursive: true });
+ * project-sides/registration-control.jsx, invites/page.jsx) and a
+ * page.jsx-only stage broke the canonical build with Module not found. The
+ * one deliberate exception is agents/[name]: its generateStaticParams reads
+ * the mock-data fixture and would emit a document per fixture agent,
+ * changing the served set — the manifest carries exactly agents/index.html. */
+for (const route of ['usage', 'resources', 'alerts', 'engagements', 'accounts', 'agents', 'project-sides', 'approvals', 'tasks', 'project-board', 'invites']) await cp(join(source, 'app', route), join(staged, 'app', route), { recursive: true });
 await rm(join(staged, 'app', 'agents', '[name]'), { recursive: true, force: true });
 for (const name of ['layout.jsx', 'globals.css']) await cp(join(source, 'app', name), join(staged, 'app', name));
 /*

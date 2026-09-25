@@ -674,3 +674,148 @@ async fn bounded_work_keeps_health_responsive() {
     assert!(busy > 0);
     store.shutdown().await.unwrap();
 }
+
+// ── Task #46: framework catalog, host detection, role capability ────────
+
+/// GET /api/frameworks returns the five adapters in registry order, each
+/// projected to the exact serializeFramework keys (backend-v2.js:13356-13381),
+/// and the flag guard flattened to `[...exact, ...prefix].sort()`.
+#[tokio::test]
+async fn fleet_views_frameworks_match_ts_shape() {
+    let (_dir, store, service) = setup();
+    let mut response = TestClient::get(format!("{BASE}/api/native/v1/frameworks"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .bearer_auth(TOKEN)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value: Value = response.take_json().await.unwrap();
+    let rows = value.as_array().unwrap();
+    assert_eq!(rows.len(), 5);
+    let ids: Vec<&str> = rows.iter().map(|r| r["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, ["claude", "codex-acp", "codex", "hermes", "octos"]);
+    for row in rows {
+        let keys = [
+            "id", "displayName", "transport", "launchable", "notLaunchableReason",
+            "command", "defaultArgs", "modelFlag", "permissionSummary",
+            "acpModelFlag", "acpModelFlagNote", "commandNote", "refusedFlags",
+            "guardMessage",
+        ];
+        for key in keys {
+            assert!(row.get(key).is_some(), "missing key {key} in framework {row:?}");
+        }
+    }
+    // The guard flattening: claude refusedFlags == ["--allow-dangerously-skip-permissions",
+    // "--dangerously-skip-permissions", "--permission-mode", "--permission-mode="] (sorted).
+    let claude = rows.iter().find(|r| r["id"] == "claude").unwrap();
+    assert_eq!(
+        claude["refusedFlags"],
+        json!([
+            "--allow-dangerously-skip-permissions",
+            "--dangerously-skip-permissions",
+            "--permission-mode",
+            "--permission-mode="
+        ])
+    );
+    // An ACP framework is launchable:false with a start command, not an absence.
+    let octos = rows.iter().find(|r| r["id"] == "octos").unwrap();
+    assert_eq!(octos["launchable"], false);
+    assert_eq!(octos["transport"], "acp");
+    store.shutdown().await.unwrap();
+}
+
+/// GET /api/frameworks/detect returns the probe envelope: scannedAt, host and
+/// the five probes each carrying state + startWith + the credential caveat
+/// said in the payload (backend-v2.js:13530-13552).
+#[tokio::test]
+async fn fleet_views_detect_matches_ts_shape() {
+    let (_dir, store, service) = setup();
+    let mut response = TestClient::get(format!("{BASE}/api/native/v1/frameworks/detect"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .bearer_auth(TOKEN)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value: Value = response.take_json().await.unwrap();
+    assert!(value["scannedAt"].as_u64().is_some());
+    assert!(value["host"].is_string());
+    assert_eq!(
+        value["caveat"],
+        "credentialPresent means the credential directory exists, not that a valid session is in it"
+    );
+    let probes = value["frameworks"].as_array().unwrap();
+    assert_eq!(probes.len(), 5);
+    for probe in probes {
+        for key in [
+            "id", "displayName", "transport", "command", "onPath", "version",
+            "probeError", "credentialHome", "credentialPresent", "launchable",
+            "notLaunchableReason", "permissionSummary", "state", "fix", "startWith",
+        ] {
+            assert!(probe.get(key).is_some(), "missing key {key} in probe {probe:?}");
+        }
+        assert!(matches!(probe["state"].as_str(), Some("absent" | "unusable" | "needs_auth" | "ready")));
+        assert!(matches!(probe["startWith"].as_str(), Some("hagency up" | "hagency acp-up")));
+    }
+    store.shutdown().await.unwrap();
+}
+
+/// GET /api/capability returns the role × resource view over real state:
+/// generatedAt + tiers + source, one row per role (six), and the resources
+/// map keyed by role (backend-v2.js:13584-13725). On an empty store every
+/// role is unfillable with a stated reason, never a fabricated headcount.
+#[tokio::test]
+async fn fleet_views_capability_matches_ts_shape() {
+    // The capability route reads real state through the domain store, so it
+    // needs a domain-backed app (setup() is deliberately domain-less).
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    let custody = Store::start(Repository::open(&state).unwrap(), 16).unwrap();
+    let domain = DomainStore::start(DomainRepository::open(&state).unwrap(), 16).unwrap();
+    let app = App::new(
+        custody.clone(),
+        TOKEN.as_bytes(),
+        "127.0.0.1:13300".parse().unwrap(),
+    )
+    .unwrap()
+    .with_domain(domain.clone());
+    let service = Service::new(app.router());
+    let mut response = TestClient::get(format!("{BASE}/api/native/v1/capability"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .bearer_auth(TOKEN)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value: Value = response.take_json().await.unwrap();
+    assert!(value["generatedAt"].as_u64().is_some());
+    assert_eq!(value["source"], "lib/role-capacity.json");
+    assert_eq!(value["tiers"], json!(["strong", "medium", "lightweight"]));
+    assert_eq!(value["agents"], 0);
+    let roles = value["roles"].as_array().unwrap();
+    assert_eq!(roles.len(), 6);
+    let role_names: Vec<&str> = roles.iter().map(|r| r["role"].as_str().unwrap()).collect();
+    assert_eq!(
+        role_names,
+        ["architect", "review", "coding", "testing", "integration", "documentation"]
+    );
+    for role in roles {
+        for key in [
+            "role", "displayName", "defaultTier", "crossFamily", "crossFamilyOk",
+            "families", "fillable", "able", "unable", "overTier", "excluded",
+        ] {
+            assert!(role.get(key).is_some(), "missing key {key} in role {role:?}");
+        }
+        assert_eq!(role["fillable"], 0, "empty store must not claim a fillable role");
+        assert!(role["able"].as_array().unwrap().is_empty());
+    }
+    // The resources map carries every role, each with a `considered` count.
+    let resources = value["resources"].as_object().unwrap();
+    assert_eq!(resources.len(), 6);
+    for (_role, view) in resources {
+        assert!(view["qualified"].is_array());
+        assert!(view["unqualified"].is_array());
+        assert!(view["selected"].is_null());
+        assert!(view["considered"].is_u64());
+    }
+    domain.shutdown().await.unwrap();
+    custody.shutdown().await.unwrap();
+}

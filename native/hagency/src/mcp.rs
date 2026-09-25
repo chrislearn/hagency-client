@@ -332,6 +332,42 @@ impl Session {
                 },
             );
         }
+        if name == task_client::reminders::NAME {
+            let Some(mut args) = args.as_object().cloned() else {
+                return Ok(tool_error("Tool arguments must be an object"));
+            };
+            let msg = match args.remove("msg") {
+                Some(Value::String(msg)) => msg,
+                _ => return Ok(tool_error("schedule_reminder requires a string msg")),
+            };
+            let delay_ms = match args.remove("delay_ms") {
+                Some(Value::Number(n)) => match n.as_u64() {
+                    Some(delay_ms) => delay_ms,
+                    None => return Ok(tool_error("Invalid reminder delay_ms")),
+                },
+                _ => return Ok(tool_error("schedule_reminder requires delay_ms")),
+            };
+            if !args.is_empty() {
+                return Ok(tool_error("schedule_reminder takes msg and delay_ms only"));
+            }
+            return Ok(
+                match task_client::reminders::run(
+                    &self.context,
+                    msg,
+                    delay_ms,
+                    task_client::DEFAULT_DEADLINE,
+                )
+                .await
+                {
+                    Ok(value) => {
+                        let structured = serde_json::to_value(&value)
+                            .map_err(|_| Error::Protocol("reminder tool projection failed"))?;
+                        json!({"content":[{"type":"text","text":structured.to_string()}],"structuredContent":structured,"isError":false})
+                    }
+                    Err(error) => tool_error(&error.to_string()),
+                },
+            );
+        }
         let Some(mut args) = args.as_object().cloned() else {
             return Ok(tool_error("Tool arguments must be an object"));
         };
@@ -619,6 +655,7 @@ fn valid_call(params: Option<&Value>, file_tools: bool, receive_tools: bool) -> 
                 | "get_approval"
                 | "consume_approval"
                 | "read_conversation"
+                | "schedule_reminder"
         )
     )) && p
         .keys()

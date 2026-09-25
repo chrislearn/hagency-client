@@ -19,8 +19,12 @@ mod engagements;
 mod engagements_retire;
 #[path = "console/engagements_verdict.rs"]
 mod engagements_verdict;
+#[path = "console/exec_policy.rs"]
+mod exec_policy;
 #[path = "console/fixture.rs"]
 mod fixture;
+#[path = "console/invites.rs"]
+mod invites;
 #[path = "console/matrix_diag.rs"]
 mod matrix_diag;
 #[path = "console/origin.rs"]
@@ -39,9 +43,15 @@ mod registration;
 mod resources;
 #[path = "console/side_registration.rs"]
 mod side_registration;
+#[path = "console/side_budget.rs"]
+mod side_budget;
+#[path = "console/side_lifecycle.rs"]
+mod side_lifecycle;
 #[path = "console/status_strip.rs"]
 #[cfg(feature = "native-console-browser")]
 mod status_strip;
+#[path = "console/tasks.rs"]
+mod tasks;
 #[path = "console/ts_oracle_approvals.rs"]
 mod ts_oracle_approvals;
 use fixture::*;
@@ -112,6 +122,13 @@ fn delete(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
 }
 fn patch(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
     TestClient::patch(format!("{BASE}{path}"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .add_header("origin", BASE, true)
+        .add_header("sec-fetch-site", "same-origin", true)
+        .add_header("cookie", cookie, true)
+}
+fn put(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
+    TestClient::put(format!("{BASE}{path}"))
         .add_header("host", "127.0.0.1:13300", true)
         .add_header("origin", BASE, true)
         .add_header("sec-fetch-site", "same-origin", true)
@@ -270,6 +287,23 @@ async fn native_console_assets() {
         let alias = f.root.path().canonicalize().unwrap().join("alias");
         std::os::unix::fs::symlink(&path, &alias).unwrap();
         assert!(hagency::console::Console::load(&alias).is_err());
+        // Board #84: an ANCESTOR spelled through a relative symlink is a
+        // legitimate path, not a bait — this host's own worktree alias is
+        // `hl -> hl.noindex`. The old component-by-component nofollow walk
+        // refused it and killed the executable suite (`Error: Assets`).
+        // Only the asset directory ITSELF must be a real directory.
+        use std::os::unix::fs::PermissionsExt;
+        let anchor = path.parent().unwrap();
+        let real = anchor.join("real");
+        std::fs::create_dir(&real).unwrap();
+        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assets(&real.join("bundle"));
+        std::os::unix::fs::symlink("real", anchor.join("aliasdir")).unwrap();
+        let through_alias = anchor.join("aliasdir").join("bundle");
+        assert!(
+            hagency::console::Console::load(&through_alias).is_ok(),
+            "a bundle behind an ancestor symlink must load"
+        );
         std::fs::remove_file(path.join("usage/index.html")).unwrap();
         std::os::unix::fs::symlink(path.join("manifest.json"), path.join("usage/index.html"))
             .unwrap();

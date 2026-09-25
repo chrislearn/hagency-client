@@ -10,12 +10,17 @@ mod authority;
 pub mod client;
 mod engagements;
 mod graphs;
+mod exec_policy;
+mod invites;
 mod matrix_diag;
 mod offer_book;
 mod project_sides;
+mod side_budget;
+mod side_lifecycle;
 mod resource_configuration;
 mod resources;
 pub mod side_registration;
+mod tasks;
 mod usage;
 use crate::{App, refusal};
 use authority::{Authority, COOKIE, Session};
@@ -96,17 +101,28 @@ pub(crate) fn router() -> Router {
                 .push(usage::router())
                 .push(alerts::router())
                 .push(agents::router())
+                .push(exec_policy::router())
                 .push(stream::router())
                 .push(engagements::router())
                 .push(graphs::router())
+                .push(invites::router())
                 .push(offer_book::router())
                 .push(project_sides::router())
                 .push(side_registration::router())
+                .push(side_budget::router())
+                .push(side_lifecycle::router())
                 .push(approvals::router())
                 .push(resources::router())
                 .push(accounts::router())
                 .push(matrix_diag::router())
-                .push(resource_configuration::router()),
+                .push(resource_configuration::router())
+                // Task #46: the operator-facing capability and framework reads
+                // (GET /api/capability, /api/frameworks, /api/frameworks/detect)
+                // are session-scoped reads, mounted under the console API so
+                // the native console reaches them without an operator bearer.
+                .push(crate::fleet_views::router())
+                .push(tasks::router())
+                .push(tasks::extra_router()),
         )
         .push(Router::with_path("{**asset}").get(asset))
 }
