@@ -641,6 +641,10 @@ mod tests {
         ] {
             assert_eq!(classify(command), tier, "{command}");
         }
+        // `classifyCommand` defaults an UNKNOWN command to operator tier (:61-63).
+        assert_eq!(classify("!nonsense"), 1);
+    }
+
     /// `is_operator` gates the `/thread` directive (TS `msg.trustLevel ===
     /// 'operator'`, backend-v2.js:2265, derived from `MATRIX_OPERATOR_MXIDS`
     /// alone): an admin who is not an operator is NOT trusted for it.
@@ -651,10 +655,6 @@ mod tests {
         assert!(!acl.is_operator("@admin:test"));
         assert!(!acl.is_operator("@mallory:test"));
         assert!(!acl.is_operator(""));
-    }
-
-    /// `classifyCommand` defaults an UNKNOWN command to operator tier (:61-63).
-        assert_eq!(classify("!nonsense"), 1);
     }
 
     /// `parse` (:306-310): trimming, the lowercased first token, arguments.
