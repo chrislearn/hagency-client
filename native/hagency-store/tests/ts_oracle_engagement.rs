@@ -193,6 +193,109 @@ fn ts_engagement_preview_is_a_dry_run() {
     assert_eq!(digest(&b.path()), before, "the preview must not write");
 }
 
+/// TS `engagement-store.test.js:301` — *the same request id and digest yields the
+/// SAME engagement*. Derived from `admit` (`domain.rs:1329-1338`): an exact replay
+/// returns the existing row and creates no second one.
+#[test]
+fn ts_engagement_idempotent_replay_yields_the_same_engagement() {
+    let mut b = Book::open();
+    let pool = resource("oracle_replay_pool", "oracle_replay_seat", 500);
+    b.db.put_resource(&pool).unwrap();
+    let proof = proof(&request("replay_one", "ReplayWorker", &pool, 50));
+    let first = b.db.admit(&proof, 1000).unwrap();
+    let again = b.db.admit(&proof, 1000).unwrap();
+    assert_eq!(again.id, first.id, "an exact replay is the same engagement");
+    let rows: u64 = rusqlite::Connection::open(b.path())
+        .unwrap()
+        .query_row(
+            "SELECT COUNT(*) FROM engagements WHERE id=?1",
+            [&first.id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(rows, 1, "an exact replay creates no second row");
+}
+
+/// TS `engagement-store.test.js:310` — *the same id with a DIFFERENT ask is a
+/// conflict, not a merge or an overwrite*. Derived from `admit`: the id is
+/// `(fleet_id, request_id)` while the digest covers the whole request
+/// (`authority.rs:117-124`), so a changed amount under the same id is `Conflict`.
+#[test]
+fn ts_engagement_same_id_different_ask_is_a_conflict() {
+    let mut b = Book::open();
+    let pool = resource("oracle_conflict_pool", "oracle_conflict_seat", 500);
+    b.db.put_resource(&pool).unwrap();
+    b.db.admit(&proof(&request("conflict_one", "ConflictWorker", &pool, 50)), 1000)
+        .unwrap();
+    let changed = proof(&request("conflict_one", "ConflictWorker", &pool, 100));
+    assert!(
+        matches!(b.db.admit(&changed, 1000), Err(Error::Conflict)),
+        "reusing the id for a different ask is refused, never merged or overwritten"
+    );
+}
+
+/// TS `engagement-store.test.js:323` — *different ids are different requests even
+/// when identical in content*. The id is the request id, not the content.
+#[test]
+fn ts_engagement_different_ids_are_different_requests() {
+    let mut b = Book::open();
+    let pool = resource("oracle_ids_pool", "oracle_ids_seat", 500);
+    b.db.put_resource(&pool).unwrap();
+    let a = b
+        .db
+        .admit(&proof(&request("ids_a", "IdsA", &pool, 50)), 1000)
+        .unwrap();
+    let c = b
+        .db
+        .admit(&proof(&request("ids_b", "IdsB", &pool, 50)), 1000)
+        .unwrap();
+    assert_ne!(a.id, c.id, "two ids are two requests");
+}
+
+/// TS `engagement-store.test.js:167` — *refuses an approval that would
+/// over-commit the agent*. Derived from `approve` (`domain.rs:1447-1481`): a
+/// request larger than the remaining headroom is refused
+/// (`OverCommit`/`InsufficientCapacity`) and the engagement is left `pending` —
+/// a refused verdict is not a partial one.
+#[test]
+fn ts_engagement_approval_over_commit_is_refused_and_leaves_it_pending() {
+    let mut b = Book::open();
+    let small = resource("oracle_small_pool", "oracle_small_seat", 10);
+    b.db.put_resource(&small).unwrap();
+    let proof = proof(&request("over_one", "OverWorker", &small, 40));
+    let e = b.db.admit(&proof, 1000).unwrap();
+    let result = b.db.approve("approve_over", &proof, 1000);
+    assert!(
+        matches!(
+            result,
+            Err(Error::OverCommit { .. }) | Err(Error::InsufficientCapacity)
+        ),
+        "an over-requesting approval is refused: {result:?}"
+    );
+    assert_eq!(
+        b.state(&e.id),
+        "pending",
+        "the engagement is untouched: a refused verdict is not a partial one"
+    );
+}
+
+/// TS `engagement-store.test.js:332` — *a request with no id is accepted and SAYS
+/// it could not be deduped*. Native requires a well-formed `request_id`
+/// (`authority.rs:83`) and derives the engagement id from it, so there is no
+/// un-deduped path to assert: absence is refused, not silently accepted.
+#[test]
+#[ignore = "parity gap: native requires a request_id and derives the engagement id from it, so absence is refused — there is no un-deduped path"]
+fn ts_engagement_request_without_an_id() {}
+
+/// TS `engagement-store.test.js:370,414,426,441,479,498` — *refuses a cap that
+/// would floor to zero*, the ended-engagement cap, and the persist-failure
+/// rollbacks. The cap/prune and restore-on-failure behaviours are native and
+/// asserted by `tests/retention_engagements.rs` in this crate; the offer-cap
+/// floor rule depends on offer terms native does not have.
+#[test]
+#[ignore = "covered: engagement cap/prune + restore-on-failure are asserted by tests/retention_engagements.rs; the offer-cap floor rule has no native offer terms"]
+fn ts_engagement_cap_and_persist_failure_rollbacks() {}
+
 /// TS `engagement-store.test.js` (`routeRequest` — the fall-back-to-approval
 /// ladder): native has no whitelist or offer terms, so EVERY request takes the
 /// first rung. The TS case's own comment calls that rung `notWhitelisted`; the

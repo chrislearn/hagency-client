@@ -38,6 +38,8 @@ mod side_registration;
 #[path = "console/status_strip.rs"]
 #[cfg(feature = "native-console-browser")]
 mod status_strip;
+#[path = "console/ts_oracle_approvals.rs"]
+mod ts_oracle_approvals;
 use fixture::*;
 use salvo::{
     prelude::*,
