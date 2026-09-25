@@ -42,7 +42,11 @@ try {
       );
     }
   }
-  async function budget(id, edit = false) { await page.goto(edit ? editUrl(id) : createUrl(id)); await editor(id); await next(); await next(); await next(); }
+  // The native wizard is THREE steps (model, reasoning, budget): two Next
+  // presses reach the budget step — a third has no button and times out
+  // (the step reduction at 9775f997 left this walk clicking for a fourth
+  // step that no longer exists).
+  async function budget(id, edit = false) { await page.goto(edit ? editUrl(id) : createUrl(id)); await editor(id); await next(); await next(); }
   async function ceiling(tokens) { await page.locator('#configuration-ceiling').selectOption('monthly'); await page.locator('#wz-tokens').fill(String(tokens)); }
   async function save(edit = false) { await page.getByRole('button', { name: edit ? /^(Save configuration|保存配置)$/ : /^(Create another configuration|创建另一项配置)$/ }).click(); await page.locator('[data-configuration-action="saved"]').waitFor(); }
   await page.goto(config.url); await ready();

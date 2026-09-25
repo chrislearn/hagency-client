@@ -18,19 +18,26 @@ async function rosterWalk(page) {
   assert((await page.locator('tbody tr').count()) >= 3, 'one roster row per seeded engagement');
   const text = await page.locator('main').innerText();
   assert.match(text, /UsageWorker/);
-  assert.match(text, /read-only — derived from the engagement projections|只读 —— 由接洽投影派生/);
+  assert.match(text, /derived from the engagement projections|由接洽投影派生/);
   // The server's own gap list, rendered verbatim: the page never decides
   // which columns are unknown.
   assert.match(text, /tmux/);
   assert.match(text, /workspace_path/);
   // The null-not-zero arms: the active engagement carries its dispatch
   // clock; a pending one renders the unknown word — never a zero.
-  const cells = await page.locator('tbody tr td:last-child').allInnerTexts();
+  // Column 7 is the activity cell in both shapes of the roster (the
+  // lifecycle controls column is the 8th, only when the login carries it).
+  const cells = await page.locator('tbody tr td:nth-child(7)').allInnerTexts();
   assert(cells.some((c) => /^\d{4}-\d{2}-\d{2}T/.test(c)), 'the active engagement carries its dispatch clock');
   assert(cells.some((c) => c === 'Unknown' || c === '未知'), 'an engagement with no attempt row renders unknown');
   assert(cells.every((c) => c !== '0'), 'unknown is never rendered as zero');
   assert(!/private_|\/Users\/|tmux attach/.test(text), 'no private path, home or target renders');
-  assert((await page.locator('main button').count()) === 1, 'Refresh is the only control — no lifecycle, no mutation');
+  // One login (TS parity): the roster renders the implemented lifecycle
+  // controls per row — stop and review — and never the unavailable ones.
+  assert((await page.locator('[data-lifecycle-action="stop"]').count()) >= 3, 'one login renders the stop control per row');
+  assert((await page.locator('[data-lifecycle-action="review"]').count()) >= 3, 'the review control renders per row');
+  assert((await page.locator('[data-lifecycle-action="start"]').count()) === 0, 'the unavailable start transition is never advertised');
+  assert((await page.locator('[data-lifecycle-action="preset"]').count()) === 0, 'the unavailable preset transition is never advertised');
 }
 
 /* The project-sides walk (ADR-132): the page renders the six-key side
@@ -82,11 +89,10 @@ if (config.roster) {
   process.exit(0);
 }
 if (config.lifecycle) {
-  // The lifecycle lane (ADR-130 browser scenario): the roster renders NO
-  // enabled control under a read-only ticket, then the SAME walk under a
-  // fresh agent-lifecycle ticket (the harness mints and hands it over
-  // stdin; the browser mints nothing) renders only the implemented stop
-  // control — and no external request leaves the page in either phase.
+  // The lifecycle lane (ADR-130 browser scenario): ONE access link (the
+  // harness mints it and hands it over stdin; the browser mints nothing)
+  // carries lifecycle authority — TS parity: no second ticket, no read-only
+  // phase — and no external request leaves the page.
   try {
     const context = await browser.newContext({ serviceWorkers: 'block' });
     const page = await context.newPage();
@@ -99,12 +105,11 @@ if (config.lifecycle) {
     });
     await page.goto(config.url);
     await page.locator('[data-native-state="ready"]').waitFor();
-    assert((await page.locator('[data-lifecycle-action]').count()) === 0, 'a read-only session renders no lifecycle control');
-    // The harness owns the lifecycle ticket; the browser mints nothing.
-    const lifecycleUrl = (await fixture('LIFECYCLE_TICKET')).url;
-    await page.goto(lifecycleUrl);
+    // The exchange lands on the usage page; the roster is where the
+    // lifecycle controls render (one login carries the authority).
+    await page.goto(`${config.base}/console/agents/`);
     await page.locator('[data-native-state="ready"]').waitFor();
-    assert((await page.locator('[data-lifecycle-action="stop"]').count()) >= 3, 'the scoped roster renders the stop control per row');
+    assert((await page.locator('[data-lifecycle-action="stop"]').count()) >= 3, 'one login renders the stop control per row');
     assert((await page.locator('[data-lifecycle-action="start"]').count()) === 0, 'the roster does not advertise the unavailable start transition');
     assert((await page.locator('[data-lifecycle-action="preset"]').count()) === 0, 'the roster does not advertise the unavailable preset transition');
     await page.locator(`[data-engagement-id="${config.engagement}"] [data-lifecycle-action="review"]`).click();
@@ -222,7 +227,7 @@ try {
   const cookies = await context.cookies();
   const cookie = cookies.find((c) => c.name === 'hagency_console');
   assert(cookie?.httpOnly && cookie.sameSite === 'Strict' && cookie.path === '/console');
-  assert(cookie.expires * 1000 > Date.now() && cookie.expires * 1000 <= Date.now() + 901000);
+  assert.equal(cookie.expires, -1, 'one login is a browser-session cookie — no Max-Age, no expiry to race');
   assert.equal(await page.evaluate(() => document.cookie), '');
   assert(urls.every((url) => !url.includes('access=') && !url.includes(cookie.value)));
   const rawStatus = await page.evaluate(async () => (await fetch('/api/native/v1/engagements')).status);
@@ -290,26 +295,10 @@ try {
   assert.match(await page.locator('main').innerText(), /has drawn 100 against a ceiling of 50/);
   assert.match(await page.locator('main').innerText(), /raise the ceiling on preset private_alert_pool/);
   assert((await page.locator('tbody tr[aria-selected]').count()) >= 1, 'the seeded alert row renders and is selectable');
-  assert((await page.locator('[data-transition]').count()) === 0, 'a read-only session is offered no triage controls');
-  assert.match(await page.locator('main').innerText(), /This session can read alerts|此会话可以查看告警/);
-  // The scoped session: exchange its ticket, then the walk is unchanged.
-  // Present in the in-process lane; the executable lane reuses the read-only
-  // walk because its link is minted by the real subcommand.
-  // One access ticket is outstanding at a time (`authority.rs` `issue_scope`
-  // replaces it), so the scoped link is minted only now, after the read-only
-  // ticket was exchanged above: the in-process lane asks the harness for it
-  // and walks the buttons; the executable lane has no scoped walk because its
-  // link is minted by the real subcommand once.
+  // One login (TS parity): the SAME session is offered the triage controls
+  // the served `next` array names — no second link, no read-only notice.
+  assert((await page.locator('[data-transition]').count()) === 3, 'one login is offered the served triage controls');
   if (!config.executable) {
-    console.log('SCOPED_LINK');
-    const scopedUrl = JSON.parse((await lines.next()).value).scopedUrl;
-    // The exchange lands on the resources page, which carries no
-    // `data-native-state` marker; the session cookie is set once its main
-    // content renders.
-    await page.goto(scopedUrl);
-    await page.locator('main').waitFor();
-    await page.goto(`${config.base}/console/alerts/`);
-    await page.locator('[data-native-state="ready"]').waitFor();
     // The open row offers exactly the served map: acknowledge, resolve, suppress.
     const buttons = page.locator('[data-transition]');
     assert(await buttons.count() === 3, 'the open row serves exactly three transitions');

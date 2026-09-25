@@ -145,6 +145,16 @@ impl Authority {
         }
         let value = secret()?;
         let until = now + ACCESS_HORIZON;
+        // A bound, not a rate limit: the browser keeps only its newest
+        // cookie, so superseded grants are garbage. Dropping the OLDEST
+        // keeps memory finite without ever refusing an exchange — a reload
+        // can never meet a 429 here.
+        while state.sessions.len() >= 64 {
+            let removed = state.sessions.remove(0);
+            if let Some(access) = removed.access {
+                let _ = access.revoke();
+            }
+        }
         state.sessions.push(Grant {
             hash: hash(&value)?,
             expires: None,

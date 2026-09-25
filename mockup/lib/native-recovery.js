@@ -41,7 +41,7 @@ export function validateStopped(v, agent, after = '') {
 export function validateInspection(v, agent, original) {
   const s = v?.snapshot, o = s?.observation, inventory = o?.inventory;
   if (!keys(v, ['inspectionId', 'inspectionToken', 'expiresAt', 'snapshot']) || !hash(v.inspectionId) || !hash(v.inspectionToken) || !number(v.expiresAt)
-    || !keys(s, ['dispatchId', 'fence', 'receiptDigest', 'observation', 'task', 'route']) || s.dispatchId !== original || !number(s.fence) || s.fence === 0 || !hash(s.receiptDigest)
+    || !keys(s, ['dispatchId', 'fence', 'receiptDigest', 'observation', 'fenced', 'task', 'route']) || s.dispatchId !== original || !number(s.fence) || s.fence === 0 || !hash(s.receiptDigest) || typeof s.fenced !== 'boolean'
     || !keys(o, ['scope', 'workspace', 'inventory']) || !hash(o.scope) || !id(o.workspace) || !task(s.task)
     || !keys(inventory, ['profile', 'root', 'entries']) || inventory.profile !== 'stopped-content-inventory-v1'
     || !keys(inventory.root, ['platform', 'volume', 'object']) || !text(inventory.root.platform, 64) || !text(inventory.root.volume, 64)

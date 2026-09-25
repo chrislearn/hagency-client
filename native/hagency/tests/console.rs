@@ -68,14 +68,12 @@ async fn session(service: &Service) -> String {
         .unwrap()
         .to_str()
         .unwrap();
-    for flag in [
-        "HttpOnly",
-        "SameSite=Strict",
-        "Path=/console",
-        "Max-Age=900",
-    ] {
+    for flag in ["HttpOnly", "SameSite=Strict", "Path=/console"] {
         assert!(cookie.contains(flag));
     }
+    // TS parity: no Max-Age — the login cookie survives reloads; only
+    // logout (or process end) ends it.
+    assert!(!cookie.contains("Max-Age"));
     cookie.split(';').next().unwrap().to_owned()
 }
 fn get(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
@@ -84,20 +82,6 @@ fn get(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
         .add_header("sec-fetch-site", "same-origin", true)
         .add_header("cookie", cookie, true)
 }
-async fn lifecycle_issue(service: &Service) -> String {
-    let mut response = TestClient::post(format!(
-        "{BASE}/api/native/v1/console/agent-lifecycle-access"
-    ))
-    .add_header("host", "127.0.0.1:13300", true)
-    .bearer_auth(TOKEN)
-    .send(service)
-    .await;
-    assert_eq!(response.status_code, Some(StatusCode::OK));
-    response.take_json::<Value>().await.unwrap()["ticket"]
-        .as_str()
-        .unwrap()
-        .to_owned()
-}
 fn post(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
     TestClient::post(format!("{BASE}{path}"))
         .add_header("host", "127.0.0.1:13300", true)
@@ -105,20 +89,10 @@ fn post(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
         .add_header("sec-fetch-site", "same-origin", true)
         .add_header("cookie", cookie, true)
 }
+/// TS parity: one login is the whole console — the scoped issue routes are
+/// gone, so every former "scoped session" is the same `session()`.
 async fn lifecycle_session(service: &Service) -> String {
-    let ticket = lifecycle_issue(service).await;
-    let response = exchange(service, &ticket).await;
-    assert_eq!(response.status_code, Some(StatusCode::OK));
-    response
-        .headers()
-        .get("set-cookie")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .split(';')
-        .next()
-        .unwrap()
-        .to_owned()
+    session(service).await
 }
 
 #[tokio::test]
@@ -138,13 +112,17 @@ async fn native_console_authority() {
         .await;
     assert_eq!(denied.status_code, Some(StatusCode::FORBIDDEN));
     let ticket = issue(&service).await;
-    let rate = TestClient::post(format!("{BASE}/api/native/v1/console/access"))
-        .add_header("host", "127.0.0.1:13300", true)
-        .bearer_auth(TOKEN)
-        .send(&service)
-        .await;
-    assert_eq!(rate.status_code, Some(StatusCode::TOO_MANY_REQUESTS));
-    let response = exchange(&service, &ticket).await;
+    // TS parity: issuing access is never rate-limited (the retained
+    // middleware never throttled re-authentication), and re-issuing simply
+    // replaces the unexchanged link — no console_busy 429.
+    let again = issue(&service).await;
+    assert_ne!(again, ticket, "a fresh link replaces the old one");
+    assert_eq!(
+        exchange(&service, &ticket).await.status_code,
+        Some(StatusCode::UNAUTHORIZED),
+        "the replaced link is retired"
+    );
+    let response = exchange(&service, &again).await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let cookie = response
         .headers()
@@ -156,10 +134,31 @@ async fn native_console_authority() {
         .next()
         .unwrap()
         .to_owned();
+    // The ticket is a reusable credential, not one-time: exchanging it
+    // again yields another working session (a reload of the access URL
+    // never meets a burn).
     assert_eq!(
-        exchange(&service, &ticket).await.status_code,
-        Some(StatusCode::UNAUTHORIZED)
+        exchange(&service, &again).await.status_code,
+        Some(StatusCode::OK)
     );
+    // The scoped issue routes are gone — one login is the whole console.
+    for path in [
+        "resource-publication-access",
+        "resource-configuration-access",
+        "account-access",
+        "agent-lifecycle-access",
+    ] {
+        let response = TestClient::post(format!("{BASE}/api/native/v1/console/{path}"))
+            .add_header("host", "127.0.0.1:13300", true)
+            .bearer_auth(TOKEN)
+            .send(&service)
+            .await;
+        assert_eq!(
+            response.status_code,
+            Some(StatusCode::NOT_FOUND),
+            "scoped route {path} is gone"
+        );
+    }
     for (name, value) in [
         ("host", "evil.test"),
         ("origin", "https://evil.test"),
