@@ -41,6 +41,14 @@ fn native_owned_approval_context_long_limit() {
 #[test]
 fn native_owned_approval_maintenance() {
     let mut f = Fixture::configured(true, 1000, 60_000, false);
+    // Build the second fixture BEFORE capturing the wall-clock deadline. Its
+    // setup is heavyweight (its own provision, engagements, matrix crypto), and
+    // under load it used to run *between* the capture and the first `.unwrap()`
+    // that consumes the deadline, so `checked_deadline` saw an expired bound and
+    // returned RunnerAuthority although the logical sequence was untouched.
+    // Nothing about the product's behaviour changed; the unrelated setup simply
+    // no longer sits inside the deadline's window.
+    let mut other = Fixture::configured(true, 1000, 60_000, false);
     let until = Instant::now() + Duration::from_secs(5);
     let scope =
         f.db.bind_owned_approval_context(
@@ -86,7 +94,6 @@ fn native_owned_approval_maintenance() {
         f.db.check_owned_dispatch(&f.caps[0], &f.fingerprints[0], 1013)
             .is_err()
     );
-    let mut other = Fixture::configured(true, 1000, 60_000, false);
     assert!(other.db.maintain_owned_approval(&scope, 1013).is_err());
     f.choose(&request.id, ApprovalChoice::Deny);
     let mut grants = vec![
