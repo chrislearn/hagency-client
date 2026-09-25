@@ -269,6 +269,13 @@ impl Fixture {
         }
         if paced_startup {
             config["matrix_request_interval_ms"] = json!(1000);
+        } else {
+            // A busy host can keep the intake owner-lock wait past the 20 s
+            // SDK default while another agent is mid cross-signing/Olm; a
+            // timeout then invalidates the transport and parks intake
+            // (error=Generation) for good. `paced_startup` is the one
+            // fixture whose SDK budget IS the subject — leave it alone.
+            config["matrix_sdk_timeout_ms"] = json!(60_000);
         }
         if let Some(ms) = sdk_ms {
             config["matrix_sdk_timeout_ms"] = json!(ms);
@@ -888,6 +895,10 @@ pub struct Agent {
     uploads: Vec<Vec<u8>>,
     incoming: Vec<Vec<u8>>,
     downloads: Vec<usize>,
+    /// The display name the agent has set on itself (identity
+    /// reconciliation): `None` until the agent PUTs one, so the first GET
+    /// returns an empty (machine-generated-equivalent) profile.
+    displayname: Option<String>,
     created: bool,
     invited: bool,
     joined: bool,
@@ -912,6 +923,7 @@ impl Agent {
             uploads: Vec::new(),
             incoming: Vec::new(),
             downloads: Vec::new(),
+            displayname: None,
             created: false,
             invited: false,
             joined: false,
@@ -1243,6 +1255,26 @@ impl Peer {
                     200,
                     json!({"next_batch":format!("root-{}",self.root_sync),"rooms":{"join":{ROOT:{"timeline":{"events":[],"limited":false},"state":{"events":[]}},"!reception:example.test":{"timeline":{"events":events,"limited":false},"state":{"events":[]}}}},"to_device":{"events":[]}}),
                 )
+            } else if request.method == "PUT" && path.contains("/send/") {
+                // The coordinator posts the approval-status notice in the
+                // project room (approval_delivery/public.rs: `m.room.message`
+                // always, txn `approval_status_` + 64 hex digest — one
+                // identity per notice content, never re-attempted).
+                assert!(request.target.contains("factory_project"));
+                assert!(segments.contains(&"m.room.message"));
+                let txn = segments.last().expect("send txn segment");
+                assert!(
+                    txn.starts_with("approval_status_")
+                        && txn.len() == "approval_status_".len() + 64
+                        && txn["approval_status_".len()..]
+                            .bytes()
+                            .all(|b| b.is_ascii_hexdigit()),
+                    "approval-status txn id: {txn}"
+                );
+                (
+                    200,
+                    json!({"event_id":format!("$coordinator_send_{}", self.root_sync)}),
+                )
             } else {
                 assert!(path.ends_with("/state"));
                 if request.target.contains("factory_project") {
@@ -1380,6 +1412,19 @@ impl Peer {
                     200,
                     json!({"user_id":agent.user,"device_id":agent.device,"is_guest":false}),
                 )
+            } else if path.contains("/profile/") && path.ends_with("/displayname") {
+                // Identity reconciliation: the agent reads its profile before
+                // creating its DM room, and PUTs the agent-definition name
+                // when the current one is machine-generated (a fresh account
+                // reads empty). Serve both — and PIN what the PUT carries.
+                if request.method == "PUT" {
+                    assert_eq!(body["displayname"], json!(format!("FleetAgent{index}")));
+                    agent.displayname = Some(body["displayname"].as_str().unwrap().into());
+                }
+                (
+                    200,
+                    json!({"displayname": agent.displayname.clone().unwrap_or_default()}),
+                )
             } else if path.ends_with("/state") {
                 if request.target.contains("factory_project") {
                     (200, project)
@@ -1417,8 +1462,59 @@ impl Peer {
             } else if request.method == "PUT" && path.contains("/sendToDevice/") {
                 agent.crypto.share(body).await;
                 (200, json!({}))
+            } else if request.method == "PUT" && path.contains("/typing/") {
+                // The typing indicator (presence.rs `typing_request` — the
+                // setAgentTyping wire form, bridge-matrix.js:10527):
+                // ephemeral self-reported state while the agent works, never
+                // a room event. The path carries the agent's OWN mxid; the
+                // body is {"typing":true,"timeout":…} when it starts and
+                // {"typing":false} when it stops.
+                let user = path.rsplit('/').next().expect("typing user segment");
+                assert_eq!(user, agent.user, "typing is self-reported by the agent");
+                assert!(
+                    request.target.contains("factory_project")
+                        || request.target.contains(&format!("fleet_dm_{index}")),
+                    "typing happens in the room the agent works in: {}",
+                    request.target
+                );
+                let typing = body["typing"].as_bool().expect("typing is a boolean");
+                if typing {
+                    assert_eq!(
+                        body["timeout"],
+                        json!(45_000),
+                        "the typing window the product pins (AGENT_TYPING_TIMEOUT_MS)"
+                    );
+                } else {
+                    assert!(body["timeout"].is_null(), "the stop carries no window");
+                }
+                (200, json!({}))
             } else if request.method == "PUT" && path.contains("/send/") {
-                if request.target.contains("factory_project") {
+                if segments.contains(&"m.reaction") {
+                    // The delivery receipt (presence.rs `ack_request`, the
+                    // ackAgentReceipt wire form): an m.annotation reaction by
+                    // the agent on the event it just handled, in whatever room
+                    // that event lived in — project and DM both occur. The txn
+                    // is `ack_` + 24 hex derived from the event, so a retry of
+                    // the same handoff cannot double-react; the key is the
+                    // eyes emoji the product pins (AGENT_ACK_REACTION).
+                    let txn = segments.last().expect("send txn segment");
+                    assert!(
+                        txn.starts_with("ack_")
+                            && txn.len() == 28
+                            && txn[4..].bytes().all(|b| b.is_ascii_hexdigit()),
+                        "ack txn id: {txn}"
+                    );
+                    assert_eq!(body["m.relates_to"]["rel_type"], json!("m.annotation"));
+                    assert!(
+                        !body["m.relates_to"]["event_id"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .is_empty(),
+                        "the reaction names the event it acknowledges"
+                    );
+                    assert_eq!(body["m.relates_to"]["key"], json!("\u{1F440}"));
+                    (200, json!({"event_id":format!("$fleet_ack_{}", &txn[4..])}))
+                } else if request.target.contains("factory_project") {
                     assert!(segments.contains(&"m.room.message"));
                     // Two kinds of plaintext project event an agent may post in
                     // its own identity: its final reply, and the task notice

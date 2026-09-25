@@ -234,7 +234,19 @@ async fn native_matrix_owned_notice_failure() {
                 if lost {
                     drop(request)
                 } else {
+                    /* 403 maps to Unauthorized (http.rs), and the
+                     * rejoin-on-kick polish (44e080f9) answers that with the
+                     * auto-join before the send settles uncertain. The join
+                     * is refused too, so membership is NOT restored. Consume
+                     * it HERE: a leftover in the channel would masquerade as
+                     * the retry's traffic below. The drop arm has no
+                     * response at all — a transport error, not an auth
+                     * error — so no rejoin fires there. */
                     request.json(403, json!({"errcode":"M_FORBIDDEN"}));
+                    let r = fake.next().await;
+                    assert_eq!(r.method, "POST");
+                    assert_eq!(r.target, format!("/_matrix/client/v3/join/{ROOM}"));
+                    r.json(403, json!({"errcode":"M_FORBIDDEN"}));
                 }
             })
             .await;
@@ -248,6 +260,11 @@ async fn native_matrix_owned_notice_failure() {
             OutgoingState::Uncertain
         );
         w.assert_inactive(&intent, seq).await;
+        /* The retry must not put the notice back on the wire: it settles
+         * from state (Uncertain custody), never from a new send attempt.
+         * The auto-join the first send fired was consumed in its own
+         * script, so the quiet window below means exactly "no resend" —
+         * and nothing else on the transport either. */
         assert!(w.collector.send_notice(notice, &cancel).await.is_err());
         fake.no_request().await;
         w.close().await;

@@ -267,8 +267,15 @@ fn stderr_category(bytes: &[u8]) -> &'static str {
         return "empty";
     }
     for line in bytes.split(|byte| *byte == b'\n') {
-        match line.strip_suffix(b"\r").unwrap_or(line) {
-            b"Error: Config" => return "config",
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
+        // 2e4d4d21 (board #28/L31c) made the Config refusal name its field
+        // and fix, so the line grew from the bare `Error: Config` to
+        // `Error: Config { field: …, fix: … }` — one line, still one
+        // refusal class. Match by prefix; the bare form stays covered.
+        if line.starts_with(b"Error: Config") {
+            return "config";
+        }
+        match line {
             b"Error: Startup" => return "startup",
             b"Error: Server" => return "server",
             b"Error: Worker" => return "worker",
