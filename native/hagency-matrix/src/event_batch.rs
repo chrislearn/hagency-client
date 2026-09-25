@@ -510,12 +510,19 @@ impl Batch {
                 // TS parity (bridge-matrix.js:6799-6831): a plaintext room's
                 // m.file/m.image is archived like any other message — the room's
                 // lack of encryption is not a refusal. The TS receiver accepts
-                // `content.file?.url || content.url` (lib/matrix-file.js:38).
-                // This slice's manifest custody is encrypted-only, so the event
-                // is admitted as a visible message without a crypto manifest;
-                // full receive_file custody for plaintext needs the manifest and
-                // core observation types relaxed (outside this task's file list).
-                (Proof::Plain, false) => None,
+                // `content.file?.url || content.url` (lib/matrix-file.js:38);
+                // the manifest carries content.url with no crypto device/session.
+                (Proof::Plain, false) => Some(
+                    crate::attachments::Manifest::new(
+                        &self.sdk_identity,
+                        target,
+                        original,
+                        &value["content"],
+                        "",
+                        "",
+                    )
+                    .map_err(|_| Malformed)?,
+                ),
                 // An encrypted event against a target recorded plaintext is a
                 // state desync, not TS behaviour; keep the original refusal.
                 (Proof::Verified { .. }, false) => return Err(Unsupported),

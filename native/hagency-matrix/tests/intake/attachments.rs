@@ -141,9 +141,12 @@ async fn native_matrix_attachment_plaintext_room_admitted() {
     // The message is visible to the agent's session like any timeline event.
     let inbox = f.store.inbox("root".into(), 0, 100, None).await.unwrap();
     assert_eq!(inbox.len(), 1);
-    // Encrypted-only manifest custody is untouched by a plaintext event.
-    assert_eq!(rows(&f, "matrix_attachments"), 0);
-    assert!(manifests(&c).await.is_empty());
+    // TS parity: the plaintext attachment is retained in manifest custody too
+    // (no crypto device/session), and its metadata reaches the ticket store.
+    assert_eq!(rows(&f, "matrix_attachments"), 1);
+    let retained = manifests(&c).await;
+    assert_eq!(retained.len(), 1);
+    assert!(retained[0].content_digest.len() == 64);
     assert_eq!(status(&c, &mut fake).await.stage, "idle");
     fake.quiesced(fake.requests(), &common::limits()).await;
     finish(c, f, fake).await;
@@ -385,13 +388,22 @@ async fn native_matrix_attachment_lookup_scope() {
     ));
     let first = held.pop().unwrap();
     assert_eq!(first.media_id().to_mxc(), "mxc://media.remote/fixture_file");
-    let descriptor = first.descriptor().private_event_json().to_vec();
+    let descriptor = first
+        .descriptor()
+        .expect("encrypted-room fixture carries a descriptor")
+        .private_event_json()
+        .to_vec();
     drop(first);
     let next = c
         .attachment_manifest(cap.clone(), ticket.clone(), &cancel)
         .await
         .unwrap();
-    assert_eq!(next.descriptor().private_event_json(), descriptor);
+    assert_eq!(
+        next.descriptor()
+            .expect("encrypted-room fixture carries a descriptor")
+            .private_event_json(),
+        descriptor
+    );
     drop(held);
     drop(next);
     let lock = c.inner.owner.lock().await;

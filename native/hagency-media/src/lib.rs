@@ -107,6 +107,17 @@ impl Codec {
             }),
         }
     }
+    /// TS parity (lib/matrix-file.js:38, :57-63): a plaintext room's media is
+    /// received as-is; only a checked digest is added, no descriptor decrypt.
+    pub fn check(&self, bytes: Vec<u8>) -> Result<CheckedBytes, Error> {
+        let permit = self.admit(bytes.len())?;
+        let digest = Sha256::digest(&bytes).into();
+        Ok(CheckedBytes {
+            bytes,
+            digest,
+            _permit: permit,
+        })
+    }
     fn admit(&self, len: usize) -> Result<Permit, Error> {
         if len > self.pool.limits.max_bytes {
             return Err(Error::Capacity);
