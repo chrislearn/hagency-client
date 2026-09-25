@@ -3131,6 +3131,12 @@ impl DomainStore {
     pub async fn console_feed(&self) -> Result<serde_json::Value, Error> {
         self.call(64, |db| db.console_feed()).await
     }
+    /// #59 named-event entity read: the rows behind the TS broadcastSSE
+    /// vocabulary — the SSE route diffs two snapshots into named events
+    /// with entity payloads. One writer job, one bounded read.
+    pub async fn console_entities(&self) -> Result<serde_json::Value, Error> {
+        self.call(64, |db| db.console_entities()).await
+    }
     /// The read-only agent detail (board #22): one writer job, one bounded
     /// agent-keyed read — the projection is computed at the store, so the
     /// console route adds no second arithmetic path. `None` is the route's

@@ -67,4 +67,167 @@ impl super::DomainRepository {
             "alerts": {"version": alertsv, "count": alerts.0},
         }))
     }
+
+    /// #59 named-event entities: the rows behind the TS `broadcastSSE`
+    /// vocabulary, each carrying its own state word so a stream can diff
+    /// two snapshots into named events with entity payloads. The task
+    /// payload IS the row's stored `Task` document (canonical_tasks.config
+    /// is the serialized entity, exactly what `task_updated` broadcast);
+    /// the alert payload is the ceiling_alerts row (what `alert_created` /
+    /// `alert_updated` / `alert_resolved` broadcast). Approvals, fences and
+    /// admitted messages carry their identifying columns — the native
+    /// counterparts of `approval_requested`'s `{request_id, agent}`,
+    /// `agent_blocked`/`agent_recovered`'s `{agent, reason, blockedSince}`
+    /// and `message`'s message row.
+    pub fn console_entities(&self) -> Result<serde_json::Value, Error> {
+        let mut tasks = Vec::new();
+        {
+            let mut stmt = self.db.prepare(
+                // The table has no updated_at column; the serialized Task
+                // document in config carries it (core Task struct).
+                "SELECT id,config,json_extract(config,'$.updated_at') \
+                 FROM canonical_tasks ORDER BY id LIMIT 500",
+            )?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<u64>>(2)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            for (id, config, updated_at) in rows {
+                let mut value: serde_json::Value =
+                    serde_json::from_str(&config).unwrap_or(serde_json::Value::Null);
+                if let Some(object) = value.as_object_mut() {
+                    object.insert("id".into(), serde_json::json!(id));
+                }
+                tasks.push(json!({
+                    "key": id,
+                    "state": value.get("status").cloned()
+                        .unwrap_or(serde_json::Value::Null),
+                    "updated_at": updated_at.unwrap_or_default(),
+                    "entity": value,
+                }));
+            }
+        }
+        let mut alerts = Vec::new();
+        {
+            let mut stmt = self.db.prepare(
+                "SELECT dedupe_key,resource_id,summary,detail,runbook,impact,recovery_condition,\
+                 occurrences,first_seen_ms,last_seen_ms,resolved_at_ms \
+                 FROM ceiling_alerts ORDER BY dedupe_key LIMIT 500",
+            )?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, Option<u64>>(9)?,
+                        row.get::<_, Option<u64>>(10)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            for (dedupe_key, resource_id, summary, last_seen, resolved) in rows {
+                alerts.push(json!({
+                    "key": dedupe_key,
+                    "state": if resolved.is_some() { "resolved" } else { "open" },
+                    "updated_at": last_seen.unwrap_or_default(),
+                    "entity": {
+                        "dedupe_key": dedupe_key,
+                        "resource_id": resource_id,
+                        "summary": summary,
+                        "resolved_at_ms": resolved,
+                    },
+                }));
+            }
+        }
+        let mut approvals = Vec::new();
+        {
+            let mut stmt = self.db.prepare(
+                "SELECT o.id,o.state FROM owner_approvals o \
+                 ORDER BY o.id LIMIT 500",
+            )?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            for (id, state) in rows {
+                approvals.push(json!({
+                    "key": id,
+                    "state": state,
+                    // The table carries no update timestamp; the diff keys
+                    // on (id, state), so a state transition still reads.
+                    "updated_at": 0,
+                    "entity": {"request_id": id, "status": state},
+                }));
+            }
+        }
+        let mut fences = Vec::new();
+        {
+            let mut stmt = self.db.prepare(
+                "SELECT engagement_id,reason,created_at,cleared_at FROM agent_fences \
+                 ORDER BY engagement_id,id LIMIT 500",
+            )?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, u64>(2)?,
+                        row.get::<_, Option<u64>>(3)?,
+                    ))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            for (engagement, reason, created_at, cleared_at) in rows {
+                fences.push(json!({
+                    "key": engagement,
+                    "state": if cleared_at.is_some() { "recovered" } else { "blocked" },
+                    "updated_at": cleared_at.unwrap_or(created_at),
+                    "entity": {
+                        "agent": engagement,
+                        "reason": reason,
+                        "blocked_since": created_at,
+                        "recovered_at": cleared_at,
+                    },
+                }));
+            }
+        }
+        let mut messages = Vec::new();
+        {
+            let mut stmt = self.db.prepare(
+                "SELECT sequence,source_key FROM admitted_messages ORDER BY sequence LIMIT 500",
+            )?;
+            let rows = stmt
+                .query_map([], |row| {
+                    Ok((row.get::<_, u64>(0)?, row.get::<_, String>(1)?))
+                })?
+                .collect::<Result<Vec<_>, _>>()?;
+            for (sequence, source_key) in rows {
+                messages.push(json!({
+                    "key": sequence,
+                    "state": "admitted",
+                    "updated_at": sequence,
+                    "entity": {"sequence": sequence, "source_key": source_key},
+                }));
+            }
+        }
+        let version = hagency_core::canonical::digest(&json!([
+            &tasks, &alerts, &approvals, &fences, &messages,
+        ]))?;
+        Ok(json!({
+            "version": version,
+            "tasks": tasks,
+            "alerts": alerts,
+            "approvals": approvals,
+            "fences": fences,
+            "messages": messages,
+        }))
+    }
 }
