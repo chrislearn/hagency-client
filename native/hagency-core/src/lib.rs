@@ -4,6 +4,7 @@ pub mod allocation;
 pub mod attachments;
 pub mod authority;
 pub mod canonical;
+pub mod commands;
 pub mod ceiling;
 pub mod conversations;
 pub mod custody;

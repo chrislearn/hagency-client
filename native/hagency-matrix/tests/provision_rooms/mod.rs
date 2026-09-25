@@ -60,7 +60,7 @@ impl Server {
             member(OWNER),member(&representative()),
             {"type":"m.room.join_rules","state_key":"","content":{"join_rule":"invite"}},
             power_levels(json!({OWNER:100,representative():50})),
-            {"type":"com.hagency.project.binding.v1","state_key":"","content":{
+            {"type":"com.hagency.admin.binding.v1","state_key":fleet_id(),"content":{
                 "v":1,"purpose":"project","authVersion":1,"fleetId":fleet_id(),
                 "projectId":"project_provision","ownerMxid":OWNER}}
         ]);

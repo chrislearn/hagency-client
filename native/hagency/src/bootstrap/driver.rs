@@ -1,3 +1,5 @@
+#[path = "commands.rs"]
+mod commands;
 #[path = "inbox.rs"]
 mod inbox;
 #[path = "notice.rs"]
@@ -9,7 +11,8 @@ use hagency_execution::{ApprovalRequests, Operation, Report, SharedHost};
 use hagency_matrix::{CancellationToken, Collector, HostIntakePlan};
 use hagency_runtime::owned::Cleanup;
 use hagency_store::{
-    AttemptClock, AttemptEvent, AttemptPhase, DomainStore, FenceReason, OwnedClaimProfile,
+    AttemptClock, AttemptEvent, AttemptPhase, DomainStore, EffectOutcome, FenceReason,
+    OwnedClaimProfile,
 };
 use std::{
     sync::mpsc::{self, SyncSender, TrySendError},
@@ -313,6 +316,14 @@ async fn run_continuous(input: Attempt<'_>) -> Result<Option<Box<Report>>, Failu
         if input.cancel.is_cancelled() {
             return Ok(None);
         }
+        // A revoked engagement's retirement effect: leave every room this
+        // worker holds, log the device out, then stop working. This is the
+        // retained executor's own shape (`lib/matrix-work-executor.js:13-49`):
+        // the agent uses the credential it already holds, then clears it. The
+        // worker IS the executor, so no timer and no separate sweeper exists.
+        if retire_requested(&input, &engagement).await? {
+            return Ok(None);
+        }
         // A fenced agent claims nothing (the store's gate); say so and wait.
         if custody(&input, &engagement).await {
             tokio::select! {
@@ -469,6 +480,66 @@ async fn run_continuous(input: Attempt<'_>) -> Result<Option<Box<Report>>, Failu
 /// dispatch's `not_before`.
 const LAUNCH_RETRY_MS: u64 = 5_000;
 const LAUNCH_RETRY: Duration = Duration::from_millis(LAUNCH_RETRY_MS);
+
+/// Execute this engagement's retirement effect, if one is claimable, and say
+/// whether the worker must now stop. This is the ONE production executor of the
+/// `retire` effect (TS `lib/matrix-work-executor.js:13-49`): the console route
+/// records the decision and schedules the effect (`ConsoleDocument`/`revoke`),
+/// and the agent's own live worker — which already holds an authenticated
+/// transport — performs the acts and settles the record. No timer, no sweeper,
+/// no second claim: `claim_effect_for` is the store's exact, fenced ownership.
+///
+/// Outcomes map to the store's own vocabulary: `Applied` names the per-room and
+/// logout verdicts, `NotApplied` is a definitive refusal (a `matrix_http_<s>`
+/// answer), and `Unknown` leaves the effect retryable for the operator's
+/// `cleanup-retry` — the bridge never invents a completion it did not observe.
+async fn retire_requested(input: &Attempt<'_>, engagement: &str) -> Result<bool, Failure> {
+    let effect_id = format!("retire_{engagement}");
+    let claimed = input
+        .domain
+        .claim_effect_for(effect_id)
+        .await
+        .map_err(|_| Failure::OutcomeUnknown)?;
+    let Some(effect) = claimed else {
+        return Ok(false);
+    };
+    if effect.kind != "retire" {
+        return Err(Failure::OutcomeUnknown);
+    }
+    input.status.phase("retiring");
+    tracing::info!(%engagement, "retirement: leaving rooms and logging out");
+    let retirement = match input.collector.retire_agent(input.cancel).await {
+        Ok(retirement) => retirement,
+        Err(hagency_matrix::Error::Cancelled) => return Err(Failure::Cancelled),
+        Err(error) => {
+            input.status.matrix_refusal(&error);
+            tracing::warn!(%engagement, ?error, "retirement act was not observed; left for retry");
+            input
+                .domain
+                .observe_effect(effect.id, effect.fence, EffectOutcome::Unknown)
+                .await
+                .map_err(|_| Failure::OutcomeUnknown)?;
+            return Ok(true);
+        }
+    };
+    let outcome = if retirement.complete() {
+        EffectOutcome::Applied {
+            receipt: retirement.receipt(),
+        }
+    } else {
+        EffectOutcome::NotApplied {
+            receipt: retirement.receipt(),
+        }
+    };
+    tracing::info!(%engagement, complete = retirement.complete(), "retirement observed");
+    input
+        .domain
+        .observe_effect(effect.id, effect.fence, outcome)
+        .await
+        .map_err(|_| Failure::OutcomeUnknown)?;
+    Ok(true)
+}
+
 /// What the store holds against this agent (ADR-182): its unresolved
 /// dispatches and any open fence. Read once per pass; the store's own gates
 /// are what refuse the work, this only says so in the status.
@@ -605,7 +676,7 @@ async fn run(input: Attempt<'_>) -> Result<Option<Completed>, Failure> {
     };
     if !intake_sessions.is_empty() {
         status.phase("receiving");
-        let plan = HostIntakePlan::new(intake_sessions).map_err(|_| Failure::Config)?;
+        let plan = HostIntakePlan::new(intake_sessions.clone()).map_err(|_| Failure::Config)?;
         collector.intake(plan, cancel).await.map_err(|error| {
             status.matrix_refusal(&error);
             tracing::warn!(error = ?error, "Matrix inbox intake refused");
@@ -618,6 +689,13 @@ async fn run(input: Attempt<'_>) -> Result<Option<Completed>, Failure> {
             }
         })?;
     }
+    // A `!` line is never agent input, so nothing downstream answers it. The
+    // agent that received it says the answer in the room (it is the member with
+    // an authenticated transport), as the retained bridge did. Bounded per
+    // attempt: unanswered lines wait for the next poll.
+    if !intake_sessions.is_empty() {
+        commands::deliver(domain, collector, &intake_sessions, cancel, status).await?;
+    }
     // ADR180 delegation is inline-factory only: an ordinary host owns no
     // engagement a notice could be scoped to. The assignee posts its own notice
     // before scheduling, because that delivery is what activates the intent.
@@ -628,10 +706,22 @@ async fn run(input: Attempt<'_>) -> Result<Option<Completed>, Failure> {
     } else {
         None
     };
+    let mut agent_work: Vec<hagency_matrix::AgentWork> = Vec::new();
     if !agent_inboxes.is_empty() {
         status.phase("scheduling");
         for plan in agent_inboxes {
+            // Read the trigger BEFORE selection: selection binds the input to a
+            // dispatch, after which it is no longer an unprocessed trigger. The
+            // signals are sent only once the store has accepted the message and
+            // minted the dispatch, so neither can claim a delivery that did not
+            // happen (TS `beginAgentWork`, bridge-matrix.js:10603).
+            let target = collector.agent_work_target(&plan.session_id).await;
             match domain.select_agent_inbox(plan.clone()).await {
+                Ok(hagency_core::agent_inbox::AgentInboxSelection::Selected { .. }) => {
+                    if let Some((room_id, event_id)) = target {
+                        agent_work.push(collector.begin_agent_work(&room_id, &event_id));
+                    }
+                }
                 Ok(_) => {}
                 // This poll's own intake can observe a membership change that
                 // advances a shared project's generation (ADR153) and retires
@@ -814,9 +904,11 @@ async fn run(input: Attempt<'_>) -> Result<Option<Completed>, Failure> {
                 operation.wait_boxed().await.map_err(|_| Failure::Worker)?
             }
     };
-    finish_attempt(domain, capability, report, collector, cancel, status)
-        .await
-        .map(Some)
+    finish_attempt(
+        domain, capability, report, collector, cancel, status, agent_work,
+    )
+    .await
+    .map(Some)
 }
 
 fn now_ms() -> u64 {
@@ -856,6 +948,7 @@ async fn finish_attempt(
     collector: &Collector,
     cancel: &CancellationToken,
     status: &StatusHandle,
+    agent_work: Vec<hagency_matrix::AgentWork>,
 ) -> Result<Completed, Failure> {
     status.result(&capability.dispatch_id, &report);
     // The attempt's last records (ADR-181): the full status, uncollapsed, as
@@ -924,6 +1017,13 @@ async fn finish_attempt(
             .map_err(|_| Failure::OutcomeUnknown)?;
         if delivered.state != hagency_matrix::OutgoingState::Delivered {
             return Err(Failure::OutcomeUnknown);
+        }
+        // THE AGENT SPOKE HERE, so the wait ends here (`sendAsAgentContent`,
+        // bridge-matrix.js:10884-10885). Every outbound agent message converges
+        // on this function, so this is the one place that cannot be forgotten.
+        // Any other exit path ends the wait from `AgentWork::drop`.
+        for work in agent_work {
+            work.end().await;
         }
         status.phase("delivered");
     }
@@ -1476,9 +1576,17 @@ pub(super) mod tests {
         );
         let cancel = CancellationToken::new();
         let status = StatusHandle::new(true);
-        let completed = finish_attempt(&f.store, a, report, &shared.collector, &cancel, &status)
-            .await
-            .unwrap();
+        let completed = finish_attempt(
+            &f.store,
+            a,
+            report,
+            &shared.collector,
+            &cancel,
+            &status,
+            Vec::new(),
+        )
+        .await
+        .unwrap();
         assert_eq!(
             count("SELECT COUNT(*) FROM dispatch_stops WHERE settled_at IS NULL"),
             2,
@@ -1494,9 +1602,17 @@ pub(super) mod tests {
         let report = second.wait_boxed().await.unwrap();
         assert_eq!(report.protocol, hagency_execution::Protocol::NotStarted);
         drop(
-            finish_attempt(&f.store, b, report, &shared.collector, &cancel, &status)
-                .await
-                .unwrap(),
+            finish_attempt(
+                &f.store,
+                b,
+                report,
+                &shared.collector,
+                &cancel,
+                &status,
+                Vec::new(),
+            )
+            .await
+            .unwrap(),
         );
         assert_eq!(
             count("SELECT COUNT(*) FROM dispatch_stops WHERE settled_at IS NULL"),
