@@ -8,7 +8,7 @@ use std::time::Duration;
 mod fixture;
 mod recovery;
 use fixture::*;
-use upload_fixture::{DATA, Fixture, post};
+use upload_fixture::{DATA, Fixture, post, post_plaintext};
 
 fn serial() -> &'static tokio::sync::Mutex<()> {
     static SERIAL: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
@@ -164,6 +164,59 @@ async fn native_file_publication_image_msgtype_and_mime() {
         codec.decrypt(&descriptor, &ciphertext).unwrap().bytes(),
         DATA
     );
+    f.fake.quiesced(f.fake.requests(), &common::limits()).await;
+    drop(op);
+    f.finish().await;
+}
+
+#[tokio::test]
+async fn native_file_publication_plaintext_room_url_event() {
+    // TS parity (lib/matrix-file.js:30-33): a plaintext room receives the file
+    // event with content.url — unencrypted on the wire, real MIME, m.image
+    // previews — and the upload POST carried the original bytes, not the
+    // encrypted blob (post_plaintext above).
+    let _serial = serial().lock().await;
+    let mut f = Fixture::new_plaintext().await;
+    let Some((original, identity, ciphertext)) =
+        accepted_plaintext(&mut f, "plain-image", None, "图表.png").await
+    else {
+        f.finish().await;
+        return;
+    };
+    let (claim, send) = publication(&f, identity.clone()).await;
+    let mut op = original
+        .prepare_file_publication(claim, send)
+        .map_err(|e| e.error())
+        .unwrap();
+    let cancel = CancellationToken::new();
+    let (result, content) = common::scripted(op.run(&cancel), async {
+        let (request, content) = wire_plaintext(&mut f.fake).await;
+        request.json(200, json!({"event_id":"$plain-accepted"}));
+        content
+    })
+    .await;
+    assert_eq!(result.unwrap().state, OutgoingState::Delivered);
+    assert_eq!(content["msgtype"], "m.image");
+    assert_eq!(content["filename"], "图表.png");
+    assert_eq!(content["body"], "图表.png");
+    assert_eq!(content["info"]["mimetype"], "image/png");
+    assert_eq!(content["info"]["size"], DATA.len());
+    assert_eq!(content["url"], "mxc://remote.test/original");
+    // No ciphertext descriptor on a plaintext room.
+    assert!(content.get("file").is_none());
+    // Staged custody stays the encrypted original; it never hit the wire.
+    assert_ne!(DATA, ciphertext);
+    let receipt = f
+        .base
+        .store
+        .inspect_file_delivery(f.cap.clone(), identity.id().into())
+        .await
+        .unwrap();
+    assert_eq!(
+        receipt.status,
+        hagency_core::file_delivery::FileDeliveryStatus::Delivered
+    );
+    assert_eq!(receipt.event_id.as_deref(), Some("$plain-accepted"));
     f.fake.quiesced(f.fake.requests(), &common::limits()).await;
     drop(op);
     f.finish().await;
