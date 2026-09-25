@@ -18,7 +18,9 @@ async function rosterWalk(page) {
   assert((await page.locator('tbody tr').count()) >= 3, 'one roster row per seeded engagement');
   const text = await page.locator('main').innerText();
   assert.match(text, /UsageWorker/);
-  assert.match(text, /read-only — derived from the engagement projections|只读 —— 由接洽投影派生/);
+  // #43 item 4: the heading no longer says "read-only" beside Stop/Review;
+  // it names what the page is and what stopping needs.
+  assert.match(text, /the engagement projections, observed|接洽投影的观察/);
   // The server's own gap list, rendered verbatim: the page never decides
   // which columns are unknown.
   assert.match(text, /tmux/);
@@ -53,7 +55,10 @@ async function projectSidesWalk(page) {
   assert(!/as_token|hs_token|asToken|hsToken/.test(text), 'no credential word on screen');
   assert(!/@owner:example\.test/.test(text), 'the owner mxid stays withheld');
   assert(!/!private:example\.test/.test(text), 'the owner DM room stays withheld');
-  assert((await page.locator('main button').count()) === 1, 'Refresh is the only control');
+  // #45 parity row #33 joined this page: register-a-side and
+  // generate-registration render beside the read-only observation, so
+  // three controls now — register, generate, refresh.
+  assert((await page.locator('main button').count()) === 3, 'register, generate and refresh are the controls');
 }
 
 const browser = await chromium.launch({ executablePath: process.env.HAGENCY_BROWSER_CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true,
@@ -109,7 +114,14 @@ if (config.lifecycle) {
     assert((await page.locator('[data-lifecycle-action="preset"]').count()) === 0, 'the roster does not advertise the unavailable preset transition');
     await page.locator(`[data-engagement-id="${config.engagement}"] [data-lifecycle-action="review"]`).click();
     await page.locator('[data-recovery-inspect="resolution_dispatch"]').click();
-    await page.locator('[data-recovery-inspection]').waitFor();
+    // A failure here is silent in the DOM (the panel renders its error
+    // word instead of the inspection), so surface what actually rendered.
+    try {
+      await page.locator('[data-recovery-inspection]').waitFor({ timeout: 15_000 });
+    } catch (error) {
+      const panel = await page.locator('[data-recovery-panel]').innerText().catch(() => '(no recovery panel)');
+      throw new Error(`inspection never rendered; recovery panel says:\n${panel}\n${error.message}`);
+    }
     assert.match(await page.locator('[data-recovery-inspection]').innerText(), /result\.txt/);
     assert.equal(await page.locator('[data-recovery-action]').count(), 3);
     await page.locator('[data-recovery-note]').fill('Reviewed the original offline fixture inventory. Keep this task blocked.');
@@ -342,7 +354,11 @@ try {
   assert((await page.locator('tbody tr').count()) >= 1, 'the seeded engagement renders');
   assert.match(await page.locator('main').innerText(), /UsageWorker|NewUsageWorker/);
   assert.match(await page.locator('main').innerText(), /read-only — creating, verdicts and revocation|只读 —— 创建、裁定与撤销/);
-  assert(await page.locator('main button.danger').count() === 0, 'no mutating buttons on the engagements page');
+  // #16/#44 intended UI: the verdict panel carries the operator decision —
+  // the pending row renders its Approve/Reject controls. A read-only
+  // session would be refused on click (the scope notice); this walk never
+  // clicks them, it asserts they render for the seeded pending row.
+  assert((await page.locator('main button.danger').count()) >= 1, 'the pending verdict row carries its refuse control');
   // Page IN-PAGE through the seeded rows: every page reaching the ready state
   // passed validateEngagements, and the Next button disables on the null
   // cursor. The in-page pager uses the client's own page size, so the three
@@ -377,7 +393,10 @@ try {
   const logoutStarted = new Promise((resolve) => { observedLogout = resolve; });
   await context.route(`${config.base}/console/session`, async (route) => { observedLogout(); await heldLogout; await route.continue(); });
   page.on('request', (request) => { if (request.url().includes('/console/api/')) readsDuringLogout += 1; });
-  await page.getByRole('button', { name: config.executable ? '结束访问' : 'End access', exact: true }).click();
+  // The ONE End access on screen is the rail's control (the usage page's
+  // main carries no logout of its own) — target it by its locale-stable
+  // attribute, valid for both the en in-process lane and the zh executable.
+  await page.locator('[data-shell-action="end-access"]').click();
   await page.locator('[data-native-state="access"]').waitFor();
   await logoutStarted;
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new PopStateEvent('popstate')); });
