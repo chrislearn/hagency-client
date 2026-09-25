@@ -97,7 +97,8 @@ fn ts_oracle_task_transition_edges() {
 /// blank/non-string title. Native `TaskDefinition::validate` does the same.
 #[test]
 fn ts_oracle_task_requires_real_title() {
-    for bad in ["", "   ", "x".repeat(256)] {
+    let overlong = "x".repeat(256);
+    for bad in ["", "   ", overlong.as_str()] {
         assert!(
             TaskDefinition {
                 title: bad.to_string(),
