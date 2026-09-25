@@ -76,6 +76,11 @@ pub struct HostConfig {
     pub(crate) approval: bool,
     pub(crate) endpoint: Url,
     pub(crate) authorization: HeaderValue,
+    /// The representative/bot credential the retained bridge used to
+    /// re-invite a kicked agent before it rejoined (bridge-matrix.js:10912-
+    /// 10918, :10938-10943). Carried from the provisioning path that already
+    /// holds it; an absent host keeps the join-only recovery.
+    pub(crate) representative: Option<HeaderValue>,
     pub(crate) identity: HostIdentity,
     pub(crate) rooms: Vec<HostRoom>,
     /// The pre-project reception room, observed for the provisioning ingress
@@ -151,6 +156,7 @@ impl HostConfig {
             approval: false,
             endpoint: url,
             authorization,
+            representative: None,
             identity,
             rooms,
             reception_room: None,
@@ -166,6 +172,22 @@ impl HostConfig {
         }
         self.roots
             .push(reqwest::Certificate::from_pem(pem).map_err(|_| Error::Config)?);
+        Ok(self)
+    }
+    /// The representative/bot credential for the send path's kick recovery
+    /// (bridge-matrix.js:10912-10918): re-invite the kicked agent before it
+    /// rejoins. Setting twice is refused; the same token shape as `new`.
+    pub fn with_representative(mut self, token: &str) -> Result<Self, Error> {
+        if self.representative.is_some()
+            || token.len() < 16
+            || token.len() > 4096
+            || !token.bytes().all(|b| (33..=126).contains(&b))
+        {
+            return Err(Error::Config);
+        }
+        let mut value = HeaderValue::from_str(&format!("Bearer {token}")).map_err(|_| Error::Config)?;
+        value.set_sensitive(true);
+        self.representative = Some(value);
         Ok(self)
     }
     /// The host's engagement id, for the bootstrap fill that resolves the

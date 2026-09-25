@@ -25,6 +25,10 @@ pub(crate) struct Inner {
     pub(crate) enrollment_jobs: crate::enrollment::Jobs,
     pub(crate) config: HostConfig,
     pub(crate) http: Http,
+    /// The representative/bot client for the send path's kick recovery
+    /// (bridge-matrix.js:10912-10918): re-invite before the agent rejoins.
+    /// Built only when the provisioning custody handed a credential over.
+    pub(crate) representative: Option<Http>,
     pub(crate) domain: DomainStore,
     pub(crate) owner: Mutex<Option<Owner>>,
     pub(crate) busy: Arc<Semaphore>,
@@ -126,10 +130,15 @@ impl Collector {
 impl Inner {
     pub(crate) fn new(config: HostConfig, domain: DomainStore) -> Result<Arc<Self>, Error> {
         let http = Http::new(&config)?;
+        let representative = match &config.representative {
+            Some(_) => Some(Http::new_representative(&config)?),
+            None => None,
+        };
         Ok(Arc::new(Self {
             enrollment_jobs: crate::enrollment::Jobs::default(),
             config,
             http,
+            representative,
             domain,
             owner: Mutex::new(None),
             busy: Arc::new(Semaphore::new(1)),

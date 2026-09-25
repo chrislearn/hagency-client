@@ -531,13 +531,41 @@ impl Inner {
                 match result {
                     Ok(value) => value,
                     Err(Error::Unauthorized) => {
-                        let restored = crate::identity_polish::agent_rejoin(
-                            &self.http,
-                            &attempt.route.room_id,
-                            cancel,
-                        )
-                        .await
-                        .is_ok();
+                        // The invite half of the retained invite-then-join
+                        // pair (bridge-matrix.js:10912-10918): a kicked
+                        // member needs a fresh invite no agent can mint for
+                        // itself. The representative credential rides the
+                        // config from the provisioning custody that verified
+                        // it; without one, recovery stays join-only.
+                        let invited = match &self.representative {
+                            Some(representative) => representative
+                                .post(
+                                    &[
+                                        "_matrix",
+                                        "client",
+                                        "v3",
+                                        "rooms",
+                                        &attempt.route.room_id,
+                                        "invite",
+                                    ],
+                                    serde_json::to_string(
+                                        &json!({"user_id":attempt.route.sender_mxid}),
+                                    )
+                                    .map_err(|_| Error::Capacity)?,
+                                    cancel,
+                                )
+                                .await
+                                .is_ok_and(|response| response.status == 200),
+                            None => true,
+                        };
+                        let restored = invited
+                            && crate::identity_polish::agent_rejoin(
+                                &self.http,
+                                &attempt.route.room_id,
+                                cancel,
+                            )
+                            .await
+                            .is_ok();
                         let retried = if restored {
                             self.http
                                 .put(&send, write.body.clone(), cancel)

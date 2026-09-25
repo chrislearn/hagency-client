@@ -57,8 +57,46 @@ async fn scripted<T: std::fmt::Debug, S: std::future::Future>(
     assert!(trace.has(ObservationPhase::OwnerReturned));
     result
 }
-async fn ready(encrypted: bool, direct: bool) -> (common::Fixture, common::Fake, Collector) {
+async fn ready(
+    encrypted: bool,
+    direct: bool,
+) -> (common::Fixture, common::Fake, Collector) {
     ready_named(encrypted, direct, "outgoing bootstrap", None).await
+}
+/// Board #61 row 3: like `ready` but the collector carries the representative
+/// credential the provisioning custody verified, so the send path can re-
+/// invite a kicked agent (bridge-matrix.js:10912-10918).
+async fn ready_with_representative(
+    encrypted: bool,
+    direct: bool,
+    callsite: &'static str,
+) -> (common::Fixture, common::Fake, Collector) {
+    let f = common::Fixture::new();
+    let mut fake = common::Fake::start(true).await;
+    let mut config = config(&f, &fake.endpoint, f.identity.clone(), direct);
+    config.limits = common::limits();
+    config = config
+        .with_representative("synthetic-representative-token-not-real")
+        .unwrap();
+    let c = Collector::new(config, f.store.clone()).unwrap();
+    let cancel = CancellationToken::new();
+    let (r, ()) = scripted(callsite, None, c.collect(&cancel), async {
+        fake.next().await.json(200, common::who());
+        fake.next().await.json(200, common::sync("boot"));
+        fake.next().await.json(200, room(encrypted));
+    })
+    .await;
+    r.unwrap();
+    f.store
+        .resolve_verified_matrix_session(SessionBinding {
+            id: "root".into(),
+            engagement_id: f.identity.transport.engagement_id.clone(),
+            room_id: "!project:example.test".into(),
+            thread_root: None,
+        })
+        .await
+        .unwrap();
+    (f, fake, c)
 }
 async fn ready_named(
     encrypted: bool,
@@ -252,6 +290,66 @@ async fn native_matrix_outgoing_kicked_agent_rejoins_and_the_message_is_delivere
         let body: Value = serde_json::from_slice(&resent.body).unwrap();
         resent.json(200, json!({"event_id": "$rejoined"}));
         assert_eq!(body["body"], "Answer **verified** 中文");
+    })
+    .await;
+    assert_eq!(result.unwrap().state, OutgoingState::Delivered);
+    assert_eq!(state(&f, &claim.id), "delivered");
+    fake.quiesced(fake.requests(), &common::limits()).await;
+    c.close().await.unwrap();
+    f.store.shutdown().await.unwrap();
+    fake.close().await;
+}
+
+/// Board #61 row 3 (TS bridge-matrix.js:10912-10918): the INVITE half of the
+/// rejoin-on-kick pair. With the representative credential the provisioning
+/// custody verified riding the collector, a membership-refused send is
+/// preceded by a representative invite of the kicked agent — then the agent
+/// joins and the same transaction is resent. The invite is observable on the
+/// wire: its own bearer, the agent's MXID in the body.
+#[tokio::test]
+async fn native_matrix_outgoing_kicked_agent_is_reinvited_by_the_representative_then_rejoins() {
+    let (f, mut fake, c) = ready_with_representative(false, false, "reinvite bootstrap").await;
+    let claim = final_claim(&f).await;
+    let cancel = CancellationToken::new();
+    let (result, ()) = common::scripted(c.send_final(claim.clone(), &cancel), async {
+        preflight(&mut fake, false).await;
+        preflight(&mut fake, false).await;
+        // The kick surfaces at the write itself, as in the join-only test.
+        let refused = fake.next().await;
+        assert_eq!(refused.method, "PUT");
+        assert!(refused.target.contains("/send/m.room.message/"));
+        let transaction = refused.target.rsplit('/').next().unwrap().to_owned();
+        refused.json(403, json!({"errcode":"M_FORBIDDEN","error":"not in room"}));
+        // The invite (bridge-matrix.js:10912-10918, the appservice half):
+        // POST /rooms/{id}/invite as the REPRESENTATIVE, body naming the
+        // agent, exactly as provisioning's rooms custody invites at creation.
+        let invite = fake.next().await;
+        assert_eq!(invite.method, "POST");
+        assert!(
+            invite
+                .target
+                .contains("/_matrix/client/v3/rooms/!project:example.test/invite")
+        );
+        assert_eq!(
+            invite.headers["authorization"],
+            "Bearer synthetic-representative-token-not-real"
+        );
+        let body: Value = serde_json::from_slice(&invite.body).unwrap();
+        assert_eq!(body["user_id"], "@worker:example.test");
+        invite.json(200, json!({}));
+        // The rejoin (bridge-matrix.js:10936-10943): POST /join as the agent.
+        let join = fake.next().await;
+        assert_eq!(join.method, "POST");
+        assert!(join.target.contains("/_matrix/client/v3/join/!project:example.test"));
+        assert_eq!(join.headers["authorization"], format!("Bearer {}", common::TOKEN));
+        join.json(200, json!({"room_id": "!project:example.test"}));
+        // The resend: the same write, same transaction id.
+        let resent = fake.next().await;
+        assert_eq!(resent.method, "PUT");
+        assert!(resent
+            .target
+            .ends_with(&format!("/send/m.room.message/{transaction}")));
+        resent.json(200, json!({"event_id": "$reinvited"}));
     })
     .await;
     assert_eq!(result.unwrap().state, OutgoingState::Delivered);

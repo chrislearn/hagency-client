@@ -439,6 +439,17 @@ impl Http {
             &config.roots,
         )
     }
+    /// The representative/bot credential variant of `new`, for the send
+    /// path's kick recovery (bridge-matrix.js:10912-10918). Same endpoint,
+    /// limits and roots; only the bearer differs.
+    pub(crate) fn new_representative(config: &HostConfig) -> Result<Self, Error> {
+        Self::for_host(
+            &config.endpoint,
+            config.representative.as_ref(),
+            &config.limits,
+            &config.roots,
+        )
+    }
     /// Crate-private construction for the fixed account provisioner. There is
     /// deliberately no public mutable credential/endpoint selector.
     pub(crate) fn for_host(
