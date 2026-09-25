@@ -5,6 +5,7 @@ pub mod bot_commands;
 pub mod bootstrap;
 pub mod console;
 pub(crate) mod file_service;
+pub(crate) mod fleet_views;
 pub mod inspect;
 pub mod mcp;
 pub(crate) mod receive_service;
@@ -158,6 +159,7 @@ impl App {
                     .hoop(authorize)
                     .push(Router::with_path("capabilities").get(capabilities))
                     .push(resources::router())
+                    .push(fleet_views::router())
                     .push(usage::router())
                     .push(alerts::router())
                     .push(console::operator_router())
