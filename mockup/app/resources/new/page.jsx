@@ -81,7 +81,7 @@ export default function WizardPage() {
     </section>}
     {['ready', 'stale'].includes(data.phase) && (data.editor
       ? <div data-native-configuration-id={data.editor.resource.id} aria-busy={data.refreshing === true}><WizardForm key={`${data.editing}:${data.editor.resource.id}`} native={data} /></div>
-      : <section className="panel"><p>{t('nc.noSource')}</p></section>)}
+      : <section className="panel"><p>{t('nc.noSource')}</p><p><a className="btn primary" href="/console/accounts/">{t('nc.noSourceAccounts')}</a></p></section>)}
   </>;
 }
 const validNativeTokens = (value) => /^[0-9]+$/.test(String(value)) && Number.isSafeInteger(Number(value)) && Number(value) >= 0;

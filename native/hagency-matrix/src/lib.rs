@@ -15,6 +15,7 @@ mod media_download;
 mod media_upload;
 mod outgoing;
 mod receive;
+mod retire;
 mod upload;
 pub use upload::{FilePublicationAdmissionFailure, FilePublicationOperation};
 pub use upload::{StagedUpload, UploadAdmissionFailure, UploadOperation};
@@ -33,6 +34,7 @@ pub use media_upload::{
 pub use outgoing::{OutgoingState, OutgoingSummary};
 pub use provisioning::{ProvisionedAgent, TokenProvisioningHost};
 pub use receive::{ReceiveError, ReceivedAttachment, ReceivedScope};
+pub use retire::{AgentRetirement, RetireClient, RetireVerdict};
 pub use token_provision::{
     ApplicationServiceCredential, ProvisionedTokenAccount, TokenAccountProvision,
 };
@@ -109,6 +111,13 @@ impl From<hagency_store::Error> for Error {
 extern crate self as hagency_matrix;
 
 mod approval_batch;
+
+mod presence;
+pub use presence::AgentWork;
+pub use presence::{
+    AGENT_ACK_REACTION, AGENT_TYPING_MAX_MS, AGENT_TYPING_REFRESH_MS, AGENT_TYPING_TIMEOUT_MS,
+};
+pub use presence::{ack_request, typing_request};
 
 mod approval_intake;
 pub use approval_intake::{
