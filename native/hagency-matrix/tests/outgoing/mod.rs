@@ -1,7 +1,7 @@
 use super::*;
 use crate::collector::observation::{Phase as ObservationPhase, Trace, observed};
 use crate::{HostConfig, HostIdentity, HostIntakePlan, HostRoom, collector::fixtures as common};
-use hagency_core::{ingress::VerifiedTaskRequest, task_intents::TaskDefinition, tasks::*};
+use hagency_core::{commands::CommandNoticeRequest, ingress::VerifiedTaskRequest, task_intents::TaskDefinition, tasks::*};
 use serde_json::{Value, json};
 use std::{
     sync::atomic::Ordering,
@@ -1487,6 +1487,57 @@ async fn native_matrix_outgoing_first_unsafe_snapshot_surfaces_the_safety_reason
             .unwrap()
             .is_none()
     );
+    c.close().await.unwrap();
+    f.store.shutdown().await.unwrap();
+    fake.close().await;
+}
+
+/// Task #61 row 1. A `!help` answer must actually reach the room. Review #54
+/// found the builder (`outgoing.rs:292`) drafts `m.text` — exactly TS
+/// (`lib/bot-commands.js:397-404`) — while the validator demanded `m.notice`,
+/// so `sdk/outgoing.rs:49` refused EVERY command answer and nothing was ever
+/// sent live. This drives the real send path end to end (submit -> claim ->
+/// send_command_notice -> sdk start/validate -> the wire), not a wire shape.
+#[tokio::test]
+async fn native_matrix_outgoing_command_answer_is_delivered_live() {
+    let (f, mut fake, c) = ready(false, false).await;
+    let cancel = CancellationToken::new();
+    f.store
+        .submit_command_notice(CommandNoticeRequest {
+            session_id: "root".into(),
+            body: "=== Agent Bridge Bot Commands ===".into(),
+            html: Some("<h3>Agent Bridge Bot Commands</h3>".into()),
+            source_event_id: "$command".into(),
+        })
+        .await
+        .unwrap();
+    let claimed = f
+        .store
+        .claim_command_notice_for_session("root".into(), 60_000)
+        .await
+        .unwrap()
+        .unwrap();
+    let (result, body) = common::scripted(c.send_command_notice(claimed.clone(), &cancel), async {
+        let req = plain_wire(&mut fake).await;
+        let body: Value = serde_json::from_slice(&req.body).unwrap();
+        req.json(200, json!({"event_id":"$answered"}));
+        body
+    })
+    .await;
+    // The whole point: it is DELIVERED, not refused by the validator.
+    assert_eq!(result.unwrap().state, OutgoingState::Delivered);
+    // TS lib/bot-commands.js:398 — the answer is TEXT, and carries the
+    // handler's own html verbatim (format + formatted_body, :399-402).
+    assert_eq!(body["msgtype"], "m.text");
+    assert_eq!(body["body"], "=== Agent Bridge Bot Commands ===");
+    assert_eq!(body["format"], "org.matrix.custom.html");
+    assert!(
+        body["formatted_body"]
+            .as_str()
+            .unwrap()
+            .contains("Agent Bridge Bot Commands")
+    );
+    fake.quiesced(fake.requests(), &common::limits()).await;
     c.close().await.unwrap();
     f.store.shutdown().await.unwrap();
     fake.close().await;

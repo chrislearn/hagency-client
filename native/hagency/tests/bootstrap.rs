@@ -130,7 +130,7 @@ async fn native_configured_fleet_profile() {
             assert!(f.state_dir.join("factory-task-contexts").is_dir());
         } else {
             assert!(
-                matches!(result, Err(hagency::bootstrap::Failure::Config)),
+                matches!(result, Err(hagency::bootstrap::Failure::Config { .. })),
                 "{kind}"
             );
         }

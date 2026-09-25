@@ -17,18 +17,26 @@
 # except where noted; the loopback listen is hard-coded in the units.
 set -eu
 
-USAGE="usage: $0 --install-dir DIR --state-dir DIR [--overwrite]
+USAGE="usage: $0 --install-dir DIR --state-dir DIR --console-dir DIR [--config-dir DIR] [--overwrite]
   Linux : writes <systemd-dir>/hagency-native.service (default /etc/systemd/system), daemon-reload, enable --now
-  macOS : writes ~/Library/LaunchAgents/io.hagency.native.plist, bootstrap"
+  macOS : writes ~/Library/LaunchAgents/io.hagency.native.plist, bootstrap
+  --console-dir is the validated native console build (serve --console-assets); required.
+  --config-dir optionally supplies agent-driver.json and private matrix.*/palpo.* files
+  (installed into the state dir 0600 before start; the unit always carries the full
+  service flags, so no post-install hand-edit is ever needed)."
 
 INSTALL_DIR=""
 STATE_DIR=""
+CONSOLE_DIR=""
+CONFIG_DIR=""
 SYSTEMD_DIR="${HAGENCY_SYSTEMD_DIR:-/etc/systemd/system}"
 OVERWRITE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --install-dir) INSTALL_DIR="${2:?}"; shift 2 ;;
     --state-dir)   STATE_DIR="${2:?}";   shift 2 ;;
+    --console-dir) CONSOLE_DIR="${2:?}"; shift 2 ;;
+    --config-dir)  CONFIG_DIR="${2:?}";  shift 2 ;;
     --systemd-dir) SYSTEMD_DIR="${2:?}"; shift 2 ;;
     --overwrite)   OVERWRITE=1; shift ;;
     *) echo "refused: unknown argument $1" >&2; echo "$USAGE" >&2; exit 2 ;;
@@ -36,6 +44,8 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$INSTALL_DIR" ] || { echo "refused: --install-dir is required (placeholders are not defaults)" >&2; exit 2; }
 [ -n "$STATE_DIR" ]   || { echo "refused: --state-dir is required (placeholders are not defaults)" >&2; exit 2; }
+[ -n "$CONSOLE_DIR" ] || { echo "refused: --console-dir is required; the installed unit serves the console (TS parity: install-full.sh ships its assets)" >&2; exit 2; }
+[ -d "$CONSOLE_DIR" ] || { echo "refused: console dir $CONSOLE_DIR is not a directory; build it with the native console build script first" >&2; exit 1; }
 
 BIN="$INSTALL_DIR/hagency"
 [ -x "$BIN" ] || { echo "refused: missing binary $BIN" >&2; exit 1; }
@@ -44,6 +54,20 @@ BIN="$INSTALL_DIR/hagency"
 
 # init first (fail-closes on a non-empty dir; mints operator.token).
 "$BIN" init --state-dir "$STATE_DIR" || { echo "refused: hagency init failed for $STATE_DIR" >&2; exit 1; }
+
+if [ -n "$CONFIG_DIR" ]; then
+  [ -d "$CONFIG_DIR" ] || { echo "refused: --config-dir $CONFIG_DIR is not a directory" >&2; exit 1; }
+  for file in "$CONFIG_DIR"/*; do
+    [ -f "$file" ] || continue
+    name="$(basename "$file")"
+    case "$name" in
+      agent-driver.json|development-driver.json|palpo-transport.json|matrix.*|palpo.*|approval.*)
+        install -m 0600 "$file" "$STATE_DIR/$name" || { echo "refused: could not install $name into $STATE_DIR" >&2; exit 1; }
+        ;;
+      *) echo "refused: unexpected config file $name (allowed: agent-driver.json, palpo-transport.json, matrix.*, palpo.*, approval.*)" >&2; exit 1 ;;
+    esac
+  done
+fi
 
 wait_ready() {
   i=0
@@ -64,7 +88,7 @@ case "$(uname -s)" in
     if [ -e "$UNIT" ] && [ "$OVERWRITE" -ne 1 ]; then
       echo "refused: $UNIT exists and --overwrite was not given" >&2; exit 1
     fi
-    sed -e "s|__INSTALL_DIR__|$INSTALL_DIR|g" -e "s|__STATE_DIR__|$STATE_DIR|g" -e "s|__USER__|$(id -un)|g" \
+    sed -e "s|__INSTALL_DIR__|$INSTALL_DIR|g" -e "s|__STATE_DIR__|$STATE_DIR|g" -e "s|__USER__|$(id -un)|g" -e "s|__CONSOLE_DIR__|$CONSOLE_DIR|g" \
       "$(dirname "$0")/../deploy/hagency-native.service" > "$UNIT"
     systemctl daemon-reload
     systemctl enable --now hagency-native.service
@@ -78,7 +102,7 @@ case "$(uname -s)" in
     if [ -e "$PLIST" ] && [ "$OVERWRITE" -ne 1 ]; then
       echo "refused: $PLIST exists and --overwrite was not given" >&2; exit 1
     fi
-    sed -e "s|__INSTALL_DIR__|$INSTALL_DIR|g" -e "s|__STATE_DIR__|$STATE_DIR|g" \
+    sed -e "s|__INSTALL_DIR__|$INSTALL_DIR|g" -e "s|__STATE_DIR__|$STATE_DIR|g" -e "s|__CONSOLE_DIR__|$CONSOLE_DIR|g" \
       "$(dirname "$0")/../deploy/io.hagency.native.plist" > "$PLIST"
     launchctl bootstrap "gui/$(id -u)" "$PLIST"
     wait_ready curl || { echo "refused: agent bootstrapped but /ready gate failed" >&2; exit 1; }
