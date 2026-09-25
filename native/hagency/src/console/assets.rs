@@ -169,7 +169,7 @@ impl Assets {
                 return Err(Error::Assets);
             }
         }
-        if !values.contains_key("/console/usage/") || !values.contains_key("/console/") {
+        if !values.contains_key("/console/usage/") {
             return Err(Error::Assets);
         }
         Ok(Self {
