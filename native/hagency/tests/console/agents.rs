@@ -1,6 +1,6 @@
 use super::*;
 use hagency_core::tasks::SessionBinding;
-use hagency_store::resource_publication_revision;
+use hagency_store::{ACCOUNT_PROFILE, resource_publication_revision};
 
 /// The agent roster observation (ADR-126, widened by board #22): the read
 /// is one row per AGENT — the TS roster's shape (`backend-v2.js:11696`) —
@@ -1626,5 +1626,60 @@ async fn native_console_agent_delete_not_found_and_invalid_name() {
         invalid.take_json::<Value>().await.unwrap()["code"],
         "invalid_console_request"
     );
+    f.close().await;
+}
+/// TS parity: ONE login is the whole console — an anonymous caller is refused
+/// before any store work; the logged-in session reaches the lifecycle routes
+/// AND the neighbouring resource/account mutations without a second link.
+#[tokio::test]
+async fn native_console_agent_lifecycle_is_one_login() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    // TS parity: ONE login is the whole console. An anonymous caller is
+    // refused before any store work; the logged-in session may act on the
+    // lifecycle routes and the resource/account routes alike.
+    let id = &f.engagement;
+    for path in [
+        format!("/console/api/agents/{id}/start"),
+        format!("/console/api/agents/{id}/stop"),
+        format!("/console/api/agents/{id}/preset"),
+    ] {
+        let response = TestClient::post(format!("{BASE}{path}"))
+            .add_header("host", "127.0.0.1:13300", true)
+            .add_header("origin", BASE, true)
+            .add_header("sec-fetch-site", "same-origin", true)
+            .send(&service)
+            .await;
+        assert_eq!(response.status_code, Some(StatusCode::UNAUTHORIZED), "anonymous {path}");
+    }
+    let cookie = session(&service).await;
+    // Start has no durable native transition. It must refuse every authorized
+    // call instead of reporting a successful no-op.
+    let mut response = post(&format!("/console/api/agents/{id}/start"), &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::NOT_IMPLEMENTED));
+    assert_eq!(
+        response.take_json::<Value>().await.unwrap()["code"],
+        "agent_start_unavailable"
+    );
+    // The SAME login reaches the neighbouring mutation classes — no scope
+    // word, the store's own validation answers (revision conflict).
+    let source = native_resource("private_lifecycle_scope_source");
+    f.domain.put_resource(source.clone()).await.unwrap();
+    let revision = resource_publication_revision(&source).unwrap();
+    let response = post(
+        &format!("/console/api/resources/{}/publication", source.id()),
+        &cookie,
+    )
+    .json(&json!({"expectedRevision":revision,"published":false}))
+    .send(&service)
+    .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK), "publication is not scope-refused");
+    let response = post("/console/api/accounts", &cookie)
+        .json(&json!({"profile":ACCOUNT_PROFILE}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK), "account prepare is not scope-refused");
     f.close().await;
 }

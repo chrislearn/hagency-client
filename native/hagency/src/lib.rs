@@ -7,6 +7,8 @@ pub mod console;
 pub(crate) mod file_service;
 pub mod inspect;
 pub mod mcp;
+mod operator;
+pub mod operator_cli;
 pub mod ops;
 pub(crate) mod receive_service;
 mod resources;
@@ -164,6 +166,7 @@ impl App {
                     .push(alerts::router())
                     .push(console::operator_router())
                     .push(runtime::router())
+                    .push(operator::router())
                     .push(Router::with_path("custody").post(receive)),
             )
     }

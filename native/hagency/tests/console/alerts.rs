@@ -216,31 +216,9 @@ async fn native_console_alert_transition() {
     .await;
     assert_eq!(anonymous.status_code, Some(StatusCode::UNAUTHORIZED));
     let cookie = session(&service).await;
-    tokio::time::sleep(std::time::Duration::from_millis(1010)).await;
-    let mut issued = TestClient::post(format!(
-        "{BASE}/api/native/v1/console/resource-configuration-access"
-    ))
-    .add_header("host", "127.0.0.1:13300", true)
-    .bearer_auth(TOKEN)
-    .send(&service)
-    .await;
-    assert_eq!(issued.status_code, Some(StatusCode::OK));
-    let ticket = issued.take_json::<Value>().await.unwrap()["ticket"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let exchanged = exchange(&service, &ticket).await;
-    assert_eq!(exchanged.status_code, Some(StatusCode::OK));
-    let manager = exchanged
-        .headers()
-        .get("set-cookie")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .split(";")
-        .next()
-        .unwrap()
-        .to_owned();
+    // TS parity: the SAME login that reads the alerts also transitions them
+    // — no second link, no issuance wait.
+    let manager = cookie.clone();
     // The seeded overrun's key comes from the read the page uses.
     let mut response = get("/console/api/alerts", &cookie).send(&service).await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
@@ -299,7 +277,7 @@ async fn native_console_alert_transition() {
     assert_eq!(body["code"], "bad_transition", "named the refusal");
     // An unknown key is a named 404, never a silent shape. The scope check
     // runs before any store read, so the named 404 is what a SCOPED caller
-    // sees; an unscoped one is refused first (the `requires_scope` test).
+    // sees; an unscoped one is refused first (the `is_one_login` test).
     let response = TestClient::post(format!(
         "{BASE}/console/api/alerts/agent_ceiling_overrun:missing/transition"
     ))
@@ -313,81 +291,35 @@ async fn native_console_alert_transition() {
     assert_eq!(response.status_code, Some(StatusCode::NOT_FOUND));
 }
 
-/// Brief 28, F1: the console transition is an operator triage act behind the
-/// CONFIGURE scope. A read-only session is refused with the console's
-/// missing-scope word BEFORE any store read (the row and its provenance are
-/// unchanged), and a configuration-scoped session succeeds.
+/// TS parity: there is no read-only login — an anonymous caller is refused
+/// before any store read, and one logged-in session reads, sees the triage
+/// permission, and transitions the alert.
 #[tokio::test]
-async fn native_console_alert_transition_requires_scope() {
+async fn native_console_alert_transition_is_one_login() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
-    let readonly = session(&service).await;
-    let mut response = get("/console/api/alerts", &readonly).send(&service).await;
+    let response = TestClient::post(format!(
+        "{BASE}/console/api/alerts/agent_ceiling_overrun:x/transition"
+    ))
+    .add_header("host", "127.0.0.1:13300", true)
+    .add_header("origin", BASE, true)
+    .add_header("sec-fetch-site", "same-origin", true)
+    .json(&serde_json::json!({"to": "acknowledged"}))
+    .send(&service)
+    .await;
+    assert_eq!(response.status_code, Some(StatusCode::UNAUTHORIZED));
+    let cookie = session(&service).await;
+    let mut response = get("/console/api/alerts", &cookie).send(&service).await;
     let value = response.take_json::<Value>().await.unwrap();
     let key = value["alerts"][0]["dedupe_key"]
         .as_str()
         .unwrap()
         .to_owned();
-    assert_eq!(value["permissions"]["configureResource"], false);
-    let refused = TestClient::post(format!("{BASE}/console/api/alerts/{key}/transition"))
-        .add_header("host", "127.0.0.1:13300", true)
-        .add_header("sec-fetch-site", "same-origin", true)
-        .add_header("cookie", &readonly, true)
-        .add_header("origin", BASE, true)
-        .json(&serde_json::json!({"to": "acknowledged"}))
-        .send(&service)
-        .await;
-    assert_eq!(refused.status_code, Some(StatusCode::FORBIDDEN));
-    let mut refused = refused;
-    let body = refused.take_json::<Value>().await.unwrap();
-    assert_eq!(
-        body["code"], "resource_configuration_scope_required",
-        "the console's existing missing-scope word"
-    );
-    // The refusal came before any store read: the row is unchanged and no
-    // transition provenance was written.
-    let db = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3")).unwrap();
-    let (status, note, by, at): (String, Option<String>, Option<String>, Option<i64>) = db
-        .query_row(
-            "SELECT status,note,transitioned_by,transitioned_at_ms FROM ceiling_alerts WHERE dedupe_key=?1",
-            [&key],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-        )
-        .unwrap();
-    assert_eq!(status, "open");
-    assert_eq!(note, None);
-    assert_eq!(by, None, "no transition provenance was written");
-    assert_eq!(at, None);
-    drop(db);
-    tokio::time::sleep(std::time::Duration::from_millis(1010)).await;
-    let mut response = TestClient::post(format!(
-        "{BASE}/api/native/v1/console/resource-configuration-access"
-    ))
-    .add_header("host", "127.0.0.1:13300", true)
-    .bearer_auth(TOKEN)
-    .send(&service)
-    .await;
-    assert_eq!(response.status_code, Some(StatusCode::OK));
-    let ticket = response.take_json::<Value>().await.unwrap()["ticket"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let issued = exchange(&service, &ticket).await;
-    assert_eq!(issued.status_code, Some(StatusCode::OK));
-    let manager = issued
-        .headers()
-        .get("set-cookie")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .split(";")
-        .next()
-        .unwrap()
-        .to_owned();
+    assert_eq!(value["permissions"]["configureResource"], true);
     let mut response = TestClient::post(format!("{BASE}/console/api/alerts/{key}/transition"))
         .add_header("host", "127.0.0.1:13300", true)
         .add_header("sec-fetch-site", "same-origin", true)
-        .add_header("cookie", &manager, true)
+        .add_header("cookie", &cookie, true)
         .add_header("origin", BASE, true)
         .json(&serde_json::json!({"to": "acknowledged"}))
         .send(&service)
@@ -395,7 +327,7 @@ async fn native_console_alert_transition_requires_scope() {
     assert_eq!(
         response.status_code,
         Some(StatusCode::OK),
-        "the scoped session succeeds"
+        "the logged-in session triages"
     );
     let value = response.take_json::<Value>().await.unwrap();
     assert_eq!(value["alerts"][0]["status"], "acknowledged");
@@ -411,30 +343,7 @@ async fn native_console_alert_transition_requires_scope() {
 async fn native_console_alert_transition_actor_is_the_session() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
-    let mut response = TestClient::post(format!(
-        "{BASE}/api/native/v1/console/resource-configuration-access"
-    ))
-    .add_header("host", "127.0.0.1:13300", true)
-    .bearer_auth(TOKEN)
-    .send(&service)
-    .await;
-    assert_eq!(response.status_code, Some(StatusCode::OK));
-    let ticket = response.take_json::<Value>().await.unwrap()["ticket"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let issued = exchange(&service, &ticket).await;
-    assert_eq!(issued.status_code, Some(StatusCode::OK));
-    let manager = issued
-        .headers()
-        .get("set-cookie")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .split(";")
-        .next()
-        .unwrap()
-        .to_owned();
+    let manager = session(&service).await;
     let mut response = get("/console/api/alerts", &manager).send(&service).await;
     let value = response.take_json::<Value>().await.unwrap();
     let key = value["alerts"][0]["dedupe_key"]

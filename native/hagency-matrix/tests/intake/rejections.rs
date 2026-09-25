@@ -13,13 +13,22 @@ async fn stop_sdk(c: Collector) {
     drop(c);
 }
 async fn ready(private: bool) -> (common::Fixture, common::Fake, Collector) {
+    ready_limits(private, common::load_limits()).await
+}
+/// #81: these are service-level `scripted()` fixtures sharing one runtime
+/// with the fake peer; the tight tier's `sdk=10s` was crossed by scheduler
+/// starvation, not by the product (the #59 under-load trace shows every
+/// product step recorded done at 10.35 s). The load tier keeps every bound
+/// strictly below `Limits::default()`, so a real refusal still fails.
+/// `drive_with`-style deliberate-deadline tests keep using `ready`'s old
+/// tier via their own local fixtures — this local variant only serves
+/// `archived_terminal_source`.
+async fn ready_limits(private: bool, limits: crate::Limits) -> (common::Fixture, common::Fake, Collector) {
     let f = common::Fixture::new();
     let mut fake = common::Fake::start(true).await;
-    let c = Collector::new(
-        config(&f, &fake.endpoint, f.identity.clone(), 1, private),
-        f.store.clone(),
-    )
-    .unwrap();
+    let mut config = config(&f, &fake.endpoint, f.identity.clone(), 1, private);
+    config.limits = limits;
+    let c = Collector::new(config, f.store.clone()).unwrap();
     prime(&c, &f, &mut fake, private).await;
     (f, fake, c)
 }

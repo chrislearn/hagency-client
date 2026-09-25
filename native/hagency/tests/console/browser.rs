@@ -928,9 +928,6 @@ async fn native_console_agent_lifecycle_browser() {
         while let Some(line) = lines.next_line().await.unwrap() {
             match line.as_str() {
                 "LIFECYCLE_TICKET" => {
-                    // Ticket issuance is limited to one per second; cached
-                    // browser assets can finish the read-only walk sooner.
-                    tokio::time::sleep(Duration::from_millis(1010)).await;
                     let lifecycle_url = hagency::console::client::lifecycle_access(
                         &f.root.path().join("state"),
                         address,

@@ -50,15 +50,20 @@ async fn native_engagement_verdict_approve_reserves_and_enqueues_provision() {
     assert_eq!(candidate["resource"], "private_usage_pool");
     assert_eq!(candidate["provision"], true);
 
-    // A read-only session cannot decide: the mutation needs AgentLifecycle.
-    let refused = post(
-        &format!("/console/api/engagements/{pending}/approve"),
-        &read_only,
-    )
+    // TS parity (#31): there is no read-only login — one login is the whole
+    // console. An anonymous caller is refused before any store job; every
+    // logged-in session may decide. The anonymous caller needs no ticket at
+    // all (the console's authenticate hoop rejects it without a cookie).
+    let anonymous = TestClient::post(format!(
+        "{BASE}/console/api/engagements/{pending}/approve"
+    ))
+    .add_header("host", "127.0.0.1:13300", true)
+    .add_header("origin", BASE, true)
+    .add_header("sec-fetch-site", "same-origin", true)
     .json(&json!({"commandId": "cmd_verdict_1"}))
     .send(&service)
     .await;
-    assert_eq!(refused.status_code, Some(StatusCode::FORBIDDEN));
+    assert_eq!(anonymous.status_code, Some(StatusCode::UNAUTHORIZED));
 
     // Ticket issuance is rate-limited to one per second.
     tokio::time::sleep(std::time::Duration::from_millis(1100)).await;

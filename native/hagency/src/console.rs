@@ -101,12 +101,7 @@ pub(crate) fn router() -> Router {
         .push(Router::with_path("{**asset}").get(asset))
 }
 pub(crate) fn operator_router() -> Router {
-    Router::new()
-        .push(Router::with_path("console/access").post(issue))
-        .push(Router::with_path("console/resource-publication-access").post(issue_publication))
-        .push(Router::with_path("console/resource-configuration-access").post(issue_configuration))
-        .push(Router::with_path("console/account-access").post(issue_account))
-        .push(Router::with_path("console/agent-lifecycle-access").post(issue_lifecycle))
+    Router::new().push(Router::with_path("console/access").post(issue))
 }
 fn console(depot: &Depot) -> Result<&Console, Error> {
     depot
@@ -258,23 +253,11 @@ async fn body(req: &mut Request, maximum: usize) -> Result<Vec<u8>, Error> {
         .map_err(|_| Error::Invalid)
 }
 #[handler]
-async fn issue(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    issue_scope(req, depot, res, false, false, false).await;
-}
-#[handler]
-async fn issue_publication(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    issue_scope(req, depot, res, true, false, false).await;
-}
-#[handler]
-async fn issue_configuration(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    issue_scope(req, depot, res, false, true, false).await;
-}
-#[handler]
-async fn issue_lifecycle(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    issue_scope(req, depot, res, false, false, true).await;
-}
-#[handler]
-async fn issue_account(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+async fn issue(req: &mut Request, depot: &Depot, res: &mut Response) {
+    // TS parity: one issue route, no scope selection — the operator asks
+    // for access and gets the whole console (`createApiAuthMiddleware`
+    // admitted one credential to every `/api` route). No rate limit: the
+    // TS middleware never throttled re-authentication.
     let result = async {
         let c = console(depot)?;
         let _permit =
@@ -285,42 +268,7 @@ async fn issue_account(req: &mut Request, depot: &mut Depot, res: &mut Response)
         if req.uri().query().is_some() || !body(req, 1).await?.is_empty() {
             return Err(Error::Invalid);
         }
-        let value = c.0.authority.issue_account()?;
-        Ok(serde_json::json!({"ticket":value,"expires_in":120}))
-    }
-    .await;
-    match result {
-        Ok(value) => res.render(Json(value)),
-        Err(error) => failed(res, error),
-    }
-}
-async fn issue_scope(
-    req: &mut Request,
-    depot: &Depot,
-    res: &mut Response,
-    publication: bool,
-    configuration: bool,
-    lifecycle: bool,
-) {
-    let result = async {
-        let c = console(depot)?;
-        let _permit =
-            c.0.requests
-                .clone()
-                .try_acquire_owned()
-                .map_err(|_| Error::Busy)?;
-        if req.uri().query().is_some() || !body(req, 1).await?.is_empty() {
-            return Err(Error::Invalid);
-        }
-        let value = if lifecycle {
-            c.0.authority.issue_lifecycle()?
-        } else if configuration {
-            c.0.authority.issue_configuration()?
-        } else if publication {
-            c.0.authority.issue_publication()?
-        } else {
-            c.0.authority.issue()?
-        };
+        let value = c.0.authority.issue()?;
         Ok(serde_json::json!({"ticket":value,"expires_in":120}))
     }
     .await;
@@ -357,13 +305,16 @@ async fn exchange(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     .await;
     match result {
         Ok(value) => {
+            // No Max-Age: the login cookie lives for the browser session, so
+            // a reload never loses it (TS parity — the retained middleware
+            // never expired a credential on a timer; logout is the bound).
             res.headers_mut().insert(
                 "set-cookie",
-                format!("{COOKIE}={value}; HttpOnly; SameSite=Strict; Path=/console; Max-Age=900")
+                format!("{COOKIE}={value}; HttpOnly; SameSite=Strict; Path=/console")
                     .parse()
                     .expect("generated cookie"),
             );
-            res.render(Json(serde_json::json!({"ok":true,"expires_in":900})));
+            res.render(Json(serde_json::json!({"ok":true})));
         }
         Err(error) => failed(res, error),
     }
