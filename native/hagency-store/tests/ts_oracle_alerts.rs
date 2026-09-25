@@ -133,6 +133,8 @@ fn ts_oracle_alerts_transition_map_legal_pairs_and_terminal() {
             to: "acknowledged",
             actor: "operator".into(),
             note: None,
+            assignee: None,
+            suppress_until_ms: None,
             now: 2_000_000,
         })
         .unwrap();
@@ -145,6 +147,8 @@ fn ts_oracle_alerts_transition_map_legal_pairs_and_terminal() {
             to: "resolved",
             actor: "operator".into(),
             note: None,
+            assignee: None,
+            suppress_until_ms: None,
             now: 2_100_000,
         })
         .unwrap();
@@ -158,6 +162,8 @@ fn ts_oracle_alerts_transition_map_legal_pairs_and_terminal() {
             to: "open",
             actor: "operator".into(),
             note: None,
+            assignee: None,
+            suppress_until_ms: None,
             now: 2_200_000,
         })
         .is_err());

@@ -125,16 +125,26 @@ async fn save(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         return;
     }
     match result {
-        Ok(()) => res.render(Json(serde_json::json!({
-            "ok": true,
-            "side": {
-                "id": registration.fleet_id,
-                "generation": registration.generation,
-                "server_name": registration.server_name,
-                "reception_room_id": registration.reception_room_id,
-                "representative": registration.representative_mxid,
-            },
-        }))),
+        Ok(()) => {
+            // The fleet registration is ALSO the side: one side per homeserver,
+            // keyed by the server name (ADR-016 decision 1). Ensure the side
+            // record exists so the lifecycle routes (credential, verify,
+            // projects) have a row to act on. Idempotent.
+            if let Err(error) = store.ensure_side(registration.server_name.clone()).await {
+                store_error(res, error);
+                return;
+            }
+            res.render(Json(serde_json::json!({
+                "ok": true,
+                "side": {
+                    "id": registration.fleet_id,
+                    "generation": registration.generation,
+                    "server_name": registration.server_name,
+                    "reception_room_id": registration.reception_room_id,
+                    "representative": registration.representative_mxid,
+                },
+            })));
+        }
         Err(error) => store_error(res, error),
     }
 }

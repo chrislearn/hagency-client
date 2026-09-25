@@ -19,8 +19,12 @@ mod engagements;
 mod engagements_retire;
 #[path = "console/engagements_verdict.rs"]
 mod engagements_verdict;
+#[path = "console/exec_policy.rs"]
+mod exec_policy;
 #[path = "console/fixture.rs"]
 mod fixture;
+#[path = "console/invites.rs"]
+mod invites;
 #[path = "console/matrix_diag.rs"]
 mod matrix_diag;
 #[path = "console/origin.rs"]
@@ -37,9 +41,15 @@ mod registration;
 mod resources;
 #[path = "console/side_registration.rs"]
 mod side_registration;
+#[path = "console/side_budget.rs"]
+mod side_budget;
+#[path = "console/side_lifecycle.rs"]
+mod side_lifecycle;
 #[path = "console/status_strip.rs"]
 #[cfg(feature = "native-console-browser")]
 mod status_strip;
+#[path = "console/tasks.rs"]
+mod tasks;
 #[path = "console/ts_oracle_approvals.rs"]
 mod ts_oracle_approvals;
 use fixture::*;
@@ -101,6 +111,14 @@ fn post(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
         .add_header("sec-fetch-site", "same-origin", true)
         .add_header("cookie", cookie, true)
 }
+fn put(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
+    TestClient::put(format!("{BASE}{path}"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .add_header("origin", BASE, true)
+        .add_header("sec-fetch-site", "same-origin", true)
+        .add_header("cookie", cookie, true)
+}
+
 /// TS parity: one login is the whole console — the scoped issue routes are
 /// gone, so every former "scoped session" is the same `session()`.
 async fn lifecycle_session(service: &Service) -> String {

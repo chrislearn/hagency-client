@@ -49,7 +49,7 @@ function serverOf(roomId) {
 
 export default function ProjectsPage() {
   const t = useT();
-  const { invites, whitelist, contributions, projectSides, provenance, loading, refresh } = useData();
+  const { nativeConsole, invites, whitelist, contributions, projectSides, provenance, loading, refresh } = useData();
   const [toast, say] = useToast();
 
   /*
@@ -134,6 +134,13 @@ export default function ProjectsPage() {
         */}
       <div className="btn-row">
         <Link className="btn primary" href="/projects/new">{t('pr.addSide')}</Link>
+        {/*
+          * Task #12: the native console's invitation decisions live on their
+          * own route; this page's pending-invites panel is the retained arm
+          * the native build has no source for. The link is the native way in
+          * — the same reachability rule /projects/new learned the hard way.
+          */}
+        {nativeConsole && <Link className="btn" href="/invites">{t('ni.title')}</Link>}
       </div>
 
       <Provenance slices={['projectSides', 'invites', 'contributions', 'whitelist']} />

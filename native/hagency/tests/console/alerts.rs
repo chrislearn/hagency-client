@@ -227,7 +227,7 @@ async fn native_console_alert_transition() {
     assert_eq!(alert["status"], "open");
     assert_eq!(
         alert["next"],
-        serde_json::json!(["acknowledged", "resolved", "suppressed"]),
+        serde_json::json!(["acknowledged", "assigned", "resolved", "suppressed"]),
         "the served map is the store's, in its order"
     );
     let key = alert["dedupe_key"].as_str().unwrap().to_owned();
@@ -246,7 +246,7 @@ async fn native_console_alert_transition() {
     assert_eq!(value["alerts"][0]["note"], "seen");
     assert_eq!(
         value["alerts"][0]["next"],
-        serde_json::json!(["resolved", "suppressed"]),
+        serde_json::json!(["assigned", "resolved"]),
         "the reply carries the next legal set from the same map"
     );
     // The terminal state serves no transitions: resolve, then empty next.

@@ -268,6 +268,14 @@ pub enum RunnerCommand {
         call_id: String,
         operation: TaskMutation,
     },
+    /// Schedule a self-reminder for this runner's own session (board #53).
+    /// `msg` is the agent's own free text; `delay_ms` is the positive delay.
+    /// Listing and deletion are operator-side (console routes), exactly as the
+    /// TS `GET`/`DELETE /api/reminders` are unauthenticated/`requireMutation`.
+    ScheduleReminder {
+        msg: String,
+        delay_ms: u64,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskComment {
