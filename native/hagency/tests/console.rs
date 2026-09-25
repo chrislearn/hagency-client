@@ -8,6 +8,8 @@ mod stream;
 mod alerts;
 #[path = "console/approvals.rs"]
 mod approvals;
+#[path = "console/approval_bindings.rs"]
+mod approval_bindings;
 #[path = "console/browser.rs"]
 #[cfg(feature = "native-console-browser")]
 mod browser;
@@ -31,6 +33,8 @@ mod matrix_diag;
 mod origin;
 #[path = "console/offer_book.rs"]
 mod offer_book;
+#[path = "console/graphs.rs"]
+mod graphs;
 #[path = "console/project_sides.rs"]
 mod project_sides;
 #[path = "console/real_agent.rs"]
@@ -111,6 +115,20 @@ fn post(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
         .add_header("sec-fetch-site", "same-origin", true)
         .add_header("cookie", cookie, true)
 }
+fn delete(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
+    TestClient::delete(format!("{BASE}{path}"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .add_header("origin", BASE, true)
+        .add_header("sec-fetch-site", "same-origin", true)
+        .add_header("cookie", cookie, true)
+}
+fn patch(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
+    TestClient::patch(format!("{BASE}{path}"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .add_header("origin", BASE, true)
+        .add_header("sec-fetch-site", "same-origin", true)
+        .add_header("cookie", cookie, true)
+}
 fn put(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
     TestClient::put(format!("{BASE}{path}"))
         .add_header("host", "127.0.0.1:13300", true)
@@ -118,7 +136,6 @@ fn put(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
         .add_header("sec-fetch-site", "same-origin", true)
         .add_header("cookie", cookie, true)
 }
-
 /// TS parity: one login is the whole console — the scoped issue routes are
 /// gone, so every former "scoped session" is the same `session()`.
 async fn lifecycle_session(service: &Service) -> String {
@@ -253,6 +270,22 @@ async fn native_console_assets() {
             .await
             .unwrap()
             .contains("retained asset fixture")
+    );
+    // Board #47: the task-graphs document must be SERVED, which needs the page
+    // admitted by `assets.rs` (an unlisted `task-graphs/index.html` makes
+    // `Console::load` fail outright, so a bundle carrying the page would be
+    // refused) at the URL the rail links to.
+    let mut graphs = TestClient::get(format!("{BASE}/console/task-graphs/"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .send(&f.service())
+        .await;
+    assert_eq!(graphs.status_code, Some(StatusCode::OK));
+    assert!(
+        graphs
+            .take_string()
+            .await
+            .unwrap()
+            .contains("task-graphs document fixture")
     );
     for path in [
         "/console/operator.token",

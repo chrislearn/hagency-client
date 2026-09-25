@@ -64,7 +64,10 @@ async fn native_matrix_shared_request_pacing() {
                         "Bearer synthetic-independent-pacing-token"
                     );
                     posts += 1;
-                    request.json(429, json!({"retry_after_ms":0}));
+                    // Task #9: a permanent write refusal ends the write
+                    // immediately (401/403 are not retried); a 429 would now
+                    // retry like a read.
+                    request.json(403, json!({"errcode": "M_FORBIDDEN"}));
                 }
                 "PUT" => {
                     puts += 1;
@@ -82,7 +85,7 @@ async fn native_matrix_shared_request_pacing() {
         script
     );
     assert_eq!(read.unwrap().success().unwrap(), json!({"ok":true}));
-    assert_eq!(post.unwrap().success(), Err(Error::Remote(429)));
+    assert_eq!(post.unwrap().success(), Err(Error::Unauthorized));
     assert_eq!(put.unwrap().success().unwrap(), json!({"ok":true}));
     assert_eq!(fake.requests(), 4);
     fake.no_request().await;

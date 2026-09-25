@@ -270,11 +270,11 @@ impl Fixture {
         if paced_startup {
             config["matrix_request_interval_ms"] = json!(1000);
         } else {
-            // A busy host can keep the intake owner-lock wait past the 20 s
-            // SDK default while another agent is mid cross-signing/Olm; a
-            // timeout then invalidates the transport and parks intake
-            // (error=Generation) for good. `paced_startup` is the one
-            // fixture whose SDK budget IS the subject — leave it alone.
+            // A busy host can keep the intake owner-lock wait (collector.rs:422)
+            // past the 20 s SDK default while another agent is mid
+            // cross-signing/Olm; a timeout then invalidates the transport and
+            // parks intake (error=Generation) for good. `paced_startup` is the
+            // one fixture whose SDK budget IS the subject — leave it alone.
             config["matrix_sdk_timeout_ms"] = json!(60_000);
         }
         if let Some(ms) = sdk_ms {
@@ -895,9 +895,9 @@ pub struct Agent {
     uploads: Vec<Vec<u8>>,
     incoming: Vec<Vec<u8>>,
     downloads: Vec<usize>,
-    /// The display name the agent has set on itself (identity
-    /// reconciliation): `None` until the agent PUTs one, so the first GET
-    /// returns an empty (machine-generated-equivalent) profile.
+    /// The display name the agent has set on itself (identity reconciliation,
+    /// board #11): `None` until the agent PUTs one, so the first GET returns
+    /// an empty (machine-generated-equivalent) profile.
     displayname: Option<String>,
     created: bool,
     invited: bool,
@@ -1413,10 +1413,10 @@ impl Peer {
                     json!({"user_id":agent.user,"device_id":agent.device,"is_guest":false}),
                 )
             } else if path.contains("/profile/") && path.ends_with("/displayname") {
-                // Identity reconciliation: the agent reads its profile before
-                // creating its DM room, and PUTs the agent-definition name
-                // when the current one is machine-generated (a fresh account
-                // reads empty). Serve both — and PIN what the PUT carries.
+                // Identity reconciliation (board #11, token_provision/rooms.rs):
+                // the agent reads its profile before creating its DM room, and
+                // PUTs the agent-definition name when the current one is
+                // machine-generated (a fresh account reads empty). Serve both.
                 if request.method == "PUT" {
                     assert_eq!(body["displayname"], json!(format!("FleetAgent{index}")));
                     agent.displayname = Some(body["displayname"].as_str().unwrap().into());
@@ -1555,7 +1555,12 @@ impl Peer {
                     .crypto
                     .protocol(&request.method, &request.target, &body)
                     .await
-                    .expect("original enrolled agent SDK protocol")
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "original enrolled agent SDK protocol: {} {}",
+                            request.method, request.target
+                        )
+                    })
             }
         };
         let join = if path.ends_with("/state") {

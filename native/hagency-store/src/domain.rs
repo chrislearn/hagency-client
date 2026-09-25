@@ -17,6 +17,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{fs::File, path::Path};
 pub(crate) mod accounts;
+mod activity;
+pub use activity::{ActivityEvent, ActivityUpdate};
 mod agent_fences;
 mod agent_lifecycle;
 mod console_feed;
@@ -75,7 +77,9 @@ mod stopped_inspection;
 pub use outcome_resolution::{OutcomeAction, OutcomeResolution};
 mod provision_runtime;
 mod reminders;
+mod room_trust;
 pub use reminders::{Reminder, ReminderReceipt, ReminderSweep};
+pub use room_trust::RoomTrustRecord;
 mod side_registration;
 pub use side_registration::{
     IssueSideRegistration, IssueSideRegistrationRequest, SideCredential,
@@ -123,7 +127,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 51;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 53;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -873,6 +877,19 @@ impl DomainRepository {
                         51,
                         include_str!("migrations/066-reminders.sql"),
                     ),
+                    // Integration of lane/activity task/1: its board-assigned
+                    // number was 040; it lands as the next sequential tuple 52
+                    // (file name kept).
+                    (
+                        52,
+                        include_str!("migrations/040-dispatch-activity.sql"),
+                    ),
+                    // Task #80's migration number is 073 (the board's
+                    // assignment); the walker requires the next sequential
+                    // list version, so the file keeps 073 and the tuple
+                    // carries 53.
+                    (53, include_str!("migrations/073-room-trust.sql")),
+
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
@@ -881,6 +898,8 @@ impl DomainRepository {
                     "SELECT server_name,label,api_base_url,credential,pending_credential,pending_issued_at,representative,access_state,access_detail,access_checked_at,access_issued_at,allocated_tokens,active,created_at,updated_at FROM side_records LIMIT 0",
                     "SELECT server_name,id,name,room_id,note,archived,archived_at,created_at,updated_at FROM side_projects LIMIT 0",
                     "SELECT id,engagement_id,dispatch_id,fence,reason,created_at,cleared_at,cleared_by FROM agent_fences LIMIT 0",
+                    "SELECT dispatch_id,phase,kind,tools,finished,started_at,updated_at,queued_at,revision,anchor FROM dispatch_activity LIMIT 0",
+                    "SELECT dispatch_id,event_key FROM dispatch_activity_events LIMIT 0",
                     "SELECT id,session_id,transaction_id,digest,body,html,route,source_event_id,state,cancel_requested,fence,claim_hash,claim_until,event_id,observation,created_at,updated_at FROM command_notices LIMIT 0",
                     "SELECT id FROM current_command_notices LIMIT 0",
                     "SELECT id,dirty FROM workspace_resources LIMIT 0",
@@ -1756,6 +1775,13 @@ impl DomainRepository {
             requested_tokens: request.requested_tokens,
             state: EngagementState::Pending,
             cleanup: CleanupState::NotRequired,
+            workspace_mode: request
+                .agent_definition
+                .workspace_mode
+                .clone()
+                .unwrap_or_else(|| "shared".into()),
+            worktrees_dir: request.agent_definition.worktrees_dir.clone(),
+            worktree_bootstrap: request.agent_definition.worktree_bootstrap.clone(),
         };
         tx.execute("INSERT INTO projects(fleet_id,id,generation,room_id,owner_mxid,owner_room_id) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(fleet_id,id) DO NOTHING",
             params![request.fleet_id,request.target_project_id,proof.registration().generation,request.target_room_id,request.owner_mxid,request.owner_dm_room_id])?;

@@ -1953,6 +1953,33 @@ impl DomainStore {
         })
         .await
     }
+    /// The read-only approval-bindings list (board #52): the plain-list
+    /// branch of TS `GET /api/approval-bindings`. Same weight class as the
+    /// grants read — bounded by its own limit parameter.
+    pub async fn approval_bindings(
+        &self,
+        agent: String,
+        project_room_id: String,
+        limit: u64,
+    ) -> Result<Vec<hagency_core::approvals::ApprovalBindingSummary>, Error> {
+        self.call(weight(&(&agent, &project_room_id))?, move |db| {
+            db.approval_bindings(&agent, &project_room_id, limit)
+        })
+        .await
+    }
+    /// The operator unbind (board #52): removes the derived binding row AND
+    /// revokes the approval grants it carried, in one transaction — TS
+    /// `removeBinding` + `revokeScopesByBinding` (backend-v2.js:9030-9046).
+    pub async fn retire_approval_binding(
+        &self,
+        agent: String,
+        room_id: String,
+    ) -> Result<hagency_core::approvals::ApprovalBindingSummary, Error> {
+        self.call(weight(&(&agent, &room_id))?, move |db| {
+            db.retire_approval_binding(&agent, &room_id)
+        })
+        .await
+    }
     pub async fn matrix_ingress_scope(
         &self,
         session: String,
@@ -2081,6 +2108,15 @@ impl DomainStore {
         self.call(weight(&id)?, move |db| db.verified_notice_receipt(&id))
             .await
     }
+    /// Secret-free read used only by a resumed send (task #9): is this journaled
+    /// notice write still authorized to be re-put (still `sending`, not
+    /// retired/cancelled, same fence)? False means park as uncertain.
+    pub async fn verified_notice_send_current(&self, id: String, fence: u64) -> Result<bool, Error> {
+        self.call(weight(&(&id, fence))?, move |db| {
+            db.verified_notice_send_current(&id, fence)
+        })
+        .await
+    }
     pub async fn cancel_verified_task_notice(
         &self,
         id: String,
@@ -2172,6 +2208,15 @@ impl DomainStore {
     ) -> Result<CommandNoticeReceipt, Error> {
         self.call(weight(&id)?, move |db| db.command_notice_receipt(&id))
             .await
+    }
+    /// Secret-free read used only by a resumed send (task #9): is this journaled
+    /// command answer still authorized to be re-put (still `sending`, same
+    /// fence, not cancelled)? False means park as uncertain.
+    pub async fn command_notice_send_current(&self, id: String, fence: u64) -> Result<bool, Error> {
+        self.call(weight(&(&id, fence))?, move |db| {
+            db.command_notice_send_current(&id, fence)
+        })
+        .await
     }
     /// The admitted `!` lines in this session with no answer queued yet.
     pub async fn pending_command_lines(
@@ -2308,6 +2353,16 @@ impl DomainStore {
     ) -> Result<bool, Error> {
         self.call(weight(&(&id, fence))?, move |db| {
             db.final_reply_history_conflicts(&id, fence)
+        })
+        .await
+    }
+    /// Secret-free read used only by a resumed send (task #9): is this journaled
+    /// write still authorized to be re-put (still `sending`, unfenced,
+    /// uncancelled, same fence)? A retirement/cancellation that moved it off
+    /// `sending` answers false so the resume parks instead of re-sending.
+    pub async fn final_reply_send_current(&self, id: String, fence: u64) -> Result<bool, Error> {
+        self.call(weight(&(&id, fence))?, move |db| {
+            db.final_reply_send_current(&id, fence)
         })
         .await
     }

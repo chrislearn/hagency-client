@@ -243,29 +243,65 @@ async fn native_matrix_owned_notice_failure() {
                      * response at all — a transport error, not an auth
                      * error — so no rejoin fires there. */
                     request.json(403, json!({"errcode":"M_FORBIDDEN"}));
-                    let r = fake.next().await;
-                    assert_eq!(r.method, "POST");
-                    assert_eq!(r.target, format!("/_matrix/client/v3/join/{ROOM}"));
-                    r.json(403, json!({"errcode":"M_FORBIDDEN"}));
+                    // Board #11 (bridge-matrix.js:10888-10950): a room write that
+                    // fails on membership first attempts the rejoin and resends.
+                    // Here the rejoin itself is refused, so the membership is not
+                    // restorable and the 403 stands as the verdict.
+                    let rejoin = fake.next().await;
+                    assert_eq!(rejoin.method, "POST");
+                    assert_eq!(
+                        rejoin.target,
+                        format!("/_matrix/client/v3/join/{ROOM}")
+                    );
+                    rejoin.json(403, json!({"errcode":"M_FORBIDDEN"}));
                 }
             })
             .await;
         assert!(result.is_err());
-        assert_eq!(
-            w.collector
-                .resume_outgoing_custody(&cancel)
-                .await
-                .unwrap()
-                .state,
-            OutgoingState::Uncertain
-        );
+        // The failed first send started nothing: no dispatch child, no final send.
         w.assert_inactive(&intent, seq).await;
-        /* The retry must not put the notice back on the wire: it settles
-         * from state (Uncertain custody), never from a new send attempt.
-         * The auto-join the first send fired was consumed in its own
-         * script, so the quiet window below means exactly "no resend" —
-         * and nothing else on the transport either. */
-        assert!(w.collector.send_notice(notice, &cancel).await.is_err());
+        if lost {
+            // Task #9 (TS `pollOneRouterOutbox`, bridge-matrix.js:6036-6055): a
+            // lost notice response is non-permanent, so the resume re-sends it
+            // with the SAME transaction id — Matrix dedups the replay — and the
+            // real acceptance then activates the task.
+            let (summary, ()) = common::scripted(
+                w.collector.resume_outgoing_custody(&cancel),
+                async {
+                    let request = fake.next().await;
+                    assert_eq!(request.method, "PUT");
+                    assert_eq!(
+                        request.target,
+                        format!(
+                            "/_matrix/client/v3/rooms/{ROOM}/send/m.room.message/{}",
+                            notice.claim.notice.transaction_id
+                        )
+                    );
+                    request.json(200, json!({"event_id":"$notice"}));
+                },
+            )
+            .await;
+            assert_eq!(summary.unwrap().state, OutgoingState::Delivered);
+            assert_eq!(
+                w.intent_state(&intent.task_id),
+                ("active".into(), Some("$notice".into()))
+            );
+        } else {
+            // TS `isPermanentRouterMatrixFailure` (bridge-matrix.js:6029-6033):
+            // a 403 is permanent — the retained product posts that command to
+            // `../failed` and never retries it. The journaled mark parks it here:
+            // the resume starts no HTTP write and the task stays inactive.
+            assert_eq!(
+                w.collector
+                    .resume_outgoing_custody(&cancel)
+                    .await
+                    .unwrap()
+                    .state,
+                OutgoingState::Uncertain
+            );
+            w.assert_inactive(&intent, seq).await;
+            assert!(w.collector.send_notice(notice, &cancel).await.is_err());
+        }
         fake.no_request().await;
         w.close().await;
         fake.close().await;
