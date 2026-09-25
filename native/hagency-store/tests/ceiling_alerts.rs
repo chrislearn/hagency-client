@@ -500,6 +500,8 @@ fn transition(
         to,
         actor: "operator".into(),
         note: note.map(str::to_owned),
+        assignee: None,
+        suppress_until_ms: None,
         now: 2_000_000,
     })
 }
@@ -520,16 +522,22 @@ fn seeded_overrun() -> Alarm {
 /// write nothing. `resolved` is terminal.
 #[test]
 fn native_ceiling_alert_transitions_follow_one_legal_map() {
+    // The TS map verbatim (lib/alert-store.js:8-14): five states,
+    // `assigned` included; `resolved` terminal. Integration fix: the lane
+    // shipped this table still on the old four-state shape (its chain
+    // 39→45 never ran the test); it now asserts the TS-visible outcome.
     let legal = [
         ("open", "acknowledged"),
+        ("open", "assigned"),
         ("open", "resolved"),
         ("open", "suppressed"),
+        ("acknowledged", "assigned"),
         ("acknowledged", "resolved"),
-        ("acknowledged", "suppressed"),
+        ("assigned", "resolved"),
         ("suppressed", "open"),
-        ("suppressed", "resolved"),
+        ("suppressed", "assigned"),
     ];
-    let states = ["open", "acknowledged", "resolved", "suppressed"];
+    let states = ["open", "acknowledged", "assigned", "resolved", "suppressed"];
     for from in states {
         for to in states {
             let mut alarm = seeded_overrun();
@@ -574,6 +582,8 @@ fn native_ceiling_alert_transitions_follow_one_legal_map() {
             to: "acknowledged",
             actor: "operator".into(),
             note: None,
+            assignee: None,
+            suppress_until_ms: None,
             now: 1,
         }),
         Err(Error::NotFound)
@@ -584,6 +594,8 @@ fn native_ceiling_alert_transitions_follow_one_legal_map() {
             to: "acknowledged",
             actor: "a".repeat(129),
             note: None,
+            assignee: None,
+            suppress_until_ms: None,
             now: 1,
         }),
         Err(Error::Invalid(_))
@@ -786,9 +798,9 @@ fn native_ceiling_alert_schema_upgrade() {
     // first (the 025 replay posture; cf. updated_at in file_delivery.rs).
     // Same for 033's park_reason on runner_attempts and 036's addressed on
     // dispatch_inputs.
-    sql.execute_batch("ALTER TABLE approval_verdict_receipts DROP COLUMN denial_reason; ALTER TABLE runner_attempts DROP COLUMN park_reason; ALTER TABLE dispatch_inputs DROP COLUMN addressed; DROP TABLE IF EXISTS dispatch_conversation_reads; ALTER TABLE runner_attempts DROP COLUMN started_at; ALTER TABLE runner_attempts DROP COLUMN parked_at; ALTER TABLE runner_attempts DROP COLUMN last_renew_at; ALTER TABLE runner_attempts DROP COLUMN settled_at; ALTER TABLE runner_attempts DROP COLUMN terminal_reason; DROP TABLE IF EXISTS runner_attempt_events; DROP TABLE IF EXISTS agent_fences; DROP TABLE IF EXISTS dispatch_activity_events; DROP TABLE IF EXISTS dispatch_activity; DROP TABLE IF EXISTS side_registrations; DROP VIEW IF EXISTS current_command_notices; DROP TABLE IF EXISTS command_notice_inspections; DROP TABLE IF EXISTS command_notices;")
-        .unwrap();
-    sql.pragma_update(None, "user_version", 24).unwrap();
+    sql.execute_batch("ALTER TABLE approval_verdict_receipts DROP COLUMN denial_reason; ALTER TABLE runner_attempts DROP COLUMN park_reason; ALTER TABLE dispatch_inputs DROP COLUMN addressed; DROP TABLE IF EXISTS dispatch_conversation_reads; ALTER TABLE runner_attempts DROP COLUMN started_at; ALTER TABLE runner_attempts DROP COLUMN parked_at; ALTER TABLE runner_attempts DROP COLUMN last_renew_at; ALTER TABLE runner_attempts DROP COLUMN settled_at; ALTER TABLE runner_attempts DROP COLUMN terminal_reason; DROP TABLE IF EXISTS runner_attempt_events; DROP TABLE IF EXISTS agent_fences; DROP TABLE IF EXISTS dispatch_activity_events; DROP TABLE IF EXISTS dispatch_activity;  DROP TABLE IF EXISTS pending_invites;  DROP TABLE IF EXISTS ceiling_alert_notes; DROP TABLE IF EXISTS side_registrations; DROP VIEW IF EXISTS current_command_notices; DROP TABLE IF EXISTS command_notice_inspections; DROP TABLE IF EXISTS command_notices; DROP TABLE IF EXISTS operator_tasks; DROP TABLE IF EXISTS operator_task_comments;")
+         .unwrap();
+    sql.execute_batch("DROP TABLE IF EXISTS agent_lifecycle; DROP TABLE IF EXISTS side_records; DROP TABLE IF EXISTS side_projects;  ALTER TABLE decisions DROP COLUMN kind; ALTER TABLE decisions DROP COLUMN at; DROP TABLE IF EXISTS reminders;  PRAGMA user_version=24;").unwrap();
     drop(sql);
     for _ in 0..2 {
         let db = DomainRepository::open(&state).unwrap();
@@ -821,7 +833,7 @@ fn native_ceiling_alert_schema_upgrade() {
     assert_eq!(open.occurrences, 1);
     assert_eq!(
         allowed_transitions(&open.status),
-        ["acknowledged", "resolved", "suppressed"].as_slice()
+        ["acknowledged", "assigned", "resolved", "suppressed"].as_slice()
     );
     // The sweep still updates the upgraded open row (occurrences ride) and
     // leaves the resolved row alone.

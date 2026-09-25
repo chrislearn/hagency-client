@@ -23,17 +23,22 @@
 use super::resources::failure;
 use super::{Error, Session, body, console, failed, recheck, usage::query};
 use crate::{refusal, resources::domain};
-use hagency_core::project::{EngagementState, identifier};
+use hagency_core::project::{AgentName, EngagementState, identifier};
 use salvo::prelude::*;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 pub(super) fn router() -> Router {
     Router::with_path("agents")
         .get(list)
-        .push(Router::with_path("{name}").get(super::agent_detail::detail))
+        .push(
+            Router::with_path("{name}")
+                .get(super::agent_detail::detail)
+                .delete(delete),
+        )
         .push(Router::with_path("{id}/start").post(start))
         .push(Router::with_path("{id}/stop").post(stop))
-        .push(Router::with_path("{id}/preset").post(preset))
+        .push(Router::with_path("{id}/preset").put(preset))
         .push(Router::with_path("{id}/recover-dispatch").post(recover_dispatch))
         .push(Router::with_path("{id}/stopped-dispatches").get(stopped_dispatches))
         .push(
@@ -49,47 +54,68 @@ pub(super) fn router() -> Router {
         .push(Router::with_path("{id}/refuse").post(refuse))
 }
 
-/// Exactly nine keys, in the ADR-126 order extended by board #22. Every
-/// key except `name`, `framework`, `role`, `state`, `engagement_id`,
-/// `requested_tokens` and `online` is nullable at the source; `null`
-/// means "unknown", rendered as such. One row per AGENT (TS parity:
-/// `backend-v2.js:11696` serializes every agent record).
+/// Exactly twelve keys, in the ADR-126 order extended by board #22 and
+/// board #60. Every key except `name`, `framework`, `role`, `state`,
+/// `engagement_id`, `requested_tokens`, `online` and `seat` is nullable at
+/// the source; `null` means "unknown", rendered as such. `consumed` is
+/// `null` when nothing was measured — unknown, never zero. One row per
+/// AGENT (TS parity: `backend-v2.js:11696` serializes every agent record).
 #[derive(Serialize)]
 struct RosterItem {
     name: String,
     framework: String,
     role: String,
+    /// The ENGAGEMENT LIFECYCLE word (pending/reserved/active/…), which is
+    /// what the store's projection carries.
     state: EngagementState,
     engagement_id: String,
     requested_tokens: u64,
     online: bool,
     last_seen_ms: Option<u64>,
     last_activity_ms: Option<u64>,
+    /// The LIVE DISPATCH's word, separate from `state` by construction
+    /// (board #60 item 2; TS `:6872` reads `machine.state`, a liveness
+    /// value). Null when native's dispatch record shows no live dispatch.
+    liveness: Option<String>,
+    /// Tokens observed consumed by the agent's engagements, summed the way
+    /// the usage report sums it. Null when nothing was measured.
+    consumed: Option<u64>,
 }
 
-/// Every retained roster column native has no source for in this slice:
-/// per-agent consumed usage (the ceiling report is keyed by resource),
-/// the tmux target and pane, the credential home and workspace path
-/// (private by omission, named as unavailable), the seat. `online` and
-/// `last_seen` are SOURCED now (board #22): a live dispatch and the
-/// newest attempt clock are real worker state, so they render as columns.
-const UNAVAILABLE: [&str; 6] = [
-    "consumed",
-    "tmux",
-    "pane",
-    "credential_home",
-    "workspace_path",
-    "seat",
-];
+/// Board #60 item 2. The columns that were printed as `unknown` are now
+/// ANSWERED from native state — `consumed` (`usage_sources.latest_counts`)
+/// and `liveness` (the live dispatch row, separate from the engagement
+/// `state` word) — so they render as columns and nothing is left to name.
+///
+/// The four that cannot be answered are DROPPED rather than printed as
+/// "unknown", and `seat` joins them: TS's own roster serializer
+/// (`backend-v2.js:6822-6916`) carries no seat, and this codebase treats the
+/// seat id as private (`console/accounts.rs` deliberately withholds
+/// `seat_id`; the roster fixture asserts a seat name never reaches the
+/// wire). Filling it would invent a field TS does not have, so the honest
+/// reading of "fill what native can answer" is that `seat` is not one of
+/// them. `tmux`/`pane`/`credential_home`/`workspace_path` are unanswerable
+/// by design (ADR-126 keeps panes and paths off the wire, and the store
+/// holds no such column).
+///
+/// The list is kept, empty, because it is the server-owned mechanism the
+/// page renders verbatim: a future column with no source turns itself on by
+/// being named here.
+const UNAVAILABLE: [&str; 0] = [];
 
 #[handler]
 async fn list(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    // A roster takes no selection: any query parameter is refused, the
-    // same hygiene the alerts read applies to its own allowlist.
-    if query(req, &[], 0).is_err() {
+    // The roster takes ONE selection — `view`, whose only meaningful value
+    // is `names` (TS `backend-v2.js:11698`, the name-only arm the console's
+    // pickers use). Every other query parameter is refused, the same
+    // hygiene the alerts read applies to its own allowlist.
+    if query(req, &["view"], 64).is_err() {
         failed(res, Error::Invalid);
         return;
     }
+    let names_only = req
+        .query::<String>("view")
+        .is_some_and(|v| v.trim().eq_ignore_ascii_case("names"));
     let Some(store) = domain(depot, res) else {
         return;
     };
@@ -100,6 +126,21 @@ async fn list(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     }
     match result {
         Ok(rows) => {
+            // TS answers `names` as a sorted bare array of non-empty name
+            // strings, filtered to agents that are not retired
+            // (`backend-v2.js:11699-11704`). Native has no agent-delete
+            // route, so nothing carries a `retiredAt`; every roster row
+            // qualifies — the same set the envelope below would carry.
+            if names_only {
+                let mut names: Vec<String> = rows
+                    .into_iter()
+                    .map(|row| row.name)
+                    .filter(|name| !name.is_empty())
+                    .collect();
+                names.sort();
+                res.render(Json(names));
+                return;
+            }
             // Statement time, as the alerts read does: the roster has no
             // clock parameter to honor.
             let at_ms = std::time::SystemTime::now()
@@ -119,6 +160,8 @@ async fn list(req: &mut Request, depot: &mut Depot, res: &mut Response) {
                     online: row.online,
                     last_seen_ms: row.last_seen_ms,
                     last_activity_ms: row.last_activity_ms,
+                    liveness: row.liveness,
+                    consumed: row.consumed,
                 })
                 .collect();
             // CL-S2 (ADR-130): the lifecycle controls render ONLY from the
@@ -181,28 +224,53 @@ fn check_lifecycle(depot: &Depot, res: &mut Response) -> bool {
     }
 }
 
-/// Native has no durable agent lifecycle record or safe way to re-arm a
-/// stop-fenced dispatch. A successful no-op here would lie to the operator,
-/// so the retained route fails closed until a host-owned start transition is
-/// implemented. It never reads the roster and never spawns a process.
+/// Start — TS parity backend-v2.js:12712-12775: refuses an agent that never
+/// stopped (the retained `agent already online`, 409), refuses while
+/// lifecycle cleanup is pending (the retained `agent_lifecycle_busy`, 409),
+/// and otherwise records the durable return to serving. The host's own
+/// discovery picks the agent back up; this route never spawns a process.
 #[handler]
 async fn start(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     if query(req, &[], 0).is_err() {
         failed(res, Error::Invalid);
         return;
     }
-    if let Err(error) = engagement_id(req) {
-        failed(res, error);
-        return;
-    }
+    let id = match engagement_id(req) {
+        Ok(id) => id,
+        Err(error) => {
+            failed(res, error);
+            return;
+        }
+    };
     if !check_lifecycle(depot, res) {
         return;
     }
-    if let Err(error) = recheck(depot) {
-        failed(res, error);
+    let Some(store) = domain(depot, res) else {
+        return;
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|d| u64::try_from(d.as_millis()).ok())
+        .unwrap_or_default();
+    let result = store.start_agent(id, now).await;
+    if result.is_ok() && recheck(depot).is_err() {
+        failure(res, hagency_store::Error::OutcomeUnknown);
         return;
     }
-    refusal(res, StatusCode::NOT_IMPLEMENTED, "agent_start_unavailable");
+    match result {
+        Ok(()) => res.render(Json(serde_json::json!({"ok": true, "state": "launching"}))),
+        Err(hagency_store::Error::NotFound) => refusal(res, StatusCode::NOT_FOUND, "not_found"),
+        Err(hagency_store::Error::Conflict) => {
+            // `agent already online` (backend-v2.js:12717).
+            refusal(res, StatusCode::CONFLICT, "agent_already_online")
+        }
+        Err(hagency_store::Error::State) => {
+            // `agent lifecycle cleanup is still pending` (backend-v2.js:12719).
+            refusal(res, StatusCode::CONFLICT, "agent_lifecycle_busy")
+        }
+        Err(error) => failure(res, error),
+    }
 }
 
 /// Stop — fence, never settle: the store resolves the named engagement's
@@ -232,13 +300,14 @@ async fn stop(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         .ok()
         .and_then(|d| u64::try_from(d.as_millis()).ok())
         .unwrap_or_default();
-    let result = store.stop_dispatch_for_agent(id, now).await;
+    let result = store.stop_agent(id, "console".to_owned(), now).await;
     if result.is_ok() && recheck(depot).is_err() {
         failure(res, hagency_store::Error::OutcomeUnknown);
         return;
     }
     match result {
         Ok(value) => res.render(Json(value)),
+        Err(hagency_store::Error::NotFound) => refusal(res, StatusCode::NOT_FOUND, "not_found"),
         Err(error) => failure(res, error),
     }
 }
@@ -623,28 +692,205 @@ async fn continue_stopped_dispatch(req: &mut Request, depot: &mut Depot, res: &m
     }
 }
 
-/// Native engagements are provisioned against one immutable resource and
-/// their budget, account binding, effect payload and running profile all
-/// derive from it. Rebinding only a preset id would corrupt that invariant.
-/// Refuse until a complete retire/reprovision transition owns every effect.
+/// Preset (resource) rebind — TS parity `PUT /api/agents/:name/preset`
+/// (backend-v2.js:11484-11522): the binding, the ceiling and the profile
+/// move together; the next dispatch the host claims runs on the new
+/// resource (the claim selector reads the provision effect's resource
+/// payload, which the store rewrites in the same transaction).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct Preset {
+    preset_id: String,
+}
+
 #[handler]
 async fn preset(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    if query(req, &[], 0).is_err() {
+    let prepared = async {
+        query(req, &[], 0)?;
+        let id = engagement_id(req)?;
+        let raw = body(req, 4096).await?;
+        let input: Preset = serde_json::from_slice(&raw).map_err(|_| Error::Invalid)?;
+        // Absent and empty both mean unbind in TS; native refuses — an
+        // engagement cannot exist without a resource.
+        if input.preset_id.trim().is_empty() {
+            return Err(Error::Invalid);
+        }
+        identifier(&input.preset_id, 128).map_err(|_| Error::Invalid)?;
+        Ok::<_, Error>((id, input.preset_id.trim().to_owned()))
+    }
+    .await;
+    let (id, requested) = match prepared {
+        Ok(value) => value,
+        Err(error) => {
+            failed(res, error);
+            return;
+        }
+    };
+    if !check_lifecycle(depot, res) {
+        return;
+    }
+    let Some(store) = domain(depot, res) else {
+        return;
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|d| u64::try_from(d.as_millis()).ok())
+        .unwrap_or_default();
+    let result = store.rebind_agent_resource(id, requested, now).await;
+    if result.is_ok() && recheck(depot).is_err() {
+        failure(res, hagency_store::Error::OutcomeUnknown);
+        return;
+    }
+    match result {
+        Ok(value) => res.render(Json(value)),
+        Err(hagency_store::Error::NotFound) => refusal(res, StatusCode::NOT_FOUND, "not_found"),
+        Err(hagency_store::Error::Invalid(_)) => {
+            refusal(res, StatusCode::BAD_REQUEST, "unknown_preset")
+        }
+        Err(error) => failure(res, error),
+    }
+}
+
+/// `DELETE /api/agents/:name` — the retained soft/force delete
+/// (`backend-v2.js:12164-12307`).
+///
+/// SOFT (the default) is TS's reversible act: it reports
+/// `{ok, deprecated, message}` and changes nothing that an `undelete`
+/// would have to undo. TS marks its agent record inactive; native has no
+/// agent record (an agent is DERIVED from its engagements), so there is
+/// nothing to mark — and deliberately NOTHING is revoked, which is the
+/// distinction TS's own comment makes: a soft delete is reversible and
+/// `revoke` has no inverse, so only `?force=true` may touch commitments.
+///
+/// FORCE really deletes: TS revokes the agent's ACTIVE engagements and
+/// reports the released ids, because a commitment outlives its agent
+/// otherwise (`backend-v2.js:12206-12225`). Native's `revoke` is that same
+/// act and releases the budget by construction (a commitment IS the
+/// engagement's state), so force maps onto the existing retirement path
+/// rather than a second write path — each revocation carries its own
+/// deterministic command id, so a retried delete replays instead of
+/// double-acting.
+///
+/// What native does NOT do, and does not pretend to: TS also leaves the
+/// customer's project rooms and its groups, and kills the agent's tmux
+/// session. Native has no group concept and no room-withdrawal or session
+/// kill at this layer (the retirement the revoke schedules owns worker
+/// cleanup), so those are reported empty/false exactly as TS reports them
+/// for a deployment that has none — never invented. See the report.
+#[handler]
+async fn delete(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    // `?force=true` is TS's trigger, compared as the STRING 'true' — any
+    // other value (or none) is the soft, reversible path.
+    if query(req, &["force"], 64).is_err() {
         failed(res, Error::Invalid);
         return;
     }
-    if let Err(error) = engagement_id(req) {
+    let force = req.query::<String>("force").as_deref() == Some("true");
+    // The same name shape `agent_detail` accepts — validated here because
+    // that module's helper is private to it (a delete must not address a
+    // name the detail read would refuse).
+    let Some(name) = req.param::<String>("name") else {
+        failed(res, Error::Invalid);
+        return;
+    };
+    if AgentName::try_from(name.clone()).is_err() {
+        failed(res, Error::Invalid);
+        return;
+    }
+    // Deleting is a lifecycle act: the same finite scope `retire` requires,
+    // refused before any store read.
+    if !check_lifecycle(depot, res) {
+        return;
+    }
+    let Some(store) = domain(depot, res) else {
+        return;
+    };
+    let detail = store.agent_detail(&name).await;
+    if let Err(error) = recheck(depot) {
         failed(res, error);
         return;
     }
-    if !check_lifecycle(depot, res) {
+    let detail = match detail {
+        Ok(Some(detail)) => detail,
+        // TS: 404 `{error:'agent not found'}` when no record names it.
+        Ok(None) => {
+            res.status_code(StatusCode::NOT_FOUND);
+            res.render(Json(serde_json::json!({
+                "error": "agent not found",
+                "code": "agent_not_found",
+            })));
+            return;
+        }
+        Err(error) => {
+            failure(res, error);
+            return;
+        }
+    };
+
+    if !force {
+        res.render(Json(serde_json::json!({
+            "ok": true,
+            "deprecated": true,
+            // TS's message, verbatim.
+            "message": "unregister is disabled; agent marked inactive. Use ?force=true to permanently delete.",
+            "agent": detail,
+        })));
         return;
+    }
+
+    // FORCE: release this agent's active engagements. A failure here stops
+    // the delete rather than proceeding — removing the agent while its
+    // commitment stands is the very leak this closes (TS's
+    // `engagement_release_failed`, `backend-v2.js:12238-12252`).
+    let active = match store.agent_active_engagements(name.clone()).await {
+        Ok(active) => active,
+        Err(error) => {
+            failure(res, error);
+            return;
+        }
+    };
+    let mut released = Vec::with_capacity(active.len());
+    for id in active {
+        let command = delete_command_id(&name, &id);
+        match store.revoke(command, id.clone()).await {
+            Ok(_) => released.push(id),
+            Err(error) => {
+                if let Err(error) = recheck(depot) {
+                    failed(res, error);
+                    return;
+                }
+                // TS names the code and the agent it could not remove.
+                refusal(res, StatusCode::SERVICE_UNAVAILABLE, "engagement_release_failed");
+                let _ = error;
+                return;
+            }
+        }
     }
     if let Err(error) = recheck(depot) {
         failed(res, error);
         return;
     }
-    refusal(res, StatusCode::NOT_IMPLEMENTED, "agent_preset_unavailable");
+    res.render(Json(serde_json::json!({
+        "ok": true,
+        "deleted": true,
+        "name": name,
+        // Native has no tmux/session kill at this layer: the revoke above
+        // schedules the retirement that owns worker cleanup. Reported
+        // false rather than claimed.
+        "sessionKilled": false,
+        "releasedEngagements": released,
+        "leftGroups": Vec::<String>::new(),
+        "leftProjectRooms": Vec::<String>::new(),
+    })));
+}
+
+/// A deterministic command id for one force-delete revocation, so a retried
+/// `DELETE ?force=true` replays the store's decision instead of acting twice
+/// (the store replays an identical command id by digest).
+fn delete_command_id(name: &str, engagement: &str) -> String {
+    let digest = Sha256::digest(format!("delete_agent\u{0}{name}\u{0}{engagement}").as_bytes());
+    format!("delete_{}", digest[..16].iter().map(|b| format!("{b:02x}")).collect::<String>())
 }
 
 fn store_error(res: &mut Response, error: hagency_store::Error) {

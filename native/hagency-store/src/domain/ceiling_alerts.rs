@@ -157,11 +157,11 @@ impl DomainRepository {
                     report.preset_name,
                     resource.id()
                 );
-                let existing: Option<bool> = tx
+                let existing: Option<(bool, Option<String>, Option<u64>)> = tx
                     .query_row(
-                        "SELECT resolved_at_ms IS NOT NULL FROM ceiling_alerts WHERE dedupe_key=?1",
+                        "SELECT resolved_at_ms IS NOT NULL, status, suppress_until_ms FROM ceiling_alerts WHERE dedupe_key=?1",
                         [&key],
-                        |r| r.get(0),
+                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
                     )
                     .optional()?;
                 // The preserved contract is one OPEN alert per resource,
@@ -174,33 +174,38 @@ impl DomainRepository {
                     None => {
                         const IMPACT: &str = "no new engagement can be approved against this agent; the work already approved keeps running, because admission control cannot retract a commitment it already granted";
                         const RECOVERY: &str = "the drawn figure falls back under the ceiling, by raising the ceiling or ending engagements — this alert auto-resolves when that happens";
+                        // The retained ingest files the full identity
+                        // (`backend-v2.js:9422-9447`): kind
+                        // `agent_ceiling_overrun`, severity `warning`,
+                        // source `backend`, sourceAgent the resource id.
                         tx.execute(
-                            "INSERT INTO ceiling_alerts(dedupe_key,resource_id,summary,detail,runbook,impact,recovery_condition,occurrences,first_seen_ms,last_seen_ms) VALUES(?1,?2,?3,?4,?5,?6,?7,1,?8,?8)",
+                            "INSERT INTO ceiling_alerts(dedupe_key,resource_id,summary,detail,runbook,impact,recovery_condition,occurrences,first_seen_ms,last_seen_ms,alert_type,severity,source,source_agent,tags) VALUES(?1,?2,?3,?4,?5,?6,?7,1,?8,?8,'agent_ceiling_overrun','warning','backend',?2,'[\"ceiling\",\"budget\"]')",
                             params![key, resource.id(), summary, detail, runbook, IMPACT, RECOVERY, now],
                         )?;
                         outcome.raised += 1;
                     }
-                    Some(was_resolved) => {
+                    Some((was_resolved, status, suppress_until)) => {
                         let changed = tx.execute(
                             if was_resolved {
                                 // A resolved row re-raised reopens as a FRESH
                                 // episode: display state reset beside the
                                 // resolved columns the sweep always cleared.
-                                "UPDATE ceiling_alerts SET resource_id=?2,summary=?3,detail=?4,occurrences=occurrences+1,last_seen_ms=?5,resolved_at_ms=NULL,resolved_by=NULL,status='open',note=NULL,transitioned_at_ms=NULL,transitioned_by=NULL WHERE dedupe_key=?1"
+                                "UPDATE ceiling_alerts SET resource_id=?2,summary=?3,detail=?4,occurrences=occurrences+1,last_seen_ms=?5,resolved_at_ms=NULL,resolved_by=NULL,status='open',note=NULL,transitioned_at_ms=NULL,transitioned_by=NULL,suppress_until_ms=NULL WHERE dedupe_key=?1"
+                            } else if status.as_deref() == Some("suppressed")
+                                && suppress_until.is_some_and(|until| now > until)
+                            {
+                                // The retained Bug-1 fix
+                                // (`lib/alert-store.js:245-248`): a
+                                // suppressed row reopens on a new occurrence
+                                // once its `suppressUntil` has passed, and
+                                // stays suppressed inside the window.
+                                "UPDATE ceiling_alerts SET resource_id=?2,summary=?3,detail=?4,occurrences=occurrences+1,last_seen_ms=?5,status='open',suppress_until_ms=NULL WHERE dedupe_key=?1"
                             } else {
                                 // An unresolved row rides occurrences and
-                                // KEEPS its operator status. What the
-                                // retained store does: a SUPPRESSED row
-                                // reopens on a new occurrence only once its
-                                // `suppressUntil` has passed, and stays
-                                // suppressed inside the window (the Bug-1
-                                // fix, `lib/alert-store.js:245-248`; pinned
-                                // by `tests/alert-store.test.js:28-78`).
-                                // Native carries NO window (brief-24 §2.6:
-                                // suppression is operator-released only), so
-                                // the expiry half has no counterpart here —
-                                // suppressed stays suppressed until an
-                                // operator reopens it.
+                                // KEEPS its operator status; inside the
+                                // suppression window the row stays
+                                // suppressed, exactly like the retained
+                                // store.
                                 "UPDATE ceiling_alerts SET resource_id=?2,summary=?3,detail=?4,occurrences=occurrences+1,last_seen_ms=?5 WHERE dedupe_key=?1"
                             },
                             params![key, resource.id(), summary, detail, now],
@@ -253,73 +258,310 @@ impl DomainRepository {
                 "invalid alert limit",
             )));
         }
-        let mut statement =
-            self.db.prepare("SELECT dedupe_key,resource_id,summary,detail,runbook,impact,recovery_condition,occurrences,first_seen_ms,last_seen_ms,status,note,transitioned_at_ms,transitioned_by FROM ceiling_alerts WHERE resolved_at_ms IS NULL ORDER BY last_seen_ms DESC LIMIT ?1")?;
+        let mut statement = self.db.prepare(&format!(
+            "SELECT {ALERT_COLUMNS} FROM ceiling_alerts WHERE resolved_at_ms IS NULL ORDER BY last_seen_ms DESC LIMIT ?1"
+        ))?;
         let rows = statement
-            .query_map(params![limit], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, String>(5)?,
-                    row.get::<_, String>(6)?,
-                    row.get::<_, i64>(7)?,
-                    row.get::<_, u64>(8)?,
-                    row.get::<_, u64>(9)?,
-                    row.get::<_, String>(10)?,
-                    row.get::<_, Option<String>>(11)?,
-                    row.get::<_, Option<u64>>(12)?,
-                    row.get::<_, Option<String>>(13)?,
-                ))
+            .query_map(params![limit], alert_from_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// The retained list route's filter set (`alert-store.js:388-414`):
+    /// comma-separated `status`/`severity`, exact `sourceAgent`/`alertType`/
+    /// `assignee`, sorted by `lastSeenAt` desc, then paginated. SQL applies
+    /// the exact-match filters; the comma lists and pagination are applied
+    /// after the read so the retained clamp (`min(parseInt(limit)||100,
+    /// 500)`) decides the page size, not SQL.
+    pub fn list_alerts(
+        &self,
+        filter: &AlertListFilter,
+    ) -> Result<Vec<CeilingAlert>, Error> {
+        let mut statement = self.db.prepare(&format!(
+            "SELECT {ALERT_COLUMNS} FROM ceiling_alerts
+             WHERE (?1 IS NULL OR source_agent = ?1)
+               AND (?2 IS NULL OR alert_type = ?2)
+               AND (?3 IS NULL OR assignee = ?3)
+             ORDER BY last_seen_ms DESC"
+        ))?;
+        let mut rows = statement
+            .query_map(
+                params![
+                    filter.source_agent,
+                    filter.alert_type,
+                    filter.assignee,
+                ],
+                alert_from_row,
+            )?
+            .collect::<Result<Vec<_>, _>>()?;
+        if let Some(statuses) = &filter.statuses {
+            rows.retain(|a| statuses.iter().any(|s| s == &a.status));
+        }
+        if let Some(severities) = &filter.severities {
+            rows.retain(|a| severities.iter().any(|s| s == &a.severity));
+        }
+        let limit = filter.limit.unwrap_or(100).min(500) as usize;
+        let offset = filter.offset.unwrap_or(0) as usize;
+        Ok(rows.into_iter().skip(offset).take(limit).collect())
+    }
+
+    /// One alert by dedupe key (`GET /api/alerts/:id`,
+    /// `alert-store.js:383-385`): the row plus its notes history.
+    pub fn get_alert(&self, key: &str) -> Result<(CeilingAlert, Vec<AlertNote>), Error> {
+        let alert = read_alert(&self.db, key)?;
+        let notes = self.alert_notes(key)?;
+        Ok((alert, notes))
+    }
+
+    /// The retained notes history (`alert-store.js:456-459`), oldest first.
+    pub fn alert_notes(&self, key: &str) -> Result<Vec<AlertNote>, Error> {
+        let mut statement = self.db.prepare(
+            "SELECT author,text,ts_ms FROM ceiling_alert_notes WHERE dedupe_key=?1 ORDER BY seq",
+        )?;
+        let rows = statement
+            .query_map([key], |row| {
+                Ok(AlertNote {
+                    author: row.get(0)?,
+                    text: row.get(1)?,
+                    ts_ms: row.get(2)?,
+                })
             })?
             .collect::<Result<Vec<_>, _>>()?;
-        rows.into_iter()
-            .map(
-                |(
-                    dedupe_key,
-                    resource_id,
-                    summary,
-                    detail,
-                    runbook,
-                    impact,
-                    recovery_condition,
-                    occurrences,
-                    first_seen_ms,
-                    last_seen_ms,
-                    status,
-                    note,
-                    transitioned_at_ms,
-                    transitioned_by,
-                )| {
-                    Ok(CeilingAlert {
-                        resolved: false,
-                        detail: read_detail(&detail),
-                        occurrences: u64::try_from(occurrences).map_err(|_| Error::Schema)?,
-                        dedupe_key,
-                        resource_id,
-                        summary,
-                        runbook,
-                        impact,
-                        recovery_condition,
-                        first_seen_ms,
-                        last_seen_ms,
-                        status,
-                        note,
-                        transitioned_at_ms,
-                        transitioned_by,
-                    })
-                },
+        Ok(rows)
+    }
+
+    /// `addNote` parity (`alert-store.js:447-462`): 404 when the alert is
+    /// missing, 400 (`bad_request`) on empty text after the retained
+    /// trim-and-bound, `author` defaulting to `anonymous` when blank —
+    /// note the retained ROUTE defaults `author` to 'operator'
+    /// (`backend-v2.js:16133`), so the route passes its own default.
+    pub fn add_alert_note(
+        &mut self,
+        key: &str,
+        author: &str,
+        text: &str,
+        now: u64,
+    ) -> Result<(CeilingAlert, Vec<AlertNote>), Error> {
+        let text = text.trim().chars().take(2048).collect::<String>();
+        if text.is_empty() {
+            return Err(hagency_core::InvalidInput("note text required").into());
+        }
+        let author = author.trim().chars().take(128).collect::<String>();
+        let author = if author.is_empty() {
+            "anonymous".to_owned()
+        } else {
+            author
+        };
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let exists: Option<u8> = tx
+            .query_row(
+                "SELECT 1 FROM ceiling_alerts WHERE dedupe_key=?1",
+                [key],
+                |r| r.get(0),
             )
-            .collect()
+            .optional()?;
+        if exists.is_none() {
+            return Err(Error::NotFound);
+        }
+        let seq: u64 = tx.query_row(
+            "SELECT COALESCE(MAX(seq),0)+1 FROM ceiling_alert_notes WHERE dedupe_key=?1",
+            [key],
+            |r| r.get(0),
+        )?;
+        tx.execute(
+            "INSERT INTO ceiling_alert_notes(dedupe_key,seq,author,text,ts_ms) VALUES(?1,?2,?3,?4,?5)",
+            params![key, seq, author, text, now],
+        )?;
+        // Keep the 025 latest-note column in step: the console transition
+        // renders it, and the retained `notes` array's tail IS the latest.
+        tx.execute(
+            "UPDATE ceiling_alerts SET note=?2 WHERE dedupe_key=?1",
+            params![key, text],
+        )?;
+        let alert = read_alert(&tx, key)?;
+        let notes = alert_notes_tx(&tx, key)?;
+        tx.commit()?;
+        Ok((alert, notes))
+    }
+
+    /// `updateAlert` parity (`alert-store.js:464-525`): tags bounded (64
+    /// chars, ≤20), linkedTaskId (128), owner/assignee/runbook/impact/
+    /// recoveryCondition, and — when any actionable field moves — the
+    /// retained actionability rebuild: a warning/critical missing any of
+    /// owner+assignee, runbook, impact, recoveryCondition is filed as
+    /// `info` with `originalSeverity` and `missingActionableFields`
+    /// recorded (`alert-store.js:102-138`); supplying them restores the
+    /// original severity.
+    pub fn update_alert(
+        &mut self,
+        key: &str,
+        patch: &AlertPatch,
+    ) -> Result<CeilingAlert, Error> {
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let current: Option<(String, Option<String>, Option<String>)> = tx
+            .query_row(
+                "SELECT severity, original_severity, status FROM ceiling_alerts WHERE dedupe_key=?1",
+                [key],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .optional()?;
+        let Some((severity, original_severity, _status)) = current else {
+            return Err(Error::NotFound);
+        };
+        if let Some(tags) = &patch.tags {
+            let tags: Vec<String> = tags
+                .iter()
+                .map(|t| t.trim().chars().take(64).collect::<String>())
+                .filter(|t| !t.is_empty())
+                .take(20)
+                .collect();
+            tx.execute(
+                "UPDATE ceiling_alerts SET tags=?2 WHERE dedupe_key=?1",
+                params![key, serde_json::to_string(&tags).unwrap_or_default()],
+            )?;
+        }
+        if let Some(linked) = &patch.linked_task_id {
+            let linked = linked.trim().chars().take(128).collect::<String>();
+            let linked = if linked.is_empty() { None } else { Some(linked) };
+            tx.execute(
+                "UPDATE ceiling_alerts SET linked_task_id=?2 WHERE dedupe_key=?1",
+                params![key, linked],
+            )?;
+        }
+        for (column, value, bound) in [
+            ("source_agent", &patch.source_agent, 128usize),
+            ("assignee", &patch.assignee, 128),
+            ("runbook", &patch.runbook, 512),
+            ("impact", &patch.impact, 1024),
+            ("recovery_condition", &patch.recovery_condition, 1024),
+        ] {
+            if let Some(value) = value {
+                let trimmed = value.trim().chars().take(bound).collect::<String>();
+                let value = if trimmed.is_empty() { None } else { Some(trimmed) };
+                tx.execute(
+                    &format!("UPDATE ceiling_alerts SET {column}=?2 WHERE dedupe_key=?1"),
+                    params![key, value],
+                )?;
+            }
+        }
+        // The actionability rebuild (`alert-store.js:486-514`): it runs
+        // whenever an actionable field was touched, against the requested
+        // severity (the original when a downgrade is recorded).
+        let action_touched = patch.assignee.is_some()
+            || patch.runbook.is_some()
+            || patch.impact.is_some()
+            || patch.recovery_condition.is_some()
+            || patch.owner.is_some();
+        if action_touched {
+            let requested = original_severity.unwrap_or(severity);
+            let owner = patch.owner.clone().map(|o| {
+                o.trim().chars().take(128).collect::<String>()
+            }).filter(|o| !o.is_empty());
+            let row: (Option<String>, Option<String>, Option<String>, Option<String>, Option<String>) = tx
+                .query_row(
+                    "SELECT assignee, runbook, impact, recovery_condition, resource_id FROM ceiling_alerts WHERE dedupe_key=?1",
+                    [key],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+                )?;
+            let (assignee, runbook, impact, recovery, _resource) = row;
+            let mut missing: Vec<String> = Vec::new();
+            let paging = requested == "warning" || requested == "critical";
+            if paging {
+                if assignee.is_none() && owner.is_none() {
+                    missing.push("owner".to_owned());
+                }
+                if runbook.is_none() {
+                    missing.push("runbook".to_owned());
+                }
+                if impact.is_none() {
+                    missing.push("impact".to_owned());
+                }
+                if recovery.is_none() {
+                    missing.push("recoveryCondition".to_owned());
+                }
+            }
+            let (severity, original): (&str, Option<&str>) = if paging && !missing.is_empty() {
+                ("info", Some(requested.as_str()))
+            } else {
+                (requested.as_str(), None)
+            };
+            tx.execute(
+                "UPDATE ceiling_alerts SET severity=?2, original_severity=?3, missing_actionable_fields=?4 WHERE dedupe_key=?1",
+                params![
+                    key,
+                    severity,
+                    original,
+                    serde_json::to_string(&missing).unwrap_or_default()
+                ],
+            )?;
+        }
+        let alert = read_alert(&tx, key)?;
+        tx.commit()?;
+        Ok(alert)
+    }
+
+    /// `deleteAlert` parity (`alert-store.js:527-538`): remove the row and
+    /// return it; NOT_FOUND when the id is unknown (the retained route
+    /// answers 404 `alert not found`, `backend-v2.js:16152-16154`).
+    pub fn delete_alert(&mut self, key: &str) -> Result<CeilingAlert, Error> {
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let alert = read_alert(&tx, key)?;
+        tx.execute("DELETE FROM ceiling_alerts WHERE dedupe_key=?1", [key])?;
+        tx.commit()?;
+        Ok(alert)
+    }
+
+    /// `getStats` parity (`alert-store.js:540-552`): every status bucket
+    /// zero-seeded over the retained five states; severity buckets count
+    /// non-resolved rows only.
+    pub fn alert_stats(&self) -> Result<AlertStats, Error> {
+        let mut by_status: std::collections::BTreeMap<String, u64> = ALERT_STATUSES
+            .iter()
+            .map(|s| ((*s).to_owned(), 0))
+            .collect();
+        let mut by_severity: std::collections::BTreeMap<String, u64> = ALERT_SEVERITIES
+            .iter()
+            .map(|s| ((*s).to_owned(), 0))
+            .collect();
+        let mut statement = self
+            .db
+            .prepare("SELECT status, severity, resolved_at_ms FROM ceiling_alerts")?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<u64>>(2)?,
+            ))
+        })?;
+        let mut total = 0u64;
+        for row in rows {
+            let (status, severity, resolved_at) = row?;
+            total += 1;
+            *by_status.entry(status).or_insert(0) += 1;
+            if resolved_at.is_none() {
+                *by_severity.entry(severity).or_insert(0) += 1;
+            }
+        }
+        Ok(AlertStats {
+            total,
+            by_status,
+            by_severity,
+        })
     }
 }
 
-/// One open overrun alert with every retained field (`backend-v2.js:9422-9447`):
-/// `detail` is the parsed object, not the stored string; the resolved state is
-/// carried so the projection can state it without a second column. The
-/// display-state columns (ADR-124 amendment, migration 025) ride along.
+/// One overrun alert with every retained field (`backend-v2.js:9422-9447`,
+/// `lib/alert-store.js:300-328`): `detail` is the parsed object, not the
+/// stored string; the resolved state is carried so the projection can state
+/// it without a second column. The display-state columns (migration 025)
+/// and the retained identity/severity/assignee/suppression columns
+/// (migration 045, task #24) ride along.
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
 pub struct CeilingAlert {
     pub dedupe_key: String,
@@ -341,55 +583,125 @@ pub struct CeilingAlert {
     pub transitioned_at_ms: Option<u64>,
     #[serde(default)]
     pub transitioned_by: Option<String>,
+    /// The retained `alertType` (`lib/alert-store.js:301`): ceiling rows
+    /// always carry `agent_ceiling_overrun`.
+    #[serde(default = "default_alert_type")]
+    pub alert_type: String,
+    /// The retained `severity` (`alert-store.js:5`): the ceiling sweep
+    /// always files `warning` (`backend-v2.js:9427`).
+    #[serde(default = "default_severity")]
+    pub severity: String,
+    /// The retained `source` (`alert-store.js:6`): `backend` for the sweep.
+    #[serde(default = "default_source")]
+    pub source: String,
+    /// The retained `sourceAgent` (`alert-store.js:306`): the resource id.
+    #[serde(default)]
+    pub source_agent: Option<String>,
+    /// The retained `assignee` (`alert-store.js:317,430`): set by a
+    /// transition into `assigned` or by the update route.
+    #[serde(default)]
+    pub assignee: Option<String>,
+    /// The retained `suppressUntil` (`alert-store.js:433-434`): an absolute
+    /// millisecond deadline, or NULL for operator-released suppression.
+    #[serde(default)]
+    pub suppress_until_ms: Option<u64>,
+    /// The retained `linkedTaskId` (`alert-store.js:477-478`).
+    #[serde(default)]
+    pub linked_task_id: Option<String>,
+    /// The retained `originalSeverity` (`alert-store.js:132-133`): the
+    /// severity the caller asked for when the store downgraded a
+    /// warning/critical for missing actionable fields; NULL when filed at
+    /// the requested severity.
+    #[serde(default)]
+    pub original_severity: Option<String>,
+    /// The retained `missingActionableFields` (`alert-store.js:116-136`).
+    #[serde(default)]
+    pub missing_actionable_fields: Vec<String>,
+    /// The retained `owner` (`alert-store.js:317,470`).
+    #[serde(default)]
+    pub owner: Option<String>,
+    /// The retained `tags` (`alert-store.js:317`).
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 fn default_status() -> String {
     "open".into()
 }
+fn default_alert_type() -> String {
+    "agent_ceiling_overrun".into()
+}
+fn default_severity() -> String {
+    "warning".into()
+}
+fn default_source() -> String {
+    "backend".into()
+}
 
-/// The ONE legal-transition map (ADR-124 amendment): server-owned, served to
-/// every consumer — the store, both routes and the page's buttons all derive
-/// from this single definition. The retained console's `NEXT_STATUS`
-/// (mockup/app/alerts/page.jsx:31-37) DIVERGES from the retained store's
-/// `TRANSITIONS` (lib/alert-store.js:8-14: it offers `acknowledged→suppressed`
-/// and `assigned→suppressed`, which the store refuses, and hides
+/// One retained alert note (`lib/alert-store.js:456-459`): author, text,
+/// and the statement time.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
+pub struct AlertNote {
+    pub author: String,
+    pub text: String,
+    pub ts_ms: u64,
+}
+
+/// The ONE legal-transition map (task #24, `lib/alert-store.js:4-14`
+/// parity): the retained FIVE states, `assigned` restored. Server-owned,
+/// served to every consumer — the store, both routes and the page's buttons
+/// all derive from this single definition. The retained console's
+/// `NEXT_STATUS` (mockup/app/alerts/page.jsx:31-37) DIVERGES from the
+/// retained store's `TRANSITIONS` (it offers `acknowledged→suppressed` and
+/// `assigned→suppressed`, which the store refuses, and hides
 /// `suppressed→assigned`, which it allows); that drift is NOT ported — this
 /// map matches the retained STORE exactly, `resolved` terminal.
-pub const ALERT_STATUSES: [&str; 4] = ["open", "acknowledged", "resolved", "suppressed"];
-/// The four-state subset the ceiling alert honestly carries (brief-24 §2):
-/// `assigned` is dropped — it would need an assignee column and the retained
-/// agent-token authority (`backend-v2.js:16104-16113`), which the native
-/// boundary does not have — and `acknowledged→suppressed` is legal here: the
-/// retained STORE refuses it while its own console offers it
-/// (`mockup/app/alerts/page.jsx:31-37` vs `lib/alert-store.js:8-14`); that
-/// drift is not ported, and this one map is what every consumer serves.
-/// `resolved` is terminal.
+pub const ALERT_STATUSES: [&str; 5] =
+    ["open", "acknowledged", "assigned", "resolved", "suppressed"];
+/// `lib/alert-store.js:5` parity.
+pub const ALERT_SEVERITIES: [&str; 3] = ["info", "warning", "critical"];
+/// `lib/alert-store.js:6` parity.
+pub const ALERT_SOURCES: [&str; 4] = ["backend", "bridge", "supervisor", "system"];
+/// `TRANSITIONS`, `lib/alert-store.js:8-14`: open→{acknowledged, assigned,
+/// resolved, suppressed}; acknowledged→{assigned, resolved}; assigned→
+/// {resolved}; suppressed→{open, assigned}; resolved terminal.
 pub fn allowed_transitions(from: &str) -> &'static [&'static str] {
     match from {
-        "open" => &["acknowledged", "resolved", "suppressed"],
-        "acknowledged" => &["resolved", "suppressed"],
-        "suppressed" => &["open", "resolved"],
+        "open" => &["acknowledged", "assigned", "resolved", "suppressed"],
+        "acknowledged" => &["assigned", "resolved"],
+        "assigned" => &["resolved"],
+        "suppressed" => &["open", "assigned"],
         _ => &[],
     }
 }
+/// The retained suppression default (`ALERT_SUPPRESS_DEFAULT_MS`,
+/// `lib/alert-store.js:26`): 24 hours, applied when the operator
+/// transition carries no explicit `suppressUntil`.
+pub const ALERT_SUPPRESS_DEFAULT_MS: u64 = 24 * 60 * 60 * 1000;
 /// A transition is DISPLAY STATE ONLY: it mutates how the alert renders and
 /// nothing else — no admission, lease, engagement or retry consults it.
+/// `assignee` and `suppress_until_ms` ride the transition exactly like the
+/// retained `meta.assignee` / `meta.suppressUntil`
+/// (`lib/alert-store.js:427-437`).
 #[derive(serde::Serialize)]
 pub struct AlertTransition {
     pub key: String,
     pub to: &'static str,
     pub actor: String,
     pub note: Option<String>,
+    pub assignee: Option<String>,
+    pub suppress_until_ms: Option<u64>,
     pub now: u64,
 }
 impl DomainRepository {
     /// Apply one operator display-state transition (`lib/alert-store.js:415-439`
     /// parity): legal pairs only (`bad_transition` otherwise), `resolved` sets
-    /// `resolved_by` to the actor like the retained `meta.actor || 'operator'`.
-    /// Suppression carries NO window natively — it is operator-released only
-    /// (`suppressed→open` on the map); the retained 24h expiry
-    /// (`ALERT_SUPPRESS_DEFAULT_MS`, alert-store.js:24) is the named
-    /// divergence (brief-24 §2.6). One `Immediate` transaction, same as the
-    /// sweep — a refused transition writes nothing.
+    /// `resolved_at_ms`/`resolved_by` to the actor like the retained
+    /// `meta.actor || 'operator'`; `assigned` adopts `meta.assignee`
+    /// (normalized to 128) when one is supplied; `suppressed` sets
+    /// `suppressUntil = meta.suppressUntil || now + ALERT_SUPPRESS_DEFAULT_MS`;
+    /// reopening to `open` clears the suppression window exactly like the
+    /// retained store. One `Immediate` transaction, same as the sweep — a
+    /// refused transition writes nothing.
     pub fn transition_ceiling_alert(
         &mut self,
         command: AlertTransition,
@@ -399,6 +711,8 @@ impl DomainRepository {
             to,
             actor,
             note,
+            assignee,
+            suppress_until_ms,
             now,
         } = command;
         let actor = if actor.is_empty() {
@@ -406,6 +720,7 @@ impl DomainRepository {
         } else {
             actor
         };
+        let assignee = assignee.map(|a| a.trim().chars().take(128).collect::<String>());
         if actor.len() > 128 || note.as_deref().is_some_and(|n| n.len() > 2048) {
             return Err(hagency_core::InvalidInput("invalid alert transition").into());
         }
@@ -426,80 +741,162 @@ impl DomainRepository {
             return Err(hagency_core::InvalidInput("bad_transition").into());
         }
         let resolved_at = (to == "resolved").then_some(now);
+        // `suppressed` carries the retained window (`alert-store.js:433-434`);
+        // `open` clears it (`alert-store.js:435-437`); every other target
+        // leaves the stored window alone.
+        let suppress_until = match to {
+            "suppressed" => Some(Some(
+                suppress_until_ms.unwrap_or_else(|| now.saturating_add(ALERT_SUPPRESS_DEFAULT_MS)),
+            )),
+            "open" => Some(None),
+            _ => None,
+        };
         let changed = tx.execute(
-            "UPDATE ceiling_alerts SET status=?2,note=?3,transitioned_at_ms=?4,transitioned_by=?5,resolved_at_ms=COALESCE(?6,resolved_at_ms),resolved_by=CASE WHEN ?6 IS NOT NULL THEN ?7 ELSE resolved_by END WHERE dedupe_key=?1",
-            rusqlite::params![key, to, note, now, actor, resolved_at, actor],
+            "UPDATE ceiling_alerts SET status=?2,note=?3,transitioned_at_ms=?4,transitioned_by=?5,resolved_at_ms=COALESCE(?6,resolved_at_ms),resolved_by=CASE WHEN ?6 IS NOT NULL THEN ?7 ELSE resolved_by END,assignee=CASE WHEN ?8 THEN COALESCE(?9,assignee) ELSE assignee END,suppress_until_ms=CASE WHEN ?10 IS NULL THEN suppress_until_ms ELSE ?11 END WHERE dedupe_key=?1",
+            rusqlite::params![
+                key,
+                to,
+                note,
+                now,
+                actor,
+                resolved_at,
+                actor,
+                to == "assigned",
+                assignee,
+                suppress_until.is_some(),
+                suppress_until.flatten(),
+            ],
         )?;
         debug_assert_eq!(changed, 1);
+        // A note carried by the transition is filed in the notes history
+        // exactly like the retained `addNote` (`alert-store.js:447-462`).
+        if let Some(text) = note.as_deref().filter(|t| !t.trim().is_empty()) {
+            let seq: u64 = tx.query_row(
+                "SELECT COALESCE(MAX(seq),0)+1 FROM ceiling_alert_notes WHERE dedupe_key=?1",
+                [&key],
+                |r| r.get(0),
+            )?;
+            tx.execute(
+                "INSERT INTO ceiling_alert_notes(dedupe_key,seq,author,text,ts_ms) VALUES(?1,?2,?3,?4,?5)",
+                params![key, seq, actor, text.chars().take(2048).collect::<String>(), now],
+            )?;
+        }
         let alert = read_alert(&tx, &key)?;
         tx.commit()?;
         Ok(alert)
     }
 }
 
-/// One alert row by dedupe key, through the read's own row type.
-fn read_alert(db: &rusqlite::Connection, key: &str) -> Result<CeilingAlert, Error> {
-    let row = db
-        .query_row(
-            "SELECT dedupe_key,resource_id,summary,detail,runbook,impact,recovery_condition,occurrences,first_seen_ms,last_seen_ms,resolved_at_ms,status,note,transitioned_at_ms,transitioned_by FROM ceiling_alerts WHERE dedupe_key=?1",
-            [key],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, String>(5)?,
-                    row.get::<_, String>(6)?,
-                    row.get::<_, i64>(7)?,
-                    row.get::<_, u64>(8)?,
-                    row.get::<_, u64>(9)?,
-                    row.get::<_, Option<u64>>(10)?,
-                    row.get::<_, String>(11)?,
-                    row.get::<_, Option<String>>(12)?,
-                    row.get::<_, Option<u64>>(13)?,
-                    row.get::<_, Option<String>>(14)?,
-                ))
-            },
-        )
-        .map_err(|error| match error {
-            rusqlite::Error::QueryReturnedNoRows => Error::NotFound,
-            other => other.into(),
-        })?;
-    let (
-        dedupe_key,
-        resource_id,
-        summary,
-        detail,
-        runbook,
-        impact,
-        recovery_condition,
-        occurrences,
-        first_seen_ms,
-        last_seen_ms,
-        resolved_at_ms,
-        status,
-        note,
-        transitioned_at_ms,
-        transitioned_by,
-    ) = row;
+/// The one column list every alert read selects (migration 045 shape), in
+/// declaration order — the row parser below consumes exactly this order.
+const ALERT_COLUMNS: &str = "dedupe_key,resource_id,summary,detail,runbook,impact,recovery_condition,occurrences,first_seen_ms,last_seen_ms,resolved_at_ms,resolved_by,status,note,transitioned_at_ms,transitioned_by,alert_type,severity,source,source_agent,assignee,suppress_until_ms,linked_task_id,original_severity,missing_actionable_fields,owner,tags";
+
+/// Parse one row selected with `ALERT_COLUMNS` into the wire struct.
+/// `missing_actionable_fields`/`tags` are stored as JSON arrays the way the
+/// retained record carries them (`alert-store.js:317`); a corrupt cell is
+/// `Error::Schema`, never a silently-empty list.
+fn alert_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CeilingAlert> {
+    let detail: String = row.get(3)?;
+    let missing: String = row.get(24)?;
+    let tags: String = row.get(26)?;
+    let resolved_at_ms: Option<u64> = row.get(10)?;
     Ok(CeilingAlert {
+        dedupe_key: row.get(0)?,
+        resource_id: row.get(1)?,
+        summary: row.get(2)?,
+        detail: read_detail(&detail),
+        runbook: row.get(4)?,
+        impact: row.get(5)?,
+        recovery_condition: row.get(6)?,
+        occurrences: row.get::<_, i64>(7)?.try_into().unwrap_or_default(),
+        first_seen_ms: row.get(8)?,
+        last_seen_ms: row.get(9)?,
         resolved: resolved_at_ms.is_some(),
-        detail: serde_json::from_str(&detail).unwrap_or(serde_json::Value::String(detail)),
-        occurrences: u64::try_from(occurrences).map_err(|_| Error::Schema)?,
-        dedupe_key,
-        resource_id,
-        summary,
-        runbook,
-        impact,
-        recovery_condition,
-        first_seen_ms,
-        last_seen_ms,
-        status,
-        note,
-        transitioned_at_ms,
-        transitioned_by,
+        status: row.get(12)?,
+        note: row.get(13)?,
+        transitioned_at_ms: row.get(14)?,
+        transitioned_by: row.get(15)?,
+        alert_type: row.get(16)?,
+        severity: row.get(17)?,
+        source: row.get(18)?,
+        source_agent: row.get(19)?,
+        assignee: row.get(20)?,
+        suppress_until_ms: row.get(21)?,
+        linked_task_id: row.get(22)?,
+        original_severity: row.get(23)?,
+        missing_actionable_fields: serde_json::from_str(&missing).unwrap_or_default(),
+        owner: row.get(25)?,
+        tags: serde_json::from_str(&tags).unwrap_or_default(),
+    })
+}
+
+/// The retained list filters (`alert-store.js:388-414`): comma-separated
+/// status/severity lists, exact sourceAgent/alertType/assignee matches,
+/// and pagination with the retained default 100 / cap 500.
+#[derive(Debug, Default)]
+pub struct AlertListFilter {
+    pub statuses: Option<Vec<String>>,
+    pub severities: Option<Vec<String>>,
+    pub source_agent: Option<String>,
+    pub alert_type: Option<String>,
+    pub assignee: Option<String>,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+/// The retained PATCH body (`alert-store.js:464-525`): every field
+/// optional; an absent field is untouched, `null` clears it.
+#[derive(Debug, Default)]
+pub struct AlertPatch {
+    pub tags: Option<Vec<String>>,
+    pub linked_task_id: Option<String>,
+    pub owner: Option<String>,
+    pub assignee: Option<String>,
+    pub source_agent: Option<String>,
+    pub runbook: Option<String>,
+    pub impact: Option<String>,
+    pub recovery_condition: Option<String>,
+}
+
+/// The retained stats payload (`alert-store.js:540-552`).
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct AlertStats {
+    pub total: u64,
+    pub by_status: std::collections::BTreeMap<String, u64>,
+    pub by_severity: std::collections::BTreeMap<String, u64>,
+}
+
+/// The notes history read inside a transaction (`add_alert_note` reads the
+/// history it just wrote before committing), the same SELECT the public
+/// `alert_notes` runs. A `&Transaction` derefs to `&Connection`, so this
+/// one helper serves both.
+fn alert_notes_tx(db: &rusqlite::Connection, key: &str) -> Result<Vec<AlertNote>, Error> {
+    let mut statement = db.prepare(
+        "SELECT author,text,ts_ms FROM ceiling_alert_notes WHERE dedupe_key=?1 ORDER BY seq",
+    )?;
+    let rows = statement
+        .query_map([key], |row| {
+            Ok(AlertNote {
+                author: row.get(0)?,
+                text: row.get(1)?,
+                ts_ms: row.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// One alert row by dedupe key, through the read's own row type.
+fn read_alert(db: &rusqlite::Connection, key: &str) -> Result<CeilingAlert, Error> {    db.query_row(
+        &format!(
+            "SELECT {ALERT_COLUMNS} FROM ceiling_alerts WHERE dedupe_key=?1"
+        ),
+        [key],
+        alert_from_row,
+    )
+    .map_err(|error| match error {
+        rusqlite::Error::QueryReturnedNoRows => Error::NotFound,
+        other => other.into(),
     })
 }
 

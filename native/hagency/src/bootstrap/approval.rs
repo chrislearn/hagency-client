@@ -116,7 +116,10 @@ pub(crate) fn collector(
 ) -> Result<Arc<ApprovalCollector>, Failure> {
     let approval = HostApprovalConfig::new(config, vec![engagement_id]).map_err(|_| {
         tracing::error!("approval collector refused: host approval config invalid");
-        Failure::Config
+        Failure::Config {
+            field: "agent-driver.json: approval block",
+            fix: "owner room, wait budget and pacing must form a valid host approval configuration",
+        }
     })?;
     // The named refusal the `refuses_without_enrollment` selector binds: an
     // approval section whose fresh-account enrollment anchors are absent or
@@ -125,12 +128,18 @@ pub(crate) fn collector(
         .with_fresh_account_enrollment(anchors)
         .map_err(|_| {
             tracing::error!("approval enrollment refused: fresh-account anchors absent or invalid");
-            Failure::Config
+            Failure::Config {
+                field: "agent-driver.json: approval fresh-account enrollment",
+                fix: "every named anchor needs a resolvable fresh-account enrollment at serve time",
+            }
         })?;
     Ok(Arc::new(ApprovalCollector::new(approval, domain).map_err(
         |_| {
             tracing::error!("approval collector refused: collector construction failed");
-            Failure::Config
+            Failure::Config {
+                field: "agent-driver.json: approval block",
+                fix: "collector construction refused; check the owner identity and room binding",
+            }
         },
     )?))
 }

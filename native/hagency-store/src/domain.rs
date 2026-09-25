@@ -20,10 +20,12 @@ pub(crate) mod accounts;
 mod activity;
 pub use activity::{ActivityEvent, ActivityUpdate};
 mod agent_fences;
+mod agent_lifecycle;
 mod console_feed;
 pub use agent_fences::{AgentFence, FenceReason};
 mod approvals;
 mod engagement_retention;
+mod engagement_terms;
 pub use approvals::card::PrivateApprovalCard;
 mod attachments;
 mod attempt_events;
@@ -36,24 +38,34 @@ pub use attempt_events::{
 pub use catalog_publication::PublishedCatalog;
 mod ceiling_alerts;
 pub use ceiling_alerts::{
-    ALERT_STATUSES, AlertTransition, CeilingAlert, MAX_OPEN_CEILING_ALERTS, SweepOutcome,
-    allowed_transitions,
+    ALERT_SEVERITIES, ALERT_SOURCES, ALERT_STATUSES, ALERT_SUPPRESS_DEFAULT_MS, AlertListFilter,
+    AlertNote, AlertPatch, AlertStats, AlertTransition, CeilingAlert, MAX_OPEN_CEILING_ALERTS,
+    SweepOutcome, allowed_transitions,
 };
 mod command_notices;
 mod conversation_lifecycle;
 mod conversations;
 mod delivery_feedback;
+mod exec_policy;
 mod execution;
 mod graphs;
 mod matrix_routes;
 mod messages;
 pub use engagement_retention::{ENDED_LIMIT, EngagementPruneOutcome, EngagementRetentionStatus};
+pub use engagement_terms::{AgentDefinition, RoleOffer, WhitelistEntry};
 pub use execution::{
     EXECUTION_RETENTION_BATCH, EXECUTION_RETENTION_DISPATCHES, EXECUTION_RETENTION_ROWS,
     ExecutionPruneOutcome,
 };
 pub use messages::{CorpusSweepOutcome, MESSAGE_RETENTION_FLOOR, RetentionStatus};
 mod notice_custody;
+mod operator_tasks;
+pub use operator_tasks::{
+    MAX_TASK_COMMENTS, MAX_TASK_PAGE, OperatorTask, OperatorTaskComment, TASK_GRANULARITIES,
+    TASK_PRIORITIES, TASK_STATUSES, TaskFilters, operator_transitions,
+};
+mod invites;
+pub use invites::PendingInvite;
 mod offer_book;
 pub use offer_book::{
     Contribution, OfferBook, OfferResource, OfferRole, OfferServing, Preview,
@@ -64,6 +76,8 @@ mod owned_dispatch;
 mod stopped_inspection;
 pub use outcome_resolution::{OutcomeAction, OutcomeResolution};
 mod provision_runtime;
+mod reminders;
+pub use reminders::{Reminder, ReminderReceipt, ReminderSweep};
 mod side_registration;
 pub use side_registration::{
     IssueSideRegistration, IssueSideRegistrationRequest, SideCredential,
@@ -83,6 +97,10 @@ pub(crate) mod received_files;
 mod replies;
 pub(crate) mod resource_configuration;
 pub(crate) mod resource_publication;
+mod side_budget;
+pub use side_budget::{SideBudget, SideCommitment, UsageTotals};
+mod side_lifecycle;
+pub use side_lifecycle::{Credential, Representative, SideProjectRecord, SideRecord};
 mod task_intents;
 pub(crate) mod uploads;
 mod usage;
@@ -107,7 +125,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 42;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 52;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -302,6 +320,47 @@ pub struct AgentRosterRow {
     pub online: bool,
     pub last_seen_ms: Option<u64>,
     pub last_activity_ms: Option<u64>,
+    /// The live dispatch's own word, separate from `state` (the engagement
+    /// lifecycle word): `running` (started), `waiting_approval` (parked),
+    /// `starting` (leased). `None` means native's dispatch record shows no
+    /// live dispatch — said as unknown, never guessed as `idle`.
+    pub liveness: Option<String>,
+    /// Tokens the agent's engagements were observed to consume:
+    /// `usage_sources.latest_counts` display volume summed the way the usage
+    /// report sums it. `None` when nothing was measured — unknown, not zero.
+    pub consumed: Option<u64>,
+}
+/// One console engagement row (board #60 item 3). The label the triage list
+/// already rendered, plus the figures TS's `/api/engagements`
+/// (`backend-v2.js:14964-14975`) carries and native was dropping:
+/// `remainingTokens` (what is LEFT on the resource behind the engagement),
+/// `ownerBindingRequired` (a pending request with no verified owner binding
+/// yet — TS's readiness rule), and the record's own timestamps.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngagementLabel {
+    pub id: String,
+    pub agent_name: String,
+    pub project_name: Option<String>,
+    pub role: String,
+    pub requested_tokens: u64,
+    pub state: EngagementState,
+    pub cleanup: CleanupState,
+    /// What is LEFT on the resource behind the agent, so the queue can show
+    /// over-commitment BEFORE the decision (TS `:14974`
+    /// `agentRemainingTokens`). The same `min` of the non-null limits the
+    /// admission decision uses. `None` when no ceiling is declared: unknown,
+    /// never rendered as a zero allowance.
+    pub agent_remaining_tokens: Option<u64>,
+    /// TS `:14972`: a PENDING request has no owner yet unless a verified
+    /// binding exists for it. Only pending rows can require one; a decided
+    /// row's readiness is no longer a question the queue asks.
+    pub owner_binding_required: bool,
+    /// When the request was observed (`evidence.observed_at_ms`, recorded at
+    /// admission) and, for an ended engagement, when it reached its terminal
+    /// state (`engagement_ends.ended_at`). Both optional: null is unknown.
+    pub created_at_ms: Option<u64>,
+    pub ended_at_ms: Option<u64>,
 }
 /// One session (room) of the agent detail read: the room the session's
 /// binding names plus its live dispatch state, when one exists. Exactly
@@ -338,6 +397,10 @@ pub struct AgentDetail {
     pub rooms: Vec<AgentDetailRoom>,
     pub dispatch: Option<AgentDetailRoom>,
     pub tasks: Vec<hagency_core::tasks::Task>,
+    /// Board #53: this agent's self-reminders (every engagement the agent name
+    /// holds), oldest first. The reminder's `msg` is the agent's own text; no
+    /// credential or workspace path travels inside.
+    pub reminders: Vec<Reminder>,
 }
 fn role_available(db: &Connection, role: &str, fleet: Option<&str>) -> Result<bool, Error> {
     qualification::check_role(role)?;
@@ -467,15 +530,21 @@ const DECISION_PRUNE_RETRY_KIND: &str = "retry_cleanup";
 /// inserts a `phase='decisions'` receipt row.
 const RETENTION_RECEIPT_LIMIT: u64 = 100;
 
+/// The audit's own facts ride the decisions row itself (board #16, parity
+/// lib/engagement-store.js:299-321 `record`): the kind word is the deciding
+/// command's own — the call sites pass the retained `engagement.*` word —
+/// and the clock is the deciding moment. Rows written before 047 keep NULL
+/// and render as unknown.
 fn record_decision(
     tx: &Transaction<'_>,
     id: &str,
     digest: &str,
     value: &Engagement,
+    audit_word: Option<&str>,
 ) -> Result<(), Error> {
     tx.execute(
-        "INSERT INTO decisions(id,digest,result) VALUES(?1,?2,?3)",
-        params![id, digest, serialize(value)?],
+        "INSERT INTO decisions(id,digest,result,kind,at) VALUES(?1,?2,?3,?4,?5)",
+        params![id, digest, serialize(value)?, audit_word, graphs::now_ms()?],
     )?;
     // The in-write trim runs after the insert, in the same transaction, so a
     // rolled-back verdict carries neither the prune nor a receipt.
@@ -746,23 +815,90 @@ impl DomainRepository {
                         include_str!("migrations/046-side-registrations.sql"),
                     ),
                     (41, include_str!("migrations/040-command-notices.sql")),
-                    // Task #1's migration number is 040 (the board's
-                    // assignment); the walker requires the next sequential
-                    // list version after integ's head 41, so the file keeps
-                    // 040 and the tuple carries 42. Integration renumbers
-                    // on merge.
+                    // Integration of lane/agentctl: its board-assigned number
+                    // was 049; it lands as the next sequential tuple 42 (file
+                    // name kept).
+                    (42, include_str!("migrations/049-agent-lifecycle.sql")),
+                    // Integration of lane/taskmgmt: its board-assigned number
+                    // was 044; it lands as the next sequential tuple 43 (file
+                    // name kept).
+                    (43, include_str!("migrations/044-operator-tasks.sql")),
+                    // Integration of lane/offers: its board-assigned number
+                    // was 043; its 040-042 reserved placeholders are deleted
+                    // (the board instruction) and the real migration lands as
+                    // the next sequential tuple 44 (file name kept).
                     (
-                        42,
+                        44,
+                        include_str!("migrations/043-offers-whitelist-agent-definitions.sql"),
+                    ),
+                    // Integration of lane/alerts: its board-assigned number
+                    // was 045 (already the next sequential tuple; landing
+                    // order made them coincide).
+                    (45, include_str!("migrations/045-alert-parity.sql")),
+                    // Integration of ../nav task/20: its board-assigned number
+                    // was 061; it lands as the next sequential tuple 46 (file
+                    // name kept).
+                    (46, include_str!("migrations/061-side-allocations.sql")),
+                    // Integration of ../firstres task/27: its board-assigned
+                    // number was 040; it lands as the next sequential tuple 47
+                    // (file name kept).
+                    (
+                        47,
+                        include_str!("migrations/040-workspace-dirty-release.sql"),
+                    ),
+                    // Integration of lane/verdict: its board-assigned number
+                    // was 047; its 040-046 walker placeholders are deleted
+                    // (the board instruction) and the real migration lands as
+                    // the next sequential tuple 48 (file name kept).
+                    (
+                        48,
+                        include_str!("migrations/047-engagement-verdict-audit.sql"),
+                    ),
+                    // Integration of ../regissue task/12: its board-assigned
+                    // number was 060; it lands as the next sequential tuple 49
+                    // (file name kept).
+                    (
+                        49,
+                        include_str!("migrations/060-pending-invites.sql"),
+                    ),
+                    // Integration of lane/sidelife: the addition notice named
+                    // migration 042; the branch file carries 040 — it lands as
+                    // the next sequential tuple 50 (file name kept).
+                    (
+                        50,
+                        include_str!("migrations/040-side-credentials.sql"),
+                    ),
+                    // Integration of ../provision task/53: its board-assigned
+                    // number was 066; it lands as the next sequential tuple 51
+                    // (file name kept).
+                    (
+                        51,
+                        include_str!("migrations/066-reminders.sql"),
+                    ),
+                    // Integration of lane/activity task/1: its board-assigned
+                    // number was 040; it lands as the next sequential tuple 52
+                    // (file name kept).
+                    (
+                        52,
                         include_str!("migrations/040-dispatch-activity.sql"),
                     ),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
+                    "SELECT fleet_id,allocated_tokens,updated_at FROM side_allocations LIMIT 0",
+                    "SELECT engagement_id,stopped_at,reason,operator,started_at FROM agent_lifecycle LIMIT 0",
+                    "SELECT server_name,label,api_base_url,credential,pending_credential,pending_issued_at,representative,access_state,access_detail,access_checked_at,access_issued_at,allocated_tokens,active,created_at,updated_at FROM side_records LIMIT 0",
+                    "SELECT server_name,id,name,room_id,note,archived,archived_at,created_at,updated_at FROM side_projects LIMIT 0",
                     "SELECT id,engagement_id,dispatch_id,fence,reason,created_at,cleared_at,cleared_by FROM agent_fences LIMIT 0",
                     "SELECT dispatch_id,phase,kind,tools,finished,started_at,updated_at,queued_at,revision,anchor FROM dispatch_activity LIMIT 0",
                     "SELECT dispatch_id,event_key FROM dispatch_activity_events LIMIT 0",
                     "SELECT id,session_id,transaction_id,digest,body,html,route,source_event_id,state,cancel_requested,fence,claim_hash,claim_until,event_id,observation,created_at,updated_at FROM command_notices LIMIT 0",
                     "SELECT id FROM current_command_notices LIMIT 0",
+                    "SELECT id,dirty FROM workspace_resources LIMIT 0",
+                    "SELECT resource_id,inspected_at FROM workspace_dirty_releases LIMIT 0",
+                    "SELECT engagement_id,yolo,updated_at FROM agent_execution_policies LIMIT 0",
+                    "SELECT room_id,agent,inviter,project_server,mode,since_ts,state,join_pending,leave_pending,seen_at,decided_at,decided_by FROM pending_invites LIMIT 0",
+                    "SELECT id,engagement_id,session_id,msg,created_at,fire_at,fired_at FROM reminders LIMIT 0",
                     "SELECT dispatch_id,fence,seq,at_ms,phase,detail FROM runner_attempt_events LIMIT 0",
                     "SELECT dispatch_id,fence,started_at,parked_at,last_renew_at,settled_at,terminal_reason FROM runner_attempts LIMIT 0",
                     "SELECT dispatch_id,message_sequence,addressed FROM dispatch_inputs LIMIT 0",
@@ -777,7 +913,10 @@ impl DomainRepository {
                     "SELECT id,account_id,account_generation,attempt,observed_at_ms,expires_at_ms,mode,provider_state,outcome FROM account_login_observations LIMIT 0",
                     "SELECT account_id,attempt,started_at_ms,deadline_ms,state,receipt_id FROM account_login_attempts LIMIT 0",
                     "SELECT id,account_id,retired_at_ms,readiness,logout_detail FROM account_logout_receipts LIMIT 0",
-                    "SELECT dedupe_key,resource_id,summary,detail,runbook,impact,recovery_condition,occurrences,first_seen_ms,last_seen_ms,resolved_at_ms,resolved_by,status,note,transitioned_at_ms,transitioned_by FROM ceiling_alerts LIMIT 0",
+                    "SELECT dedupe_key,resource_id,summary,detail,runbook,impact,recovery_condition,occurrences,first_seen_ms,last_seen_ms,resolved_at_ms,resolved_by,status,note,transitioned_at_ms,transitioned_by,alert_type,severity,source,source_agent,assignee,suppress_until_ms,linked_task_id,original_severity,missing_actionable_fields,owner,tags FROM ceiling_alerts LIMIT 0",
+                    "SELECT dedupe_key,seq,author,text,ts_ms FROM ceiling_alert_notes LIMIT 0",
+                    "SELECT id,title,description,status,priority,granularity,assignee,created_by,created_at,updated_at,started_at,completed_at,heartbeat_at,waiting_reason,waiting_until,parent_id,labels FROM operator_tasks LIMIT 0",
+                    "SELECT sequence,task_id,author,body,created_at FROM operator_task_comments LIMIT 0",
                     "SELECT k.secret,k.deployment,k.root_identity,a.id,a.ordinal,a.generation,a.state,a.namespace_identity,a.identity_tuple,a.seat_id,r.preset_id,r.account_id,r.binding_generation FROM account_identity_key k CROSS JOIN managed_accounts a CROSS JOIN resource_accounts r LIMIT 0",
                     "SELECT request_id,context_id,capability_digest,decision_digest,state,write_accepted,authorized_at,response_started_at FROM approval_responses LIMIT 0",
                     "SELECT id,capability_digest,event_id,workspace_id,binding,binding_digest,byte_limit,facts,state,failure FROM received_files LIMIT 0",
@@ -1002,6 +1141,89 @@ impl DomainRepository {
             .map(|s| Ok(serde_json::from_str(&s?)?))
             .collect()
     }
+    /// The console engagements list (board #60 item 3): the label the triage
+    /// list already rendered, widened to the figures TS's `/api/engagements`
+    /// (`backend-v2.js:14964-14975`) carries and native was dropping, and a
+    /// server-side `state` filter (`:14965` `?state=`).
+    ///
+    /// `agent_remaining_tokens` is computed the way the ADMISSION decision
+    /// computes it — `min` of the non-null limits (`ceiling - drawn`, the
+    /// seat's remaining, the pool's remaining) — so the queue shows the
+    /// over-commitment the decision would refuse, before the decision. The
+    /// engagement's own reservation is NOT excluded (TS `remainingFor(e.agent)`
+    /// passes no exclusion here), so the figure is the agent's, not a
+    /// self-forgiving one.
+    ///
+    /// `owner_binding_required` is TS `:14972`: a PENDING request with no
+    /// owner binding yet. It reads `approval_bindings` directly rather than
+    /// the `current_approval_bindings` view, because that view is scoped to
+    /// `state='active'` engagements and so could never answer a pending row.
+    ///
+    /// `created_at_ms` is `evidence.observed_at_ms` — the request's own
+    /// observation instant, recorded at admission. Native keeps no separate
+    /// creation clock, so this is the closest true instant, never invented.
+    /// `ended_at_ms` is `engagement_ends.ended_at`, absent while live.
+    pub fn engagement_labels(
+        &self,
+        after: &str,
+        state: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<EngagementLabel>, Error> {
+        if limit == 0 || limit > 100 {
+            return Err(InvalidInput("page limit must be 1..100").into());
+        }
+        let at = graphs::now_ms()?;
+        let mut query = self.db.prepare(
+            "SELECT e.projection,e.resource_id, \
+             (SELECT ended_at FROM engagement_ends WHERE engagement_id=e.id), \
+             EXISTS(SELECT 1 FROM approval_bindings b JOIN approval_rooms room \
+              ON room.server_name=b.server_name AND room.room_id=b.room_id \
+               AND room.generation=b.room_generation AND room.available=1 \
+              WHERE b.engagement_id=e.id), \
+             json_extract(e.evidence,'$.observed_at_ms') \
+             FROM engagements e WHERE e.id>?1 AND (?2 IS NULL OR e.state=?2) \
+             ORDER BY e.id LIMIT ?3",
+        )?;
+        let rows: Vec<(String, String, Option<i64>, bool, Option<i64>)> = query
+            .query_map(params![after, state, limit as i64], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })?
+            .collect::<Result<_, _>>()?;
+        let mut labels = Vec::with_capacity(rows.len());
+        for (projection, resource_id, ended_at, has_binding, observed_at) in rows {
+            let engagement: Engagement = serde_json::from_str(&projection)?;
+            let resource = read_resource(&self.db, &resource_id)?;
+            let report = usage::ceiling_report(&self.db, &resource.id(), at)?;
+            let spent = budget(&self.db, &resource, None, false)?;
+            let by_ceiling = report
+                .ceiling_tokens
+                .map(|c| c.saturating_sub(report.drawn));
+            let agent_remaining_tokens = [
+                by_ceiling,
+                spent.seat.remaining.map(u64::from),
+                spent.pool.remaining.map(u64::from),
+            ]
+            .into_iter()
+            .flatten()
+            .min();
+            // Compare before the state moves into the label.
+            let pending = engagement.state == EngagementState::Pending;
+            labels.push(EngagementLabel {
+                id: engagement.id.clone(),
+                agent_name: engagement.agent_name.as_str().to_owned(),
+                project_name: engagement.project_name.clone(),
+                role: engagement.role.clone(),
+                requested_tokens: u64::from(engagement.requested_tokens),
+                state: engagement.state,
+                cleanup: engagement.cleanup,
+                agent_remaining_tokens,
+                owner_binding_required: pending && !has_binding,
+                created_at_ms: observed_at.and_then(|v| u64::try_from(v).ok()),
+                ended_at_ms: ended_at.and_then(|v| u64::try_from(v).ok()),
+            });
+        }
+        Ok(labels)
+    }
     /// The bounded approval observation read (ADR-138, C2a): pages
     /// `owner_approvals` by the opaque id cursor with the same hard cap as
     /// `engagements`, and names its `SELECT` columns so the projection cannot
@@ -1037,6 +1259,45 @@ impl DomainRepository {
     }
     pub fn get(&self, id: &str) -> Result<Engagement, Error> {
         read_engagement(&self.db, id)
+    }
+    /// The console verdict audit (parity: backend-v2.js:14980-14983 →
+    /// lib/engagement-store.js:804-806 `listAudit`): the newest `limit`
+    /// recorded decisions, newest-first. Entry shape is the retained
+    /// `{type, at, ...detail}` — `type` is the deciding command's own word,
+    /// `at` the deciding moment, and the detail carries the engagement id and
+    /// the state the verdict produced. Rows recorded before migration 047
+    /// have no word/clock and surface as unknown, never invented.
+    /// The console verdict audit (parity: backend-v2.js:14980-14983 →
+    /// lib/engagement-store.js:804-806 `listAudit`): the newest `limit`
+    /// recorded decisions, newest-first. Entry shape is the retained
+    /// `{type, at, ...detail}` — `type` is the deciding command's own word,
+    /// `at` the deciding moment, and the detail carries the engagement id and
+    /// the state the verdict produced. Rows recorded before migration 047
+    /// have no word/clock and surface as unknown, never invented. The limit
+    /// clamps exactly like the retained store — `Math.max(1, Math.min(limit,
+    /// AUDIT_LIMIT))` — no failure state TS did not have.
+    pub fn decisions_audit(&self, limit: usize) -> Result<Vec<serde_json::Value>, Error> {
+        let limit = limit.clamp(1, 2000);
+        let mut query = self
+            .db
+            .prepare("SELECT kind,at,result FROM decisions ORDER BY rowid DESC LIMIT ?1")?;
+        let rows = query
+            .query_map([limit as i64], |r| {
+                Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, String>(2)?))
+            })?
+            .collect::<Result<Vec<_>, rusqlite::Error>>()?;
+        rows.into_iter()
+            .map(|(kind, at, result)| {
+                let engagement: Engagement =
+                    serde_json::from_str(&result).map_err(|_| Error::Schema)?;
+                Ok(serde_json::json!({
+                    "type": kind,
+                    "at": at,
+                    "engagementId": engagement.id,
+                    "state": engagement.state,
+                }))
+            })
+            .collect()
     }
     /// The read-only project-sides projection (ADR-132): one row per fleet
     /// registration — the id IS the server name (ADR-016) — LEFT JOINed to
@@ -1171,7 +1432,23 @@ impl DomainRepository {
               WHERE json_extract(e2.projection,'$.agentName')=json_extract(e.projection,'$.agentName')), \
              (SELECT MAX(a.created_at) FROM runner_sessions s \
               JOIN runner_dispatches d ON d.session_id=s.id \
-              JOIN runner_attempts a ON a.dispatch_id=d.id WHERE s.engagement_id=e.id) \
+              JOIN runner_attempts a ON a.dispatch_id=d.id WHERE s.engagement_id=e.id), \
+             (SELECT d.state FROM runner_sessions s JOIN runner_dispatches d ON d.session_id=s.id \
+              JOIN engagements e2 ON e2.id=s.engagement_id \
+              WHERE json_extract(e2.projection,'$.agentName')=json_extract(e.projection,'$.agentName') \
+              AND d.state IN ('leased','started','parked') \
+              ORDER BY CASE d.state WHEN 'started' THEN 3 WHEN 'parked' THEN 2 ELSE 1 END DESC, d.id LIMIT 1), \
+             (SELECT CASE \
+               WHEN COUNT(*)=0 THEN NULL \
+               WHEN MIN(CASE WHEN json_extract(u.latest_counts,'$.input') IS NULL \
+                              OR json_extract(u.latest_counts,'$.output') IS NULL \
+                              OR json_extract(u.latest_counts,'$.cacheWrite') IS NULL \
+                              OR json_extract(u.latest_counts,'$.cacheRead') IS NULL \
+                             THEN 0 ELSE 1 END)=0 THEN NULL \
+               ELSE SUM(json_extract(u.latest_counts,'$.input') + json_extract(u.latest_counts,'$.output') \
+               + json_extract(u.latest_counts,'$.cacheWrite') + json_extract(u.latest_counts,'$.cacheRead')) END \
+              FROM usage_sources u JOIN engagements e3 ON e3.id=u.engagement_id \
+              WHERE json_extract(e3.projection,'$.agentName')=json_extract(e.projection,'$.agentName')) \
              FROM engagements e JOIN resources r ON r.id=e.resource_id \
              WHERE NOT EXISTS (SELECT 1 FROM engagements b \
               WHERE json_extract(b.projection,'$.agentName')=json_extract(e.projection,'$.agentName') \
@@ -1187,12 +1464,24 @@ impl DomainRepository {
                     row.get::<_, bool>(2)?,
                     row.get::<_, Option<i64>>(3)?,
                     row.get::<_, Option<i64>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<i64>>(6)?,
                 ))
             })?
             .map(|row| {
-                let (projection, config, online, last_seen, last_activity) = row?;
+                let (projection, config, online, last_seen, last_activity, dispatch, consumed) =
+                    row?;
                 let engagement: Engagement = serde_json::from_str(&projection)?;
                 let resource: Resource = serde_json::from_str(&config)?;
+                // The live dispatch's own word, distinct from the engagement
+                // lifecycle word (TS `:6872` reads `machine.state`, a
+                // liveness value). `None` is said as unknown, never guessed.
+                let liveness = match dispatch.as_deref() {
+                    Some("started") => Some("running".to_owned()),
+                    Some("parked") => Some("waiting_approval".to_owned()),
+                    Some("leased") => Some("starting".to_owned()),
+                    _ => None,
+                };
                 Ok(AgentRosterRow {
                     name: engagement.agent_name.as_str().to_owned(),
                     framework: resource.framework,
@@ -1203,11 +1492,13 @@ impl DomainRepository {
                     online,
                     last_seen_ms: last_seen.and_then(|v| u64::try_from(v).ok()),
                     last_activity_ms: last_activity.and_then(|v| u64::try_from(v).ok()),
+                    liveness,
+                    consumed: consumed.and_then(|v| u64::try_from(v).ok()),
                 })
             })
             .collect()
     }
-    /// The read-only agent detail (board #22, TS `backend-v2.js:12155`):
+/// The read-only agent detail (board #22, TS `backend-v2.js:12155`):
     /// `None` when no engagement names the agent (the route's 404), else the
     /// agent-keyed identity — the same most-live representative engagement
     /// the roster picks — plus the resource id, project id, the rooms its
@@ -1297,6 +1588,27 @@ impl DomainRepository {
             .query_map([name], |row| row.get::<_, String>(0))?
             .map(|row| Ok(serde_json::from_str(&row?)?))
             .collect::<Result<_, Error>>()?;
+        // Board #53: the agent's own reminders, oldest first, across every
+        // engagement the agent name holds. Bounded to 100 rows, matching the
+        // rooms list's own bound.
+        let mut reminders_query = self.db.prepare(
+            "SELECT r.id,r.engagement_id,r.session_id,r.msg,r.created_at,r.fire_at,r.fired_at \
+             FROM reminders r JOIN engagements e ON e.id=r.engagement_id \
+             WHERE json_extract(e.projection,'$.agentName')=?1 ORDER BY r.id LIMIT 100",
+        )?;
+        let reminders: Vec<Reminder> = reminders_query
+            .query_map([name], |row| {
+                Ok(Reminder {
+                    id: row.get(0)?,
+                    engagement_id: row.get(1)?,
+                    session_id: row.get(2)?,
+                    msg: row.get(3)?,
+                    created_at: row.get(4)?,
+                    fire_at: row.get(5)?,
+                    fired_at: row.get(6)?,
+                })
+            })?
+            .collect::<Result<_, _>>()?;
         Ok(Some(AgentDetail {
             name: engagement.agent_name.as_str().to_owned(),
             framework: resource.framework,
@@ -1312,7 +1624,26 @@ impl DomainRepository {
             rooms,
             dispatch,
             tasks,
+            reminders,
         }))
+    }
+    /// The agent's ACTIVE engagement ids, newest first — the list a force
+    /// delete revokes (TS `backend-v2.js:12231-12238`: `engagementStore.list(
+    /// {state:'active'})` filtered to this agent, then revoked one by one).
+    /// An agent is a derived projection, so this is the only way to find the
+    /// commitments it holds; a commitment lives in the engagement's own state
+    /// (`pool_commitments`/`seat_commitments`), so revoking releases it.
+    /// Bounded, like the roster read.
+    pub fn agent_active_engagements(&self, name: &str) -> Result<Vec<String>, Error> {
+        let mut query = self.db.prepare(
+            "SELECT id FROM engagements \
+             WHERE json_extract(projection,'$.agentName')=?1 AND state='active' \
+             ORDER BY id LIMIT 100",
+        )?;
+        query
+            .query_map([name], |row| row.get::<_, String>(0))?
+            .map(|row| Ok(row?))
+            .collect::<Result<_, Error>>()
     }
     pub fn resource_budget(&self, id: &str) -> Result<Budget, Error> {
         budget(&self.db, &read_resource(&self.db, id)?, None, false)
@@ -1363,7 +1694,63 @@ impl DomainRepository {
         if collision {
             return Err(Error::Conflict);
         }
+        /*
+         * Task #19 TS parity (lib/engagement-store.js:546-566): the routing
+         * verdict is RECORDED, never used to refuse — TS stores the request
+         * with its `route` and `autoJoined` so the queue can show why it did
+         * not auto-join. `remainingTokens` is computed exactly like the
+         * approve() check but with `for_auto_join=true` (the retained JS
+         * `remainingFor(agent, { forAutoJoin: true })`), and a seat period
+         * mismatch nulls the whole figure (backend-v2.js:14057) rather than
+         * erroring, because routing must name `overCeiling`, not refuse.
+         */
+        let whitelisted = tx
+            .query_row(
+                "SELECT 1 FROM room_whitelist WHERE project_room_id=?1",
+                [&request.target_room_id],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        let cross_family_ok = role_available(&tx, &request.role, Some(&request.fleet_id))?;
+        let offer = engagement_terms::read_offer(&tx, &request.role)?;
+        let report = usage::ceiling_report(&tx, &resource.id(), now)?;
+        let spent_budget = budget(&tx, &resource, None, true)?;
+        let seat_ok = spent_budget.seat.status != allocation::SeatStatus::PeriodMismatch;
+        let by_ceiling = report.ceiling_tokens.map(|c| c.saturating_sub(report.drawn));
+        let remaining = [
+            by_ceiling,
+            seat_ok
+                .then(|| spent_budget.seat.remaining)
+                .flatten()
+                .map(u64::from),
+            spent_budget.pool.remaining.map(u64::from),
+        ]
+        .into_iter()
+        .flatten()
+        .min();
+        // TS holdsAllocation: an engagement that has a live allocation — in
+        // this store that is reserved/active with a non-failed provision.
+        // `role` lives in the context JSON, not a column.
+        let active_for_role: i64 = tx.query_row(
+            "SELECT COUNT(*) FROM engagements e WHERE json_extract(e.context,'$.role')=?1 \
+             AND e.state IN ('reserved','active') \
+             AND NOT EXISTS(SELECT 1 FROM effects f WHERE f.engagement_id=e.id AND f.kind='provision' AND f.state='failed')",
+            [&request.role],
+            |r| r.get(0),
+        )?;
+        let (route, auto_joined) = engagement_terms::route_request(
+            whitelisted,
+            cross_family_ok,
+            offer.as_ref(),
+            u64::from(request.requested_tokens),
+            request.rate_per_day.map(u64::from),
+            remaining,
+            active_for_role,
+        );
         let value = Engagement {
+            route: Some(route.to_owned()),
+            auto_joined,
             id,
             request_id: request.request_id.clone(),
             project_id: request.target_project_id.clone(),
@@ -1499,7 +1886,7 @@ impl DomainRepository {
         )?;
         let payload = json!({"request":request,"registrationGeneration":generation,"runtimeName":value.runtime_name,"resource":resource,"approvalEvidence":proof.audit()});
         tx.execute("INSERT INTO effects(id,engagement_id,kind,state,payload) VALUES(?1,?2,'provision','pending',?3)", params![format!("provision_{id}"),id,serialize(&payload)?])?;
-        record_decision(&tx, command_id, &digest, &value)?;
+        record_decision(&tx, command_id, &digest, &value, Some("engagement.approved"))?;
         tx.commit()?;
         Ok(value)
     }
@@ -1527,7 +1914,7 @@ impl DomainRepository {
         if changed != 1 {
             return Err(Error::State);
         }
-        record_decision(&tx, command_id, &digest, &value)?;
+        record_decision(&tx, command_id, &digest, &value, None)?;
         tx.commit()?;
         Ok(value)
     }
@@ -1577,7 +1964,17 @@ impl DomainRepository {
         )?;
         graphs::reconcile(&tx, graphs::now_ms()?)?;
         matrix_routes::reconcile(&tx, graphs::now_ms()?)?;
-        record_decision(&tx, command_id, &digest, &value)?;
+        record_decision(
+            &tx,
+            command_id,
+            &digest,
+            &value,
+            Some(if revoke {
+                "engagement.revoked"
+            } else {
+                "engagement.rejected"
+            }),
+        )?;
         tx.commit()?;
         Ok(value)
     }

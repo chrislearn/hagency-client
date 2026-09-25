@@ -5,12 +5,16 @@ pub mod bot_commands;
 pub mod bootstrap;
 pub mod console;
 pub(crate) mod file_service;
+pub(crate) mod fleet_views;
 pub mod inspect;
 pub mod mcp;
+mod operator;
+pub mod operator_cli;
 pub mod ops;
 pub(crate) mod receive_service;
 mod resources;
 mod runner;
+mod runtime;
 pub mod task_client;
 mod usage;
 use salvo::prelude::*;
@@ -159,9 +163,12 @@ impl App {
                     .hoop(authorize)
                     .push(Router::with_path("capabilities").get(capabilities))
                     .push(resources::router())
+                    .push(fleet_views::router())
                     .push(usage::router())
                     .push(alerts::router())
                     .push(console::operator_router())
+                    .push(runtime::router())
+                    .push(operator::router())
                     .push(Router::with_path("custody").post(receive)),
             )
     }
@@ -434,13 +441,178 @@ fn readiness(depot: &mut Depot, res: &mut Response, refuse: bool) {
         ));
     }
     let all_ready = components.iter().all(|(_, state)| state.is_ready());
+    // TS /health rollup (task #46, backend-v2.js:7586-7629). The retained
+    // native contract (`status`/`implementation`/`components`) stays; the TS
+    // fields are added BESIDE it, each from real SYNCHRONOUS state — /health
+    // never enqueues a writer job (the `bounded_work_keeps_health_responsive`
+    // invariant), so nothing here reads the store. Native has no multi-server
+    // heartbeat registry nor a request-path message counter; those are stated
+    // as their honest native value, not fabricated.
+    let fleet = app.as_ref().and_then(|a| a.fleet.as_ref()).map(|f| f.snapshot());
+    let (agents, online_agents, blocked_agents) = match &fleet {
+        Some(snap) => {
+            let registered = snap["registered_backends"].as_u64().unwrap_or(0) as usize;
+            let rows = snap["agents"].as_array().cloned().unwrap_or_default();
+            // A fleet agent is "online" while its worker is alive — not one
+            // of the settled terminal/failure words. Parked/refusing words
+            // (ADR-182/183) count as alive-and-blocked, exactly the split
+            // the TS agentFlowHealth reports as `blocked`.
+            let online = rows
+                .iter()
+                .filter(|r| !matches!(r["status"]["state"].as_str(),
+                    Some("closed" | "unavailable" | "outcome_unknown" | "stopped")))
+                .count();
+            let blocked = rows
+                .iter()
+                .filter(|r| matches!(r["status"]["state"].as_str(),
+                    Some("fenced" | "awaiting_operator" | "refresh_refused" | "approval_refused")))
+                .count();
+            (registered, online, blocked)
+        }
+        None => (0, 0, 0),
+    };
+    // Native talks to exactly one homeserver transport (palpo); there is no
+    // multi-server registry, so `servers` is 1 when configured and
+    // `onlineServers` is 1 when running.
+    let palpo_state = app.as_ref().and_then(|a| a.palpo.as_ref()).map(|p| p.state());
+    let servers = usize::from(palpo_state.is_some());
+    let online_servers = usize::from(palpo_state == Some("running"));
+    // The TS rollup's `messages` is the in-process delivery queue length.
+    // Native keeps that count in the bounded store, not on the request path;
+    // reporting a synchronous 0 (and saying so) beats blocking /health on a
+    // writer read to fetch a figure this boundary must not depend on.
+    let messages = 0usize;
+    let auth = serde_json::json!({
+        "agentTokens": {
+            "mode": "audit",
+            "configuredMode": "audit",
+            "behavior": "log-only",
+            "managedAgentCount": agents,
+            "loadedManagedAgentTokenCount": 0,
+            "missingManagedAgentTokenCount": agents,
+            "missingManagedAgentNames": [],
+            "missingManagedAgentNamesTruncated": false,
+            "failClosedReady": agents == 0,
+        },
+        "serverCredential": {
+            "boundary": "operator-bearer",
+            "behavior": "operator-bearer-required",
+            "operatorBearerConfigured": true,
+            "serverTokenConfigured": false,
+            "serverTokenAccepted": false,
+            "serverTokenEnforced": false,
+            "serverOwnedRoutes": [],
+            "operatorOwnedRoutes": [],
+            "relayReadRoutes": [],
+            "futureCredential": "HAGENCY_SERVER_TOKEN",
+        },
+    });
+    // flow-health port (lib/backend/flow-health.js) over the same sync
+    // signals: servers/agents from the fleet + palpo above, the other four
+    // components stated as their honest native value (no sync alert/runtime
+    // read exists at this boundary).
+    let components_health = serde_json::json!({
+        "servers": {
+            "status": if servers == 0 { "unknown" }
+                else if online_servers < servers { "degraded" }
+                else { "healthy" },
+            "total": servers,
+            "online": online_servers,
+            "offline": servers - online_servers,
+            "maintenance": 0,
+            "stale": 0,
+        },
+        "agents": {
+            "status": if agents == 0 { "unknown" }
+                else if online_agents == 0 { "unhealthy" }
+                else if online_agents < agents || blocked_agents > 0 { "degraded" }
+                else { "healthy" },
+            "total": agents,
+            "online": online_agents,
+            "offline": agents.saturating_sub(online_agents),
+            "blocked": blocked_agents,
+        },
+        "runtime": {
+            "status": if agents == 0 { "unknown" }
+                else if blocked_agents > 0 { "degraded" }
+                else { "healthy" },
+            "total": agents,
+            "blocked": blocked_agents,
+            "stale": 0,
+            "staleAfterMs": 120000,
+        },
+        "alerts": {
+            "status": "unknown",
+            "actionable": {"total": 0, "critical": 0, "warning": 0,
+                "byStatus": {"open": 0, "acknowledged": 0, "assigned": 0}},
+        },
+        "auth": {
+            "status": "healthy",
+            "agentTokenMode": "audit",
+            "missingManagedAgentTokenCount": agents,
+            "serverCredentialBoundary": "operator-bearer",
+        },
+        "deliveryEvents": {
+            "status": "unknown",
+            "enabled": false,
+            "recentCount": 0,
+            "lastEventAt": null,
+            "recentTypes": {},
+        },
+    });
+    // aggregateFlowHealthStatus: unhealthy wins, then degraded, then unknown
+    // when no primary signals, else healthy. Primary signals = fleet or
+    // palpo present.
+    let health_status = if components_health["servers"]["status"] == "unhealthy"
+        || components_health["agents"]["status"] == "unhealthy"
+        || components_health["runtime"]["status"] == "unhealthy"
+    {
+        "unhealthy"
+    } else if components_health["servers"]["status"] == "degraded"
+        || components_health["agents"]["status"] == "degraded"
+        || components_health["runtime"]["status"] == "degraded"
+    {
+        "degraded"
+    } else if servers == 0 && agents == 0 {
+        "unknown"
+    } else {
+        "healthy"
+    };
+    let health_reasons: Vec<String> = components_health
+        .as_object()
+        .map(|map| {
+            map.iter()
+                .filter(|(_, v)| {
+                    matches!(v["status"].as_str(), Some("unhealthy" | "degraded"))
+                })
+                .map(|(name, v)| format!("{name}:{}", v["status"].as_str().unwrap_or("")))
+                .collect()
+        })
+        .unwrap_or_default();
     let value = serde_json::json!({
         "status": if all_ready { "ok" } else { "unavailable" },
         "implementation": "rust",
         "components": components
-            .into_iter()
+            .iter()
             .map(|(name, state)| serde_json::json!({"name": name, "state": state.word()}))
             .collect::<Vec<_>>(),
+        // ── TS /health rollup fields (task #46) ──
+        "agents": agents,
+        "onlineAgents": online_agents,
+        "servers": servers,
+        "onlineServers": online_servers,
+        "messages": messages,
+        "auth": auth,
+        "health": serde_json::json!({
+            "status": health_status,
+            "generatedAt": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|d| u64::try_from(d.as_millis()).ok())
+                .unwrap_or_default(),
+            "components": components_health,
+            "reasons": health_reasons,
+        }),
     });
     // F2: /health is ALWAYS 200 while the process is live (the retained
     // contract); /ready is the 503-when-not-ready boundary. Never a silent
@@ -478,9 +650,112 @@ async fn capabilities(depot: &mut Depot, res: &mut Response) {
     res.render(Json(value));
 }
 
+/// The human text paired with every refusal code (board #60 item 1).
+///
+/// The retained server always answers `{error: <message>, code}` — never a bare
+/// token (`backend-v2.js:14953-14958` for engagements, `:10032` for the
+/// registration body) — so an operator reading the JSON, a log, or the console
+/// gets a sentence rather than `over_commit`. Codes with an exact retained
+/// wording carry it; the rest say in one line what the code means. The console
+/// localises from `code` and falls back to this text.
+fn refusal_message(code: &str) -> &'static str {
+    match code {
+        // Authentication and authority.
+        "operator_auth_required" => "the operator token is required",
+        "local_authority_required" => "the request must reach this service directly",
+        "console_origin_required" => "the request must originate from this console",
+        "console_access_required" => "console access is required or has expired",
+        "runner_auth_required" => "the runner token is required",
+        "acl_unconfigured" => "no access control list is configured",
+        "admin_required" => "an administrator credential is required",
+        "operator_required" => "an operator credential is required",
+        // Scopes.
+        "task_scope_required" => "task management scope is required",
+        "resource_publication_scope_required" => "resource publication management scope is required",
+        "resource_configuration_scope_required" => "resource configuration management scope is required",
+        "account_scope_required" => "account enrollment management scope is required",
+        "agent_lifecycle_scope_required" => "agent lifecycle management scope is required",
+        // Request bodies.
+        "json_required" => "a JSON request body is required",
+        "body_rejected" => "the request body was rejected",
+        "body_timeout" => "the request body was not received in time",
+        "body_too_large" => "the request body exceeds the limit",
+        // Invalid input, by surface.
+        "invalid" => "the request is invalid",
+        "invalid_console_request" => "the console request is invalid",
+        "invalid_usage_query" => "the usage query is invalid",
+        "invalid_roster_query" => "the roster query is invalid",
+        "invalid_alerts_query" => "the alerts query is invalid",
+        "invalid_approvals_query" => "the approvals query is invalid",
+        "invalid_side_query" => "the project-sides query is invalid",
+        "invalid_stream_query" => "the stream query is invalid",
+        "invalid_engagement_id" => "the engagement id is invalid",
+        "invalid_resource_command" => "the resource command is invalid",
+        "invalid_account_command" => "the account command is invalid",
+        "invalid_registration_body" => "the registration body is invalid",
+        "invalid_domain_command" => "the domain command is invalid",
+        "invalid_task_operation" => "the task operation is invalid",
+        "invalid_delivery" => "the delivery is invalid",
+        "invalid_alert_transition" => "the alert transition is invalid",
+        // Reads that could not be answered.
+        "not_found" => "the requested record was not found",
+        "project_side_not_found" => "project side not found",
+        "engagement_unavailable" => "the engagement could not be read",
+        "roster_unavailable" => "the agent roster could not be read",
+        "usage_unavailable" => "the usage observation is unavailable",
+        "alerts_unavailable" => "the alerts observation is unavailable",
+        "alerts_corrupt" => "the alert store is corrupt",
+        "approvals_unavailable" => "the approvals observation is unavailable",
+        "sides_unavailable" => "the project-sides observation is unavailable",
+        "stream_unavailable" => "the change stream is unavailable",
+        "registration_unavailable" => "the registration is unavailable",
+        // Service state.
+        "console_unavailable" => "the native console is unavailable",
+        "native_unavailable" => "the native API is unavailable",
+        "unavailable" => "the service is unavailable",
+        "domain_unavailable" => "the domain store is unavailable",
+        "busy" => "the service is busy; retry",
+        "console_busy" => "the console is at capacity; retry",
+        "outcome_unknown" => "the outcome is unknown",
+        "clock_unavailable" => "the clock is unavailable",
+        // Allocation.
+        "over_commit" => "the request exceeds the remaining allocation",
+        "no_ceiling" => "no remaining allocation is available",
+        "insufficient_capacity" => "there is not enough capacity",
+        // Lifecycle and concurrency conflicts.
+        "engagement_not_pending" => "engagement is no longer pending",
+        "engagement_not_live" => "the engagement is no longer live",
+        "command_conflict" => "a different command is already in progress",
+        "decision_conflict" => "the decision conflicts with the recorded one",
+        "resource_in_use" => "the resource is in use",
+        "resource_revision_conflict" => "the resource was changed by another writer",
+        "account_revision_conflict" => "the account was changed by another writer",
+        "account_state_conflict" => "the account is not in a state that allows this",
+        "continuation_conflict" => "the dispatch cannot be continued",
+        "recovery_conflict" => "the dispatch cannot be recovered",
+        "resolution_conflict" => "the dispatch was already resolved",
+        "stale_generation" => "the registration generation is stale",
+        "registration_generation" => "the registration generation does not match",
+        "bad_transition" => "the transition is not allowed",
+        "dispatch_not_continuable" => "the dispatch cannot be continued",
+        "dispatch_not_recoverable" => "the dispatch cannot be recovered",
+        "dispatch_not_resolvable" => "the dispatch cannot be resolved",
+        // Agents and roles.
+        "agent_unavailable" => "the agent is unavailable",
+        "agent_preset_unavailable" => "the agent preset is unavailable",
+        "agent_start_unavailable" => "the agent cannot be started",
+        "role_required" => "a role is required",
+        "resource_required" => "a resource is required",
+        "roles_are_model_derived" => "roles are derived from the model",
+        _ => "the request was refused",
+    }
+}
+
 fn refusal(res: &mut Response, status: StatusCode, code: &str) {
     res.status_code(status);
-    res.render(Json(serde_json::json!({"ok":false,"code":code})));
+    res.render(Json(
+        serde_json::json!({"ok":false,"code":code,"error":refusal_message(code)}),
+    ));
 }
 
 fn local_authority(req: &Request, depot: &Depot, res: &mut Response) -> bool {

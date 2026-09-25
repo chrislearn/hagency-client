@@ -264,4 +264,11 @@ pub struct Engagement {
     pub requested_tokens: Tokens,
     pub state: EngagementState,
     pub cleanup: CleanupState,
+    /// TS routeRequest verdict at admission (lib/engagement-store.js:178-232):
+    /// why this request did — or did not — auto-join. The routing is recorded,
+    /// never used to refuse: the request still lands in the queue.
+    #[serde(default)]
+    pub route: Option<String>,
+    #[serde(default)]
+    pub auto_joined: bool,
 }

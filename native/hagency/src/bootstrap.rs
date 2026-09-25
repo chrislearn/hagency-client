@@ -6,6 +6,7 @@ mod driver;
 pub(crate) mod engagement_notice;
 pub mod fleet;
 pub mod intake_refusal;
+pub mod invites;
 pub(crate) mod palpo;
 pub mod provision;
 pub mod probe;
@@ -27,8 +28,18 @@ use std::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum Failure {
-    #[error("development profile is invalid or unavailable")]
-    Config,
+    /// Every configuration refusal names the field the operator must fix and
+    /// the fix itself (TS parity: install-full.sh:292 "API_TOKEN is required
+    /// in $ENV_FILE or API_TOKEN env…", backend-v2.js:265 names field+fix in
+    /// one message). The `/ready` wire word stays the single vocabulary word
+    /// `config` (brief 21); this payload is the operator-facing surface.
+    #[error("configuration error in {field}: {fix}")]
+    Config {
+        /// The file or setting the operator must fix, e.g. "matrix.sdk_key".
+        field: &'static str,
+        /// The fix, e.g. "write exactly 32 bytes, 0600, inside the state dir".
+        fix: &'static str,
+    },
     #[error("native startup owner is unavailable")]
     Startup,
     #[error("current Matrix refresh was refused")]
@@ -698,7 +709,7 @@ impl StatusHandle {
             "unavailable"
         };
         status.error = Some(match failure {
-            Failure::Config => "config",
+            Failure::Config { .. } => "config",
             Failure::Startup => "startup",
             Failure::Refresh => "refresh",
             Failure::Registration => "registration",
@@ -819,7 +830,10 @@ impl Shared {
     fn new(matrix: hagency_matrix::HostConfig, domain: DomainStore) -> Result<Self, Failure> {
         Ok(Self {
             collector: Arc::new(
-                Collector::new(matrix, domain.clone()).map_err(|_| Failure::Config)?,
+                Collector::new(matrix, domain.clone()).map_err(|_| Failure::Config {
+                    field: "agent-driver.json: matrix block",
+                    fix: "the matrix host configuration must construct a collector (origin, limits)",
+                })?,
             ),
             domain,
             workspace: workspace::WorkspaceAccess::new(),
@@ -860,6 +874,18 @@ pub enum CeilingSweepTick {
     Swept(hagency_store::SweepOutcome),
     Refused(&'static str),
 }
+
+/// What one reminder due-tick observed (board #53). Diagnostic only.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReminderSweepTick {
+    Swept(hagency_store::ReminderSweep),
+    Refused(&'static str),
+}
+
+/// The reminder due loop cadence (board #53): the TS delivery queue ran
+/// `processDueReminders` every 1 s (delivery-queue.js:1767). Native sweeps the
+/// same condition — a due reminder whose `fired_at` is NULL — on a 1 s period.
+pub const REMINDER_SWEEP_PERIOD: Duration = Duration::from_secs(1);
 
 /// Production ceiling-overrun sweep cadence (ADR-124 slice b): the condition
 /// is standing, so an hour is the retained default
@@ -948,6 +974,59 @@ pub fn start_ceiling_sweep(
                         "[ceiling] sweep tick failed: {error}; waiting for the next tick"
                     );
                     CeilingSweepTick::Refused("failed")
+                }
+            };
+            let _ = sender.send(tick);
+        }
+    });
+    (handle, observed)
+}
+
+/// The reminder due loop (board #53, TS `processDueReminders` at 1 s):
+/// fire every due reminder whose `fired_at` is NULL, in one bounded writer
+/// transaction per tick. Same shape and refusal discipline as the ceiling
+/// sweep — a missed tick is harmless (the condition is standing), and a
+/// refusal is logged with the `[reminder]` prefix and retried next tick.
+pub fn start_reminder_sweep(
+    domain: DomainStore,
+    shutdown: CancellationToken,
+    period: Duration,
+) -> (
+    tokio::task::JoinHandle<()>,
+    tokio::sync::watch::Receiver<ReminderSweepTick>,
+) {
+    let (sender, observed) =
+        tokio::sync::watch::channel(ReminderSweepTick::Refused("unstarted"));
+    let handle = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(period);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tokio::select! {
+                _ = shutdown.cancelled() => break,
+                _ = interval.tick() => {}
+            }
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|d| u64::try_from(d.as_millis()).ok())
+                .unwrap_or_default();
+            let tick = match domain.fire_reminders(now, 512).await {
+                Ok(outcome) => ReminderSweepTick::Swept(outcome),
+                Err(hagency_store::Error::Busy) => {
+                    tracing::warn!("[reminder] sweep tick refused: busy; waiting for the next tick");
+                    ReminderSweepTick::Refused("busy")
+                }
+                Err(hagency_store::Error::OutcomeUnknown) => {
+                    tracing::warn!(
+                        "[reminder] sweep tick outcome unknown; waiting for the next tick"
+                    );
+                    ReminderSweepTick::Refused("outcome_unknown")
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        "[reminder] sweep tick failed: {error}; waiting for the next tick"
+                    );
+                    ReminderSweepTick::Refused("failed")
                 }
             };
             let _ = sender.send(tick);
@@ -1243,6 +1322,8 @@ pub struct Bootstrap {
     /// The one retention sweep task's handle (tick contract §1.5): kept to
     /// abort at shutdown, exactly the ceiling sweep's shape above.
     retention_sweep: Option<std::sync::Arc<tokio::task::JoinHandle<()>>>,
+    /// The reminder due loop's handle (board #53), kept to abort at shutdown.
+    reminder_sweep: Option<std::sync::Arc<tokio::task::JoinHandle<()>>>,
 }
 impl Bootstrap {
     /// Own fresh development state. No live repository, .env, arbitrary command
@@ -1274,7 +1355,10 @@ impl Bootstrap {
         options: Options,
     ) -> Result<Self, Failure> {
         if options.development_driver && options.agent_driver {
-            return Err(Failure::Config);
+            return Err(Failure::Config {
+                field: "serve --development-driver / --agent-driver",
+                fix: "choose exactly one driver mode; the two flags are mutually exclusive",
+            });
         }
         let driver_mode = if options.agent_driver {
             DriverMode::Continuous
@@ -1285,7 +1369,10 @@ impl Bootstrap {
         };
         tracing::trace!(target: "hagency_startup_observation", "native startup boundary: bootstrap_entered");
         if !listen.ip().is_loopback() || listen.port() == 0 {
-            return Err(Failure::Config);
+            return Err(Failure::Config {
+                field: "serve --listen",
+                fix: "the address must be loopback with an explicit non-zero port (e.g. 127.0.0.1:13300)",
+            });
         }
         private::directory(state).map_err(|_| Failure::Startup)?;
         let state = state.canonicalize().map_err(|_| Failure::Startup)?;
@@ -1336,14 +1423,23 @@ impl Bootstrap {
                 if let Some(id) = prepared.managed_account.take() {
                     let account = repository
                         .managed_account(&id)
-                        .map_err(|_| Failure::Config)?;
+                        .map_err(|_| Failure::Config {
+                            field: "agent-driver.json: managed_account",
+                            fix: "the named managed account must exist in the store",
+                        })?;
                     prepared.claim = account
                         .bind_claim_profile(prepared.claim)
-                        .map_err(|_| Failure::Config)?;
+                        .map_err(|_| Failure::Config {
+                            field: "agent-driver.json: managed_account",
+                            fix: "the claim profile must bind to the managed account",
+                        })?;
                     prepared.host = prepared
                         .host
                         .with_managed_account(account)
-                        .map_err(|_| Failure::Config)?;
+                        .map_err(|_| Failure::Config {
+                            field: "agent-driver.json: managed_account",
+                            fix: "the host must accept the managed account credential",
+                        })?;
                 }
                 Ok::<_, Failure>(prepared)
             })
@@ -1374,7 +1470,15 @@ impl Bootstrap {
         }
         let shared = prepared
             .as_mut()
-            .map(|p| Shared::new(p.matrix.take().ok_or(Failure::Config)?, domain.clone()))
+            .map(|p| {
+                Shared::new(
+                    p.matrix.take().ok_or(Failure::Config {
+                        field: "agent-driver.json: matrix block",
+                        fix: "a driver-mode serve requires a configured matrix host",
+                    })?,
+                    domain.clone(),
+                )
+            })
             .transpose()?;
         // TS parity (bridge-matrix.js:9377): the public notice is spoken by the
         // AGENT. Reuse the ordinary collector the driver's replies already use
@@ -1409,7 +1513,10 @@ impl Bootstrap {
             (Some(shared), Some(setup)) => {
                 let fleet = fleet::Service::new(domain.clone(), shared.collector.clone(), setup)?;
                 fleet.register_root(
-                    root_engagement.ok_or(Failure::Config)?,
+                    root_engagement.ok_or(Failure::Config {
+                        field: "agent-driver.json: factory root engagement",
+                        fix: "the factory service requires a registered root engagement",
+                    })?,
                     files.as_ref().map(|owner| owner.handle()),
                     receives.as_ref().map(|owner| owner.handle()),
                     status.clone(),
@@ -1463,6 +1570,7 @@ impl Bootstrap {
             retention_sweep_period: RETENTION_SWEEP_PERIOD,
             ceiling_sweep: None,
             retention_sweep: None,
+            reminder_sweep: None,
         })
     }
     pub fn status(&self) -> Status {
@@ -1516,6 +1624,10 @@ impl Bootstrap {
         // abort-on-shutdown its doc comment promises, the ceiling sweep's
         // shape.
         if let Some(sweep) = &mut self.retention_sweep {
+            sweep.abort();
+        }
+        // Board #53: the reminder due loop's handle, aborted at shutdown.
+        if let Some(sweep) = &mut self.reminder_sweep {
             sweep.abort();
         }
         if let Some(palpo) = &self.palpo {
@@ -1624,6 +1736,14 @@ impl Bootstrap {
         let sweep = std::sync::Arc::new(ceiling_sweep);
         self.ceiling_sweep = Some(sweep.clone());
         self.app = self.app.clone().with_ceiling_sweep(sweep, sweep_tick);
+        // Task #12: the agent-invite poller, beside the sweeps — the same
+        // Shared (collector + domain) the file and receive services use,
+        // the same shutdown token. The task exits on cancellation and a
+        // refused round backs off, never terminates (ADR-183). Only a
+        // Matrix-configured bootstrap polls.
+        if let Some(shared) = self.shared.clone() {
+            invites::start(shared, shutdown.clone());
+        }
         // The ONE retention sweep task (tick contract §1.5), beside the
         // ceiling task — same `start_*_sweep` shape, its own period and its
         // own watch channel; slice 1 lands the `messages` phase only.
@@ -1643,6 +1763,15 @@ impl Bootstrap {
             .app
             .clone()
             .with_retention_sweep(retention, retention_tick);
+        // Board #53: the reminder due loop, beside the ceiling and retention
+        // tasks — same `start_*_sweep` shape, 1 s cadence (the TS
+        // `processDueReminders` interval).
+        let (reminder_sweep, _reminder_tick) = start_reminder_sweep(
+            self.domain.clone(),
+            shutdown.clone(),
+            REMINDER_SWEEP_PERIOD,
+        );
+        self.reminder_sweep = Some(std::sync::Arc::new(reminder_sweep));
         tracing::trace!(target: "hagency_startup_observation", "native startup boundary: server_poll_entered");
         let server = Server::new(acceptor).max_connections(64);
         let handle = server.handle();
@@ -1728,7 +1857,10 @@ impl Bootstrap {
             _=shutdown.cancelled()=>None,
             result=async {
                 match &mut self.fleet {
-                    Some(fleet)=>fleet::Service::run(fleet,self.approval_sender.clone().ok_or(Failure::Config)?,shutdown).await,
+                    Some(fleet)=>fleet::Service::run(fleet,self.approval_sender.clone().ok_or(Failure::Config {
+                        field: "agent-driver.json: approval block",
+                        fix: "the factory service requires the approval pump started before serve",
+                    })?,shutdown).await,
                     None=>std::future::pending::<Result<(),Failure>>().await,
                 }
             }=>result.err(),

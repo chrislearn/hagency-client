@@ -12,11 +12,12 @@
  * deliberately no work item, progress, queue, task count or utilisation
  * column: the retained roster withdrew them on principle and native does
  * not widen what it narrowed. The lifecycle scope exposes stop and a
- * separate private stopped-task review. Start and preset rebinding remain
- * absent because their server routes fail closed; a button that can only
- * refuse would lie. Clicking an agent's name opens its detail IN PLACE: the
- * packaged native console serves one static HTML per route with no fallback
- * (the manifest carries only agents/index.html), so a link to /agents/<name>
+ * separate private stopped-task review. #21: the server routes now also
+ * complete start and preset (resource) rebind, so those controls are
+ * offered and render the server's own outcome words. Clicking an agent's
+ * name opens its detail IN PLACE: the packaged native console serves one
+ * static HTML per route with no fallback (the manifest carries only
+ * agents/index.html), so a link to /agents/<name>
  * would 404 in production — the href stays only for the dev route and for
  * open-in-new-tab.
  */
@@ -26,9 +27,10 @@ import PageHead from '@/components/PageHead';
 import NativeStatusStrip from '@/components/NativeStatusStrip';
 import { NativeAccessNotice } from '@/components/NativeUsage';
 import { useT } from '@/components/Prefs';
+import { errorText } from '@/lib/i18n';
 import { useData } from '@/components/Data';
 import { fmtTokens } from '@/lib/mock-data';
-import { stopAgent } from '@/lib/native-api';
+import { rebindAgentResource, startAgent, stopAgent } from '@/lib/native-api';
 import NativeStoppedWork from '@/components/NativeStoppedWork';
 import NativeAgentDetail from '@/components/NativeAgentDetail';
 
@@ -111,8 +113,10 @@ export default function NativeAgents() {
                 <th>{t('col.framework')}</th>
                 <th>{t('col.role')}</th>
                 <th>{t('col.state')}</th>
+                <th>{t('na.liveness')}</th>
                 <th>{t('na.engagement')}</th>
                 <th className="num">{t('col.requested')}</th>
+                <th className="num">{t('na.consumed')}</th>
                 <th>{t('na.lastActivity')}</th>
                 <th>{t('na.online')}</th>
                 <th>{t('na.lastSeen')}</th>
@@ -126,8 +130,15 @@ export default function NativeAgents() {
                   <td className="dim">{a.framework}</td>
                   <td>{a.role}</td>
                   <td>{a.state}</td>
+                  {/* Board #60 item 2: the LIVE DISPATCH's word, a separate
+                      fact from the engagement lifecycle word beside it —
+                      null means no live dispatch, said as unknown. */}
+                  <td className="dim">{a.liveness === null ? t('nu.unknown') : t(`na.liveness.${a.liveness}`)}</td>
                   <td className="dim">{a.engagement_id}</td>
                   <td className="num dim">{fmtTokens(a.requested_tokens)}</td>
+                  {/* Tokens observed consumed; null when unmeasured, never
+                      rendered as a zero that would read as "used nothing". */}
+                  <td className="num dim">{a.consumed === null ? t('nu.unknown') : fmtTokens(a.consumed)}</td>
                   {/* Last dispatch activity, not last seen; null is unknown,
                       rendered as the word — never a zero clock. */}
                   <td className="dim">{a.last_activity_ms === null ? t('nu.unknown') : new Date(a.last_activity_ms).toISOString()}</td>
@@ -141,6 +152,26 @@ export default function NativeAgents() {
                     <td>
                       <button className="btn" data-lifecycle-action="stop" disabled={hold || stop?.kind === 'pending'} onClick={() => void stopOne(a)}>{t('na.stop')}</button>
                       <button className="btn" data-lifecycle-action="review" disabled={hold} onClick={() => setReview(a)}>{t('nrec.open')}</button>
+                      {presetFor === a.engagement_id && (
+                        <form
+                          data-lifecycle-form="preset"
+                          onSubmit={(e) => { e.preventDefault(); applyPreset(a.engagement_id); }}
+                          style={{ display: 'flex', gap: 6, marginTop: 6 }}
+                        >
+                          <input
+                            aria-label={t('na.presetId')}
+                            data-lifecycle-input="preset-id"
+                            value={presetId}
+                            onChange={(e) => setPresetId(e.target.value)}
+                            placeholder={t('na.presetId')}
+                            style={{ minWidth: 160 }}
+                          />
+                          <button className="btn" type="submit" disabled={hold || !presetId.trim()}>{t('na.preset')}</button>
+                        </form>
+                      )}
+                      {result?.engagement === a.engagement_id && (
+                        <p className="note" role="status" data-lifecycle-result>{result.text}</p>
+                      )}
                     </td>
                   )}
                 </tr>
@@ -155,7 +186,7 @@ export default function NativeAgents() {
       </div>
       {stop && (
         <section className="notice" data-stop-action={stop.kind} role={stop.kind === 'pending' || stop.kind === 'saved' ? 'status' : 'alert'}>
-          <p><b>{stop.engagement}</b> · {t(`na.stop.${stop.kind}`)}{stop.error ? ` (${stop.error})` : ''}</p>
+          <p><b>{stop.engagement}</b> · {t(`na.stop.${stop.kind}`)}{stop.error ? ` (${errorText(t, stop.error)})` : ''}</p>
           {stop.kind !== 'pending' && <button className="btn" onClick={data.refresh}>{t('nu.refresh')}</button>}
         </section>
       )}

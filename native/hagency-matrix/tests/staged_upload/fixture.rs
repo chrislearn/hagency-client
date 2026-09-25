@@ -47,8 +47,13 @@ impl Fixture {
     async fn build(direct: bool, thread: bool, plaintext: bool) -> Self {
         let base = common::Fixture::new();
         let mut fake = common::Fake::start(true).await;
+        // #81: service-level scripted() fixtures sharing one runtime with the
+        // fake peer — the load tier is what `config_under_load` exists for
+        // (common/mod.rs:142). No test on this fixture asserts a deliberate
+        // tight transport bound (their waits are 10–15 s channel
+        // notifications), so a real transport refusal still fails.
         let mut config = base
-            .config(&fake.endpoint)
+            .config_under_load(&fake.endpoint)
             .with_root_pem(include_bytes!("../fixtures/ca.pem"))
             .unwrap();
         if !direct {

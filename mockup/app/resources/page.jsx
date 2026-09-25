@@ -2,6 +2,7 @@
 
 import { Fragment, useState } from 'react';
 import ResourceAgents from '@/components/ResourceAgents';
+import ResourceAgentDefinitions from '@/components/ResourceAgentDefinitions';
 import NativeResources from '@/components/NativeResources';
 import { ResourceExecutionPermissions } from '@/components/ExecutionPermissions';
 
@@ -127,6 +128,12 @@ function LegacyResourcesPage() {
                   </td>
                 </tr><tr><td colSpan={7}>
                   <ResourceAgents preset={p} live={provenance.presets === 'live'} refresh={refresh} />
+                  <ResourceAgentDefinitions
+                    preset={p}
+                    roles={capability().map((c) => c.key)}
+                    live={provenance.presets === 'live'}
+                    refresh={refresh}
+                  />
                   <ResourceExecutionPermissions preset={p} live={provenance.presets === 'live'} refresh={refresh} />
                 </td></tr></Fragment>
               );

@@ -65,6 +65,14 @@ const SECTIONS = [
     head: 'rail.secFleet',
     rows: [
       { href: '/alerts', key: 'alerts', icon: '◉', count: 'alertsOpen', unit: 'open', hot: true },
+      /*
+       * Operator tasks (board #23) sit under FLEET beside alerts: both are the
+       * operator's own triage surfaces over a work queue, and the kept row is
+       * what makes the page reachable by clicking rather than by typing a URL.
+       * No count: the store read is the page's own, and a rail number would be
+       * a second, staler copy of it.
+       */
+      { href: '/tasks', key: 'tasks', icon: '☑', count: null },
       { href: '/config', key: 'config', icon: '⚙', count: null },
     ],
   },
@@ -118,7 +126,7 @@ function NativeRail() {
     <div className="rail-fleet">{SECTIONS.map((sec) => <div key={sec.head}>
       <h2 className="rail-sec">{t(sec.head)}</h2>
       <ul className="rail-list">{sec.rows.map((row) => <li key={row.key}>
-        {['usage', 'resources', 'alerts', 'engagements', 'workforce'].includes(row.key) ? <a className="fleet-row" href={row.key === 'workforce' ? '/console/agents/' : `/console/${row.key}/`} aria-current={isCurrent(path, row) ? 'page' : undefined}><span className="ico">{row.icon}</span><span className="grow">{t(`nav.${row.key}`)}</span></a>
+        {['usage', 'resources', 'alerts', 'engagements', 'workforce', 'tasks'].includes(row.key) ? <a className="fleet-row" href={row.key === 'workforce' ? '/console/agents/' : `/console/${row.key}/`} aria-current={isCurrent(path, row) ? 'page' : undefined}><span className="ico">{row.icon}</span><span className="grow">{t(`nav.${row.key}`)}</span></a>
           : <span className="fleet-row" aria-disabled="true" title={t('nu.unavailableRoute')}><span className="ico">{row.icon}</span><span className="grow">{t(`nav.${row.key}`)}</span><span>—</span></span>}
       </li>)}</ul>
     </div>)}</div>
