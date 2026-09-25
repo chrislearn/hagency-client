@@ -7,6 +7,7 @@ pub mod console;
 pub(crate) mod file_service;
 pub mod inspect;
 pub mod mcp;
+pub mod ops;
 pub(crate) mod receive_service;
 mod resources;
 mod runner;
