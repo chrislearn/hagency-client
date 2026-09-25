@@ -146,7 +146,7 @@ const en = {
 
   'na.title': 'Managed accounts',
   'na.sub': 'Host-owned credential namespaces with no readiness verdict.',
-  'na.rosterSub': 'the engagement projections, observed — stopping work needs a lifecycle access link',
+  'na.rosterSub': 'the engagement projections, observed — one console login grants the lifecycle controls',
   'na.loadingRoster': 'Reading the roster…',
   'na.stop.pending': 'Stop requested…',
   'na.stop.saved': 'Stop accepted.',
@@ -1498,7 +1498,7 @@ const zh = {
 
   'na.title': '托管账户',
   'na.sub': '主机自有的凭据命名空间，不给出就绪判断。',
-  'na.rosterSub': '接洽投影的观察 —— 停止工作需要生命周期访问链接',
+  'na.rosterSub': '接洽投影的观察 —— 一次控制台登录即可获得生命周期控制',
   'na.loadingRoster': '正在读取名册…',
   'na.stop.pending': '已请求停止…',
   'na.stop.saved': '停止已受理。',

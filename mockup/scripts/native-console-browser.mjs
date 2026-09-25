@@ -18,7 +18,7 @@ async function rosterWalk(page) {
   assert((await page.locator('tbody tr').count()) >= 3, 'one roster row per seeded engagement');
   const text = await page.locator('main').innerText();
   assert.match(text, /UsageWorker/);
-  assert.match(text, /derived from the engagement projections|由接洽投影派生/);
+  assert.match(text, /derived from the engagement projections|the engagement projections, observed|由接洽投影派生|接洽投影的观察/);
   // The server's own gap list, rendered verbatim: the page never decides
   // which columns are unknown.
   assert.match(text, /tmux/);
@@ -60,7 +60,9 @@ async function projectSidesWalk(page) {
   assert(!/as_token|hs_token|asToken|hsToken/.test(text), 'no credential word on screen');
   assert(!/@owner:example\.test/.test(text), 'the owner mxid stays withheld');
   assert(!/!private:example\.test/.test(text), 'the owner DM room stays withheld');
-  assert((await page.locator('main button').count()) === 1, 'Refresh is the only control');
+  // Board #13/#45: register-a-side and issue-a-registration controls joined
+  // the read-only observation, so Refresh is no longer the only control.
+  assert((await page.locator('main button').count()) >= 1, 'the Refresh control is present alongside the registration controls');
 }
 
 const browser = await chromium.launch({ executablePath: process.env.HAGENCY_BROWSER_CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true,
