@@ -14,6 +14,11 @@ use disposition::{Decision, Disposition, Rejection, Source};
 
 pub(crate) const MAX_TIMELINE: usize = 100;
 pub(crate) const MAX_TARGETS: usize = 64;
+/// A bounded retention of raw `m.room.encrypted` envelopes whose room key had
+/// not arrived yet (TS `bridge-matrix.js:6646` `pendingEncryptedEventStore`).
+/// Capacity refuses rather than evicting: an unresolved custody is never
+/// silently dropped (TS throws and the durable sync token does not advance).
+pub(crate) const MAX_PENDING_UNDECRYPTABLE: usize = 64;
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Phase {
@@ -38,6 +43,10 @@ pub(crate) struct Batch {
     /// idempotent on `request_id`), and are never disposition rows.
     #[serde(default)]
     pub pre_project: Vec<PreProjectEvent>,
+    /// ADR-065 reverted to TS (board #10): raw undecryptable envelopes retained
+    /// for a later sync. Never a disposition row, never archived, bounded.
+    #[serde(default)]
+    pub pending: Vec<PendingEnvelope>,
     pub acknowledgements: Vec<Acknowledgement>,
     pub filtered: usize,
     #[serde(default)]
@@ -71,6 +80,33 @@ impl PreProjectEvent {
 enum Candidate {
     Target(Box<Event>),
     PreProject(Box<PreProjectEvent>),
+}
+/// A raw `m.room.encrypted` envelope retained because its room key had not
+/// arrived (TS `bridge-matrix.js:6646-6658`). Unlike a terminal tombstone, the
+/// source stays recoverable: a later sync retries decryption and, when the key
+/// arrives, the message becomes input exactly once.
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct PendingEnvelope {
+    pub room: String,
+    pub raw: Value,
+}
+impl PendingEnvelope {
+    pub(crate) fn validate(&self) -> Result<(), Error> {
+        if self.room.is_empty() || !self.raw.is_object() {
+            return Err(Error::Storage);
+        }
+        Ok(())
+    }
+}
+/// A retained envelope whose room key has since arrived, decrypted by the
+/// owned SDK and handed to `derive_with_history` (board #10). It has no raw
+/// counterpart in this sync, so it becomes a candidate with the next index and
+/// is admitted exactly once by the ordinary handoff.
+pub(crate) struct Recovered {
+    pub room: String,
+    pub original: Value,
+    pub value: Value,
+    pub kind: TimelineEventKind,
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct Message {
@@ -215,6 +251,7 @@ impl Batch {
             reason: None,
             events: vec![],
             pre_project: vec![],
+            pending: vec![],
             acknowledgements: vec![],
             filtered: 0,
             dispositions: Some(vec![]),
@@ -222,13 +259,14 @@ impl Batch {
     }
     #[cfg(test)]
     pub(crate) fn derive(&mut self, sync: SyncResponse, history: &[Receipt]) -> Result<(), Error> {
-        self.derive_with_history(sync, history, &[])
+        self.derive_with_history(sync, history, &[], &[])
     }
     pub(crate) fn derive_with_history(
         &mut self,
         sync: SyncResponse,
         history: &[Receipt],
         archived: &[Disposition],
+        recovered: &[Recovered],
     ) -> Result<(), Error> {
         if sync
             .rooms
@@ -253,6 +291,7 @@ impl Batch {
         }
         let mut events = vec![];
         let mut dispositions = vec![];
+        let mut pending = vec![];
         let mut filtered = 0;
         let mut seen = BTreeSet::new();
         for ((room, original), (actual_room, timeline)) in raw.iter().zip(returned) {
@@ -288,6 +327,29 @@ impl Batch {
                 .or_else(|| Disposition::prior(&source, history))
             {
                 prior
+            } else if let TimelineEventKind::UnableToDecrypt { utd_info, .. } = &timeline.kind {
+                // Board #10 (TS `bridge-matrix.js:6646` `onFailedRoomDecryption`):
+                // a failure to decrypt because the room KEY has not arrived yet
+                // is NOT terminal — retain the raw envelope so a later sync can
+                // recover it, and never write the immutable tombstone that would
+                // stop that. Only `is_missing_room_key()` qualifies; a permanent
+                // trust refusal (untrusted/forged sender, malformed) stays an
+                // immediate rejection exactly as before. One row per raw event
+                // is still exact (validate_restored's raw.len() == values.len()).
+                if !utd_info.reason.is_missing_room_key() {
+                    Decision::Rejected {
+                        reason: Rejection::CryptoIneligible,
+                    }
+                } else {
+                    if pending.len() >= MAX_PENDING_UNDECRYPTABLE {
+                        return Err(Error::Capacity);
+                    }
+                    pending.push(PendingEnvelope {
+                        room: room.clone(),
+                        raw: original.clone(),
+                    });
+                    Decision::Deferred
+                }
             } else if timeline.raw().deserialize().is_err() {
                 Decision::Rejected {
                     reason: Rejection::Malformed,
@@ -320,8 +382,27 @@ impl Batch {
                 decision,
             )?);
         }
+        // Board #10: events recovered from the durable pending store (the room
+        // key arrived on a later sync) are appended as ordinary candidates.
+        // They are not in `raw`, so they hold no prior source row; their
+        // indices continue after the raw candidates and the handoff admits
+        // them exactly once (idempotent on the domain receipt).
+        for entry in recovered {
+            match self.event(&entry.room, &entry.original, &entry.value, &entry.kind) {
+                Ok(Some(Candidate::Target(event))) => {
+                    let index = events.len();
+                    events.push(*event);
+                    dispositions.push(Disposition::new(
+                        Source::new(&entry.room, &entry.original)?,
+                        serde_json::to_value(&entry.kind).map_err(|_| Error::Storage)?,
+                        Decision::Candidate { index },
+                    )?);
+                }
+                _ => {}
+            }
+        }
         // Candidate content plus the complete private disposition ledger is bounded.
-        if serde_json::to_vec(&(&events, &self.pre_project, &dispositions))
+        if serde_json::to_vec(&(&events, &self.pre_project, &dispositions, &pending))
             .map_err(|_| Error::Storage)?
             .len()
             > 1024 * 1024
@@ -331,6 +412,7 @@ impl Batch {
         self.events = events;
         self.filtered = filtered;
         self.dispositions = Some(dispositions);
+        self.pending = pending;
         self.phase = Phase::Derived;
         Ok(())
     }
@@ -494,27 +576,51 @@ impl Batch {
                 }
             }
         }
+        // TS:bridge-matrix.js:3133-3174 — `m.mentions` is only the FIRST place a
+        // mention may live. A client that sets none still addresses a member with
+        // an HTML pill in `formatted_body`, or in plain text with `@name`; both
+        // name a LOCALPART and the room supplies the server. ADR-054 narrowed this
+        // to `m.mentions` alone, so a client that omits it could not wake an agent
+        // at all; TS never narrowed it.
+        if mentions.is_empty() {
+            mentions = address_mentions(content, &target.server_name);
+        }
         let attachment = if matches!(kind, "m.file" | "m.image") {
-            let Proof::Verified {
-                device, session, ..
-            } = &proof
-            else {
-                return Err(CryptoIneligible);
-            };
-            if !target.encrypted {
-                return Err(Unsupported);
+            match (&proof, target.encrypted) {
+                (Proof::Verified { device, session, .. }, true) => Some(
+                    crate::attachments::Manifest::new(
+                        &self.sdk_identity,
+                        target,
+                        original,
+                        &value["content"],
+                        device,
+                        session,
+                    )
+                    .map_err(|_| Malformed)?,
+                ),
+                // TS parity (bridge-matrix.js:6799-6831): a plaintext room's
+                // m.file/m.image is archived like any other message — the room's
+                // lack of encryption is not a refusal. The TS receiver accepts
+                // `content.file?.url || content.url` (lib/matrix-file.js:38);
+                // the manifest carries content.url with no crypto device/session.
+                (Proof::Plain, false) => Some(
+                    crate::attachments::Manifest::new(
+                        &self.sdk_identity,
+                        target,
+                        original,
+                        &value["content"],
+                        "",
+                        "",
+                    )
+                    .map_err(|_| Malformed)?,
+                ),
+                // An encrypted event against a target recorded plaintext is a
+                // state desync, not TS behaviour; keep the original refusal.
+                (Proof::Verified { .. }, false) => return Err(Unsupported),
+                // Unreachable in practice: a plain proof against an encrypted
+                // target is already refused as PlaintextEncrypted above.
+                (Proof::Plain, true) => return Err(CryptoIneligible),
             }
-            Some(
-                crate::attachments::Manifest::new(
-                    &self.sdk_identity,
-                    target,
-                    original,
-                    &value["content"],
-                    device,
-                    session,
-                )
-                .map_err(|_| Malformed)?,
-            )
         } else {
             None
         };
@@ -571,18 +677,40 @@ impl Batch {
         if matches!(self.phase, Phase::Prepared | Phase::Applying)
             && (!self.events.is_empty()
                 || !self.pre_project.is_empty()
+                || !self.pending.is_empty()
                 || !self.acknowledgements.is_empty()
                 || self.filtered != 0
                 || self.dispositions.as_ref().is_some_and(|v| !v.is_empty()))
         {
             return Err(Error::Storage);
         }
+        // Board #10: retained raw envelopes awaiting a room key are bounded and
+        // must belong to a target room. They are never a candidate or a
+        // terminal source, so they carry no disposition row.
+        if self.pending.len() > MAX_PENDING_UNDECRYPTABLE {
+            return Err(Error::Storage);
+        }
+        for envelope in &self.pending {
+            envelope.validate()?;
+            if !self.targets.iter().any(|t| t.room_id == envelope.room) {
+                return Err(Error::Storage);
+            }
+        }
         if let Some(values) = &self.dispositions {
             disposition::validate(values, self.events.len(), self.filtered)?;
             if self.phase == Phase::Derived || !values.is_empty() {
                 let raw = disposition::raw_events(&self.raw).map_err(|_| Error::Storage)?;
-                if raw.len() != values.len() {
+                // Board #10: recovered candidates (from the retained pending
+                // store) are appended after the raw rows, so the ledger may be
+                // longer than the raw timeline. The raw rows must still match
+                // exactly; every extra row must be a candidate.
+                if values.len() < raw.len() {
                     return Err(Error::Storage);
+                }
+                for value in &values[raw.len()..] {
+                    if !matches!(value.decision, Decision::Candidate { .. }) {
+                        return Err(Error::Storage);
+                    }
                 }
                 for ((room, event), value) in raw.iter().zip(values) {
                     if !value.matches(room, event).map_err(|_| Error::Storage)? {
@@ -708,5 +836,154 @@ impl Receipt {
     }
     pub(crate) fn lacks_filtered_history(&self) -> bool {
         self.filtered > 0 && self.dispositions.is_none()
+    }
+}
+
+/// TS:bridge-matrix.js:3150-3169, steps 2 and 3 of `parseMentions`: when a client
+/// set no `m.mentions`, the address is carried by an HTML pill in
+/// `formatted_body` or by plain `@name` text in the body. Both name a LOCALPART
+/// and the room supplies the server, so the localpart plus the route's
+/// `server_name` is exactly the MXID an `m.mentions` list would have carried.
+/// TS never fell back past a non-empty pill list, so neither does this.
+fn address_mentions(
+    content: &serde_json::Map<String, Value>,
+    server: &str,
+) -> BTreeSet<String> {
+    let mut found = BTreeSet::new();
+    if let Some(formatted) = content.get("formatted_body").and_then(Value::as_str) {
+        for localpart in pill_localparts(formatted) {
+            if let Some(mxid) = mention_mxid(&localpart, server) {
+                found.insert(mxid);
+            }
+            if found.len() == MENTION_CAP {
+                return found;
+            }
+        }
+    }
+    if !found.is_empty() {
+        return found;
+    }
+    if let Some(body) = content.get("body").and_then(Value::as_str) {
+        for localpart in plain_localparts(body) {
+            if let Some(mxid) = mention_mxid(&localpart, server) {
+                found.insert(mxid);
+            }
+            if found.len() == MENTION_CAP {
+                return found;
+            }
+        }
+    }
+    found
+}
+
+/// The same 64-entry ceiling `m.mentions.user_ids` is held to.
+const MENTION_CAP: usize = 64;
+/// TS's `[a-z0-9_-]` character class, matched case-insensitively.
+fn mention_localpart_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || c == '_' || c == '-'
+}
+/// A mention names a localpart; the room's own server completes the MXID. An
+/// entry that does not form a valid scoped user is dropped rather than failing
+/// the whole event, exactly as `agentNameFromUserId` returns null for one.
+fn mention_mxid(localpart: &str, server: &str) -> Option<String> {
+    if localpart.is_empty() || localpart.len() > 128 {
+        return None;
+    }
+    let mxid = format!("@{localpart}:{server}");
+    hagency_core::replies::matrix_user(&mxid, server).ok()?;
+    Some(mxid)
+}
+/// Localparts named by HTML pill hrefs, in order: TS's
+/// `matrix\.to/#/@(?:prefix)?([a-z0-9_-]+):` — the trailing colon is required, so
+/// a bare `matrix.to/#/@name` is not a pill.
+fn pill_localparts(formatted: &str) -> Vec<String> {
+    const NEEDLE: &str = "matrix.to/#/@";
+    let mut out = Vec::new();
+    let mut rest = formatted;
+    while let Some(at) = rest.find(NEEDLE) {
+        let after = &rest[at + NEEDLE.len()..];
+        let end = after
+            .find(|c: char| !mention_localpart_char(c))
+            .unwrap_or(after.len());
+        let localpart = &after[..end];
+        if !localpart.is_empty() && after[end..].starts_with(':') {
+            out.push(localpart.to_owned());
+        }
+        rest = &after[end.max(1)..];
+    }
+    out
+}
+/// Localparts named by plain `@name` text, in order: TS's global
+/// `@(?:prefix)?([a-z0-9_-]+)`.
+fn plain_localparts(body: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut chars = body.char_indices().peekable();
+    while let Some((_, c)) = chars.next() {
+        if c != '@' {
+            continue;
+        }
+        let mut localpart = String::new();
+        while let Some(&(_, next)) = chars.peek() {
+            if mention_localpart_char(next) {
+                localpart.push(next);
+                chars.next();
+            } else {
+                break;
+            }
+        }
+        if !localpart.is_empty() {
+            out.push(localpart);
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod mention_fallback_tests {
+    use super::*;
+
+    fn content(value: serde_json::Value) -> serde_json::Map<String, Value> {
+        value.as_object().unwrap().clone()
+    }
+    fn mentioned(value: serde_json::Value, server: &str) -> Vec<String> {
+        address_mentions(&content(value), server).into_iter().collect()
+    }
+
+    /// TS:bridge-matrix.js:3133-3174. `m.mentions` is empty here, so the address
+    /// has to be recovered from the pill or from plain `@name` text; both name a
+    /// LOCALPART and the room completes the MXID. This is the TS-visible outcome
+    /// (which member an empty `m.mentions` still addresses), not an invariant.
+    #[test]
+    fn native_matrix_mention_fallback_reads_pills_and_plain_text() {
+        let server = "example.test";
+        assert_eq!(
+            mentioned(
+                serde_json::json!({"formatted_body":
+                    "<a href=\"https://matrix.to/#/@worker:example.test\">worker</a> please"}),
+                server
+            ),
+            vec!["@worker:example.test".to_string()],
+            "an HTML pill addresses the localpart"
+        );
+        assert_eq!(
+            mentioned(serde_json::json!({"body": "@worker please answer"}), server),
+            vec!["@worker:example.test".to_string()],
+            "plain @name text addresses the localpart"
+        );
+        assert!(
+            mentioned(serde_json::json!({"body": "nobody is addressed"}), server).is_empty(),
+            "an unaddressed message wakes nobody"
+        );
+        // A pill without the trailing server (`matrix.to/#/@worker`) is not a
+        // pill; TS then reads the plain-text body, which does name the agent.
+        assert_eq!(
+            mentioned(
+                serde_json::json!({"formatted_body":
+                    "<a href=\"https://matrix.to/#/@worker\">worker</a>", "body": "@worker"}),
+                server
+            ),
+            vec!["@worker:example.test".to_string()],
+            "a non-pill href falls through to the plain-text pass"
+        );
     }
 }

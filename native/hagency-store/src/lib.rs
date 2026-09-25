@@ -4,6 +4,7 @@ pub use domain::resource_configuration::{
     ResourceConfigurationResult,
 };
 pub mod agent_home;
+pub mod backup;
 mod database;
 mod domain;
 pub use domain::DOMAIN_SCHEMA_VERSION;
@@ -27,6 +28,7 @@ pub use domain::{
     IssueSideRegistration, IssueSideRegistrationRequest, KnownTokens, SideCredential, MAX_ENGAGEMENT_USAGE_PERIODS, MAX_ENGAGEMENT_USAGE_SOURCES,
     MAX_OPEN_CEILING_ALERTS, MAX_SOURCE_USAGE_RECEIPTS, MAX_USAGE_PERIODS, MAX_USAGE_RECEIPTS,
     MAX_USAGE_SOURCES, MESSAGE_RETENTION_FLOOR, OVER_BUDGET_NOTICE_KIND, OverBudgetNotice,
+    Contribution, OfferBook, OfferResource, OfferRole, OfferServing, Preview,
     OwnedClaimProfile, OwnedClaimRoom, OwnedCompletion, OwnedDispatchScope, OwnedFailure,
     OwnedObservation, OwnedProvisionScope, PEER_RECEIPT_CEILING, PEER_RETENTION_CEILING,
     PEER_RETENTION_FLOOR, PeerRetentionStatus, PeerSweepOutcome, ProjectSide, RetentionStatus,
