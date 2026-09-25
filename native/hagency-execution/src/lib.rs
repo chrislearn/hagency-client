@@ -25,8 +25,8 @@ pub use registration::{LaunchAck, RegistrationError, WorkspaceRegistration};
 pub use usage::{UsageFailure, UsageStatus};
 pub use warm::{WarmIdleStatus, WarmLimits, WarmRuntime};
 pub use workspace::{
-    StartedWorkspace, WorkspaceError, WorkspaceReceive, WorkspaceReceiveError, WorktreeError,
-    WorktreeInfo, WorktreeManager, WorktreeSpec, ordinary_launch_path,
+    StartedWorkspace, WorkspaceError, WorkspaceReceive, WorkspaceReceiveError, WorktreeConfig,
+    WorktreeError, WorktreeInfo, WorktreeManager, WorktreeSpec, ordinary_launch_path,
 };
 #[cfg(test)]
 #[path = "../tests/support/reply_loss.rs"]

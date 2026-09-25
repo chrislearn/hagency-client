@@ -194,6 +194,11 @@ pub struct OwnedDispatchScope {
     pub(super) account: Option<super::accounts::Association>,
     fingerprint: String,
     engagement_id: String,
+    /// The session's Matrix thread root (`SessionBinding.thread_root`), carried
+    /// through so a worktree-mode dispatch can resolve its per-thread worktree.
+    /// `None` for a non-threaded (top-level) session, which keeps the shared
+    /// engagement workspace. Already covered by the fingerprint via `session`.
+    thread_root: Option<String>,
     started: Option<(String, u64, String)>,
 }
 impl OwnedDispatchScope {
@@ -207,6 +212,7 @@ impl OwnedDispatchScope {
             &self.account,
             &self.fingerprint,
             &self.engagement_id,
+            &self.thread_root,
             &self.started,
         )
     }
@@ -238,6 +244,12 @@ impl OwnedDispatchScope {
     }
     pub fn engagement_id(&self) -> &str {
         &self.engagement_id
+    }
+    /// The session's Matrix thread root, if any. A worktree-mode dispatch uses
+    /// this to resolve its per-thread worktree; `None` keeps the engagement
+    /// workspace.
+    pub fn thread_root(&self) -> Option<&str> {
+        self.thread_root.as_deref()
     }
 }
 
@@ -323,6 +335,7 @@ fn project_dispatch(
     } else {
         execution::session(db, &input.session_id)?
     };
+    let thread_root = session.matrix().and_then(|b| b.thread_root.clone());
     let engagement = read_engagement(db, session.engagement_id())?;
     let (effect, generation): (String, u64) = db.query_row(
         "SELECT f.payload,e.generation FROM effects f JOIN engagements e ON e.id=f.engagement_id WHERE f.engagement_id=?1 AND f.kind='provision' AND f.state='complete'",
@@ -377,6 +390,7 @@ fn project_dispatch(
         account,
         fingerprint,
         engagement_id: engagement.id,
+        thread_root,
         started: None,
     })
 }
