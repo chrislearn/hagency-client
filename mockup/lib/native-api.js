@@ -261,7 +261,10 @@ export function validateAgentDetail(v, name) {
     || typeof v.online !== 'boolean' || !(v.last_seen_ms === null || number(v.last_seen_ms))
     || !id(v.resource_id) || !id(v.project_id) || !number(v.engagements)
     || !Array.isArray(v.rooms) || v.rooms.length > 100 || v.rooms.some((r) => !detailRoom(r))
-    || !detailRoom(v.dispatch)
+    // `dispatch` is null when nothing is live (domain.rs picks only
+    // leased/started/parked rooms; a stopped dispatch is outcome_unknown and
+    // yields none) — the read's own contract, not a malformed payload.
+    || !(v.dispatch === null || detailRoom(v.dispatch))
     || !Array.isArray(v.tasks) || v.tasks.length > 10
     || v.tasks.some((task) => !object(task, ['id', 'session_id', 'creator_session_id', 'title', 'description', 'priority', 'granularity', 'labels', 'parent_id', 'status', 'execution_epoch', 'created_at', 'updated_at', 'started_at', 'completed_at', 'heartbeat_at', 'waiting_reason', 'waiting_until'])
       || !id(task.id) || !id(task.session_id) || !text(task.title, 1024) || !TASK_STATES.includes(task.status)
