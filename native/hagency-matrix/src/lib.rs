@@ -15,6 +15,7 @@ mod media_download;
 mod media_upload;
 mod outgoing;
 mod receive;
+mod retire;
 mod upload;
 pub use upload::{FilePublicationAdmissionFailure, FilePublicationOperation};
 pub use upload::{StagedUpload, UploadAdmissionFailure, UploadOperation};
@@ -33,6 +34,7 @@ pub use media_upload::{
 pub use outgoing::{OutgoingState, OutgoingSummary};
 pub use provisioning::{ProvisionedAgent, TokenProvisioningHost};
 pub use receive::{ReceiveError, ReceivedAttachment, ReceivedScope};
+pub use retire::{AgentRetirement, RetireClient, RetireVerdict};
 pub use token_provision::{
     ApplicationServiceCredential, ProvisionedTokenAccount, TokenAccountProvision,
 };

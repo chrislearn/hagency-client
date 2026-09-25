@@ -3,6 +3,7 @@ pub mod accounts;
 mod approval;
 mod config;
 mod driver;
+pub(crate) mod engagement_notice;
 pub mod fleet;
 pub mod intake_refusal;
 pub(crate) mod palpo;
