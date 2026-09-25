@@ -66,6 +66,42 @@ impl PreProjectEvent {
         self.input.observation()
     }
 }
+/// TS `lib/fleet-protocol.js:4,16-34`: a request carried as the custom Matrix
+/// event type `com.hagency.engagement.request.v1` has the camelCase fleet
+/// fields as its `content` (no `msgtype`, no `body`). `provision()` reads the
+/// console-shape `body`, so this rewrites the camelCase `content` into the
+/// body the msgtype carrier carries. The fields `provision()` derives itself
+/// (`fleetId`, `v`, `authVersion`, `sourceRoomId`, `ownerMxid`, `ownerDmRoomId`,
+/// `sourceEventId`) are omitted here exactly as the msgtype body omits them.
+fn custom_request_body(content: &serde_json::Map<String, Value>) -> Result<String, Rejection> {
+    let get = |key: &str| content.get(key).ok_or(Rejection::Malformed);
+    let requester = get("requesterMxid")?
+        .as_str()
+        .ok_or(Rejection::Malformed)?;
+    let definition = get("agentDefinition")?
+        .as_object()
+        .ok_or(Rejection::Malformed)?;
+    let name = definition
+        .get("name")
+        .ok_or(Rejection::Malformed)?
+        .clone();
+    let resource = definition
+        .get("resourceId")
+        .ok_or(Rejection::Malformed)?
+        .clone();
+    let body = serde_json::json!({
+        "requestId": get("requestId")?,
+        "requester": requester,
+        "project": get("targetProjectId")?,
+        "projectRoomId": get("targetRoomId")?,
+        "role": get("role")?,
+        "requestedTokens": get("requestedTokens")?,
+        "ratePerDay": content.get("ratePerDay").cloned().unwrap_or(Value::Null),
+        "agent": name,
+        "context": { "agentDefinition": { "resourceId": resource } },
+    });
+    Ok(body.to_string())
+}
 /// A derived timeline candidate: either a routed event or a pre-project
 /// provisioning request admitted by discriminator before target resolution.
 enum Candidate {
@@ -380,7 +416,13 @@ impl Batch {
             }
             TimelineEventKind::PlainText { .. } => Proof::Plain,
         };
-        if string("type")? != "m.room.message" {
+        // TS `lib/fleet-protocol.js:4`: a request may also be carried as the
+        // custom event type `com.hagency.engagement.request.v1` (top-level
+        // `type`), whose `content` is the camelCase fleet fields. Everything
+        // else that is not a room message is not ours (Ok(None), dropped).
+        let event_type = string("type")?;
+        let custom_request = event_type == "com.hagency.engagement.request.v1";
+        if event_type != "m.room.message" && !custom_request {
             return Ok(None);
         }
         let content = value
@@ -391,10 +433,22 @@ impl Batch {
         if relation.is_some_and(|v| !v.is_object()) {
             return Err(Malformed);
         }
-        let msgtype = content
-            .get("msgtype")
-            .and_then(Value::as_str)
-            .ok_or(Malformed)?;
+        // A custom-type request carries the camelCase fleet fields as its
+        // `content`; `provision()` reads the console-shape `body`, so the two
+        // carriers converge here into the same pre-project message the msgtype
+        // carrier produces (same kind, same body shape, same fail-closed
+        // verification in `provision`).
+        let (msgtype, body) = if custom_request {
+            (
+                "com.hagency.engagement.request.v1",
+                custom_request_body(content)?,
+            )
+        } else {
+            (
+                content.get("msgtype").and_then(Value::as_str).ok_or(Malformed)?,
+                content.get("body").and_then(Value::as_str).ok_or(Malformed)?.to_owned(),
+            )
+        };
         // ADR-095: the provisioning discriminator is admitted before target
         // resolution. The reception room is pre-project, so no ReplyRoute can
         // name it; the event becomes a pre-project candidate instead and
@@ -407,10 +461,6 @@ impl Batch {
             msgtype,
             "com.hagency.engagement.request.v1" | "com.hagency.engagement.approval.v1"
         ) {
-            let body = content
-                .get("body")
-                .and_then(Value::as_str)
-                .ok_or(Malformed)?;
             let input = Message {
                 server_name: string("sender")?
                     .split_once(':')
