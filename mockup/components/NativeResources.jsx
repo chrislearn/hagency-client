@@ -49,7 +49,9 @@ export default function NativeResources() {
   return <>
     <PageHead title={t('rs.title')} sub={t('nr.sub')}><NativeStatusStrip /></PageHead>
     <p className="muted">{t('nr.localOnly')}</p>
-    {['ready', 'stale'].includes(phase) && <div className="btn-row"><a className="btn primary" href={`/console/resources/new/${selected ? `?source_resource_id=${selected}` : ''}`}>{t('nc.create')}</a></div>}
+    {/* Item 3: the list link names the destination; the wizard's own
+     * submit keeps "Create another configuration" as the action. */}
+    {['ready', 'stale'].includes(phase) && <div className="btn-row"><a className="btn primary" href={`/console/resources/new/${selected ? `?source_resource_id=${selected}` : ''}`}>{t('nr.createLink')}</a></div>}
     {phase === 'loading' && <p role="status">{t('nr.loading')}</p>}
     <NativeAccessNotice />
     {action && <section className="notice" data-resource-action={action.kind} role={action.kind === 'pending' || action.kind === 'saved' ? 'status' : 'alert'}>

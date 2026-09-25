@@ -69,7 +69,9 @@ export default function WizardPage() {
   const data = useData(); const t = useT();
   if (!data.nativeConsole) return <WizardForm />;
   return <>
-    <PageHead title={t(data.editing ? 'nc.edit' : 'nc.pageTitle')} sub={t('nc.scope')}><NativeStatusStrip /><a className="btn" href="/console/resources/">{t('wz.cancel')}</a></PageHead>
+    {/* Item 3: the heading names what the page shows; the row button's
+     * "Edit configuration" stays the action that OPENS it. */}
+    <PageHead title={t(data.editing ? 'nc.editHead' : 'nc.pageTitle')} sub={t('nc.scope')}><NativeStatusStrip /><a className="btn" href="/console/resources/">{t('wz.cancel')}</a></PageHead>
     <NativeAccessNotice />
     {data.phase === 'loading' && <p role="status">{t('nr.loading')}</p>}
     {data.phase === 'error' && <section className="notice" role="alert"><p>{t('nr.failed')}</p><button className="btn" onClick={data.refresh}>{t('nu.refresh')}</button></section>}

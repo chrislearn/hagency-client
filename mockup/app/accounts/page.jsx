@@ -29,8 +29,10 @@ export default function AccountsPage() {
         await exchangeAccess(window.location, window.history);
         const value = await fetchAccounts();
         if (!cancelled) setState({ phase: 'ready', accounts: value.accounts });
-      } catch {
-        if (!cancelled) setState({ phase: 'access', accounts: null });
+      } catch (error) {
+        /* Item 6: only a real access refusal is "access required" — busy
+         * and network failures render as a read error with a retry. */
+        if (!cancelled) setState({ phase: error.message === 'console_access_required' ? 'access' : 'error', accounts: null });
       }
     })();
     return () => { cancelled = true; };
@@ -61,8 +63,10 @@ export default function AccountsPage() {
   return (
     <NativeAccounts
       phase={state.phase}
+      error={state.error}
       accounts={state.accounts}
       action={action}
+      onRetry={load}
       onPrepare={() => run('prepare', prepareAccount)}
       onEnroll={(account, model, reasoning) => run(`enroll ${account.ordinal}`, () => enrollAccountResource(account.id, model, reasoning, account.revision))}
       onRetire={(account) => run(`retire ${account.ordinal}`, () => retireAccount(account.id))}
