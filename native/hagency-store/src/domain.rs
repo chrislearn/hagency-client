@@ -685,10 +685,7 @@ impl DomainRepository {
                     // list version after this branch's head 39, so the file
                     // keeps 040 and the tuple carries 40. Integration
                     // renumbers on merge if another slice landed first.
-                    (
-                        40,
-                        include_str!("migrations/040-dispatch-activity.sql"),
-                    ),
+                    (40, include_str!("migrations/040-dispatch-activity.sql")),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[

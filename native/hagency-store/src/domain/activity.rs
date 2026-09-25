@@ -125,7 +125,9 @@ pub fn activity_body(
         "resumed" => "已收到审批决定，继续处理",
         "tool_start" => {
             let label = kind.and_then(label).unwrap_or("调用工具");
-            return format!("{icon} 正在{label}\n已运行 {elapsed} 秒 · 工具调用 {tools} 次，已返回 {finished} 次");
+            return format!(
+                "{icon} 正在{label}\n已运行 {elapsed} 秒 · 工具调用 {tools} 次，已返回 {finished} 次"
+            );
         }
         "tool_end" => "工具调用已返回，继续处理",
         _ => "已开始处理，等待运行器的下一步事件",
@@ -207,13 +209,12 @@ pub(super) fn update(
             };
             let key = format!("{}:{}", event.phase(), event_id);
             if matches!(event, ActivityEvent::ToolEnd { .. })
-                && !tx
-                    .query_row(
-                        "SELECT EXISTS(SELECT 1 FROM dispatch_activity_events \
+                && !tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM dispatch_activity_events \
                          WHERE dispatch_id=?1 AND event_key=?2)",
-                        rusqlite::params![dispatch_id, format!("tool_start:{event_id}")],
-                        |r| r.get::<_, bool>(0),
-                    )?
+                    rusqlite::params![dispatch_id, format!("tool_start:{event_id}")],
+                    |r| r.get::<_, bool>(0),
+                )?
             {
                 return Ok(None);
             }
@@ -242,15 +243,23 @@ pub(super) fn update(
     let immediate =
         event.immediate() || (matches!(event, ActivityEvent::ToolStart { .. }) && row.tools == 1);
     let due = immediate
-        || now - row.queued_at >= if matches!(event, ActivityEvent::Heartbeat) {
-            30_000
-        } else {
-            5_000
-        };
+        || now - row.queued_at
+            >= if matches!(event, ActivityEvent::Heartbeat) {
+                30_000
+            } else {
+                5_000
+            };
     tx.execute(
         "UPDATE dispatch_activity SET phase=?2,kind=?3,tools=?4,finished=?5,updated_at=?6 \
          WHERE dispatch_id=?1",
-        rusqlite::params![dispatch_id, row.phase, row.kind, row.tools, row.finished, now],
+        rusqlite::params![
+            dispatch_id,
+            row.phase,
+            row.kind,
+            row.tools,
+            row.finished,
+            now
+        ],
     )?;
     if !due {
         return Ok(None);
@@ -382,12 +391,11 @@ impl DomainRepository {
         identifier(dispatch_id, 128)?;
         if !matches!(
             event,
-            ActivityEvent::Heartbeat | ActivityEvent::ToolStart { .. } | ActivityEvent::ToolEnd { .. }
+            ActivityEvent::Heartbeat
+                | ActivityEvent::ToolStart { .. }
+                | ActivityEvent::ToolEnd { .. }
         ) {
-            return Err(hagency_core::InvalidInput(
-                "runner cannot set lifecycle activity",
-            )
-            .into());
+            return Err(hagency_core::InvalidInput("runner cannot set lifecycle activity").into());
         }
         let tx = self
             .db
@@ -403,7 +411,7 @@ impl DomainRepository {
             None => return Err(Error::NotFound),
             Some("started") => {}
             Some(_) => {
-                return Err(hagency_core::InvalidInput("activity requires an active runner").into())
+                return Err(hagency_core::InvalidInput("activity requires an active runner").into());
             }
         }
         tx.execute_batch("SAVEPOINT activity_notice")?;
@@ -439,8 +447,9 @@ mod tests {
     const DISPATCH: &str = "dispatch_activity_fixture";
 
     fn seeded(db: &mut crate::DomainRepository) -> &'static str {
-        db.db.execute_batch(
-            "INSERT INTO registrations(fleet_id,generation,config) VALUES('fleet_a',1,'{}'); \
+        db.db
+            .execute_batch(
+                "INSERT INTO registrations(fleet_id,generation,config) VALUES('fleet_a',1,'{}'); \
              INSERT INTO resources(id,preset_id,config) VALUES('res_a','preset_a','{}'); \
              INSERT INTO projects(fleet_id,id,generation,room_id,owner_mxid,owner_room_id) \
              VALUES('fleet_a','p1',1,'!r:example.test','@o:example.test','!d:example.test'); \
@@ -450,16 +459,20 @@ mod tests {
              INSERT INTO runner_sessions(id,engagement_id,binding) VALUES('sess_a','eng_a','{}'); \
              INSERT INTO runner_dispatches(id,session_id,task_id,input,digest,state) \
              VALUES('dispatch_activity_fixture','sess_a',NULL,'{}','digest_a','started');",
-        )
-        .unwrap();
+            )
+            .unwrap();
         DISPATCH
     }
 
     /// A trait so tests can reach the private transaction helpers without
     /// adding public surface.
     trait Update {
-        fn update(&mut self, dispatch: &str, event: &ActivityEvent, now: i64)
-            -> Option<ActivityUpdate>;
+        fn update(
+            &mut self,
+            dispatch: &str,
+            event: &ActivityEvent,
+            now: i64,
+        ) -> Option<ActivityUpdate>;
         fn delivered(&mut self, dispatch: &str, event_id: &str) -> bool;
     }
     impl Update for crate::DomainRepository {
@@ -469,10 +482,7 @@ mod tests {
             event: &ActivityEvent,
             now: i64,
         ) -> Option<ActivityUpdate> {
-            let tx = self
-                .db
-                .transaction()
-                .expect("transaction opens");
+            let tx = self.db.transaction().expect("transaction opens");
             let update = super::update(&tx, dispatch, event, now).expect("update applies");
             tx.commit().expect("commit");
             update
@@ -543,9 +553,7 @@ mod tests {
             "⏳ 正在读取或修改文件\n已运行 8 秒 · 工具调用 3 次，已返回 0 次"
         );
         // Waiting is immediate, with its own icon and words.
-        let waiting = db
-            .update(&dispatch, &ActivityEvent::Waiting, 9600)
-            .unwrap();
+        let waiting = db.update(&dispatch, &ActivityEvent::Waiting, 9600).unwrap();
         assert_eq!(
             waiting.body,
             "⏸️ 等待负责人授权；请在私人审批房间处理\n已运行 8 秒 · 工具调用 3 次，已返回 0 次"
@@ -560,16 +568,23 @@ mod tests {
         let (_root, mut db) = open();
         let dispatch = seeded(&mut db);
         // No row, no lifecycle event but started.
-        assert!(db.update(&dispatch, &ActivityEvent::Heartbeat, 1000).is_none());
-        assert!(db
-            .update(&dispatch, &ActivityEvent::Waiting, 1000)
-            .is_none());
+        assert!(
+            db.update(&dispatch, &ActivityEvent::Heartbeat, 1000)
+                .is_none()
+        );
+        assert!(
+            db.update(&dispatch, &ActivityEvent::Waiting, 1000)
+                .is_none()
+        );
         db.update(&dispatch, &ActivityEvent::Started, 1000);
         // A second started admits nothing.
-        assert!(db.update(&dispatch, &ActivityEvent::Started, 2000).is_none());
+        assert!(
+            db.update(&dispatch, &ActivityEvent::Started, 2000)
+                .is_none()
+        );
         // tool_end without tool_start.
-        assert!(db
-            .update(
+        assert!(
+            db.update(
                 &dispatch,
                 &ActivityEvent::ToolEnd {
                     kind: "command".into(),
@@ -577,7 +592,8 @@ mod tests {
                 },
                 2000
             )
-            .is_none());
+            .is_none()
+        );
         // A repeated tool_start counts nothing (dedupe).
         db.update(
             &dispatch,
@@ -587,17 +603,12 @@ mod tests {
             },
             2000,
         );
-        let before = read(
-            &db.db
-                .transaction()
-                .unwrap(),
-            &dispatch,
-        )
-        .unwrap()
-        .unwrap();
+        let before = read(&db.db.transaction().unwrap(), &dispatch)
+            .unwrap()
+            .unwrap();
         assert_eq!(before.tools, 1);
-        assert!(db
-            .update(
+        assert!(
+            db.update(
                 &dispatch,
                 &ActivityEvent::ToolStart {
                     kind: "command".into(),
@@ -605,23 +616,34 @@ mod tests {
                 },
                 3000
             )
-            .is_none());
+            .is_none()
+        );
         // Heartbeat coalesces until 30 s passes. TS heartbeat does NOT
         // change the phase (activity.ts:50): the row stays tool_start, so
         // the due body still reads 正在运行命令 with the elapsed time.
-        assert!(db.update(&dispatch, &ActivityEvent::Heartbeat, 20_000).is_none());
-        let beat = db.update(&dispatch, &ActivityEvent::Heartbeat, 32_000).unwrap();
+        assert!(
+            db.update(&dispatch, &ActivityEvent::Heartbeat, 20_000)
+                .is_none()
+        );
+        let beat = db
+            .update(&dispatch, &ActivityEvent::Heartbeat, 32_000)
+            .unwrap();
         assert_eq!(
             beat.body,
             "⏳ 正在运行命令\n已运行 31 秒 · 工具调用 1 次，已返回 0 次"
         );
         // Terminal: completed, then nothing.
-        let done = db.update(&dispatch, &ActivityEvent::Completed, 33_000).unwrap();
+        let done = db
+            .update(&dispatch, &ActivityEvent::Completed, 33_000)
+            .unwrap();
         assert_eq!(
             done.body,
             "✅ 本轮处理已结束\n已运行 32 秒 · 工具调用 1 次，已返回 0 次"
         );
-        assert!(db.update(&dispatch, &ActivityEvent::Heartbeat, 34_000).is_none());
+        assert!(
+            db.update(&dispatch, &ActivityEvent::Heartbeat, 34_000)
+                .is_none()
+        );
     }
 
     /// The anchor is the FIRST delivered id and never moves (COALESCE).

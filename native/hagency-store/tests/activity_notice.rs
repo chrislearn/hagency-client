@@ -14,7 +14,7 @@ use hagency_core::{
     replies::*,
     tasks::*,
 };
-use hagency_store::{DomainRepository, EffectOutcome, AttemptEvent, AttemptPhase};
+use hagency_store::{AttemptEvent, AttemptPhase, DomainRepository, EffectOutcome};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 
@@ -206,17 +206,16 @@ fn native_activity_notice_first_send_then_edit_revision() {
 
     // A tool event through the runner entry: the first tool is immediate,
     // and the notice kind now CARRIES the delivered anchor for the edit.
-    f.db
-        .record_activity_event(
-            &dispatch,
-            &hagency_store::ActivityEvent::ToolStart {
-                kind: "command".into(),
-                event_id: "tool_1".into(),
-            },
-            7005,
-        )
-        .unwrap()
-        .unwrap();
+    f.db.record_activity_event(
+        &dispatch,
+        &hagency_store::ActivityEvent::ToolStart {
+            kind: "command".into(),
+            event_id: "tool_1".into(),
+        },
+        7005,
+    )
+    .unwrap()
+    .unwrap();
     let rows = f.activity_rows();
     assert_eq!(rows.len(), 2, "revision 2 queued beside the delivered 1");
     assert_eq!(
@@ -255,11 +254,11 @@ fn native_activity_notice_first_send_then_edit_revision() {
     );
     // Terminal: nothing more.
     f.observe(&cap, AttemptPhase::Lost, 9500);
-    assert!(f
-        .db
-        .record_activity_event(&dispatch, &hagency_store::ActivityEvent::Heartbeat, 9600)
-        .unwrap()
-        .is_none());
+    assert!(
+        f.db.record_activity_event(&dispatch, &hagency_store::ActivityEvent::Heartbeat, 9600)
+            .unwrap()
+            .is_none()
+    );
     assert_eq!(f.activity_rows().len(), 3);
 }
 
@@ -283,7 +282,10 @@ fn native_activity_supersede_touches_only_pending_rows() {
     f.observe(&cap, AttemptPhase::Parked, 4000);
     let rows = f.activity_rows();
     assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].2, "claimed", "a claimed transaction stays immutable");
+    assert_eq!(
+        rows[0].2, "claimed",
+        "a claimed transaction stays immutable"
+    );
     assert_eq!(rows[1].2, "pending");
     assert_eq!(
         rows[1].1,
