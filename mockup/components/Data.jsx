@@ -6,6 +6,7 @@ import { makeDerive } from '@/lib/derive';
 import { fetchLive, CONTRACT_SLICES } from '@/lib/api';
 import * as fixture from '@/lib/mock-data';
 import { NATIVE_MODE, exchangeAccess, fetchNative, fetchResources, resourceView, publishResource, configurationView, configurationSelection, fetchConfiguration, configureResource, logoutNative, selection, alertsView, fetchAlerts, agentsView, fetchAgents, projectSidesView, fetchProjectSides, transitionAlert } from '@/lib/native-api';
+import { useLiveStream } from '@/lib/native-stream';
 
 /*
  * One data context for the console, with provenance attached.
@@ -173,6 +174,16 @@ function NativeDataProvider({ children }) {
     return () => { stopped = true; admitted.current = false; generation.current += 1; clearInterval(timer); window.removeEventListener('focus', refresh); window.removeEventListener('popstate', navigate); window.removeEventListener('hashchange', renew); document.removeEventListener('visibilitychange', refresh); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // #26 live updates: the SSE stream says a CATEGORY changed; this provider
+  // refetches its own bounded read — the retained dashboard's division. The
+  // stream signal rides the same in-flight and visibility guards the 15 s
+  // poll uses, so a live tab and an idle tab behave identically.
+  const liveRefresh = useRef(() => {});
+  liveRefresh.current = () => { if (inFlight.current === 0 && document.visibilityState === 'visible') void load(); };
+  useLiveStream((category) => {
+    if (!['agents', 'tasks', 'alerts'].includes(category)) return;
+    liveRefresh.current();
+  }, NATIVE_MODE);
   const choose = (value) => {
     if (configurationView(window.location)) {
       window.history.pushState(window.history.state, '', `/console/resources/new/?source_resource_id=${encodeURIComponent(value)}`);

@@ -23,8 +23,8 @@ use serde_json::json;
 
 pub(super) fn router() -> Router {
     Router::with_path("stream")
+        .get(stream)
         .push(Router::with_path("snapshot").get(snapshot))
-        .push(Router::new().get(stream))
         .push(Router::with_path("events").get(events))
 }
 
@@ -37,7 +37,9 @@ async fn stream(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     // boundary already authenticated the browser; this handler only reads
     // the store.
     depot.remove("console_permit");
-    if query(req, &["after"], 160).is_err() {
+    // The retained route ignores the query string entirely (sse-adapter
+    // installRoute): refuse any parameters rather than inventing semantics.
+    if query(req, &[], 0).is_err() {
         failed(res, Error::Invalid);
         return;
     }
@@ -49,12 +51,9 @@ async fn stream(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     let Some(store) = domain(depot, res) else {
         return;
     };
-    let mut last = match req.query::<String>("after") {
-        Some(after) if !after.is_empty() => after,
-        _ => match store.console_feed().await {
-            Ok(feed) => feed["version"].as_str().unwrap_or_default().to_owned(),
-            Err(_) => String::new(),
-        },
+    let mut last = match store.console_feed().await {
+        Ok(feed) => feed["version"].as_str().unwrap_or_default().to_owned(),
+        Err(_) => String::new(),
     };
     let headers = [
         ("content-type", "text/event-stream; charset=utf-8"),
@@ -65,51 +64,55 @@ async fn stream(req: &mut Request, depot: &mut Depot, res: &mut Response) {
             res.headers_mut().insert(name, parsed);
         }
     }
-    let sender = res.channel();
-    let mut sender = sender;
-    let _ = sender.send_data(":\n\n".to_owned()).await;
-    let _ = sender
-        .send_data(format!("event: hello\ndata: {}\n\n", json!({"version": last})))
-        .await;
-    // Poll cadence: the console page polled at 15 s; the feed read is one
-    // bounded query, so 1 s keeps a live page tight without touching any
-    // writer. The first interval tick fires immediately — the initial
-    // fingerprint is emitted without waiting a second.
-    let mut poll = tokio::time::interval(std::time::Duration::from_secs(1));
-    poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    let mut keepalive = tokio::time::interval(std::time::Duration::from_secs(30));
-    keepalive.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-    loop {
-        tokio::select! {
-            _ = keepalive.tick() => {
-                if sender.send_data(":\n\n".to_owned()).await.is_err() {
-                    return;
-                }
-            }
-            _ = poll.tick() => {
-                let Ok(feed) = store.console_feed().await else {
-                    continue;
-                };
-                let version = feed["version"].as_str().unwrap_or_default().to_owned();
-                if !version.is_empty() && version != last {
-                    for category in ["agents", "tasks", "alerts"] {
-                        let _ = sender
-                            .send_data(format!(
-                                "event: {}\ndata: {}\n\n",
-                                category,
-                                json!({
-                                    "version": feed[category]["version"],
-                                    "count": feed[category]["count"],
-                                    "feed_version": version,
-                                })
-                            ))
-                            .await;
+    // The response is only SENT once this handler returns; the stream body
+    // is the channel below, written by a spawned task that outlives the
+    // request. TS parity: the retained route wrote `:\n\n` on connect and
+    // kept the socket open via the clients set (sse-adapter.js:20-31).
+    let mut sender = res.channel();
+    tokio::spawn(async move {
+        let _ = sender.send_data(":\n\n".to_owned()).await;
+        let _ = sender
+            .send_data(format!("event: hello\ndata: {}\n\n", json!({"version": last})))
+            .await;
+        // Poll cadence: the console page polled at 15 s; the feed read is
+        // one bounded query, so 1 s keeps a live page tight without touching
+        // any writer. The first interval tick fires immediately.
+        let mut poll = tokio::time::interval(std::time::Duration::from_secs(1));
+        poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut keepalive = tokio::time::interval(std::time::Duration::from_secs(30));
+        keepalive.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            tokio::select! {
+                _ = keepalive.tick() => {
+                    if sender.send_data(":\n\n".to_owned()).await.is_err() {
+                        return;
                     }
-                    last = version;
+                }
+                _ = poll.tick() => {
+                    let Ok(feed) = store.console_feed().await else {
+                        continue;
+                    };
+                    let version = feed["version"].as_str().unwrap_or_default().to_owned();
+                    if !version.is_empty() && version != last {
+                        for category in ["agents", "tasks", "alerts"] {
+                            let _ = sender
+                                .send_data(format!(
+                                    "event: {}\ndata: {}\n\n",
+                                    category,
+                                    json!({
+                                        "version": feed[category]["version"],
+                                        "count": feed[category]["count"],
+                                        "feed_version": version,
+                                    })
+                                ))
+                                .await;
+                        }
+                        last = version;
+                    }
                 }
             }
         }
-    }
+    });
 }
 
 /// `GET /console/api/stream/snapshot` — the bounded one-shot feed read
