@@ -25,6 +25,7 @@
  */
 import { useState } from 'react';
 import { useT } from '@/components/Prefs';
+import { errorText } from '@/lib/i18n';
 import { registerProjectSide } from '@/lib/native-api';
 
 /* The store's own validation, mirrored so the form refuses before the wire
@@ -78,7 +79,7 @@ export default function RegisterSideControl() {
         ? t('np.reg.scope')
         : error.message === 'stale_generation' ? t('np.reg.stale')
           : error.message === 'invalid_side_query' ? t('np.reg.invalid')
-            : `${t('np.reg.saveFail')} (${error.message})`);
+            : `${t('np.reg.saveFail')} (${errorText(t, error.message)})`);
     } finally {
       setBusy(false);
     }

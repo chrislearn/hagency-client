@@ -26,6 +26,7 @@ import PageHead from '@/components/PageHead';
 import NativeStatusStrip from '@/components/NativeStatusStrip';
 import { NativeAccessNotice } from '@/components/NativeUsage';
 import { useT } from '@/components/Prefs';
+import { errorText } from '@/lib/i18n';
 import { useData } from '@/components/Data';
 import { fmtTokens } from '@/lib/mock-data';
 import { stopAgent } from '@/lib/native-api';
@@ -155,7 +156,7 @@ export default function NativeAgents() {
       </div>
       {stop && (
         <section className="notice" data-stop-action={stop.kind} role={stop.kind === 'pending' || stop.kind === 'saved' ? 'status' : 'alert'}>
-          <p><b>{stop.engagement}</b> · {t(`na.stop.${stop.kind}`)}{stop.error ? ` (${stop.error})` : ''}</p>
+          <p><b>{stop.engagement}</b> · {t(`na.stop.${stop.kind}`)}{stop.error ? ` (${errorText(t, stop.error)})` : ''}</p>
           {stop.kind !== 'pending' && <button className="btn" onClick={data.refresh}>{t('nu.refresh')}</button>}
         </section>
       )}

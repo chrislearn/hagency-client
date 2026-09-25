@@ -20,6 +20,7 @@ import PageHead from '@/components/PageHead';
 import NativeStatusStrip from '@/components/NativeStatusStrip';
 import { NativeAccessNotice } from '@/components/NativeUsage';
 import { useT } from '@/components/Prefs';
+import { errorText } from '@/lib/i18n';
 import { useData } from '@/components/Data';
 import { fmtTokens } from '@/lib/mock-data';
 import { retireEngagement, retryEngagementCleanup } from '@/lib/native-api';
@@ -86,7 +87,7 @@ export default function NativeEngagements() {
     } catch (error) {
       setNote(error.message === 'agent_lifecycle_scope_required'
         ? t('ng.scopeRequired')
-        : `${t('ng.actionFailed')} (${error.message})`);
+        : `${t('ng.actionFailed')} (${errorText(t, error.message)})`);
     } finally {
       setBusy(false);
     }
