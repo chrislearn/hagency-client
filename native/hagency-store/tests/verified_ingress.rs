@@ -1730,7 +1730,7 @@ fn native_verified_ingress_emits_delivery_feedback_notice() {
     assert_eq!(notice["task_id"], json!(task.task_id));
     assert_eq!(
         notice["body"],
-        json!("⚠️ Mention targets not found in agent registry: @zoe:example.test.")
+        json!("⚠️ Mention targets not found in agent registry: @zoe.")
     );
     // Idempotent: re-admitting the same event adds no second notice.
     assert!(!f.db.admit_matrix_event(&event, 1016).unwrap().created);
