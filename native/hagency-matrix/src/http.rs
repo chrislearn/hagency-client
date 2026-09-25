@@ -52,10 +52,15 @@ pub(crate) struct Http {
     reader: Client,
     base: Url,
     limits: Limits,
+    rate_limit: RateLimitGate,
 }
 /// First wait before redialling a JSON request whose connection never existed;
 /// doubled per attempt inside the original request deadline.
 const CONNECT_RETRY: std::time::Duration = std::time::Duration::from_millis(100);
+/// TS parity (`fetchWithRateLimit`, bridge-matrix.js:261-279): one request,
+/// read or write, is up to this many tries against 429s, all sharing one
+/// host-wide cooldown clock.
+const RATE_LIMIT_TRIES: usize = 6;
 /// The header wait is armed before the dial starts, so when it is no longer than
 /// the connect budget (both default to 5 s) it ends first or ties, and a dial
 /// that timed out surfaces as Timeout instead of the connect failure it is --
@@ -144,6 +149,42 @@ impl RequestPacing {
         Ok(())
     }
 }
+/// The TS bridge's shared Matrix rate-limit gate
+/// (`src/matrix-rate-limit-gate.mjs`, fed by `fetchWithRateLimit`,
+/// bridge-matrix.js:261-279): one cooldown clock for every request this host
+/// sends, reads and writes alike. A 429 seen on any path extends the shared
+/// cooldown for every path; a caller that did not cause the cooldown still
+/// waits it out. The cooldown only ever extends, never shrinks; a request made
+/// through another transport and failed still counts as a try.
+struct RateLimitGate {
+    cooldown_until: tokio::sync::Mutex<Option<Instant>>,
+}
+impl RateLimitGate {
+    fn new() -> Self {
+        Self {
+            cooldown_until: tokio::sync::Mutex::new(None),
+        }
+    }
+    /// `retry_after_ms` -> wait, capped at the TS max backoff (120 s); absent
+    /// or unusable gets the TS default (60 s). The clock extends only.
+    /// Returns the effective cooldown end — this observation's wait, or a
+    /// longer one already in effect — so the caller sleeps exactly that.
+    async fn observe(&self, delay: Option<std::time::Duration>) -> Instant {
+        const DEFAULT: std::time::Duration = std::time::Duration::from_secs(60);
+        const MAX: std::time::Duration = std::time::Duration::from_secs(120);
+        let wait = delay.unwrap_or(DEFAULT).min(MAX);
+        let until = Instant::now() + wait;
+        let mut cooldown = self.cooldown_until.lock().await;
+        if cooldown.is_none_or(|at| until > at) {
+            *cooldown = Some(until);
+        }
+        cooldown.unwrap_or(until)
+    }
+    /// When the shared cooldown clears, if it is active at all.
+    async fn clears_at(&self) -> Option<Instant> {
+        *self.cooldown_until.lock().await
+    }
+}
 /// Exact complete body of a validated HTTP200 encrypted-upload response. Only
 /// the actual bounded transport constructs this value. It carries no room,
 /// dispatch, sender verification, persistence or current-execution authority.
@@ -193,7 +234,10 @@ impl UploadResponse {
 pub(crate) struct Response {
     pub status: u16,
     pub value: Option<Value>,
-    retry_delay: Option<std::time::Duration>,
+    /// The server's own `retry_after` (header seconds or body milliseconds),
+    /// with no default and no floor; the shared gate supplies the TS default
+    /// (60 s) and cap (120 s) when it is absent or unusable.
+    pub(crate) retry_after: Option<std::time::Duration>,
 }
 impl Response {
     pub fn success(self) -> Result<Value, Error> {
@@ -491,6 +535,7 @@ impl Http {
             reader: build(true)?,
             base: endpoint.clone(),
             limits: limits.clone(),
+            rate_limit: RateLimitGate::new(),
         })
     }
 
@@ -501,8 +546,11 @@ impl Http {
         cancel: &CancellationToken,
     ) -> Result<Response, Error> {
         let deadline = Instant::now() + self.limits.request;
-        for attempt in 0..4 {
-            // One budget of four attempts, whether the last one ended in a
+        // TS beforeRequest (bridge-matrix.js:265-270): wait out an already
+        // active shared cooldown, even one this caller did not cause.
+        self.share_cooldown(cancel, deadline).await?;
+        for attempt in 0..RATE_LIMIT_TRIES {
+            // One budget of six tries, whether the last one ended in a
             // complete 429 or never reached the peer at all.
             let outcome = match self
                 .perform_once(
@@ -516,17 +564,27 @@ impl Http {
                 .await
             {
                 Ok(response) if response.status != 429 => return Ok(response),
-                Ok(response) => Ok(response),
-                Err(Failed::Connect) => Err(Error::Transport),
+                // A complete 429 extends the shared cooldown (retry_after_ms,
+                // TS default 60 s, cap 120 s) and is retried inside this
+                // budget: fetchWithRateLimit's six tries, one shared gate.
+                Ok(response) => {
+                    let until = self.rate_limit.observe(response.retry_after).await;
+                    if attempt + 1 < RATE_LIMIT_TRIES && until < deadline {
+                        wait(cancel, deadline, tokio::time::sleep_until(until)).await?;
+                        continue;
+                    }
+                    return Ok(response);
+                }
                 Err(Failed::Other(error)) => return Err(error),
+                Err(Failed::Connect) => Err(Error::Transport),
             };
             let delay = match &outcome {
-                Ok(response) => response.retry_delay,
                 Err(_) => Some(CONNECT_RETRY),
+                Ok(_) => unreachable!("a non-429 response already returned"),
             }
             .and_then(|delay| delay.checked_mul(1 << attempt));
             let next = delay
-                .filter(|_| attempt < 3)
+                .filter(|_| attempt + 1 < RATE_LIMIT_TRIES)
                 .and_then(|delay| Instant::now().checked_add(delay))
                 .filter(|next| *next < deadline);
             let Some(next) = next else {
@@ -542,13 +600,15 @@ impl Http {
         body: String,
         cancel: &CancellationToken,
     ) -> Result<Response, Error> {
+        let deadline = Instant::now() + self.limits.request;
+        self.share_cooldown(cancel, deadline).await?;
         self.perform(
             reqwest::Method::POST,
             segments,
             None,
             Some(body),
             cancel,
-            Instant::now() + self.limits.request,
+            deadline,
         )
         .await
     }
@@ -558,19 +618,25 @@ impl Http {
         body: String,
         cancel: &CancellationToken,
     ) -> Result<Response, Error> {
+        let deadline = Instant::now() + self.limits.request;
+        self.share_cooldown(cancel, deadline).await?;
         self.perform(
             reqwest::Method::PUT,
             segments,
             None,
             Some(body),
             cancel,
-            Instant::now() + self.limits.request,
+            deadline,
         )
         .await
     }
-    /// A JSON write is sent at most once. Only a dial that failed before any
-    /// connection existed is repeated: no byte of the request left, so there is
-    /// nothing to send twice. Any other failure, and a complete 429, ends it.
+    /// A JSON write is sent at most once per server verdict. A dial that
+    /// failed before any connection existed is repeated (no request byte
+    /// left), and a complete 429 — which refused the write, so nothing was
+    /// accepted — is retried inside this budget exactly like TS
+    /// fetchWithRateLimit: six tries through the shared cooldown, with the
+    /// same transaction id already fixed in the request path. Any other
+    /// failure ends it and is the caller's to re-send with the same txn id.
     async fn perform(
         &self,
         method: reqwest::Method,
@@ -580,7 +646,7 @@ impl Http {
         cancel: &CancellationToken,
         deadline: Instant,
     ) -> Result<Response, Error> {
-        for attempt in 0..4 {
+        for attempt in 0..RATE_LIMIT_TRIES {
             match self
                 .perform_once(
                     method.clone(),
@@ -593,11 +659,19 @@ impl Http {
                 .await
             {
                 Err(Failed::Connect) => {}
+                Ok(response) if response.status == 429 => {
+                    let until = self.rate_limit.observe(response.retry_after).await;
+                    if attempt + 1 < RATE_LIMIT_TRIES && until < deadline {
+                        wait(cancel, deadline, tokio::time::sleep_until(until)).await?;
+                        continue;
+                    }
+                    return Ok(response);
+                }
                 outcome => return Ok(outcome?),
             }
             let next = CONNECT_RETRY
                 .checked_mul(1 << attempt)
-                .filter(|_| attempt < 3)
+                .filter(|_| attempt + 1 < RATE_LIMIT_TRIES)
                 .and_then(|delay| Instant::now().checked_add(delay))
                 .filter(|next| *next < deadline);
             let Some(next) = next else {
@@ -606,6 +680,23 @@ impl Http {
             wait(cancel, deadline, tokio::time::sleep_until(next)).await?;
         }
         unreachable!("finite write loop always returns its last outcome")
+    }
+    /// TS beforeRequest: before the first try, wait out a shared cooldown
+    /// already active from any other request source. A cooldown that cannot
+    /// clear inside this bounded request surfaces as Timeout; the caller's
+    /// outer retry loop fires again once it has cleared.
+    async fn share_cooldown(
+        &self,
+        cancel: &CancellationToken,
+        deadline: Instant,
+    ) -> Result<(), Error> {
+        if let Some(at) = self.rate_limit.clears_at().await {
+            if at >= deadline {
+                return Err(Error::Timeout);
+            }
+            wait(cancel, deadline, tokio::time::sleep_until(at)).await?;
+        }
+        Ok(())
     }
     async fn perform_once(
         &self,
@@ -725,13 +816,13 @@ impl Http {
         } else {
             None
         };
-        let retry_delay = retry_header
+        let retry_after = retry_header
             .as_ref()
             .and_then(|headers| read_retry_delay(headers, value.as_ref()));
         Ok(Response {
             status,
             value,
-            retry_delay,
+            retry_after,
         })
     }
     async fn pace(&self, cancel: &CancellationToken, deadline: Instant) -> Result<(), Error> {
