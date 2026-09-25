@@ -26,6 +26,7 @@ import PageHead from '@/components/PageHead';
 import NativeStatusStrip from '@/components/NativeStatusStrip';
 import { NativeAccessNotice } from '@/components/NativeUsage';
 import { useT } from '@/components/Prefs';
+import { errorText } from '@/lib/i18n';
 import { useData } from '@/components/Data';
 import { fmtTokens } from '@/lib/mock-data';
 import { stopAgent } from '@/lib/native-api';
@@ -111,8 +112,10 @@ export default function NativeAgents() {
                 <th>{t('col.framework')}</th>
                 <th>{t('col.role')}</th>
                 <th>{t('col.state')}</th>
+                <th>{t('na.liveness')}</th>
                 <th>{t('na.engagement')}</th>
                 <th className="num">{t('col.requested')}</th>
+                <th className="num">{t('na.consumed')}</th>
                 <th>{t('na.lastActivity')}</th>
                 <th>{t('na.online')}</th>
                 <th>{t('na.lastSeen')}</th>
@@ -126,8 +129,15 @@ export default function NativeAgents() {
                   <td className="dim">{a.framework}</td>
                   <td>{a.role}</td>
                   <td>{a.state}</td>
+                  {/* Board #60 item 2: the LIVE DISPATCH's word, a separate
+                      fact from the engagement lifecycle word beside it —
+                      null means no live dispatch, said as unknown. */}
+                  <td className="dim">{a.liveness === null ? t('nu.unknown') : t(`na.liveness.${a.liveness}`)}</td>
                   <td className="dim">{a.engagement_id}</td>
                   <td className="num dim">{fmtTokens(a.requested_tokens)}</td>
+                  {/* Tokens observed consumed; null when unmeasured, never
+                      rendered as a zero that would read as "used nothing". */}
+                  <td className="num dim">{a.consumed === null ? t('nu.unknown') : fmtTokens(a.consumed)}</td>
                   {/* Last dispatch activity, not last seen; null is unknown,
                       rendered as the word — never a zero clock. */}
                   <td className="dim">{a.last_activity_ms === null ? t('nu.unknown') : new Date(a.last_activity_ms).toISOString()}</td>
@@ -155,7 +165,7 @@ export default function NativeAgents() {
       </div>
       {stop && (
         <section className="notice" data-stop-action={stop.kind} role={stop.kind === 'pending' || stop.kind === 'saved' ? 'status' : 'alert'}>
-          <p><b>{stop.engagement}</b> · {t(`na.stop.${stop.kind}`)}{stop.error ? ` (${stop.error})` : ''}</p>
+          <p><b>{stop.engagement}</b> · {t(`na.stop.${stop.kind}`)}{stop.error ? ` (${errorText(t, stop.error)})` : ''}</p>
           {stop.kind !== 'pending' && <button className="btn" onClick={data.refresh}>{t('nu.refresh')}</button>}
         </section>
       )}

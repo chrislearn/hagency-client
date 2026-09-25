@@ -4,6 +4,7 @@ import PageHead from '@/components/PageHead';
 import { useT } from '@/components/Prefs';
 import { useData } from '@/components/Data';
 import NativeProjectSides from '@/components/NativeProjectSides';
+import ConnectionControl from './connection-control';
 import SideRegistrationControl from './registration-control';
 import RegisterSideControl from './register-side';
 
@@ -35,6 +36,7 @@ export default function ProjectSidesPage() {
       <>
         <RegisterSideControl />
         <SideRegistrationControl sides={data.sides ?? []} />
+        <ConnectionControl sides={data.sides ?? []} />
         <NativeProjectSides />
       </>
     );

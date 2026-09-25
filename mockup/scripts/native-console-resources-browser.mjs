@@ -135,11 +135,18 @@ try {
     // through the client's mapping of 503 native_unavailable to the unknown outcome below.
     await page.locator('[data-resource-action="unknown"]').waitFor();
     await fixture('RELEASE_STORE');
-    await page.getByRole('button', { name: 'End access', exact: true }).click();
+    /* The rail's locale-stable control, as the executable branch below:
+     * main's own button is conditional on the page arm, and under the
+     * shared host's load the main-scoped name lookup timed out (full3). */
+    await page.locator('[data-shell-action="end-access"]').click();
     await page.locator('[data-logout-state="ended"]').waitFor();
     assert.equal(await page.locator('[data-native-resource-state]').count(), 0);
   } else {
-    await page.getByRole('button', { name: '结束访问', exact: true }).click();
+    /* The executable lane runs Chinese, and the resources page's main
+     * carries no logout of its own here — the ONE 结束访问 on screen is the
+     * rail's control. Target it by its locale-stable attribute, not a name
+     * that only exists outside main. */
+    await page.locator('[data-shell-action="end-access"]').click();
     await page.locator('[data-logout-state="ended"]').waitFor();
   }
   const storage = await page.evaluate(() => ({ local: Object.fromEntries(Object.entries(localStorage)), session: Object.fromEntries(Object.entries(sessionStorage)) }));

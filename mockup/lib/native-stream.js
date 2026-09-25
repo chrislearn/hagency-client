@@ -15,14 +15,37 @@ import { useEffect, useRef } from 'react';
 
 export const STREAM_CATEGORIES = ['agents', 'tasks', 'alerts'];
 
+/* #59: the TS named-event vocabulary (backend-v2.js broadcastSSE sites).
+ * Each event maps to the page whose data changed — the stream also keeps
+ * the three category signals, but the named events are the parity wire:
+ * the dashboard refreshes FROM them, exactly as the retained dashboard
+ * consumed /api/stream. */
+export const NAMED_EVENTS = {
+  task_created: 'tasks',
+  task_updated: 'tasks',
+  task_deleted: 'tasks',
+  alert_created: 'alerts',
+  alert_updated: 'alerts',
+  alert_resolved: 'alerts',
+  alert_deleted: 'alerts',
+  approval_requested: 'agents',
+  approval_verdict: 'agents',
+  agent_blocked: 'agents',
+  agent_recovered: 'agents',
+  message: 'agents',
+};
+
 export function snapshotRequest() {
   return '/console/api/stream/snapshot';
 }
 
 /** Subscribe to the live stream. `onChange(category)` fires on the first
- * event for a category whose feed version moved since the last event.
- * Returns nothing; the subscription is tied to the component's lifetime
- * and re-created when `active` flips. */
+ *  event for a category whose feed version moved since the last event.
+ *  #59: the TS named events also fire it — each name maps to the page whose
+ *  data changed (NAMED_EVENTS), so the dashboard refreshes FROM the named
+ *  events exactly as the retained dashboard consumed /api/stream.
+ *  Returns nothing; the subscription is tied to the component's lifetime
+ *  and re-created when `active` flips. */
 export function useLiveStream(onChange, active = true) {
   const notify = useRef(onChange);
   notify.current = onChange;
@@ -38,6 +61,12 @@ export function useLiveStream(onChange, active = true) {
       notify.current?.(category);
     };
     const handlers = new Map(STREAM_CATEGORIES.map((category) => [category, changed(category)]));
+    // Named events carry the entity as the payload (no feed_version): each
+    // occurrence is the news, so they notify without dedupe.
+    for (const name of Object.keys(NAMED_EVENTS)) {
+      const handler = () => notify.current?.(NAMED_EVENTS[name]);
+      handlers.set(name, handler);
+    }
     for (const [category, handler] of handlers) source.addEventListener(category, handler);
     return () => {
       for (const [category, handler] of handlers) source.removeEventListener(category, handler);
