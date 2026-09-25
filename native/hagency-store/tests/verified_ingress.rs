@@ -6,7 +6,7 @@ mod notice_custody;
 use common::*;
 use hagency_core::{ingress::*, messages::*, replies::*, task_intents::*, tasks::*};
 use hagency_store::{DomainRepository, EffectOutcome, Error};
-use serde_json::json;
+use serde_json::{Value, json};
 use std::collections::BTreeSet;
 
 struct Fixture {
@@ -1097,4 +1097,76 @@ fn native_matrix_intake_rotation_historical_receipt_is_content_bound_read_only()
         .query_row("SELECT COUNT(*) FROM admitted_messages", [], |r| r.get(0))
         .unwrap();
     assert_eq!(n, 1);
+}
+
+/// The delivery-feedback notice, end to end (task #5, bridge-matrix.js:6492-6572):
+/// a human's group message whose mention cannot reach its target must leave the
+/// TS notice text in the room, and the message must still be admitted - TS sends
+/// the notice after acceptance and `sendDeliveryNotice` swallows its own failure.
+#[test]
+fn native_verified_ingress_emits_delivery_feedback_notice() {
+    let mut f = Fixture::new(false);
+    let (_, _, task) = setup_task(&mut f);
+    let before = count(&f.sql(), "admitted_messages");
+    // `@zoe` has no transport (unknown) and is not in the joined set: the
+    // backend's `mentions_unknown` case (backend-v2.js:16817). A follow-up in
+    // this group thread is rooted at `$root`, exactly as
+    // `native_verified_ingress_followup` admits one.
+    let event = f.event(
+        &task.session_id,
+        "stranger",
+        Some("$root"),
+        &["@zoe:example.test"],
+        1014,
+    );
+    let receipt = f.db.admit_matrix_event(&event, 1015).unwrap();
+    assert!(receipt.projected);
+    // The message was still admitted: the notice is additive, never a refusal.
+    assert_eq!(count(&f.sql(), "admitted_messages"), before + 1);
+    let (kind, config): (String, String) = f
+        .sql()
+        .query_row(
+            "SELECT json_extract(config,'$.kind'), config FROM task_notices WHERE json_extract(config,'$.kind') LIKE 'delivery_feedback_%'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(kind, format!("delivery_feedback_{}", receipt.sequence));
+    let notice: Value = serde_json::from_str(&config).unwrap();
+    assert_eq!(notice["task_id"], json!(task.task_id));
+    assert_eq!(
+        notice["body"],
+        json!("⚠️ Mention targets not found in agent registry: @zoe:example.test.")
+    );
+    // Idempotent: re-admitting the same event adds no second notice.
+    assert!(!f.db.admit_matrix_event(&event, 1016).unwrap().created);
+    assert_eq!(
+        f.sql()
+            .query_row(
+                "SELECT COUNT(*) FROM task_notices WHERE json_extract(config,'$.kind') LIKE 'delivery_feedback_%'",
+                [],
+                |r| r.get::<_, u64>(0)
+            )
+            .unwrap(),
+        1
+    );
+    // A mention that IS a provisioned member says nothing at all.
+    let clean = f.event(
+        &task.session_id,
+        "clean",
+        Some("$root"),
+        &["@a:example.test"],
+        1017,
+    );
+    f.db.admit_matrix_event(&clean, 1018).unwrap();
+    assert_eq!(
+        f.sql()
+            .query_row(
+                "SELECT COUNT(*) FROM task_notices WHERE json_extract(config,'$.kind') LIKE 'delivery_feedback_%'",
+                [],
+                |r| r.get::<_, u64>(0)
+            )
+            .unwrap(),
+        1
+    );
 }
