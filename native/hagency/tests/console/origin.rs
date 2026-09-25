@@ -148,12 +148,32 @@ async fn native_console_origin_matches_retained_vectors() {
             .map(|s| s.as_str().unwrap())
             .collect::<Vec<_>>()
             .join("/");
-        let res = TestClient::get(format!("{BASE}/console/{joined}"))
-            .add_header("host", BASE.split_once("://").unwrap().1, true)
-            .add_header("sec-fetch-site", "same-origin", true)
-            .add_header("cookie", cookie.clone(), true)
-            .send(&service)
-            .await;
+        // Replay the RAW path. `TestClient` composes its URL through
+        // `url::Url`, which normalizes `.`/`..`/`%2e%2e` CLIENT-side, so a
+        // traversal row would be replayed as its already-collapsed path and
+        // the rule this section names would never be exercised. hyper hands
+        // the raw path to the product in production, so build the same
+        // `http::Uri` here instead of routing through the URL parser.
+        let uri: salvo::hyper::Uri = format!("{BASE}/console/{joined}").parse().unwrap();
+        let mut raw = Request::new();
+        raw.set_uri(uri);
+        let _ = raw.add_header("host", BASE.split_once("://").unwrap().1, true);
+        let _ = raw.add_header("sec-fetch-site", "same-origin", true);
+        let _ = raw.add_header("cookie", cookie.clone(), true);
+        let res = service.handle(raw).await;
+        // The empty segment list is the ONE row the native composition answers
+        // with a document instead of a refusal: `/console/` is the new front
+        // door (parity #1). The retained proxy had no route at `/api/hagency/`
+        // and refused; native serves the root document there, so the row
+        // asserts that document (a named divergence, per this section's rule).
+        if joined.is_empty() {
+            assert_eq!(
+                res.status_code,
+                Some(StatusCode::OK),
+                "the front door must serve the empty segment list"
+            );
+            continue;
+        }
         if row["expected"]["canonical"].is_array() {
             assert_ne!(
                 res.status_code,
