@@ -9,6 +9,7 @@ mod usage {
     mod admission;
     mod bounds;
     mod ceiling;
+    mod ledger;
     mod vectors;
 }
 
