@@ -332,6 +332,16 @@ fn project_dispatch(
     let resource: Resource =
         serde_json::from_value(effect.get("resource").cloned().ok_or(Error::Schema)?)?;
     resource.validate()?;
+    // The thread session's model override takes effect on the next dispatch:
+    // the operator's `/thread model <m>` replaces the provisioned model before
+    // the launch descriptor is built (TS `getLaunchDescriptor` carries
+    // `modelOverride`, backend-v2.js:2629). The override is validated by the
+    // parser (plain name/alias ≤64), so this is a value swap, never a new model
+    // authority. A cleared override (`None`) falls back to the provisioned model.
+    let mut resource = resource;
+    if let Some(model) = super::directives::model_override(db, &input.session_id)? {
+        resource.model = model;
+    }
     if resource.id() != engagement.resource_id
         || effect
             .get("registrationGeneration")

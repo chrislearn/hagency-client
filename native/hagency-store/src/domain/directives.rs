@@ -200,6 +200,18 @@ pub struct SessionOverrides {
     pub mode: Option<ThreadMode>,
 }
 
+/// The session's model override, read directly from the row (no `DomainRepository`
+/// needed, so the dispatch projection can use it). `None` = no override.
+pub(super) fn model_override(db: &rusqlite::Connection, session: &str) -> Result<Option<String>, Error> {
+    db.query_row(
+        "SELECT model_override FROM runner_sessions WHERE id=?1",
+        [session],
+        |r| r.get(0),
+    )
+    .optional()
+    .map_err(Error::from)
+}
+
 impl DomainRepository {
     /// Read the session's current overrides. `None` rows become `None` fields,
     /// matching the TS `?? null` projection (`store.ts:388-389`).
