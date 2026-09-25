@@ -801,3 +801,102 @@ fn native_logs_to_stderr_with_no_file_sink() {
     collect_log_names(directory.path(), &mut found);
     assert!(found.is_empty(), "a file log sink appeared: {found:?}");
 }
+
+/// Task #28 (c): account and registration verbs drive the RUNNING service's
+/// operator API over loopback, so the CLI works while the service runs (the
+/// offline writers need the store lock the service already holds). The same
+/// command shape the offline `native_account_cli` test uses, plus `--listen`.
+#[test]
+fn native_account_and_registration_cli_through_running_service() {
+    let root = tempfile::tempdir().unwrap();
+    let state = root.path().join("state");
+    let init = Command::new(env!("CARGO_BIN_EXE_hagency"))
+        .args(["init", "--state-dir"])
+        .arg(&state)
+        .env("PATH", "")
+        .output()
+        .unwrap();
+    assert!(init.status.success());
+    let token = fs::read_to_string(state.join("operator.token")).unwrap();
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    drop(listener);
+    let running = launch(&state, address);
+
+    let invoke = |args: &[&str]| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_hagency"));
+        command
+            .args(args)
+            .arg("--state-dir")
+            .arg(&state)
+            .arg("--listen")
+            .arg(address.to_string())
+            .env("PATH", "")
+            .env("HOME", "/untrusted-fixture-home")
+            .env("CODEX_HOME", "/untrusted-fixture-codex")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        command.output().unwrap()
+    };
+
+    // Account prepare through the running service: succeeds despite the
+    // service holding the store (the offline writer would report Locked).
+    let prepared = invoke(&["account", "prepare"]);
+    assert!(
+        prepared.status.success(),
+        "prepare through the running service failed: {}",
+        String::from_utf8_lossy(&prepared.stderr)
+    );
+    let choices: Vec<serde_json::Value> =
+        serde_json::from_slice(&prepared.stdout).unwrap();
+    assert_eq!(choices.len(), 1, "one prepared account");
+    let id = choices[0]["id"].as_str().unwrap().to_owned();
+
+    // Inspect through the running service returns the same single row.
+    let inspect = invoke(&["account", "inspect"]);
+    assert!(
+        inspect.status.success(),
+        "inspect through the running service failed: {}",
+        String::from_utf8_lossy(&inspect.stderr)
+    );
+    let inspected: Vec<serde_json::Value> =
+        serde_json::from_slice(&inspect.stdout).unwrap();
+    assert_eq!(inspected.len(), 1);
+    assert_eq!(inspected[0]["id"], choices[0]["id"]);
+
+    // Retire through the running service.
+    let retired = invoke(&["account", "retire", "--id", &id]);
+    assert!(
+        retired.status.success(),
+        "retire through the running service failed: {}",
+        String::from_utf8_lossy(&retired.stderr)
+    );
+
+    // Registration through the running service: a valid six-field document.
+    let registration = serde_json::json!({
+        "fleetId": "hf_0123456789abcdef0123456789abcdef",
+        "generation": 1,
+        "serverName": "example.test",
+        "receptionRoomId": "!reception:example.test",
+        "representativeMxid": "@hf_0123456789abcdef0123456789abcdef_representative:example.test",
+        "approvalBotMxid": "@hf_0123456789abcdef0123456789abcdef_approval:example.test"
+    });
+    let reg_file = root.path().join("registration.json");
+    fs::write(&reg_file, registration.to_string()).unwrap();
+    let registered = invoke(&["registration", "register", "--file", reg_file.to_str().unwrap()]);
+    assert!(
+        registered.status.success(),
+        "registration through the running service failed: {}",
+        String::from_utf8_lossy(&registered.stderr)
+    );
+
+    // The service is still up — the whole point is that it never had to stop.
+    assert_eq!(
+        operator_get(address, &token, "/api/native/v1/resources?limit=100")
+            .starts_with('['),
+        true
+    );
+    drop(running);
+}

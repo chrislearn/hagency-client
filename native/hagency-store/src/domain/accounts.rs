@@ -934,6 +934,14 @@ pub struct LoginAttempt {
     account_id: String,
     attempt: u64,
 }
+impl LoginAttempt {
+    /// The account this attempt was allocated for. Task #28's settle route
+    /// cross-checks the path id against this before settling, so a mismatched
+    /// attempt never settles a different account's row.
+    pub fn account_id(&self) -> &str {
+        &self.account_id
+    }
+}
 /// The parent's classification of the login child's exit, from a closed
 /// vocabulary — never the provider's verbatim words, never a credential.
 #[derive(Debug, Clone, Serialize, Deserialize)]

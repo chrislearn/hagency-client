@@ -39,12 +39,18 @@ enum Command {
         #[arg(long)]
         state_dir: PathBuf,
     },
-    /// Prepare or inspect fresh host-owned Codex credential namespaces offline.
+    /// Prepare or inspect fresh host-owned Codex credential namespaces.
+    /// With --listen the command drives the RUNNING service's operator API;
+    /// without it, the offline store writer is used (service must be stopped).
     Account {
-        // clap forbids required global arguments; the offline account commands
-        // accept --state-dir before or after their verb and refuse without it.
+        // clap forbids required global arguments; the account commands accept
+        // --state-dir (and --listen) before or after their verb.
         #[arg(long, global = true)]
         state_dir: Option<PathBuf>,
+        /// Drive the running service at this loopback address instead of
+        /// opening the state directory a second time.
+        #[arg(long, global = true)]
+        listen: Option<SocketAddr>,
         #[command(subcommand)]
         command: hagency::bootstrap::accounts::Command,
     },
@@ -53,6 +59,10 @@ enum Command {
     Registration {
         #[arg(long, global = true)]
         state_dir: Option<PathBuf>,
+        /// Drive the running service at this loopback address instead of
+        /// opening the state directory a second time.
+        #[arg(long, global = true)]
+        listen: Option<SocketAddr>,
         #[command(subcommand)]
         command: hagency::bootstrap::registration::Command,
     },
@@ -228,15 +238,56 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                 "Initialized native state. Operator token is in operator.token; keep it private."
             );
         }
-        Command::Account { state_dir, command } => {
+        Command::Account {
+            state_dir,
+            command,
+            listen,
+        } => {
             let state_dir = state_dir.ok_or("account commands require --state-dir")?;
-            let result = hagency::bootstrap::accounts::run(&state_dir, command)?;
+            let result = match listen {
+                // Task #28: drive the RUNNING service's operator API over
+                // loopback (the service stays up); offline fallback otherwise.
+                Some(address) => {
+                    match hagency::operator_cli::accounts(&state_dir, address, command).await {
+                        Ok(choices) => choices,
+                        Err(error) => {
+                            eprintln!("hagency: {}", error.describe());
+                            std::process::exit(error.exit_code());
+                        }
+                    }
+                }
+                None => hagency::bootstrap::accounts::run(&state_dir, command)?,
+            };
             println!("{}", serde_json::to_string(&result)?);
         }
-        Command::Registration { state_dir, command } => {
+        Command::Registration {
+            state_dir,
+            command,
+            listen,
+        } => {
             let state_dir = state_dir.ok_or("registration commands require --state-dir")?;
-            hagency::bootstrap::registration::run(&state_dir, command)?;
-            println!("{}", serde_json::json!({"ok": true}));
+            match command {
+                hagency::bootstrap::registration::Command::Register { file } => {
+                    match listen {
+                        Some(address) => {
+                            if let Err(error) =
+                                hagency::operator_cli::registration(&state_dir, address, &file)
+                                    .await
+                            {
+                                eprintln!("hagency: {}", error.describe());
+                                std::process::exit(error.exit_code());
+                            }
+                        }
+                        None => {
+                            hagency::bootstrap::registration::run(
+                                &state_dir,
+                                hagency::bootstrap::registration::Command::Register { file },
+                            )?;
+                        }
+                    }
+                    println!("{}", serde_json::json!({"ok": true}));
+                }
+            }
         }
         Command::Provision { state_dir, command } => {
             let state_dir = state_dir.ok_or("provision commands require --state-dir")?;

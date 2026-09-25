@@ -122,6 +122,16 @@ async fn native_bootstrap_config_receive_inbox_absent_workspace() {
         stderr.contains("Error: Config"),
         "expected Failure::Config, got stderr: {stderr}"
     );
+    // Task #28 (a): the config refusal must name the field AND the fix, not
+    // merely collapse into the bare word `config`.
+    assert!(
+        stderr.contains("receive_inbox.workspace_id"),
+        "the config error must name the field, got stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("must be declared in workspaces"),
+        "the config error must name the fix, got stderr: {stderr}"
+    );
     assert_eq!(f.attempts(), 0);
     assert!(!f.work.join("owned-mcp.requests").exists());
 }
