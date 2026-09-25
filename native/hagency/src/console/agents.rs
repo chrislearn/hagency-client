@@ -23,14 +23,19 @@
 use super::resources::failure;
 use super::{Error, Session, body, console, failed, recheck, usage::query};
 use crate::{refusal, resources::domain};
-use hagency_core::project::{EngagementState, identifier};
+use hagency_core::project::{AgentName, EngagementState, identifier};
 use salvo::prelude::*;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 pub(super) fn router() -> Router {
     Router::with_path("agents")
         .get(list)
-        .push(Router::with_path("{name}").get(super::agent_detail::detail))
+        .push(
+            Router::with_path("{name}")
+                .get(super::agent_detail::detail)
+                .delete(delete),
+        )
         .push(Router::with_path("{id}/start").post(start))
         .push(Router::with_path("{id}/stop").post(stop))
         .push(Router::with_path("{id}/preset").post(preset))
@@ -665,6 +670,147 @@ async fn preset(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         return;
     }
     refusal(res, StatusCode::NOT_IMPLEMENTED, "agent_preset_unavailable");
+}
+
+/// `DELETE /api/agents/:name` — the retained soft/force delete
+/// (`backend-v2.js:12164-12307`).
+///
+/// SOFT (the default) is TS's reversible act: it reports
+/// `{ok, deprecated, message}` and changes nothing that an `undelete`
+/// would have to undo. TS marks its agent record inactive; native has no
+/// agent record (an agent is DERIVED from its engagements), so there is
+/// nothing to mark — and deliberately NOTHING is revoked, which is the
+/// distinction TS's own comment makes: a soft delete is reversible and
+/// `revoke` has no inverse, so only `?force=true` may touch commitments.
+///
+/// FORCE really deletes: TS revokes the agent's ACTIVE engagements and
+/// reports the released ids, because a commitment outlives its agent
+/// otherwise (`backend-v2.js:12206-12225`). Native's `revoke` is that same
+/// act and releases the budget by construction (a commitment IS the
+/// engagement's state), so force maps onto the existing retirement path
+/// rather than a second write path — each revocation carries its own
+/// deterministic command id, so a retried delete replays instead of
+/// double-acting.
+///
+/// What native does NOT do, and does not pretend to: TS also leaves the
+/// customer's project rooms and its groups, and kills the agent's tmux
+/// session. Native has no group concept and no room-withdrawal or session
+/// kill at this layer (the retirement the revoke schedules owns worker
+/// cleanup), so those are reported empty/false exactly as TS reports them
+/// for a deployment that has none — never invented. See the report.
+#[handler]
+async fn delete(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    // `?force=true` is TS's trigger, compared as the STRING 'true' — any
+    // other value (or none) is the soft, reversible path.
+    if query(req, &["force"], 64).is_err() {
+        failed(res, Error::Invalid);
+        return;
+    }
+    let force = req.query::<String>("force").as_deref() == Some("true");
+    // The same name shape `agent_detail` accepts — validated here because
+    // that module's helper is private to it (a delete must not address a
+    // name the detail read would refuse).
+    let Some(name) = req.param::<String>("name") else {
+        failed(res, Error::Invalid);
+        return;
+    };
+    if AgentName::try_from(name.clone()).is_err() {
+        failed(res, Error::Invalid);
+        return;
+    }
+    // Deleting is a lifecycle act: the same finite scope `retire` requires,
+    // refused before any store read.
+    if !check_lifecycle(depot, res) {
+        return;
+    }
+    let Some(store) = domain(depot, res) else {
+        return;
+    };
+    let detail = store.agent_detail(&name).await;
+    if let Err(error) = recheck(depot) {
+        failed(res, error);
+        return;
+    }
+    let detail = match detail {
+        Ok(Some(detail)) => detail,
+        // TS: 404 `{error:'agent not found'}` when no record names it.
+        Ok(None) => {
+            res.status_code(StatusCode::NOT_FOUND);
+            res.render(Json(serde_json::json!({
+                "error": "agent not found",
+                "code": "agent_not_found",
+            })));
+            return;
+        }
+        Err(error) => {
+            failure(res, error);
+            return;
+        }
+    };
+
+    if !force {
+        res.render(Json(serde_json::json!({
+            "ok": true,
+            "deprecated": true,
+            // TS's message, verbatim.
+            "message": "unregister is disabled; agent marked inactive. Use ?force=true to permanently delete.",
+            "agent": detail,
+        })));
+        return;
+    }
+
+    // FORCE: release this agent's active engagements. A failure here stops
+    // the delete rather than proceeding — removing the agent while its
+    // commitment stands is the very leak this closes (TS's
+    // `engagement_release_failed`, `backend-v2.js:12238-12252`).
+    let active = match store.agent_active_engagements(name.clone()).await {
+        Ok(active) => active,
+        Err(error) => {
+            failure(res, error);
+            return;
+        }
+    };
+    let mut released = Vec::with_capacity(active.len());
+    for id in active {
+        let command = delete_command_id(&name, &id);
+        match store.revoke(command, id.clone()).await {
+            Ok(_) => released.push(id),
+            Err(error) => {
+                if let Err(error) = recheck(depot) {
+                    failed(res, error);
+                    return;
+                }
+                // TS names the code and the agent it could not remove.
+                refusal(res, StatusCode::SERVICE_UNAVAILABLE, "engagement_release_failed");
+                let _ = error;
+                return;
+            }
+        }
+    }
+    if let Err(error) = recheck(depot) {
+        failed(res, error);
+        return;
+    }
+    res.render(Json(serde_json::json!({
+        "ok": true,
+        "deleted": true,
+        "name": name,
+        // Native has no tmux/session kill at this layer: the revoke above
+        // schedules the retirement that owns worker cleanup. Reported
+        // false rather than claimed.
+        "sessionKilled": false,
+        "releasedEngagements": released,
+        "leftGroups": Vec::<String>::new(),
+        "leftProjectRooms": Vec::<String>::new(),
+    })));
+}
+
+/// A deterministic command id for one force-delete revocation, so a retried
+/// `DELETE ?force=true` replays the store's decision instead of acting twice
+/// (the store replays an identical command id by digest).
+fn delete_command_id(name: &str, engagement: &str) -> String {
+    let digest = Sha256::digest(format!("delete_agent\u{0}{name}\u{0}{engagement}").as_bytes());
+    format!("delete_{}", digest[..16].iter().map(|b| format!("{b:02x}")).collect::<String>())
 }
 
 fn store_error(res: &mut Response, error: hagency_store::Error) {

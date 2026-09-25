@@ -268,6 +268,26 @@ export async function stopAgent(id) {
   return request(`/api/agents/${id}/stop`, { method: 'POST' });
 }
 
+/* Remove an agent (board #58, TS backend-v2.js:12164). The two shapes are
+ * kept APART on purpose, because the retained route's own trap is a caller
+ * that checks only `ok`: a plain DELETE answers `{ok:true, deprecated:true,
+ * message}` and leaves the agent in place, while `?force=true` really
+ * removes it and reports what it released. So `force` decides which key must
+ * be present, and a response that says `ok` without it is refused as
+ * invalid rather than reported as a successful removal. */
+export async function deleteAgent(name, force = false) {
+  const v = await request(`/api/agents/${encodeURIComponent(name)}${force ? '?force=true' : ''}`, { method: 'DELETE' });
+  if (v?.ok !== true) throw new Error('invalid_native_response');
+  if (force) {
+    if (v.deleted !== true || typeof v.sessionKilled !== 'boolean'
+      || !Array.isArray(v.releasedEngagements) || v.releasedEngagements.some((id_) => !id(id_))
+      || !Array.isArray(v.leftGroups) || !Array.isArray(v.leftProjectRooms)) throw new Error('invalid_native_response');
+  } else if (v.deprecated !== true || typeof v.message !== 'string') {
+    throw new Error('invalid_native_response');
+  }
+  return v;
+}
+
 /* The project-sides read (ADR-132): one row per fleet registration — the
  * id IS the server name (ADR-016) — with EXACTLY six keys and projects
  * entries of exactly {id, room_id}. The exact-key contract is the privacy

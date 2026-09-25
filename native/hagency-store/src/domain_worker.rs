@@ -3139,6 +3139,13 @@ impl DomainStore {
         let name = name.to_owned();
         self.call(64, move |db| db.agent_detail(&name)).await
     }
+    /// The agent's active engagement ids (board #58): the force-delete
+    /// route's revoke list, read in one writer job so the route adds no
+    /// second arithmetic path.
+    pub async fn agent_active_engagements(&self, name: String) -> Result<Vec<String>, Error> {
+        self.call(weight(&name)?, move |db| db.agent_active_engagements(&name))
+            .await
+    }
     /// The read-only project-sides projection (ADR-132): one writer job,
     /// one bounded read; the route adds no second projection.
     pub async fn project_sides(&self) -> Result<Vec<crate::ProjectSide>, Error> {
