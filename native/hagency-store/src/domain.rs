@@ -61,6 +61,8 @@ pub use operator_tasks::{
     MAX_TASK_COMMENTS, MAX_TASK_PAGE, OperatorTask, OperatorTaskComment, TASK_GRANULARITIES,
     TASK_PRIORITIES, TASK_STATUSES, TaskFilters, operator_transitions,
 };
+mod invites;
+pub use invites::PendingInvite;
 mod outcome_resolution;
 mod owned_completion;
 mod owned_dispatch;
@@ -112,7 +114,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 48;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 49;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -796,6 +798,13 @@ impl DomainRepository {
                         48,
                         include_str!("migrations/047-engagement-verdict-audit.sql"),
                     ),
+                    // Integration of ../regissue task/12: its board-assigned
+                    // number was 060; it lands as the next sequential tuple 49
+                    // (file name kept).
+                    (
+                        49,
+                        include_str!("migrations/060-pending-invites.sql"),
+                    ),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
@@ -807,6 +816,7 @@ impl DomainRepository {
                     "SELECT id,dirty FROM workspace_resources LIMIT 0",
                     "SELECT resource_id,inspected_at FROM workspace_dirty_releases LIMIT 0",
                     "SELECT engagement_id,yolo,updated_at FROM agent_execution_policies LIMIT 0",
+                    "SELECT room_id,agent,inviter,project_server,mode,since_ts,state,join_pending,leave_pending,seen_at,decided_at,decided_by FROM pending_invites LIMIT 0",
                     "SELECT dispatch_id,fence,seq,at_ms,phase,detail FROM runner_attempt_events LIMIT 0",
                     "SELECT dispatch_id,fence,started_at,parked_at,last_renew_at,settled_at,terminal_reason FROM runner_attempts LIMIT 0",
                     "SELECT dispatch_id,message_sequence,addressed FROM dispatch_inputs LIMIT 0",

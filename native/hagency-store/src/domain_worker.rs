@@ -3284,6 +3284,106 @@ impl DomainStore {
         let name = name.to_owned();
         self.call(64, move |db| db.agent_detail(&name)).await
     }
+    /// Task #12 reads: the pending-invitation list (TS `listPendingInvites`,
+    /// pending-only newest-first) and the single-record lookup.
+    pub async fn pending_invites(&self) -> Result<Vec<crate::PendingInvite>, Error> {
+        self.call(64, |db| db.pending_invites()).await
+    }
+    pub async fn pending_invite(
+        &self,
+        room_id: String,
+        agent: String,
+    ) -> Result<Option<crate::PendingInvite>, Error> {
+        self.call(weight(&(&room_id, &agent))?, move |db| {
+            db.pending_invite(&room_id, &agent)
+        })
+        .await
+    }
+    /// Task #12: record the operator's decision. `joined` is false from the
+    /// console (the join is queued, exactly the TS decide response's
+    /// `queued: true`); the poll consumes the worklist afterwards.
+    pub async fn settle_pending_invite(
+        &self,
+        room_id: String,
+        agent: String,
+        accepted: bool,
+        joined: bool,
+        by: String,
+    ) -> Result<Option<crate::PendingInvite>, Error> {
+        self.call(weight(&(&room_id, &agent, accepted, joined, &by))?, move |db| {
+            let now = i64::try_from(writer_time()?).map_err(|_| Error::Unavailable)?;
+            db.settle_pending_invite(&room_id, &agent, accepted, joined, &by, now)
+        })
+        .await
+    }
+    /// Task #12 wire intake: remember an untrusted invitation (TS
+    /// `rememberPendingInvite`) and backfill a null inviter.
+    pub async fn remember_pending_invite(
+        &self,
+        room_id: String,
+        agent: String,
+        inviter: Option<String>,
+        mode: String,
+        since_ts: i64,
+    ) -> Result<bool, Error> {
+        self.call(weight(&(&room_id, &agent, &inviter, &mode, since_ts))?, move |db| {
+            let now = i64::try_from(writer_time()?).map_err(|_| Error::Unavailable)?;
+            db.remember_pending_invite(&room_id, &agent, inviter.as_deref(), &mode, since_ts, now)
+        })
+        .await
+    }
+    pub async fn backfill_pending_invite_inviter(
+        &self,
+        room_id: String,
+        agent: String,
+        inviter: String,
+    ) -> Result<bool, Error> {
+        self.call(weight(&(&room_id, &agent, &inviter))?, move |db| {
+            db.backfill_pending_invite_inviter(&room_id, &agent, &inviter)
+        })
+        .await
+    }
+    /// Task #12 worklists: the joins/leaves the poll owes, and the marks
+    /// that clear them only after the homeserver answered.
+    pub async fn join_pending_invites(
+        &self,
+        agent: String,
+    ) -> Result<Vec<(String, String)>, Error> {
+        self.call(weight(&agent)?, move |db| db.join_pending_invites(&agent))
+            .await
+    }
+    pub async fn mark_invite_joined(&self, room_id: String, agent: String) -> Result<bool, Error> {
+        self.call(weight(&(&room_id, &agent))?, move |db| {
+            db.mark_invite_joined(&room_id, &agent)
+        })
+        .await
+    }
+    pub async fn leave_pending_invites(
+        &self,
+        agent: String,
+    ) -> Result<Vec<(String, String)>, Error> {
+        self.call(weight(&agent)?, move |db| db.leave_pending_invites(&agent))
+            .await
+    }
+    pub async fn mark_invite_left(&self, room_id: String, agent: String) -> Result<bool, Error> {
+        self.call(weight(&(&room_id, &agent))?, move |db| {
+            db.mark_invite_left(&room_id, &agent)
+        })
+        .await
+    }
+    /// Task #12 trust source: the owner a room's project recorded — the
+    /// store-held equivalent of TS `MATRIX_TRUSTED_INVITER_MXIDS`.
+    pub async fn room_owner(&self, room_id: String) -> Result<Option<String>, Error> {
+        self.call(weight(&room_id)?, move |db| db.room_owner(&room_id))
+            .await
+    }
+    /// The agent NAME an engagement syncs under — the invite record key.
+    pub async fn engagement_agent(&self, engagement_id: String) -> Result<Option<String>, Error> {
+        self.call(weight(&engagement_id)?, move |db| {
+            db.engagement_agent(&engagement_id)
+        })
+        .await
+    }
     /// The read-only project-sides projection (ADR-132): one writer job,
     /// one bounded read; the route adds no second projection.
     pub async fn project_sides(&self) -> Result<Vec<crate::ProjectSide>, Error> {

@@ -11,6 +11,7 @@ mod event_batch;
 mod http;
 pub use http::UploadResponse;
 mod intake;
+mod invites;
 mod media_download;
 mod media_upload;
 mod outgoing;
