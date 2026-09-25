@@ -49,38 +49,54 @@ pub(super) fn router() -> Router {
         .push(Router::with_path("{id}/refuse").post(refuse))
 }
 
-/// Exactly nine keys, in the ADR-126 order extended by board #22. Every
-/// key except `name`, `framework`, `role`, `state`, `engagement_id`,
-/// `requested_tokens` and `online` is nullable at the source; `null`
-/// means "unknown", rendered as such. One row per AGENT (TS parity:
-/// `backend-v2.js:11696` serializes every agent record).
+/// Exactly twelve keys, in the ADR-126 order extended by board #22 and
+/// board #60. Every key except `name`, `framework`, `role`, `state`,
+/// `engagement_id`, `requested_tokens`, `online` and `seat` is nullable at
+/// the source; `null` means "unknown", rendered as such. `consumed` is
+/// `null` when nothing was measured — unknown, never zero. One row per
+/// AGENT (TS parity: `backend-v2.js:11696` serializes every agent record).
 #[derive(Serialize)]
 struct RosterItem {
     name: String,
     framework: String,
     role: String,
+    /// The ENGAGEMENT LIFECYCLE word (pending/reserved/active/…), which is
+    /// what the store's projection carries.
     state: EngagementState,
     engagement_id: String,
     requested_tokens: u64,
     online: bool,
     last_seen_ms: Option<u64>,
     last_activity_ms: Option<u64>,
+    /// The LIVE DISPATCH's word, separate from `state` by construction
+    /// (board #60 item 2; TS `:6872` reads `machine.state`, a liveness
+    /// value). Null when native's dispatch record shows no live dispatch.
+    liveness: Option<String>,
+    /// Tokens observed consumed by the agent's engagements, summed the way
+    /// the usage report sums it. Null when nothing was measured.
+    consumed: Option<u64>,
 }
 
-/// Every retained roster column native has no source for in this slice:
-/// per-agent consumed usage (the ceiling report is keyed by resource),
-/// the tmux target and pane, the credential home and workspace path
-/// (private by omission, named as unavailable), the seat. `online` and
-/// `last_seen` are SOURCED now (board #22): a live dispatch and the
-/// newest attempt clock are real worker state, so they render as columns.
-const UNAVAILABLE: [&str; 6] = [
-    "consumed",
-    "tmux",
-    "pane",
-    "credential_home",
-    "workspace_path",
-    "seat",
-];
+/// Board #60 item 2. The columns that were printed as `unknown` are now
+/// ANSWERED from native state — `consumed` (`usage_sources.latest_counts`)
+/// and `liveness` (the live dispatch row, separate from the engagement
+/// `state` word) — so they render as columns and nothing is left to name.
+///
+/// The four that cannot be answered are DROPPED rather than printed as
+/// "unknown", and `seat` joins them: TS's own roster serializer
+/// (`backend-v2.js:6822-6916`) carries no seat, and this codebase treats the
+/// seat id as private (`console/accounts.rs` deliberately withholds
+/// `seat_id`; the roster fixture asserts a seat name never reaches the
+/// wire). Filling it would invent a field TS does not have, so the honest
+/// reading of "fill what native can answer" is that `seat` is not one of
+/// them. `tmux`/`pane`/`credential_home`/`workspace_path` are unanswerable
+/// by design (ADR-126 keeps panes and paths off the wire, and the store
+/// holds no such column).
+///
+/// The list is kept, empty, because it is the server-owned mechanism the
+/// page renders verbatim: a future column with no source turns itself on by
+/// being named here.
+const UNAVAILABLE: [&str; 0] = [];
 
 #[handler]
 async fn list(req: &mut Request, depot: &mut Depot, res: &mut Response) {
@@ -119,6 +135,8 @@ async fn list(req: &mut Request, depot: &mut Depot, res: &mut Response) {
                     online: row.online,
                     last_seen_ms: row.last_seen_ms,
                     last_activity_ms: row.last_activity_ms,
+                    liveness: row.liveness,
+                    consumed: row.consumed,
                 })
                 .collect();
             // CL-S2 (ADR-130): the lifecycle controls render ONLY from the

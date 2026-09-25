@@ -209,8 +209,11 @@ export function alertsView(location) { return /^\/console\/alerts\/?$/.test(loca
  * `last_activity_ms` keeps the representative engagement's attempt
  * clock. `unavailable` is SERVER-OWNED: whatever columns the server
  * names are rendered as unknown, so a future source turns a column on
- * by removing its name server-side, never by a client edit. */
-const ROSTER_KEYS = ['name', 'framework', 'role', 'state', 'engagement_id', 'requested_tokens', 'online', 'last_seen_ms', 'last_activity_ms'];
+ * by removing its name server-side, never by a client edit. Board #60:
+ * `liveness` (the live dispatch's own word, distinct from the engagement
+ * `state`) and `consumed` (observed tokens, null when unmeasured) are
+ * served now, so this list is empty. */
+const ROSTER_KEYS = ['name', 'framework', 'role', 'state', 'engagement_id', 'requested_tokens', 'online', 'last_seen_ms', 'last_activity_ms', 'liveness', 'consumed'];
 export function validateAgents(v) {
   if (!object(v, ['at_ms', 'unavailable', 'agents', 'permissions']) || !number(v.at_ms)
     || !Array.isArray(v.unavailable) || v.unavailable.length > 32 || v.unavailable.some((n) => !text(n, 64))
@@ -221,7 +224,9 @@ export function validateAgents(v) {
       || !STATES.includes(a.state) || !id(a.engagement_id)
       || !number(a.requested_tokens) || typeof a.online !== 'boolean'
       || !(a.last_seen_ms === null || number(a.last_seen_ms))
-      || !(a.last_activity_ms === null || number(a.last_activity_ms)))) throw new Error('invalid_native_response');
+      || !(a.last_activity_ms === null || number(a.last_activity_ms))
+      || !(a.liveness === null || text(a.liveness, 32))
+      || !(a.consumed === null || number(a.consumed)))) throw new Error('invalid_native_response');
   return v;
 }
 export async function fetchAgents() {

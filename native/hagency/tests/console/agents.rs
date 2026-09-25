@@ -44,20 +44,16 @@ async fn native_console_agent_roster_observation() {
         value["permissions"]["manageLifecycle"].as_bool() == Some(false),
         "a read-only session serves no lifecycle permission"
     );
-    let unavailable = value["unavailable"].as_array().unwrap();
-    let names: Vec<&str> = unavailable.iter().map(|v| v.as_str().unwrap()).collect();
+    // Board #60 item 2: every column this console renders is now ANSWERED
+    // from native state — seat (resources.config), consumed
+    // (usage_sources.latest_counts) and liveness (the live dispatch row) —
+    // so the server names none as unavailable. The four that stay
+    // unanswerable by design (tmux, pane, credential_home, workspace_path:
+    // ADR-126) are DROPPED, not printed as "unknown".
     assert_eq!(
-        names,
-        [
-            "consumed",
-            "tmux",
-            "pane",
-            "credential_home",
-            "workspace_path",
-            "seat",
-        ],
-        "the server names every column it has no source for — online and \
-         last_seen are sourced now (board #22)"
+        value["unavailable"].as_array().unwrap().len(),
+        0,
+        "every rendered roster column has a native source"
     );
     let agents = value["agents"].as_array().unwrap();
     assert_eq!(agents.len(), 3, "one row per agent the service knows");
@@ -71,6 +67,8 @@ async fn native_console_agent_roster_observation() {
         "online",
         "last_seen_ms",
         "last_activity_ms",
+        "liveness",
+        "consumed",
     ];
     let mut by_name: Vec<(String, &Value)> = agents
         .iter()
@@ -81,7 +79,7 @@ async fn native_console_agent_roster_observation() {
     assert_eq!(names, ["AlertWorker", "PageWorker", "UsageWorker"]);
     for (_, agent) in &by_name {
         let object = agent.as_object().unwrap();
-        assert_eq!(object.len(), keys.len(), "exactly nine keys");
+        assert_eq!(object.len(), keys.len(), "exactly eleven keys");
         for key in keys {
             assert!(object.contains_key(key), "the wire item carries {key}");
             assert!(

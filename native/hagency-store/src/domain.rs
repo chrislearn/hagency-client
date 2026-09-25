@@ -296,6 +296,15 @@ pub struct AgentRosterRow {
     pub online: bool,
     pub last_seen_ms: Option<u64>,
     pub last_activity_ms: Option<u64>,
+    /// The live dispatch's own word, separate from `state` (the engagement
+    /// lifecycle word): `running` (started), `waiting_approval` (parked),
+    /// `starting` (leased). `None` means native's dispatch record shows no
+    /// live dispatch — said as unknown, never guessed as `idle`.
+    pub liveness: Option<String>,
+    /// Tokens the agent's engagements were observed to consume:
+    /// `usage_sources.latest_counts` display volume summed the way the usage
+    /// report sums it. `None` when nothing was measured — unknown, not zero.
+    pub consumed: Option<u64>,
 }
 /// One session (room) of the agent detail read: the room the session's
 /// binding names plus its live dispatch state, when one exists. Exactly
@@ -1154,7 +1163,23 @@ impl DomainRepository {
               WHERE json_extract(e2.projection,'$.agentName')=json_extract(e.projection,'$.agentName')), \
              (SELECT MAX(a.created_at) FROM runner_sessions s \
               JOIN runner_dispatches d ON d.session_id=s.id \
-              JOIN runner_attempts a ON a.dispatch_id=d.id WHERE s.engagement_id=e.id) \
+              JOIN runner_attempts a ON a.dispatch_id=d.id WHERE s.engagement_id=e.id), \
+             (SELECT d.state FROM runner_sessions s JOIN runner_dispatches d ON d.session_id=s.id \
+              JOIN engagements e2 ON e2.id=s.engagement_id \
+              WHERE json_extract(e2.projection,'$.agentName')=json_extract(e.projection,'$.agentName') \
+              AND d.state IN ('leased','started','parked') \
+              ORDER BY CASE d.state WHEN 'started' THEN 3 WHEN 'parked' THEN 2 ELSE 1 END DESC, d.id LIMIT 1), \
+             (SELECT CASE \
+               WHEN COUNT(*)=0 THEN NULL \
+               WHEN MIN(CASE WHEN json_extract(u.latest_counts,'$.input') IS NULL \
+                              OR json_extract(u.latest_counts,'$.output') IS NULL \
+                              OR json_extract(u.latest_counts,'$.cacheWrite') IS NULL \
+                              OR json_extract(u.latest_counts,'$.cacheRead') IS NULL \
+                             THEN 0 ELSE 1 END)=0 THEN NULL \
+               ELSE SUM(json_extract(u.latest_counts,'$.input') + json_extract(u.latest_counts,'$.output') \
+               + json_extract(u.latest_counts,'$.cacheWrite') + json_extract(u.latest_counts,'$.cacheRead')) END \
+              FROM usage_sources u JOIN engagements e3 ON e3.id=u.engagement_id \
+              WHERE json_extract(e3.projection,'$.agentName')=json_extract(e.projection,'$.agentName')) \
              FROM engagements e JOIN resources r ON r.id=e.resource_id \
              WHERE NOT EXISTS (SELECT 1 FROM engagements b \
               WHERE json_extract(b.projection,'$.agentName')=json_extract(e.projection,'$.agentName') \
@@ -1170,12 +1195,24 @@ impl DomainRepository {
                     row.get::<_, bool>(2)?,
                     row.get::<_, Option<i64>>(3)?,
                     row.get::<_, Option<i64>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<i64>>(6)?,
                 ))
             })?
             .map(|row| {
-                let (projection, config, online, last_seen, last_activity) = row?;
+                let (projection, config, online, last_seen, last_activity, dispatch, consumed) =
+                    row?;
                 let engagement: Engagement = serde_json::from_str(&projection)?;
                 let resource: Resource = serde_json::from_str(&config)?;
+                // The live dispatch's own word, distinct from the engagement
+                // lifecycle word (TS `:6872` reads `machine.state`, a
+                // liveness value). `None` is said as unknown, never guessed.
+                let liveness = match dispatch.as_deref() {
+                    Some("started") => Some("running".to_owned()),
+                    Some("parked") => Some("waiting_approval".to_owned()),
+                    Some("leased") => Some("starting".to_owned()),
+                    _ => None,
+                };
                 Ok(AgentRosterRow {
                     name: engagement.agent_name.as_str().to_owned(),
                     framework: resource.framework,
@@ -1186,6 +1223,8 @@ impl DomainRepository {
                     online,
                     last_seen_ms: last_seen.and_then(|v| u64::try_from(v).ok()),
                     last_activity_ms: last_activity.and_then(|v| u64::try_from(v).ok()),
+                    liveness,
+                    consumed: consumed.and_then(|v| u64::try_from(v).ok()),
                 })
             })
             .collect()
