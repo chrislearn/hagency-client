@@ -25,6 +25,21 @@ pub(crate) enum Source {
     File(Box<crate::upload::publication::FileSource>),
     Resume,
 }
+
+/// Parse an activity notice's kind into its dispatch id and, when the
+/// send should EDIT an earlier revision, the anchor event id. The kind is
+/// `activity:<dispatch_id>:<revision>[:<anchor>]` (task #1): dispatch ids
+/// are colon-free (`identifier()`), the revision is numeric, and the
+/// anchor — a Matrix event id — may itself contain colons, so it is taken
+/// as the remainder. Every other notice kind parses to None.
+fn parse_activity_notice(kind: &str) -> Option<(String, Option<String>)> {
+    let rest = kind.strip_prefix("activity:")?;
+    let (dispatch, rest) = rest.split_once(':')?;
+    let anchor = rest
+        .split_once(':')
+        .map(|(_revision, anchor)| anchor.to_owned());
+    Some((dispatch.to_owned(), anchor))
+}
 impl Collector {
     /// Existing host claim only. No caller-selected Matrix path or content.
     pub async fn send_final(
@@ -127,6 +142,7 @@ impl Inner {
         if view.attempt.is_some() {
             return Err(Error::OutcomeUnknown);
         }
+        let mut activity: Option<(String, Option<String>)> = None;
         let (kind, id, fence, domain_digest, route, transaction_id, body) = match &source {
             Source::Final(claim) => {
                 let historical = owner
@@ -192,6 +208,7 @@ impl Inner {
                 if receipt.state != "claimed" {
                     return Err(Error::Domain);
                 }
+                activity = parse_activity_notice(&claim.claim.notice.kind);
                 (
                     Kind::Notice,
                     claim.claim.notice.id.clone(),
@@ -233,6 +250,25 @@ impl Inner {
                 json!({"msgtype":if kind==Kind::Notice {"m.notice"}else{"m.text"},"body":body});
             if let Some(root) = &route.thread_root {
                 content["m.relates_to"] = json!({"rel_type":"m.thread","event_id":root,"is_falling_back":true,"m.in_reply_to":{"event_id":root}});
+            }
+            // The activity arm (lib/matrix-activity.js:4-13): the notice
+            // carries `io.hagency.activity: {dispatch_id}`, and when an
+            // earlier revision of this dispatch was already delivered the
+            // send becomes an EDIT of that anchor event — `* ` body,
+            // `m.new_content` the plain content, `m.relates_to` the
+            // replace relation (which replaces the thread relation, as
+            // the TS override does).
+            if let Some((dispatch, anchor)) = &activity {
+                content["io.hagency.activity"] = json!({"dispatch_id": dispatch});
+                if let Some(anchor) = anchor {
+                    let plain = content.clone();
+                    let starred =
+                        format!("* {}", content["body"].as_str().unwrap_or_default());
+                    content["body"] = json!(starred);
+                    content["m.new_content"] = plain;
+                    content["m.relates_to"] =
+                        json!({"rel_type":"m.replace","event_id":anchor});
+                }
             }
             let content = MatrixContent::new(content)
                 .and_then(|c| c.formatted())

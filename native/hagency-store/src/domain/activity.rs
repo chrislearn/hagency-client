@@ -17,8 +17,10 @@
 //!
 //! The anchor (`:76-78`): the FIRST delivered activity event id, kept by
 //! COALESCE — the event every later revision edits in place.
+use super::DomainRepository;
 use crate::{Error, domain::task_intents, domain::verified_ingress};
-use rusqlite::{Connection, OptionalExtension, Transaction};
+use hagency_core::project::identifier;
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 use serde::Serialize;
 
 /// The tool kinds a tool event names, with their TS display labels
@@ -297,17 +299,44 @@ pub(super) fn update_and_enqueue(
     let Some(update) = update(tx, dispatch_id, event, now_i64)? else {
         return Ok(None);
     };
+    // The anchor every later revision edits: the FIRST delivered activity
+    // event of this dispatch (TS `delivered()`, COALESCE semantics).
+    // Resolved at enqueue from the delivery columns — the store's own
+    // record of what the homeserver answered — and kept in
+    // `dispatch_activity.anchor` so the earliest one survives later ones.
+    // The prefix match is length-pinned `substr`, never LIKE: a dispatch
+    // id may contain `_`, which LIKE would read as a wildcard.
+    let prefix = format!("activity:{dispatch_id}:");
+    let anchor: Option<String> = tx
+        .query_row(
+            "SELECT json_extract(delivery,'$.event_id') FROM task_notices \
+             WHERE substr(json_extract(config,'$.kind'),1,?1)=?2 \
+             AND state='delivered' AND delivery IS NOT NULL \
+             ORDER BY rowid LIMIT 1",
+            rusqlite::params![prefix.len() as i64, prefix.clone()],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(anchor) = &anchor {
+        delivered(tx, dispatch_id, anchor)?;
+    }
     // The TS dedupe key `activity:${dispatch_id}:${revision}` rides the
     // notice's KIND: `notice_id` digests (task_id, kind), so the revision
-    // is what makes each edit its own outbox row — a fixed kind would
-    // collide every revision into one silently-ignored INSERT.
-    let kind = format!("activity:{dispatch_id}:{}", update.revision);
+    // is what makes each edit its own outbox row. When an anchor exists
+    // it is appended after the revision — the send arm then builds the
+    // edit form without a second store read. Dispatch ids are colon-free
+    // (`identifier()`), so the split stays unambiguous; a Matrix event id
+    // carries a colon of its own and sits last.
+    let kind = match &anchor {
+        Some(anchor) => format!("{prefix}{}:{anchor}", update.revision),
+        None => format!("{prefix}{}", update.revision),
+    };
     // Supersede only UNCLAIMED projections: a claimed transaction stays
     // immutable for retries (store.ts:2777-2780).
     tx.execute(
         "UPDATE task_notices SET state='failed',error_code='activity_superseded' \
-         WHERE state='pending' AND json_extract(config,'$.kind') LIKE ?1",
-        [format!("activity:{dispatch_id}:%")],
+         WHERE state='pending' AND substr(json_extract(config,'$.kind'),1,?1)=?2",
+        rusqlite::params![prefix.len() as i64, prefix],
     )?;
     let (task_id, session_id): (Option<String>, String) = tx
         .query_row(
@@ -338,10 +367,64 @@ pub(super) fn update_and_enqueue(
     Ok(Some(update))
 }
 
+impl DomainRepository {
+    /// The runner's own activity events (TS `recordRunnerActivity`,
+    /// `store.ts:2692-2705`): only tool and heartbeat events — the
+    /// runner cannot set lifecycle activity, that belongs to the dispatch
+    /// transitions. Refused input counts as a host observation refusal:
+    /// its own savepoint, nothing left behind, the turn unaffected.
+    pub fn record_activity_event(
+        &mut self,
+        dispatch_id: &str,
+        event: &ActivityEvent,
+        now: u64,
+    ) -> Result<Option<ActivityUpdate>, Error> {
+        identifier(dispatch_id, 128)?;
+        if !matches!(
+            event,
+            ActivityEvent::Heartbeat | ActivityEvent::ToolStart { .. } | ActivityEvent::ToolEnd { .. }
+        ) {
+            return Err(hagency_core::InvalidInput(
+                "runner cannot set lifecycle activity",
+            )
+            .into());
+        }
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let state: Option<String> = tx
+            .query_row(
+                "SELECT state FROM runner_dispatches WHERE id=?1",
+                [dispatch_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        match state.as_deref() {
+            None => return Err(Error::NotFound),
+            Some("started") => {}
+            Some(_) => {
+                return Err(hagency_core::InvalidInput("activity requires an active runner").into())
+            }
+        }
+        tx.execute_batch("SAVEPOINT activity_notice")?;
+        let result = match update_and_enqueue(&tx, dispatch_id, event, now) {
+            Ok(value) => {
+                tx.execute_batch("RELEASE activity_notice")?;
+                value
+            }
+            Err(error) => {
+                tx.execute_batch("ROLLBACK TO activity_notice; RELEASE activity_notice")?;
+                return Err(error);
+            }
+        };
+        tx.commit()?;
+        Ok(result)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
     fn open() -> (tempfile::TempDir, crate::DomainRepository) {
         let root = tempfile::tempdir().unwrap();
         let db = crate::DomainRepository::open(&root.path().join("domain")).unwrap();
