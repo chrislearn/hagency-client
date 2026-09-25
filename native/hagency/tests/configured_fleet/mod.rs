@@ -1040,7 +1040,7 @@ impl Peer {
             member(crypto::SENDER, "join"),
         ];
         events.extend(rules());
-        events.push(json!({"type":"com.hagency.project.binding.v1","state_key":"","content":{"v":1,"purpose":"project","authVersion":1,"fleetId":reg().fleet_id,"projectId":"factory_project","ownerMxid":OWNER}}));
+        events.push(json!({"type":"com.hagency.admin.binding.v1","state_key":reg().fleet_id,"content":{"v":1,"purpose":"project","authVersion":1,"fleetId":reg().fleet_id,"projectId":"factory_project","ownerMxid":OWNER}}));
         for agent in &self.agents {
             if agent.invited {
                 events.push(member(

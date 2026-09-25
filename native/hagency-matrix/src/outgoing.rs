@@ -1,7 +1,9 @@
 pub(crate) mod state;
 use crate::collector::observe;
 use crate::{CancellationToken, Collector, Error, collector::Inner, sdk::Owner};
-use hagency_core::{ingress::VerifiedNoticeClaim, replies::*};
+use hagency_core::{
+    commands::CommandNoticeClaimed, ingress::VerifiedNoticeClaim, replies::*,
+};
 use hagency_matrix_format::MatrixContent;
 use serde_json::json;
 use state::{Attempt, Command, Kind, Phase};
@@ -22,6 +24,7 @@ pub struct OutgoingSummary {
 pub(crate) enum Source {
     Final(ReplyClaim),
     Notice(Box<VerifiedNoticeClaim>),
+    Command(Box<CommandNoticeClaimed>),
     File(Box<crate::upload::publication::FileSource>),
     Resume,
 }
@@ -40,6 +43,18 @@ impl Collector {
         cancel: &CancellationToken,
     ) -> Result<OutgoingSummary, Error> {
         self.outgoing_job(Source::Notice(Box::new(claim)), cancel)
+            .await
+    }
+    /// Answer a `!` command line in the room that carried it, as this agent.
+    /// Same custody and retry discipline as a final reply: the claim is
+    /// host-minted, one send per claim, and an unknown outcome is inspected
+    /// rather than re-sent (`lib/bot-commands.js` `reply`/`sendInto`).
+    pub async fn send_command_notice(
+        &self,
+        claimed: CommandNoticeClaimed,
+        cancel: &CancellationToken,
+    ) -> Result<OutgoingSummary, Error> {
+        self.outgoing_job(Source::Command(Box::new(claimed)), cancel)
             .await
     }
     /// Settles journaled acceptance. Uncertain/prepared work is inspect-only;
@@ -204,6 +219,47 @@ impl Inner {
                     None,
                 )
             }
+            Source::Command(claimed) => {
+                observe!(OutgoingPreview);
+                let receipt = self
+                    .domain
+                    .command_notice_receipt(claimed.claim.notice.id.clone())
+                    .await?;
+                let historical = owner
+                    .outgoing(Command::Lookup {
+                        id: receipt.id.clone(),
+                        fence: receipt.fence,
+                    })
+                    .await?;
+                if let Some(original) = historical.receipts.first() {
+                    if original.kind != Kind::Command {
+                        return Err(Error::Conflict);
+                    }
+                    if receipt.state != "delivered" {
+                        return Err(Error::Conflict);
+                    }
+                    return Ok(OutgoingSummary {
+                        id: Some(receipt.id),
+                        state: OutgoingState::Delivered,
+                        replayed: true,
+                    });
+                }
+                if receipt.state != "claimed" {
+                    return Err(Error::Domain);
+                }
+                (
+                    Kind::Command,
+                    claimed.claim.notice.id.clone(),
+                    receipt.fence,
+                    claimed.digest.clone(),
+                    claimed.route.clone(),
+                    claimed.claim.notice.transaction_id.clone(),
+                    claimed.claim.notice.body.clone(),
+                    // A command answer names nobody: it renders from the route's
+                    // thread root alone, exactly as the retained bridge sent it.
+                    None,
+                )
+            }
             Source::File(file) => {
                 let l = &file.locator;
                 self.domain
@@ -234,6 +290,17 @@ impl Inner {
         } else {
             let mut content =
                 json!({"msgtype":if kind==Kind::Notice {"m.notice"}else{"m.text"},"body":body});
+            // The retained bridge attached the handler's own html rendering
+            // (`reply`, :397-404: `format` + `formatted_body` only when that
+            // handler had one). A command answer carries it through verbatim —
+            // a truthy `formatted_body` is trusted passthrough, never
+            // re-rendered (`hagency-matrix-format`).
+            if let Source::Command(claimed) = &source
+                && let Some(html) = &claimed.claim.notice.html
+            {
+                content["format"] = json!("org.matrix.custom.html");
+                content["formatted_body"] = json!(html);
+            }
             if let Some(relation) = state::reply_relation(
                 route.thread_root.as_deref(),
                 reply_to.as_deref(),
@@ -292,6 +359,23 @@ impl Inner {
                 let begun = self
                     .domain
                     .begin_verified_task_notice_send(id.clone(), claim.claim.token.clone())
+                    .await?;
+                if begun.fence != fence
+                    || begun.digest != draft.domain_digest
+                    || begun.route != draft.route
+                    || begun.notice.transaction_id != draft.transaction_id
+                    || begun.notice.body != body
+                {
+                    return Err(Error::Conflict);
+                }
+            }
+            Source::Command(claimed) => {
+                let begun = self
+                    .domain
+                    .begin_command_notice_send(
+                        claimed.claim.notice.id.clone(),
+                        claimed.claim.token.clone(),
+                    )
                     .await?;
                 if begun.fence != fence
                     || begun.digest != draft.domain_digest
@@ -470,6 +554,15 @@ impl Inner {
                     )
                     .await?
             }
+            Source::Command(claimed) => {
+                self.domain
+                    .validate_command_notice_send(
+                        claimed.claim.notice.id.clone(),
+                        claimed.claim.token.clone(),
+                        fence,
+                    )
+                    .await?
+            }
             Source::File(file) => {
                 self.domain
                     .validate_file_publication(file.cap.clone(), file.claim.clone())
@@ -569,6 +662,11 @@ impl Inner {
             Kind::Notice => {
                 self.domain
                     .reconcile_verified_task_notice(attempt.id.clone(), attempt.fence, observation)
+                    .await?;
+            }
+            Kind::Command => {
+                self.domain
+                    .reconcile_command_notice(attempt.id.clone(), attempt.fence, observation)
                     .await?;
             }
             Kind::File => {

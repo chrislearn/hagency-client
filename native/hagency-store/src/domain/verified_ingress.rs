@@ -74,6 +74,17 @@ fn human_waking_kind(kind: &str) -> bool {
         "m.text" | "m.notice" | "m.file" | "m.image" | "m.audio" | "m.video"
     )
 }
+
+/// A `!` line is a bot command rather than agent input, exactly as the retained
+/// bridge decided before routing (`bridge-matrix.js`): a non-file/image message
+/// whose trimmed body begins with `!`. Kept local because the store cannot
+/// depend on the console crate that owns the command table
+/// (`hagency::bot_commands`); the rule is one line and is asserted on both
+/// sides.
+fn is_bot_command(event: &InboundMessage) -> bool {
+    !matches!(event.kind.as_str(), "m.file" | "m.image")
+        && event.body.trim_start().starts_with('!')
+}
 fn record_message(
     tx: &Transaction<'_>,
     input: &InboundMessage,
@@ -657,7 +668,16 @@ impl DomainRepository {
             && match &route.privacy {
                 RoomPrivacy::Direct { human_mxid } => &event.sender_mxid == human_mxid,
                 RoomPrivacy::Group {} => input.mentions.contains(&route.sender_mxid),
-            };
+            }
+            // A `!` line is a bot command, never agent input. The retained
+            // bridge checked `cmdBody.startsWith('!')` on text only, BEFORE any
+            // routing, so a command was dispatched and never became a prompt
+            // (bridge-matrix.js:7111-7125). The event is still admitted and
+            // recorded — the dispatcher reads it back from `session_inputs` —
+            // and it wakes nobody. A DM `!…` used to be an ordinary direct
+            // message and so woke the agent — the side effect the parity table
+            // called out at `verified_ingress.rs:650-651`.
+            && !is_bot_command(event);
         let task = bound_intent(&tx, &route.session_id)?;
         if let Some((id, state, root)) = &task {
             if state == "closed" {
@@ -682,6 +702,29 @@ impl DomainRepository {
         tx.execute("INSERT INTO session_inputs(session_id,message_sequence,wake,config) VALUES(?1,?2,?3,?4)",params![route.session_id,message.sequence,wake,serialize(&message)?])?;
         if let Some((id, _, _)) = task {
             attach(&tx, &id, &message, wake)?;
+            // The room is owed the delivery-feedback notice when a human's
+            // mention could not reach its target (bridge-matrix.js:6492-6572).
+            // TS sends this AFTER the message is accepted, and
+            // `sendDeliveryNotice` swallows its own failure (:6487) — so a
+            // notice that cannot be stored must never cost the message its
+            // admission. Its own savepoint makes that exact: best effort, and
+            // the admission's outcome is untouched either way.
+            if matches!(route.privacy, RoomPrivacy::Group {}) && !input.mentions.is_empty() {
+                tx.execute_batch("SAVEPOINT delivery_feedback")?;
+                match super::delivery_feedback::emit(
+                    &tx,
+                    &id,
+                    &message,
+                    &input.mentions,
+                    message.sequence,
+                    now,
+                ) {
+                    Ok(()) => tx.execute_batch("RELEASE delivery_feedback")?,
+                    Err(_) => tx.execute_batch(
+                        "ROLLBACK TO delivery_feedback; RELEASE delivery_feedback",
+                    )?,
+                }
+            }
         }
         super::attachments::project_one(&tx, &route, &message)?;
         let result = MatrixIngressReceipt {
