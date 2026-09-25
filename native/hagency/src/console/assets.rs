@@ -68,9 +68,7 @@ fn root(path: &Path) -> Result<Dir, Error> {
     for name in ancestors {
         dir = dir.open_dir(name).map_err(|_| Error::Assets)?;
     }
-    dir = dir
-        .open_dir_nofollow(last)
-        .map_err(|_| Error::Assets)?;
+    dir = dir.open_dir_nofollow(last).map_err(|_| Error::Assets)?;
     // Existing helper validates owner and private permissions from the actual handle.
     hagency_store::private::check_handle(
         &dir.try_clone().map_err(|_| Error::Assets)?.into_std_file(),
