@@ -276,6 +276,16 @@ impl DomainRepository {
         identifier(id, 128)?;
         receipt(&self.db, id, false)
     }
+    /// Secret-free read used only by a resumed send (task #9): is this journaled
+    /// notice write still authorized to be re-put — still `sending` and not
+    /// retired/cancelled? Retirement and host cancellation both move it off
+    /// `sending`, so a resumed send then parks as uncertain for a human rather
+    /// than re-sending.
+    pub fn verified_notice_send_current(&self, id: &str, fence: u64) -> Result<bool, Error> {
+        identifier(id, 128)?;
+        generation(fence)?;
+        Ok(self.db.query_row("SELECT EXISTS(SELECT 1 FROM task_notices WHERE id=?1 AND send_fence=?2 AND state='sending' AND cancel_requested=0)",params![id, fence], |row| row.get(0))?)
+    }
     pub fn cancel_verified_task_notice(
         &mut self,
         id: &str,

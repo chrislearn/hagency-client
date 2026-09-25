@@ -79,6 +79,7 @@ impl Sdk {
             keys_digest: None,
             writes: vec![],
             index: 0,
+            permanent_failure: false,
             file: Some(binding),
         })
     }
