@@ -18,6 +18,7 @@
 import { useMemo, useState } from 'react';
 import PageHead from '@/components/PageHead';
 import NativeStatusStrip from '@/components/NativeStatusStrip';
+import { NativeAccessNotice } from '@/components/NativeUsage';
 import { useT } from '@/components/Prefs';
 import { useData } from '@/components/Data';
 import { fmtTokens } from '@/lib/mock-data';
@@ -56,14 +57,19 @@ export default function NativeEngagements() {
       </section>
     );
   }
-  if (phase === 'access') return null;
+  /* Item 6: the access notice with the CLI command, not a blank screen. */
+  if (phase === 'access') return <>
+    <PageHead title={t('nav.engagements')} sub={t('ng.readonly')}><NativeStatusStrip /></PageHead>
+    <NativeAccessNotice />
+  </>;
 
   return (
     <div data-native-state={phase} aria-busy={refreshing === true}>
       {refreshing && <p role="status">{t('nu.refreshing')}</p>}
 
-      <PageHead title={t('nav.engagements')}><NativeStatusStrip /></PageHead>
-      <h2 style={{ marginTop: 0 }}>{t('nav.engagements')}<span className="note"> {t('ng.readonly')}</span></h2>
+      {/* Item 1: one heading per page — the h1 carries the title, the
+       * read-only note rides its `sub`, and the duplicate h2 is gone. */}
+      <PageHead title={t('nav.engagements')} sub={t('ng.readonly')}><NativeStatusStrip /></PageHead>
 
       {/* One strip: the state split of this page. */}
       <div className="cards">
@@ -96,7 +102,11 @@ export default function NativeEngagements() {
         </span>
       </div>
 
-      {rows.length === 0 ? (
+      {/* Item 7: the list starts empty — "no engagements" is a ready-state
+       * fact, not a first paint. */}
+      {phase === 'loading' ? (
+        <p role="status">{t('ng.loading')}</p>
+      ) : rows.length === 0 ? (
         <div className="empty">
           <div className="big">{t('ng.none')}</div>
         </div>

@@ -16,6 +16,7 @@
 import { useMemo, useState } from 'react';
 import PageHead from '@/components/PageHead';
 import NativeStatusStrip from '@/components/NativeStatusStrip';
+import { NativeAccessNotice } from '@/components/NativeUsage';
 import Severity from '@/components/Severity';
 import { useT } from '@/components/Prefs';
 import { useData } from '@/components/Data';
@@ -48,7 +49,11 @@ export default function NativeAlerts() {
       </section>
     );
   }
-  if (phase === 'access') return null;
+  /* Item 6: the access notice with the CLI command, not a blank screen. */
+  if (phase === 'access') return <>
+    <PageHead title={t('al.title')} sub={t('al.nativeReadonly')}><NativeStatusStrip /></PageHead>
+    <NativeAccessNotice />
+  </>;
 
   const detailText = (a) => {
     if (typeof a.detail === 'string') return a.detail; // the truncated-payload arm
@@ -60,8 +65,9 @@ export default function NativeAlerts() {
     <div data-native-state={phase} aria-busy={refreshing === true}>
       {refreshing && <p role="status">{t('nu.refreshing')}</p>}
 
-      <PageHead title={t('al.title')}><NativeStatusStrip /></PageHead>
-      <h2 style={{ marginTop: 0 }}>{t('al.title')}<span className="note"> {t('al.nativeReadonly')}</span></h2>
+      {/* Item 1: one heading per page — the h1 carries the title, the
+       * display-state note rides its `sub`, and the duplicate h2 is gone. */}
+      <PageHead title={t('al.title')} sub={t('al.nativeReadonly')}><NativeStatusStrip /></PageHead>
 
       {/* One strip: the open set. There is only one status natively. */}
       <div className="cards">
@@ -83,7 +89,11 @@ export default function NativeAlerts() {
         <span className="sub dim" style={{ fontSize: 12 }}>{t('common.shown', { a: rows.length, b: alerts.length })}</span>
       </div>
 
-      {rows.length === 0 ? (
+      {/* Item 7: the list starts empty — "none open" is a ready-state
+       * fact, not a first paint. */}
+      {phase === 'loading' ? (
+        <p role="status">{t('al.loading')}</p>
+      ) : rows.length === 0 ? (
         <div className="empty">
           <div className="big">{t('al.noMatch')}</div>
           <p className="small">{t('al.noneOpen')}</p>
