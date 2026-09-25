@@ -1953,6 +1953,33 @@ impl DomainStore {
         })
         .await
     }
+    /// The read-only approval-bindings list (board #52): the plain-list
+    /// branch of TS `GET /api/approval-bindings`. Same weight class as the
+    /// grants read — bounded by its own limit parameter.
+    pub async fn approval_bindings(
+        &self,
+        agent: String,
+        project_room_id: String,
+        limit: u64,
+    ) -> Result<Vec<hagency_core::approvals::ApprovalBindingSummary>, Error> {
+        self.call(weight(&(&agent, &project_room_id))?, move |db| {
+            db.approval_bindings(&agent, &project_room_id, limit)
+        })
+        .await
+    }
+    /// The operator unbind (board #52): removes the derived binding row AND
+    /// revokes the approval grants it carried, in one transaction — TS
+    /// `removeBinding` + `revokeScopesByBinding` (backend-v2.js:9030-9046).
+    pub async fn retire_approval_binding(
+        &self,
+        agent: String,
+        room_id: String,
+    ) -> Result<hagency_core::approvals::ApprovalBindingSummary, Error> {
+        self.call(weight(&(&agent, &room_id))?, move |db| {
+            db.retire_approval_binding(&agent, &room_id)
+        })
+        .await
+    }
     pub async fn matrix_ingress_scope(
         &self,
         session: String,

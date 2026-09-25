@@ -8,6 +8,8 @@ mod stream;
 mod alerts;
 #[path = "console/approvals.rs"]
 mod approvals;
+#[path = "console/approval_bindings.rs"]
+mod approval_bindings;
 #[path = "console/browser.rs"]
 #[cfg(feature = "native-console-browser")]
 mod browser;
