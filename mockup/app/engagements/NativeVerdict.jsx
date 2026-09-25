@@ -13,6 +13,7 @@
 import { useEffect, useState } from 'react';
 import { nativeRequest } from '@/lib/native-api';
 import { useT } from '@/components/Prefs';
+import { errorText } from '@/lib/i18n';
 import { useData } from '@/components/Data';
 
 const newCommand = () => `console_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
@@ -49,7 +50,7 @@ function PendingRow({ e, onDone }) {
     } catch (error) {
       setNote(error.message === 'agent_lifecycle_scope_required'
         ? t('nv.scopeRequired')
-        : `${t('nv.decideFailed')} (${error.message})`);
+        : `${t('nv.decideFailed')} (${errorText(t, error.message)})`);
     } finally {
       setBusy(false);
     }

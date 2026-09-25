@@ -32,7 +32,7 @@ async fn native_alerts_read_requires_operator_authority() {
         assert_eq!(response.status_code, Some(StatusCode::UNAUTHORIZED));
         assert_eq!(
             response.take_json::<Value>().await.unwrap(),
-            json!({"ok":false,"code":"operator_auth_required"})
+            json!({"ok":false,"code":"operator_auth_required","error":"the operator token is required"})
         );
     }
     for (header, value) in [
@@ -49,7 +49,7 @@ async fn native_alerts_read_requires_operator_authority() {
         assert_eq!(response.status_code, Some(StatusCode::FORBIDDEN));
         assert_eq!(
             response.take_json::<Value>().await.unwrap(),
-            json!({"ok":false,"code":"local_authority_required"})
+            json!({"ok":false,"code":"local_authority_required","error":"the request must reach this service directly"})
         );
     }
     let response = TestClient::post(f.url())
@@ -85,7 +85,7 @@ async fn native_alerts_read_requires_operator_authority() {
         );
         assert_eq!(
             response.take_json::<Value>().await.unwrap(),
-            json!({"ok":false,"code":"invalid_alerts_query"}),
+            json!({"ok":false,"code":"invalid_alerts_query","error":"the alerts query is invalid"}),
             "{query}"
         );
     }

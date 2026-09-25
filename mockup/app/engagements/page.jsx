@@ -15,6 +15,7 @@ import CredentialForm from '@/components/CredentialForm';
 import { allocationValue, approvalVerdict, projectLabel } from '@/lib/console-workflow';
 import { NATIVE_MODE } from '@/lib/native-api';
 import NativeEngagements from '@/components/NativeEngagements';
+import NativeOfferBook from '@/components/NativeOfferBook';
 import NativeVerdict from './NativeVerdict';
 
 /*
@@ -458,6 +459,7 @@ export default function EngagementsPage() {
     return (
       <>
         <NativeEngagements />
+        <NativeOfferBook />
         <NativeVerdict />
       </>
     );

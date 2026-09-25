@@ -600,10 +600,23 @@ fn native_warm_runtime_managed_readiness() {
     login(&mut db, &account, LoginOutcome::Refused, now() + 60_000);
     assert!(db.validate_warm_runtime_scope(&scope).is_err());
     std::thread::sleep(Duration::from_millis(2));
-    login(&mut db, &account, LoginOutcome::Observed, now() + 30);
+    // A usable observation: assert the *validity* half with the file's ordinary
+    // 60 s observation, never a 30 ms window a loaded host can cross between the
+    // login and this assertion.
+    login(&mut db, &account, LoginOutcome::Observed, now() + 60_000);
     db.validate_warm_runtime_scope(&scope).unwrap();
-    std::thread::sleep(Duration::from_millis(40));
-    assert!(db.validate_warm_runtime_scope(&scope).is_err());
+    // The *expiry* half: poll the real state until the observation lapses,
+    // instead of one `sleep(40ms)` plus one shot that a loaded host can miss
+    // (and that a fast host can satisfy before the expiry is even reached).
+    login(&mut db, &account, LoginOutcome::Observed, now() + 20);
+    let lapsed = Instant::now() + Duration::from_secs(10);
+    while db.validate_warm_runtime_scope(&scope).is_ok() {
+        assert!(
+            Instant::now() < lapsed,
+            "a lapsed warm observation stayed usable"
+        );
+        std::thread::sleep(Duration::from_millis(5));
+    }
     login(&mut db, &account, LoginOutcome::Observed, now() + 60_000);
     account.retire();
     assert!(db.validate_warm_runtime_scope(&scope).is_err());
