@@ -13,6 +13,7 @@ pub(crate) mod coordination;
 pub(crate) mod discussion;
 pub(crate) mod files;
 pub(crate) mod received;
+pub(crate) mod reminders;
 mod transport;
 pub const DEFAULT_DEADLINE: Duration = Duration::from_secs(5);
 

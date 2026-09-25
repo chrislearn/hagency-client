@@ -36,7 +36,7 @@ async fn native_bootstrap_local_codex() {
             result.unwrap().close().await.unwrap();
         } else {
             assert!(
-                matches!(result, Err(hagency::bootstrap::Failure::Config)),
+                matches!(result, Err(hagency::bootstrap::Failure::Config { .. })),
                 "{kind}"
             );
         }

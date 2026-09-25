@@ -36,17 +36,7 @@ async fn native_engagement_retire_active_is_revoked() {
     let service = f.service();
     let state = f.root.path().join("state");
     // A read-only session cannot retire: the mutation needs AgentLifecycle.
-    let read_only = session(&service).await;
-    let refused = retire_post(
-        &service,
-        &format!("/console/api/engagements/{}/retire", f.engagement),
-        &read_only,
-        &json!({"commandId": "cmd_retire_1"}),
-    )
-    .await;
-    assert_eq!(refused.status_code, Some(StatusCode::FORBIDDEN));
-    // Ticket issuance is rate-limited to one per second.
-    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+    // TS parity: one login retires — no scope word, no issuance wait.
     let cookie = lifecycle_session(&service).await;
     let mut response = retire_post(
         &service,

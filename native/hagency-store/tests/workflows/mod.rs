@@ -260,7 +260,7 @@ fn native_graph_transactions() {
     drop(db);
     let inspect = sql(&root);
     remove_graph_schema(&inspect);
-    inspect.pragma_update(None, "user_version", 9).unwrap();
+    inspect.execute_batch("DROP TABLE IF EXISTS agent_lifecycle; ALTER TABLE decisions DROP COLUMN kind; ALTER TABLE decisions DROP COLUMN at; PRAGMA user_version=9;").unwrap();
     for _ in 0..2 {
         let db = DomainRepository::open(&root.path().join("state")).unwrap();
         assert_eq!(

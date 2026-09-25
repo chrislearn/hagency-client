@@ -201,6 +201,8 @@ async fn native_console_stream_named_events_carry_entity_payloads() {
             to: "resolved",
             actor: "operator".into(),
             note: None,
+            assignee: None,
+            suppress_until_ms: None,
             now: now(),
         })
         .await

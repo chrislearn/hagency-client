@@ -12,6 +12,9 @@ mod http;
 pub use http::UploadResponse;
 mod identity_polish;
 mod intake;
+mod invites;
+pub mod join_backfill;
+mod membership_sweep;
 mod media_download;
 mod media_upload;
 mod outgoing;
@@ -36,6 +39,7 @@ pub use representative_sync::{
     SyncStats, reconcile_timeline,
 };
 pub use intake::{HostIntakePlan, IntakeStatus, IntakeSummary};
+pub use membership_sweep::{MEMBERSHIP_SWEEP_INTERVAL, SweepOutcome};
 pub use media_download::{MediaDownloadError, MediaDownloadLimits, MediaDownloader, MediaId};
 pub use media_upload::{
     MediaUploadError, MediaUploadLimits, MediaUploader, UploadAttempt, UploadState,

@@ -1,6 +1,6 @@
 use super::*;
 use hagency_core::tasks::SessionBinding;
-use hagency_store::resource_publication_revision;
+use hagency_store::{ACCOUNT_PROFILE, resource_publication_revision};
 
 /// The agent roster observation (ADR-126, widened by board #22): the read
 /// is one row per AGENT — the TS roster's shape (`backend-v2.js:11696`) —
@@ -41,8 +41,8 @@ async fn native_console_agent_roster_observation() {
     );
     assert!(value["at_ms"].as_u64().unwrap() > 0);
     assert!(
-        value["permissions"]["manageLifecycle"].as_bool() == Some(false),
-        "a read-only session serves no lifecycle permission"
+        value["permissions"]["manageLifecycle"].as_bool() == Some(true),
+        "one login carries the lifecycle permission (the operator's one-login decision)"
     );
     // Board #60 item 2: every column this console renders is now ANSWERED
     // from native state — seat (resources.config), consumed
@@ -176,7 +176,7 @@ async fn native_console_agent_detail_observation() {
     let keys = [
         "name", "framework", "role", "state", "engagement_id", "requested_tokens",
         "online", "last_seen_ms", "resource_id", "project_id", "engagements",
-        "rooms", "dispatch", "tasks",
+        "rooms", "dispatch", "tasks", "reminders",
     ];
     let object = value.as_object().unwrap();
     assert_eq!(object.len(), keys.len(), "exactly the declared detail keys");
@@ -413,141 +413,18 @@ async fn native_console_stop_dispatch_for_agent_is_at_most_once() {
     f.close().await;
 }
 
-/// CL-S2 (ADR-130) scope selector: the lifecycle gate refuses a read-only
-/// session on all lifecycle routes with `agent_lifecycle_scope_required` and
-/// no engagement row changes. A lifecycle session may stop, while start and
-/// preset fail closed until their durable transitions exist; neighbouring
-/// scopes remain isolated.
-#[tokio::test]
-async fn native_console_agent_lifecycle_is_scoped() {
-    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
-    let service = f.service();
-    let readonly = session(&service).await;
-    // The console's issuance budget is one per second ACROSS scopes
-    // (authority.rs `issue_scope`): the read-only issue above and the
-    // lifecycle issue below cannot land in the same second without the
-    // second answering busy (429). Drive them one at a time — the house
-    // pattern the resources authority test uses — never a retry loop.
-    tokio::time::sleep(std::time::Duration::from_millis(1010)).await;
-    let lifecycle = lifecycle_session(&service).await;
-    let id = &f.engagement;
-    // Read-only: all three compatibility routes refuse before store work.
-    for path in [
-        format!("/console/api/agents/{id}/start"),
-        format!("/console/api/agents/{id}/stop"),
-        format!("/console/api/agents/{id}/preset"),
-    ] {
-        let mut builder = post(&path, &readonly);
-        if path.ends_with("/preset") {
-            builder = builder.json(&json!({"presetId":"private_usage_pool"}));
-        }
-        let mut response = builder.send(&service).await;
-        assert_eq!(
-            response.status_code,
-            Some(StatusCode::FORBIDDEN),
-            "read-only {path}"
-        );
-        let body = response.take_json::<Value>().await.unwrap();
-        assert_eq!(
-            body["code"], "agent_lifecycle_scope_required",
-            "read-only {path}"
-        );
-    }
-    // No engagement row changed: no stop row, the roster still holds it.
-    let raw = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3")).unwrap();
-    let stops: i64 = raw
-        .query_row("SELECT COUNT(*) FROM dispatch_stops", [], |r| r.get(0))
-        .unwrap();
-    assert_eq!(stops, 0, "a refused stop writes no stop row");
-    assert!(
-        f.domain
-            .agent_roster()
-            .await
-            .unwrap()
-            .iter()
-            .any(|r| r.engagement_id == *id),
-        "the engagement row survives the refusals"
-    );
-    drop(raw);
-    // Start has no durable native transition. It must refuse every authorized
-    // call instead of reporting a successful no-op.
-    let mut response = post(&format!("/console/api/agents/{id}/start"), &lifecycle)
-        .send(&service)
-        .await;
-    assert_eq!(response.status_code, Some(StatusCode::NOT_IMPLEMENTED));
-    assert_eq!(
-        response.take_json::<Value>().await.unwrap()["code"],
-        "agent_start_unavailable"
-    );
-    // Neighbouring mutations refuse the lifecycle session with THEIR words.
-    let source = native_resource("private_lifecycle_scope_source");
-    f.domain.put_resource(source.clone()).await.unwrap();
-    let revision = resource_publication_revision(&source).unwrap();
-    let mut response = post(
-        &format!("/console/api/resources/{}/publication", source.id()),
-        &lifecycle,
-    )
-    .json(&json!({"expectedRevision":revision,"published":false}))
-    .send(&service)
-    .await;
-    assert_eq!(response.status_code, Some(StatusCode::FORBIDDEN));
-    assert_eq!(
-        response.take_json::<Value>().await.unwrap()["code"],
-        "resource_publication_scope_required"
-    );
-    let mut response = TestClient::patch(format!(
-        "{BASE}/console/api/resources/{}/configuration",
-        source.id()
-    ))
-    .add_header("host", "127.0.0.1:13300", true)
-    .add_header("origin", BASE, true)
-    .add_header("sec-fetch-site", "same-origin", true)
-    .add_header("cookie", &lifecycle, true)
-    .json(&json!({
-        "expectedRevision":revision,
-        "profileChange":{"kind":"preserve"},
-        "ceilingChange":{"kind":"clear"}
-    }))
-    .send(&service)
-    .await;
-    assert_eq!(response.status_code, Some(StatusCode::FORBIDDEN));
-    assert_eq!(
-        response.take_json::<Value>().await.unwrap()["code"],
-        "resource_configuration_scope_required"
-    );
-    // F1 (review r1): the account mutation refuses the lifecycle session
-    // with ITS OWN word too — MA-S3a's surface is present on this lineage
-    // post-rebase, so the scenario's clause is asserted, not dropped. The
-    // prepare gate runs before any body is read or store work begins.
-    let mut response = post("/console/api/accounts", &lifecycle)
-        .send(&service)
-        .await;
-    assert_eq!(response.status_code, Some(StatusCode::FORBIDDEN));
-    assert_eq!(
-        response.take_json::<Value>().await.unwrap()["code"],
-        "account_scope_required"
-    );
-    f.close().await;
-}
-
-/// CL-S2 (ADR-130) at-most-once selector, driven at the HTTP surface: start
-/// fails closed because no durable native start transition exists; two stops
-/// resolve the SAME dispatch id and fence through the unsettled stop row,
-/// writing no second row, and both still report `stop_pending`.
+/// #21 acceptance: stop completes and start re-arms — TS parity
+/// `stopManagedAgent` (backend-v2.js:12577-12708, success object
+/// `{ok:true,stopped:true,...cancelledDispatches}` at :12690) and start
+/// (backend-v2.js:12712, the return to serving). Idempotency follows the
+/// retained stop: a second stop answers `stopped:true` again, writing no
+/// second row.
 #[tokio::test]
 async fn native_console_agent_start_stop_is_at_most_once() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
     let lifecycle = lifecycle_session(&service).await;
     let id = &f.engagement;
-    let mut response = post(&format!("/console/api/agents/{id}/start"), &lifecycle)
-        .send(&service)
-        .await;
-    assert_eq!(response.status_code, Some(StatusCode::NOT_IMPLEMENTED));
-    assert_eq!(
-        response.take_json::<Value>().await.unwrap()["code"],
-        "agent_start_unavailable"
-    );
     let stop = || async {
         let mut response = post(&format!("/console/api/agents/{id}/stop"), &lifecycle)
             .send(&service)
@@ -556,19 +433,21 @@ async fn native_console_agent_start_stop_is_at_most_once() {
         response.take_json::<Value>().await.unwrap()
     };
     let first = stop().await;
-    for key in ["stopped", "stop_pending", "dispatch_id", "fence", "state"] {
-        assert!(
-            first.get(key).is_some(),
-            "the stop wire object carries {key}"
-        );
-    }
-    assert_eq!(first["stop_pending"], true);
-    assert_eq!(first["stopped"], false);
+    assert_eq!(first["ok"], true);
+    assert_eq!(first["stopped"], true, "the stop completes");
+    assert_eq!(first["state"], "stopped");
+    assert_eq!(
+        first["cancelled_dispatches"].as_array().map(Vec::len),
+        Some(1),
+        "the live dispatch is the retained cancelledDispatches"
+    );
     let second = stop().await;
-    assert_eq!(second["dispatch_id"], first["dispatch_id"]);
-    assert_eq!(second["fence"], first["fence"]);
-    assert_eq!(second["stop_pending"], true);
-    assert_eq!(second["stopped"], false);
+    assert_eq!(second["stopped"], true);
+    assert_eq!(
+        second["cancelled_dispatches"].as_array().map(Vec::len),
+        Some(0),
+        "the second stop is idempotent"
+    );
     let raw = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3")).unwrap();
     let count: i64 = raw
         .query_row("SELECT COUNT(*) FROM dispatch_stops", [], |r| r.get(0))
@@ -576,44 +455,115 @@ async fn native_console_agent_start_stop_is_at_most_once() {
     assert_eq!(count, 1, "the second stop writes no second row");
     let settled: Option<u64> = raw
         .query_row(
-            "SELECT settled_at FROM dispatch_stops WHERE dispatch_id=?1",
-            [first["dispatch_id"].as_str().unwrap()],
+            "SELECT settled_at FROM dispatch_stops WHERE dispatch_id='private_dispatch'",
+            [],
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(settled, None, "no production path settles the stop");
+    assert!(settled.is_some(), "the operator stop settles the stop row");
+    let stopped: Option<u64> = raw
+        .query_row(
+            "SELECT stopped_at FROM agent_lifecycle WHERE engagement_id=?1",
+            [&*id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(stopped.is_some(), "the durable stopped row exists");
     drop(raw);
+    // Start brings the agent back to serving (backend-v2.js:12712-12775).
+    let mut response = post(&format!("/console/api/agents/{id}/start"), &lifecycle)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let body = response.take_json::<Value>().await.unwrap();
+    assert_eq!(body["ok"], true);
+    assert_eq!(body["state"], "launching");
+    let started: Option<u64> = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3"))
+        .unwrap()
+        .query_row(
+            "SELECT started_at FROM agent_lifecycle WHERE engagement_id=?1",
+            [&*id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(started.is_some(), "serving is re-armed durably");
+    // A second start hits the retained `agent already online` (409).
+    let mut response = post(&format!("/console/api/agents/{id}/start"), &lifecycle)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::CONFLICT));
+    assert_eq!(
+        response.take_json::<Value>().await.unwrap()["code"],
+        "agent_already_online"
+    );
     f.close().await;
 }
 
-/// CL-S2 (ADR-130) preset selector: native has no agent registry independent
-/// of engagements, and an engagement's resource owns budget, account and
-/// provision effects. The route therefore refuses rather than pretending an
-/// in-memory pointer changed that durable association.
+/// #21 preset (resource) rebind — TS parity `PUT /api/agents/:name/preset`
+/// (backend-v2.js:11484-11522): binding, ceiling and profile move together,
+/// the response reports ceiling/remaining beside the binding, and the NEXT
+/// dispatch the host claims reads the new resource from the provision
+/// effect's payload. An unknown preset is refused with 400 and the previous
+/// binding survives (tests/api-agent-preset-binding.test.js parity).
 #[tokio::test]
 async fn native_console_agent_preset_apply_refuses_without_durable_transition() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
     let lifecycle = lifecycle_session(&service).await;
     let id = &f.engagement;
-    let before = f
-        .domain
-        .agent_roster()
-        .await
-        .unwrap()
-        .into_iter()
-        .find(|row| row.engagement_id == *id)
-        .unwrap();
-    let mut response = post(&format!("/console/api/agents/{id}/preset"), &lifecycle)
-        .json(&json!({"presetId": "private_preset_apply_published"}))
+    // A second published resource to rebind onto.
+    let other = native_resource("private_preset_apply_published");
+    f.domain.put_resource(other.clone()).await.unwrap();
+    let mut response = put(&format!("/console/api/agents/{id}/preset"), &lifecycle)
+        .json(&json!({"presetId": other.preset_id}))
         .send(&service)
         .await;
-    assert_eq!(response.status_code, Some(StatusCode::NOT_IMPLEMENTED));
+    let probe = response.take_json::<Value>().await.unwrap();
+    assert_eq!(
+        response.status_code,
+        Some(StatusCode::OK),
+        "rebind failed: {probe}"
+    );
+    let body = probe;
+    assert_eq!(body["ok"], true);
+    assert_eq!(body["preset_id"], other.preset_id);
+    assert_eq!(body["resource_id"], other.id());
+    // The retained `remaining` question, answered beside the binding.
+    assert_eq!(body["ceiling_tokens"], 5000);
+    let remaining = body["remaining"].as_u64().expect("remaining is a number");
+    assert!(remaining <= 5000, "remaining never exceeds the ceiling");
+    // The durable association moved: row, projection and the provision
+    // effect's resource payload — the one the claim selector reads.
+    let raw = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3")).unwrap();
+    let (row_resource, projected): (String, String) = raw
+        .query_row(
+            "SELECT resource_id,json_extract(projection,'$.resourceId') FROM engagements WHERE id=?1",
+            [&*id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(row_resource, other.id(), "the engagement row moved");
+    assert_eq!(projected, other.id(), "the projection moved");
+    let payload: String = raw
+        .query_row(
+            "SELECT json_extract(payload,'$.resource.presetId') FROM effects WHERE engagement_id=?1 AND kind='provision'",
+            [&*id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(payload, other.preset_id, "the next dispatch reads this payload");
+    drop(raw);
+    // Unknown preset: 400, and the binding survives (TS parity).
+    let mut response = put(&format!("/console/api/agents/{id}/preset"), &lifecycle)
+        .json(&json!({"presetId": "no_such_preset"}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST));
     assert_eq!(
         response.take_json::<Value>().await.unwrap()["code"],
-        "agent_preset_unavailable"
+        "unknown_preset"
     );
-    let after = f
+    let survived = f
         .domain
         .agent_roster()
         .await
@@ -621,9 +571,7 @@ async fn native_console_agent_preset_apply_refuses_without_durable_transition() 
         .into_iter()
         .find(|row| row.engagement_id == *id)
         .unwrap();
-    assert_eq!(after.framework, before.framework);
-    assert_eq!(after.state, before.state);
-    assert_eq!(after.requested_tokens, before.requested_tokens);
+    assert_eq!(survived.framework, other.framework, "the binding survives");
     f.close().await;
 }
 
@@ -775,25 +723,14 @@ async fn native_console_agent_recover_dispatch_agent_binding() {
 
 /// A lifecycle operator recovers the orphan: the route reaches recover_dispatch
 /// and the store clears the lease/quarantine/dirty, supersedes older queued work and
-/// writes the recovery record with the evidence. A read-only session is refused.
+/// writes the recovery record with the evidence. (One login carries the
+/// permission; anonymous callers are refused by the shared authenticate hoop.)
 #[tokio::test]
 async fn native_console_agent_recover_dispatch_recovers_orphan() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
     let state = f.root.path().join("state");
     seed_orphan_dispatch(&f, &f.engagement, false).await;
-    // A read-only ticket cannot recover: the mutation needs Scope::AgentLifecycle.
-    let read_only = session(&service).await;
-    let refused = post(
-        &format!("/console/api/agents/{}/recover-dispatch", f.engagement),
-        &read_only,
-    )
-    .json(&recovery_body())
-    .send(&service)
-    .await;
-    assert_eq!(refused.status_code, Some(StatusCode::FORBIDDEN));
-    // Ticket issuance is rate-limited to one per second (authority.rs issued slot).
-    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
     let cookie = lifecycle_session(&service).await;
     let mut response = post(
         &format!("/console/api/agents/{}/recover-dispatch", f.engagement),
@@ -918,32 +855,6 @@ async fn native_console_agent_recover_dispatch_refuses_stopped_dispatch() {
 
 #[tokio::test]
 async fn native_console_stopped_dispatch_continuation() {
-    {
-        let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
-        let service = f.service();
-        let readonly = session(&service).await;
-        let read = format!(
-            "/console/api/agents/{}/stopped-dispatches/orphan_dispatch/inspection",
-            f.engagement
-        );
-        let write = format!(
-            "/console/api/agents/{}/continue-stopped-dispatch",
-            f.engagement
-        );
-        assert_eq!(
-            get(&read, &readonly).send(&service).await.status_code,
-            Some(StatusCode::FORBIDDEN)
-        );
-        assert_eq!(
-            post(&write, &readonly)
-                .json(&recovery_body())
-                .send(&service)
-                .await
-                .status_code,
-            Some(StatusCode::FORBIDDEN)
-        );
-        f.close().await;
-    }
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
     seed_orphan_dispatch(&f, &f.engagement, true).await;
@@ -1113,17 +1024,6 @@ pub(super) async fn seed_inspected_failure(f: &Fixture) {
 
 #[tokio::test]
 async fn native_console_stopped_dispatch_list() {
-    {
-        let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
-        let service = f.service();
-        let readonly = session(&service).await;
-        let path = format!("/console/api/agents/{}/stopped-dispatches", f.engagement);
-        assert_eq!(
-            get(&path, &readonly).send(&service).await.status_code,
-            Some(StatusCode::FORBIDDEN)
-        );
-        f.close().await;
-    }
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     seed_inspected_failure(&f).await;
     let service = f.service();
@@ -1213,31 +1113,6 @@ async fn native_console_stopped_dispatch_list() {
 
 #[tokio::test]
 async fn native_console_outcome_resolution() {
-    {
-        let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
-        let service = f.service();
-        let readonly = session(&service).await;
-        for path in [
-            format!(
-                "/console/api/agents/{}/stopped-dispatches/resolution_dispatch/inspect",
-                f.engagement
-            ),
-            format!(
-                "/console/api/agents/{}/resolve-stopped-dispatch",
-                f.engagement
-            ),
-        ] {
-            assert_eq!(
-                post(&path, &readonly)
-                    .json(&json!({}))
-                    .send(&service)
-                    .await
-                    .status_code,
-                Some(StatusCode::FORBIDDEN)
-            );
-        }
-        f.close().await;
-    }
     for action in ["continue", "accept_completed", "keep_blocked"] {
         let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
         seed_inspected_failure(&f).await;
@@ -1483,43 +1358,6 @@ async fn native_console_agent_delete_force_releases_active_engagements() {
     f.close().await;
 }
 
-/// A delete is a lifecycle act: a read-only session is refused with the
-/// console's named word and NOTHING changes — not even under `?force=true`,
-/// which is the one arm that mutates.
-#[tokio::test]
-async fn native_console_agent_delete_refuses_without_lifecycle_scope() {
-    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
-    let service = f.service();
-    let readonly = session(&service).await;
-    for path in [
-        "/console/api/agents/UsageWorker",
-        "/console/api/agents/UsageWorker?force=true",
-    ] {
-        let mut response = TestClient::delete(format!("{BASE}{path}"))
-            .add_header("host", "127.0.0.1:13300", true)
-            .add_header("origin", BASE, true)
-            .add_header("sec-fetch-site", "same-origin", true)
-            .add_header("cookie", &readonly, true)
-            .send(&service)
-            .await;
-        assert_eq!(response.status_code, Some(StatusCode::FORBIDDEN), "{path}");
-        assert_eq!(
-            response.take_json::<Value>().await.unwrap()["code"],
-            "agent_lifecycle_scope_required",
-            "{path}"
-        );
-    }
-    // The refusal left the commitment standing (the force refusal above is
-    // the one that matters: it must not have half-deleted).
-    let engagement = f.domain.engagement(f.engagement.clone()).await.unwrap();
-    assert_eq!(
-        engagement.state,
-        hagency_core::project::EngagementState::Active,
-        "a refused delete changes nothing"
-    );
-    f.close().await;
-}
-
 /// The TS refusal shapes: 404 `{error:'agent not found'}` for an agent no
 /// record names, 400 for a name shape the detail read would refuse.
 #[tokio::test]
@@ -1556,5 +1394,64 @@ async fn native_console_agent_delete_not_found_and_invalid_name() {
         invalid.take_json::<Value>().await.unwrap()["code"],
         "invalid_console_request"
     );
+    f.close().await;
+}
+/// TS parity: ONE login is the whole console — an anonymous caller is refused
+/// before any store work; the logged-in session reaches the lifecycle routes
+/// AND the neighbouring resource/account mutations without a second link.
+#[tokio::test]
+async fn native_console_agent_lifecycle_is_one_login() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    // TS parity: ONE login is the whole console. An anonymous caller is
+    // refused before any store work; the logged-in session may act on the
+    // lifecycle routes and the resource/account routes alike.
+    let id = &f.engagement;
+    // Anonymous callers are refused before any store work. Preset is PUT
+    // (TS parity: backend-v2.js:11484 `app.put`) — the wrong-method POST is
+    // answered 405 by routing before auth, so use the route's own method.
+    for path in [
+        format!("/console/api/agents/{id}/start"),
+        format!("/console/api/agents/{id}/stop"),
+        format!("/console/api/agents/{id}/preset"),
+    ] {
+        let response = if path.ends_with("/preset") {
+            put(&path, "hagency_console=anonymous")
+        } else {
+            post(&path, "hagency_console=anonymous")
+        }
+        .send(&service)
+        .await;
+        assert_eq!(response.status_code, Some(StatusCode::UNAUTHORIZED), "anonymous {path}");
+    }
+    let cookie = session(&service).await;
+    // Start refuses an agent that never stopped — TS parity 409
+    // `agent already online` (backend-v2.js:12717).
+    let mut response = post(&format!("/console/api/agents/{id}/start"), &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::CONFLICT));
+    assert_eq!(
+        response.take_json::<Value>().await.unwrap()["code"],
+        "agent_already_online"
+    );
+    // The SAME login reaches the neighbouring mutation classes — no scope
+    // word, the store's own validation answers (revision conflict).
+    let source = native_resource("private_lifecycle_scope_source");
+    f.domain.put_resource(source.clone()).await.unwrap();
+    let revision = resource_publication_revision(&source).unwrap();
+    let response = post(
+        &format!("/console/api/resources/{}/publication", source.id()),
+        &cookie,
+    )
+    .json(&json!({"expectedRevision":revision,"published":false}))
+    .send(&service)
+    .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK), "publication is not scope-refused");
+    let response = post("/console/api/accounts", &cookie)
+        .json(&json!({"profile":ACCOUNT_PROFILE}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK), "account prepare is not scope-refused");
     f.close().await;
 }

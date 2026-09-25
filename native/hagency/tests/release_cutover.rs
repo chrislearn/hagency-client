@@ -558,6 +558,7 @@ fn render_unit(artifact: &Path, state: &Path) -> String {
         )
         .replace("__STATE_DIR__", &state.to_string_lossy())
         .replace("__USER__", "tester")
+        .replace("__CONSOLE_DIR__", "/opt/hagency-native/console")
 }
 
 #[test]
@@ -713,6 +714,7 @@ fn native_package_entrypoints_reference_no_node() {
             .current_dir(repo.join("install"))
             .env("INSTALL_DIR", "/opt/hagency-native")
             .env("STATE_DIR", "/var/lib/hagency-native")
+            .env("CONSOLE_DIR", "/opt/hagency-native/console")
             .env(target_var, &target)
             .stdin(Stdio::null())
             .output()
@@ -727,7 +729,8 @@ fn native_package_entrypoints_reference_no_node() {
         assert!(
             !rendered.contains("__INSTALL_DIR__")
                 && !rendered.contains("__STATE_DIR__")
-                && !rendered.contains("__USER__"),
+                && !rendered.contains("__USER__")
+                && !rendered.contains("__CONSOLE_DIR__"),
             "renderer for {template} left placeholders unresolved"
         );
         // The render half must not be vacuous: non-empty, and it carries

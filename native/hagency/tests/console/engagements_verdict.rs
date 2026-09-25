@@ -50,15 +50,20 @@ async fn native_engagement_verdict_approve_reserves_and_enqueues_provision() {
     assert_eq!(candidate["resource"], "private_usage_pool");
     assert_eq!(candidate["provision"], true);
 
-    // A read-only session cannot decide: the mutation needs AgentLifecycle.
-    let refused = post(
-        &format!("/console/api/engagements/{pending}/approve"),
-        &read_only,
-    )
+    // TS parity (#31): there is no read-only login — one login is the whole
+    // console. An anonymous caller is refused before any store job; every
+    // logged-in session may decide. The anonymous caller needs no ticket at
+    // all (the console's authenticate hoop rejects it without a cookie).
+    let anonymous = TestClient::post(format!(
+        "{BASE}/console/api/engagements/{pending}/approve"
+    ))
+    .add_header("host", "127.0.0.1:13300", true)
+    .add_header("origin", BASE, true)
+    .add_header("sec-fetch-site", "same-origin", true)
     .json(&json!({"commandId": "cmd_verdict_1"}))
     .send(&service)
     .await;
-    assert_eq!(refused.status_code, Some(StatusCode::FORBIDDEN));
+    assert_eq!(anonymous.status_code, Some(StatusCode::UNAUTHORIZED));
 
     // Ticket issuance is rate-limited to one per second.
     tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
@@ -130,6 +135,80 @@ async fn native_engagement_verdict_refuse_rejects_pending() {
     // No provision row was ever enqueued for the refused request.
     let rows = effects(&state);
     assert!(rows.iter().all(|r| r.0 != pending));
+    f.close().await;
+}
+
+/// Scenario: the audit read lists the newest decisions newest-first with the
+/// retained entry shape (backend-v2.js:14980-14983, listAudit
+/// lib/engagement-store.js:804-806).
+#[tokio::test]
+async fn native_engagement_verdict_audit_lists_newest_first() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    // Ticket issuance is rate-limited to one per second.
+    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+    let cookie = lifecycle_session(&service).await;
+    let approved = f.new_engagement().await;
+    let mut response = post(
+        &format!("/console/api/engagements/{approved}/approve"),
+        &cookie,
+    )
+    .json(&json!({"commandId": "cmd_audit_1"}))
+    .send(&service)
+    .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let refused = {
+        // A DISTINCT engagement: the shared new_engagement helper replays one
+        // fixed request id, so the second pending row is admitted directly
+        // with its own id and agent name (admit's live-name collision guard).
+        let pool = common::resource("private_usage_pool", "private_usage_seat", 1000);
+        f.domain
+            .admit(
+                common::proof(&common::request(
+                    "audit_refuse_request",
+                    "AuditRefuseWorker",
+                    &pool,
+                    100,
+                )),
+                1000,
+            )
+            .await
+            .unwrap()
+            .id
+    };
+    let mut response = post(&format!("/console/api/agents/{refused}/refuse"), &cookie)
+        .json(&json!({"commandId": "cmd_audit_2"}))
+        .send(&service)
+    .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+
+    let mut listed = get("/console/api/engagements/audit", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(listed.status_code, Some(StatusCode::OK));
+    let body = listed.take_json::<Value>().await.unwrap();
+    let audit = body["audit"].as_array().unwrap();
+    assert!(audit.len() >= 2);
+    // Newest first: the refusal is the most recent decision.
+    assert_eq!(audit[0]["type"], "engagement.rejected");
+    assert_eq!(audit[0]["engagementId"], refused);
+    // Every entry carries the retained {type, at, ...detail} shape.
+    for entry in audit {
+        assert!(entry["at"].as_u64().unwrap() > 0);
+        assert!(entry["engagementId"].is_string());
+        assert!(entry["state"].is_string());
+    }
+    // The approval we drove is present with its retained word.
+    assert!(audit.iter().any(|e| {
+        e["type"] == "engagement.approved" && e["engagementId"] == approved.as_str()
+    }));
+
+    // The retained clamp (lib/engagement-store.js:805 Math.min(limit, 2000)):
+    // an over-cap limit clamps, it is never a failure state TS did not have.
+    let response = get("/console/api/engagements/audit?limit=2001", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
     f.close().await;
 }
 
