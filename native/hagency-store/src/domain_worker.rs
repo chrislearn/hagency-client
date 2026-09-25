@@ -3774,6 +3774,106 @@ impl DomainStore {
         })
         .await
     }
+    /// Project-side credential/lifecycle store ops (board #14). The side id IS
+    /// the server name; each op is one bounded writer job.
+    pub async fn ensure_side(&self, id: String) -> Result<(), Error> {
+        self.call(weight(&id)?, move |db| db.ensure_side(&id)).await
+    }
+    pub async fn set_api_base_url(
+        &self,
+        id: String,
+        api_base_url: Option<String>,
+    ) -> Result<Option<crate::SideRecord>, Error> {
+        self.call(weight(&(&id, &api_base_url))?, move |db| {
+            db.set_api_base_url(&id, api_base_url.as_deref())
+        })
+        .await
+    }
+    pub async fn side(&self, id: String) -> Result<Option<crate::SideRecord>, Error> {
+        self.call(weight(&id)?, move |db| db.side(&id)).await
+    }
+    pub async fn credential_for(&self, id: String) -> Result<Option<crate::Credential>, Error> {
+        self.call(weight(&id)?, move |db| db.credential_for(&id)).await
+    }
+    pub async fn pending_credential_for(
+        &self,
+        id: String,
+    ) -> Result<Option<crate::Credential>, Error> {
+        self.call(weight(&id)?, move |db| db.pending_credential_for(&id))
+            .await
+    }
+    pub async fn set_credential(
+        &self,
+        id: String,
+        value: Option<serde_json::Value>,
+        stage: bool,
+    ) -> Result<Option<crate::SideRecord>, Error> {
+        self.call(
+            weight(&(&id, &value, stage))?,
+            move |db| db.set_credential(&id, value, stage),
+        )
+        .await
+    }
+    pub async fn promote_pending_credential(
+        &self,
+        id: String,
+    ) -> Result<Option<crate::SideRecord>, Error> {
+        self.call(weight(&id)?, move |db| db.promote_pending_credential(&id))
+            .await
+    }
+    pub async fn observe_access(
+        &self,
+        id: String,
+        state: String,
+        detail: Option<String>,
+    ) -> Result<Option<crate::SideRecord>, Error> {
+        self.call(
+            weight(&(&id, &state, &detail))?,
+            move |db| db.observe_access(&id, &state, detail.as_deref()),
+        )
+        .await
+    }
+    pub async fn set_representative(
+        &self,
+        id: String,
+        mxid: String,
+    ) -> Result<Option<crate::SideRecord>, Error> {
+        self.call(weight(&(&id, &mxid))?, move |db| {
+            db.set_representative(&id, &mxid)
+        })
+        .await
+    }
+    pub async fn upsert_project(
+        &self,
+        side: String,
+        input: serde_json::Value,
+    ) -> Result<Option<crate::SideProjectRecord>, Error> {
+        self.call(weight(&(&side, &input))?, move |db| {
+            db.upsert_project(&side, &input)
+        })
+        .await
+    }
+    pub async fn set_project_archived(
+        &self,
+        side: String,
+        project_id: String,
+        archived: bool,
+    ) -> Result<Option<crate::SideProjectRecord>, Error> {
+        self.call(weight(&(&side, &project_id, archived))?, move |db| {
+            db.set_project_archived(&side, &project_id, archived)
+        })
+        .await
+    }
+    pub async fn deactivate_side(&self, id: String) -> Result<Option<crate::SideRecord>, Error> {
+        self.call(weight(&id)?, move |db| db.deactivate_side(&id)).await
+    }
+    pub async fn reactivate_side(&self, id: String) -> Result<Option<crate::SideRecord>, Error> {
+        self.call(weight(&id)?, move |db| db.reactivate_side(&id)).await
+    }
+    pub async fn remove_side(&self, id: String, force: bool) -> Result<(), Error> {
+        self.call(weight(&(&id, force))?, move |db| db.remove_side(&id, force))
+            .await
+    }
     pub async fn provisioning_registration(
         &self,
         fleet_id: String,

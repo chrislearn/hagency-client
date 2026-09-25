@@ -12,6 +12,7 @@ mod exec_policy;
 mod invites;
 mod project_sides;
 mod side_budget;
+mod side_lifecycle;
 mod resource_configuration;
 mod resources;
 pub mod side_registration;
@@ -83,6 +84,7 @@ pub(crate) fn router() -> Router {
                 .push(project_sides::router())
                 .push(side_registration::router())
                 .push(side_budget::router())
+                .push(side_lifecycle::router())
                 .push(approvals::router())
                 .push(resources::router())
                 .push(accounts::router())

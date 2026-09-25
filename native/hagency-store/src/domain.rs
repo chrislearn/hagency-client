@@ -90,6 +90,8 @@ pub(crate) mod resource_configuration;
 pub(crate) mod resource_publication;
 mod side_budget;
 pub use side_budget::{SideBudget, SideCommitment, UsageTotals};
+mod side_lifecycle;
+pub use side_lifecycle::{Credential, Representative, SideProjectRecord, SideRecord};
 mod task_intents;
 pub(crate) mod uploads;
 mod usage;
@@ -114,7 +116,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 49;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 50;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -805,11 +807,20 @@ impl DomainRepository {
                         49,
                         include_str!("migrations/060-pending-invites.sql"),
                     ),
+                    // Integration of lane/sidelife: the addition notice named
+                    // migration 042; the branch file carries 040 — it lands as
+                    // the next sequential tuple 50 (file name kept).
+                    (
+                        50,
+                        include_str!("migrations/040-side-credentials.sql"),
+                    ),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
                     "SELECT fleet_id,allocated_tokens,updated_at FROM side_allocations LIMIT 0",
                     "SELECT engagement_id,stopped_at,reason,operator,started_at FROM agent_lifecycle LIMIT 0",
+                    "SELECT server_name,label,api_base_url,credential,pending_credential,pending_issued_at,representative,access_state,access_detail,access_checked_at,access_issued_at,allocated_tokens,active,created_at,updated_at FROM side_records LIMIT 0",
+                    "SELECT server_name,id,name,room_id,note,archived,archived_at,created_at,updated_at FROM side_projects LIMIT 0",
                     "SELECT id,engagement_id,dispatch_id,fence,reason,created_at,cleared_at,cleared_by FROM agent_fences LIMIT 0",
                     "SELECT id,session_id,transaction_id,digest,body,html,route,source_event_id,state,cancel_requested,fence,claim_hash,claim_until,event_id,observation,created_at,updated_at FROM command_notices LIMIT 0",
                     "SELECT id FROM current_command_notices LIMIT 0",

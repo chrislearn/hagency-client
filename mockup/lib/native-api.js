@@ -316,6 +316,73 @@ export async function fetchProjectSides() {
 }
 export function projectSidesView(location) { return /^\/console\/project-sides\/?$/.test(location.pathname); }
 export function usageView(location) { return /^\/console\/usage\/?$/.test(location.pathname); }
+/* The side lifecycle mutations (board #14). Each reply is the same
+ * `{ok:true, side}` envelope the single-side read serves, so one validator
+ * governs every write AND the read — the page never re-derives a side. The
+ * credential VALUE is write-only (ADR-016 decision 8): no fetch returns it,
+ * and the projection carries only `credentialKind`/`hasCredential`, so a
+ * token can never reach the browser's memory from a read. */
+const SIDE_LIFECYCLE_KEYS = ['id', 'label', 'serverName', 'apiBaseUrl', 'credentialKind', 'hasCredential', 'awaitingInstall', 'awaitingInstallSince', 'senderLocalpart', 'appserviceUrl', 'namespace', 'accessIssuedAt', 'accessState', 'accessDetail', 'accessCheckedAt', 'allocatedTokens', 'representative', 'projects', 'active', 'createdAt', 'updatedAt'];
+const projectRow = (p) => object(p, ['id', 'name', 'roomId', 'note', 'archived', 'archivedAt', 'createdAt', 'updatedAt'])
+  && text(p.id, 128) && text(p.name, 255)
+  && (p.roomId === null || text(p.roomId, 256))
+  && (p.note === null || text(p.note, 1024))
+  && typeof p.archived === 'boolean' && (p.archivedAt === null || number(p.archivedAt))
+  && number(p.createdAt) && number(p.updatedAt);
+const validSideRecord = (s) => object(s, SIDE_LIFECYCLE_KEYS)
+  && text(s.id, 255) && text(s.label, 255) && text(s.serverName, 255)
+  && (s.apiBaseUrl === null || text(s.apiBaseUrl, 1024))
+  && (s.credentialKind === null || ['appservice', 'registrationToken'].includes(s.credentialKind))
+  && typeof s.hasCredential === 'boolean' && typeof s.awaitingInstall === 'boolean'
+  && (s.awaitingInstallSince === null || number(s.awaitingInstallSince))
+  && (s.senderLocalpart === null || text(s.senderLocalpart, 255))
+  && (s.appserviceUrl === null || text(s.appserviceUrl, 1024))
+  && (s.namespace === null || text(s.namespace, 255))
+  && (s.accessIssuedAt === null || number(s.accessIssuedAt))
+  && ['unverified', 'accepted', 'rejected', 'unreachable', 'blocked'].includes(s.accessState)
+  && (s.accessDetail === null || text(s.accessDetail, 1024))
+  && (s.accessCheckedAt === null || number(s.accessCheckedAt))
+  && (s.allocatedTokens === null || number(s.allocatedTokens))
+  && (s.representative === null || (object(s.representative, ['mxid', 'localpart', 'observedAt']) && text(s.representative.mxid, 255) && text(s.representative.localpart, 255) && number(s.representative.observedAt)))
+  && Array.isArray(s.projects) && s.projects.every(projectRow)
+  && typeof s.active === 'boolean' && number(s.createdAt) && number(s.updatedAt);
+function validSideEnvelope(v) {
+  if (!object(v, ['ok', 'side']) || v.ok !== true || !validSideRecord(v.side)) throw new Error('invalid_native_response');
+  return v.side;
+}
+export async function fetchSide(id) {
+  return validSideEnvelope(await request(`/api/project-sides/${encodeURIComponent(id)}`));
+}
+export async function setSideCredential(id, credential) {
+  return validSideEnvelope(await request(`/api/project-sides/${encodeURIComponent(id)}/credential`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential }),
+  }));
+}
+export async function verifySide(id) {
+  /* The verdict rides on the returned side; the `promoted` fact is the
+   * operator-visible "did my staged credential take effect". */
+  return request(`/api/project-sides/${encodeURIComponent(id)}/verify`, { method: 'POST' });
+}
+export async function addSideProject(id, input) {
+  return request(`/api/project-sides/${encodeURIComponent(id)}/projects`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+}
+export async function archiveSideProject(id, projectId, archived = true) {
+  return request(`/api/project-sides/${encodeURIComponent(id)}/projects/${encodeURIComponent(projectId)}/archive`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ archived }),
+  });
+}
+export async function deactivateSide(id) {
+  return validSideEnvelope(await request(`/api/project-sides/${encodeURIComponent(id)}/deactivate`, { method: 'POST' }));
+}
+export async function reactivateSide(id) {
+  return validSideEnvelope(await request(`/api/project-sides/${encodeURIComponent(id)}/reactivate`, { method: 'POST' }));
+}
+export async function removeSide(id, force = false) {
+  return request(`/api/project-sides/${encodeURIComponent(id)}${force ? '?force=true' : ''}`, { method: 'DELETE' });
+}
 export async function transitionAlert(key, to, note) {
   /* One display-state transition through the console session. The reply is
    * the SAME envelope the list read serves (one row), so the same validator
