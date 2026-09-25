@@ -21,6 +21,8 @@ mod engagements_retire;
 mod engagements_verdict;
 #[path = "console/fixture.rs"]
 mod fixture;
+#[path = "console/matrix_diag.rs"]
+mod matrix_diag;
 #[path = "console/origin.rs"]
 mod origin;
 #[path = "console/offer_book.rs"]
