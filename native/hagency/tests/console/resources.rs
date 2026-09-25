@@ -1,31 +1,10 @@
 use super::*;
 use hagency_store::resource_publication_revision;
 
+/// TS parity: one login is the whole console — the former publication-scope
+/// session is the same `/console/access` login as every other.
 async fn management(service: &Service) -> String {
-    let mut response = TestClient::post(format!(
-        "{BASE}/api/native/v1/console/resource-publication-access"
-    ))
-    .add_header("host", "127.0.0.1:13300", true)
-    .bearer_auth(TOKEN)
-    .send(service)
-    .await;
-    assert_eq!(response.status_code, Some(StatusCode::OK));
-    let ticket = response.take_json::<Value>().await.unwrap()["ticket"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let response = exchange(service, &ticket).await;
-    assert_eq!(response.status_code, Some(StatusCode::OK));
-    response
-        .headers()
-        .get("set-cookie")
-        .unwrap()
-        .to_str()
-        .unwrap()
-        .split(';')
-        .next()
-        .unwrap()
-        .to_owned()
+    session(service).await
 }
 fn command(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
     TestClient::post(format!("{BASE}{path}"))
@@ -47,18 +26,12 @@ async fn native_console_resource_authority() {
     let resource = native_resource("private_resource_pool");
     f.domain.put_resource(resource.clone()).await.unwrap();
     let service = f.service();
-    let readonly = session(&service).await;
+    // TS parity: ONE login is the whole console — the same session reads and
+    // publishes; no second link, no issuance wait.
+    let manager = management(&service).await;
     let path = format!("/console/api/resources/{}/publication", resource.id());
     let body = json!({"expectedRevision":resource_publication_revision(&resource).unwrap(),"published":false});
-    assert_eq!(
-        command(&path, &readonly)
-            .json(&body)
-            .send(&service)
-            .await
-            .status_code,
-        Some(StatusCode::FORBIDDEN)
-    );
-    // The issuer shares its existing rate budget across both fixed scopes.
+    // The scoped issue route is gone: one login is the whole console.
     assert_eq!(
         TestClient::post(format!(
             "{BASE}/api/native/v1/console/resource-publication-access"
@@ -68,10 +41,8 @@ async fn native_console_resource_authority() {
         .send(&service)
         .await
         .status_code,
-        Some(StatusCode::TOO_MANY_REQUESTS)
+        Some(StatusCode::NOT_FOUND)
     );
-    tokio::time::sleep(std::time::Duration::from_millis(1010)).await;
-    let manager = management(&service).await;
     let bad =
         json!({"expectedRevision":body["expectedRevision"],"published":false,"scope":"operator"});
     assert_eq!(
@@ -98,8 +69,9 @@ async fn native_console_resource_authority() {
         "console_busy"
     );
     // Unrelated session authority still succeeds without waiting on SQLite.
+    let unrelated = session(&service).await;
     assert_eq!(
-        logout(&readonly).send(&service).await.status_code,
+        logout(&unrelated).send(&service).await.status_code,
         Some(StatusCode::OK)
     );
     lock.execute_batch("COMMIT").unwrap();
@@ -151,7 +123,7 @@ async fn native_console_resource_observations() {
     ] {
         assert!(!text.contains(private));
     }
-    assert_eq!(rows["permissions"]["publishResource"], false);
+    assert_eq!(rows["permissions"]["publishResource"], true);
     assert_eq!(rows["roles"].as_array().unwrap().len(), 6);
     // G5: the roles table keeps the EIGHT-key set exactly (the client's
     // exact-key conjunction at native-api.js:10-11 applied to roles) — the
