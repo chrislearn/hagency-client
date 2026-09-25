@@ -871,6 +871,32 @@ async fn delete(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         failed(res, error);
         return;
     }
+    // The tombstone `undelete` reverses: TS writes
+    // `deletedAgentTombstones[name] = { deletedAt, reason: 'force-delete' }`
+    // (`persistForceDeletedAgentState`, `backend-v2.js:4342-4359`) as the
+    // durable record that re-registration must clear, and a persistence
+    // failure stops the delete with 503 (`:12282`) rather than reporting an
+    // agent as removed that undelete could never restore.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|d| u64::try_from(d.as_millis()).ok())
+        .unwrap_or_default();
+    if let Err(error) = store
+        .record_agent_tombstone(name.clone(), "force-delete".into(), now)
+        .await
+    {
+        if let Err(error) = recheck(depot) {
+            failed(res, error);
+            return;
+        }
+        res.status_code(StatusCode::SERVICE_UNAVAILABLE);
+        res.render(Json(serde_json::json!({
+            "error": "agent force-delete persistence failed",
+        })));
+        let _ = error;
+        return;
+    }
     res.render(Json(serde_json::json!({
         "ok": true,
         "deleted": true,

@@ -1245,6 +1245,61 @@ async fn native_console_outcome_resolution() {
     }
 }
 
+/// The launch-env route (board #49, TS `backend-v2.js:12344`
+/// `GET /api/agents/:name/launch-env`): the runtime profile the agent would
+/// launch with, in the TS `normalizeRuntimeProfile` shape
+/// (`{runtimeProfile:{primary,supervisor}}`, `backend-v2.js:864-876`). The
+/// seeded UsageWorker's resource is codex/gpt-5.6-sol/medium with no
+/// provider, so `primary` carries exactly those four facts and `supervisor`
+/// is null — the TS shape when the stored record carries none. Unknown agent
+/// is the TS route's 404 `agent not found`; an invalid name shape is 400
+/// before any store work; a query parameter is refused.
+#[tokio::test]
+async fn native_console_agent_launch_env_observation() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let anonymous = TestClient::get(format!("{BASE}/console/api/agents/UsageWorker/launch-env"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .send(&service)
+        .await;
+    assert_eq!(anonymous.status_code, Some(StatusCode::UNAUTHORIZED));
+    let cookie = session(&service).await;
+    // The read takes no selection: query parameters are refused.
+    let response = get("/console/api/agents/UsageWorker/launch-env?agent=x", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST));
+    // An agent the service never engaged is the TS route's 404.
+    let mut response = get("/console/api/agents/Nobody/launch-env", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::NOT_FOUND));
+    assert_eq!(
+        response.take_json::<Value>().await.unwrap()["code"],
+        "agent_not_found"
+    );
+    let mut response = get("/console/api/agents/UsageWorker/launch-env", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+    let value = response.take_json::<Value>().await.unwrap();
+    // Exactly the TS envelope: one `runtimeProfile` key.
+    assert_eq!(value.as_object().unwrap().len(), 1);
+    let profile = value["runtimeProfile"].as_object().unwrap();
+    assert_eq!(profile.len(), 2, "TS normalizeRuntimeProfile: primary + supervisor");
+    let primary = value["runtimeProfile"]["primary"].as_object().unwrap();
+    assert_eq!(primary["framework"], "codex");
+    assert_eq!(primary["model"], "gpt-5.6-sol");
+    assert_eq!(primary["reasoning"], "medium");
+    assert!(primary["provider"].is_null(), "no provider on the seeded resource");
+    assert!(
+        value["runtimeProfile"]["supervisor"].is_null(),
+        "the port stores no supervisor profile: null, the TS shape when none"
+    );
+    f.close().await;
+}
+
 /// `DELETE /api/agents/:name` — the retained soft/force delete
 /// (`backend-v2.js:12164-12307`). SOFT is TS's reversible act: it reports
 /// `{ok, deprecated, message}` and changes nothing, because TS's own comment
@@ -1355,6 +1410,209 @@ async fn native_console_agent_delete_force_releases_active_engagements() {
         hagency_core::project::EngagementState::Revoked,
         "force released the commitment"
     );
+    // The force-delete PERSISTED the tombstone `undelete` reverses — TS's
+    // `persistForceDeletedAgentState` (`backend-v2.js:4354`) is what makes
+    // re-registration conditional on an explicit undelete, so the delete
+    // route must have written it, not a test seeding it (RULES §3).
+    let raw = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3")).unwrap();
+    let reason: String = raw
+        .query_row(
+            "SELECT reason FROM agent_tombstones WHERE name='UsageWorker'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(reason, "force-delete", "TS's tombstone reason, verbatim");
+    drop(raw);
+    // And it is reversible through the #49 route: 200, the tombstone gone.
+    let mut response = post("/console/api/agents/UsageWorker/undelete", &cookie)
+        .json(&json!({}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["undeleted"], true);
+    f.close().await;
+}
+
+/// The five remaining #49 leftover routes (TS `backend-v2.js:12308` undelete,
+/// `:16370` avatar, `:16988` delivery-events, `:16900` message, `:17002`
+/// suppress), served from the migration-067 tables. Every route is mounted
+/// behind the console `authenticate` hoop; each asserts the TS-visible body and
+/// status for its cases. The board is seeded through the store writers the
+/// routes read — no test-only seam.
+#[tokio::test]
+async fn native_console_agent_message_leftovers() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let anonymous = TestClient::get(format!("{BASE}/console/api/agents/UsageWorker/delivery-events"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .send(&service)
+        .await;
+    assert_eq!(anonymous.status_code, Some(StatusCode::UNAUTHORIZED));
+    let cookie = session(&service).await;
+
+    // ── undelete (TS :12308): 404 with no tombstone, 200 once one exists ──
+    let response = post("/console/api/agents/UsageWorker/undelete", &cookie)
+        .json(&json!({}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::NOT_FOUND));
+    f.domain
+        .record_agent_tombstone("UsageWorker".into(), "force-delete".into(), 1000)
+        .await
+        .unwrap();
+    let mut response = post("/console/api/agents/UsageWorker/undelete", &cookie)
+        .json(&json!({}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["undeleted"], true);
+    assert_eq!(value["name"], "UsageWorker");
+    // Removed for real: a second call is the 404 again.
+    let response = post("/console/api/agents/UsageWorker/undelete", &cookie)
+        .json(&json!({}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::NOT_FOUND));
+
+    // ── avatar (TS :16370): queued, with force/custom from body+query ──
+    let mut response = post("/console/api/agents/UsageWorker/avatar", &cookie)
+        .json(&json!({"image": "aGk="}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["queued"], true);
+    assert_eq!(value["name"], "UsageWorker");
+    assert_eq!(value["force"], false, "no generate and no ?force=true");
+    assert_eq!(value["custom"], true, "body.image present");
+    // `?force=true` (TS reads the query as well as body.generate).
+    let mut response = post("/console/api/agents/UsageWorker/avatar?force=true", &cookie)
+        .json(&json!({}))
+        .send(&service)
+        .await;
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["force"], true);
+    assert_eq!(value["custom"], false);
+
+    // ── message + suppress + delivery-events ──
+    // Unknown message id is the TS route's 404.
+    let mut response = get("/console/api/messages/msg_9999", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::NOT_FOUND));
+    assert_eq!(
+        response.take_json::<Value>().await.unwrap()["error"],
+        "message not found"
+    );
+    f.domain
+        .record_operator_message(hagency_store::NewOperatorMessage {
+            id: "msg_0001".into(),
+            sender: "operator".into(),
+            recipient: Some("UsageWorker".into()),
+            kind: "human".into(),
+            priority: "urgent".into(),
+            summary: "Review the build".into(),
+            full: "Please review the build output.".into(),
+            mentions: json!([]),
+            attachments: json!([]),
+            created_at: 1_000_000,
+            reply_to: None,
+            group: None,
+            source: "api".into(),
+            source_room: None,
+            source_event_id: None,
+            sender_mxid: None,
+            room_recipients: json!([]),
+            default_recipient: Some("UsageWorker".into()),
+            schema_kind: Some("review".into()),
+            schema_version: Some(2),
+            schema_payload: Some(json!({"verdict":"pending"}).to_string()),
+        })
+        .await
+        .unwrap();
+    let mut response = get("/console/api/messages/msg_0001", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["id"], "msg_0001");
+    assert_eq!(value["from"], "operator");
+    assert_eq!(value["to"], "UsageWorker");
+    assert_eq!(value["type"], "human");
+    assert_eq!(value["priority"], "urgent", "normalized priority");
+    assert_eq!(value["summary"], "Review the build");
+    assert_eq!(value["source"], "api");
+    // `schema` reduced to {kind,version[,payload]} (TS :4109).
+    assert_eq!(value["schema"]["kind"], "review");
+    assert_eq!(value["schema"]["version"], 2);
+    assert_eq!(value["schema"]["payload"]["verdict"], "pending");
+    assert!(value["ts"].is_null(), "TS serves ts: undefined");
+    assert!(
+        value["time"].as_str().unwrap().ends_with(" ago"),
+        "relativeTime shape"
+    );
+    assert_eq!(value["suppressedRecipients"].as_array().unwrap().len(), 0);
+
+    // suppress (TS :17002): the agent is added once and stays added.
+    let mut response = post("/console/api/messages/msg_0001/suppress", &cookie)
+        .json(&json!({"agent": "UsageWorker"}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["id"], "msg_0001");
+    assert_eq!(value["agent"], "UsageWorker");
+    assert_eq!(value["suppressed"], true);
+    assert_eq!(value["was_unread"], true);
+    assert_eq!(value["is_unread_now"], false);
+    assert_eq!(value["suppressedRecipients"], json!(["UsageWorker"]));
+    // Idempotent: a second call reports it was already suppressed.
+    let mut response = post("/console/api/messages/msg_0001/suppress", &cookie)
+        .json(&json!({"agent": "UsageWorker", "reason": "operator-ack"}))
+        .send(&service)
+        .await;
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["was_unread"], false, "already suppressed");
+    assert_eq!(value["suppressedRecipients"], json!(["UsageWorker"]));
+
+    // A message that does not target the agent is the TS route's 400.
+    let response = post("/console/api/messages/msg_0001/suppress", &cookie)
+        .json(&json!({"agent": "PageWorker"}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST));
+    // No agent named is the TS route's 400.
+    let response = post("/console/api/messages/msg_0001/suppress", &cookie)
+        .json(&json!({}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST));
+
+    // delivery-events (TS :16988): the suppress appended one, newest first.
+    let mut response = get("/console/api/agents/UsageWorker/delivery-events", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["agent"], "UsageWorker");
+    let events = value["events"].as_array().unwrap();
+    assert_eq!(events.len(), 1, "one suppress, one event");
+    assert_eq!(events[0]["type"], "message.suppressed");
+    assert_eq!(events[0]["agent"], "UsageWorker");
+    assert_eq!(events[0]["messageId"], "msg_0001");
+    assert_eq!(events[0]["reason"], "explicit-suppress");
+    // An agent the service never engaged is the TS route's 404.
+    let response = get("/console/api/agents/Nobody/delivery-events", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::NOT_FOUND));
     f.close().await;
 }
 
