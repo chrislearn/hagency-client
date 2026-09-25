@@ -3122,6 +3122,14 @@ impl DomainStore {
     pub async fn agent_roster(&self) -> Result<Vec<crate::AgentRosterRow>, Error> {
         self.call(64, |db| db.agent_roster()).await
     }
+    /// The read-only agent detail (board #22): one writer job, one bounded
+    /// agent-keyed read — the projection is computed at the store, so the
+    /// console route adds no second arithmetic path. `None` is the route's
+    /// 404: no engagement names the agent.
+    pub async fn agent_detail(&self, name: &str) -> Result<Option<crate::AgentDetail>, Error> {
+        let name = name.to_owned();
+        self.call(64, move |db| db.agent_detail(&name)).await
+    }
     /// The read-only project-sides projection (ADR-132): one writer job,
     /// one bounded read; the route adds no second projection.
     pub async fn project_sides(&self) -> Result<Vec<crate::ProjectSide>, Error> {
