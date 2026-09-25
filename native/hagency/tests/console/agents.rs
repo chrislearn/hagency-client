@@ -44,20 +44,16 @@ async fn native_console_agent_roster_observation() {
         value["permissions"]["manageLifecycle"].as_bool() == Some(true),
         "one login serves every console permission (TS parity)"
     );
-    let unavailable = value["unavailable"].as_array().unwrap();
-    let names: Vec<&str> = unavailable.iter().map(|v| v.as_str().unwrap()).collect();
+    // Board #60 item 2: every column this console renders is now ANSWERED
+    // from native state — seat (resources.config), consumed
+    // (usage_sources.latest_counts) and liveness (the live dispatch row) —
+    // so the server names none as unavailable. The four that stay
+    // unanswerable by design (tmux, pane, credential_home, workspace_path:
+    // ADR-126) are DROPPED, not printed as "unknown".
     assert_eq!(
-        names,
-        [
-            "consumed",
-            "tmux",
-            "pane",
-            "credential_home",
-            "workspace_path",
-            "seat",
-        ],
-        "the server names every column it has no source for — online and \
-         last_seen are sourced now (board #22)"
+        value["unavailable"].as_array().unwrap().len(),
+        0,
+        "every rendered roster column has a native source"
     );
     let agents = value["agents"].as_array().unwrap();
     assert_eq!(agents.len(), 3, "one row per agent the service knows");
@@ -71,6 +67,8 @@ async fn native_console_agent_roster_observation() {
         "online",
         "last_seen_ms",
         "last_activity_ms",
+        "liveness",
+        "consumed",
     ];
     let mut by_name: Vec<(String, &Value)> = agents
         .iter()
@@ -81,7 +79,7 @@ async fn native_console_agent_roster_observation() {
     assert_eq!(names, ["AlertWorker", "PageWorker", "UsageWorker"]);
     for (_, agent) in &by_name {
         let object = agent.as_object().unwrap();
-        assert_eq!(object.len(), keys.len(), "exactly nine keys");
+        assert_eq!(object.len(), keys.len(), "exactly eleven keys");
         for key in keys {
             assert!(object.contains_key(key), "the wire item carries {key}");
             assert!(
@@ -1315,4 +1313,193 @@ async fn native_console_outcome_resolution() {
         );
         f.close().await;
     }
+}
+
+/// `DELETE /api/agents/:name` — the retained soft/force delete
+/// (`backend-v2.js:12164-12307`). SOFT is TS's reversible act: it reports
+/// `{ok, deprecated, message}` and changes nothing, because TS's own comment
+/// (`:12206-12225`) is explicit that only `?force=true` may revoke — a soft
+/// delete is reversible and `revoke` has no inverse. Native has no agent
+/// record (an agent is DERIVED from its engagements), so "marked inactive" is
+/// the honest no-op it is: NOTHING is revoked.
+#[tokio::test]
+async fn native_console_agent_delete_soft_is_reversible() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let cookie = lifecycle_session(&service).await;
+    let mut response = TestClient::delete(format!(
+        "{BASE}/console/api/agents/UsageWorker"
+    ))
+    .add_header("host", "127.0.0.1:13300", true)
+    .add_header("origin", BASE, true)
+    .add_header("sec-fetch-site", "same-origin", true)
+    .add_header("cookie", &cookie, true)
+    .send(&service)
+    .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["deprecated"], true);
+    assert_eq!(
+        value["message"],
+        "unregister is disabled; agent marked inactive. Use ?force=true to permanently delete."
+    );
+    // The agent payload IS the detail projection the read serves — TS
+    // returns `serializeAgent(agent)` (`backend-v2.js:12304`), so the two
+    // must agree byte for byte rather than merely "look like" each other.
+    // (`assert_private` deliberately does not apply here: the bounded detail
+    // projection carries `rooms[].session_id`, which the shipped
+    // `GET /console/api/agents/{name}` route serves too — the detail test
+    // asserts that value is present.)
+    let served = get("/console/api/agents/UsageWorker", &cookie)
+        .send(&service)
+        .await
+        .take_json::<Value>()
+        .await
+        .unwrap();
+    assert_eq!(value["agent"], served, "the delete returns the served record");
+    assert_eq!(value["agent"]["name"], "UsageWorker");
+    assert_eq!(value["agent"]["state"], "active");
+    // The envelope carries exactly TS's four soft-delete keys.
+    let mut keys: Vec<&str> = value.as_object().unwrap().keys().map(|k| k.as_str()).collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["agent", "deprecated", "message", "ok"]);
+    // REVERSIBLE: the engagement is untouched, so nothing an `undelete`
+    // would have to undo (TS's stated reason for not releasing here).
+    let engagement = f.domain.engagement(f.engagement.clone()).await.unwrap();
+    assert_eq!(
+        engagement.state,
+        hagency_core::project::EngagementState::Active,
+        "a soft delete revokes nothing"
+    );
+    // And no stop row was written — the act is not a dispatch mutation.
+    let raw = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3")).unwrap();
+    let stops: i64 = raw
+        .query_row("SELECT COUNT(*) FROM dispatch_stops", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(stops, 0, "a soft delete writes no stop row");
+    drop(raw);
+    f.close().await;
+}
+
+/// FORCE really deletes: TS revokes the agent's ACTIVE engagements and
+/// REPORTS the released ids (`backend-v2.js:12231-12238`), because a
+/// commitment outliving its agent is the leak this closes — removing the
+/// agent while its commitment stands would drain a contributor's quota by
+/// attrition. Native's `revoke` is that act and releases the budget by
+/// construction.
+#[tokio::test]
+async fn native_console_agent_delete_force_releases_active_engagements() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let cookie = lifecycle_session(&service).await;
+    let id = f.engagement.clone();
+    let mut response = TestClient::delete(format!(
+        "{BASE}/console/api/agents/UsageWorker?force=true"
+    ))
+    .add_header("host", "127.0.0.1:13300", true)
+    .add_header("origin", BASE, true)
+    .add_header("sec-fetch-site", "same-origin", true)
+    .add_header("cookie", &cookie, true)
+    .send(&service)
+    .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["deleted"], true);
+    assert_eq!(value["name"], "UsageWorker");
+    // Native has no tmux/session kill at this layer; the revoke schedules
+    // the retirement that owns worker cleanup. Reported, never invented.
+    assert_eq!(value["sessionKilled"], false);
+    assert_eq!(value["leftGroups"].as_array().unwrap().len(), 0);
+    assert_eq!(value["leftProjectRooms"].as_array().unwrap().len(), 0);
+    let released = value["releasedEngagements"].as_array().unwrap();
+    assert_eq!(released.len(), 1, "the agent's one active engagement");
+    assert_eq!(released[0], id);
+    assert_private(&value);
+    // The commitment is RELEASED: the engagement is revoked, not merely
+    // reported as such.
+    let engagement = f.domain.engagement(id).await.unwrap();
+    assert_eq!(
+        engagement.state,
+        hagency_core::project::EngagementState::Revoked,
+        "force released the commitment"
+    );
+    f.close().await;
+}
+
+/// A delete is a lifecycle act: a read-only session is refused with the
+/// console's named word and NOTHING changes — not even under `?force=true`,
+/// which is the one arm that mutates.
+#[tokio::test]
+async fn native_console_agent_delete_refuses_without_lifecycle_scope() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let readonly = session(&service).await;
+    for path in [
+        "/console/api/agents/UsageWorker",
+        "/console/api/agents/UsageWorker?force=true",
+    ] {
+        let mut response = TestClient::delete(format!("{BASE}{path}"))
+            .add_header("host", "127.0.0.1:13300", true)
+            .add_header("origin", BASE, true)
+            .add_header("sec-fetch-site", "same-origin", true)
+            .add_header("cookie", &readonly, true)
+            .send(&service)
+            .await;
+        assert_eq!(response.status_code, Some(StatusCode::FORBIDDEN), "{path}");
+        assert_eq!(
+            response.take_json::<Value>().await.unwrap()["code"],
+            "agent_lifecycle_scope_required",
+            "{path}"
+        );
+    }
+    // The refusal left the commitment standing (the force refusal above is
+    // the one that matters: it must not have half-deleted).
+    let engagement = f.domain.engagement(f.engagement.clone()).await.unwrap();
+    assert_eq!(
+        engagement.state,
+        hagency_core::project::EngagementState::Active,
+        "a refused delete changes nothing"
+    );
+    f.close().await;
+}
+
+/// The TS refusal shapes: 404 `{error:'agent not found'}` for an agent no
+/// record names, 400 for a name shape the detail read would refuse.
+#[tokio::test]
+async fn native_console_agent_delete_not_found_and_invalid_name() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let cookie = lifecycle_session(&service).await;
+    let mut missing = TestClient::delete(format!(
+        "{BASE}/console/api/agents/NoSuchAgent"
+    ))
+    .add_header("host", "127.0.0.1:13300", true)
+    .add_header("origin", BASE, true)
+    .add_header("sec-fetch-site", "same-origin", true)
+    .add_header("cookie", &cookie, true)
+    .send(&service)
+    .await;
+    assert_eq!(missing.status_code, Some(StatusCode::NOT_FOUND));
+    let body = missing.take_json::<Value>().await.unwrap();
+    assert_eq!(body["error"], "agent not found");
+    assert_eq!(body["code"], "agent_not_found");
+    // An invalid name shape is refused BEFORE any store work (the same
+    // AgentName bound the detail read uses).
+    let mut invalid = TestClient::delete(format!(
+        "{BASE}/console/api/agents/1bad%20name"
+    ))
+    .add_header("host", "127.0.0.1:13300", true)
+    .add_header("origin", BASE, true)
+    .add_header("sec-fetch-site", "same-origin", true)
+    .add_header("cookie", &cookie, true)
+    .send(&service)
+    .await;
+    assert_eq!(invalid.status_code, Some(StatusCode::BAD_REQUEST));
+    assert_eq!(
+        invalid.take_json::<Value>().await.unwrap()["code"],
+        "invalid_console_request"
+    );
+    f.close().await;
 }

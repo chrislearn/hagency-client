@@ -90,7 +90,13 @@ export default function NativeOfferBook() {
 
   const roles = book?.roles ?? [];
   return (
-    <div data-native-state={phase}>
+    /* A sub-section with its own fetch lifecycle, NOT the page's phase
+     * root: `data-native-state` is the page-level channel (one root per
+     * page — every walk and assistive contract keys on it), so the offer
+     * book marks its own state in its own namespace. Two page-phase roots
+     * on the engagements page broke the single-root contract (#48 landed
+     * the panel; #82 fixes the marker). */
+    <div data-offer-state={phase}>
       <h2 style={{ marginTop: 24 }}>{t('ng.offerBook')}<span className="note"> {t('ng.offerBookNote')}</span></h2>
 
       {roles.length === 0 ? (

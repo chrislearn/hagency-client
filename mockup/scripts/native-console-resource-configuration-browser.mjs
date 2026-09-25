@@ -42,10 +42,9 @@ try {
       );
     }
   }
-  // The native wizard is THREE steps (model, reasoning, budget): two Next
-  // presses reach the budget step — a third has no button and times out
-  // (the step reduction at 9775f997 left this walk clicking for a fourth
-  // step that no longer exists).
+  // NATIVE_STEPS is three (model, reasoning, budget) — TWO Next clicks
+  // reach the budget step; a third waits forever for a button that no
+  // longer exists.
   async function budget(id, edit = false) { await page.goto(edit ? editUrl(id) : createUrl(id)); await editor(id); await next(); await next(); }
   async function ceiling(tokens) { await page.locator('#configuration-ceiling').selectOption('monthly'); await page.locator('#wz-tokens').fill(String(tokens)); }
   async function save(edit = false) { await page.getByRole('button', { name: edit ? /^(Save configuration|保存配置)$/ : /^(Create another configuration|创建另一项配置)$/ }).click(); await page.locator('[data-configuration-action="saved"]').waitFor(); }
@@ -117,7 +116,8 @@ try {
       // through the client's mapping of 503 native_unavailable to the unknown outcome below.
       await page.locator('[data-configuration-action="unknown"]').waitFor();
       await fixture('RELEASE_STORE');
-      await page.locator('[data-shell-action="end-access"]').click(); await expectLogoutState('ended');
+      // Scoped to main: the rail carries a second end-access control since #44.
+      await page.getByRole('main').getByRole('button', { name: 'End access', exact: true }).click(); await expectLogoutState('ended');
       assert.equal(await page.locator('[data-native-configuration-id]').count(), 0);
     }
   }
