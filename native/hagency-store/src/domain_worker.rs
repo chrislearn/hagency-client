@@ -1,5 +1,5 @@
 use crate::{
-    CeilingAlert, DomainRepository, Effect, EffectOutcome, Error, ShutdownOutcome,
+    CeilingAlert, DomainRepository, Effect, EffectOutcome, EngagementLabel, Error, ShutdownOutcome,
     ShutdownSnapshot, SweepOutcome,
     shutdown::{Phase, Probe, mark},
 };
@@ -3115,6 +3115,21 @@ impl DomainStore {
         self.call(weight(&after)?, move |db| db.engagements(&after, limit))
             .await
     }
+    /// The console engagements list with its server-side `state` filter
+    /// (board #60 item 3): one writer job, one bounded read — the projection
+    /// and the remaining-tokens arithmetic are computed at the store, so the
+    /// console route adds no second path.
+    pub async fn engagement_labels(
+        &self,
+        after: String,
+        state: Option<String>,
+        limit: usize,
+    ) -> Result<Vec<EngagementLabel>, Error> {
+        self.call(weight(&(&after, &state))?, move |db| {
+            db.engagement_labels(&after, state.as_deref(), limit)
+        })
+        .await
+    }
     /// Single-engagement read for the console verdict surface: a call-only
     /// wrapper over the repository's own `get`; no new semantics.
     pub async fn engagement(&self, id: String) -> Result<Engagement, Error> {
@@ -3138,6 +3153,13 @@ impl DomainStore {
     pub async fn agent_detail(&self, name: &str) -> Result<Option<crate::AgentDetail>, Error> {
         let name = name.to_owned();
         self.call(64, move |db| db.agent_detail(&name)).await
+    }
+    /// The agent's active engagement ids (board #58): the force-delete
+    /// route's revoke list, read in one writer job so the route adds no
+    /// second arithmetic path.
+    pub async fn agent_active_engagements(&self, name: String) -> Result<Vec<String>, Error> {
+        self.call(weight(&name)?, move |db| db.agent_active_engagements(&name))
+            .await
     }
     /// The read-only project-sides projection (ADR-132): one writer job,
     /// one bounded read; the route adds no second projection.
