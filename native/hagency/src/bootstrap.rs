@@ -25,8 +25,18 @@ use std::{
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum Failure {
-    #[error("development profile is invalid or unavailable")]
-    Config,
+    /// Every configuration refusal names the field the operator must fix and
+    /// the fix itself (TS parity: install-full.sh:292 "API_TOKEN is required
+    /// in $ENV_FILE or API_TOKEN env…", backend-v2.js:265 names field+fix in
+    /// one message). The `/ready` wire word stays the single vocabulary word
+    /// `config` (brief 21); this payload is the operator-facing surface.
+    #[error("configuration error in {field}: {fix}")]
+    Config {
+        /// The file or setting the operator must fix, e.g. "matrix.sdk_key".
+        field: &'static str,
+        /// The fix, e.g. "write exactly 32 bytes, 0600, inside the state dir".
+        fix: &'static str,
+    },
     #[error("native startup owner is unavailable")]
     Startup,
     #[error("current Matrix refresh was refused")]
@@ -690,7 +700,7 @@ impl StatusHandle {
             "unavailable"
         };
         status.error = Some(match failure {
-            Failure::Config => "config",
+            Failure::Config { .. } => "config",
             Failure::Startup => "startup",
             Failure::Refresh => "refresh",
             Failure::Registration => "registration",
@@ -811,7 +821,10 @@ impl Shared {
     fn new(matrix: hagency_matrix::HostConfig, domain: DomainStore) -> Result<Self, Failure> {
         Ok(Self {
             collector: Arc::new(
-                Collector::new(matrix, domain.clone()).map_err(|_| Failure::Config)?,
+                Collector::new(matrix, domain.clone()).map_err(|_| Failure::Config {
+                    field: "agent-driver.json: matrix block",
+                    fix: "the matrix host configuration must construct a collector (origin, limits)",
+                })?,
             ),
             domain,
             workspace: workspace::WorkspaceAccess::new(),
@@ -1266,7 +1279,10 @@ impl Bootstrap {
         options: Options,
     ) -> Result<Self, Failure> {
         if options.development_driver && options.agent_driver {
-            return Err(Failure::Config);
+            return Err(Failure::Config {
+                field: "serve --development-driver / --agent-driver",
+                fix: "choose exactly one driver mode; the two flags are mutually exclusive",
+            });
         }
         let driver_mode = if options.agent_driver {
             DriverMode::Continuous
@@ -1277,7 +1293,10 @@ impl Bootstrap {
         };
         tracing::trace!(target: "hagency_startup_observation", "native startup boundary: bootstrap_entered");
         if !listen.ip().is_loopback() || listen.port() == 0 {
-            return Err(Failure::Config);
+            return Err(Failure::Config {
+                field: "serve --listen",
+                fix: "the address must be loopback with an explicit non-zero port (e.g. 127.0.0.1:13300)",
+            });
         }
         private::directory(state).map_err(|_| Failure::Startup)?;
         let state = state.canonicalize().map_err(|_| Failure::Startup)?;
@@ -1328,14 +1347,23 @@ impl Bootstrap {
                 if let Some(id) = prepared.managed_account.take() {
                     let account = repository
                         .managed_account(&id)
-                        .map_err(|_| Failure::Config)?;
+                        .map_err(|_| Failure::Config {
+                            field: "agent-driver.json: managed_account",
+                            fix: "the named managed account must exist in the store",
+                        })?;
                     prepared.claim = account
                         .bind_claim_profile(prepared.claim)
-                        .map_err(|_| Failure::Config)?;
+                        .map_err(|_| Failure::Config {
+                            field: "agent-driver.json: managed_account",
+                            fix: "the claim profile must bind to the managed account",
+                        })?;
                     prepared.host = prepared
                         .host
                         .with_managed_account(account)
-                        .map_err(|_| Failure::Config)?;
+                        .map_err(|_| Failure::Config {
+                            field: "agent-driver.json: managed_account",
+                            fix: "the host must accept the managed account credential",
+                        })?;
                 }
                 Ok::<_, Failure>(prepared)
             })
@@ -1366,7 +1394,15 @@ impl Bootstrap {
         }
         let shared = prepared
             .as_mut()
-            .map(|p| Shared::new(p.matrix.take().ok_or(Failure::Config)?, domain.clone()))
+            .map(|p| {
+                Shared::new(
+                    p.matrix.take().ok_or(Failure::Config {
+                        field: "agent-driver.json: matrix block",
+                        fix: "a driver-mode serve requires a configured matrix host",
+                    })?,
+                    domain.clone(),
+                )
+            })
             .transpose()?;
         let approval = approval_collector
             .map(|collector| Arc::new(approval::Pump::new(collector, domain.clone())));
@@ -1390,7 +1426,10 @@ impl Bootstrap {
             (Some(shared), Some(setup)) => {
                 let fleet = fleet::Service::new(domain.clone(), shared.collector.clone(), setup)?;
                 fleet.register_root(
-                    root_engagement.ok_or(Failure::Config)?,
+                    root_engagement.ok_or(Failure::Config {
+                        field: "agent-driver.json: factory root engagement",
+                        fix: "the factory service requires a registered root engagement",
+                    })?,
                     files.as_ref().map(|owner| owner.handle()),
                     receives.as_ref().map(|owner| owner.handle()),
                     status.clone(),
@@ -1709,7 +1748,10 @@ impl Bootstrap {
             _=shutdown.cancelled()=>None,
             result=async {
                 match &mut self.fleet {
-                    Some(fleet)=>fleet::Service::run(fleet,self.approval_sender.clone().ok_or(Failure::Config)?,shutdown).await,
+                    Some(fleet)=>fleet::Service::run(fleet,self.approval_sender.clone().ok_or(Failure::Config {
+                        field: "agent-driver.json: approval block",
+                        fix: "the factory service requires the approval pump started before serve",
+                    })?,shutdown).await,
                     None=>std::future::pending::<Result<(),Failure>>().await,
                 }
             }=>result.err(),
