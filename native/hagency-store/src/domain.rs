@@ -18,6 +18,7 @@ use serde_json::{Value, json};
 use std::{fs::File, path::Path};
 pub(crate) mod accounts;
 mod agent_fences;
+mod console_feed;
 pub use agent_fences::{AgentFence, FenceReason};
 mod approvals;
 mod engagement_retention;
