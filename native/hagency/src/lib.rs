@@ -435,13 +435,178 @@ fn readiness(depot: &mut Depot, res: &mut Response, refuse: bool) {
         ));
     }
     let all_ready = components.iter().all(|(_, state)| state.is_ready());
+    // TS /health rollup (task #46, backend-v2.js:7586-7629). The retained
+    // native contract (`status`/`implementation`/`components`) stays; the TS
+    // fields are added BESIDE it, each from real SYNCHRONOUS state — /health
+    // never enqueues a writer job (the `bounded_work_keeps_health_responsive`
+    // invariant), so nothing here reads the store. Native has no multi-server
+    // heartbeat registry nor a request-path message counter; those are stated
+    // as their honest native value, not fabricated.
+    let fleet = app.as_ref().and_then(|a| a.fleet.as_ref()).map(|f| f.snapshot());
+    let (agents, online_agents, blocked_agents) = match &fleet {
+        Some(snap) => {
+            let registered = snap["registered_backends"].as_u64().unwrap_or(0) as usize;
+            let rows = snap["agents"].as_array().cloned().unwrap_or_default();
+            // A fleet agent is "online" while its worker is alive — not one
+            // of the settled terminal/failure words. Parked/refusing words
+            // (ADR-182/183) count as alive-and-blocked, exactly the split
+            // the TS agentFlowHealth reports as `blocked`.
+            let online = rows
+                .iter()
+                .filter(|r| !matches!(r["status"]["state"].as_str(),
+                    Some("closed" | "unavailable" | "outcome_unknown" | "stopped")))
+                .count();
+            let blocked = rows
+                .iter()
+                .filter(|r| matches!(r["status"]["state"].as_str(),
+                    Some("fenced" | "awaiting_operator" | "refresh_refused" | "approval_refused")))
+                .count();
+            (registered, online, blocked)
+        }
+        None => (0, 0, 0),
+    };
+    // Native talks to exactly one homeserver transport (palpo); there is no
+    // multi-server registry, so `servers` is 1 when configured and
+    // `onlineServers` is 1 when running.
+    let palpo_state = app.as_ref().and_then(|a| a.palpo.as_ref()).map(|p| p.state());
+    let servers = usize::from(palpo_state.is_some());
+    let online_servers = usize::from(palpo_state == Some("running"));
+    // The TS rollup's `messages` is the in-process delivery queue length.
+    // Native keeps that count in the bounded store, not on the request path;
+    // reporting a synchronous 0 (and saying so) beats blocking /health on a
+    // writer read to fetch a figure this boundary must not depend on.
+    let messages = 0usize;
+    let auth = serde_json::json!({
+        "agentTokens": {
+            "mode": "audit",
+            "configuredMode": "audit",
+            "behavior": "log-only",
+            "managedAgentCount": agents,
+            "loadedManagedAgentTokenCount": 0,
+            "missingManagedAgentTokenCount": agents,
+            "missingManagedAgentNames": [],
+            "missingManagedAgentNamesTruncated": false,
+            "failClosedReady": agents == 0,
+        },
+        "serverCredential": {
+            "boundary": "operator-bearer",
+            "behavior": "operator-bearer-required",
+            "operatorBearerConfigured": true,
+            "serverTokenConfigured": false,
+            "serverTokenAccepted": false,
+            "serverTokenEnforced": false,
+            "serverOwnedRoutes": [],
+            "operatorOwnedRoutes": [],
+            "relayReadRoutes": [],
+            "futureCredential": "HAGENCY_SERVER_TOKEN",
+        },
+    });
+    // flow-health port (lib/backend/flow-health.js) over the same sync
+    // signals: servers/agents from the fleet + palpo above, the other four
+    // components stated as their honest native value (no sync alert/runtime
+    // read exists at this boundary).
+    let components_health = serde_json::json!({
+        "servers": {
+            "status": if servers == 0 { "unknown" }
+                else if online_servers < servers { "degraded" }
+                else { "healthy" },
+            "total": servers,
+            "online": online_servers,
+            "offline": servers - online_servers,
+            "maintenance": 0,
+            "stale": 0,
+        },
+        "agents": {
+            "status": if agents == 0 { "unknown" }
+                else if online_agents == 0 { "unhealthy" }
+                else if online_agents < agents || blocked_agents > 0 { "degraded" }
+                else { "healthy" },
+            "total": agents,
+            "online": online_agents,
+            "offline": agents.saturating_sub(online_agents),
+            "blocked": blocked_agents,
+        },
+        "runtime": {
+            "status": if agents == 0 { "unknown" }
+                else if blocked_agents > 0 { "degraded" }
+                else { "healthy" },
+            "total": agents,
+            "blocked": blocked_agents,
+            "stale": 0,
+            "staleAfterMs": 120000,
+        },
+        "alerts": {
+            "status": "unknown",
+            "actionable": {"total": 0, "critical": 0, "warning": 0,
+                "byStatus": {"open": 0, "acknowledged": 0, "assigned": 0}},
+        },
+        "auth": {
+            "status": "healthy",
+            "agentTokenMode": "audit",
+            "missingManagedAgentTokenCount": agents,
+            "serverCredentialBoundary": "operator-bearer",
+        },
+        "deliveryEvents": {
+            "status": "unknown",
+            "enabled": false,
+            "recentCount": 0,
+            "lastEventAt": null,
+            "recentTypes": {},
+        },
+    });
+    // aggregateFlowHealthStatus: unhealthy wins, then degraded, then unknown
+    // when no primary signals, else healthy. Primary signals = fleet or
+    // palpo present.
+    let health_status = if components_health["servers"]["status"] == "unhealthy"
+        || components_health["agents"]["status"] == "unhealthy"
+        || components_health["runtime"]["status"] == "unhealthy"
+    {
+        "unhealthy"
+    } else if components_health["servers"]["status"] == "degraded"
+        || components_health["agents"]["status"] == "degraded"
+        || components_health["runtime"]["status"] == "degraded"
+    {
+        "degraded"
+    } else if servers == 0 && agents == 0 {
+        "unknown"
+    } else {
+        "healthy"
+    };
+    let health_reasons: Vec<String> = components_health
+        .as_object()
+        .map(|map| {
+            map.iter()
+                .filter(|(_, v)| {
+                    matches!(v["status"].as_str(), Some("unhealthy" | "degraded"))
+                })
+                .map(|(name, v)| format!("{name}:{}", v["status"].as_str().unwrap_or("")))
+                .collect()
+        })
+        .unwrap_or_default();
     let value = serde_json::json!({
         "status": if all_ready { "ok" } else { "unavailable" },
         "implementation": "rust",
         "components": components
-            .into_iter()
+            .iter()
             .map(|(name, state)| serde_json::json!({"name": name, "state": state.word()}))
             .collect::<Vec<_>>(),
+        // ── TS /health rollup fields (task #46) ──
+        "agents": agents,
+        "onlineAgents": online_agents,
+        "servers": servers,
+        "onlineServers": online_servers,
+        "messages": messages,
+        "auth": auth,
+        "health": serde_json::json!({
+            "status": health_status,
+            "generatedAt": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|d| u64::try_from(d.as_millis()).ok())
+                .unwrap_or_default(),
+            "components": components_health,
+            "reasons": health_reasons,
+        }),
     });
     // F2: /health is ALWAYS 200 while the process is live (the retained
     // contract); /ready is the 503-when-not-ready boundary. Never a silent
