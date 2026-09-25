@@ -65,7 +65,10 @@ export default function NativeEngagements() {
       <PageHead title={t('nav.engagements')}><NativeStatusStrip /></PageHead>
       <h2 style={{ marginTop: 0 }}>{t('nav.engagements')}<span className="note"> {t('ng.readonly')}</span></h2>
 
-      {/* One strip: the state split of this page. */}
+      {/* The counts are the split of the rows loaded so far — page one plus any
+          further pages walked — and they SAY so, because a bare "pending 0" from
+          a single window reads as a fact about the whole service, which it is
+          not: there is no total in the triage read to report instead. */}
       <div className="cards">
         {NATIVE_STATES.map((s) => (
           <div className="card" key={s}>
@@ -74,6 +77,7 @@ export default function NativeEngagements() {
           </div>
         ))}
       </div>
+      <p className="dim" style={{ fontSize: 12 }}>{t('ng.countScope')}</p>
 
       <div className="btn-row" style={{ margin: '22px 0 12px' }}>
         <label style={{ fontSize: 12, color: 'var(--ink-dim)' }}>
@@ -114,12 +118,17 @@ export default function NativeEngagements() {
             </thead>
             <tbody>
               {rows.map((e) => (
-                <tr key={e.id}>
+                <tr key={e.id} data-engagement-row={e.id}>
                   <td>{e.state}</td>
-                  <td>{e.agentName}</td>
+                  <td>
+                    {/* The agent name reaches the usage page for THIS engagement
+                        — the drill-down the reader expects a triage row to have. */}
+                    <a href={`/console/usage/?engagement_id=${encodeURIComponent(e.id)}`}>{e.agentName}</a>
+                  </td>
                   <td>{e.projectName ?? '—'}</td>
                   <td>{e.role}</td>
                   <td className="num dim">{fmtTokens(e.requestedTokens)}</td>
+                  <td><a href={`/console/usage/?engagement_id=${encodeURIComponent(e.id)}`}>{t('ng.viewUsage')}</a></td>
                 </tr>
               ))}
             </tbody>

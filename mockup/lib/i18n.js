@@ -1292,6 +1292,12 @@ const en = {
   "wf.utilNote": "Busy and idle time are shown when available. A utilization percentage needs a defined reporting period and availability schedule.",
   'wf.seeUsage': 'Which frameworks can be metered at all →',
   "wf.contractNote": "Usage covers Agents with available records. Project access shows current permissions; historical access is unavailable.",
+  'common.search': 'Search',
+  'common.searchPlaceholder': 'Filter by agent, project or role',
+  'ng.viewUsage': 'Usage →',
+  'ng.countScope': 'Counts cover the rows loaded so far, not the whole service.',
+  'np.nativeOnly': 'Project sides are served by the native console only.',
+  'nacc.nativeOnly': 'Managed accounts are served by the native console only.',
 };
 
 const zh = {
@@ -2543,6 +2549,12 @@ const zh = {
   "wf.utilNote": "有记录时显示忙碌和空闲时间。利用率需要先确定统计周期和可用时段。",
   'wf.seeUsage': '哪些框架根本无法计量 →',
   "wf.contractNote": "用量仅覆盖有记录的 Agent。项目访问仅显示当前权限，暂无历史记录。",
+  'common.search': '搜索',
+  'common.searchPlaceholder': '按 Agent、项目或角色筛选',
+  'ng.viewUsage': '查看用量 →',
+  'ng.countScope': '计数仅覆盖已加载的行，并非整个服务的总数。',
+  'np.nativeOnly': '项目方信息仅由原生控制台提供。',
+  'nacc.nativeOnly': '托管账户仅由原生控制台提供。',
 };
 
 export const DICTS = { en, zh };

@@ -1,5 +1,7 @@
 'use client';
 
+import PageHead from '@/components/PageHead';
+import { useT } from '@/components/Prefs';
 import { useData } from '@/components/Data';
 import NativeProjectSides from '@/components/NativeProjectSides';
 import SideRegistrationControl from './registration-control';
@@ -17,12 +19,28 @@ import SideRegistrationControl from './registration-control';
  */
 export default function ProjectSidesPage() {
   const data = useData();
+  const t = useT();
+  if (data.nativeConsole) {
+    return (
+      <>
+        <SideRegistrationControl sides={data.sides ?? []} />
+        <NativeProjectSides />
+      </>
+    );
+  }
+  /*
+   * The route exists in both builds, so the retained build rendered NOTHING —
+   * a blank page with a working URL, which reads as a crash. It states what the
+   * page is and that native serves it, the same arm the approvals page carries
+   * for the same reason.
+   */
   return (
     <>
-      {data.nativeConsole && (
-        <SideRegistrationControl sides={data.sides ?? []} />
-      )}
-      {data.nativeConsole ? <NativeProjectSides /> : null}
+      <PageHead title={t('np.title')} />
+      <section className="panel">
+        <h2>{t('np.title')}</h2>
+        <p>{t('np.nativeOnly')}</p>
+      </section>
     </>
   );
 }

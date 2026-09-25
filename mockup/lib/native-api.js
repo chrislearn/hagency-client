@@ -1,5 +1,7 @@
 /* Closed native browser protocol. Credentials exist only in the fragment exchange
  * and HttpOnly cookie; usage facts never enter local/session storage. */
+import { remember } from './labels';
+
 export const NATIVE_MODE = process.env.NEXT_PUBLIC_HAGENCY_NATIVE_CONSOLE === '1';
 const ROOT = '/console';
 
@@ -126,13 +128,24 @@ export async function exchangeAccess(location, history, previousLogout = Promise
   await previousLogout;
   await request('/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticket: fragment.slice(8) }) });
 }
-export async function fetchNative(selected, after = '') {
+/* `withReport` exists because two pages read this ONE list for different
+ * purposes: the usage page needs the selected engagement's evidence, while the
+ * engagements page is a triage list that never renders a report. The flag is
+ * what stops the triage page issuing a usage read it then discards. */
+export async function fetchNative(selected, after = '', withReport = true) {
   if ((selected !== null && !id(selected)) || (after && !id(after))) throw new Error('invalid_selection');
   const list = validateEngagements(await request(`/api/engagements?limit=16${after ? `&after=${after}` : ''}`));
   const chosen = selected ?? list.engagements[0]?.id ?? null;
-  const report = chosen === null ? null : validateReport(await request(`/api/engagements/${chosen}/usage`), chosen);
+  const report = !withReport || chosen === null ? null : validateReport(await request(`/api/engagements/${chosen}/usage`), chosen);
+  // Every row the wire names is remembered, because no per-id route exists: a
+  // selection the reader leaves the page with has no other way to keep its name.
+  for (const e of list.engagements) remember(e.id, [e.agentName, e.projectName, e.role].filter(Boolean).join(' · '));
   return { ...list, selected: chosen, report };
 }
+/* The triage document's own view test, beside its siblings: the engagements
+ * read is selected from like the others, and the provider needs to tell it
+ * apart from /usage to know whether a report is wanted at all. */
+export function engagementsView(location) { return /^\/console\/engagements\/?$/.test(location.pathname); }
 /* The console's open ceiling alerts. Exactly fifteen keys per alert — the
  * server's ConsoleAlert set — because the exact-key contract is how a stale
  * server or client fails loudly instead of rendering half a page. The
@@ -383,6 +396,7 @@ export async function fetchResources(selected, after = '') {
   const list = validateResources(await request(`/api/resources?limit=16${after ? `&after=${after}` : ''}`));
   const chosen = selected ?? list.resources[0]?.id ?? null;
   const budget = chosen === null ? null : validateBudget(await request(`/api/resources/${chosen}/budget`));
+  for (const r of list.resources) remember(r.id, [r.framework, r.model, r.reasoning].filter(Boolean).join(' · '));
   return { ...list, selected: chosen, budget, resourceConsole: true };
 }
 export async function publishResource(resource, published) {
