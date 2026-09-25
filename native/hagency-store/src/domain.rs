@@ -18,6 +18,7 @@ use serde_json::{Value, json};
 use std::{fs::File, path::Path};
 pub(crate) mod accounts;
 mod agent_fences;
+mod console_feed;
 pub use agent_fences::{AgentFence, FenceReason};
 mod approvals;
 mod engagement_retention;
@@ -51,6 +52,10 @@ pub use execution::{
 };
 pub use messages::{CorpusSweepOutcome, MESSAGE_RETENTION_FLOOR, RetentionStatus};
 mod notice_custody;
+mod offer_book;
+pub use offer_book::{
+    Contribution, OfferBook, OfferResource, OfferRole, OfferServing, Preview,
+};
 mod outcome_resolution;
 mod owned_completion;
 mod owned_dispatch;

@@ -66,6 +66,7 @@ impl Sdk {
             fence: l.fence,
             domain_digest: l.content_digest.clone(),
             route: l.route.clone(),
+            reply_to: None,
             transaction_id: l.transaction_id.clone(),
             content_digest: state::hash(state::encode(&content, state::MAX_EVENT)?.as_bytes()),
             content,

@@ -8,6 +8,13 @@ use super::*;
 use serde_json::Value;
 use std::io::{Seek, Write};
 
+/// The product budget `fresh_approval_waiting` writes as `operation_ms`, and
+/// the value the delivery drain below is derived from. The drain is a FAILURE
+/// bound, so it must outlast everything the product is permitted to take —
+/// startup plus one whole operation budget — or a loaded host reports a
+/// roundtrip the product would still have completed.
+const APPROVAL_OPERATION_MS: u64 = 20_000;
+
 /// Inject the approval bot's own credential set (config.rs `approval`): a
 /// SECOND identity/token/device/SDK root and a DM room, never the pooled
 /// ordinary `HostConfig`. `anchors` empty models the absent enrollment.
@@ -76,7 +83,7 @@ fn fresh_approval_waiting(f: &Fixture, anchor: String, owner_wait_ms: u64) {
     // expiry. The wait plus its 5 s response reserve must fit in the operation
     // budget that remains at turn start, so both are raised together, as the
     // configured-fleet approval fixtures already do.
-    config["operation_ms"] = json!(20_000);
+    config["operation_ms"] = json!(APPROVAL_OPERATION_MS);
     config["approval_owner_wait_ms"] = json!(owner_wait_ms);
     config["approval"] = json!({
         "origin":f.fake.endpoint,"server_name":"example.test","registration_fingerprint":"a".repeat(64),
@@ -230,13 +237,20 @@ async fn roundtrip(plaintext_first: bool, action: Option<&str>) {
     // which would fail the "the owner really was asked" assertion below. 5 s
     // clears that with room and still leaves the watchdog the startup, the send
     // and the decline sequence.
-    fresh_approval_waiting(
-        &f,
-        peer.anchor(),
-        if action.is_some() { 10_000 } else { 5_000 },
-    );
+    let owner_wait_ms: u64 = if action.is_some() { 10_000 } else { 5_000 };
+    fresh_approval_waiting(&f, peer.anchor(), owner_wait_ms);
     let child = f.launch(true);
-    let until = tokio::time::Instant::now() + STARTUP_WATCHDOG;
+    // The drain must outlast the product's OWN declared budget, not a fixed
+    // constant. `fresh_approval_waiting` sets `operation_ms` to
+    // `APPROVAL_OPERATION_MS`, the whole budget the service may take for this
+    // operation; a bound shorter than startup plus that budget fires before a
+    // loaded host can finish, and the assert below then reports a roundtrip the
+    // product would still have completed (`cards=0` — the card had not even been
+    // issued yet). The drain stays a FAILURE bound: it is only reached if the
+    // product never answers at all.
+    let until = tokio::time::Instant::now()
+        + STARTUP_WATCHDOG
+        + std::time::Duration::from_millis(APPROVAL_OPERATION_MS);
     let mut plaintext_sent = false;
     let mut encrypted_sent = false;
     let mut observed_startup = false;

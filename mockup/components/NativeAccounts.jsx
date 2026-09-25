@@ -1,5 +1,7 @@
 'use client';
 import { useState } from 'react';
+import PageHead from '@/components/PageHead';
+import NativeStatusStrip from '@/components/NativeStatusStrip';
 import { useT } from '@/components/Prefs';
 
 /* The console account surface (MA-S3b) plus its three mutations (HIDDEN in
@@ -17,25 +19,50 @@ import { useT } from '@/components/Prefs';
  * model, optional reasoning and the row's current revision as
  * expectedRevision — a stale revision is refused with the conflict word, no
  * stale write is applied. */
-export default function NativeAccounts({ phase, accounts, action, onPrepare, onEnroll, onRetire }) {
+export default function NativeAccounts({ phase, error, accounts, action, onPrepare, onEnroll, onRetire, onRetry }) {
   const t = useT();
   if (phase === 'access') {
     return (
+      <>
+      <PageHead title={t('na.title')} sub={t('na.sub')}><NativeStatusStrip /></PageHead>
       <section className="panel" data-native-state="access">
         <h2>{t('na.access')}</h2>
         <p>{t('na.accessHelp')}</p>
+        {/* Item 6: the command, shown — account work needs its own
+         * enrollment scope, not the read-only link. */}
+        <code>hagency console-access --state-dir &lt;state&gt; --listen &lt;address&gt; --manage-account-enrollment</code>
       </section>
+      </>
+    );
+  }
+  if (phase === 'error') {
+    return (
+      <>
+      <PageHead title={t('na.title')} sub={t('na.sub')}><NativeStatusStrip /></PageHead>
+      {/* Item 6: a busy or unreachable service is a read failure with a
+       * retry — never misreported as "access required". */}
+      <section className="panel" data-native-state="error" role="alert">
+        <h2>{t('na.failed')}</h2>
+        <p>{t('nu.retryHelp')}</p>
+        {onRetry && <button className="btn" onClick={onRetry}>{t('common.refresh')}</button>}
+      </section>
+      </>
     );
   }
   if (phase === 'loading') {
     return (
+      <>
+      <PageHead title={t('na.title')} sub={t('na.sub')}><NativeStatusStrip /></PageHead>
       <section className="panel" data-native-state="loading" aria-busy="true">
         <h2>{t('na.loading')}</h2>
       </section>
+      </>
     );
   }
   const busy = action?.kind === 'pending';
   return (
+    <>
+    <PageHead title={t('na.title')} sub={t('na.sub')}><NativeStatusStrip /></PageHead>
     <section className="panel" data-native-state="ready" aria-busy="false">
       <h2>{t('na.title')}</h2>
       <p>{t('na.sub')}</p>
@@ -75,6 +102,7 @@ export default function NativeAccounts({ phase, accounts, action, onPrepare, onE
       )}
       <p>{t('na.opacity')}</p>
     </section>
+    </>
   );
 }
 
