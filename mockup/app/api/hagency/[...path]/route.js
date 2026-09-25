@@ -138,6 +138,15 @@ const WRITES = [
   { method: 'DELETE', re: /^agents\/[A-Za-z0-9._-]+\/execution-grants\/grant_[0-9a-f]{32}$/ },
   { method: 'POST', re: /^framework-presets$/ },
   { method: 'PUT', re: /^framework-presets\/[A-Za-z0-9._-]+\/catalog$/ },
+  /*
+   * Agent definitions (task #19): POST creates, PUT updates, DELETE removes.
+   * The definition id is `rad_` + 32 hex characters, the TS `rad_${randomUUID()}`
+   * shape, so the character class pins what the route can name — a wider one
+   * would pre-authorise deletes against future sibling routes.
+   */
+  { method: 'POST', re: /^framework-presets\/[A-Za-z0-9._-]+\/agents$/ },
+  { method: 'PUT', re: /^framework-presets\/[A-Za-z0-9._-]+\/agents\/rad_[0-9a-f]{32}$/ },
+  { method: 'DELETE', re: /^framework-presets\/[A-Za-z0-9._-]+\/agents\/rad_[0-9a-f]{32}$/ },
   { method: 'PUT', re: /^framework-presets\/[A-Za-z0-9._-]+$/ },
   { method: 'DELETE', re: /^framework-presets\/[A-Za-z0-9._-]+$/ },
   { method: 'POST', re: /^alerts\/[A-Za-z0-9._-]+\/transition$/ },
