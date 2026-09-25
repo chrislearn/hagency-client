@@ -10,6 +10,7 @@ pub mod mcp;
 pub(crate) mod receive_service;
 mod resources;
 mod runner;
+mod runtime;
 pub mod task_client;
 mod usage;
 use salvo::prelude::*;
@@ -161,6 +162,7 @@ impl App {
                     .push(usage::router())
                     .push(alerts::router())
                     .push(console::operator_router())
+                    .push(runtime::router())
                     .push(Router::with_path("custody").post(receive)),
             )
     }
