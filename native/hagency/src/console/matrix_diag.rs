@@ -316,23 +316,25 @@ async fn reach(_req: &mut Request, depot: &mut Depot, res: &mut Response) {
     let client = ProbeClient::new();
     let mut homeservers = Vec::with_capacity(sides.len());
     for side in sides {
-        // `ProjectSide.id` IS the server name (ADR-016, domain.rs projection
-        // doc). Native stores no apiBaseUrl, so reach probes each side by its
-        // name through the same discovery path TS uses.
-        let discovery = discover_base_url(&side.id, &client).await;
-        if let Some(url) = discovery.url {
-            let probe_result = probe_homeserver(&url, &client).await;
-            homeservers.push(serde_json::json!({
-                "serverName": side.id,
-                "url": url,
-                "source": "already recorded as a project side",
-                "alreadyASide": true,
-                "hasCredential": side.registered,
-                "sideId": side.id,
-                "via": discovery.via,
-                "probe": probe_result,
-            }));
-        }
+        // `ProjectSide.id` IS the server name (ADR-016). TS probes
+        // `originFor(side.apiBaseUrl)`; native's ProjectSide carries no
+        // apiBaseUrl, so the address is null and the probe is TS's
+        // "no probeable URL" arm — honest, and no outbound DNS to a stored
+        // name (which would also violate the sandbox's localhost-only rule).
+        let has_credential = match store.side_credential_for_transport(side.id.clone()).await {
+            Ok(credential) => credential.is_some(),
+            Err(_) => false,
+        };
+        let probe_result = probe_homeserver("", &client).await;
+        homeservers.push(serde_json::json!({
+            "serverName": side.id,
+            "url": null,
+            "source": "already recorded as a project side",
+            "alreadyASide": true,
+            "hasCredential": has_credential,
+            "sideId": side.id,
+            "probe": probe_result,
+        }));
     }
     // Native configures no appservice port / edge / sync intake, so report
     // TS's honest no-config arm verbatim rather than guess an inbound path.

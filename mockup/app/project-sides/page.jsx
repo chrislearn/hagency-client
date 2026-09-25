@@ -2,6 +2,7 @@
 
 import { useData } from '@/components/Data';
 import NativeProjectSides from '@/components/NativeProjectSides';
+import ConnectionControl from './connection-control';
 import SideRegistrationControl from './registration-control';
 
 /*
@@ -22,6 +23,7 @@ export default function ProjectSidesPage() {
       {data.nativeConsole && (
         <SideRegistrationControl sides={data.sides ?? []} />
       )}
+      {data.nativeConsole && <ConnectionControl sides={data.sides ?? []} />}
       {data.nativeConsole ? <NativeProjectSides /> : null}
     </>
   );
