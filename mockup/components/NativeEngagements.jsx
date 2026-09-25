@@ -22,8 +22,12 @@ import { NativeAccessNotice } from '@/components/NativeUsage';
 import { useT } from '@/components/Prefs';
 import { useData } from '@/components/Data';
 import { fmtTokens } from '@/lib/mock-data';
+import { retireEngagement, retryEngagementCleanup } from '@/lib/native-api';
 
 const NATIVE_STATES = ['pending', 'reserved', 'active', 'rejected', 'revoked', 'failed'];
+/* The command id is the store's idempotency key: minted here, never by the
+ * route. One per operator act, so a double-submit replays rather than acts. */
+const newCommand = () => `console_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 
 export default function NativeEngagements() {
   const t = useT();
@@ -31,6 +35,12 @@ export default function NativeEngagements() {
   const { phase, error, refreshing, engagements = [], next_after: nextAfter } = data;
   const [state, setState] = useState('all');
   const [agent, setAgent] = useState('all');
+  // The exile rule (AgentActions.jsx): a destructive control asks first and
+  // says what happened. `confirming` holds `{id, kind}` — never a bare flag,
+  // so a confirmation can never be carried onto a different row.
+  const [confirming, setConfirming] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState(null);
 
   const agentNames = useMemo(
     () => [...new Set(engagements.map((e) => e.agentName))].filter(Boolean),
@@ -47,6 +57,40 @@ export default function NativeEngagements() {
       .filter((e) => agent === 'all' || e.agentName === agent),
     [engagements, state, agent],
   );
+
+  /* Retire is the store's `end(..., revoke = true)` guard (domain.rs:1525-1530):
+   * pending, reserved or active. Anything terminal is refused with
+   * `engagement_not_live`, so no button is offered for it. */
+  const retirable = (e) => ['pending', 'reserved', 'active'].includes(e.state);
+  /* The cleanup retry's precondition (domain.rs:1505-1510): the engagement is
+   * revoked AND its `retire` effect is failed. The list read exposes that as
+   * `cleanup` — TS's own `['failed','pending'].includes(withdrawal.state)`
+   * arm, with native's four-value column in place of the withdrawal record.
+   * A retirement that failed waits for this operator act: there is no sweeper
+   * and no timer (engagements.rs:12). */
+  const retryable = (e) => e.state === 'revoked' && ['pending', 'uncertain'].includes(e.cleanup);
+
+  async function act(id, kind) {
+    if (busy) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      const receipt = kind === 'retire'
+        ? await retireEngagement(id, newCommand())
+        : await retryEngagementCleanup(id, newCommand());
+      setConfirming(null);
+      setNote(kind === 'retire'
+        ? t('ng.retiredMsg', { state: receipt.state, cleanup: receipt.cleanup })
+        : t('ng.retriedMsg', { state: receipt.state, cleanup: receipt.cleanup }));
+      await data.refresh();
+    } catch (error) {
+      setNote(error.message === 'agent_lifecycle_scope_required'
+        ? t('ng.scopeRequired')
+        : `${t('ng.actionFailed')} (${error.message})`);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   if (phase === 'error') {
     return (
@@ -120,6 +164,7 @@ export default function NativeEngagements() {
                 <th>{t('col.project')}</th>
                 <th>{t('col.role')}</th>
                 <th className="num">{t('col.requested')}</th>
+                <th>{t('col.action')}</th>
               </tr>
             </thead>
             <tbody>
@@ -130,6 +175,35 @@ export default function NativeEngagements() {
                   <td>{e.projectName ?? '—'}</td>
                   <td>{e.role}</td>
                   <td className="num dim">{fmtTokens(e.requestedTokens)}</td>
+                  <td>
+                    {/* Exile + confirm (AgentActions.jsx): the confirmation
+                        names THIS row's id, so a slip on one row can never
+                        retire another. */}
+                    {confirming?.id === e.id ? (
+                      <span className="btn-row tight">
+                        <span className="dim">{confirming.kind === 'retire' ? t('ng.confirmRetire') : t('ng.confirmRetry')}</span>
+                        <button type="button" className="btn-s danger" disabled={busy}
+                          onClick={() => act(e.id, confirming.kind)}>{t('ng.confirm')}</button>
+                        <button type="button" className="btn-s" disabled={busy}
+                          onClick={() => setConfirming(null)}>{t('ng.cancel')}</button>
+                      </span>
+                    ) : (
+                      <>
+                        {retirable(e) && (
+                          <button type="button" className="btn-s danger" disabled={busy}
+                            onClick={() => { setNote(null); setConfirming({ id: e.id, kind: 'retire' }); }}>
+                            {t('ng.retire')}
+                          </button>
+                        )}
+                        {retryable(e) && (
+                          <button type="button" className="btn-s" disabled={busy}
+                            onClick={() => { setNote(null); setConfirming({ id: e.id, kind: 'cleanup-retry' }); }}>
+                            {t('ng.retryCleanup')}
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

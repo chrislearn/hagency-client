@@ -22,6 +22,9 @@ function PendingRow({ e, onDone }) {
   const [candidates, setCandidates] = useState(null);
   const [note, setNote] = useState(null);
   const [busy, setBusy] = useState(false);
+  // Refuse is destructive and irreversible; approve is not. Only the
+  // destructive arm asks first (AgentActions.jsx's rule).
+  const [confirming, setConfirming] = useState(false);
   useEffect(() => {
     let live = true;
     nativeRequest(`/api/engagements/${encodeURIComponent(e.id)}/candidates`)
@@ -66,10 +69,16 @@ function PendingRow({ e, onDone }) {
       <td>
         {candidates?.locked
           ? <span className="dim">{t('nv.locked')}</span>
-          : (
+          : confirming ? (
+            <span className="btn-row tight">
+              <span className="dim">{t('nv.confirmRefuse')}</span>
+              <button className="btn-s danger" type="button" disabled={busy} onClick={() => decide('refuse')}>{t('nv.confirm')}</button>
+              <button className="btn-s" type="button" disabled={busy} onClick={() => setConfirming(false)}>{t('nv.cancel')}</button>
+            </span>
+          ) : (
             <div className="btn-row">
               <button className="btn-s primary" type="button" disabled={busy || !candidate} onClick={() => decide('approve')}>{t('en.approve')}</button>
-              <button className="btn-s danger" type="button" disabled={busy} onClick={() => decide('refuse')}>{t('en.reject')}</button>
+              <button className="btn-s danger" type="button" disabled={busy} onClick={() => { setNote(null); setConfirming(true); }}>{t('en.reject')}</button>
             </div>
           )}
         {candidates && note && <p role="alert" className="warn-text">{note}</p>}
