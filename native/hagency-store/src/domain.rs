@@ -306,6 +306,38 @@ pub struct AgentRosterRow {
     /// report sums it. `None` when nothing was measured — unknown, not zero.
     pub consumed: Option<u64>,
 }
+/// One console engagement row (board #60 item 3). The label the triage list
+/// already rendered, plus the figures TS's `/api/engagements`
+/// (`backend-v2.js:14964-14975`) carries and native was dropping:
+/// `remainingTokens` (what is LEFT on the resource behind the engagement),
+/// `ownerBindingRequired` (a pending request with no verified owner binding
+/// yet — TS's readiness rule), and the record's own timestamps.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngagementLabel {
+    pub id: String,
+    pub agent_name: String,
+    pub project_name: Option<String>,
+    pub role: String,
+    pub requested_tokens: u64,
+    pub state: EngagementState,
+    pub cleanup: CleanupState,
+    /// What is LEFT on the resource behind the agent, so the queue can show
+    /// over-commitment BEFORE the decision (TS `:14974`
+    /// `agentRemainingTokens`). The same `min` of the non-null limits the
+    /// admission decision uses. `None` when no ceiling is declared: unknown,
+    /// never rendered as a zero allowance.
+    pub agent_remaining_tokens: Option<u64>,
+    /// TS `:14972`: a PENDING request has no owner yet unless a verified
+    /// binding exists for it. Only pending rows can require one; a decided
+    /// row's readiness is no longer a question the queue asks.
+    pub owner_binding_required: bool,
+    /// When the request was observed (`evidence.observed_at_ms`, recorded at
+    /// admission) and, for an ended engagement, when it reached its terminal
+    /// state (`engagement_ends.ended_at`). Both optional: null is unknown.
+    pub created_at_ms: Option<u64>,
+    pub ended_at_ms: Option<u64>,
+}
 /// One session (room) of the agent detail read: the room the session's
 /// binding names plus its live dispatch state, when one exists. Exactly
 /// these four scalar keys — the room id is already what the engagement
@@ -994,6 +1026,89 @@ impl DomainRepository {
             .map(|s| Ok(serde_json::from_str(&s?)?))
             .collect()
     }
+    /// The console engagements list (board #60 item 3): the label the triage
+    /// list already rendered, widened to the figures TS's `/api/engagements`
+    /// (`backend-v2.js:14964-14975`) carries and native was dropping, and a
+    /// server-side `state` filter (`:14965` `?state=`).
+    ///
+    /// `agent_remaining_tokens` is computed the way the ADMISSION decision
+    /// computes it — `min` of the non-null limits (`ceiling - drawn`, the
+    /// seat's remaining, the pool's remaining) — so the queue shows the
+    /// over-commitment the decision would refuse, before the decision. The
+    /// engagement's own reservation is NOT excluded (TS `remainingFor(e.agent)`
+    /// passes no exclusion here), so the figure is the agent's, not a
+    /// self-forgiving one.
+    ///
+    /// `owner_binding_required` is TS `:14972`: a PENDING request with no
+    /// owner binding yet. It reads `approval_bindings` directly rather than
+    /// the `current_approval_bindings` view, because that view is scoped to
+    /// `state='active'` engagements and so could never answer a pending row.
+    ///
+    /// `created_at_ms` is `evidence.observed_at_ms` — the request's own
+    /// observation instant, recorded at admission. Native keeps no separate
+    /// creation clock, so this is the closest true instant, never invented.
+    /// `ended_at_ms` is `engagement_ends.ended_at`, absent while live.
+    pub fn engagement_labels(
+        &self,
+        after: &str,
+        state: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<EngagementLabel>, Error> {
+        if limit == 0 || limit > 100 {
+            return Err(InvalidInput("page limit must be 1..100").into());
+        }
+        let at = graphs::now_ms()?;
+        let mut query = self.db.prepare(
+            "SELECT e.projection,e.resource_id, \
+             (SELECT ended_at FROM engagement_ends WHERE engagement_id=e.id), \
+             EXISTS(SELECT 1 FROM approval_bindings b JOIN approval_rooms room \
+              ON room.server_name=b.server_name AND room.room_id=b.room_id \
+               AND room.generation=b.room_generation AND room.available=1 \
+              WHERE b.engagement_id=e.id), \
+             json_extract(e.evidence,'$.observed_at_ms') \
+             FROM engagements e WHERE e.id>?1 AND (?2 IS NULL OR e.state=?2) \
+             ORDER BY e.id LIMIT ?3",
+        )?;
+        let rows: Vec<(String, String, Option<i64>, bool, Option<i64>)> = query
+            .query_map(params![after, state, limit as i64], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })?
+            .collect::<Result<_, _>>()?;
+        let mut labels = Vec::with_capacity(rows.len());
+        for (projection, resource_id, ended_at, has_binding, observed_at) in rows {
+            let engagement: Engagement = serde_json::from_str(&projection)?;
+            let resource = read_resource(&self.db, &resource_id)?;
+            let report = usage::ceiling_report(&self.db, &resource.id(), at)?;
+            let spent = budget(&self.db, &resource, None, false)?;
+            let by_ceiling = report
+                .ceiling_tokens
+                .map(|c| c.saturating_sub(report.drawn));
+            let agent_remaining_tokens = [
+                by_ceiling,
+                spent.seat.remaining.map(u64::from),
+                spent.pool.remaining.map(u64::from),
+            ]
+            .into_iter()
+            .flatten()
+            .min();
+            // Compare before the state moves into the label.
+            let pending = engagement.state == EngagementState::Pending;
+            labels.push(EngagementLabel {
+                id: engagement.id.clone(),
+                agent_name: engagement.agent_name.as_str().to_owned(),
+                project_name: engagement.project_name.clone(),
+                role: engagement.role.clone(),
+                requested_tokens: u64::from(engagement.requested_tokens),
+                state: engagement.state,
+                cleanup: engagement.cleanup,
+                agent_remaining_tokens,
+                owner_binding_required: pending && !has_binding,
+                created_at_ms: observed_at.and_then(|v| u64::try_from(v).ok()),
+                ended_at_ms: ended_at.and_then(|v| u64::try_from(v).ok()),
+            });
+        }
+        Ok(labels)
+    }
     /// The bounded approval observation read (ADR-138, C2a): pages
     /// `owner_approvals` by the opaque id cursor with the same hard cap as
     /// `engagements`, and names its `SELECT` columns so the projection cannot
@@ -1229,7 +1344,7 @@ impl DomainRepository {
             })
             .collect()
     }
-    /// The read-only agent detail (board #22, TS `backend-v2.js:12155`):
+/// The read-only agent detail (board #22, TS `backend-v2.js:12155`):
     /// `None` when no engagement names the agent (the route's 404), else the
     /// agent-keyed identity — the same most-live representative engagement
     /// the roster picks — plus the resource id, project id, the rooms its
