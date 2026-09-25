@@ -246,6 +246,128 @@ async fn project_mentions(mut f: Fixture) {
     f.stop().await;
     f.fake.close().await;
 }
+/// Board #30: after a clean stop and after kill -9, every provisioned agent
+/// re-attaches and answers a fresh @mention, without re-registering an account
+/// or re-uploading keys. The always-grant survival and the queued/leased/started
+/// reconcile rules are store-layer invariants exercised by their own suites
+/// (`approvals::recover` reopens the repo on every open; `execution::recover_all`
+/// runs on the same path); this test proves the real binary re-attaches three
+/// agents against durable state and serves new work through the follow-up
+/// binding, identically for TERM and KILL (ADR-183 fences nothing either way).
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[tokio::test]
+async fn native_configured_fleet_three_agents_reattach_after_restart() {
+    for signal in [RestartSignal::Term, RestartSignal::Kill] {
+        let mut f = Fixture::three_agents().await;
+        // Three genuine Active factories, each with a warm child and a project
+        // inbox, plus the private DM.
+        f.until("three original private and project inboxes", |f| {
+            f.count("SELECT COUNT(*) FROM current_matrix_routes r JOIN runner_sessions s ON s.id=r.session_id JOIN engagements e ON e.id=s.engagement_id WHERE e.request_id LIKE 'fleet_target_%'")
+                == 6
+                && (0..3).all(|i| f.work(i).join("owned-mcp.warm-initialized").is_file())
+        })
+        .await;
+        f.wait_for_registered_agents().await;
+        f.assert_project_scope();
+        assert_eq!(f.count("SELECT COUNT(*) FROM canonical_tasks"), 0);
+        let account_posts: Vec<usize> =
+            f.peer.agents.iter().map(|a| a.account_posts).collect();
+        let key_writes = f.peer.agents.iter().map(|a| a.crypto.writes.len()).collect::<Vec<_>>();
+        // Round 1: the original warm processes answer three exact mentions.
+        f.peer.queue_project_mentions(true);
+        f.until("three exact project mentions executing", |f| {
+            (0..3).all(|i| {
+                f.try_receipt(i, "fleet-ready")
+                    .is_some_and(|r| f.task_started(r["task_id"].as_str().unwrap()))
+            })
+        })
+        .await;
+        let first: Vec<String> = (0..3)
+            .map(|i| f.receipt(i, "fleet-ready")["task_id"].as_str().unwrap().to_owned())
+            .collect();
+        for index in 0..3 {
+            fs::write(
+                f.work(index).join("owned-mcp.fleet-release"),
+                b"original project task observed",
+            )
+            .unwrap();
+        }
+        f.until("three project replies delivered", |f| {
+            f.count("SELECT COUNT(*) FROM final_replies WHERE state='delivered'") == 3
+                && f.peer.agents.iter().all(|a| a.project_events.len() == 1)
+        })
+        .await;
+        for (index, task) in first.iter().enumerate() {
+            assert_eq!(f.task_status(task), "done");
+            assert!(f.task_reply_delivered(task));
+            fs::remove_file(f.work(index).join("owned-mcp.fleet-release")).unwrap();
+            fs::remove_file(f.work(index).join("owned-mcp.fleet-ready")).unwrap();
+        }
+        assert_eq!(f.count("SELECT COUNT(*) FROM resource_leases"), 0);
+        // The restart: durable state is reopened and every agent re-attaches.
+        f.restart(signal).await;
+        f.became_ready().await;
+        f.wait_for_registered_agents().await;
+        f.assert_project_scope();
+        assert_eq!(
+            f.count("SELECT COUNT(*) FROM runner_dispatches WHERE state='outcome_unknown'"),
+            0,
+            "no outcome_unknown survives a clean {} restart",
+            match signal {
+                RestartSignal::Term => "TERM",
+                RestartSignal::Kill => "KILL",
+            }
+        );
+        // Round 2: fresh event ids, so intake cannot dedup them (source_key
+        // digests server+room+event_id); the re-attached runtimes answer.
+        f.peer.queue_project_mentions_at(true, 2);
+        f.until("three re-attached mentions executing", |f| {
+            (0..3).all(|i| {
+                f.try_receipt(i, "fleet-ready")
+                    .is_some_and(|r| f.task_started(r["task_id"].as_str().unwrap()))
+            })
+        })
+        .await;
+        let second: Vec<String> = (0..3)
+            .map(|i| f.receipt(i, "fleet-ready")["task_id"].as_str().unwrap().to_owned())
+            .collect();
+        assert!(
+            second.iter().all(|t| !first.contains(t)),
+            "a re-attached agent answers with a NEW canonical task"
+        );
+        for index in 0..3 {
+            fs::write(
+                f.work(index).join("owned-mcp.fleet-release"),
+                b"re-attached project task observed",
+            )
+            .unwrap();
+        }
+        f.until("three re-attached replies delivered", |f| {
+            f.count("SELECT COUNT(*) FROM final_replies WHERE state='delivered'") == 6
+                && f.peer.agents.iter().all(|a| a.project_events.len() == 2)
+        })
+        .await;
+        for (index, task) in second.iter().enumerate() {
+            assert_eq!(f.task_status(task), "done");
+            assert!(f.task_reply_delivered(task));
+            let event = &f.peer.agents[index].project_events[1];
+            assert_eq!(event["sender"], f.peer.agents[index].user);
+            assert_eq!(
+                event["content"]["body"],
+                format!("Verified factory task {task}")
+            );
+        }
+        // A restart registers no account and uploads no keys.
+        for (index, agent) in f.peer.agents.iter().enumerate() {
+            assert_eq!(agent.account_posts, account_posts[index]);
+            assert_eq!(agent.crypto.writes.len(), key_writes[index]);
+        }
+        assert_eq!(f.count("SELECT COUNT(*) FROM resource_leases"), 0);
+        f.assert_ready().await;
+        f.stop().await;
+        f.fake.close().await;
+    }
+}
 /// ADR180 delivery of a delegated task. The owner asks one agent; that agent
 /// hands the work to its colleague with `delegate_task`, the owner approves the
 /// one card the call raises, and the ASSIGNEE — not the delegator — announces

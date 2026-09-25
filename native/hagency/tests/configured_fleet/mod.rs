@@ -63,6 +63,14 @@ impl Drop for Running {
         let _ = self.0.wait();
     }
 }
+/// How a restart tears down the previous service process. TERM is the clean
+/// stop; KILL leaves no graceful shutdown (ADR-183: nothing is fenced either
+/// way, so the reopened store must recover identically for both).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum RestartSignal {
+    Term,
+    Kill,
+}
 /// One fleet at a time. Each fixture runs a real service process, three
 /// encrypted Matrix clients, per-agent guardians and scripted helpers. Cargo
 /// runs this binary's tests in parallel, and four of them on a hosted runner's
@@ -100,9 +108,11 @@ impl Fixture {
     pub async fn delegating() -> Self {
         Self::configured(false, false, true, false, None, true, 2).await
     }
-    /// Three factory agents: the restart acceptance count (board #30).
+    /// Three factory agents: the restart acceptance count (board #30). The
+    /// local-Codex profile, same as `project_mentions`, so the @mention -> task
+    /// -> reply chain is the one the acceptance names.
     pub async fn three_agents() -> Self {
-        Self::configured(false, false, false, false, None, false, 3).await
+        Self::configured(false, false, true, false, None, false, 3).await
     }
     async fn configured(
         application_service: bool,
@@ -505,9 +515,12 @@ impl Fixture {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .unwrap();
-        // Both physical joins may appear in one authenticated state snapshot.
-        // Generations count changed observations, not individual network writes.
-        assert!((2..=3).contains(&generation));
+        // Generations count changed observations, not individual network
+        // writes: one initial observation plus at most one bump per physical
+        // agent join (a few joins may coalesce into one authenticated snapshot,
+        // so the lower bound stays 2 regardless of the count).
+        let upper = 1 + self.peer.agents.len() as u64;
+        assert!((2..=upper).contains(&generation));
         let mut expected = BTreeSet::from([
             OWNER.to_owned(),
             reg().representative_mxid,
@@ -764,7 +777,10 @@ impl Fixture {
             assert_eq!(fleet["registered_backends"], 1 + n);
             assert_eq!(fleet["failed"], false);
             let agents = fleet["agents"].as_array().unwrap();
-            assert_eq!(agents.len(), n);
+            // The snapshot's `agents` array is the full entries map: the root
+            // backend plus every admitted agent (base `9775f997` asserted 3 for
+            // a 2-agent fixture). `registered_backends` counts the same map.
+            assert_eq!(agents.len(), 1 + n);
             for index in 0..n {
                 let agent = agents
                     .iter()
@@ -789,6 +805,59 @@ impl Fixture {
         loop {
             tokio::select! {_=&mut read=>break,request=self.fake.next()=>self.peer.respond(request).await}
         }
+    }
+    /// Tear the service down and relaunch the real binary over the SAME
+    /// durable state dir, on a fresh ephemeral listen port. `Term` is the
+    /// clean stop; `Kill` leaves no graceful shutdown — ADR-183 fenced nothing
+    /// either way, so the reopened store must recover identically for both
+    /// (the acceptance's two clauses). The fake homeserver and the per-agent
+    /// device state persist in memory, exactly as the real ones would.
+    pub async fn restart(&mut self, signal: RestartSignal) {
+        let sig = match signal {
+            RestartSignal::Term => "-TERM",
+            RestartSignal::Kill => "-KILL",
+        };
+        assert!(
+            Command::new("/bin/kill")
+                .args([sig, &self.child.0.id().to_string()])
+                .status()
+                .unwrap()
+                .success()
+        );
+        tokio::time::timeout(Duration::from_secs(10), async {
+            loop {
+                if self.child.0.try_wait().unwrap().is_some() {
+                    break;
+                }
+                tokio::select! {request=self.fake.next()=>self.peer.respond(request).await,_=tokio::time::sleep(Duration::from_millis(10))=>{}}
+            }
+        })
+        .await
+        .unwrap();
+        for agent in &mut self.peer.agents {
+            if let Some(owner) = agent.owner_job.take() {
+                owner.await.unwrap();
+            }
+        }
+        // A fresh port removes any TIME_WAIT/rebind concern; the durable state
+        // and operator token are what the re-attach actually depends on.
+        let reserve = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        self.address = reserve.local_addr().unwrap();
+        drop(reserve);
+        let base = self.root.path().canonicalize().unwrap();
+        fs::remove_file(base.join("native.stderr")).ok();
+        let diagnostic = private::open(&base.join("native.stderr"), true).unwrap();
+        self.child = Running(
+            Command::new(env!("CARGO_BIN_EXE_hagency"))
+                .args(["serve", "--agent-driver", "--state-dir"])
+                .arg(&self.state)
+                .args(["--listen", &self.address.to_string()])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::from(diagnostic))
+                .spawn()
+                .unwrap(),
+        );
     }
     pub async fn stop(&mut self) {
         assert!(
@@ -1009,12 +1078,18 @@ impl Peer {
         }
     }
     pub fn queue_project_mentions(&mut self, addressed: bool) {
+        self.queue_project_mentions_at(addressed, 1);
+    }
+    /// Round-parameterized: Matrix `source_key` digests (server, room,
+    /// event_id), so a restart's re-delivered mentions must carry fresh event
+    /// ids or intake silently dedups them and the re-attach is never exercised.
+    pub fn queue_project_mentions_at(&mut self, addressed: bool, round: u64) {
         let events = if addressed {
-            self.agents.iter().enumerate().map(|(index,agent)|json!({"event_id":format!("$project_mention_{index}"),"sender":OWNER,"type":"m.room.message","origin_server_ts":now(),
+            self.agents.iter().enumerate().map(|(index,agent)|json!({"event_id":format!("$project_mention_{index}_{round}"),"sender":OWNER,"type":"m.room.message","origin_server_ts":now(),
                 "content":{"msgtype":"m.text","body":format!("PROJECT_ADDRESSED_{index}"),"m.mentions":{"user_ids":[agent.user]}}})).collect::<Vec<_>>()
         } else {
             vec![
-                json!({"event_id":"$project_unaddressed","sender":OWNER,"type":"m.room.message","origin_server_ts":now(),
+                json!({"event_id":format!("$project_unaddressed_{round}"),"sender":OWNER,"type":"m.room.message","origin_server_ts":now(),
             "content":{"msgtype":"m.text","body":"PROJECT_UNADDRESSED","m.mentions":{"user_ids":[OWNER]}}}),
             ]
         };
@@ -1390,6 +1465,7 @@ impl Peer {
         let join = if path.ends_with("/state") {
             (0..self.agents.len()).find(|i| {
                 request.target.contains(&format!("fleet_dm_{i}"))
+                    && !self.agents[*i].owner
                     && self.agents[*i].owner_job.is_none()
             })
         } else {
