@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{fs::File, path::Path};
 pub(crate) mod accounts;
+mod activity;
 mod agent_fences;
 pub use agent_fences::{AgentFence, FenceReason};
 mod approvals;
@@ -616,7 +617,7 @@ impl DomainRepository {
                 name: "domain.sqlite3",
                 lock: "domain.lock",
                 application_id: 0x48414732,
-                version: 39,
+                version: 40,
                 migrations: &[
                     (2, include_str!("migrations/002-role-publication.sql")),
                     (3, include_str!("migrations/003-task-dispatch.sql")),
@@ -678,6 +679,15 @@ impl DomainRepository {
                     ),
                     (38, include_str!("migrations/038-agent-fences.sql")),
                     (39, include_str!("migrations/039-attempt-over-budget.sql")),
+                    // Task #1's migration number is 040 (the board's
+                    // assignment); the walker requires the next sequential
+                    // list version after this branch's head 39, so the file
+                    // keeps 040 and the tuple carries 40. Integration
+                    // renumbers on merge if another slice landed first.
+                    (
+                        40,
+                        include_str!("migrations/040-dispatch-activity.sql"),
+                    ),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
