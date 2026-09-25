@@ -68,11 +68,15 @@ async fn ready_named(
 ) -> (common::Fixture, common::Fake, Collector) {
     let f = common::Fixture::new();
     let mut fake = common::Fake::start(true).await;
-    let c = Collector::new(
-        config(&f, &fake.endpoint, f.identity.clone(), direct),
-        f.store.clone(),
-    )
-    .unwrap();
+    // #81: service-level scripted() fixtures — the tight tier's
+    // headers=400ms was crossed by scheduler starvation before this
+    // suite's script could answer (the #59 under-load trace: collector
+    // Err(Timeout) after 467ms, script progress 0). The load tier keeps
+    // every bound strictly below Limits::default(); no test in this file
+    // asserts a deliberate tight-bound timeout.
+    let mut config = config(&f, &fake.endpoint, f.identity.clone(), direct);
+    config.limits = common::load_limits();
+    let c = Collector::new(config, f.store.clone()).unwrap();
     let cancel = CancellationToken::new();
     let (r, ()) = scripted(callsite, variant, c.collect(&cancel), async {
         fake.next().await.json(200, common::who());
