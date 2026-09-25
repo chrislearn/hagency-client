@@ -95,7 +95,7 @@ export default function NativeVerdict() {
   if (data.phase === 'error' || data.phase === 'access') return null;
   const pending = (data.engagements ?? []).filter((e) => e.state === 'pending');
   return (
-    <section className="panel" style={{ marginTop: 18 }}>
+    <section className="panel" data-verdict-panel style={{ marginTop: 18 }}>
       <h2>{t('nv.verdict')} <span className="note">{t('nv.verdictHelp')}</span></h2>
       {pending.length === 0
         ? <p className="dim">{t('nv.nonePending')}</p>

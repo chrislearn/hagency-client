@@ -3146,6 +3146,12 @@ impl DomainStore {
     pub async fn console_feed(&self) -> Result<serde_json::Value, Error> {
         self.call(64, |db| db.console_feed()).await
     }
+    /// #59 named-event entity read: the rows behind the TS broadcastSSE
+    /// vocabulary — the SSE route diffs two snapshots into named events
+    /// with entity payloads. One writer job, one bounded read.
+    pub async fn console_entities(&self) -> Result<serde_json::Value, Error> {
+        self.call(64, |db| db.console_entities()).await
+    }
     /// The read-only agent detail (board #22): one writer job, one bounded
     /// agent-keyed read — the projection is computed at the store, so the
     /// console route adds no second arithmetic path. `None` is the route's
@@ -3327,6 +3333,33 @@ impl DomainStore {
             return Err(Error::Capacity);
         }
         self.call(256, move |db| db.managed_account(&id)).await
+    }
+    /// Allocate a login attempt through the running service (task #28): the
+    /// CLI asks the service to begin, runs the provider child locally, then
+    /// settles through the same owner — the store is never opened twice.
+    pub async fn begin_account_login(
+        &self,
+        id: String,
+        now: u64,
+    ) -> Result<crate::LoginAttempt, Error> {
+        if id.len() > 128 {
+            return Err(Error::Capacity);
+        }
+        self.call(256, move |db| db.begin_account_login(&id, now))
+            .await
+    }
+    /// Settle the attempt with the parent's classification of the child's
+    /// exit; the receipt row and the settle commit together (§5.3).
+    pub async fn settle_account_login(
+        &self,
+        attempt: crate::LoginAttempt,
+        verdict: crate::LoginVerdict,
+        now: u64,
+    ) -> Result<crate::AccountReadiness, Error> {
+        self.call(256, move |db| {
+            db.settle_account_login(attempt, verdict, now)
+        })
+        .await
     }
     pub async fn enroll_account_resource(
         &self,
