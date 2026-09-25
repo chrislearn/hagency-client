@@ -72,6 +72,18 @@ fn assert_plist_contract() {
         arguments.contains(&"127.0.0.1:13300".to_string()),
         "the loopback listen is FIXED in ProgramArguments — a refusal, not a default"
     );
+    // The installed agent starts the FULL service (TS parity): the driver,
+    // Palpo lanes and console assets are pinned offline here because they
+    // need operator-supplied config and a reachable Matrix host the CI leg
+    // cannot seed honestly; the spawn leg below exercises the same binary's
+    // foreground start/stop contract.
+    assert!(arguments.contains(&"--agent-driver".to_string()));
+    assert!(arguments.contains(&"--palpo-transport".to_string()));
+    assert!(arguments.contains(&"--console-assets".to_string()));
+    assert!(
+        arguments.iter().any(|v| v == "__CONSOLE_DIR__"),
+        "console dir is an explicit placeholder, never a guessed default"
+    );
     assert!(
         arguments.iter().any(|v| v == "__STATE_DIR__"),
         "explicit state placeholder, never a guessed default"
@@ -205,8 +217,12 @@ fn init_state(root: &Path) -> std::path::PathBuf {
     assert!(status.success(), "hagency init must provision fresh state");
     state
 }
-/// Exactly the argv the plist's ProgramArguments renders after placeholder
-/// substitution — the command the wrapper execs.
+/// The foreground serve the plist's ProgramArguments names, on a minimal
+/// state the CI leg can seed honestly. The FULL unit argv (agent driver,
+/// Palpo lanes, console assets) is pinned offline in assert_plist_contract:
+/// those flags need operator-supplied config and a reachable Matrix host
+/// this leg cannot fabricate, so the spawn leg exercises the binary's
+/// foreground start/stop contract launchd owns.
 fn spawn_service(state: &Path) -> Running {
     let addr = free_loopback();
     let child = Command::new(binary())

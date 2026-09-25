@@ -676,7 +676,10 @@ async fn run(input: Attempt<'_>) -> Result<Option<Completed>, Failure> {
     };
     if !intake_sessions.is_empty() {
         status.phase("receiving");
-        let plan = HostIntakePlan::new(intake_sessions.clone()).map_err(|_| Failure::Config)?;
+        let plan = HostIntakePlan::new(intake_sessions.clone()).map_err(|_| Failure::Config {
+            field: "intake session ids",
+            fix: "each session id must be 1-128 chars of [A-Za-z0-9_-] and resolvable at intake time",
+        })?;
         collector.intake(plan, cancel).await.map_err(|error| {
             status.matrix_refusal(&error);
             tracing::warn!(error = ?error, "Matrix inbox intake refused");
@@ -770,7 +773,10 @@ async fn run(input: Attempt<'_>) -> Result<Option<Completed>, Failure> {
         None
     };
     status.phase("claiming");
-    let capability_ms = limits.capability_ms().map_err(|_| Failure::Config)?;
+    let capability_ms = limits.capability_ms().map_err(|_| Failure::Config {
+        field: "matrix limits capability budget",
+        fix: "request pacing must admit one bounded capability window inside the operation budget",
+    })?;
     let capability = domain
         .claim_owned_dispatch_for_host(profile, runner.into(), 60_000, capability_ms, max_live)
         .await

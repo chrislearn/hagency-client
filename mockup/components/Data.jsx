@@ -5,7 +5,7 @@ import DataStatus from '@/components/DataStatus';
 import { makeDerive } from '@/lib/derive';
 import { fetchLive, CONTRACT_SLICES } from '@/lib/api';
 import * as fixture from '@/lib/mock-data';
-import { NATIVE_MODE, exchangeAccess, fetchNative, fetchResources, resourceView, publishResource, configurationView, configurationSelection, fetchConfiguration, configureResource, logoutNative, selection, alertsView, fetchAlerts, agentsView, fetchAgents, projectSidesView, fetchProjectSides, transitionAlert } from '@/lib/native-api';
+import { NATIVE_MODE, exchangeAccess, fetchNative, fetchResources, resourceView, publishResource, configurationView, configurationSelection, fetchConfiguration, configureResource, logoutNative, selection, alertsView, fetchAlerts, agentsView, fetchAgents, projectSidesView, fetchProjectSides, transitionAlert, approvalsView, accountsView, engagementsView } from '@/lib/native-api';
 import { useLiveStream } from '@/lib/native-stream';
 
 /*
@@ -120,6 +120,29 @@ function NativeDataProvider({ children }) {
   const logoutPending = useRef(Promise.resolve());
   const endingAccess = useRef(false);
   const cursor = useRef('');
+  /*
+   * A page whose read the provider does not perform (approvals, accounts) still
+   * needs to know WHEN the session was admitted — it must not fetch before the
+   * ticket exchange, or its own read races the exchange and reports a 401 as
+   * "access required" while the session is fine. This promise resolves once
+   * admission completes, so such a page waits instead of exchanging for itself.
+   */
+  /*
+   * Created ONCE, in the body guarded by the null check: `useRef(new Promise(
+   * ...))` would run the executor on every render, so after the first re-render
+   * `settle` would point at a fresh orphan promise while the one the pages await
+   * never settles — the page would wait forever. The pair is kept together so
+   * the resolver and the promise it belongs to can never come apart.
+   */
+  const ready = useRef(null);
+  if (ready.current === null) {
+    let settle;
+    const promise = new Promise((resolve) => { settle = resolve; });
+    ready.current = { promise, settle };
+  }
+  // Pages of the triage list already walked. Kept outside state because a new
+  // page is a new requestKey, and the reset that follows would drop them.
+  const triageRows = useRef([]);
   const load = async (after = cursor.current) => {
     if (!admitted.current) return;
     const mine = ++generation.current;
@@ -130,16 +153,52 @@ function NativeDataProvider({ children }) {
       const alerts = alertsView(window.location);
       const roster = !alerts && agentsView(window.location);
       const sideList = !alerts && !roster && projectSidesView(window.location);
-      const resources = !alerts && !roster && !sideList && (entry !== null || resourceView(window.location));
-      const requested = entry ? entry.id : alerts || roster || sideList ? null : selection(window.location, resources ? 'resource_id' : 'engagement_id');
-      requestKey = JSON.stringify([entry ? `configuration:${entry.mode}` : alerts ? 'alerts' : roster ? 'agents' : sideList ? 'sides' : resources, requested, after]);
+      /*
+       * Approvals and accounts read for themselves — each page owns both its
+       * read and its mutations — so the provider must fetch NOTHING here. It
+       * used to fall through to the engagements branch and pull a 16-engagement
+       * page PLUS a usage report for a page that renders neither: a read the
+       * operator paid for and never saw.
+       */
+      const standalone = !alerts && !roster && !sideList
+        && (approvalsView(window.location) || accountsView(window.location));
+      /*
+       * The engagements triage page reads the SAME list as /usage but renders no
+       * report, so it must not request one. That is the other half of the same
+       * defect: a wasted read is a read the service performed for nobody.
+       */
+      const triage = !alerts && !roster && !sideList && !standalone && engagementsView(window.location);
+      const resources = !alerts && !roster && !sideList && !standalone && (entry !== null || resourceView(window.location));
+      const requested = entry ? entry.id : alerts || roster || sideList || standalone ? null : selection(window.location, resources ? 'resource_id' : 'engagement_id');
+      requestKey = JSON.stringify([entry ? `configuration:${entry.mode}` : alerts ? 'alerts' : roster ? 'agents' : sideList ? 'sides' : standalone ? 'standalone' : triage ? 'triage' : resources ? 'resources' : 'usage', requested, after]);
       setState((s) => s.requestKey === requestKey && ['ready', 'stale'].includes(s.phase)
         ? { ...s, refreshing: true, error: null }
         : { ...initial });
-      const value = await (entry ? fetchConfiguration(entry, after) : alerts ? fetchAlerts() : roster ? fetchAgents() : sideList ? fetchProjectSides() : resources ? fetchResources(requested, after) : fetchNative(requested, after));
+      const value = standalone ? {}
+        : entry ? await fetchConfiguration(entry, after)
+          : alerts ? await fetchAlerts()
+            : roster ? await fetchAgents()
+              : sideList ? await fetchProjectSides()
+                : resources ? await fetchResources(requested, after)
+                  : await fetchNative(requested, after, !triage);
       if (mine !== generation.current || !admitted.current) return;
       cursor.current = after;
-      setState({ ...initial, ...value, phase: 'ready', requestKey });
+      /*
+       * The triage page walks its OWN cursor, and its state cards must report
+       * the split of everything read so far rather than only the page on
+       * screen — "pending 0" from a single 16-row window is a number the
+       * operator would read as the whole service, and the triage read carries
+       * no total to use instead. Later pages therefore keep the rows already
+       * loaded; `firstPage` (after === '') starts them over. Held in a ref
+       * because a new page is a new requestKey, and the reset above would
+       * otherwise discard the earlier pages.
+       */
+      let merged = value;
+      if (triage) {
+        triageRows.current = after ? [...triageRows.current, ...(value.engagements ?? [])] : (value.engagements ?? []);
+        merged = { ...value, engagements: triageRows.current };
+      }
+      setState({ ...initial, ...merged, phase: 'ready', requestKey });
       return value;
     } catch (error) {
       if (mine !== generation.current) return;
@@ -159,8 +218,15 @@ function NativeDataProvider({ children }) {
       setState({ ...initial });
       try {
         await exchangeAccess(window.location, window.history, logoutPending.current);
-        if (!stopped && mine === generation.current) { admitted.current = true; await load(''); }
+        if (!stopped && mine === generation.current) { admitted.current = true; ready.current.settle(); await load(''); }
       } catch (error) { if (!stopped && mine === generation.current) setState({ ...initial, phase: 'access', error: error.message }); }
+      /*
+       * Settle `ready` on BOTH outcomes. A page that reads for itself must not
+       * wait forever when admission failed — it fetches, fails, and reports the
+       * denial in its own words. Leaving the promise pending on the failure arm
+       * would strand approvals/accounts in `loading` with no explanation.
+       */
+      finally { ready.current.settle(); }
     };
     void enter();
     const refresh = () => { if (!stopped && inFlight.current === 0 && document.visibilityState === 'visible') void load(); };
@@ -265,7 +331,7 @@ function NativeDataProvider({ children }) {
       if (error.message === 'console_access_required') { admitted.current = false; generation.current += 1; setState({ ...initial, phase: 'access', error: error.message }); }
     } finally { mutation.current = false; }
   };
-  return <DataContext.Provider value={{ ...state, action, publish, configure, transition, logoutStatus, choose, refresh: () => load(), nextPage: () => load(state.next_after), firstPage: () => load(''), logout }}>{children}</DataContext.Provider>;
+  return <DataContext.Provider value={{ ...state, action, publish, configure, transition, logoutStatus, ready: ready.current.promise, choose, refresh: () => load(), nextPage: () => load(state.next_after), firstPage: () => load(''), logout }}>{children}</DataContext.Provider>;
 }
 
 function LegacyDataProvider({ children }) {

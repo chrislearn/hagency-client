@@ -1,5 +1,7 @@
 /* Closed native browser protocol. Credentials exist only in the fragment exchange
  * and HttpOnly cookie; usage facts never enter local/session storage. */
+import { remember } from './labels';
+
 export const NATIVE_MODE = process.env.NEXT_PUBLIC_HAGENCY_NATIVE_CONSOLE === '1';
 const ROOT = '/console';
 
@@ -53,10 +55,17 @@ export function validateEngagements(v) {
    * implementation accident of `slice`, not a designed rule; the native
    * verifier's scalar bound is the contract. */
   if (!object(v, ['engagements', 'next_after']) || !Array.isArray(v.engagements) || v.engagements.length > 16
-    || !(v.next_after === null || id(v.next_after)) || v.engagements.some((e) => !object(e, ['id', 'agentName', 'projectName', 'role', 'requestedTokens', 'state', 'cleanup'])
+    || !(v.next_after === null || id(v.next_after)) || v.engagements.some((e) => !object(e, ['id', 'agentName', 'projectName', 'role', 'requestedTokens', 'state', 'cleanup', 'agentRemainingTokens', 'ownerBindingRequired', 'createdAtMs', 'endedAtMs'])
       || !id(e.id) || typeof e.agentName !== 'string' || e.agentName.length > 128
       || !(e.projectName === null || (typeof e.projectName === 'string' && [...e.projectName].length <= 255))
-      || typeof e.role !== 'string' || e.role.length > 128 || !number(e.requestedTokens) || !STATES.includes(e.state) || !CLEANUP.includes(e.cleanup))) throw new Error('invalid_native_response');
+      || typeof e.role !== 'string' || e.role.length > 128 || !number(e.requestedTokens) || !STATES.includes(e.state) || !CLEANUP.includes(e.cleanup)
+      /* Board #60 item 3: the remaining allowance is null when no ceiling is
+       * declared (unknown, never a zero allowance), and the owner-binding
+       * flag is a real boolean — never coerce an absent one to false. */
+      || !(e.agentRemainingTokens === null || number(e.agentRemainingTokens))
+      || typeof e.ownerBindingRequired !== 'boolean'
+      || !(e.createdAtMs === null || number(e.createdAtMs))
+      || !(e.endedAtMs === null || number(e.endedAtMs)))) throw new Error('invalid_native_response');
   return v;
 }
 const RECOVERY_ERRORS = { agent_lifecycle_scope_required: 403, resolution_conflict: 409, dispatch_not_resolvable: 409, invalid_console_request: 400 };
@@ -79,13 +88,13 @@ async function request(path, options = {}, responseLimit = 64 * 1024) {
     const value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
     if (!response.ok) {
       if (value?.code === 'console_busy' && response.status === 429) throw new Error('busy');
-      const known = { busy: 503, outcome_unknown: 504, resource_revision_conflict: 409, resource_publication_scope_required: 403, resource_configuration_scope_required: 403, resource_in_use: 409, invalid_resource_command: 400, account_scope_required: 403, account_state_conflict: 409, account_revision_conflict: 409, invalid_account_command: 400 };
+      const known = { busy: 503, outcome_unknown: 504, resource_revision_conflict: 409, resource_publication_scope_required: 403, resource_configuration_scope_required: 403, resource_in_use: 409, invalid_resource_command: 400, account_scope_required: 403, account_state_conflict: 409, account_revision_conflict: 409, invalid_account_command: 400, engagement_not_live: 409, engagement_not_pending: 409, decision_conflict: 409, command_conflict: 409, stale_generation: 409, invalid_side_query: 400, sides_unavailable: 503 };
       if (known[value?.code] === response.status || RECOVERY_ERRORS[value?.code] === response.status) throw new Error(value.code);
       throw new Error(response.status === 401 ? 'console_access_required' : (response.status === 404 ? 'not_found' : 'native_unavailable'));
     }
     return value;
   } catch (error) {
-    if (['console_access_required', 'not_found', 'invalid_native_response', 'invalid_selection', 'busy', 'outcome_unknown', 'resource_revision_conflict', 'resource_publication_scope_required', 'resource_configuration_scope_required', 'resource_in_use', 'invalid_resource_command', 'account_scope_required', 'account_state_conflict', 'account_revision_conflict', 'invalid_account_command', ...Object.keys(RECOVERY_ERRORS)].includes(error.message)) throw error;
+    if (['console_access_required', 'not_found', 'invalid_native_response', 'invalid_selection', 'busy', 'outcome_unknown', 'resource_revision_conflict', 'resource_publication_scope_required', 'resource_configuration_scope_required', 'resource_in_use', 'invalid_resource_command', 'account_scope_required', 'account_state_conflict', 'account_revision_conflict', 'invalid_account_command', 'engagement_not_live', 'engagement_not_pending', 'decision_conflict', 'command_conflict', 'stale_generation', 'invalid_side_query', 'sides_unavailable', ...Object.keys(RECOVERY_ERRORS)].includes(error.message)) throw error;
     if (options.method === 'DELETE') throw new Error('logout_unknown');
     if (['POST', 'PATCH'].includes(options.method) && (path.startsWith('/api/resources') || path.startsWith('/api/accounts') || path.startsWith('/api/agents/'))) throw new Error('outcome_unknown');
     throw new Error('native_unavailable');
@@ -126,13 +135,24 @@ export async function exchangeAccess(location, history, previousLogout = Promise
   await previousLogout;
   await request('/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticket: fragment.slice(8) }) });
 }
-export async function fetchNative(selected, after = '') {
+/* `withReport` exists because two pages read this ONE list for different
+ * purposes: the usage page needs the selected engagement's evidence, while the
+ * engagements page is a triage list that never renders a report. The flag is
+ * what stops the triage page issuing a usage read it then discards. */
+export async function fetchNative(selected, after = '', withReport = true) {
   if ((selected !== null && !id(selected)) || (after && !id(after))) throw new Error('invalid_selection');
   const list = validateEngagements(await request(`/api/engagements?limit=16${after ? `&after=${after}` : ''}`));
   const chosen = selected ?? list.engagements[0]?.id ?? null;
-  const report = chosen === null ? null : validateReport(await request(`/api/engagements/${chosen}/usage`), chosen);
+  const report = !withReport || chosen === null ? null : validateReport(await request(`/api/engagements/${chosen}/usage`), chosen);
+  // Every row the wire names is remembered, because no per-id route exists: a
+  // selection the reader leaves the page with has no other way to keep its name.
+  for (const e of list.engagements) remember(e.id, [e.agentName, e.projectName, e.role].filter(Boolean).join(' · '));
   return { ...list, selected: chosen, report };
 }
+/* The triage document's own view test, beside its siblings: the engagements
+ * read is selected from like the others, and the provider needs to tell it
+ * apart from /usage to know whether a report is wanted at all. */
+export function engagementsView(location) { return /^\/console\/engagements\/?$/.test(location.pathname); }
 /* The console's open ceiling alerts. Exactly fifteen keys per alert — the
  * server's ConsoleAlert set — because the exact-key contract is how a stale
  * server or client fails loudly instead of rendering half a page. The
@@ -196,8 +216,11 @@ export function alertsView(location) { return /^\/console\/alerts\/?$/.test(loca
  * `last_activity_ms` keeps the representative engagement's attempt
  * clock. `unavailable` is SERVER-OWNED: whatever columns the server
  * names are rendered as unknown, so a future source turns a column on
- * by removing its name server-side, never by a client edit. */
-const ROSTER_KEYS = ['name', 'framework', 'role', 'state', 'engagement_id', 'requested_tokens', 'online', 'last_seen_ms', 'last_activity_ms'];
+ * by removing its name server-side, never by a client edit. Board #60:
+ * `liveness` (the live dispatch's own word, distinct from the engagement
+ * `state`) and `consumed` (observed tokens, null when unmeasured) are
+ * served now, so this list is empty. */
+const ROSTER_KEYS = ['name', 'framework', 'role', 'state', 'engagement_id', 'requested_tokens', 'online', 'last_seen_ms', 'last_activity_ms', 'liveness', 'consumed'];
 export function validateAgents(v) {
   if (!object(v, ['at_ms', 'unavailable', 'agents', 'permissions']) || !number(v.at_ms)
     || !Array.isArray(v.unavailable) || v.unavailable.length > 32 || v.unavailable.some((n) => !text(n, 64))
@@ -208,7 +231,9 @@ export function validateAgents(v) {
       || !STATES.includes(a.state) || !id(a.engagement_id)
       || !number(a.requested_tokens) || typeof a.online !== 'boolean'
       || !(a.last_seen_ms === null || number(a.last_seen_ms))
-      || !(a.last_activity_ms === null || number(a.last_activity_ms)))) throw new Error('invalid_native_response');
+      || !(a.last_activity_ms === null || number(a.last_activity_ms))
+      || !(a.liveness === null || text(a.liveness, 32))
+      || !(a.consumed === null || number(a.consumed)))) throw new Error('invalid_native_response');
   return v;
 }
 export async function fetchAgents() {
@@ -236,7 +261,10 @@ export function validateAgentDetail(v, name) {
     || typeof v.online !== 'boolean' || !(v.last_seen_ms === null || number(v.last_seen_ms))
     || !id(v.resource_id) || !id(v.project_id) || !number(v.engagements)
     || !Array.isArray(v.rooms) || v.rooms.length > 100 || v.rooms.some((r) => !detailRoom(r))
-    || !detailRoom(v.dispatch)
+    // `dispatch` is null when nothing is live (domain.rs picks only
+    // leased/started/parked rooms; a stopped dispatch is outcome_unknown and
+    // yields none) — the read's own contract, not a malformed payload.
+    || !(v.dispatch === null || detailRoom(v.dispatch))
     || !Array.isArray(v.tasks) || v.tasks.length > 10
     || v.tasks.some((task) => !object(task, ['id', 'session_id', 'creator_session_id', 'title', 'description', 'priority', 'granularity', 'labels', 'parent_id', 'status', 'execution_epoch', 'created_at', 'updated_at', 'started_at', 'completed_at', 'heartbeat_at', 'waiting_reason', 'waiting_until'])
       || !id(task.id) || !id(task.session_id) || !text(task.title, 1024) || !TASK_STATES.includes(task.status)
@@ -253,6 +281,26 @@ export async function fetchAgentDetail(name) {
  * that can only refuse. */
 export async function stopAgent(id) {
   return request(`/api/agents/${id}/stop`, { method: 'POST' });
+}
+
+/* Remove an agent (board #58, TS backend-v2.js:12164). The two shapes are
+ * kept APART on purpose, because the retained route's own trap is a caller
+ * that checks only `ok`: a plain DELETE answers `{ok:true, deprecated:true,
+ * message}` and leaves the agent in place, while `?force=true` really
+ * removes it and reports what it released. So `force` decides which key must
+ * be present, and a response that says `ok` without it is refused as
+ * invalid rather than reported as a successful removal. */
+export async function deleteAgent(name, force = false) {
+  const v = await request(`/api/agents/${encodeURIComponent(name)}${force ? '?force=true' : ''}`, { method: 'DELETE' });
+  if (v?.ok !== true) throw new Error('invalid_native_response');
+  if (force) {
+    if (v.deleted !== true || typeof v.sessionKilled !== 'boolean'
+      || !Array.isArray(v.releasedEngagements) || v.releasedEngagements.some((id_) => !id(id_))
+      || !Array.isArray(v.leftGroups) || !Array.isArray(v.leftProjectRooms)) throw new Error('invalid_native_response');
+  } else if (v.deprecated !== true || typeof v.message !== 'string') {
+    throw new Error('invalid_native_response');
+  }
+  return v;
 }
 
 /* The project-sides read (ADR-132): one row per fleet registration — the
@@ -282,6 +330,47 @@ export async function fetchProjectSides() {
   return validateProjectSides(await request('/api/project-sides'));
 }
 export function projectSidesView(location) { return /^\/console\/project-sides\/?$/.test(location.pathname); }
+/* The bounded decision receipt every engagement mutation answers — `id`,
+ * `state`, `cleanup` and nothing else (engagements.rs `receipt()`). One
+ * validator for approve, refuse's sibling reads and the retire pair,
+ * because they are one route shape. */
+export function validateEngagementReceipt(v) {
+  if (!object(v, ['id', 'state', 'cleanup']) || !id(v.id) || !STATES.includes(v.state) || !CLEANUP.includes(v.cleanup)) throw new Error('invalid_native_response');
+  return v;
+}
+/* Approve / refuse a pending engagement (board #16). Approve reaches the
+ * SAME store verdict the project-side Matrix approval reaches; refuse rides
+ * the existing /api/agents/{id}/refuse route and answers the rejected
+ * engagement. The command id is minted client-side: it is the store's
+ * idempotency key, never the route's. */
+export async function approveEngagement(engagementId, commandId) {
+  return validateEngagementReceipt(await request(`/api/engagements/${encodeURIComponent(engagementId)}/approve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commandId }) }));
+}
+export async function refuseEngagement(engagementId, commandId) {
+  const v = await request(`/api/agents/${encodeURIComponent(engagementId)}/refuse`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commandId }) });
+  if (!object(v, ['engagement']) || !id(v.engagement?.id) || !STATES.includes(v.engagement?.state)) throw new Error('invalid_native_response');
+  return v.engagement;
+}
+/* End an engagement (ADR-150) and retry its failed cleanup. The worker
+ * replaces itself with a payment, the entitlement stops metering, and the
+ * initial grant is reclaimed; a failed retirement waits for this operator
+ * act — native has no sweeper or timer (engagements.rs:12). */
+export async function retireEngagement(engagementId, commandId) {
+  return validateEngagementReceipt(await request(`/api/engagements/${encodeURIComponent(engagementId)}/retire`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commandId }) }));
+}
+export async function retryEngagementCleanup(engagementId, commandId) {
+  return validateEngagementReceipt(await request(`/api/engagements/${encodeURIComponent(engagementId)}/cleanup-retry`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commandId }) }));
+}
+/* Register a fleet side (G11): the retained POST /api/project-sides shape on
+ * the console API, gated by the agent-lifecycle scope. The answer is the
+ * saved record's own five fields, never the operator token. */
+export async function registerProjectSide(registration) {
+  const v = await request('/api/project-sides', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(registration) });
+  if (!object(v, ['ok', 'side']) || v.ok !== true
+    || !object(v.side, ['id', 'generation', 'server_name', 'reception_room_id', 'representative'])
+    || typeof v.side.id !== 'string' || !number(v.side.generation)) throw new Error('invalid_native_response');
+  return v.side;
+}
 export async function transitionAlert(key, to, note) {
   /* One display-state transition through the console session. The reply is
    * the SAME envelope the list read serves (one row), so the same validator
@@ -421,6 +510,7 @@ export async function fetchResources(selected, after = '') {
   const list = validateResources(await request(`/api/resources?limit=16${after ? `&after=${after}` : ''}`));
   const chosen = selected ?? list.resources[0]?.id ?? null;
   const budget = chosen === null ? null : validateBudget(await request(`/api/resources/${chosen}/budget`));
+  for (const r of list.resources) remember(r.id, [r.framework, r.model, r.reasoning].filter(Boolean).join(' · '));
   return { ...list, selected: chosen, budget, resourceConsole: true };
 }
 export async function publishResource(resource, published) {
@@ -501,4 +591,69 @@ export async function enrollAccountResource(id, model, reasoning, expectedRevisi
   const v = await request(`/api/accounts/${encodeURIComponent(id)}/enrollment`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
   if (!object(v, ['account']) || !validAccount(v.account)) throw new Error('invalid_native_response');
   return v.account;
+}
+
+/* Board #48: the requester-facing reads. Each validator pins the EXACT key set
+ * the server serves, so a stale server or client fails loudly with
+ * `invalid_native_response` instead of rendering half a page.
+ *
+ * `whitelisted` is tri-state on purpose and validated as such: `null` is "no
+ * room was identified" (the retained route publishes room trust to a requester
+ * never at all), which is NOT `false` ("this room is not trusted"). Collapsing
+ * the two would turn "we did not ask" into an accusation.
+ *
+ * The three offer caps are `null` — the retained store's own "unset" encoding
+ * (`lib/engagement-store.js:451-454`), never `0`. The page must render them as
+ * an unstated cap, not as "zero tokens". */
+const TIERS = ['lightweight', 'medium', 'strong'];
+const OFFER_SERVING_KEYS = ['agent', 'framework', 'model', 'reasoning', 'tier', 'provisioningRequired'];
+const OFFER_ROLE_KEYS = ['role', 'crossFamilyOk', 'budgetCapPerEngagement', 'rateCap', 'count', 'runningNow', 'serving', 'resources'];
+const OFFER_RESOURCE_KEYS = ['id', 'name', 'framework', 'model', 'reasoning', 'tier'];
+const validOffering = (v) => v === null || (object(v, OFFER_SERVING_KEYS)
+  && optionalText(v.agent, 128) && optionalText(v.framework, 64) && optionalText(v.model, 256)
+  && optionalText(v.reasoning, 128) && (v.tier === null || TIERS.includes(v.tier))
+  && typeof v.provisioningRequired === 'boolean');
+export function validateOfferBook(v) {
+  if (!object(v, ['roles', 'whitelisted', 'projectRoomId']) || !Array.isArray(v.roles) || v.roles.length > 64
+    || !(v.whitelisted === null || typeof v.whitelisted === 'boolean')
+    || !optionalText(v.projectRoomId, 256)
+    || v.roles.some((r) => !object(r, OFFER_ROLE_KEYS)
+      || !text(r.role, 64) || typeof r.crossFamilyOk !== 'boolean'
+      || !(r.budgetCapPerEngagement === null || number(r.budgetCapPerEngagement))
+      || !(r.rateCap === null || number(r.rateCap))
+      || !(r.count === null || number(r.count)) || !number(r.runningNow)
+      || !validOffering(r.serving)
+      || !Array.isArray(r.resources) || r.resources.length > 64
+      || r.resources.some((x) => !object(x, OFFER_RESOURCE_KEYS)
+        || !text(x.id, 128) || !text(x.name, 256) || !text(x.framework, 64) || !text(x.model, 256)
+        || !optionalText(x.reasoning, 128) || !(x.tier === null || TIERS.includes(x.tier))))) throw new Error('invalid_native_response');
+  return v;
+}
+export async function fetchOfferBook(roomId = null) {
+  return validateOfferBook(await request(`/api/offer-book${roomId ? `?projectRoomId=${encodeURIComponent(roomId)}` : ''}`));
+}
+const CONTRIBUTION_KEYS = ['agent', 'project', 'projectRoomId', 'ownerMxid', 'active', 'agentJoined', 'membershipCheckedAt'];
+export function validateContributions(v) {
+  if (!object(v, ['contributions']) || !Array.isArray(v.contributions) || v.contributions.length > 200
+    || v.contributions.some((c) => !object(c, CONTRIBUTION_KEYS)
+      || !text(c.agent, 128) || !text(c.project, 128) || !text(c.projectRoomId, 256) || !text(c.ownerMxid, 256)
+      || typeof c.active !== 'boolean'
+      || !(c.agentJoined === null || typeof c.agentJoined === 'boolean')
+      || !(c.membershipCheckedAt === null || number(c.membershipCheckedAt)))) throw new Error('invalid_native_response');
+  return v;
+}
+export async function fetchContributions() {
+  return validateContributions(await request('/api/contributions'));
+}
+const ROUTES = ['notWhitelisted', 'crossFamilyUnavailable', 'overOffer', 'overCeiling', 'autoJoin'];
+export function validatePreview(v) {
+  if (!object(v, ['route', 'autoJoin', 'agent', 'agentRemainingTokens'])
+    || !ROUTES.includes(v.route) || typeof v.autoJoin !== 'boolean'
+    || !optionalText(v.agent, 128)
+    || !(v.agentRemainingTokens === null || number(v.agentRemainingTokens))) throw new Error('invalid_native_response');
+  return v;
+}
+export async function fetchPreview(role, requestedTokens = null) {
+  const query = `role=${encodeURIComponent(role)}${requestedTokens === null ? '' : `&requestedTokens=${encodeURIComponent(requestedTokens)}`}`;
+  return validatePreview(await request(`/api/engagements/preview?${query}`));
 }

@@ -27,16 +27,31 @@ pub(super) struct Prepared {
 impl Prepared {
     pub(super) fn load(state: &Path) -> Result<Self, Failure> {
         let value: Config =
-            serde_json::from_slice(&read(&state.join("palpo-transport.json"), 16 * 1024)?)
-                .map_err(|_| Failure::Config)?;
+            serde_json::from_slice(&read(&state.join("palpo-transport.json"), 16 * 1024, "palpo-transport.json")?)
+                .map_err(|_| Failure::Config {
+                    field: "palpo-transport.json",
+                    fix: "the file must be valid JSON for the palpo v2 transport profile",
+                })?;
         if value.profile != "palpo_v2_resources_v1" || !value.endpoint.starts_with("https://") {
-            return Err(Failure::Config);
+            return Err(Failure::Config {
+                field: "palpo-transport.json: profile and endpoint",
+                fix: "profile must be palpo_v2_resources_v1 and endpoint must start with https://",
+            });
         }
-        value.registration.validate().map_err(|_| Failure::Config)?;
+        value.registration.validate().map_err(|_| Failure::Config {
+            field: "palpo-transport.json: registration",
+            fix: "the six-field registration must be present and well-formed",
+        })?;
         let registration_fingerprint = canonical::digest(
-            &serde_json::to_value(&value.registration).map_err(|_| Failure::Config)?,
+            &serde_json::to_value(&value.registration).map_err(|_| Failure::Config {
+                field: "palpo-transport.json: registration",
+                fix: "the registration must serialize to canonical JSON",
+            })?,
         )
-        .map_err(|_| Failure::Config)?;
+        .map_err(|_| Failure::Config {
+            field: "palpo-transport.json: registration",
+            fix: "the registration digest must compute; keep the fields ASCII",
+        })?;
         let registration = RegistrationIdentity {
             binding: "native-palpo-v2".into(),
             side_id: value.registration.server_name,
@@ -44,8 +59,11 @@ impl Prepared {
             registration_generation: value.registration.generation,
             registration_fingerprint,
         };
-        let token = read(&state.join("palpo.machine_token"), 4096)?;
-        let token = std::str::from_utf8(&token).map_err(|_| Failure::Config)?;
+        let token = read(&state.join("palpo.machine_token"), 4096, "palpo.machine_token")?;
+        let token = std::str::from_utf8(&token).map_err(|_| Failure::Config {
+            field: "palpo.machine_token",
+            fix: "the token must be valid UTF-8 (max 4096 bytes, owner-private 0600)",
+        })?;
         let mut host = HostConfig::new(
             registration.clone(),
             &value.endpoint,
@@ -53,16 +71,25 @@ impl Prepared {
             value.machine_generation,
             Limits::default(),
         )
-        .map_err(|_| Failure::Config)?;
+        .map_err(|_| Failure::Config {
+            field: "palpo-transport.json: machine credentials",
+            fix: "machine token and generation must form a valid host credential",
+        })?;
         let ca = state.join("palpo.ca.pem");
         match std::fs::symlink_metadata(&ca) {
             Ok(_) => {
                 host = host
-                    .with_root_pem(&read(&ca, 16 * 1024)?)
-                    .map_err(|_| Failure::Config)?;
+                    .with_root_pem(&read(&ca, 16 * 1024, "palpo.ca.pem")?)
+                    .map_err(|_| Failure::Config {
+                        field: "palpo.ca.pem",
+                        fix: "the CA bundle must be a usable PEM root (max 16 KiB)",
+                    })?;
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => return Err(Failure::Config),
+            Err(_) => return Err(Failure::Config {
+                field: "palpo.ca.pem",
+                fix: "the file must be readable by the service owner (stat failed)",
+            }),
         }
         Ok(Self { host, registration })
     }

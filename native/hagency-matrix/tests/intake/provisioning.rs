@@ -99,6 +99,37 @@ fn request_event(event_id: &str, body: String) -> Value {
     })
 }
 
+/// The same request carried as the CUSTOM event type
+/// `com.hagency.engagement.request.v1` (top-level `type`, camelCase `content`,
+/// no `msgtype`/`body` — `lib/fleet-protocol.js:4,16-34`).
+fn custom_request_event(event_id: &str, request_id: &str, tokens: u64) -> Value {
+    json!({
+        "event_id": event_id,
+        "sender": OWNER,
+        "type": "com.hagency.engagement.request.v1",
+        "origin_server_ts": now(),
+        "content": {
+            "v": 1,
+            "fleetId": fleet_id(),
+            "requestId": request_id,
+            "requesterMxid": OWNER,
+            "sourceRoomId": RECEPTION,
+            "targetProjectId": "project_provision",
+            "targetRoomId": PROJECT,
+            "ownerMxid": OWNER,
+            "ownerDmRoomId": PRIVATE,
+            "role": "coding",
+            "requestedTokens": tokens,
+            "ratePerDay": null,
+            "authVersion": 1,
+            "agentDefinition": {
+                "name": "Provisioned",
+                "resourceId": "resource_27cac5503836765cd10751d2"
+            }
+        }
+    })
+}
+
 /// The provider's decision event: a separate pre-project admission carrying
 /// the request id it approves (ADR-095: the verdict is the separate `approve`
 /// write, never folded into the mint).
@@ -865,6 +896,30 @@ async fn native_provisioning_ingress_admits_a_provider_approved_request() {
                 "$request_one",
                 request_body("request_one", 250),
             )],
+        ),
+    )
+    .await;
+    let stage = status(&c, &mut fake).await.stage;
+    let summary = result.unwrap_or_else(|e| panic!("intake failed: {e:?}, stage={stage}"));
+    assert_eq!(summary.admitted, 1);
+    assert_eq!(summary.replayed, 0);
+    assert_eq!(rows(&f, "engagements"), before + 1);
+    c.close().await.unwrap();
+}
+
+/// A request sent as the CUSTOM event type `com.hagency.engagement.request.v1`
+/// is admitted exactly like the msgtype one: the camelCase `content` is
+/// translated to the console-shape body, then the same provision path runs.
+#[tokio::test]
+async fn native_provisioning_admits_a_custom_event_type_request() {
+    let (f, mut fake, c) = ready_provisioning().await;
+    let before = rows(&f, "engagements");
+    let result = run_provisioning(
+        &c,
+        &mut fake,
+        provisioning_sync(
+            "provision_custom",
+            vec![custom_request_event("$custom_request", "request_one", 250)],
         ),
     )
     .await;

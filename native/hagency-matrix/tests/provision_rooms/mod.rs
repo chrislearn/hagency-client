@@ -538,7 +538,13 @@ async fn native_provisioning_inline_rooms_refusals() {
     // continues from the rooms without creating, inviting or joining again.
     let mut server = Server::new().await;
     let mut limits = common::load_limits();
-    limits.sdk = std::time::Duration::from_secs(4);
+    // #81: the attempt budget is the mechanism under test (owner absent → the
+    // wait expires → effect stays started), not a liveness bound for the whole
+    // intake. 4 s was barely above ONE starved provision step; the sibling
+    // guards on the same fixtures (:729, :1632) already use 15 s (#40's T4
+    // precedent). The expiry itself still happens — every assertion is
+    // unchanged.
+    limits.sdk = std::time::Duration::from_secs(15);
     let (f, mut fake, c) = ready_inline_limits(
         Some((REP_TOKEN, vec![(OWNER.into(), server.peer.anchor())])),
         limits,
@@ -721,7 +727,12 @@ async fn native_provisioning_inline_rooms_custody() {
         {
             let settled = c.inner.busy.clone().acquire_owned();
             tokio::pin!(settled);
-            let watchdog = tokio::time::sleep(std::time::Duration::from_secs(5));
+            // This permit is the job's real completion signal; the watchdog is
+            // only a liveness guard. The job makes several provision steps each
+            // bounded by the product's own 4 s SDK timeout (see the sibling
+            // guards at :1584 and :1663, which use 15 s for the same permit);
+            // a 5 s guard is barely above ONE step and a loaded host crossed it.
+            let watchdog = tokio::time::sleep(std::time::Duration::from_secs(15));
             tokio::pin!(watchdog);
             loop {
                 tokio::select! {

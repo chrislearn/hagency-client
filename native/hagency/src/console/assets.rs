@@ -58,9 +58,17 @@ fn root(path: &Path) -> Result<Dir, Error> {
         return Err(Error::Assets);
     }
     let mut dir = Dir::open_ambient_dir(anchor, ambient_authority()).map_err(|_| Error::Assets)?;
-    for name in parts {
-        dir = dir.open_dir_nofollow(name).map_err(|_| Error::Assets)?;
+    // Ancestors may be spelled through a symlink: the host's own worktree
+    // alias (`/Users/x/home/hl -> hl.noindex`, macOS `/tmp -> /private/tmp`)
+    // is a legitimate way to name the bundle, and following it cannot change
+    // which bytes the final handle proves. The asset directory ITSELF must be
+    // a real directory, never a link: a link can be repointed at any moment,
+    // so the proof handle would stop naming the bytes we validated.
+    let (last, ancestors) = parts.split_last().ok_or(Error::Assets)?;
+    for name in ancestors {
+        dir = dir.open_dir(name).map_err(|_| Error::Assets)?;
     }
+    dir = dir.open_dir_nofollow(last).map_err(|_| Error::Assets)?;
     // Existing helper validates owner and private permissions from the actual handle.
     hagency_store::private::check_handle(
         &dir.try_clone().map_err(|_| Error::Assets)?.into_std_file(),
@@ -80,7 +88,8 @@ fn snapshot(dir: &Dir, path: &str, limit: usize) -> Result<Snapshot, Error> {
 fn mime(path: &str) -> Option<&'static str> {
     if matches!(
         path,
-        "usage/index.html"
+        "index.html"
+            | "usage/index.html"
             | "resources/index.html"
             | "resources/new/index.html"
             | "alerts/index.html"
@@ -136,7 +145,9 @@ impl Assets {
             if proof.len() != entry.size || digest != entry.sha256 {
                 return Err(Error::Assets);
             }
-            let key = if entry.path == "usage/index.html" {
+            let key = if entry.path == "index.html" {
+                "/console/".into()
+            } else if entry.path == "usage/index.html" {
                 "/console/usage/".into()
             } else if entry.path == "resources/new/index.html" {
                 "/console/resources/new/".into()
@@ -175,7 +186,9 @@ impl Assets {
         })
     }
     pub(super) fn get(&self, path: &str) -> Option<&Asset> {
-        self.values.get(if path == "/console/usage" {
+        self.values.get(if path == "/console" {
+            "/console/"
+        } else if path == "/console/usage" {
             "/console/usage/"
         } else if path == "/console/resources/new" {
             "/console/resources/new/"
