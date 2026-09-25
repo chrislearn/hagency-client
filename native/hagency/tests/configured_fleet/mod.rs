@@ -1248,6 +1248,21 @@ impl Peer {
                     200,
                     json!({"next_batch":format!("root-{}",self.root_sync),"rooms":{"join":{ROOT:{"timeline":{"events":[],"limited":false},"state":{"events":[]}},"!reception:example.test":{"timeline":{"events":events,"limited":false},"state":{"events":[]}}}},"to_device":{"events":[]}}),
                 )
+            } else if request.method == "PUT" && path.contains("/send/") {
+                // The coordinator's own approval-delivery pair: the private
+                // card (`/private/send/m.room.encrypted/approval_*`) and the
+                // public waiting-for-owner notice
+                // (`/factory_project/send/m.room.message/approval_status_*`,
+                // `approval_delivery/public.rs`). A real homeserver accepts
+                // both; the fixture only has to model the endpoints.
+                if request.target.contains("private") {
+                    let room: ruma::OwnedRoomId = PRIVATE.try_into().unwrap();
+                    self.approval.decrypt(body, &room).await;
+                }
+                (
+                    200,
+                    json!({"event_id":format!("$fleet_coordinator_send_{}",self.root_sync)}),
+                )
             } else {
                 assert!(path.ends_with("/state"));
                 if request.target.contains("factory_project") {
