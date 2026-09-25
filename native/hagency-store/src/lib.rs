@@ -4,6 +4,7 @@ pub use domain::resource_configuration::{
     ResourceConfigurationResult,
 };
 pub mod agent_home;
+pub mod backup;
 mod database;
 mod domain;
 mod domain_worker;
