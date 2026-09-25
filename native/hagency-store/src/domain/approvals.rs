@@ -995,6 +995,85 @@ impl DomainRepository {
             })
             .collect()
     }
+    /// The read-only approval-bindings list (board #52, TS `GET
+    /// /api/approval-bindings` at backend-v2.js:9051-9082, the plain-list
+    /// branch): every LIVE binding, derived — never a second writer. The
+    /// native binding store is observation-driven (`observe_approval_room`
+    /// inserts on a room snapshot), so "list what is bound" is exactly
+    /// `current_approval_bindings` (the view that demands the room be
+    /// available, the engagement active, and the registration, project and
+    /// room rows all agree) joined to the agent's name and the room's
+    /// owner/project. Filters mirror the TS `listBindings` agent filter;
+    /// the TS `project` filter matches `projectRoomId` (the TS list route
+    /// passes a room id in the `project` query slot). The TS write half
+    /// (PUT bind / PUT membership / DELETE unbind) asserts facts native
+    /// derives from room observations instead — see report-52.md.
+    pub fn approval_bindings(
+        &self,
+        agent: &str,
+        project_room_id: &str,
+        limit: u64,
+    ) -> Result<Vec<ApprovalBindingSummary>, Error> {
+        if !agent.is_empty() {
+            text(agent, 128)?;
+        }
+        if !project_room_id.is_empty() {
+            // No fleet server name is in scope here: the value's own suffix
+            // is the server it claims to belong to.
+            let (_, suffix) = project_room_id
+                .split_once(':')
+                .ok_or(hagency_core::InvalidInput("invalid room id"))?;
+            matrix_room(project_room_id, suffix)?;
+        }
+        if limit == 0 || limit > 100 {
+            return Err(Error::Capacity);
+        }
+        let mut query = self.db.prepare(
+            "SELECT e.id, json_extract(e.projection,'$.agentName'), \
+             room.fleet_id, room.project_id, room.server_name, room.room_id, \
+             room.owner_mxid, b.room_generation, b.incarnation \
+             FROM current_approval_bindings current \
+             JOIN approval_bindings b ON b.engagement_id=current.engagement_id \
+             JOIN approval_rooms room ON room.server_name=b.server_name AND room.room_id=b.room_id \
+             JOIN engagements e ON e.id=b.engagement_id \
+             WHERE (?1='' OR json_extract(e.projection,'$.agentName')=?1) \
+             AND (?2='' OR room.room_id=?2) \
+             ORDER BY e.id LIMIT ?3",
+        )?;
+        let rows = query
+            .query_map(params![agent, project_room_id, limit as i64], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?,
+                    r.get::<_, String>(5)?,
+                    r.get::<_, String>(6)?,
+                    r.get::<_, i64>(7)?,
+                    r.get::<_, i64>(8)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, rusqlite::Error>>()?;
+        rows.into_iter()
+            .map(
+                |(engagement, agent, fleet, project, server, room, owner, room_generation, incarnation)| {
+                    Ok(ApprovalBindingSummary {
+                        engagement_id: engagement,
+                        agent,
+                        fleet_id: fleet,
+                        project_id: project,
+                        server_name: server,
+                        room_id: room,
+                        owner_mxid: owner,
+                        room_generation: u64::try_from(room_generation)
+                            .map_err(|_| Error::Schema)?,
+                        incarnation: u64::try_from(incarnation).map_err(|_| Error::Schema)?,
+                    })
+                },
+            )
+            .collect()
+    }
 }
 
 fn decide_verdict(

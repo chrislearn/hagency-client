@@ -1952,6 +1952,20 @@ impl DomainStore {
         })
         .await
     }
+    /// The read-only approval-bindings list (board #52): the plain-list
+    /// branch of TS `GET /api/approval-bindings`. Same weight class as the
+    /// grants read — bounded by its own limit parameter.
+    pub async fn approval_bindings(
+        &self,
+        agent: String,
+        project_room_id: String,
+        limit: u64,
+    ) -> Result<Vec<hagency_core::approvals::ApprovalBindingSummary>, Error> {
+        self.call(weight(&(&agent, &project_room_id))?, move |db| {
+            db.approval_bindings(&agent, &project_room_id, limit)
+        })
+        .await
+    }
     pub async fn matrix_ingress_scope(
         &self,
         session: String,

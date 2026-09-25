@@ -327,6 +327,28 @@ export async function fetchApproval(key) {
 }
 export function approvalsView(location) { return /^\/console\/approvals\/?$/.test(location.pathname); }
 
+/*
+ * The read-only approval-bindings list (board #52, TS `GET
+ * /api/approval-bindings` at backend-v2.js:9051-9082, the plain-list branch):
+ * exactly the nine keys the route serves, and nothing else — no
+ * `agentJoined`, no `active`, no authority id, because native derives a
+ * binding from its own room observations and none of those columns exist to
+ * serve. An extra key fails the whole read, the same discipline the
+ * approvals projection applies.
+ */
+const bindingRow = (v) => object(v, ['engagementId', 'agent', 'fleetId', 'projectId', 'serverName', 'roomId', 'ownerMxid', 'roomGeneration', 'incarnation'])
+  && id(v.engagementId) && text(v.agent, 128) && id(v.fleetId) && id(v.projectId)
+  && text(v.serverName, 256) && text(v.roomId, 256) && text(v.ownerMxid, 256)
+  && number(v.roomGeneration) && number(v.incarnation);
+export function validateApprovalBindings(v) {
+  if (!object(v, ['at_ms', 'bindings']) || !Array.isArray(v.bindings) || v.bindings.length > 100
+    || v.bindings.some((b) => !bindingRow(b))) throw new Error('invalid_native_response');
+  return v;
+}
+export async function fetchApprovalBindings() {
+  return validateApprovalBindings(await request('/api/approval-bindings'));
+}
+
 const revision = (v) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
 const text = (v, max) => typeof v === 'string' && v.length <= max;
 const optionalText = (v, max) => v === null || text(v, max);
