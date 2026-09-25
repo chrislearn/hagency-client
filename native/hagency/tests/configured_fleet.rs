@@ -180,7 +180,14 @@ async fn project_mentions(mut f: Fixture) {
             event["content"]["body"],
             format!("Verified factory task {task}")
         );
-        assert!(event["content"].get("m.relates_to").is_none());
+        // TS:bridge-matrix.js:3318-3393. The question was asked at the project
+        // room's top level (route thread_root is null above), so the answer
+        // stays there — carrying `m.in_reply_to` to the message it answers,
+        // `$project_mention_{index}`, and opening no thread.
+        assert_eq!(
+            event["content"]["m.relates_to"],
+            json!({"m.in_reply_to":{"event_id":format!("$project_mention_{index}")}})
+        );
         assert!(f.peer.agents[index].crypto.events.is_empty());
         for name in ["owned-mcp.fleet-release", "owned-mcp.fleet-ready"] {
             fs::remove_file(f.work(index).join(name)).unwrap();

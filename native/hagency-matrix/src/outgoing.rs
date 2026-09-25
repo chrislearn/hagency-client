@@ -142,7 +142,7 @@ impl Inner {
         if view.attempt.is_some() {
             return Err(Error::OutcomeUnknown);
         }
-        let (kind, id, fence, domain_digest, route, transaction_id, body) = match &source {
+        let (kind, id, fence, domain_digest, route, transaction_id, body, reply_to) = match &source {
             Source::Final(claim) => {
                 let historical = owner
                     .outgoing(Command::Lookup {
@@ -177,6 +177,7 @@ impl Inner {
                     send.route,
                     send.transaction_id,
                     send.body,
+                    send.reply_to,
                 )
             }
             Source::Notice(claim) => {
@@ -215,6 +216,7 @@ impl Inner {
                     claim.route.clone(),
                     claim.claim.notice.transaction_id.clone(),
                     claim.claim.notice.body.clone(),
+                    None,
                 )
             }
             Source::Command(claimed) => {
@@ -253,6 +255,9 @@ impl Inner {
                     claimed.route.clone(),
                     claimed.claim.notice.transaction_id.clone(),
                     claimed.claim.notice.body.clone(),
+                    // A command answer names nobody: it renders from the route's
+                    // thread root alone, exactly as the retained bridge sent it.
+                    None,
                 )
             }
             Source::File(file) => {
@@ -268,6 +273,7 @@ impl Inner {
                     l.route.clone(),
                     l.transaction_id.clone(),
                     String::new(),
+                    None,
                 )
             }
             Source::Resume => unreachable!(),
@@ -295,8 +301,12 @@ impl Inner {
                 content["format"] = json!("org.matrix.custom.html");
                 content["formatted_body"] = json!(html);
             }
-            if let Some(root) = &route.thread_root {
-                content["m.relates_to"] = json!({"rel_type":"m.thread","event_id":root,"is_falling_back":true,"m.in_reply_to":{"event_id":root}});
+            if let Some(relation) = state::reply_relation(
+                route.thread_root.as_deref(),
+                reply_to.as_deref(),
+                matches!(route.privacy, hagency_core::replies::RoomPrivacy::Group {}),
+            ) {
+                content["m.relates_to"] = relation;
             }
             let content = MatrixContent::new(content)
                 .and_then(|c| c.formatted())
@@ -309,6 +319,7 @@ impl Inner {
                 fence,
                 domain_digest,
                 route,
+                reply_to,
                 transaction_id,
                 content,
                 content_digest,
