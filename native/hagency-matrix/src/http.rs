@@ -57,6 +57,11 @@ pub(crate) struct Http {
 /// First wait before redialling a JSON request whose connection never existed;
 /// doubled per attempt inside the original request deadline.
 const CONNECT_RETRY: std::time::Duration = std::time::Duration::from_millis(100);
+/// ADR-174: a dial that never connected (no request byte left) is redialled at
+/// most this many times, doubled waits, inside the request deadline. Distinct
+/// from the 429 rate-limit retry below — a refused dial is not a server
+/// verdict, so it neither extends the cooldown nor consumes a rate-limit try.
+const CONNECT_DIALS: usize = 4;
 /// TS parity (`fetchWithRateLimit`, bridge-matrix.js:261-279): one request,
 /// read or write, is up to this many tries against 429s, all sharing one
 /// host-wide cooldown clock.
@@ -550,10 +555,8 @@ impl Http {
         // active shared cooldown, even one this caller did not cause.
         self.share_cooldown(cancel, deadline).await?;
         for attempt in 0..RATE_LIMIT_TRIES {
-            // One budget of six tries, whether the last one ended in a
-            // complete 429 or never reached the peer at all.
-            let outcome = match self
-                .perform_once(
+            match self
+                .dial(
                     reqwest::Method::GET,
                     segments,
                     query,
@@ -575,22 +578,9 @@ impl Http {
                     }
                     return Ok(response);
                 }
+                Err(Failed::Connect) => return Err(Error::Transport),
                 Err(Failed::Other(error)) => return Err(error),
-                Err(Failed::Connect) => Err(Error::Transport),
-            };
-            let delay = match &outcome {
-                Err(_) => Some(CONNECT_RETRY),
-                Ok(_) => unreachable!("a non-429 response already returned"),
             }
-            .and_then(|delay| delay.checked_mul(1 << attempt));
-            let next = delay
-                .filter(|_| attempt + 1 < RATE_LIMIT_TRIES)
-                .and_then(|delay| Instant::now().checked_add(delay))
-                .filter(|next| *next < deadline);
-            let Some(next) = next else {
-                return outcome;
-            };
-            wait(cancel, deadline, tokio::time::sleep_until(next)).await?;
         }
         unreachable!("finite GET loop always returns its last outcome")
     }
@@ -648,17 +638,9 @@ impl Http {
     ) -> Result<Response, Error> {
         for attempt in 0..RATE_LIMIT_TRIES {
             match self
-                .perform_once(
-                    method.clone(),
-                    segments,
-                    query,
-                    body.clone(),
-                    cancel,
-                    deadline,
-                )
+                .dial(method.clone(), segments, query, body.clone(), cancel, deadline)
                 .await
             {
-                Err(Failed::Connect) => {}
                 Ok(response) if response.status == 429 => {
                     let until = self.rate_limit.observe(response.retry_after).await;
                     if attempt + 1 < RATE_LIMIT_TRIES && until < deadline {
@@ -667,19 +649,47 @@ impl Http {
                     }
                     return Ok(response);
                 }
-                outcome => return Ok(outcome?),
+                Ok(response) => return Ok(response),
+                Err(Failed::Connect) => return Err(Error::Transport),
+                Err(Failed::Other(error)) => return Err(error),
+            }
+        }
+        unreachable!("finite write loop always returns its last outcome")
+    }
+    /// ADR-174: one attempt that redials a connection that never existed (no
+    /// request byte left), at most CONNECT_DIALS times with doubled waits,
+    /// inside the request deadline. A refused dial is not a server verdict:
+    /// it neither extends the shared cooldown nor consumes a rate-limit try.
+    /// Returns the first response, or `Failed::Connect` when no dial ever
+    /// connected, or `Failed::Other` on any other failure.
+    async fn dial(
+        &self,
+        method: reqwest::Method,
+        segments: &[&str],
+        query: Option<&[(&str, &str)]>,
+        body: Option<String>,
+        cancel: &CancellationToken,
+        deadline: Instant,
+    ) -> Result<Response, Failed> {
+        for attempt in 0..CONNECT_DIALS {
+            match self
+                .perform_once(method.clone(), segments, query, body.clone(), cancel, deadline)
+                .await
+            {
+                Err(Failed::Connect) => {}
+                outcome => return outcome,
             }
             let next = CONNECT_RETRY
                 .checked_mul(1 << attempt)
-                .filter(|_| attempt + 1 < RATE_LIMIT_TRIES)
+                .filter(|_| attempt + 1 < CONNECT_DIALS)
                 .and_then(|delay| Instant::now().checked_add(delay))
                 .filter(|next| *next < deadline);
             let Some(next) = next else {
-                return Err(Error::Transport);
+                return Err(Failed::Connect);
             };
             wait(cancel, deadline, tokio::time::sleep_until(next)).await?;
         }
-        unreachable!("finite write loop always returns its last outcome")
+        unreachable!("finite dial loop always returns its last outcome")
     }
     /// TS beforeRequest: before the first try, wait out a shared cooldown
     /// already active from any other request source. A cooldown that cannot
