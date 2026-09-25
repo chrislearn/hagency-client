@@ -20,9 +20,13 @@ pub(crate) mod accounts;
 mod activity;
 pub use activity::{ActivityEvent, ActivityUpdate};
 mod agent_fences;
+mod agent_message_leftovers;
 mod agent_lifecycle;
 mod console_feed;
 pub use agent_fences::{AgentFence, FenceReason};
+pub use agent_message_leftovers::{
+    DeliveryEventRow, NewOperatorMessage, OperatorMessage, SuppressOutcome, Suppression, Tombstone,
+};
 mod approvals;
 mod engagement_retention;
 mod engagement_terms;
@@ -132,7 +136,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 54;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 55;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -374,6 +378,36 @@ pub struct EngagementLabel {
 /// these four scalar keys — the room id is already what the engagement
 /// and sessions reads serve; no binding payload, credential or workspace
 /// path travels.
+/// One role of the launch runtime profile (board #49, TS
+/// `normalizeRuntimeProfileRole`, `backend-v2.js:831-862`): the four fields
+/// native can source from the resource. `extraArgs`, `apiBaseUrl` and
+/// `apiKey` are TS-only enrichment of the record's own profile object and
+/// have no native source, so they are omitted — the same "unknown, never
+/// fabricated" rule the roster's `unavailable` list states.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeProfileRole {
+    pub framework: String,
+    pub provider: Option<String>,
+    pub model: String,
+    pub reasoning: Option<String>,
+}
+/// The launch runtime profile (board #49, TS `normalizeRuntimeProfile`,
+/// `backend-v2.js:864-876`): `{primary, supervisor}`. The port stores no
+/// supervisor profile, so `supervisor` is null — the TS shape when the
+/// stored record carries none.
+#[derive(Debug, Clone, Serialize)]
+pub struct RuntimeProfile {
+    pub primary: Option<RuntimeProfileRole>,
+    pub supervisor: Option<RuntimeProfileRole>,
+}
+/// One row of the read-only agent detail (board #22, TS `backend-v2.js:12155`
+/// `GET /api/agents/:name`): the agent-keyed identity plus the resource it
+/// works from, the rooms its sessions bind, its current (live) dispatch and
+/// its recent tasks. Scalar keys and two bounded lists of flat objects —
+/// no config payload, credential home or workspace path can travel inside.
+/// `engagements` counts every engagement the agent ever held, so an agent
+/// whose work all ended is still fully described.
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentDetailRoom {
     pub session_id: String,
@@ -902,6 +936,13 @@ impl DomainRepository {
                         54,
                         include_str!("migrations/069-thread-directives.sql"),
                     ),
+                    // Board #49's migration number is 067 (the board's
+                    // assignment); integrated as the next sequential tuple 55.
+                    // The file keeps its assigned 067 name.
+                    (
+                        55,
+                        include_str!("migrations/067-agent-message-leftovers.sql"),
+                    ),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
@@ -963,6 +1004,10 @@ impl DomainRepository {
                     "SELECT s.joined,s.invite_only,s.available,s.invalidation,m.transport_generation,f.cancel_requested,i.digest FROM matrix_room_scopes s CROSS JOIN matrix_room_memberships m CROSS JOIN final_replies f CROSS JOIN final_reply_inspections i LIMIT 0",
                     "SELECT id FROM current_final_replies LIMIT 0",
                     "SELECT e.scope_digest,e.config,r.digest,s.ingress_since,s.parent_session_id,t.observed_at,room.visibility_since,si.config,ti.config,ti.wake,n.verified_route,n.content_digest FROM matrix_ingress_events e CROSS JOIN verified_task_requests r CROSS JOIN matrix_session_routes s CROSS JOIN matrix_transports t CROSS JOIN matrix_room_scopes room CROSS JOIN session_inputs si CROSS JOIN task_inputs ti CROSS JOIN task_notices n LIMIT 0",
+                    "SELECT id,sender,recipient,kind,priority,summary,full,mentions,attachments,created_at,reply_to,group_id,source,source_room,source_event_id,sender_mxid,room_recipients,default_recipient,schema_kind,schema_version,schema_payload,suppressed FROM operator_messages LIMIT 0",
+                    "SELECT id,agent,message_id,kind,source,reason,context,created_at FROM delivery_events LIMIT 0",
+                    "SELECT name,deleted_at,reason FROM agent_tombstones LIMIT 0",
+                    "SELECT id,agent,regenerate,custom,mime,requested_at FROM avatar_requests LIMIT 0",
                 ],
             },
         )?;
@@ -1645,6 +1690,39 @@ impl DomainRepository {
             dispatch,
             tasks,
             reminders,
+        }))
+    }
+    /// The agent's launch runtime profile (board #49, TS `backend-v2.js:12344`
+    /// `GET /api/agents/:name/launch-env`): the profile of the resource the
+    /// agent's representative engagement works from, projected into the TS
+    /// `normalizeRuntimeProfile` shape (`{primary, supervisor}`). The port
+    /// stores no supervisor profile, so `supervisor` is null — the TS shape
+    /// when the stored profile carries none. `None` is the route's 404: no
+    /// engagement names the agent, the same key `agent_detail` selects on.
+    pub fn agent_launch_env(&self, name: &str) -> Result<Option<RuntimeProfile>, Error> {
+        let config: Option<String> = self
+            .db
+            .query_row(
+                "SELECT r.config FROM engagements e JOIN resources r ON r.id=e.resource_id \
+                 WHERE json_extract(e.projection,'$.agentName')=?1 \
+                 ORDER BY CASE e.state WHEN 'active' THEN 3 WHEN 'reserved' THEN 2 \
+                  WHEN 'pending' THEN 1 ELSE 0 END DESC, e.id DESC LIMIT 1",
+                [name],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(config) = config else {
+            return Ok(None);
+        };
+        let resource: Resource = serde_json::from_str(&config)?;
+        Ok(Some(RuntimeProfile {
+            primary: Some(RuntimeProfileRole {
+                framework: resource.framework,
+                provider: resource.provider,
+                model: resource.model,
+                reasoning: resource.reasoning,
+            }),
+            supervisor: None,
         }))
     }
     /// The agent's ACTIVE engagement ids, newest first — the list a force

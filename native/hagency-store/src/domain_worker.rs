@@ -3395,6 +3395,87 @@ impl DomainStore {
         let name = name.to_owned();
         self.call(64, move |db| db.agent_detail(&name)).await
     }
+    /// The agent's launch runtime profile (board #49): one writer job, one
+    /// bounded agent-keyed read; `None` is the route's 404.
+    pub async fn agent_launch_env(
+        &self,
+        name: &str,
+    ) -> Result<Option<crate::RuntimeProfile>, Error> {
+        let name = name.to_owned();
+        self.call(64, move |db| db.agent_launch_env(&name)).await
+    }
+    /// Board #49: the operator-board message (`backend-v2.js:16900`); `None`
+    /// is the route's 404.
+    pub async fn operator_message(
+        &self,
+        id: String,
+        now: u64,
+    ) -> Result<Option<crate::OperatorMessage>, Error> {
+        self.call(weight(&id)?, move |db| db.operator_message(&id, now))
+            .await
+    }
+    /// Board #49: the suppress write (`backend-v2.js:17002`).
+    pub async fn suppress_message(
+        &self,
+        id: String,
+        agent: String,
+        reason: String,
+        now: u64,
+    ) -> Result<crate::SuppressOutcome, Error> {
+        self.call(weight(&(&id, &agent))?, move |db| {
+            db.suppress_message(&id, &agent, &reason, now)
+        })
+        .await
+    }
+    /// Board #49: the agent's delivery events (`backend-v2.js:16988`).
+    pub async fn delivery_events(
+        &self,
+        agent: String,
+        limit: u32,
+    ) -> Result<Vec<crate::DeliveryEventRow>, Error> {
+        self.call(weight(&agent)?, move |db| db.delivery_events(&agent, limit))
+            .await
+    }
+    /// Board #49: the undelete write (`backend-v2.js:12308`); `false` is the
+    /// route's 404 `no tombstone found`.
+    pub async fn undelete_agent(&self, name: String) -> Result<bool, Error> {
+        self.call(weight(&name)?, move |db| db.undelete_agent(&name))
+            .await
+    }
+    /// Board #49: the tombstone writer (`backend-v2.js:4354`).
+    pub async fn record_agent_tombstone(
+        &self,
+        name: String,
+        reason: String,
+        now: u64,
+    ) -> Result<(), Error> {
+        self.call(weight(&name)?, move |db| {
+            db.record_agent_tombstone(&name, &reason, now)
+        })
+        .await
+    }
+    /// Board #49: the avatar request queue (`backend-v2.js:16370`).
+    pub async fn record_avatar_request(
+        &self,
+        agent: String,
+        regenerate: bool,
+        custom: bool,
+        mime: Option<String>,
+        now: u64,
+    ) -> Result<(), Error> {
+        self.call(weight(&agent)?, move |db| {
+            db.record_avatar_request(&agent, regenerate, custom, mime.as_deref(), now)
+        })
+        .await
+    }
+    /// Board #49: the board WRITER (`backend-v2.js:16480`, `:4500`).
+    pub async fn record_operator_message(
+        &self,
+        message: crate::NewOperatorMessage,
+    ) -> Result<(), Error> {
+        self.call(64 * 1024, move |db| db.record_operator_message(message))
+            .await
+    }
     /// Task #12 reads: the pending-invitation list (TS `listPendingInvites`,
     /// pending-only newest-first) and the single-record lookup.
     pub async fn pending_invites(&self) -> Result<Vec<crate::PendingInvite>, Error> {
