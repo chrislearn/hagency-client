@@ -404,12 +404,26 @@ impl Operation {
             }
             write(&custody, "dm-possible", Value::Null).await?;
             self.agent_current(cancel, deadline).await?;
+            // The agent's definition display name (bridge-matrix.js:5938-5955):
+            // set once at the identity moment of this provision — a custom
+            // name never present on a fresh account still wins inside the
+            // reconcile itself (matrix-agent-profile.js:22).
+            crate::identity_polish::reconcile_display_name(
+                &self.agent.http,
+                &self.agent.config.identity.transport.sender_mxid,
+                self.request.agent_definition.name.as_str(),
+                self.request.agent_definition.name.as_str(),
+                cancel,
+            )
+            .await?;
             self.project(cancel, deadline).await?;
             let response = self.post(&self.agent_write,&["_matrix","client","v3","createRoom"],json!({
                 "preset":"private_chat","is_direct":true,"invite":[self.request.owner_mxid],
                 "name":self.request.agent_definition.name,"creation_content":{"m.federate":false},
                 "initial_state":[{"type":"m.room.encryption","state_key":"","content":{"algorithm":"m.megolm.v1.aes-sha2"}},
-                    {"type":"m.room.history_visibility","state_key":"","content":{"history_visibility":"invited"}}]
+                    {"type":"m.room.history_visibility","state_key":"","content":{"history_visibility":"invited"}},
+                    {"type":"m.room.power_levels","state_key":"","content":crate::identity_polish::approval_room_power_levels(
+                        &self.agent.config.identity.transport.sender_mxid)?}]
             }),cancel,deadline).await?;
             write(
                 &custody,
@@ -503,6 +517,23 @@ impl Operation {
                 break;
             }
             if Instant::now() + std::time::Duration::from_secs(3) >= poll_until {
+                // The owner-absent warning (bridge-matrix.js:9267-9297): the
+                // request reached its DM, but nobody who can decide will see
+                // it until the owner joins — invited and never joined. Warned
+                // once on the first attempt's wait handoff; resumed turns
+                // re-check quietly (TS posts per delivery and native delivers
+                // once), and like the retained check it never takes the
+                // delivery it is checking down with it (:9293-9296).
+                if !resumed {
+                    eprintln!(
+                        "{}",
+                        crate::identity_polish::owner_absent_warning(
+                            Some(self.request.agent_definition.name.as_str()),
+                            &dm,
+                            &self.request.owner_mxid,
+                        )
+                    );
+                }
                 return Err(Error::AwaitingOwner);
             }
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;

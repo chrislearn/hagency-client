@@ -1,5 +1,6 @@
 mod common;
 use common::*;
+use hagency_core::tasks::*;
 use hagency_core::{
     allocation::Tokens,
     project::{CleanupState, EngagementState, Seat},
@@ -589,4 +590,134 @@ fn native_ceiling_no_ceiling_distinct_from_over_commit() {
         }
         other => panic!("expected OverCommit, got {other:?}"),
     }
+}
+
+/// The agent roster (board #22, TS `backend-v2.js:11696`): one row per
+/// AGENT — every agent the service knows appears, including one whose
+/// engagement is admit-only — with `online` derived from REAL worker
+/// state (a live dispatch in one of the agent's sessions) and
+/// `last_seen_ms` from the newest attempt clock, null never zero.
+#[test]
+fn domain_agent_roster_is_agent_keyed_with_real_worker_state() {
+    let (_dir, mut db) = setup();
+    let pool = resource("roster_pool", "roster_seat", 1000);
+    db.put_resource(&pool).unwrap();
+    // OnlineWorker: admitted, approved, effect observed, session, task,
+    // dispatch claimed and STARTED — the attempt clock is 1003.
+    let online_proof = proof(&request("roster_one", "OnlineWorker", &pool, 100));
+    let engagement = db.admit(&online_proof, 1000).unwrap().id;
+    db.approve("approve_roster_one", &online_proof, 1000).unwrap();
+    let effect = db.claim_effect().unwrap().unwrap();
+    db.observe_effect(
+        &effect.id,
+        effect.fence,
+        &EffectOutcome::Applied { receipt: "roster fixture".into() },
+    )
+    .unwrap();
+    db.register_session(&SessionBinding {
+        id: "roster_session".into(),
+        engagement_id: engagement.clone(),
+        room_id: "!project:example.test".into(),
+        thread_root: None,
+    })
+    .unwrap();
+    db.create_canonical_task("roster_task", "roster_session", "Roster work", 1001)
+        .unwrap();
+    db.register_workspace("roster_workspace").unwrap();
+    db.enqueue_dispatch(&DispatchInput {
+        id: "roster_dispatch".into(),
+        session_id: "roster_session".into(),
+        task_id: Some("roster_task".into()),
+        resources: vec![ResourceLease { id: "roster_workspace".into(), exclusive: true }],
+        payload: json!({}),
+    })
+    .unwrap();
+    let cap = db.claim_dispatch("roster_runner", 1002, 60000, 120000, 128).unwrap().unwrap();
+    let scope = db.owned_dispatch_scope(&cap, 1003).unwrap();
+    db.start_owned_dispatch(&cap, scope.fingerprint(), 1004).unwrap();
+    // IdleWorker: admit-only, no session — known but never staffed.
+    db.admit(&proof(&request("roster_two", "IdleWorker", &pool, 100)), 1000)
+        .unwrap();
+
+    let roster = db.agent_roster().unwrap();
+    assert_eq!(roster.len(), 2, "one row per agent the service knows");
+    let online = roster.iter().find(|r| r.name == "OnlineWorker").unwrap();
+    assert_eq!(online.state, EngagementState::Active);
+    assert!(online.online, "a live started dispatch is real worker state");
+    assert_eq!(online.last_seen_ms, Some(1002), "the newest attempt clock");
+    assert_eq!(online.last_activity_ms, Some(1002));
+    assert_eq!(online.engagement_id, engagement);
+    let idle = roster.iter().find(|r| r.name == "IdleWorker").unwrap();
+    assert_eq!(idle.state, EngagementState::Pending);
+    assert!(!idle.online, "no session means no live dispatch");
+    assert_eq!(idle.last_seen_ms, None, "never attempted: null, not zero");
+    assert_eq!(idle.last_activity_ms, None);
+}
+
+/// The agent detail (board #22, TS `backend-v2.js:12155`): the agent-keyed
+/// identity plus resource, rooms, current dispatch and recent tasks; an
+/// unknown agent is None (the route's 404).
+#[test]
+fn domain_agent_detail_projects_rooms_dispatch_and_tasks() {
+    let (_dir, mut db) = setup();
+    let pool = resource("detail_pool", "detail_seat", 1000);
+    db.put_resource(&pool).unwrap();
+    assert!(db.agent_detail("Nobody").unwrap().is_none(), "unknown agent: 404");
+    let detail_proof = proof(&request("detail_one", "DetailWorker", &pool, 100));
+    let engagement = db.admit(&detail_proof, 1000).unwrap().id;
+    db.approve("approve_detail_one", &detail_proof, 1000).unwrap();
+    let effect = db.claim_effect().unwrap().unwrap();
+    db.observe_effect(
+        &effect.id,
+        effect.fence,
+        &EffectOutcome::Applied { receipt: "detail fixture".into() },
+    )
+    .unwrap();
+    db.register_session(&SessionBinding {
+        id: "detail_session".into(),
+        engagement_id: engagement.clone(),
+        room_id: "!project:example.test".into(),
+        thread_root: None,
+    })
+    .unwrap();
+    db.create_canonical_task("detail_task", "detail_session", "Detail work", 1001)
+        .unwrap();
+    db.register_workspace("detail_workspace").unwrap();
+    db.enqueue_dispatch(&DispatchInput {
+        id: "detail_dispatch".into(),
+        session_id: "detail_session".into(),
+        task_id: Some("detail_task".into()),
+        resources: vec![ResourceLease { id: "detail_workspace".into(), exclusive: true }],
+        payload: json!({}),
+    })
+    .unwrap();
+    let cap = db.claim_dispatch("detail_runner", 1002, 60000, 120000, 128).unwrap().unwrap();
+    let scope = db.owned_dispatch_scope(&cap, 1003).unwrap();
+    db.start_owned_dispatch(&cap, scope.fingerprint(), 1004).unwrap();
+
+    let detail = db.agent_detail("DetailWorker").unwrap().unwrap();
+    assert_eq!(detail.name, "DetailWorker");
+    assert_eq!(detail.state, EngagementState::Active);
+    assert!(detail.online);
+    assert_eq!(detail.last_seen_ms, Some(1002));
+    assert_eq!(detail.engagements, 1);
+    assert_eq!(detail.engagement_id, engagement);
+    assert_eq!(detail.rooms.len(), 1);
+    assert_eq!(detail.rooms[0].room_id, "!project:example.test");
+    assert_eq!(detail.rooms[0].dispatch_state.as_deref(), Some("started"));
+    let dispatch = detail.dispatch.as_ref().unwrap();
+    assert_eq!(dispatch.dispatch_state.as_deref(), Some("started"));
+    assert_eq!(dispatch.dispatch_id.as_deref(), Some("detail_dispatch"));
+    assert_eq!(detail.tasks.len(), 1);
+    assert_eq!(detail.tasks[0].id, "detail_task");
+    assert_eq!(detail.tasks[0].title, "Detail work");
+    // Admit-only agent: known, no rooms, no dispatch, no tasks.
+    db.admit(&proof(&request("detail_two", "QuietWorker", &pool, 100)), 1000)
+        .unwrap();
+    let quiet = db.agent_detail("QuietWorker").unwrap().unwrap();
+    assert!(!quiet.online);
+    assert_eq!(quiet.last_seen_ms, None);
+    assert!(quiet.dispatch.is_none());
+    assert!(quiet.rooms.is_empty());
+    assert!(quiet.tasks.is_empty());
 }

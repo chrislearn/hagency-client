@@ -80,8 +80,7 @@ fn snapshot(dir: &Dir, path: &str, limit: usize) -> Result<Snapshot, Error> {
 fn mime(path: &str) -> Option<&'static str> {
     if matches!(
         path,
-        "index.html"
-            | "usage/index.html"
+        "usage/index.html"
             | "resources/index.html"
             | "resources/new/index.html"
             | "alerts/index.html"
@@ -137,9 +136,7 @@ impl Assets {
             if proof.len() != entry.size || digest != entry.sha256 {
                 return Err(Error::Assets);
             }
-            let key = if entry.path == "index.html" {
-                "/console/".into()
-            } else if entry.path == "usage/index.html" {
+            let key = if entry.path == "usage/index.html" {
                 "/console/usage/".into()
             } else if entry.path == "resources/new/index.html" {
                 "/console/resources/new/".into()
@@ -178,9 +175,7 @@ impl Assets {
         })
     }
     pub(super) fn get(&self, path: &str) -> Option<&Asset> {
-        self.values.get(if path == "/console" {
-            "/console/"
-        } else if path == "/console/usage" {
+        self.values.get(if path == "/console/usage" {
             "/console/usage/"
         } else if path == "/console/resources/new" {
             "/console/resources/new/"

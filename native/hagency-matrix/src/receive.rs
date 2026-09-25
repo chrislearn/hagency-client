@@ -189,15 +189,21 @@ impl Collector {
             })
             .as_ref()
             .map_err(Clone::clone)?;
-        let checked = downloader
-            .download_bounded_until(
-                handle.media_id(),
-                handle.descriptor(),
-                cancel,
-                deadline,
-                max_bytes,
-            )
-            .await?;
+        // TS parity (lib/matrix-file.js:38): an encrypted-room attachment decrypts
+        // through its descriptor; a plaintext-room attachment is the original
+        // bytes, checked by digest only.
+        let checked = match handle.descriptor() {
+            Some(descriptor) => {
+                downloader
+                    .download_bounded_until(handle.media_id(), descriptor, cancel, deadline, max_bytes)
+                    .await?
+            }
+            None => {
+                downloader
+                    .download_plain_bounded_until(handle.media_id(), cancel, deadline, max_bytes)
+                    .await?
+            }
+        };
         let scope = ReceivedScope {
             domain: self.inner.domain.clone(),
             cap,

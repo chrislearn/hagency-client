@@ -167,6 +167,10 @@ pub struct ReplySend {
     pub digest: String,
     pub route: ReplyRoute,
     pub body: String,
+    /// The message this reply answers (`m.in_reply_to`), from the dispatch's
+    /// own addressed input. None for a host-driven send with no question.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_to: Option<String>,
 }
 #[derive(Clone, Serialize)]
 pub struct ReplyDeliveryObservation {

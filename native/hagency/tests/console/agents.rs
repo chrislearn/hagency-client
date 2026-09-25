@@ -2,12 +2,13 @@ use super::*;
 use hagency_core::tasks::SessionBinding;
 use hagency_store::resource_publication_revision;
 
-/// The agent roster observation (ADR-126): the read is a bounded
-/// projection of the engagement rows — every item carries EXACTLY the
-/// seven declared keys, no nested object, no private field — and the
-/// null-not-zero rule is pinned on the seeded rows with no attempt
-/// (`AlertWorker`, `PageWorker` are `pending` with `last_activity_ms:
-/// null`, while `UsageWorker` is `active` with the attempt clock).
+/// The agent roster observation (ADR-126, widened by board #22): the read
+/// is one row per AGENT — the TS roster's shape (`backend-v2.js:11696`) —
+/// every item carries EXACTLY the nine declared keys, no nested object, no
+/// private field — and the null-not-zero rule is pinned on the seeded
+/// agents with no attempt (`AlertWorker`, `PageWorker` report null
+/// `last_seen_ms`/`last_activity_ms`, while `UsageWorker` is online with
+/// the attempt clock: its live `started` dispatch is REAL worker state).
 #[tokio::test]
 async fn native_console_agent_roster_observation() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
@@ -43,24 +44,19 @@ async fn native_console_agent_roster_observation() {
         value["permissions"]["manageLifecycle"].as_bool() == Some(false),
         "a read-only session serves no lifecycle permission"
     );
-    let unavailable = value["unavailable"].as_array().unwrap();
-    let names: Vec<&str> = unavailable.iter().map(|v| v.as_str().unwrap()).collect();
+    // Board #60 item 2: every column this console renders is now ANSWERED
+    // from native state — seat (resources.config), consumed
+    // (usage_sources.latest_counts) and liveness (the live dispatch row) —
+    // so the server names none as unavailable. The four that stay
+    // unanswerable by design (tmux, pane, credential_home, workspace_path:
+    // ADR-126) are DROPPED, not printed as "unknown".
     assert_eq!(
-        names,
-        [
-            "consumed",
-            "last_seen",
-            "online",
-            "tmux",
-            "pane",
-            "credential_home",
-            "workspace_path",
-            "seat",
-        ],
-        "the server names every column it has no source for"
+        value["unavailable"].as_array().unwrap().len(),
+        0,
+        "every rendered roster column has a native source"
     );
     let agents = value["agents"].as_array().unwrap();
-    assert_eq!(agents.len(), 3, "one row per seeded engagement");
+    assert_eq!(agents.len(), 3, "one row per agent the service knows");
     let keys = [
         "name",
         "framework",
@@ -68,7 +64,11 @@ async fn native_console_agent_roster_observation() {
         "state",
         "engagement_id",
         "requested_tokens",
+        "online",
+        "last_seen_ms",
         "last_activity_ms",
+        "liveness",
+        "consumed",
     ];
     let mut by_name: Vec<(String, &Value)> = agents
         .iter()
@@ -79,7 +79,7 @@ async fn native_console_agent_roster_observation() {
     assert_eq!(names, ["AlertWorker", "PageWorker", "UsageWorker"]);
     for (_, agent) in &by_name {
         let object = agent.as_object().unwrap();
-        assert_eq!(object.len(), keys.len(), "exactly seven keys");
+        assert_eq!(object.len(), keys.len(), "exactly eleven keys");
         for key in keys {
             assert!(object.contains_key(key), "the wire item carries {key}");
             assert!(
@@ -103,6 +103,16 @@ async fn native_console_agent_roster_observation() {
         usage["last_activity_ms"], 1002,
         "the newest attempt clock — last dispatch activity, not last seen"
     );
+    // Real worker state: UsageWorker's `started` dispatch is live, so the
+    // agent is online and its newest attempt clock is its last seen.
+    assert_eq!(
+        usage["online"], true,
+        "a live dispatch in the agent's session is real worker state"
+    );
+    assert_eq!(
+        usage["last_seen_ms"], 1002,
+        "last seen is the agent's newest attempt clock"
+    );
     // The null-not-zero rule: engagements with no attempt row report
     // unknown, never an invented zero clock. AlertWorker was approved but
     // its effect was never observed (reserved); PageWorker is admit-only
@@ -117,8 +127,118 @@ async fn native_console_agent_roster_observation() {
             agent["last_activity_ms"].is_null(),
             "{name} carries null, not zero"
         );
+        assert_eq!(agent["online"], false, "{name} has no live dispatch");
+        assert!(
+            agent["last_seen_ms"].is_null(),
+            "{name} never attempted — null, not zero"
+        );
     }
     assert_private(&value);
+    f.close().await;
+}
+
+/// The agent detail route (board #22, TS `backend-v2.js:12155`
+/// `GET /api/agents/:name`): one agent the service knows — identity,
+/// resource, rooms, current dispatch, recent tasks — with the same
+/// read-class gating as the roster. An unknown agent is 404, an invalid
+/// name shape is 400 before any store work, and the seeded UsageWorker's
+/// live dispatch is its real online state.
+#[tokio::test]
+async fn native_console_agent_detail_observation() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let anonymous = TestClient::get(format!("{BASE}/console/api/agents/UsageWorker"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .send(&service)
+        .await;
+    assert_eq!(anonymous.status_code, Some(StatusCode::UNAUTHORIZED));
+    let cookie = session(&service).await;
+    // The detail takes no selection: query parameters are refused.
+    let response = get("/console/api/agents/UsageWorker?limit=1", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST));
+    // An agent the service never engaged is the TS route's 404.
+    let mut response = get("/console/api/agents/Nobody", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::NOT_FOUND));
+    assert_eq!(
+        response.take_json::<Value>().await.unwrap()["code"],
+        "agent_not_found"
+    );
+    let mut response = get("/console/api/agents/UsageWorker", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+    let value = response.take_json::<Value>().await.unwrap();
+    let keys = [
+        "name", "framework", "role", "state", "engagement_id", "requested_tokens",
+        "online", "last_seen_ms", "resource_id", "project_id", "engagements",
+        "rooms", "dispatch", "tasks",
+    ];
+    let object = value.as_object().unwrap();
+    assert_eq!(object.len(), keys.len(), "exactly the declared detail keys");
+    for key in keys {
+        assert!(object.contains_key(key), "the detail carries {key}");
+    }
+    assert_eq!(value["name"], "UsageWorker");
+    assert_eq!(value["framework"], "codex");
+    assert_eq!(value["role"], "coding");
+    assert_eq!(value["state"], "active");
+    assert_eq!(value["requested_tokens"], 100);
+    assert_eq!(value["engagements"], 1, "one engagement names the agent");
+    assert!(value["resource_id"].as_str().unwrap().len() <= 128);
+    assert!(value["project_id"].as_str().unwrap().len() <= 128);
+    // Real worker state: the seeded live `started` dispatch.
+    assert_eq!(value["online"], true);
+    assert_eq!(value["last_seen_ms"], 1002);
+    // Rooms: the one seeded session binds the project room and carries the
+    // live dispatch state.
+    let rooms = value["rooms"].as_array().unwrap();
+    assert_eq!(rooms.len(), 1);
+    assert_eq!(rooms[0]["session_id"], "private_session");
+    assert_eq!(rooms[0]["room_id"], "!project:example.test");
+    assert_eq!(rooms[0]["dispatch_state"], "started");
+    assert_eq!(rooms[0]["dispatch_id"], "private_dispatch");
+    // Current dispatch: the same live dispatch, agent-wide.
+    assert_eq!(value["dispatch"]["dispatch_state"], "started");
+    assert_eq!(value["dispatch"]["room_id"], "!project:example.test");
+    // Recent tasks: the one seeded canonical task, newest first. The
+    // fixture claimed and STARTED its dispatch, so the task's TS-visible
+    // state is in_progress — the state a started dispatch reports
+    // (backend-v2.js:13332 serves the store's task verbatim).
+    let tasks = value["tasks"].as_array().unwrap();
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks[0]["id"], "private_task");
+    assert_eq!(tasks[0]["title"], "Usage");
+    assert_eq!(tasks[0]["status"], "in_progress");
+    f.close().await;
+}
+
+/// The detail serves the TS-visible state even when the agent's work
+/// ended: an agent whose engagements are all retired still appears (the
+/// TS roster never dropped a record), with no live dispatch.
+#[tokio::test]
+async fn native_console_agent_detail_covers_an_ended_agent() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let cookie = session(&service).await;
+    // PageWorker is admit-only (pending): known to the service, never
+    // staffed a session.
+    let mut response = get("/console/api/agents/PageWorker", &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["name"], "PageWorker");
+    assert_eq!(value["state"], "pending");
+    assert_eq!(value["online"], false, "no session means no live dispatch");
+    assert!(value["last_seen_ms"].is_null(), "never attempted: null, not zero");
+    assert!(value["dispatch"].is_null(), "no live dispatch");
+    assert!(value["rooms"].as_array().unwrap().is_empty());
+    assert!(value["tasks"].as_array().unwrap().is_empty());
     f.close().await;
 }
 
@@ -1248,4 +1368,193 @@ async fn native_console_outcome_resolution() {
         );
         f.close().await;
     }
+}
+
+/// `DELETE /api/agents/:name` — the retained soft/force delete
+/// (`backend-v2.js:12164-12307`). SOFT is TS's reversible act: it reports
+/// `{ok, deprecated, message}` and changes nothing, because TS's own comment
+/// (`:12206-12225`) is explicit that only `?force=true` may revoke — a soft
+/// delete is reversible and `revoke` has no inverse. Native has no agent
+/// record (an agent is DERIVED from its engagements), so "marked inactive" is
+/// the honest no-op it is: NOTHING is revoked.
+#[tokio::test]
+async fn native_console_agent_delete_soft_is_reversible() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let cookie = lifecycle_session(&service).await;
+    let mut response = TestClient::delete(format!(
+        "{BASE}/console/api/agents/UsageWorker"
+    ))
+    .add_header("host", "127.0.0.1:13300", true)
+    .add_header("origin", BASE, true)
+    .add_header("sec-fetch-site", "same-origin", true)
+    .add_header("cookie", &cookie, true)
+    .send(&service)
+    .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["deprecated"], true);
+    assert_eq!(
+        value["message"],
+        "unregister is disabled; agent marked inactive. Use ?force=true to permanently delete."
+    );
+    // The agent payload IS the detail projection the read serves — TS
+    // returns `serializeAgent(agent)` (`backend-v2.js:12304`), so the two
+    // must agree byte for byte rather than merely "look like" each other.
+    // (`assert_private` deliberately does not apply here: the bounded detail
+    // projection carries `rooms[].session_id`, which the shipped
+    // `GET /console/api/agents/{name}` route serves too — the detail test
+    // asserts that value is present.)
+    let served = get("/console/api/agents/UsageWorker", &cookie)
+        .send(&service)
+        .await
+        .take_json::<Value>()
+        .await
+        .unwrap();
+    assert_eq!(value["agent"], served, "the delete returns the served record");
+    assert_eq!(value["agent"]["name"], "UsageWorker");
+    assert_eq!(value["agent"]["state"], "active");
+    // The envelope carries exactly TS's four soft-delete keys.
+    let mut keys: Vec<&str> = value.as_object().unwrap().keys().map(|k| k.as_str()).collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["agent", "deprecated", "message", "ok"]);
+    // REVERSIBLE: the engagement is untouched, so nothing an `undelete`
+    // would have to undo (TS's stated reason for not releasing here).
+    let engagement = f.domain.engagement(f.engagement.clone()).await.unwrap();
+    assert_eq!(
+        engagement.state,
+        hagency_core::project::EngagementState::Active,
+        "a soft delete revokes nothing"
+    );
+    // And no stop row was written — the act is not a dispatch mutation.
+    let raw = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3")).unwrap();
+    let stops: i64 = raw
+        .query_row("SELECT COUNT(*) FROM dispatch_stops", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(stops, 0, "a soft delete writes no stop row");
+    drop(raw);
+    f.close().await;
+}
+
+/// FORCE really deletes: TS revokes the agent's ACTIVE engagements and
+/// REPORTS the released ids (`backend-v2.js:12231-12238`), because a
+/// commitment outliving its agent is the leak this closes — removing the
+/// agent while its commitment stands would drain a contributor's quota by
+/// attrition. Native's `revoke` is that act and releases the budget by
+/// construction.
+#[tokio::test]
+async fn native_console_agent_delete_force_releases_active_engagements() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let cookie = lifecycle_session(&service).await;
+    let id = f.engagement.clone();
+    let mut response = TestClient::delete(format!(
+        "{BASE}/console/api/agents/UsageWorker?force=true"
+    ))
+    .add_header("host", "127.0.0.1:13300", true)
+    .add_header("origin", BASE, true)
+    .add_header("sec-fetch-site", "same-origin", true)
+    .add_header("cookie", &cookie, true)
+    .send(&service)
+    .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let value = response.take_json::<Value>().await.unwrap();
+    assert_eq!(value["ok"], true);
+    assert_eq!(value["deleted"], true);
+    assert_eq!(value["name"], "UsageWorker");
+    // Native has no tmux/session kill at this layer; the revoke schedules
+    // the retirement that owns worker cleanup. Reported, never invented.
+    assert_eq!(value["sessionKilled"], false);
+    assert_eq!(value["leftGroups"].as_array().unwrap().len(), 0);
+    assert_eq!(value["leftProjectRooms"].as_array().unwrap().len(), 0);
+    let released = value["releasedEngagements"].as_array().unwrap();
+    assert_eq!(released.len(), 1, "the agent's one active engagement");
+    assert_eq!(released[0], id);
+    assert_private(&value);
+    // The commitment is RELEASED: the engagement is revoked, not merely
+    // reported as such.
+    let engagement = f.domain.engagement(id).await.unwrap();
+    assert_eq!(
+        engagement.state,
+        hagency_core::project::EngagementState::Revoked,
+        "force released the commitment"
+    );
+    f.close().await;
+}
+
+/// A delete is a lifecycle act: a read-only session is refused with the
+/// console's named word and NOTHING changes — not even under `?force=true`,
+/// which is the one arm that mutates.
+#[tokio::test]
+async fn native_console_agent_delete_refuses_without_lifecycle_scope() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let readonly = session(&service).await;
+    for path in [
+        "/console/api/agents/UsageWorker",
+        "/console/api/agents/UsageWorker?force=true",
+    ] {
+        let mut response = TestClient::delete(format!("{BASE}{path}"))
+            .add_header("host", "127.0.0.1:13300", true)
+            .add_header("origin", BASE, true)
+            .add_header("sec-fetch-site", "same-origin", true)
+            .add_header("cookie", &readonly, true)
+            .send(&service)
+            .await;
+        assert_eq!(response.status_code, Some(StatusCode::FORBIDDEN), "{path}");
+        assert_eq!(
+            response.take_json::<Value>().await.unwrap()["code"],
+            "agent_lifecycle_scope_required",
+            "{path}"
+        );
+    }
+    // The refusal left the commitment standing (the force refusal above is
+    // the one that matters: it must not have half-deleted).
+    let engagement = f.domain.engagement(f.engagement.clone()).await.unwrap();
+    assert_eq!(
+        engagement.state,
+        hagency_core::project::EngagementState::Active,
+        "a refused delete changes nothing"
+    );
+    f.close().await;
+}
+
+/// The TS refusal shapes: 404 `{error:'agent not found'}` for an agent no
+/// record names, 400 for a name shape the detail read would refuse.
+#[tokio::test]
+async fn native_console_agent_delete_not_found_and_invalid_name() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let cookie = lifecycle_session(&service).await;
+    let mut missing = TestClient::delete(format!(
+        "{BASE}/console/api/agents/NoSuchAgent"
+    ))
+    .add_header("host", "127.0.0.1:13300", true)
+    .add_header("origin", BASE, true)
+    .add_header("sec-fetch-site", "same-origin", true)
+    .add_header("cookie", &cookie, true)
+    .send(&service)
+    .await;
+    assert_eq!(missing.status_code, Some(StatusCode::NOT_FOUND));
+    let body = missing.take_json::<Value>().await.unwrap();
+    assert_eq!(body["error"], "agent not found");
+    assert_eq!(body["code"], "agent_not_found");
+    // An invalid name shape is refused BEFORE any store work (the same
+    // AgentName bound the detail read uses).
+    let mut invalid = TestClient::delete(format!(
+        "{BASE}/console/api/agents/1bad%20name"
+    ))
+    .add_header("host", "127.0.0.1:13300", true)
+    .add_header("origin", BASE, true)
+    .add_header("sec-fetch-site", "same-origin", true)
+    .add_header("cookie", &cookie, true)
+    .send(&service)
+    .await;
+    assert_eq!(invalid.status_code, Some(StatusCode::BAD_REQUEST));
+    assert_eq!(
+        invalid.take_json::<Value>().await.unwrap()["code"],
+        "invalid_console_request"
+    );
+    f.close().await;
 }

@@ -31,15 +31,10 @@ pub fn assets(path: &Path) {
     private::write_new(&path.join("usage/index.html"), bytes).unwrap();
     let engagement_bytes = b"<!doctype html><html><body>engagements document fixture</body></html>";
     private::write_new(&path.join("engagements/index.html"), engagement_bytes).unwrap();
-    /* The production build (build-native-console.mjs) always exports the
-     * front-door document; assets.rs requires it, so the fixture does too. */
-    let root_bytes = b"<!doctype html><html><body>front door fixture</body></html>";
-    private::write_new(&path.join("index.html"), root_bytes).unwrap();
     let mut assets = Vec::new();
-    let entries: [(&str, &[u8]); 3] = [
+    let entries: [(&str, &[u8]); 2] = [
         ("usage/index.html", bytes),
         ("engagements/index.html", engagement_bytes),
-        ("index.html", root_bytes),
     ];
     for (path, bytes) in entries {
         let digest: String = Sha256::digest(bytes)

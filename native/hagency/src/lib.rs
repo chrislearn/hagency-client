@@ -1,11 +1,13 @@
 use hagency_core::custody::{Delivery, MAX_DELIVERY_BYTES};
 use hagency_store::{DomainStore, Error, Store};
 mod alerts;
+pub mod bot_commands;
 pub mod bootstrap;
 pub mod console;
 pub(crate) mod file_service;
 pub mod inspect;
 pub mod mcp;
+pub mod ops;
 pub(crate) mod receive_service;
 mod resources;
 mod runner;
@@ -476,9 +478,112 @@ async fn capabilities(depot: &mut Depot, res: &mut Response) {
     res.render(Json(value));
 }
 
+/// The human text paired with every refusal code (board #60 item 1).
+///
+/// The retained server always answers `{error: <message>, code}` — never a bare
+/// token (`backend-v2.js:14953-14958` for engagements, `:10032` for the
+/// registration body) — so an operator reading the JSON, a log, or the console
+/// gets a sentence rather than `over_commit`. Codes with an exact retained
+/// wording carry it; the rest say in one line what the code means. The console
+/// localises from `code` and falls back to this text.
+fn refusal_message(code: &str) -> &'static str {
+    match code {
+        // Authentication and authority.
+        "operator_auth_required" => "the operator token is required",
+        "local_authority_required" => "the request must reach this service directly",
+        "console_origin_required" => "the request must originate from this console",
+        "console_access_required" => "console access is required or has expired",
+        "runner_auth_required" => "the runner token is required",
+        "acl_unconfigured" => "no access control list is configured",
+        "admin_required" => "an administrator credential is required",
+        "operator_required" => "an operator credential is required",
+        // Scopes.
+        "task_scope_required" => "task management scope is required",
+        "resource_publication_scope_required" => "resource publication management scope is required",
+        "resource_configuration_scope_required" => "resource configuration management scope is required",
+        "account_scope_required" => "account enrollment management scope is required",
+        "agent_lifecycle_scope_required" => "agent lifecycle management scope is required",
+        // Request bodies.
+        "json_required" => "a JSON request body is required",
+        "body_rejected" => "the request body was rejected",
+        "body_timeout" => "the request body was not received in time",
+        "body_too_large" => "the request body exceeds the limit",
+        // Invalid input, by surface.
+        "invalid" => "the request is invalid",
+        "invalid_console_request" => "the console request is invalid",
+        "invalid_usage_query" => "the usage query is invalid",
+        "invalid_roster_query" => "the roster query is invalid",
+        "invalid_alerts_query" => "the alerts query is invalid",
+        "invalid_approvals_query" => "the approvals query is invalid",
+        "invalid_side_query" => "the project-sides query is invalid",
+        "invalid_stream_query" => "the stream query is invalid",
+        "invalid_engagement_id" => "the engagement id is invalid",
+        "invalid_resource_command" => "the resource command is invalid",
+        "invalid_account_command" => "the account command is invalid",
+        "invalid_registration_body" => "the registration body is invalid",
+        "invalid_domain_command" => "the domain command is invalid",
+        "invalid_task_operation" => "the task operation is invalid",
+        "invalid_delivery" => "the delivery is invalid",
+        "invalid_alert_transition" => "the alert transition is invalid",
+        // Reads that could not be answered.
+        "not_found" => "the requested record was not found",
+        "project_side_not_found" => "project side not found",
+        "engagement_unavailable" => "the engagement could not be read",
+        "roster_unavailable" => "the agent roster could not be read",
+        "usage_unavailable" => "the usage observation is unavailable",
+        "alerts_unavailable" => "the alerts observation is unavailable",
+        "alerts_corrupt" => "the alert store is corrupt",
+        "approvals_unavailable" => "the approvals observation is unavailable",
+        "sides_unavailable" => "the project-sides observation is unavailable",
+        "stream_unavailable" => "the change stream is unavailable",
+        "registration_unavailable" => "the registration is unavailable",
+        // Service state.
+        "console_unavailable" => "the native console is unavailable",
+        "native_unavailable" => "the native API is unavailable",
+        "unavailable" => "the service is unavailable",
+        "domain_unavailable" => "the domain store is unavailable",
+        "busy" => "the service is busy; retry",
+        "console_busy" => "the console is at capacity; retry",
+        "outcome_unknown" => "the outcome is unknown",
+        "clock_unavailable" => "the clock is unavailable",
+        // Allocation.
+        "over_commit" => "the request exceeds the remaining allocation",
+        "no_ceiling" => "no remaining allocation is available",
+        "insufficient_capacity" => "there is not enough capacity",
+        // Lifecycle and concurrency conflicts.
+        "engagement_not_pending" => "engagement is no longer pending",
+        "engagement_not_live" => "the engagement is no longer live",
+        "command_conflict" => "a different command is already in progress",
+        "decision_conflict" => "the decision conflicts with the recorded one",
+        "resource_in_use" => "the resource is in use",
+        "resource_revision_conflict" => "the resource was changed by another writer",
+        "account_revision_conflict" => "the account was changed by another writer",
+        "account_state_conflict" => "the account is not in a state that allows this",
+        "continuation_conflict" => "the dispatch cannot be continued",
+        "recovery_conflict" => "the dispatch cannot be recovered",
+        "resolution_conflict" => "the dispatch was already resolved",
+        "stale_generation" => "the registration generation is stale",
+        "registration_generation" => "the registration generation does not match",
+        "bad_transition" => "the transition is not allowed",
+        "dispatch_not_continuable" => "the dispatch cannot be continued",
+        "dispatch_not_recoverable" => "the dispatch cannot be recovered",
+        "dispatch_not_resolvable" => "the dispatch cannot be resolved",
+        // Agents and roles.
+        "agent_unavailable" => "the agent is unavailable",
+        "agent_preset_unavailable" => "the agent preset is unavailable",
+        "agent_start_unavailable" => "the agent cannot be started",
+        "role_required" => "a role is required",
+        "resource_required" => "a resource is required",
+        "roles_are_model_derived" => "roles are derived from the model",
+        _ => "the request was refused",
+    }
+}
+
 fn refusal(res: &mut Response, status: StatusCode, code: &str) {
     res.status_code(status);
-    res.render(Json(serde_json::json!({"ok":false,"code":code})));
+    res.render(Json(
+        serde_json::json!({"ok":false,"code":code,"error":refusal_message(code)}),
+    ));
 }
 
 fn local_authority(req: &Request, depot: &Depot, res: &mut Response) -> bool {

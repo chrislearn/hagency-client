@@ -76,22 +76,32 @@ const SECTIONS = [
 const isUnder = (pathname, href) => pathname.startsWith(`${href}/`);
 
 /*
- * Native-only rail rows (parity finding #3): accounts, approvals and
- * project-sides are built and served by the native console but had no nav
- * entry, reachable only by typing the URL. They live under 机群/Fleet —
- * they observe the fleet's accounts, pending decisions and registered
- * project sides, none of which is a resource, capability or engagement.
- * Capability, projects and config stay greyed: no native page exists for
- * those workflows, and a link that can only 404 would lie.
+ * The native console is served under basePath /console, and usePathname()
+ * reports whatever path the deployment uses. Comparing a raw pathname against
+ * '/console/agents' only worked for the rows whose check happened to be a
+ * suffix test; the Agents row — a full-match test — was therefore unmarked on
+ * every page it was supposed to mark. Strip the base once, then compare against
+ * route paths, so the marking does not depend on whether usePathname() includes
+ * it (both forms are handled).
  */
-const NATIVE_FLEET_ROWS = [
-  { href: '/accounts', key: 'accounts', icon: '◍' },
-  { href: '/approvals', key: 'approvals', icon: '✓' },
-  { href: '/project-sides', key: 'projectSides', icon: '⛓' },
-];
-const NATIVE_SECTIONS = SECTIONS.map((sec) => sec.head === 'rail.secFleet'
-  ? { ...sec, rows: [...sec.rows, ...NATIVE_FLEET_ROWS] }
-  : sec);
+const CONSOLE_BASE = '/console';
+const routePath = (pathname) => {
+  const raw = pathname ?? '/';
+  const stripped = raw === CONSOLE_BASE || raw.startsWith(`${CONSOLE_BASE}/`)
+    ? raw.slice(CONSOLE_BASE.length) || '/'
+    : raw;
+  return stripped.length > 1 && stripped.endsWith('/') ? stripped.slice(0, -1) : stripped;
+};
+
+/** Does the current route belong to this rail row? */
+function isCurrent(path, row) {
+  // /agents/<name> is the roster's own detail view.
+  if (row.key === 'workforce') return path === '/agents' || path.startsWith('/agents/');
+  // A dynamic segment marks its parent: /resources/new is still the resources
+  // row, which the wizard's cancel link returns to.
+  if (row.key === 'resources') return path === '/' || path === '/resources' || path.startsWith('/resources/');
+  return path === row.href || path.startsWith(`${row.href}/`);
+}
 
 export default function Rail() {
   const data = useData();
@@ -101,15 +111,24 @@ export default function Rail() {
 function NativeRail() {
   const t = useT();
   const pathname = usePathname();
+  const data = useData();
+  const path = routePath(pathname);
   return <nav className="rail" aria-label={t('rail.nav')}>
     <div className="rail-brand"><b>HAGENCY</b><span>{t('nr.nativeConsole')}</span></div>
-    <div className="rail-fleet">{NATIVE_SECTIONS.map((sec) => <div key={sec.head}>
+    <div className="rail-fleet">{SECTIONS.map((sec) => <div key={sec.head}>
       <h2 className="rail-sec">{t(sec.head)}</h2>
       <ul className="rail-list">{sec.rows.map((row) => <li key={row.key}>
-        {['usage', 'resources', 'alerts', 'engagements', 'workforce', 'accounts', 'approvals', 'project-sides'].includes(row.key) ? <a className="fleet-row" href={row.key === 'workforce' ? '/console/agents/' : `/console/${row.key}/`} aria-current={pathname.endsWith(`/${row.key}`) || pathname.endsWith(`/${row.key}/`) || (row.key === 'workforce' ? /^\/console\/agents\/?$/.test(pathname) : pathname.startsWith(`/console/${row.key}/`)) ? 'page' : undefined}><span className="ico">{row.icon}</span><span className="grow">{t(`nav.${row.key}`)}</span></a>
+        {['usage', 'resources', 'alerts', 'engagements', 'workforce'].includes(row.key) ? <a className="fleet-row" href={row.key === 'workforce' ? '/console/agents/' : `/console/${row.key}/`} aria-current={isCurrent(path, row) ? 'page' : undefined}><span className="ico">{row.icon}</span><span className="grow">{t(`nav.${row.key}`)}</span></a>
           : <span className="fleet-row" aria-disabled="true" title={t('nu.unavailableRoute')}><span className="ico">{row.icon}</span><span className="grow">{t(`nav.${row.key}`)}</span><span>—</span></span>}
       </li>)}</ul>
     </div>)}</div>
+    {/* The session control belongs to the SHELL, not to a page: it used to sit
+        inside the Resource configuration panel, so six of the nine pages
+        offered no way to end access at all. Rendered here it is on every
+        native page, exactly once. */}
+    <div className="rail-session">
+      <button className="btn" data-shell-action="end-access" onClick={data.logout}>{t('nu.logout')}</button>
+    </div>
     <PrefsSwitch />
   </nav>;
 }

@@ -36,6 +36,15 @@ impl Fixture {
         Self::new_profile(true, false).await
     }
     pub async fn new_profile(direct: bool, thread: bool) -> Self {
+        Self::build(direct, thread, false).await
+    }
+    /// A group room whose /state carries no m.room.encryption event: the
+    /// derived route is plaintext, so files travel unencrypted (TS parity,
+    /// lib/matrix-file.js:30-33).
+    pub async fn new_plaintext() -> Self {
+        Self::build(false, false, true).await
+    }
+    async fn build(direct: bool, thread: bool, plaintext: bool) -> Self {
         let base = common::Fixture::new();
         let mut fake = common::Fake::start(true).await;
         let mut config = base
@@ -48,11 +57,19 @@ impl Fixture {
         }
         let collector = Collector::new(config, base.store.clone()).unwrap();
         let cancel = CancellationToken::new();
-        let (result, ()) = common::scripted(
-            collector.collect(&cancel),
-            common::success(&mut fake, "upload-initial"),
-        )
-        .await;
+        let (result, ()) = if plaintext {
+            common::scripted(
+                collector.collect(&cancel),
+                common::success_plaintext(&mut fake, "upload-initial"),
+            )
+            .await
+        } else {
+            common::scripted(
+                collector.collect(&cancel),
+                common::success(&mut fake, "upload-initial"),
+            )
+            .await
+        };
         result.unwrap();
         base.store
             .resolve_verified_matrix_session(SessionBinding {
@@ -250,6 +267,14 @@ impl Fixture {
         id: &str,
         caption: Option<&str>,
     ) -> Option<(StagedUpload, hagency_store::FileDeliveryIdentity, Vec<u8>)> {
+        self.file_input_named(id, caption, "结果.txt").await
+    }
+    pub async fn file_input_named(
+        &mut self,
+        id: &str,
+        caption: Option<&str>,
+        filename: &str,
+    ) -> Option<(StagedUpload, hagency_store::FileDeliveryIdentity, Vec<u8>)> {
         let file = self
             .base
             .store
@@ -258,7 +283,7 @@ impl Fixture {
                 hagency_core::file_delivery::FileDeliveryRequest {
                     call_id: id.into(),
                     request_digest: "1".repeat(64),
-                    filename: "结果.txt".into(),
+                    filename: filename.into(),
                     caption: caption.map(str::to_owned),
                 },
             )
@@ -429,6 +454,21 @@ pub(crate) async fn post(fake: &mut common::Fake, ciphertext: &[u8]) {
     assert_eq!(request.headers["content-type"], "application/octet-stream");
     assert_eq!(request.body, ciphertext);
     assert_ne!(request.body, DATA);
+    request.raw(common::response(200, RAW));
+}
+/// TS parity (lib/matrix-file.js:30-33): a plaintext room uploads the original
+/// bytes, not the encrypted blob; staged custody stays the encrypted record.
+pub(crate) async fn post_plaintext(fake: &mut common::Fake) {
+    authenticate(fake).await;
+    let request = fake.next().await;
+    assert_eq!(request.method, "POST");
+    assert_eq!(request.target, "/_matrix/media/v3/upload");
+    assert_eq!(
+        request.headers["authorization"],
+        format!("Bearer {}", common::TOKEN)
+    );
+    assert_eq!(request.headers["content-type"], "application/octet-stream");
+    assert_eq!(request.body, DATA);
     request.raw(common::response(200, RAW));
 }
 

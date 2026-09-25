@@ -84,6 +84,12 @@ pub(crate) enum Decision {
     Candidate { index: usize },
     Rejected { reason: Rejection },
     NotTarget,
+    /// Board #10 (TS `bridge-matrix.js:6646`): an `m.room.encrypted` event
+    /// whose room key had not arrived. The raw envelope is retained in the
+    /// batch's bounded `pending` list and NO terminal tombstone is written, so
+    /// a later sync can recover the message once the key arrives. It is not a
+    /// candidate (it produced no input) and it is not archived.
+    Deferred,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -112,7 +118,11 @@ impl Disposition {
     ) -> Option<Decision> {
         history
             .find(|r| {
-                r.source.matches_key(source) && !matches!(r.decision, Decision::Candidate { .. })
+                r.source.matches_key(source)
+                    && !matches!(
+                        r.decision,
+                        Decision::Candidate { .. } | Decision::Deferred
+                    )
             })
             .map(|r| {
                 if source.immutable != r.source.immutable {
@@ -128,7 +138,13 @@ impl Disposition {
         self.source.archive_key()
     }
     pub(crate) fn terminal(&self) -> bool {
-        !matches!(self.decision, Decision::Candidate { .. })
+        // Board #10: a deferred (awaiting-room-key) source is NOT terminal. It
+        // is never archived as an immutable tombstone, so it can still become a
+        // candidate when the key arrives.
+        !matches!(
+            self.decision,
+            Decision::Candidate { .. } | Decision::Deferred
+        )
     }
     pub(crate) fn validate_archive(&self) -> Result<(), Error> {
         self.source.validate()?;
@@ -164,6 +180,10 @@ pub(super) fn validate(
             Decision::Candidate { index } if index == next => next += 1,
             Decision::Candidate { .. } => return Err(Error::Storage),
             Decision::NotTarget => ignored += 1,
+            // Board #10: a deferred source accounted for a raw event but
+            // produced neither a candidate nor a filtered/ignored row, so it
+            // neither advances `next` nor counts against `filtered`.
+            Decision::Deferred => {}
             Decision::Rejected { .. } => {}
         }
     }

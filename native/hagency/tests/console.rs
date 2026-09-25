@@ -2,6 +2,8 @@
 mod accounts;
 #[path = "console/agents.rs"]
 mod agents;
+#[path = "console/stream.rs"]
+mod stream;
 #[path = "console/alerts.rs"]
 mod alerts;
 #[path = "console/approvals.rs"]
@@ -15,10 +17,14 @@ mod configuration;
 mod engagements;
 #[path = "console/engagements_retire.rs"]
 mod engagements_retire;
+#[path = "console/engagements_verdict.rs"]
+mod engagements_verdict;
 #[path = "console/fixture.rs"]
 mod fixture;
 #[path = "console/origin.rs"]
 mod origin;
+#[path = "console/offer_book.rs"]
+mod offer_book;
 #[path = "console/project_sides.rs"]
 mod project_sides;
 #[path = "console/real_agent.rs"]
@@ -27,6 +33,8 @@ mod real_agent;
 mod registration;
 #[path = "console/resources.rs"]
 mod resources;
+#[path = "console/side_registration.rs"]
+mod side_registration;
 #[path = "console/status_strip.rs"]
 #[cfg(feature = "native-console-browser")]
 mod status_strip;
@@ -225,23 +233,6 @@ async fn native_console_assets() {
             .unwrap()
             .contains("retained asset fixture")
     );
-    /* The front door (parity finding #1): `/console/` serves the root
-     * document, and bare `/console` maps to it — the operator never needs a
-     * deep URL to land on a real page. */
-    for path in ["/console/", "/console"] {
-        let mut response = TestClient::get(format!("{BASE}{path}"))
-            .add_header("host", "127.0.0.1:13300", true)
-            .send(&f.service())
-            .await;
-        assert!(
-            response
-                .take_string()
-                .await
-                .unwrap()
-                .contains("front door fixture"),
-            "front door missing at {path}"
-        );
-    }
     for path in [
         "/console/operator.token",
         "/console/agents/FixtureName",
