@@ -931,6 +931,89 @@ async fn native_provisioning_admits_a_custom_event_type_request() {
     c.close().await.unwrap();
 }
 
+/// Board #71 (TS parity: lib/engagement-store.js:503-511 + lib/bot-commands.js:573):
+/// a request whose body omits `requestId` is accepted — the intake derives the
+/// idempotency key from the source event id, the exact key the retained bridge
+/// supplies. Two id-less asks are two engagements; re-delivering the same event
+/// replays the admission instead of minting a second engagement.
+#[tokio::test]
+async fn native_provisioning_ingress_admits_a_request_without_request_id() {
+    let (f, mut fake, c) = ready_provisioning().await;
+    let before = rows(&f, "engagements");
+    let idless = |event: &str, agent: &str| {
+        let mut body: Value = serde_json::from_str(&request_body("request_one", 250)).unwrap();
+        let object = body.as_object_mut().unwrap();
+        object.remove("requestId");
+        // A second live ask for the same (project, agent) hits the store's
+        // live-name uniqueness (unrelated to requestId), so the two asks name
+        // different agents — the TS case's `two.id !== one.id`, honestly.
+        object.insert("agent".into(), agent.into());
+        request_event(event, body.to_string())
+    };
+    let cancel = CancellationToken::new();
+    let intake = c.intake(plan(), &cancel);
+    let (result, ()) = common::scripted(intake, async {
+        fake.next().await.json(200, common::who());
+        let request = fake.next().await;
+        assert!(request.target.contains("sync?"));
+        request.json(
+            200,
+            provisioning_sync(
+                "provision",
+                vec![idless("$ask_one", "Provisioned"), idless("$ask_two", "Second")],
+            ),
+        );
+        fake.next().await.json(200, session_state());
+        fake.next().await.json(200, reception_state());
+        // The project room's /state is fetched once (the in-memory room-facts
+        // cache serves the second same-room admit; provision clears only a
+        // LATER verdict's cached entry, intake.rs:417-420).
+        fake.next().await.json(200, project_state());
+    })
+    .await;
+    let stage = status(&c, &mut fake).await.stage;
+    let summary = result.unwrap_or_else(|e| panic!("intake failed: {e:?}, stage={stage}"));
+    assert_eq!(summary.admitted, 2);
+    assert_eq!(summary.replayed, 0);
+    assert_eq!(rows(&f, "engagements"), before + 2);
+    // The stored key is the one the intake derived from the source event id —
+    // `ev_<sha256(event_id)>` — the TS bridge's event-id key.
+    let derived = format!("ev_{}", hagency_core::project::hash(b"$ask_one"));
+    let stored: String = rusqlite::Connection::open(f.root.path().join("domain/domain.sqlite3"))
+        .unwrap()
+        .query_row(
+            "SELECT request_id FROM engagements WHERE request_id=?1",
+            [&derived],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(stored, derived);
+    // Re-delivering the same source event replays the admission: the derived
+    // key is stable, so the second intake reports a replay, not a mint. The
+    // project room's /state is cached from the first pass, so the script
+    // answers only the session and reception rooms.
+    let cancel = CancellationToken::new();
+    let intake = c.intake(plan(), &cancel);
+    let (replay, ()) = common::scripted(intake, async {
+        fake.next().await.json(200, common::who());
+        let request = fake.next().await;
+        assert!(request.target.contains("sync?"));
+        request.json(
+            200,
+            provisioning_sync("provision_replay", vec![idless("$ask_one", "Provisioned")]),
+        );
+        fake.next().await.json(200, session_state());
+        fake.next().await.json(200, reception_state());
+    })
+    .await;
+    let stage = status(&c, &mut fake).await.stage;
+    let replay = replay.unwrap_or_else(|e| panic!("replay intake failed: {e:?}, stage={stage}"));
+    assert_eq!(replay.admitted, 0);
+    assert_eq!(replay.replayed, 1);
+    assert_eq!(rows(&f, "engagements"), before + 2);
+    c.close().await.unwrap();
+}
+
 /// A lost writer response after a successful provision leaves the batch
 /// pending; the restored handoff replays the admission (idempotent on
 /// `request_id`) instead of minting a second engagement.

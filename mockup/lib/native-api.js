@@ -522,6 +522,43 @@ export async function fetchApproval(key) {
 }
 export function approvalsView(location) { return /^\/console\/approvals\/?$/.test(location.pathname); }
 
+/*
+ * The read-only approval-bindings list (board #52, TS `GET
+ * /api/approval-bindings` at backend-v2.js:9051-9082, the plain-list branch):
+ * exactly the nine keys the route serves, and nothing else — no
+ * `agentJoined`, no `active`, no authority id, because native derives a
+ * binding from its own room observations and none of those columns exist to
+ * serve. An extra key fails the whole read, the same discipline the
+ * approvals projection applies.
+ */
+const bindingRow = (v) => object(v, ['engagementId', 'agent', 'fleetId', 'projectId', 'serverName', 'roomId', 'ownerMxid', 'roomGeneration', 'incarnation'])
+  && id(v.engagementId) && text(v.agent, 128) && id(v.fleetId) && id(v.projectId)
+  && text(v.serverName, 256) && text(v.roomId, 256) && text(v.ownerMxid, 256)
+  && number(v.roomGeneration) && number(v.incarnation);
+export function validateApprovalBindings(v) {
+  if (!object(v, ['at_ms', 'bindings']) || !Array.isArray(v.bindings) || v.bindings.length > 100
+    || v.bindings.some((b) => !bindingRow(b))) throw new Error('invalid_native_response');
+  return v;
+}
+export async function fetchApprovalBindings() {
+  return validateApprovalBindings(await request('/api/approval-bindings'));
+}
+
+/*
+ * The operator unbind (board #52, TS `DELETE
+ * /api/approval-bindings/:agent/:roomId` at backend-v2.js:9032-9046). integ
+ * is SINGLE-LOGIN (operator decision): any authenticated session may unbind —
+ * no scope word, no capability word — while an anonymous caller is refused
+ * 401 before the route. Both ids are percent-encoded path segments; the
+ * server validates the room shape, so a malformed value is a refusal, never a
+ * silent success.
+ */
+export async function unbindApprovalBinding(agent, roomId) {
+  const v = await request(`/api/approval-bindings/${encodeURIComponent(agent)}/${encodeURIComponent(roomId)}`, { method: 'DELETE' });
+  if (!object(v, ['ok', 'binding']) || v.ok !== true || !bindingRow(v.binding)) throw new Error('invalid_native_response');
+  return v.binding;
+}
+
 /* The fleet usage totals (backend-v2.js:15700-15720): the numerator never
  * travels without its denominator, and null means "not known", never zero.
  * busySec and tasks are named in the server-owned unavailable list — the

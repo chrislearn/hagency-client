@@ -2,6 +2,7 @@
 mod accounts;
 mod agent_detail;
 mod agents;
+mod approval_bindings;
 mod stream;
 mod alerts;
 mod approvals;
@@ -112,6 +113,7 @@ pub(crate) fn router() -> Router {
                 .push(side_budget::router())
                 .push(side_lifecycle::router())
                 .push(approvals::router())
+                .push(approval_bindings::router())
                 .push(resources::router())
                 .push(accounts::router())
                 .push(matrix_diag::router())
