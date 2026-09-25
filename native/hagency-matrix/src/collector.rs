@@ -1007,4 +1007,50 @@ mod tests {
         f.store.shutdown().await.unwrap();
         fake.close().await;
     }
+    /// Board #61 row 5 (bridge-matrix.js:5938-5955): the display name comes
+    /// from THIS agent's definition in the local store — never an outbound
+    /// backend fetch — and the reconcile is throttled to one per 300 s. The
+    /// fixture's engagement was admitted with the agent definition name
+    /// "Worker" (`domain::request("worker", "Worker", ..)`), while its fresh
+    /// account's localpart is machine-generated, so the definition's name
+    /// overwrites it (lib/matrix-agent-profile.js:22).
+    #[tokio::test]
+    async fn native_matrix_agent_display_name_reconciles_from_the_store() {
+        let f = common::Fixture::new();
+        let mut fake = common::Fake::start(false).await;
+        let c = Collector::new(f.config(&fake.endpoint), f.store.clone()).unwrap();
+        let cancel = CancellationToken::new();
+        let engagement = f.identity.transport.engagement_id.clone();
+        let script = async {
+            let read = fake.next().await;
+            assert_eq!(read.method, "GET");
+            assert!(read.target.ends_with("/displayname"));
+            assert!(read.target.contains("@worker:example.test"));
+            assert_eq!(
+                read.headers["authorization"],
+                format!("Bearer {}", common::TOKEN)
+            );
+            // The account's own localpart is machine-generated: overwritable.
+            read.json(200, json!({"displayname": "worker"}));
+            let write = fake.next().await;
+            assert_eq!(write.method, "PUT");
+            let body: Value = serde_json::from_slice(&write.body).unwrap();
+            assert_eq!(body["displayname"], "Worker");
+            write.json(200, json!({}));
+            let readback = fake.next().await;
+            assert_eq!(readback.method, "GET");
+            readback.json(200, json!({"displayname": "Worker"}));
+        };
+        let (result, ()) = tokio::join!(c.reconcile_agent_profile(&engagement, &cancel), script);
+        assert!(result.unwrap(), "the definition's name was written");
+        // The 300 s throttle (bridge-matrix.js:5939-5940): a second pass now
+        // issues no request at all.
+        let admitted = fake.requests();
+        let (second, ()) = tokio::join!(c.reconcile_agent_profile(&engagement, &cancel), async {});
+        assert!(!second.unwrap());
+        fake.quiesced(admitted, &common::limits()).await;
+        c.close().await.unwrap();
+        f.store.shutdown().await.unwrap();
+        fake.close().await;
+    }
 }

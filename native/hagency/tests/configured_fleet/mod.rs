@@ -1430,9 +1430,22 @@ impl Peer {
                     .unwrap_or_else(|| json!({"rooms":{"join":{}},"to_device":{"events":[]}}));
                 batch["next_batch"] = json!(format!("agent-{index}-{}", agent.sync));
                 (200, batch)
+            } else if request.method == "PUT" && path.contains("/typing/") {
+                // The agent's typing indicator (`presence.rs:typing_request`,
+                // bridge-matrix.js:10527-10668). A real homeserver accepts it;
+                // the fixture only has to model the endpoint.
+                (200, json!({}))
             } else if request.method == "PUT" && path.contains("/sendToDevice/") {
                 agent.crypto.share(body).await;
                 (200, json!({}))
+            } else if request.method == "PUT" && path.contains("/send/") && segments.contains(&"m.reaction") {
+                // The agent's own ack of a human's message (`presence.rs:70-90`,
+                // `ack_request`): a real homeserver accepts an `m.reaction`
+                // send exactly like any other event.
+                (
+                    200,
+                    json!({"event_id":format!("$fleet_reaction_{index}_{}",agent.project_events.len())}),
+                )
             } else if request.method == "PUT" && path.contains("/send/") {
                 if request.target.contains("factory_project") {
                     assert!(segments.contains(&"m.room.message"));
