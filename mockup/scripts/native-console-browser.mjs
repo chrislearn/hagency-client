@@ -21,10 +21,16 @@ async function rosterWalk(page) {
   // #43 item 4: the heading no longer says "read-only" beside Stop/Review;
   // it names what the page is and what stopping needs.
   assert.match(text, /the engagement projections, observed|接洽投影的观察/);
-  // The server's own gap list, rendered verbatim: the page never decides
-  // which columns are unknown.
-  assert.match(text, /tmux/);
-  assert.match(text, /workspace_path/);
+  // #60 widened the roster to the full projection: the never-answerable
+  // columns (tmux target, workspace path) are GONE from the server's gap
+  // list — it is empty now — and the five real columns render by name
+  // (bilingual: the executable lane walks the same page in Chinese).
+  assert.match(text, /Liveness|运行状态/);
+  assert.match(text, /Consumed|已消耗/);
+  assert.match(text, /Last dispatch activity|最近派发活动/);
+  assert.match(text, /Online|在线/);
+  assert.match(text, /Last seen|最近在线/);
+  assert(!/tmux|workspace_path/.test(text), 'the never-answerable columns are gone (#60)');
   // The null-not-zero arms: the active engagement carries its dispatch
   // clock; a pending one renders the unknown word — never a zero.
   const cells = await page.locator('tbody tr td:last-child').allInnerTexts();
@@ -56,9 +62,10 @@ async function projectSidesWalk(page) {
   assert(!/@owner:example\.test/.test(text), 'the owner mxid stays withheld');
   assert(!/!private:example\.test/.test(text), 'the owner DM room stays withheld');
   // #45 parity row #33 joined this page: register-a-side and
-  // generate-registration render beside the read-only observation, so
-  // three controls now — register, generate, refresh.
-  assert((await page.locator('main button').count()) === 3, 'register, generate and refresh are the controls');
+  // generate-registration render beside the read-only observation.
+  // #51 added the connection probe: register, generate, test connection
+  // and refresh — four controls now.
+  assert((await page.locator('main button').count()) === 4, 'register, generate, test connection and refresh are the controls');
 }
 
 const browser = await chromium.launch({ executablePath: process.env.HAGENCY_BROWSER_CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true,
