@@ -161,7 +161,11 @@ try {
    * value — the seeded source's own 5000-token ceiling. */
   const configurationUrl = (await fixture('CONFIGURATION_TICKET')).url;
   await page.goto(configurationUrl);
-  await page.locator('[data-native-resource-state="ready"]').waitFor();
+  /* One login (#93): the ticket now lands on the usage page, so the
+   * exchange is proven by the usage page's own readiness — the resources
+   * page's attribute can never appear at this point anymore. The wizard
+   * gate on the next line still proves the resources page itself. */
+  await page.locator('[data-native-state="ready"]').first().waitFor();
   await page.goto(`${config.base}/console/resources/new/?resource_id=${config.resource}`);
   await page.locator(`[data-native-configuration-id="${config.resource}"][aria-busy="false"]`).waitFor();
   await page.getByRole('button', { name: /^(Next|下一步)$/ }).click();
