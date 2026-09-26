@@ -1111,7 +1111,7 @@ impl Budget {
         (result, Some(over))
     }
 }
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .ok()
@@ -1124,7 +1124,7 @@ fn now_ms() -> u64 {
 /// ignored, exactly as `return null` does there. The dedupe id is the
 /// sha256 hex of the item id, so a replayed `item/completed` can never count
 /// twice (`store` `dispatch_activity_events`).
-fn runner_activity(update: &Update) -> Option<hagency_store::ActivityEvent> {
+pub(crate) fn runner_activity(update: &Update) -> Option<hagency_store::ActivityEvent> {
     let Update::Item { id, kind, phase } = update else {
         return None;
     };
@@ -1147,6 +1147,31 @@ fn runner_activity(update: &Update) -> Option<hagency_store::ActivityEvent> {
             event_id,
         },
     })
+}
+/// Record one drained update's runner activity. **Both** update-draining paths
+/// call this: the plain loop below, and the approval drive that production
+/// actually takes. The recording used to live inline in the plain loop only,
+/// so with approvals bound (which is every live dispatch, `config.rs:1051`)
+/// the loop was never reached and `dispatch_activity_events` stayed empty —
+/// the notice's counters read `工具调用 0 次` forever (board #114). Wired here
+/// once, no drain path can forget it.
+pub(crate) async fn record_runner_activity(
+    domain: &DomainStore,
+    cap: &RunnerCapability,
+    update: &Update,
+) {
+    let Some(event) = runner_activity(update) else {
+        return;
+    };
+    // Observation-class, exactly like `note()`: a refused write is counted
+    // nowhere and never changes the turn.
+    if let Err(error) = domain
+        .record_activity_event(cap.dispatch_id.clone(), event, now_ms())
+        .await
+    {
+        tracing::warn!(dispatch_id = %cap.dispatch_id, error = ?error,
+            "runner activity not recorded");
+    }
 }
 /// One phase of the attempt, kept with it (ADR-181). Best effort: the store
 /// records it in its own savepoint, a refused record changes nothing here,
@@ -1707,19 +1732,9 @@ async fn execute(
                 let _ = bounded(usage.record_pending(), cancel, ceiling).await?;
             }
             // The runner's own tool activity (TS `recordRunnerActivity`,
-            // `runner.ts:742-746`). Observation-class, exactly like the attempt
-            // records `note()` writes: a refused write is counted nowhere and
-            // never changes the turn. This is the ONE production seam that
-            // feeds the notice's `工具调用 N 次，已返回 M 次` counters.
-            if let Some(event) = runner_activity(&update) {
-                if let Err(error) = domain
-                    .record_activity_event(cap.dispatch_id.clone(), event, now_ms())
-                    .await
-                {
-                    tracing::warn!(dispatch_id = %cap.dispatch_id, error = ?error,
-                        "runner activity not recorded");
-                }
-            }
+            // `runner.ts:742-746`). The approval drive records the same events
+            // through the same helper — see `record_runner_activity`.
+            record_runner_activity(domain, cap, &update).await;
             match update {
                 Update::TurnEnded => break,
                 Update::Approval(_) | Update::ApprovalResolved { .. } => {

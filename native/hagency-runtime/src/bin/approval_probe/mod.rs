@@ -107,6 +107,9 @@ pub(super) fn run(mode: &str, reader: &mut impl BufRead, marker: &Path) -> io::R
     if mode == "owned-approval-mcp" {
         return mcp(reader, marker, false);
     }
+    if mode == "owned-approval-tools" {
+        return tools(reader, marker);
+    }
     if mode == "owned-approval-mcp-unsupported-form" {
         // The REAL Codex sends elicitation FORMS a adapter cannot turn into an
         // owner approval (board #87: the live kill). The fake never did, which
@@ -378,5 +381,46 @@ fn mcp(reader: &mut impl BufRead, marker: &Path, unsupported_form: bool) -> io::
         json!({"threadId":"owned-thread","turnId":"owned-turn","completedAtMs":2,"item":item}),
     )?;
     announce(marker, "approval-continued")?;
+    Ok(true)
+}
+
+/// Real Codex 0.157 `item/started` + `item/completed` frames for the three
+/// tool item types `codexActivity` counts (`router/src/runner-activity.ts:4-18`):
+/// `commandExecution`, `fileChange`, `mcpToolCall`. Shapes are verbatim from the
+/// captured `ThreadItem` schema (`codex app-server` 0.157): each carries its own
+/// REQUIRED fields (`command`/`cwd`/`commandActions`; `changes`; `arguments`/
+/// `server`/`tool`) and the `inProgress`/`completed` status enum values. Board
+/// #114: the real item stream is what the counters must count, so the fixture
+/// sends the real shapes rather than a convenient invention.
+fn tools(reader: &mut impl BufRead, marker: &Path) -> io::Result<bool> {
+    let _ = reader; // this mode emits only; it reads no response
+    let cwd = std::env::current_dir()?.to_string_lossy().into_owned();
+    let started = |item: Value| {
+        json!({"threadId":"owned-thread","turnId":"owned-turn","startedAtMs":1,"item":item})
+    };
+    let completed = |item: Value| {
+        json!({"threadId":"owned-thread","turnId":"owned-turn","completedAtMs":2,"item":item})
+    };
+    let command = |status: &str, exit: Value| {
+        json!({"id":"tool-command","type":"commandExecution","command":"echo tool-count",
+            "cwd":cwd,"commandActions":[],"status":status,"exitCode":exit})
+    };
+    note("item/started", started(command("inProgress", Value::Null)))?;
+    note("item/completed", completed(command("completed", json!(0))))?;
+    let file = |status: &str| {
+        json!({"id":"tool-file","type":"fileChange","status":status,
+            "changes":[{"path":"hello2.txt","kind":{"type":"add"},"diff":"+hello2"}]})
+    };
+    note("item/started", started(file("inProgress")))?;
+    note("item/completed", completed(file("completed")))?;
+    let mcp = |status: &str| {
+        json!({"id":"tool-mcp","type":"mcpToolCall","server":"hagency_task_writer",
+            "tool":"send_file","arguments":{"call_id":"file-1","path":"hello2.txt"},"status":status})
+    };
+    note("item/started", started(mcp("inProgress")))?;
+    note("item/completed", completed(mcp("completed")))?;
+    announce(marker, "tools-sent")?;
+    // Continue so the shared tail emits the agentMessage + turn/completed that
+    // end the turn; the drive must have drained the tool items before then.
     Ok(true)
 }
