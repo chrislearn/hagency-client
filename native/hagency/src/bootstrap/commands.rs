@@ -84,7 +84,12 @@ pub(super) async fn deliver(
                 })
                 .await
                 .map_err(|_| Failure::OutcomeUnknown)?;
-            if receipt.state != "delivered" {
+            // The receipt names the session that OWNS the answer. Two agents in
+            // one room race on the same event id, and the store serializes them:
+            // the loser gets the WINNER's receipt back. Only the owner queues a
+            // send, so the room hears one answer, as the one bridge process made
+            // it (bridge-matrix.js:4117).
+            if receipt.session_id == line.session_id && receipt.state != "delivered" {
                 queued += 1;
             }
         }
@@ -124,7 +129,10 @@ pub(super) async fn deliver(
                 })
                 .await
                 .map_err(|_| Failure::OutcomeUnknown)?;
-            if receipt.state != "delivered" {
+            // Same one-event-one-answer rule: a directive confirmation is queued
+            // by the session that owns the claim. (TS dedups the notice on the
+            // Matrix event id too — `router/src/store.ts:2813`.)
+            if receipt.session_id == line.session_id && receipt.state != "delivered" {
                 queued += 1;
             }
         }
