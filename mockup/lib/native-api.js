@@ -548,7 +548,7 @@ export async function retryEngagementCleanup(engagementId, commandId) {
   return validateEngagementReceipt(await request(`/api/engagements/${encodeURIComponent(engagementId)}/cleanup-retry`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commandId }) }));
 }
 /* Register a fleet side (G11): the retained POST /api/project-sides shape on
- * the console API, gated by the agent-lifecycle scope. The answer is the
+ * the console API, behind the console session. The answer is the
  * saved record's own five fields, never the operator token. */
 export async function registerProjectSide(registration) {
   const v = await request('/api/project-sides', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(registration) });

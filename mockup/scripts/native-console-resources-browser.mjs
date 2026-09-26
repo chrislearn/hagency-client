@@ -27,7 +27,13 @@ try {
     await row(id).locator(`[data-publication="${target}"]`).waitFor();
     await ready();
   }
+  // The one link lands on the usage page and exchanges the session cookie
+  // (one login carries every console action); the walk then opens the
+  // resource page. Waiting for the landing's ready marker first proves the
+  // exchange completed before we navigate away.
   await page.goto(config.url);
+  await page.locator('[data-native-state="ready"]').first().waitFor();
+  await page.goto(`${config.base}/console/resources/`);
   await ready();
   // G5 (ADR-108 amendment): the catalogue section on THIS page — the three
   // derived columns render from the read, `families` is the MODEL family

@@ -1,4 +1,7 @@
-//! Local operator command; its output contains only a short-lived ticket for the explicitly selected scope.
+//! Local operator command; its output contains only the short-lived ticket
+//! that opens the console. One link is the whole console (TS parity: the
+//! retained `createApiAuthMiddleware` admitted one credential to every `/api`
+//! route), so there is no scope to select here.
 use super::Error;
 use http_body_util::{BodyExt, Full};
 use hyper::{Request, body::Bytes, client::conn::http1};
@@ -13,33 +16,11 @@ struct Issued {
     ticket: String,
     expires_in: u64,
 }
+/// One link opens the whole console. The retained middleware authenticated a
+/// single credential for every `/api` route, so there is no scope to request
+/// and no landing-page selection: the operator lands on the usage page, the
+/// one the bare command always printed.
 pub async fn access(state: &Path, address: SocketAddr) -> Result<String, Error> {
-    scoped_access(state, address, false, false, false, false).await
-}
-pub async fn publication_access(state: &Path, address: SocketAddr) -> Result<String, Error> {
-    scoped_access(state, address, true, false, false, false).await
-}
-pub async fn configuration_access(state: &Path, address: SocketAddr) -> Result<String, Error> {
-    scoped_access(state, address, false, true, false, false).await
-}
-pub async fn account_access(state: &Path, address: SocketAddr) -> Result<String, Error> {
-    scoped_access(state, address, false, false, true, false).await
-}
-pub async fn lifecycle_access(state: &Path, address: SocketAddr) -> Result<String, Error> {
-    scoped_access(state, address, false, false, false, true).await
-}
-/// TS parity: every variant requests the SAME one login (the retained
-/// `createApiAuthMiddleware` admitted one credential to every `/api` route).
-/// The flags survive only as a landing-page preference for the operator's
-/// next click — they no longer narrow what the session may do.
-async fn scoped_access(
-    state: &Path,
-    address: SocketAddr,
-    publication: bool,
-    configuration: bool,
-    account: bool,
-    lifecycle: bool,
-) -> Result<String, Error> {
     if !address.ip().is_loopback()
         || address.port() == 0
         || matches!(address, SocketAddr::V6(v) if v.scope_id()!=0 || v.flowinfo()!=0)
@@ -52,28 +33,11 @@ async fn scoped_access(
     if !(32..=256).contains(&token.len()) || !token.bytes().all(|b| b.is_ascii_graphic()) {
         return Err(Error::Unavailable);
     }
-    tokio::time::timeout(
-        Duration::from_secs(5),
-        exchange(
-            address,
-            token,
-            publication,
-            configuration,
-            account,
-            lifecycle,
-        ),
-    )
-    .await
-    .map_err(|_| Error::Unavailable)?
+    tokio::time::timeout(Duration::from_secs(5), exchange(address, token))
+        .await
+        .map_err(|_| Error::Unavailable)?
 }
-async fn exchange(
-    address: SocketAddr,
-    token: &str,
-    publication: bool,
-    configuration: bool,
-    account: bool,
-    lifecycle: bool,
-) -> Result<String, Error> {
+async fn exchange(address: SocketAddr, token: &str) -> Result<String, Error> {
     let stream = TcpStream::connect(address)
         .await
         .map_err(|_| Error::Unavailable)?;
@@ -88,8 +52,8 @@ async fn exchange(
     authorization.set_sensitive(true);
     let request = Request::builder()
         .method("POST")
-        // One login route for every variant (TS parity): the flags only
-        // choose where the link lands, never what the session may do.
+        // One login route, no scope selection (TS parity: the retained
+        // middleware authenticated one credential for every `/api` route).
         .uri("/api/native/v1/console/access")
         .header("host", address.to_string())
         .header("authorization", authorization)
@@ -132,17 +96,11 @@ async fn exchange(
         {
             return Err(Error::Unavailable);
         }
+        // The landing page the bare command always printed. With one link
+        // there is no scope to steer by, and this keeps the surviving
+        // command's behaviour rather than inventing a new landing.
         Ok(format!(
-            "http://{address}/console/{}/#access={}",
-            if account {
-                "accounts"
-            } else if publication || configuration {
-                "resources"
-            } else if lifecycle {
-                "agents"
-            } else {
-                "usage"
-            },
+            "http://{address}/console/usage/#access={}",
             issued.ticket
         ))
     };

@@ -135,7 +135,7 @@ function WizardForm({ native = null }) {
         <p>{t('nc.pageHint')}</p>
         {native.refreshing && <p role="status">{t('nr.refreshing')}</p>}
         {native.phase === 'stale' && <p role="alert">{t('nr.stale')}</p>}
-        {!native.permissions?.configureResource && <div className="notice"><p>{t('nc.readOnly')}</p><code>hagency console-access --state-dir &lt;state&gt; --listen &lt;address&gt; --manage-resource-configuration</code></div>}
+        {!native.permissions?.configureResource && <div className="notice"><p>{t('nc.readOnly')}</p><code>hagency console-access --state-dir &lt;state&gt; --listen &lt;address&gt;</code></div>}
         <div className="btn-row"><button className="btn" onClick={refresh}>{t('nu.refresh')}</button><button className="btn" onClick={reload}>{t('nc.reload')}</button><button className="btn" onClick={native.logout}>{t('nu.logout')}</button></div>
       </> : <Provenance slices={['frameworks', 'ceilings']} />}
 

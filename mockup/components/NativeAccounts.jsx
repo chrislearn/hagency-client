@@ -28,9 +28,9 @@ export default function NativeAccounts({ phase, error, accounts, action, onPrepa
       <section className="panel" data-native-state="access">
         <h2>{t('na.access')}</h2>
         <p>{t('na.accessHelp')}</p>
-        {/* Item 6: the command, shown — account work needs its own
-         * enrollment scope, not the read-only link. */}
-        <code>hagency console-access --state-dir &lt;state&gt; --listen &lt;address&gt; --manage-account-enrollment</code>
+        {/* Item 6: the command, shown — and it is the SAME one link as
+         * everywhere else: one login grants every console action. */}
+        <code>hagency console-access --state-dir &lt;state&gt; --listen &lt;address&gt;</code>
       </section>
       </>
     );

@@ -43,8 +43,8 @@ export default function AgentsPage() {
  * `yolo` is offered only for Codex agents — the server's own rule
  * (`normalize_policy`, hagency-core/src/execution.rs:28 requires
  * framework == "codex"), so no control is drawn that could only be refused.
- * The whole panel needs the agent-lifecycle scope, the same grant the
- * lifecycle buttons beside it need.
+ * The whole panel needs a console sign-in (one access link grants every
+ * console action), the same grant the lifecycle buttons beside it need.
  */
 function ExecutionPolicy() {
   const t = useT();

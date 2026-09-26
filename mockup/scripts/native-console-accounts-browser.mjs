@@ -15,9 +15,13 @@ try {
     if (url.origin !== config.base) { failures.push('unexpected external request'); await route.abort(); }
     else await route.continue();
   });
+  // The one link lands on the usage page and exchanges the session cookie;
+  // the walk then opens accounts (one login carries every console action).
   await page.goto(config.url);
   await page.locator('[data-native-state="ready"][aria-busy="false"]').waitFor();
   assert.equal(new URL(page.url()).hash, '');
+  await page.goto(`${config.base}/console/accounts/`);
+  await page.locator('[data-native-state="ready"][aria-busy="false"]').waitFor();
   // The seeded row is present and readable.
   const row = page.locator(`[data-account-row="${config.account}"]`);
   await row.waitFor();

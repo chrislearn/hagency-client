@@ -607,7 +607,10 @@ hagency console-access --state-dir /absolute/native-state
 ```
 
 Open the printed link within two minutes. The browser removes its fragment and
-exchanges that one-use read-only ticket for a 15-minute HttpOnly session. The
+exchanges that one-use ticket for an HttpOnly session that lasts until you end
+access or the service stops — one login, and every console action is available
+(the retained middleware authenticated one credential for every `/api` route,
+so there is no scope to select). The
 operator token remains in the private state directory and never enters browser
 assets, JavaScript storage or the access link. Reissuing a link invalidates the
 previous outstanding ticket; issuance is limited to one per second, and at most
@@ -651,11 +654,11 @@ configuration/allocation facts, not provider usage, installed runtime readiness 
 proof of delivery to Palpo. Selection uses `/console/resources/?resource_id=...`
 and works for rows created after the static artifact was built.
 
-Ordinary console tickets remain read only. To grant only native catalog visibility
-changes for the finite session, request the explicit scope:
+One access link opens the whole console — catalog visibility changes need no
+separate link, because the console has no scoped links:
 
 ```sh
-hagency console-access --state-dir /absolute/native-state --manage-resource-publication
+hagency console-access --state-dir /absolute/native-state
 ```
 
 The retained Include/Withdraw control compares the exact actual configuration
@@ -681,11 +684,11 @@ empty runtime PATH. It does not use live configuration or a deployed Node server
 
 ### Additional resource configurations in the retained wizard (ADR111)
 
-`hagency console-access --state-dir <state> --listen <loopback-address>
---manage-resource-configuration` issues a separate finite configuration link.
-This flag and `--manage-resource-publication` are mutually exclusive. The default
-link remains read-only. A configuration grant cannot change existing catalog
-inclusion, edit accounts or use the closed operator API.
+`hagency console-access --state-dir <state> --listen <loopback-address>` issues
+the one console link; configuration work needs no separate link (the scoped
+`--manage-resource-configuration` selectors were removed as over-design). The
+console API still constrains what a configuration write may touch: it cannot
+change existing catalog inclusion, edit accounts or use the closed operator API.
 
 The original four-step resource wizard is served at `/console/resources/new/`.
 `?source_resource_id=<public-resource-id>` creates another configuration from the
