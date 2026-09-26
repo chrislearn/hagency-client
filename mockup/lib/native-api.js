@@ -163,9 +163,17 @@ export async function fetchNative(selected, after = '', withReport = true) {
  * figures. The engagement evidence itself stays on Data's own load. */
 export async function fetchFleetUsage() {
   const [totals, sides] = await Promise.all([fetchUsageTotals(), fetchProjectSides()]);
-  const sideBudgets = {};
-  for (const side of sides.sides.slice(0, 16)) sideBudgets[side.id] = await fetchSideBudget(side.id);
-  return { totals, sides: sides.sides, sideBudgets };
+  /* The key MUST be `budgets`: the panel spreads this object straight into its
+   * state (`fleet.jsx`, `setState({ phase: 'ready', error: null, ...value })`)
+   * and then indexes `state.budgets[side.id]`. Returning `sideBudgets` left
+   * `state.budgets` undefined, so the spread rendered the fleet table and threw
+   * `TypeError: Cannot read properties of undefined` — a crash no test saw
+   * because the budget read always failed first and took the panel to its
+   * error branch instead. Caught by the walk gate (board #108) once the read
+   * succeeded. */
+  const budgets = {};
+  for (const side of sides.sides.slice(0, 16)) budgets[side.id] = await fetchSideBudget(side.id);
+  return { totals, sides: sides.sides, budgets };
 }
 
 /* The usage page's load: the engagement evidence fetchNative returns,
@@ -673,18 +681,28 @@ export async function fetchUsageTotals() { return validateUsageTotals(await requ
 const serverName = (v) => typeof v === 'string' && v.length <= 255 && /^[a-z0-9][a-z0-9.\-]*(:\d{1,5})?$/.test(v);
 const commitment = (v) => object(v, ['id', 'agent', 'role', 'project', 'projectName', 'allocatedTokens', 'agentExists'])
   && id(v.id) && text(v.agent, 128) && text(v.role, 128) && id(v.project)
-  && optionalText(v.projectName, 255) && number(v.allocatedTokens) && typeof v.agentExists === 'boolean';
-const budgetFields = (b) => object(b, ['allocated', 'committed', 'remaining', 'commitments', 'poolCommitments', 'poolCommitted', 'totalCommitted', 'orphanedCommitted'])
-  && (b.allocated === null || number(b.allocated)) && number(b.committed)
+  && optionalScalarText(v.projectName, 255) && number(v.allocatedTokens) && typeof v.agentExists === 'boolean';
+const BUDGET_KEYS = ['allocated', 'committed', 'remaining', 'commitments', 'poolCommitments', 'poolCommitted', 'totalCommitted', 'orphanedCommitted'];
+/* The budget VALUES, independent of the object's key set. The SAME eight
+ * fields are served two ways: nested (PUT `{ok, side, budget}`) and spread
+ * FLAT beside `ok`/`sideId` (GET — the retained route's own spread,
+ * backend-v2.js:9571, which this module's own comment above records). The
+ * value check must therefore not demand an exact key count: requiring
+ * exactly eight keys made EVERY budget GET fail as
+ * `invalid_native_response`, so `fetchSideBudget` always threw, the fleet
+ * panel's read never resolved, and the page could only ever render
+ * "Fleet usage could not be read". */
+const budgetValues = (b) => (b.allocated === null || number(b.allocated)) && number(b.committed)
   && (b.remaining === null || number(b.remaining))
   && Array.isArray(b.commitments) && b.commitments.length <= 1024 && b.commitments.every(commitment)
   && Array.isArray(b.poolCommitments) && b.poolCommitments.length <= 1024 && b.poolCommitments.every(commitment)
   && number(b.poolCommitted) && number(b.totalCommitted) && number(b.orphanedCommitted);
-/* GET spreads the budget and the breakdown FLAT beside sideId — the
- * retained route's own spread (backend-v2.js:9571). */
+/* The nested form pins its exact eight-key set; the flat form's exact set is
+ * pinned by `validateSideBudget`'s own ten-key top-level check. */
+const budgetFields = (b) => object(b, BUDGET_KEYS) && budgetValues(b);
 export function validateSideBudget(v, side) {
-  if (!object(v, ['ok', 'sideId', 'allocated', 'committed', 'remaining', 'commitments', 'poolCommitments', 'poolCommitted', 'totalCommitted', 'orphanedCommitted'])
-    || v.ok !== true || v.sideId !== side || !budgetFields(v)) throw new Error('invalid_native_response');
+  if (!object(v, ['ok', 'sideId', ...BUDGET_KEYS])
+    || v.ok !== true || v.sideId !== side || !budgetValues(v)) throw new Error('invalid_native_response');
   return v;
 }
 /* PUT replies {ok, side, budget} — the SAME six-key side record the list
@@ -693,7 +711,13 @@ export function validateAllocationReply(v) {
   if (!object(v, ['ok', 'side', 'budget']) || v.ok !== true
     || !object(v.side, SIDE_KEYS) || !text(v.side.id, 255) || !text(v.side.representative, 255)
     || !number(v.side.generation) || typeof v.side.registered !== 'boolean' || !room(v.side.reception_room_id)
-    || !Array.isArray(v.side.projects) || v.side.projects.length <= 64
+    /* The per-side cap is 64 (the store's own ROW_NUMBER window, domain.rs),
+     * and the list read above bounds it the same way. This bound was INVERTED
+     * — `<= 64` — so it rejected every legal side (0..=64 projects) and
+     * accepted only an illegal one, which made `setSideAllocation` throw on
+     * every save and the panel's write path unreachable. Found by the new
+     * flat/nested budget test below. */
+    || !Array.isArray(v.side.projects) || v.side.projects.length > 64
     || !v.side.projects.every((p) => object(p, ['id', 'room_id']) && text(p.id, 128) && room(p.room_id))
     || !budgetFields(v.budget)) throw new Error('invalid_native_response');
   return v;
@@ -714,6 +738,15 @@ export async function setSideAllocation(side, allocatedTokens) {
 const revision = (v) => typeof v === 'string' && /^[a-f0-9]{64}$/.test(v);
 const text = (v, max) => typeof v === 'string' && v.length <= max;
 const optionalText = (v, max) => v === null || text(v, max);
+/* projectName is bounded in Unicode SCALAR VALUES (code points), like
+ * `validateEngagements` above and the server's own `trim().chars().take(255)`
+ * (authority.rs:286): 255 astral characters are 510 UTF-16 units, so a
+ * `.length` bound refuses a read the server legitimately serves. The side
+ * budget's commitments are the OTHER place a project name travels, and they
+ * used the UTF-16 bound — so ONE such name (the live fleet's AlertWorker,
+ * "𝕏".repeat(260) truncated to 255 scalars) refused every budget read, which
+ * took the whole fleet panel down with it ("Fleet usage could not be read"). */
+const optionalScalarText = (v, max) => v === null || (typeof v === 'string' && [...v].length <= max);
 const periodFields = (v) => !Object.hasOwn(v, 'period') || v.period === null || text(v.period, 64 * 1024);
 const ceiling = (v) => v === null || (v && Object.keys(v).every((k) => ['tokens', 'period'].includes(k)) && (v.tokens === null || number(v.tokens)) && periodFields(v));
 const validResource = (r) => !(!object(r, ['id', 'framework', 'model', 'provider', 'reasoning', 'ceiling', 'published', 'roles', 'revision'])

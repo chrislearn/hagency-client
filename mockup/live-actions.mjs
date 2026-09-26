@@ -323,7 +323,25 @@ await step('7-usage-renders-numbers', async () => {
   const words = await cells.allInnerTexts();
   const numeric = words.filter((w) => /\d/.test(w)).length;
   if (numeric === 0) throw new Error(`no numeric usage cell rendered; all said ${JSON.stringify(words.slice(0, 4))}`);
-  return `${numeric} of ${count} usage cells render numbers`;
+  /*
+   * The FLEET half of the same page (board #108). Its read is a COMPOSITION —
+   * totals, then one budget per side — so a single failing side replaces the
+   * whole panel with "Fleet usage could not be read" while the per-engagement
+   * `[data-kind]` cells above still render numbers. That is precisely how a
+   * client-side budget validator rejected every read and this step still
+   * reported clean, so the count above is not enough: require the panel's own
+   * figure, never its failure panel.
+   */
+  const fleetDrawn = page.locator('[data-fleet="drawn"]');
+  try {
+    await fleetDrawn.first().waitFor({ state: 'visible', timeout: 10_000 });
+  } catch {
+    const alert = (await page.locator('section.panel[role="alert"] h2').allInnerTexts()).join('; ');
+    throw new Error(`the fleet panel rendered no figures (panel said: ${alert || '(nothing)'})`);
+  }
+  const fleetText = (await fleetDrawn.first().innerText()).trim();
+  if (fleetText === '') throw new Error('the fleet panel rendered an empty drawn figure');
+  return `${numeric} of ${count} usage cells render numbers; fleet drawn "${fleetText}"`;
 });
 
 // ---------------------------------------------------------------------------
