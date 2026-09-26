@@ -85,6 +85,16 @@ fn fresh_approval_waiting(f: &Fixture, anchor: String, owner_wait_ms: u64) {
     // configured-fleet approval fixtures already do.
     config["operation_ms"] = json!(APPROVAL_OPERATION_MS);
     config["approval_owner_wait_ms"] = json!(owner_wait_ms);
+    // The runner is a REAL child whose initialize handshake answers through a
+    // loaded host. The template's 1500 ms RPC bound fired under load (see
+    // .peer/report-96.md: spawn_done -> stop_requested measured 1505 ms, the
+    // failure record named stage "initialize" / transport timeout) and the
+    // one-attempt profile then ended the turn before any card existed
+    // (polls=0, cards=0). 2000 is the product's own ceiling
+    // (hagency-execution Limits::validate) and the configured_fleet sibling
+    // fixture's value; the owner-wait reserve stays max(response_ms, 5000)
+    // either way, so no expiry-path timing moves.
+    config["response_ms"] = json!(2_000);
     config["approval"] = json!({
         "origin":f.fake.endpoint,"server_name":"example.test","registration_fingerprint":"a".repeat(64),
         "engagement_id":config["matrix"]["engagement_id"],"registration_generation":1,"transport_generation":1,
