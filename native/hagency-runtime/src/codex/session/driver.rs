@@ -7,7 +7,7 @@ use super::{
     Error, InterruptDisposition, MAX_DEFERRED, MAX_DEFERRED_BYTES, MAX_TEXT_BYTES, Outcome, Phase,
     ResumeThreadId, Settings, Update,
 };
-use crate::codex::{Event, MAX_REQUEST_MS, RequestId, TurnScope, transport};
+use crate::codex::{ACKNOWLEDGEMENT_MS, Event, MAX_REQUEST_MS, RequestId, TurnScope, transport};
 use serde_json::Value;
 use std::collections::{BTreeSet, VecDeque};
 use std::sync::{
@@ -29,6 +29,10 @@ pub struct SessionDriver<R, W, E> {
     settings: Settings,
     state: State,
     response_timeout_ms: u64,
+    /// The operation ceiling the session was granted (`transport::Limits`
+    /// `lifetime_ms`). The acknowledgement budget is `min` of it and
+    /// `ACKNOWLEDGEMENT_MS`, so a startup RPC can never outlive its operation.
+    lifetime_ms: u64,
     deferred: VecDeque<Event>,
     deferred_bytes: usize,
     approvals_enabled: bool,
@@ -64,12 +68,14 @@ impl<R, W, E> SessionDriver<R, W, E> {
         if response_timeout_ms == 0 || response_timeout_ms > MAX_REQUEST_MS {
             return Err(Error::Settings);
         }
+        let lifetime_ms = limits.lifetime_ms;
         Ok(Self {
             wire: transport::Driver::new(stdout, stdin, stderr, limits)
                 .map_err(Error::Transport)?,
             settings,
             state: State::default(),
             response_timeout_ms,
+            lifetime_ms,
             deferred: VecDeque::new(),
             deferred_bytes: 0,
             approvals_enabled: false,
@@ -88,6 +94,24 @@ impl<R, W, E> SessionDriver<R, W, E> {
     }
     pub fn settings(&self) -> &Settings {
         &self.settings
+    }
+    /// The acknowledgement budget for a startup RPC (`initialize`,
+    /// `thread/start`, `thread/resume`). TS 1:1, and **unconditional**: TS
+    /// applies `acknowledgementTimeoutMs` (`?? 60_000`) to these three waits
+    /// regardless of whether an MCP server is configured (`router/src/runner.ts`
+    /// `:431` default, used at `:807` `Codex initialize` and `:828` `Codex
+    /// thread start`). The generic per-request `response_ms` bound is a
+    /// different bound and does not apply here.
+    ///
+    /// The product `response_ms` ceiling (2 s,
+    /// `hagency-execution/src/host.rs:58`) sits UNDER Codex's own required-MCP
+    /// ceiling (`startup_timeout_sec`, 5 s — `session/task_mcp.rs:50-51`), so a
+    /// cold helper lost the race and the live rig died `Transport(Timeout)` at
+    /// `stage="thread_start"`, settling the attempt `outcome_unknown` (board
+    /// #105). The operation ceiling still wins: `lifetime_ms` bounds every wait
+    /// independently, so this never outlives the session it was granted.
+    fn acknowledgement_ms(&self) -> u64 {
+        ACKNOWLEDGEMENT_MS.min(self.lifetime_ms)
     }
     /// One fixed Host helper after initialize, never general reconfiguration.
     pub fn bind_task_mcp(&mut self, helper: super::TaskMcp) -> Result<(), Error> {
@@ -354,7 +378,10 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
         self.wire
             .send(transport::Command::Initialize {
                 client_version: env!("CARGO_PKG_VERSION").into(),
-                response_timeout_ms: self.response_timeout_ms,
+                // Startup RPC: TS bounds `Codex initialize` by the same 60 s
+                // acknowledgement budget (`router/src/runner.ts:807`), not the
+                // generic per-request bound (board #105).
+                response_timeout_ms: self.acknowledgement_ms(),
             })
             .await
             .map_err(Error::Transport)?;
@@ -424,7 +451,11 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
             "thread/start"
         };
         let result = self
-            .call(method, self.settings.thread_request(resume))
+            // Startup RPC: Codex answers `thread/start`/`thread/resume` only
+            // after every REQUIRED MCP server in the thread config has
+            // handshaked (`task_mcp.rs:51`, `startup_timeout_sec`), so it uses
+            // the startup floor rather than the generic per-request bound.
+            .startup_call(method, self.settings.thread_request(resume))
             .await?;
         let id = self.state.observe_thread(&result, &self.settings, resume)?;
         self.validate_deferred()?;
@@ -801,12 +832,28 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
     }
 
     async fn call(&mut self, method: &str, params: Value) -> Result<Value, Error> {
+        self.call_bounded(method, params, self.response_timeout_ms)
+            .await
+    }
+    /// A startup RPC (`initialize`, `thread/start`, `thread/resume`) under the
+    /// acknowledgement budget instead of the generic per-request bound. See
+    /// `acknowledgement_ms`.
+    async fn startup_call(&mut self, method: &str, params: Value) -> Result<Value, Error> {
+        self.call_bounded(method, params, self.acknowledgement_ms())
+            .await
+    }
+    async fn call_bounded(
+        &mut self,
+        method: &str,
+        params: Value,
+        response_timeout_ms: u64,
+    ) -> Result<Value, Error> {
         let written = self
             .wire
             .send(transport::Command::Request {
                 method: method.into(),
                 params,
-                response_timeout_ms: self.response_timeout_ms,
+                response_timeout_ms,
             })
             .await
             .map_err(Error::Transport)?;

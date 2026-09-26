@@ -142,3 +142,77 @@ async fn native_codex_session_real_app_server_startup_exchange() {
     assert_eq!(opened, thread);
     assert_eq!(session.phase(), Phase::ThreadReady);
 }
+
+/// Board #105: Codex withholds the `thread/start` response until every REQUIRED
+/// MCP server in the thread config has completed its handshake, and bounds that
+/// on its own side by `startup_timeout_sec` (`task_mcp.rs:51`, 5 s). Native's
+/// generic per-request bound is the product `response_ms` ceiling (2 s,
+/// `hagency-execution/src/host.rs:58`) — UNDER Codex's own ceiling. A cold
+/// helper that loses that race was reported as `Transport(Timeout)` at
+/// `stage="thread_start"`, settling the attempt `outcome_unknown` (the live
+/// regression). A startup RPC takes the startup floor instead, so a
+/// slow-but-valid handshake still opens the thread; past Codex's own ceiling we
+/// receive Codex's refusal, never a timeout.
+///
+/// Fails before the fix: the 300 ms generic bound fires while the handshake is
+/// still in flight, so `start_thread()` returns `Transport(Timeout)`.
+#[tokio::test]
+async fn native_codex_session_thread_start_waits_out_a_slow_required_mcp_handshake() {
+    use hagency_runtime::codex::session::TaskMcp;
+    let helper = TaskMcp::new(
+        std::env::temp_dir().join("native-task-helper"),
+        "original_task".into(),
+        None,
+    )
+    .unwrap();
+    let (stdin, peer_in) = tokio::io::duplex(131072);
+    let (stdout, peer_out) = tokio::io::duplex(131072);
+    let (stderr, peer_err) = tokio::io::duplex(1024);
+    // 300 ms is the generic per-request bound; the required-MCP handshake this
+    // test simulates takes ~600 ms — longer than the bound, under the floor.
+    let mut session = Session::new(
+        stdout,
+        stdin,
+        stderr,
+        settings(false).with_task_mcp(helper),
+        Limits {
+            write_timeout_ms: 500,
+            event_wait_ms: 1000,
+            lifetime_ms: 30_000,
+        },
+        300,
+    )
+    .unwrap();
+    let mut peer = Peer {
+        stdin: peer_in,
+        stdout: peer_out,
+        _stderr: peer_err,
+    };
+    initialize(&mut session, &mut peer).await;
+
+    let (result, ()) = tokio::join!(session.start_thread(), async {
+        let request = read(&mut peer.stdin).await;
+        assert_eq!(request["method"], "thread/start");
+        // The response is withheld while the required MCP server handshakes.
+        sleep(Duration::from_millis(600)).await;
+        // Best effort: before the fix the session has already timed out and
+        // closed our pipe, so delivering the answer is impossible. Swallowing
+        // that lets the assertion below name the real fault (the startup
+        // timeout) instead of a derived `BrokenPipe`.
+        let _ = tokio::time::timeout(Duration::from_secs(3), async {
+            let mut bytes =
+                serde_json::to_vec(&json!({"id": request["id"], "result": thread_result(false)}))
+                    .unwrap();
+            bytes.push(b'\n');
+            peer.stdout.write_all(&bytes).await
+        })
+        .await;
+    });
+    assert_eq!(
+        result.unwrap_or_else(|error| panic!(
+            "a valid slow required-MCP handshake must not fail thread/start: {error:?}"
+        )),
+        "thread-one"
+    );
+    assert_eq!(session.phase(), Phase::ThreadReady);
+}

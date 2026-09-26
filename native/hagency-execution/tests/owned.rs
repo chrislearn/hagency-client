@@ -470,9 +470,28 @@ async fn native_owned_dispatch_cancel_and_unknown() {
 async fn native_owned_runtime_failure_observation() {
     use hagency_execution::RuntimeStage;
     use hagency_runtime::codex::{session, transport};
-    for (mode, cause) in [
-        ("silent", transport::Error::Timeout),
-        ("eof", transport::Error::PeerEof),
+    // A startup RPC now waits out the 60 s acknowledgement budget, bounded by
+    // the operation ceiling (`ACKNOWLEDGEMENT_MS`; TS `acknowledgementTimeoutMs`,
+    // runner.ts:431/807/828). This fixture's operation budget is 25 s, so a child
+    // that never answers `initialize` is ended by the operation deadline
+    // (`Failure::Deadline`, the transport recording `Cancelled` /
+    // `CancelledOperation`) rather than by a per-request transport timeout — the
+    // startup budget deliberately outlives `response_ms`. A child that closes its
+    // pipe instead stays an immediate transport fact. Both shapes keep the
+    // diagnostic the live rig needed: the stage and the pending-request count.
+    for (mode, failure, session_error, cause) in [
+        (
+            "silent",
+            Failure::Deadline,
+            session::Error::Cancelled,
+            transport::Error::CancelledOperation,
+        ),
+        (
+            "eof",
+            Failure::Protocol,
+            session::Error::Transport(transport::Error::PeerEof),
+            transport::Error::PeerEof,
+        ),
     ] {
         let f = Fixture::new();
         let mut operation = f.operation(mode);
@@ -481,14 +500,11 @@ async fn native_owned_runtime_failure_observation() {
             f.marker().is_file(),
             "the original child must actually enter"
         );
-        assert_eq!(report.failure, Some(Failure::Protocol));
+        assert_eq!(report.failure.as_ref(), Some(&failure));
         assert_eq!(report.protocol, Protocol::Unknown);
         let original = report.runtime_observation().unwrap().clone();
         assert_eq!(original.stage, RuntimeStage::Initialize);
-        assert_eq!(
-            original.session_error,
-            Some(session::Error::Transport(cause))
-        );
+        assert_eq!(original.session_error, Some(session_error));
         assert_eq!(original.transport_cause, Some(cause));
         assert_eq!(original.pending_requests, Some(1));
         assert_eq!(original.pending_server_requests, Some(0));
@@ -508,7 +524,7 @@ async fn native_owned_runtime_failure_observation() {
         );
         report.retry_stop();
         assert_eq!(report.runtime_observation(), Some(&original));
-        assert_eq!(report.failure, Some(Failure::Protocol));
+        assert_eq!(report.failure.as_ref(), Some(&failure));
         assert_eq!(report.protocol, Protocol::Unknown);
         if !cfg!(any(target_os = "linux", target_os = "macos", windows)) {
             assert!(report.retains_process_custody());
