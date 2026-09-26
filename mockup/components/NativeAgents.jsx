@@ -30,7 +30,7 @@ import { useT } from '@/components/Prefs';
 import { errorText } from '@/lib/i18n';
 import { useData } from '@/components/Data';
 import { fmtTokens } from '@/lib/mock-data';
-import { rebindAgentResource, startAgent, stopAgent } from '@/lib/native-api';
+import { stopAgent } from '@/lib/native-api';
 import NativeStoppedWork from '@/components/NativeStoppedWork';
 import NativeAgentDetail from '@/components/NativeAgentDetail';
 

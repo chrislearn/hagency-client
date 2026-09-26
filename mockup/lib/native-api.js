@@ -203,9 +203,13 @@ export function engagementsView(location) { return /^\/console\/engagements\/?$/
  * (the retained console's own NEXT_STATUS drift is not ported). */
 const DETAIL_KEYS = ['agent', 'presetId', 'ceilingTokens', 'committedTokens', 'measuredTokens', 'drawnTokens', 'overByTokens'];
 const ALERT_KEYS = ['dedupe_key', 'resource_id', 'summary', 'detail', 'runbook', 'impact', 'recovery_condition', 'occurrences', 'first_seen_ms', 'last_seen_ms', 'resolved', 'severity', 'status', 'next', 'note'];
-// Mirrors hagency_store::ALERT_STATUSES (the one server-owned map): the
-// validator must refuse an unknown state rather than misrender, so this
-// list must move in the same commit as the store's.
+// Mirrors hagency_store::ALERT_STATUSES (the one server-owned map,
+// domain/ceiling_alerts.rs:659 — the retained FIVE states, `assigned`
+// restored): the validator must refuse an unknown state rather than
+// misrender, so this list must move in the same commit as the store's.
+// It had not: a served `next` naming `assigned` failed `validateAlerts`
+// outright, so the whole alerts READ was refused as invalid_native_response
+// and the page could only ever show its error panel.
 const ALERT_STATUSES = ['open', 'acknowledged', 'assigned', 'resolved', 'suppressed'];
 const validDetail = (v) => (v !== null && typeof v === 'object' && !Array.isArray(v)
   && Object.keys(v).length === DETAIL_KEYS.length && DETAIL_KEYS.every((k) => Object.hasOwn(v, k))
@@ -894,21 +898,28 @@ const oneTask = (v) => { if (!object(v, ['ok', 'task']) || v.ok !== true || !val
 export async function createTask(body) {
   return oneTask(await request('/api/tasks', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
 }
-export async function updateTask(id, patch) {
-  if (!id(id)) throw new Error('invalid_selection');
-  return oneTask(await request(`/api/tasks/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) }));
+// The parameter is `task`, NOT `id`: a parameter named `id` shadows the
+// module-level `id` validator above, so the guard read `if (!id(id))` on a
+// STRING and threw `TypeError: id is not a function` BEFORE any request went
+// out. Every task mutation through the console therefore died silently in the
+// click handler — `act` caught it and flashed a toast, and the page simply
+// never changed. (The live action walk found it: the comment control stayed
+// enabled, the id was valid, and no /comments request was ever sent.)
+export async function updateTask(task, patch) {
+  if (!id(task)) throw new Error('invalid_selection');
+  return oneTask(await request(`/api/tasks/${encodeURIComponent(task)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) }));
 }
-export async function deleteTask(id) {
-  if (!id(id)) throw new Error('invalid_selection');
-  return oneTask(await request(`/api/tasks/${encodeURIComponent(id)}`, { method: 'DELETE' }));
+export async function deleteTask(task) {
+  if (!id(task)) throw new Error('invalid_selection');
+  return oneTask(await request(`/api/tasks/${encodeURIComponent(task)}`, { method: 'DELETE' }));
 }
-export async function transitionTask(id, status, extra = {}) {
-  if (!id(id) || !TASK_STATES.includes(status)) throw new Error('invalid_selection');
-  return oneTask(await request(`/api/tasks/${encodeURIComponent(id)}/transition`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...extra, status }) }));
+export async function transitionTask(task, status, extra = {}) {
+  if (!id(task) || !TASK_STATES.includes(status)) throw new Error('invalid_selection');
+  return oneTask(await request(`/api/tasks/${encodeURIComponent(task)}/transition`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...extra, status }) }));
 }
-export async function commentTask(id, comment) {
-  if (!id(id)) throw new Error('invalid_selection');
-  return oneTask(await request(`/api/tasks/${encodeURIComponent(id)}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(comment) }));
+export async function commentTask(task, comment) {
+  if (!id(task)) throw new Error('invalid_selection');
+  return oneTask(await request(`/api/tasks/${encodeURIComponent(task)}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(comment) }));
 }
 /* The project board: the retained envelope (`lib/project-board.js:buildProjectBoardSnapshot`)
  * carries `generatedAt`, `staleAfterMs`, `activityLimit`, `totals` and

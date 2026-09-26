@@ -46,6 +46,9 @@ mod registration;
 #[path = "console/rail.rs"]
 #[cfg(feature = "native-console-browser")]
 mod rail;
+#[path = "console/live_actions.rs"]
+#[cfg(feature = "native-console-browser")]
+mod live_actions;
 #[path = "console/resources.rs"]
 mod resources;
 #[path = "console/side_registration.rs"]
