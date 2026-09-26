@@ -79,7 +79,7 @@ try {
 
   /* A loading state, not "no rows": throttle the page's API reads so the
    * fetch is in flight while the paint happens, then release. */
-  await page.route('**/console/api/**', async (route) => {
+  await page.route('**/console/api/engagements*', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 400));
     await route.continue();
   });
