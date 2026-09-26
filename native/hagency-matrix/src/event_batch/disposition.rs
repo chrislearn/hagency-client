@@ -68,7 +68,7 @@ impl Source {
         Ok(())
     }
 }
-#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Debug)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Rejection {
     StaleSession,
