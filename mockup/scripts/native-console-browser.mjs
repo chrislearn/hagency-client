@@ -75,6 +75,58 @@ async function projectSidesWalk(page) {
   assert((await page.locator('main button').count()) === 4, 'register, generate, test connection and refresh are the controls');
 }
 
+/* The tasks page's WRITE journey (board #107), shared by the tasks-only lane:
+ * create a task, comment on it and SEE the comment come back, take the move
+ * the server itself offers, then delete it — every step through the page's OWN
+ * controls. A page that renders perfectly can still refuse the action, and the
+ * failure mode this catches is a click that sends NOTHING at all: the retired
+ * regression threw inside the click handler before any request left the
+ * browser, so no toast and no row change ever appeared. An assertion on the
+ * rendered list alone cannot see that; waiting for the SERVED reply can.
+ * The status words (created/accepted/…) are wire values, intentionally not
+ * translated, so only the field LABELS move between locales. */
+async function tasksWalk(page) {
+  const zh = config.executable === true;
+  await page.goto(`${config.base}/console/tasks/`);
+  await page.locator('[data-native-state="ready"]').first().waitFor();
+  const title = `served walk ${Date.now()}`;
+  await page.getByRole('button', { name: zh ? '新建任务' : 'New task', exact: true }).click();
+  await page.locator('label', { hasText: zh ? '标题' : 'Title' }).locator('input').fill(title);
+  await page.getByRole('button', { name: zh ? '创建' : 'Create', exact: true }).click();
+  const row = page.locator('tbody tr', { hasText: title });
+  await row.first().waitFor({ timeout: 20_000 });
+  await row.first().click();
+  await page.locator('h3', { hasText: title }).first().waitFor({ timeout: 20_000 });
+
+  // Comment: the SERVED reply must render back as this task's own comment
+  // (author included), which a click sending nothing can never produce.
+  const note = `served note ${Date.now()}`;
+  const box = page.getByPlaceholder(zh ? '添加评论…' : 'Add a comment…');
+  await box.fill(note);
+  const comment = page.getByRole('button', { name: zh ? '评论' : 'Comment', exact: true });
+  assert.equal(await comment.isEnabled(), true, 'the comment control enables once text is present');
+  await comment.click();
+  await page.locator('dl.kv', { hasText: note }).waitFor({ timeout: 20_000 });
+  assert.match(await page.locator('dl.kv').last().innerText(), new RegExp(note), 'the comment renders back');
+
+  // Transition: the first offered move is legal by construction (the server
+  // serves each row its own `next`), so pressing it must move the SERVED state.
+  const move = page.getByRole('button', { name: /^→ \S/ }).first();
+  await move.waitFor({ timeout: 20_000 });
+  const to = (await move.innerText()).replace(/^→\s*/, '').trim();
+  const before = await page.locator('dl.kv').first().locator('dd').first().innerText();
+  assert.notEqual(to, before, 'the offered move leaves the current state');
+  await move.click();
+  await page.locator(`button:has-text("→ ${to}")`).waitFor({ state: 'detached', timeout: 20_000 });
+  assert.equal(await page.locator('dl.kv').first().locator('dd').first().innerText(), to, 'the served state moved');
+
+  // Delete: the page's own confirm, then the row leaves the served list.
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.getByRole('button', { name: zh ? '删除' : 'Delete', exact: true }).click();
+  await row.first().waitFor({ state: 'detached', timeout: 20_000 });
+  return `created, commented, transitioned to ${to} and deleted ${JSON.stringify(title)}`;
+}
+
 const browser = await chromium.launch({ executablePath: process.env.HAGENCY_BROWSER_CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', headless: true,
   args: ['--disable-background-networking', '--disable-component-update', '--no-default-browser-check'] });
 if (config.roster) {
@@ -191,6 +243,30 @@ if (config.sides) {
     assert(!/private_|operator\.token/.test(await page.locator('main').innerText()), 'no credential value on screen');
     assert.deepEqual(failures, []);
     console.log('PASS native project-sides browser');
+  } finally { await browser.close(); }
+  process.exit(0);
+}
+if (config.tasks) {
+  // The tasks lane (board #107): one access link, the write journey over the
+  // page's own controls, against a served binary. The link is exchanged on the
+  // usage page (one login grants every console action, #31), then the walk runs.
+  try {
+    const context = await browser.newContext({ serviceWorkers: 'block' });
+    const page = await context.newPage();
+    const failures = []; const urls = [];
+    page.on('pageerror', (error) => failures.push(error.message));
+    await context.route('**/*', async (route) => {
+      const url = new URL(route.request().url()); urls.push(url.toString());
+      if (url.origin !== config.base) { failures.push('unexpected external request'); await route.abort(); }
+      else await route.continue();
+    });
+    await page.goto(config.url);
+    await page.locator('[data-native-state="ready"]').first().waitFor();
+    const detail = await tasksWalk(page);
+    assert(urls.every((url) => !url.includes('access=')), 'no ticket value in a request URL');
+    assert(!/private_|operator\.token/.test(await page.locator('main').innerText()), 'no credential value on screen');
+    assert.deepEqual(failures, []);
+    console.log(`PASS native tasks browser — ${detail}`);
   } finally { await browser.close(); }
   process.exit(0);
 }

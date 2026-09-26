@@ -966,6 +966,71 @@ async fn native_console_agent_lifecycle_browser() {
     f.close().await;
 }
 
+/// Board #107: the tasks page's WRITE journey over the SERVED binary — create a
+/// task, comment on it and see the comment come back, take the move the server
+/// offers, then delete it, every step through the page's own controls. The
+/// retired regression threw INSIDE the click handler before any request left the
+/// browser: the comment control was enabled, the id was valid, and the click
+/// sent nothing — so no toast and no render changed. A render-only assertion
+/// cannot see that; this walk waits for the SERVED reply, against the shipped
+/// bundle the operator's deployment serves.
+#[tokio::test]
+async fn native_console_tasks_browser() {
+    let address = address();
+    let f = Fixture::new(address, Some(&built()));
+    hagency_store::private::write_new(
+        &f.root.path().join("state/operator.token"),
+        TOKEN.as_bytes(),
+    )
+    .unwrap();
+    let acceptor = TcpListener::new(address).try_bind().await.unwrap();
+    let server = Server::new(acceptor);
+    let handle = server.handle();
+    let serving = tokio::spawn(server.try_serve(f.app.clone().router()));
+    let url = hagency::console::client::access(&f.root.path().join("state"), address)
+        .await
+        .unwrap();
+    let mut child = Command::new(node())
+        .arg(script())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("actual browser tooling must exist");
+    let mut input = child.stdin.take().unwrap();
+    input
+        .write_all(
+            format!(
+                "{}\n",
+                json!({"base":format!("http://{address}"),"url":url,"tasks":true})
+            )
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let mut pass = false;
+    tokio::time::timeout(Duration::from_secs(90), async {
+        while let Some(line) = lines.next_line().await.unwrap() {
+            if line.contains("PASS native tasks browser") {
+                pass = true;
+            }
+            println!("{line}");
+        }
+    })
+    .await
+    .expect("real tasks browser deadline");
+    assert!(pass, "the tasks lane reported no pass marker");
+    assert!(
+        child.wait().await.unwrap().success(),
+        "tasks browser failed"
+    );
+    handle.stop_graceful(Some(Duration::from_secs(2)));
+    serving.await.unwrap().unwrap();
+    f.close().await;
+}
+
 fn regression_script() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../mockup/scripts/native-console-regression-browser.mjs")
