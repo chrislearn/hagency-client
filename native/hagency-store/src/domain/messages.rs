@@ -1167,7 +1167,15 @@ pub(super) fn select_intent(
     // `pending` (the notice has not been delivered yet) and `closed` are not
     // errors: the pump sees them while the notice is still in flight.
     let task = execution::task(tx, &task_id)?;
-    if state != "active" || task.status == TaskState::Done {
+    // Board #98 / TS `router/src/store.ts` `claimDispatch`: a COMPLETED task is
+    // not dead. The original requester's follow-up in its thread reopens it
+    // (`task.reopened_for_followup`), and the retained product's thread binding
+    // lookup never filtered on task status for exactly this reason. Admission
+    // already gated the wake (`admit_matrix_input` clears it for anyone but the
+    // original requester after `completed_at`), and `start_task` re-checks
+    // `fresh_followup` before it may reopen, so relaxing this to `state` alone
+    // cannot resurrect consumed work.
+    if state != "active" {
         return Ok(AgentInboxSelection::NoWake);
     }
     // Only an input of this task can be bound: `task_intents::check_input`
@@ -1339,17 +1347,26 @@ impl DomainRepository {
         tx.commit()?;
         Ok(result)
     }
-    /// The delegated sessions an agent reads its rooms through, beside its own:
-    /// active intents whose task is not done and whose route is current. A
-    /// follow-up the owner posts in a delegated thread is admitted through this
-    /// session, as the retained product routes a thread message to the task
-    /// bound to that thread. Projection only, re-checked at admission.
+    /// The thread sessions an agent reads its rooms through, beside its own:
+    /// every active intent whose route is current, INCLUDING one whose task is
+    /// already done. A follow-up the owner posts in a delegated thread is
+    /// admitted through this session, as the retained product routes a thread
+    /// message to the task bound to that thread — and the retained product does
+    /// NOT stop admitting them once the task completes: it keeps the thread
+    /// readable and lets the original requester's follow-up reopen the task
+    /// (`router/src/store.ts` `claimDispatch`, `completed_task_followup`;
+    /// `admit_matrix_event` keeps the after-done sender/time rule). Excluding a
+    /// done task here removed its thread from the intake plan, so a follow-up in
+    /// that thread matched no target and was dropped silently at ingress
+    /// (board #98). Dispatch is unaffected: `intent_inboxes` and `select_intent`
+    /// still refuse a done task unless a fresh attached input makes
+    /// `task_followup_ready` true. Projection only, re-checked at admission.
     pub fn intent_sessions(&self, engagement_id: &str) -> Result<Vec<String>, Error> {
         identifier(engagement_id, 128)?;
         Ok(self
             .db
             .prepare(
-                "SELECT i.session_id FROM task_intents i JOIN runner_sessions s ON s.id=i.session_id JOIN canonical_tasks t ON t.id=i.task_id WHERE s.engagement_id=?1 AND i.state='active' AND json_extract(t.config,'$.status')<>'done' AND EXISTS(SELECT 1 FROM current_matrix_routes c WHERE c.session_id=i.session_id) ORDER BY i.rowid LIMIT 16",
+                "SELECT i.session_id FROM task_intents i JOIN runner_sessions s ON s.id=i.session_id JOIN canonical_tasks t ON t.id=i.task_id WHERE s.engagement_id=?1 AND i.state='active' AND EXISTS(SELECT 1 FROM current_matrix_routes c WHERE c.session_id=i.session_id) ORDER BY i.rowid LIMIT 16",
             )?
             .query_map([engagement_id], |r| r.get(0))?
             .collect::<Result<Vec<String>, _>>()?)
@@ -1363,7 +1380,7 @@ impl DomainRepository {
         Ok(self
             .db
             .prepare(
-                "SELECT i.session_id FROM task_intents i JOIN runner_sessions s ON s.id=i.session_id JOIN canonical_tasks t ON t.id=i.task_id WHERE s.engagement_id=?1 AND i.state='active' AND json_extract(t.config,'$.status')<>'done' AND EXISTS(SELECT 1 FROM current_matrix_routes c WHERE c.session_id=i.session_id) AND NOT EXISTS(SELECT 1 FROM runner_dispatches d WHERE d.session_id=i.session_id AND d.state IN ('queued','leased','started','parked')) AND EXISTS(SELECT 1 FROM session_inputs si JOIN task_inputs ti ON ti.task_id=i.task_id AND ti.message_sequence=si.message_sequence WHERE si.session_id=i.session_id AND si.wake=1 AND si.processed_at IS NULL AND si.dispatch_id IS NULL) ORDER BY i.rowid LIMIT 16",
+                "SELECT i.session_id FROM task_intents i JOIN runner_sessions s ON s.id=i.session_id JOIN canonical_tasks t ON t.id=i.task_id WHERE s.engagement_id=?1 AND i.state='active' AND EXISTS(SELECT 1 FROM current_matrix_routes c WHERE c.session_id=i.session_id) AND NOT EXISTS(SELECT 1 FROM runner_dispatches d WHERE d.session_id=i.session_id AND d.state IN ('queued','leased','started','parked')) AND EXISTS(SELECT 1 FROM session_inputs si JOIN task_inputs ti ON ti.task_id=i.task_id AND ti.message_sequence=si.message_sequence WHERE si.session_id=i.session_id AND si.wake=1 AND si.processed_at IS NULL AND si.dispatch_id IS NULL) ORDER BY i.rowid LIMIT 16",
             )?
             .query_map([engagement_id], |r| r.get(0))?
             .collect::<Result<Vec<String>, _>>()?)

@@ -3,7 +3,7 @@
   "bridgeFile": "bridge-matrix.js",
   "routeFile": "mockup/app/api/hagency/[...path]/route.js",
   "bridgeSha256": "201cc578188799b445712ccab39275025e726009531d52781a96e26c9004a072",
-  "routeSha256": "884d00c3bd084a13e61c1c856752bd834bd2ededb62fe5652033299fef3c5ccc",
+  "routeSha256": "862e082f98b4064e33a58900368394877a2866295197abbd8625c7d410ed2a60",
   "semantics": "two complete verdict shapes and nothing mixed; 32-hex request ids; approve_task needs a task id; one-origin write gate",
   "eventKey": "com.agentchat.approval",
   "requestMsgtype": "com.agentchat.approval.request.v1",

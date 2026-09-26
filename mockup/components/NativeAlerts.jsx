@@ -184,7 +184,7 @@ export default function NativeAlerts() {
                     disabled={data.action?.kind === 'pending'}
                     onClick={() => data.transition(selected.dedupe_key, to)}
                   >
-                    {t(to === 'open' ? 'act.reopen' : `act.${to === 'acknowledged' ? 'acknowledge' : to === 'resolved' ? 'resolve' : 'suppress'}`)}
+                    {t(to === 'open' ? 'act.reopen' : `act.${to === 'acknowledged' ? 'acknowledge' : to === 'assigned' ? 'assigned' : to === 'resolved' ? 'resolve' : 'suppress'}`)}
                   </button>
                 ))}
               </div>

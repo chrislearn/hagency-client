@@ -232,10 +232,13 @@ try {
     await context.route(path, (route) => route.abort('failed'));
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await page.locator('[data-native-state="stale"]').waitFor();
-    assert.match(await page.locator('main [role="alert"]').innerText(), /earlier observations may be stale/);
+    assert.match(await page.locator('[data-native-state="stale"] [role="alert"]').innerText(), /earlier observations may be stale/);
     assert.equal(await page.locator('[data-kind="input"]').first().textContent(), '4');
     await context.unroute(path);
-    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    // The stale container's own Refresh (the btn-row one): the fleet panel
+    // renders a second Refresh when its read fails, so the page-level
+    // role query is ambiguous.
+    await page.locator('[data-native-state="stale"]').getByRole('button', { name: 'Refresh', exact: true }).click();
     await page.locator('[data-native-state="ready"][aria-busy="false"]').first().waitFor();
   }
   if (process.env.HAGENCY_CONSOLE_SCREENSHOTS && !config.executable) {
@@ -263,7 +266,9 @@ try {
   if (!config.executable) {
     console.log('CREATE_ENGAGEMENT');
     const created = JSON.parse((await lines.next()).value).engagement;
-    await page.getByRole('button', { name: '刷新', exact: true }).click();
+    // The usage container's own Refresh: the fleet panel renders a second
+    // one when its read fails, so the page-level role query is ambiguous.
+    await page.locator('[data-native-state]').first().getByRole('button', { name: '刷新', exact: true }).click();
     await page.locator(`option[value="${created}"]`).waitFor({ state: 'attached' });
     await page.locator('#native-engagement').selectOption(created);
     await page.locator(`[data-engagement-id="${created}"]`).waitFor();
@@ -295,7 +300,9 @@ try {
     await page.getByRole('button', { name: 'English', exact: true }).click();
     assert.equal(await page.locator('[data-kind="input"]').first().textContent(), 'Unknown');
     await page.goto(`${config.base}/console/usage/?engagement_id=does_not_exist`);
-    await page.locator('main [role="alert"]').waitFor();
+    // The engagement's own error panel: the fleet panel renders a second
+    // alert when its read fails, so match the alert carrying this text.
+    await page.getByRole('alert').filter({ hasText: /not present in the native service/ }).waitFor();
     assert.match(await page.locator('main').innerText(), /not present in the native service/);
     assert.equal(await page.locator('[data-kind]').count(), 0);
     await page.goto(`${config.base}/console/usage/?engagement_id=${config.engagement}`);
@@ -316,12 +323,14 @@ try {
   assert((await page.locator('tbody tr[aria-selected]').count()) >= 1, 'the seeded alert row renders and is selectable');
   // One login (TS parity): the SAME session is offered the triage controls
   // the served `next` array names — no second link, no read-only notice.
-  assert((await page.locator('[data-transition]').count()) === 3, 'one login is offered the served triage controls');
+  assert((await page.locator('[data-transition]').count()) === 4, 'one login is offered the served triage controls');
   if (!config.executable) {
-    // The open row offers exactly the served map: acknowledge, resolve, suppress.
+    // The open row offers exactly the served map: acknowledge, assign,
+    // resolve, suppress (the store's own transition map).
     const buttons = page.locator('[data-transition]');
-    assert(await buttons.count() === 3, 'the open row serves exactly three transitions');
+    assert(await buttons.count() === 4, 'the open row serves exactly four transitions');
     assert((await page.locator('[data-transition="acknowledged"]').count()) === 1);
+    assert((await page.locator('[data-transition="assigned"]').count()) === 1);
     assert((await page.locator('[data-transition="resolved"]').count()) === 1);
     assert((await page.locator('[data-transition="suppressed"]').count()) === 1);
     // A REAL press: acknowledge, then the served map narrows to resolve/suppress.
@@ -332,7 +341,7 @@ try {
     // re-renders still fails here rather than passing on the stale set).
     await page.locator('[data-transition="acknowledged"]').waitFor({ state: 'detached', timeout: 10_000 });
     assert((await page.locator('[data-transition="acknowledged"]').count()) === 0, 'acknowledged is no longer offered');
-    assert((await buttons.count()) === 2, 'the acknowledged row serves resolve and suppress');
+    assert((await buttons.count()) === 2, 'the acknowledged row serves assign and resolve');
     // To terminal: resolve, and the terminal row serves nothing.
     await page.locator('[data-transition="resolved"]').click();
     await page.locator('[data-transition="resolved"]').waitFor({ state: 'detached', timeout: 10_000 });

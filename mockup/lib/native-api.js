@@ -106,8 +106,13 @@ export { request as nativeRequest };
  * server's; unknown state words render as text, never error). Same-origin
  * top-level /ready, never under /console and never /health. */
 export function validateReadiness(v) {
+  /* The retained contract fixes the SHAPE of these three keys; the #46
+   * health rollup rides BESIDE them (lib.rs adds its fields without
+   * touching these) and the strip consumes the payload as-is, so extra
+   * top-level keys are expected — only the retained shapes are enforced. */
   const word = (s, max) => typeof s === 'string' && s.length <= max;
-  if (!object(v, ['status', 'implementation', 'components']) || !word(v.status, 32) || !word(v.implementation, 32)
+  if (v === null || typeof v !== 'object' || Array.isArray(v)
+    || !word(v.status, 32) || !word(v.implementation, 32)
     || !Array.isArray(v.components) || v.components.length > 64
     || v.components.some((c) => !object(c, ['name', 'state']) || !word(c.name, 64) || !word(c.state, 64))) throw new Error('invalid_native_response');
   return v;

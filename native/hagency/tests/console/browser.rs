@@ -1141,7 +1141,26 @@ async fn native_console_regression_browser() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(quarantined, 1, "the stop fences the dispatch's session");
+    // The operator stop is a CONFIRMED cleanup (TS parity: the stop route
+    // settles only unconfirmed runner terminations behind
+    // `stopUnconfirmedDispatches`, backend-v2.js:12636-12648 — the confirmed
+    // path never retains the quarantine). The fixture has no runner process,
+    // so the host's stop IS the confirmation: the fence ran (the dispatch
+    // above ended outcome_unknown), the stop row settles, and the session
+    // quarantine clears — the same words the store-level tests use
+    // ("the operator stop settles the stop row", console/agents.rs).
+    let settled: Option<u64> = sql
+        .query_row(
+            "SELECT settled_at FROM dispatch_stops WHERE dispatch_id='private_dispatch'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(settled.is_some(), "the operator stop settles the fence row");
+    assert_eq!(
+        quarantined, 0,
+        "the confirmed stop clears the session quarantine"
+    );
     let alert_status: String = sql
         .query_row("SELECT status FROM ceiling_alerts", [], |r| r.get(0))
         .unwrap();
