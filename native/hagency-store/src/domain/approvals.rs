@@ -1235,13 +1235,21 @@ fn decide_verdict(
 
 fn room_authority(db: &Connection, engagement: &str) -> Result<ApprovalRoomAuthority, Error> {
     identifier(engagement, 128)?;
-    let (encoded, project, owner, room, project_room):(String,String,String,String,String)=db.query_row("SELECT r.config,e.project_id,p.owner_mxid,p.owner_room_id,p.room_id FROM engagements e JOIN registrations r ON r.fleet_id=e.fleet_id AND r.generation=e.generation JOIN projects p ON p.fleet_id=e.fleet_id AND p.id=e.project_id AND p.generation=e.generation WHERE e.id=?1 AND e.state='active'",[engagement],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).optional()?.ok_or(Error::RunnerAuthority)?;
+    let (encoded, project, owner, room, project_room, agent_name):(String,String,String,String,String,String)=db.query_row("SELECT r.config,e.project_id,p.owner_mxid,p.owner_room_id,p.room_id,json_extract(e.projection,'$.agentName') FROM engagements e JOIN registrations r ON r.fleet_id=e.fleet_id AND r.generation=e.generation JOIN projects p ON p.fleet_id=e.fleet_id AND p.id=e.project_id AND p.generation=e.generation WHERE e.id=?1 AND e.state='active'",[engagement],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?))).optional()?.ok_or(Error::RunnerAuthority)?;
     let reg: Registration = serde_json::from_str(&encoded)?;
     if room == project_room || room == reg.reception_room_id {
         return Err(Error::RunnerAuthority);
     }
+    // The room-visible identity of the agent is its NAME (TS `approval.agent`).
+    // The projection always carries it; a name that does not validate is
+    // refused rather than copied into a room string (board #99).
+    let agent_name = hagency_core::project::AgentName::try_from(agent_name)
+        .map_err(|_| Error::RunnerAuthority)?
+        .as_str()
+        .to_owned();
     Ok(ApprovalRoomAuthority {
         engagement_id: engagement.into(),
+        agent_name,
         fleet_id: reg.fleet_id,
         project_id: project,
         registration_generation: reg.generation,

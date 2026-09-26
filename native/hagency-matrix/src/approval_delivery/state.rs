@@ -107,7 +107,7 @@ impl Frozen {
             || d["version"] != 1
             || d["kind"] != "request"
             || d["runtime"] != "codex"
-            || d["agent"] != a.engagement_id
+            || d["agent"] != a.agent_name
             || d["project"] != a.project_id
             || d["project_room_id"] != a.project_room_id
             || d["request_id"] != t.request_id
@@ -421,6 +421,7 @@ mod tests {
         ApprovalIntakeTarget {
             authority: ApprovalRoomAuthority {
                 engagement_id: "agent-one".into(),
+                agent_name: "agent-one".into(),
                 fleet_id: "fleet-one".into(),
                 project_id: "project-one".into(),
                 registration_generation: 1,

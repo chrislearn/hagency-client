@@ -189,6 +189,12 @@ impl ApprovalApplicationObservation {
 #[derive(Clone, PartialEq, Eq, Serialize)]
 pub struct ApprovalRoomAuthority {
     pub engagement_id: String,
+    /// The agent's NAME — the same string the room shows as its display name
+    /// (`engagement.agentName`, set as the profile displayname by
+    /// `reconcile_agent_profile`). TS carries this, not an id: every approval
+    /// room string interpolates `approval.agent` (bridge-matrix.js:2585, 2603,
+    /// 2628), so the id must never reach the room (board #99).
+    pub agent_name: String,
     pub fleet_id: String,
     pub project_id: String,
     pub registration_generation: u64,
