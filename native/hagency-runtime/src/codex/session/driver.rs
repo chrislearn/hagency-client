@@ -562,6 +562,11 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
                 params: Some(params),
             } if self.approvals_enabled => {
                 self.last_server_request = Some(server_request_shape(&method));
+                // The fixed shape label is what logs carry: a private runtime
+                // string is never projected (see
+                // `native_codex_session_outcomes_refused_callbacks_expose_only_fixed_shape_labels`),
+                // and unlike `method` it is `Copy`, so it survives `parse`.
+                let shape = server_request_shape(&method);
                 let elicitation = method == "mcpServer/elicitation/request";
                 let original = id.clone();
                 let declinable = crate::codex::approval::policy_decline(&method, &params).is_some();
@@ -577,18 +582,30 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
                 let request = match parsed {
                     Ok(request) => request,
                     Err(error) => {
-                        if elicitation {
-                            self.wire
-                                .send(transport::Command::RejectServerRequest { id: original })
-                                .await
-                                .map_err(Error::Transport)?;
-                        } else if matches!(error, Error::Policy)
+                        // An adapter-refused approval — the unsupported MCP
+                        // elicitation FORM — is answered with the family's own
+                        // decline and the turn goes on. The retained runner ends
+                        // the turn here (`router/src/runner.ts:725-735`); the
+                        // operator rule (a bridge-side fault is never terminal)
+                        // overrides it, and this is exactly the arm that killed a
+                        // live turn as a silent `protocol` when Codex asked an
+                        // elicitation. Identity and correlation failures
+                        // (`Error::Scope`) are not answered with a decline: Codex
+                        // never learns whether that tool ran. The WARN names the
+                        // cause the failure previously hid.
+                        let adapter_refused = matches!(error, Error::Policy);
+                        if adapter_refused
                             && declinable
                             && self.policy_declines < MAX_POLICY_DECLINES
                         {
-                            // Refused by the adapter, not by the owner: answer with
-                            // the family's own decline and let the turn go on. The
-                            // host coordinator never sees this request.
+                            tracing::warn!(
+                                method = shape,
+                                request_id = ?original,
+                                "Codex server request refused by the adapter; answering its decline and continuing the turn"
+                            );
+                            // Refused by the adapter, not by the owner: answer
+                            // with the family's own decline and let the turn go
+                            // on. The host coordinator never sees this request.
                             self.wire
                                 .send(transport::Command::DeclineServerRequest {
                                     id: original.clone(),
@@ -599,6 +616,21 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
                             self.policy_declined.insert(original);
                             self.observation_kind = super::ObservationKind::Ignored;
                             return Ok(Update::Notice);
+                        }
+                        tracing::warn!(
+                            method = shape,
+                            request_id = ?original,
+                            "unsupported Codex server request; the turn cannot continue"
+                        );
+                        // A failure this adapter cannot answer with a decline
+                        // still gets the wire's own "no" for an elicitation —
+                        // the retained runner cancels it (`router/src/runner.ts:727-728`);
+                        // other families keep their protocol error response.
+                        if elicitation {
+                            self.wire
+                                .send(transport::Command::RejectServerRequest { id: original })
+                                .await
+                                .map_err(Error::Transport)?;
                         }
                         return Err(error);
                     }
