@@ -41,10 +41,13 @@ async function rosterWalk(page) {
   assert(cells.every((c) => c !== '0'), 'unknown is never rendered as zero');
   assert(!/private_|\/Users\/|tmux attach/.test(text), 'no private path, home or target renders');
   // One login (TS parity): the roster renders the implemented lifecycle
-  // controls per row — stop and review — and never the unavailable ones.
+  // controls per row. Stop and review for every serving row; #106 added the
+  // way BACK — Start — but it renders ONLY for a stopped row, and no fixture
+  // row is stopped here, so it stays absent (the same predicate the
+  // stop-then-start lane exercises positively).
   assert((await page.locator('[data-lifecycle-action="stop"]').count()) >= 3, 'one login renders the stop control per row');
   assert((await page.locator('[data-lifecycle-action="review"]').count()) >= 3, 'the review control renders per row');
-  assert((await page.locator('[data-lifecycle-action="start"]').count()) === 0, 'the unavailable start transition is never advertised');
+  assert((await page.locator('[data-lifecycle-action="start"]').count()) === 0, 'no serving row advertises Start (it is the stopped row control)');
   assert((await page.locator('[data-lifecycle-action="preset"]').count()) === 0, 'the unavailable preset transition is never advertised');
 }
 
@@ -174,7 +177,7 @@ if (config.lifecycle) {
     await page.goto(`${config.base}/console/agents/`);
     await page.locator('[data-native-state="ready"]').first().waitFor();
     assert((await page.locator('[data-lifecycle-action="stop"]').count()) >= 3, 'one login renders the stop control per row');
-    assert((await page.locator('[data-lifecycle-action="start"]').count()) === 0, 'the roster does not advertise the unavailable start transition');
+    assert((await page.locator('[data-lifecycle-action="start"]').count()) === 0, 'no serving row advertises Start (board #106: Start is the stopped row control)');
     assert((await page.locator('[data-lifecycle-action="preset"]').count()) === 0, 'the roster does not advertise the unavailable preset transition');
     await page.locator(`[data-engagement-id="${config.engagement}"] [data-lifecycle-action="review"]`).click();
     await page.locator('[data-recovery-inspect="resolution_dispatch"]').click();

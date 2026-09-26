@@ -22,7 +22,7 @@
 //! column on by removing its name here, not by a client edit.
 use super::resources::failure;
 use super::{Error, Session, body, console, failed, recheck, usage::query};
-use crate::{refusal, resources::domain};
+use crate::{App, refusal, resources::domain};
 use hagency_core::project::{AgentName, EngagementState, identifier};
 use salvo::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -76,6 +76,9 @@ struct RosterItem {
     /// The LIVE DISPATCH's word, separate from `state` by construction
     /// (board #60 item 2; TS `:6872` reads `machine.state`, a liveness
     /// value). Null when native's dispatch record shows no live dispatch.
+    /// Carries TS's `manualDown` as `stopped` (`backend-v2.js:6847`), which is
+    /// the word the console offers Start for — so the wire keeps its exact
+    /// eleven keys and the client validator is untouched.
     liveness: Option<String>,
     /// Tokens observed consumed by the agent's engagements, summed the way
     /// the usage report sums it. Null when nothing was measured.
@@ -103,6 +106,33 @@ struct RosterItem {
 /// being named here.
 const UNAVAILABLE: [&str; 0] = [];
 
+/// The fleet's own view of one engagement's worker: `Some(true)` while that
+/// worker is alive — not one of the settled terminal/failure words, the same
+/// rule `/health` applies (`lib.rs:456`: "a fleet agent is online while its
+/// worker is alive"). TS derives an agent's `online` the same way
+/// (`backend-v2.js:6783-6814` `getAgentDeliveryState` -> `machine.online`),
+/// NOT from whether a dispatch happens to be live: an agent whose worker is up
+/// and between dispatches (`receiving`/`no_work`) is online, which is exactly
+/// the live run that reported every agent Offline (board #106).
+///
+/// `None` when this process owns no fleet (an asset-only or non-factory host)
+/// or the fleet holds no row for the engagement — then the caller keeps the
+/// store's own live-dispatch rule rather than inventing a verdict.
+fn fleet_alive(snapshot: Option<&serde_json::Value>, engagement: &str) -> Option<bool> {
+    let row = snapshot
+        .and_then(|value| value.get("agents"))
+        .and_then(|agents| agents.as_array())
+        .and_then(|rows| {
+            rows.iter()
+                .find(|row| row["engagement_id"].as_str() == Some(engagement))
+        })?;
+    // The same settled terminal/failure words `/health` excludes.
+    Some(!matches!(
+        row["status"]["state"].as_str(),
+        Some("closed" | "unavailable" | "outcome_unknown" | "stopped")
+    ))
+}
+
 #[handler]
 async fn list(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     // The roster takes ONE selection — `view`, whose only meaningful value
@@ -119,6 +149,13 @@ async fn list(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     let Some(store) = domain(depot, res) else {
         return;
     };
+    // The fleet's own worker state, when this host owns a fleet. Read before
+    // the store call so the overlay and the rows describe one moment.
+    let fleet = depot
+        .get_typed::<App>()
+        .ok()
+        .and_then(|app| app.fleet.as_ref())
+        .map(|fleet| fleet.snapshot());
     let result = store.agent_roster().await;
     if let Err(error) = recheck(depot) {
         failed(res, error);
@@ -150,18 +187,35 @@ async fn list(req: &mut Request, depot: &mut Depot, res: &mut Response) {
                 .unwrap_or_default();
             let agents: Vec<_> = rows
                 .into_iter()
-                .map(|row| RosterItem {
-                    name: row.name,
-                    framework: row.framework,
-                    role: row.role,
-                    state: row.state,
-                    engagement_id: row.engagement_id,
-                    requested_tokens: row.requested_tokens,
-                    online: row.online,
-                    last_seen_ms: row.last_seen_ms,
-                    last_activity_ms: row.last_activity_ms,
-                    liveness: row.liveness,
-                    consumed: row.consumed,
+                .map(|row| {
+                    // TS derives `online` from `machine.online`, and a
+                    // manual-down machine is NOT online
+                    // (`lib/agent-state.js:71`: `online = state !== 'offline'
+                    // && state !== 'manual_down'`). So the operator's stop
+                    // outranks the fleet: a worker the stop has fenced but not
+                    // yet reaped must not read Online.
+                    //
+                    // Otherwise the fleet is authoritative when it holds a row
+                    // for this engagement (`/health` derives its own
+                    // `onlineAgents` from exactly this snapshot, `lib.rs:451`);
+                    // a worker alive between dispatches (`receiving`,
+                    // `no_work`) is Online, which is the defect the live run
+                    // reported (board #106).
+                    let online = !row.manual_down
+                        && fleet_alive(fleet.as_ref(), &row.engagement_id).unwrap_or(row.online);
+                    RosterItem {
+                        name: row.name,
+                        framework: row.framework,
+                        role: row.role,
+                        state: row.state,
+                        engagement_id: row.engagement_id,
+                        requested_tokens: row.requested_tokens,
+                        online,
+                        last_seen_ms: row.last_seen_ms,
+                        last_activity_ms: row.last_activity_ms,
+                        liveness: row.liveness,
+                        consumed: row.consumed,
+                    }
                 })
                 .collect();
             // CL-S2 (ADR-130): the lifecycle controls render ONLY from the

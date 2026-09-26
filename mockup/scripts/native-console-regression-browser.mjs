@@ -123,12 +123,14 @@ try {
   /* (c) STOP an agent (same lifecycle scope): the roster's stop control with
    * its #43 feedback notice. The seeded UsageWorker holds a live started
    * dispatch, so the stop is accepted and the notice says so.
-   * (d) START: the server route fails closed (agents.rs `start`, 501) and
-   * the roster renders no start control — asserted as absence, never
-   * clicked, the honest bound for this build. */
+   * (d) START: board #106 renders it per row — for a STOPPED row. This walk
+   * asserts a serving row still offers no Start (asserted below, before the
+   * stop); the positive stopped -> Start -> start journey is driven by the
+   * served-binary lane (native_console_agents_stop_then_start), which clicks
+   * it. */
   await page.goto(`${config.base}/console/agents/`);
   await page.locator('[data-native-state="ready"]').waitFor();
-  assert((await page.locator('[data-lifecycle-action="start"]').count()) === 0, 'the roster offers no start control');
+  assert((await page.locator('[data-lifecycle-action="start"]').count()) === 0, 'a serving row offers no start control');
   await page.locator(`[data-engagement-id="${config.engagement}"] [data-lifecycle-action="stop"]`).click();
   await page.locator('[data-stop-action="saved"]').waitFor();
 

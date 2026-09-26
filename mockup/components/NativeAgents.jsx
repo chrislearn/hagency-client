@@ -30,7 +30,7 @@ import { useT } from '@/components/Prefs';
 import { errorText } from '@/lib/i18n';
 import { useData } from '@/components/Data';
 import { fmtTokens } from '@/lib/mock-data';
-import { stopAgent } from '@/lib/native-api';
+import { startAgent, stopAgent } from '@/lib/native-api';
 import NativeStoppedWork from '@/components/NativeStoppedWork';
 import NativeAgentDetail from '@/components/NativeAgentDetail';
 
@@ -45,6 +45,7 @@ export default function NativeAgents() {
   /* Item 5: Stop is an awaited mutation with visible pending / success /
    * error words, never a fire-and-forget click that can reject unhandled. */
   const [stop, setStop] = useState(null);
+  const [start, setStart] = useState(null);
 
   const stopOne = async (agent) => {
     if (stop?.engagement === agent.engagement_id) return;
@@ -55,6 +56,27 @@ export default function NativeAgents() {
       await data.refresh();
     } catch (error) {
       setStop({
+        engagement: agent.engagement_id,
+        kind: ['busy', 'outcome_unknown', 'native_unavailable', 'invalid_native_response'].includes(error.message) ? 'unknown' : 'refused',
+        error: error.message,
+      });
+    }
+  };
+
+  /* The stop's own shape for the way BACK (board #106). TS offers exactly one
+   * lifecycle transition per agent state: an operator-stopped agent reads
+   * `stopped` (`backend-v2.js:6872`) and `POST /api/agents/:name/start`
+   * (`:12712`) is its route to serving again. Awaited with visible
+   * pending / success / error words, never a fire-and-forget click. */
+  const startOne = async (agent) => {
+    if (start?.engagement === agent.engagement_id) return;
+    setStart({ engagement: agent.engagement_id, kind: 'pending' });
+    try {
+      await startAgent(agent.engagement_id);
+      setStart({ engagement: agent.engagement_id, kind: 'saved' });
+      await data.refresh();
+    } catch (error) {
+      setStart({
         engagement: agent.engagement_id,
         kind: ['busy', 'outcome_unknown', 'native_unavailable', 'invalid_native_response'].includes(error.message) ? 'unknown' : 'refused',
         error: error.message,
@@ -150,7 +172,18 @@ export default function NativeAgents() {
                   <td className="dim">{a.last_seen_ms === null ? t('nu.unknown') : new Date(a.last_seen_ms).toISOString()}</td>
                   {manageLifecycle && (
                     <td>
-                      <button className="btn" data-lifecycle-action="stop" disabled={hold || stop?.kind === 'pending'} onClick={() => void stopOne(a)}>{t('na.stop')}</button>
+                      {/* TS offers ONE lifecycle transition per agent state:
+                          an operator-stopped agent reads `stopped`
+                          (`backend-v2.js:6872`) and `POST
+                          /api/agents/:name/start` (:12712) is its route back;
+                          every other state offers Stop. Before #106 a stopped
+                          row still showed Stop and no Start, so the operator
+                          could not bring the agent back. */}
+                      {a.liveness === 'stopped' ? (
+                        <button className="btn" data-lifecycle-action="start" disabled={hold || start?.kind === 'pending'} onClick={() => void startOne(a)}>{t('na.start')}</button>
+                      ) : (
+                        <button className="btn" data-lifecycle-action="stop" disabled={hold || stop?.kind === 'pending'} onClick={() => void stopOne(a)}>{t('na.stop')}</button>
+                      )}
                       <button className="btn" data-lifecycle-action="review" disabled={hold} onClick={() => setReview(a)}>{t('nrec.open')}</button>
                     </td>
                   )}
@@ -168,6 +201,14 @@ export default function NativeAgents() {
         <section className="notice" data-stop-action={stop.kind} role={stop.kind === 'pending' || stop.kind === 'saved' ? 'status' : 'alert'}>
           <p><b>{stop.engagement}</b> · {t(`na.stop.${stop.kind}`)}{stop.error ? ` (${errorText(t, stop.error)})` : ''}</p>
           {stop.kind !== 'pending' && <button className="btn" onClick={data.refresh}>{t('nu.refresh')}</button>}
+        </section>
+      )}
+      {/* The start's own outcome words (board #106): the same awaited-mutation
+          notice the stop renders, carrying the server's refusal sentence. */}
+      {start && (
+        <section className="notice" data-start-action={start.kind} role={start.kind === 'pending' || start.kind === 'saved' ? 'status' : 'alert'}>
+          <p><b>{start.engagement}</b> · {t(`na.start.${start.kind}`)}{start.error ? ` (${errorText(t, start.error)})` : ''}</p>
+          {start.kind !== 'pending' && <button className="btn" onClick={data.refresh}>{t('nu.refresh')}</button>}
         </section>
       )}
       {manageLifecycle && review && <NativeStoppedWork key={review.engagement_id} agent={review} onHold={setHold} />}
