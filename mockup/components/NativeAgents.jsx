@@ -148,7 +148,21 @@ export default function NativeAgents() {
             <tbody>
               {agents.map((a) => (
                 <tr key={a.name} data-engagement-id={a.engagement_id} data-agent-name={a.name}>
-                  <td><Link href={`/agents/${encodeURIComponent(a.name)}`} onClick={(e) => { e.preventDefault(); setSelected(a.name); }}>{a.name}</Link></td>
+                  {/* Board #109: `prefetch={false}`. The packaged console
+                      serves ONE static HTML per route and the build drops
+                      `app/agents/[name]` (`build-native-console.mjs:37`), so
+                      this href is deliberately NOT in the bundle — it stays
+                      only for the dev route and open-in-new-tab, and the click
+                      renders the detail in place (`preventDefault`). Next
+                      prefetches every Link on viewport entry anyway, issuing a
+                      `HEAD /console/agents/<name>/` that can ONLY 404 (before
+                      board #92 the asset server answered a bare 405 for that
+                      HEAD; #92 registered `.head(asset)` for Express parity, so
+                      a missing document correctly became a 404 and the
+                      regression walk — which exempts the 405 — saw it). The
+                      prefetch is provably useless (the response is never
+                      navigated to) so the product stops making it. */}
+                  <td><Link prefetch={false} href={`/agents/${encodeURIComponent(a.name)}`} onClick={(e) => { e.preventDefault(); setSelected(a.name); }}>{a.name}</Link></td>
                   <td className="dim">{a.framework}</td>
                   <td>{a.role}</td>
                   <td>{a.state}</td>
