@@ -16,6 +16,21 @@ pub const MAX_PENDING: usize = 32;
 pub const MAX_SERVER_IDS: usize = 1024;
 pub const PARTIAL_FRAME_MS: u64 = 10_000;
 pub const MAX_REQUEST_MS: u64 = 1_200_000;
+/// The acknowledgement budget for a startup RPC (`initialize`, `thread/start`,
+/// `thread/resume`) in a session that carries a REQUIRED MCP server. TS 1:1
+/// (`router/src/runner.ts:431` `acknowledgementTimeoutMs ?? 60_000`, used for
+/// `Codex initialize` at `:807` and `Codex thread start` at `:828`).
+///
+/// Distinct from the generic per-request `response_ms` (2 s,
+/// `hagency-execution/src/host.rs:58`). Codex withholds the `thread/start`
+/// response until every required MCP server in the thread config has completed
+/// its handshake (`session/task_mcp.rs:50-51`), and bounds that itself by
+/// `startup_timeout_sec` (5 s). The product `response_ms` ceiling sits *under*
+/// Codex's own ceiling, so a cold helper lost the race and the live rig died
+/// `Transport(Timeout)` at `stage="thread_start"`, settling the attempt
+/// `outcome_unknown` (board #105). Never overrides the operation ceiling: the
+/// driver takes `min` of this and the transport lifetime.
+pub const ACKNOWLEDGEMENT_MS: u64 = 60_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum Error {
