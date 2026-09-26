@@ -290,7 +290,6 @@ fn native_verified_ingress_policy() {
         "sender",
         "room",
         "server",
-        "thread",
         "future",
         "old",
     ] {
@@ -304,12 +303,30 @@ fn native_verified_ingress_policy() {
             "sender" => event.event.sender_mxid = "@absent:example.test".into(),
             "room" => event.event.room_id = "!other:example.test".into(),
             "server" => event.event.server_name = "other.test".into(),
-            "thread" => event.event.thread_root = Some("$unknown".into()),
             "future" => event.event.origin_ts = 9999,
             _ => event.event.origin_ts = 1,
         };
         assert!(f.db.admit_matrix_event(&event, 1011).is_err(), "{field}");
     }
+    // Board #112: a THREAD ROOT that binds no thread session is NOT a refusal.
+    // TS routes a thread follow-up to the task bound to its root, and when no
+    // binding applies it is an ordinary, woken new message to the mentioned
+    // agent (`backend-v2.js:2352-2366`) — the retained bridge never had a
+    // "thread root must equal the session's" rule. Native refused it, so the
+    // live follow-up vanished; it is now admitted through the room session,
+    // carrying its own thread root so the answer lands IN the thread.
+    let mut threaded = f.event("a", "threaded", None, &["@a:example.test"], 1010);
+    threaded.event.thread_root = Some("$unknown".into());
+    let receipt = f.db.admit_matrix_event(&threaded, 1011).unwrap();
+    assert!(receipt.wake, "the thread follow-up addresses the agent");
+    assert_eq!(
+        f.db.inbox("a", 0, 10, None)
+            .unwrap()
+            .last()
+            .map(|item| item.message.thread_root.clone()),
+        Some(Some("$unknown".into())),
+        "the admitted follow-up keeps the thread root it arrived with"
+    );
     let source = f.event("a", "legacy", None, &[], 1010);
     assert!(
         f.db.ingest_message(
@@ -416,6 +433,77 @@ fn native_verified_ingress_top_level_group_answer_names_the_question() {
         output.reply_to.as_deref(),
         Some("$root"),
         "it still names the question it answers"
+    );
+}
+
+/// Board #112, the store's half of the exact live sequence: the question was
+/// answered through the ROOM session (no task thread session is ever bound to
+/// it), the task completed, and the owner then replies IN THE THREAD of that
+/// question. TS routes a thread follow-up to the task bound to its root, and
+/// when no binding applies it is an ordinary new message to the mentioned
+/// agent, answered IN the thread (`backend-v2.js:2352-2366`); the relation is
+/// built from the SOURCE message's `threadRootEventId`
+/// (`bridge-matrix.js:3318-3393`), never from the session. So the answer must
+/// carry the thread root even though the session is room-scoped.
+#[test]
+fn native_verified_ingress_threaded_followup_answer_stays_in_thread() {
+    let mut f = Fixture::new(false);
+    let mut follow = f.event("a", "followup", None, &["@a:example.test"], 1010);
+    follow.event.thread_root = Some("$question".into());
+    let source = f.db.admit_matrix_event(&follow, 1011).unwrap();
+    assert!(source.wake, "the thread follow-up addresses the agent");
+    f.db.create_canonical_task("t", "a", "Add 11", 1012)
+        .unwrap();
+    f.db.enqueue_inbox_dispatch(
+        &DispatchInput {
+            id: "d".into(),
+            session_id: "a".into(),
+            task_id: Some("t".into()),
+            resources: vec![],
+            payload: json!({"instruction":"Add 11"}),
+        },
+        &[source.sequence],
+    )
+    .unwrap();
+    let cap = f
+        .db
+        .claim_dispatch("runner", 1013, 60_000, 120_000, 8)
+        .unwrap()
+        .unwrap();
+    f.db.start_dispatch(&cap, 1014).unwrap();
+    f.db.mutate_task(
+        &cap,
+        "t",
+        "done",
+        &TaskMutation::Transition {
+            status: TaskState::Done,
+            waiting_reason: None,
+            waiting_until: None,
+        },
+        1015,
+    )
+    .unwrap();
+    f.db.submit_final_reply(
+        &cap,
+        &FinalReply {
+            call_id: "final".into(),
+            body: "300".into(),
+            incidental: false,
+        },
+        1016,
+    )
+    .unwrap();
+    let send = f.db.claim_final_reply(1017, 1000).unwrap().unwrap();
+    let output = f.db.begin_final_reply_send(&send, 1018).unwrap();
+    assert_eq!(
+        output.route.thread_root.as_deref(),
+        Some("$question"),
+        "the answer lands IN the thread the follow-up arrived in"
+    );
+    assert_eq!(
+        output.reply_to.as_deref(),
+        Some("$followup"),
+        "it names the follow-up it answers"
     );
 }
 

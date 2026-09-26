@@ -1803,3 +1803,66 @@ async fn native_matrix_intake_threaded_followup_after_task_done() {
     f.store.shutdown().await.unwrap();
     fake.close().await;
 }
+
+/// Board #112. The live sequence: the owner asks at the room's top level and the
+/// agent answers through its ROOM session — no task thread session is ever bound
+/// to the question — then the owner replies IN THE THREAD of that question with
+/// Element's exact shape (m.mentions + m.thread + is_falling_back +
+/// m.in_reply_to). Before the fix the threaded event matched no target
+/// (`no target for thread_root Some("$question")`) and was dropped: the plan's
+/// sessions are room-scoped (`thread_root: None`), and the root-id fallback is
+/// gated by `thread.is_none()`.
+#[tokio::test]
+async fn native_matrix_intake_threaded_followup_to_room_session() {
+    let f = common::Fixture::new();
+    let mut fake = common::Fake::start(false).await;
+    let c = Collector::new(
+        config(&f, &fake.endpoint, f.identity.clone(), 1, false),
+        f.store.clone(),
+    )
+    .unwrap();
+    prime(&c, &f, &mut fake, false).await;
+    // 1. The question, top level, addressed to the agent.
+    let question = sync(
+        "question",
+        vec![event(
+            "question",
+            "@worker what is 17 times 17?",
+            &["@worker:example.test"],
+            None,
+        )],
+    );
+    assert_eq!(run(&c, &mut fake, question, false).await.unwrap().admitted, 1);
+    // 2. Element's exact threaded follow-up.
+    let mut follow = event(
+        "followup",
+        "@worker Now add 11 to that.",
+        &["@worker:example.test"],
+        None,
+    );
+    follow["content"]["m.relates_to"] = json!({
+        "rel_type": "m.thread",
+        "event_id": "$question",
+        "is_falling_back": true,
+        "m.in_reply_to": {"event_id": "$question"}
+    });
+    let result = run(&c, &mut fake, sync("followup", vec![follow]), false)
+        .await
+        .unwrap();
+    // A mentioned agent must never silently lose a message (board #112).
+    assert_eq!(
+        result.admitted, 1,
+        "a thread follow-up addressing the agent must be admitted, not dropped"
+    );
+    let inbox = f.store.inbox("root".into(), 0, 10, None).await.unwrap();
+    assert_eq!(inbox.len(), 2);
+    assert_eq!(
+        inbox[1].message.thread_root.as_deref(),
+        Some("$question"),
+        "the follow-up keeps its thread root so the answer lands IN the thread"
+    );
+    assert!(inbox[1].wake, "the follow-up addresses the agent");
+    c.close().await.unwrap();
+    f.store.shutdown().await.unwrap();
+    fake.close().await;
+}

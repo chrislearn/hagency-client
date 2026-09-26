@@ -543,7 +543,17 @@ impl DomainRepository {
             || event.room_id != route.room_id
             || (event.thread_root != route.thread_root
                 && !(event.thread_root.is_none()
-                    && route.thread_root.as_deref() == Some(&event.event_id)))
+                    && route.thread_root.as_deref() == Some(&event.event_id))
+                // Board #112 (TS `backend-v2.js:2352-2366`): a thread follow-up
+                // whose root binds no task is "an ordinary new message to the
+                // mentioned agent, answered IN the thread". Native's ordinary
+                // owner mention runs through the ROOM session, which carries no
+                // thread root — so a threaded event must be admissible through
+                // it. The caller picks the route: when a thread-scoped route for
+                // this root exists, `event_batch` matches it exactly and the
+                // equality arm above holds, so this arm only ever fires when
+                // there is no thread scoped session to carry the message.
+                && !(route.thread_root.is_none() && event.thread_root.is_some()))
             || (route.encrypted && !input.encrypted)
         {
             return Err(Error::RunnerAuthority);
