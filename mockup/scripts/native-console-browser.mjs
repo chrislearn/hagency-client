@@ -325,10 +325,12 @@ try {
   // the served `next` array names — no second link, no read-only notice.
   assert((await page.locator('[data-transition]').count()) === 4, 'one login is offered the served triage controls');
   if (!config.executable) {
-    // The open row offers exactly the served map: acknowledge, resolve, suppress.
+    // The open row offers exactly the served map: acknowledge, assign,
+    // resolve, suppress (the store's own transition map).
     const buttons = page.locator('[data-transition]');
-    assert(await buttons.count() === 3, 'the open row serves exactly three transitions');
+    assert(await buttons.count() === 4, 'the open row serves exactly four transitions');
     assert((await page.locator('[data-transition="acknowledged"]').count()) === 1);
+    assert((await page.locator('[data-transition="assigned"]').count()) === 1);
     assert((await page.locator('[data-transition="resolved"]').count()) === 1);
     assert((await page.locator('[data-transition="suppressed"]').count()) === 1);
     // A REAL press: acknowledge, then the served map narrows to resolve/suppress.
@@ -339,7 +341,7 @@ try {
     // re-renders still fails here rather than passing on the stale set).
     await page.locator('[data-transition="acknowledged"]').waitFor({ state: 'detached', timeout: 10_000 });
     assert((await page.locator('[data-transition="acknowledged"]').count()) === 0, 'acknowledged is no longer offered');
-    assert((await buttons.count()) === 2, 'the acknowledged row serves resolve and suppress');
+    assert((await buttons.count()) === 2, 'the acknowledged row serves assign and resolve');
     // To terminal: resolve, and the terminal row serves nothing.
     await page.locator('[data-transition="resolved"]').click();
     await page.locator('[data-transition="resolved"]').waitFor({ state: 'detached', timeout: 10_000 });
