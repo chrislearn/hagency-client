@@ -23,6 +23,9 @@ mod mcp_approval;
 #[path = "session/terminal_progress.rs"]
 mod terminal_progress;
 
+#[path = "session/live_startup.rs"]
+mod live_startup;
+
 type Session = SessionDriver<DuplexStream, DuplexStream, DuplexStream>;
 struct Peer {
     stdin: DuplexStream,
