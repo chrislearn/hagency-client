@@ -169,20 +169,21 @@ impl Collector {
 
     /// Task #12: one lightweight invite sync — `timeline limit 0`, the TS
     /// poll's exact filter (`bridge-matrix.js:7903`) — parsed into the
-    /// invitations addressed to THIS collector's sender mxid. A bounded
-    /// owned job under the same busy permit as `collect`, so the two
-    /// never interleave on one HTTP identity.
+    /// invitations addressed to THIS collector's sender mxid.
+    ///
+    /// NO `busy` PERMIT, deliberately (board #86). The permit guards the SDK
+    /// OWNER: the one `Owner` and the single-writer crypto/state stores under
+    /// it, which every `busy`-taking job (`collect`, `intake`, `close`,
+    /// `send_notice`, enrollment, approval) touches. This read touches none of
+    /// them — it is a stateless `Http` GET, exactly the retained product's
+    /// plain `fetch` sync, which holds no client lock and so cannot contend
+    /// with the agent's own sync (`bridge-matrix.js:7894-8131`). Taking the
+    /// permit here made a parked poll refuse the agent's refresh with `Busy`,
+    /// and the agent stopped ingesting room events (the live 19447 run).
     pub async fn observe_invites(&self, cancel: &CancellationToken) -> Result<Vec<crate::invites::ObservedInvite>, Error> {
-        let permit = self
-            .inner
-            .busy
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| Error::Busy)?;
         let inner = self.inner.clone();
         let cancel = cancel.clone();
         let job = async move {
-            let _permit = permit;
             let sync = crate::invites::invite_sync(&inner.http, None, &cancel).await?;
             Ok(crate::invites::parse_invites(
                 &sync,
@@ -194,39 +195,28 @@ impl Collector {
 
     /// Task #12: accept an invitation by joining, returning the room id
     /// the SERVER reports (`bridge-matrix.js:9073-9082`).
+    ///
+    /// No `busy` permit, for `observe_invites`' reason: this is a stateless
+    /// `POST /join` on `Http`, and holds nothing the SDK owner holds. A join
+    /// parked on the permit used to refuse the agent's own refresh with `Busy`.
     pub async fn join_room(&self, room_id: &str, cancel: &CancellationToken) -> Result<String, Error> {
-        let permit = self
-            .inner
-            .busy
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| Error::Busy)?;
         let inner = self.inner.clone();
         let room_id = room_id.to_owned();
         let cancel = cancel.clone();
-        let job = async move {
-            let _permit = permit;
-            crate::invites::join_room(&inner.http, &room_id, &cancel).await
-        };
+        let job = async move { crate::invites::join_room(&inner.http, &room_id, &cancel).await };
         tokio::spawn(job).await.map_err(|_| Error::OutcomeUnknown)?
     }
 
     /// Task #12: decline by leaving — best-effort by design
     /// (`bridge-matrix.js:9135-9147`); the decision is the record.
+    ///
+    /// No `busy` permit, for `observe_invites`' reason: a stateless
+    /// `POST /leave` on `Http`, holding nothing the SDK owner holds.
     pub async fn leave_room(&self, room_id: &str, cancel: &CancellationToken) -> Result<(), Error> {
-        let permit = self
-            .inner
-            .busy
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| Error::Busy)?;
         let inner = self.inner.clone();
         let room_id = room_id.to_owned();
         let cancel = cancel.clone();
-        let job = async move {
-            let _permit = permit;
-            crate::invites::leave_room(&inner.http, &room_id, &cancel).await
-        };
+        let job = async move { crate::invites::leave_room(&inner.http, &room_id, &cancel).await };
         tokio::spawn(job).await.map_err(|_| Error::OutcomeUnknown)?
     }
     pub(crate) async fn close_with_permit(
