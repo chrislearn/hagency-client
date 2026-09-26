@@ -43,6 +43,9 @@ mod project_sides;
 mod real_agent;
 #[path = "console/registration.rs"]
 mod registration;
+#[path = "console/rail.rs"]
+#[cfg(feature = "native-console-browser")]
+mod rail;
 #[path = "console/resources.rs"]
 mod resources;
 #[path = "console/side_registration.rs"]
