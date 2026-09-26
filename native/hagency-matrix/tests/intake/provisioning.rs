@@ -273,6 +273,57 @@ fn project_state() -> Value {
     ])
 }
 
+/// Board #95: the project-room binding content, in the shape both the TS event
+/// and the legacy event carry.
+fn project_binding(fleet: &str) -> Value {
+    json!({
+        "v": 1,
+        "fleetId": fleet,
+        "purpose": "project",
+        "projectId": "project_provision",
+        "ownerMxid": OWNER,
+        "authVersion": 1
+    })
+}
+
+/// Board #95: the TS binding state event (`com.hagency.admin.binding.v1`,
+/// keyed by the fleet id) that integ reads.
+fn ts_binding_event(binding: Value) -> Value {
+    json!({
+        "type": "com.hagency.admin.binding.v1",
+        "state_key": binding["fleetId"].clone(),
+        "content": binding
+    })
+}
+
+/// Board #95: the LEGACY binding state event
+/// (`com.hagency.project.binding.v1`, empty state key) that earlier Rust
+/// builds wrote.
+fn legacy_binding_event(binding: Value) -> Value {
+    json!({
+        "type": "com.hagency.project.binding.v1",
+        "state_key": "",
+        "content": binding
+    })
+}
+
+/// Board #95: `project_state()` with the fixture's TS binding event removed,
+/// so a test supplies whichever binding event(s) it means to exercise.
+fn project_state_without_binding() -> Value {
+    let mut state = project_state();
+    state
+        .as_array_mut()
+        .unwrap()
+        .retain(|event| event["type"] != "com.hagency.admin.binding.v1");
+    state
+}
+
+/// Board #95: append binding event(s) to a project-room state.
+fn with_binding(mut state: Value, events: Vec<Value>) -> Value {
+    state.as_array_mut().unwrap().extend(events);
+    state
+}
+
 /// Prime the collector like `prime()`, but answer both observed room-state
 /// requests: the session room first, then the reception room.
 async fn prime_provisioning(c: &Collector, f: &common::Fixture, fake: &mut common::Fake) {
@@ -843,6 +894,18 @@ async fn run_provisioning(
     fake: &mut common::Fake,
     value: Value,
 ) -> Result<IntakeSummary, Error> {
+    run_provisioning_with_project(c, fake, value, project_state()).await
+}
+
+/// Board #95: `run_provisioning` with the request's target project room
+/// answered by a caller-supplied state, so a test can vary which binding event
+/// that room carries.
+async fn run_provisioning_with_project(
+    c: &Collector,
+    fake: &mut common::Fake,
+    value: Value,
+    project: Value,
+) -> Result<IntakeSummary, Error> {
     let cancel = CancellationToken::new();
     let intake = c.intake(plan(), &cancel);
     let (result, ()) = common::scripted(intake, async {
@@ -855,7 +918,7 @@ async fn run_provisioning(
         // provision() finds it missing from the in-memory facts.
         fake.next().await.json(200, session_state());
         fake.next().await.json(200, reception_state());
-        fake.next().await.json(200, project_state());
+        fake.next().await.json(200, project);
     })
     .await;
     result
@@ -1307,5 +1370,125 @@ async fn native_provisioning_approval_replays_a_second_verdict() {
     assert_eq!(rows(&f, "matrix_session_routes"), before_routes);
     assert_eq!(effect_row(&f), Some(("provision".into(), "pending".into())));
     assert_eq!(route_rows(&f), 0);
+    c.close().await.unwrap();
+}
+
+/// Board #95: a project room bound only by the TS event
+/// (`com.hagency.admin.binding.v1`, keyed by the fleet id) is admitted — the
+/// behaviour integ already had, pinned so the legacy fall-back cannot widen it.
+#[tokio::test]
+async fn native_provisioning_admits_a_room_bound_by_the_ts_event() {
+    let (f, mut fake, c) = ready_provisioning().await;
+    let before = rows(&f, "engagements");
+    let project = with_binding(
+        project_state_without_binding(),
+        vec![ts_binding_event(project_binding(&fleet_id()))],
+    );
+    let result = run_provisioning_with_project(
+        &c,
+        &mut fake,
+        provisioning_sync(
+            "provision",
+            vec![request_event("$request_one", request_body("request_one", 250))],
+        ),
+        project,
+    )
+    .await;
+    let stage = status(&c, &mut fake).await.stage;
+    let summary = result.unwrap_or_else(|e| panic!("intake failed: {e:?}, stage={stage}"));
+    assert_eq!(summary.admitted, 1);
+    assert_eq!(rows(&f, "engagements"), before + 1);
+    c.close().await.unwrap();
+}
+
+/// Board #95: a project room bound only by the LEGACY event
+/// (`com.hagency.project.binding.v1`, state_key `""`) — what an earlier Rust
+/// build wrote — is admitted after the upgrade instead of failing with
+/// `Error: Authority`.
+#[tokio::test]
+async fn native_provisioning_admits_a_room_bound_by_the_legacy_event() {
+    let (f, mut fake, c) = ready_provisioning().await;
+    let before = rows(&f, "engagements");
+    let project = with_binding(
+        project_state_without_binding(),
+        vec![legacy_binding_event(project_binding(&fleet_id()))],
+    );
+    let result = run_provisioning_with_project(
+        &c,
+        &mut fake,
+        provisioning_sync(
+            "provision",
+            vec![request_event("$request_one", request_body("request_one", 250))],
+        ),
+        project,
+    )
+    .await;
+    let stage = status(&c, &mut fake).await.stage;
+    let summary = result.unwrap_or_else(|e| panic!("intake failed: {e:?}, stage={stage}"));
+    assert_eq!(summary.admitted, 1);
+    assert_eq!(rows(&f, "engagements"), before + 1);
+    c.close().await.unwrap();
+}
+
+/// Board #95: when a room carries BOTH binding events and they disagree, the
+/// TS event wins. The legacy event here names a foreign fleet; if the legacy
+/// event were consulted the request would be refused, so admission proves the
+/// TS event was the one carried.
+#[tokio::test]
+async fn native_provisioning_prefers_the_ts_binding_when_both_are_present() {
+    let (f, mut fake, c) = ready_provisioning().await;
+    let before = rows(&f, "engagements");
+    let foreign = format!("hf_{}", "b".repeat(32));
+    assert_ne!(foreign, fleet_id());
+    let project = with_binding(
+        project_state_without_binding(),
+        vec![
+            legacy_binding_event(project_binding(&foreign)),
+            ts_binding_event(project_binding(&fleet_id())),
+        ],
+    );
+    let result = run_provisioning_with_project(
+        &c,
+        &mut fake,
+        provisioning_sync(
+            "provision",
+            vec![request_event("$request_one", request_body("request_one", 250))],
+        ),
+        project,
+    )
+    .await;
+    let stage = status(&c, &mut fake).await.stage;
+    let summary = result.unwrap_or_else(|e| panic!("intake failed: {e:?}, stage={stage}"));
+    assert_eq!(summary.admitted, 1);
+    assert_eq!(rows(&f, "engagements"), before + 1);
+    c.close().await.unwrap();
+}
+
+/// Board #95: a LEGACY binding that names a foreign fleet is refused with the
+/// same error as today — the fall-back only reads the event, it does not relax
+/// the `verify_request` field gate.
+#[tokio::test]
+async fn native_provisioning_refuses_a_foreign_fleet_legacy_binding() {
+    let (f, mut fake, c) = ready_provisioning().await;
+    let before = rows(&f, "engagements");
+    let foreign = format!("hf_{}", "b".repeat(32));
+    let project = with_binding(
+        project_state_without_binding(),
+        vec![legacy_binding_event(project_binding(&foreign))],
+    );
+    let result = run_provisioning_with_project(
+        &c,
+        &mut fake,
+        provisioning_sync(
+            "provision",
+            vec![request_event("$request_one", request_body("request_one", 250))],
+        ),
+        project,
+    )
+    .await;
+    assert_eq!(result, Err(Error::Generation));
+    assert_eq!(rows(&f, "engagements"), before);
+    assert!(f.available().await);
+    assert_eq!(status(&c, &mut fake).await.stage, "quarantined");
     c.close().await.unwrap();
 }

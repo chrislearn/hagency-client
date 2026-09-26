@@ -50,12 +50,58 @@ fn client(origin: &str, token: &str) -> Matrix {
         .unwrap();
     matrix
 }
-async fn exercise(state: &Path, mut input: Existing, bad: Option<&str>) -> Result<Receipt, Error> {
+/// Board #95: which binding event(s) the request's target project room carries.
+#[derive(Clone, Default)]
+struct Bindings {
+    /// Drop the TS `com.hagency.admin.binding.v1` event.
+    without_ts: bool,
+    /// Also carry the LEGACY `com.hagency.project.binding.v1` event (key `""`)
+    /// naming this fleet — the shape an earlier Rust build wrote.
+    legacy_fleet: Option<String>,
+}
+
+/// Board #95: the project-room state with the binding event(s) a test wants.
+fn project_state(project: &RoomObservation, bindings: &Bindings) -> Value {
+    let mut state = states(project);
+    let mut binding = None;
+    state.as_array_mut().unwrap().retain(|event| {
+        if event["type"] == "com.hagency.admin.binding.v1" {
+            binding = Some(event["content"].clone());
+            !bindings.without_ts
+        } else {
+            true
+        }
+    });
+    if let Some(fleet) = &bindings.legacy_fleet {
+        let mut legacy = binding
+            .or_else(|| project.binding.clone())
+            .expect("the fixture's project room carries a binding");
+        legacy["fleetId"] = json!(fleet);
+        state.as_array_mut().unwrap().push(json!({
+            "type": "com.hagency.project.binding.v1",
+            "state_key": "",
+            "content": legacy
+        }));
+    }
+    state
+}
+
+async fn exercise(state: &Path, input: Existing, bad: Option<&str>) -> Result<Receipt, Error> {
+    exercise_bindings(state, input, bad, Bindings::default()).await
+}
+
+async fn exercise_bindings(
+    state: &Path,
+    mut input: Existing,
+    bad: Option<&str>,
+    bindings: Bindings,
+) -> Result<Receipt, Error> {
     let mut fake = common::Fake::start(true).await;
     input.origin = fake.endpoint.clone();
     let mut observation = common::domain::observation(&input.request);
     observation.project.joined.insert(input.agent_mxid.clone());
-    let mut agent_project = states(&observation.project);
+    let project = project_state(&observation.project, &bindings);
+    let mut agent_project = project_state(&observation.project, &bindings);
     if let Some(missing) = bad {
         agent_project
             .as_array_mut()
@@ -77,7 +123,7 @@ async fn exercise(state: &Path, mut input: Existing, bad: Option<&str>) -> Resul
             json!({"event_id":source.event_id,"room_id":source.room_id,"sender":source.sender,"type":source.event_type,"content":source.content}),
         ),
         ("observer", states(&observation.reception)),
-        ("observer", states(&observation.project)),
+        ("observer", project),
         ("observer", states(&observation.owner_room)),
         ("agent", common::state()),
     ];
@@ -257,4 +303,78 @@ async fn native_adopt_matrix_chunked_bound() {
     assert!(matches!(result, Err(Error::Matrix)));
     drop(release);
     fake.close().await;
+}
+
+/// Board #95: a target project room bound only by the TS event
+/// (`com.hagency.admin.binding.v1`, keyed by the fleet id) still adopts — the
+/// behaviour integ already had, pinned beside the legacy fall-back.
+#[tokio::test]
+async fn native_adopt_room_bound_by_the_ts_event() {
+    let root = tempfile::tempdir().unwrap();
+    let state = root.path().join("state");
+    private::directory(&state).unwrap();
+    let receipt = exercise(&state, input(), None).await.unwrap();
+    assert_eq!(receipt.session_id, "direct_session");
+}
+
+/// Board #95: a target project room bound only by the LEGACY event
+/// (`com.hagency.project.binding.v1`, state_key `""`) — what an earlier Rust
+/// build wrote — adopts after the upgrade instead of failing `Error::Authority`.
+#[tokio::test]
+async fn native_adopt_room_bound_by_the_legacy_event() {
+    let root = tempfile::tempdir().unwrap();
+    let state = root.path().join("state");
+    private::directory(&state).unwrap();
+    let fleet = common::domain::registration().fleet_id;
+    let bindings = Bindings {
+        without_ts: true,
+        legacy_fleet: Some(fleet),
+    };
+    let receipt = exercise_bindings(&state, input(), None, bindings)
+        .await
+        .unwrap();
+    assert_eq!(receipt.session_id, "direct_session");
+}
+
+/// Board #95: when a room carries BOTH binding events and they disagree, the
+/// TS event wins. The legacy event here names a foreign fleet; were the legacy
+/// event consulted the adopt would be refused, so success proves the TS event
+/// was the one carried.
+#[tokio::test]
+async fn native_adopt_prefers_the_ts_binding_when_both_are_present() {
+    let root = tempfile::tempdir().unwrap();
+    let state = root.path().join("state");
+    private::directory(&state).unwrap();
+    let fleet = common::domain::registration().fleet_id;
+    let foreign = format!("hf_{}", "b".repeat(32));
+    assert_ne!(foreign, fleet);
+    let bindings = Bindings {
+        without_ts: false,
+        legacy_fleet: Some(foreign),
+    };
+    let receipt = exercise_bindings(&state, input(), None, bindings)
+        .await
+        .unwrap();
+    assert_eq!(receipt.session_id, "direct_session");
+}
+
+/// Board #95: a LEGACY binding naming a foreign fleet is refused with the same
+/// error as today — the fall-back reads the event, it does not relax the
+/// `verify_request` fleet/project gate.
+#[tokio::test]
+async fn native_adopt_refuses_a_foreign_fleet_legacy_binding() {
+    let root = tempfile::tempdir().unwrap();
+    let state = root.path().join("state");
+    private::directory(&state).unwrap();
+    let foreign = format!("hf_{}", "b".repeat(32));
+    assert_ne!(foreign, common::domain::registration().fleet_id);
+    let bindings = Bindings {
+        without_ts: true,
+        legacy_fleet: Some(foreign),
+    };
+    assert!(matches!(
+        exercise_bindings(&state, input(), None, bindings).await,
+        Err(Error::Authority)
+    ));
+    assert!(!state.join("domain.sqlite3").exists());
 }
