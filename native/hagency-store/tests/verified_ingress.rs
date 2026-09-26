@@ -2040,6 +2040,36 @@ fn native_bot_command_is_answered_after_the_session_outgrows_the_window() {
     }
 }
 
+/// Board #113, the `/thread` sibling. `pending_thread_directives` shared the
+/// identical window defect: its `LIMIT` bounded every `session_inputs` row and
+/// the `/thread` filter ran in Rust afterwards, so a directive past the
+/// session's first `limit` inputs was dropped with no trace. It is fixed the
+/// same way and must stay reachable on a session that has outgrown the window.
+#[test]
+fn native_thread_directive_is_offered_after_the_session_outgrows_the_window() {
+    let mut f = Fixture::with_agents(&["a"], true);
+    // Ordinary traffic first, so the directive is nowhere near the window.
+    for round in 0..40u64 {
+        let filler = f.event("a", &format!("filler{round}"), None, &[], 1020 + round);
+        f.db.admit_matrix_event(&filler, 1030 + round).unwrap();
+    }
+    let mut directive = f.event("a", "directive", None, &[], 1200);
+    directive.event.body = "/thread mode plan".into();
+    // A directive is consumed before routing: admitted, recorded, wakes nobody.
+    assert!(!f.db.admit_matrix_event(&directive, 1201).unwrap().wake);
+    let offered = f
+        .db
+        .pending_thread_directives("a".into(), 16)
+        .unwrap();
+    assert_eq!(
+        offered.len(),
+        1,
+        "the directive must still be offered once the session outgrew the window"
+    );
+    assert_eq!(offered[0].event_id, "$directive");
+    assert_eq!(offered[0].body, "/thread mode plan");
+}
+
 /// The other half of TS's rule: a command reply whose send FAILED is recorded
 /// and never repeated — `bridge-matrix.js:6921-6925` posts "The command will
 /// not be repeated automatically." Native does not re-answer either: the
