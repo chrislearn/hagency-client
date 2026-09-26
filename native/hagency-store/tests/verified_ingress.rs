@@ -1861,6 +1861,100 @@ fn native_bot_command_is_answered_once_for_the_event_not_once_per_agent() {
     }
 }
 
+/// Board #113. The live room answered NOTHING to a later `!help`, though an
+/// earlier one had been answered — the operator saw no reply and no log line,
+/// while `command_notices` held only the two rows from the OLDER `!help`.
+///
+/// Cause: `pending_command_lines` applied its `LIMIT` to EVERY
+/// `session_inputs` row of the session and only filtered for `!` lines in Rust,
+/// so once a room had more than `limit` admitted rows the newest `!` line fell
+/// outside the window and was offered to NOBODY (no row, no send, no trace).
+/// The live sessions held 67 rows, so the operator's `!help` at `seq` 51 was
+/// invisible.
+///
+/// This reproduces the live shape through the production custody path: two
+/// agents in one room, a FIRST `!help` already answered, ordinary traffic that
+/// pushes the session well past any first-`limit` window, then a SECOND
+/// `!help`. It must still be offered to BOTH agents and answered exactly ONCE
+/// (#97's rule).
+#[test]
+fn native_bot_command_is_answered_after_the_session_outgrows_the_window() {
+    let mut f = Fixture::with_agents(&["a", "b"], false);
+    let submit = |f: &mut Fixture, session: &str, event: &str| {
+        f.db.submit_command_notice(
+            &CommandNoticeRequest {
+                session_id: session.into(),
+                body: "=== Agent Bridge Bot Commands ===".into(),
+                html: None,
+                source_event_id: event.into(),
+            },
+            1012,
+        )
+        .unwrap()
+    };
+    // The FIRST `!help` — the live rig's older event, which already HAS rows.
+    for session in ["a", "b"] {
+        let mut first = f.event(session, "help1", None, &[], 1010);
+        first.event.body = "!help".into();
+        // A `!` line is admitted, recorded, and wakes nobody.
+        assert!(!f.db.admit_matrix_event(&first, 1011).unwrap().wake);
+    }
+    let first = submit(&mut f, "a", "$help1");
+    assert_eq!(first.session_id, "a");
+    assert!(!first.replayed);
+    let loser = submit(&mut f, "b", "$help1");
+    assert_eq!(loser.session_id, "a", "the second agent gets a's receipt");
+    assert!(loser.replayed);
+    assert_eq!(count(&f.sql(), "command_notices"), 1);
+    // Ordinary room traffic, seen by both agents exactly as a real room event
+    // is, carries the session far past any first-16 window — what the live
+    // room's 67 rows did.
+    for round in 0..40u64 {
+        for session in ["a", "b"] {
+            let filler = f.event(session, &format!("filler{round}"), None, &[], 1020 + round);
+            f.db.admit_matrix_event(&filler, 1030 + round).unwrap();
+        }
+    }
+    // The SECOND `!help`, later in the same room. Before the fix this line was
+    // offered to NOBODY: it sat outside the window of raw inputs.
+    for session in ["a", "b"] {
+        let mut second = f.event(session, "help2", None, &[], 1200);
+        second.event.body = "!help".into();
+        assert!(!f.db.admit_matrix_event(&second, 1201).unwrap().wake);
+    }
+    for session in ["a", "b"] {
+        let offered = f.db.pending_command_lines(session.into(), 16).unwrap();
+        assert_eq!(
+            offered.len(),
+            1,
+            "session {session} must still be offered the later !help once the \
+             session outgrew the window; the earlier one stays quiet because it \
+             is already answered"
+        );
+        assert_eq!(offered[0].event_id, "$help2");
+    }
+    // ...and it is answered exactly ONCE, however many agents are joined: the
+    // first session to submit owns the event, the other is handed its receipt.
+    let winner = submit(&mut f, "a", "$help2");
+    assert_eq!(winner.session_id, "a");
+    assert!(!winner.replayed);
+    let loser = submit(&mut f, "b", "$help2");
+    assert_eq!(
+        loser.session_id, "a",
+        "b must be told the later !help is a's answer, not queue a second reply"
+    );
+    assert!(loser.replayed);
+    assert_eq!(count(&f.sql(), "command_notices"), 2);
+    for session in ["a", "b"] {
+        assert!(
+            f.db.pending_command_lines(session.into(), 16)
+                .unwrap()
+                .is_empty(),
+            "session {session} must not be re-offered an answered command"
+        );
+    }
+}
+
 /// The other half of TS's rule: a command reply whose send FAILED is recorded
 /// and never repeated — `bridge-matrix.js:6921-6925` posts "The command will
 /// not be repeated automatically." Native does not re-answer either: the

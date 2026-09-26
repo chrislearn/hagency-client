@@ -285,15 +285,28 @@ impl DomainRepository {
         if !(1..=1024).contains(&limit) {
             return Err(hagency_core::InvalidInput("invalid directive line limit").into());
         }
+        // Board #113, same defect as `pending_command_lines`: the limit used to
+        // bound every `session_inputs` row and filter for `/thread` in Rust, so
+        // a directive past the session's first `limit` inputs was dropped with
+        // no trace. The prefilter tests the MESSAGE BODY only (a filter on the
+        // whole config matches every row, because `room_id` starts with `!`),
+        // and is a SUPERSET of `is_directive` — SQL never decides what a
+        // directive is.
         let encoded: Vec<String> = self
             .db
-            .prepare("SELECT CASE WHEN s.matrix_generation>0 THEN i.config ELSE m.config END FROM session_inputs i JOIN admitted_messages m ON m.sequence=i.message_sequence JOIN runner_sessions s ON s.id=i.session_id WHERE i.session_id=?1 ORDER BY i.message_sequence LIMIT ?2")?
+            .prepare("SELECT CASE WHEN s.matrix_generation>0 THEN i.config ELSE m.config END FROM session_inputs i JOIN admitted_messages m ON m.sequence=i.message_sequence JOIN runner_sessions s ON s.id=i.session_id WHERE i.session_id=?1 AND instr(json_extract(CASE WHEN s.matrix_generation>0 THEN i.config ELSE m.config END,'$.body'),'/thread')>0 ORDER BY i.message_sequence LIMIT ?2")?
             .query_map(params![session, limit], |r| r.get(0))?
             .collect::<Result<_, _>>()?;
         let mut lines = Vec::new();
         for encoded in encoded {
             let message: hagency_core::messages::Message = serde_json::from_str(&encoded)?;
             if !matches!(message.kind.as_str(), "m.text") || !is_directive(&message.body) {
+                // Board #113: a skip must say why (see `pending_command_lines`).
+                tracing::debug!(
+                    session,
+                    event_id = %message.event_id,
+                    "thread directive skipped: not a `/thread` line"
+                );
                 continue;
             }
             let id = format!(
@@ -306,6 +319,11 @@ impl DomainRepository {
                 |r| r.get(0),
             )?;
             if answered {
+                tracing::debug!(
+                    session,
+                    event_id = %message.event_id,
+                    "thread directive skipped: this session already queued an answer"
+                );
                 continue;
             }
             lines.push(hagency_core::commands::CommandLine {

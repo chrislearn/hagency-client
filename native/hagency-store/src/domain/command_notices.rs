@@ -362,15 +362,42 @@ impl DomainRepository {
         if !(1..=1024).contains(&limit) {
             return Err(hagency_core::InvalidInput("invalid command line limit").into());
         }
+        // The limit counts COMMAND lines, not raw inputs. It used to bound
+        // every `session_inputs` row of the session and filter for `!` in the
+        // Rust loop below, so once a room had more than `limit` admitted rows
+        // the newest `!` line fell outside the window and was offered to
+        // nobody — board #113: the live room's session held 67 rows, so the
+        // operator's `!help` (seq 51) was hidden behind `LIMIT 16`,
+        // `command_notices` stayed empty and NO agent answered it.
+        //
+        // The prefilter tests the MESSAGE BODY, never the whole row: every
+        // config carries `room_id` (`!project:…`), so a filter on the encoded
+        // config matched all 67 rows and reproduced the bug (measured against
+        // the live store). It is a deliberately SUPERSET of the Rust check
+        // below (`kind == m.text` && trimmed body starts with `!`) — SQL may
+        // be too permissive, never too strict, so the narrowed window can
+        // never drop a line the Rust loop would have accepted. Rust stays the
+        // authority on what a command is (intake's `is_bot_command`).
         let encoded: Vec<String> = self
             .db
-            .prepare("SELECT CASE WHEN s.matrix_generation>0 THEN i.config ELSE m.config END FROM session_inputs i JOIN admitted_messages m ON m.sequence=i.message_sequence JOIN runner_sessions s ON s.id=i.session_id WHERE i.session_id=?1 ORDER BY i.message_sequence LIMIT ?2")?
+            .prepare("SELECT CASE WHEN s.matrix_generation>0 THEN i.config ELSE m.config END FROM session_inputs i JOIN admitted_messages m ON m.sequence=i.message_sequence JOIN runner_sessions s ON s.id=i.session_id WHERE i.session_id=?1 AND instr(json_extract(CASE WHEN s.matrix_generation>0 THEN i.config ELSE m.config END,'$.body'),'!')>0 ORDER BY i.message_sequence LIMIT ?2")?
             .query_map(params![session, limit], |r| r.get(0))?
             .collect::<Result<_, _>>()?;
         let mut lines = Vec::new();
         for encoded in encoded {
             let message: hagency_core::messages::Message = serde_json::from_str(&encoded)?;
-            if !matches!(message.kind.as_str(), "m.text") || !message.body.trim_start().starts_with('!') {
+            // Board #113: every skip says WHY. The live regression left no
+            // trace, so a dropped command and a command nobody had admitted
+            // yet looked identical in the log.
+            if !matches!(message.kind.as_str(), "m.text")
+                || !message.body.trim_start().starts_with('!')
+            {
+                tracing::debug!(
+                    session,
+                    event_id = %message.event_id,
+                    kind = %message.kind,
+                    "bot command skipped: not a `!` line"
+                );
                 continue;
             }
             let id = format!(
@@ -383,6 +410,11 @@ impl DomainRepository {
                 |r| r.get(0),
             )?;
             if answered {
+                tracing::debug!(
+                    session,
+                    event_id = %message.event_id,
+                    "bot command skipped: this session already queued an answer"
+                );
                 continue;
             }
             // The event id, not this session's copy of it, is what makes a
@@ -396,6 +428,11 @@ impl DomainRepository {
                 |r| r.get(0),
             )?;
             if owned {
+                tracing::debug!(
+                    session,
+                    event_id = %message.event_id,
+                    "bot command skipped: another session already owns the answer"
+                );
                 continue;
             }
             lines.push(hagency_core::commands::CommandLine {
