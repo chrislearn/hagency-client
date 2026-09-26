@@ -750,9 +750,14 @@ fn fake() -> io::Result<()> {
         json!({"id":turn["id"],"result":{"turn":{"id":"owned-turn","status":"inProgress","items":[]}}}),
     )?;
     if Path::new("owned-mcp.fail-notification").is_file() {
+        // Board #94: an unknown METHOD is now tolerated (logged and ignored), so
+        // this fixture can no longer force its failed attempt that way. It uses a
+        // notification whose VALUE this build does not model instead — still
+        // refused, still a notification-side fault (UnsupportedEvent), so the
+        // attempt fails exactly as before.
         send(
             &mut output,
-            json!({"method":"offlinePrivateNotification","params":{"threadId":"owned-thread","turnId":"owned-turn"}}),
+            json!({"method":"thread/status/changed","params":{"threadId":"owned-thread","status":{"type":"offlinePrivateStatus"}}}),
         )?;
         std::thread::sleep(Duration::from_secs(8));
         return Ok(());
