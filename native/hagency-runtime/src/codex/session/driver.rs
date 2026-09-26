@@ -222,6 +222,13 @@ impl<R, W, E> SessionDriver<R, W, E> {
     pub fn refused_notification(&self) -> Option<&'static str> {
         self.refused_notification
     }
+    /// The provider's own reason for ending the turn, bounded at admission
+    /// (board #110). Diagnostic only: TS surfaces the same words
+    /// (`router/src/runner.ts:793`), and without them a usage-limit refusal read
+    /// as a bare `protocol` fault. Never a path, capability or secret.
+    pub fn turn_failure(&self) -> Option<&str> {
+        self.state.turn_failure()
+    }
     /// Whether the connection still holds this prepared server request. False
     /// once `serverRequest/resolved` was parsed: the one-shot frame's transmit
     /// path is gone, so it must never be re-sent.

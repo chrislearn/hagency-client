@@ -1002,8 +1002,12 @@ async fn finish_attempt(
         } else {
             AttemptPhase::Settled
         },
+        // Board #110: the provider's own reason for ending the turn rides the
+        // SAME bounded evidence record as the stderr tails, so a live failure
+        // that wrote nothing to stderr is still diagnosable. Empty when the
+        // turn did not fail provider-side.
         serde_json::json!({"status": projected, "exit_identity": report.exit_identity, "stderr_tail": report.stderr_tail,
-            "guardian_stderr_tail": report.guardian_stderr_tail}),
+            "guardian_stderr_tail": report.guardian_stderr_tail, "turn_failure": report.turn_failure}),
     )
     .await;
     let reason = format!(

@@ -940,6 +940,56 @@ async fn native_codex_session_outcomes_failed_interrupted_and_retry_are_distinct
 }
 
 #[tokio::test]
+async fn native_codex_session_provider_failure_reason_is_retained() {
+    // Board #110: the REAL app server ends a refused turn with an `error`
+    // notice (`willRetry: false`) carrying the provider's own words and a
+    // `codexErrorInfo`, then restates them in `turn/completed`'s `turn.error`.
+    // Captured verbatim from a local `codex app-server` 0.157.0 driven through
+    // this session's own requests. Native used to length-check the message and
+    // throw it away, so the operator saw a bare `protocol` fault and "Result
+    // uncertain"; TS surfaces the same words (router/src/runner.ts:793).
+    const REASON: &str = "You\u{2019}ve hit your usage limit. Visit \
+        https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 27th, 2026 4:50 AM.";
+    let (mut session, mut peer) = running().await;
+    let refusal = note(
+        "error",
+        json!({
+            "threadId": "thread-one", "turnId": "turn-one",
+            "error": { "message": REASON, "codexErrorInfo": "usageLimitExceeded",
+                       "additionalDetails": null, "misalignment": null },
+            "willRetry": false,
+        }),
+    );
+    let mut echo = end("failed");
+    echo["params"]["turn"]["error"] = json!({ "message": REASON, "codexErrorInfo": "usageLimitExceeded" });
+    // The wire sends the cause and the failed turn in one instant (the same
+    // captured order the sibling test replays), so both arrive in one read and
+    // the echo is drained as terminal suffix. Keeping the FIRST reason is
+    // idempotent: the restatement must not replace what the `error` said.
+    let stream = bytes(&[refusal, echo]);
+    peer.stdout.write_all(&stream).await.unwrap();
+    assert!(matches!(
+        session.next_update().await,
+        Ok(Update::TurnEnded)
+    ));
+    assert!(matches!(session.outcome(), Some(Outcome::Failed)));
+    assert_eq!(
+        session.turn_failure(),
+        Some(REASON),
+        "the provider's own reason survives the turn, and its echo does not overwrite it"
+    );
+
+    // The completion-first order carries it too (a failed turn whose `error`
+    // notice was not the frame this build read).
+    let (mut session, mut peer) = running().await;
+    let mut completion = end("failed");
+    completion["params"]["turn"]["error"] = json!({ "message": "upstream refusal" });
+    update(&mut session, &mut peer, completion).await.unwrap();
+    assert!(matches!(session.outcome(), Some(Outcome::Failed)));
+    assert_eq!(session.turn_failure(), Some("upstream refusal"));
+}
+
+#[tokio::test]
 async fn native_codex_session_outcomes_interrupt_ack_does_not_complete_a_turn() {
     for rejected in [false, true] {
         let (mut session, mut peer) = running().await;
