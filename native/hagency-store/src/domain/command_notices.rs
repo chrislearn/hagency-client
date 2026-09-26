@@ -168,6 +168,26 @@ impl DomainRepository {
             tx.commit()?;
             return Ok(result);
         }
+        // ONE EVENT, ONE ANSWER. The retained bridge deduplicated a command by
+        // its Matrix event id (`isDuplicateMatrixEvent`, bridge-matrix.js:4117)
+        // in ONE process, so a `!help` several agents share a room for was
+        // answered once. Native runs one driver per agent but they share this
+        // store, so the event id is where the same rule is enforced across
+        // processes: an answer already queued by ANY session owns the event,
+        // and the late session returns that winner's receipt instead of queuing
+        // a second reply. The claim, not each agent's own id, decides.
+        let winner: Option<String> = tx
+            .query_row(
+                "SELECT id FROM command_notices WHERE source_event_id=?1 ORDER BY rowid LIMIT 1",
+                [&input.source_event_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(winner) = winner {
+            let result = receipt(&tx, &winner, true)?;
+            tx.commit()?;
+            return Ok(result);
+        }
         bounded_row(&tx, "command_notices", "id", &id, 100_000)?;
         tx.execute("INSERT INTO command_notices(id,session_id,transaction_id,digest,body,html,route,source_event_id,state,created_at,updated_at) VALUES(?1,?2,?1,?3,?4,?5,?6,?7,'pending',?8,?8)",params![id,input.session_id,digest,input.body,input.html,serialize(&route)?,input.source_event_id,now])?;
         let result = receipt(&tx, &id, false)?;
@@ -363,6 +383,19 @@ impl DomainRepository {
                 |r| r.get(0),
             )?;
             if answered {
+                continue;
+            }
+            // The event id, not this session's copy of it, is what makes a
+            // command answered ONCE: if any session already owns an answer for
+            // this event, this session stays quiet (see `submit_command_notice`
+            // for the whole rule). A line whose answer is the winner's is not
+            // this session's to say.
+            let owned: bool = self.db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM command_notices WHERE source_event_id=?1)",
+                [&message.event_id],
+                |r| r.get(0),
+            )?;
+            if owned {
                 continue;
             }
             lines.push(hagency_core::commands::CommandLine {

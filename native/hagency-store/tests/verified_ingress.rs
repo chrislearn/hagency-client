@@ -4,7 +4,9 @@ mod common;
 #[path = "verified_ingress/notice_custody.rs"]
 mod notice_custody;
 use common::*;
-use hagency_core::{ingress::*, messages::*, replies::*, task_intents::*, tasks::*};
+use hagency_core::{
+    commands::CommandNoticeRequest, ingress::*, messages::*, replies::*, task_intents::*, tasks::*,
+};
 use hagency_store::{DomainRepository, EffectOutcome, Error, OutcomeAction, OutcomeResolution};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -17,13 +19,19 @@ struct Fixture {
 }
 impl Fixture {
     fn new(direct: bool) -> Self {
+        Self::with_agents(if direct { &["a"] } else { &["a", "b"] }, direct)
+    }
+    /// The same fixture with an explicit agent roster. Board #97 needs THREE
+    /// agents joined to one room: a shared room where several agents are
+    /// present is exactly the shape that answered one `!help` once per agent.
+    fn with_agents(names: &[&str], direct: bool) -> Self {
         let root = tempfile::tempdir().unwrap();
         let mut db = DomainRepository::open(&root.path().join("state")).unwrap();
         db.register(&registration()).unwrap();
         let pool = resource("pool", "seat", 1000);
         db.put_resource(&pool).unwrap();
         let mut agents = vec![];
-        for name in if direct { vec!["a"] } else { vec!["a", "b"] } {
+        for name in names.iter().copied() {
             let proof = proof(&request(name, name, &pool, 100));
             let agent = db.admit(&proof, 1000).unwrap();
             db.approve(&format!("approve_{name}"), &proof, 1000)
@@ -50,10 +58,11 @@ impl Fixture {
             .unwrap();
             agents.push(agent.id);
         }
-        let mut joined = BTreeSet::from(["@owner:example.test".into(), "@a:example.test".into()]);
+        let mut joined: BTreeSet<String> =
+            names.iter().map(|name| format!("@{name}:example.test")).collect();
+        joined.insert("@owner:example.test".into());
         if !direct {
             joined.extend([
-                "@b:example.test".into(),
                 "@other:example.test".into(),
                 registration().representative_mxid,
                 registration().approval_bot_mxid,
@@ -87,7 +96,7 @@ impl Fixture {
             db.observe_matrix_room(&observation, 1002).unwrap();
             db.resolve_verified_matrix_session(
                 &SessionBinding {
-                    id: if index == 0 { "a" } else { "b" }.into(),
+                    id: names[index].into(),
                     engagement_id: agent.clone(),
                     room_id: room.room_id.clone(),
                     thread_root: None,
@@ -1769,4 +1778,145 @@ fn native_verified_ingress_emits_delivery_feedback_notice() {
             .unwrap(),
         1
     );
+}
+
+/// Board #97. A shared room answered `!help` once per joined agent because the
+/// answer's identity was derived **per session** (`command_notices.rs:357`),
+/// while every agent's driver answers its own intake
+/// (`bootstrap/driver.rs:715-717`) — so three joined agents meant three
+/// `=== Agent Bridge Bot Commands ===` notices. The retained bridge answered
+/// ONCE because it deduplicated the command on the Matrix **event id** in one
+/// process (`isDuplicateMatrixEvent`, bridge-matrix.js:4117-4120). Native keeps
+/// that rule in the one thing all agents share — the store — so it holds across
+/// processes and restarts too.
+#[test]
+fn native_bot_command_is_answered_once_for_the_event_not_once_per_agent() {
+    let mut f = Fixture::with_agents(&["a", "b", "c"], false);
+    // ONE event in a room all three agents are joined to. Every agent's intake
+    // admits it — it is a fact in the room — and none of them wakes for it.
+    for session in ["a", "b", "c"] {
+        let mut event = f.event(session, "help", None, &[], 1010);
+        event.event.body = "!help".into();
+        assert!(!f.db.admit_matrix_event(&event, 1011).unwrap().wake);
+    }
+    // Three session_inputs rows, one admitted message: the same room event seen
+    // by three agents, which is the race the live rig exposed.
+    let sql = f.sql();
+    assert_eq!(count(&sql, "admitted_messages"), 1);
+    assert_eq!(
+        sql.query_row(
+            "SELECT COUNT(*) FROM session_inputs WHERE message_sequence=(SELECT sequence FROM admitted_messages LIMIT 1)",
+            [],
+            |r| r.get::<_, u64>(0)
+        )
+        .unwrap(),
+        3
+    );
+    // Each agent's poll offers it — before anyone has answered.
+    for session in ["a", "b", "c"] {
+        assert_eq!(
+            f.db.pending_command_lines(session.into(), 16)
+                .unwrap()
+                .len(),
+            1,
+            "session {session} has the unanswered line before anyone answers"
+        );
+    }
+    // Whoever gets there first answers FOR THE EVENT. The others are handed the
+    // winner's own receipt and must not queue a second reply.
+    let mut answer = |session: &str| {
+        f.db.submit_command_notice(
+            &CommandNoticeRequest {
+                session_id: session.into(),
+                body: "=== Agent Bridge Bot Commands ===".into(),
+                html: None,
+                source_event_id: "$help".into(),
+            },
+            1012,
+        )
+        .unwrap()
+    };
+    let first = answer("a");
+    assert_eq!(first.session_id, "a");
+    assert!(!first.replayed);
+    for loser in ["b", "c"] {
+        let receipt = answer(loser);
+        assert_eq!(
+            receipt.session_id, "a",
+            "{loser} must be told the answer is a's, not queue its own"
+        );
+        assert!(receipt.replayed);
+    }
+    // Exactly ONE answer exists for the event, however many agents saw it.
+    assert_eq!(count(&sql, "command_notices"), 1);
+    // And the event is ANSWERED: no agent is offered it again, so the room hears
+    // exactly one `!help` reply.
+    for session in ["a", "b", "c"] {
+        assert!(
+            f.db.pending_command_lines(session.into(), 16)
+                .unwrap()
+                .is_empty(),
+            "session {session} must not be offered an answered event"
+        );
+    }
+}
+
+/// The other half of TS's rule: a command reply whose send FAILED is recorded
+/// and never repeated — `bridge-matrix.js:6921-6925` posts "The command will
+/// not be repeated automatically." Native does not re-answer either: the
+/// winner's unknown outcome parks the row as `uncertain`, and no agent — the
+/// winner included — is offered the event again. Without that, a failed send
+/// would hand the event to the next agent, which is the same defect wearing a
+/// different hat.
+#[test]
+fn native_failed_bot_command_answer_is_not_repeated_by_another_agent() {
+    let mut f = Fixture::with_agents(&["a", "b", "c"], false);
+    for session in ["a", "b", "c"] {
+        let mut event = f.event(session, "help", None, &[], 1010);
+        event.event.body = "!help".into();
+        f.db.admit_matrix_event(&event, 1011).unwrap();
+    }
+    f.db.submit_command_notice(
+        &CommandNoticeRequest {
+            session_id: "a".into(),
+            body: "=== Agent Bridge Bot Commands ===".into(),
+            html: None,
+            source_event_id: "$help".into(),
+        },
+        1012,
+    )
+    .unwrap();
+    // `a` claims it and begins the send, and the outcome is never established:
+    // the row stays `sending` under a lease that then lapses, which is exactly
+    // the unknown outcome the send path refuses to guess about.
+    let claimed = f
+        .db
+        .claim_command_notice_for_session("a".into(), 1012, 1000)
+        .unwrap()
+        .unwrap();
+    f.db.begin_command_notice_send(&claimed.claim.notice.id, &claimed.claim.token, 1013)
+        .unwrap();
+    // Past the lease, the store reconciles the un-settled send to `uncertain`.
+    assert!(
+        f.db.claim_command_notice_for_session("b".into(), 3013, 1000)
+            .unwrap()
+            .is_none(),
+        "b must not claim an answer whose send outcome is unknown"
+    );
+    assert_eq!(
+        f.db.command_notice_receipt(&claimed.claim.notice.id)
+            .unwrap()
+            .state,
+        "uncertain"
+    );
+    // The event is neither offered again nor answered twice, by anyone.
+    for session in ["a", "b", "c"] {
+        assert!(
+            f.db.pending_command_lines(session.into(), 16)
+                .unwrap()
+                .is_empty(),
+            "session {session} must not re-offer a command whose reply was attempted"
+        );
+    }
+    assert_eq!(count(&f.sql(), "command_notices"), 1);
 }
