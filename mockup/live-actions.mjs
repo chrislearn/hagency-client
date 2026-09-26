@@ -317,12 +317,6 @@ await step('6-acknowledge-alert', async () => {
 await step('7-usage-renders-numbers', async () => {
   await page.goto(`${cfg.base}/console/usage/`);
   await page.locator('[data-native-state="ready"]').first().waitFor();
-  const cells = page.locator('[data-kind]');
-  const count = await cells.count();
-  if (count === 0) throw new Error('the usage page served no numeric cells');
-  const words = await cells.allInnerTexts();
-  const numeric = words.filter((w) => /\d/.test(w)).length;
-  if (numeric === 0) throw new Error(`no numeric usage cell rendered; all said ${JSON.stringify(words.slice(0, 4))}`);
   /*
    * The FLEET half of the same page (board #108). Its read is a COMPOSITION —
    * totals, then one budget per side — so a single failing side replaces the
@@ -341,7 +335,44 @@ await step('7-usage-renders-numbers', async () => {
   }
   const fleetText = (await fleetDrawn.first().innerText()).trim();
   if (fleetText === '') throw new Error('the fleet panel rendered an empty drawn figure');
-  return `${numeric} of ${count} usage cells render numbers; fleet drawn "${fleetText}"`;
+  /*
+   * The ENGAGEMENT half (board #115). The page OPENS on the first engagement
+   * of the list, and a fleet's first engagement is as likely to be one that
+   * never ran a turn as one that did — the live rig's RustFleetCoordinator had
+   * never been dispatched, so every kind in its own summary legitimately read
+   * Unknown while the old version of this step still passed on the fleet
+   * figure alone. So walk the selector the operator walks, take the first
+   * engagement whose OWN evidence renders numbers, and assert those numbers —
+   * `[data-engagement-id] > section:first-of-type` is that engagement's
+   * summary (the ceiling block below it is the RESOURCE's figure, not the
+   * engagement's, which is exactly the confusion board #115 reported). A
+   * fleet where nothing was measured says so by name.
+   */
+  const candidates = await page
+    .locator('#native-engagement option')
+    .evaluateAll((options) => options.map((option) => option.value).filter(Boolean));
+  if (candidates.length === 0) throw new Error('no engagement with usage (the list is empty)');
+  let chosen = null;
+  let summary = null;
+  for (const id of candidates) {
+    await page.locator('#native-engagement').selectOption(id);
+    try {
+      await page.locator(`[data-engagement-id="${id}"]`).waitFor({ timeout: 4_000 });
+    } catch {
+      continue; // its own read failed or is still in flight; try the next
+    }
+    const cells = await page.locator(`[data-engagement-id="${id}"] > section:first-of-type [data-kind]`).allInnerTexts();
+    const numeric = cells.filter((word) => /\d/.test(word)).length;
+    if (numeric > 0) {
+      chosen = id;
+      summary = { numeric, total: cells.length };
+      break;
+    }
+  }
+  if (chosen === null) throw new Error(`no engagement with usage (checked ${candidates.length})`);
+  const input = (await page.locator(`[data-engagement-id="${chosen}"] > section:first-of-type [data-kind="input"]`).first().innerText()).trim();
+  if (!/\d/.test(input)) throw new Error(`the chosen engagement's summary rendered a non-numeric input count: ${JSON.stringify(input)}`);
+  return `engagement ${chosen} renders measured numbers (input "${input}", ${summary.numeric} of ${summary.total} summary cells); fleet drawn "${fleetText}"`;
 });
 
 // ---------------------------------------------------------------------------

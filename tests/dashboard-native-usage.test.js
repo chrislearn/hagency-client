@@ -23,6 +23,26 @@ describe('retained usage native mode', () => {
     expect(() => validateEngagements({ engagements: [], next_after: null, token: 'not_allowed' })).toThrow();
   });
   /*
+   * Board #115: the ceiling block on the ENGAGEMENT panel publishes the
+   * RESOURCE's draw (`usage_report` -> `ceiling_report(record.resource_id)`),
+   * while the summary/daily/monthly cells beside it are engagement-scoped.
+   * That asymmetry is invisible on a live rig until a resource holds an
+   * unobserved engagement next to a measured one — which is exactly what
+   * happened: RustFleetCoordinator had never run a turn, its own cells read
+   * Unknown, and its ceiling block showed 2,238,654 = the sum of its two
+   * siblings on the same resource. The store test pins the figures; this pins
+   * the WORDS the operator reads, so the number can never again present itself
+   * as the engagement's own usage.
+   */
+  test('the ceiling block names its scope as the resource', async () => {
+    const html = await renderDashboard('mockup/app/usage/page.jsx', { data: { nativeConsole: true, phase: 'ready', report, engagements: [], selected: report.engagement_id } });
+    expect(html).toContain('Measured usage, all kinds (whole resource, this period)');
+    expect(html).toContain('The ceiling belongs to this engagement&#x27;s RESOURCE, not to the engagement');
+    const zh = await renderDashboard('mockup/app/usage/page.jsx', { locale: 'zh', data: { nativeConsole: true, phase: 'ready', report, engagements: [], selected: report.engagement_id } });
+    expect(zh).toContain('已测量用量（全部类型，整个资源，本周期）');
+    expect(zh).toContain('上限属于该接洽所用的资源');
+  });
+  /*
    * Board #108 (a): the side budget is served TWO ways and the client pinned
    * only one. The GET spreads the budget FLAT beside `ok`/`sideId`
    * (backend-v2.js:9571) — ten keys — while `budgetFields` demanded an object
