@@ -44,7 +44,7 @@ fn label(kind: &str) -> Option<&'static str> {
 /// One observation the lifecycle asks the store to keep. The TS
 /// `ActivityEvent` union: a lifecycle phase, or a tool phase carrying
 /// its kind and the runner's dedupe id.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum ActivityEvent {
     Started,
     Heartbeat,

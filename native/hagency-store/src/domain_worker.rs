@@ -1602,6 +1602,22 @@ impl DomainStore {
         })
         .await
     }
+    /// The runner's own tool/heartbeat activity (TS `recordRunnerActivity`,
+    /// `store.ts:2699-2705`): the production seam the execution layer reports
+    /// each runner item event through. Observation-class like
+    /// `record_attempt_event` above — the caller counts a refusal, never
+    /// retries it and never lets it change the turn.
+    pub async fn record_activity_event(
+        &self,
+        dispatch_id: String,
+        event: crate::ActivityEvent,
+        now: u64,
+    ) -> Result<Option<crate::ActivityUpdate>, Error> {
+        self.call(weight(&(&dispatch_id, &event, now))?, move |db| {
+            db.record_activity_event(&dispatch_id, &event, now)
+        })
+        .await
+    }
     /// ADR-183 decision D: queue the one thread notice of an over-budget
     /// turn. Observation-class like the events above: the host records what
     /// it found and never lets a refusal change the turn.
