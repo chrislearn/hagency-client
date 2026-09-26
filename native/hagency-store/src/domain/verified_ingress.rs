@@ -677,7 +677,13 @@ impl DomainRepository {
             // and it wakes nobody. A DM `!…` used to be an ordinary direct
             // message and so woke the agent — the side effect the parity table
             // called out at `verified_ingress.rs:650-651`.
-            && !is_bot_command(event);
+            && !is_bot_command(event)
+            // A `/thread` directive is consumed before routing (TS
+            // `parseThreadSessionDirective`, backend-v2.js:2254-2266): it is
+            // never chat input and wakes nobody, exactly like a `!` command.
+            // It is still admitted and recorded so the host can read it back
+            // and answer in-thread.
+            && !super::directives::is_directive(&event.body);
         // The event was a request at all: like the retained product, only a
         // turn that was actually asked for gets an explanation when it does
         // not start — background chatter in a done task's thread stays quiet.

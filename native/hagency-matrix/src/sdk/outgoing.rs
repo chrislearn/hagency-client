@@ -221,6 +221,17 @@ impl Sdk {
                     return Err(error);
                 }
             }
+            Command::Refused => {
+                // Task #9 (TS `isPermanentRouterMatrixFailure`,
+                // bridge-matrix.js:6029-6033): an HTTP 4xx other than 429 is a
+                // permanent verdict the retained product answers by posting the
+                // command to `../failed` and never retrying it. The journaled
+                // mark is the durable half of that stop: a later resume reads it
+                // and parks the send for a human instead of re-putting it.
+                let attempt = self.journal.outgoing.as_mut().ok_or(Error::Storage)?;
+                attempt.permanent_failure = true;
+                self.persist_outgoing().await?;
+            }
         }
         Ok(View {
             attempt: self.journal.outgoing.clone(),

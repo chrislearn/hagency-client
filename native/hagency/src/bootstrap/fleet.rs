@@ -437,6 +437,24 @@ impl Service {
             }
         }
         let _running = Running(self.routes.running.clone());
+        // Board #71: the idle-agent membership sweep (TS parity,
+        // backend-v2.js:14192-14228 + :17511's hourly scheduling), started
+        // beside the fleet loop on the shared collector's own credential.
+        // The loop ends itself on the same shutdown token; the guard aborts
+        // it on every exit path so a closed service leaves no task behind.
+        // Never terminal: read failures retry with the retained 1 s -> 60 s
+        // backoff inside the loop, so no failure here can end the service.
+        struct SweepGuard(tokio::task::JoinHandle<()>);
+        impl Drop for SweepGuard {
+            fn drop(&mut self) {
+                self.0.abort();
+            }
+        }
+        let _sweep = SweepGuard(tokio::spawn(
+            self.coordinator
+                .clone()
+                .membership_sweep_loop(cancel.clone()),
+        ));
         self.reattach_known_agents(&notices, cancel).await;
         let mut tick = tokio::time::interval(Duration::from_millis(100));
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);

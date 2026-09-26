@@ -150,6 +150,10 @@ impl OwnedSession {
     pub fn last_server_request(&self) -> Option<&'static str> {
         self.session.last_server_request()
     }
+    /// The refused server request's own method name, bounded and printable.
+    pub fn last_server_request_method(&self) -> Option<&str> {
+        self.session.last_server_request_method()
+    }
     pub fn refused_notification(&self) -> Option<&'static str> {
         self.session.refused_notification()
     }

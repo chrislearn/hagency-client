@@ -15,27 +15,28 @@ const output = resolve(args[outputAt + 1]);
 await mkdir(output, { mode: 0o700 }); // Refuse existing output, retaining failed artifacts.
 const work = await mkdtemp(join(dirname(output), 'native-console-build-'));
 const staged = join(work, 'mockup');
-await mkdir(join(staged, 'app', 'usage'), { recursive: true, mode: 0o700 });
-await mkdir(join(staged, 'app', 'resources', 'new'), { recursive: true, mode: 0o700 });
-await mkdir(join(staged, 'app', 'alerts'), { recursive: true, mode: 0o700 });
-await mkdir(join(staged, 'app', 'engagements'), { recursive: true, mode: 0o700 });
-await mkdir(join(staged, 'app', 'accounts'), { recursive: true, mode: 0o700 });
-await mkdir(join(staged, 'app', 'agents'), { recursive: true, mode: 0o700 });
-await mkdir(join(staged, 'app', 'project-sides'), { recursive: true, mode: 0o700 });
-await mkdir(join(staged, 'app', 'approvals'), { recursive: true, mode: 0o700 });
-await mkdir(join(staged, 'app', 'tasks'), { recursive: true, mode: 0o700 });
-await mkdir(join(staged, 'app', 'project-board'), { recursive: true, mode: 0o700 });
+await mkdir(join(staged, 'app'), { recursive: true, mode: 0o700 });
 for (const name of ['components', 'lib', 'package.json', 'jsconfig.json', 'next.config.mjs']) await cp(join(source, name), join(staged, name), { recursive: true });
-/* Each route's WHOLE directory, not its page.jsx alone: pages now import
+/* Each route's WHOLE directory, not its page.jsx alone: pages import
  * siblings (engagements/NativeVerdict.jsx, project-sides/register-side.jsx,
  * project-sides/registration-control.jsx, invites/page.jsx) and a
- * page.jsx-only stage broke the canonical build with Module not found. The
- * one deliberate exception is agents/[name]: its generateStaticParams reads
- * the mock-data fixture and would emit a document per fixture agent,
- * changing the served set — the manifest carries exactly agents/index.html. */
-for (const route of ['usage', 'resources', 'alerts', 'engagements', 'accounts', 'agents', 'project-sides', 'approvals', 'tasks', 'project-board', 'invites']) await cp(join(source, 'app', route), join(staged, 'app', route), { recursive: true });
+ * page.jsx-only stage broke the canonical build with Module not found.
+ *
+ * This is the set of pages the NATIVE console serves, and it is not the whole
+ * app tree: `config`, `capability`, `projects` and `workforce` are retained-only
+ * pages whose render reads a data provenance the native provider never
+ * publishes, so staging them fails the static export outright ("Cannot read
+ * properties of undefined"), and the native rail links none of them (it
+ * renders them as disabled rows). Dynamic segments are excluded too:
+ * agents/[name] would emit one document per mock agent. `onboard` is a bare
+ * redirect(), which a static export cannot honour. The served-binary test
+ * (tests/console/rail.rs) parses Rail.jsx and GETs every native href, so a
+ * rail page can never go missing from this list again (board #88). */
+const ROUTES = ['usage', 'resources', 'alerts', 'engagements', 'accounts', 'agents', 'project-sides', 'approvals', 'tasks', 'project-board', 'task-graphs', 'invites'];
+for (const route of ROUTES) await cp(join(source, 'app', route), join(staged, 'app', route), { recursive: true });
 await rm(join(staged, 'app', 'agents', '[name]'), { recursive: true, force: true });
-for (const name of ['layout.jsx', 'globals.css']) await cp(join(source, 'app', name), join(staged, 'app', name));
+/* app/page.jsx IS 我的资源 — the front door the rail's root row marks current. */
+for (const name of ['page.jsx', 'layout.jsx', 'globals.css']) await cp(join(source, 'app', name), join(staged, 'app', name));
 /*
  * ADR-145 build-time constants, staged inside the mkdtemp tree before
  * `next build` — no repo path is generated and nothing enters
@@ -87,7 +88,7 @@ const child = spawn(process.execPath, [next, 'build', '--webpack'], { cwd: stage
 const code = await new Promise((done, reject) => { child.once('error', reject); child.once('exit', done); });
 if (code !== 0) throw new Error(`Next build failed (${code}); staging retained at ${work}`);
 const exported = join(staged, 'out');
-const files = ['usage/index.html', 'resources/index.html', 'resources/new/index.html', 'alerts/index.html', 'engagements/index.html', 'accounts/index.html', 'agents/index.html', 'project-sides/index.html', 'approvals/index.html', 'tasks/index.html', 'project-board/index.html', 'invites/index.html'];
+const files = [];
 async function walk(dir, relative) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const path = `${relative}/${entry.name}`;
@@ -97,7 +98,24 @@ async function walk(dir, relative) {
   }
 }
 await walk(join(exported, '_next', 'static'), '_next/static');
-const mime = (path) => ['usage/index.html', 'resources/index.html', 'resources/new/index.html', 'alerts/index.html', 'engagements/index.html', 'accounts/index.html', 'agents/index.html', 'project-sides/index.html', 'approvals/index.html', 'tasks/index.html', 'project-board/index.html', 'invites/index.html'].includes(path) ? 'text/html; charset=utf-8'
+/* The page documents, DERIVED from the export: the front door plus every
+ * `<route>/index.html`. A page built but missing here is absent from the
+ * bundle and 404s live (board #88); the framework's own error documents are
+ * not pages the rail reaches. */
+async function documents(dir, relative) {
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      /* Only page directories are documents: the chunk tree is walked
+       * separately, and the framework's error documents are not rail pages. */
+      if (relative === '' && (entry.name === '404' || entry.name === '_not-found' || entry.name === '_next')) continue;
+      await documents(join(dir, entry.name), relative ? `${relative}/${entry.name}` : entry.name);
+    } else if (entry.isFile() && entry.name === 'index.html') {
+      files.push(relative ? `${relative}/index.html` : 'index.html');
+    }
+  }
+}
+await documents(exported, '');
+const mime = (path) => path === 'index.html' || path.endsWith('/index.html') ? 'text/html; charset=utf-8'
   : path.endsWith('.js') ? 'text/javascript; charset=utf-8' : path.endsWith('.css') ? 'text/css; charset=utf-8'
     : path.endsWith('.woff2') ? 'font/woff2' : path.endsWith('.woff') ? 'font/woff' : null;
 let total = 0; let largest = 0; const assets = [];

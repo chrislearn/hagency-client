@@ -89,6 +89,7 @@ mod custody_tests {
         let observation = RuntimeObservation {
             stage: RuntimeStage::ThreadStart,
             server_request: Some("permissions_approval"),
+            server_request_method: Some("item/permissions/requestApproval".into()),
             refused_notification: Some("thread_status"),
             session_error: Some(session::Error::UnsupportedRequest),
             transport_cause: Some(transport::Error::Protocol(codex::Error::UnexpectedEof)),
@@ -126,7 +127,7 @@ mod custody_tests {
         );
         assert_eq!(value["runtime"]["write_accepted_bytes"], usize::MAX);
         assert_eq!(value["runtime"]["refused_notification"], "thread_status");
-        assert_eq!(value["runtime"].as_object().unwrap().len(), 9);
+        assert_eq!(value["runtime"].as_object().unwrap().len(), 10);
         assert_eq!(
             value["stop_cause"],
             "observation_failure:ancestry_unconfirmed"
@@ -143,6 +144,7 @@ mod custody_tests {
         let absent = RuntimeObservation {
             stage: RuntimeStage::Update,
             server_request: None,
+            server_request_method: None,
             refused_notification: None,
             session_error: None,
             transport_cause: None,
@@ -313,6 +315,7 @@ mod custody_tests {
 struct RuntimeStatus {
     stage: &'static str,
     server_request: Option<&'static str>,
+    server_request_method: Option<String>,
     refused_notification: Option<&'static str>,
     session_error: Option<&'static str>,
     transport_cause: Option<&'static str>,
@@ -444,6 +447,7 @@ impl From<&hagency_execution::RuntimeObservation> for RuntimeStatus {
             },
             session_error: observation.session_error.map(session_error_label),
             server_request: observation.server_request,
+            server_request_method: observation.server_request_method.clone(),
             refused_notification: observation.refused_notification,
             transport_cause: observation.transport_cause.map(transport_error_label),
             pending_requests: observation.pending_requests,

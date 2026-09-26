@@ -183,10 +183,11 @@ async fn project_mentions(mut f: Fixture) {
         // TS:bridge-matrix.js:3318-3393. The question was asked at the project
         // room's top level (route thread_root is null above), so the answer
         // stays there — carrying `m.in_reply_to` to the message it answers,
-        // `$project_mention_{index}`, and opening no thread.
+        // `$project_mention_{index}_1` (round 1 of the fake's addressed
+        // mentions), and opening no thread.
         assert_eq!(
             event["content"]["m.relates_to"],
-            json!({"m.in_reply_to":{"event_id":format!("$project_mention_{index}")}})
+            json!({"m.in_reply_to":{"event_id":format!("$project_mention_{index}_1")}})
         );
         assert!(f.peer.agents[index].crypto.events.is_empty());
         for name in ["owned-mcp.fleet-release", "owned-mcp.fleet-ready"] {
@@ -224,23 +225,48 @@ async fn project_mentions(mut f: Fixture) {
     }
     f.until("private replies independently decrypted", |f| {
         f.count("SELECT COUNT(*) FROM final_replies WHERE state='delivered'") == 4
-            && f.peer
-                .agents
-                .iter()
-                .all(|agent| agent.crypto.events.len() == 1)
+            && f.peer.agents.iter().all(|agent| {
+                // The DM also carries the merged activity round-summary (an
+                // m.notice), so count the decrypted REPLY by shape.
+                agent
+                    .crypto
+                    .events
+                    .iter()
+                    .filter(|event| event["content"]["msgtype"] == "m.text")
+                    .count()
+                    == 1
+            })
     })
     .await;
     for (index, task) in private.iter().enumerate() {
         assert_eq!(f.task_status(task), "done");
         assert!(f.task_reply_delivered(task));
         assert_eq!(
-            f.peer.agents[index].crypto.events[0]["content"]["body"],
+            f.peer.agents[index]
+                .crypto
+                .events
+                .iter()
+                .find(|event| event["content"]["msgtype"] == "m.text")
+                .expect("the decrypted reply")["content"]["body"],
             format!("Verified factory task {task}")
         );
+        /* This helper has no delegation claim: the project channel holds
+         * the earlier round's project reply plus the merged activity
+         * round-summary (an m.notice). The private task's own reply stays
+         * in the DM — the project must never gain a second m.text reply. */
+        let project_replies: Vec<&Value> = f.peer.agents[index]
+            .project_events
+            .iter()
+            .filter(|event| event["content"]["msgtype"] == "m.text")
+            .collect();
         assert_eq!(
-            f.peer.agents[index].project_events.len(),
+            project_replies.len(),
             1,
             "private reply must not reach shared project"
+        );
+        assert_eq!(
+            project_replies[0]["content"]["body"],
+            format!("Verified factory task {}", tasks[index])
         );
     }
     assert_eq!(f.count("SELECT COUNT(*) FROM runner_attempts"), 4);
@@ -301,7 +327,16 @@ async fn native_configured_fleet_three_agents_reattach_after_restart() {
         }
         f.until("three project replies delivered", |f| {
             f.count("SELECT COUNT(*) FROM final_replies WHERE state='delivered'") == 3
-                && f.peer.agents.iter().all(|a| a.project_events.len() == 1)
+                && f.peer.agents.iter().all(|a| {
+                    // The project also carries the merged activity
+                    // round-summary (an m.notice), so count the REPLY by
+                    // shape.
+                    a.project_events
+                        .iter()
+                        .filter(|event| event["content"]["msgtype"] == "m.text")
+                        .count()
+                        == 1
+                })
         })
         .await;
         for (index, task) in first.iter().enumerate() {
@@ -351,13 +386,24 @@ async fn native_configured_fleet_three_agents_reattach_after_restart() {
         }
         f.until("three re-attached replies delivered", |f| {
             f.count("SELECT COUNT(*) FROM final_replies WHERE state='delivered'") == 6
-                && f.peer.agents.iter().all(|a| a.project_events.len() == 2)
+                && f.peer.agents.iter().all(|a| {
+                    a.project_events
+                        .iter()
+                        .filter(|event| event["content"]["msgtype"] == "m.text")
+                        .count()
+                        == 2
+                })
         })
         .await;
         for (index, task) in second.iter().enumerate() {
             assert_eq!(f.task_status(task), "done");
             assert!(f.task_reply_delivered(task));
-            let event = &f.peer.agents[index].project_events[1];
+            let event = f.peer.agents[index]
+                .project_events
+                .iter()
+                .filter(|event| event["content"]["msgtype"] == "m.text")
+                .nth(1)
+                .expect("this round's reply");
             assert_eq!(event["sender"], f.peer.agents[index].user);
             assert_eq!(
                 event["content"]["body"],
@@ -496,16 +542,24 @@ async fn native_configured_fleet_delegated_task_delivery() {
             .agents
             .iter()
             .flat_map(|agent| &agent.project_events)
-            .filter(|event| event["content"]["msgtype"] == "m.notice")
+            .filter(|event| {
+                event["content"]["body"]
+                    .as_str()
+                    .map_or(false, |b| b.starts_with("Task created: "))
+            })
             .count(),
         1,
         "one claim is never sent twice"
     );
-    assert_eq!(f.peer.agents[1].project_events.len(), 1);
-    assert_eq!(
-        f.peer.agents[1].project_events[0]["content"]["msgtype"],
-        "m.text"
-    );
+    // The delegator's project session holds exactly its own reply (the
+    // merged activity round-summary also lands here); it never holds the
+    // delegated task's reply.
+    let replies: Vec<&Value> = f.peer.agents[1]
+        .project_events
+        .iter()
+        .filter(|event| event["content"]["msgtype"] == "m.text")
+        .collect();
+    assert_eq!(replies.len(), 1);
     assert_eq!(f.intent_state(&task), "active");
     assert_eq!(f.task_status(&task), "done");
     assert!(f.task_reply_delivered(&task));
@@ -760,14 +814,36 @@ async fn qualify_profile(media: bool, local: bool) {
                     f.count("SELECT COUNT(*) FROM final_replies WHERE state='delivered'")
                         == round * 2
                         && f.peer.agents.iter().all(|agent| {
-                            agent.crypto.events.len() == round as usize * if media { 2 } else { 1 }
+                            // The DM also carries the merged activity
+                            // round-summary (an m.notice), so count the
+                            // decrypted REPLY by its body, never by position.
+                            agent
+                                .crypto
+                                .events
+                                .iter()
+                                .filter(|event| {
+                                    event["content"]["body"].as_str().map_or(false, |b| {
+                                        b.starts_with("Verified factory task ")
+                                    })
+                                })
+                                .count()
+                                == round as usize
                         })
                 },
             )
             .await;
             for (index, task) in tasks.iter().enumerate() {
-                let position = round as usize * if media { 2 } else { 1 } - 1;
-                let event = &f.peer.agents[index].crypto.events[position];
+                let event = f.peer.agents[index]
+                    .crypto
+                    .events
+                    .iter()
+                    .filter(|event| {
+                        event["content"]["body"]
+                            .as_str()
+                            .map_or(false, |b| b.starts_with("Verified factory task "))
+                    })
+                    .nth(round as usize - 1)
+                    .expect("this round's decrypted reply");
                 assert_eq!(
                     event["content"]["body"],
                     format!("Verified factory task {task}")

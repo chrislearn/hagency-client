@@ -149,6 +149,14 @@ impl Acl {
         Self::new(list("MATRIX_OPERATOR_MXIDS"), list("MATRIX_ADMIN_MXIDS"), allow)
     }
 
+    /// Whether `sender` is an operator, for the `/thread` directive gate
+    /// (TS `msg.trustLevel === 'operator'`, backend-v2.js:2265). Admin is not
+    /// operator: the directive answers only to the operator list, exactly as TS
+    /// derives `trustLevel` from `MATRIX_OPERATOR_MXIDS` alone.
+    pub fn is_operator(&self, sender: &str) -> bool {
+        self.operator.contains(sender)
+    }
+
     /// `authorizeCommand` (:84-101). `Ok(reason)` carries the reason TS logged;
     /// `Err(reason)` is the refusal key the caller turns into words. Tier 0 is
     /// decided first and is never refused.
@@ -444,6 +452,114 @@ pub struct OfferServing {
     pub provisioning_required: bool,
 }
 
+/// `!request` (board #79; TS `lib/bot-commands.js:525-629` `cmdRequest`).
+/// What the host learned from submitting the request into the engagement
+/// intake — the fields the TS reply text renders. `project` is the room NAME
+/// (the label), never the id; the id never changes identity or authority.
+#[derive(Debug, Clone, Default)]
+pub struct RequestOutcome {
+    /// The backend's refusal (`result.error`), rendered as `Request refused: …`.
+    pub error: Option<String>,
+    /// The engagement the intake returned. `None` when the submit produced no
+    /// engagement at all (`Request failed: no engagement returned.`).
+    pub engagement: Option<RequestEngagement>,
+    /// The serving configuration for the transparency line; `None` when the
+    /// agent record is gone (degrades to the agent alone, never fabricated).
+    pub serving: Option<OfferServing>,
+    /// `binding.bound === false`: the attach did not happen. The project is
+    /// told THAT, never the provider's remedy (`HAGENCY_*` stays private).
+    pub attach_failed: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct RequestEngagement {
+    pub role: String,
+    pub requested_tokens: u64,
+    pub allocated_tokens: u64,
+    pub agent: String,
+    pub auto_joined: bool,
+    /// The TS `route` word deciding the pending reply's WHY.
+    pub route: Option<String>,
+}
+
+/// `cmdRequest` (:525-629), the reply half. The argument validation is
+/// synchronous exactly as TS: usage and malformed-token refusals never reach
+/// the backend.
+pub fn request_reply(args: &[String], outcome: Option<&RequestOutcome>) -> Reply {
+    let usage = "Usage: !request <role> <tokens> [tokens-per-day]\n\
+                 Example: !request architect 400000 20000";
+    let Some(_role) = args.first().filter(|role| !role.is_empty()) else {
+        return Reply::text(usage);
+    };
+    let Some(tokens_raw) = args.get(1) else {
+        return Reply::text(usage);
+    };
+    // `Number(String(tokensRaw).replace(/[_,]/g, ''))` (:533-536).
+    let cleaned: String = tokens_raw.chars().filter(|c| *c != '_' && *c != ',').collect();
+    let parsed = cleaned.parse::<u64>();
+    let Ok(requested_tokens) = parsed else {
+        return Reply::text(format!("Not a token amount: {tokens_raw}"));
+    };
+    if requested_tokens == 0 {
+        return Reply::text(format!("Not a token amount: {tokens_raw}"));
+    }
+    let Some(outcome) = outcome else {
+        // The caller did not submit (or has no intake): TS never rendered
+        // anything without calling the backend, so this is the refusal shape.
+        return Reply::text("Request failed: no engagement returned.");
+    };
+    if let Some(error) = &outcome.error {
+        return Reply::text(format!("Request refused: {error}"));
+    }
+    let Some(e) = &outcome.engagement else {
+        return Reply::text("Request failed: no engagement returned.");
+    };
+    if e.auto_joined {
+        // The transparency ruling (:596-612): the agent and its configuration
+        // are disclosed to the borrower; the provider's deployment is not.
+        let config = outcome.serving.as_ref().and_then(|s| {
+            let model = s.model.as_deref()?;
+            let mut text = format!(
+                "{} · {}",
+                s.framework.as_deref().unwrap_or("?"),
+                model
+            );
+            if let Some(reasoning) = &s.reasoning {
+                text.push_str(&format!(" ({reasoning})"));
+            }
+            if let Some(tier) = &s.tier {
+                text.push_str(&format!(" · {tier}"));
+            }
+            Some(text)
+        });
+        let mut plain = format!(
+            "Joined automatically as {} — {} tokens, served by {}",
+            e.role, e.allocated_tokens, e.agent
+        );
+        plain.push_str(&match config {
+            Some(config) => format!(" running {config}."),
+            None => ".".to_owned(),
+        });
+        if outcome.attach_failed {
+            plain.push_str(
+                "\nNote: the agent could not be attached yet — the contributor has been notified.",
+            );
+        }
+        return Reply::text(plain);
+    }
+    // WHY it is waiting, in the project's own terms (:619-628).
+    let why = match e.route.as_deref() {
+        Some("notWhitelisted") => "this room is not on the contributor's whitelist",
+        Some("overOffer") => "the amount is above what they have published",
+        Some("overCeiling") => "the amount is above what the serving agent has left",
+        _ => "it needs a decision",
+    };
+    Reply::text(format!(
+        "Requested {} for {} tokens — awaiting a decision, because {}.",
+        e.role, e.requested_tokens, why
+    ))
+}
+
 pub fn offer(book: &OfferBook) -> Reply {
     if let Some(error) = &book.error {
         return Reply::text(format!("Cannot read the offer book: {error}"));
@@ -559,6 +675,10 @@ pub struct HostObservation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Dispatched {
     Answer(Reply),
+    /// `!request` (board #79): parsed and authorized; the caller submits the
+    /// request into the engagement intake, then renders `request_reply` with
+    /// the outcome. TS dispatches it the same two-step way (`:365`).
+    Request(Vec<String>),
     Unrenderable,
 }
 
@@ -597,9 +717,11 @@ pub fn dispatch(
             Some(items) => sessions(items),
             None => sessions_unavailable(observed.tmux_installed),
         }),
-        // Parsed and authorized, but native has no renderer. `!request` is a
-        // project-side act in TS (:365) and the rest are terminal verbs.
-        "!request" | "!groups" | "!group" | "!agent" | "!mcp" | "!bridge" | "!mkgroup"
+        // `!request` is a project-side act: the caller submits into the
+        // engagement intake, then renders the reply from the outcome. The rest
+        // are parsed-and-authorized verbs native has no renderer for.
+        "!request" => Dispatched::Request(parsed.args),
+        "!groups" | "!group" | "!agent" | "!mcp" | "!bridge" | "!mkgroup"
         | "!bindroom" | "!addmember" | "!rmember" | "!joingroup" | "!dm" | "!identity"
         | "!spy" | "!rmgroup" | "!agentctl" | "!ctl" => Dispatched::Unrenderable,
         _ => Dispatched::Answer(unknown_command(command)),
@@ -635,6 +757,18 @@ mod tests {
         }
         // `classifyCommand` defaults an UNKNOWN command to operator tier (:61-63).
         assert_eq!(classify("!nonsense"), 1);
+    }
+
+    /// `is_operator` gates the `/thread` directive (TS `msg.trustLevel ===
+    /// 'operator'`, backend-v2.js:2265, derived from `MATRIX_OPERATOR_MXIDS`
+    /// alone): an admin who is not an operator is NOT trusted for it.
+    #[test]
+    fn native_thread_directive_operator_gate() {
+        let acl = Acl::new(["@alex:test".to_owned()], ["@admin:test".to_owned()], false);
+        assert!(acl.is_operator("@alex:test"));
+        assert!(!acl.is_operator("@admin:test"));
+        assert!(!acl.is_operator("@mallory:test"));
+        assert!(!acl.is_operator(""));
     }
 
     /// `parse` (:306-310): trimming, the lowercased first token, arguments.
@@ -881,6 +1015,142 @@ mod tests {
         );
     }
 
+    /// `!request` reply half (board #79; TS `lib/bot-commands.js:525-629`):
+    /// the usage text, the malformed-token refusal (before any backend), the
+    /// auto-joined transparency line, the attach note without the provider's
+    /// remedy, and the pending-why routing.
+    #[test]
+    fn native_bot_command_request_reply() {
+        let usage = "Usage: !request <role> <tokens> [tokens-per-day]\n\
+                     Example: !request architect 400000 20000";
+        // Usage: role or tokens missing (:528-531).
+        assert_eq!(request_reply(&[], None).plain, usage);
+        assert_eq!(request_reply(&["coding".into()], None).plain, usage);
+        // Malformed token: names the offending word, never reaches the
+        // backend (:533-536).
+        assert_eq!(
+            request_reply(&["coding".into(), "four-hundred-thousand".into()], None).plain,
+            "Not a token amount: four-hundred-thousand"
+        );
+        // `_,`-separated digits parse (:533).
+        assert_eq!(
+            request_reply(&["coding".into(), "400_000".into()], None).plain,
+            "Request failed: no engagement returned."
+        );
+        // No outcome at all (:546).
+        assert_eq!(
+            request_reply(&["coding".into(), "400000".into()], None).plain,
+            "Request failed: no engagement returned."
+        );
+        // Backend refusal (:543-544).
+        assert_eq!(
+            request_reply(
+                &["coding".into(), "400000".into()],
+                Some(&RequestOutcome {
+                    error: Some("over ceiling".into()),
+                    ..RequestOutcome::default()
+                })
+            )
+            .plain,
+            "Request refused: over ceiling"
+        );
+        // Auto-joined with the transparency config (:596-605); `?` for the
+        // unknown framework exactly as TS.
+        assert_eq!(
+            request_reply(
+                &["coding".into(), "400000".into()],
+                Some(&RequestOutcome {
+                    engagement: Some(RequestEngagement {
+                        role: "coding".into(),
+                        requested_tokens: 400_000,
+                        allocated_tokens: 400_000,
+                        agent: "claude-agent".into(),
+                        auto_joined: true,
+                        route: None,
+                    }),
+                    serving: Some(OfferServing {
+                        framework: Some("claude".into()),
+                        model: Some("claude-opus-5".into()),
+                        reasoning: Some("high".into()),
+                        tier: Some("strong".into()),
+                        ..OfferServing::default()
+                    }),
+                    ..RequestOutcome::default()
+                })
+            )
+            .plain,
+            "Joined automatically as coding — 400000 tokens, served by claude-agent \
+             running claude · claude-opus-5 (high) · strong."
+        );
+        // Serving present but no model: degrades to the agent alone, no
+        // fabricated configuration (:607-612 via `s?.model` guard).
+        assert_eq!(
+            request_reply(
+                &["coding".into(), "400000".into()],
+                Some(&RequestOutcome {
+                    engagement: Some(RequestEngagement {
+                        role: "coding".into(),
+                        requested_tokens: 400_000,
+                        allocated_tokens: 400_000,
+                        agent: "claude-agent".into(),
+                        auto_joined: true,
+                        route: None,
+                    }),
+                    serving: Some(OfferServing::default()),
+                    ..RequestOutcome::default()
+                })
+            )
+            .plain,
+            "Joined automatically as coding — 400000 tokens, served by claude-agent."
+        );
+        // The attach failure note carries no HAGENCY_* remedy (:606-618).
+        let attach = request_reply(
+            &["coding".into(), "400000".into()],
+            Some(&RequestOutcome {
+                engagement: Some(RequestEngagement {
+                    role: "coding".into(),
+                    requested_tokens: 400_000,
+                    allocated_tokens: 400_000,
+                    agent: "claude-agent".into(),
+                    auto_joined: true,
+                    route: None,
+                }),
+                serving: Some(OfferServing::default()),
+                attach_failed: true,
+                ..RequestOutcome::default()
+            }),
+        );
+        assert!(attach.plain.contains("could not be attached yet"));
+        assert!(!attach.plain.contains("HAGENCY_"));
+        assert!(!attach.plain.contains("MXID"));
+        // Pending with each WHY word, and the default (:619-628).
+        for (route, why) in [
+            (Some("notWhitelisted"), "this room is not on the contributor's whitelist"),
+            (Some("overOffer"), "the amount is above what they have published"),
+            (Some("overCeiling"), "the amount is above what the serving agent has left"),
+            (None, "it needs a decision"),
+        ] {
+            assert_eq!(
+                request_reply(
+                    &["coding".into(), "400000".into()],
+                    Some(&RequestOutcome {
+                        engagement: Some(RequestEngagement {
+                            role: "coding".into(),
+                            requested_tokens: 400_000,
+                            allocated_tokens: 0,
+                            agent: String::new(),
+                            auto_joined: false,
+                            route: route.map(str::to_owned),
+                        }),
+                        ..RequestOutcome::default()
+                    })
+                )
+                .plain,
+                format!("Requested coding for 400000 tokens — awaiting a decision, because {why}.")
+            );
+        }
+    }
+
     /// `!offer` (:469-524): the empty state, the error state, the serving line
     /// with its caps, and the tri-state trust line.
     #[test]
@@ -990,13 +1260,19 @@ fn native_bot_command_predicate() {
             dispatch("!nonsense", "@a:example.test", &operator, false, &observed),
             Dispatched::Answer(unknown_command("!nonsense"))
         );
-        for command in ["!bindroom g", "!dm someone", "!request r 1000"] {
+        for command in ["!bindroom g", "!dm someone"] {
             assert_eq!(
                 dispatch(command, "@a:example.test", &operator, false, &observed),
                 Dispatched::Unrenderable,
                 "{command}"
             );
         }
+        // `!request` is parsed, authorized and handed to the caller to submit
+        // into the engagement intake (board #79; TS :365).
+        assert_eq!(
+            dispatch("!request r 1000", "@a:example.test", &operator, false, &observed),
+            Dispatched::Request(vec!["r".to_owned(), "1000".to_owned()])
+        );
         // A bridge running without a bot refuses a privileged command before
         // any mutation (:338-345).
         assert_eq!(

@@ -17,10 +17,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{fs::File, path::Path};
 pub(crate) mod accounts;
+mod activity;
+pub use activity::{ActivityEvent, ActivityUpdate};
 mod agent_fences;
+mod agent_message_leftovers;
 mod agent_lifecycle;
 mod console_feed;
 pub use agent_fences::{AgentFence, FenceReason};
+pub use agent_message_leftovers::{
+    DeliveryEventRow, NewOperatorMessage, OperatorMessage, SuppressOutcome, Suppression, Tombstone,
+};
 mod approvals;
 mod engagement_retention;
 mod engagement_terms;
@@ -44,6 +50,11 @@ mod command_notices;
 mod conversation_lifecycle;
 mod conversations;
 mod delivery_feedback;
+mod directives;
+pub use directives::{
+    SessionOverrides, THREAD_DIRECTIVE_OPERATOR_REFUSAL, ThreadDirective, ThreadMode,
+    confirmation, parse,
+};
 mod exec_policy;
 mod execution;
 mod graphs;
@@ -75,7 +86,9 @@ mod stopped_inspection;
 pub use outcome_resolution::{OutcomeAction, OutcomeResolution};
 mod provision_runtime;
 mod reminders;
+mod room_trust;
 pub use reminders::{Reminder, ReminderReceipt, ReminderSweep};
+pub use room_trust::RoomTrustRecord;
 mod side_registration;
 pub use side_registration::{
     IssueSideRegistration, IssueSideRegistrationRequest, SideCredential,
@@ -123,7 +136,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 51;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 56;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -365,6 +378,36 @@ pub struct EngagementLabel {
 /// these four scalar keys — the room id is already what the engagement
 /// and sessions reads serve; no binding payload, credential or workspace
 /// path travels.
+/// One role of the launch runtime profile (board #49, TS
+/// `normalizeRuntimeProfileRole`, `backend-v2.js:831-862`): the four fields
+/// native can source from the resource. `extraArgs`, `apiBaseUrl` and
+/// `apiKey` are TS-only enrichment of the record's own profile object and
+/// have no native source, so they are omitted — the same "unknown, never
+/// fabricated" rule the roster's `unavailable` list states.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeProfileRole {
+    pub framework: String,
+    pub provider: Option<String>,
+    pub model: String,
+    pub reasoning: Option<String>,
+}
+/// The launch runtime profile (board #49, TS `normalizeRuntimeProfile`,
+/// `backend-v2.js:864-876`): `{primary, supervisor}`. The port stores no
+/// supervisor profile, so `supervisor` is null — the TS shape when the
+/// stored record carries none.
+#[derive(Debug, Clone, Serialize)]
+pub struct RuntimeProfile {
+    pub primary: Option<RuntimeProfileRole>,
+    pub supervisor: Option<RuntimeProfileRole>,
+}
+/// One row of the read-only agent detail (board #22, TS `backend-v2.js:12155`
+/// `GET /api/agents/:name`): the agent-keyed identity plus the resource it
+/// works from, the rooms its sessions bind, its current (live) dispatch and
+/// its recent tasks. Scalar keys and two bounded lists of flat objects —
+/// no config payload, credential home or workspace path can travel inside.
+/// `engagements` counts every engagement the agent ever held, so an agent
+/// whose work all ended is still fully described.
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentDetailRoom {
     pub session_id: String,
@@ -873,6 +916,41 @@ impl DomainRepository {
                         51,
                         include_str!("migrations/066-reminders.sql"),
                     ),
+                    // Integration of lane/activity task/1: its board-assigned
+                    // number was 040; it lands as the next sequential tuple 52
+                    // (file name kept).
+                    (
+                        52,
+                        include_str!("migrations/040-dispatch-activity.sql"),
+                    ),
+                    // Task #80's migration number is 073 (the board's
+                    // assignment); the walker requires the next sequential
+                    // list version, so the file keeps 073 and the tuple
+                    // carries 53.
+                    (53, include_str!("migrations/073-room-trust.sql")),
+                    // Task #73's migration number is 069 (the board's
+                    // assignment); the walker requires the next sequential
+                    // list version, so the file keeps 069 and the tuple
+                    // carries 54.
+                    (
+                        54,
+                        include_str!("migrations/069-thread-directives.sql"),
+                    ),
+                    // Board #49's migration number is 067 (the board's
+                    // assignment); integrated as the next sequential tuple 55.
+                    // The file keeps its assigned 067 name.
+                    (
+                        55,
+                        include_str!("migrations/067-agent-message-leftovers.sql"),
+                    ),
+                    // Task #61's migration number is 065 (the board's
+                    // assignment); the walker requires the next sequential
+                    // list version, so the file keeps 065 and the tuple
+                    // carries 56.
+                    (
+                        56,
+                        include_str!("migrations/065-final-reply-incidental.sql"),
+                    ),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
@@ -881,6 +959,8 @@ impl DomainRepository {
                     "SELECT server_name,label,api_base_url,credential,pending_credential,pending_issued_at,representative,access_state,access_detail,access_checked_at,access_issued_at,allocated_tokens,active,created_at,updated_at FROM side_records LIMIT 0",
                     "SELECT server_name,id,name,room_id,note,archived,archived_at,created_at,updated_at FROM side_projects LIMIT 0",
                     "SELECT id,engagement_id,dispatch_id,fence,reason,created_at,cleared_at,cleared_by FROM agent_fences LIMIT 0",
+                    "SELECT dispatch_id,phase,kind,tools,finished,started_at,updated_at,queued_at,revision,anchor FROM dispatch_activity LIMIT 0",
+                    "SELECT dispatch_id,event_key FROM dispatch_activity_events LIMIT 0",
                     "SELECT id,session_id,transaction_id,digest,body,html,route,source_event_id,state,cancel_requested,fence,claim_hash,claim_until,event_id,observation,created_at,updated_at FROM command_notices LIMIT 0",
                     "SELECT id FROM current_command_notices LIMIT 0",
                     "SELECT id,dirty FROM workspace_resources LIMIT 0",
@@ -931,7 +1011,12 @@ impl DomainRepository {
                     "SELECT session_id FROM current_matrix_routes LIMIT 0",
                     "SELECT s.joined,s.invite_only,s.available,s.invalidation,m.transport_generation,f.cancel_requested,i.digest FROM matrix_room_scopes s CROSS JOIN matrix_room_memberships m CROSS JOIN final_replies f CROSS JOIN final_reply_inspections i LIMIT 0",
                     "SELECT id FROM current_final_replies LIMIT 0",
+                    "SELECT incidental FROM final_replies LIMIT 0",
                     "SELECT e.scope_digest,e.config,r.digest,s.ingress_since,s.parent_session_id,t.observed_at,room.visibility_since,si.config,ti.config,ti.wake,n.verified_route,n.content_digest FROM matrix_ingress_events e CROSS JOIN verified_task_requests r CROSS JOIN matrix_session_routes s CROSS JOIN matrix_transports t CROSS JOIN matrix_room_scopes room CROSS JOIN session_inputs si CROSS JOIN task_inputs ti CROSS JOIN task_notices n LIMIT 0",
+                    "SELECT id,sender,recipient,kind,priority,summary,full,mentions,attachments,created_at,reply_to,group_id,source,source_room,source_event_id,sender_mxid,room_recipients,default_recipient,schema_kind,schema_version,schema_payload,suppressed FROM operator_messages LIMIT 0",
+                    "SELECT id,agent,message_id,kind,source,reason,context,created_at FROM delivery_events LIMIT 0",
+                    "SELECT name,deleted_at,reason FROM agent_tombstones LIMIT 0",
+                    "SELECT id,agent,regenerate,custom,mime,requested_at FROM avatar_requests LIMIT 0",
                 ],
             },
         )?;
@@ -1616,6 +1701,39 @@ impl DomainRepository {
             reminders,
         }))
     }
+    /// The agent's launch runtime profile (board #49, TS `backend-v2.js:12344`
+    /// `GET /api/agents/:name/launch-env`): the profile of the resource the
+    /// agent's representative engagement works from, projected into the TS
+    /// `normalizeRuntimeProfile` shape (`{primary, supervisor}`). The port
+    /// stores no supervisor profile, so `supervisor` is null — the TS shape
+    /// when the stored profile carries none. `None` is the route's 404: no
+    /// engagement names the agent, the same key `agent_detail` selects on.
+    pub fn agent_launch_env(&self, name: &str) -> Result<Option<RuntimeProfile>, Error> {
+        let config: Option<String> = self
+            .db
+            .query_row(
+                "SELECT r.config FROM engagements e JOIN resources r ON r.id=e.resource_id \
+                 WHERE json_extract(e.projection,'$.agentName')=?1 \
+                 ORDER BY CASE e.state WHEN 'active' THEN 3 WHEN 'reserved' THEN 2 \
+                  WHEN 'pending' THEN 1 ELSE 0 END DESC, e.id DESC LIMIT 1",
+                [name],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(config) = config else {
+            return Ok(None);
+        };
+        let resource: Resource = serde_json::from_str(&config)?;
+        Ok(Some(RuntimeProfile {
+            primary: Some(RuntimeProfileRole {
+                framework: resource.framework,
+                provider: resource.provider,
+                model: resource.model,
+                reasoning: resource.reasoning,
+            }),
+            supervisor: None,
+        }))
+    }
     /// The agent's ACTIVE engagement ids, newest first — the list a force
     /// delete revokes (TS `backend-v2.js:12231-12238`: `engagementStore.list(
     /// {state:'active'})` filtered to this agent, then revoked one by one).
@@ -1756,6 +1874,13 @@ impl DomainRepository {
             requested_tokens: request.requested_tokens,
             state: EngagementState::Pending,
             cleanup: CleanupState::NotRequired,
+            workspace_mode: request
+                .agent_definition
+                .workspace_mode
+                .clone()
+                .unwrap_or_else(|| "shared".into()),
+            worktrees_dir: request.agent_definition.worktrees_dir.clone(),
+            worktree_bootstrap: request.agent_definition.worktree_bootstrap.clone(),
         };
         tx.execute("INSERT INTO projects(fleet_id,id,generation,room_id,owner_mxid,owner_room_id) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(fleet_id,id) DO NOTHING",
             params![request.fleet_id,request.target_project_id,proof.registration().generation,request.target_room_id,request.owner_mxid,request.owner_dm_room_id])?;

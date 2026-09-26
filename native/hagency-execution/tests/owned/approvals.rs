@@ -619,3 +619,48 @@ async fn native_owned_approval_expired_allow_is_still_refused() {
     assert_eq!(f.count("SELECT COUNT(*) FROM approval_grants"), 0);
     unconfirmed(&f);
 }
+
+/// Board #87, the live regression: the REAL Codex sends the MCP elicitation
+/// FORMS this adapter cannot turn into an owner approval. The unit fake never
+/// did, so the old adapter answered nothing, the runtime reported
+/// `Failure::Protocol`, and the turn — and the agent — died with NO reason
+/// logged. TS answers the family's own decline and lets the turn continue
+/// (`router/src/runner.ts:585-592,896-903`); the operator rule forbids the
+/// terminal shape. This drives it through the production operation path.
+#[tokio::test]
+async fn native_owned_mcp_unsupported_form_is_declined_and_the_turn_completes() {
+    let f = Fixture::configured(true);
+    let (mut op, mut notices) = operation(&f, "owned-approval-mcp-unsupported-form", policy());
+    let report = op.wait().await;
+
+    // The turn ran to completion: the unsupported form was answered by the
+    // ADAPTER, so no owner approval was ever parked and no card was minted.
+    let report = report.unwrap_or_else(|failure| {
+        panic!(
+            "the unsupported elicitation form must not kill the turn: {failure:?}; {}",
+            cancellation_trace(&f)
+        )
+    });
+    assert_eq!(
+        report.protocol,
+        Protocol::Completed,
+        "{:?} {:?}; {}",
+        report.failure,
+        report.runtime_observation(),
+        cancellation_trace(&f)
+    );
+    assert_eq!(report.failure, None);
+    assert_eq!(f.count("SELECT COUNT(*) FROM owner_approvals"), 0);
+    // The adapter's decline never becomes an owner approval: the operation
+    // completed with no notice waiting, and no card was minted.
+    assert!(notices.recv().await.is_none(), "no owner approval is parked");
+    // The probe only announces this after reading the decline and seeing the
+    // turn continue; the wire shape is asserted in the probe itself.
+    marker(&f, "approval-continued").await;
+    let responses = responses(&f);
+    assert_eq!(responses.len(), 1);
+    assert_eq!(
+        responses[0]["result"],
+        json!({"action":"decline","content":null,"_meta":null})
+    );
+}

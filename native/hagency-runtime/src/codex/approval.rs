@@ -41,6 +41,14 @@ pub(super) fn policy_decline(method: &str, params: &Value) -> Option<Value> {
             .then(|| json!({"decision":"decline"})),
         "item/fileChange/requestApproval" => Some(json!({"decision":"decline"})),
         "item/permissions/requestApproval" => Some(json!({"permissions":{},"scope":"turn"})),
+        // `router/src/runner.ts:901-903` (`approvalResponse`): an elicitation's
+        // decline is the same action shape as its accept, with `decline`. An
+        // unsupported FORM therefore has a "no" this adapter can issue, so it
+        // answers instead of ending the turn (operator rule; see the driver's
+        // error arm).
+        "mcpServer/elicitation/request" => {
+            Some(json!({"action":"decline","content":null,"_meta":null}))
+        }
         _ => None,
     }
 }

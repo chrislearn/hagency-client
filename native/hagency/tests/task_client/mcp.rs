@@ -201,9 +201,12 @@ async fn native_mcp_sdk() {
         let client = ().serve(transport).await.unwrap();
         let tools = client.list_all_tools().await.unwrap();
         // 23 since the room discussion became a task tool of its own (ADR178),
-        // 24 with list_tasks (parity with the retained product, 2026-09-22).
-        assert_eq!(tools.len(), 24);
+        // 24 with list_tasks (parity with the retained product, 2026-09-22),
+        // 25 with schedule_reminder (migration 066 restored the retained
+        // reminder tool; catalog.rs serves it with its own schema arm).
+        assert_eq!(tools.len(), 25);
         assert!(tools.iter().any(|v| v.name == "read_conversation"));
+        assert!(tools.iter().any(|v| v.name == "schedule_reminder"));
         assert!(tools.iter().all(|v| !v.name.contains("approve")));
         let read = client
             .call_tool(

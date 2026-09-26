@@ -105,7 +105,14 @@ pub(super) fn timeout_read(duration: Duration) -> io::Result<String> {
 }
 pub(super) fn run(mode: &str, reader: &mut impl BufRead, marker: &Path) -> io::Result<bool> {
     if mode == "owned-approval-mcp" {
-        return mcp(reader, marker);
+        return mcp(reader, marker, false);
+    }
+    if mode == "owned-approval-mcp-unsupported-form" {
+        // The REAL Codex sends elicitation FORMS a adapter cannot turn into an
+        // owner approval (board #87: the live kill). The fake never did, which
+        // is why unit-green missed it. This mode sends one and expects the
+        // adapter's own decline — the turn must survive it.
+        return mcp(reader, marker, true);
     }
     callback("approval-1")?;
     if mode == "owned-approval-eof" {
@@ -328,7 +335,7 @@ pub(super) fn run(mode: &str, reader: &mut impl BufRead, marker: &Path) -> io::R
     Ok(true)
 }
 
-fn mcp(reader: &mut impl BufRead, marker: &Path) -> io::Result<bool> {
+fn mcp(reader: &mut impl BufRead, marker: &Path, unsupported_form: bool) -> io::Result<bool> {
     let args = json!({"call_id":"file-1","path":"report.txt"});
     let mut item = json!({"type":"mcpToolCall","id":"file-item","server":"hagency_task_writer",
         "tool":"send_file","arguments":args,"status":"inProgress"});
@@ -336,18 +343,28 @@ fn mcp(reader: &mut impl BufRead, marker: &Path) -> io::Result<bool> {
         "item/started",
         json!({"threadId":"owned-thread","turnId":"owned-turn","startedAtMs":1,"item":item}),
     )?;
-    send(
-        json!({"id":"approval-1","method":"mcpServer/elicitation/request","params":{
+    // The pinned shape is `mode: "form"` and an EMPTY object schema; a form the
+    // adapter cannot turn into an owner approval is any other shape. `mode:
+    // "url"` is the one the retained runner names explicitly
+    // (`router/src/runner.ts:585-592`).
+    let mut params = json!({
         "threadId":"owned-thread","turnId":"owned-turn","serverName":"hagency_task_writer",
         "mode":"form","message":"Send the selected file?","requestedSchema":{"type":"object","properties":{}},
-        "_meta":{"codex_approval_kind":"mcp_tool_call","tool_params":args}}}),
-    )?;
+        "_meta":{"codex_approval_kind":"mcp_tool_call","tool_params":args}});
+    if unsupported_form {
+        params["mode"] = json!("url");
+    }
+    send(json!({"id":"approval-1","method":"mcpServer/elicitation/request","params":params}))?;
     let response = read(reader, marker)?;
+    // The supported form is answered accept/decline by the owner; the
+    // unsupported form is answered `decline` by the ADAPTER itself — never
+    // `cancel`, which is the wire's "no" for a request it cannot answer at all,
+    // and never a kill.
+    let expected: &[&str] = if unsupported_form { &["decline"] } else { &["accept", "decline"] };
     if response["id"] != "approval-1"
-        || !matches!(
-            response["result"]["action"].as_str(),
-            Some("accept" | "decline")
-        )
+        || !response["result"]["action"]
+            .as_str()
+            .is_some_and(|action| expected.contains(&action))
         || response["result"]["content"] != Value::Null
         || response["result"]["_meta"] != Value::Null
     {

@@ -35,12 +35,19 @@ pub use domain::{
     Reminder, ReminderReceipt, ReminderSweep,
     PEER_RETENTION_FLOOR, PeerRetentionStatus, PeerSweepOutcome, PendingInvite, ProjectSide, Representative,
     RetentionStatus, SideProject, SideProjectRecord, SideRecord, SourceUsage, SweepOutcome, SideBudget, SideCommitment, UploadAdmission, UploadClaim, UploadIdentity,
+    RuntimeProfile, RuntimeProfileRole,
+    DeliveryEventRow, NewOperatorMessage, OperatorMessage, SuppressOutcome, Suppression, Tombstone,
     UploadPreparation, UploadSend, UsageCeiling, UsageEvidence, UsagePeriod, UsagePeriodKind,
     UsageReceipt, UsageReport, UsageSource, UsageSummary, UsageTotals, allowed_transitions,
     over_budget_notice_body, MAX_TASK_COMMENTS, MAX_TASK_PAGE, OperatorTask, OperatorTaskComment,
     TASK_GRANULARITIES, TASK_PRIORITIES, TASK_STATUSES, TaskFilters, operator_transitions,
+    ActivityEvent, ActivityUpdate,
 };
 pub use domain::{DeliveryFeedback, DeliveryWarning, DirectTarget, MentionState, MentionTarget};
+pub use domain::{
+    SessionOverrides, THREAD_DIRECTIVE_OPERATOR_REFUSAL, ThreadDirective, ThreadMode, confirmation,
+    parse,
+};
 pub use domain::{OutcomeAction, OutcomeResolution};
 pub use domain_worker::DomainStore;
 pub mod outbound;

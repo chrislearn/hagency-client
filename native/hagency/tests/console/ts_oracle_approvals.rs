@@ -111,16 +111,19 @@ async fn ts_owner_approval_unknown_id_denies_without_fallback() {
 }
 
 /// TS `approval-store.test.js` (the bounded grant-revocation half): revocation
-/// only REMOVES authority and is a lifecycle mutation — a read-only session is
-/// refused, and the operator's revocation is the bounded two-key receipt.
+/// only REMOVES authority — an operator's revocation is the bounded two-key
+/// receipt, and an unknown grant is `not_found`, never a fabricated success.
+/// integ is SINGLE-LOGIN (operator decision, `42a764c6`): every logged-in
+/// session may revoke, so the retired scope refusal is no longer an outcome and
+/// this case asserts the receipt path + the 404.
 #[tokio::test]
-async fn ts_approval_grant_revocation_is_a_gated_bounded_receipt() {
+async fn ts_approval_grant_revocation_is_a_bounded_receipt() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
-    // One login carries the grant-revocation permission (the operator's
-    // one-login decision); an unknown grant is `not_found`, never a
-    // fabricated success.
-    let cookie = lifecycle_session(&service).await;
+    // ONE login is the whole console (the operator's one-login decision):
+    // an ordinary session carries the grant-revocation permission, and an
+    // unknown grant is `not_found`, never a fabricated success.
+    let cookie = session(&service).await;
     let mut response = TestClient::delete(format!("{BASE}/console/api/approvals/grants/grant_ts"))
         .add_header("host", "127.0.0.1:13300", true)
         .add_header("origin", BASE, true)

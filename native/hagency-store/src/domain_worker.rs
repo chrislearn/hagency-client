@@ -1953,6 +1953,33 @@ impl DomainStore {
         })
         .await
     }
+    /// The read-only approval-bindings list (board #52): the plain-list
+    /// branch of TS `GET /api/approval-bindings`. Same weight class as the
+    /// grants read — bounded by its own limit parameter.
+    pub async fn approval_bindings(
+        &self,
+        agent: String,
+        project_room_id: String,
+        limit: u64,
+    ) -> Result<Vec<hagency_core::approvals::ApprovalBindingSummary>, Error> {
+        self.call(weight(&(&agent, &project_room_id))?, move |db| {
+            db.approval_bindings(&agent, &project_room_id, limit)
+        })
+        .await
+    }
+    /// The operator unbind (board #52): removes the derived binding row AND
+    /// revokes the approval grants it carried, in one transaction — TS
+    /// `removeBinding` + `revokeScopesByBinding` (backend-v2.js:9030-9046).
+    pub async fn retire_approval_binding(
+        &self,
+        agent: String,
+        room_id: String,
+    ) -> Result<hagency_core::approvals::ApprovalBindingSummary, Error> {
+        self.call(weight(&(&agent, &room_id))?, move |db| {
+            db.retire_approval_binding(&agent, &room_id)
+        })
+        .await
+    }
     pub async fn matrix_ingress_scope(
         &self,
         session: String,
@@ -2081,6 +2108,15 @@ impl DomainStore {
         self.call(weight(&id)?, move |db| db.verified_notice_receipt(&id))
             .await
     }
+    /// Secret-free read used only by a resumed send (task #9): is this journaled
+    /// notice write still authorized to be re-put (still `sending`, not
+    /// retired/cancelled, same fence)? False means park as uncertain.
+    pub async fn verified_notice_send_current(&self, id: String, fence: u64) -> Result<bool, Error> {
+        self.call(weight(&(&id, fence))?, move |db| {
+            db.verified_notice_send_current(&id, fence)
+        })
+        .await
+    }
     pub async fn cancel_verified_task_notice(
         &self,
         id: String,
@@ -2173,6 +2209,15 @@ impl DomainStore {
         self.call(weight(&id)?, move |db| db.command_notice_receipt(&id))
             .await
     }
+    /// Secret-free read used only by a resumed send (task #9): is this journaled
+    /// command answer still authorized to be re-put (still `sending`, same
+    /// fence, not cancelled)? False means park as uncertain.
+    pub async fn command_notice_send_current(&self, id: String, fence: u64) -> Result<bool, Error> {
+        self.call(weight(&(&id, fence))?, move |db| {
+            db.command_notice_send_current(&id, fence)
+        })
+        .await
+    }
     /// The admitted `!` lines in this session with no answer queued yet.
     pub async fn pending_command_lines(
         &self,
@@ -2181,6 +2226,33 @@ impl DomainStore {
     ) -> Result<Vec<hagency_core::commands::CommandLine>, Error> {
         self.call(weight(&session)?, move |db| {
             db.pending_command_lines(&session, limit)
+        })
+        .await
+    }
+    pub async fn pending_thread_directives(
+        &self,
+        session: String,
+        limit: i64,
+    ) -> Result<Vec<hagency_core::commands::CommandLine>, Error> {
+        self.call(weight(&session)?, move |db| {
+            db.pending_thread_directives(&session, limit)
+        })
+        .await
+    }
+    pub async fn session_overrides(
+        &self,
+        session: String,
+    ) -> Result<crate::SessionOverrides, Error> {
+        self.call(weight(&session)?, move |db| db.session_overrides(&session))
+            .await
+    }
+    pub async fn set_session_overrides(
+        &self,
+        session: String,
+        directive: crate::ThreadDirective,
+    ) -> Result<crate::SessionOverrides, Error> {
+        self.call(weight(&session)?, move |db| {
+            db.set_session_overrides(&session, &directive)
         })
         .await
     }
@@ -2308,6 +2380,16 @@ impl DomainStore {
     ) -> Result<bool, Error> {
         self.call(weight(&(&id, fence))?, move |db| {
             db.final_reply_history_conflicts(&id, fence)
+        })
+        .await
+    }
+    /// Secret-free read used only by a resumed send (task #9): is this journaled
+    /// write still authorized to be re-put (still `sending`, unfenced,
+    /// uncancelled, same fence)? A retirement/cancellation that moved it off
+    /// `sending` answers false so the resume parks instead of re-sending.
+    pub async fn final_reply_send_current(&self, id: String, fence: u64) -> Result<bool, Error> {
+        self.call(weight(&(&id, fence))?, move |db| {
+            db.final_reply_send_current(&id, fence)
         })
         .await
     }
@@ -3312,6 +3394,87 @@ impl DomainStore {
     pub async fn agent_detail(&self, name: &str) -> Result<Option<crate::AgentDetail>, Error> {
         let name = name.to_owned();
         self.call(64, move |db| db.agent_detail(&name)).await
+    }
+    /// The agent's launch runtime profile (board #49): one writer job, one
+    /// bounded agent-keyed read; `None` is the route's 404.
+    pub async fn agent_launch_env(
+        &self,
+        name: &str,
+    ) -> Result<Option<crate::RuntimeProfile>, Error> {
+        let name = name.to_owned();
+        self.call(64, move |db| db.agent_launch_env(&name)).await
+    }
+    /// Board #49: the operator-board message (`backend-v2.js:16900`); `None`
+    /// is the route's 404.
+    pub async fn operator_message(
+        &self,
+        id: String,
+        now: u64,
+    ) -> Result<Option<crate::OperatorMessage>, Error> {
+        self.call(weight(&id)?, move |db| db.operator_message(&id, now))
+            .await
+    }
+    /// Board #49: the suppress write (`backend-v2.js:17002`).
+    pub async fn suppress_message(
+        &self,
+        id: String,
+        agent: String,
+        reason: String,
+        now: u64,
+    ) -> Result<crate::SuppressOutcome, Error> {
+        self.call(weight(&(&id, &agent))?, move |db| {
+            db.suppress_message(&id, &agent, &reason, now)
+        })
+        .await
+    }
+    /// Board #49: the agent's delivery events (`backend-v2.js:16988`).
+    pub async fn delivery_events(
+        &self,
+        agent: String,
+        limit: u32,
+    ) -> Result<Vec<crate::DeliveryEventRow>, Error> {
+        self.call(weight(&agent)?, move |db| db.delivery_events(&agent, limit))
+            .await
+    }
+    /// Board #49: the undelete write (`backend-v2.js:12308`); `false` is the
+    /// route's 404 `no tombstone found`.
+    pub async fn undelete_agent(&self, name: String) -> Result<bool, Error> {
+        self.call(weight(&name)?, move |db| db.undelete_agent(&name))
+            .await
+    }
+    /// Board #49: the tombstone writer (`backend-v2.js:4354`).
+    pub async fn record_agent_tombstone(
+        &self,
+        name: String,
+        reason: String,
+        now: u64,
+    ) -> Result<(), Error> {
+        self.call(weight(&name)?, move |db| {
+            db.record_agent_tombstone(&name, &reason, now)
+        })
+        .await
+    }
+    /// Board #49: the avatar request queue (`backend-v2.js:16370`).
+    pub async fn record_avatar_request(
+        &self,
+        agent: String,
+        regenerate: bool,
+        custom: bool,
+        mime: Option<String>,
+        now: u64,
+    ) -> Result<(), Error> {
+        self.call(weight(&agent)?, move |db| {
+            db.record_avatar_request(&agent, regenerate, custom, mime.as_deref(), now)
+        })
+        .await
+    }
+    /// Board #49: the board WRITER (`backend-v2.js:16480`, `:4500`).
+    pub async fn record_operator_message(
+        &self,
+        message: crate::NewOperatorMessage,
+    ) -> Result<(), Error> {
+        self.call(64 * 1024, move |db| db.record_operator_message(message))
+            .await
     }
     /// Task #12 reads: the pending-invitation list (TS `listPendingInvites`,
     /// pending-only newest-first) and the single-record lookup.

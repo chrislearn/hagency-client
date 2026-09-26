@@ -13,11 +13,15 @@ pub use http::UploadResponse;
 mod identity_polish;
 mod intake;
 mod invites;
+pub mod join_backfill;
+mod membership_sweep;
 mod media_download;
 mod media_upload;
 mod outgoing;
 mod receive;
+mod representative_sync;
 mod retire;
+mod room_trust;
 mod upload;
 pub use upload::{FilePublicationAdmissionFailure, FilePublicationOperation};
 pub use upload::{StagedUpload, UploadAdmissionFailure, UploadOperation};
@@ -28,7 +32,14 @@ mod wire;
 pub use collector::{Collector, ObservationSummary};
 pub use config::{HostConfig, HostIdentity, HostRoom, Limits};
 pub use http::RequestPacing;
+pub use room_trust::{RoomTrust, RoomTrustReason, TrustMode};
+pub use representative_sync::{
+    BoxFuture, CircuitBreak, EventMeta, HistoryPage, PageReader, PageSink, PendingVerdict,
+    RepresentativeHttp, RepresentativeSync, SyncBatch, SyncDriver, SyncError, SyncHooks, SyncState,
+    SyncStats, reconcile_timeline,
+};
 pub use intake::{HostIntakePlan, IntakeStatus, IntakeSummary};
+pub use membership_sweep::{MEMBERSHIP_SWEEP_INTERVAL, SweepOutcome};
 pub use media_download::{MediaDownloadError, MediaDownloadLimits, MediaDownloader, MediaId};
 pub use media_upload::{
     MediaUploadError, MediaUploadLimits, MediaUploader, UploadAttempt, UploadState,

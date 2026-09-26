@@ -101,20 +101,20 @@ pub fn remove_graph_schema(db: &rusqlite::Connection) {
             |r| r.get(0),
         )
         .unwrap();
-    db.execute_batch("DROP VIEW admissible_dispatch_peer_inputs; DROP VIEW graph_dispatch_scope; DROP VIEW graph_dispatch_ready; DROP VIEW current_graph_scopes; DROP VIEW live_peer_inputs; DROP VIEW conversation_peer_inputs; DROP TABLE graph_dependencies; DROP TABLE graph_commands; DROP TABLE graph_nodes; DROP TABLE task_graphs;").unwrap();
+    db.execute_batch("DROP VIEW admissible_dispatch_peer_inputs; DROP VIEW graph_dispatch_scope; DROP VIEW graph_dispatch_ready; DROP VIEW current_graph_scopes; DROP VIEW live_peer_inputs; DROP VIEW conversation_peer_inputs; DROP TABLE graph_dependencies; DROP TABLE graph_commands; DROP TABLE graph_nodes; DROP TABLE task_graphs; DROP TABLE IF EXISTS room_trust;").unwrap();
     db.execute_batch(&original.replacen("conversation_peer_inputs", "live_peer_inputs", 1))
         .unwrap();
 }
 /// Restore schema 10 without inventing privacy for any earlier native session.
 pub fn remove_reply_schema(db: &rusqlite::Connection) {
     remove_ingress_schema(db);
-    db.execute_batch("DROP VIEW current_final_replies; DROP VIEW current_matrix_routes; DROP TABLE final_reply_inspections; DROP TABLE final_reply_calls; DROP TABLE final_replies; DROP TABLE matrix_session_routes; DROP TABLE matrix_room_memberships; DROP TABLE matrix_room_scopes; DROP TABLE matrix_transports; DROP INDEX canonical_runner_session; ALTER TABLE runner_sessions DROP COLUMN matrix_generation; CREATE UNIQUE INDEX canonical_runner_session ON runner_sessions(engagement_id,CASE WHEN json_extract(binding,'$.kind')='internal' THEN 'internal' ELSE 'matrix' END,CASE WHEN json_extract(binding,'$.kind')='internal' THEN id ELSE json_extract(binding,'$.room_id') END,COALESCE(json_extract(binding,'$.thread_root'),''));").unwrap();
+    db.execute_batch("DROP VIEW current_final_replies; DROP VIEW current_matrix_routes; DROP TABLE final_reply_inspections; DROP TABLE final_reply_calls; DROP TABLE final_replies; DROP TABLE matrix_session_routes; DROP TABLE matrix_room_memberships; DROP TABLE matrix_room_scopes; DROP TABLE matrix_transports; DROP INDEX canonical_runner_session; ALTER TABLE runner_sessions DROP COLUMN matrix_generation; CREATE UNIQUE INDEX canonical_runner_session ON runner_sessions(engagement_id,CASE WHEN json_extract(binding,'$.kind')='internal' THEN 'internal' ELSE 'matrix' END,CASE WHEN json_extract(binding,'$.kind')='internal' THEN id ELSE json_extract(binding,'$.room_id') END,COALESCE(json_extract(binding,'$.thread_root'),'')); DROP TABLE IF EXISTS room_trust;").unwrap();
 }
 
 /// Restore schema 11 without manufacturing new ingress provenance.
 pub fn remove_ingress_schema(db: &rusqlite::Connection) {
     remove_approval_schema(db);
-    db.execute_batch("DROP VIEW current_final_replies; DROP VIEW current_matrix_routes; DROP VIEW task_followup_ready; DROP TABLE verified_task_requests; DROP TABLE matrix_ingress_events; ALTER TABLE matrix_transports DROP COLUMN observed_at; ALTER TABLE matrix_room_scopes DROP COLUMN visibility_since; ALTER TABLE matrix_session_routes DROP COLUMN ingress_since; ALTER TABLE matrix_session_routes DROP COLUMN parent_session_id; ALTER TABLE session_inputs DROP COLUMN config; ALTER TABLE task_inputs DROP COLUMN config; ALTER TABLE task_inputs DROP COLUMN wake; ALTER TABLE task_notices DROP COLUMN verified_route; ALTER TABLE task_notices DROP COLUMN content_digest;").unwrap();
+    db.execute_batch("DROP VIEW current_final_replies; DROP VIEW current_matrix_routes; DROP VIEW task_followup_ready; DROP TABLE verified_task_requests; DROP TABLE matrix_ingress_events; ALTER TABLE matrix_transports DROP COLUMN observed_at; ALTER TABLE matrix_room_scopes DROP COLUMN visibility_since; ALTER TABLE matrix_session_routes DROP COLUMN ingress_since; ALTER TABLE matrix_session_routes DROP COLUMN parent_session_id; ALTER TABLE session_inputs DROP COLUMN config; ALTER TABLE task_inputs DROP COLUMN config; ALTER TABLE task_inputs DROP COLUMN wake; ALTER TABLE task_notices DROP COLUMN verified_route; ALTER TABLE task_notices DROP COLUMN content_digest; DROP TABLE IF EXISTS room_trust;").unwrap();
     let routes = include_str!("../../src/migrations/011-final-replies.sql");
     db.execute_batch(reply_route_view(routes)).unwrap();
     db.execute_batch(&routes[routes.find("CREATE VIEW current_final_replies AS").unwrap()..])
@@ -132,9 +132,9 @@ pub fn remove_approval_schema(db: &rusqlite::Connection) {
     // ALTER does not replay idempotently. 036 splits the frozen window the
     // same way: `addressed` exists only from schema 36 on. 037 adds the
     // attempt clock columns and the event table the same way.
-    db.execute_batch("ALTER TABLE runner_attempts DROP COLUMN park_reason; ALTER TABLE dispatch_inputs DROP COLUMN addressed; DROP TABLE IF EXISTS dispatch_conversation_reads; ALTER TABLE runner_attempts DROP COLUMN started_at; ALTER TABLE runner_attempts DROP COLUMN parked_at; ALTER TABLE runner_attempts DROP COLUMN last_renew_at; ALTER TABLE runner_attempts DROP COLUMN settled_at; ALTER TABLE runner_attempts DROP COLUMN terminal_reason; DROP TABLE IF EXISTS runner_attempt_events; DROP TABLE IF EXISTS agent_fences; DROP TABLE IF EXISTS pending_invites;  DROP TABLE IF EXISTS ceiling_alert_notes; DROP TABLE IF EXISTS agent_lifecycle; DROP TABLE IF EXISTS side_registrations; DROP VIEW IF EXISTS current_command_notices; DROP TABLE IF EXISTS command_notice_inspections; DROP TABLE IF EXISTS command_notices; DROP TABLE IF EXISTS operator_tasks; DROP TABLE IF EXISTS operator_task_comments; DROP TABLE IF EXISTS side_records; DROP TABLE IF EXISTS side_projects;  DROP TABLE IF EXISTS reminders; ")
+    db.execute_batch("ALTER TABLE runner_attempts DROP COLUMN park_reason; ALTER TABLE dispatch_inputs DROP COLUMN addressed; DROP TABLE IF EXISTS dispatch_conversation_reads; ALTER TABLE runner_attempts DROP COLUMN started_at; ALTER TABLE runner_attempts DROP COLUMN parked_at; ALTER TABLE runner_attempts DROP COLUMN last_renew_at; ALTER TABLE runner_attempts DROP COLUMN settled_at; ALTER TABLE runner_attempts DROP COLUMN terminal_reason; DROP TABLE IF EXISTS runner_attempt_events; DROP TABLE IF EXISTS agent_fences; DROP TABLE IF EXISTS avatar_requests; DROP TABLE IF EXISTS agent_tombstones; DROP TABLE IF EXISTS delivery_events; DROP TABLE IF EXISTS operator_messages; DROP TABLE IF EXISTS dispatch_activity_events; DROP TABLE IF EXISTS dispatch_activity;  DROP TABLE IF EXISTS pending_invites;  DROP TABLE IF EXISTS ceiling_alert_notes; DROP TABLE IF EXISTS agent_lifecycle; DROP TABLE IF EXISTS side_registrations; DROP VIEW IF EXISTS current_command_notices; DROP TABLE IF EXISTS command_notice_inspections; DROP TABLE IF EXISTS command_notices; ALTER TABLE final_replies DROP COLUMN incidental; DROP TABLE IF EXISTS operator_tasks; DROP TABLE IF EXISTS operator_task_comments; DROP TABLE IF EXISTS side_records; DROP TABLE IF EXISTS side_projects;  DROP TABLE IF EXISTS reminders; DROP TABLE IF EXISTS room_trust;")
          .unwrap();
-    db.execute_batch("DROP TRIGGER approval_room_retire_grants; DROP TRIGGER approval_project_retire; DROP TRIGGER approval_registration_retire; DROP TRIGGER approval_engagement_retire; DROP TRIGGER approval_task_retire; DROP VIEW current_approval_bindings; DROP TABLE approval_verdict_receipts; DROP TABLE approval_grants; DROP TABLE owner_approvals; DROP TABLE approval_contexts; DROP TABLE approval_bindings; DROP TABLE approval_rooms;").unwrap();
+    db.execute_batch("DROP TRIGGER approval_room_retire_grants; DROP TRIGGER approval_project_retire; DROP TRIGGER approval_registration_retire; DROP TRIGGER approval_engagement_retire; DROP TRIGGER approval_task_retire; DROP VIEW current_approval_bindings; DROP TABLE approval_verdict_receipts; DROP TABLE approval_grants; DROP TABLE owner_approvals; DROP TABLE approval_contexts; DROP TABLE approval_bindings; DROP TABLE approval_rooms; DROP TABLE IF EXISTS room_trust;").unwrap();
 }
 
 /// SQL statement boundaries survive LF and Windows checkout CRLF spelling.
@@ -147,12 +147,12 @@ pub fn reply_route_view(routes: &str) -> &str {
 /// Rebuild the actual schema13 notice shape; a pre-custody sender could hold a claim.
 pub fn remove_notice_schema(db: &rusqlite::Connection) {
     remove_matrix_transport_schema(db);
-    db.execute_batch("DROP TABLE notice_send_inspections; DROP INDEX task_notice_ready; ALTER TABLE task_notices RENAME TO task_notices_newer;").unwrap();
+    db.execute_batch("DROP TABLE notice_send_inspections; DROP INDEX task_notice_ready; ALTER TABLE task_notices RENAME TO task_notices_newer; DROP TABLE IF EXISTS room_trust;").unwrap();
     let schema = include_str!("../../src/migrations/005-task-intents.sql");
     let start = schema.find("CREATE TABLE task_notices").unwrap();
     let end = schema.find("-- One predicate").unwrap();
     db.execute_batch(&schema[start..end]).unwrap();
-    db.execute_batch("ALTER TABLE task_notices ADD COLUMN verified_route TEXT CHECK(verified_route IS NULL OR json_valid(verified_route)); ALTER TABLE task_notices ADD COLUMN content_digest TEXT; INSERT INTO task_notices(id,task_id,config,state,claim_hash,claim_until,delivery,error_code,not_before,verified_route,content_digest) SELECT id,task_id,config,CASE WHEN state IN ('sending','uncertain') THEN 'claimed' ELSE state END,claim_hash,claim_until,delivery,error_code,not_before,verified_route,content_digest FROM task_notices_newer; DROP TABLE task_notices_newer;").unwrap();
+    db.execute_batch("ALTER TABLE task_notices ADD COLUMN verified_route TEXT CHECK(verified_route IS NULL OR json_valid(verified_route)); ALTER TABLE task_notices ADD COLUMN content_digest TEXT; INSERT INTO task_notices(id,task_id,config,state,claim_hash,claim_until,delivery,error_code,not_before,verified_route,content_digest) SELECT id,task_id,config,CASE WHEN state IN ('sending','uncertain') THEN 'claimed' ELSE state END,claim_hash,claim_until,delivery,error_code,not_before,verified_route,content_digest FROM task_notices_newer; DROP TABLE task_notices_newer; DROP TABLE IF EXISTS room_trust;").unwrap();
 }
 
 /// Restore schema14 without weakening its notice-send custody.
@@ -172,14 +172,14 @@ pub fn remove_matrix_transport_schema(db: &rusqlite::Connection) {
 /// Restore schema15 without manufacturing completion or owner authority.
 pub fn remove_owned_completion_schema(db: &rusqlite::Connection) {
     remove_usage_schema(db);
-    db.execute_batch("DROP TABLE owned_task_completions;")
+    db.execute_batch("DROP TABLE owned_task_completions; DROP TABLE IF EXISTS room_trust;")
         .unwrap();
 }
 
 /// Restore schema16 without inventing usage for historical execution paths.
 pub fn remove_usage_schema(db: &rusqlite::Connection) {
     remove_attachment_schema(db);
-    db.execute_batch("DROP TABLE usage_receipts; DROP TABLE usage_periods; DROP TABLE usage_sources; DROP TABLE usage_clock;").unwrap();
+    db.execute_batch("DROP TABLE usage_receipts; DROP TABLE usage_periods; DROP TABLE usage_sources; DROP TABLE usage_clock; DROP TABLE IF EXISTS room_trust;").unwrap();
 }
 
 /// Remove delivery and upload additions before constructing an older database.
@@ -191,13 +191,13 @@ pub fn remove_upload_schema(db: &rusqlite::Connection) {
     // rebuilt from 024 here; the fixtures that drop tables directly instead
     // of chaining (`approvals/responses.rs`, `file_delivery.rs`,
     // `received_files.rs`, `schema_fixtures.rs`) carry the same drop.
-    db.execute_batch("DROP TABLE IF EXISTS ceiling_alerts; DROP TABLE IF EXISTS ceiling_alert_notes;")
+    db.execute_batch("DROP TABLE IF EXISTS ceiling_alerts; DROP TABLE IF EXISTS ceiling_alert_notes; DROP TABLE IF EXISTS room_trust;")
         .unwrap();
-    db.execute_batch("DROP TABLE IF EXISTS approval_responses; DROP TABLE IF EXISTS received_files; DROP TABLE IF EXISTS file_deliveries; DROP TABLE IF EXISTS file_uploads;")
+    db.execute_batch("DROP TABLE IF EXISTS approval_responses; DROP TABLE IF EXISTS received_files; DROP TABLE IF EXISTS file_deliveries; DROP TABLE IF EXISTS file_uploads; DROP TABLE IF EXISTS room_trust;")
         .unwrap();
 }
 
 pub fn remove_attachment_schema(db: &rusqlite::Connection) {
     remove_upload_schema(db);
-    db.execute_batch("DROP TABLE IF EXISTS dispatch_attachment_windows; DROP TABLE IF EXISTS session_attachment_visibility; DROP TABLE IF EXISTS matrix_attachments;").unwrap();
+    db.execute_batch("DROP TABLE IF EXISTS dispatch_attachment_windows; DROP TABLE IF EXISTS session_attachment_visibility; DROP TABLE IF EXISTS matrix_attachments; DROP TABLE IF EXISTS room_trust;").unwrap();
 }

@@ -67,6 +67,7 @@ impl Sdk {
             domain_digest: l.content_digest.clone(),
             route: l.route.clone(),
             reply_to: None,
+            incidental: false,
             transaction_id: l.transaction_id.clone(),
             content_digest: state::hash(state::encode(&content, state::MAX_EVENT)?.as_bytes()),
             content,
@@ -79,6 +80,7 @@ impl Sdk {
             keys_digest: None,
             writes: vec![],
             index: 0,
+            permanent_failure: false,
             file: Some(binding),
         })
     }

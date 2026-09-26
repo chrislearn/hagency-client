@@ -6,6 +6,7 @@ import { useT } from '@/components/Prefs';
 import { useData } from '@/components/Data';
 import { NATIVE_MODE } from '@/lib/native-api';
 import NativeApprovals from '@/components/NativeApprovals';
+import NativeApprovalBindings from '@/components/NativeApprovalBindings';
 
 /*
  * 审批观察 — read-only approval observation (ADR-138, PC-C2b).
@@ -19,7 +20,16 @@ import NativeApprovals from '@/components/NativeApprovals';
 export default function ApprovalsPage() {
   const data = useData();
   const t = useT();
-  return data.nativeConsole ? <NativeApprovals /> : <LegacyApprovals />;
+  return data.nativeConsole ? (
+    <>
+      <NativeApprovals />
+      {/* The read-only approval-bindings list (board #52): rendered under the
+          same native-only gate as the observation it observes. */}
+      <NativeApprovalBindings />
+    </>
+  ) : (
+    <LegacyApprovals />
+  );
 }
 
 function LegacyApprovals() {

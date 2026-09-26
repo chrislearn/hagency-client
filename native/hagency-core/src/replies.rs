@@ -118,6 +118,12 @@ pub struct ReplyRoute {
 pub struct FinalReply {
     pub call_id: String,
     pub body: String,
+    /// bridge-matrix.js:3374-3385 — an incidental answer (progress report) to
+    /// a message with no source thread STARTS a thread rooted at that message
+    /// instead of answering at the room's top level. Accepted from any caller
+    /// (backend-v2.js:16718); defaults to a plain top-level reply.
+    #[serde(default)]
+    pub incidental: bool,
 }
 impl std::fmt::Debug for FinalReply {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -171,6 +177,9 @@ pub struct ReplySend {
     /// own addressed input. None for a host-driven send with no question.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reply_to: Option<String>,
+    /// bridge-matrix.js:3374-3385 — an incidental answer to a message with no
+    /// source thread starts a NEW thread rooted at that message.
+    pub incidental: bool,
 }
 #[derive(Clone, Serialize)]
 pub struct ReplyDeliveryObservation {

@@ -1,10 +1,12 @@
 #[path = "owned_matrix/support.rs"]
 mod support;
+use hagency::bootstrap::invites::poll_round;
 use hagency_core::tasks::{RunnerCommand, TaskState};
 use hagency_execution::{Failure, Limits, Operation, Protocol, Settlement};
 use hagency_matrix::{CancellationToken, HostIntakePlan, OutgoingState};
 use hagency_runtime::owned::Cleanup;
 use serde_json::{Value, json};
+use std::time::Duration;
 use support::*;
 
 #[tokio::test]
@@ -234,21 +236,74 @@ async fn native_matrix_owned_notice_failure() {
                 if lost {
                     drop(request)
                 } else {
+                    /* 403 maps to Unauthorized (http.rs), and the
+                     * rejoin-on-kick polish (44e080f9) answers that with the
+                     * auto-join before the send settles uncertain. The join
+                     * is refused too, so membership is NOT restored. Consume
+                     * it HERE: a leftover in the channel would masquerade as
+                     * the retry's traffic below. The drop arm has no
+                     * response at all — a transport error, not an auth
+                     * error — so no rejoin fires there. */
                     request.json(403, json!({"errcode":"M_FORBIDDEN"}));
+                    // Board #11 (bridge-matrix.js:10888-10950): a room write that
+                    // fails on membership first attempts the rejoin and resends.
+                    // Here the rejoin itself is refused, so the membership is not
+                    // restorable and the 403 stands as the verdict.
+                    let rejoin = fake.next().await;
+                    assert_eq!(rejoin.method, "POST");
+                    assert_eq!(
+                        rejoin.target,
+                        format!("/_matrix/client/v3/join/{ROOM}")
+                    );
+                    rejoin.json(403, json!({"errcode":"M_FORBIDDEN"}));
                 }
             })
             .await;
         assert!(result.is_err());
-        assert_eq!(
-            w.collector
-                .resume_outgoing_custody(&cancel)
-                .await
-                .unwrap()
-                .state,
-            OutgoingState::Uncertain
-        );
+        // The failed first send started nothing: no dispatch child, no final send.
         w.assert_inactive(&intent, seq).await;
-        assert!(w.collector.send_notice(notice, &cancel).await.is_err());
+        if lost {
+            // Task #9 (TS `pollOneRouterOutbox`, bridge-matrix.js:6036-6055): a
+            // lost notice response is non-permanent, so the resume re-sends it
+            // with the SAME transaction id — Matrix dedups the replay — and the
+            // real acceptance then activates the task.
+            let (summary, ()) = common::scripted(
+                w.collector.resume_outgoing_custody(&cancel),
+                async {
+                    let request = fake.next().await;
+                    assert_eq!(request.method, "PUT");
+                    assert_eq!(
+                        request.target,
+                        format!(
+                            "/_matrix/client/v3/rooms/{ROOM}/send/m.room.message/{}",
+                            notice.claim.notice.transaction_id
+                        )
+                    );
+                    request.json(200, json!({"event_id":"$notice"}));
+                },
+            )
+            .await;
+            assert_eq!(summary.unwrap().state, OutgoingState::Delivered);
+            assert_eq!(
+                w.intent_state(&intent.task_id),
+                ("active".into(), Some("$notice".into()))
+            );
+        } else {
+            // TS `isPermanentRouterMatrixFailure` (bridge-matrix.js:6029-6033):
+            // a 403 is permanent — the retained product posts that command to
+            // `../failed` and never retries it. The journaled mark parks it here:
+            // the resume starts no HTTP write and the task stays inactive.
+            assert_eq!(
+                w.collector
+                    .resume_outgoing_custody(&cancel)
+                    .await
+                    .unwrap()
+                    .state,
+                OutgoingState::Uncertain
+            );
+            w.assert_inactive(&intent, seq).await;
+            assert!(w.collector.send_notice(notice, &cancel).await.is_err());
+        }
         fake.no_request().await;
         w.close().await;
         fake.close().await;
@@ -281,6 +336,90 @@ async fn native_matrix_owned_private_plaintext_refused() {
     assert_eq!(w.count("SELECT COUNT(*) FROM admitted_messages"), 0);
     assert_eq!(w.count("SELECT COUNT(*) FROM canonical_tasks"), 0);
     w.assert_no_execution();
+    fake.no_request().await;
+    w.close().await;
+    fake.close().await;
+}
+
+/// Board #86: the #12 invite poll must never starve the agent's own refresh.
+///
+/// The first live run parked the invite poller in flight on the SDK's single
+/// `busy` permit; the driver's own refresh then came back `Busy`, so the agent
+/// stopped ingesting room events and a mention was never answered. This drives
+/// the PRODUCTION path on ONE collector: the poll's sync is held in flight by
+/// the peer, the driver's exact refresh call (`driver.rs` `run()`:
+/// `collector.collect`) runs while it is parked, and the mention that refresh
+/// and intake carry is still ingested — with the poll still parked.
+///
+/// TS does not contend here (`bridge-matrix.js:7894-8131`): its poll is a
+/// stateless `fetch` sync holding no client lock, which is why the fix drops
+/// the permit from the invite reads rather than serializing them.
+#[tokio::test]
+async fn native_invite_poll_does_not_starve_the_agent_refresh() {
+    let (w, mut fake) = Workflow::ready(false).await;
+    let cancel = CancellationToken::new();
+
+    // (1) The poll's own stateless sync, PARKED: the peer observes the request
+    // and withholds the response, so the poll is suspended mid-flight exactly
+    // as it was live — the state that used to hold the SDK permit.
+    let mut poll = Box::pin(poll_round(&w.collector, &w.f.store, &cancel));
+    let request = tokio::select! {
+        biased;
+        request = fake.next() => request,
+        _ = poll.as_mut() => panic!("the invite poll settled before its sync request"),
+    };
+    assert!(
+        request
+            .target
+            .starts_with("/_matrix/client/v3/sync?timeout=0&filter="),
+        "the invite path reads rooms.invite from its own sync: {}",
+        request.target
+    );
+    let (release, parked) = tokio::sync::oneshot::channel();
+    let invited = serde_json::to_vec(&json!({"next_batch":"poll","rooms":{"invite":{}}})).unwrap();
+    request.hold(
+        vec![(Duration::ZERO, common::response(200, &invited))],
+        0,
+        parked,
+    );
+
+    // (2) The agent's OWN refresh on the SAME collector while the poll is
+    // parked. Before the fix this returned `Error::Busy` and the driver
+    // logged "Matrix refresh refused"; the mention below never woke.
+    let (refreshed, ()) = common::scripted(w.collector.collect(&cancel), async {
+        fake.next().await.json(200, common::who());
+        fake.next().await.json(200, common::sync("refresh"));
+        fake.next().await.json(200, room(false));
+    })
+    .await;
+    assert_eq!(
+        refreshed
+            .expect("the agent's refresh is never refused with Busy")
+            .rooms,
+        1
+    );
+
+    // (3) The mention is ingested on the same collector with the poll STILL
+    // parked: the live symptom was that this never woke.
+    let plan = HostIntakePlan::new(vec!["root".into()]).unwrap();
+    let (admitted, ()) = common::scripted(w.collector.intake(plan, &cancel), async {
+        fake.next().await.json(200, common::who());
+        fake.next().await.json(200, sync(event()));
+        fake.next().await.json(200, room(false));
+    })
+    .await;
+    assert_eq!(
+        admitted.expect("intake is never refused with Busy").admitted,
+        1,
+        "the mention woke the agent"
+    );
+    let inbox = w.f.store.inbox("root".into(), 0, 10, None).await.unwrap();
+    assert_eq!(inbox.len(), 1);
+    assert_eq!(inbox[0].message.body, INPUT);
+
+    // (4) Releasing the parked poll completes it cleanly — no refusal.
+    release.send(()).unwrap();
+    poll.await.unwrap();
     fake.no_request().await;
     w.close().await;
     fake.close().await;

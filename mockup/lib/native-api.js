@@ -301,6 +301,86 @@ export async function fetchAgentDetail(name) {
   return validateAgentDetail(await request(`/api/agents/${encodeURIComponent(name)}`), name);
 }
 
+/* The launch runtime profile (board #49, TS backend-v2.js:12344
+ * GET /api/agents/:name/launch-env). Exactly the TS envelope `{runtimeProfile}`
+ * and, inside it, the `normalizeRuntimeProfile` shape `{primary, supervisor}`
+ * (backend-v2.js:864-876). `supervisor` is null when the record carries none,
+ * which is always here — the port stores no supervisor profile, and null is
+ * rendered as unknown, never invented. A role carries framework/provider/model/
+ * reasoning only: extraArgs, apiBaseUrl and apiKey have no native source and
+ * are refused by exact-key checking rather than silently dropped. */
+const runtimeRole = (v) => object(v, ['framework', 'provider', 'model', 'reasoning'])
+  && text(v.framework, 64) && text(v.model, 256)
+  && (v.provider === null || text(v.provider, 64))
+  && (v.reasoning === null || text(v.reasoning, 64));
+export function validateLaunchEnv(v) {
+  if (!object(v, ['runtimeProfile'])) throw new Error('invalid_native_response');
+  const p = v.runtimeProfile;
+  if (p !== null && (!object(p, ['primary', 'supervisor'])
+    || (p.primary !== null && !runtimeRole(p.primary))
+    || (p.supervisor !== null && !runtimeRole(p.supervisor)))) throw new Error('invalid_native_response');
+  return v;
+}
+export async function fetchAgentLaunchEnv(name) {
+  return validateLaunchEnv(await request(`/api/agents/${encodeURIComponent(name)}/launch-env`));
+}
+
+/* Undelete an agent (board #49, TS backend-v2.js:12308-12316). The retained
+ * route answers exactly `{ok, undeleted, name}` when a force-delete
+ * tombstone exists — the key a caller must check is `undeleted`, not `ok`,
+ * because the 404 arm is the interesting outcome here: it means no
+ * tombstone stood, so there was nothing to reverse. */
+export async function undeleteAgent(name) {
+  const v = await request(`/api/agents/${encodeURIComponent(name)}/undelete`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+  if (!object(v, ['ok', 'undeleted', 'name']) || v.ok !== true || v.undeleted !== true || v.name !== name) throw new Error('invalid_native_response');
+  return v;
+}
+
+/* Queue an avatar request (board #49, TS backend-v2.js:16370-16377). TS
+ * handed the request to the bridge over SSE and answered immediately
+ * `{ok, queued, name, force, custom}` — the response is a receipt, never
+ * the avatar. `force` is body.generate OR ?force=true; `custom` is whether
+ * an image rode the request. The base64 payload is capped where the
+ * retained express.json limit capped it (10mb). */
+export async function requestAgentAvatar(name, { generate = false, image = null, mime = null, force = false } = {}) {
+  const body = {};
+  if (generate) body.generate = true;
+  if (image !== null) body.image = image;
+  if (mime !== null) body.mime = mime;
+  const path = force ? `/api/agents/${encodeURIComponent(name)}/avatar?force=true` : `/api/agents/${encodeURIComponent(name)}/avatar`;
+  const v = await request(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, 10 * 1024 * 1024 + 4096);
+  if (!object(v, ['ok', 'queued', 'name', 'force', 'custom'])
+    || v.ok !== true || v.queued !== true || v.name !== name
+    || typeof v.force !== 'boolean' || typeof v.custom !== 'boolean') throw new Error('invalid_native_response');
+  return v;
+}
+
+/* The agent's delivery events (board #49, TS backend-v2.js:16988-17000):
+ * `{agent, events}` newest-first. An event carries the retained row shape
+ * (id, messageId?, type, agent, source?, reason?, context?, ts) — optional
+ * keys are ABSENT when unset (serde skip_serializing_if), so the validator
+ * checks presence only when the key exists. `agent` must name the agent
+ * asked for, exactly as `validateAgentDetail` pins its own name. */
+const deliveryEvent = (v) => object(v, ['id', 'type', 'agent', 'ts'])
+  && number(v.id) && number(v.ts) && text(v.type, 64) && text(v.agent, 128)
+  && (!Object.hasOwn(v, 'messageId') || text(v.messageId, 128))
+  && (!Object.hasOwn(v, 'source') || text(v.source, 64))
+  && (!Object.hasOwn(v, 'reason') || text(v.reason, 255))
+  && (!Object.hasOwn(v, 'context') || (v.context !== null && typeof v.context === 'object' && !Array.isArray(v.context)));
+export function validateDeliveryEvents(v, name) {
+  if (!object(v, ['agent', 'events']) || v.agent !== name || !Array.isArray(v.events) || v.events.length > 1000
+    || v.events.some((e) => !deliveryEvent(e))) throw new Error('invalid_native_response');
+  return v;
+}
+export async function fetchAgentDeliveryEvents(name, limit = null) {
+  const suffix = limit === null ? '' : `?limit=${encodeURIComponent(limit)}`;
+  return validateDeliveryEvents(await request(`/api/agents/${encodeURIComponent(name)}/delivery-events${suffix}`), name);
+}
+
+/* CL-S2 (ADR-130): expose only the lifecycle mutation that has a durable
+ * domain effect. Start and preset rebinding fail closed at the server until
+ * their complete state transitions exist; the browser must not offer buttons
+ * that can only refuse. */
 /* #21 lifecycle mutations (TS parity: backend-v2.js:12577-12775 stop/start,
  * :11484-11522 preset). The browser offers only what the server does:
  * stop completes, start re-arms serving, preset rebinds the resource the
@@ -521,6 +601,43 @@ export async function fetchApproval(key) {
   return validateApproval(await request(`/api/approvals/${encodeURIComponent(key)}`));
 }
 export function approvalsView(location) { return /^\/console\/approvals\/?$/.test(location.pathname); }
+
+/*
+ * The read-only approval-bindings list (board #52, TS `GET
+ * /api/approval-bindings` at backend-v2.js:9051-9082, the plain-list branch):
+ * exactly the nine keys the route serves, and nothing else — no
+ * `agentJoined`, no `active`, no authority id, because native derives a
+ * binding from its own room observations and none of those columns exist to
+ * serve. An extra key fails the whole read, the same discipline the
+ * approvals projection applies.
+ */
+const bindingRow = (v) => object(v, ['engagementId', 'agent', 'fleetId', 'projectId', 'serverName', 'roomId', 'ownerMxid', 'roomGeneration', 'incarnation'])
+  && id(v.engagementId) && text(v.agent, 128) && id(v.fleetId) && id(v.projectId)
+  && text(v.serverName, 256) && text(v.roomId, 256) && text(v.ownerMxid, 256)
+  && number(v.roomGeneration) && number(v.incarnation);
+export function validateApprovalBindings(v) {
+  if (!object(v, ['at_ms', 'bindings']) || !Array.isArray(v.bindings) || v.bindings.length > 100
+    || v.bindings.some((b) => !bindingRow(b))) throw new Error('invalid_native_response');
+  return v;
+}
+export async function fetchApprovalBindings() {
+  return validateApprovalBindings(await request('/api/approval-bindings'));
+}
+
+/*
+ * The operator unbind (board #52, TS `DELETE
+ * /api/approval-bindings/:agent/:roomId` at backend-v2.js:9032-9046). integ
+ * is SINGLE-LOGIN (operator decision): any authenticated session may unbind —
+ * no scope word, no capability word — while an anonymous caller is refused
+ * 401 before the route. Both ids are percent-encoded path segments; the
+ * server validates the room shape, so a malformed value is a refusal, never a
+ * silent success.
+ */
+export async function unbindApprovalBinding(agent, roomId) {
+  const v = await request(`/api/approval-bindings/${encodeURIComponent(agent)}/${encodeURIComponent(roomId)}`, { method: 'DELETE' });
+  if (!object(v, ['ok', 'binding']) || v.ok !== true || !bindingRow(v.binding)) throw new Error('invalid_native_response');
+  return v.binding;
+}
 
 /* The fleet usage totals (backend-v2.js:15700-15720): the numerator never
  * travels without its denominator, and null means "not known", never zero.
@@ -871,3 +988,53 @@ export async function fetchPreview(role, requestedTokens = null) {
   const query = `role=${encodeURIComponent(role)}${requestedTokens === null ? '' : `&requestedTokens=${encodeURIComponent(requestedTokens)}`}`;
   return validatePreview(await request(`/api/engagements/preview?${query}`));
 }
+
+/* Operator task graphs (board #47): the native console's task-graph routes
+ * mirror the retained `/api/task-graphs` (backend-v2.js:15974-16020). A
+ * graph is the TS `normalizeGraph` shape — id/owner/label/status plus a
+ * `nodes` map keyed by node id with camelCase timestamps — served verbatim.
+ * Validators refuse an unexpected top-level shape rather than render it. */
+const GRAPH_STATUSES = ['active', 'complete', 'failed', 'cancelled'];
+const NODE_STATUSES = ['pending', 'dispatched', 'active', 'complete', 'failed', 'skipped', 'cancelled'];
+export function validateGraph(v) {
+  if (!object(v, ['id', 'owner', 'label', 'status', 'nodes', 'createdAt', 'updatedAt', 'completedAt'])
+    || !text(v.id, 255) || !text(v.owner, 255) || !text(v.label, 4000)
+    || !GRAPH_STATUSES.includes(v.status)
+    || !text(v.createdAt, 128) || !text(v.updatedAt, 128) || !optionalText(v.completedAt, 128)
+    || typeof v.nodes !== 'object' || v.nodes === null || Array.isArray(v.nodes)) throw new Error('invalid_native_response');
+  for (const n of Object.values(v.nodes)) {
+    if (!object(n, ['id', 'assignee', 'description', 'depends_on', 'status', 'result', 'error', 'condition', 'message_id', 'dispatchedAt', 'completedAt', 'startedAt'])
+      || !text(n.id, 255) || !text(n.assignee, 255) || !text(n.description, 4000)
+      || !Array.isArray(n.depends_on) || n.depends_on.some((d) => !text(d, 255))
+      || !NODE_STATUSES.includes(n.status)
+      || !optionalText(n.error, 4000) || !optionalText(n.message_id, 255)
+      || !optionalText(n.dispatchedAt, 128) || !optionalText(n.completedAt, 128) || !optionalText(n.startedAt, 128)) throw new Error('invalid_native_response');
+  }
+  return v;
+}
+export function validateGraphs(v) {
+  if (!Array.isArray(v) || v.length > 1024) throw new Error('invalid_native_response');
+  return v.map(validateGraph);
+}
+export async function fetchTaskGraphs(status = '') {
+  return validateGraphs(await request(`/api/task-graphs${status ? `?status=${encodeURIComponent(status)}` : ''}`));
+}
+export async function fetchTaskGraph(id) {
+  return validateGraph(await request(`/api/task-graphs/${encodeURIComponent(id)}`));
+}
+export async function createTaskGraph(body) {
+  const v = await request('/api/task-graphs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (v?.ok !== true) throw new Error('invalid_native_response');
+  return validateGraph(v.graph);
+}
+export async function deleteTaskGraph(id) {
+  const v = await request(`/api/task-graphs/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  if (v?.ok !== true) throw new Error('invalid_native_response');
+  return validateGraph(v.graph);
+}
+export async function updateTaskGraphNode(id, nodeId, patch) {
+  const v = await request(`/api/task-graphs/${encodeURIComponent(id)}/nodes/${encodeURIComponent(nodeId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+  if (v?.ok !== true) throw new Error('invalid_native_response');
+  return validateGraph(v.graph);
+}
+export function taskGraphsView(location) { return /^\/console\/task-graphs\/?$/.test(location.pathname); }

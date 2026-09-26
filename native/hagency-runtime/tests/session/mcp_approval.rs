@@ -83,6 +83,8 @@ async fn native_codex_mcp_approval_correlated_once() {
 
 #[tokio::test]
 async fn native_codex_mcp_approval_rejects_uncorrelated() {
+    // Correlation and identity failures still end the turn: Codex never learns
+    // which tool ran, so no decline is issued and the wire gets the cancel.
     for case in [
         "missing",
         "ambiguous",
@@ -91,13 +93,8 @@ async fn native_codex_mcp_approval_rejects_uncorrelated() {
         "wrong_turn",
         "wrong_server",
         "wrong_args",
-        "url",
-        "input_form",
         "schema_extension",
-        "null_meta",
-        "wrong_kind",
         "null_turn",
-        "nonobject_args",
         "oversize",
         "duplicate_start",
     ] {
@@ -123,17 +120,10 @@ async fn native_codex_mcp_approval_rejects_uncorrelated() {
             "wrong_turn" => event["params"]["turnId"] = json!("other"),
             "wrong_server" => event["params"]["serverName"] = json!("other"),
             "wrong_args" => event["params"]["_meta"]["tool_params"]["path"] = json!("private.txt"),
-            "url" => event["params"]["mode"] = json!("url"),
-            "input_form" => {
-                event["params"]["requestedSchema"]["properties"]["value"] = json!({"type":"string"})
-            }
             "schema_extension" => {
                 event["params"]["requestedSchema"]["additionalProperties"] = json!(false)
             }
-            "null_meta" => event["params"]["_meta"] = Value::Null,
-            "wrong_kind" => event["params"]["_meta"]["codex_approval_kind"] = json!("other"),
             "null_turn" => event["params"]["turnId"] = Value::Null,
-            "nonobject_args" => event["params"]["_meta"]["tool_params"] = json!([]),
             "oversize" => event["params"]["message"] = json!("x".repeat(65536)),
             "duplicate_start" => event = item("file-item", false),
             _ => {}
@@ -155,6 +145,49 @@ async fn native_codex_mcp_approval_rejects_uncorrelated() {
                 .unwrap_err()
                 .kind(),
             std::io::ErrorKind::UnexpectedEof
+        );
+    }
+}
+
+/// TS `router/src/runner.ts:592,901-903`: an elicitation whose FORM this adapter
+/// cannot turn into an owner approval is answered with the family's own decline
+/// (`{"action":"decline",...}`, the `approvalResponse` shape), and the turn goes
+/// on — it is NOT killed. This is the arm that killed a live turn as a silent
+/// `protocol` failure (board #87): the adapter answered nothing and the runtime
+/// reported `Failure::Protocol` with no reason recorded.
+#[tokio::test]
+async fn native_codex_mcp_unsupported_form_is_declined_and_the_turn_survives() {
+    for case in ["url", "input_form", "null_meta", "wrong_kind", "nonobject_args"] {
+        let (mut s, mut p) = setup().await;
+        observe(&mut s, &mut p, item("file-item", false))
+            .await
+            .unwrap();
+        let mut event = request(0);
+        match case {
+            "url" => event["params"]["mode"] = json!("url"),
+            "input_form" => {
+                event["params"]["requestedSchema"]["properties"]["value"] = json!({"type":"string"})
+            }
+            "null_meta" => event["params"]["_meta"] = Value::Null,
+            "wrong_kind" => event["params"]["_meta"]["codex_approval_kind"] = json!("other"),
+            "nonobject_args" => event["params"]["_meta"]["tool_params"] = json!([]),
+            _ => {}
+        }
+        // The turn survives: a Notice, not an error, and the session is still
+        // running rather than ended.
+        let update = observe(&mut s, &mut p, event).await.unwrap_or_else(|error| {
+            panic!("{case}: the unsupported form must not kill the turn: {error:?}")
+        });
+        assert!(matches!(update, Update::Notice), "{case}");
+        assert_eq!(s.phase(), Phase::Running, "{case}");
+        assert_eq!(s.last_server_request(), Some("mcp_elicitation"), "{case}");
+        // The answer is the decline, never the cancel an unanswerable request
+        // gets, and the correlation was not consumed — the request never became
+        // an owner approval.
+        assert_eq!(
+            read(&mut p.stdin).await,
+            json!({"id":0,"result":{"action":"decline","content":null,"_meta":null}}),
+            "{case}"
         );
     }
 }
