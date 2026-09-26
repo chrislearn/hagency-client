@@ -418,3 +418,53 @@ fn native_usage_totals_empty_bound_partial_and_measured() {
     assert_eq!(totals.tokens_measured_for, 1);
     assert!(totals.tokens_partial, "1 of 2 measured is partial");
 }
+
+/// Board #108: a source bound but never observed must not erase its siblings'
+/// measured latest counts. `usage_summary` folded every source's
+/// `latest_counts` through `optional_add`, which nulls a kind when EITHER side
+/// is null — so one unused source (all-unknown at bind) nulled the whole sum
+/// and the live fleet rendered "Latest observed counts: Unknown" beside five
+/// real source rows. The fleet figure already skips an all-unknown source
+/// (`usage_totals`, the retained filter `typeof tokensUsed === 'number'`,
+/// backend-v2.js:15702); the summary follows the same rule now.
+#[test]
+fn native_usage_summary_ignores_a_bound_but_unobserved_source() {
+    let mut f = Fixture::new(Framework::Codex);
+    let (_, _, observed) = f.start();
+    f.db
+        .record_usage_observation(&observed, "measured_call", &codex(7, 2, 3), 2000)
+        .unwrap();
+    // A second source in the SAME engagement, bound and never observed — the
+    // live fleet's exact shape (five measured rows beside an unused dispatch).
+    let _ = f.start();
+    let summary = f.totals();
+    assert_eq!(summary.sources, 2, "both sources are counted");
+    let latest = summary
+        .latest_counts
+        .expect("a measured source publishes its counts");
+    assert_eq!(
+        latest.input,
+        Some(7),
+        "the measured source's figures survive the unobserved sibling"
+    );
+    assert_eq!(latest.output, Some(2));
+    assert_eq!(latest.cache_read, Some(3));
+    assert_eq!(summary.known_high_water_lower_bound.unwrap().input, 7);
+}
+
+/// The all-unknown case is unchanged: a source bound and never observed, with
+/// no measured sibling, keeps the all-unknown shape (`Some` of null kinds),
+/// which renders as Unknown. It must not become a zero claiming the engagement
+/// consumed nothing, nor a bare `null` claiming there is no source at all.
+#[test]
+fn native_usage_summary_all_unobserved_stays_unknown() {
+    let mut f = Fixture::new(Framework::Codex);
+    let _ = f.start();
+    let summary = f.totals();
+    assert_eq!(summary.sources, 1);
+    let latest = summary
+        .latest_counts
+        .expect("a bound source keeps the Some(all-null) shape");
+    assert_eq!(latest.input, None, "unknown, never zero");
+    assert_eq!(latest.output, None);
+}

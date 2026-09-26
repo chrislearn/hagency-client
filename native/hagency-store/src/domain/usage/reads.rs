@@ -108,8 +108,11 @@ impl DomainRepository {
             evidence: UsageEvidence::HostAttributedUntrustedUsage,
         };
         let mut latest = zero();
+        // How many sources actually carry a latest observation. A source bound
+        // but never observed contributes nothing (below), so this is NOT the
+        // same as `sources` — and it decides whether the fold is "unknown".
+        let mut latest_measured = 0u64;
         let mut known = KnownTokens::default();
-        let mut known_latest = KnownTokens::default();
         let mut query=self.db.prepare("SELECT high_water,latest_counts,historical_incomplete,regressions,latest_incomplete FROM usage_sources WHERE engagement_id=?1 ORDER BY id")?;
         for row in query.query_map([engagement], |r| {
             Ok((
@@ -122,10 +125,19 @@ impl DomainRepository {
         })? {
             let (water, next, history, regressions, latest_incomplete) = row?;
             let next: Option<TokenCounts> = serde_json::from_str(&next)?;
-            let next = next.unwrap_or_else(unknown);
             known = known.adding(serde_json::from_str(&water)?)?;
-            known_latest = known_latest.adding(next)?;
-            latest = optional_add(latest, next)?;
+            // A source that is bound but never observed stores the literal
+            // JSON `null` here. Folding that in as all-unknown nulled EVERY
+            // kind of the sum, so one unused source erased the measured
+            // figures of its siblings — the live fleet rendered "Latest
+            // observed counts: Unknown" beside five real rows. It contributes
+            // nothing instead, exactly as `usage_totals` already skips an
+            // all-unknown source (the retained filter is
+            // `typeof tokensUsed === 'number'`, backend-v2.js:15702).
+            if let Some(counts) = next {
+                latest = optional_add(latest, counts)?;
+                latest_measured = add(latest_measured, 1)?;
+            }
             result.sources = add(result.sources, 1)?;
             result.latest_incomplete_sources = add(
                 result.latest_incomplete_sources,
@@ -136,7 +148,12 @@ impl DomainRepository {
             result.regression_observations = add(result.regression_observations, regressions)?;
         }
         if result.sources > 0 {
-            result.latest_counts = Some(latest);
+            // Sources exist, but if every one of them is bound-and-never-
+            // observed the fold above added nothing: keep the all-unknown
+            // shape (`Some` of all-null kinds), which the console renders as
+            // Unknown and never as a zero claiming the engagement consumed
+            // nothing. One measured source is enough to publish real figures.
+            result.latest_counts = Some(if latest_measured > 0 { latest } else { unknown() });
             result.known_high_water_lower_bound = Some(known);
         }
         Ok(result)

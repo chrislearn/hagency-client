@@ -65,6 +65,7 @@ mod tasks;
 #[path = "console/ts_oracle_approvals.rs"]
 mod ts_oracle_approvals;
 use fixture::*;
+use hagency_core::tasks::{DispatchInput, ResourceLease, SessionBinding};
 use salvo::{
     prelude::*,
     test::{ResponseExt, TestClient},
@@ -447,6 +448,103 @@ async fn native_console_usage() {
     assert_eq!(
         get(&path, &cookie).send(&service).await.status_code,
         Some(StatusCode::SERVICE_UNAVAILABLE)
+    );
+    f.close().await;
+}
+
+/// Board #108: the served page must show REAL counts when a Codex usage event
+/// was recorded, even when the same engagement also carries a source that was
+/// bound (its dispatch started) but never observed. The live fleet has exactly
+/// that shape — several dispatches per engagement, one of them without a usage
+/// notification — and the page rendered "Latest observed counts: Unknown" for
+/// every kind beside real ceiling figures, because `usage_summary` folded the
+/// all-unknown sibling into the sum. This walks the console mount, the path a
+/// live console actually uses.
+#[tokio::test]
+async fn native_console_usage_counts_survive_an_unobserved_sibling_source() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let cookie = session(&service).await;
+    let path = format!("/console/api/engagements/{}/usage", f.engagement);
+    // The seed's single source is fully observed.
+    let mut response = get(&path, &cookie).send(&service).await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let before: Value = response.take_json().await.unwrap();
+    assert_eq!(before["summary"]["sources"], 1);
+    let measured = before["summary"]["latest_counts"]["input"].clone();
+    assert!(
+        measured.is_u64(),
+        "the seeded Codex usage event rendered a real count"
+    );
+    // Bind a SECOND source on the same engagement and never observe it: its
+    // own session, task, workspace and dispatch, claimed and started, then
+    // abandoned without a usage notification.
+    f.domain
+        .register_session(SessionBinding {
+            id: "unobserved_session".into(),
+            engagement_id: f.engagement.clone(),
+            room_id: "!project:example.test".into(),
+            thread_root: Some("$unobserved_thread".into()),
+        })
+        .await
+        .unwrap();
+    f.domain
+        .create_canonical_task(
+            "unobserved_task".into(),
+            "unobserved_session".into(),
+            "Unobserved turn".into(),
+            2000,
+        )
+        .await
+        .unwrap();
+    f.domain
+        .register_workspace("unobserved_workspace".into())
+        .await
+        .unwrap();
+    f.domain
+        .enqueue_dispatch(DispatchInput {
+            id: "unobserved_dispatch".into(),
+            session_id: "unobserved_session".into(),
+            task_id: Some("unobserved_task".into()),
+            resources: vec![ResourceLease {
+                id: "unobserved_workspace".into(),
+                exclusive: true,
+            }],
+            payload: json!({}),
+        })
+        .await
+        .unwrap();
+    // The ASYNC store's `owned_dispatch_scope`/`start_owned_dispatch` stamp the
+    // REAL writer clock, so the claim must be made on that same clock or the
+    // lease has already expired by the time the scope is taken.
+    let cap = f
+        .domain
+        .claim_dispatch("unobserved_runner".into(), now(), 60_000, 120_000, 128)
+        .await
+        .unwrap()
+        .unwrap();
+    let scope = f.domain.owned_dispatch_scope(cap.clone()).await.unwrap();
+    let started = f
+        .domain
+        .start_owned_dispatch(cap.clone(), scope.fingerprint().to_owned())
+        .await
+        .unwrap();
+    let _unobserved = f.domain.bind_usage_source(cap, started).await.unwrap();
+    // The unobserved sibling must not erase the recorded event's figures.
+    let mut response = get(&path, &cookie).send(&service).await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let after: Value = response.take_json().await.unwrap();
+    assert_eq!(
+        after["summary"]["sources"], 2,
+        "the bound-but-unobserved sibling is counted as a source"
+    );
+    assert_eq!(
+        after["summary"]["latest_counts"]["input"], measured,
+        "the recorded Codex event still shows its real count beside an unobserved source"
+    );
+    assert!(
+        !after["summary"]["latest_counts"]["input"].is_null(),
+        "never the Unknown word when usage was measured"
     );
     f.close().await;
 }

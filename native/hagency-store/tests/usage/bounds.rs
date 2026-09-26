@@ -182,7 +182,17 @@ fn native_usage_capacity_and_rollback() {
         Err(Error::Capacity)
     ));
     let summary = f.totals();
-    assert_eq!(summary.latest_counts.unwrap().input, None);
+    // Board #108: `other`'s observation was REFUSED above, so `other` is
+    // bound-and-never-observed — its stored `latest_counts` stays the literal
+    // JSON `null` (`domain/usage.rs:116`). Such a source now contributes
+    // NOTHING to the latest fold instead of nulling every kind of its measured
+    // siblings, the rule `known_high_water_lower_bound` (asserted just below,
+    // via `unwrap_or(0)`) and `usage_totals` already follow; the all-or-nothing
+    // fold was the outlier and made a live fleet with five measured sources
+    // render "Latest observed counts: Unknown". `source`'s JSON_SAFE_MAX input
+    // therefore stands. Nothing else moved: the refused observation still
+    // added no receipt and left `other` unobserved (asserted below).
+    assert_eq!(summary.latest_counts.unwrap().input, Some(JSON_SAFE_MAX));
     assert_eq!(
         summary.known_high_water_lower_bound.unwrap().input,
         JSON_SAFE_MAX
