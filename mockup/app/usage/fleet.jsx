@@ -37,13 +37,18 @@ export default function FleetUsagePanel() {
       setState((s) => ({ ...s, phase: 'error', error: error.message }));
     }
   }, []);
-  useEffect(() => { void load(); }, [load]);
+  /* Ride the provider's admission: before the ticket is exchanged — and
+   * again after End access — the panel must not fire its reads with a
+   * dead credential; the provider's own phase is the gate. */
   useEffect(() => {
-    const refresh = () => { if (document.visibilityState === 'visible') void load(); };
+    if (data.phase === 'ready' || data.phase === 'stale') void load();
+  }, [load, data.phase]);
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === 'visible' && (data.phase === 'ready' || data.phase === 'stale')) void load(); };
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);
     return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
-  }, [load]);
+  }, [load, data.phase]);
   if (data.phase === 'access') return null;
   if (state.phase === 'loading') return <section className="panel"><p role="status">{t('nu.loading')}</p></section>;
   if (state.phase === 'error') return <section className="panel" role="alert"><h2 className="sec" style={{ marginTop: 0 }}>{t('us.fleetFailed')}</h2>

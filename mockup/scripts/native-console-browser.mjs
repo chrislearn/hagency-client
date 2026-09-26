@@ -266,7 +266,9 @@ try {
   if (!config.executable) {
     console.log('CREATE_ENGAGEMENT');
     const created = JSON.parse((await lines.next()).value).engagement;
-    await page.getByRole('button', { name: '刷新', exact: true }).click();
+    // The usage container's own Refresh: the fleet panel renders a second
+    // one when its read fails, so the page-level role query is ambiguous.
+    await page.locator('[data-native-state]').first().getByRole('button', { name: '刷新', exact: true }).click();
     await page.locator(`option[value="${created}"]`).waitFor({ state: 'attached' });
     await page.locator('#native-engagement').selectOption(created);
     await page.locator(`[data-engagement-id="${created}"]`).waitFor();
@@ -298,7 +300,9 @@ try {
     await page.getByRole('button', { name: 'English', exact: true }).click();
     assert.equal(await page.locator('[data-kind="input"]').first().textContent(), 'Unknown');
     await page.goto(`${config.base}/console/usage/?engagement_id=does_not_exist`);
-    await page.locator('main [role="alert"]').waitFor();
+    // The engagement's own error panel: the fleet panel renders a second
+    // alert when its read fails, so match the alert carrying this text.
+    await page.getByRole('alert').filter({ hasText: /not present in the native service/ }).waitFor();
     assert.match(await page.locator('main').innerText(), /not present in the native service/);
     assert.equal(await page.locator('[data-kind]').count(), 0);
     await page.goto(`${config.base}/console/usage/?engagement_id=${config.engagement}`);

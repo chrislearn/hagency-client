@@ -229,8 +229,12 @@ function NativeDataProvider({ children }) {
       finally { ready.current.settle(); }
     };
     void enter();
-    const refresh = () => { if (!stopped && inFlight.current === 0 && document.visibilityState === 'visible') void load(); };
-    const navigate = () => { if (!stopped) void load(); };
+    /* After End access the credential is gone: focus, visibility and
+     * popstate must not wave a dead token at the API (the refused reads
+     * the regression lane names). `renew` is the re-admission path and
+     * stays ungated by design. */
+    const refresh = () => { if (!stopped && admitted.current && inFlight.current === 0 && document.visibilityState === 'visible') void load(); };
+    const navigate = () => { if (!stopped && admitted.current) void load(); };
     const renew = () => { if (!stopped && window.location.hash) void enter(); };
     const timer = setInterval(refresh, 15000);
     window.addEventListener('focus', refresh);
@@ -245,7 +249,7 @@ function NativeDataProvider({ children }) {
   // stream signal rides the same in-flight and visibility guards the 15 s
   // poll uses, so a live tab and an idle tab behave identically.
   const liveRefresh = useRef(() => {});
-  liveRefresh.current = () => { if (inFlight.current === 0 && document.visibilityState === 'visible') void load(); };
+  liveRefresh.current = () => { if (admitted.current && inFlight.current === 0 && document.visibilityState === 'visible') void load(); };
   useLiveStream((category) => {
     if (!['agents', 'tasks', 'alerts'].includes(category)) return;
     liveRefresh.current();
