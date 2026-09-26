@@ -27,6 +27,8 @@ mod exec_policy;
 mod fixture;
 #[path = "console/invites.rs"]
 mod invites;
+#[path = "console/fleet_views.rs"]
+mod fleet_views;
 #[path = "console/matrix_diag.rs"]
 mod matrix_diag;
 #[path = "console/origin.rs"]
