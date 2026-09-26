@@ -37,6 +37,11 @@ impl Drive<'_> {
     ) -> Result<bool, Failure> {
         // Retain callback/resolution facts in the original owner BEFORE any
         // usage or request receipt can await or unwind.
+        // The runner's own tool activity (TS `recordRunnerActivity`,
+        // `runner.ts:742-746`) is recorded on EVERY update this drive drains —
+        // item/started and item/completed are the counter's only source, and
+        // production runs this drive, not the plain loop (board #114).
+        crate::operation::record_runner_activity(self.domain, self.cap, &update).await;
         let (request, terminal) = match update {
             Update::Approval(request) => (
                 Some(callbacks.retain(runner, request, self.until, &self.cap.dispatch_id)?),

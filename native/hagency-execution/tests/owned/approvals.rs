@@ -664,3 +664,51 @@ async fn native_owned_mcp_unsupported_form_is_declined_and_the_turn_completes() 
         json!({"action":"decline","content":null,"_meta":null})
     );
 }
+
+/// Board #114 — the runner's REAL tool items must reach the activity counters
+/// even on the approval path. Production ALWAYS binds approvals
+/// (`bootstrap/config.rs:1051-1053`), so every live dispatch rides
+/// `approvals.drive`, not the plain update loop; before this fix
+/// `Drive::update` swallowed `Update::Item` in its catch-all, so
+/// `dispatch_activity_events` stayed empty and every ✅ notice read
+/// `工具调用 0 次，已返回 0 次` with no warning (the recorder never ran).
+///
+/// The frames are the real Codex 0.157 `ThreadItem` shapes
+/// (`commandExecution` / `fileChange` / `mcpToolCall`, from the captured
+/// app-server schema), emitted by the probe's `owned-approval-tools` mode.
+#[tokio::test]
+async fn native_owned_approval_records_runner_tool_activity() {
+    let f = Fixture::configured(true);
+    let (mut op, _notices) = operation(&f, "owned-approval-tools", policy());
+    let report = op.wait().await.unwrap();
+    assert_eq!(
+        report.protocol,
+        Protocol::Completed,
+        "{:?} {:?}",
+        report.failure,
+        report.runtime_observation()
+    );
+    // The probe only announces this after emitting all three tool items.
+    marker(&f, "tools-sent").await;
+    // Three tools, each with a start and a return: the counters must be 3/3,
+    // never 0/0. The agentMessage item the shared tail also sends is NOT a
+    // tool and must not be counted — hence exactly 3 starts, not 4.
+    assert_eq!(
+        f.count("SELECT tools FROM dispatch_activity WHERE dispatch_id='dispatch'"),
+        3,
+        "three real tool items must count as three tool calls"
+    );
+    assert_eq!(
+        f.count("SELECT finished FROM dispatch_activity WHERE dispatch_id='dispatch'"),
+        3,
+        "three real item/completed frames must count as three returns"
+    );
+    assert_eq!(
+        f.count("SELECT COUNT(*) FROM dispatch_activity_events WHERE event_key LIKE 'tool_start:%'"),
+        3
+    );
+    assert_eq!(
+        f.count("SELECT COUNT(*) FROM dispatch_activity_events WHERE event_key LIKE 'tool_end:%'"),
+        3
+    );
+}
