@@ -895,6 +895,10 @@ pub struct Agent {
     uploads: Vec<Vec<u8>>,
     incoming: Vec<Vec<u8>>,
     downloads: Vec<usize>,
+    /// The display name the agent has set on itself (identity reconciliation,
+    /// board #11): `None` until the agent PUTs one, so the first GET returns
+    /// an empty (machine-generated-equivalent) profile.
+    displayname: Option<String>,
     created: bool,
     invited: bool,
     joined: bool,
@@ -919,6 +923,7 @@ impl Agent {
             uploads: Vec::new(),
             incoming: Vec::new(),
             downloads: Vec::new(),
+            displayname: None,
             created: false,
             invited: false,
             joined: false,
