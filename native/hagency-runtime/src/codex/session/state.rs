@@ -157,6 +157,7 @@ impl State {
             | "remoteControl/status/changed"
             | "mcpServer/startupStatus/updated"
             | "account/rateLimits/updated"
+            | "account/updated"
             | "hook/started"
             | "hook/completed" => Ok(Update::Notice),
             "thread/started" => Ok(Update::ThreadStatus),
@@ -261,6 +262,7 @@ impl State {
             | "remoteControl/status/changed"
             | "mcpServer/startupStatus/updated"
             | "account/rateLimits/updated"
+            | "account/updated"
             | "serverRequest/resolved"
             | "hook/completed" => Ok(()),
             "thread/status/changed" if string(object(params, "status")?, "type")? == "idle" => {
@@ -542,8 +544,24 @@ pub(super) fn scope(
     }
     if matches!(
         method,
-        "warning" | "configWarning" | "remoteControl/status/changed" | "account/rateLimits/updated"
+        "warning"
+            | "configWarning"
+            | "remoteControl/status/changed"
+            | "account/rateLimits/updated"
+            | "account/updated"
     ) {
+        if method == "account/updated" {
+            // The app-server's global account/auth notice (captured board #89).
+            // It carries no threadId/turnId and grants no scope.
+            for key in ["authMode", "planType"] {
+                if let Some(value) = params.get(key).filter(|value| !value.is_null()) {
+                    let value = value.as_str().ok_or(Error::Malformed)?;
+                    if value.len() > 64 || value.chars().any(char::is_control) {
+                        return Err(Error::Malformed);
+                    }
+                }
+            }
+        }
         if method == "account/rateLimits/updated" {
             // Account rolling-window metadata is not per-turn usage evidence.
             object(params, "rateLimits")?;

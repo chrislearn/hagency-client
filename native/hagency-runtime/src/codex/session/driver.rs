@@ -250,6 +250,12 @@ impl<R, W, E> SessionDriver<R, W, E> {
                     | "remoteControl/status/changed"
                     | "mcpServer/startupStatus/updated"
                     | "account/rateLimits/updated"
+                    // codex 0.157 emits `account/updated` between the
+                    // initialize result and our `initialized` ack, so this
+                    // unbound-thread phase is where it arrives. Refusing it
+                    // here is what killed every dispatch at `thread_start`
+                    // with `Error::Scope` (captured board #89).
+                    | "account/updated"
                     | "hook/started"
                     | "hook/completed"
             )
@@ -374,6 +380,11 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
                         | "configWarning"
                         | "remoteControl/status/changed"
                         | "account/rateLimits/updated"
+                        // codex 0.157 emits this global account notice between
+                        // the initialize result and our `initialized` ack
+                        // (captured board #89). Refusing it killed every
+                        // dispatch at `thread_start` with `Error::Scope`.
+                        | "account/updated"
                 ) =>
                 {
                     self.state.notification(&method, &params)?;
@@ -860,6 +871,7 @@ fn notification_shape(method: &str, params: &Value) -> &'static str {
         "mcpServer/startupStatus/updated" => "mcp_startup",
         "remoteControl/status/changed" => "remote_control",
         "account/rateLimits/updated" => "account_limits",
+        "account/updated" => "account",
         "thread/tokenUsage/updated" => "turn_usage",
         "item/commandExecution/terminalInteraction" => "terminal_interaction",
         "item/fileChange/patchUpdated" => "patch_updated",
