@@ -85,23 +85,32 @@ fn snapshot(dir: &Dir, path: &str, limit: usize) -> Result<Snapshot, Error> {
     .snapshot(&RelativeFile::new(path).map_err(|_| Error::Assets)?)
     .map_err(|_| Error::Assets)
 }
+/// A document is the front door (`index.html`) or a rail page
+/// (`<route>/index.html`). Derived from the path SHAPE, never a hand list:
+/// the hand list silently refused a page the build shipped, and a refused page
+/// fails `load` outright — the service will not start on that bundle at all
+/// (board #88). The length, character and segment rules are the same ones the
+/// static branch below enforces, so a traversal or a bogus byte can never name
+/// a document.
+fn document(path: &str) -> bool {
+    let Some(route) = path.strip_suffix("index.html") else {
+        return false;
+    };
+    // The front door is exactly `index.html`; a page is `<route>/index.html`
+    // with the route one or more plain, non-empty segments.
+    if !route.is_empty() && !route.ends_with('/') {
+        return false;
+    }
+    path.len() <= 512
+        && path
+            .split('/')
+            .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
+        && path
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"/_-.".contains(&b))
+}
 fn mime(path: &str) -> Option<&'static str> {
-    if matches!(
-        path,
-        "index.html"
-            | "usage/index.html"
-            | "resources/index.html"
-            | "resources/new/index.html"
-            | "alerts/index.html"
-            | "engagements/index.html"
-            | "accounts/index.html"
-            | "agents/index.html"
-            | "project-sides/index.html"
-            | "approvals/index.html"
-            | "tasks/index.html"
-            | "project-board/index.html"
-            | "task-graphs/index.html"
-    ) {
+    if document(path) {
         return Some("text/html; charset=utf-8");
     }
     if !path.starts_with("_next/static/")
@@ -148,32 +157,15 @@ impl Assets {
             if proof.len() != entry.size || digest != entry.sha256 {
                 return Err(Error::Assets);
             }
+            // Derived, not hand-mapped: the front door is `/console/`, and a
+            // page `<route>/index.html` serves at `/console/<route>/`. A page
+            // the build ships is therefore reachable without editing this
+            // file (board #88); the old hand map meant adding a page silently
+            // required a code change in two places.
             let key = if entry.path == "index.html" {
                 "/console/".into()
-            } else if entry.path == "usage/index.html" {
-                "/console/usage/".into()
-            } else if entry.path == "resources/new/index.html" {
-                "/console/resources/new/".into()
-            } else if entry.path == "resources/index.html" {
-                "/console/resources/".into()
-            } else if entry.path == "alerts/index.html" {
-                "/console/alerts/".into()
-            } else if entry.path == "engagements/index.html" {
-                "/console/engagements/".into()
-            } else if entry.path == "accounts/index.html" {
-                "/console/accounts/".into()
-            } else if entry.path == "agents/index.html" {
-                "/console/agents/".into()
-            } else if entry.path == "project-sides/index.html" {
-                "/console/project-sides/".into()
-            } else if entry.path == "approvals/index.html" {
-                "/console/approvals/".into()
-            } else if entry.path == "tasks/index.html" {
-                "/console/tasks/".into()
-            } else if entry.path == "project-board/index.html" {
-                "/console/project-board/".into()
-            } else if entry.path == "task-graphs/index.html" {
-                "/console/task-graphs/".into()
+            } else if document(&entry.path) {
+                format!("/console/{}", &entry.path[..entry.path.len() - "index.html".len()])
             } else {
                 format!("/console/{}", entry.path)
             };
@@ -195,28 +187,23 @@ impl Assets {
         })
     }
     pub(super) fn get(&self, path: &str) -> Option<&Asset> {
-        self.values.get(if path == "/console" {
-            "/console/"
-        } else if path == "/console/usage" {
-            "/console/usage/"
-        } else if path == "/console/resources/new" {
-            "/console/resources/new/"
-        } else if path == "/console/resources" {
-            "/console/resources/"
-        } else if path == "/console/alerts" {
-            "/console/alerts/"
-        } else if path == "/console/engagements" {
-            "/console/engagements/"
-        } else if path == "/console/accounts" {
-            "/console/accounts/"
-        } else if path == "/console/agents" {
-            "/console/agents/"
-        } else if path == "/console/project-sides" {
-            "/console/project-sides/"
-        } else if path == "/console/approvals" {
-            "/console/approvals/"
+        // The exact key wins: a static chunk is stored as the URL it is
+        // requested at, and must never be rewritten.
+        if let Some(asset) = self.values.get(path) {
+            return Some(asset);
+        }
+        // `/console` and `/console/<route>` are the no-trailing-slash spellings
+        // of a document key (`/console/`, `/console/<route>/`). Only a
+        // document is stored with a trailing slash, so the retry cannot shadow
+        // a static asset. Derived from the path shape, so a newly shipped page
+        // needs no edit here (board #88).
+        let with_slash = if path == "/console" {
+            "/console/".to_owned()
+        } else if path.starts_with("/console/") {
+            format!("{path}/")
         } else {
-            path
-        })
+            return None;
+        };
+        self.values.get(&with_slash)
     }
 }
