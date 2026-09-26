@@ -429,7 +429,16 @@ impl Fixture {
     pub fn assert_file_delivery(&self, index: usize, round: usize, task: &str) {
         let agent = &self.peer.agents[index];
         assert_eq!(agent.uploads.len(), round + 1);
-        let event = &agent.crypto.events[round * 2];
+        // The DM also carries the merged activity round-summary (an
+        // m.notice) after each reply, so find this round's upload by
+        // shape, never by position.
+        let event = agent
+            .crypto
+            .events
+            .iter()
+            .filter(|event| event["content"]["msgtype"] == "m.file")
+            .nth(round)
+            .expect("this round's file upload");
         let content = &event["content"];
         assert_eq!(event["sender"], agent.user);
         assert_eq!(content["msgtype"], "m.file");
@@ -565,8 +574,9 @@ impl Fixture {
             }
             assert!(
                 tokio::time::Instant::now() < until,
-                "timed out during {stage}: {}",
-                self.diagnostic()
+                "timed out during {stage}: {} | {}",
+                self.diagnostic(),
+                self.state_counts()
             );
             tokio::select! {request=self.fake.next()=>self.peer.respond(request).await,_=tokio::time::sleep(Duration::from_millis(10))=>{}}
         }
@@ -713,6 +723,30 @@ impl Fixture {
         loop {
             tokio::select! {_=&mut read=>break,request=self.fake.next()=>self.peer.respond(request).await}
         }
+    }
+    /// The until-predicate's own inputs, at timeout: which side of the
+    /// conjunction is stuck (store delivery states, per-agent decrypted
+    /// reply counts). Disposable synthetic fixture data only.
+    fn state_counts(&self) -> String {
+        let crypto: Vec<usize> = self
+            .peer
+            .agents
+            .iter()
+            .map(|agent| agent.crypto.events.len())
+            .collect();
+        let projects: Vec<usize> = self
+            .peer
+            .agents
+            .iter()
+            .map(|agent| agent.project_events.len())
+            .collect();
+        format!(
+            "final_replies delivered={} uncertain={} sending={} pending={} | per-agent crypto_events={crypto:?} project_events={projects:?}",
+            self.count("SELECT COUNT(*) FROM final_replies WHERE state='delivered'"),
+            self.count("SELECT COUNT(*) FROM final_replies WHERE state='uncertain'"),
+            self.count("SELECT COUNT(*) FROM final_replies WHERE state='sending'"),
+            self.count("SELECT COUNT(*) FROM final_replies WHERE state='pending'"),
+        )
     }
     fn diagnostic(&self) -> String {
         // Only disposable synthetic fixture data. Never used with live state.
@@ -1257,11 +1291,19 @@ impl Peer {
                 )
             } else if request.method == "PUT" && path.contains("/send/") {
                 // The coordinator posts the approval-status notice in the
-                // project room (approval_status_*, a plaintext notice). The
-                // send is server-side; accept any m.room.message there.
+                // project room (approval_delivery/public.rs: `m.room.message`
+                // always, txn `approval_status_` + 64 hex digest — one
+                // identity per notice content, never re-attempted).
+                assert!(request.target.contains("factory_project"));
+                assert!(segments.contains(&"m.room.message"));
+                let txn = segments.last().expect("send txn segment");
                 assert!(
-                    request.target.contains("factory_project")
-                        && segments.contains(&"m.room.message")
+                    txn.starts_with("approval_status_")
+                        && txn.len() == "approval_status_".len() + 64
+                        && txn["approval_status_".len()..]
+                            .bytes()
+                            .all(|b| b.is_ascii_hexdigit()),
+                    "approval-status txn id: {txn}"
                 );
                 (
                     200,
@@ -1459,37 +1501,88 @@ impl Peer {
             } else if request.method == "PUT" && path.contains("/sendToDevice/") {
                 agent.crypto.share(body).await;
                 (200, json!({}))
-            } else if path.contains("/typing/") {
-                // Presence (board #11 parity, presence.rs): the typing
-                // indicator is a plaintext ephemeral server API, never an
-                // encrypted room event.
+            } else if request.method == "PUT" && path.contains("/typing/") {
+                // The typing indicator (presence.rs `typing_request` — the
+                // setAgentTyping wire form, bridge-matrix.js:10527):
+                // ephemeral self-reported state while the agent works, never
+                // a room event. The path carries the agent's OWN mxid; the
+                // body is {"typing":true,"timeout":…} when it starts and
+                // {"typing":false} when it stops.
+                let user = path.rsplit('/').next().expect("typing user segment");
+                assert_eq!(user, agent.user, "typing is self-reported by the agent");
+                assert!(
+                    request.target.contains("factory_project")
+                        || request.target.contains(&format!("fleet_dm_{index}")),
+                    "typing happens in the room the agent works in: {}",
+                    request.target
+                );
+                let typing = body["typing"].as_bool().expect("typing is a boolean");
+                if typing {
+                    assert_eq!(
+                        body["timeout"],
+                        json!(45_000),
+                        "the typing window the product pins (AGENT_TYPING_TIMEOUT_MS)"
+                    );
+                } else {
+                    assert!(body["timeout"].is_null(), "the stop carries no window");
+                }
                 (200, json!({}))
             } else if request.method == "PUT" && path.contains("/send/") {
-                if request.target.contains("factory_project") {
-                    if segments.contains(&"m.reaction") {
-                        // `ackAgentReceipt` (presence.rs): the 👀 annotation is
-                        // plaintext (m.reaction cannot carry encrypted content)
-                        // and the agent also sends it in the shared project.
-                        assert_eq!(body["m.relates_to"]["rel_type"], "m.annotation");
-                        (
-                            200,
-                            json!({"event_id":format!("$fleet_project_ack_{index}_{}",agent.project_events.len())}),
-                        )
-                    } else {
-                        assert!(segments.contains(&"m.room.message"));
-                    // Two kinds of plaintext project event an agent may post in
-                    // its own identity: its final reply, and the task notice
-                    // that announces work another agent delegated to it.
+                if segments.contains(&"m.reaction") {
+                    // The delivery receipt (presence.rs `ack_request`, the
+                    // ackAgentReceipt wire form): an m.annotation reaction by
+                    // the agent on the event it just handled, in whatever room
+                    // that event lived in — project and DM both occur. The txn
+                    // is `ack_` + 24 hex derived from the event, so a retry of
+                    // the same handoff cannot double-react; the key is the
+                    // eyes emoji the product pins (AGENT_ACK_REACTION).
+                    let txn = segments.last().expect("send txn segment");
+                    assert!(
+                        txn.starts_with("ack_")
+                            && txn.len() == 28
+                            && txn[4..].bytes().all(|b| b.is_ascii_hexdigit()),
+                        "ack txn id: {txn}"
+                    );
+                    assert_eq!(body["m.relates_to"]["rel_type"], json!("m.annotation"));
+                    assert!(
+                        !body["m.relates_to"]["event_id"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .is_empty(),
+                        "the reaction names the event it acknowledges"
+                    );
+                    assert_eq!(body["m.relates_to"]["key"], json!("\u{1F440}"));
+                    (200, json!({"event_id":format!("$fleet_ack_{}", &txn[4..])}))
+                } else if request.target.contains("factory_project") {
+                    assert!(segments.contains(&"m.room.message"));
+                    // Three kinds of plaintext project event an agent may post
+                    // in its own identity: its final reply, the task notice
+                    // that announces work another agent delegated to it, and
+                    // the activity round-summary the merged features post
+                    // (store activity.rs `summary`). Pin each by shape —
+                    // never accept blind.
+                    let text = body["body"].as_str().unwrap_or_default();
                     if body["msgtype"] == "m.notice" {
-                        assert!(body["body"].as_str().unwrap().starts_with("Task created: "));
+                        if text.starts_with("Task created: ") {
+                            // The delegation announcement.
+                        } else {
+                            // The activity round-summary: first line the
+                            // phase's icon and word, second line the volatile
+                            // counters — pin the shape, never the numbers.
+                            let (head, tail) = text.split_once('\n').expect(
+                                "the activity summary carries its phase line and the counter line",
+                            );
+                            assert!(!head.is_empty(), "activity summary phase line: {head:?}");
+                            assert!(
+                                tail.starts_with("已运行 ")
+                                    && tail.contains(" 秒 · 工具调用 ")
+                                    && tail.ends_with(" 次"),
+                                "activity summary counters: {tail:?}"
+                            );
+                        }
                     } else {
                         assert_eq!(body["msgtype"], "m.text");
-                        assert!(
-                            body["body"]
-                                .as_str()
-                                .unwrap()
-                                .starts_with("Verified factory task ")
-                        );
+                        assert!(text.starts_with("Verified factory task "));
                     }
                     agent
                         .project_events
@@ -1498,41 +1591,17 @@ impl Peer {
                         200,
                         json!({"event_id":format!("$fleet_project_reply_{index}_{}",agent.project_events.len())}),
                     )
-                    }
-                } else if path.contains("/typing/") {
-                    // Presence (board #11 parity, presence.rs): the typing
-                    // indicator is a plaintext ephemeral server API, never an
-                    // encrypted room event.
-                    (200, json!({}))
                 } else {
-                    if segments.contains(&"m.reaction") {
-                        // `ackAgentReceipt` (presence.rs): the 👀 annotation is
-                        // a plaintext server API too — m.reaction cannot be
-                        // encrypted content. Accept and answer.
-                        assert!(request.target
-                            .contains(&format!("fleet_dm_{index}")));
-                        assert_eq!(
-                            body["m.relates_to"]["rel_type"], "m.annotation"
-                        );
-                        (
-                            200,
-                            json!({"event_id":format!(
-                                "$fleet_ack_{index}_{}",
-                                agent.room_posts + agent.account_posts
-                            )}),
-                        )
-                    } else {
-                        assert!(
-                            request.target.contains(&format!("fleet_dm_{index}"))
-                                && segments.contains(&"m.room.encrypted")
-                        );
-                        let room: ruma::OwnedRoomId = agent.dm.clone().try_into().unwrap();
-                        agent.crypto.decrypt(body, &room).await;
-                        (
-                            200,
-                            json!({"event_id":format!("$fleet_reply_{index}_{}",agent.crypto.events.len())}),
-                        )
-                    }
+                    assert!(
+                        request.target.contains(&format!("fleet_dm_{index}"))
+                            && segments.contains(&"m.room.encrypted")
+                    );
+                    let room: ruma::OwnedRoomId = agent.dm.clone().try_into().unwrap();
+                    agent.crypto.decrypt(body, &room).await;
+                    (
+                        200,
+                        json!({"event_id":format!("$fleet_reply_{index}_{}",agent.crypto.events.len())}),
+                    )
                 }
             } else {
                 assert!(agent.created && agent.owner && agent.joined);

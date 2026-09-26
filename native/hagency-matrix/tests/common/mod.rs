@@ -502,11 +502,15 @@ impl Fake {
     /// and received_files harnesses) whose trees this lane does not touch.
     /// Every call site inside this crate's own tests uses `quiesced`.
     pub async fn no_request(&mut self) {
-        assert!(
-            timeout(Duration::from_millis(80), self.requests.recv())
-                .await
-                .is_err()
-        );
+        if let Ok(Some(request)) = timeout(Duration::from_millis(80), self.requests.recv()).await {
+            // Name the intruder: a bare `is_err` assert made the owned_matrix
+            // quiet-window failure need this re-run at all (the crate's own
+            // tests get this naming from `quiesced` already).
+            panic!(
+                "transport was expected to be quiescent but admitted {} {}",
+                request.method, request.target
+            );
+        }
     }
     pub async fn close(self) {
         self.stop.cancel();

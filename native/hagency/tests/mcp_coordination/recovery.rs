@@ -153,7 +153,11 @@ async fn native_mcp_coordination_catalog() {
             "read_graph_dependency",
             "get_approval",
             "consume_approval",
-            "read_conversation"
+            "read_conversation",
+            // Migration 066 restored the retained reminder tool
+            // (mcp/catalog.rs serves it; runner.rs mounts its route) —
+            // the catalog's 25th entry, asserted like the rest below.
+            "schedule_reminder"
         ])
     );
     for tool in tools {

@@ -570,16 +570,22 @@ async fn native_ceiling_alert_transition_route_authority() {
         .unwrap()
         .to_owned();
     let seeded = format!("{}/{key}/transition", f.url());
-    // A malformed body and an unknown state word are invalid.
-    for body in [json!({}), json!({"to": "assigned"}), json!({"to": ""})] {
+    // A malformed body and an empty state word are invalid. (`assigned`
+    // LEFT this group: migration 045 restored the retained fifth state —
+    // task #24's TS parity — so the word validates against the five-state
+    // `ALERT_STATUSES` and transitions legally.)
+    for body in [json!({}), json!({"to": ""})] {
         let response = post(&seeded, Some(TOKEN), body).send(&f.service).await;
         assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST));
     }
-    // One legal walk to terminal: acknowledge, suppress, resolve — the row
-    // itself comes back, display state and provenance asserted per hop.
+    // One legal walk to terminal under the five-state map (store
+    // `allowed_transitions`, lib/alert-store.js:8-14 restored by migration
+    // 045): open→suppressed→assigned→resolved — the retained suppression
+    // hop and the restored assigned state. The row itself comes back,
+    // display state and provenance asserted per hop.
     for (to, note) in [
-        ("acknowledged", Some("seen")),
         ("suppressed", None),
+        ("assigned", Some("on it")),
         ("resolved", Some("closed by operator")),
     ] {
         let body = match note {

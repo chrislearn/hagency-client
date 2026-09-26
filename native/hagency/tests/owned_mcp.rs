@@ -659,8 +659,10 @@ async fn native_claude_owned_task_mcp() {
         assert_eq!(
             receipt,
             // Five since the room discussion became a task tool of its own (ADR178);
-            // six with list_tasks, which the peer now calls instead of refusing.
-            json!({"heartbeat":true,"readback":true,"helper_exit":true,"tools":6+2*usize::from(send)+2*usize::from(receive),
+            // six with list_tasks, which the peer now calls instead of refusing;
+            // seven with schedule_reminder (migration 066 restored the retained
+            // reminder tool — catalog.rs serves it with its own schema arm).
+            json!({"heartbeat":true,"readback":true,"helper_exit":true,"tools":7+2*usize::from(send)+2*usize::from(receive),
             "outside_profile_refused":4,"foreign_task_refused":true})
         );
         let task: Task = serde_json::from_str(

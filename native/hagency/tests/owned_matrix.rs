@@ -234,6 +234,14 @@ async fn native_matrix_owned_notice_failure() {
                 if lost {
                     drop(request)
                 } else {
+                    /* 403 maps to Unauthorized (http.rs), and the
+                     * rejoin-on-kick polish (44e080f9) answers that with the
+                     * auto-join before the send settles uncertain. The join
+                     * is refused too, so membership is NOT restored. Consume
+                     * it HERE: a leftover in the channel would masquerade as
+                     * the retry's traffic below. The drop arm has no
+                     * response at all — a transport error, not an auth
+                     * error — so no rejoin fires there. */
                     request.json(403, json!({"errcode":"M_FORBIDDEN"}));
                     // Board #11 (bridge-matrix.js:10888-10950): a room write that
                     // fails on membership first attempts the rejoin and resends.
