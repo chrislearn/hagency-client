@@ -235,7 +235,10 @@ try {
     assert.match(await page.locator('[data-native-state="stale"] [role="alert"]').innerText(), /earlier observations may be stale/);
     assert.equal(await page.locator('[data-kind="input"]').first().textContent(), '4');
     await context.unroute(path);
-    await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+    // The stale container's own Refresh (the btn-row one): the fleet panel
+    // renders a second Refresh when its read fails, so the page-level
+    // role query is ambiguous.
+    await page.locator('[data-native-state="stale"]').getByRole('button', { name: 'Refresh', exact: true }).click();
     await page.locator('[data-native-state="ready"][aria-busy="false"]').first().waitFor();
   }
   if (process.env.HAGENCY_CONSOLE_SCREENSHOTS && !config.executable) {
