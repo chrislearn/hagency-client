@@ -25,6 +25,13 @@ pub(super) struct State {
     /// failed `turn/completed` the app server sends right after it has not been
     /// read yet. Consumed by that one notice and nothing else.
     failed_echo_owed: bool,
+    /// The provider's own reason for ending the turn, bounded and printable
+    /// (board #110). The real app server sends it in `error.params.error.message`
+    /// and repeats it in `turn/completed`'s `turn.error.message`; TS surfaces it
+    /// (`router/src/runner.ts:793` rejects with the whole `params`). Native used
+    /// to length-check it and throw it away, so a usage-limit refusal reached the
+    /// operator as a bare `protocol` "Result uncertain" with no reason at all.
+    turn_failure: Option<String>,
 }
 impl Default for State {
     fn default() -> Self {
@@ -39,12 +46,18 @@ impl Default for State {
             text_bytes: 0,
             events: 0,
             failed_echo_owed: false,
+            turn_failure: None,
         }
     }
 }
 impl State {
     pub fn item_count(&self) -> usize {
         self.items.len()
+    }
+    /// The provider's own turn-failure reason, already length-checked at
+    /// admission. Diagnostic only: it never decides an outcome.
+    pub fn turn_failure(&self) -> Option<&str> {
+        self.turn_failure.as_deref()
     }
     pub fn text_bytes(&self) -> usize {
         self.text_bytes
@@ -201,6 +214,8 @@ impl State {
                     Some(false) => {
                         self.phase = Phase::Ended;
                         self.outcome = Some(Outcome::Failed);
+                        // Retain the provider's own words (board #110).
+                        self.turn_failure = Some(message.to_owned());
                         self.failed_echo_owed = true;
                         Ok(Update::TurnEnded)
                     }
@@ -488,8 +503,16 @@ impl State {
                 Outcome::Completed { text }
             }
             "failed" => {
-                if string(object(turn, "error")?, "message")?.len() > 4096 {
+                let message = string(object(turn, "error")?, "message")?;
+                if message.len() > 4096 {
                     return Err(Error::Capacity);
+                }
+                // `turn/completed` restates the reason the `error` notice just
+                // gave (board #110); keep whichever arrived. The echo arm above
+                // already consumed the duplicate, so this is the arm that runs
+                // when the completion is the FIRST frame to carry it.
+                if self.turn_failure.is_none() {
+                    self.turn_failure = Some(message.to_owned());
                 }
                 Outcome::Failed
             }

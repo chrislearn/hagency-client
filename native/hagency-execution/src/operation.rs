@@ -459,6 +459,12 @@ pub struct Report {
     pub exit_identity: Option<String>,
     pub stderr_tail: String,
     pub guardian_stderr_tail: String,
+    /// The provider's own reason for ending the turn, bounded, for the
+    /// attempt's record (board #110). TS surfaces the same words
+    /// (`router/src/runner.ts:793`); without them a usage-limit refusal reached
+    /// the operator as a bare `protocol` fault with no reason at all. Evidence
+    /// only — it decides no outcome, and it never carries a path or capability.
+    pub turn_failure: String,
     /// Fixed original startup diagnostics, never authority or child-stop proof.
     startup_error: Option<StartError>,
     runtime_observation: Option<RuntimeObservation>,
@@ -495,6 +501,7 @@ impl Report {
             exit_identity: None,
             stderr_tail: String::new(),
             guardian_stderr_tail: String::new(),
+            turn_failure: String::new(),
             canonical_status: None,
             settlement: Settlement::Pending,
             settlement_cause: None,
@@ -1781,6 +1788,11 @@ async fn execute(
     report.exit_identity = runner.exit_identity();
     report.stderr_tail = runner.stderr_tail(512);
     report.guardian_stderr_tail = runner.guardian_stderr_tail();
+    // The provider's own reason for ending the turn (board #110), bounded to
+    // the same 512 bytes as the stderr tail it sits beside. The real app server
+    // names a usage-limit refusal here; native used to drop it, so the operator
+    // saw only a bare `protocol` fault.
+    report.turn_failure = runner.turn_failure_tail(512);
     note(
         domain,
         cap,

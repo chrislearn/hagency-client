@@ -157,6 +157,26 @@ impl OwnedSession {
     pub fn refused_notification(&self) -> Option<&'static str> {
         self.session.refused_notification()
     }
+    /// The provider's own reason for ending the turn, bounded at admission
+    /// (board #110). Diagnostic only — TS surfaces the same words, and without
+    /// them a usage-limit refusal reached the operator as a bare `protocol`
+    /// "Result uncertain" with no reason at all.
+    pub fn turn_failure(&self) -> Option<&str> {
+        self.session.turn_failure()
+    }
+    /// The last `max` bytes of the provider's turn-failure reason, cut on a
+    /// character boundary like `stderr_tail`, for the attempt's record
+    /// (board #110). Evidence only: no verdict, retry or authority reads it.
+    pub fn turn_failure_tail(&self, max: usize) -> String {
+        let Some(text) = self.session.turn_failure() else {
+            return String::new();
+        };
+        let start = text.ceil_char_boundary(text.len().saturating_sub(max));
+        text[start..]
+            .chars()
+            .map(|c| if c.is_control() && c != '\n' { '\u{FFFD}' } else { c })
+            .collect()
+    }
     /// Whether the connection still holds this prepared server request. False
     /// once `serverRequest/resolved` was parsed: the one-shot frame's transmit
     /// path is gone, so it must never be re-sent.
