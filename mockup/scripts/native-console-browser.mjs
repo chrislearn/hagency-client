@@ -180,6 +180,13 @@ if (config.lifecycle) {
     assert((await page.locator('[data-lifecycle-action="start"]').count()) === 0, 'no serving row advertises Start (board #106: Start is the stopped row control)');
     assert((await page.locator('[data-lifecycle-action="preset"]').count()) === 0, 'the roster does not advertise the unavailable preset transition');
     await page.locator(`[data-engagement-id="${config.engagement}"] [data-lifecycle-action="review"]`).click();
+    // Board #111 acceptance, at the served binary: the review page must LIST
+    // the dispatch the session quarantine is about. This fixture settles the
+    // agent's own started `private_dispatch` by lease expiry, so its session
+    // refuses every turn while the dispatch has NO `dispatch_stops` row — the
+    // exact live trap. Before the fix this panel said "No unsettled stopped
+    // task in this page." and the operator had no route out.
+    await page.locator('[data-recovery-inspect="private_dispatch"]').waitFor({ timeout: 15_000 });
     await page.locator('[data-recovery-inspect="resolution_dispatch"]').click();
     // A failure here is silent in the DOM (the panel renders its error
     // word instead of the inspection), so surface what actually rendered.
@@ -222,7 +229,12 @@ if (config.lifecycle) {
     assert.match(await page.locator('[data-recovery-result]').innerText(), /blocked/);
     assert.equal(requests, 2);
     assert(urls.every((url) => !url.includes('access=')), 'no ticket value in a request URL');
-    assert(!/private_|operator\.token/.test(await page.locator('main').innerText()), 'no credential value on screen');
+    // Board #111: the review page is SPECIFIED to list the quarantined
+    // dispatch's id, and this fixture names it `private_dispatch`
+    // (console/fixture.rs) — so that one identifier the page must render is
+    // allowed. The guard still catches every OTHER fixture-internal or
+    // credential value (a token, a storage path, an account/seat id).
+    assert(!/private_(?!dispatch)|operator\.token/.test(await page.locator('main').innerText()), 'no credential value on screen');
     assert.deepEqual(failures, []);
     console.log('PASS native agent lifecycle browser');
   } finally { await browser.close(); }

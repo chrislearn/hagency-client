@@ -1058,8 +1058,17 @@ async fn native_console_stopped_dispatch_list() {
     assert_eq!(first.as_object().unwrap().len(), 3);
     assert_eq!(first["engagementId"], f.engagement);
     assert_eq!(first["dispatches"].as_array().unwrap().len(), 16);
-    assert_eq!(first["dispatches"][0]["dispatchId"], "resolution_dispatch");
+    // Board #111: the fixture's OWN seeded dispatch is settled `outcome_unknown`
+    // by lease expiry (its lease is wall-clock-stale by the time seeding
+    // finishes) and has NO `dispatch_stops` row — exactly the live shape this
+    // page used to hide. It sorts first (`private_…` < `resolution_…`) and is
+    // the dispatch the session quarantine is about, so it heads the page and IS
+    // inspectable (its attempt's own `lost` event is the material).
+    assert_eq!(first["dispatches"][0]["dispatchId"], "private_dispatch");
     assert_eq!(first["dispatches"][0]["inspectionAvailable"], true);
+    assert_eq!(first["dispatches"][0]["reason"], "runner_lost");
+    assert_eq!(first["dispatches"][1]["dispatchId"], "resolution_dispatch");
+    assert_eq!(first["dispatches"][1]["inspectionAvailable"], true);
     for (index, row) in first["dispatches"].as_array().unwrap().iter().enumerate() {
         assert_eq!(row.as_object().unwrap().len(), 6);
         assert!(
@@ -1068,18 +1077,22 @@ async fn native_console_stopped_dispatch_list() {
                 .values()
                 .all(|v| !v.is_array() && !v.is_object())
         );
-        if index > 0 {
+        // Only the two dispatches with real inspection material lead; the 17
+        // discovery-only fixture rows carry no host receipt and no lost event.
+        if index > 1 {
             assert_eq!(row["inspectionAvailable"], false);
         }
     }
-    assert_eq!(first["nextAfter"], "z_stopped_14");
-    let second = get(&format!("{path}?after=z_stopped_14"), &cookie)
+    // 19 unresolved rows exist (private_dispatch, resolution_dispatch, 17
+    // z_stopped_*); the page is capped at 16, so the cursor is the 16th id.
+    assert_eq!(first["nextAfter"], "z_stopped_13");
+    let second = get(&format!("{path}?after=z_stopped_13"), &cookie)
         .send(&service)
         .await
         .take_json::<Value>()
         .await
         .unwrap();
-    assert_eq!(second["dispatches"].as_array().unwrap().len(), 2);
+    assert_eq!(second["dispatches"].as_array().unwrap().len(), 3);
     assert!(second["nextAfter"].is_null());
     let foreign = f
         .domain

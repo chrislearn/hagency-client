@@ -279,6 +279,12 @@ fn lose(tx: &Transaction<'_>, id: &str, now: u64, writer: &'static str) -> Resul
             [&d.session_id],
         )?;
         tx.execute("UPDATE workspace_resources SET dirty=1 WHERE id IN (SELECT resource_id FROM dispatch_resources WHERE dispatch_id=?1 AND exclusive=1)",[id])?;
+        // Deliberately NO `dispatch_stops` row: a loss is not a stop the host
+        // proved, and this shape — `outcome_unknown` with no stop row — is
+        // exactly what the operator's `recover_dispatch` route exists to
+        // resolve (ADR-148; `native_console_agent_recover_dispatch_recovers_orphan`
+        // and `agent_fences::orphan` both pin it). The review page covers this
+        // shape too since board #111; see `stopped_inspection.rs`.
         // The retained product says this in the thread for a run a restart
         // settled as unknown too (`reconcileOnStart` ->
         // `settleUnknownInternal`), not only for one the runner reported.

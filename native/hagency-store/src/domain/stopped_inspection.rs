@@ -26,8 +26,21 @@ impl DomainRepository {
         )? {
             return Err(Error::NotFound);
         }
+        // Board #111: this lists what the OPERATOR must settle — the same set
+        // the session quarantine is about (`task_intents::quarantined_waiting_notice`),
+        // not only the runs a reported failure left a stop row for. A run the
+        // host settled by RESTART or lease expiry (`execution.rs::lose`) writes
+        // no `dispatch_stops` row (deliberately — that shape is what
+        // `recover_dispatch`/ADR-148 owns), so the inner join hid it: the
+        // session refused every turn while this page showed nothing. TS lists
+        // by state alone (router/src/agent-ops.ts:1049-1053: state
+        // `outcome_unknown` and no `outcome_resolutions` row).
+        // `inspectionAvailable` mirrors what `outcome_resolution::snapshot`
+        // accepts — a host inventory, an open agent fence, or, for a lost run,
+        // the attempt's own `lost` event — or the row would list with a
+        // permanently disabled Inspect button.
         let mut rows:Vec<Value>=self.db.prepare(
-            "SELECT d.id,d.session_id,d.task_id,d.fence,s.reason,(EXISTS(SELECT 1 FROM owned_stop_inspections i WHERE i.dispatch_id=d.id AND i.fence=d.fence) OR EXISTS(SELECT 1 FROM agent_fences af WHERE af.dispatch_id=d.id AND af.fence=d.fence AND af.cleared_at IS NULL)) FROM runner_dispatches d JOIN runner_sessions r ON r.id=d.session_id JOIN dispatch_stops s ON s.dispatch_id=d.id AND s.fence=d.fence WHERE r.engagement_id=?1 AND d.id>?2 AND d.state='outcome_unknown' AND s.settled_at IS NULL ORDER BY d.id LIMIT 17"
+            "SELECT d.id,d.session_id,d.task_id,d.fence,COALESCE(s.reason,'runner_lost'),(EXISTS(SELECT 1 FROM owned_stop_inspections i WHERE i.dispatch_id=d.id AND i.fence=d.fence) OR EXISTS(SELECT 1 FROM agent_fences af WHERE af.dispatch_id=d.id AND af.fence=d.fence AND af.cleared_at IS NULL) OR EXISTS(SELECT 1 FROM runner_attempt_events e WHERE e.dispatch_id=d.id AND e.fence=d.fence AND e.phase='lost')) FROM runner_dispatches d JOIN runner_sessions r ON r.id=d.session_id LEFT JOIN dispatch_stops s ON s.dispatch_id=d.id AND s.fence=d.fence WHERE r.engagement_id=?1 AND d.id>?2 AND d.state='outcome_unknown' AND s.settled_at IS NULL AND NOT EXISTS(SELECT 1 FROM outcome_resolutions o WHERE o.dispatch_id=d.id) ORDER BY d.id LIMIT 17"
         )?.query_map(params![engagement,after],|r|Ok(json!({"dispatchId":r.get::<_,String>(0)?,"sessionId":r.get::<_,String>(1)?,"taskId":r.get::<_,Option<String>>(2)?,"fence":r.get::<_,u64>(3)?,"reason":r.get::<_,String>(4)?,"inspectionAvailable":r.get::<_,bool>(5)?})))?.collect::<Result<_,_>>()?;
         let next = (rows.len() > 16).then(|| rows[15]["dispatchId"].clone());
         rows.truncate(16);
