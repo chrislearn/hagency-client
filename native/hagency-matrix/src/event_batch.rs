@@ -412,6 +412,27 @@ impl Batch {
             if matches!(decision, Decision::NotTarget) {
                 filtered += 1;
             }
+            // Board #98: every refusal at ingress leaves a trace. A follow-up
+            // posted in a thread whose session is not in this plan matched no
+            // target and was dropped with no reason anywhere — that silence is
+            // exactly how the live drop hid for 120 s. Logged, never stored:
+            // the disposition row already carries the durable decision. An
+            // unrelated room event is NOT ours and stays unlogged (that is the
+            // ordinary `NotTarget` path); only a threaded event — the shape
+            // that can only ever be ours — is loud when it matches no target.
+            match &decision {
+                Decision::NotTarget if event_thread(&value).is_some() => eprintln!(
+                    "[ingress] dropped {room} {}: no target for thread_root {:?} ({} target(s))",
+                    value.get("event_id").and_then(Value::as_str).unwrap_or("?"),
+                    event_thread(&value),
+                    self.targets.len(),
+                ),
+                Decision::Rejected { reason } => eprintln!(
+                    "[ingress] refused {room} {}: {reason:?}",
+                    value.get("event_id").and_then(Value::as_str).unwrap_or("?"),
+                ),
+                Decision::Candidate { .. } | Decision::Deferred | Decision::NotTarget => {}
+            }
             dispositions.push(Disposition::new(
                 source,
                 serde_json::to_value(&timeline.kind).map_err(|_| Error::Storage)?,
@@ -895,6 +916,15 @@ impl Receipt {
 /// and the room supplies the server, so the localpart plus the route's
 /// `server_name` is exactly the MXID an `m.mentions` list would have carried.
 /// TS never fell back past a non-empty pill list, so neither does this.
+/// The thread root an inbound wire event names, if any. Used only by the
+/// ingress trace (board #98): a threaded event that matches no target is
+/// dropped, and that drop must be audible.
+fn event_thread(value: &Value) -> Option<&str> {
+    let relation = value.get("content")?.get("m.relates_to")?;
+    (relation.get("rel_type").and_then(Value::as_str) == Some("m.thread"))
+        .then(|| relation.get("event_id").and_then(Value::as_str))
+        .flatten()
+}
 fn address_mentions(
     content: &serde_json::Map<String, Value>,
     server: &str,

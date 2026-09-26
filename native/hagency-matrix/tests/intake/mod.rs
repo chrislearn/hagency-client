@@ -1592,3 +1592,214 @@ async fn native_matrix_intake_pill_and_plain_mentions_wake_without_m_mentions() 
     f.store.shutdown().await.unwrap();
     fake.close().await;
 }
+
+
+/// Board #98. The owner posts a question at the project room's top level; the
+/// agent's task binds to it as a thread session; the task then completes (the
+/// live rig showed the agent's own ✅ notice). The owner now replies IN THAT
+/// THREAD with Element's exact shape. Before the fix the task's thread session
+/// had already left the intake plan (`intent_sessions` excluded a done task), so
+/// the follow-up matched no target and was dropped with nothing logged.
+#[tokio::test]
+async fn native_matrix_intake_threaded_followup_after_task_done() {
+    use hagency_core::{
+        agent_inbox::AgentInboxPlan,
+        ingress::VerifiedTaskRequest,
+        replies::ReplyDeliveryObservation,
+        task_intents::TaskDefinition,
+        tasks::{DispatchInput, RunnerCapability, TaskMutation, TaskState},
+    };
+    let f = common::Fixture::new();
+    let mut fake = common::Fake::start(false).await;
+    let c = Collector::new(
+        config(&f, &fake.endpoint, f.identity.clone(), 1, false),
+        f.store.clone(),
+    )
+    .unwrap();
+    prime(&c, &f, &mut fake, false).await;
+    // 1. The question, top level, addressed to the agent: "391" gets answered.
+    let question = sync(
+        "question",
+        vec![event(
+            "question",
+            "@worker what is 17 times 23?",
+            &["@worker:example.test"],
+            None,
+        )],
+    );
+    assert_eq!(run(&c, &mut fake, question, false).await.unwrap().admitted, 1);
+    let inbox = f.store.inbox("root".into(), 0, 10, None).await.unwrap();
+    assert_eq!(inbox.len(), 1);
+    let sequence = inbox[0].message.sequence;
+    // 2. The agent's task, rooted at that question => a thread-scoped session.
+    let task = f
+        .store
+        .create_verified_task_intent(VerifiedTaskRequest {
+            scope: f.store.matrix_ingress_scope("root".into()).await.unwrap(),
+            request_key: "question_task".into(),
+            source_sequence: sequence,
+            definition: TaskDefinition {
+                title: "17 times 23".into(),
+                ..Default::default()
+            },
+        })
+        .await
+        .unwrap();
+    assert_ne!(task.session_id, "root", "the task opens its own thread session");
+    // The acknowledgement activates the intent, exactly as the host does.
+    let n = f
+        .store
+        .claim_verified_task_notice(60_000)
+        .await
+        .unwrap()
+        .unwrap();
+    f.store
+        .begin_verified_task_notice_send(n.claim.notice.id.clone(), n.claim.token.clone())
+        .await
+        .unwrap();
+    f.store
+        .deliver_verified_task_notice(
+            n.claim.notice.id.clone(),
+            n.claim.token.clone(),
+            ReplyDeliveryObservation {
+                transaction_id: n.claim.notice.transaction_id,
+                digest: n.digest,
+                server_name: n.route.server_name,
+                room_id: n.route.room_id,
+                sender_mxid: n.route.sender_mxid,
+                device_id: n.route.device_id,
+                event_id: "$question_ack".into(),
+                encrypted: false,
+            },
+        )
+        .await
+        .unwrap();
+    // 3. The agent answers and its task COMPLETES (the live ✅ notice).
+    // completed_at is one minute in the past so the follow-up below is a fresh
+    // request to a done task, not chatter at the moment it finished.
+    let done_at = now() - 60_000;
+    f.store
+        .enqueue_inbox_dispatch(
+            DispatchInput {
+                id: "question_dispatch".into(),
+                session_id: task.session_id.clone(),
+                task_id: Some(task.task_id.clone()),
+                resources: vec![],
+                payload: json!({"instruction":"answer the question"}),
+            },
+            vec![sequence],
+        )
+        .await
+        .unwrap();
+    let cap: RunnerCapability = f
+        .store
+        .claim_dispatch("question_runner".into(), now(), 60_000, 60_000, 1)
+        .await
+        .unwrap()
+        .unwrap();
+    f.store.start_dispatch(cap.clone(), now()).await.unwrap();
+    f.store
+        .mutate_task(
+            cap.clone(),
+            task.task_id.clone(),
+            "answered".into(),
+            TaskMutation::Transition {
+                status: TaskState::Done,
+                waiting_reason: None,
+                waiting_until: None,
+            },
+            done_at,
+        )
+        .await
+        .unwrap();
+    // The agent's turn ends: its dispatch is settled, so the session is idle
+    // again and only a NEW follow-up can make it selectable.
+    f.store
+        .complete_dispatch(cap, json!({"fixture":"turn ended"}), now())
+        .await
+        .unwrap();
+    // 4. The production plan rule (driver.rs:685): the agent's own sessions
+    // plus the thread sessions of its tasks. A completed task must still be
+    // here, or its thread is unreadable.
+    let engagement = f.identity.transport.engagement_id.clone();
+    let sessions = f.store.intent_sessions(engagement.clone()).await.unwrap();
+    assert!(
+        sessions.contains(&task.session_id),
+        "a completed task's thread session must stay in the intake plan: {sessions:?}"
+    );
+    // 5. Element's exact threaded follow-up (backend-v2.js:2254; the shape the
+    // live rig posted): m.mentions + m.thread + is_falling_back + m.in_reply_to.
+    let mut follow = event(
+        "followup",
+        "@worker Now add 9 to that.",
+        &["@worker:example.test"],
+        None,
+    );
+    follow["content"]["m.relates_to"] = json!({
+        "rel_type": "m.thread",
+        "event_id": "$question",
+        "is_falling_back": true,
+        "m.in_reply_to": {"event_id": "$question"}
+    });
+    let mut plan = vec!["root".to_string()];
+    plan.extend(sessions.iter().cloned());
+    let cancel = CancellationToken::new();
+    let (result, ()) = tokio::join!(
+        c.intake(HostIntakePlan::new(plan).unwrap(), &cancel),
+        async {
+            fake.next().await.json(200, common::who());
+            fake.next()
+                .await
+                .json(200, sync("followup", vec![follow]));
+            fake.next().await.json(200, state(false));
+        }
+    );
+    assert_eq!(
+        result.unwrap().admitted,
+        1,
+        "the threaded follow-up must be admitted, not silently dropped"
+    );
+    // It reached the task's OWN thread session, with the root, addressed.
+    let thread = f
+        .store
+        .inbox(task.session_id.clone(), 0, 10, None)
+        .await
+        .unwrap();
+    assert_eq!(thread.len(), 1);
+    // TS keeps the typed text, mention included (`parseInboundTextMessage`
+    // strips only Element's fallback quote block, never the mention — :3312).
+    assert_eq!(thread[0].message.body, "@worker Now add 9 to that.");
+    assert_eq!(thread[0].message.thread_root.as_deref(), Some("$question"));
+    assert!(thread[0].wake, "the follow-up addresses the agent");
+    // And it is real work again for that task's session.
+    assert_eq!(
+        f.store.intent_inboxes(engagement).await.unwrap(),
+        vec![task.session_id.clone()],
+        "the follow-up waits for a dispatch of the same task"
+    );
+    // 6. The answer carries the thread root, so the reply lands IN the thread
+    // (bridge-matrix.js:3318-3393; `Attempt::validate` enforces exactly this).
+    let route = f
+        .store
+        .matrix_intake_route(task.session_id.clone())
+        .await
+        .unwrap();
+    assert_eq!(route.thread_root.as_deref(), Some("$question"));
+    assert_eq!(
+        crate::outgoing::state::reply_relation(
+            route.thread_root.as_deref(),
+            Some("$followup"),
+            true,
+            false
+        ),
+        Some(json!({
+            "rel_type": "m.thread",
+            "event_id": "$question",
+            "is_falling_back": true,
+            "m.in_reply_to": {"event_id": "$followup"}
+        }))
+    );
+    c.close().await.unwrap();
+    f.store.shutdown().await.unwrap();
+    fake.close().await;
+}
