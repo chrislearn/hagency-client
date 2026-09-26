@@ -49,10 +49,12 @@ fn malformed() -> Vec<Value> {
             "id" => {
                 value.as_object_mut().unwrap().remove("event_id");
             }
-            "relation" => {
-                value["content"]["m.relates_to"] =
-                    json!({"rel_type":"m.replace","event_id":"$root"})
-            }
+            // Board #112: an `m.replace` OBJECT is not malformed — TS
+            // `parseInboundTextMessage` (:3294-3297) SKIPS an edit, it never
+            // refuses it, so this fixture can no longer stand for a malformed
+            // relation. A `m.relates_to` that is not an object is genuinely
+            // malformed for both, which is what this case has always meant.
+            "relation" => value["content"]["m.relates_to"] = json!("m.replace"),
             "mentions" => value["content"]["m.mentions"] = json!({"user_ids":[123]}),
             "media" => {
                 value["content"]["msgtype"] = json!("m.file");
@@ -64,17 +66,60 @@ fn malformed() -> Vec<Value> {
     }
     values
 }
+/// Board #112, second half. The live log repeated
+/// `[ingress] refused !room $Xy6e…: Unsupported`. Those events are the agents'
+/// own delivery edits: every activity notice the service sends as an
+/// `m.replace` (`apply_activity_envelope`, TS `activity.ts:55-72`) comes back on
+/// the next sync, and native refused ANY relation that was not `m.thread` as
+/// `Unsupported`. TS does not refuse them — `parseInboundTextMessage`
+/// (`bridge-matrix.js:3294-3297`) SKIPS an edit outright: "Ignore edit events:
+/// they should not create a new hagency message." So they must be ignored (a
+/// non-target), not refused, and must not be logged as refusals.
+#[tokio::test]
+async fn native_matrix_intake_edit_events_are_ignored_not_refused() {
+    let (f, mut fake, c) = ready(false).await;
+    let mut edit = event(
+        "edit",
+        "* ✅ 已完成",
+        &["@worker:example.test"],
+        None,
+    );
+    edit["content"]["m.relates_to"] =
+        json!({"rel_type":"m.replace","event_id":"$activity_notice"});
+    edit["content"]["m.new_content"] = json!({"msgtype":"m.notice","body":"✅ 已完成"});
+    let mut reaction = event("reaction", "", &[], None);
+    // A real reaction is an `m.reaction` EVENT, not an `m.room.message` carrying
+    // an `m.annotation` relation — the event type is what makes it not ours.
+    reaction["type"] = json!("m.reaction");
+    reaction["content"] = json!({"m.relates_to": {"rel_type":"m.annotation","event_id":"$question","key":"👀"}});
+    let result = run(&c, &mut fake, sync("edits", vec![edit, reaction]), false)
+        .await
+        .unwrap();
+    // Neither is admitted and neither is a refusal: an edit is not a new
+    // message, and a reaction is not a message at all.
+    assert_eq!(result.admitted, 0);
+    assert_eq!(
+        result.rejected, 0,
+        "an edit/reaction is ignored like TS, never refused"
+    );
+    assert_eq!(rows(&f, "admitted_messages"), 0);
+    assert!(f.available().await, "an ignored event changes no authority");
+    c.close().await.unwrap();
+    f.store.shutdown().await.unwrap();
+    fake.close().await;
+}
+
 #[tokio::test]
 async fn native_matrix_rejection_continuation_actual_mixed_batch() {
     let (f, mut fake, c) = ready(false).await;
     let mut values = malformed();
     let rejected = values.len();
-    values.push(event(
-        "outside",
-        "Other thread",
-        &["@worker:example.test"],
-        Some("$unselected"),
-    ));
+    // Board #112: a threaded event that NAMES the agent is now admitted through
+    // the room session (it is an ordinary new message to the agent, answered
+    // in-thread — TS `backend-v2.js:2352-2366`), so this fixture is unaddressed
+    // to stay the genuine non-target this test is about: the malformed
+    // rejections and the eligible event beside them in the same batch.
+    values.push(event("outside", "Other thread", &[], Some("$unselected")));
     values.push(event(
         "good",
         "Eligible later in same batch",
@@ -273,12 +318,10 @@ async fn native_matrix_rejection_crypto_trust_upgrade_cannot_reinterpret_source(
 #[tokio::test]
 async fn native_matrix_rejection_replay_restart_changed_plan_and_content() {
     let (f, mut fake, c) = ready(false).await;
-    let off = event(
-        "unselected",
-        "Original non-target",
-        &["@worker:example.test"],
-        Some("$thread"),
-    );
+    // Board #112: unaddressed on purpose. A thread event that NAMES the agent is
+    // now admitted through the room session, so it could not stand for the
+    // non-target whose prior disposition this test carries across a restart.
+    let off = event("unselected", "Original non-target", &[], Some("$thread"));
     let bad = malformed().remove(0);
     let no_id = malformed().remove(2);
     let first = run(

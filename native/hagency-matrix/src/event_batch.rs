@@ -1,7 +1,10 @@
 //! Private authenticated journal DTOs. Only the owned SDK constructs proofs;
 //! deserialization occurs solely after authenticated journal decryption.
 use crate::{Error, wire};
-use hagency_core::{canonical, ingress::*, messages::InboundMessage, replies::ReplyRoute};
+use hagency_core::{
+    canonical, ingress::*, messages::InboundMessage,
+    replies::{ReplyRoute, RoomPrivacy},
+};
 use matrix_sdk_base::sync::SyncResponse;
 use matrix_sdk_common::deserialized_responses::{
     AlgorithmInfo, TimelineEventKind, VerificationState,
@@ -587,6 +590,14 @@ impl Batch {
             }))));
         }
         let thread = match relation.and_then(|v| v.get("rel_type")) {
+            // Board #112 (TS `parseInboundTextMessage`, bridge-matrix.js:3294-3297):
+            // "Ignore edit events: they should not create a new hagency message."
+            // The retained bridge SKIPPED an edit — it never refused it. Native
+            // refused every non-thread relation as `Unsupported`, so an agent's
+            // own ⏳→✅ activity edits were re-delivered by every sync and logged
+            // as `[ingress] refused …: Unsupported` over and over. Ignoring them
+            // is the TS behaviour; a refusal TS did not have is not (RULES §1).
+            Some(Value::String(t)) if t == "m.replace" => return Ok(None),
             Some(Value::String(t)) if t == "m.thread" => Some(
                 relation
                     .and_then(|v| v.get("event_id"))
@@ -608,6 +619,48 @@ impl Batch {
                 .targets
                 .iter()
                 .filter(|t| t.room_id == room && t.thread_root.as_deref() == Some(id))
+                .collect();
+        }
+        // Board #112: a mentioned agent must never silently lose a message. TS
+        // routes a thread follow-up to the task bound to its root, and when NO
+        // binding applies it is an ordinary new message to the mentioned agent,
+        // answered IN the thread (`backend-v2.js:2352-2366`). Native's ordinary
+        // owner mention runs through the ROOM session (`select_agent`), which
+        // carries no thread binding, so a follow-up in the thread of a question
+        // that session answered at the top level matched nothing and was dropped
+        // (live: `no target for thread_root Some("$uPwN…")`). Fall back to the
+        // room-scoped target: the event is admitted and woken, and the answer
+        // carries the SOURCE message's own thread root, exactly as TS
+        // `resolveGroupReplyRelation` (`bridge-matrix.js:3318-3393`) takes it
+        // from `delivery.threadRootEventId` rather than from the session.
+        //
+        // This arm is NOT a licence to read somebody else's thread: TS requires
+        // that the message ADDRESS this agent before the binding-less follow-up
+        // is taken (`backend-v2.js:2368-2377`: a human whose `msg.mentions`
+        // includes the agent). The predicate below is exactly the room target's
+        // own wake rule, so the fallback admits nothing the room session would
+        // not already have woken on; an unaddressed thread message stays
+        // `NotTarget` (filtered), as it was before.
+        if candidates.is_empty() && thread.is_some() {
+            let sender = string("sender")?;
+            candidates = self
+                .targets
+                .iter()
+                .filter(|t| t.room_id == room && t.thread_root.is_none())
+                .filter(|t| match &t.privacy {
+                    RoomPrivacy::Direct { human_mxid } => sender == human_mxid,
+                    RoomPrivacy::Group {} => {
+                        content
+                            .get("m.mentions")
+                            .and_then(|m| m.get("user_ids"))
+                            .and_then(Value::as_array)
+                            .is_some_and(|ids| {
+                                ids.iter()
+                                    .any(|id| id.as_str() == Some(t.sender_mxid.as_str()))
+                            })
+                            || address_mentions(content, &t.server_name).contains(&t.sender_mxid)
+                    }
+                })
                 .collect();
         }
         if candidates.len() > 1 {

@@ -61,13 +61,29 @@ fn snapshot(db: &Connection, id: &str) -> Result<ReplySend, Error> {
                 ))
             },
         )?;
+    // TS `resolveGroupReplyRelation` (`bridge-matrix.js:3318-3393`) takes the
+    // thread an answer lands in from the SOURCE message's own
+    // `threadRootEventId`, never from the session. A reply the agent sends
+    // through its room session — board #112, a thread follow-up whose root has
+    // no task binding — therefore still lands IN the thread. Only a group room
+    // gets the relation: `lib/matrix-direct-chat.js:270` strips `m.relates_to`
+    // from a non-group room, and the stored route is left untouched (the
+    // session really is room-scoped), so `current_final_replies` keeps matching.
+    let question = question_event(db, &dispatch)?;
+    let mut route: ReplyRoute = serde_json::from_str(&route)?;
+    if route.thread_root.is_none()
+        && matches!(route.privacy, hagency_core::replies::RoomPrivacy::Group {})
+        && let Some(root) = question.as_ref().and_then(|m| m.thread_root.clone())
+    {
+        route.thread_root = Some(root);
+    }
     Ok(ReplySend {
         id: id.into(),
         transaction_id,
         digest,
-        route: serde_json::from_str(&route)?,
+        route,
         body,
-        reply_to: question_event(db, &dispatch)?,
+        reply_to: question.map(|m| m.event_id),
         incidental,
     })
 }
@@ -77,7 +93,7 @@ fn snapshot(db: &Connection, id: &str) -> Result<ReplySend, Error> {
 /// answers (`task_intents.rs:112`). Read from the frozen window rather than a
 /// stored column because the window is already durable for exactly as long as
 /// the reply is.
-fn question_event(db: &Connection, dispatch: &str) -> Result<Option<String>, Error> {
+fn question_event(db: &Connection, dispatch: &str) -> Result<Option<Message>, Error> {
     let encoded: Option<String> = db
         .query_row(
             "SELECT CASE WHEN s.matrix_generation>0 THEN i.config ELSE m.config END FROM dispatch_inputs d JOIN admitted_messages m ON m.sequence=d.message_sequence JOIN runner_dispatches r ON r.id=d.dispatch_id JOIN runner_sessions s ON s.id=r.session_id JOIN session_inputs i ON i.session_id=r.session_id AND i.message_sequence=m.sequence WHERE d.dispatch_id=?1 AND d.addressed=1 ORDER BY m.sequence DESC LIMIT 1",
@@ -88,8 +104,10 @@ fn question_event(db: &Connection, dispatch: &str) -> Result<Option<String>, Err
     let Some(encoded) = encoded else {
         return Ok(None);
     };
-    let message: Message = serde_json::from_str(&encoded)?;
-    Ok(Some(message.event_id))
+    // The whole source message, not just its id: TS reads the thread an answer
+    // lands in from this message's own `threadRootEventId`
+    // (`bridge-matrix.js:3374-3385`), so the reply needs both halves.
+    Ok(Some(serde_json::from_str(&encoded)?))
 }
 fn claim_state(db: &Connection, claim: &ReplyClaim, now: u64) -> Result<String, Error> {
     identifier(&claim.id, 128)?;
