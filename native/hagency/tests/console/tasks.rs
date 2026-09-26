@@ -400,3 +400,67 @@ async fn native_console_task_comment_bound() {
     );
     f.close().await;
 }
+
+/// Board #92: every tasks route must answer the methods a real browser sends,
+/// through the REAL console router (`Fixture::service` = `App::router`, the
+/// same builder `hagency serve` serves). A test on `tasks::router()` alone
+/// cannot see this class of defect — and neither could the lifecycle test
+/// above, which only ever issued GET.
+///
+/// The live symptom was `405 (Method Not Allowed)` logged while
+/// `/console/tasks/` was open. The tasks page's own "Project board" `<Link>`
+/// makes Next issue a **HEAD** prefetch (`next/dist/shared/lib/router` sends
+/// `method: 'HEAD'`), and salvo does not fold HEAD onto a `.get()` route the
+/// way the retained Express server does — so the request fell past the GET
+/// child, matched the path with a different method, and salvo answered 405.
+/// (A second, independent half of the same gap: the read guard called HEAD a
+/// mutation, so even a routed HEAD was refused its session by the `Origin`
+/// requirement a browser omits on a same-origin prefetch.)
+/// This pins the family: GET still answers, and HEAD answers too, for the API
+/// routes and for the documents the page links to.
+#[tokio::test]
+async fn native_console_tasks_routes_answer_head_like_the_retained_get() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let cookie = writer(&service).await;
+
+    let mut created = post("/console/api/tasks", &cookie)
+        .json(&json!({"title":"Head parity"}))
+        .send(&service)
+        .await;
+    let id = created.take_json::<Value>().await.unwrap()["task"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    // Every GET route in the card's family: GET answers, and HEAD answers.
+    for path in [
+        "/console/api/tasks".to_owned(),
+        format!("/console/api/tasks/{id}"),
+        "/console/api/agents/Alice/tasks".to_owned(),
+        "/console/api/project-board".to_owned(),
+    ] {
+        let listed = get(&path, &cookie).send(&service).await;
+        assert_eq!(listed.status_code, Some(StatusCode::OK), "GET {path}");
+        let headed = head(&path, &cookie).send(&service).await;
+        assert_eq!(
+            headed.status_code,
+            Some(StatusCode::OK),
+            "HEAD {path} must answer as the retained Express GET does, not 405"
+        );
+    }
+
+    // The documents the tasks page itself links to, fetched the way a browser
+    // prefetches them.
+    for path in ["/console/tasks/", "/console/project-board/"] {
+        let document = get(path, &cookie).send(&service).await;
+        assert_eq!(document.status_code, Some(StatusCode::OK), "GET {path}");
+        let headed = head(path, &cookie).send(&service).await;
+        assert_eq!(
+            headed.status_code,
+            Some(StatusCode::OK),
+            "HEAD {path} must answer as a document, not 405"
+        );
+    }
+    f.close().await;
+}

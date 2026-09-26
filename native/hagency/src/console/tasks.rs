@@ -32,8 +32,14 @@ const UNAVAILABLE: [&str; 1] = ["health"];
 pub(super) fn router() -> Router {
     Router::with_path("tasks")
         .get(list)
+        // Express serves HEAD from a GET route (`app.get` registers both); the
+        // retained server therefore answers a HEAD on every task read, and the
+        // console's own `<Link>` prefetch sends one. Salvo's `MethodFilter(GET)`
+        // does not fold HEAD onto GET, so the read routes register it explicitly
+        // (board #92 — a HEAD fell past the GET child and answered 405).
+        .head(list)
         .post(create)
-        .push(Router::with_path("{id}").get(get).patch(patch).delete(delete))
+        .push(Router::with_path("{id}").get(get).head(get).patch(patch).delete(delete))
         .push(Router::with_path("{id}/accept").post(accept))
         .push(Router::with_path("{id}/transition").post(transition))
         .push(Router::with_path("{id}/comments").post(comment))
@@ -43,8 +49,8 @@ pub(super) fn router() -> Router {
 /// the retained routes do (`/api/agents/:name/tasks`, `/api/project-board`).
 pub(super) fn extra_router() -> Router {
     Router::new()
-        .push(Router::with_path("agents/{name}/tasks").get(agent_tasks))
-        .push(Router::with_path("project-board").get(project_board))
+        .push(Router::with_path("agents/{name}/tasks").get(agent_tasks).head(agent_tasks))
+        .push(Router::with_path("project-board").get(project_board).head(project_board))
 }
 
 fn now_ms() -> u64 {

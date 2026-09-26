@@ -31,6 +31,16 @@ pub fn assets(path: &Path) {
     private::write_new(&path.join("usage/index.html"), bytes).unwrap();
     let engagement_bytes = b"<!doctype html><html><body>engagements document fixture</body></html>";
     private::write_new(&path.join("engagements/index.html"), engagement_bytes).unwrap();
+    /* Board #92: the two documents the tasks page itself links to. The fixture
+     * carries them for the same reason production does — the page's own rail
+     * and "Project board" link fetch them, and a document absent here would
+     * make a served-document assertion pass for the wrong reason. */
+    std::fs::create_dir(path.join("tasks")).unwrap();
+    let tasks_bytes = b"<!doctype html><html><body>tasks document fixture</body></html>";
+    private::write_new(&path.join("tasks/index.html"), tasks_bytes).unwrap();
+    std::fs::create_dir(path.join("project-board")).unwrap();
+    let board_bytes = b"<!doctype html><html><body>project-board document fixture</body></html>";
+    private::write_new(&path.join("project-board/index.html"), board_bytes).unwrap();
     /* Board #47: the task-graphs document, staged the same way the production
      * build does, so `/console/task-graphs/` is served by the fixture too. */
     std::fs::create_dir(path.join("task-graphs")).unwrap();
@@ -41,11 +51,13 @@ pub fn assets(path: &Path) {
     let root_bytes = b"<!doctype html><html><body>front door fixture</body></html>";
     private::write_new(&path.join("index.html"), root_bytes).unwrap();
     let mut assets = Vec::new();
-    let entries: [(&str, &[u8]); 4] = [
+    let entries: [(&str, &[u8]); 6] = [
         ("usage/index.html", bytes),
         ("engagements/index.html", engagement_bytes),
         ("index.html", root_bytes),
         ("task-graphs/index.html", graphs_bytes),
+        ("tasks/index.html", tasks_bytes),
+        ("project-board/index.html", board_bytes),
     ];
     for (path, bytes) in entries {
         let digest: String = Sha256::digest(bytes)

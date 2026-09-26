@@ -113,6 +113,15 @@ fn get(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
         .add_header("sec-fetch-site", "same-origin", true)
         .add_header("cookie", cookie, true)
 }
+/// Board #92: a HEAD exactly as a browser issues it — the same authority
+/// headers a GET carries. Next's `<Link>` prefetch uses HEAD on the documents
+/// the console links to, so this is a real client, not a hypothetical.
+fn head(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
+    TestClient::head(format!("{BASE}{path}"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .add_header("sec-fetch-site", "same-origin", true)
+        .add_header("cookie", cookie, true)
+}
 fn post(path: &str, cookie: &str) -> salvo::test::RequestBuilder {
     TestClient::post(format!("{BASE}{path}"))
         .add_header("host", "127.0.0.1:13300", true)
