@@ -369,6 +369,23 @@ async fn native_runner_agent_self_update_refusals() {
         );
         let body = response.take_string().await.unwrap();
         assert!(body.contains("project_side_not_settable_here"), "{key}: {body}");
+        // Lesson (first LIVE run): a refusal must say WHAT was refused and WHY,
+        // never fall through to the generic word. The reason names the field
+        // and the offending route class, and the remedy points at the operator
+        // route (TS backend-v2.js:11550 "Naming the operator route in the
+        // refusal is the point").
+        assert!(
+            body.contains("agent-authenticated"),
+            "the refusal must say why: {key}: {body}"
+        );
+        assert!(
+            body.contains("/project-side"),
+            "the refusal must name the remedy route: {key}: {body}"
+        );
+        assert!(
+            !body.contains("the request was refused"),
+            "the generic fallback is not a recorded reason: {key}: {body}"
+        );
     }
     // Any other field: native has no agent record to write, so the route
     // fails closed rather than reporting a success that applied nothing.
@@ -379,6 +396,11 @@ async fn native_runner_agent_self_update_refusals() {
     assert_eq!(response.status_code, Some(StatusCode::CONFLICT));
     let body = response.take_string().await.unwrap();
     assert!(body.contains("agent_record_not_writable"), "{body}");
+    // The reason must be a recorded one, not the generic fallback.
+    assert!(
+        !body.contains("the request was refused"),
+        "the generic fallback is not a recorded reason: {body}"
+    );
     f.close().await;
 }
 
