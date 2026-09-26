@@ -152,26 +152,6 @@ export default function NativeAgents() {
                     <td>
                       <button className="btn" data-lifecycle-action="stop" disabled={hold || stop?.kind === 'pending'} onClick={() => void stopOne(a)}>{t('na.stop')}</button>
                       <button className="btn" data-lifecycle-action="review" disabled={hold} onClick={() => setReview(a)}>{t('nrec.open')}</button>
-                      {presetFor === a.engagement_id && (
-                        <form
-                          data-lifecycle-form="preset"
-                          onSubmit={(e) => { e.preventDefault(); applyPreset(a.engagement_id); }}
-                          style={{ display: 'flex', gap: 6, marginTop: 6 }}
-                        >
-                          <input
-                            aria-label={t('na.presetId')}
-                            data-lifecycle-input="preset-id"
-                            value={presetId}
-                            onChange={(e) => setPresetId(e.target.value)}
-                            placeholder={t('na.presetId')}
-                            style={{ minWidth: 160 }}
-                          />
-                          <button className="btn" type="submit" disabled={hold || !presetId.trim()}>{t('na.preset')}</button>
-                        </form>
-                      )}
-                      {result?.engagement === a.engagement_id && (
-                        <p className="note" role="status" data-lifecycle-result>{result.text}</p>
-                      )}
                     </td>
                   )}
                 </tr>

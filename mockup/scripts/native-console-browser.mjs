@@ -232,7 +232,7 @@ try {
     await context.route(path, (route) => route.abort('failed'));
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
     await page.locator('[data-native-state="stale"]').waitFor();
-    assert.match(await page.locator('main [role="alert"]').innerText(), /earlier observations may be stale/);
+    assert.match(await page.locator('[data-native-state="stale"] [role="alert"]').innerText(), /earlier observations may be stale/);
     assert.equal(await page.locator('[data-kind="input"]').first().textContent(), '4');
     await context.unroute(path);
     await page.getByRole('button', { name: 'Refresh', exact: true }).click();
@@ -316,7 +316,7 @@ try {
   assert((await page.locator('tbody tr[aria-selected]').count()) >= 1, 'the seeded alert row renders and is selectable');
   // One login (TS parity): the SAME session is offered the triage controls
   // the served `next` array names — no second link, no read-only notice.
-  assert((await page.locator('[data-transition]').count()) === 3, 'one login is offered the served triage controls');
+  assert((await page.locator('[data-transition]').count()) === 4, 'one login is offered the served triage controls');
   if (!config.executable) {
     // The open row offers exactly the served map: acknowledge, resolve, suppress.
     const buttons = page.locator('[data-transition]');
