@@ -364,10 +364,15 @@ pub struct RuntimeWriteObservation {
     pub accepted_bytes: usize,
     pub total_bytes: usize,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeObservation {
     pub stage: RuntimeStage,
     pub server_request: Option<&'static str>,
+    /// The refused server request's own method name, bounded and printable.
+    /// `server_request` above is a fixed vocabulary label and reads `"unknown"`
+    /// for a method native does not know — exactly the case board #87 must
+    /// NAME so a live failure is actionable. Diagnostic only (ADR-181).
+    pub server_request_method: Option<String>,
     pub refused_notification: Option<&'static str>,
     pub session_error: Option<session::Error>,
     pub transport_cause: Option<hagency_runtime::codex::transport::Error>,
@@ -381,6 +386,7 @@ impl RuntimeObservation {
         Self {
             stage,
             server_request: runner.last_server_request(),
+            server_request_method: runner.last_server_request_method().map(str::to_owned),
             refused_notification: runner.refused_notification(),
             session_error: match runner.protocol_outcome() {
                 Some(Outcome::Unknown { reason }) => Some(*reason),
