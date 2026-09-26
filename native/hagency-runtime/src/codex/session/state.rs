@@ -245,7 +245,17 @@ impl State {
                 }
                 Ok(Update::Progress)
             }
-            _ => Err(Error::UnsupportedEvent),
+            // TS parity (`router/src/runner.ts:738-793`): the retained runner's
+            // line handler is a flat chain of `if (message.method === …)`
+            // checks with no catch-all, so a notification it does not match
+            // falls through and is ignored. Codex adds methods across versions
+            // (account/updated, board #89); refusing an unknown METHOD is what
+            // killed live dispatches. Log the name and ignore it. A KNOWN method
+            // with an unrecognized value keeps its strict arm above.
+            method => {
+                tracing::debug!(method = method, "ignoring unrecognized Codex notification");
+                Ok(Update::Notice)
+            }
         }
     }
 
@@ -284,7 +294,16 @@ impl State {
                 self.failed_echo_owed = false;
                 Ok(())
             }
-            _ => Err(Error::Scope),
+            // A KNOWN lifecycle notice that contradicts the ending is still a
+            // refusal in the drain, whatever #94 tolerates: this is not an
+            // unknown method.
+            "thread/status/changed" | "turn/completed" => Err(Error::Scope),
+            // Any method this build does not model at all: log and carry on
+            // (board #94, the shutdown phase).
+            other => {
+                tracing::debug!(method = other, "ignoring unrecognized Codex notification");
+                Ok(())
+            }
         }
     }
 
@@ -598,12 +617,24 @@ pub(super) fn scope(
         }
         return Ok(());
     }
+    // Thread binding. Enforced whenever the notice DECLARES a thread and this
+    // session holds one: a declared foreign thread is always refused. A notice
+    // that declares no thread is global — there is nothing to bind, and Codex
+    // adds such notices across versions; the retained runner ignores them. This
+    // is what lets an unknown method be tolerated by name instead of killed
+    // (boards #89/#94), without relaxing the check for a substituted thread.
     let observed_thread = if method == "thread/started" {
-        id(object(params, "thread")?, "id")?
+        Some(id(object(params, "thread")?, "id")?)
     } else {
-        id(params, "threadId")?
+        params
+            .get("threadId")
+            .filter(|value| !value.is_null())
+            .map(|value| value.as_str().ok_or(Error::Malformed))
+            .transpose()?
     };
-    if thread.is_some_and(|expected| expected != observed_thread) {
+    if let (Some(expected), Some(observed)) = (thread, observed_thread)
+        && expected != observed
+    {
         return Err(Error::Scope);
     }
     if matches!(
@@ -612,12 +643,21 @@ pub(super) fn scope(
     ) {
         return Ok(());
     }
+    // Turn binding. Same rule: enforced whenever the notice declares a turn —
+    // by top-level `turnId`, or by the nested `turn` object that the turn
+    // lifecycle notices carry.
     let observed_turn = if matches!(method, "turn/started" | "turn/completed") {
-        id(object(params, "turn")?, "id")?
+        Some(id(object(params, "turn")?, "id")?)
     } else {
-        id(params, "turnId")?
+        params
+            .get("turnId")
+            .filter(|value| !value.is_null())
+            .map(|value| value.as_str().ok_or(Error::Malformed))
+            .transpose()?
     };
-    if turn.is_some_and(|expected| expected != observed_turn) {
+    if let (Some(expected), Some(observed)) = (turn, observed_turn)
+        && expected != observed
+    {
         return Err(Error::Scope);
     }
     Ok(())

@@ -880,7 +880,7 @@ async fn native_continuous_driver_operator_resolution() {
         f.count(
             "SELECT COUNT(*) FROM runner_attempt_events WHERE dispatch_id='dispatch' AND fence=1 AND phase='failed' \
              AND json_extract(detail,'$.status.cleanup')='whole_tree_stopped' \
-             AND json_extract(detail,'$.status.runtime.refused_notification')='unknown'"
+             AND json_extract(detail,'$.status.runtime.refused_notification')='thread_status'"
         ),
         1
     );

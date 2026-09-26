@@ -238,28 +238,18 @@ impl<R, W, E> SessionDriver<R, W, E> {
         else {
             return Err(Error::Malformed);
         };
-        // A new thread is unbound until its RPC response. Only thread lifecycle
-        // and global notices may race that response; no turn is admitted yet.
+        // A new thread is unbound until its RPC response, so no TURN-scoped
+        // notice can be legitimate yet: refuse one that declares a turn.
+        // Everything else is a thread-lifecycle or global notice, and a method
+        // this build does not know is tolerated by name (board #94) instead of
+        // refused. Refusing by method is what killed live dispatches (#89).
         if self.state.phase == Phase::OpeningThread
-            && !matches!(
-                method.as_str(),
-                "thread/started"
-                    | "thread/status/changed"
-                    | "warning"
-                    | "configWarning"
-                    | "remoteControl/status/changed"
-                    | "mcpServer/startupStatus/updated"
-                    | "account/rateLimits/updated"
-                    // codex 0.157 emits `account/updated` between the
-                    // initialize result and our `initialized` ack, so this
-                    // unbound-thread phase is where it arrives. Refusing it
-                    // here is what killed every dispatch at `thread_start`
-                    // with `Error::Scope` (captured board #89).
-                    | "account/updated"
-                    | "hook/started"
-                    | "hook/completed"
-            )
+            && params.get("turnId").is_some_and(|value| !value.is_null())
         {
+            tracing::warn!(
+                method = method.as_str(),
+                "refusing turn-scoped Codex notification while the thread is unbound"
+            );
             return Err(Error::Scope);
         }
         if self.state.phase == Phase::OpeningThread
@@ -371,24 +361,26 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
         loop {
             match self.receive().await? {
                 Event::Initialized { .. } => break,
+                // Board #94: a startup notification is never fatal, whatever its
+                // method. This used to be a per-method allowlist, and every
+                // method Codex added across versions (account/updated, board #89)
+                // killed the dispatch. `state.notification` validates the ones it
+                // models and logs the rest by name.
                 Event::Notification {
                     method,
                     params: Some(params),
-                } if matches!(
-                    method.as_str(),
-                    "warning"
-                        | "configWarning"
-                        | "remoteControl/status/changed"
-                        | "account/rateLimits/updated"
-                        // codex 0.157 emits this global account notice between
-                        // the initialize result and our `initialized` ack
-                        // (captured board #89). Refusing it killed every
-                        // dispatch at `thread_start` with `Error::Scope`.
-                        | "account/updated"
-                ) =>
-                {
+                } => {
                     self.state.notification(&method, &params)?;
                 }
+                Event::Notification { method, .. } => {
+                    tracing::debug!(
+                        method = method.as_str(),
+                        "ignoring parameterless Codex notification during startup"
+                    );
+                }
+                // A request during startup has no owner to answer it: answer it
+                // ourselves and let startup continue.
+                Event::ServerRequest { id, .. } => self.answer_request(id).await?,
                 _ => return Err(Error::Scope),
             }
         }
@@ -650,6 +642,19 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
                             request_id = ?original,
                             "unsupported Codex server request; the turn cannot continue"
                         );
+                        // A method this build does not know at all is answered
+                        // with the wire's own refusal and the turn goes on.
+                        // Board #94: an unknown request must never kill the
+                        // turn. TS sends the same -32601 and the operator rule
+                        // drops only its termination (`router/src/runner.ts:715,726`).
+                        if matches!(error, Error::UnsupportedRequest) {
+                            self.wire
+                                .send(transport::Command::RejectServerRequest { id: original })
+                                .await
+                                .map_err(Error::Transport)?;
+                            self.observation_kind = super::ObservationKind::Ignored;
+                            return Ok(Update::Notice);
+                        }
                         // A failure this adapter cannot answer with a decline
                         // still gets the wire's own "no" for an elicitation —
                         // the retained runner cancels it (`router/src/runner.ts:727-728`);
@@ -674,6 +679,17 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
                 self.control.admit(&self.wire, request.id())?;
                 self.observation_kind = super::ObservationKind::Ignored;
                 return Ok(Update::Approval(request));
+            }
+            // No owner can take this request — approvals are off, or the frame
+            // carried no params. Answer it with the wire's own refusal (the
+            // JSON-RPC `-32601` error, or the MCP elicitation's `cancel`) and go
+            // on. Board #94: a request this session cannot hand to an owner must
+            // never kill the turn. TS answers and then terminates
+            // (`router/src/runner.ts:709-736`); the operator rule (a bridge-side
+            // fault is never terminal) keeps only the answer.
+            Event::ServerRequest { id, .. } => {
+                self.answer_request(id).await?;
+                return Ok(Update::Notice);
             }
             event => event,
         };
@@ -751,7 +767,7 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
                 // the loop, so a mid-drain arrival still collapsed every
                 // turn-end arm into `UnsupportedRequest`.
                 Some(Event::ServerRequest { id, .. }) if !self.approvals_enabled => {
-                    self.unsupported(id).await?;
+                    self.answer_request(id).await?;
                 }
                 Some(Event::ServerRequest { .. }) => {
                     // The deferral itself: the event is consumed here (it
@@ -805,6 +821,9 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
                     return result.map_err(|error| Error::Rejected(error.code));
                 }
                 event @ Event::Notification { .. } => self.buffer(event)?,
+                // A request that races this call has no owner yet (no turn is
+                // running), so answer it and keep waiting for our own response.
+                Event::ServerRequest { id, .. } => self.answer_request(id).await?,
                 _ => return Err(Error::Scope),
             }
         }
@@ -815,19 +834,24 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
             self.last_server_request = Some(server_request_shape(method));
             self.last_server_request_method = Some(bounded_method(method));
         }
-        if !self.approvals_enabled
-            && let Event::ServerRequest { id, .. } = event
-        {
-            return self.unsupported(id).await;
-        }
         Ok(event)
     }
-    async fn unsupported(&mut self, id: RequestId) -> Result<Event, Error> {
+    /// Answer a server->client request this session cannot hand to an owner with
+    /// the response the retained runner sends — the JSON-RPC `-32601` error, or
+    /// the MCP elicitation's own `cancel` — and keep going. Board #94: an
+    /// unknown request must never kill the turn. TS answers and then terminates
+    /// (`router/src/runner.ts:709-736`); the operator rule (a bridge-side fault
+    /// is never terminal) keeps only the answer.
+    async fn answer_request(&mut self, id: RequestId) -> Result<(), Error> {
+        tracing::debug!(
+            request_id = ?id,
+            "answering a Codex server request no owner can take; continuing"
+        );
         self.wire
             .send(transport::Command::RejectServerRequest { id })
             .await
             .map_err(Error::Transport)?;
-        Err(Error::UnsupportedRequest)
+        Ok(())
     }
 }
 
