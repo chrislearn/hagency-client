@@ -340,6 +340,11 @@ pub struct AgentRosterRow {
     /// `usage_sources.latest_counts` display volume summed the way the usage
     /// report sums it. `None` when nothing was measured — unknown, not zero.
     pub consumed: Option<u64>,
+    /// The operator's durable stop (`agent_lifecycle`, TS's `manualDown`):
+    /// the engagement's newest lifecycle row is stopped-and-not-restarted.
+    /// Roster-internal — it shapes `liveness`, and is deliberately NOT a
+    /// wire key (the console client refuses any key outside its eleven).
+    pub manual_down: bool,
 }
 /// One console engagement row (board #60 item 3). The label the triage list
 /// already rendered, plus the figures TS's `/api/engagements`
@@ -1507,11 +1512,14 @@ impl DomainRepository {
              (SELECT MAX(a.created_at) FROM runner_sessions s \
               JOIN runner_dispatches d ON d.session_id=s.id \
               JOIN runner_attempts a ON a.dispatch_id=d.id WHERE s.engagement_id=e.id), \
+             (SELECT EXISTS(SELECT 1 FROM agent_lifecycle l JOIN engagements e4 ON e4.id=l.engagement_id \
+               WHERE json_extract(e4.projection,'$.agentName')=json_extract(e.projection,'$.agentName') \
+               AND l.stopped_at IS NOT NULL AND l.started_at IS NULL)), \
              (SELECT d.state FROM runner_sessions s JOIN runner_dispatches d ON d.session_id=s.id \
-              JOIN engagements e2 ON e2.id=s.engagement_id \
-              WHERE json_extract(e2.projection,'$.agentName')=json_extract(e.projection,'$.agentName') \
-              AND d.state IN ('leased','started','parked') \
-              ORDER BY CASE d.state WHEN 'started' THEN 3 WHEN 'parked' THEN 2 ELSE 1 END DESC, d.id LIMIT 1), \
+               JOIN engagements e2 ON e2.id=s.engagement_id \
+               WHERE json_extract(e2.projection,'$.agentName')=json_extract(e.projection,'$.agentName') \
+               AND d.state IN ('leased','started','parked') \
+               ORDER BY CASE d.state WHEN 'started' THEN 3 WHEN 'parked' THEN 2 ELSE 1 END DESC, d.id LIMIT 1), \
              (SELECT CASE \
                WHEN COUNT(*)=0 THEN NULL \
                WHEN MIN(CASE WHEN json_extract(u.latest_counts,'$.input') IS NULL \
@@ -1538,24 +1546,57 @@ impl DomainRepository {
                     row.get::<_, bool>(2)?,
                     row.get::<_, Option<i64>>(3)?,
                     row.get::<_, Option<i64>>(4)?,
-                    row.get::<_, Option<String>>(5)?,
-                    row.get::<_, Option<i64>>(6)?,
+                    row.get::<_, bool>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, Option<i64>>(7)?,
                 ))
             })?
             .map(|row| {
-                let (projection, config, online, last_seen, last_activity, dispatch, consumed) =
-                    row?;
+                let (
+                    projection,
+                    config,
+                    online,
+                    last_seen,
+                    last_activity,
+                    manual_down,
+                    dispatch,
+                    consumed,
+                ) = row?;
                 let engagement: Engagement = serde_json::from_str(&projection)?;
                 let resource: Resource = serde_json::from_str(&config)?;
-                // The live dispatch's own word, distinct from the engagement
-                // lifecycle word (TS `:6872` reads `machine.state`, a
-                // liveness value). `None` is said as unknown, never guessed.
-                let liveness = match dispatch.as_deref() {
-                    Some("started") => Some("running".to_owned()),
-                    Some("parked") => Some("waiting_approval".to_owned()),
-                    Some("leased") => Some("starting".to_owned()),
-                    _ => None,
+                // TS `serializeAgent` (`backend-v2.js:6846-6848`) picks the
+                // agent-machine word: `agent.manualDown ? 'stopped' : ... :
+                // queued ? 'queued' : 'idle'`. Native's durable equivalent of
+                // `manualDown` is the `agent_lifecycle` row
+                // (`agent_lifecycle.rs:134`, read as `started_at IS NULL`),
+                // and the live dispatch supplies the working words. A stopped
+                // agent that still has a live dispatch row is reported
+                // stopped: the operator's decision outranks work the stop is
+                // still fencing.
+                // A deployed, unstopped engagement is SERVING — TS's
+                // `machine.online`, the word the retained roster shows for it
+                // (`workforce/page.jsx:446`). The live run reported exactly
+                // these agents as Unknown (board #106), so the serving case is
+                // named `running` rather than left null; an engagement that is
+                // not `active` (pending/reserved) has no worker yet and stays
+                // unknown — never an invented word.
+                let serving = engagement.state == EngagementState::Active && !manual_down;
+                let liveness = match (manual_down, dispatch.as_deref()) {
+                    (true, _) => Some("stopped".to_owned()),
+                    (false, Some("started")) => Some("running".to_owned()),
+                    (false, Some("parked")) => Some("waiting_approval".to_owned()),
+                    (false, Some("leased")) => Some("starting".to_owned()),
+                    (false, None) if serving => Some("running".to_owned()),
+                    // A live row native has no word for (queued, or an
+                    // outcome the operator still owns), or an engagement with
+                    // no worker at all: said as unknown, never guessed.
+                    (false, _) => None,
                 };
+                // TS `online` is worker liveness, not "a dispatch happens to
+                // be live" (`backend-v2.js:6789,6802`): a serving agent
+                // between dispatches is Online, which is the other half of
+                // what the live run reported (board #106).
+                let online = online || serving;
                 Ok(AgentRosterRow {
                     name: engagement.agent_name.as_str().to_owned(),
                     framework: resource.framework,
@@ -1567,6 +1608,7 @@ impl DomainRepository {
                     last_seen_ms: last_seen.and_then(|v| u64::try_from(v).ok()),
                     last_activity_ms: last_activity.and_then(|v| u64::try_from(v).ok()),
                     liveness,
+                    manual_down,
                     consumed: consumed.and_then(|v| u64::try_from(v).ok()),
                 })
             })

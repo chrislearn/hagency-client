@@ -232,6 +232,122 @@ fn resource_script() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../mockup/scripts/native-console-resources-browser.mjs")
 }
+
+fn agents_script() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../mockup/scripts/native-console-agents-browser.mjs")
+}
+
+/// Board #106, the acceptance: ONE served binary, the operator's own journey
+/// through the UI — stop a serving agent, watch the row become stopped and
+/// offer Start, then start it and watch it serve again. The console page's
+/// client is the only thing that talks to the service; no step calls an API.
+///
+/// A served binary, not the in-process fixture: the live run that found this
+/// used the packaged bundle behind the real `serve`, and the defect was
+/// exactly a control the page never rendered.
+#[tokio::test]
+async fn native_console_agents_stop_then_start() {
+    let root = tempfile::tempdir().unwrap();
+    let state = root.path().join("state");
+    let empty_path = root.path().join("empty-path");
+    std::fs::create_dir(&empty_path).unwrap();
+    let binary = env!("CARGO_BIN_EXE_hagency");
+    let init = Command::new(binary)
+        .args(["init", "--state-dir"])
+        .arg(&state)
+        .env_clear()
+        .env("PATH", &empty_path)
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        init.status.success(),
+        "{}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+    // The seeded UsageWorker holds a live `started` dispatch, so the stop has
+    // real work to fence and the store records the durable stopped row
+    // (the same state the stop/start store test pins).
+    let (db, engagement) = seed(&state);
+    drop(db);
+    let address = address();
+    let mut server = Command::new(binary)
+        .args(["serve", "--state-dir"])
+        .arg(&state)
+        .args(["--listen", &address.to_string(), "--console-assets"])
+        .arg(built())
+        .env_clear()
+        .env("PATH", &empty_path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        loop {
+            if tokio::net::TcpStream::connect(address).await.is_ok() {
+                break;
+            }
+            assert!(
+                server.try_wait().unwrap().is_none(),
+                "{}",
+                await_admission(&mut server, address).await
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("native executable startup");
+    let link = Command::new(binary)
+        .args(["console-access", "--state-dir"])
+        .arg(&state)
+        .args(["--listen", &address.to_string()])
+        .env_clear()
+        .env("PATH", &empty_path)
+        .output()
+        .await
+        .unwrap();
+    assert!(
+        link.status.success(),
+        "native access command must work without Node on PATH"
+    );
+    let url = String::from_utf8(link.stdout).unwrap().trim().to_owned();
+    assert!(!url.contains(TOKEN));
+    let mut browser = Command::new(node())
+        .arg(agents_script())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("actual browser tooling must exist");
+    browser
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(
+            format!(
+                "{}\n",
+                json!({"base":format!("http://{address}"),"url":url,"engagement":engagement})
+            )
+            .as_bytes(),
+        )
+        .await
+        .unwrap();
+    // 120s: the shared host runs a browser walk at ~60s when healthy, and a
+    // starved walk must not be mistaken for the defect this test exists for.
+    assert!(
+        tokio::time::timeout(Duration::from_secs(120), browser.wait())
+            .await
+            .unwrap()
+            .unwrap()
+            .success(),
+        "the served-binary stop-then-start walk failed"
+    );
+    server.kill().await.unwrap();
+    server.wait().await.unwrap();
+}
 #[tokio::test]
 async fn native_console_resources_browser() {
     let address = address();

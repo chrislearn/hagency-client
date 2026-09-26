@@ -182,9 +182,9 @@ await step('3-approve-pending-engagement', async () => {
 
 // ---------------------------------------------------------------------------
 // 4. Agents: stop one running agent, see the state change, start it again.
-//    NOTE: the console renders a start control NOWHERE (NativeAgents.jsx offers
-//    stop + stopped-work review only; `startAgent` is imported and never
-//    called), so the second half is reported as a found gap, not a driver bug.
+//    Both halves run since board #106: the roster renders Stop for a serving
+//    agent and Start for a stopped one (TS parity `backend-v2.js:6872,12712`),
+//    so the whole journey is driven through the UI here.
 // ---------------------------------------------------------------------------
 await step('4-agents-stop-then-start', async () => {
   await page.goto(`${cfg.base}/console/agents/`);
@@ -202,17 +202,22 @@ await step('4-agents-stop-then-start', async () => {
   const outcome = await page.locator('[data-stop-action]').first().getAttribute('data-stop-action');
   if (outcome !== 'saved') throw new Error(`storing the stop returned "${outcome}" (row was ${JSON.stringify(before.slice(0, 100))})`);
   // The stop is an awaited mutation that refreshes the roster itself, so the
-  // state change to observe is the service's own outcome word + the re-read
-  // landing ready (the console offers no separate "running/stopped" cell).
+  // state change to observe is the row's own return to serving.
   await ready();
   const start = page.locator('[data-lifecycle-action="start"]');
   if ((await start.count()) === 0) {
-    throw new Error(`stopped an agent (row was ${JSON.stringify(before.slice(0, 100))}); the service accepted the stop and the roster re-read, but "start it again" cannot run: the roster renders no start control, and the feature-gated roster lane pins that as intended (native-console-browser.mjs:47 "the unavailable start transition is never advertised")`);
+    throw new Error(`stopped an agent (row was ${JSON.stringify(before.slice(0, 100))}); the service accepted the stop and the roster re-read, but the row offers no start control — the operator cannot bring the agent back`);
   }
   await start.first().click();
-  await page.locator('[data-lifecycle-action="start"]').first().waitFor({ state: 'detached', timeout: 20_000 }).catch(() => {});
+  await page.locator('[data-start-action="saved"], [data-start-action="refused"], [data-start-action="unknown"]').waitFor({ timeout: 20_000 });
+  const restarted = await page.locator('[data-start-action]').first().getAttribute('data-start-action');
+  if (restarted !== 'saved') throw new Error(`the start returned "${restarted}"`);
+  await ready();
+  if ((await page.locator('[data-lifecycle-action="stop"]').count()) === 0) {
+    throw new Error('the agent was started but no Stop control came back — it is not serving again');
+  }
   return 'stopped an agent and started it again';
-}, 'the console offers no "start" control to click: the roster lane pins data-lifecycle-action="start" at zero ("the unavailable start transition is never advertised"), so a second half that starts the agent cannot be driven through the UI in any environment, fake or live');
+});
 
 // ---------------------------------------------------------------------------
 // 5. Tasks: create one, comment on it, transition it, delete it.
