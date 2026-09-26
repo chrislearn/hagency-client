@@ -103,38 +103,14 @@ enum Command {
         #[arg(long)]
         batch_digest: String,
     },
-    /// Print a short-lived read-only console link using local operator authority.
+    /// Print the console link using local operator authority. One link opens
+    /// the whole console: the retained `createApiAuthMiddleware` admitted one
+    /// credential to every `/api` route, so there is no scope to select.
     ConsoleAccess {
         #[arg(long)]
         state_dir: PathBuf,
         #[arg(long, default_value = "127.0.0.1:13300")]
         listen: SocketAddr,
-        /// Grant only finite native resource catalog publication management.
-        #[arg(long, conflicts_with = "manage_resource_configuration")]
-        manage_resource_publication: bool,
-        /// Grant finite additional resource configuration creation and editing.
-        #[arg(long)]
-        manage_resource_configuration: bool,
-        /// Grant finite managed-account preparation, retirement and enrolment.
-        #[arg(
-            long,
-            conflicts_with_all = [
-                "manage_resource_publication",
-                "manage_resource_configuration",
-                "manage_agent_lifecycle"
-            ]
-        )]
-        manage_account_enrollment: bool,
-        /// Grant finite agent lifecycle management for implemented operator transitions.
-        #[arg(
-            long,
-            conflicts_with_all = [
-                "manage_resource_publication",
-                "manage_resource_configuration",
-                "manage_account_enrollment"
-            ]
-        )]
-        manage_agent_lifecycle: bool,
     },
     /// Read-only inspection: open ceiling overrun alerts from the running service.
     Alerts {
@@ -475,27 +451,13 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                 return Err(error.into());
             }
         }
-        Command::ConsoleAccess {
-            state_dir,
-            listen,
-            manage_resource_publication,
-            manage_resource_configuration,
-            manage_account_enrollment,
-            manage_agent_lifecycle,
-        } => {
+        Command::ConsoleAccess { state_dir, listen } => {
+            // One link, one login: every variant issued the same full-access
+            // ticket (TS `createApiAuthMiddleware`), and the session it opens
+            // carries every console action.
             println!(
                 "{}",
-                if manage_agent_lifecycle {
-                    hagency::console::client::lifecycle_access(&state_dir, listen).await?
-                } else if manage_resource_configuration {
-                    hagency::console::client::configuration_access(&state_dir, listen).await?
-                } else if manage_resource_publication {
-                    hagency::console::client::publication_access(&state_dir, listen).await?
-                } else if manage_account_enrollment {
-                    hagency::console::client::account_access(&state_dir, listen).await?
-                } else {
-                    hagency::console::client::access(&state_dir, listen).await?
-                }
+                hagency::console::client::access(&state_dir, listen).await?
             );
         }
         // Read-only inspection (brief 22): each arm renders exactly what its

@@ -542,10 +542,11 @@ impl Fixture {
         }
         Running(command.stderr(Stdio::from(file)).spawn().unwrap())
     }
-    /// The operator's console session: a lifecycle ticket exchanged for the
-    /// console cookie, exactly as the browser does it.
+    /// The operator's console session: one login's ticket exchanged for the
+    /// console cookie, exactly as the browser does it. One link carries every
+    /// console action (TS parity), so no scope is selected here.
     pub async fn operator(&self) -> Operator {
-        let link = hagency::console::client::lifecycle_access(&self.state_dir, self.address)
+        let link = hagency::console::client::access(&self.state_dir, self.address)
             .await
             .unwrap();
         let ticket = link.split_once("#access=").unwrap().1.to_owned();

@@ -119,20 +119,6 @@ async fn native_console_browser() {
                     .await
                     .unwrap();
                 created = true;
-            } else if line == "SCOPED_LINK" {
-                // One access ticket is outstanding at a time, so the scoped
-                // link is minted only after the browser exchanged the
-                // read-only one (the walk that precedes this marker).
-                let scoped_url = hagency::console::client::configuration_access(
-                    &f.root.path().join("state"),
-                    address,
-                )
-                .await
-                .unwrap();
-                input
-                    .write_all(format!("{}\n", json!({"scopedUrl":scoped_url})).as_bytes())
-                    .await
-                    .unwrap();
             } else {
                 println!("{line}");
             }
@@ -264,7 +250,7 @@ async fn native_console_resources_browser() {
     let server = Server::new(TcpListener::new(address).try_bind().await.unwrap());
     let handle = server.handle();
     let serving = tokio::spawn(server.try_serve(f.app.clone().router()));
-    let url = hagency::console::client::publication_access(&f.root.path().join("state"), address)
+    let url = hagency::console::client::access(&f.root.path().join("state"), address)
         .await
         .unwrap();
     let mut child = Command::new(node())
@@ -402,11 +388,7 @@ async fn native_console_resources_executable() {
     .await
     .expect("native executable startup");
     let link = Command::new(binary)
-        .args([
-            "console-access",
-            "--manage-resource-publication",
-            "--state-dir",
-        ])
+        .args(["console-access", "--state-dir"])
         .arg(&state)
         .args(["--listen", &address.to_string()])
         .env_clear()
@@ -460,7 +442,7 @@ async fn native_console_resource_configuration_browser() {
     let server = Server::new(TcpListener::new(address).try_bind().await.unwrap());
     let handle = server.handle();
     let serving = tokio::spawn(server.try_serve(f.app.clone().router()));
-    let url = hagency::console::client::configuration_access(&f.root.path().join("state"), address)
+    let url = hagency::console::client::access(&f.root.path().join("state"), address)
         .await
         .unwrap();
     let mut child = Command::new(node())
@@ -622,11 +604,7 @@ async fn native_console_resource_configuration_executable() {
         .await
         .unwrap();
         let link = Command::new(binary)
-            .args([
-                "console-access",
-                "--manage-resource-configuration",
-                "--state-dir",
-            ])
+            .args(["console-access", "--state-dir"])
             .arg(&state)
             .args(["--listen", &address.to_string()])
             .env_clear()
@@ -743,10 +721,13 @@ async fn native_console_accounts_browser() {
     let server = Server::new(TcpListener::new(address).try_bind().await.unwrap());
     let handle = server.handle();
     let serving = tokio::spawn(server.try_serve(f.app.clone().router()));
-    let url = hagency::console::client::account_access(&f.root.path().join("state"), address)
+    let url = hagency::console::client::access(&f.root.path().join("state"), address)
         .await
         .unwrap();
-    assert!(url.contains("/console/accounts/#access="));
+    assert!(
+        url.contains("/console/usage/#access="),
+        "one link opens the console: {url}"
+    );
     let mut child = Command::new(node())
         .arg(accounts_script())
         .stdin(Stdio::piped())
@@ -936,7 +917,7 @@ async fn native_console_agent_lifecycle_browser() {
         while let Some(line) = lines.next_line().await.unwrap() {
             match line.as_str() {
                 "LIFECYCLE_TICKET" => {
-                    let lifecycle_url = hagency::console::client::lifecycle_access(
+                    let lifecycle_url = hagency::console::client::access(
                         &f.root.path().join("state"),
                         address,
                     )
@@ -1070,14 +1051,14 @@ async fn native_console_regression_browser() {
                     // browser walk before each request can outpace it.
                     tokio::time::sleep(Duration::from_millis(1010)).await;
                     let scoped = if line == "LIFECYCLE_TICKET" {
-                        hagency::console::client::lifecycle_access(
+                        hagency::console::client::access(
                             &f.root.path().join("state"),
                             address,
                         )
                         .await
                         .unwrap()
                     } else {
-                        hagency::console::client::configuration_access(
+                        hagency::console::client::access(
                             &f.root.path().join("state"),
                             address,
                         )

@@ -603,17 +603,23 @@ fn console_assets(dir: &Path) -> std::path::PathBuf {
     root.canonicalize().unwrap()
 }
 
-/// The three console-access management flags are pairwise mutually exclusive:
-/// each pair is refused before any ticket is issued (MA-S3a's CLI selector).
+/// Board #93: the scoped-access surface is gone. `console-access` used to
+/// take four mutually exclusive management flags (one scope each); the
+/// operator ruled scoped links over-design, so every retired flag is now an
+/// unknown argument — refused by clap before any ticket issues, which is what
+/// stops a scoped link being minted at all.
 #[test]
-fn native_console_account_grant_is_mutually_exclusive() {
+fn native_console_access_has_no_scoped_flags() {
     let root = tempfile::tempdir().unwrap();
     let state = root.path().join("state");
-    let refuse = |flags: &[&str]| {
+    for retired in [
+        "--manage-account-enrollment",
+        "--manage-resource-publication",
+        "--manage-resource-configuration",
+        "--manage-agent-lifecycle",
+    ] {
         let output = Command::new(env!("CARGO_BIN_EXE_hagency"))
-            .arg("console-access")
-            .args(flags)
-            .arg("--state-dir")
+            .args(["console-access", retired, "--state-dir"])
             .arg(&state)
             .env("PATH", "")
             .env("HOME", "/untrusted-fixture-home")
@@ -621,35 +627,27 @@ fn native_console_account_grant_is_mutually_exclusive() {
             .unwrap();
         assert!(
             !output.status.success(),
-            "combination {flags:?} must be refused"
+            "the retired {retired} must be refused, not accepted"
+        );
+        assert!(
+            output.stdout.is_empty(),
+            "{retired} must issue no link"
         );
         let stderr = String::from_utf8_lossy(&output.stderr).to_lowercase();
         assert!(
-            stderr.contains("cannot be used with"),
-            "refusal must name the conflict: {flags:?}"
+            stderr.contains("unexpected argument") || stderr.contains("found argument"),
+            "the refusal must name the unknown flag: {stderr}"
         );
-    };
-    refuse(&[
-        "--manage-account-enrollment",
-        "--manage-resource-publication",
-    ]);
-    refuse(&[
-        "--manage-account-enrollment",
-        "--manage-resource-configuration",
-    ]);
-    refuse(&[
-        "--manage-resource-publication",
-        "--manage-resource-configuration",
-    ]);
+    }
 }
 
-/// CL-S2 (ADR-130): `console-access --manage-agent-lifecycle` issues a
-/// ticket whose URL lands on the agents page (the lifecycle act), and each
-/// combination with an existing management flag is refused by clap before
-/// any ticket issues — a declaration is not a test, so the pairwise
-/// exclusivity is asserted here.
+/// Board #93: one link opens the whole console. `console-access` takes no
+/// scope flag and prints ONE link — the bare command's long-standing landing
+/// (the usage page) carrying the bounded 64-hex ticket a session is exchanged
+/// from. TS parity: the retained `createApiAuthMiddleware` authenticated one
+/// credential for every `/api` route, so there was never a scope to pick.
 #[test]
-fn native_cli_console_access_issues_agent_lifecycle_scope() {
+fn native_cli_console_access_issues_one_full_access_link() {
     let directory = tempfile::tempdir().unwrap();
     let state = directory.path().join("lifecycle access state");
     let init = Command::new(env!("CARGO_BIN_EXE_hagency"))
@@ -664,7 +662,8 @@ fn native_cli_console_access_issues_agent_lifecycle_scope() {
     drop(listener);
     let running = launch_with(&state, address, Some(&console_assets(directory.path())));
 
-    // Alone: issues a ticket on the agents page — the lifecycle act.
+    // One link: no flag, and it lands on the usage page — the landing the
+    // bare command always printed before scopes existed.
     let alone = Command::new(env!("CARGO_BIN_EXE_hagency"))
         .args([
             "console-access",
@@ -672,20 +671,19 @@ fn native_cli_console_access_issues_agent_lifecycle_scope() {
             state.to_str().unwrap(),
             "--listen",
             &address.to_string(),
-            "--manage-agent-lifecycle",
         ])
         .env("PATH", "")
         .output()
         .unwrap();
     assert!(
         alone.status.success(),
-        "lifecycle issuance failed: {}",
+        "the one access link failed: {}",
         String::from_utf8_lossy(&alone.stderr)
     );
     let url = String::from_utf8_lossy(&alone.stdout).trim().to_owned();
     assert!(
-        url.starts_with(&format!("http://{address}/console/agents/#access=")),
-        "the lifecycle ticket lands on the agents page: {url}"
+        url.starts_with(&format!("http://{address}/console/usage/#access=")),
+        "one link opens the console on the usage page: {url}"
     );
     let fragment = url.rsplit('#').next().unwrap();
     assert!(
@@ -696,38 +694,6 @@ fn native_cli_console_access_issues_agent_lifecycle_scope() {
         "the ticket is the bounded 64-hex credential: {fragment}"
     );
 
-    // Each pairwise combination is refused before any ticket issues.
-    // Post-rebase, the account grant is a third management flag and the
-    // declaration is pairwise against it too — asserted, not assumed (F1).
-    for combo in [
-        ["--manage-agent-lifecycle", "--manage-resource-publication"],
-        [
-            "--manage-agent-lifecycle",
-            "--manage-resource-configuration",
-        ],
-        ["--manage-agent-lifecycle", "--manage-account-enrollment"],
-    ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_hagency"))
-            .args([
-                "console-access",
-                "--state-dir",
-                state.to_str().unwrap(),
-                "--listen",
-                &address.to_string(),
-            ])
-            .args(combo)
-            .env("PATH", "")
-            .output()
-            .unwrap();
-        assert!(
-            !output.status.success(),
-            "{combo:?} must be refused before issuance"
-        );
-        assert!(
-            output.stdout.is_empty(),
-            "{combo:?} refuses before any ticket is printed"
-        );
-    }
     drop(running);
 }
 

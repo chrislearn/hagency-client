@@ -72,8 +72,8 @@ struct Decide {
 }
 
 /// Accept or decline one invitation. A decision is an operator act behind
-/// the agent-lifecycle scope — the same finite scope the project-side
-/// write requires — refused before any store read.
+/// the console session — the same sign-in the project-side write requires —
+/// refused before any store read.
 #[handler]
 async fn decide(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     // The decide route takes no query.

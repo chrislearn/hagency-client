@@ -48,7 +48,11 @@ try {
   async function budget(id, edit = false) { await page.goto(edit ? editUrl(id) : createUrl(id)); await editor(id); await next(); await next(); }
   async function ceiling(tokens) { await page.locator('#configuration-ceiling').selectOption('monthly'); await page.locator('#wz-tokens').fill(String(tokens)); }
   async function save(edit = false) { await page.getByRole('button', { name: edit ? /^(Save configuration|保存配置)$/ : /^(Create another configuration|创建另一项配置)$/ }).click(); await page.locator('[data-configuration-action="saved"]').waitFor(); }
-  await page.goto(config.url); await ready();
+  // The one link lands on the usage page and exchanges the session cookie;
+  // the walk then opens the resource page (one login carries every action).
+  await page.goto(config.url);
+  await page.locator('[data-native-state="ready"]').first().waitFor();
+  await page.goto(`${config.base}/console/resources/`); await ready();
   await page.getByRole('button', { name: 'Light', exact: true }).click();
   const cookie = (await context.cookies()).find((c) => c.name === 'hagency_console'); assert(cookie?.httpOnly && cookie.sameSite === 'Strict'); assert.equal(await page.evaluate(() => document.cookie), ''); assert.equal(new URL(page.url()).hash, '');
   assert.equal(await page.evaluate(async () => (await fetch('/api/native/v1/resources')).status), 403);
