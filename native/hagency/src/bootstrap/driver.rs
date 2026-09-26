@@ -817,6 +817,22 @@ async fn run(input: Attempt<'_>) -> Result<Option<Completed>, Failure> {
         serde_json::json!({"runner": runner, "capability_ms": capability_ms, "max_live": max_live}),
     )
     .await;
+    // #91: post the attempt's `started` activity notice HERE — before any
+    // Operation exists, so the agent's own Matrix client has no concurrent
+    // user. An in-turn drain (a 1 s timer beside `wait_boxed`) collided with
+    // the operation's own sends on the shared client and parked the agent
+    // (`Error::Storage` → `outcome_unknown`); LESSONS #86. Delivered first,
+    // this revision is the anchor the store resolves for every later revision
+    // (`domain/activity.rs` `delivered()`), so the terminal ✅ goes out as an
+    // `m.replace` edit of it — TS `activity.ts:55-72` parity. Best effort,
+    // exactly like the failure path's delivery below: a refused notice
+    // changes nothing about the attempt.
+    if let RuntimeOwner::Factory(agent) = &*owner {
+        let engagement = agent.session().engagement_id.clone();
+        if let Err(error) = notice::deliver(domain, collector, &engagement, cancel, None).await {
+            tracing::warn!(?error, "started activity notice refused; the attempt continues");
+        }
+    }
     if cancel.is_cancelled() {
         domain
             .observe_owned_failure(capability, hagency_store::OwnedFailure::Cancelled)

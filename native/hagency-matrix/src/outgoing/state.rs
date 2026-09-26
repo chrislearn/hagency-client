@@ -193,7 +193,21 @@ impl Attempt {
             matches!(self.route.privacy, hagency_core::replies::RoomPrivacy::Group {}),
             self.incidental,
         );
-        if self.content.get("m.relates_to") != expected_relation.as_ref()
+        // A journaled attempt carries the route's own answer relation EXCEPT
+        // for an activity EDIT, which the envelope swaps to `m.replace` of the
+        // anchor it edits (`outgoing.rs` `apply_activity_envelope`, TS
+        // lib/matrix-activity.js). That is the one other relation admitted,
+        // and only when the edit proves the same route binding it replaced:
+        // the activity key is present and the retained plain content under
+        // `m.new_content` still carries the route's relation verbatim. The
+        // room/thread authority is therefore still checked, never bypassed.
+        let relation_ok =
+            self.content.get("m.relates_to") == expected_relation.as_ref()
+                || (self.content["io.hagency.activity"].is_object()
+                    && self.content["m.relates_to"]["rel_type"] == "m.replace"
+                    && self.content["m.new_content"].get("m.relates_to")
+                        == expected_relation.as_ref());
+        if !relation_ok
             || self.content["msgtype"]
                 != match self.kind {
                     Kind::Notice => "m.notice",

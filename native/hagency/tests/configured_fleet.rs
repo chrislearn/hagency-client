@@ -167,14 +167,29 @@ async fn project_mentions(mut f: Fixture) {
             && f.peer
                 .agents
                 .iter()
-                .all(|agent| agent.project_events.len() == 1)
+                // The project room also carries each agent's OWN activity
+                // notice — the ⏳ first send and its ✅ m.replace edit (#91) —
+                // so the canonical REPLY is the one m.text event, not the
+                // whole list.
+                .all(|agent| {
+                    agent
+                        .project_events
+                        .iter()
+                        .filter(|event| event["content"]["msgtype"] == "m.text")
+                        .count()
+                        == 1
+                })
     })
     .await;
     for (index, task) in tasks.iter().enumerate() {
         f.assert_project_task(index, task);
         assert_eq!(f.task_status(task), "done");
         assert!(f.task_reply_delivered(task));
-        let event = &f.peer.agents[index].project_events[0];
+        let event = f.peer.agents[index]
+            .project_events
+            .iter()
+            .find(|event| event["content"]["msgtype"] == "m.text")
+            .expect("the project reply");
         assert_eq!(event["sender"], f.peer.agents[index].user);
         assert_eq!(
             event["content"]["body"],
@@ -576,7 +591,18 @@ async fn native_configured_fleet_delegated_task_delivery() {
     assert_eq!(route["engagement_id"], engagement(0));
     assert_eq!(route["room_id"], PROJECT);
     assert_eq!(route["thread_root"], DELEGATION_EVENT);
-    let reply = &f.peer.agents[0].project_events[1];
+    // Select the reply by its body, not by index: the agent's own `⏳` activity
+    // notice is now posted before the turn runs (#91), so the reply is no
+    // longer guaranteed to be the second project event.
+    let reply = f.peer.agents[0]
+        .project_events
+        .iter()
+        .find(|event| {
+            event["content"]["body"]
+                .as_str()
+                .is_some_and(|body| body.starts_with("Verified factory task "))
+        })
+        .expect("the assignee's canonical reply");
     assert_eq!(
         reply["content"]["body"],
         format!("Verified factory task {task}")

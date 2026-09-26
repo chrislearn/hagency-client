@@ -8,6 +8,7 @@ use hagency_runtime::{
     owned::{Cleanup, OwnedSession, StartError},
 };
 use hagency_store::{DomainStore, OwnedFailure, OwnedObservation};
+use sha2::{Digest, Sha256};
 use std::{
     future::Future,
     sync::{
@@ -1110,6 +1111,36 @@ fn now_ms() -> u64 {
         .and_then(|d| u64::try_from(d.as_millis()).ok())
         .unwrap_or_default()
 }
+/// The runner's own item events projected into the activity vocabulary
+/// (TS `codexActivity`, `router/src/runner-activity.ts:4-18`). Only the item
+/// types the retained mapping names produce an event; everything else is
+/// ignored, exactly as `return null` does there. The dedupe id is the
+/// sha256 hex of the item id, so a replayed `item/completed` can never count
+/// twice (`store` `dispatch_activity_events`).
+fn runner_activity(update: &Update) -> Option<hagency_store::ActivityEvent> {
+    let Update::Item { id, kind, phase } = update else {
+        return None;
+    };
+    let kind = match kind.as_str() {
+        "commandExecution" => "command",
+        "fileChange" => "files",
+        "webSearch" => "search",
+        "mcpToolCall" | "dynamicToolCall" => "tool",
+        "collabAgentToolCall" => "delegate",
+        _ => return None,
+    };
+    let event_id = format!("{:x}", Sha256::digest(id.as_bytes()));
+    Some(match phase {
+        session::ItemPhase::Active => hagency_store::ActivityEvent::ToolStart {
+            kind: kind.into(),
+            event_id,
+        },
+        session::ItemPhase::Complete => hagency_store::ActivityEvent::ToolEnd {
+            kind: kind.into(),
+            event_id,
+        },
+    })
+}
 /// One phase of the attempt, kept with it (ADR-181). Best effort: the store
 /// records it in its own savepoint, a refused record changes nothing here,
 /// and the same fixed labels go to the service log.
@@ -1668,6 +1699,20 @@ async fn execute(
                 // still reaches the existing retained process cleanup path.
                 let _ = bounded(usage.record_pending(), cancel, ceiling).await?;
             }
+            // The runner's own tool activity (TS `recordRunnerActivity`,
+            // `runner.ts:742-746`). Observation-class, exactly like the attempt
+            // records `note()` writes: a refused write is counted nowhere and
+            // never changes the turn. This is the ONE production seam that
+            // feeds the notice's `工具调用 N 次，已返回 M 次` counters.
+            if let Some(event) = runner_activity(&update) {
+                if let Err(error) = domain
+                    .record_activity_event(cap.dispatch_id.clone(), event, now_ms())
+                    .await
+                {
+                    tracing::warn!(dispatch_id = %cap.dispatch_id, error = ?error,
+                        "runner activity not recorded");
+                }
+            }
             match update {
                 Update::TurnEnded => break,
                 Update::Approval(_) | Update::ApprovalResolved { .. } => {
@@ -1913,8 +1958,74 @@ fn stop_detail(
 
 #[cfg(test)]
 mod tests {
-    use super::{Failure, Report, SettlementCause, observes_completion, settlement_failure};
+    use super::{
+        Failure, Report, SettlementCause, observes_completion, runner_activity, settlement_failure,
+    };
     use hagency_store::Error;
+
+    /// The runner's item events project into the activity vocabulary exactly
+    /// as TS `codexActivity` (`router/src/runner-activity.ts:4-18`) maps them,
+    /// and nothing else counts. Without this the notice's
+    /// `工具调用 N 次，已返回 M 次` counters stay at zero forever (board #91
+    /// addendum).
+    #[test]
+    fn native_runner_activity_projects_item_events() {
+        use hagency_runtime::codex::session::{ItemPhase, Update};
+        use hagency_store::ActivityEvent;
+
+        // Every mapped codex item type, both phases.
+        for (item_type, kind) in [
+            ("commandExecution", "command"),
+            ("fileChange", "files"),
+            ("webSearch", "search"),
+            ("mcpToolCall", "tool"),
+            ("dynamicToolCall", "tool"),
+            ("collabAgentToolCall", "delegate"),
+        ] {
+            use sha2::Digest;
+            let start = runner_activity(&Update::Item {
+                id: "tool-1".into(),
+                kind: item_type.into(),
+                phase: ItemPhase::Active,
+            })
+            .expect("a mapped item type starts a tool");
+            assert_eq!(
+                start,
+                ActivityEvent::ToolStart {
+                    kind: kind.into(),
+                    event_id: format!("{:x}", sha2::Sha256::digest(b"tool-1")),
+                }
+            );
+            let end = runner_activity(&Update::Item {
+                id: "tool-1".into(),
+                kind: item_type.into(),
+                phase: ItemPhase::Complete,
+            })
+            .expect("a mapped item type returns");
+            assert_eq!(
+                end,
+                ActivityEvent::ToolEnd {
+                    kind: kind.into(),
+                    event_id: format!("{:x}", sha2::Sha256::digest(b"tool-1")),
+                }
+            );
+        }
+        // TS `return null`: an unmapped item type, and every non-item update.
+        for item_type in ["agentMessage", "reasoning", "userMessage", "plan"] {
+            assert!(
+                runner_activity(&Update::Item {
+                    id: "x".into(),
+                    kind: item_type.into(),
+                    phase: ItemPhase::Active,
+                })
+                .is_none(),
+                "{item_type} must not count as a tool"
+            );
+        }
+        assert!(runner_activity(&Update::TurnStarted).is_none());
+        assert!(runner_activity(&Update::Progress).is_none());
+        assert!(runner_activity(&Update::TurnEnded).is_none());
+    }
 
     /// H5: a named `PeerUnavailable` refusal never reaches settlement, so the
     /// failure path must not observe completion custody for it — a store

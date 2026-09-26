@@ -327,7 +327,21 @@ impl DomainRepository {
         // task, no addressed root) leaves the event observation intact —
         // the same best-effort contract the event itself carries.
         let activity_event = match event.phase {
-            AttemptPhase::Initialized | AttemptPhase::TurnStarted => {
+            // `Claimed` opens the activity row at the attempt's start. TS posts
+            // the `started` notice from the dispatch transition itself
+            // (`acknowledgeRunnerEffect`, store.ts:2004), not from a runner
+            // phase, and its 1 s outbox timer (bridge-matrix.js:4553) sends it
+            // while the turn runs. Opening it here lets the driver deliver it
+            // BEFORE the operation exists (no contention for the agent's own
+            // Matrix client), so it is the delivered anchor every later
+            // revision edits. Observed before: the only drain ran at the poll
+            // boundary BEFORE the claim, so `initialized`'s revision stayed
+            // `pending` and the terminal revision superseded it unsent
+            // (`update_and_enqueue`, activity.rs:345) — only the final ✅ ever
+            // went out, with no anchor, hence never an `m.replace` edit.
+            AttemptPhase::Claimed
+            | AttemptPhase::Initialized
+            | AttemptPhase::TurnStarted => {
                 Some(super::activity::ActivityEvent::Started)
             }
             AttemptPhase::Parked => Some(super::activity::ActivityEvent::Waiting),
@@ -336,8 +350,7 @@ impl DomainRepository {
             AttemptPhase::Failed | AttemptPhase::Lost => {
                 Some(super::activity::ActivityEvent::Interrupted)
             }
-            AttemptPhase::Claimed
-            | AttemptPhase::SpawnStarted
+            AttemptPhase::SpawnStarted
             | AttemptPhase::SpawnDone
             | AttemptPhase::OverBudget
             | AttemptPhase::ApprovalRequested
