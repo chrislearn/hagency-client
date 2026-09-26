@@ -83,23 +83,65 @@ pub fn active_pairs(engagements: &[Engagement]) -> Vec<(String, String)> {
 /// What one invite answered. The 403 whose `error` says "already in the
 /// room" is the retained membership check PASSING, not failing — the exact
 /// branch `admitAgentToProjectRoom` was written to read correctly.
+///
+/// A FAILURE CARRIES THE OBSERVED CAUSE, never a bare word (LESSONS.md
+/// "Failure reasons must be recorded": every refusal says what was refused
+/// and why). The retained sweep logs `${error?.message || error}`
+/// (`backend-v2.js:14225`), so a `M_FORBIDDEN` an operator sees here is the
+/// homeserver's own text — a bare "invite refused" is what sent a live run
+/// hunting the credential when the real cause was a power level.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Invite {
     Invited,
     AlreadyPresent,
     Failed(String),
 }
-pub(crate) fn classify_invite(status: u16, error_text: Option<&str>) -> Invite {
+/// Bound on the reason carried out of a foreign homeserver's error text —
+/// the same 256-byte, char-boundary rule `approval_delivery.rs:137-142`
+/// applies to another peer's words.
+fn bounded_reason(value: &str) -> String {
+    let mut text = value.to_owned();
+    let mut cut = text.len().min(256);
+    while !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    text.truncate(cut);
+    text
+}
+/// The refusal text for a non-2xx invite: the homeserver's OWN words when it
+/// sent any (`errcode: error`, the Matrix error document), otherwise the
+/// status alone. Never invented, never blank.
+fn invite_refusal(status: u16, value: Option<&serde_json::Value>) -> String {
+    let code = value
+        .and_then(|v| v.get("errcode"))
+        .and_then(serde_json::Value::as_str);
+    let error = value
+        .and_then(|v| v.get("error"))
+        .and_then(serde_json::Value::as_str);
+    match (code, error) {
+        (Some(code), Some(error)) => bounded_reason(&format!("{code}: {error}")),
+        (None, Some(error)) => bounded_reason(error),
+        (Some(code), None) => format!("invite answered HTTP {status} ({code})"),
+        (None, None) => format!("invite answered HTTP {status}"),
+    }
+}
+pub(crate) fn classify_invite(status: u16, value: Option<&serde_json::Value>) -> Invite {
     match status {
         200 => Invite::Invited,
         403 => {
-            if error_text.is_some_and(|text| text.contains("already in the room")) {
+            // The membership check, read from the observed error text: a 403
+            // that says "already in the room" is the check PASSING.
+            let already = value
+                .and_then(|v| v.get("error"))
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|text| text.contains("already in the room"));
+            if already {
                 Invite::AlreadyPresent
             } else {
-                Invite::Failed("invite refused".to_owned())
+                Invite::Failed(invite_refusal(status, value))
             }
         }
-        status => Invite::Failed(format!("invite answered HTTP {status}")),
+        status => Invite::Failed(invite_refusal(status, value)),
     }
 }
 
@@ -213,15 +255,11 @@ impl crate::Collector {
                 )
                 .await;
             let invite = match result {
-                Ok(response) => classify_invite(
-                    response.status,
-                    response
-                        .value
-                        .as_ref()
-                        .and_then(|value| value.get("error"))
-                        .and_then(serde_json::Value::as_str),
-                ),
-                Err(_) => Invite::Failed("invite request did not complete".to_owned()),
+                Ok(response) => classify_invite(response.status, response.value.as_ref()),
+                // The transport's own Display, never a bare word: a timeout,
+                // a redirect refusal and a malformed body are three different
+                // operator actions (`native_sweep` logs this verbatim).
+                Err(error) => Invite::Failed(bounded_reason(&error.to_string())),
             };
             match invite {
                 Invite::Invited => {
@@ -320,22 +358,49 @@ mod tests {
     /// Retained tests/api-engagement-room-admission.test.js:472-490 — an
     /// agent already in the room is left alone by READING the invite's 403
     /// as the check: the error text that means "already a member" is a
-    /// pass, any other 403 is a refusal, and 200 is a real re-invite.
+    /// pass, any other 403 is a refusal, and 200 is a real re-invite. The
+    /// REFUSAL carries the homeserver's own words (LESSONS.md "Failure
+    /// reasons must be recorded"), not a bare word.
     #[test]
     fn native_sweep_reads_the_invite_403_as_the_membership_check() {
         assert_eq!(
-            classify_invite(403, Some("@x is already in the room.")),
+            classify_invite(
+                403,
+                Some(&json!({"errcode":"M_FORBIDDEN","error":"@x is already in the room."}))
+            ),
             Invite::AlreadyPresent
         );
         assert_eq!(classify_invite(200, None), Invite::Invited);
         assert_eq!(
-            classify_invite(403, Some("You are not allowed to invite")),
-            Invite::Failed("invite refused".to_owned())
+            classify_invite(
+                403,
+                Some(&json!({"errcode":"M_FORBIDDEN","error":"You are not allowed to invite"})),
+            ),
+            Invite::Failed("M_FORBIDDEN: You are not allowed to invite".to_owned()),
+            "the refusal says WHICH homeserver error it was"
         );
         assert_eq!(
             classify_invite(502, None),
             Invite::Failed("invite answered HTTP 502".to_owned())
         );
+        assert_eq!(
+            classify_invite(500, Some(&json!({"errcode":"M_UNKNOWN"}))),
+            Invite::Failed("invite answered HTTP 500 (M_UNKNOWN)".to_owned())
+        );
+        // A foreign homeserver's words are bounded like every other peer's
+        // (`approval_delivery.rs:137-142`), never echoed unbounded.
+        let long = classify_invite(
+            403,
+            Some(&json!({"errcode":"M_FORBIDDEN","error":"é".repeat(400)})),
+        );
+        match long {
+            Invite::Failed(reason) => assert!(
+                reason.len() <= 256 && reason.is_char_boundary(reason.len()),
+                "bounded at a char boundary: {} bytes",
+                reason.len()
+            ),
+            other => panic!("expected a refusal, got {other:?}"),
+        }
     }
 
     /// The TS-VISIBLE outcome, on the wire (retained
