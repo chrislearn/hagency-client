@@ -8,6 +8,17 @@ use std::{
 };
 use tokio::sync::{Mutex, Semaphore};
 
+/// Wall-clock milliseconds for the profile-reconcile throttle (the retained
+/// `Date.now()`). A missing clock reads 0, which the throttle treats as
+/// "never checked" — so a clock fault never suppresses a reconcile.
+fn profile_clock_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|d| u64::try_from(d.as_millis()).ok())
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 pub(crate) mod observation;
 macro_rules! observe {
@@ -25,6 +36,10 @@ pub(crate) struct Inner {
     pub(crate) enrollment_jobs: crate::enrollment::Jobs,
     pub(crate) config: HostConfig,
     pub(crate) http: Http,
+    /// The representative/bot client for the send path's kick recovery
+    /// (bridge-matrix.js:10912-10918): re-invite before the agent rejoins.
+    /// Built only when the provisioning custody handed a credential over.
+    pub(crate) representative: Option<Http>,
     pub(crate) domain: DomainStore,
     pub(crate) owner: Mutex<Option<Owner>>,
     pub(crate) busy: Arc<Semaphore>,
@@ -34,6 +49,10 @@ pub(crate) struct Inner {
     /// Verification-time-only room snapshots + authority facts (ADR-095),
     /// captured at intake and read by the provisioning hook; never stored.
     pub(crate) room_facts: Mutex<BTreeMap<String, (MatrixRoomObservation, RoomAuthorityFacts)>>,
+    /// When this agent's display name was last reconciled, in wall-clock ms;
+    /// 0 is "never". The 300 s throttle of `reconcile_agent_profile`
+    /// (bridge-matrix.js:5939-5940).
+    pub(crate) profile_checked_at: std::sync::atomic::AtomicU64,
     #[cfg(test)]
     pub(crate) handoff_fault: std::sync::atomic::AtomicU8,
     #[cfg(test)]
@@ -97,6 +116,48 @@ impl Collector {
             .try_acquire_owned()
             .map_err(|_| Error::Busy)?;
         self.close_with_permit(_permit).await
+    }
+    /// Reconcile this agent's Matrix display name from its own definition,
+    /// throttled to the retained 300 s per agent (`reconcileAgentProfile`,
+    /// bridge-matrix.js:5938-5955). The control plane is this port's local
+    /// store — the name is the engagement's own `agentName`, which the
+    /// provision request's agent definition set — never an outbound backend
+    /// fetch. The throttle is written only after a completed reconcile, so a
+    /// refused one is retried on the next cycle exactly as the retained
+    /// bridge retries it on its next registration poll; the caller warns and
+    /// never ends the worker over it.
+    pub async fn reconcile_agent_profile(
+        &self,
+        engagement: &str,
+        cancel: &CancellationToken,
+    ) -> Result<bool, Error> {
+        let inner = &self.inner;
+        let now = profile_clock_ms();
+        let last = inner
+            .profile_checked_at
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if last != 0
+            && now.saturating_sub(last) < crate::identity_polish::PROFILE_RECONCILE_INTERVAL_MS
+        {
+            return Ok(false);
+        }
+        let name = inner
+            .domain
+            .engagement(engagement.to_owned())
+            .await?
+            .agent_name;
+        let changed = crate::identity_polish::reconcile_display_name(
+            &inner.http,
+            &inner.config.identity.transport.sender_mxid,
+            name.as_str(),
+            name.as_str(),
+            cancel,
+        )
+        .await?;
+        inner
+            .profile_checked_at
+            .store(profile_clock_ms(), std::sync::atomic::Ordering::Relaxed);
+        Ok(changed)
     }
 
     /// The engagement this collector's transport belongs to — task #12's
@@ -196,10 +257,15 @@ impl Collector {
 impl Inner {
     pub(crate) fn new(config: HostConfig, domain: DomainStore) -> Result<Arc<Self>, Error> {
         let http = Http::new(&config)?;
+        let representative = match &config.representative {
+            Some(_) => Some(Http::new_representative(&config)?),
+            None => None,
+        };
         Ok(Arc::new(Self {
             enrollment_jobs: crate::enrollment::Jobs::default(),
             config,
             http,
+            representative,
             domain,
             owner: Mutex::new(None),
             busy: Arc::new(Semaphore::new(1)),
@@ -207,6 +273,7 @@ impl Inner {
             receiver: crate::receive::Receiver::new(),
             uploads: crate::upload::Registry::new(),
             room_facts: Mutex::new(BTreeMap::new()),
+            profile_checked_at: std::sync::atomic::AtomicU64::new(0),
             #[cfg(test)]
             handoff_fault: std::sync::atomic::AtomicU8::new(0),
             #[cfg(test)]
@@ -1006,6 +1073,52 @@ mod tests {
                 .await
                 .is_ok()
         );
+        c.close().await.unwrap();
+        f.store.shutdown().await.unwrap();
+        fake.close().await;
+    }
+    /// Board #61 row 5 (bridge-matrix.js:5938-5955): the display name comes
+    /// from THIS agent's definition in the local store — never an outbound
+    /// backend fetch — and the reconcile is throttled to one per 300 s. The
+    /// fixture's engagement was admitted with the agent definition name
+    /// "Worker" (`domain::request("worker", "Worker", ..)`), while its fresh
+    /// account's localpart is machine-generated, so the definition's name
+    /// overwrites it (lib/matrix-agent-profile.js:22).
+    #[tokio::test]
+    async fn native_matrix_agent_display_name_reconciles_from_the_store() {
+        let f = common::Fixture::new();
+        let mut fake = common::Fake::start(false).await;
+        let c = Collector::new(f.config(&fake.endpoint), f.store.clone()).unwrap();
+        let cancel = CancellationToken::new();
+        let engagement = f.identity.transport.engagement_id.clone();
+        let script = async {
+            let read = fake.next().await;
+            assert_eq!(read.method, "GET");
+            assert!(read.target.ends_with("/displayname"));
+            assert!(read.target.contains("@worker:example.test"));
+            assert_eq!(
+                read.headers["authorization"],
+                format!("Bearer {}", common::TOKEN)
+            );
+            // The account's own localpart is machine-generated: overwritable.
+            read.json(200, json!({"displayname": "worker"}));
+            let write = fake.next().await;
+            assert_eq!(write.method, "PUT");
+            let body: Value = serde_json::from_slice(&write.body).unwrap();
+            assert_eq!(body["displayname"], "Worker");
+            write.json(200, json!({}));
+            let readback = fake.next().await;
+            assert_eq!(readback.method, "GET");
+            readback.json(200, json!({"displayname": "Worker"}));
+        };
+        let (result, ()) = tokio::join!(c.reconcile_agent_profile(&engagement, &cancel), script);
+        assert!(result.unwrap(), "the definition's name was written");
+        // The 300 s throttle (bridge-matrix.js:5939-5940): a second pass now
+        // issues no request at all.
+        let admitted = fake.requests();
+        let (second, ()) = tokio::join!(c.reconcile_agent_profile(&engagement, &cancel), async {});
+        assert!(!second.unwrap());
+        fake.quiesced(admitted, &common::limits()).await;
         c.close().await.unwrap();
         f.store.shutdown().await.unwrap();
         fake.close().await;

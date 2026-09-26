@@ -451,6 +451,7 @@ impl TokenAccountProvision {
             key: self.key,
             context: self.context,
             token,
+            representative_token: std::sync::Mutex::new(None),
             root: self.root,
             limits: self.limits,
             roots: self.roots,
@@ -513,6 +514,11 @@ pub struct ProvisionedTokenAccount {
     key: [u8; 32],
     context: Context,
     token: String,
+    /// The representative credential the rooms custody verified, kept for the
+    /// collector it builds: the send path re-invites a kicked agent with it
+    /// (bridge-matrix.js:10912-10918). Set once `create_agent_rooms` accepts
+    /// it; never a new login.
+    representative_token: std::sync::Mutex<Option<String>>,
     root: PathBuf,
     limits: Limits,
     roots: Vec<reqwest::Certificate>,
@@ -566,6 +572,17 @@ impl ProvisionedTokenAccount {
         config.factory_rooms = self.factory_rooms.clone();
         config.as_guard = self.as_guard.clone();
         config.roots = self.roots.clone();
+        // The representative credential the rooms custody verified rides the
+        // collector so the send path can re-invite a kicked agent
+        // (bridge-matrix.js:10912-10918). Absent until that custody accepts it.
+        if let Some(token) = self
+            .representative_token
+            .lock()
+            .map_err(|_| Error::OutcomeUnknown)?
+            .clone()
+        {
+            config = config.with_representative(&token)?;
+        }
         Ok(config)
     }
     /// Enroll the original inline account before activation. Only accounts
@@ -647,7 +664,17 @@ impl ProvisionedTokenAccount {
     ) -> Result<(), Error> {
         let original = self.scope.as_ref().ok_or(Error::Config)?;
         let operation = rooms::Operation::new(self, original.clone(), representative_token)?;
-        self.room_jobs.run(operation, cancel).await
+        let result = self.room_jobs.run(operation, cancel).await;
+        if result.is_ok() {
+            // The custody verified this credential against the server
+            // (whoami + invite accepted); the collector built from this
+            // account may re-use it for kick recovery. No new login.
+            *self
+                .representative_token
+                .lock()
+                .map_err(|_| Error::OutcomeUnknown)? = Some(representative_token.to_owned());
+        }
+        result
     }
     /// Use only this account's actual created/joined room observations.
     pub async fn enroll_created_rooms(

@@ -911,6 +911,10 @@ pub struct Agent {
     sync: u64,
     pending: Option<Value>,
     pub project_events: Vec<Value>,
+    /// The Matrix profile display name this account currently holds; the
+    /// production reconcile (`reconcileAgentProfile`, bridge-matrix.js:5938-
+    /// 5955) GETs it, PUTs the agent definition's name and reads it back.
+    displayname: Option<String>,
 }
 impl Agent {
     fn new(index: usize, crypto: crypto::Peer) -> Self {
@@ -936,6 +940,7 @@ impl Agent {
             sync: 0,
             pending: None,
             project_events: Vec::new(),
+            displayname: None,
         }
     }
     fn dm_state(&self) -> Value {
@@ -1451,6 +1456,11 @@ impl Peer {
                     .unwrap_or_else(|| json!({"rooms":{"join":{}},"to_device":{"events":[]}}));
                 batch["next_batch"] = json!(format!("agent-{index}-{}", agent.sync));
                 (200, batch)
+            } else if request.method == "PUT" && path.contains("/typing/") {
+                // The agent's typing indicator (`presence.rs:typing_request`,
+                // bridge-matrix.js:10527-10668). A real homeserver accepts it;
+                // the fixture only has to model the endpoint.
+                (200, json!({}))
             } else if request.method == "PUT" && path.contains("/sendToDevice/") {
                 agent.crypto.share(body).await;
                 (200, json!({}))

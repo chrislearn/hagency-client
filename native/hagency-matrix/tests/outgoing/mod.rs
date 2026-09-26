@@ -57,8 +57,46 @@ async fn scripted<T: std::fmt::Debug, S: std::future::Future>(
     assert!(trace.has(ObservationPhase::OwnerReturned));
     result
 }
-async fn ready(encrypted: bool, direct: bool) -> (common::Fixture, common::Fake, Collector) {
+async fn ready(
+    encrypted: bool,
+    direct: bool,
+) -> (common::Fixture, common::Fake, Collector) {
     ready_named(encrypted, direct, "outgoing bootstrap", None).await
+}
+/// Board #61 row 3: like `ready` but the collector carries the representative
+/// credential the provisioning custody verified, so the send path can re-
+/// invite a kicked agent (bridge-matrix.js:10912-10918).
+async fn ready_with_representative(
+    encrypted: bool,
+    direct: bool,
+    callsite: &'static str,
+) -> (common::Fixture, common::Fake, Collector) {
+    let f = common::Fixture::new();
+    let mut fake = common::Fake::start(true).await;
+    let mut config = config(&f, &fake.endpoint, f.identity.clone(), direct);
+    config.limits = common::limits();
+    config = config
+        .with_representative("synthetic-representative-token-not-real")
+        .unwrap();
+    let c = Collector::new(config, f.store.clone()).unwrap();
+    let cancel = CancellationToken::new();
+    let (r, ()) = scripted(callsite, None, c.collect(&cancel), async {
+        fake.next().await.json(200, common::who());
+        fake.next().await.json(200, common::sync("boot"));
+        fake.next().await.json(200, room(encrypted));
+    })
+    .await;
+    r.unwrap();
+    f.store
+        .resolve_verified_matrix_session(SessionBinding {
+            id: "root".into(),
+            engagement_id: f.identity.transport.engagement_id.clone(),
+            room_id: "!project:example.test".into(),
+            thread_root: None,
+        })
+        .await
+        .unwrap();
+    (f, fake, c)
 }
 async fn ready_named(
     encrypted: bool,
@@ -161,6 +199,7 @@ async fn final_claim_named(f: &common::Fixture, name: &str) -> ReplyClaim {
             RunnerCommand::SubmitFinalReply(FinalReply {
                 call_id: "final".into(),
                 body: "Answer **verified** 中文".into(),
+                incidental: false,
             }),
         )
         .await
@@ -329,6 +368,174 @@ async fn native_matrix_outgoing_kicked_agent_rejoins_and_the_message_is_delivere
     .await;
     assert_eq!(result.unwrap().state, OutgoingState::Delivered);
     assert_eq!(state(&f, &claim.id), "delivered");
+    fake.quiesced(fake.requests(), &common::limits()).await;
+    c.close().await.unwrap();
+    f.store.shutdown().await.unwrap();
+    fake.close().await;
+}
+
+/// Board #61 row 3 (TS bridge-matrix.js:10912-10918): the INVITE half of the
+/// rejoin-on-kick pair. With the representative credential the provisioning
+/// custody verified riding the collector, a membership-refused send is
+/// preceded by a representative invite of the kicked agent — then the agent
+/// joins and the same transaction is resent. The invite is observable on the
+/// wire: its own bearer, the agent's MXID in the body.
+#[tokio::test]
+async fn native_matrix_outgoing_kicked_agent_is_reinvited_by_the_representative_then_rejoins() {
+    let (f, mut fake, c) = ready_with_representative(false, false, "reinvite bootstrap").await;
+    let claim = final_claim(&f).await;
+    let cancel = CancellationToken::new();
+    let (result, ()) = common::scripted(c.send_final(claim.clone(), &cancel), async {
+        preflight(&mut fake, false).await;
+        preflight(&mut fake, false).await;
+        // The kick surfaces at the write itself, as in the join-only test.
+        let refused = fake.next().await;
+        assert_eq!(refused.method, "PUT");
+        assert!(refused.target.contains("/send/m.room.message/"));
+        let transaction = refused.target.rsplit('/').next().unwrap().to_owned();
+        refused.json(403, json!({"errcode":"M_FORBIDDEN","error":"not in room"}));
+        // The invite (bridge-matrix.js:10912-10918, the appservice half):
+        // POST /rooms/{id}/invite as the REPRESENTATIVE, body naming the
+        // agent, exactly as provisioning's rooms custody invites at creation.
+        let invite = fake.next().await;
+        assert_eq!(invite.method, "POST");
+        assert!(
+            invite
+                .target
+                .contains("/_matrix/client/v3/rooms/!project:example.test/invite")
+        );
+        assert_eq!(
+            invite.headers["authorization"],
+            "Bearer synthetic-representative-token-not-real"
+        );
+        let body: Value = serde_json::from_slice(&invite.body).unwrap();
+        assert_eq!(body["user_id"], "@worker:example.test");
+        invite.json(200, json!({}));
+        // The rejoin (bridge-matrix.js:10936-10943): POST /join as the agent.
+        let join = fake.next().await;
+        assert_eq!(join.method, "POST");
+        assert!(join.target.contains("/_matrix/client/v3/join/!project:example.test"));
+        assert_eq!(join.headers["authorization"], format!("Bearer {}", common::TOKEN));
+        join.json(200, json!({"room_id": "!project:example.test"}));
+        // The resend: the same write, same transaction id.
+        let resent = fake.next().await;
+        assert_eq!(resent.method, "PUT");
+        assert!(resent
+            .target
+            .ends_with(&format!("/send/m.room.message/{transaction}")));
+        resent.json(200, json!({"event_id": "$reinvited"}));
+    })
+    .await;
+    assert_eq!(result.unwrap().state, OutgoingState::Delivered);
+    assert_eq!(state(&f, &claim.id), "delivered");
+    fake.quiesced(fake.requests(), &common::limits()).await;
+    c.close().await.unwrap();
+    f.store.shutdown().await.unwrap();
+    fake.close().await;
+}
+
+/// Board #61 row 6 (TS bridge-matrix.js:3374-3385): an INCIDENTAL answer to a
+/// group question with no source thread STARTS a thread rooted at that
+/// question — root == reply target, falling back to a plain reply for clients
+/// without thread rendering. Goes through the real send path (submit → claim
+/// → send_final → sdk → the wire), with the question admitted as the
+/// dispatch's addressed input so the reply names it.
+#[tokio::test]
+async fn native_matrix_outgoing_incidental_group_answer_starts_a_thread_at_the_question() {
+    let (f, mut fake, c) = ready(false, false).await;
+    // Admit the question exactly as the notice intake does: a top-level group
+    // message addressing the agent, so its route has NO thread root.
+    let cancel = CancellationToken::new();
+    let event = json!({"event_id":"$question","sender":"@owner:example.test","type":"m.room.message","origin_server_ts":now(),"content":{"msgtype":"m.text","body":"Please implement","m.mentions":{"user_ids":["@worker:example.test"]}}});
+    let sync = json!({"next_batch":"question","rooms":{"join":{"!project:example.test":{"timeline":{"limited":false,"events":[event]},"state":{"events":[]}}}},"to_device":{"events":[]}});
+    let (r, ()) = scripted(
+        "incidental intake",
+        None,
+        c.intake(HostIntakePlan::new(vec!["root".into()]).unwrap(), &cancel),
+        async {
+            fake.next().await.json(200, common::who());
+            fake.next().await.json(200, sync);
+            fake.next().await.json(200, room(false));
+        },
+    )
+    .await;
+    r.unwrap();
+    let inbox = f.store.inbox("root".into(), 0, 10, None).await.unwrap();
+    let sequence = inbox[0].message.sequence;
+    f.store
+        .create_canonical_task("task".into(), "root".into(), "Finish result".into(), now())
+        .await
+        .unwrap();
+    f.store
+        .enqueue_inbox_dispatch(
+            DispatchInput {
+                id: "run_task".into(),
+                session_id: "root".into(),
+                task_id: Some("task".into()),
+                resources: vec![],
+                payload: json!({"instruction":"fixture"}),
+            },
+            vec![sequence],
+        )
+        .await
+        .unwrap();
+    let cap = f
+        .store
+        .claim_dispatch("runner".into(), now(), 60_000, 120_000, 1)
+        .await
+        .unwrap()
+        .unwrap();
+    f.store.start_dispatch(cap.clone(), now()).await.unwrap();
+    f.store
+        .mutate_task(
+            cap.clone(),
+            "task".into(),
+            "done".into(),
+            TaskMutation::Transition {
+                status: TaskState::Done,
+                waiting_reason: None,
+                waiting_until: None,
+            },
+            now(),
+        )
+        .await
+        .unwrap();
+    f.store
+        .runner_command(
+            cap.clone(),
+            RunnerCommand::SubmitFinalReply(FinalReply {
+                call_id: "final".into(),
+                body: "Progress: still working".into(),
+                incidental: true,
+            }),
+        )
+        .await
+        .unwrap();
+    f.store
+        .complete_dispatch(cap, json!({"observed":"fixture completed"}), now())
+        .await
+        .unwrap();
+    let claim = f.store.claim_final_reply(60_000).await.unwrap().unwrap();
+    let (result, body) = scripted(
+        "incidental send",
+        None,
+        c.send_final(claim.clone(), &cancel),
+        async {
+            let req = plain_wire(&mut fake).await;
+            let body: Value = serde_json::from_slice(&req.body).unwrap();
+            req.json(200, json!({"event_id":"$threaded"}));
+            body
+        },
+    )
+    .await;
+    assert_eq!(result.unwrap().state, OutgoingState::Delivered);
+    assert_eq!(state(&f, &claim.id), "delivered");
+    // The incidental shape: a NEW thread rooted at the question itself,
+    // falling back to a plain reply for thread-less clients.
+    assert_eq!(body["m.relates_to"]["rel_type"], "m.thread");
+    assert_eq!(body["m.relates_to"]["event_id"], "$question");
+    assert_eq!(body["m.relates_to"]["is_falling_back"], true);
+    assert_eq!(body["m.relates_to"]["m.in_reply_to"]["event_id"], "$question");
     fake.quiesced(fake.requests(), &common::limits()).await;
     c.close().await.unwrap();
     f.store.shutdown().await.unwrap();

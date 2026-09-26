@@ -225,7 +225,7 @@ impl DomainRepository {
         graphs::complete_guard(&tx, &d)?;
         super::file_delivery::complete_guard(&tx, &cap.dispatch_id)?;
         let (reply, _) =
-            replies::insert_intent(&tx, current.task(), &cap.dispatch_id, &frozen, &body, now)?;
+            replies::insert_intent(&tx, current.task(), &cap.dispatch_id, &frozen, &body, false, now)?;
         tx.execute(
             "UPDATE dispatch_stops SET evidence=?3,settled_at=?4 WHERE dispatch_id=?1 AND fence=?2",
             params![

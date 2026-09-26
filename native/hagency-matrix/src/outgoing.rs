@@ -253,7 +253,7 @@ impl Inner {
             return Err(Error::OutcomeUnknown);
         }
         let mut activity: Option<(String, Option<String>)> = None;
-        let (kind, id, fence, domain_digest, route, transaction_id, body, reply_to) = match &source {
+        let (kind, id, fence, domain_digest, route, transaction_id, body, reply_to, incidental) = match &source {
             Source::Final(claim) => {
                 let historical = owner
                     .outgoing(Command::Lookup {
@@ -289,6 +289,7 @@ impl Inner {
                     send.transaction_id,
                     send.body,
                     send.reply_to,
+                    send.incidental,
                 )
             }
             Source::Notice(claim) => {
@@ -329,6 +330,7 @@ impl Inner {
                     claim.claim.notice.transaction_id.clone(),
                     claim.claim.notice.body.clone(),
                     None,
+                    false,
                 )
             }
             Source::Command(claimed) => {
@@ -370,6 +372,7 @@ impl Inner {
                     // A command answer names nobody: it renders from the route's
                     // thread root alone, exactly as the retained bridge sent it.
                     None,
+                    false,
                 )
             }
             Source::File(file) => {
@@ -386,6 +389,7 @@ impl Inner {
                     l.transaction_id.clone(),
                     String::new(),
                     None,
+                    false,
                 )
             }
             Source::Resume => unreachable!(),
@@ -417,6 +421,7 @@ impl Inner {
                 route.thread_root.as_deref(),
                 reply_to.as_deref(),
                 matches!(route.privacy, hagency_core::replies::RoomPrivacy::Group {}),
+                incidental,
             ) {
                 content["m.relates_to"] = relation;
             }
@@ -435,6 +440,7 @@ impl Inner {
                 domain_digest,
                 route,
                 reply_to,
+                incidental,
                 transaction_id,
                 content,
                 content_digest,
@@ -891,13 +897,41 @@ impl Inner {
             match sent {
                 Ok(value) => Ok(value),
                 Err(Error::Unauthorized) => {
-                    let restored = crate::identity_polish::agent_rejoin(
-                        &self.http,
-                        &route.room_id,
-                        cancel,
-                    )
-                    .await
-                    .is_ok();
+                    // The invite half of the retained invite-then-join pair
+                    // (bridge-matrix.js:10912-10918): a kicked member needs a
+                    // fresh invite no agent can mint for itself. The
+                    // representative credential rides the config from the
+                    // provisioning custody that verified it; without one,
+                    // recovery stays join-only.
+                    let invited = match &self.representative {
+                        Some(representative) => representative
+                            .post(
+                                &[
+                                    "_matrix",
+                                    "client",
+                                    "v3",
+                                    "rooms",
+                                    &route.room_id,
+                                    "invite",
+                                ],
+                                serde_json::to_string(
+                                    &json!({"user_id":route.sender_mxid}),
+                                )
+                                .map_err(|_| Error::Capacity)?,
+                                cancel,
+                            )
+                            .await
+                            .is_ok_and(|response| response.status == 200),
+                        None => true,
+                    };
+                    let restored = invited
+                        && crate::identity_polish::agent_rejoin(
+                            &self.http,
+                            &route.room_id,
+                            cancel,
+                        )
+                        .await
+                        .is_ok();
                     let retried = if restored {
                         self.http
                             .put(&send, write.body.clone(), cancel)

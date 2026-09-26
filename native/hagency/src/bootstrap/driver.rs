@@ -332,6 +332,22 @@ async fn run_continuous(input: Attempt<'_>) -> Result<Option<Box<Report>>, Failu
             }
             continue;
         }
+        // The retained bridge's per-agent profile reconcile
+        // (`reconcileAgentProfile`, bridge-matrix.js:5938-5955): re-read the
+        // definition's display name from the store and reconcile the Matrix
+        // profile, throttled to 300 s per agent. Only an agent's OWN worker
+        // does this — TS's `pollRegistrations` reconciles each agent with that
+        // agent's sender, and the coordinator's account is nobody's agent.
+        // Best effort, the retained `catch { console.warn }`: a refused
+        // reconcile never ends the worker, a later cycle retries it.
+        if let RuntimeOwner::Factory(_) = &*input.owner
+            && let Err(error) = input
+                .collector
+                .reconcile_agent_profile(&engagement, input.cancel)
+                .await
+        {
+            tracing::warn!(?error, "agent display-name reconcile refused; the worker continues");
+        }
         let outcome = run(Attempt {
             domain: input.domain,
             owner: &mut *input.owner,
