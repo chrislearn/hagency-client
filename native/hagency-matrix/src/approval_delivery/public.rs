@@ -18,6 +18,9 @@ use hagency_store::PrivateApprovalCard;
 use serde_json::{Value, json};
 
 pub(crate) const MAX_NOTICE_BODY: usize = 512;
+/// The profile display name's own cap (lib/matrix-agent-profile.js:6-8 takes
+/// 128 chars) — the name in the notice is that same string.
+pub(crate) const MAX_AGENT_NAME: usize = 128;
 pub(crate) const NOTICE_MSGTYPE: &str = "com.agentchat.approval.status.v1";
 /// The shared Agent Chat approval key. TS sends the status detail under the
 /// SAME key as the request card (`APPROVAL_EVENT_KEY`, bridge-matrix.js:215).
@@ -67,7 +70,11 @@ pub(crate) fn build_public_approval_notice(
 /// any byte.
 #[derive(Clone)]
 pub(crate) struct PublicFrozen {
+    /// The room-visible name (TS `approval.agent`) — never the engagement id.
     agent: String,
+    /// The engagement id, kept ONLY as the binding this notice is addressed
+    /// from; it is never rendered into a room string.
+    engagement: String,
     project: String,
     server_name: String,
     project_room_id: String,
@@ -86,10 +93,14 @@ impl PublicFrozen {
     pub fn new(card: &PrivateApprovalCard, thread_root: Option<String>) -> Result<Self, Error> {
         let t = card.target();
         let a = &t.authority;
-        let agent = a.engagement_id.trim().to_owned();
+        // The room string names the AGENT, never its engagement id
+        // (bridge-matrix.js:2585; board #99). The room's display name for the
+        // agent is the same string, set by `reconcile_agent_profile`.
+        let agent = a.agent_name.trim().to_owned();
         let value = Self {
             body: format!("Agent {agent} is waiting for approval from its owner."),
             agent,
+            engagement: a.engagement_id.trim().to_owned(),
             project: a.project_id.clone(),
             server_name: a.server_name.clone(),
             project_room_id: a.project_room_id.clone(),
@@ -157,12 +168,18 @@ impl PublicFrozen {
         authority.server_name == self.server_name
             && authority.project_room_id == self.project_room_id
             && authority.bot_mxid == self.bot_mxid
-            && authority.engagement_id == self.agent
+            && authority.engagement_id == self.engagement
+            && authority.agent_name.trim() == self.agent
             && authority.project_id == self.project
     }
     fn validate(&self) -> Result<(), Error> {
-        for id in [&self.agent, &self.project] {
-            identifier(id, 512).map_err(|_| Error::Storage)?;
+        // The engagement id stays an identifier; the NAME is bounded text
+        // (unicode letters are legal in an agent name, so `identifier` would
+        // wrongly refuse them).
+        identifier(&self.engagement, 512).map_err(|_| Error::Storage)?;
+        identifier(&self.project, 512).map_err(|_| Error::Storage)?;
+        if self.agent.is_empty() || self.agent.chars().count() > MAX_AGENT_NAME {
+            return Err(Error::Storage);
         }
         matrix_room(&self.project_room_id, &self.server_name).map_err(|_| Error::Storage)?;
         matrix_room(&self.private_room_id, &self.server_name).map_err(|_| Error::Storage)?;
@@ -232,6 +249,7 @@ mod tests {
     fn notice(thread_root: Option<&str>) -> PublicFrozen {
         let mut value = PublicFrozen {
             agent: "agent-one".into(),
+            engagement: "agent-one".into(),
             project: "project-one".into(),
             server_name: "hq.test".into(),
             project_room_id: "!project:hq.test".into(),

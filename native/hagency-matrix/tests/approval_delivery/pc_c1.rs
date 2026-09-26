@@ -102,11 +102,11 @@ async fn native_private_approval_public_status_notice() {
         json!({
             "msgtype": "com.agentchat.approval.status.v1",
             "body": format!("Agent {} is waiting for approval from its owner.",
-                authority.engagement_id),
+                authority.agent_name),
             "com.agentchat.approval": {
                 "version": 1,
                 "kind": "status",
-                "agent": authority.engagement_id,
+                "agent": authority.agent_name,
                 "project": authority.project_id,
                 "state": "waiting_for_owner",
             },
@@ -114,6 +114,26 @@ async fn native_private_approval_public_status_notice() {
                 "is_falling_back":true,"m.in_reply_to":{"event_id":root}},
         }),
         "exact notice body"
+    );
+
+    // Board #99: the room string names the AGENT (its display name), never the
+    // engagement id — the live defect read `Agent en_ae6b2f… is waiting …`. The
+    // fixture's agent name is `Worker`; its engagement id is `en_<hash>`, so
+    // the two are distinguishable and this assertion can fail.
+    assert_eq!(authority.agent_name, "Worker", "the agent's own name");
+    assert_eq!(
+        sent["body"], "Agent Worker is waiting for approval from its owner.",
+        "the notice names the agent"
+    );
+    assert_eq!(sent["com.agentchat.approval"]["agent"], "Worker");
+    let body = sent["body"].as_str().unwrap();
+    assert!(
+        !body.contains(&authority.engagement_id),
+        "the engagement id must never reach the room: {body}"
+    );
+    assert!(
+        !content.contains(&authority.engagement_id),
+        "no byte of the notice may carry the engagement id"
     );
 
     // Reading the notice confers no grant and no authority: the request is

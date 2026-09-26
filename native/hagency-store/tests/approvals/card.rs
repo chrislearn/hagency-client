@@ -111,7 +111,11 @@ fn native_private_approval_card_content() {
         let detail = &card.content()["com.agentchat.approval"];
         assert_eq!(detail["request_id"], request.id);
         assert_eq!(detail["input_digest"], target.request_digest);
-        assert_eq!(detail["agent"], f.agents[0]);
+        // The card names the AGENT (board #99): the fixture registers the
+        // engagement `f.agents[0]` under the name "a", and TS puts the name in
+        // `detail.agent` (bridge-matrix.js:2603) — never the engagement id.
+        assert_eq!(detail["agent"], "a");
+        assert_ne!(detail["agent"], f.agents[0].as_str());
         assert_eq!(detail["project"], target.authority.project_id);
         assert_eq!(detail["project_room_id"], "!project:example.test");
         assert_eq!(detail["upstream_rpc_id"], json!(input.upstream_id));

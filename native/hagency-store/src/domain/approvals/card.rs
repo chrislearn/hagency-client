@@ -68,7 +68,7 @@ impl DomainRepository {
                 "workspace":context.workspace,"task_id":context.task});
             description.push_str(&format!(
                 "\nAuthorization scope for {} in project {}:\nWorkspace: {}\nThis task: {}\nAlways allow saves this exact rule for this Agent and project.",
-                target.authority.engagement_id, target.authority.project_id,
+                target.authority.agent_name, target.authority.project_id,
                 context.workspace, context.task
             ));
             actions.push(
@@ -89,7 +89,7 @@ impl DomainRepository {
         };
         let mut detail = json!({
             "version":1,"kind":"request",
-            "agent":target.authority.engagement_id,
+            "agent":target.authority.agent_name,
             "project":target.authority.project_id,
             "project_room_id":target.authority.project_room_id,
             "request_id":target.request_id,"input_digest":target.request_digest,
@@ -106,7 +106,7 @@ impl DomainRepository {
         .map_err(|_| Error::RunnerAuthority)?;
         let body = format!(
             "Approval required for {}\nProject: {}\nRuntime: codex\nTool: {}\nDescription: {}\nInput: {}\nExpires: {}\nChoose an approval button for the scope shown above. Text replies are not approval.",
-            target.authority.engagement_id,
+            target.authority.agent_name,
             target.authority.project_id,
             request.method,
             description,

@@ -15,6 +15,7 @@ pub(crate) const MAX_EVENTS: usize = 100;
 #[serde(remote = "ApprovalRoomAuthority")]
 struct AuthorityDef {
     engagement_id: String,
+    agent_name: String,
     fleet_id: String,
     project_id: String,
     registration_generation: u64,
@@ -641,7 +642,7 @@ fn select(
         let t = targets.iter().find(|t| t.0.request_id == d.request_id)?;
         let a = &t.0.authority;
         if d.input_digest != t.0.request_digest
-            || d.agent != a.engagement_id
+            || d.agent != a.agent_name
             || d.project != a.project_id
             || d.project_room_id != a.project_room_id
             || a.room_id != room
@@ -667,6 +668,7 @@ mod tests {
         Target(ApprovalIntakeTarget {
             authority: ApprovalRoomAuthority {
                 engagement_id: "agent-one".into(),
+                agent_name: "agent-one".into(),
                 fleet_id: "fleet-one".into(),
                 project_id: "project-one".into(),
                 registration_generation: 1,

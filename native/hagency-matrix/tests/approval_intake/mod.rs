@@ -352,7 +352,7 @@ async fn request(f: &common::Fixture, cap: &RunnerCapability, id: u64) -> Approv
     f.store.approval_intake_target(a.id).await.unwrap()
 }
 fn verdict(t: &ApprovalIntakeTarget, action: &str) -> Value {
-    json!({"msgtype":"com.agentchat.approval.verdict.v1","body":"Owner button action","com.agentchat.approval":{"version":1,"kind":"verdict","agent":t.authority.engagement_id,"project":t.authority.project_id,"project_room_id":t.authority.project_room_id,"request_id":t.request_id,"input_digest":t.request_digest,"action":action}})
+    json!({"msgtype":"com.agentchat.approval.verdict.v1","body":"Owner button action","com.agentchat.approval":{"version":1,"kind":"verdict","agent":t.authority.agent_name,"project":t.authority.project_id,"project_room_id":t.authority.project_room_id,"request_id":t.request_id,"input_digest":t.request_digest,"action":action}})
 }
 #[tokio::test]
 async fn native_matrix_approval_verdict_real_encrypted_owner_actions_exact_scopes() {
