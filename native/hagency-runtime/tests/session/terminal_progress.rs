@@ -64,7 +64,6 @@ async fn native_codex_session_terminal_progress() {
         "process",
         "stdin",
         "large",
-        "unknown",
     ] {
         let (mut session, mut peer) = running().await;
         if case != "absent" {
@@ -106,10 +105,7 @@ async fn native_codex_session_terminal_progress() {
                 event["params"]["stdin"] = json!("x".repeat(MAX_TEXT_BYTES + 1));
                 Error::Capacity
             }
-            _ => {
-                event["method"] = "private-peer-method".into();
-                Error::UnsupportedEvent
-            }
+            _ => unreachable!("every listed case is matched above"),
         };
         assert_eq!(
             update(&mut session, &mut peer, event).await.err(),
@@ -117,13 +113,22 @@ async fn native_codex_session_terminal_progress() {
             "{case}"
         );
         unknown(&session, expected);
-        assert_eq!(
-            session.refused_notification(),
-            Some(if case == "unknown" {
-                "unknown"
-            } else {
-                "terminal_interaction"
-            })
-        );
+        assert_eq!(session.refused_notification(), Some("terminal_interaction"));
     }
+    // Board #94: an invented notification method during an active command is
+    // logged and ignored; the command's own scope checks above stay strict.
+    let (mut session, mut peer) = running().await;
+    update(&mut session, &mut peer, command(false))
+        .await
+        .unwrap();
+    let invented = note(
+        "private-peer-method",
+        json!({"threadId":"thread-one","turnId":"turn-one"}),
+    );
+    assert!(matches!(
+        update(&mut session, &mut peer, invented).await,
+        Ok(Update::Notice)
+    ));
+    assert_eq!(session.phase(), Phase::Running);
+    assert!(session.outcome().is_none());
 }

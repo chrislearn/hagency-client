@@ -45,7 +45,6 @@ async fn native_codex_session_hook_notices() {
         "invalid_status",
         "oversized",
         "async",
-        "private_label",
     ] {
         let (mut session, mut peer) = running().await;
         let mut event = hook("hook/started", true);
@@ -75,10 +74,7 @@ async fn native_codex_session_hook_notices() {
                 event["params"]["run"]["executionMode"] = "async".into();
                 Error::Malformed
             }
-            _ => {
-                event["method"] = "private-peer-text".into();
-                Error::UnsupportedEvent
-            }
+            _ => unreachable!("every listed kind is matched above"),
         };
         assert_eq!(
             update(&mut session, &mut peer, event).await.err(),
@@ -86,15 +82,20 @@ async fn native_codex_session_hook_notices() {
             "{kind}"
         );
         unknown(&session, expected);
-        assert_eq!(
-            session.refused_notification(),
-            Some(if kind == "private_label" {
-                "unknown"
-            } else {
-                "hook"
-            })
-        );
+        assert_eq!(session.refused_notification(), Some("hook"));
     }
+    // Board #94: a notification METHOD this build does not know is logged and
+    // ignored — never fatal — while a known method with a bad value stays strict
+    // above. The turn goes on.
+    let (mut session, mut peer) = running().await;
+    let mut event = hook("hook/started", true);
+    event["method"] = "private-peer-method".into();
+    assert!(matches!(
+        update(&mut session, &mut peer, event).await,
+        Ok(Update::Notice)
+    ));
+    assert_eq!(session.phase(), Phase::Running);
+    assert!(session.outcome().is_none());
     let (mut session, mut peer) = fixture(false);
     initialize(&mut session, &mut peer).await;
     let (opened, _) = tokio::join!(

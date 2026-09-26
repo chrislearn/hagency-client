@@ -26,6 +26,9 @@ mod terminal_progress;
 #[path = "session/live_startup.rs"]
 mod live_startup;
 
+#[path = "session/unknown_tolerance.rs"]
+mod unknown_tolerance;
+
 type Session = SessionDriver<DuplexStream, DuplexStream, DuplexStream>;
 struct Peer {
     stdin: DuplexStream,
@@ -977,31 +980,35 @@ async fn native_codex_session_outcomes_interrupt_ack_does_not_complete_a_turn() 
 }
 
 #[tokio::test]
-async fn native_codex_session_outcomes_server_requests_are_explicitly_unsupported() {
+async fn native_codex_session_unowned_requests_are_answered_and_unknown_notices_ignored() {
+    // Board #94: production never enables approvals, so every server request
+    // reaches the ownerless arm. It is answered with the wire's own refusal and
+    // the turn goes on — never killed.
     let (mut session, mut peer) = running().await;
     let request = json!({ "id": "approval", "method": "item/commandExecution/requestApproval", "params": { "threadId": "thread-one", "turnId": "turn-one", "itemId": "one", "reason": "grant everything" } });
     let (result, response) = tokio::join!(session.next_update(), async {
         write(&mut peer, request).await;
         read(&mut peer.stdin).await
     });
-    assert_eq!(result.err(), Some(Error::UnsupportedRequest));
+    assert!(matches!(result, Ok(Update::Notice)), "{:?}", result.err());
     assert_eq!(response["id"], "approval");
     assert_eq!(response["error"]["code"], -32601);
     assert!(response.get("result").is_none());
-    assert!(matches!(
-        session.outcome(),
-        Some(Outcome::UnsupportedRequest)
-    ));
+    assert_eq!(session.phase(), Phase::Running);
+    assert!(session.outcome().is_none());
+
+    // An invented notification is logged and ignored the same way.
     let (mut session, mut peer) = running().await;
     let event = note(
         "item/autoApprovalReview/completed",
         json!({ "threadId": "thread-one", "turnId": "turn-one", "approved": true }),
     );
-    assert_eq!(
-        update(&mut session, &mut peer, event).await.err(),
-        Some(Error::UnsupportedEvent)
-    );
-    unknown(&session, Error::UnsupportedEvent);
+    assert!(matches!(
+        update(&mut session, &mut peer, event).await,
+        Ok(Update::Notice)
+    ));
+    assert_eq!(session.phase(), Phase::Running);
+    assert!(session.outcome().is_none());
 }
 
 #[tokio::test(start_paused = true)]
@@ -1258,16 +1265,15 @@ async fn native_codex_session_identity_terminal_received_suffixes_are_checked() 
 }
 
 #[tokio::test]
-async fn native_codex_session_outcomes_terminal_cannot_discard_received_server_request() {
+async fn native_codex_session_outcomes_terminal_drain_answers_received_server_request() {
     let (mut session, mut peer) = running().await;
     peer.stdout.write_all(&bytes(&[end("completed"), json!({ "id": "late-request", "method": "item/permissions/requestApproval", "params": { "threadId": "thread-one", "turnId": "turn-one" } })])).await.unwrap();
     let (result, response) = tokio::join!(session.next_update(), read(&mut peer.stdin));
-    assert_eq!(result.err(), Some(Error::UnsupportedRequest));
+    // The drain must not silently discard it (board #94): it is answered, and the
+    // completed turn is still the update the host sees.
+    assert!(matches!(result, Ok(Update::TurnEnded)), "{:?}", result.err());
     assert_eq!(response["error"]["code"], -32601);
-    assert!(matches!(
-        session.outcome(),
-        Some(Outcome::UnsupportedRequest)
-    ));
+    assert!(matches!(session.outcome(), Some(Outcome::Completed { .. })));
 }
 
 #[tokio::test]
@@ -1316,7 +1322,7 @@ fn approval_event(id: Value) -> Value {
 }
 
 #[tokio::test]
-async fn native_codex_session_outcomes_refused_callbacks_expose_only_fixed_shape_labels() {
+async fn native_codex_session_outcomes_unowned_requests_are_answered_and_named() {
     for (method, label) in [
         ("item/commandExecution/requestApproval", "command_approval"),
         ("item/tool/requestUserInput", "tool_user_input"),
@@ -1333,8 +1339,12 @@ async fn native_codex_session_outcomes_refused_callbacks_expose_only_fixed_shape
             json!({"id":7,"method":method,"params":{"private":"not-projected"}}),
         )
         .await;
-        assert_eq!(result.err(), Some(Error::UnsupportedRequest));
+        // No owner can take it, so it is answered and the turn goes on. The
+        // fixed shape label still names the method (never the payload).
+        assert!(matches!(result, Ok(Update::Notice)), "{method}");
         assert_eq!(session.last_server_request(), Some(label));
+        assert_eq!(session.phase(), Phase::Running, "{method}");
+        assert!(session.outcome().is_none(), "{method}");
         let response = read(&mut peer.stdin).await;
         if method == "mcpServer/elicitation/request" {
             assert_eq!(
@@ -1344,10 +1354,6 @@ async fn native_codex_session_outcomes_refused_callbacks_expose_only_fixed_shape
         } else {
             assert_eq!(response["error"]["code"], -32601);
         }
-        assert!(matches!(
-            session.outcome(),
-            Some(Outcome::UnsupportedRequest)
-        ));
     }
 }
 #[tokio::test]
@@ -1363,11 +1369,6 @@ async fn native_codex_session_outcomes_refused_notifications_expose_only_fixed_s
             json!({"threadId":"thread-one","turnId":"turn-one","item":{"id":"item-one","type":"private-peer-kind"}}),
             "other_item",
         ),
-        (
-            "private-peer-method",
-            json!({"private":"private-peer-text"}),
-            "unknown",
-        ),
     ] {
         let (mut session, mut peer) = running().await;
         assert_eq!(session.refused_notification(), None);
@@ -1379,18 +1380,35 @@ async fn native_codex_session_outcomes_refused_notifications_expose_only_fixed_s
         assert_eq!(session.refused_notification(), Some(label));
         assert!(matches!(session.outcome(), Some(Outcome::Unknown { .. })));
     }
+    // Board #94: these two are KNOWN methods with an unrecognized value, so they
+    // stay strict above. A method this build does not know at all is different:
+    // it is logged and ignored, the turn goes on, and the label still names it.
+    let (mut session, mut peer) = running().await;
+    let invented = note("private-peer-method", json!({"private":"private-peer-text"}));
+    assert!(matches!(
+        update(&mut session, &mut peer, invented).await,
+        Ok(Update::Notice)
+    ));
+    // Nothing was refused, so no refusal label is recorded; the method name is
+    // carried by the debug log instead.
+    assert_eq!(session.refused_notification(), None);
+    assert_eq!(session.phase(), Phase::Running);
+    assert!(session.outcome().is_none());
 }
 #[tokio::test]
 async fn native_codex_approval_session() {
     use hagency_runtime::codex::RequestId;
     let (mut session, mut peer) = running().await;
-    // Existing default behavior must stay fail closed.
+    // With approvals off there is no owner, so the request is answered with the
+    // wire's own refusal and the turn goes on (board #94) — it is not fatal.
     assert!(matches!(
         update(&mut session, &mut peer, approval_event(json!(7))).await,
-        Err(Error::UnsupportedRequest)
+        Ok(Update::Notice)
     ));
     let error = read(&mut peer.stdin).await;
     assert_eq!(error["error"]["code"], -32601);
+    assert_eq!(session.phase(), Phase::Running);
+    assert!(session.outcome().is_none());
     let (mut session, mut peer) = running().await;
     session.enable_approvals().unwrap();
     let Update::Approval(request) = update(&mut session, &mut peer, approval_event(json!(7)))
