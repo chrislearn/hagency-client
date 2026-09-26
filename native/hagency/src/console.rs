@@ -128,7 +128,11 @@ pub(crate) fn router() -> Router {
                 .push(tasks::router())
                 .push(tasks::extra_router()),
         )
-        .push(Router::with_path("{**asset}").get(asset))
+        // Board #92: Express serves HEAD from a GET route, so the retained
+        // server answers a HEAD on every document; the console's own `<Link>`
+        // prefetch sends one. Salvo's `MethodFilter(GET)` does not fold HEAD
+        // onto GET, so a bare `.get(asset)` answered 405 — register it.
+        .push(Router::with_path("{**asset}").get(asset).head(asset))
 }
 pub(crate) fn operator_router() -> Router {
     Router::new().push(Router::with_path("console/access").post(issue))
@@ -246,7 +250,13 @@ fn cookie(req: &Request) -> Result<&str, Error> {
     selected.ok_or(Error::Unauthorized)
 }
 fn current(req: &Request, depot: &Depot) -> Result<Session, Error> {
-    if !same_origin(req, depot, req.method() != Method::GET) {
+    // Board #92: HEAD is a SAFE method (RFC 9110 §9.2.1) and Express serves it
+    // from the GET route, so the retained server runs its read guard for a
+    // HEAD. Treating it as a mutation demanded an `Origin` header that a
+    // browser never sends on a same-origin `<Link>` prefetch, so the console
+    // 401'd its own prefetch.
+    let mutation = !matches!(*req.method(), Method::GET | Method::HEAD);
+    if !same_origin(req, depot, mutation) {
         return Err(Error::Unauthorized);
     }
     console(depot)?.0.authority.authenticate(cookie(req)?)
