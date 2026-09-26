@@ -38,6 +38,12 @@ pub struct SessionDriver<R, W, E> {
     observation_kind: super::ObservationKind,
     observation_evidence: super::observation::EvidenceTracker,
     last_server_request: Option<&'static str>,
+    /// The refused request's OWN method name, bounded and printable. The shape
+    /// label above is a fixed aggregate vocabulary and reads `"unknown"` for a
+    /// method native does not know — which is exactly the case that must name
+    /// itself. Board #87: a live turn died as `owned_failure: "protocol"` with
+    /// no way to tell WHICH server->client request killed it.
+    last_server_request_method: Option<String>,
     refused_notification: Option<&'static str>,
     mcp: crate::codex::approval::McpTracker,
     /// Requests this session declined by adapter policy. Their upstream
@@ -73,6 +79,7 @@ impl<R, W, E> SessionDriver<R, W, E> {
             observation_kind: super::ObservationKind::Ignored,
             observation_evidence: super::observation::EvidenceTracker::default(),
             last_server_request: None,
+            last_server_request_method: None,
             refused_notification: None,
             mcp: crate::codex::approval::McpTracker::default(),
             policy_declined: BTreeSet::new(),
@@ -180,6 +187,12 @@ impl<R, W, E> SessionDriver<R, W, E> {
     /// Fixed shape label only; no callback params, IDs or runtime text.
     pub fn last_server_request(&self) -> Option<&'static str> {
         self.last_server_request
+    }
+    /// The refused server request's own method name, bounded and printable.
+    /// Diagnostic only (ADR-181 shape): it names WHAT was refused so a live
+    /// failure is actionable, and it is never authority.
+    pub fn last_server_request_method(&self) -> Option<&str> {
+        self.last_server_request_method.as_deref()
     }
     /// Fixed category of the refused notification, never a peer method/ID/text.
     pub fn refused_notification(&self) -> Option<&'static str> {
@@ -562,6 +575,13 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
                 params: Some(params),
             } if self.approvals_enabled => {
                 self.last_server_request = Some(server_request_shape(&method));
+                let method_name = bounded_method(&method);
+                self.last_server_request_method = Some(method_name.clone());
+                // The fixed shape label is what status carries: a private runtime
+                // string is never projected (see
+                // `native_codex_session_outcomes_refused_callbacks_expose_only_fixed_shape_labels`),
+                // and unlike `method` it is `Copy`, so it survives `parse`.
+                let shape = server_request_shape(&method);
                 let elicitation = method == "mcpServer/elicitation/request";
                 let original = id.clone();
                 let declinable = crate::codex::approval::policy_decline(&method, &params).is_some();
@@ -577,18 +597,31 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
                 let request = match parsed {
                     Ok(request) => request,
                     Err(error) => {
-                        if elicitation {
-                            self.wire
-                                .send(transport::Command::RejectServerRequest { id: original })
-                                .await
-                                .map_err(Error::Transport)?;
-                        } else if matches!(error, Error::Policy)
+                        // An adapter-refused approval — the unsupported MCP
+                        // elicitation FORM — is answered with the family's own
+                        // decline and the turn goes on. The retained runner ends
+                        // the turn here (`router/src/runner.ts:725-735`); the
+                        // operator rule (a bridge-side fault is never terminal)
+                        // overrides it, and this is exactly the arm that killed a
+                        // live turn as a silent `protocol` when Codex asked an
+                        // elicitation. Identity and correlation failures
+                        // (`Error::Scope`) are not answered with a decline: Codex
+                        // never learns whether that tool ran. The WARN names the
+                        // cause the failure previously hid.
+                        let adapter_refused = matches!(error, Error::Policy);
+                        if adapter_refused
                             && declinable
                             && self.policy_declines < MAX_POLICY_DECLINES
                         {
-                            // Refused by the adapter, not by the owner: answer with
-                            // the family's own decline and let the turn go on. The
-                            // host coordinator never sees this request.
+                            tracing::warn!(
+                                shape = shape,
+                                method = %method_name,
+                                request_id = ?original,
+                                "Codex server request refused by the adapter; answering its decline and continuing the turn"
+                            );
+                            // Refused by the adapter, not by the owner: answer
+                            // with the family's own decline and let the turn go
+                            // on. The host coordinator never sees this request.
                             self.wire
                                 .send(transport::Command::DeclineServerRequest {
                                     id: original.clone(),
@@ -599,6 +632,22 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
                             self.policy_declined.insert(original);
                             self.observation_kind = super::ObservationKind::Ignored;
                             return Ok(Update::Notice);
+                        }
+                        tracing::warn!(
+                            shape = shape,
+                            method = %method_name,
+                            request_id = ?original,
+                            "unsupported Codex server request; the turn cannot continue"
+                        );
+                        // A failure this adapter cannot answer with a decline
+                        // still gets the wire's own "no" for an elicitation —
+                        // the retained runner cancels it (`router/src/runner.ts:727-728`);
+                        // other families keep their protocol error response.
+                        if elicitation {
+                            self.wire
+                                .send(transport::Command::RejectServerRequest { id: original })
+                                .await
+                                .map_err(Error::Transport)?;
                         }
                         return Err(error);
                     }
@@ -753,6 +802,7 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
         let event = self.wire.next_event().await.map_err(Error::Transport)?;
         if let Event::ServerRequest { method, .. } = &event {
             self.last_server_request = Some(server_request_shape(method));
+            self.last_server_request_method = Some(bounded_method(method));
         }
         if !self.approvals_enabled
             && let Event::ServerRequest { id, .. } = event
@@ -768,6 +818,14 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
             .map_err(Error::Transport)?;
         Err(Error::UnsupportedRequest)
     }
+}
+
+/// The refused request's own method name, bounded so a hostile peer cannot stuff
+/// the failure detail. Board #87: the fixed shape label reads `"unknown"` for
+/// exactly the method that killed a live turn, so the cause must name itself.
+/// Diagnostic only (ADR-181): never authority.
+fn bounded_method(method: &str) -> String {
+    method.chars().take(255).collect()
 }
 
 fn server_request_shape(method: &str) -> &'static str {

@@ -483,7 +483,7 @@ async fn native_owned_runtime_failure_observation() {
         );
         assert_eq!(report.failure, Some(Failure::Protocol));
         assert_eq!(report.protocol, Protocol::Unknown);
-        let original = *report.runtime_observation().unwrap();
+        let original = report.runtime_observation().unwrap().clone();
         assert_eq!(original.stage, RuntimeStage::Initialize);
         assert_eq!(
             original.session_error,
