@@ -102,15 +102,36 @@ fn snapshot(db: &Connection, id: &str, d: &execution::Dispatch) -> Result<Snapsh
     let (receipt, observation, fenced) = match receipt {
         Some((receipt, observation)) => (receipt, observation, false),
         None => {
-            let evidence: Option<String> = db
+            let fenced: Option<String> = db
                 .query_row(
                     "SELECT e.detail FROM runner_attempt_events e WHERE e.dispatch_id=?1 AND e.fence=?2 AND e.phase='stop_reported' AND EXISTS(SELECT 1 FROM agent_fences af WHERE af.dispatch_id=?1 AND af.fence=?2 AND af.cleared_at IS NULL) ORDER BY e.seq DESC LIMIT 1",
                     params![id, d.fence],
                     |r| r.get(0),
                 )
                 .optional()?;
-            let evidence = evidence.ok_or(Error::State)?;
-            let receipt = canonical::digest(&json!(["agent_fence", &evidence]))?;
+            let (kind, evidence) = match fenced {
+                Some(evidence) => ("agent_fence", evidence),
+                // Board #111: a run the host LOST — restart or lease expiry
+                // (`execution.rs::lose`) — reported no stop, so it has neither a
+                // host inventory nor an agent fence and this refused it
+                // (`Error::State`). The operator could then neither inspect nor
+                // settle it, while the quarantine that same loss set refused
+                // every later turn: the live trap. The attempt's own `lost`
+                // event is the evidence of what happened (ADR-181 point 6) and
+                // what the settlement is bound to — the same settle-only shape
+                // as the unproven-fence case below.
+                None => {
+                    let lost: Option<String> = db
+                        .query_row(
+                            "SELECT e.detail FROM runner_attempt_events e WHERE e.dispatch_id=?1 AND e.fence=?2 AND e.phase='lost' ORDER BY e.seq DESC LIMIT 1",
+                            params![id, d.fence],
+                            |r| r.get(0),
+                        )
+                        .optional()?;
+                    ("runner_lost", lost.ok_or(Error::State)?)
+                }
+            };
+            let receipt = canonical::digest(&json!([kind, &evidence]))?;
             (receipt, evidence, true)
         }
     };
@@ -304,6 +325,19 @@ impl DomainRepository {
             if super::graphs::is_graph_task(&tx, d.task_id.as_deref())? {
                 return Err(Error::State);
             }
+            // A run the host LOST — restart or lease expiry (`execution.rs::lose`)
+            // — has no `dispatch_stops` row by design (that no-row shape is what
+            // `recover_dispatch`/ADR-148 owns; `lose` must not fabricate proof
+            // the host never had). The operator's settlement IS the stop, so
+            // record it as one: same table, same kernel, same effect as the
+            // proven case (ADR-162 clears the quarantine through it). Without
+            // the row the dispatch would settle but stay in
+            // `unresolved_dispatches`, which still counts as live occupancy at
+            // claim (`execution.rs:935`) — the slot would leak forever.
+            tx.execute(
+                "INSERT OR IGNORE INTO dispatch_stops(dispatch_id,fence,reason,created_at) VALUES(?1,?2,'runner_lost',?3)",
+                params![input.original, fence, now],
+            )?;
             super::conversation_lifecycle::settle_stop_in_transaction(
                 &tx,
                 &input.original,

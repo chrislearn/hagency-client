@@ -334,3 +334,95 @@ fn native_owned_dispatch_negative_historical_fence() {
         Err(Error::RunnerAuthority)
     ));
 }
+
+/// Board #111: a run the host settled as `outcome_unknown` by RESTART — not by
+/// a reported failure — must still be listed for the operator. The quarantine
+/// notice a session then shows ("a previous runner in this session stopped
+/// after work may have started") is gated on `quarantined=1` plus an
+/// `outcome_unknown` dispatch (`task_intents::quarantined_waiting_notice`); the
+/// console's review page must cover the SAME set, or the operator has no way out.
+#[tokio::test]
+async fn native_console_review_lists_a_restart_settled_outcome_unknown() {
+    let (root, mut db, engagement, cap) = setup();
+    let before = db.owned_dispatch_scope(&cap, 1002).unwrap();
+    db.start_owned_dispatch(&cap, before.fingerprint(), 1003)
+        .unwrap();
+    // The host dies mid-turn. Reopening settles the started run as unknown
+    // (`recover_all` -> `lose(.., "restart")`), which also quarantines it.
+    drop(db);
+    let db = DomainRepository::open(&root.path().join("state")).unwrap();
+    let raw = sql(&root);
+    let (state, quarantined, stops): (String, i64, i64) = raw
+        .query_row(
+            "SELECT d.state,s.quarantined,(SELECT COUNT(*) FROM dispatch_stops WHERE dispatch_id=d.id) \
+             FROM runner_dispatches d JOIN runner_sessions s ON s.id=d.session_id WHERE d.id=?1",
+            [&cap.dispatch_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(state, "outcome_unknown", "the restart settle");
+    assert_eq!(quarantined, 1, "the session refuses the next turn");
+    // The operator's only route out. The quarantine is about this dispatch, so
+    // the review page must show it.
+    let listed = db.stopped_dispatches_for_agent(&engagement, "").unwrap();
+    assert_eq!(
+        listed["dispatches"].as_array().unwrap().len(),
+        1,
+        "the review page must list the dispatch the quarantine is about (stop rows: {stops}): {listed}"
+    );
+}
+
+/// Board #111, the whole operator path for a RESTART-settled dispatch:
+/// review lists it -> inspect -> resolve -> the session accepts a turn again.
+/// The board's acceptance is exactly this chain, so it is driven here rather
+/// than asserting the listing alone.
+#[tokio::test]
+async fn native_console_review_resolves_a_restart_settled_outcome_unknown() {
+    let (root, mut db, engagement, cap) = setup();
+    let before = db.owned_dispatch_scope(&cap, 1002).unwrap();
+    db.start_owned_dispatch(&cap, before.fingerprint(), 1003)
+        .unwrap();
+    drop(db);
+    let mut db = DomainRepository::open(&root.path().join("state")).unwrap();
+
+    // 1. The review page lists the dispatch the quarantine is about.
+    let listed = db.stopped_dispatches_for_agent(&engagement, "").unwrap();
+    let rows = listed["dispatches"].as_array().unwrap();
+    assert_eq!(rows.len(), 1, "the review page lists it: {listed}");
+    assert_eq!(rows[0]["dispatchId"], cap.dispatch_id);
+
+    // 2. Inspect it.
+    let inspection = db
+        .begin_outcome_inspection(&engagement, &cap.dispatch_id, 60_000, 10_000)
+        .expect("the operator must be able to inspect the quarantined dispatch");
+    let command = hagency_store::OutcomeResolution {
+        original: cap.dispatch_id.clone(),
+        request_id: "operator_resolution".into(),
+        inspection_id: inspection["inspectionId"].as_str().unwrap().into(),
+        inspection_token: inspection["inspectionToken"].as_str().unwrap().into(),
+        action: hagency_store::OutcomeAction::AcceptCompleted,
+        operator_note: "Reviewed the retained workspace".into(),
+        replacement: None,
+    };
+
+    // 3. Resolve it.
+    db.resolve_stopped_dispatch(&engagement, &command, 10_001)
+        .expect("the operator must be able to settle the quarantined dispatch");
+
+    // 4. The session accepts a turn again — the point of the whole page.
+    let raw = sql(&root);
+    let (quarantined, dirty, unresolved): (i64, i64, i64) = raw
+        .query_row(
+            "SELECT s.quarantined,w.dirty,(SELECT COUNT(*) FROM unresolved_dispatches u WHERE u.id=?1) \
+             FROM runner_sessions s JOIN workspace_resources w ON w.id='workspace' WHERE s.id='session'",
+            [&cap.dispatch_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        quarantined, 0,
+        "the session no longer refuses the next turn"
+    );
+    assert_eq!(dirty, 0, "the workspace is no longer held");
+    assert_eq!(unresolved, 0, "nothing unsettled remains");
+}
