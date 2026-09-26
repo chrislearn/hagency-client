@@ -1906,6 +1906,41 @@ fn native_bot_command_is_answered_after_the_session_outgrows_the_window() {
     assert_eq!(loser.session_id, "a", "the second agent gets a's receipt");
     assert!(loser.replayed);
     assert_eq!(count(&f.sql(), "command_notices"), 1);
+    // The first `!help` was ANSWERED — driven to `delivered` through the same
+    // custody the service uses. This is the live store's own shape: its two
+    // `command_notices` rows are both `delivered`, belonging to the OLDER
+    // `!help`; only the newer one was left unanswered.
+    let first_claim = f
+        .db
+        .claim_command_notice_for_session("a".into(), 1013, 60_000)
+        .unwrap()
+        .unwrap();
+    assert_eq!(first_claim.claim.notice.source_event_id, "$help1");
+    let first_send = f
+        .db
+        .begin_command_notice_send(&first_claim.claim.notice.id, &first_claim.claim.token, 1014)
+        .unwrap();
+    assert_eq!(
+        f.db
+            .deliver_command_notice(
+                &first_claim.claim.notice.id,
+                &first_claim.claim.token,
+                &ReplyDeliveryObservation {
+                    transaction_id: first_send.notice.transaction_id.clone(),
+                    digest: first_send.digest.clone(),
+                    server_name: first_send.route.server_name.clone(),
+                    room_id: first_send.route.room_id.clone(),
+                    sender_mxid: first_send.route.sender_mxid.clone(),
+                    device_id: first_send.route.device_id.clone(),
+                    event_id: "$help1_answer".into(),
+                    encrypted: first_send.route.encrypted,
+                },
+                1015,
+            )
+            .unwrap()
+            .state,
+        "delivered"
+    );
     // Ordinary room traffic, seen by both agents exactly as a real room event
     // is, carries the session far past any first-16 window — what the live
     // room's 67 rows did.
@@ -1945,6 +1980,56 @@ fn native_bot_command_is_answered_after_the_session_outgrows_the_window() {
     );
     assert!(loser.replayed);
     assert_eq!(count(&f.sql(), "command_notices"), 2);
+    // The winner really SAYS it — through the same custody the service uses
+    // (claim -> one-shot begin -> deliver), so "exactly one reply" is a
+    // delivered `m.notice`, not merely one queued row.
+    let claimed = f
+        .db
+        .claim_command_notice_for_session("a".into(), 1013, 60_000)
+        .unwrap()
+        .expect("the later !help is claimable by its owning session");
+    assert_eq!(claimed.claim.notice.source_event_id, "$help2");
+    // The other agent cannot claim it: the row belongs to `a`.
+    assert!(
+        f.db.claim_command_notice_for_session("b".into(), 1013, 60_000)
+            .unwrap()
+            .is_none(),
+        "b must have nothing to claim for a's answer"
+    );
+    let send = f
+        .db
+        .begin_command_notice_send(&claimed.claim.notice.id, &claimed.claim.token, 1014)
+        .unwrap();
+    let delivered = f
+        .db
+        .deliver_command_notice(
+            &claimed.claim.notice.id,
+            &claimed.claim.token,
+            &ReplyDeliveryObservation {
+                transaction_id: send.notice.transaction_id.clone(),
+                digest: send.digest.clone(),
+                server_name: send.route.server_name.clone(),
+                room_id: send.route.room_id.clone(),
+                sender_mxid: send.route.sender_mxid.clone(),
+                device_id: send.route.device_id.clone(),
+                event_id: "$help2_answer".into(),
+                encrypted: send.route.encrypted,
+            },
+            1015,
+        )
+        .unwrap();
+    assert_eq!(delivered.state, "delivered");
+    // Exactly ONE answer reached the room for the later event.
+    assert_eq!(
+        f.sql()
+            .query_row(
+                "SELECT COUNT(*) FROM command_notices WHERE source_event_id='$help2' AND state='delivered'",
+                [],
+                |r| r.get::<_, u64>(0)
+            )
+            .unwrap(),
+        1
+    );
     for session in ["a", "b"] {
         assert!(
             f.db.pending_command_lines(session.into(), 16)
