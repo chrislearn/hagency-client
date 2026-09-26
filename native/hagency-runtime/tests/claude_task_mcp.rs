@@ -156,6 +156,13 @@ fn native_claude_task_mcp_profile() {
         .unwrap()
         .split(',')
         .collect::<Vec<_>>();
+    // The profile pre-approves the product's own fixed task-helper class,
+    // `TASK_MCP_TOOLS` (task_mcp.rs:18-26) — the same constant the Codex path
+    // pre-approves (codex/session/task_mcp.rs:61). `schedule_reminder` is its
+    // 7th entry: the retained TS agent scheduled self-reminders through the
+    // `hagency reminder` CLI with no owner approval (skills/hagency/SKILL.md:130,
+    // lib/delivery-queue.js:1725-1760), so pre-approving it here is not a new
+    // grant. It is deliberately NOT in COORDINATION_TOOLS.
     assert_eq!(
         rules,
         vec![
@@ -164,7 +171,8 @@ fn native_claude_task_mcp_profile() {
             "mcp__hagency_task_writer__update_task_execution",
             "mcp__hagency_task_writer__transition_task",
             "mcp__hagency_task_writer__complete_task_with_reply",
-            "mcp__hagency_task_writer__read_conversation"
+            "mcp__hagency_task_writer__read_conversation",
+            "mcp__hagency_task_writer__schedule_reminder"
         ]
     );
     // The TS ask patterns contain '*'; only the allow rules must be exact.
