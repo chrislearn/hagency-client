@@ -429,7 +429,16 @@ impl Fixture {
     pub fn assert_file_delivery(&self, index: usize, round: usize, task: &str) {
         let agent = &self.peer.agents[index];
         assert_eq!(agent.uploads.len(), round + 1);
-        let event = &agent.crypto.events[round * 2];
+        // The DM also carries the merged activity round-summary (an
+        // m.notice) after each reply, so find this round's upload by
+        // shape, never by position.
+        let event = agent
+            .crypto
+            .events
+            .iter()
+            .filter(|event| event["content"]["msgtype"] == "m.file")
+            .nth(round)
+            .expect("this round's file upload");
         let content = &event["content"];
         assert_eq!(event["sender"], agent.user);
         assert_eq!(content["msgtype"], "m.file");
@@ -565,8 +574,9 @@ impl Fixture {
             }
             assert!(
                 tokio::time::Instant::now() < until,
-                "timed out during {stage}: {}",
-                self.diagnostic()
+                "timed out during {stage}: {} | {}",
+                self.diagnostic(),
+                self.state_counts()
             );
             tokio::select! {request=self.fake.next()=>self.peer.respond(request).await,_=tokio::time::sleep(Duration::from_millis(10))=>{}}
         }
@@ -713,6 +723,30 @@ impl Fixture {
         loop {
             tokio::select! {_=&mut read=>break,request=self.fake.next()=>self.peer.respond(request).await}
         }
+    }
+    /// The until-predicate's own inputs, at timeout: which side of the
+    /// conjunction is stuck (store delivery states, per-agent decrypted
+    /// reply counts). Disposable synthetic fixture data only.
+    fn state_counts(&self) -> String {
+        let crypto: Vec<usize> = self
+            .peer
+            .agents
+            .iter()
+            .map(|agent| agent.crypto.events.len())
+            .collect();
+        let projects: Vec<usize> = self
+            .peer
+            .agents
+            .iter()
+            .map(|agent| agent.project_events.len())
+            .collect();
+        format!(
+            "final_replies delivered={} uncertain={} sending={} pending={} | per-agent crypto_events={crypto:?} project_events={projects:?}",
+            self.count("SELECT COUNT(*) FROM final_replies WHERE state='delivered'"),
+            self.count("SELECT COUNT(*) FROM final_replies WHERE state='uncertain'"),
+            self.count("SELECT COUNT(*) FROM final_replies WHERE state='sending'"),
+            self.count("SELECT COUNT(*) FROM final_replies WHERE state='pending'"),
+        )
     }
     fn diagnostic(&self) -> String {
         // Only disposable synthetic fixture data. Never used with live state.
@@ -1516,19 +1550,34 @@ impl Peer {
                     (200, json!({"event_id":format!("$fleet_ack_{}", &txn[4..])}))
                 } else if request.target.contains("factory_project") {
                     assert!(segments.contains(&"m.room.message"));
-                    // Two kinds of plaintext project event an agent may post in
-                    // its own identity: its final reply, and the task notice
-                    // that announces work another agent delegated to it.
+                    // Three kinds of plaintext project event an agent may post
+                    // in its own identity: its final reply, the task notice
+                    // that announces work another agent delegated to it, and
+                    // the activity round-summary the merged features post
+                    // (store activity.rs `summary`). Pin each by shape —
+                    // never accept blind.
+                    let text = body["body"].as_str().unwrap_or_default();
                     if body["msgtype"] == "m.notice" {
-                        assert!(body["body"].as_str().unwrap().starts_with("Task created: "));
+                        if text.starts_with("Task created: ") {
+                            // The delegation announcement.
+                        } else {
+                            // The activity round-summary: first line the
+                            // phase's icon and word, second line the volatile
+                            // counters — pin the shape, never the numbers.
+                            let (head, tail) = text.split_once('\n').expect(
+                                "the activity summary carries its phase line and the counter line",
+                            );
+                            assert!(!head.is_empty(), "activity summary phase line: {head:?}");
+                            assert!(
+                                tail.starts_with("已运行 ")
+                                    && tail.contains(" 秒 · 工具调用 ")
+                                    && tail.ends_with(" 次"),
+                                "activity summary counters: {tail:?}"
+                            );
+                        }
                     } else {
                         assert_eq!(body["msgtype"], "m.text");
-                        assert!(
-                            body["body"]
-                                .as_str()
-                                .unwrap()
-                                .starts_with("Verified factory task ")
-                        );
+                        assert!(text.starts_with("Verified factory task "));
                     }
                     agent
                         .project_events
