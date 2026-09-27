@@ -698,7 +698,15 @@ async fn run(input: Attempt<'_>) -> Result<Option<Completed>, Failure> {
         })?;
         collector.intake(plan, cancel).await.map_err(|error| {
             status.matrix_refusal(&error);
-            tracing::warn!(error = ?error, "Matrix inbox intake refused");
+            // Board #117: the engagement and the refusing rule, both named —
+            // this warning used to repeat as a bare `error=Domain` with no way
+            // to tell which agent or which rule was refusing.
+            tracing::warn!(
+                engagement = %profile.engagement_id(),
+                targets = intake_sessions.len(),
+                error = ?error,
+                "Matrix inbox intake refused"
+            );
             if cancel.is_cancelled() {
                 Failure::Cancelled
             } else if error == hagency_matrix::Error::OutcomeUnknown {

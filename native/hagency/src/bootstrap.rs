@@ -820,7 +820,9 @@ pub(crate) fn matrix_error_label(error: &hagency_matrix::Error) -> &'static str 
         Conflict => "conflict",
         Unsupported => "unsupported",
         UnsafeSnapshot(_) => "unsafe_snapshot",
-        Domain => "domain",
+        // Board #117: name the refusing rule, not the bare word the log used
+        // to repeat forever.
+        Domain(reason) => reason,
     }
 }
 /// One original account/writer/root owner shared only inside the application.

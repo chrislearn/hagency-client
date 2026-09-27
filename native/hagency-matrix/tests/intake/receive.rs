@@ -427,7 +427,7 @@ async fn native_matrix_receive_retirement() {
         request.raw(response(&vector().1));
         assert!(matches!(
             run.await,
-            Err(ReceiveError::Authority(Error::Domain | Error::Generation))
+            Err(ReceiveError::Authority(Error::Domain(_) | Error::Generation))
         ));
         assert!(
             c.receive_attachment(cap, "$private".into(), &cancel)
@@ -621,7 +621,7 @@ async fn native_matrix_received_scope() {
                     tokio::time::Instant::now() + common::limits().sdk
                 )
                 .await,
-            Err(ReceiveError::Authority(Error::Domain | Error::Generation))
+            Err(ReceiveError::Authority(Error::Domain(_) | Error::Generation))
         ));
     }
     fake.quiesced(fake.requests(), &c.inner.config.limits).await;
@@ -740,7 +740,7 @@ async fn native_matrix_received_scope_deadline() {
         .unwrap();
     assert!(matches!(
         scope.revalidate(&fresh, read_deadline).await,
-        Err(ReceiveError::Authority(Error::Domain | Error::Generation))
+        Err(ReceiveError::Authority(Error::Domain(_) | Error::Generation))
     ));
     fake.quiesced(fake.requests(), &c.inner.config.limits).await;
     close(c, f, fake).await;
