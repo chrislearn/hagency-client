@@ -318,7 +318,7 @@ impl Inner {
                     });
                 }
                 if receipt.state != "claimed" {
-                    return Err(Error::Domain);
+                    return Err(Error::Domain("notice_receipt_not_claimed"));
                 }
                 activity = parse_activity_notice(&claim.claim.notice.kind);
                 (
@@ -359,7 +359,7 @@ impl Inner {
                     });
                 }
                 if receipt.state != "claimed" {
-                    return Err(Error::Domain);
+                    return Err(Error::Domain("command_notice_receipt_not_claimed"));
                 }
                 (
                     Kind::Command,

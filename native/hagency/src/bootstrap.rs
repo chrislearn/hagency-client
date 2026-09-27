@@ -73,6 +73,28 @@ mod custody_tests {
             matrix_error_label(&hagency_matrix::Error::Remote(429)),
             "remote"
         );
+        // Board #117: a domain refusal names the rule that refused it. Before,
+        // every unmapped store error collapsed into a bare "domain", so the live
+        // log repeated `error=Domain` with no way to tell which precondition
+        // refused the agent's intake.
+        assert_eq!(
+            matrix_error_label(&hagency_matrix::Error::Domain("runner_authority")),
+            "runner_authority"
+        );
+        for (refusal, rule) in [
+            (hagency_store::Error::RunnerAuthority, "runner_authority"),
+            (hagency_store::Error::Quarantined, "quarantined"),
+            (hagency_store::Error::NotFound, "not_found"),
+            (hagency_store::Error::State, "state"),
+            (hagency_store::Error::Conflict, "conflict"),
+        ] {
+            let mapped: hagency_matrix::Error = refusal.into();
+            assert_eq!(
+                matrix_error_label(&mapped),
+                rule,
+                "a store refusal must name the rule that refused it"
+            );
+        }
         let handle = StatusHandle::new(true);
         handle.matrix_refusal(&hagency_matrix::Error::UnsafeSnapshot(
             "private fixture content".into(),
@@ -820,7 +842,9 @@ pub(crate) fn matrix_error_label(error: &hagency_matrix::Error) -> &'static str 
         Conflict => "conflict",
         Unsupported => "unsupported",
         UnsafeSnapshot(_) => "unsafe_snapshot",
-        Domain => "domain",
+        // Board #117: name the refusing rule, not the bare word the log used
+        // to repeat forever.
+        Domain(reason) => reason,
     }
 }
 /// One original account/writer/root owner shared only inside the application.

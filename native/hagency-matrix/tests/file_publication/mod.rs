@@ -310,7 +310,7 @@ async fn native_file_publication_current_scope() {
         inner.outgoing_continue.notify_one();
     })
     .await;
-    assert_eq!(result, Err(Error::Domain));
+    assert!(matches!(result, Err(Error::Domain(_))), "{result:?}");
     assert_eq!(op.run(&cancel).await, Err(Error::Conflict));
     let resumed = f.collector.resume_outgoing_custody(&cancel).await.unwrap();
     assert_eq!(resumed.state, OutgoingState::Uncertain);

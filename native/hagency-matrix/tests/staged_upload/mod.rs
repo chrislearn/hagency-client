@@ -472,7 +472,7 @@ async fn native_staged_upload_recovery() {
     sql.execute_batch("CREATE TRIGGER upload_settle_abort BEFORE UPDATE ON file_uploads WHEN NEW.upload_state='accepted' BEGIN SELECT RAISE(ABORT,'fixture acceptance abort'); END;").unwrap();
     let cancel = CancellationToken::new();
     let (result, ()) = common::scripted(op.run(&cancel), post(&mut f.fake, &ciphertext)).await;
-    assert_eq!(result, Err(Error::Domain));
+    assert!(matches!(result, Err(Error::Domain(_))), "{result:?}");
     assert_eq!(
         f.base.store.inspect_upload(identity).await.unwrap().upload,
         hagency_core::uploads::UploadState::WritePossible

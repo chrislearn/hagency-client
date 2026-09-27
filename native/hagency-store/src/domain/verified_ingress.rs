@@ -145,7 +145,16 @@ pub(super) fn input_message(
     Ok(serde_json::from_str(&encoded)?)
 }
 pub(super) fn task_message(db: &Connection, task: &str, sequence: u64) -> Result<Message, Error> {
-    let encoded:String=db.query_row("SELECT CASE WHEN s.matrix_generation>0 THEN i.config ELSE m.config END FROM task_inputs i JOIN canonical_tasks t ON t.id=i.task_id JOIN runner_sessions s ON s.id=t.session_id JOIN admitted_messages m ON m.sequence=i.message_sequence WHERE i.task_id=?1 AND i.message_sequence=?2",params![task,sequence],|r|r.get(0)).optional()?.ok_or(Error::RunnerAuthority)?;
+    // Board #117: `persist_intent` writes `task_inputs` with NO `config` (only
+    // `verified_ingress::attach` populates it), so a VERIFIED delegated task's
+    // root input has `i.config` NULL. The old read took `i.config` alone for
+    // `matrix_generation>0`, so the `completed_task_followup` branch
+    // (`:707-708`, `t.status == Done`) refused the whole admission with a bare
+    // `Sqlite(InvalidColumnType(…NULL))` — the untraceable `error=Domain` the
+    // live log repeated forever. Fall back to the admitted message's own frozen
+    // copy, exactly as `task_intents::project_inputs` already does
+    // (`COALESCE(ti.config, m.config)`); `i.config`, when present, still wins.
+    let encoded:String=db.query_row("SELECT CASE WHEN s.matrix_generation>0 THEN COALESCE(i.config,m.config) ELSE m.config END FROM task_inputs i JOIN canonical_tasks t ON t.id=i.task_id JOIN runner_sessions s ON s.id=t.session_id JOIN admitted_messages m ON m.sequence=i.message_sequence WHERE i.task_id=?1 AND i.message_sequence=?2",params![task,sequence],|r|r.get(0)).optional()?.ok_or(Error::RunnerAuthority)?;
     Ok(serde_json::from_str(&encoded)?)
 }
 pub(super) fn provenance(

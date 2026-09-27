@@ -101,12 +101,49 @@ pub enum Error {
     Unsupported,
     #[error("room snapshot is unsafe and was refused: {0}")]
     UnsafeSnapshot(String),
-    #[error("domain authority rejected the observation")]
-    Domain,
+    /// A store precondition refused the observation, carrying the fixed label
+    /// of the rule that refused it. Board #117: the live log repeated a bare
+    /// `error=Domain` forever with no rule named, because every unmapped store
+    /// variant collapsed into this word and lost its cause.
+    #[error("domain refused: {0}")]
+    Domain(&'static str),
+}
+/// The fixed word for a store refusal (ADR-175 pattern: a bounded category,
+/// never the store's own error text, which can name host paths).
+pub fn store_error_label(error: &hagency_store::Error) -> &'static str {
+    use hagency_store::Error::*;
+    match error {
+        LocalAuthority => "local_authority",
+        RunnerAuthority => "runner_authority",
+        AlreadyConsumed => "already_consumed",
+        NotConsumable => "not_consumable",
+        UnsafeSnapshot(_) => "unsafe_snapshot",
+        Quarantined => "quarantined",
+        Invalid(_) => "invalid",
+        Conflict => "conflict",
+        Generation => "generation",
+        NotFound => "not_found",
+        Unqualified => "unqualified",
+        InsufficientCapacity => "insufficient_capacity",
+        NoCeiling => "no_ceiling",
+        OverCommit { .. } => "over_commit",
+        State => "state",
+        Locked => "locked",
+        Schema => "schema",
+        Private => "private",
+        PlatformUnavailable => "platform_unavailable",
+        Capacity => "capacity",
+        Busy => "busy",
+        Unavailable => "unavailable",
+        OutcomeUnknown => "outcome_unknown",
+        Sqlite(_) => "sqlite",
+        Io(_) => "io",
+        Json(_) => "json",
+    }
 }
 impl From<hagency_store::Error> for Error {
     fn from(e: hagency_store::Error) -> Self {
-        match e {
+        match &e {
             hagency_store::Error::Generation => Self::Generation,
             hagency_store::Error::OutcomeUnknown => Self::OutcomeUnknown,
             hagency_store::Error::Capacity => Self::Capacity,
@@ -114,8 +151,10 @@ impl From<hagency_store::Error> for Error {
             hagency_store::Error::Conflict => Self::Conflict,
             // A safety refusal is neither domain authority nor a wire-format
             // failure; it is its own word, carrying the digest-bound reason.
-            hagency_store::Error::UnsafeSnapshot(reason) => Self::UnsafeSnapshot(reason),
-            _ => Self::Domain,
+            hagency_store::Error::UnsafeSnapshot(reason) => Self::UnsafeSnapshot(reason.clone()),
+            // Every other store refusal names its own rule instead of being
+            // erased to a bare word.
+            _ => Self::Domain(store_error_label(&e)),
         }
     }
 }

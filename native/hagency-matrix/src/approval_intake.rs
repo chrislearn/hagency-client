@@ -387,7 +387,7 @@ impl ApprovalCollector {
 fn room_evidence(error: &Error) -> bool {
     matches!(
         error,
-        Error::Conflict | Error::Generation | Error::UnsafeSnapshot(_) | Error::Domain
+        Error::Conflict | Error::Generation | Error::UnsafeSnapshot(_) | Error::Domain(_)
     )
 }
 impl Inner {
