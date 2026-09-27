@@ -23,6 +23,28 @@ fn frozen(db: &Connection, id: &str) -> Result<(TaskNotice, ReplyRoute, String),
     ).optional()?.ok_or(Error::RunnerAuthority)?;
     Ok((notice, serde_json::from_str(&route)?, digest))
 }
+/// Board #116: a notice about a question asked IN A THREAD must land IN that
+/// thread, exactly as the answer does. TS keys a notice's thread off the
+/// SESSION (`store.ts:2683` `enqueueThreadNotice` -> `session.thread_root_event_id`),
+/// and a threaded request makes the session thread-scoped (`store.ts:583-590`).
+/// Native binds a ROOM-scoped session to a threaded source instead (board #112),
+/// so the stored route carries no thread root. The DELIVERY thread is resolved at
+/// ENQUEUE from the source message's own `threadRootEventId`
+/// (`bridge-matrix.js:3318-3393`, exactly as `replies.rs:72-79` does for the
+/// answer) and carried on the notice, so this path adds NO store read: the claim
+/// and send arms already hold the notice. Only a group room gets the relation
+/// (`lib/matrix-direct-chat.js:270` strips it from a non-group room), and the
+/// STORED route is left untouched so `current()` keeps matching it.
+fn delivered_route(notice: &TaskNotice, stored_route: &ReplyRoute) -> ReplyRoute {
+    let mut route = stored_route.clone();
+    if route.thread_root.is_none()
+        && matches!(route.privacy, hagency_core::replies::RoomPrivacy::Group {})
+        && let Some(root) = &notice.thread_root
+    {
+        route.thread_root = Some(root.clone());
+    }
+    route
+}
 fn current(db: &Connection, id: &str) -> Result<bool, Error> {
     let (notice, route, _) = frozen(db, id)?;
     // A delegated task's notice lives and dies with its intent. An ordinary
@@ -164,12 +186,13 @@ impl DomainRepository {
         if !current(&tx, &id)? {
             return Err(Error::RunnerAuthority);
         }
-        let (notice, route, digest) = frozen(&tx, &id)?;
+        let (notice, stored_route, digest) = frozen(&tx, &id)?;
         let (source, fence): (String, u64) = tx.query_row(
             "SELECT source_event_id,send_fence+1 FROM task_notices WHERE id=?1",
             [&id],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
+        let route = delivered_route(&notice, &stored_route);
         generation(fence)?;
         let mut random = [0u8; 32];
         getrandom::fill(&mut random).map_err(|_| Error::Unavailable)?;
@@ -201,12 +224,13 @@ impl DomainRepository {
         if check_claim(&tx, id, token, now)? != "claimed" || !current(&tx, id)? {
             return Err(Error::RunnerAuthority);
         }
-        let (notice, route, digest) = frozen(&tx, id)?;
+        let (notice, stored_route, digest) = frozen(&tx, id)?;
         let (source_event_id, fence): (String, u64) = tx.query_row(
             "SELECT source_event_id,send_fence FROM task_notices WHERE id=?1",
             [id],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
+        let route = delivered_route(&notice, &stored_route);
         tx.execute("UPDATE task_notices SET state='sending' WHERE id=?1", [id])?;
         tx.commit()?;
         Ok(VerifiedNoticeSend {

@@ -1001,3 +1001,67 @@ fn native_stopped_dispatch_continuation_refusals() {
         );
     }
 }
+
+/// Board #116: the completion tool's OWN `tool_end` arrives after
+/// `complete_task_with_reply` fenced the dispatch mid-turn, so the counter read
+/// N starts / N-1 returns ("工具调用 6 次，已返回 5 次"). TS records it — the
+/// dispatch settles at TURN end (`router/src/runner.ts:875`), after every item
+/// of the turn — so ✅ reads N/N. The held completion keeps the activity window
+/// open for exactly as long as the HOLD is pending, and closes with it.
+#[test]
+fn native_activity_tool_end_after_held_completion_counts() {
+    use hagency_store::{ActivityEvent, AttemptEvent, AttemptPhase};
+    let mut f = Fixture::new(false, None);
+    let d = f.cap.dispatch_id.clone();
+    // The lifecycle observation opens the activity row, exactly as the driver's
+    // first hook does (`attempt_events.rs:340` Initialized -> Started). A tool
+    // event cannot open it: TS `update()` returns null with no previous row.
+    f.db.record_attempt_event(
+        &AttemptEvent { dispatch_id: d.clone(), fence: f.cap.fence, phase: AttemptPhase::Initialized, detail: json!({}) },
+        1005,
+    )
+    .unwrap();
+    let started = |id: &str| ActivityEvent::ToolStart { kind: "tool".into(), event_id: id.into() };
+    let ended = |id: &str| ActivityEvent::ToolEnd { kind: "tool".into(), event_id: id.into() };
+    // The ordinary tool, fully inside the started window.
+    f.db.record_activity_event(&d, &started("earlier"), 1006).unwrap();
+    f.db.record_activity_event(&d, &ended("earlier"), 1006).unwrap();
+    // The COMPLETION tool: its start is before the fence, its end after.
+    f.db.record_activity_event(&d, &started("finish"), 1006).unwrap();
+    let held = f.finish();
+    assert_eq!(held.state, CompletionState::Held);
+    assert_eq!(
+        f.sql()
+            .query_row("SELECT state FROM runner_dispatches WHERE id='dispatch'", [], |r| r.get::<_, String>(0))
+            .unwrap(),
+        "outcome_unknown",
+        "the completion fences the dispatch mid-turn"
+    );
+    // Before the fix this was refused: "activity requires an active runner".
+    f.db.record_activity_event(&d, &ended("finish"), 1010).unwrap();
+    assert_eq!(
+        (
+            f.count("SELECT tools FROM dispatch_activity WHERE dispatch_id='dispatch'"),
+            f.count("SELECT finished FROM dispatch_activity WHERE dispatch_id='dispatch'"),
+        ),
+        (2, 2),
+        "the completing tool is both started and returned — N/N, not N/N-1"
+    );
+    // Negative control: with the hold RESOLVED the window closes again, so a
+    // late heartbeat is refused exactly as `activity.ts` refuses a terminal row.
+    let reference = f.db.observe_owned_completion(&f.cap, &f.started).unwrap().unwrap();
+    f.db.publish_owned_completion(&f.cap, &f.started, &reference, 1011).unwrap();
+    let settled: bool = f
+        .sql()
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM dispatch_stops WHERE dispatch_id='dispatch' AND settled_at IS NOT NULL)",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(settled, "publishing settles the held stop");
+    assert!(
+        f.db.record_activity_event(&d, &ended("later"), 1012).is_err(),
+        "after the hold resolves, activity is refused again"
+    );
+}

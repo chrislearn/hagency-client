@@ -2217,3 +2217,83 @@ fn native_failed_bot_command_answer_is_not_repeated_by_another_agent() {
     }
     assert_eq!(count(&f.sql(), "command_notices"), 1);
 }
+
+/// Board #116: the ⏳/✅ activity notice about a question asked IN A THREAD must
+/// land IN that thread, like the answer it tracks. The session that answers is
+/// ROOM-scoped (board #112 — the thread root has no task binding), so the stored
+/// notice route carries no thread root; it is read from the SOURCE message's own
+/// `threadRootEventId`, exactly as the answer is
+/// (`bridge-matrix.js:3318-3393`). The STORED route is untouched, so `current()`
+/// keeps matching it.
+#[test]
+fn native_verified_ingress_activity_notice_stays_in_source_thread() {
+    use hagency_store::{AttemptEvent, AttemptPhase};
+    for direct in [false, true] {
+        let mut f = Fixture::new(direct);
+        let mentions: Vec<&str> = if direct { vec![] } else { vec!["@a:example.test"] };
+        let mut follow = f.event("a", "question", None, &mentions, 1010);
+        follow.event.thread_root = Some("$question".into());
+        let source = f.db.admit_matrix_event(&follow, 1011).unwrap();
+        f.db.create_canonical_task("t", "a", "Add 11", 1012).unwrap();
+        f.db.enqueue_inbox_dispatch(
+            &DispatchInput {
+                id: "d".into(),
+                session_id: "a".into(),
+                task_id: Some("t".into()),
+                resources: vec![],
+                payload: json!({"instruction": "Add 11"}),
+            },
+            &[source.sequence],
+        )
+        .unwrap();
+        let cap = f
+            .db
+            .claim_dispatch("runner", 1013, 60_000, 120_000, 8)
+            .unwrap()
+            .unwrap();
+        f.db.start_dispatch(&cap, 1014).unwrap();
+        // The lifecycle hook that queues the ⏳ notice.
+        f.db.record_attempt_event(
+            &AttemptEvent {
+                dispatch_id: cap.dispatch_id.clone(),
+                fence: cap.fence,
+                phase: AttemptPhase::Initialized,
+                detail: json!({}),
+            },
+            1015,
+        )
+        .unwrap();
+        let claim = f
+            .db
+            .claim_verified_task_notice(1016, 1000)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            claim.route.thread_root.as_deref(),
+            if direct { None } else { Some("$question") },
+            "the notice lands in the thread the question arrived in — group only, \
+             a DM strips the relation (`lib/matrix-direct-chat.js:270`)"
+        );
+        assert_eq!(
+            claim.claim.notice.thread_root.as_deref(),
+            claim.route.thread_root.as_deref(),
+            "the notice's own thread root agrees with the route it was claimed on"
+        );
+        assert_eq!(
+            claim.source_event_id, "$question",
+            "it still names the question it is about"
+        );
+        // The STORED route keeps its room scope: `current()` compares against it.
+        assert_eq!(
+            f.sql()
+                .query_row(
+                    "SELECT json_extract(verified_route,'$.thread_root') FROM task_notices WHERE id=?1",
+                    [&claim.claim.notice.id],
+                    |r| r.get::<_, Option<String>>(0),
+                )
+                .unwrap(),
+            None,
+            "the stored route is not rewritten"
+        );
+    }
+}

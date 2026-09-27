@@ -343,6 +343,38 @@ pub(super) fn add_keyed_notice(
 ) -> Result<TaskNotice, Error> {
     let session = execution::matrix_admission_session(tx, &task.session_id)?;
     let id = notice_id(&task.id, id_key)?;
+    // A live Matrix-backed session has a route; a notice on one is custody
+    // tracked (`verified_route`/`content_digest`). Read it ONCE — the notice's own
+    // thread root and its frozen route both derive from it.
+    let route = if tx.query_row(
+        "SELECT matrix_generation>0 FROM runner_sessions WHERE id=?1",
+        [&task.session_id],
+        |r| r.get::<_, bool>(0),
+    )? {
+        Some(super::matrix_routes::route(tx, &task.session_id)?)
+    } else {
+        None
+    };
+    // Board #116: TS keys a notice's thread off the SESSION
+    // (`store.ts:2683` `enqueueThreadNotice` -> `thread_root_event_id`), and a
+    // threaded request makes that session thread-scoped (`store.ts:583-590`).
+    // Native instead binds a ROOM-scoped session to a threaded source (board
+    // #112), so for a GROUP room fall back to the SOURCE message's own
+    // `threadRootEventId` — the very root its answer lands in
+    // (`bridge-matrix.js:3318-3393`). A direct room keeps `None` there:
+    // `lib/matrix-direct-chat.js:270` strips the relation. The FROZEN route stays
+    // room-scoped so `current()` keeps matching it; the send arms promote this
+    // thread through `notice_custody::delivered_route`.
+    let thread_root = match &route {
+        // No live Matrix session: the notice is not custody tracked (base shape).
+        None => Some(root.event_id.clone()),
+        // A thread-scoped session already names the thread (base shape).
+        Some(_) if session.thread_root.is_some() => session.thread_root.clone(),
+        Some(route) if matches!(route.privacy, hagency_core::replies::RoomPrivacy::Group {}) => {
+            root.thread_root.clone()
+        }
+        Some(_) => None,
+    };
     let value = TaskNotice {
         id: id.clone(),
         task_id: task.id.clone(),
@@ -350,31 +382,18 @@ pub(super) fn add_keyed_notice(
         sender_engagement: session.engagement_id.clone(),
         server_name: root.server_name.clone(),
         room_id: root.room_id.clone(),
-        thread_root: if tx.query_row(
-            "SELECT matrix_generation>0 FROM runner_sessions WHERE id=?1",
-            [&task.session_id],
-            |r| r.get::<_, bool>(0),
-        )? {
-            session.thread_root.clone()
-        } else {
-            Some(root.event_id.clone())
-        },
+        thread_root,
         transaction_id: format!("hagency_{}", &canonical::digest(&json!(id))?[..40]),
         body,
         kind: kind.into(),
     };
     bounded_row(tx, "task_notices", "id", &id, 30_000)?;
     tx.execute("INSERT INTO task_notices(id,task_id,config,state,not_before) VALUES(?1,?2,?3,'pending',?4)",params![id,task.id,serialize(&value)?,now])?;
-    if tx.query_row(
-        "SELECT matrix_generation>0 FROM runner_sessions WHERE id=?1",
-        [&task.session_id],
-        |r| r.get::<_, bool>(0),
-    )? {
-        let route = super::matrix_routes::route(tx, &task.session_id)?;
-        let digest = canonical::digest(&json!([&value, &route, root.event_id]))?;
+    if let Some(route) = &route {
+        let digest = canonical::digest(&json!([&value, route, root.event_id]))?;
         tx.execute(
             "UPDATE task_notices SET verified_route=?2,content_digest=?3,task_epoch=?4,source_event_id=?5 WHERE id=?1",
-            params![id, serialize(&route)?, digest, task.execution_epoch, root.event_id],
+            params![id, serialize(route)?, digest, task.execution_epoch, root.event_id],
         )?;
     }
     Ok(value)

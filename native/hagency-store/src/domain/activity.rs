@@ -407,9 +407,26 @@ impl DomainRepository {
                 |r| r.get(0),
             )
             .optional()?;
+        // `started` is the ordinary window. Board #116: `complete_task_with_reply`
+        // fences the dispatch MID-TURN (`owned_completion.rs:151`), so the
+        // completion tool's OWN trailing `item/completed` — the `tool_end` that
+        // makes the counter read N/N — arrives when the dispatch is already
+        // `outcome_unknown`. TS records it: the dispatch is settled only at turn
+        // end (`router/src/runner.ts:875`), so every item of the turn counts and
+        // ✅ reads N/N. The fence here is the completion HOLD (an unsettled
+        // `dispatch_stops` row), not a dead runner: the runner is alive and still
+        // emitting, so the window stays open for exactly as long as the held
+        // completion is pending, and closes when the hold resolves.
+        let held: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM dispatch_stops WHERE dispatch_id=?1 \
+             AND reason='owned_completion' AND settled_at IS NULL)",
+            [dispatch_id],
+            |r| r.get(0),
+        )?;
         match state.as_deref() {
             None => return Err(Error::NotFound),
             Some("started") => {}
+            Some(_) if held => {}
             Some(_) => {
                 return Err(hagency_core::InvalidInput("activity requires an active runner").into());
             }
