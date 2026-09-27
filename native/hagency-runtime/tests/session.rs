@@ -1030,22 +1030,26 @@ async fn native_codex_session_outcomes_interrupt_ack_does_not_complete_a_turn() 
 }
 
 #[tokio::test]
-async fn native_codex_session_unowned_requests_are_answered_and_unknown_notices_ignored() {
-    // Board #94: production never enables approvals, so every server request
-    // reaches the ownerless arm. It is answered with the wire's own refusal and
-    // the turn goes on — never killed.
+async fn native_codex_session_recognized_requests_are_unsupported_and_unknown_notices_ignored() {
+    // Board #94 tolerates a method this build does not know AT ALL, keeping the
+    // turn alive (`session/unknown_tolerance.rs` is that acceptance, one test
+    // per phase). A RECOGNIZED request nobody can own is not unknown protocol
+    // noise: it keeps the named refusal, exactly as #94's own contract says
+    // ("a KNOWN method whose VALUE is unmodeled keeps its strict arm").
     let (mut session, mut peer) = running().await;
     let request = json!({ "id": "approval", "method": "item/commandExecution/requestApproval", "params": { "threadId": "thread-one", "turnId": "turn-one", "itemId": "one", "reason": "grant everything" } });
     let (result, response) = tokio::join!(session.next_update(), async {
         write(&mut peer, request).await;
         read(&mut peer.stdin).await
     });
-    assert!(matches!(result, Ok(Update::Notice)), "{:?}", result.err());
+    assert_eq!(result.err(), Some(Error::UnsupportedRequest));
     assert_eq!(response["id"], "approval");
     assert_eq!(response["error"]["code"], -32601);
     assert!(response.get("result").is_none());
-    assert_eq!(session.phase(), Phase::Running);
-    assert!(session.outcome().is_none());
+    assert!(matches!(
+        session.outcome(),
+        Some(Outcome::UnsupportedRequest)
+    ));
 
     // An invented notification is logged and ignored the same way.
     let (mut session, mut peer) = running().await;
@@ -1373,13 +1377,16 @@ fn approval_event(id: Value) -> Value {
 
 #[tokio::test]
 async fn native_codex_session_outcomes_unowned_requests_are_answered_and_named() {
+    // A RECOGNIZED request nobody can own keeps its named refusal; the fixed
+    // shape label still names the method (never the payload). Board #94's
+    // tolerance is for a method this build does NOT know — asserted after the
+    // loop, where the turn goes on.
     for (method, label) in [
         ("item/commandExecution/requestApproval", "command_approval"),
         ("item/tool/requestUserInput", "tool_user_input"),
         ("mcpServer/elicitation/request", "mcp_elicitation"),
         ("item/tool/call", "dynamic_tool_call"),
         ("account/chatgptAuthTokens/refresh", "auth_refresh"),
-        ("private-runtime-string-must-not-be-projected", "unknown"),
     ] {
         let (mut session, mut peer) = running().await;
         assert_eq!(session.last_server_request(), None);
@@ -1389,12 +1396,8 @@ async fn native_codex_session_outcomes_unowned_requests_are_answered_and_named()
             json!({"id":7,"method":method,"params":{"private":"not-projected"}}),
         )
         .await;
-        // No owner can take it, so it is answered and the turn goes on. The
-        // fixed shape label still names the method (never the payload).
-        assert!(matches!(result, Ok(Update::Notice)), "{method}");
+        assert_eq!(result.err(), Some(Error::UnsupportedRequest), "{method}");
         assert_eq!(session.last_server_request(), Some(label));
-        assert_eq!(session.phase(), Phase::Running, "{method}");
-        assert!(session.outcome().is_none(), "{method}");
         let response = read(&mut peer.stdin).await;
         if method == "mcpServer/elicitation/request" {
             assert_eq!(
@@ -1404,7 +1407,26 @@ async fn native_codex_session_outcomes_unowned_requests_are_answered_and_named()
         } else {
             assert_eq!(response["error"]["code"], -32601);
         }
+        assert!(matches!(
+            session.outcome(),
+            Some(Outcome::UnsupportedRequest)
+        ));
     }
+    // An UNKNOWN method (#94): answered with the wire's own refusal and the turn
+    // goes on — never killed. The label stays the fixed `unknown`, so the
+    // private method string is never projected.
+    let (mut session, mut peer) = running().await;
+    let result = update(
+        &mut session,
+        &mut peer,
+        json!({"id":7,"method":"private-runtime-string-must-not-be-projected","params":{"private":"not-projected"}}),
+    )
+    .await;
+    assert!(matches!(result, Ok(Update::Notice)), "{:?}", result.err());
+    assert_eq!(session.last_server_request(), Some("unknown"));
+    assert_eq!(read(&mut peer.stdin).await["error"]["code"], -32601);
+    assert_eq!(session.phase(), Phase::Running);
+    assert!(session.outcome().is_none());
 }
 #[tokio::test]
 async fn native_codex_session_outcomes_refused_notifications_expose_only_fixed_shape_labels() {
@@ -1449,16 +1471,19 @@ async fn native_codex_session_outcomes_refused_notifications_expose_only_fixed_s
 async fn native_codex_approval_session() {
     use hagency_runtime::codex::RequestId;
     let (mut session, mut peer) = running().await;
-    // With approvals off there is no owner, so the request is answered with the
-    // wire's own refusal and the turn goes on (board #94) — it is not fatal.
-    assert!(matches!(
-        update(&mut session, &mut peer, approval_event(json!(7))).await,
-        Ok(Update::Notice)
-    ));
+    // With approvals off there is no owner for a RECOGNIZED approval: it is
+    // answered with the wire's own refusal and the session fails with the named
+    // `UnsupportedRequest`, which the operation maps to
+    // `Failure::UnsupportedApproval`. Board #94 tolerates only a method this
+    // build does not know at all, and this one is in `server_request_shape`.
+    assert_eq!(
+        update(&mut session, &mut peer, approval_event(json!(7)))
+            .await
+            .err(),
+        Some(Error::UnsupportedRequest)
+    );
     let error = read(&mut peer.stdin).await;
     assert_eq!(error["error"]["code"], -32601);
-    assert_eq!(session.phase(), Phase::Running);
-    assert!(session.outcome().is_none());
     let (mut session, mut peer) = running().await;
     session.enable_approvals().unwrap();
     let Update::Approval(request) = update(&mut session, &mut peer, approval_event(json!(7)))

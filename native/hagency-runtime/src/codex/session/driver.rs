@@ -719,15 +719,23 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
                 return Ok(Update::Approval(request));
             }
             // No owner can take this request — approvals are off, or the frame
-            // carried no params. Answer it with the wire's own refusal (the
-            // JSON-RPC `-32601` error, or the MCP elicitation's `cancel`) and go
-            // on. Board #94: a request this session cannot hand to an owner must
-            // never kill the turn. TS answers and then terminates
-            // (`router/src/runner.ts:709-736`); the operator rule (a bridge-side
-            // fault is never terminal) keeps only the answer.
-            Event::ServerRequest { id, .. } => {
-                self.answer_request(id).await?;
-                return Ok(Update::Notice);
+            // carried no params. Board #94 tolerates a method this build does
+            // not know AT ALL: it is answered and the turn goes on (TS sends the
+            // same `-32601`, `router/src/runner.ts:715,726`; the operator rule
+            // drops only its termination). A RECOGNIZED request is not protocol
+            // noise — it is a real product outcome this session cannot grant, so
+            // it keeps the named refusal the operation maps to
+            // `Failure::UnsupportedApproval`. TS drives every recognized
+            // approval to an owner and fails the turn when it cannot
+            // (`runner.ts:713-722,733`); it never silently continues.
+            Event::ServerRequest { id, method, .. } => {
+                self.last_server_request = Some(server_request_shape(&method));
+                self.last_server_request_method = Some(bounded_method(&method));
+                if server_request_shape(&method) == "unknown" {
+                    self.answer_request(id).await?;
+                    return Ok(Update::Notice);
+                }
+                return self.unsupported(id).await;
             }
             event => event,
         };
@@ -906,6 +914,21 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
             .await
             .map_err(Error::Transport)?;
         Ok(())
+    }
+
+    /// Answer a RECOGNIZED server->client request that no owner can take with
+    /// the wire's own refusal, then fail the session with the named
+    /// `UnsupportedRequest` (the operation maps it to
+    /// `Failure::UnsupportedApproval`). Board #94 tolerates only a method this
+    /// build does not know at all; a recognized approval is a real product
+    /// outcome, and TS fails the turn rather than silently continuing
+    /// (`router/src/runner.ts:713-722,733`).
+    async fn unsupported(&mut self, id: RequestId) -> Result<Update, Error> {
+        self.wire
+            .send(transport::Command::RejectServerRequest { id })
+            .await
+            .map_err(Error::Transport)?;
+        Err(Error::UnsupportedRequest)
     }
 }
 
