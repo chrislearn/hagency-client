@@ -496,6 +496,95 @@ fn native_delegated_thread_followup_continues_the_delegated_task() {
     );
 }
 
+/// Board #117: a delegation whose TASK is done but whose intent is still
+/// `active` — the exact live shape (task `done`, dispatch `completed`, intent
+/// `active`, session_85f561fb…) — must still admit a follow-up in the task's
+/// thread. Live, agent2's whole intake was refused forever (`error=Domain`)
+/// until a clean restart re-planned it.
+///
+/// `persist_intent` (task_intents.rs:582) writes `task_inputs` with NO
+/// `config`; only `verified_ingress::attach` populates it. `task_message` read
+/// `task_inputs.config` alone for a VERIFIED session, so the `Done` branch
+/// (verified_ingress.rs:707-708) hit NULL and the whole admission was refused.
+/// The reader must take the admitted message's copy, as `project_inputs`
+/// already does (`COALESCE(ti.config, m.config)`).
+#[test]
+fn native_delegated_completed_task_followup_admits() {
+    let mut f = Fixture::new();
+    let cap = f.working();
+    let created = f.delegate(&cap, "call-1", 3007);
+    f.deliver_notice(3008);
+    assert_eq!(f.intent_state(&created.task_id), "active");
+    let plan = AgentInboxPlan {
+        session_id: created.session_id.clone(),
+        workspace_id: "work_assignee".into(),
+    };
+    let AgentInboxSelection::Selected { dispatch_id, .. } =
+        f.db.select_intent_inbox(&plan, 3010).unwrap()
+    else {
+        panic!("an active delegated intent did not mint a dispatch")
+    };
+    let assignee_cap = f
+        .db
+        .claim_owned_dispatch_for_host(&f.assignee_profile(), "runner_assignee", 3011, 60_000, 60_000, 8)
+        .unwrap()
+        .expect("the assignee claims its delegated dispatch");
+    assert_eq!(assignee_cap.dispatch_id, dispatch_id);
+    let scope = f.db.owned_dispatch_scope(&assignee_cap, 3012).unwrap();
+    f.db.start_owned_dispatch(&assignee_cap, scope.fingerprint(), 3013)
+        .unwrap();
+    // The assignee finishes the work: the TASK goes Done while the intent
+    // stays `active` and its thread session keeps being read.
+    f.db.mutate_task(
+        &assignee_cap,
+        &created.task_id,
+        "done",
+        &TaskMutation::Transition {
+            status: TaskState::Done,
+            waiting_reason: None,
+            waiting_until: None,
+        },
+        3015,
+    )
+    .unwrap();
+    f.db.complete_dispatch(&assignee_cap, &serde_json::json!({"done": true}), 3020)
+        .unwrap();
+    assert_eq!(f.intent_state(&created.task_id), "active");
+    let status: String = f
+        .sql()
+        .query_row(
+            "SELECT json_extract(config,'$.status') FROM canonical_tasks WHERE id=?1",
+            [&created.task_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(status, "done");
+    // The requester follows up in the completed task's own thread.
+    let observation = MatrixEventObservation {
+        scope: f.db.matrix_ingress_scope(&created.session_id).unwrap(),
+        event: InboundMessage {
+            server_name: "example.test".into(),
+            room_id: ROOM.into(),
+            event_id: "$followup".into(),
+            sender_mxid: "@owner:example.test".into(),
+            thread_root: Some("$wake".into()),
+            body: "@helper:example.test Now add the per-region totals.".into(),
+            kind: "m.text".into(),
+            origin_ts: 4000,
+        },
+        // The mention must name the ASSIGNEE (the delegated session's own
+        // sender), exactly as the sibling thread-followup test does.
+        mentions: BTreeSet::from([f.assignee.transport.sender_mxid.clone()]),
+        encrypted: true,
+    };
+    let receipt = f.db.admit_matrix_event(&observation, 4001).unwrap();
+    assert_eq!(
+        (receipt.session_id.as_str(), receipt.wake),
+        (created.session_id.as_str(), true),
+        "the requester's fresh follow-up continues the completed delegated task"
+    );
+}
+
 #[test]
 fn native_delegated_intent_is_not_selected_before_activation() {
     let mut f = Fixture::new();
