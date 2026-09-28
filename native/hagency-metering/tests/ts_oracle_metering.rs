@@ -283,12 +283,12 @@ fn ts_oracle_supported_frameworks_say_so() {
 }
 
 /// TS `metering.test.js:173` `Claude's directory name is the cwd with slashes
-/// replaced`: `/Users/example/home/hagency` → `-Users-example-home-hagency`.
+/// replaced`: `/Users/someone/home/hagency` → `-Users-someone-home-hagency`.
 #[test]
 fn ts_oracle_claude_project_dir() {
     assert_eq!(
-        claude_project_dir("/Users/example/home/hagency").as_deref(),
-        Some("-Users-example-home-hagency")
+        claude_project_dir("/Users/someone/home/hagency").as_deref(),
+        Some("-Users-someone-home-hagency")
     );
 }
 
