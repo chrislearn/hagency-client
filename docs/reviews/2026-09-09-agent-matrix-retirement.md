@@ -74,18 +74,18 @@ non-passing. Its requirement trace also reports absent lifecycle results for
 other mapped contribution scenarios. The Vitest/Node results above are separate
 execution evidence; skipped native scenarios are not counted as passing.
 
-Local source is `/Users/yuechen/home/hagency-outbound-20260908`; backend7238,
+Local source is `~/home/hagency-outbound-20260908`; backend7238,
 bridge7239 and console7240 run it, with console build
 `.next-agent-retirement-20260909`. All63 existing dispatches were completed before
 the initial restart. Palpo Web source is
-`/Users/yuechen/home/palpo-account-approval-20260909`; final Mini1 image is
+`~/home/palpo-account-approval-20260909`; final Mini1 image is
 `palpo-web-admin:177462cdd1d6be2d`. Account-approval configuration and the persistent
 volume were preserved. Palpo's Rust homeserver was neither changed nor restarted.
 No commit or push was made. These source checkouts have no provisioned task-writer;
 no canonical task transition was fabricated.
 
 Protected live evidence is under
-`/Users/yuechen/Library/Caches/palpo-admin-e2e/2026-09-06/agent-retirement-20260909/`,
+`<local-evidence>/palpo-admin-e2e/2026-09-06/agent-retirement-20260909/`,
 including `matrix-final-proof.json`, `relay-final-proof.json`,
 `local-final-proof.json`, `alias-reconciliation.json` and `history-proof.json`.
 Browser evidence is `/tmp/hagency-edison-retirement-browser.json` and the

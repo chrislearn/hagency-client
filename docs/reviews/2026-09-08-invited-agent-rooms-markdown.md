@@ -18,7 +18,7 @@ Promotion starts a fresh conversation context range and blocks pending replies
 from the former private task. This limits Hagency's context delivery; it does not
 change Matrix room history visibility or erase messages already in the room.
 
-Validation from `/Users/yuechen/home/hagency`:
+Validation from `~/home/hagency`:
 
 - 179 Vitest tests across 13 suites pass, covering bridge/backend integration,
   deduplication, authorization, independent room bindings, context boundaries,
@@ -60,7 +60,7 @@ the earlier native Robrix or live encrypted-room acceptance. New replies get the
 format fix; previously sent plaintext events are not rewritten.
 
 Private evidence is in
-`/Users/yuechen/Library/Caches/palpo-admin-e2e/2026-09-06/`:
+`<local-evidence>/palpo-admin-e2e/2026-09-06/`:
 `invited-rooms-final-verification.json`, `invited-rooms-browser-verified.json`,
 `invited-rooms-thread-browser.png`, `invited-rooms-dm-browser.png`,
 `invited-rooms-deployment.json` and `invited-rooms-lifecycle-final.json`.

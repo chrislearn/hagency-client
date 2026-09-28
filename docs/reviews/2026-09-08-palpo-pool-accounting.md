@@ -48,5 +48,5 @@ and zero page errors.
 
 Private receipts: `palpo-pool-deployment.json`, `edison-selected-pool-fixed.json`,
 `edison-selected-pool-fixed.png`, `palpo-pool-lifecycle.json` in
-`/Users/yuechen/Library/Caches/palpo-admin-e2e/2026-09-06`.
+`<local-evidence>/palpo-admin-e2e/2026-09-06`.
 No commit or push; unrelated worktree changes remain intact.

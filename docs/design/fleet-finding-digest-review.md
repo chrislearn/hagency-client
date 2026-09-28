@@ -15,7 +15,7 @@ The scan and insert are transactionally correct under valid store state.
 
 - The shared `io_gate` is acquired before blocking work at [store.rs:2523](crates/octos-fleet/src/store.rs:2523).
 - Scan, reference validation, sequence allocation, and insert all occur in one write transaction beginning at [store.rs:2526](crates/octos-fleet/src/store.rs:2526), with the only commit at [store.rs:2574](crates/octos-fleet/src/store.rs:2574).
-- I checked redb 2.6.3’s implementation, not just its docs: `start_write_transaction` blocks while another writer exists at [transaction_tracker.rs:117](/Users/yuechen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/redb-2.6.3/src/transaction_tracker.rs:117), and uncommitted transactions abort on drop at [transactions.rs:2349](/Users/yuechen/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/redb-2.6.3/src/transactions.rs:2349).
+- I checked redb 2.6.3’s implementation, not just its docs: `start_write_transaction` blocks while another writer exists at [transaction_tracker.rs:117](~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/redb-2.6.3/src/transaction_tracker.rs:117), and uncommitted transactions abort on drop at [transactions.rs:2349](~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/redb-2.6.3/src/transactions.rs:2349).
 
 Therefore:
 

@@ -149,7 +149,7 @@ describe('check_inbox records a progress anchor', () => {
   test('a group message is remembered with its group', async () => {
     const { anchor } = await readInboxAndAnchor({
       dm: [],
-      group: [{ id: 'msg_100', ts: 1000, group: 'hagency', from: 'yuechen', summary: 'question' }],
+      group: [{ id: 'msg_100', ts: 1000, group: 'hagency', from: 'operator', summary: 'question' }],
     });
     expect(anchor()).toMatchObject({ replyTo: 'msg_100', group: 'hagency' });
   });
@@ -158,10 +158,10 @@ describe('check_inbox records a progress anchor', () => {
     // Progress must reach the same audience the answer would, and no wider. A DM's answer goes back to
     // one person, so its progress does too — recording a group here would broadcast it.
     const { anchor } = await readInboxAndAnchor({
-      dm: [{ id: 'msg_200', ts: 2000, from: 'yuechen', summary: 'privately' }],
+      dm: [{ id: 'msg_200', ts: 2000, from: 'operator', summary: 'privately' }],
       group: [],
     });
-    expect(anchor()).toMatchObject({ replyTo: 'msg_200', to: 'yuechen', group: null });
+    expect(anchor()).toMatchObject({ replyTo: 'msg_200', to: 'operator', group: null });
   });
 
   test('the newest message wins across both buckets', async () => {
@@ -187,7 +187,7 @@ describe('check_inbox records a progress anchor', () => {
      */
     const tmpdir = mkdtempSync(path.join(os.tmpdir(), 'hagency-anchor-'));
     temps.add(tmpdir);
-    let payload = { dm: [], group: [{ id: 'msg_300', ts: 3000, group: 'hagency', from: 'yuechen' }] };
+    let payload = { dm: [], group: [{ id: 'msg_300', ts: 3000, group: 'hagency', from: 'operator' }] };
     const server = http.createServer((req, res) => {
       res.setHeader('Content-Type', 'application/json');
       if (req.url.startsWith('/api/inbox/')) return res.end(JSON.stringify(payload));
@@ -210,7 +210,7 @@ describe('check_inbox records a progress anchor', () => {
     // "started" — the one line that tells a borrower the room heard them.
     const { anchor } = await readInboxAndAnchor({
       dm: [],
-      group: [{ id: 'msg_400', ts: 4000, group: 'hagency', from: 'yuechen' }],
+      group: [{ id: 'msg_400', ts: 4000, group: 'hagency', from: 'operator' }],
     });
     expect(anchor()).toMatchObject({ lastSentAt: 0, counts: {} });
   });
@@ -232,7 +232,7 @@ describe('an agent whose own progress crowded out the question', () => {
 
     const asked = [];
     const crowded = { group: 'g', unread: Array.from({ length: 10 }, (_, i) => ({ id: `mine_${i}`, ts: 2000 + i, from: 'alpha', group: 'g' })), read: [] };
-    const wider = { group: 'g', unread: [{ id: 'msg_question', ts: 1000, from: 'yuechen', group: 'g' }, ...crowded.unread], read: [] };
+    const wider = { group: 'g', unread: [{ id: 'msg_question', ts: 1000, from: 'operator', group: 'g' }, ...crowded.unread], read: [] };
     const server = http.createServer((req, res) => {
       asked.push(req.url);
       res.setHeader('Content-Type', 'application/json');
@@ -261,7 +261,7 @@ describe('an agent whose own progress crowded out the question', () => {
       asked.push(req.url);
       res.setHeader('Content-Type', 'application/json');
       if (!req.url.startsWith('/api/groups/')) return res.end(JSON.stringify({ name: 'alpha', groups: [] }));
-      res.end(JSON.stringify({ group: 'g', unread: [{ id: 'msg_q', ts: 9, from: 'yuechen', group: 'g' }], read: [] }));
+      res.end(JSON.stringify({ group: 'g', unread: [{ id: 'msg_q', ts: 9, from: 'operator', group: 'g' }], read: [] }));
     });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', () => { servers.add(server); server.unref?.(); resolve(); }));
 

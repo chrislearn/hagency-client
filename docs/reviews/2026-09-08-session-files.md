@@ -72,7 +72,7 @@ page policy and sandbox remain intact. The prior server file is backed up.
 This is test client configuration, not a Palpo change.
 
 Private evidence root:
-/Users/yuechen/Library/Caches/palpo-admin-e2e/2026-09-06
+<local-evidence>/palpo-admin-e2e/2026-09-06
 
 - session-files-deployment-0908.json
 - session-files-group-0908.json

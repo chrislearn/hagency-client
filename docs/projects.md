@@ -5,7 +5,7 @@
 - Managed path: `projects/hagency-website/`.
 - Model: new, independently owned source tree with its own Git repository;
   not a symlink and not a synchronized copy of another checkout.
-- Absolute path: `/Users/yuechen/home/hagency/projects/hagency-website`.
+- Absolute path: `~/home/hagency/projects/hagency-website`.
 - Source remote: none configured.
 - Stack: Astro, TypeScript, static English/Simplified Chinese routes.
 - Preview: `http://127.0.0.1:4328/en/`, `http://127.0.0.1:4328/zh-cn/`.

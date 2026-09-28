@@ -44,7 +44,7 @@ Deployment: local backend18194 PID40252, console13202 PID40253 using
 were not restarted. No commit or push.
 
 Private evidence is under
-`/Users/yuechen/Library/Caches/palpo-admin-e2e/2026-09-06`:
+`<local-evidence>/palpo-admin-e2e/2026-09-06`:
 `palpo-auto-live-result.json`, `palpo-auto-pool-final.png`,
 `palpo-auto-final-state.json`, `palpo-auto-deployment.json`,
 `palpo-auto-pool-deploy.log` and `palpo-auto-lifecycle.json`.

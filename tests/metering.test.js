@@ -171,7 +171,7 @@ describe('framework support is stated per framework', () => {
 
 describe('locating transcripts', () => {
   test("Claude's directory name is the cwd with slashes replaced", () => {
-    expect(claudeProjectDir('/Users/yuechen/home/hagency')).toBe('-Users-yuechen-home-hagency');
+    expect(claudeProjectDir('/Users/someone/home/hagency')).toBe('-Users-someone-home-hagency');
   });
 
   test('a relative path has no project directory', () => {

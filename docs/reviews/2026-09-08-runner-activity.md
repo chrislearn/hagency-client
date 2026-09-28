@@ -39,7 +39,7 @@ dispatch remained after the tests. Public profile readback and browser rendering
 show `edison`. Native Robrix2 was not driven by this test.
 
 Private artifacts are under
-`/Users/yuechen/Library/Caches/palpo-admin-e2e/2026-09-06/`:
+`<local-evidence>/palpo-admin-e2e/2026-09-06/`:
 `agent-profile-repair-0908.json`, `runner-activity-live-0908.json`,
 `runner-activity-deployment-0908.json`, `runner-activity-browser-0908.json`,
 `runner-activity-test-summary-0908.json`, and the `runner-activity-*.png` captures.

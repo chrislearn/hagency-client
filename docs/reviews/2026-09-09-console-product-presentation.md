@@ -64,7 +64,7 @@ Verification limitations are explicit:
   fix backend timeouts.
 
 Evidence, screenshots and logs are local under
-`/Users/yuechen/Library/Caches/hagency-console-cleanup/2026-09-09/`.
+`<local-evidence>/hagency-console-cleanup/2026-09-09/`.
 
 ## Local deployment
 

@@ -13,7 +13,7 @@ The deployed form checked published roles but ignored fleet readiness. It still
 enabled Send after expiry, and its generic failure notice appeared only at the
 top of a long page. This explains why a failed submission could look unresponsive.
 
-Updated the Palpo admin source at `/Users/yuechen/home/palpo-admin-web/web-admin`:
+Updated the Palpo admin source at `~/home/palpo-admin-web/web-admin`:
 
 - Gate Send on project readiness, current connection expiry and role availability.
 - Show connection recovery beside the request form, with a Verify connection

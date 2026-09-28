@@ -414,7 +414,7 @@ evidence are in the execution map.
   retirement, rather than recreated. See ADR-017. All 174 remaining active
   selectors resolve through `npm run check:spec-bindings`.
 
-- `/Users/yuechen/home/hagency` is the HAFleet source Git checkout, with origin
+- `~/home/hagency` is the HAFleet source Git checkout, with origin
   `https://github.com/hagency-org/HAFleet.git`; it is not a provisioned agent-home
   `workdir/projects/` copy. Its root AGENTS.md/CLAUDE.md symlink to workspace templates.
   At the 2026-09-05 audit, `./task-writer`, `docs/projects.md`, and `docs/plan.md`
@@ -582,7 +582,7 @@ evidence are in the execution map.
   connection refusal because the local18010/18080 SSH forwards and control socket
   had disappeared. Mini1's Palpo containers remained healthy. Forwarding is now
   owned by launchd `com.hafleet.mini1-tunnel`, installed at
-  `/Users/yuechen/Library/LaunchAgents/com.hafleet.mini1-tunnel.plist`, with the
+  `~/Library/LaunchAgents/com.hafleet.mini1-tunnel.plist`, with the
   existing private-cache control socket and reverse19094→18195. Explicitly set
   `ControlPersist=no` and `ForkAfterAuthentication=no`: the user's SSH config
   otherwise enables ControlPersist600, detaches a master and defeats foreground
@@ -1041,7 +1041,7 @@ palpo-admin-e2e/2026-09-06/execution-auth-backup-20260908-154315.
 - Live backend, bridge and console now use the isolated hagency-outbound-20260908 worktree. Palpo browser/machine HTTPS origin is crew.ominix.io:19444; Matrix HTTPS origin is crew.ominix.io:19443. Local console remains 127.0.0.1:13202. The old laptop18010/18080 forwards, bridge18195 listener and Mini1 reverse19094 are disabled. Do not restore a tunnel as the default repair.
 - Generation1 migration retained the same dynamic AS registration, Matrix tokens, namespace, agents, projects and allocations. The exact real Matrix receipt established proof; automatic heartbeats maintain liveness without owner browser renewal. Requests retain independent observed/received expiry. A pending historical edision request was replayed but not approved or allocated.
 - Changed Matrix API URLs require a coordinated bridge restart for existing private clients. Verify the original cached token's full user_id and device_id at the configured endpoint with timeout/redirect refusal, then update only baseUrl. Never delete crypto caches or create replacement devices merely because a tunnel URL changed. Live three-device recovery is evidenced in outbound-direct-device-after.json.
-- Operational launch helper and protected rollback/evidence files remain under Library/Caches/palpo-admin-e2e/2026-09-06. Do not commit downloaded credentials. Full acceptance, exact sources and remaining validation limits: docs/reviews/2026-09-08-palpo-outbound-implementation.md.
+- Operational launch helper and protected rollback/evidence files remain under <local-evidence>/palpo-admin-e2e/2026-09-06. Do not commit downloaded credentials. Full acceptance, exact sources and remaining validation limits: docs/reviews/2026-09-08-palpo-outbound-implementation.md.
 
 
 ## 2026-09-08 shared Agent reply archival
@@ -1112,7 +1112,7 @@ Rust homeserver did not require code changes. Private room history must start at
 invitation so administrators can see requests posted before their first join.
 New-project owner approval readiness now refreshes automatically.
 
-Source worktree: /Users/yuechen/home/palpo-account-approval-20260909, branch
+Source worktree: ~/home/palpo-account-approval-20260909, branch
 feat/account-approval-20260909. Final image palpo-web-admin:cc23a8c98efb31c9.
 Keep PALPO_ACCOUNT_CONFIG=/app/data/account-approval.json on later web deployments;
 the private key, bot credential and dedicated server-side admin token stay in

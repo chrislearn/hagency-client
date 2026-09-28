@@ -85,5 +85,5 @@ than fabricate canonical runtime task state.
   Palpo, Hagency and Robrix remain on their existing deployments.
 
 Verification logs and the exact patch are preserved outside Git under
-`~/Library/Caches/hagency-review-closure/2026-09-09/`. This record documents the
+`<local-evidence>/hagency-review-closure/2026-09-09/`. This record documents the
 tested source; it does not claim a fresh live Matrix/LLM end-to-end run.

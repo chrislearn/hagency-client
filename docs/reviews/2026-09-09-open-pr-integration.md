@@ -51,7 +51,7 @@ the actual Vitest commands and full-suite results are recorded separately.
 
 Raw focused, full-suite, CI, build, native lifecycle and browser logs, screenshots
 and merge receipts are retained outside Git under
-~/Library/Caches/hagency-review-closure/2026-09-09/open-pr-fixes/.
+<local-evidence>/hagency-review-closure/2026-09-09/open-pr-fixes/.
 
 ## Merge outcome
 

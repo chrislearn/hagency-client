@@ -6,7 +6,7 @@ The review is complete — I've traced all the requested flows through the specs
 
 # Hagency Independent Code Review — commit `75ca1ec`
 
-**Scope:** `/Users/yuechen/home/hagency` at `75ca1ecbf8c4623359094f000fa4968693f4a27e`, reviewed read-only against `specs/project.spec.md`, the 8 task specs, and accepted `knowledge/` requirements/decisions (with ADR-013's pricing withdrawal and ADR-016's identity/provisioning amendments treated as current truth). **No tests were executed**; all findings are from static reading of source and test assertions. `docs/progress.md` / `docs/agent-knowledge.md` were not consulted.
+**Scope:** `~/home/hagency` at `75ca1ecbf8c4623359094f000fa4968693f4a27e`, reviewed read-only against `specs/project.spec.md`, the 8 task specs, and accepted `knowledge/` requirements/decisions (with ADR-013's pricing withdrawal and ADR-016's identity/provisioning amendments treated as current truth). **No tests were executed**; all findings are from static reading of source and test assertions. `docs/progress.md` / `docs/agent-knowledge.md` were not consulted.
 
 **TL;DR:** The core chain (offer → whitelist → engagement → budget → binding → room admission → revocation) is implemented carefully and mostly matches its specs, with unusually honest self-documentation. No P0. The substantive gaps cluster at two seams: (1) the appservice router accepts a token that matches **two** registrations by first-match where the side-provenance spec mandates HTTP 403, and the test named after that scenario only exercises the wrong-token half; (2) the HTTP engagement surface trusts a **caller-claimed** `projectRoomId` under the shared requester credential, which the whitelist-key requirement forbids for room identity. Beyond that: an idempotent-replay ordering bug in the budget gate, a cross-side alert-resolution bug in the side-removal cascade, and several accepted-document conflicts that no one has reconciled (most notably ADR-016's "the borrower approves" ruling vs. the still-governing owner-DM approval spec and implementation).
 
@@ -16,7 +16,7 @@ The review is complete — I've traced all the requested flows through the specs
 
 ### P1-1 — Ambiguous `hs_token` selects a registration by first-match instead of refusing 403
 
-- **Location:** `/Users/yuechen/home/hagency/lib/appservice-receiver.js:404-408` (`createAppserviceRouter.handle`)
+- **Location:** `~/home/hagency/lib/appservice-receiver.js:404-408` (`createAppserviceRouter.handle`)
 - **Violates:** `specs/task-side-provenance.spec.md:48` ("An unknown token or one matching multiple local registrations returns HTTP 403 before dispatch; **first-match selection is not authority**") and the critical scenario at `:103-112` (`side_provenance_rejects_bad_or_ambiguous_credentials`).
 - **Trigger:** two configured sides whose credential records carry the same `hs_token` — an operator installing one registration file for two sides, a copy-paste duplication in the side store, or a bad `inbound-credentials` payload. `setSides` (`lib/appservice-receiver.js:360-386`) performs no duplicate-token detection, and the match loop keeps the first hit: `if (!match) match = { sideId, entry }`.
 - **Actual vs required:** actual — the transaction is dispatched under whichever side iterates first, acquiring that side's registration identity, representative, room-relation authority, and dedup window. Required — HTTP 403 before dispatch, zero ingress.
@@ -26,7 +26,7 @@ The review is complete — I've traced all the requested flows through the specs
 
 ### P1-2 — HTTP engagement intake accepts a caller-claimed `projectRoomId` under the shared requester credential
 
-- **Location:** `/Users/yuechen/home/hagency/backend-v2.js:13535` (`POST /api/engagements`, guarded by `requireRequester` at `:12952-12958`), room taken from `req.body.projectRoomId` at `:13620` and `:13626`; also `GET /api/offer-book?projectRoomId=…` at `:13811-13843`.
+- **Location:** `~/home/hagency/backend-v2.js:13535` (`POST /api/engagements`, guarded by `requireRequester` at `:12952-12958`), room taken from `req.body.projectRoomId` at `:13620` and `:13626`; also `GET /api/offer-book?projectRoomId=…` at `:13811-13843`.
 - **Violates:** `knowledge/requirements/req-contribution-console.md:80-83` (REQ-CONTRIBUTION-CONSOLE-WHITELIST-KEY: "The whitelist MUST key on the **authenticated** `projectRoomId` reported by Matrix… MUST NOT accept a room id supplied in message content"). The Matrix path honors this (`lib/bot-commands.js:414-427, 525-546` — room and event id come from the authenticated event); the HTTP path does not: the requester credential authenticates *the right to submit*, not *which room is asking*.
 - **Trigger:** any holder of `HAGENCY_REQUESTER_TOKEN` (a single shared secret; `lib/bot-commands.js:121-124` shows it is intended to travel to submitting parties) who knows or guesses another project's whitelisted room id.
 - **Actual vs required:** actual — a request naming a foreign whitelisted room auto-joins under that room's trust: the victim side's budget is committed (`refuseOverSideAllocation` charges the room's server, `:13619-13623`), an owner binding is written, and a real Matrix invite/join is fired into the victim's room (`admitAgentToProjectRoom`, `:13662`). `offer-book` likewise answers "is room X whitelisted?" for any X (`:13840`). Required — room identity on this surface must be authenticated or the surface must not honor whitelist/auto-join at all.
@@ -35,7 +35,7 @@ The review is complete — I've traced all the requested flows through the specs
 
 ### P2-1 — Idempotent replay of a committed request is refused by the side-budget gate before the dedup lookup runs
 
-- **Location:** `/Users/yuechen/home/hagency/backend-v2.js:13619-13624` (`refuseOverSideAllocation` runs first) vs. `/Users/yuechen/home/hagency/lib/engagement-store.js:469-483` (`requestId` dedup lives inside `createRequest`).
+- **Location:** `~/home/hagency/backend-v2.js:13619-13624` (`refuseOverSideAllocation` runs first) vs. `~/home/hagency/lib/engagement-store.js:469-483` (`requestId` dedup lives inside `createRequest`).
 - **Violates:** `knowledge/requirements/req-contribution-console.md:94-100` (REQ-CONTRIBUTION-CONSOLE-IDEMPOTENT: "Repeating the same `request_id` with the same request digest MUST return the existing engagement") and its scenario at `:168-172`; PRD gate A-R0-1 as cited in Traceability.
 - **Trigger:** an auto-joined request commits `N` tokens; the same Matrix event is redelivered (bridge restart clears the in-memory claim map `bridge-matrix.js:4573`, sync-batch replay, or edge redelivery) while `allocated − committed < N`. The replay's budget check computes remaining *including the first commitment* and answers 409 `over_allocation` — and files a spurious `project_side_budget` operator alarm (`raiseSideBudgetAlarm`, `backend-v2.js:8854`) — without ever reaching the store's "same id + same digest → return prior" branch.
 - **Actual vs required:** actual — 409 + false alarm + "Request refused" posted into the borrower's room; required — the existing engagement returned unchanged.
@@ -44,7 +44,7 @@ The review is complete — I've traced all the requested flows through the specs
 
 ### P2-2 — Removing a project side auto-resolves `agent_identity_unminted` alerts belonging to *every other* side
 
-- **Location:** `/Users/yuechen/home/hagency/backend-v2.js:9982-9985` — `alertStore.autoResolveByPrefix('agent_identity_unminted:')` resolves all alerts of that type (see `lib/alert-store.js:358-380`, which mutates every prefix match); the `.filter(...includes(removedSideId))` on the next line trims only the *reported* list, not the mutation.
+- **Location:** `~/home/hagency/backend-v2.js:9982-9985` — `alertStore.autoResolveByPrefix('agent_identity_unminted:')` resolves all alerts of that type (see `lib/alert-store.js:358-380`, which mutates every prefix match); the `.filter(...includes(removedSideId))` on the next line trims only the *reported* list, not the mutation.
 - **Violates:** ADR-016 decision 7 / row 7 ("SIDE-SCOPED alerts are resolved by dedupe prefix" — scoped to the removed side) and the alarm design intent of decision 6.
 - **Trigger:** two sides, each with an open `agent_identity_unminted:<agent>:<side>` alert; operator deletes side A.
 - **Actual vs required:** actual — side B's unminted-identity alert is silently marked resolved-by-system; required — only alerts naming the removed side are swept.
@@ -53,7 +53,7 @@ The review is complete — I've traced all the requested flows through the specs
 
 ### P2-3 — Retired agents remain selectable for new engagements
 
-- **Location:** `/Users/yuechen/home/hagency/backend-v2.js:12818-12835` (`agentForRole` filters only by tier), `:12916-12929` (`remainingFor`), `:9879-9891` (`retireAgentsForSide` sets `online:false`, `retiredAt`, `offlineReason` — none of which any selection path reads; `isAgentRecord` at `:1356-1358` ignores retirement).
+- **Location:** `~/home/hagency/backend-v2.js:12818-12835` (`agentForRole` filters only by tier), `:12916-12929` (`remainingFor`), `:9879-9891` (`retireAgentsForSide` sets `online:false`, `retiredAt`, `offlineReason` — none of which any selection path reads; `isAgentRecord` at `:1356-1358` ignores retirement).
 - **Violates:** ADR-016 decision 7 ("retires agent identities: deactivated, **unable to be dispatched**, MXID retained for attribution").
 - **Trigger:** delete a project side (retiring its agents), then a `!request`/`POST /api/engagements` for a role the retired agent's preset still qualifies for.
 - **Actual vs required:** actual — `agentForRole` can name the retired agent, `serving` discloses it to the borrower, and `decide()` will allocate against its ceiling; on the contributor's own-server rooms nothing later blocks it (cross-side rooms are caught by `backendRosterAdmits` ② at `:13206`). Required — a retired identity serves nothing new.
@@ -61,7 +61,7 @@ The review is complete — I've traced all the requested flows through the specs
 
 ### P2-4 — Side-removal cascade never withdraws agents (or the representative) from the customer's rooms, then destroys the only credential that could
 
-- **Location:** `/Users/yuechen/home/hagency/backend-v2.js:9843-9877` (`endEngagementsAndBindingsForSide` calls `engagementStore.revoke` directly — not `detachEngagement`) and `:9905-9940` (route retires agents, then `removeSide`; no `withdrawAgentFromProjectRoom(s)` call). Contrast the per-engagement revoke route `:13759-13779`, which does withdraw.
+- **Location:** `~/home/hagency/backend-v2.js:9843-9877` (`endEngagementsAndBindingsForSide` calls `engagementStore.revoke` directly — not `detachEngagement`) and `:9905-9940` (route retires agents, then `removeSide`; no `withdrawAgentFromProjectRoom(s)` call). Contrast the per-engagement revoke route `:13759-13779`, which does withdraw.
 - **Violates:** ADR-016 decision 7's stated order rationale (`knowledge/decisions/adr-016…md:556-561`: "leaving rooms, revoking tokens, and any farewell … all require the token that deletion would already have destroyed" — the reason the credential is forgotten last), and the hygiene rule the code itself documents at `backend-v2.js:13098-13102`.
 - **Trigger:** `DELETE /api/project-sides/:id?force=true` (or after deactivation) with agents joined to rooms on that side.
 - **Actual vs required:** actual — engagements end and commitments release, but every joined `@ac_*` account and the representative remain members of the customer's rooms forever; after `removeSide` the acting credential is gone, so no later cleanup is possible from Hagency. The `cascadeNote` (`:10004-10006`) does not disclose the skipped step. Required — leave rooms while the credential still exists (the order is the whole point of "credential last").
@@ -69,7 +69,7 @@ The review is complete — I've traced all the requested flows through the specs
 
 ### P2-5 — Intake `mode` is read from the transaction body, so a homeserver push can select or poison the mode
 
-- **Location:** `/Users/yuechen/home/hagency/lib/appservice-receiver.js:268` (`mode: typeof body?.mode === 'string' ? body.mode : undefined`), consumed at `/Users/yuechen/home/hagency/bridge-matrix.js:5189` (`mode: meta?.mode ?? 'push'`). The edge/sync adapters legitimately stamp `body.mode` (`lib/appservice-puller.js:193`, `lib/appservice-sync.js:378`), but the push listener forwards the homeserver's raw body on the same channel.
+- **Location:** `~/home/hagency/lib/appservice-receiver.js:268` (`mode: typeof body?.mode === 'string' ? body.mode : undefined`), consumed at `~/home/hagency/bridge-matrix.js:5189` (`mode: meta?.mode ?? 'push'`). The edge/sync adapters legitimately stamp `body.mode` (`lib/appservice-puller.js:193`, `lib/appservice-sync.js:378`), but the push listener forwards the homeserver's raw body on the same channel.
 - **Violates:** `specs/task-side-provenance.spec.md:39` ("Incoming fields cannot replace authenticated provenance or **select the intake mode**") and `:48` ("The listener supplies push mode…").
 - **Trigger:** a project side's homeserver (authenticated with its own `hs_token`) PUTs a transaction whose JSON includes `"mode": "sync"`, `"edge"`, or garbage.
 - **Actual vs required:** actual — a valid mode string relabels a push as edge/sync in provenance, logs, and diagnostics; an *invalid* string makes `buildSideProvenance` throw before the gate (`lib/side-provenance.js:96-98`), which the receiver converts to a blanket 500 (`lib/appservice-receiver.js:269-279`) — an infinite homeserver retry loop that self-inflicts head-of-line blocking for that side. Required — the listener path supplies `push` unconditionally; body fields never select mode.
@@ -78,21 +78,21 @@ The review is complete — I've traced all the requested flows through the specs
 
 ### P2-6 — Bind-failure remedy leaks the provider's environment variable names to the borrower over the HTTP surface
 
-- **Location:** `/Users/yuechen/home/hagency/backend-v2.js:13372-13376` (`bindEngagement` error names `HAGENCY_OWNER_MXID` / `HAGENCY_OWNER_DM_ROOM`), returned verbatim as `binding.error` in the `POST /api/engagements` auto-join response (`:13663-13667`) — a route authenticated by the *requester* (project-side) credential.
+- **Location:** `~/home/hagency/backend-v2.js:13372-13376` (`bindEngagement` error names `HAGENCY_OWNER_MXID` / `HAGENCY_OWNER_DM_ROOM`), returned verbatim as `binding.error` in the `POST /api/engagements` auto-join response (`:13663-13667`) — a route authenticated by the *requester* (project-side) credential.
 - **Violates:** `knowledge/requirements/req-contribution-console.md:53-56` (REQ-CONTRIBUTION-CONSOLE-ROLES: "environment variable names are private, and a failure reported to a project MUST NOT carry the provider's own configuration as its remedy").
 - **Trigger:** whitelisted auto-join on a deployment with no resolvable owner. The Matrix path deliberately withholds this (`lib/bot-commands.js:576-587`), but a programmatic requester posting to the API receives the full remedy text.
 - **Correction:** when the caller authenticated with the requester token, replace `binding.error` with the neutral "could not be attached; the contributor has been notified" the bridge already uses; keep the full text for operator-bearer callers and the engagement record.
 
 ### P2-7 — Cross-family role (`review`) can auto-join served by a single model family
 
-- **Location:** `/Users/yuechen/home/hagency/lib/engagement-store.js:176-226` (`routeRequest` has no cross-family input), `/Users/yuechen/home/hagency/backend-v2.js:12818-12835` (`agentForRole` checks tier only); constraint declared at `/Users/yuechen/home/hagency/lib/role-capacity.json:44-49` and enforced only on the capability read (`backend-v2.js:12668-12689`, `fillable: 0`).
+- **Location:** `~/home/hagency/lib/engagement-store.js:176-226` (`routeRequest` has no cross-family input), `~/home/hagency/backend-v2.js:12818-12835` (`agentForRole` checks tier only); constraint declared at `~/home/hagency/lib/role-capacity.json:44-49` and enforced only on the capability read (`backend-v2.js:12668-12689`, `fillable: 0`).
 - **Violates:** the coherence half of `knowledge/requirements/req-contribution-console.md:76-78` (REQ-CONTRIBUTION-CONSOLE-CROSS-FAMILY: "Any field summarising fillability MUST agree with the cross-family constraint reported beside it") — `/api/capability` reports `review` unfillable for a one-family fleet while `!request review N` on a whitelisted room auto-joins it with one agent and reports `serving`.
 - **Impact:** the surfaces disagree; a borrower is granted a "Reviewer" the capability model says cannot exist, defeating the role vocabulary's meaning (ADR-013 decision 3).
 - **Correction:** in `POST /api/engagements`, when `roleCapacity.roles[role].crossFamily` is true and the qualified fleet spans <2 families, route to approval (never auto-join) and attach a hint naming the constraint.
 
 ### P2-8 — Knock-answer membership handler compares a *composed, lowercased* representative instead of the `/whoami`-recorded MXID
 
-- **Location:** `/Users/yuechen/home/hagency/bridge-matrix.js:4777-4778` (`@${senderLocalpart.toLowerCase()}:${sideId}` vs. `state_key.toLowerCase()`), inside `onAppserviceMembership`.
+- **Location:** `~/home/hagency/bridge-matrix.js:4777-4778` (`@${senderLocalpart.toLowerCase()}:${sideId}` vs. `state_key.toLowerCase()`), inside `onAppserviceMembership`.
 - **Violates:** `specs/task-side-provenance.spec.md:49` ("Use the exact representative MXID recorded from `/whoami` for the selected registration, **never a reconstructed localpart**") and the case-preservation rule at `:31`; also the design rule documented in the same repo at `lib/matrix-representative.js:112-117`.
 - **Trigger/impact:** low today (`sender_localpart` is forced lowercase at registration generation, `lib/appservice-receiver.js:97`), but a homeserver that canonicalizes differently, or a hand-written registration with mixed case, makes the join/trust action target a differently-cased identity than the one the provenance gate proved; localparts are case-sensitive in Matrix. The provenance *gate* itself does this correctly (`representativeMxidFor`), so this is an inconsistency between the gate and the action behind it.
 - **Correction:** use `registered.representative.mxid` (already available in the snapshot) for the `state_key` comparison and the join.

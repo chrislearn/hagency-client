@@ -209,7 +209,7 @@ Reused same-revision verification from the initial audit: full Vitest run **3,70
 
 This extended review added isolated API and actual runner-process probes for F1–F7/F10, the real push-listener mode probe for F9, and separate reproductions of F14–F17 and the cross-family discrepancy from Fable's review. F18 was confirmed by tracing the complete deletion/refresh path. No application or test implementation was changed. Fixture backend stores and sockets were temporary; fixture runtimes were cleaned up. No deployed Matrix server, remote mini, real task-executing model, production credentials, or external project was used by those probes. The separately authorized Claude Code reviewer used its model service for review only.
 
-Local evidence is under `/Users/yuechen/Library/Caches/hagency-audit/2026-09-05/` (suite reports, selector audit and original provenance probe) and `/Users/yuechen/Library/Caches/hagency-review/2026-09-05/` (`contribution-probes.log`, `runner-probes.log`, `mode-probe.log`, `fable-validation.log`, independent reviewer output). Exploratory fixture setup failures in the contribution log are followed by separately labeled corrected reproductions; only the confirmed outcomes above support findings.
+Local evidence is under `<local-evidence>/hagency-audit/2026-09-05/` (suite reports, selector audit and original provenance probe) and `<local-evidence>/hagency-review/2026-09-05/` (`contribution-probes.log`, `runner-probes.log`, `mode-probe.log`, `fable-validation.log`, independent reviewer output). Exploratory fixture setup failures in the contribution log are followed by separately labeled corrected reproductions; only the confirmed outcomes above support findings.
 
 ## Suggested order to reach sign-off
 

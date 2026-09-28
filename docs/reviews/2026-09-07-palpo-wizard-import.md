@@ -43,7 +43,7 @@ perform the final save. Existing backend, bridge, Palpo, resource and history
 state were not rewritten for this implementation. No commit or push was made.
 
 Private evidence is under
-`/Users/yuechen/Library/Caches/palpo-admin-e2e/2026-09-06/`:
+`<local-evidence>/palpo-admin-e2e/2026-09-06/`:
 `wizard-browser-final.log`, `wizard-live-preview-verified.json`,
 `wizard-live-import-preview.png` and `wizard-import-lifecycle.json`.
 The downloaded `wizard-owner-configuration.json` is mode0600 and contains

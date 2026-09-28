@@ -61,14 +61,14 @@ suggestion. Exact Vitest results are separate evidence.
 
 All63 dispatches were completed before graceful restart. Backend23654,
 bridge23655 and console23656 now run the actual edited source tree
-`/Users/yuechen/home/hagency-outbound-20260908`. Console build:
+`~/home/hagency-outbound-20260908`. Console build:
 `.next-console-recovery-20260909`. All ten live engagement decisions, amounts,
 Agents and ended timestamps matched the pre-deployment snapshot. No Palpo source
 or container change, no commit/push. No task-writer is provisioned in this checkout,
 so no canonical task transition was fabricated.
 
 Evidence and protected rollback snapshots are in
-`/Users/yuechen/Library/Caches/palpo-admin-e2e/2026-09-06/console-recovery-20260909/`.
+`<local-evidence>/palpo-admin-e2e/2026-09-06/console-recovery-20260909/`.
 `private-before.json`, `source-before/` and `project-sides-before.json` preserve the
 prior configuration/source/metadata. The prior console build remains `.next`.
 Preserve later operator activity when restoring state.

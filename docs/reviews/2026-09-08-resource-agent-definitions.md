@@ -49,7 +49,7 @@ architecture ownership checks pass. All 290 specification selectors resolve.
 The native agent-spec lifecycle has four unsupported behavioral skips and is
 **not passing**; Vitest evidence is recorded separately.
 
-The companion Palpo source is `/Users/yuechen/home/palpo-admin-web/web-admin`.
+The companion Palpo source is `~/home/palpo-admin-web/web-admin`.
 Its 31 Node tests and both browser workflow suites pass, including fresh catalog
 refresh, multiple named definitions, private-field removal, expired-connection
 recovery and retained request identity.

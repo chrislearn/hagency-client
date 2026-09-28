@@ -717,7 +717,7 @@ checkout has no provisioned `./task-writer` or agent-home project manifest.
 
 Requested work: pull the latest HAFleet and assess completion against the planned
 specification. `git pull --ff-only` advanced `master` from `0b1193d` to
-`75ca1ecbf8c4623359094f000fa4968693f4a27e` in `/Users/yuechen/home/hagency`.
+`75ca1ecbf8c4623359094f000fa4968693f4a27e` in `~/home/hagency`.
 The checkout was initially clean. No implementation or test source was changed.
 
 **Verdict: the project cannot be signed off as fully complete against its current
@@ -810,7 +810,7 @@ refresh, not a source fix. Local runtime: Node v24.10.0, npm 11.6.0, macOS.
 
 The temporary console was stopped after verification. Logs, JSON test reports,
 the binding audit, and the local provenance-probe output are retained under
-`/Users/yuechen/Library/Caches/hafleet-audit/2026-09-05/`.
+`<local-evidence>/hafleet-audit/2026-09-05/`.
 
 ### Contract binding inventory
 
@@ -879,7 +879,7 @@ implementation was edited, and no live Matrix, remote mini, or real task-executi
 model workflow was run. Claude Code was separately launched as the requested
 reviewer with model claude-fable-5 and read-only file tools; it has no authority to
 change the repo or contact project services. Review evidence is under
-`/Users/yuechen/Library/Caches/hafleet-review/2026-09-05/`.
+`<local-evidence>/hafleet-review/2026-09-05/`.
 
 Claude Code Fable completed its independent static review successfully. Its original
 output is preserved in [the Fable review](reviews/2026-09-05-claude-fable-review.md).
@@ -1213,7 +1213,7 @@ borrower work task remains the next manual validation step.
 ## Parallel Matrix admin Web App started — 2026-09-06
 
 At the operator's explicit request, delegated implementation to `palpo_admin_app`
-in the independent `/Users/yuechen/home/palpo-admin-web` worktree on
+in the independent `~/home/palpo-admin-web` worktree on
 `feat/hafleet-admin-web`. The agent located no local Palpo source, cloned upstream
 at 3e4fbd33 and is implementing an initial `web-admin/` service against Palpo's actual
 admin/Matrix APIs using the existing proposed HAFleet onboarding requirements.
@@ -1282,7 +1282,7 @@ subtask. Protocol details are in `docs/design/palpo-fleet-protocol-v1.md`.
   agent-prefix/import mismatch is being fixed before testing admission.
 - Private evidence and credentials are under the operator cache
   `palpo-admin-e2e/2026-09-06`; source deployment artifacts live in
-  `/Users/yuechen/home/palpo-admin-web/web-admin/deploy/`. Existing manual HAFleet
+  `~/home/palpo-admin-web/web-admin/deploy/`. Existing manual HAFleet
   runtime18193 and native Robrix remain separate. This is not full acceptance.
 
 ## 2026-09-06 — Imported fleet naming blocker closed
@@ -1899,7 +1899,7 @@ URLs pass again, and Playwright opens the real room and its thread successfully.
 Reverse callback TCP connectivity also returns the bridge's authentication403
 (reachability evidence, not an unauthenticated health-check success).
 
-Service: /Users/yuechen/Library/LaunchAgents/com.hafleet.mini1-tunnel.plist.
+Service: ~/Library/LaunchAgents/com.hafleet.mini1-tunnel.plist.
 Private cache evidence: mini1-history-connectivity-recovery.json,
 mini1-tunnel-restart-test.json and mini1-recovered-history-browser.png.
 
@@ -7020,7 +7020,7 @@ Final strict lifecycle passed 8/8: the explicit 31-path boundary and seven selec
 each with exactly one actual passing test and no failed/ignored tests in stdout.
 This is a disclosed feature-adapted lifecycle, not unmodified stock agent-spec.
 The external wrapper at
-`/Users/yuechen/Library/Caches/hagency-rust-migration/2026-09-10/console-tools/run`
+`<local-evidence>/hagency-rust-migration/2026-09-10/console-tools/run`
 has SHA256 `f8fff88eb7382abdf1a5e509f08298414c208d17ae35db64bcc1d6ad3b675e62`.
 For each bound selector it invokes the actual Cargo command
 `cargo test --locked -p hagency --features native-console-browser -q <selector>`.
@@ -7336,7 +7336,7 @@ remain linted. A real ESLint regression proves both exclusions and rejection of
 an undefined identifier in native/scripts; the full identifier test file passes
 8/8. This fixes artifact traversal, without suppressing the source rule. The
 original failure, source-independent integrated results and corrected checks are
-retained under `~/Library/Caches/hagency-rust-migration/2026-09-10/`.
+retained under `<local-evidence>/hagency-rust-migration/2026-09-10/`.
 
 The task contract is parsed/linted and its explicit boundaries are checked by
 agent-spec. Its Cargo-only lifecycle cannot execute these Vitest bindings, so
@@ -7397,7 +7397,7 @@ three HTTPS selectors then passed. Dependency setup initially attempted a missin
 workspace rusqlite entry; it now uses the same pinned0.37.0 bundled SQLite as the
 store, dev-only, without upgrading any lockfile package. Package-wide, lint and
 strict lifecycle results will be recorded after their original runs. Evidence:
-`~/Library/Caches/hagency-rust-migration/2026-09-10/catalog-*`. Native executable
+`<local-evidence>/hagency-rust-migration/2026-09-10/catalog-*`. Native executable
 service ownership/wiring and full M5 acceptance remain separate and unfinished.
 
 
@@ -7952,7 +7952,7 @@ client qualification and ongoing identity/key management remain separate.
   test prints nothing else). Second occurrence of this selector on hosted
   Ubuntu. Recorded, not changed; the fixture should print the operation
   report when the notice channel closes before it is treated further.
-- Operator Windows VM (`54.156.69.166`, Server 2025, 4 vCPU, 16 GB, Defender
+- Operator Windows VM (`<windows-vm>`, Server 2025, 4 vCPU, 16 GB, Defender
   on, MSVC 2022 Build Tools, Rust 1.95.0 MSVC): every `hagency` test target
   at `94c1177` ran four times under eight test threads with no shutdown
   stall (0 of 4 failed), so the package-level probe does not reproduce on

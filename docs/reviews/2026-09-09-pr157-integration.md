@@ -36,5 +36,5 @@ palpo-im/palpo. No upstream Palpo merge is claimed. PR 374 has conflicts and a
 failed Complement check; PR 349 also conflicts.
 
 Raw commands, verification logs, PR state and merge receipts are retained under
-~/Library/Caches/hagency-review-closure/2026-09-09/pr157-merge/. The operator's
+<local-evidence>/hagency-review-closure/2026-09-09/pr157-merge/. The operator's
 independent website coordination changes remain outside the integration commits.

@@ -56,6 +56,6 @@ The native homeserver's deployed image remains unchanged.
 
 Logs, original dirty-document snapshots and restoration fragments are preserved
 outside Git under
-`/Users/yuechen/Library/Caches/palpo-admin-e2e/2026-09-06/commit-merge-20260909/`.
+`<local-evidence>/palpo-admin-e2e/2026-09-06/commit-merge-20260909/`.
 The source checkout has no provisioned task-writer; no canonical task transition
 was invented.

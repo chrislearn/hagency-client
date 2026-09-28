@@ -38,14 +38,14 @@ renamed. Authorization, capacity and manual approval are unchanged.
 
 ## Deployment and evidence
 
-Palpo source: /Users/yuechen/home/palpo-account-approval-20260909.
+Palpo source: ~/home/palpo-account-approval-20260909.
 Mini1 web image: palpo-web-admin:136171fcade9cd56.
 The existing account-approval configuration and credentials were retained.
-Hagency source: /Users/yuechen/home/hagency-outbound-20260908. Backend and bridge
+Hagency source: ~/home/hagency-outbound-20260908. Backend and bridge
 restarted after all63 existing dispatches were complete; they retained runtime
 state and their outbound transport. Palpo Rust and Robrix needed no code changes.
 
-Evidence: /Users/yuechen/Library/Caches/palpo-admin-e2e/2026-09-06/unicode-agent-names-20260909.
+Evidence: <local-evidence>/palpo-admin-e2e/2026-09-06/unicode-agent-names-20260909.
 This contains live-browser-proof.json, hagency-pending-proof.json, screenshots,
 test/lifecycle logs, the previous Hagency module and deployment rollback metadata.
 Source changes are uncommitted; no merge or push was performed. The workspace

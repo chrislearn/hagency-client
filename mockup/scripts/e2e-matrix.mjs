@@ -20,7 +20,7 @@
  * has the same shape and the same reason.
  *
  * Run:
- *   ssh -f -N -L 8008:127.0.0.1:8008 cloud@<mini1>     # tunnel to the homeserver
+ *   ssh -f -N -L 8008:127.0.0.1:8008 <user>@<mini1>     # tunnel to the homeserver
  *   HAGENCY_REQUESTER_TOKEN=… node scripts/e2e-matrix.mjs
  *
  * Env:

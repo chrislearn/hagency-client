@@ -1,7 +1,7 @@
 # TASK: bring octos's ACP implementation to parity
 
 **Repo to change:** the octos Rust workspace (not Hagency). Reference checkout used
-while writing this: `/Users/yuechen/home/octos` @ `34030c2ec`, v2.0.2-rc.13.
+while writing this: `~/home/octos` @ `34030c2ec`, v2.0.2-rc.13.
 **Independent of:** any Hagency-side ui-protocol work. Nothing here blocks on that.
 **Audience:** an agent who has not seen this investigation.
 

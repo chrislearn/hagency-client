@@ -11,7 +11,7 @@
  *   registration url   how the HOMESERVER dials the edge. Loopback, because co-located is the point.
  *
  * The console pre-filled the registration with the first one. On the walkthrough that produced
- * `url: "http://69.194.3.128:8097"` in the file installed on the customer's homeserver, while the edge —
+ * `url: "http://<edge-host>:8097"` in the file installed on the customer's homeserver, while the edge —
  * bound to loopback, as it should be — printed `put this in the registration: url: http://127.0.0.1:8097`.
  * The homeserver never called. And `POST .../verify` answered **accepted**, because verification exercises
  * the OUTBOUND direction only: Hagency could act as the representative perfectly well. So every screen said

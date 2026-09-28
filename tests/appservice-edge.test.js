@@ -166,7 +166,7 @@ describe('what the doorway refuses', () => {
      * THE TWO ADDRESSES THAT GOT CONFLATED, and it produced a silent dead inbound path.
      *
      * Walked on a clean pair of machines: the console pre-filled the registration with `HAGENCY_EDGE_URL`
-     * (`http://69.194.3.128:8097`, how Hagency reaches this edge) while the edge, bound to loopback, printed
+     * (`http://<edge-host>:8097`, how Hagency reaches this edge) while the edge, bound to loopback, printed
      * `put this in the registration: url: http://127.0.0.1:8097`. The homeserver could not reach a public IP
      * that nothing listened on, so it never called — and `verify` still answered `accepted`, because
      * verification proves the OUTBOUND direction only. Every screen said the customer was onboarded; the

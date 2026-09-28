@@ -72,7 +72,7 @@ operator resume and explicit follow-up, the exact original command reused the
 rule successfully. Initial logs are preserved, not relabeled as passes.
 
 Evidence root:
-`~/Library/Caches/palpo-admin-e2e/2026-09-06/`
+`<local-evidence>/palpo-admin-e2e/2026-09-06/`
 
 - `execution-auth-live/`: native card, saved/revoked rule screenshots, sentinel,
   isolated real YOLO report.

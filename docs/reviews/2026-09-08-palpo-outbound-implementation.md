@@ -13,7 +13,7 @@ a claim that every Hagency feature or historical UI check passes.
 | Matrix client API, including Robrix homeserver | `https://crew.ominix.io:19443` |
 | Local Hagency console | `http://127.0.0.1:13202` |
 | Hagency backend | Local loopback `18194` |
-| Hagency backend, bridge and console source | `/Users/yuechen/home/hagency-outbound-20260908` |
+| Hagency backend, bridge and console source | `~/home/hagency-outbound-20260908` |
 | Server-side Matrix relay | `http://palpo-web-admin-hfux-closure-20260906:8090/api/relay/v2/hf_82042a93a7734deeab65e02226608831` |
 
 The contributor bridge has no inbound Appservice listener. The owned
@@ -75,7 +75,7 @@ implemented.
 ## Verification
 
 All paths below refer to the checkout actually edited. Evidence directory:
-`/Users/yuechen/Library/Caches/palpo-admin-e2e/2026-09-06`.
+`<local-evidence>/palpo-admin-e2e/2026-09-06`.
 
 | Check | Actual result |
 |---|---|
@@ -181,6 +181,6 @@ coordinate Appservice URL, web data, Hagency credentials/runtime and routes as
 one deployment; do not replace just one side with stale authority. Secrets and
 downloaded configuration remain in protected operational files, outside Git.
 
-The original `/Users/yuechen/home/hagency` checkout and its concurrent website
+The original `~/home/hagency` checkout and its concurrent website
 changes were left intact. This source checkout has no provisioned `task-writer`,
 `docs/plan.md` or `docs/projects.md`; no canonical task status was invented.
