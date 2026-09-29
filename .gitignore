@@ -53,3 +53,7 @@ test-results.json
 # Native Rust build and isolated development state
 /target/
 /native/.state/
+
+# Test and peer scratch; never commit
+/tmp/
+mockup/tmp/
