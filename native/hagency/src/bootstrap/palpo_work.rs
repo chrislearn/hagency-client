@@ -130,10 +130,33 @@ impl Reader {
         })
     }
     async fn get(&self, segments: &[&str]) -> Result<Option<Value>, ()> {
+        self.call_as(&self.user, reqwest::Method::GET, segments, &[], None).await
+    }
+    /// One App Service request acting as `user` (a member of the fleet namespace).
+    async fn call_as(
+        &self,
+        user: &str,
+        method: reqwest::Method,
+        segments: &[&str],
+        query: &[(&str, &str)],
+        body: Option<Value>,
+    ) -> Result<Option<Value>, ()> {
         let mut url = self.origin.clone();
         url.path_segments_mut().map_err(|_| ())?.extend(segments);
-        url.query_pairs_mut().append_pair("user_id", &self.user);
-        let response = self.client.get(url).bearer_auth(&self.token).send().await.map_err(|_| ())?;
+        {
+            let mut pairs = url.query_pairs_mut();
+            pairs.append_pair("user_id", user);
+            for (k, v) in query {
+                pairs.append_pair(k, v);
+            }
+        }
+        let mut request = self.client.request(method, url).bearer_auth(&self.token);
+        if let Some(body) = body {
+            request = request
+                .header(reqwest::header::CONTENT_TYPE, "application/json")
+                .body(serde_json::to_vec(&body).map_err(|_| ())?);
+        }
+        let response = request.send().await.map_err(|_| ())?;
         if response.status() == StatusCode::NOT_FOUND {
             return Ok(None);
         }
@@ -294,6 +317,45 @@ async fn work_once(adapter: &Adapter, probes: &Probes, domain: &DomainStore, rea
     }
 }
 
+/// The fleet's approval bot accepts invites to private approval rooms (TS: the
+/// bridge bot's invite poll, `handleBotInvite`, which in audit mode accepts and
+/// lets the later verification decide). Accepted: an encrypted, invite-only
+/// room, invited by a local human outside the fleet's own namespace. Palpo then
+/// verifies the room holds exactly the owner and this bot.
+async fn approval_invites_once(reader: &Reader, bot: &str, fleet: &str, server: &str) {
+    let filter = r#"{"room":{"timeline":{"limit":0},"ephemeral":{"types":[]},"account_data":{"types":[]}},"presence":{"types":[]},"account_data":{"types":[]}}"#;
+    let Ok(Some(sync)) = reader
+        .call_as(bot, reqwest::Method::GET, &["_matrix", "client", "v3", "sync"], &[("timeout", "0"), ("filter", filter)], None)
+        .await
+    else {
+        return;
+    };
+    let Some(invites) = sync.pointer("/rooms/invite").and_then(Value::as_object) else { return };
+    for (room, invite) in invites {
+        let state = invite.pointer("/invite_state/events").and_then(Value::as_array).cloned().unwrap_or_default();
+        let find = |kind: &str| state.iter().find(|e| e.get("type").and_then(Value::as_str) == Some(kind));
+        let encrypted = find("m.room.encryption").and_then(|e| e.pointer("/content/algorithm")).and_then(Value::as_str)
+            == Some("m.megolm.v1.aes-sha2");
+        let invite_only = find("m.room.join_rules").and_then(|e| e.pointer("/content/join_rule")).and_then(Value::as_str)
+            == Some("invite");
+        let inviter = state
+            .iter()
+            .find(|e| e.get("type").and_then(Value::as_str) == Some("m.room.member")
+                && e.get("state_key").and_then(Value::as_str) == Some(bot))
+            .and_then(|e| e.get("sender").and_then(Value::as_str))
+            .unwrap_or_default();
+        let local_human = inviter.ends_with(&format!(":{server}")) && !inviter.starts_with(&format!("@{fleet}_"));
+        if !(encrypted && invite_only && local_human) {
+            eprintln!("palpo approval bot: leaving invite to {room} pending (encrypted={encrypted} invite_only={invite_only} inviter={inviter})");
+            continue;
+        }
+        let joined = reader
+            .call_as(bot, reqwest::Method::POST, &["_matrix", "client", "v3", "join", room], &[], Some(json!({})))
+            .await;
+        eprintln!("palpo approval bot: join {room} invited by {inviter}: {}", if joined.is_ok() { "ok" } else { "failed, retrying" });
+    }
+}
+
 /// Runs beside the transport lanes until cancelled.
 pub(super) async fn run(
     adapter: &Adapter,
@@ -308,7 +370,18 @@ pub(super) async fn run(
         eprintln!("palpo work: invalid homeserver in palpo-appservice.json; probes wait");
         return;
     };
+    let server = appservice.representative.split_once(':').map(|(_, s)| s.to_owned()).unwrap_or_default();
+    let bot = domain
+        .provisioning_registration(fleet.to_owned())
+        .await
+        .map(|r| r.approval_bot_mxid)
+        .unwrap_or_default();
+    let mut invites_due = std::time::Instant::now();
     while !cancel.is_cancelled() {
+        if !bot.is_empty() && std::time::Instant::now() >= invites_due {
+            approval_invites_once(&reader, &bot, fleet, &server).await;
+            invites_due = std::time::Instant::now() + Duration::from_secs(15);
+        }
         let matrix = matrix_once(adapter, probes, fleet, &appservice.representative, generation).await;
         let work = work_once(adapter, probes, domain, &reader, fleet).await;
         let pause = match (matrix, work) {
