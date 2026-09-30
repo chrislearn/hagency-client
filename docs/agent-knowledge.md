@@ -1175,6 +1175,87 @@ share the trusted backend options object; neither replaces the other. Canonical
 side lookup must retain the representative needed by outbound Matrix handling.
 See docs/reviews/2026-09-09-open-pr-integration.md for evidence.
 
+## Hagency interactive architecture (2026-09-08)
+
+The website now has `/en/architecture/` and `/zh-cn/architecture/`, implemented
+with @xyflow/react in an Astro React island. Four diagrams cover the complete
+system, Appservice registration, message delivery, and coding-agent runtimes.
+Typed graph data is in src/data/architecture.ts; bilingual protocol details are
+in src/data/architecture-content.ts. Keep static explanations available when
+JavaScript is disabled or the island fails. The diagram has no live API client.
+
+Reviewed source snapshots: HAFleet hagency-outbound-20260908 at 05dc46b, Palpo
+palpo-outbound-20260908 at 8a0908cd, and Robrix2 d5523276. Preserve the distinction
+between this local development baseline and published or deployed versions.
+Palpo homeserver sends AS transactions to its companion web relay; HAFleet
+initiates outbound HTTPS polling, ACK and updates with independent machine
+credentials plus generation. The existing connect-fleet guide now reflects this
+transport. AS tokens, real device credentials, web sessions and execution
+approvals remain distinct. Codex uses fresh App Server threads; ACP adapters,
+MCP tool calls and retained tmux transport have separate capabilities.
+
+Current website total: 62 localized content routes, 31 per language. Typecheck
+and build pass; all 17 Node/Playwright tests pass with zero skips. Native
+agent-spec 1.4 still reports one boundary pass and seven skipped Node scenarios;
+its overall result is non-passing. Active contract is
+specs/task-interactive-architecture.spec.md. Full verification, source evidence
+and lifecycle output live in the website docs. Preview remains 127.0.0.1:4328.
+
+
+## 2026-09-09 — Palpo public PR
+
+Palpo PR https://github.com/palpo-im/palpo/pull/428 publishes the HAFleet web
+companion, outbound transport and signup/retirement flows from local 3d63ae11,
+plus App Service database authentication and atomic callback URL updates.
+Branch feat/hafleet-web-admin-outbound at aa16b9ec is based on upstream 62fa8566
+and retains its namespace changes. Publication uses a fresh snapshot so local
+Mini1 operational records and deployment addresses stay in the original local
+checkout; public deployment is a generic Compose example. GitHub permission is
+now ADMIN. Original Palpo main remains clean at 3d63ae11; PR creation is not merge
+or deployment. Raw validation is under <local-evidence>/palpo-pr/2026-09-09/.
+
+## 2026-09-09 — Hagency is the sole runtime brand
+
+The operator requested a fresh rename without old-brand compatibility, then
+explicitly excluded generic fleet terminology. Use `hagency`, `HAGENCY_*`,
+`.hagency`, `/api/hagency`, `com.hagency.*` and `io.hagency.*`. Keep fleet
+variables, `hf_` registration IDs and `/api/fleet` endpoints unchanged. Do not
+add old-brand command aliases, configuration fallbacks or protocol redirects.
+The source repository is now https://github.com/hagency-org/hagency.
+
+The Hagency rename is local master commit `bdad5f9`. Palpo PR #428 now carries
+`c7c400e0` with matching event types and branding. Both applications need matching
+builds when deployed; live services have not been changed by the rename. The
+website is updated in its existing dirty tree; preserve earlier architecture work.
+Evidence and its pre-rename website snapshot live in
+`<local-evidence>/hagency-rename/2026-09-09/`. Root provisioned entry files and
+historical progress/capture evidence intentionally retain their provenance.
+
+
+## 2026-09-09 — Public merge and website deployment receipts
+
+The rename is now published: Hagency PR #159 merged into master at e927e46b;
+Palpo PR #428 merged into main at cbb1a9a9. The original local Palpo source and
+live deployments remain untouched; a merged repository is not a restarted
+service. Generic fleet terminology remains intentionally unchanged.
+
+The independent website repository is https://github.com/hagency-org/hagency-website,
+main at 34d5585. GitHub Pages serves https://hagency-org.github.io/hagency-website/,
+with en/ and zh-cn/ locales. .github/workflows/pages.yml validates local routes,
+then builds with SITE_URL set to that public repository path and validates the
+production prefix before deploying. src/data/site.ts asset()/url() must retain
+the Astro BASE_URL prefix for all internal routes and static assets. To verify
+the live site, build with that SITE_URL and run PUBLISHED_SITE set to the same
+public URL followed by node --test tests/pages.test.mjs.
+
+Clean cloud npm 11.19.0 found missing @emnapi/core and @emnapi/wasi-threads
+optional peer entries in the old npm 11.6 lock. Regenerating only the existing
+lock in a clean directory with npm 11.19.0 fixed it without version upgrades;
+keep npm ci as the deployment check. Final run 34432177782 deployed successfully,
+and all 62 public content routes plus interactive checks passed in Chromium.
+No application credentials or runtime connections are part of this static site.
+
+
 - **Console product presentation, 2026-09-09:** Diagnostic details are collapsed
   using native disclosures, while non-live data and execution policy remain
   explicit. Keep backend identities unchanged; raw stored Agent names are not
@@ -4839,3 +4920,62 @@ retained. This is not a full project or two-agent qualification pass. Progress
 records exact task/dispatch and private evidence. Investigate retained runtime
 and guardian observations before another live attempt; no historical cause is
 asserted. Preserve older unknown owners20841/18059/83315 too.
+
+
+- **Rust migration planning, 2026-09-09:** the operator selected Salvo and native
+  Windows, Linux and macOS. [The migration plan](design/hagency-rust-migration-plan.md)
+  maps shared behavior and platform adapters across ten phases, including helper
+  runtime dependencies, parity gates, crypto/state continuity and rollback limits.
+  This is a documentation deliverable; Rust implementation and runtime validation
+  have not started. Requirement: REQ-RUST-MIGRATION-PLAN.
+
+
+- **Console merge and Rust plan review, 2026-09-09:** PR #161 merged cleanup
+  `70312d1` as master `5dbef22`; CI4279passed/1skip/0failed. Local master is
+  synchronized and prior drafts preserved. Before Rust implementation, add
+  bounded background work/latency gates, explicit transaction ownership, early
+  Windows/Matrix encryption proofs and M7 integration dependencies. The draft
+  is unchanged; [review](reviews/2026-09-09-rust-migration-plan-review.md) records
+  planning gaps separately from implementation defects.
+
+## Rust port: restart behaviour (2026-09-21/22)
+
+- A clean stop fences nothing (ADR-047 amendment): the transport and the approval
+  room stay available, so the same state directory starts again at the same
+  generation, keeping sessions, queued work and the owner's `always` grants. Only
+  genuine negative Matrix evidence fences. The caller's own cancellation of a
+  read-only observation (whoami, sync, room state) is not evidence, for the
+  transport and for the room alike; a cancellation with a write in flight still
+  fences.
+- Inline factory agents come back after a restart (ADR-147 amendment, spec
+  `task-rust-factory-agent-reattach`): rebuilt read-only from the completion's
+  own receipt, the encrypted account custody (one GET whoami, never a register),
+  the replayed rooms custody, the existing SDK store and the reopened home; the
+  next task launches as an ordinary follow-up. An agent that cannot come back is
+  shown as `not_attached` and fails nothing else.
+- Live checks for both: `tools/restart-check.py [--when-refreshing]` and
+  `tools/post-round.py` in the private rig; a stop timed during a refresh is the
+  case that finds fences, an idle stop proves little.
+- Still open on the restart list: the retained product's thread notice for a
+  dispatch a restart settled as unknown; the owner-join wait; agents on
+  provider-managed accounts; a home after a task-client binary upgrade.
+
+- Live operator recovery (2026-09-22): the console orphan route needs the
+  instance served with `--console-assets`; the operator path is `hagency
+  console-access --manage-agent-lifecycle` -> `POST /console/session` (headers
+  `sec-fetch-site: same-origin`, `origin: http://127.0.0.1:<port>`, JSON
+  content-type, no authorization header) -> cookie `hagency_console` ->
+  `POST /console/api/agents/<engagement>/recover-dispatch` (body <= 8 KiB; the
+  replacement keeps the original resources byte-identical, drops the host-owned
+  inbox keys, carries a new instruction; the store re-attaches the inbox as
+  `recoveryInbox`). Rig: live tools dir `recover-live.py`; memory
+  `live-recover-dispatch-rig`.
+
+- Spec `Production caller:` lines are checked by
+  `native/scripts/check-production-callers.mjs` on every hosted lane; a wrong
+  impl name is `unresolved`, a fn only reached through another crate's field
+  is `missing`, a common method name (`handle`) is `ambiguous` — each fails
+  the lane. Name the wired root the checker already credits (fleet
+  `Service::reattach_known_agents`, runner route handlers) and re-run the
+  checker locally before pushing; look at every section, not just
+  `unknownGaps`.
