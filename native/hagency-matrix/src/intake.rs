@@ -590,6 +590,9 @@ impl Inner {
         // other refusal is the provision's own, as it would have been inline.
         if let Some(host) = &self.config.provisioning {
             host.resume_awaiting_owners(&self.domain, cancel).await?;
+            // A verdict given in the console reserved the engagement without a
+            // Matrix approval event: start its provisioning here.
+            host.resume_pending_provisions(&self.domain, cancel).await?;
         }
         // Capture current targets before acquiring a new remote response. A resumed
         // handoff uses only its original journal targets, regardless of a new plan.

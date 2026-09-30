@@ -455,6 +455,31 @@ impl TokenProvisioningHost {
         }
         Ok(still)
     }
+    /// Provision every engagement the operator approved outside Matrix (the
+    /// console verdict reserves and queues the effect but runs no account
+    /// step). One claim each, the same `account` the Matrix verdict runs inline;
+    /// an owner not yet joined is the ordinary non-terminal wait.
+    pub(crate) async fn resume_pending_provisions(
+        &self,
+        domain: &DomainStore,
+        cancel: &CancellationToken,
+    ) -> Result<usize, Error> {
+        let pending = domain
+            .pending_provisions(self.registration.fleet_id.clone())
+            .await
+            .map_err(|_| Error::Storage)?;
+        let mut started = 0;
+        for engagement in pending {
+            match self
+                .account(domain, &self.registration, &engagement, cancel)
+                .await
+            {
+                Ok(()) | Err(Error::AwaitingOwner) => started += 1,
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(started)
+    }
     pub(crate) async fn account(
         &self,
         domain: &DomainStore,

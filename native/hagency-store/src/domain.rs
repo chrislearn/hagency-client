@@ -2146,6 +2146,19 @@ impl DomainRepository {
         project::identifier(id, 128)?;
         self.claim_matching_effect(Some(id))
     }
+    /// The engagements of `fleet_id` approved but never provisioned: a pending
+    /// provision effect on a reserved engagement of the current registration
+    /// generation — exactly what `claim_matching_effect` would claim. A console
+    /// approval leaves these behind (TS provisioned on the operator's verdict,
+    /// backend-v2.js fulfillment); the host claims them on its next turn.
+    pub fn pending_provisions(&self, fleet_id: &str) -> Result<Vec<String>, Error> {
+        project::identifier(fleet_id, 128)?;
+        let mut statement = self.db.prepare(
+            "SELECT e.id FROM effects f JOIN engagements e ON e.id=f.engagement_id JOIN registrations r ON r.fleet_id=e.fleet_id WHERE e.fleet_id=?1 AND f.kind='provision' AND f.state='pending' AND e.state='reserved' AND e.generation=r.generation ORDER BY f.id LIMIT 16",
+        )?;
+        let rows = statement.query_map([fleet_id], |r| r.get(0))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
     fn claim_matching_effect(&mut self, expected: Option<&str>) -> Result<Option<Effect>, Error> {
         let tx = self
             .db

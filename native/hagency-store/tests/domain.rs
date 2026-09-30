@@ -8,6 +8,29 @@ use hagency_core::{
 use hagency_store::{DomainRepository, DomainStore, EffectOutcome, EffectState, Error};
 use serde_json::json;
 
+/// A console verdict reserves the engagement and queues its provision effect
+/// without claiming it; the host reads that backlog on its next turn and it
+/// leaves the list the moment the effect is claimed.
+#[test]
+fn native_console_approval_leaves_a_pending_provision() {
+    let (_dir, mut db) = setup();
+    let pool = resource("console_account", "console_seat", 100);
+    db.put_resource(&pool).unwrap();
+    let request = request("console_one", "Console", &pool, 40);
+    let proof = proof(&request);
+    let fleet = registration().fleet_id;
+    db.admit(&proof, 1000).unwrap();
+    assert!(db.pending_provisions(&fleet).unwrap().is_empty());
+    db.approve("console_approve", &proof, 1000).unwrap();
+    let engagement = request.engagement_id().unwrap();
+    assert_eq!(db.pending_provisions(&fleet).unwrap(), vec![engagement.clone()]);
+    assert!(db.pending_provisions("hf_other_fleet").unwrap().is_empty());
+    db.claim_effect_for(&format!("provision_{engagement}"))
+        .unwrap()
+        .unwrap();
+    assert!(db.pending_provisions(&fleet).unwrap().is_empty());
+}
+
 #[tokio::test]
 async fn native_provision_account_current_scope() {
     let (dir, mut db) = setup();
