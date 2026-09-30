@@ -459,6 +459,27 @@ async fn native_matrix_rejection_custody_missing_sdk_coverage_and_identity_failu
     fake.close().await;
 }
 
+/// ADR-183: a homeserver that cannot be read (a restart answering 503, a
+/// gateway error) is not evidence about the incarnation. Intake fails for this
+/// pass and the transport stays available for the next one; an identity
+/// mismatch (above) still fences.
+#[tokio::test]
+async fn native_matrix_unreachable_homeserver_does_not_fence() {
+    let (f, mut fake, c) = ready(false).await;
+    let cancel = CancellationToken::new();
+    let (result, ()) = common::scripted(c.intake(plan(), &cancel), async {
+        fake.next()
+            .await
+            .json(503, json!({"errcode":"M_UNKNOWN","error":"homeserver restarting"}));
+    })
+    .await;
+    assert_eq!(result, Err(Error::Remote(503)));
+    assert!(f.available().await, "an unreachable homeserver fences nothing");
+    c.close().await.unwrap();
+    f.store.shutdown().await.unwrap();
+    fake.close().await;
+}
+
 async fn alter_journal(f: &common::Fixture, alter: impl FnOnce(&mut Value)) {
     use matrix_sdk_base::StateStore;
     use matrix_sdk_sqlite::{SqliteStateStore, SqliteStoreConfig};

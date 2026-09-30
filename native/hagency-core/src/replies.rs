@@ -81,6 +81,10 @@ pub struct OwnerRoomFacts {
 
 /// An authenticated adapter must record loss/absence of room evidence. This is
 /// a negative observation, never permission to infer a new privacy classification.
+/// The invalidation reason for a room whose full-state READ failed: transient
+/// evidence about the transport, which a later complete observation clears.
+pub const OBSERVATION_FAILED: &str = "Matrix full-state observation failed";
+
 #[derive(Clone, Serialize)]
 pub struct MatrixRoomInvalidation {
     pub engagement_id: String,

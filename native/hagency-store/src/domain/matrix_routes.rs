@@ -334,14 +334,14 @@ impl DomainRepository {
         }
         let privacy = serialize(&input.privacy)?;
         let joined = serialize(&input.joined)?;
-        let prior: Option<(u64,bool,bool,bool)>=tx.query_row(
-            "SELECT generation,available,registration_generation=?5 AND owner_mxid=?6 AND privacy=?7 AND encrypted=?8 AND invite_only=?9 AND direct_sender IS NULL,joined=?10 FROM matrix_room_scopes WHERE server_name=?1 AND room_id=?2 AND fleet_id=?3 AND project_id=?4",
+        let prior: Option<(u64,bool,bool,bool,Option<String>)>=tx.query_row(
+            "SELECT generation,available,registration_generation=?5 AND owner_mxid=?6 AND privacy=?7 AND encrypted=?8 AND invite_only=?9 AND direct_sender IS NULL,joined=?10,invalidation FROM matrix_room_scopes WHERE server_name=?1 AND room_id=?2 AND fleet_id=?3 AND project_id=?4",
             params![c.registration.server_name,input.room_id,c.registration.fleet_id,c.project,c.registration.generation,c.owner,privacy,input.encrypted,input.invite_only,joined],
-            |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional()?;
+            |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).optional()?;
         let mut observed = input.clone();
         match (prior, expected) {
             (None, None) if input.generation == 1 => {}
-            (Some((generation, true, true, same_members)), Some(expected))
+            (Some((generation, true, true, same_members, _)), Some(expected))
                 if expected.available
                     && expected.generation == generation
                     && input.generation == generation =>
@@ -351,6 +351,20 @@ impl DomainRepository {
                 } else {
                     generation.checked_add(1).ok_or(Error::Capacity)?
                 };
+            }
+            // A room retired only because a read of its state FAILED (a
+            // homeserver restart, a network drop) is not a verdict about the
+            // room: a fresh complete observation of that exact retired
+            // generation re-validates it at the next generation, through the
+            // same validator below. A room retired for an authority change
+            // (owner left, unsafe member) still needs a human.
+            (Some((generation, false, _, _, Some(reason))), Some(expected))
+                if reason == hagency_core::replies::OBSERVATION_FAILED
+                    && !expected.available
+                    && expected.generation == generation
+                    && input.generation == generation =>
+            {
+                observed.generation = generation.checked_add(1).ok_or(Error::Capacity)?;
             }
             _ => return Err(Error::Generation),
         }

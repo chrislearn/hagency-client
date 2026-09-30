@@ -154,6 +154,46 @@ fn count(db: &rusqlite::Connection, table: &str) -> u64 {
         .unwrap()
 }
 
+/// A shared project room retired by a failed observation is republished by the
+/// next complete observation at the next generation; a stale view is not.
+#[test]
+fn native_retired_group_room_is_republished_by_a_fresh_observation() {
+    let mut f = Fixture::new(false, None);
+    let prior =
+        f.db.matrix_room_state(&f.engagement, &f.room.room_id)
+            .unwrap()
+            .unwrap();
+    f.db.invalidate_matrix_room(&MatrixRoomInvalidation {
+        engagement_id: f.engagement.clone(),
+        registration_generation: 1,
+        transport_generation: 1,
+        room_id: f.room.room_id.clone(),
+        generation: prior.generation + 1,
+        reason: "Matrix full-state observation failed".into(),
+    }, 1009)
+    .unwrap();
+    let retired =
+        f.db.matrix_room_state(&f.engagement, &f.room.room_id)
+            .unwrap()
+            .unwrap();
+    assert!(!retired.available);
+    assert!(matches!(
+        f.db.refresh_matrix_group_room(&f.room, Some(&prior), 1010),
+        Err(Error::Generation)
+    ), "a view older than the retirement cannot republish");
+    let mut input = f.room.clone();
+    input.generation = retired.generation;
+    let observed =
+        f.db.refresh_matrix_group_room(&input, Some(&retired), 1011)
+            .unwrap();
+    assert_eq!(observed.generation, retired.generation + 1);
+    let current =
+        f.db.matrix_room_state(&f.engagement, &f.room.room_id)
+            .unwrap()
+            .unwrap();
+    assert!(current.available && current.generation == observed.generation);
+}
+
 #[tokio::test]
 async fn native_factory_group_generation() {
     let mut f = Fixture::new(false, None);

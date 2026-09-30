@@ -412,6 +412,24 @@ impl Inner {
         observation::primary(error.clone());
         Err(error)
     }
+    /// The homeserver could not be read (a restart, a dropped connection, a
+    /// gateway error): no evidence about the incarnation at all. An identity
+    /// mismatch, an authentication rejection or an unknown local custody
+    /// outcome IS evidence and keeps its fence.
+    pub(crate) fn unreachable(error: &Error) -> bool {
+        matches!(
+            error,
+            Error::Timeout
+                | Error::Transport
+                | Error::Redirect
+                | Error::Headers
+                | Error::BodyTooLarge
+                | Error::InvalidJson
+                | Error::Busy
+                | Error::Remote(500..=599)
+                | Error::Remote(429)
+        )
+    }
     /// The pre-ADR-183 read fence, still used by the intake path: a refused
     /// read retires the incarnation unless it was the caller's own
     /// cancellation. Carrying `refused_read` there is the next slice's.
@@ -420,7 +438,10 @@ impl Inner {
         expected: MatrixTransportObservation,
         error: Error,
     ) -> Result<T, Error> {
-        if error == Error::Cancelled {
+        // ADR-183: a homeserver that could not be read is not evidence about
+        // this incarnation; the last complete batch stands and the next pass
+        // reads again. Everything else keeps the original fence.
+        if error == Error::Cancelled || Self::unreachable(&error) {
             #[cfg(test)]
             observation::primary(error.clone());
             return Err(error);
@@ -562,17 +583,28 @@ impl Inner {
         } else {
             None
         };
+        // ADR-183: a read that FAILED is not evidence about the room (a
+        // homeserver restart, a dropped connection); the last complete
+        // observation stands and the next pass reads again. Only a snapshot
+        // that was received and then refused below retires the room.
+        observe!(RoomHttp);
+        let read = match self
+            .http
+            .request(
+                &["_matrix", "client", "v3", "rooms", &target.room_id, "state"],
+                None,
+                cancel,
+            )
+            .await
+            .and_then(|response| response.success())
+        {
+            Err(error) if error == Error::Cancelled || Self::unreachable(&error) => {
+                return self.refused_read(error).await;
+            }
+            read => read,
+        };
         let result = async {
-            observe!(RoomHttp);
-            let state = self
-                .http
-                .request(
-                    &["_matrix", "client", "v3", "rooms", &target.room_id, "state"],
-                    None,
-                    cancel,
-                )
-                .await?
-                .success()?;
+            let state = read?;
             // Representable unsafe membership/privacy must reach the domain's
             // shared-room invalidation path rather than becoming a local-only error.
             let (mut observation, facts) = self.room(target, state)?;
@@ -635,7 +667,7 @@ impl Inner {
                     transport_generation: t.generation,
                     room_id: target.room_id.clone(),
                     generation: prior.generation.checked_add(1).ok_or(Error::Capacity)?,
-                    reason: "Matrix full-state observation failed".into(),
+                    reason: hagency_core::replies::OBSERVATION_FAILED.into(),
                 })
                 .await
             {

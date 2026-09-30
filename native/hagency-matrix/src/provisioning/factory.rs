@@ -484,10 +484,24 @@ impl TokenProvisioningHost {
             .map_err(|_| Error::OutcomeUnknown)?;
         *custody.runtime.lock().await = Some(runtime);
         let rooms = self.rooms.as_ref().ok_or(Error::Config)?;
+        // Re-attach continues the stored transport incarnation, or opens the
+        // next one when that incarnation was fenced (a failed room read or
+        // refresh retires it, and the store admits only generation + 1 after
+        // that). After a restart no worker of the fenced incarnation is alive,
+        // so the same account and device continue under the new generation.
+        let generation = match domain.matrix_transport_state(effect.engagement_id.clone()).await? {
+            Some(state) if !state.available => state
+                .observation
+                .generation
+                .checked_add(1)
+                .ok_or(Error::Capacity)?,
+            Some(state) => state.observation.generation,
+            None => 1,
+        };
         let collector = account
             .reattach_collector(
                 &rooms.representative,
-                1,
+                generation,
                 self.key,
                 rooms.anchors.clone(),
                 cancel,
