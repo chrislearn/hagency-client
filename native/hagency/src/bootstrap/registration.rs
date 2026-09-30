@@ -27,6 +27,15 @@ pub enum Command {
     /// Bind the fleet reception room from a verified probe event, replacing
     /// the offline step (TS parity: `lib/fleet-protocol.js:132-153`).
     Probe(super::probe::BindArgs),
+    /// Import the fleet configuration the owner downloaded from Palpo ("My
+    /// HAgency access" → Download): the fleet registration row (reception
+    /// unbound until Palpo's connection probe), the outbound transport
+    /// credential and the App Service tokens. Run with the service stopped.
+    Import {
+        /// Path to the downloaded JSON file.
+        #[arg(long)]
+        file: PathBuf,
+    },
 }
 
 pub fn run(state: &Path, command: Command) -> Result<(), hagency_store::Error> {
@@ -59,6 +68,22 @@ pub fn run(state: &Path, command: Command) -> Result<(), hagency_store::Error> {
             // generation, no-op on identical content, rotate and reconcile on an
             // advance. Nothing here softens or pre-empts it.
             domain.register(&registration)
+        }
+        Command::Import { file } => {
+            drop(domain);
+            drop(_custody);
+            let imported = super::palpo_import::run(state, &file).map_err(|error| {
+                eprintln!("Error: {error}");
+                hagency_store::Error::Invalid(hagency_core::InvalidInput("palpo import refused"))
+            })?;
+            println!(
+                "{}",
+                serde_json::json!({"imported": true, "fleetId": imported.fleet_id,
+                    "serverName": imported.server_name, "representative": imported.representative,
+                    "approvalBot": imported.approval_bot, "endpoint": imported.endpoint,
+                    "reception": "unbound until Palpo's Verify connection"})
+            );
+            Ok(())
         }
         Command::Probe(args) => super::probe::run(state, args)
             .map_err(|_| hagency_store::Error::Invalid(hagency_core::InvalidInput("probe refused"))),

@@ -322,6 +322,10 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                     )?;
                     println!("{}", serde_json::json!({"ok": true}));
                 }
+                // Offline like `register`: the service must be stopped.
+                command @ hagency::bootstrap::registration::Command::Import { .. } => {
+                    hagency::bootstrap::registration::run(&state_dir, command)?;
+                }
             }
         }
         Command::SideRegistration {

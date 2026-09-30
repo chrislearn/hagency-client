@@ -45,7 +45,12 @@ impl Registration {
             || self.generation == 0
             || self.generation > JSON_SAFE_MAX
             || <&ServerName>::try_from(self.server_name.as_str()).is_err()
-            || !valid_room(&self.reception_room_id, &self.server_name)
+            // Empty = not bound yet: an imported Palpo fleet has no reception
+            // until its first verified probe binds one (TS lib/fleet-protocol.js
+            // sets receptionRoomId only in the probe). A request can never match
+            // an empty reception, so an unbound fleet admits no request.
+            || !(self.reception_room_id.is_empty()
+                || valid_room(&self.reception_room_id, &self.server_name))
             || !valid_user(&self.representative_mxid, &self.server_name)
             || !valid_user(&self.approval_bot_mxid, &self.server_name)
             || self.representative_mxid

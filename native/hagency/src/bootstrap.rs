@@ -10,6 +10,7 @@ pub mod invites;
 pub(crate) mod palpo;
 pub mod provision;
 pub mod probe;
+pub mod palpo_import;
 pub mod registration;
 pub(crate) mod workspace;
 use approval::Pump;
