@@ -961,9 +961,13 @@ impl DomainRepository {
             .map(serde_json::from_str::<Value>)
             .transpose()?
             .is_some_and(|value| value.get("resource").is_some());
+        // A local provider login is bound by its seat: every resource configured
+        // on that seat (a console copy with another model or ceiling included)
+        // runs through the same login; the run's model and reasoning come from
+        // the dispatch's own resource.
         for candidate in candidates {
             if let Some(profile) = profile.filter(|_| resource_restricted) {
-                let matches:bool=tx.query_row("SELECT json_extract(?2,'$.resource') IS NULL OR EXISTS(SELECT 1 FROM runner_dispatches d JOIN runner_sessions s ON s.id=d.session_id JOIN effects e ON e.engagement_id=s.engagement_id WHERE d.id=?1 AND e.kind='provision' AND e.state='complete' AND json_extract(e.payload,'$.resource.presetId')=json_extract(?2,'$.resource.preset') AND json_extract(e.payload,'$.resource.seatId')=json_extract(?2,'$.resource.seat'))",
+                let matches:bool=tx.query_row("SELECT json_extract(?2,'$.resource') IS NULL OR EXISTS(SELECT 1 FROM runner_dispatches d JOIN runner_sessions s ON s.id=d.session_id JOIN effects e ON e.engagement_id=s.engagement_id WHERE d.id=?1 AND e.kind='provision' AND e.state='complete' AND json_extract(e.payload,'$.resource.seatId')=json_extract(?2,'$.resource.seat'))",
                     params![candidate,profile],|row|row.get(0))?;
                 if !matches {
                     continue;

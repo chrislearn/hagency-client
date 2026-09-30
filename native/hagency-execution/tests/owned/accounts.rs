@@ -59,7 +59,9 @@ async fn native_local_codex_host() {
         }
         let report = operation.wait().await.unwrap();
         match choice {
-            "selected" => {
+            // The local login is its seat: a binding naming another preset on
+            // the same seat (a console copy of the resource) runs the same way.
+            "selected" | "preset" => {
                 assert_eq!(report.protocol, Protocol::Completed, "{:?}", report.failure);
                 assert_eq!(report.failure, None);
                 let observation: serde_json::Value = serde_json::from_slice(

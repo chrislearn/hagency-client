@@ -94,10 +94,11 @@ impl LocalCodex {
             .restrict_resource(self.preset.clone(), self.seat.clone())
             .map_err(|_| Failure::Admission)
     }
+    /// The login is the seat: any codex resource configured on this seat is
+    /// served (a console copy differs in preset, model or ceiling only).
     pub(crate) fn admit(&self, scope: &OwnedDispatchScope) -> Result<(), Failure> {
         self.check()?;
         if scope.requires_managed_account()
-            || scope.resource().preset_id != self.preset
             || scope.resource().seat_id != self.seat
             || scope.resource().framework != "codex"
             || scope
@@ -116,7 +117,6 @@ impl LocalCodex {
     ) -> Result<(), Failure> {
         self.check()?;
         if scope.requires_managed_account()
-            || scope.resource().preset_id != self.preset
             || scope.resource().seat_id != self.seat
             || scope.resource().framework != "codex"
             || scope

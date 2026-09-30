@@ -455,7 +455,9 @@ fn native_owned_claim_resource_binding() {
     let mut f = Fixture::new();
     f.queue("selected", "work");
     let profile = f.profile("DEVICE_1", RoomPrivacy::Group {});
-    for (preset, seat) in [("foreign", "seat"), ("pool", "foreign")] {
+    // A local provider login is its seat: a foreign seat is never claimed,
+    // whatever the preset.
+    for (preset, seat) in [("foreign", "foreign"), ("pool", "foreign")] {
         let wrong = profile
             .clone()
             .restrict_resource(preset.into(), seat.into())
@@ -482,8 +484,10 @@ fn native_owned_claim_resource_binding() {
         .unwrap(),
         "queued"
     );
+    // The same seat under another preset (a console copy of the resource with
+    // another model or ceiling) is served by the same login.
     let selected = profile
-        .restrict_resource("pool".into(), "seat".into())
+        .restrict_resource("copied_preset".into(), "seat".into())
         .unwrap();
     assert!(
         selected
@@ -492,7 +496,7 @@ fn native_owned_claim_resource_binding() {
             .is_err()
     );
     let selected = selected
-        .restrict_resource("pool".into(), "seat".into())
+        .restrict_resource("copied_preset".into(), "seat".into())
         .unwrap();
     let cap =
         f.db.claim_owned_dispatch_for_host(&selected, "host", 2000, 60_000, 60_000, 1)
