@@ -214,12 +214,12 @@ async fn bind(
         .await?;
     let bound = decide(&registration, Some(&receipt), &body, &event, &room_state)
         .map_err(Error::Probe)?;
-    // TS:148-151 — set receptionRoomId on the fleet record and commit. The
-    // store's `register` keeps its contract whole: identical-content no-op,
-    // generation and reconcile handled inside the sole writer.
-    let mut next = registration;
-    next.reception_room_id = bound.source_room_id.clone();
-    domain.register(&next).map_err(|_| Error::Store)?;
+    // TS:148-151 — set receptionRoomId on the fleet record and commit. Binding
+    // is not a rotation, so it is the store's `bind_reception`, not `register`
+    // (which refuses changed content at the same generation).
+    domain
+        .bind_reception(&registration.fleet_id, registration.generation, &bound.source_room_id)
+        .map_err(|_| Error::Store)?;
     Ok(bound.source_room_id)
 }
 

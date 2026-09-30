@@ -39,7 +39,7 @@ pub use attempt_events::{
     AttemptClock, AttemptClockRow, AttemptEvent, AttemptEventRow, AttemptPhase,
     OVER_BUDGET_NOTICE_KIND, OverBudgetNotice, over_budget_notice_body,
 };
-pub use catalog_publication::PublishedCatalog;
+pub use catalog_publication::{PublishedCatalog, publication_fingerprint};
 mod ceiling_alerts;
 pub use ceiling_alerts::{
     ALERT_SEVERITIES, ALERT_SOURCES, ALERT_STATUSES, ALERT_SUPPRESS_DEFAULT_MS, AlertListFilter,
@@ -1094,6 +1094,42 @@ impl DomainRepository {
         tx.execute("INSERT INTO registrations(fleet_id,generation,config) VALUES(?1,?2,?3) ON CONFLICT(fleet_id) DO UPDATE SET generation=excluded.generation,config=excluded.config",
             params![registration.fleet_id,registration.generation,serialize(registration)?])?;
         graphs::reconcile(&tx, graphs::now_ms()?)?;
+        matrix_routes::reconcile(&tx, graphs::now_ms()?)?;
+        tx.commit()?;
+        Ok(())
+    }
+    /// Bind the fleet's reception room after a verified connection probe (TS
+    /// lib/fleet-protocol.js sets `receptionRoomId` on the fleet record). This is
+    /// not a rotation: same generation, only an unbound reception may be set,
+    /// and a different already-bound reception is a conflict.
+    pub fn bind_reception(&mut self, fleet_id: &str, generation: u64, room: &str) -> Result<(), Error> {
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let previous: String = tx
+            .query_row(
+                "SELECT config FROM registrations WHERE fleet_id=?1",
+                [fleet_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or(Error::NotFound)?;
+        let mut registration: Registration = serde_json::from_str(&previous)?;
+        if registration.generation != generation {
+            return Err(Error::Generation);
+        }
+        if registration.reception_room_id == room {
+            return Ok(());
+        }
+        if !registration.reception_room_id.is_empty() {
+            return Err(Error::Conflict);
+        }
+        registration.reception_room_id = room.to_owned();
+        registration.validate()?;
+        tx.execute(
+            "UPDATE registrations SET config=?2 WHERE fleet_id=?1",
+            params![fleet_id, serialize(&registration)?],
+        )?;
         matrix_routes::reconcile(&tx, graphs::now_ms()?)?;
         tx.commit()?;
         Ok(())

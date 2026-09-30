@@ -7,6 +7,15 @@ const PER_ROLE: usize = 200;
 // independently checks its exact final encoded body against the existing 1 MiB.
 const MAX_BODY: usize = 1024 * 1024 - 512;
 
+/// The fleet identity the Palpo publication lane is bound to. The reception
+/// room is excluded: Palpo's connection probe binds it while the transport is
+/// running (TS lib/fleet-protocol.js), and that binding is not a rotation.
+pub fn publication_fingerprint(registration: &Registration) -> Result<String, Error> {
+    let mut unbound = registration.clone();
+    unbound.reception_room_id = String::new();
+    Ok(canonical::digest(&serde_json::to_value(&unbound)?)?)
+}
+
 pub struct PublishedCatalog {
     body: Value,
 }
@@ -38,7 +47,7 @@ fn registration(db: &Connection, identity: &RegistrationIdentity) -> Result<Regi
     current.validate()?;
     if current.fleet_id != identity.fleet_id
         || current.generation != identity.registration_generation
-        || canonical::digest(&serde_json::to_value(&current)?)? != identity.registration_fingerprint
+        || publication_fingerprint(&current)? != identity.registration_fingerprint
     {
         return Err(Error::Generation);
     }

@@ -1,6 +1,6 @@
 //! One service-owned outbound adapter; no registration or execution authority.
 use super::{Failure, config::read};
-use hagency_core::{authority::Registration, canonical};
+use hagency_core::authority::Registration;
 use hagency_palpo::{Adapter, CancellationToken, Error, HostConfig, Limits};
 use hagency_store::{DomainStore, Store, outbound::RegistrationIdentity};
 use serde::{Deserialize, Serialize};
@@ -23,6 +23,14 @@ struct Config {
 pub(super) struct Prepared {
     host: HostConfig,
     registration: RegistrationIdentity,
+    work: Option<Work>,
+}
+/// What the custody consumer needs; absent without `palpo-appservice.json`.
+struct Work {
+    appservice: super::palpo_work::Appservice,
+    probes: Arc<super::palpo_work::Probes>,
+    fleet: String,
+    generation: u64,
 }
 impl Prepared {
     pub(super) fn load(state: &Path) -> Result<Self, Failure> {
@@ -42,16 +50,17 @@ impl Prepared {
             field: "palpo-transport.json: registration",
             fix: "the six-field registration must be present and well-formed",
         })?;
-        let registration_fingerprint = canonical::digest(
-            &serde_json::to_value(&value.registration).map_err(|_| Failure::Config {
-                field: "palpo-transport.json: registration",
-                fix: "the registration must serialize to canonical JSON",
-            })?,
-        )
+        let registration_fingerprint = hagency_store::publication_fingerprint(&value.registration)
         .map_err(|_| Failure::Config {
             field: "palpo-transport.json: registration",
             fix: "the registration digest must compute; keep the fields ASCII",
         })?;
+        let work = super::palpo_work::Appservice::load(state, &value.registration.server_name).map(|appservice| Work {
+            appservice,
+            probes: super::palpo_work::Probes::new(state),
+            fleet: value.registration.fleet_id.clone(),
+            generation: value.machine_generation,
+        });
         let registration = RegistrationIdentity {
             binding: "native-palpo-v2".into(),
             side_id: value.registration.server_name,
@@ -91,7 +100,7 @@ impl Prepared {
                 fix: "the file must be readable by the service owner (stat failed)",
             }),
         }
-        Ok(Self { host, registration })
+        Ok(Self { host, registration, work })
     }
 }
 
@@ -209,7 +218,10 @@ impl Owner {
                     return Ok(());
                 }
                 // Preserve the original activation future through its receipt.
-                let adapter = Adapter::attach(prepared.host, store).await?;
+                let mut adapter = Adapter::attach(prepared.host, store).await?;
+                if let Some(work) = &prepared.work {
+                    adapter = adapter.with_probe_receipts(work.probes.clone());
+                }
                 if signal.is_cancelled() {
                     return Ok(());
                 }
@@ -218,7 +230,22 @@ impl Owner {
                 // original received custody/known receipts settle before return.
                 // ADR109 rechecks domain identity after custody waits before
                 // HTTP admission; already admitted bytes cannot be recalled.
-                adapter.run_with_resources(&domain, &signal).await
+                // The custody consumer runs beside it and stops with it.
+                let consumer = async {
+                    if let Some(work) = &prepared.work {
+                        super::palpo_work::run(&adapter, &work.probes, &domain, &work.appservice,
+                            &work.fleet, work.generation, &signal).await;
+                    }
+                };
+                let (result, ()) = tokio::join!(
+                    async {
+                        let result = adapter.run_with_resources(&domain, &signal).await;
+                        signal.cancel();
+                        result
+                    },
+                    consumer
+                );
+                result
             }
             .await;
             completion.status.finish(result);

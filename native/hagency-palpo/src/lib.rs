@@ -7,7 +7,7 @@ mod config;
 mod http;
 mod wire;
 
-pub use adapter::{Adapter, Step};
+pub use adapter::{Adapter, ProbeReceipts, Step};
 pub use config::{HostConfig, Limits};
 pub use tokio_util::sync::CancellationToken;
 

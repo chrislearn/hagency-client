@@ -23,21 +23,35 @@ impl Adapter {
         else {
             return Err(Error::Custody);
         };
+        let mut included = Vec::new();
         if pending.is_none() {
             let snapshot = domain.published_catalog(self.registration.clone()).await?;
             if cancel.is_cancelled() {
                 return Err(Error::Cancelled);
             }
+            let mut body = snapshot.into_update();
+            if let Some(source) = &self.receipts {
+                included = source.pending().into_iter().take(10).collect();
+                if !included.is_empty() {
+                    body["probeReceipts"] = Value::Array(included.clone());
+                }
+            }
             let Reply::Publication(Some(_)) = self
                 .command(Command::FreezePublication {
                     scope: self.scope(),
-                    body: snapshot.into_update(),
+                    body,
                 })
                 .await?
             else {
                 return Err(Error::Custody);
             };
         }
-        self.publish_checked(Some(domain), cancel).await
+        let step = self.publish_checked(Some(domain), cancel).await?;
+        if step == Step::Published && !included.is_empty() {
+            if let Some(source) = &self.receipts {
+                source.published(&included);
+            }
+        }
+        Ok(step)
     }
 }

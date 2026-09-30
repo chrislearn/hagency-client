@@ -156,10 +156,16 @@ pub fn parse(raw: &str) -> Result<(Registration, Value, Value, String, u64), Err
 }
 
 /// Import into an initialized private state (service stopped or not yet run).
-pub fn run(state: &Path, file: &Path) -> Result<Imported, Error> {
+pub fn run(state: &Path, file: &Path, homeserver: &str) -> Result<Imported, Error> {
+    let origin = reqwest::Url::parse(homeserver).map_err(|_| Error::Invalid("--homeserver"))?;
+    if origin.scheme() != "https" && !matches!(origin.host_str(), Some("127.0.0.1" | "localhost")) {
+        return Err(Error::Invalid("--homeserver must be https"));
+    }
     private::read_secret(&state.join("operator.token"))?;
     let raw = std::fs::read_to_string(file).map_err(|_| Error::Invalid("file unreadable"))?;
-    let (registration, appservice, machine, endpoint, generation) = parse(&raw)?;
+    let (registration, mut appservice, machine, endpoint, generation) = parse(&raw)?;
+    // The Matrix client API the fleet's App Service identities act through.
+    appservice["homeserver"] = json!(origin.as_str().trim_end_matches('/'));
     let _custody = Repository::open(state)?;
     let mut domain = DomainRepository::open(state)?;
     // A re-import of the same fleet keeps a reception an earlier probe bound.

@@ -12,7 +12,7 @@ mod domain_worker;
 pub mod private;
 pub mod task_context;
 pub use domain::PrivateApprovalCard;
-pub use domain::PublishedCatalog;
+pub use domain::{PublishedCatalog, publication_fingerprint};
 pub use domain::StaleMatrixSessionReceipt;
 pub use domain::resource_publication::{
     ResourcePublicationAccess, ResourcePublicationCommand, ResourcePublicationResult,

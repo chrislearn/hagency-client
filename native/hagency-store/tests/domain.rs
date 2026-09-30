@@ -8,6 +8,25 @@ use hagency_core::{
 use hagency_store::{DomainRepository, DomainStore, EffectOutcome, EffectState, Error};
 use serde_json::json;
 
+/// A Palpo fleet is imported with no reception; the verified probe binds it
+/// once at the same generation, and a different room is then a conflict.
+#[test]
+fn native_probe_binds_an_unbound_reception_once() {
+    let (_dir, mut db) = setup();
+    let mut reg = registration();
+    let bound = reg.reception_room_id.clone();
+    reg.reception_room_id = String::new();
+    reg.fleet_id = format!("hf_{}", "b".repeat(32));
+    reg.representative_mxid = format!("@{}_representative:{}", reg.fleet_id, reg.server_name);
+    db.register(&reg).unwrap();
+    assert!(matches!(db.bind_reception(&reg.fleet_id, reg.generation + 1, &bound), Err(Error::Generation)));
+    db.bind_reception(&reg.fleet_id, reg.generation, &bound).unwrap();
+    assert_eq!(db.provisioning_registration(&reg.fleet_id).unwrap().reception_room_id, bound);
+    db.bind_reception(&reg.fleet_id, reg.generation, &bound).unwrap();
+    let other = bound.replacen('!', "!other", 1);
+    assert!(matches!(db.bind_reception(&reg.fleet_id, reg.generation, &other), Err(Error::Conflict)));
+}
+
 /// A console verdict reserves the engagement and queues its provision effect
 /// without claiming it; the host reads that backlog on its next turn and it
 /// leaves the list the moment the effect is claimed.

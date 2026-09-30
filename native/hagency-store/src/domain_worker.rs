@@ -4027,6 +4027,10 @@ impl DomainStore {
         self.call(command.weight(), move |db| db.publish_resource(command))
             .await
     }
+    pub async fn bind_reception(&self, fleet_id: String, generation: u64, room: String) -> Result<(), Error> {
+        self.call(weight(&(&fleet_id, &room))?, move |db| db.bind_reception(&fleet_id, generation, &room))
+            .await
+    }
     pub async fn register(&self, registration: Registration) -> Result<(), Error> {
         self.call(weight(&registration)?, move |db| db.register(&registration))
             .await

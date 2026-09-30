@@ -21,6 +21,14 @@ pub enum Step {
     NoPublication,
 }
 
+/// Connection-probe receipts awaiting publication (TS fleet-outbound-store
+/// `receipts`): the host records them durably, the adapter carries at most ten
+/// per update and reports which ones Palpo accepted.
+pub trait ProbeReceipts: Send + Sync {
+    fn pending(&self) -> Vec<Value>;
+    fn published(&self, receipts: &[Value]);
+}
+
 /// One host transport instance. At most one active request per Matrix/work/
 /// publication lane; no hidden reverse listener or spawned polling tasks.
 pub struct Adapter {
@@ -32,8 +40,68 @@ pub struct Adapter {
     matrix: Mutex<()>,
     work: Mutex<()>,
     publication: Mutex<()>,
+    receipts: Option<std::sync::Arc<dyn ProbeReceipts>>,
 }
 impl Adapter {
+    /// Carry the host's pending connection-probe receipts in resource updates.
+    pub fn with_probe_receipts(mut self, receipts: std::sync::Arc<dyn ProbeReceipts>) -> Self {
+        self.receipts = Some(receipts);
+        self
+    }
+    /// The oldest unfinished delivery of a lane (custody FIFO), if any.
+    pub async fn head(&self, lane: Lane) -> Result<Option<hagency_store::outbound::DeliveryView>, Error> {
+        match self.command(Command::Head { scope: self.scope(), lane }).await? {
+            Reply::Head(view) => Ok(view),
+            _ => Err(Error::Custody),
+        }
+    }
+    /// Claim and start the lane's oldest pending delivery under a new attempt
+    /// id. `None` when nothing is claimable now.
+    pub async fn take(
+        &self,
+        lane: Lane,
+        attempt: String,
+    ) -> Result<Option<hagency_store::outbound::StartedWork>, Error> {
+        let Reply::Claim(ticket) = self
+            .command(Command::Claim { scope: self.scope(), lane, id: attempt, lease_ms: 60_000 })
+            .await?
+        else {
+            return Err(Error::Custody);
+        };
+        let Some(ticket) = ticket else { return Ok(None) };
+        match self.command(Command::Start(ticket)).await? {
+            Reply::Started(work) => Ok(Some(work)),
+            _ => Err(Error::Custody),
+        }
+    }
+    /// Record the processed result; the delivery leaves the lane.
+    pub async fn complete(
+        &self,
+        ticket: hagency_store::outbound::ClaimTicket,
+        result: Value,
+    ) -> Result<(), Error> {
+        match self.command(Command::Complete { ticket, result }).await? {
+            Reply::Finished { .. } => Ok(()),
+            _ => Err(Error::Custody),
+        }
+    }
+    /// Put a started delivery back for a later attempt (its prerequisite, such
+    /// as the Matrix transaction a probe names, has not been processed yet).
+    pub async fn retry_later(&self, ticket: hagency_store::outbound::ClaimTicket) -> Result<(), Error> {
+        let attempt = ticket.id().to_owned();
+        self.command(Command::ProcessingUnknown(ticket)).await?;
+        match self
+            .command(Command::Inspect {
+                scope: self.scope(),
+                attempt_id: attempt,
+                outcome: hagency_store::outbound::Inspection::Retry,
+            })
+            .await?
+        {
+            Reply::Inspected => Ok(()),
+            _ => Err(Error::Custody),
+        }
+    }
     pub async fn attach(config: HostConfig, store: Store) -> Result<Self, Error> {
         let http = Http::new(&config)?;
         let registration = config.activation.registration.clone();
@@ -52,6 +120,7 @@ impl Adapter {
             matrix: Mutex::new(()),
             work: Mutex::new(()),
             publication: Mutex::new(()),
+            receipts: None,
         })
     }
 
