@@ -35,6 +35,10 @@ impl Adapter {
                 if !included.is_empty() {
                     body["probeReceipts"] = Value::Array(included.clone());
                 }
+                let statuses: Vec<Value> = source.statuses().into_iter().take(200).collect();
+                if !statuses.is_empty() {
+                    body["statuses"] = Value::Array(statuses);
+                }
             }
             let Reply::Publication(Some(_)) = self
                 .command(Command::FreezePublication {

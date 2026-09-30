@@ -27,6 +27,11 @@ pub enum Step {
 pub trait ProbeReceipts: Send + Sync {
     fn pending(&self) -> Vec<Value>;
     fn published(&self, receipts: &[Value]);
+    /// Current v1 request status objects (TS `requestSnapshots`), each carrying
+    /// its own `observedAt`; published with every resource update.
+    fn statuses(&self) -> Vec<Value> {
+        Vec::new()
+    }
 }
 
 /// One host transport instance. At most one active request per Matrix/work/

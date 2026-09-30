@@ -51,6 +51,7 @@ pub(super) struct Probes {
     seen: PathBuf,
     outbox: PathBuf,
     lock: Mutex<()>,
+    statuses: Mutex<Vec<Value>>,
 }
 impl Probes {
     pub(super) fn new(state: &Path) -> Arc<Self> {
@@ -58,6 +59,7 @@ impl Probes {
             seen: state.join("palpo-probe-events.json"),
             outbox: state.join("palpo-probe-receipts.json"),
             lock: Mutex::new(()),
+            statuses: Mutex::new(Vec::new()),
         })
     }
     fn read(path: &Path) -> Vec<Value> {
@@ -99,6 +101,9 @@ impl ProbeReceipts for Probes {
     fn pending(&self) -> Vec<Value> {
         let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
         Self::read(&self.outbox)
+    }
+    fn statuses(&self) -> Vec<Value> {
+        self.statuses.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
     fn published(&self, receipts: &[Value]) {
         let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -480,6 +485,44 @@ async fn approval_invites_once(reader: &Reader, bot: &str, fleet: &str, server: 
     }
 }
 
+/// The fleet's request statuses in the TS `fleetPublicEngagement` shape, observed
+/// now. Rust `reserved` is TS's approved-and-fulfilling `active` with an open
+/// fulfillment phase; `ready` needs an active, bound agent (TS: state active and
+/// bound), which the provisioning slice establishes.
+async fn refresh_statuses(domain: &DomainStore, probes: &Probes, fleet: &str) {
+    use hagency_core::project::EngagementState as S;
+    let Ok(engagements) = domain.engagements(String::new(), 100).await else { return };
+    let observed = now_iso();
+    let mut out = Vec::new();
+    for e in engagements {
+        let Ok(Some((context, _, _))) = domain.provisioning_request_evidence(fleet.to_owned(), e.request_id.clone()).await else {
+            continue;
+        };
+        let Ok(c) = serde_json::from_str::<Value>(&context) else { continue };
+        let resource = domain.resource_configuration(e.resource_id.clone()).await.ok();
+        let (state, phase, bound) = match e.state {
+            S::Pending => ("pending", None, false),
+            S::Reserved => ("active", Some("provisioning"), false),
+            S::Active => ("active", Some("complete"), true),
+            S::Rejected => ("rejected", None, false),
+            S::Revoked | S::Failed => ("ended", None, false),
+        };
+        let allocated = matches!(e.state, S::Reserved | S::Active).then(|| json!(e.requested_tokens));
+        out.push(json!({
+            "v": 1, "fleetId": fleet, "requestId": e.request_id, "engagementId": e.id, "state": state,
+            "targetProjectId": c["targetProjectId"], "targetRoomId": c["targetRoomId"],
+            "sourceRoomId": c["sourceRoomId"], "sourceEventId": c["sourceEventId"], "role": e.role,
+            "agentDefinition": c["agentDefinition"], "requestedTokens": c["requestedTokens"],
+            "allocatedTokens": allocated, "agentMxid": null, "bound": bound,
+            "serving": resource.map(|r| json!({"framework": r.framework, "model": r.model,
+                "reasoning": r.reasoning})),
+            "fulfillment": phase.map(|p| json!({"phase": p, "incomplete": false})),
+            "ready": false, "decidedAt": null, "endedAt": null, "observedAt": observed,
+        }));
+    }
+    *probes.statuses.lock().unwrap_or_else(|e| e.into_inner()) = out;
+}
+
 /// Runs beside the transport lanes until cancelled.
 pub(super) async fn run(
     adapter: &Adapter,
@@ -505,6 +548,7 @@ pub(super) async fn run(
     // retry is a new custody attempt row, and those are finite.
     let mut work_due = std::time::Instant::now();
     while !cancel.is_cancelled() {
+        refresh_statuses(domain, probes, fleet).await;
         if !bot.is_empty() && std::time::Instant::now() >= invites_due {
             approval_invites_once(&reader, &bot, fleet, &server).await;
             invites_due = std::time::Instant::now() + Duration::from_secs(15);
