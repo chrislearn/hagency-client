@@ -3,6 +3,9 @@ use crate::Repository;
 use hagency_core::custody::CustodyState;
 use rusqlite::{OptionalExtension, Transaction, TransactionBehavior, params};
 
+/// How long a work-lane item that asked for a retry steps aside.
+const WORK_RETRY_MS: u64 = 20_000;
+
 fn random_key() -> Result<String, Error> {
     let mut bytes = [0u8; 32];
     getrandom::fill(&mut bytes).map_err(|_| Error::Unavailable)?;
@@ -171,6 +174,10 @@ impl Repository {
                                 return Err(Error::State);
                             }
                             tx.execute("UPDATE inbox SET processing_state='pending' WHERE (binding,lane,id) IN (SELECT binding,lane,delivery_id FROM outbound_attempts WHERE binding=?1 AND id=?2)",params![ticket.binding,ticket.id])?;
+                            // A retried work item steps aside for WORK_RETRY_MS so
+                            // the independent items behind it are claimed first.
+                            let retry_at = now.saturating_add(WORK_RETRY_MS).min(JSON_SAFE_MAX);
+                            tx.execute("UPDATE inbox SET retry_at=?3 WHERE lane='work' AND (binding,lane,id) IN (SELECT binding,lane,delivery_id FROM outbound_attempts WHERE binding=?1 AND id=?2)",params![ticket.binding,ticket.id,retry_at])?;
                             tx.execute("UPDATE outbound_attempts SET state='retry' WHERE binding=?1 AND id=?2",params![ticket.binding,ticket.id])?;
                         }
                     }
@@ -419,7 +426,14 @@ fn claim(
             key,
         })));
     }
-    let row:Option<(String,String,String,u64)>=tx.query_row("SELECT id,processing_state,lease_state,retry_at FROM inbox WHERE binding=?1 AND lane=?2 AND processing_state NOT IN ('done','retired') ORDER BY rowid LIMIT 1",params![s.binding,lane.as_str()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional()?;
+    // The Matrix lane is ordered: its head blocks the lane. Work items (probes,
+    // requests) are independent, so one waiting for a retry must not starve the
+    // rest (TS keeps a request at submission_pending and still verifies probes).
+    let row:Option<(String,String,String,u64)>=if lane == Lane::Work {
+        tx.query_row("SELECT id,processing_state,lease_state,retry_at FROM inbox WHERE binding=?1 AND lane=?2 AND processing_state='pending' AND lease_state IN ('accepted','retired') AND retry_at<=?3 ORDER BY rowid LIMIT 1",params![s.binding,lane.as_str(),now],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional()?
+    } else {
+        tx.query_row("SELECT id,processing_state,lease_state,retry_at FROM inbox WHERE binding=?1 AND lane=?2 AND processing_state NOT IN ('done','retired') ORDER BY rowid LIMIT 1",params![s.binding,lane.as_str()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional()?
+    };
     let Some((delivery, state, lease, retry)) = row else {
         return Ok(Reply::Claim(None));
     };
