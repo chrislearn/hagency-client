@@ -38,6 +38,10 @@ pub enum Command {
         /// The fleet's Matrix client API, e.g. https://crew.ominix.io:19443.
         #[arg(long)]
         homeserver: String,
+        /// A reception room Palpo already verified for this fleet (its connection
+        /// is proven, so Palpo sends no new probe); binds it at import.
+        #[arg(long)]
+        reception: Option<String>,
     },
 }
 
@@ -72,10 +76,10 @@ pub fn run(state: &Path, command: Command) -> Result<(), hagency_store::Error> {
             // advance. Nothing here softens or pre-empts it.
             domain.register(&registration)
         }
-        Command::Import { file, homeserver } => {
+        Command::Import { file, homeserver, reception } => {
             drop(domain);
             drop(_custody);
-            let imported = super::palpo_import::run(state, &file, &homeserver).map_err(|error| {
+            let imported = super::palpo_import::run(state, &file, &homeserver, reception.as_deref()).map_err(|error| {
                 eprintln!("Error: {error}");
                 hagency_store::Error::Invalid(hagency_core::InvalidInput("palpo import refused"))
             })?;
@@ -84,7 +88,7 @@ pub fn run(state: &Path, command: Command) -> Result<(), hagency_store::Error> {
                 serde_json::json!({"imported": true, "fleetId": imported.fleet_id,
                     "serverName": imported.server_name, "representative": imported.representative,
                     "approvalBot": imported.approval_bot, "endpoint": imported.endpoint,
-                    "reception": "unbound until Palpo's Verify connection"})
+                    "reception": if imported.reception.is_empty() { "unbound until Palpo's Verify connection" } else { imported.reception.as_str() }})
             );
             Ok(())
         }

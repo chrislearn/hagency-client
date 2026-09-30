@@ -38,6 +38,8 @@ pub struct Imported {
     pub representative: String,
     pub approval_bot: String,
     pub endpoint: String,
+    /// The bound reception room, empty until Palpo's connection probe.
+    pub reception: String,
 }
 
 fn text<'a>(value: &'a Value, key: &str, field: &'static str) -> Result<&'a str, Error> {
@@ -156,7 +158,7 @@ pub fn parse(raw: &str) -> Result<(Registration, Value, Value, String, u64), Err
 }
 
 /// Import into an initialized private state (service stopped or not yet run).
-pub fn run(state: &Path, file: &Path, homeserver: &str) -> Result<Imported, Error> {
+pub fn run(state: &Path, file: &Path, homeserver: &str, reception: Option<&str>) -> Result<Imported, Error> {
     let origin = reqwest::Url::parse(homeserver).map_err(|_| Error::Invalid("--homeserver"))?;
     if origin.scheme() != "https" && !matches!(origin.host_str(), Some("127.0.0.1" | "localhost")) {
         return Err(Error::Invalid("--homeserver must be https"));
@@ -173,6 +175,8 @@ pub fn run(state: &Path, file: &Path, homeserver: &str) -> Result<Imported, Erro
     let mut registration = registration;
     if let Some(current) = current {
         registration.reception_room_id = current.reception_room_id;
+    } else if let Some(room) = reception {
+        registration.reception_room_id = room.to_owned();
     }
     domain.register(&registration)?;
     let transport = json!({
@@ -189,6 +193,7 @@ pub fn run(state: &Path, file: &Path, homeserver: &str) -> Result<Imported, Erro
         representative: registration.representative_mxid.clone(),
         approval_bot: registration.approval_bot_mxid.clone(),
         endpoint,
+        reception: registration.reception_room_id.clone(),
     })
 }
 
