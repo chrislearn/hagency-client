@@ -509,7 +509,7 @@ async fn approval_invites_once(reader: &Reader, bot: &str, fleet: &str, server: 
 /// now. Rust `reserved` is TS's approved-and-fulfilling `active` with an open
 /// fulfillment phase; `ready` needs an active, bound agent (TS: state active and
 /// bound), which the provisioning slice establishes.
-async fn refresh_statuses(domain: &DomainStore, probes: &Probes, fleet: &str) {
+async fn refresh_statuses(domain: &DomainStore, probes: &Probes, fleet: &str, reader: &Reader) {
     use hagency_core::project::EngagementState as S;
     let Ok(engagements) = domain.engagements(String::new(), 100).await else { return };
     let observed = now_iso();
@@ -531,16 +531,29 @@ async fn refresh_statuses(domain: &DomainStore, probes: &Probes, fleet: &str) {
             S::Revoked | S::Failed => ("ended", None, false),
         };
         let allocated = matches!(e.state, S::Reserved | S::Active).then(|| json!(e.requested_tokens));
+        // The serving identity is the fleet-namespaced account the App Service
+        // factory created for this engagement; `ready` is TS's rule (active and
+        // bound) plus the observed fact the agent is joined in the target room.
+        let server = reader.user.split_once(':').map(|(_, s)| s).unwrap_or_default();
+        let agent = format!("@{fleet}_{}:{server}", e.id);
+        let target = c["targetRoomId"].as_str().unwrap_or_default().to_owned();
+        let joined = bound
+            && reader
+                .get(&["_matrix", "client", "v3", "rooms", &target, "joined_members"])
+                .await
+                .ok()
+                .flatten()
+                .is_some_and(|m| m.pointer(&format!("/joined/{}", agent.replace('~', "~0").replace('/', "~1"))).is_some());
         out.push(json!({
             "v": 1, "fleetId": fleet, "requestId": e.request_id, "engagementId": e.id, "state": state,
             "targetProjectId": c["targetProjectId"], "targetRoomId": c["targetRoomId"],
             "sourceRoomId": c["sourceRoomId"], "sourceEventId": c["sourceEventId"], "role": e.role,
             "agentDefinition": c["agentDefinition"], "requestedTokens": c["requestedTokens"],
-            "allocatedTokens": allocated, "agentMxid": null, "bound": bound,
+            "allocatedTokens": allocated, "agentMxid": if bound { json!(agent) } else { Value::Null }, "bound": bound,
             "serving": resource.map(|r| json!({"framework": r.framework, "model": r.model,
                 "reasoning": r.reasoning})),
             "fulfillment": phase.map(|p| json!({"phase": p, "incomplete": false})),
-            "ready": false, "decidedAt": null, "endedAt": null, "observedAt": observed,
+            "ready": joined, "decidedAt": null, "endedAt": null, "observedAt": observed,
         }));
     }
     *probes.statuses.lock().unwrap_or_else(|e| e.into_inner()) = out;
@@ -571,7 +584,7 @@ pub(super) async fn run(
     // retry is a new custody attempt row, and those are finite.
     let mut work_due = std::time::Instant::now();
     while !cancel.is_cancelled() {
-        refresh_statuses(domain, probes, fleet).await;
+        refresh_statuses(domain, probes, fleet, &reader).await;
         if !bot.is_empty() && std::time::Instant::now() >= invites_due {
             approval_invites_once(&reader, &bot, fleet, &server).await;
             invites_due = std::time::Instant::now() + Duration::from_secs(15);
