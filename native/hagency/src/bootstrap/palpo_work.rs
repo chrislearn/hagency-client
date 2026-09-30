@@ -188,6 +188,113 @@ impl Reader {
     }
 }
 
+impl Reader {
+    async fn state_as(&self, user: &str, room: &str, kind: &str, key: &str) -> Result<Option<Value>, ()> {
+        self.call_as(user, reqwest::Method::GET, &["_matrix", "client", "v3", "rooms", room, "state", kind, key], &[], None)
+            .await
+    }
+    /// The authority facts `verify_request` checks, read fresh as `user`
+    /// (TS `plaintextPrivate` / `verifyFleetTarget` / the private-owner reads).
+    async fn observe(
+        &self,
+        user: &str,
+        room: &str,
+        binding: Option<&str>,
+    ) -> Result<hagency_core::authority::RoomObservation, ()> {
+        let members = self
+            .call_as(user, reqwest::Method::GET, &["_matrix", "client", "v3", "rooms", room, "joined_members"], &[], None)
+            .await?
+            .ok_or(())?;
+        let joined = members
+            .get("joined")
+            .and_then(Value::as_object)
+            .ok_or(())?
+            .keys()
+            .cloned()
+            .collect();
+        let rules = self.state_as(user, room, "m.room.join_rules", "").await?.ok_or(())?;
+        let encryption = self.state_as(user, room, "m.room.encryption", "").await?;
+        let levels = self.state_as(user, room, "m.room.power_levels", "").await?.unwrap_or(Value::Null);
+        let name = self.state_as(user, room, "m.room.name", "").await?;
+        let binding = match binding {
+            Some(fleet) => self.state_as(user, room, "com.hagency.admin.binding.v1", fleet).await?,
+            None => None,
+        };
+        Ok(hagency_core::authority::RoomObservation {
+            room_id: room.to_owned(),
+            joined,
+            invite_only: rules.get("join_rule").and_then(Value::as_str) == Some("invite"),
+            encryption: encryption.and_then(|e| e.get("algorithm").and_then(Value::as_str).map(str::to_owned)),
+            powers: levels
+                .get("users")
+                .and_then(Value::as_object)
+                .map(|u| u.iter().filter_map(|(k, v)| Some((k.clone(), v.as_i64()?))).collect())
+                .unwrap_or_default(),
+            default_power: levels.get("users_default").and_then(Value::as_i64).unwrap_or(0),
+            invite_power: levels.get("invite").and_then(Value::as_i64).unwrap_or(0),
+            binding,
+            name: name.and_then(|n| n.get("name").and_then(Value::as_str).map(str::to_owned)),
+        })
+    }
+}
+
+/// Admit one Palpo agent request (TS `POST /api/fleet/v1/requests`): the source
+/// event is re-read, the reception, target project and private approval room
+/// are observed fresh, and the port's own `verify_request` decides. An admitted
+/// request becomes a pending engagement for the operator's console verdict.
+async fn admit_request(
+    reader: &Reader,
+    domain: &DomainStore,
+    fleet: &str,
+    payload: &Value,
+) -> Result<String, String> {
+    use hagency_core::authority::{ProjectRequest, RequestObservation, SourceObservation, verify_request};
+    let request: ProjectRequest =
+        serde_json::from_value(payload.clone()).map_err(|e| format!("request shape: {e}"))?;
+    let registration = domain
+        .provisioning_registration(fleet.to_owned())
+        .await
+        .map_err(|_| "fleet registration unavailable".to_owned())?;
+    let rep = registration.representative_mxid.clone();
+    let event = reader
+        .call_as(&rep, reqwest::Method::GET,
+            &["_matrix", "client", "v3", "rooms", &request.source_room_id, "event", &request.source_event_id], &[], None)
+        .await
+        .map_err(|_| "source event unreadable".to_owned())?
+        .ok_or("source event missing")?;
+    let source = SourceObservation {
+        event_id: request.source_event_id.clone(),
+        room_id: request.source_room_id.clone(),
+        sender: event.get("sender").and_then(Value::as_str).unwrap_or_default().to_owned(),
+        event_type: event.get("type").and_then(Value::as_str).unwrap_or_default().to_owned(),
+        content: event.get("content").cloned().unwrap_or(Value::Null),
+    };
+    let reception = reader.observe(&rep, &request.source_room_id, None).await.map_err(|_| "reception unreadable".to_owned())?;
+    let project = reader
+        .observe(&rep, &request.target_room_id, Some(fleet))
+        .await
+        .map_err(|_| "project room unreadable (is the representative joined?)".to_owned())?;
+    let owner_room = reader
+        .observe(&registration.approval_bot_mxid, &request.owner_dm_room_id, None)
+        .await
+        .map_err(|_| "private approval room unreadable (has the approval bot joined?)".to_owned())?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or_default();
+    let observation = RequestObservation {
+        registration_generation: registration.generation,
+        observed_at_ms: now,
+        source,
+        reception,
+        project,
+        owner_room,
+    };
+    let verified = verify_request(&registration, request, observation).map_err(|e| format!("verification: {}", e.0))?;
+    let engagement = domain.admit(verified, now).await.map_err(|e| format!("admission: {e:?}"))?;
+    Ok(engagement.id)
+}
+
 fn now_iso() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -265,8 +372,25 @@ async fn work_once(adapter: &Adapter, probes: &Probes, domain: &DomainStore, rea
     let Ok(Some(work)) = adapter.take(Lane::Work, attempt("work")).await else {
         return Outcome::Idle;
     };
+    if work.kind == Kind::Request {
+        return match admit_request(reader, domain, fleet, &work.payload).await {
+            Ok(engagement) => {
+                eprintln!("palpo request admitted as {engagement} (pending the console verdict)");
+                match adapter.complete(work.ticket, json!({"engagementId": engagement})).await {
+                    Ok(()) => Outcome::Done,
+                    Err(_) => Outcome::Later,
+                }
+            }
+            Err(reason) => {
+                // TS keeps the request at submission_pending and retries; the
+                // bridge never refuses it on a transient read.
+                eprintln!("palpo request not admitted yet: {reason}");
+                let _ = adapter.retry_later(work.ticket).await;
+                Outcome::Later
+            }
+        };
+    }
     if work.kind != Kind::Probe {
-        // Requests are admitted by a later slice; keep them in custody.
         let _ = adapter.retry_later(work.ticket).await;
         return Outcome::Later;
     }
@@ -377,13 +501,24 @@ pub(super) async fn run(
         .map(|r| r.approval_bot_mxid)
         .unwrap_or_default();
     let mut invites_due = std::time::Instant::now();
+    // A work item that could not finish is retried on a slower clock: each
+    // retry is a new custody attempt row, and those are finite.
+    let mut work_due = std::time::Instant::now();
     while !cancel.is_cancelled() {
         if !bot.is_empty() && std::time::Instant::now() >= invites_due {
             approval_invites_once(&reader, &bot, fleet, &server).await;
             invites_due = std::time::Instant::now() + Duration::from_secs(15);
         }
         let matrix = matrix_once(adapter, probes, fleet, &appservice.representative, generation).await;
-        let work = work_once(adapter, probes, domain, &reader, fleet).await;
+        let work = if std::time::Instant::now() >= work_due {
+            let outcome = work_once(adapter, probes, domain, &reader, fleet).await;
+            if matches!(outcome, Outcome::Later) {
+                work_due = std::time::Instant::now() + Duration::from_secs(20);
+            }
+            outcome
+        } else {
+            Outcome::Idle
+        };
         let pause = match (matrix, work) {
             (Outcome::Done, _) | (_, Outcome::Done) => Duration::from_millis(100),
             (_, Outcome::Later) | (Outcome::Later, _) => Duration::from_secs(3),
