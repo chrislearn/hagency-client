@@ -306,11 +306,13 @@ impl ObservedRoom {
                 }
                 "com.hagency.admin.binding.v1" => {
                     // TS parity (lib/fleet-protocol.js:52): the binding is a
-                    // per-fleet state event keyed by the fleet id.
-                    if key != fleet {
-                        return Err(Error::Matrix);
+                    // per-fleet state event keyed by the fleet id, and TS reads
+                    // only that key. Palpo also writes one under the empty key
+                    // when it creates the room, and other fleets may bind the
+                    // same room: those are not this fleet's binding.
+                    if key == fleet {
+                        ts_binding = Some(Value::Object(content.clone()));
                     }
-                    ts_binding = Some(Value::Object(content.clone()));
                 }
                 // Board #95: rooms bound by EARLIER Rust builds carry the
                 // legacy `com.hagency.project.binding.v1` under the empty

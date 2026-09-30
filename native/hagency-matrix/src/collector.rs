@@ -868,10 +868,12 @@ impl Inner {
                     // `state/<type>/<fleetId>`; an event under another key is
                     // simply not this fleet's binding, and the fleet match is
                     // decided from the binding content (`fleetId`) downstream.
-                    if key.is_empty() {
-                        return Err(Error::Wire);
+                    // Palpo also writes one under the empty key when it
+                    // creates a project or approval room; TS never reads that
+                    // tuple, so neither does the collector (not a refusal).
+                    if !key.is_empty() {
+                        ts_binding = Some(Value::Object(content.clone()));
                     }
-                    ts_binding = Some(Value::Object(content.clone()));
                 }
                 // Board #95: rooms bound by EARLIER Rust builds carry the
                 // legacy `com.hagency.project.binding.v1` under the empty

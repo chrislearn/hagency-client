@@ -229,6 +229,46 @@ async fn as_drive(
     }
 }
 
+/// Palpo refuses /register for an App Service installed through its admin API
+/// (M_MISSING_TOKEN: its register lookup only knows file-backed registrations).
+/// Acting as the namespace user then creates it, and the App Service login
+/// still issues the one private device.
+#[tokio::test]
+async fn native_appservice_account_palpo_register_fallback() {
+    let state = PrivateState::new();
+    let effect = effect();
+    let mut fake = Fake::start(true).await;
+    let cancel = CancellationToken::new();
+    let work = as_operation(&fake, state.path(), &effect).execute(&cancel);
+    tokio::pin!(work);
+    let (mut registers, mut created) = (0, false);
+    let account = loop {
+        tokio::select! {
+            result = &mut work => break result.unwrap(),
+            request = fake.next() => {
+                let masquerade_user = request.method == "GET"
+                    && request.target.contains("user_id=")
+                    && !request.target.contains("hagency_namespace_probe_");
+                let response = if request.target.ends_with("/register") {
+                    registers += 1;
+                    (401, json!({"errcode":"M_MISSING_TOKEN","error":"missing appservice token"}))
+                } else if masquerade_user && !root(state.path(), &effect).join("initial").exists() {
+                    created = true;
+                    (200, json!({"user_id": identity(&effect).0, "device_id": "appservice"}))
+                } else {
+                    as_reply(&request, state.path(), &effect)
+                };
+                request.json(response.0, response.1);
+            }
+        }
+    };
+    assert_eq!(registers, 1, "register is still tried first");
+    assert!(created, "the masquerade created the account");
+    assert_eq!(account.sender_mxid(), identity(&effect).0);
+    assert_eq!(account.device_id(), identity(&effect).1);
+    assert!(root(state.path(), &effect).join("complete").exists());
+}
+
 #[tokio::test]
 async fn native_appservice_account_provision() {
     let state = PrivateState::new();

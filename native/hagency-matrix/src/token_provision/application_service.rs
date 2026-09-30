@@ -159,9 +159,31 @@ impl TokenAccountProvision {
             let body=serde_json::to_string(&json!({"type":"m.login.application_service",
                 "username":self.context.user.split_once(':').ok_or(Error::Config)?.0.trim_start_matches('@'),"inhibit_login":true}))
                 .map_err(|_|Error::Config)?;
-            let response = self
+            let mut response = self
                 .post(&http, super::REGISTER, body, cancel, deadline)
                 .await?;
+            // Palpo's /register only knows file-backed App Service
+            // registrations, so one installed through its admin API is refused
+            // as M_MISSING_TOKEN although the same token authenticates every
+            // other App Service request. There, acting as the namespace user is
+            // what creates it (TS lib/matrix-direct-chat.js logs straight in):
+            // the masquerade whoami both creates and proves the identity.
+            if response.status == 401
+                && response
+                    .value
+                    .as_ref()
+                    .and_then(|v| v.get("errcode"))
+                    .and_then(|v| v.as_str())
+                    == Some("M_MISSING_TOKEN")
+            {
+                timeout_at(deadline, guard.identity(&self.context.user, true, cancel))
+                    .await
+                    .map_err(|_| Error::OutcomeUnknown)??;
+                response = SavedResponse {
+                    status: 200,
+                    value: Some(json!({"user_id": self.context.user})),
+                };
+            }
             write(
                 custody,
                 "initial",

@@ -50,6 +50,10 @@ impl Appservice {
 pub(super) struct Probes {
     seen: PathBuf,
     outbox: PathBuf,
+    /// Request ids Palpo delivered on the work lane: the only requests Palpo
+    /// knows, so the only ones whose status it accepts (an unknown request
+    /// rejects the whole update).
+    requests: PathBuf,
     lock: Mutex<()>,
     statuses: Mutex<Vec<Value>>,
 }
@@ -58,6 +62,7 @@ impl Probes {
         Arc::new(Self {
             seen: state.join("palpo-probe-events.json"),
             outbox: state.join("palpo-probe-receipts.json"),
+            requests: state.join("palpo-requests.json"),
             lock: Mutex::new(()),
             statuses: Mutex::new(Vec::new()),
         })
@@ -87,6 +92,18 @@ impl Probes {
         Self::read(&self.seen)
             .into_iter()
             .find(|r| r.get("sourceEventId").and_then(Value::as_str) == Some(id))
+    }
+    fn remember_request(&self, id: &str) {
+        let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
+        let mut rows = Self::read(&self.requests);
+        if !rows.iter().any(|r| r.as_str() == Some(id)) {
+            rows.push(json!(id));
+        }
+        Self::write(&self.requests, &rows);
+    }
+    fn palpo_request(&self, id: &str) -> bool {
+        let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
+        Self::read(&self.requests).iter().any(|r| r.as_str() == Some(id))
     }
     fn queue_receipt(&self, receipt: Value) {
         let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -378,6 +395,9 @@ async fn work_once(adapter: &Adapter, probes: &Probes, domain: &DomainStore, rea
         return Outcome::Idle;
     };
     if work.kind == Kind::Request {
+        if let Some(id) = work.payload.get("requestId").and_then(Value::as_str) {
+            probes.remember_request(id);
+        }
         return match admit_request(reader, domain, fleet, &work.payload).await {
             Ok(engagement) => {
                 eprintln!("palpo request admitted as {engagement} (pending the console verdict)");
@@ -495,6 +515,9 @@ async fn refresh_statuses(domain: &DomainStore, probes: &Probes, fleet: &str) {
     let observed = now_iso();
     let mut out = Vec::new();
     for e in engagements {
+        if !probes.palpo_request(&e.request_id) {
+            continue;
+        }
         let Ok(Some((context, _, _))) = domain.provisioning_request_evidence(fleet.to_owned(), e.request_id.clone()).await else {
             continue;
         };
