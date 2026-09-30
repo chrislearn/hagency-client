@@ -938,6 +938,8 @@ pub struct Agent {
     joined: bool,
     owner: bool,
     owner_job: Option<tokio::task::JoinHandle<()>>,
+    /// ADR-184: the agent invited the owner to its DM, after enrolling.
+    pub owner_invited: bool,
     registered: bool,
     logged: bool,
     pub account_posts: usize,
@@ -963,6 +965,7 @@ impl Agent {
             joined: false,
             owner: false,
             owner_job: None,
+            owner_invited: false,
             registered: false,
             logged: false,
             account_posts: 0,
@@ -974,10 +977,14 @@ impl Agent {
     }
     fn dm_state(&self) -> Value {
         assert!(self.created);
-        json!([member(&self.user,"join"),member(OWNER,if self.owner {"join"} else {"invite"}),encrypted(),
+        let mut state = json!([member(&self.user,"join"),encrypted(),
         {"type":"m.room.join_rules","state_key":"","content":{"join_rule":"invite"}},
         {"type":"m.room.create","state_key":"","sender":self.user,"content":{"creator":self.user,"m.federate":false}},
-        {"type":"m.room.history_visibility","state_key":"","content":{"history_visibility":"invited"}}])
+        {"type":"m.room.history_visibility","state_key":"","content":{"history_visibility":"invited"}}]);
+        if self.owner_invited {
+            state.as_array_mut().unwrap().push(member(OWNER, if self.owner {"join"} else {"invite"}));
+        }
+        state
     }
 }
 pub struct Peer {
@@ -1417,7 +1424,7 @@ impl Peer {
                 .find(|i| request.target.contains(&format!("fleet_dm_{i}")))
                 .unwrap();
             let agent = &mut self.agents[index];
-            assert!(agent.created && !agent.owner);
+            assert!(agent.created && agent.owner_invited && !agent.owner);
             agent.owner = true;
             (200, json!({"room_id":agent.dm}))
         } else {
@@ -1468,10 +1475,21 @@ impl Peer {
                 }
             } else if path.ends_with("/createRoom") {
                 assert!(!agent.created);
-                assert_eq!(body["invite"], json!([OWNER]));
+                assert_eq!(body["invite"], json!([]), "ADR-184: the DM is created agent-only");
                 agent.created = true;
                 agent.room_posts += 1;
                 (200, json!({"room_id":agent.dm}))
+            } else if path.ends_with("/invite") && request.target.contains(&format!("fleet_dm_{index}")) {
+                assert!(agent.created && agent.joined && !agent.owner_invited);
+                assert!(
+                    agent.crypto.writes.iter().any(|(t, _)| t.ends_with("/keys/device_signing/upload"))
+                        && agent.crypto.claims >= 1,
+                    "ADR-184: the owner is invited only after the agent's keys are published"
+                );
+                assert_eq!(body, json!({"user_id": OWNER}));
+                agent.owner_invited = true;
+                agent.room_posts += 1;
+                (200, json!({}))
             } else if path.contains("/join/") {
                 assert!(agent.invited && !agent.joined);
                 agent.joined = true;
@@ -1604,7 +1622,7 @@ impl Peer {
                     )
                 }
             } else {
-                assert!(agent.created && agent.owner && agent.joined);
+                assert!(agent.created && agent.joined);
                 agent
                     .crypto
                     .protocol(&request.method, &request.target, &body)
@@ -1617,7 +1635,7 @@ impl Peer {
                     })
             }
         };
-        let join = if path.ends_with("/state") {
+        let join = if path.ends_with("/invite") && response.0 == 200 {
             (0..self.agents.len()).find(|i| {
                 request.target.contains(&format!("fleet_dm_{i}"))
                     && !self.agents[*i].owner

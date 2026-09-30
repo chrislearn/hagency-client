@@ -109,7 +109,10 @@ impl Scope {
         self.validate(&inner.domain, active).await?;
         inner.whoami(cancel).await?;
         let sender = &inner.config.identity.transport.sender_mxid;
-        let mut users = BTreeSet::from([sender.clone()]);
+        // ADR-184: the owner is in the frozen user set from the start. The agent
+        // enrolls before the owner is invited to its DM, so the owner's
+        // anchored devices are recipients the moment the owner can write.
+        let mut users = BTreeSet::from([sender.clone(), self.request.owner_mxid.clone()]);
         for target in &inner.config.rooms {
             let value = inner
                 .http
@@ -120,14 +123,40 @@ impl Scope {
                 )
                 .await?
                 .success()?;
+            // ADR-184: in the agent's DM the owner is absent (before the
+            // invite), invited (a resumed wait) or joined (the pre-activation
+            // re-check). A left or banned owner is not a recipient state.
+            let owner_membership = value.as_array().and_then(|events| {
+                events
+                    .iter()
+                    .find(|e| {
+                        e["type"] == "m.room.member" && e["state_key"] == self.request.owner_mxid
+                    })
+                    .map(|e| e["content"]["membership"].clone())
+            });
             let (room, facts) = inner.room(target, value)?;
-            if !room.joined.contains(sender) || !room.joined.contains(&self.request.owner_mxid) {
+            if !room.joined.contains(sender) {
+                return Err(Error::Recipients);
+            }
+            if matches!(target.privacy, RoomPrivacy::Direct { .. })
+                && owner_membership.is_some_and(|m| m != "invite" && m != "join")
+            {
                 return Err(Error::Recipients);
             }
             match &target.privacy {
+                // Exactly the agent (before the owner's invite), or the agent
+                // and the owner (the pre-activation re-check). Nobody else.
                 RoomPrivacy::Direct { .. }
-                    if !room.invite_only || !room.encrypted || room.joined.len() != 2 =>
+                    if !room.invite_only
+                        || !room.encrypted
+                        || !room
+                            .joined
+                            .iter()
+                            .all(|u| u == sender || *u == self.request.owner_mxid) =>
                 {
+                    return Err(Error::Recipients);
+                }
+                RoomPrivacy::Group {} if !room.joined.contains(&self.request.owner_mxid) => {
                     return Err(Error::Recipients);
                 }
                 RoomPrivacy::Group {} => {

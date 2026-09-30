@@ -18,6 +18,8 @@ struct Server {
     invited: bool,
     joined: bool,
     owner: bool,
+    /// ADR-184: the agent invited the owner to its DM (after enrollment).
+    owner_invited: bool,
     posts: usize,
     owner_reads: usize,
     as_created: bool,
@@ -47,6 +49,7 @@ impl Server {
             invited: false,
             joined: false,
             owner: false,
+            owner_invited: false,
             posts: 0,
             owner_reads: 0,
             as_created: false,
@@ -75,14 +78,28 @@ impl Server {
     }
     fn dm(&self) -> Value {
         assert!(self.created);
-        json!([
+        let mut state = json!([
             member(&self.user),
-            {"type":"m.room.member","state_key":OWNER,"content":{"membership":if self.owner {"join"} else {"invite"}}},
             {"type":"m.room.join_rules","state_key":"","content":{"join_rule":"invite"}},
             {"type":"m.room.encryption","state_key":"","content":{"algorithm":"m.megolm.v1.aes-sha2"}},
             {"type":"m.room.create","state_key":"","sender":self.user,"content":{"creator":self.user,"m.federate":false}},
             {"type":"m.room.history_visibility","state_key":"","content":{"history_visibility":"invited"}}
-        ])
+        ]);
+        if self.owner_invited {
+            state.as_array_mut().unwrap().push(json!({"type":"m.room.member","state_key":OWNER,
+                "content":{"membership":if self.owner {"join"} else {"invite"}}}));
+        }
+        state
+    }
+    /// ADR-184: the agent's device keys and cross-signing identity are on the
+    /// server (the fresh-account enrollment's key writes) before the owner is
+    /// invited.
+    fn enrolled(&self) -> bool {
+        self.peer
+            .writes
+            .iter()
+            .any(|(target, _)| target.ends_with("/keys/device_signing/upload"))
+            && self.peer.claims >= 1
     }
     async fn reply(&mut self, request: &common::Request) -> (u16, Value) {
         let actor = request.headers.get("authorization").unwrap();
@@ -203,7 +220,7 @@ impl Server {
         }
         if request.target.ends_with("/createRoom") {
             assert!(!rep && !human && !self.created);
-            assert_eq!(body["invite"], json!([OWNER]));
+            assert_eq!(body["invite"], json!([]), "ADR-184: the DM is created agent-only");
             // The identity polish (board #11): the room name and the profile
             // display name are the SAME definition name.
             assert_eq!(
@@ -248,6 +265,14 @@ impl Server {
             self.posts += 1;
             return (200, json!({"room_id":DM}));
         }
+        if request.target.ends_with("/invite") && request.target.contains("physically_created_agent_dm") {
+            assert!(!rep && !human && self.created && self.joined && !self.owner_invited);
+            assert!(self.enrolled(), "ADR-184: the owner is invited only after the agent's keys are published");
+            assert_eq!(body, json!({"user_id":OWNER}));
+            self.owner_invited = true;
+            self.posts += 1;
+            return (200, json!({}));
+        }
         if request.target.ends_with("/invite") {
             assert!(
                 rep && self.created
@@ -263,6 +288,7 @@ impl Server {
             if human {
                 assert!(
                     self.created
+                        && self.owner_invited
                         && !self.owner
                         && request.target.contains("physically_created_agent_dm")
                 );
@@ -278,7 +304,7 @@ impl Server {
             self.posts += 1;
             return (200, json!({"room_id":PROJECT}));
         }
-        assert!(!rep && !human && self.created && self.joined && self.owner);
+        assert!(!rep && !human && self.created && self.joined);
         self.peer
             .protocol(&request.method, &request.target, &body)
             .await
@@ -370,9 +396,9 @@ async fn drive(
                 }
                 let mut response = server.reply(&request).await;
                 change(&request,&mut response);
-                let first_dm = request.target.ends_with("/state") && request.target.contains("physically_created_agent_dm");
+                let invited = request.target.ends_with("/invite") && request.target.contains("physically_created_agent_dm") && response.0==200;
                 request.json(response.0,response.1);
-                if first_dm && join_owner && owner.is_none() {owner=Some(tokio::spawn(owner_join(fake.endpoint.clone())));}
+                if invited && join_owner && owner.is_none() {owner=Some(tokio::spawn(owner_join(fake.endpoint.clone())));}
             }
         }
     };
@@ -429,7 +455,8 @@ async fn native_provisioning_inline_rooms_enrollment() {
         .await
         .unwrap();
     assert_eq!(result.admitted, 2);
-    assert_eq!(server.posts, 3);
+    // ADR-184: createRoom, project invite, project join, owner invite.
+    assert_eq!(server.posts, 4);
     assert!(server.owner && server.owner_reads >= 2);
     assert_eq!(server.peer.writes.len(), 5);
     assert_eq!(server.peer.claims, 1);
@@ -509,7 +536,11 @@ async fn native_provisioning_inline_rooms_refusals() {
                         .push(member(&representative()));
                 }
                 if variant == 8 {
-                    response.1[3]["content"]["algorithm"] = json!("unsupported");
+                    for event in response.1.as_array_mut().unwrap() {
+                        if event["type"] == "m.room.encryption" {
+                            event["content"]["algorithm"] = json!("unsupported");
+                        }
+                    }
                 }
             }
         })
@@ -553,16 +584,20 @@ async fn native_provisioning_inline_rooms_refusals() {
     drive(&f, &mut fake, &c, &mut server, false, |_, _| {})
         .await
         .unwrap();
-    assert_eq!(server.posts, 3);
+    // ADR-184: createRoom, project invite, project join, owner invite.
+    assert_eq!(server.posts, 4);
     assert!(server.owner_reads > 0 && !server.owner);
-    assert!(server.peer.writes.is_empty());
+    // ADR-184: the agent enrolled before the owner was invited; the wait is
+    // for the owner only.
+    assert!(server.enrolled() && server.owner_invited);
+    let enrolled = server.peer.writes.len();
     assert_eq!(effect_row(&f), Some(("provision".into(), "started".into())));
     assert_eq!(route_rows(&f), 0);
     let reads = server.owner_reads;
     // A turn with the owner still absent looks once and keeps waiting.
     turn(&mut fake, &c, &mut server).await.unwrap();
     assert!(server.owner_reads > reads && !server.owner);
-    assert!(server.peer.writes.is_empty());
+    assert_eq!(server.peer.writes.len(), enrolled, "no key write while waiting");
     assert_eq!(effect_row(&f), Some(("provision".into(), "started".into())));
     // The owner joins; the next turn finishes the rooms and the enrollment.
     let mut owner = tokio::spawn(owner_join(fake.endpoint.clone()));
@@ -575,10 +610,14 @@ async fn native_provisioning_inline_rooms_refusals() {
     assert!(server.owner);
     turn(&mut fake, &c, &mut server).await.unwrap();
     assert_eq!(
-        server.posts, 3,
+        server.posts, 4,
         "nothing is created, invited or joined again"
     );
-    assert!(!server.peer.writes.is_empty(), "the enrollment followed");
+    assert_eq!(
+        server.peer.writes.len(),
+        enrolled,
+        "the enrollment is not repeated after the owner joins"
+    );
     assert_eq!(effect_row(&f), Some(("provision".into(), "started".into())));
     finish(f, fake, c).await;
 }
@@ -678,7 +717,8 @@ async fn native_provisioning_inline_rooms_replay() {
         std::fs::read(room_root(&f).join("complete")).unwrap(),
         protected
     );
-    assert_eq!(server.posts, 3);
+    // ADR-184: createRoom, project invite, project join, owner invite.
+    assert_eq!(server.posts, 4);
     assert_eq!(server.peer.writes.len(), 5);
     assert_account_only(&f, &c);
     finish(f, fake, c).await;
@@ -740,7 +780,7 @@ async fn native_provisioning_inline_rooms_custody() {
                     _=&mut watchdog=>panic!("original owned room job did not settle"),
                     request=fake.next()=>{
                         let response=server.reply(&request).await;
-                        let dm=request.target.ends_with("/state") && request.target.contains("physically_created_agent_dm");
+                        let dm=request.target.ends_with("/invite") && request.target.contains("physically_created_agent_dm") && response.0==200;
                         request.json(response.0,response.1);
                         if dm && human.is_none() {human=Some(tokio::spawn(owner_join(fake.endpoint.clone())));}
                     }
@@ -886,7 +926,8 @@ async fn native_provisioning_inline_rooms_custody_refusals() {
             effect_row(&f),
             Some(("provision".into(), "uncertain".into()))
         );
-        assert_eq!(server.posts, 3);
+        // ADR-184: createRoom, project invite, project join, owner invite.
+        assert_eq!(server.posts, 4);
         assert_eq!(server.peer.writes.len(), 5);
         finish(f, fake, c).await;
     }
@@ -1065,7 +1106,8 @@ async fn native_provisioning_inline_appservice() {
     assert_eq!(result.admitted, 2);
     assert!(server.as_created && server.as_logged);
     assert_eq!(server.as_posts, 2);
-    assert_eq!(server.posts, 3);
+    // ADR-184: createRoom, project invite, project join, owner invite.
+    assert_eq!(server.posts, 4);
     assert!(server.owner && server.owner_reads >= 2);
     assert_eq!(server.peer.writes.len(), 5);
     assert_eq!(server.peer.claims, 1);
@@ -1202,7 +1244,8 @@ async fn native_provisioning_sdk_active_appservice() {
             );
         }
         assert_eq!(server.as_posts, 2);
-        assert_eq!(server.posts, 3);
+        // ADR-184: createRoom, project invite, project join, owner invite.
+        assert_eq!(server.posts, 4);
         assert_eq!(server.peer.writes.len(), 5);
         assert_eq!(server.peer.claims, 1);
         assert_eq!(route_rows(&f), 0);
@@ -1228,7 +1271,8 @@ async fn native_provisioning_inline_appservice_scope_change() {
                 }
                 if boundary != "room"
                     && request.target.contains("physically_created_agent_dm")
-                    && room_root(&f).join("complete").exists()
+                    // ADR-184: enrollment follows the agent-only rooms.
+                    && room_root(&f).join("agent-rooms").exists()
                 {
                     sdk_reads += 1;
                     if sdk_reads == 3 {
@@ -1408,7 +1452,8 @@ async fn native_provisioning_inline_home() {
         );
     }
     assert_account_only(&f, &c);
-    assert_eq!(server.posts, 3);
+    // ADR-184: createRoom, project invite, project join, owner invite.
+    assert_eq!(server.posts, 4);
     assert_eq!(server.peer.writes.len(), 5);
     let weak = Arc::downgrade(&actual);
     drop(actual);
@@ -1647,7 +1692,7 @@ async fn native_provisioning_inline_home_custody() {
                         complete_account_request(&f,request,&mut fake).await;
                     } else {
                         let response=server.reply(&request).await;
-                        let dm=request.target.ends_with("/state") && request.target.contains("physically_created_agent_dm");
+                        let dm=request.target.ends_with("/invite") && request.target.contains("physically_created_agent_dm") && response.0==200;
                         request.json(response.0,response.1);
                         if dm && human.is_none() {human=Some(tokio::spawn(owner_join(fake.endpoint.clone())));}
                     }
@@ -1659,7 +1704,8 @@ async fn native_provisioning_inline_home_custody() {
         human.await.unwrap();
     }
     assert_account_only(&f, &c);
-    assert_eq!(server.posts, 3);
+    // ADR-184: createRoom, project invite, project join, owner invite.
+    assert_eq!(server.posts, 4);
     assert_eq!(server.peer.writes.len(), 5);
     assert!(custody.join("complete").exists());
     assert_eq!(

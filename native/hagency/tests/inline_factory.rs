@@ -629,7 +629,8 @@ async fn native_provisioning_effect_completed() {
         f.provision().await;
         assert_eq!(f.target_state(), ("complete".into(), "active".into()));
         f.original_owner().await;
-        assert_eq!(f.peer.posts, 3);
+        // ADR-184: createRoom, project invite, project join, owner invite.
+        assert_eq!(f.peer.posts, 4);
         assert_eq!(f.peer.peer.claims, 1);
         assert_eq!(f.peer.peer.writes.len(), 5);
         assert_eq!(
@@ -1051,7 +1052,7 @@ async fn native_provisioning_factory_refusals() {
             request=f.fake.next()=>{
                 if request.target.ends_with("/state") && request.target.contains("factory_owner_dm")
                     && f.work().join("owned-mcp.warm-initialized").exists() {
-                    refused=true;f.peer.owner=false;
+                    refused=true;f.peer.owner=false;f.peer.owner_left=true;
                 }
                 f.peer.respond(request,&f.base).await;
             },

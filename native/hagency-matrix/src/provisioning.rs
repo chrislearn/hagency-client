@@ -318,6 +318,9 @@ impl TokenProvisioningHost {
             account
                 .enroll_created_rooms(1, self.key, plan.anchors.clone(), cancel)
                 .await?;
+            // ADR-184: the agent's keys are published; only now may the owner
+            // arrive and write to it.
+            account.invite_owner(&plan.representative, cancel).await?;
         }
         if self.warm.is_some() {
             self.finish_factory(domain, effect, account, job, cancel, activated)

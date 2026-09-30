@@ -904,7 +904,8 @@ async fn qualify_profile(media: bool, local: bool) {
         for index in 0..2 {
             let agent = &f.peer.agents[index];
             assert_eq!(agent.account_posts, if application_service { 2 } else { 1 });
-            assert_eq!(agent.room_posts, 3);
+            // ADR-184: createRoom, project invite, project join, owner invite.
+            assert_eq!(agent.room_posts, 4);
             assert_eq!(
                 agent.crypto.writes.len(),
                 5,

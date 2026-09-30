@@ -339,7 +339,9 @@ async fn native_provisioning_account_enrollment_refusals() {
                                 .unwrap()
                                 .push(member(&representative())),
                             5 => reply.1[3]["content"]["algorithm"] = json!("unsupported"),
-                            6 => reply.1[1]["content"]["membership"] = json!("invite"),
+                            // ADR-184: an invited owner is a resumed wait, not a refusal;
+                            // a departed owner is.
+                            6 => reply.1[1]["content"]["membership"] = json!("leave"),
                             _ => {}
                         }
                     } else {

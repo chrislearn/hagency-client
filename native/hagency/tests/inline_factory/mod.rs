@@ -699,6 +699,10 @@ pub struct Peer {
     pub invited: bool,
     pub joined: bool,
     pub owner: bool,
+    /// ADR-184: the agent invited the owner to its DM, after enrolling.
+    pub owner_invited: bool,
+    /// The owner left the DM after joining (a real `leave`, not a re-invite).
+    pub owner_left: bool,
     pub posts: usize,
     pub approval_owner: bool,
     pub approval_observations: usize,
@@ -729,6 +733,8 @@ impl Peer {
             invited: false,
             joined: false,
             owner: false,
+            owner_invited: false,
+            owner_left: false,
             posts: 0,
             approval_owner: true,
             approval_observations: 0,
@@ -757,13 +763,18 @@ impl Peer {
     }
     fn dm(&self) -> Value {
         assert!(self.created);
-        json!([
-            member(&self.user),{"type":"m.room.member","state_key":OWNER,"content":{"membership":if self.owner {"join"} else {"invite"}}},
+        let mut state = json!([
+            member(&self.user),
             {"type":"m.room.join_rules","state_key":"","content":{"join_rule":"invite"}},
             {"type":"m.room.encryption","state_key":"","content":{"algorithm":"m.megolm.v1.aes-sha2"}},
             {"type":"m.room.create","state_key":"","sender":self.user,"content":{"creator":self.user,"m.federate":false}},
             {"type":"m.room.history_visibility","state_key":"","content":{"history_visibility":"invited"}}
-        ])
+        ]);
+        if self.owner_invited || self.owner {
+            state.as_array_mut().unwrap().push(json!({"type":"m.room.member","state_key":OWNER,
+                "content":{"membership":if self.owner_left {"leave"} else if self.owner {"join"} else {"invite"}}}));
+        }
+        state
     }
     pub async fn respond(&mut self, request: matrix::Request, base: &matrix::Fixture) {
         let actor = request.headers.get("authorization").cloned();
@@ -948,10 +959,21 @@ impl Peer {
                 }
             } else if url.path().ends_with("/createRoom") {
                 assert!(!rep && !human && !self.created);
-                assert_eq!(body["invite"], json!([OWNER]));
+                assert_eq!(body["invite"], json!([]), "ADR-184: the DM is created agent-only");
                 self.created = true;
                 self.posts += 1;
                 (200, json!({"room_id":DM}))
+            } else if url.path().ends_with("/invite") && request.target.contains("factory_owner_dm") {
+                assert!(!rep && !human && self.created && self.joined && !self.owner_invited);
+                assert!(
+                    self.peer.writes.iter().any(|(t, _)| t.ends_with("/keys/device_signing/upload"))
+                        && self.peer.claims >= 1,
+                    "ADR-184: the owner is invited only after the agent's keys are published"
+                );
+                assert_eq!(body, json!({"user_id": OWNER}));
+                self.owner_invited = true;
+                self.posts += 1;
+                (200, json!({}))
             } else if url.path().ends_with("/invite") {
                 assert!(rep && self.created && !self.invited);
                 assert_eq!(body["user_id"], self.user);
@@ -960,7 +982,7 @@ impl Peer {
                 (200, json!({}))
             } else if url.path().contains("/join/") {
                 if human {
-                    assert!(self.created && !self.owner);
+                    assert!(self.created && self.owner_invited && !self.owner);
                     self.owner = true;
                     (200, json!({"room_id":DM}))
                 } else {
@@ -976,7 +998,7 @@ impl Peer {
                     json!({"next_batch":"factory-agent-active","rooms":{"join":{}},"to_device":{"events":[]}}),
                 )
             } else {
-                assert!(!rep && !human && self.created && self.owner && self.joined);
+                assert!(!rep && !human && self.created && self.joined);
                 self.peer
                     .protocol(&request.method, &request.target, &body)
                     .await
@@ -984,8 +1006,9 @@ impl Peer {
             }
         };
         // The owner joins the new DM once; after a restart they are already in it.
-        let invite_owner = request.target.ends_with("/state")
+        let invite_owner = request.target.ends_with("/invite")
             && request.target.contains("factory_owner_dm")
+            && response.0 == 200
             && !self.owner
             && self.owner_job.is_none();
         request.json(response.0, response.1);
