@@ -7,7 +7,7 @@ use hagency_core::{
 };
 use matrix_sdk_base::sync::SyncResponse;
 use matrix_sdk_common::deserialized_responses::{
-    AlgorithmInfo, TimelineEventKind, VerificationState,
+    AlgorithmInfo, TimelineEventKind, VerificationLevel, VerificationState,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -496,8 +496,18 @@ impl Batch {
             TimelineEventKind::UnableToDecrypt { .. } => return Err(CryptoIneligible),
             TimelineEventKind::Decrypted(d) => {
                 let info = &d.encryption_info;
-                if !matches!(info.verification_state, VerificationState::Verified)
-                    || info.sender.as_str() != string("sender")?
+                // The owner's unverified devices are accepted (TS parity; see
+                // `sdk::trust_requirement`). An unknown or insecurely sourced
+                // device and a mismatched sender stay refused.
+                if !matches!(
+                    info.verification_state,
+                    VerificationState::Verified
+                        | VerificationState::Unverified(
+                            VerificationLevel::UnverifiedIdentity
+                                | VerificationLevel::VerificationViolation
+                                | VerificationLevel::UnsignedDevice
+                        )
+                ) || info.sender.as_str() != string("sender")?
                     || info.forwarder.is_some()
                 {
                     return Err(CryptoIneligible);

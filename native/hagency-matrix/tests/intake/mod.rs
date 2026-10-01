@@ -735,7 +735,12 @@ async fn native_matrix_intake_crypto_verified_human_dm_no_mention_and_spoof_refu
             result
         })
         .await;
-        if variant == "verified" {
+        if variant == "unverified" {
+            // The owner's unverified device is accepted for an agent (TS
+            // parity, `sdk::trust_requirement`): admitted like a verified one.
+            let result = result.unwrap();
+            assert_eq!((result.admitted, result.rejected), (1, 0), "unverified");
+        } else if variant == "verified" {
             assert_eq!(result.unwrap().admitted, 1);
             let inbox = f.store.inbox("root".into(), 0, 10, None).await.unwrap();
             assert_eq!(inbox.len(), 1);
@@ -749,7 +754,8 @@ async fn native_matrix_intake_crypto_verified_human_dm_no_mention_and_spoof_refu
             // Board #10 (TS `bridge-matrix.js:6646` `onFailedRoomDecryption`):
             // a missing room key is QUEUED for a later sync, not refused
             // terminally. Every other variant (unverified, forged sender,
-            // plaintext-in-encrypted-room) is still an immediate refusal.
+            // plaintext-in-encrypted-room) is still an immediate refusal; an
+            // unverified device is admitted (above).
             let expected_rejected = if variant == "missing_key" { 0 } else { 1 };
             assert_eq!(result.rejected, expected_rejected, "{variant}");
             assert_eq!(rows(&f, "admitted_messages"), 0);
