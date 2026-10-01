@@ -85,6 +85,7 @@ mod owned_dispatch;
 mod stopped_inspection;
 pub use outcome_resolution::{OutcomeAction, OutcomeResolution};
 mod provision_runtime;
+mod quota_holds;
 mod reminders;
 mod room_trust;
 pub use reminders::{Reminder, ReminderReceipt, ReminderSweep};
@@ -136,7 +137,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 57;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 58;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -345,6 +346,9 @@ pub struct AgentRosterRow {
     /// `usage_sources.latest_counts` display volume summed the way the usage
     /// report sums it. `None` when nothing was measured — unknown, not zero.
     pub consumed: Option<u64>,
+    /// ADR-186 §B: the engagement holds an open quota hold — its allocation
+    /// is used up, the running turn finishes and nothing new is dispatched.
+    pub quota_paused: bool,
     /// The operator's durable stop (`agent_lifecycle`, TS's `manualDown`):
     /// the engagement's newest lifecycle row is stopped-and-not-restarted.
     /// Roster-internal — it shapes `liveness`, and is deliberately NOT a
@@ -382,6 +386,24 @@ pub struct EngagementLabel {
     /// state (`engagement_ends.ended_at`). Both optional: null is unknown.
     pub created_at_ms: Option<u64>,
     pub ended_at_ms: Option<u64>,
+    /// ADR-186 §A4: the tokens the engagement holds — the granted amount,
+    /// raised by any top-up, else the request.
+    pub allocated_tokens: u64,
+    /// ADR-186 §B1/§B4: known fresh spend (input + output + cache writes)
+    /// over every period; `None` while unknown — no complete observation —
+    /// rendered as unknown, never as zero.
+    pub spent_tokens: Option<u64>,
+    /// ADR-186 §B2: an open quota hold — "paused: quota".
+    pub quota_paused: bool,
+}
+/// ADR-186 §B: one engagement's quota, as the pause reads it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuotaStatus {
+    pub allocated_tokens: u64,
+    /// Known fresh spend; `None` while unknown, which never pauses.
+    pub spent_tokens: Option<u64>,
+    pub paused: bool,
 }
 /// One session (room) of the agent detail read: the room the session's
 /// binding names plus its live dispatch state, when one exists. Exactly
@@ -1062,10 +1084,14 @@ impl DomainRepository {
                         57,
                         include_str!("migrations/057-engagement-allocation.sql"),
                     ),
+                    // ADR-186 §B: no board number; the file carries its list
+                    // version.
+                    (58, include_str!("migrations/058-quota-holds.sql")),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
                     "SELECT allocated_tokens FROM engagements LIMIT 0",
+                    "SELECT id,engagement_id,dispatch_id,spend,allocation,began_at,lifted_at,lifted_allocation FROM quota_holds LIMIT 0",
                     "SELECT fleet_id,allocated_tokens,updated_at FROM side_allocations LIMIT 0",
                     "SELECT engagement_id,stopped_at,reason,operator,started_at FROM agent_lifecycle LIMIT 0",
                     "SELECT server_name,label,api_base_url,credential,pending_credential,pending_issued_at,representative,access_state,access_detail,access_checked_at,access_issued_at,allocated_tokens,active,created_at,updated_at FROM side_records LIMIT 0",
@@ -1430,6 +1456,9 @@ impl DomainRepository {
             .min();
             // Compare before the state moves into the label.
             let pending = engagement.state == EngagementState::Pending;
+            let allocated_tokens = u64::from(engagement.allocation());
+            let spent_tokens = quota_holds::spend(&self.db, &engagement.id)?;
+            let quota_paused = quota_holds::paused(&self.db, &engagement.id)?;
             labels.push(EngagementLabel {
                 id: engagement.id.clone(),
                 agent_name: engagement.agent_name.as_str().to_owned(),
@@ -1442,6 +1471,9 @@ impl DomainRepository {
                 owner_binding_required: pending && !has_binding,
                 created_at_ms: observed_at.and_then(|v| u64::try_from(v).ok()),
                 ended_at_ms: ended_at.and_then(|v| u64::try_from(v).ok()),
+                allocated_tokens,
+                spent_tokens,
+                quota_paused,
             });
         }
         Ok(labels)
@@ -1740,6 +1772,7 @@ impl DomainRepository {
                 // between dispatches is Online, which is the other half of
                 // what the live run reported (board #106).
                 let online = online || serving;
+                let quota_paused = quota_holds::paused(&self.db, &engagement.id)?;
                 Ok(AgentRosterRow {
                     name: engagement.agent_name.as_str().to_owned(),
                     framework: resource.framework,
@@ -1753,6 +1786,7 @@ impl DomainRepository {
                     liveness,
                     manual_down,
                     consumed: consumed.and_then(|v| u64::try_from(v).ok()),
+                    quota_paused,
                 })
             })
             .collect()
@@ -2177,6 +2211,16 @@ impl DomainRepository {
         let engagement = read_engagement(&self.db, id)?;
         let resource = read_resource(&self.db, &engagement.resource_id)?;
         Ok(headroom(&self.db, &resource, at)?.remaining)
+    }
+    /// ADR-186 §B: the engagement's allocation, its known spend (`None`
+    /// while unknown) and whether it holds an open quota hold.
+    pub fn quota_status(&self, id: &str) -> Result<QuotaStatus, Error> {
+        let engagement = read_engagement(&self.db, id)?;
+        Ok(QuotaStatus {
+            allocated_tokens: u64::from(engagement.allocation()),
+            spent_tokens: quota_holds::spend(&self.db, id)?,
+            paused: quota_holds::paused(&self.db, id)?,
+        })
     }
     pub fn reject(&mut self, command_id: &str, id: &str) -> Result<Engagement, Error> {
         self.end(command_id, id, false)

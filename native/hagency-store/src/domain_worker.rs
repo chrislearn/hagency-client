@@ -4272,6 +4272,10 @@ impl DomainStore {
         self.call(weight(&id)?, move |db| db.engagement_headroom(&id, at))
             .await
     }
+    /// ADR-186 §B: allocation, known spend and the open quota hold.
+    pub async fn quota_status(&self, id: String) -> Result<crate::QuotaStatus, Error> {
+        self.call(weight(&id)?, move |db| db.quota_status(&id)).await
+    }
     pub async fn reject(&self, command: String, id: String) -> Result<Engagement, Error> {
         self.call(weight(&(&command, &id))?, move |db| {
             db.reject(&command, &id)

@@ -69,6 +69,8 @@ async fn native_console_agent_roster_observation() {
         "last_activity_ms",
         "liveness",
         "consumed",
+        // ADR-186 §B: the quota hold.
+        "quota_paused",
     ];
     let mut by_name: Vec<(String, &Value)> = agents
         .iter()
@@ -79,7 +81,7 @@ async fn native_console_agent_roster_observation() {
     assert_eq!(names, ["AlertWorker", "PageWorker", "UsageWorker"]);
     for (_, agent) in &by_name {
         let object = agent.as_object().unwrap();
-        assert_eq!(object.len(), keys.len(), "exactly eleven keys");
+        assert_eq!(object.len(), keys.len(), "exactly twelve keys");
         for key in keys {
             assert!(object.contains_key(key), "the wire item carries {key}");
             assert!(

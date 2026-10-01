@@ -84,3 +84,57 @@ async fn native_allocation_route_all_remaining_and_named_refusal() {
     assert_eq!(allocated_column(&state, &pending), Some(900));
     f.close().await;
 }
+
+/// §B: a quota hold shows on Engagements (`quotaPaused`, with the allocation
+/// and the known spend) and on Workforce (`quota_paused`). The hold row is
+/// written directly: the store tests own how it opens, this pins the reads.
+#[tokio::test]
+async fn native_allocation_route_reads_show_the_quota_pause() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let state = f.root.path().join("state");
+    let cookie = lifecycle_session(&service).await;
+    let paused = |value: &Value| -> Option<bool> {
+        value["engagements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == f.engagement.as_str())
+            .map(|row| row["quotaPaused"].as_bool().unwrap())
+    };
+    let mut listed = get("/console/api/engagements", &cookie).send(&service).await;
+    let before = listed.take_json::<Value>().await.unwrap();
+    assert_eq!(paused(&before), Some(false));
+    let row = before["engagements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == f.engagement.as_str())
+        .unwrap()
+        .clone();
+    assert_eq!(row["allocatedTokens"], 100, "the request is the allocation");
+    // The seed's period is incomplete (an empty snapshot between two
+    // counts) but carries counts: its known lower bound is the spend.
+    assert!(row["spentTokens"].as_u64().is_some(), "the seeded usage is counted");
+    rusqlite::Connection::open(state.join("domain.sqlite3"))
+        .unwrap()
+        .execute(
+            "INSERT INTO quota_holds(engagement_id,dispatch_id,spend,allocation,began_at) VALUES(?1,NULL,100,100,1)",
+            [&f.engagement],
+        )
+        .unwrap();
+    let mut listed = get("/console/api/engagements", &cookie).send(&service).await;
+    assert_eq!(paused(&listed.take_json::<Value>().await.unwrap()), Some(true));
+    let mut roster = get("/console/api/agents", &cookie).send(&service).await;
+    assert_eq!(roster.status_code, Some(StatusCode::OK));
+    let roster = roster.take_json::<Value>().await.unwrap();
+    let agent = roster["agents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["engagement_id"] == f.engagement.as_str())
+        .unwrap()
+        .clone();
+    assert_eq!(agent["quota_paused"], true);
+    f.close().await;
+}

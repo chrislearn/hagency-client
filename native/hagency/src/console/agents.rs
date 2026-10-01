@@ -54,8 +54,8 @@ pub(super) fn router() -> Router {
         .push(Router::with_path("{id}/refuse").post(refuse))
 }
 
-/// Exactly twelve keys, in the ADR-126 order extended by board #22 and
-/// board #60. Every key except `name`, `framework`, `role`, `state`,
+/// Exactly twelve keys, in the ADR-126 order extended by board #22, board
+/// #60 and ADR-186 (`quota_paused`). Every key except `name`, `framework`, `role`, `state`,
 /// `engagement_id`, `requested_tokens`, `online` and `seat` is nullable at
 /// the source; `null` means "unknown", rendered as such. `consumed` is
 /// `null` when nothing was measured — unknown, never zero. One row per
@@ -83,6 +83,10 @@ struct RosterItem {
     /// Tokens observed consumed by the agent's engagements, summed the way
     /// the usage report sums it. Null when nothing was measured.
     consumed: Option<u64>,
+    /// ADR-186 §B2: the agent's engagement holds an open quota hold — its
+    /// allocation is used up and nothing new is dispatched until a top-up.
+    /// Separate from `liveness`, because the running turn still finishes.
+    quota_paused: bool,
 }
 
 /// Board #60 item 2. The columns that were printed as `unknown` are now
@@ -215,6 +219,7 @@ async fn list(req: &mut Request, depot: &mut Depot, res: &mut Response) {
                         last_activity_ms: row.last_activity_ms,
                         liveness: row.liveness,
                         consumed: row.consumed,
+                        quota_paused: row.quota_paused,
                     }
                 })
                 .collect();

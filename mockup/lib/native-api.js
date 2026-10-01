@@ -55,7 +55,7 @@ export function validateEngagements(v) {
    * implementation accident of `slice`, not a designed rule; the native
    * verifier's scalar bound is the contract. */
   if (!object(v, ['engagements', 'next_after']) || !Array.isArray(v.engagements) || v.engagements.length > 16
-    || !(v.next_after === null || id(v.next_after)) || v.engagements.some((e) => !object(e, ['id', 'agentName', 'projectName', 'role', 'requestedTokens', 'state', 'cleanup', 'agentRemainingTokens', 'ownerBindingRequired', 'createdAtMs', 'endedAtMs'])
+    || !(v.next_after === null || id(v.next_after)) || v.engagements.some((e) => !object(e, ['id', 'agentName', 'projectName', 'role', 'requestedTokens', 'state', 'cleanup', 'agentRemainingTokens', 'ownerBindingRequired', 'createdAtMs', 'endedAtMs', 'allocatedTokens', 'spentTokens', 'quotaPaused'])
       || !id(e.id) || typeof e.agentName !== 'string' || e.agentName.length > 128
       || !(e.projectName === null || (typeof e.projectName === 'string' && [...e.projectName].length <= 255))
       || typeof e.role !== 'string' || e.role.length > 128 || !number(e.requestedTokens) || !STATES.includes(e.state) || !CLEANUP.includes(e.cleanup)
@@ -65,7 +65,12 @@ export function validateEngagements(v) {
       || !(e.agentRemainingTokens === null || number(e.agentRemainingTokens))
       || typeof e.ownerBindingRequired !== 'boolean'
       || !(e.createdAtMs === null || number(e.createdAtMs))
-      || !(e.endedAtMs === null || number(e.endedAtMs)))) throw new Error('invalid_native_response');
+      || !(e.endedAtMs === null || number(e.endedAtMs))
+      /* ADR-186: the allocation held, the known spend (null while unknown,
+       * never a zero) and the quota hold. */
+      || !number(e.allocatedTokens)
+      || !(e.spentTokens === null || number(e.spentTokens))
+      || typeof e.quotaPaused !== 'boolean')) throw new Error('invalid_native_response');
   return v;
 }
 const RECOVERY_ERRORS = { agent_lifecycle_scope_required: 403, resolution_conflict: 409, dispatch_not_resolvable: 409, invalid_console_request: 400 };
@@ -264,7 +269,7 @@ export function alertsView(location) { return /^\/console\/alerts\/?$/.test(loca
  * `liveness` (the live dispatch's own word, distinct from the engagement
  * `state`) and `consumed` (observed tokens, null when unmeasured) are
  * served now, so this list is empty. */
-const ROSTER_KEYS = ['name', 'framework', 'role', 'state', 'engagement_id', 'requested_tokens', 'online', 'last_seen_ms', 'last_activity_ms', 'liveness', 'consumed'];
+const ROSTER_KEYS = ['name', 'framework', 'role', 'state', 'engagement_id', 'requested_tokens', 'online', 'last_seen_ms', 'last_activity_ms', 'liveness', 'consumed', 'quota_paused'];
 export function validateAgents(v) {
   if (!object(v, ['at_ms', 'unavailable', 'agents', 'permissions']) || !number(v.at_ms)
     || !Array.isArray(v.unavailable) || v.unavailable.length > 32 || v.unavailable.some((n) => !text(n, 64))
@@ -277,7 +282,8 @@ export function validateAgents(v) {
       || !(a.last_seen_ms === null || number(a.last_seen_ms))
       || !(a.last_activity_ms === null || number(a.last_activity_ms))
       || !(a.liveness === null || text(a.liveness, 32))
-      || !(a.consumed === null || number(a.consumed)))) throw new Error('invalid_native_response');
+      || !(a.consumed === null || number(a.consumed))
+      || typeof a.quota_paused !== 'boolean')) throw new Error('invalid_native_response');
   return v;
 }
 export async function fetchAgents() {

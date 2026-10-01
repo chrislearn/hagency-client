@@ -33,7 +33,7 @@ pub use domain::{
     OwnedClaimProfile, OwnedClaimRoom, OwnedCompletion, OwnedDispatchScope, OwnedFailure,
     OwnedObservation, OwnedProvisionScope, PEER_RECEIPT_CEILING, PEER_RETENTION_CEILING,
     Reminder, ReminderReceipt, ReminderSweep,
-    PEER_RETENTION_FLOOR, PeerRetentionStatus, PeerSweepOutcome, PendingInvite, ProjectSide, Representative,
+    PEER_RETENTION_FLOOR, PeerRetentionStatus, PeerSweepOutcome, PendingInvite, ProjectSide, QuotaStatus, Representative,
     RetentionStatus, SideProject, SideProjectRecord, SideRecord, SourceUsage, SweepOutcome, SideBudget, SideCommitment, UploadAdmission, UploadClaim, UploadIdentity,
     RuntimeProfile, RuntimeProfileRole,
     DeliveryEventRow, NewOperatorMessage, OperatorMessage, SuppressOutcome, Suppression, Tombstone,

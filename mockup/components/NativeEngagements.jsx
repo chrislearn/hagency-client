@@ -174,6 +174,8 @@ export default function NativeEngagements({ lead = null, pending = null, other =
                 <th>{t('col.project')}</th>
                 <th>{t('col.role')}</th>
                 <th className="num">{t('col.requested')}</th>
+                <th className="num">{t('col.allocated')}</th>
+                <th className="num">{t('quota.spent')}</th>
                 <th className="num">{t('col.remaining')}</th>
                 <th>{t('col.action')}</th>
               </tr>
@@ -181,7 +183,12 @@ export default function NativeEngagements({ lead = null, pending = null, other =
             <tbody>
               {rows.map((e) => (
                 <tr key={e.id} data-engagement-row={e.id}>
-                  <td>{e.state}</td>
+                  <td>
+                    {e.state}
+                    {/* ADR-186 §B: the allocation is used up; queued work
+                        waits for a top-up. */}
+                    {e.quotaPaused && <> <span className="stranded warn-chip" data-quota-paused>{t('quota.paused')}</span></>}
+                  </td>
                   <td>
                     {/* The agent name reaches the usage page for THIS engagement
                         — the drill-down the reader expects a triage row to have. */}
@@ -190,6 +197,9 @@ export default function NativeEngagements({ lead = null, pending = null, other =
                   <td>{e.projectName ?? '—'}</td>
                   <td>{e.role}</td>
                   <td className="num dim">{fmtTokens(e.requestedTokens)}</td>
+                  <td className="num" data-allocated={e.allocatedTokens}>{fmtTokens(e.allocatedTokens)}</td>
+                  {/* Known fresh spend; unknown is said, never a zero. */}
+                  <td className="num dim" data-spent={e.spentTokens === null ? 'unknown' : e.spentTokens}>{e.spentTokens === null ? t('nu.unknown') : fmtTokens(e.spentTokens)}</td>
                   {/* Board #60 item 3: what is LEFT on the resource behind the
                       agent, so over-commitment shows BEFORE the decision. Null
                       is unknown (no ceiling declared), never a zero allowance;

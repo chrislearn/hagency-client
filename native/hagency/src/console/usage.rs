@@ -65,6 +65,13 @@ struct Label {
     /// ended engagement. Both null when unknown — never an invented clock.
     created_at_ms: Option<u64>,
     ended_at_ms: Option<u64>,
+    /// ADR-186 §A4: what the engagement holds — the granted amount, raised
+    /// by any top-up, else the request.
+    allocated_tokens: u64,
+    /// ADR-186 §B: known fresh spend; null while unknown, never zero.
+    spent_tokens: Option<u64>,
+    /// ADR-186 §B2: an open quota hold, shown as "paused: quota".
+    quota_paused: bool,
 }
 #[handler]
 async fn engagements(req: &mut Request, depot: &mut Depot, res: &mut Response) {
@@ -120,6 +127,9 @@ async fn engagements(req: &mut Request, depot: &mut Depot, res: &mut Response) {
                     owner_binding_required: e.owner_binding_required,
                     created_at_ms: e.created_at_ms,
                     ended_at_ms: e.ended_at_ms,
+                    allocated_tokens: e.allocated_tokens,
+                    spent_tokens: e.spent_tokens,
+                    quota_paused: e.quota_paused,
                 })
                 .collect();
             res.render(Json(

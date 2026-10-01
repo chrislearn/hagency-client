@@ -156,3 +156,338 @@ fn native_allocation_all_remaining() {
     assert_eq!(db.engagement_headroom(&id, 1000).unwrap(), Some(0));
     assert_eq!(db.engagement_headroom(&first, 1000).unwrap(), Some(0));
 }
+
+mod quota {
+    //! §B: the quota pause, on a verified Matrix thread session so the pause
+    //! notice has a thread to land in (the `over_budget_notice.rs` fixture).
+    use super::*;
+    use hagency_core::{
+        agent_inbox::{AgentInboxPlan, AgentInboxSelection},
+        ingress::MatrixEventObservation,
+        messages::InboundMessage,
+        replies::*,
+        tasks::*,
+    };
+    use hagency_metering::{Framework, observation::UsageObservation};
+    use hagency_store::{EffectOutcome, OwnedDispatchScope, UsageSource};
+    use serde_json::json;
+    use std::collections::BTreeSet;
+
+    const ROOM: &str = "!project:example.test";
+
+    pub(super) struct Fixture {
+        pub root: tempfile::TempDir,
+        pub db: DomainRepository,
+        pub engagement: String,
+        pub proof: hagency_core::authority::VerifiedRequest,
+    }
+    pub(super) fn codex(fresh: u64, output: u64, cached: u64) -> UsageObservation {
+        UsageObservation::parse(Framework::Codex,&json!({"payload":{"info":{"total_token_usage":{"input_tokens":fresh+cached,"output_tokens":output,"cached_input_tokens":cached,"reasoning_output_tokens":0,"total_tokens":fresh+cached+output}}}}).to_string()).unwrap()
+    }
+    pub(super) fn empty() -> UsageObservation {
+        UsageObservation::parse(Framework::Codex, "").unwrap()
+    }
+    impl Fixture {
+        /// One agent approved for `allocated` of its 100-token request, its
+        /// transport and Group room observed, and a verified thread session.
+        pub fn new(allocated: u64) -> Self {
+            let root = tempfile::tempdir().unwrap();
+            let mut db = DomainRepository::open(&root.path().join("state")).unwrap();
+            db.register(&registration()).unwrap();
+            let pool = resource("pool", "seat", 1000);
+            db.put_resource(&pool).unwrap();
+            let p = proof(&request("one", "Worker", &pool, 100));
+            let e = db.admit(&p, 1000).unwrap();
+            db.approve_allocating("approve_one", &p, 1000, Some(allocated))
+                .unwrap();
+            let effect = db.claim_effect().unwrap().unwrap();
+            db.observe_effect(
+                &effect.id,
+                effect.fence,
+                &EffectOutcome::Applied {
+                    receipt: "fixture account".into(),
+                },
+            )
+            .unwrap();
+            db.observe_matrix_transport(
+                &MatrixTransportObservation {
+                    engagement_id: e.id.clone(),
+                    registration_generation: 1,
+                    generation: 1,
+                    sender_mxid: "@worker:example.test".into(),
+                    device_id: "DEVICE_WORKER".into(),
+                },
+                1001,
+            )
+            .unwrap();
+            db.observe_matrix_room(
+                &MatrixRoomObservation {
+                    engagement_id: e.id.clone(),
+                    registration_generation: 1,
+                    transport_generation: 1,
+                    room_id: ROOM.into(),
+                    generation: 1,
+                    privacy: RoomPrivacy::Group {},
+                    joined: BTreeSet::from([
+                        "@owner:example.test".to_owned(),
+                        "@worker:example.test".to_owned(),
+                    ]),
+                    invite_only: true,
+                    encrypted: true,
+                },
+                1002,
+            )
+            .unwrap();
+            db.register_workspace("work_thread").unwrap();
+            db.resolve_verified_matrix_session(
+                &SessionBinding {
+                    id: "threaded".into(),
+                    engagement_id: e.id.clone(),
+                    room_id: ROOM.into(),
+                    thread_root: Some("$thread_threaded".into()),
+                },
+                1003,
+            )
+            .unwrap();
+            Self {
+                root,
+                db,
+                engagement: e.id,
+                proof: p,
+            }
+        }
+        pub fn sql(&self) -> rusqlite::Connection {
+            rusqlite::Connection::open(self.root.path().join("state/domain.sqlite3")).unwrap()
+        }
+        /// The owner's addressed request in the thread.
+        pub fn admit(&mut self, event_id: &str, origin_ts: u64) {
+            let observation = MatrixEventObservation {
+                scope: self.db.matrix_ingress_scope("threaded").unwrap(),
+                event: InboundMessage {
+                    server_name: "example.test".into(),
+                    room_id: ROOM.into(),
+                    event_id: event_id.into(),
+                    sender_mxid: "@owner:example.test".into(),
+                    thread_root: Some("$thread_threaded".into()),
+                    body: "@worker:example.test draft the quarterly report".into(),
+                    kind: "m.text".into(),
+                    origin_ts,
+                },
+                mentions: BTreeSet::from(["@worker:example.test".to_owned()]),
+                encrypted: true,
+            };
+            assert!(
+                self.db
+                    .admit_matrix_event(&observation, origin_ts + 1)
+                    .unwrap()
+                    .wake
+            );
+        }
+        /// The inbox dispatch claimed and started as an owned turn, with
+        /// its usage source bound: the running turn whose usage is observed.
+        pub fn working(&mut self, now: u64) -> (RunnerCapability, OwnedDispatchScope, UsageSource) {
+            let plan = AgentInboxPlan {
+                session_id: "threaded".into(),
+                workspace_id: "work_thread".into(),
+            };
+            let AgentInboxSelection::Selected { dispatch_id, .. } =
+                self.db.select_agent_inbox(&plan, now).unwrap()
+            else {
+                panic!("the verified wake did not create a dispatch")
+            };
+            let cap = self
+                .db
+                .claim_dispatch("runner", now + 1, 60_000, 120_000, 8)
+                .unwrap()
+                .unwrap();
+            assert_eq!(cap.dispatch_id, dispatch_id);
+            let admission = self.db.owned_dispatch_scope(&cap, now + 2).unwrap();
+            let started = self
+                .db
+                .start_owned_dispatch(&cap, admission.fingerprint(), now + 3)
+                .unwrap();
+            let source = self.db.bind_usage_source(&cap, &started, now + 4).unwrap();
+            (cap, started, source)
+        }
+        /// A second, plain session of the same engagement with one queued
+        /// dispatch: the work that arrives while the agent is paused.
+        pub fn queue_more(&mut self) {
+            self.db
+                .register_session(&SessionBinding {
+                    id: "later".into(),
+                    engagement_id: self.engagement.clone(),
+                    room_id: ROOM.into(),
+                    thread_root: None,
+                })
+                .unwrap();
+            self.db
+                .create_canonical_task("later_task", "later", "Later work", 5000)
+                .unwrap();
+            self.db.register_workspace("work_later").unwrap();
+            self.db
+                .enqueue_dispatch(&DispatchInput {
+                    id: "later_dispatch".into(),
+                    session_id: "later".into(),
+                    task_id: Some("later_task".into()),
+                    resources: vec![ResourceLease {
+                        id: "work_later".into(),
+                        exclusive: true,
+                    }],
+                    payload: json!({"instruction":"fixture"}),
+                })
+                .unwrap();
+        }
+        pub fn dispatch_state(&self, id: &str) -> String {
+            self.sql()
+                .query_row(
+                    "SELECT state FROM runner_dispatches WHERE id=?1",
+                    [id],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        }
+        /// (kind, body) of every quota notice, oldest first.
+        pub fn quota_notices(&self) -> Vec<(String, String)> {
+            let sql = self.sql();
+            let mut statement = sql
+                .prepare(
+                    "SELECT json_extract(config,'$.kind'),json_extract(config,'$.body') FROM task_notices \
+                     WHERE json_extract(config,'$.kind') LIKE 'quota_%' ORDER BY rowid",
+                )
+                .unwrap();
+            statement
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+                .unwrap()
+                .collect::<Result<_, _>>()
+                .unwrap()
+        }
+    }
+
+    /// §B1-§B3: spend below the allocation runs; spend reaching it opens the
+    /// hold, the running turn is untouched, new work stays queued and is not
+    /// claimed, and the project room hears exactly one notice.
+    #[test]
+    fn native_quota_pause_when_spend_reaches_the_allocation() {
+        let mut f = Fixture::new(50);
+        f.admit("$request", 3000);
+        let (cap, _, source) = f.working(3004);
+        f.db.record_usage_observation(&source, "under", &codex(30, 10, 7), 3100)
+            .unwrap();
+        let status = f.db.quota_status(&f.engagement).unwrap();
+        assert_eq!(status.allocated_tokens, 50);
+        // Cache reads are not counted: 30 + 10, not 47.
+        assert_eq!(status.spent_tokens, Some(40));
+        assert!(!status.paused);
+        f.db.record_usage_observation(&source, "over", &codex(45, 10, 7), 3200)
+            .unwrap();
+        let status = f.db.quota_status(&f.engagement).unwrap();
+        assert_eq!(status.spent_tokens, Some(55));
+        assert!(status.paused, "spend reached the allocation");
+        // The running turn finishes: its dispatch is still started.
+        assert_eq!(f.dispatch_state(&cap.dispatch_id), "started");
+        // Exactly one notice, in the thread of the turn, with §B3's words.
+        assert_eq!(
+            f.quota_notices(),
+            [(
+                "quota_paused".to_owned(),
+                "Paused: used 55 of 50 tokens. The owner can add tokens in the Hagency console."
+                    .to_owned()
+            )]
+        );
+        let thread: String = f
+            .sql()
+            .query_row(
+                "SELECT json_extract(config,'$.thread_root') FROM task_notices WHERE json_extract(config,'$.kind')='quota_paused'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(thread, "$thread_threaded");
+        // A further observation while paused says nothing more.
+        f.db.record_usage_observation(&source, "more", &codex(60, 10, 7), 3300)
+            .unwrap();
+        assert_eq!(f.quota_notices().len(), 1);
+        // Work that arrives meanwhile stays queued and is not claimed.
+        f.queue_more();
+        assert!(
+            f.db.claim_dispatch("runner_two", 3400, 60_000, 120_000, 8)
+                .unwrap()
+                .is_none(),
+            "no new turn is dispatched for a paused engagement"
+        );
+        assert_eq!(f.dispatch_state("later_dispatch"), "queued");
+        // The engagement is not ended or revoked by the pause.
+        assert_eq!(f.db.get(&f.engagement).unwrap().state, EngagementState::Active);
+        // Both console reads show it.
+        let label = f
+            .db
+            .engagement_labels("", None, 10)
+            .unwrap()
+            .into_iter()
+            .find(|l| l.id == f.engagement)
+            .unwrap();
+        assert!(label.quota_paused);
+        assert_eq!(label.allocated_tokens, 50);
+        assert_eq!(label.spent_tokens, Some(70));
+        let roster = f.db.agent_roster().unwrap();
+        assert!(roster.iter().any(|r| r.engagement_id == f.engagement && r.quota_paused));
+    }
+
+    /// §B1/§B4: a runtime observation is always marked incomplete by the
+    /// metering crate, yet its counts are a known lower bound of the spend —
+    /// it pauses, or no live agent could ever pause.
+    #[test]
+    fn native_quota_runtime_usage_counts_toward_the_pause() {
+        use hagency_metering::runtime_usage::{CodexUsage, CounterBreakdown};
+        let mut f = Fixture::new(50);
+        f.admit("$request", 3000);
+        let (_, _, source) = f.working(3004);
+        let observation = UsageObservation::codex_runtime(CodexUsage {
+            total: CounterBreakdown {
+                total_tokens: Some(72),
+                input_tokens: Some(67),
+                cached_input_tokens: Some(7),
+                cache_write_input_tokens: Some(0),
+                output_tokens: Some(5),
+                reasoning_output_tokens: Some(0),
+            },
+            ..CodexUsage::default()
+        })
+        .unwrap();
+        assert!(observation.incomplete(), "runtime usage is incomplete by construction");
+        f.db.record_usage_observation(&source, "runtime", &observation, 3100)
+            .unwrap();
+        let status = f.db.quota_status(&f.engagement).unwrap();
+        assert_eq!(status.spent_tokens, Some(65));
+        assert!(status.paused);
+        assert_eq!(f.quota_notices().len(), 1);
+    }
+
+    /// §B4: unknown or count-less usage never pauses, whatever the
+    /// allocation, and the spend reads as unknown.
+    #[test]
+    fn native_quota_no_pause_on_unknown_usage() {
+        let mut f = Fixture::new(1);
+        // Nothing observed at all.
+        let status = f.db.quota_status(&f.engagement).unwrap();
+        assert_eq!(status.spent_tokens, None);
+        assert!(!status.paused);
+        f.admit("$request", 3000);
+        let (_, _, source) = f.working(3004);
+        // An observation without counts is incomplete and adds nothing
+        // known: still unknown.
+        f.db.record_usage_observation(&source, "empty", &empty(), 3100)
+            .unwrap();
+        let status = f.db.quota_status(&f.engagement).unwrap();
+        assert_eq!(status.spent_tokens, None, "count-less usage is unknown");
+        assert!(!status.paused);
+        assert!(f.quota_notices().is_empty());
+        // Queued work still dispatches.
+        f.queue_more();
+        assert!(
+            f.db.claim_dispatch("runner_two", 3400, 60_000, 120_000, 8)
+                .unwrap()
+                .is_some()
+        );
+    }
+}
