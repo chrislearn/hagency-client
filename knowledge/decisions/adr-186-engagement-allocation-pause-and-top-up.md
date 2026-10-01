@@ -33,15 +33,16 @@ On 2026-10-01 the operator asked for two things:
    - the turn already running finishes;
    - no new turn is dispatched for it;
    - work that arrives meanwhile stays queued. Nothing is dropped, refused or marked done (ADR-183 rule: the bridge never decides done).
-3. When the hold begins, the agent posts one notice in the project room: "Paused: used N of M tokens. The owner can add tokens in the Hagency console."
-4. Unknown usage never pauses an agent. If an engagement has no observed usage, or only incomplete usage, it keeps running and the console shows its spend as unknown.
-5. This makes host-attributed usage, which until now was diagnostic only, the trigger for the pause. That is a deliberate change to the usage ledger's "never execution or quota authority" rule. It is limited to this pause: it never revokes an engagement, never ends one, and never refuses admission.
+3. When the hold begins, the agent posts one notice through the existing task-notice path. It lands in the project room, in the thread of the task it concerns: "Paused: used N of M tokens. The owner can add tokens in the Hagency console." A session that received no request from Matrix has nowhere to post, so no notice is sent there.
+4. Unknown usage never pauses an agent. Spend is the known lower bound of usage. It counts as unknown only when no period carries a known count; in that case the agent keeps running and the console shows its spend as unknown. (Live metering marks every observation incomplete, so "incomplete" alone cannot mean "unknown".) A lower bound can delay a pause but never cause a false one.
+5. The hold is checked whenever usage is recorded. An engagement that is already over its allocation pauses at its next usage report.
+6. This makes host-attributed usage, which until now was diagnostic only, the trigger for the pause. That is a deliberate change to the usage ledger's "never execution or quota authority" rule. It is limited to this pause: it never revokes an engagement, never ends one, and never refuses admission.
 
 ### C. Topping up resumes the agent
 
-1. `POST /console/api/engagements/{id}/allocation` with `{commandId, addTokens}` raises an active or paused engagement's allocation by `addTokens`. The console's "All remaining" option adds the resource's current headroom.
+1. `POST /console/api/engagements/{id}/allocation` with `{commandId, addTokens}` raises the allocation of a reserved, active or paused engagement by `addTokens`. The console's "All remaining" option adds the resource's current headroom.
 2. The increase is checked exactly like an approval (step A2), against the headroom left after this engagement's current allocation.
-3. When the new allocation is above the spend, the `quota_paused` hold lifts at once. Queued work is dispatched without a restart, and the agent posts "Resumed: N tokens available."
+3. When the new allocation is above the spend, the `quota_paused` hold lifts at once. Queued work is dispatched without a restart, and the agent posts "Resumed: N tokens available." in the thread of the oldest queued task, or otherwise where the pause was announced.
 4. Palpo receives the new `allocatedTokens` with the next status update.
 5. Raising the resource ceiling does not top up any engagement by itself. It only makes room for a top-up or a new approval.
 
