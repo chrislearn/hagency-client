@@ -1,6 +1,6 @@
 mod common;
 use common::*;
-use hagency_core::{authority::*, canonical, project::Resource};
+use hagency_core::{authority::*, project::Resource};
 use hagency_store::{DomainRepository, EffectOutcome, Error, outbound::RegistrationIdentity};
 use serde_json::{Value, json};
 
@@ -10,7 +10,9 @@ fn identity(reg: &Registration) -> RegistrationIdentity {
         side_id: reg.server_name.clone(),
         fleet_id: reg.fleet_id.clone(),
         registration_generation: reg.generation,
-        registration_fingerprint: canonical::digest(&json!(reg)).unwrap(),
+        // The store's own fingerprint: since d5f51876 it excludes the
+        // reception room, which a connection probe binds after registration.
+        registration_fingerprint: hagency_store::publication_fingerprint(reg).unwrap(),
     }
 }
 fn catalog(db: &DomainRepository, reg: &Registration) -> Value {
