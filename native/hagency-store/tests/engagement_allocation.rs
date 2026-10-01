@@ -403,6 +403,30 @@ mod quota {
             )
             .unwrap();
         assert_eq!(thread, "$thread_threaded");
+        // The turn that crossed the line ends and its thread closes. The pause
+        // notice must still go out: that close is exactly when it is said.
+        // (The fixture's turn has no Matrix task intent, so record its thread
+        // as a closed one, as the live turn's was.)
+        let closed = f
+            .sql()
+            .execute(
+                "INSERT INTO task_intents(task_id,request_scope,request_key,digest,session_id,root_sequence,state) \
+                 SELECT t.id,'fixture','quota-thread','fixture',t.session_id,(SELECT MAX(sequence) FROM admitted_messages),'closed' \
+                 FROM canonical_tasks t WHERE t.id=(SELECT task_id FROM task_notices WHERE json_extract(config,'$.kind')='quota_paused')",
+                [],
+            )
+            .unwrap();
+        assert_eq!(closed, 1, "the turn's thread is recorded as closed");
+        let _ = f.db.claim_verified_task_notice(3250, 60_000).unwrap();
+        let state: String = f
+            .sql()
+            .query_row(
+                "SELECT state FROM task_notices WHERE json_extract(config,'$.kind')='quota_paused'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_ne!(state, "cancelled", "the pause notice survives its thread closing");
         // A further observation while paused says nothing more.
         f.db.record_usage_observation(&source, "more", &codex(60, 10, 7), 3300)
             .unwrap();
