@@ -20,7 +20,7 @@ async function rosterWalk(page) {
   assert.match(text, /UsageWorker/);
   // #43 item 4 + #31: the heading names what the page is and what stopping
   // needs; one login grants the controls (no separate lifecycle link).
-  assert.match(text, /the engagement projections, observed|接洽投影的观察/);
+  assert.match(text, /The agents you have lent, and what each one is doing now|你借出的 Agent，以及每个 Agent 当前的状态/);
   // #60 widened the roster to the full projection: the never-answerable
   // columns (tmux target, workspace path) are GONE from the server's gap
   // list — it is empty now — and the five real columns render by name
@@ -60,14 +60,16 @@ async function projectSidesWalk(page) {
   await page.locator('[data-native-state="ready"]').first().waitFor();
   const text = await page.locator('main').innerText();
   assert.match(text, /example\.test/, 'the side card renders, keyed by server name');
-  assert.match(text, /read-only — the fleet registrations|只读 —— 车队注册及其项目/);
+  assert.match(text, /Projects connected to this Hagency, and how each one is registered|连接到此 Hagency 的项目，以及各自的注册方式/);
   assert.match(text, /!reception:example\.test/, 'the reception room id renders as ordinary data');
   assert.match(text, /project_one/, 'the joined project renders');
   assert.match(text, /!project:example\.test/, 'the project room id renders');
   // The server's own gap list, verbatim: credential_kind and owner are
-  // NAMED as unknown rather than invented.
-  assert.match(text, /credential_kind/);
-  assert.match(text, /owner/);
+  // NAMED as unknown rather than invented. The list is diagnostics, so it
+  // sits in the page's Technical details disclosure, one click away.
+  const gaps = await page.locator('main .technical-details').first().textContent();
+  assert.match(gaps, /credential_kind/);
+  assert.match(gaps, /owner/);
   assert(!/as_token|hs_token|asToken|hsToken/.test(text), 'no credential word on screen');
   assert(!/@owner:example\.test/.test(text), 'the owner mxid stays withheld');
   assert(!/!private:example\.test/.test(text), 'the owner DM room stays withheld');
@@ -444,12 +446,12 @@ try {
   }
   // The engagements page (the console consumer slice, read-only): the list
   // read the usage flow already carries, rendered as triage. Ready state,
-  // the seeded engagement's row, the read-only note, no mutating buttons.
+  // the seeded engagement's row, and the note saying who decides what.
   await page.goto(`${config.base}/console/engagements/`);
   await page.locator('[data-native-state="ready"]').first().waitFor();
   assert((await page.locator('tbody tr').count()) >= 1, 'the seeded engagement renders');
   assert.match(await page.locator('main').innerText(), /UsageWorker|NewUsageWorker/);
-  assert.match(await page.locator('main').innerText(), /read-only — creating, verdicts and revocation|只读 —— 创建、裁定与撤销/);
+  assert.match(await page.locator('main').innerText(), /Approve or reject new requests here; projects start and end them|在这里批准或拒绝新请求；项目负责发起和结束/);
   // #16/#44: the verdict panel carries the operator decision — the pending
   // row renders its Approve/Reject controls. Under #31 one login carries the
   // authority to click them; this walk asserts they render for the seeded

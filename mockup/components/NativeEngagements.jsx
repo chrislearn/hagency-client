@@ -30,7 +30,9 @@ const NATIVE_STATES = ['pending', 'reserved', 'active', 'rejected', 'revoked', '
  * route. One per operator act, so a double-submit replays rather than acts. */
 const newCommand = () => `console_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 
-export default function NativeEngagements() {
+/* `lead` renders right under the page header: the decisions waiting on the
+ * operator come before the triage list they belong to. */
+export default function NativeEngagements({ lead = null, pending = null, other = null, listHidden = false }) {
   const t = useT();
   const data = useData();
   const { phase, error, refreshing, engagements = [], next_after: nextAfter } = data;
@@ -115,6 +117,8 @@ export default function NativeEngagements() {
       {/* Item 1: one heading per page — the h1 carries the title, the
        * read-only note rides its `sub`, and the duplicate h2 is gone. */}
       <PageHead title={t('nav.engagements')} sub={t('ng.readonly')}><NativeStatusStrip /></PageHead>
+      {lead}
+      <div className="eng-list" hidden={listHidden}>
 
       {/* The counts are the split of the rows loaded so far — page one plus any
           further pages walked — and they SAY so, because a bare "pending 0" from
@@ -129,6 +133,7 @@ export default function NativeEngagements() {
         ))}
       </div>
       <p className="dim" style={{ fontSize: 12 }}>{t('ng.countScope')}</p>
+      {pending}
 
       <div className="btn-row" style={{ margin: '22px 0 12px' }}>
         <label style={{ fontSize: 12, color: 'var(--ink-dim)' }}>
@@ -193,7 +198,7 @@ export default function NativeEngagements() {
                   <td className="num dim" data-remaining={e.agentRemainingTokens === null ? 'unknown' : e.agentRemainingTokens}>
                     {e.agentRemainingTokens === null ? t('nu.unknown') : fmtTokens(e.agentRemainingTokens)}
                     {e.agentRemainingTokens !== null && e.agentRemainingTokens < e.requestedTokens && <span className="overqual" title={t('ng.overCommitted', { n: fmtTokens(e.agentRemainingTokens) })}> ⚠</span>}
-                    {e.ownerBindingRequired && <> <span className="stranded">{t('ng.ownerRequired')}</span></>}
+                    {e.ownerBindingRequired && <> <span className="stranded warn-chip">{t('ng.ownerRequired')}</span></>}
                   </td>
                   <td>
                     {/* #44 item 10 — the row links to its own usage detail. */}
@@ -235,9 +240,11 @@ export default function NativeEngagements() {
 
       <div className="btn-row" style={{ marginTop: 14 }}>
         <button className="btn" onClick={data.refresh}>{t('nu.refresh')}</button>
-        <button className="btn" disabled={nextAfter === null} onClick={data.nextPage}>{t('ng.nextPage')}</button>
         <button className="btn" onClick={data.firstPage}>{t('nu.firstPage')}</button>
+        <button className="btn" disabled={nextAfter === null} onClick={data.nextPage}>{t('ng.nextPage')}</button>
       </div>
+      </div>
+      {other}
     </div>
   );
 }

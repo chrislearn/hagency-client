@@ -81,7 +81,7 @@ export default function NativeApprovals() {
       <div className="cards">
         {Object.entries(counts).map(([s, n]) => (
           <div className="card" key={s}>
-            <div className="cap">{s}</div>
+            <div className="cap">{s.replaceAll('_', ' ')}</div>
             <div className={`val${s === 'pending' && n > 0 ? ' warn' : ''}`}>{n}</div>
           </div>
         ))}

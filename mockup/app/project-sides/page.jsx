@@ -34,10 +34,12 @@ export default function ProjectSidesPage() {
   if (data.nativeConsole) {
     return (
       <>
+        {/* The page reads top-down: its header and the registered projects
+            first, then the controls that add or test a project. */}
+        <NativeProjectSides />
         <RegisterSideControl />
         <SideRegistrationControl sides={data.sides ?? []} />
         <ConnectionControl sides={data.sides ?? []} />
-        <NativeProjectSides />
       </>
     );
   }

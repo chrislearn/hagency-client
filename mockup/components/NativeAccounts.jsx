@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import PageHead from '@/components/PageHead';
+import TechnicalDetails from '@/components/TechnicalDetails';
 import NativeStatusStrip from '@/components/NativeStatusStrip';
 import { useT } from '@/components/Prefs';
 
@@ -62,10 +63,11 @@ export default function NativeAccounts({ phase, error, accounts, action, onPrepa
   const busy = action?.kind === 'pending';
   return (
     <>
-    <PageHead title={t('na.title')} sub={t('na.sub')}><NativeStatusStrip /></PageHead>
+    <PageHead title={t('na.title')} sub={t('na.sub')}>
+      <button className="btn primary" disabled={busy} onClick={onPrepare}>{t('na.add')}</button>
+      <NativeStatusStrip />
+    </PageHead>
     <section className="panel" data-native-state="ready" aria-busy="false">
-      <h2>{t('na.title')}</h2>
-      <p>{t('na.sub')}</p>
       {action && ['conflict', 'unknown', 'busy', 'refused'].includes(action.kind) && (
         <section className="notice" data-account-action={action.kind} role="alert">
           <p><b>{action.label}</b> · {t(`na.action.${action.kind}`)}</p>
@@ -76,11 +78,8 @@ export default function NativeAccounts({ phase, error, accounts, action, onPrepa
           <p><b>{action.label}</b> · {t('na.action.saved')}</p>
         </section>
       )}
-      <div className="btn-row">
-        <button className="btn primary" disabled={busy} onClick={onPrepare}>{t('na.add')}</button>
-      </div>
       {!accounts?.length ? (
-        <p>{t('na.empty')}</p>
+        <div className="empty"><div className="big">{t('na.emptyTitle')}</div><div className="small">{t('na.empty')}</div></div>
       ) : (
         <table>
           <thead>
@@ -100,7 +99,7 @@ export default function NativeAccounts({ phase, error, accounts, action, onPrepa
           </tbody>
         </table>
       )}
-      <p>{t('na.opacity')}</p>
+      <TechnicalDetails><p>{t('na.opacity')}</p></TechnicalDetails>
     </section>
     </>
   );

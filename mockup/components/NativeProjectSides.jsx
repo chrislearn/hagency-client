@@ -11,7 +11,7 @@
  * (`credentialKind`/`hasCredential`, never a token) plus the access verdict.
  * No credential value can appear on this page.
  */
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useT } from '@/components/Prefs';
 import { useData } from '@/components/Data';
 import { fetchSide, setSideCredential, verifySide, addSideProject, archiveSideProject, deactivateSide, reactivateSide, removeSide } from '@/lib/native-api';
@@ -132,6 +132,7 @@ function SideDetail({ side, onClose, onChanged }) {
     </div>
   );
 }
+import TechnicalDetails from '@/components/TechnicalDetails';
 import PageHead from '@/components/PageHead';
 import NativeStatusStrip from '@/components/NativeStatusStrip';
 import { NativeAccessNotice } from '@/components/NativeUsage';
@@ -189,9 +190,7 @@ export default function NativeProjectSides() {
       <PageHead title={t('np.title')} sub={t('np.readonly')}><NativeStatusStrip /></PageHead>
       <NativeAccessNotice />
 
-      <p className="sub dim" style={{ fontSize: 12 }}>
-        {t('np.unavailable', { list: unavailable.join(', ') })}
-      </p>
+      {unavailable.length > 0 && <TechnicalDetails><p>{t('np.unavailable', { list: unavailable.join(', ') })}</p></TechnicalDetails>}
 
       {phase === 'loading' ? (
         <p role="status">{t('np.loading')}</p>
@@ -202,20 +201,24 @@ export default function NativeProjectSides() {
       ) : (
         <div className="cards">
           {sides.map((side) => (
-            <div className="card" key={side.id}>
-              <div className="cap" title={side.representative}>{side.id}</div>
-              <div className="val">{t('np.projects', { n: side.projects.length })}</div>
-              <div className="sub">
-                <span className={`pill${side.registered ? '' : ' warn'}`}>{t(side.registered ? 'np.registered' : 'np.generationDrift')}</span>
+            <div className="card side-card" key={side.id}>
+              {/* The side's name and registration state lead; the Matrix
+                  identifiers follow as a labelled list, each on one line with
+                  the full value on hover. */}
+              <div className="side-head">
+                <h3>{side.id}</h3>
+                <span className={`pill${side.registered ? ' ok' : ' warn'}`}>{t(side.registered ? 'np.registered' : 'np.generationDrift')}</span>
               </div>
-              <div className="TechnicalDetails" style={{ marginTop: 8, fontSize: 12 }}>
-                <div className="sub">{t('np.representative')}: {side.representative}</div>
-                <div className="sub">{t('np.reception')}: {side.reception_room_id}</div>
-                <div className="sub">{t('np.generation')}: {side.generation}</div>
+              <p className="meta">{t('np.projects', { n: side.projects.length })} · {t('np.generation')} {side.generation}</p>
+              <dl className="ids">
+                <dt>{t('np.representative')}</dt><dd title={side.representative}>{side.representative}</dd>
+                <dt>{t('np.reception')}</dt><dd title={side.reception_room_id}>{side.reception_room_id}</dd>
                 {side.projects.map((project) => (
-                  <div className="sub" key={project.id}>{project.id} · {project.room_id}</div>
+                  <Fragment key={project.id}>
+                    <dt>{t('col.project')}</dt><dd title={`${project.id} · ${project.room_id}`}>{project.id} · {project.room_id}</dd>
+                  </Fragment>
                 ))}
-              </div>
+              </dl>
               {manageLifecycle && (
                 <div className="btn-row" style={{ marginTop: 10 }}>
                   <button className="btn-s" onClick={() => open(side)} disabled={detailBusy}>{t('sl.controls')}</button>
