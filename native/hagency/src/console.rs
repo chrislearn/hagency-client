@@ -78,7 +78,10 @@ impl Console {
     pub fn load_with_state(path: &Path, state_dir: Option<&Path>) -> Result<Self, Error> {
         Ok(Self(Arc::new(Inner {
             assets: assets::Assets::load(path)?,
-            authority: Authority::new(),
+            authority: match state_dir {
+                Some(dir) => Authority::persistent(dir),
+                None => Authority::new(),
+            },
             requests: Arc::new(Semaphore::new(8)),
             graphs: match state_dir {
                 Some(dir) => Some(graphs::GraphStore::open(dir)?),

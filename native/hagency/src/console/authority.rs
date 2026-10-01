@@ -13,7 +13,12 @@ use std::{
 };
 use subtle::ConstantTimeEq;
 
-const TICKET_LIFETIME: Duration = Duration::from_secs(120);
+/// The operator's personal console: neither the access link nor a login
+/// expires on a timer, and both survive a restart (their SHA-256 hashes live
+/// in this private file in the state directory). A new link replaces the old
+/// one; logout ends a login.
+const LOGINS_FILE: &str = "console-logins.json";
+const LOGINS_MAX_BYTES: u64 = 64 * 1024;
 /// TS parity (`createApiAuthMiddleware`, lib/backend/auth-adapter.js:312-326):
 /// a login never expires on a timer — the token authenticates every request
 /// for the life of the process. The store-side mutation gates still need a
@@ -48,7 +53,11 @@ struct State {
     ticket: Option<Grant>,
     sessions: Vec<Grant>,
 }
-pub(super) struct Authority(Mutex<State>, ResourcePublicationRetirement);
+pub(super) struct Authority(
+    Mutex<State>,
+    ResourcePublicationRetirement,
+    Option<std::path::PathBuf>,
+);
 pub(super) struct Session([u8; 32]);
 /// The bounded enrolment inputs, grouped so the authority's constructor
 /// stays reviewable — the request's five scalars travel as one value
@@ -83,6 +92,39 @@ fn fresh(grant: &Grant, now: Instant) -> bool {
 fn matches(grant: &Grant, digest: &[u8; 32], now: Instant) -> bool {
     bool::from(grant.hash.ct_eq(digest)) && fresh(grant, now)
 }
+/// The persisted link and login hashes; `None` when absent or unreadable.
+fn load(path: &std::path::Path) -> Option<(Option<[u8; 32]>, Vec<[u8; 32]>)> {
+    use std::io::Read;
+    let file = hagency_store::private::open(path, false).ok()?;
+    if file.metadata().ok()?.len() > LOGINS_MAX_BYTES {
+        return None;
+    }
+    let mut text = String::new();
+    (&file).read_to_string(&mut text).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let parse = |v: &serde_json::Value| -> Option<[u8; 32]> {
+        let hex = v.as_str()?;
+        if hex.len() != 64 {
+            return None;
+        }
+        let mut out = [0u8; 32];
+        for (i, byte) in out.iter_mut().enumerate() {
+            *byte = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
+        }
+        Some(out)
+    };
+    let ticket = match &value["ticket"] {
+        serde_json::Value::Null => None,
+        v => Some(parse(v)?),
+    };
+    let sessions = value["sessions"]
+        .as_array()?
+        .iter()
+        .take(64)
+        .map(parse)
+        .collect::<Option<Vec<_>>>()?;
+    Some((ticket, sessions))
+}
 impl Authority {
     pub(super) fn new() -> Self {
         Self(
@@ -92,7 +134,56 @@ impl Authority {
                 sessions: Vec::new(),
             }),
             ResourcePublicationRetirement::default(),
+            None,
         )
+    }
+    /// The production authority: the link and every login are reloaded from
+    /// the state directory, so a restart signs nobody out. An unreadable file
+    /// starts empty (the operator mints a new link), never refuses startup.
+    pub(super) fn persistent(state_dir: &std::path::Path) -> Self {
+        let path = state_dir.join(LOGINS_FILE);
+        let retirement = ResourcePublicationRetirement::default();
+        let (ticket, sessions) = load(&path).unwrap_or_default();
+        let until = Instant::now() + ACCESS_HORIZON;
+        let sessions = sessions
+            .into_iter()
+            .map(|hash| Grant {
+                hash,
+                expires: None,
+                access: Some(Access {
+                    publication: ResourcePublicationAccess::new(until, retirement.clone()),
+                    configuration: ResourceConfigurationAccess::new(until, retirement.clone()),
+                    account: AccountEnrollmentAccess::new(until, retirement.clone()),
+                }),
+            })
+            .collect();
+        Self(
+            Mutex::new(State {
+                retired: false,
+                ticket: ticket.map(|hash| Grant {
+                    hash,
+                    expires: None,
+                    access: None,
+                }),
+                sessions,
+            }),
+            retirement,
+            Some(path),
+        )
+    }
+    /// Write the current link and logins (hashes only). Called with the
+    /// state lock held, after every change.
+    fn save(&self, state: &State) -> Result<(), Error> {
+        let Some(path) = &self.2 else {
+            return Ok(());
+        };
+        let hex = |h: &[u8; 32]| h.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        let value = serde_json::json!({
+            "ticket": state.ticket.as_ref().map(|t| hex(&t.hash)),
+            "sessions": state.sessions.iter().map(|s| hex(&s.hash)).collect::<Vec<_>>(),
+        });
+        hagency_store::private::replace(path, value.to_string().as_bytes())
+            .map_err(|_| Error::Unavailable)
     }
     /// TS parity (lib/backend/auth-adapter.js:312-326): issuing access is
     /// handing the operator the credential — never rate-limited, never
@@ -110,12 +201,14 @@ impl Authority {
         if state.retired {
             return Err(Error::Unavailable);
         }
+        let _ = now;
         let value = secret()?;
         state.ticket = Some(Grant {
             hash: hash(&value)?,
-            expires: Some(now + TICKET_LIFETIME),
+            expires: None,
             access: None,
         });
+        self.save(&state)?;
         Ok(value)
     }
     pub(super) fn exchange(&self, ticket: &str) -> Result<String, Error> {
@@ -164,6 +257,7 @@ impl Authority {
                 account: AccountEnrollmentAccess::new(until, self.1.clone()),
             }),
         });
+        self.save(&state)?;
         Ok(value)
     }
     pub(super) fn authenticate(&self, value: &str) -> Result<Session, Error> {
@@ -209,7 +303,7 @@ impl Authority {
         state
             .sessions
             .retain(|s| !bool::from(s.hash.ct_eq(&session.0)));
-        Ok(())
+        self.save(&state)
     }
     pub(super) fn retire(&self) {
         self.1.retire();
@@ -344,6 +438,26 @@ impl Authority {
 mod tests {
     use super::*;
 
+    /// The personal console survives a restart: the link and the login are
+    /// reloaded from the state directory; only a new link or logout ends them.
+    #[test]
+    fn native_console_logins_survive_a_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = Authority::persistent(dir.path());
+        let ticket = first.issue().unwrap();
+        let cookie = first.exchange(&ticket).unwrap();
+        first.retire();
+        drop(first);
+        let second = Authority::persistent(dir.path());
+        let session = second.authenticate(&cookie).unwrap();
+        assert!(second.can_lifecycle(&session).unwrap());
+        let again = second.exchange(&ticket).unwrap();
+        second.revoke(&session).unwrap();
+        drop(second);
+        let third = Authority::persistent(dir.path());
+        assert!(matches!(third.authenticate(&cookie), Err(Error::Unauthorized)));
+        third.authenticate(&again).unwrap();
+    }
     /// TS parity: the ticket is a reusable credential and the login it
     /// produces is never rate-limited, never capped and never expires.
     #[test]
@@ -364,10 +478,10 @@ mod tests {
                 .check_at(&Session(hash(&cookie).unwrap()), at)
                 .unwrap();
         }
-        assert!(matches!(
-            authority.exchange_at(&second, now + TICKET_LIFETIME),
-            Err(Error::Unauthorized)
-        ));
+        // The link has no timer either: it still signs in a year later.
+        authority
+            .exchange_at(&second, now + Duration::from_secs(365 * 24 * 60 * 60))
+            .unwrap();
         let ticket = authority.issue_at(now + Duration::from_secs(1)).unwrap();
         let cookie = authority.exchange_at(&ticket, now + Duration::from_secs(1)).unwrap();
         let session = Session(hash(&cookie).unwrap());
