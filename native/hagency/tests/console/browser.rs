@@ -1300,6 +1300,15 @@ async fn native_console_regression_browser() {
         )
         .unwrap();
     assert_eq!(approve_allocated, Some(80));
+    // ADR-186 §C: the walk added 25 tokens to the running engagement.
+    let topped_up: Option<u64> = sql
+        .query_row(
+            "SELECT allocated_tokens FROM engagements WHERE id=?1",
+            [&f.engagement],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(topped_up, Some(125));
     let provision: String = sql
         .query_row(
             "SELECT state FROM effects WHERE engagement_id=?1 AND kind='provision'",

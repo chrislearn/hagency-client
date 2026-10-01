@@ -138,3 +138,90 @@ async fn native_allocation_route_reads_show_the_quota_pause() {
     assert_eq!(agent["quota_paused"], true);
     f.close().await;
 }
+
+/// §C: the top-up route. Checked like an approval, idempotent by command
+/// id, and a hold the new allocation clears is lifted.
+#[tokio::test]
+async fn native_allocation_route_top_up_lifts_the_pause_and_is_idempotent() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let state = f.root.path().join("state");
+    let id = f.engagement.clone();
+    let path = format!("/console/api/engagements/{id}/allocation");
+    let cookie = lifecycle_session(&service).await;
+    for body in [
+        json!({"commandId": "cmd_top_zero", "addTokens": 0}),
+        json!({"commandId": "cmd_top_missing"}),
+        json!({"commandId": "cmd_top_extra", "addTokens": 5, "allocatedTokens": 5}),
+    ] {
+        let refused = post(&path, &cookie).json(&body).send(&service).await;
+        assert_eq!(refused.status_code, Some(StatusCode::BAD_REQUEST), "{body}");
+    }
+    // The seeded engagement is paused (a hold written directly; the store
+    // tests own how one opens).
+    rusqlite::Connection::open(state.join("domain.sqlite3"))
+        .unwrap()
+        .execute(
+            "INSERT INTO quota_holds(engagement_id,dispatch_id,spend,allocation,began_at) VALUES(?1,NULL,100,100,1)",
+            [&id],
+        )
+        .unwrap();
+    // The 1000-token pool holds this engagement's 100: 900 can be added.
+    let mut over = post(&path, &cookie)
+        .json(&json!({"commandId": "cmd_top_over", "addTokens": 901}))
+        .send(&service)
+        .await;
+    assert_eq!(over.status_code, Some(StatusCode::CONFLICT));
+    let refusal = over.take_json::<Value>().await.unwrap();
+    assert_eq!(refusal["code"], "over_commit");
+    assert!(refusal["message"].as_str().unwrap().contains("would exceed"));
+    assert_eq!(allocated_column(&state, &id), None, "a refusal changes nothing");
+    let mut response = post(&path, &cookie)
+        .json(&json!({"commandId": "cmd_top", "addTokens": 50}))
+        .send(&service)
+        .await;
+    assert_eq!(response.status_code, Some(StatusCode::OK));
+    let body = response.take_json::<Value>().await.unwrap();
+    assert_eq!(body["id"], id);
+    assert_eq!(body["state"], "active");
+    assert_eq!(body.as_object().unwrap().len(), 3, "the bounded receipt");
+    assert_eq!(allocated_column(&state, &id), Some(150));
+    // The replay answers the same receipt and raises nothing.
+    let replay = post(&path, &cookie)
+        .json(&json!({"commandId": "cmd_top", "addTokens": 50}))
+        .send(&service)
+        .await;
+    assert_eq!(replay.status_code, Some(StatusCode::OK));
+    assert_eq!(allocated_column(&state, &id), Some(150));
+    let mut changed = post(&path, &cookie)
+        .json(&json!({"commandId": "cmd_top", "addTokens": 60}))
+        .send(&service)
+        .await;
+    assert_eq!(changed.status_code, Some(StatusCode::CONFLICT));
+    assert_eq!(changed.take_json::<Value>().await.unwrap()["code"], "decision_conflict");
+    // 150 is above the seeded spend: the hold lifted.
+    let mut listed = get("/console/api/engagements", &cookie).send(&service).await;
+    let listed = listed.take_json::<Value>().await.unwrap();
+    let row = listed["engagements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == id.as_str())
+        .unwrap()
+        .clone();
+    assert_eq!(row["quotaPaused"], false);
+    assert_eq!(row["allocatedTokens"], 150);
+    assert_eq!(row["requestedTokens"], 100, "the ask is kept");
+    // A pending engagement holds no allocation to raise.
+    let pending = f.new_engagement_requesting("allocation_pending", 10).await;
+    let mut refused = post(
+        &format!("/console/api/engagements/{pending}/allocation"),
+        &cookie,
+    )
+    .json(&json!({"commandId": "cmd_top_pending", "addTokens": 5}))
+    .send(&service)
+    .await;
+    assert_eq!(refused.status_code, Some(StatusCode::CONFLICT));
+    assert_eq!(refused.take_json::<Value>().await.unwrap()["code"], "engagement_not_live");
+    f.close().await;
+}

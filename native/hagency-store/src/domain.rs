@@ -2212,6 +2212,59 @@ impl DomainRepository {
         let resource = read_resource(&self.db, &engagement.resource_id)?;
         Ok(headroom(&self.db, &resource, at)?.remaining)
     }
+    /// ADR-186 §C: raise an active (or still-provisioning) engagement's
+    /// allocation by `add` tokens. Checked exactly like an approval: `add`
+    /// must fit the smallest of ceiling, seat and pool headroom as it stands,
+    /// with this engagement's current allocation already counted in it — so
+    /// the new allocation fits the headroom left without it. Idempotent by
+    /// command id through the decision receipts; a reused id with another
+    /// amount conflicts. When the new allocation is above the spend, the
+    /// quota hold lifts in the same transaction and the agent says
+    /// "Resumed"; queued work is claimed on the next claim, no restart.
+    pub fn raise_allocation(
+        &mut self,
+        command_id: &str,
+        id: &str,
+        add: u64,
+        now: u64,
+    ) -> Result<Engagement, Error> {
+        project::identifier(id, 128)?;
+        if add == 0 {
+            return Err(InvalidInput("added tokens must be positive").into());
+        }
+        let add = Tokens::try_from(add)?;
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let digest = canonical::digest(&json!(["allocation", id, u64::from(add)]))?;
+        if let Some(value) = replay_decision(&tx, command_id, &digest)? {
+            return Ok(value);
+        }
+        let mut value = read_engagement(&tx, id)?;
+        if !matches!(
+            value.state,
+            EngagementState::Reserved | EngagementState::Active
+        ) {
+            return Err(Error::State);
+        }
+        let resource = read_resource(&tx, &value.resource_id)?;
+        check_grant(&tx, &resource, value.agent_name.as_str(), u64::from(add), now)?;
+        let raised = u64::from(value.allocation())
+            .checked_add(u64::from(add))
+            .ok_or(InvalidInput("token count overflow"))?;
+        value.allocated_tokens = Some(Tokens::try_from(raised)?);
+        write_engagement(&tx, &value)?;
+        quota_holds::lift(&tx, id, now)?;
+        record_decision(
+            &tx,
+            command_id,
+            &digest,
+            &value,
+            Some("engagement.allocation_raised"),
+        )?;
+        tx.commit()?;
+        Ok(value)
+    }
     /// ADR-186 §B: the engagement's allocation, its known spend (`None`
     /// while unknown) and whether it holds an open quota hold.
     pub fn quota_status(&self, id: &str) -> Result<QuotaStatus, Error> {

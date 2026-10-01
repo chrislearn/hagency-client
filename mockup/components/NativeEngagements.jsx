@@ -23,7 +23,7 @@ import { useT } from '@/components/Prefs';
 import { errorText } from '@/lib/i18n';
 import { useData } from '@/components/Data';
 import { fmtTokens } from '@/lib/mock-data';
-import { retireEngagement, retryEngagementCleanup } from '@/lib/native-api';
+import { raiseEngagementAllocation, retireEngagement, retryEngagementCleanup } from '@/lib/native-api';
 
 const NATIVE_STATES = ['pending', 'reserved', 'active', 'rejected', 'revoked', 'failed'];
 /* The command id is the store's idempotency key: minted here, never by the
@@ -44,6 +44,9 @@ export default function NativeEngagements({ lead = null, pending = null, other =
   const [confirming, setConfirming] = useState(null);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);
+  /* ADR-186 §C: the open "Add tokens" form — `{id, amount}`, one row at a
+   * time, never carried onto another row. */
+  const [topUp, setTopUp] = useState(null);
 
   const agentNames = useMemo(
     () => [...new Set(engagements.map((e) => e.agentName))].filter(Boolean),
@@ -72,6 +75,29 @@ export default function NativeEngagements({ lead = null, pending = null, other =
    * A retirement that failed waits for this operator act: there is no sweeper
    * and no timer (engagements.rs:12). */
   const retryable = (e) => e.state === 'revoked' && ['pending', 'uncertain'].includes(e.cleanup);
+  /* ADR-186 §C: only an engagement that holds an allocation can be topped
+   * up — the store's own reserved/active guard; a paused one is active. */
+  const raisable = (e) => ['reserved', 'active'].includes(e.state);
+
+  async function addTokens(id) {
+    if (busy || topUp?.id !== id) return;
+    const amount = topUp.amount.trim();
+    if (!/^[1-9][0-9]{0,15}$/.test(amount)) { setNote(t('nv.amountInvalid')); return; }
+    setBusy(true);
+    setNote(null);
+    try {
+      await raiseEngagementAllocation(id, newCommand(), Number(amount));
+      setTopUp(null);
+      setNote(t('quota.addedMsg', { n: fmtTokens(Number(amount)) }));
+      await data.refresh();
+    } catch (error) {
+      setNote(error.message === 'agent_lifecycle_scope_required'
+        ? t('ng.scopeRequired')
+        : `${t('ng.actionFailed')} (${errorText(t, error.message)})${error.detail ? `: ${error.detail}` : ''}`);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function act(id, kind) {
     if (busy) return;
@@ -224,8 +250,36 @@ export default function NativeEngagements({ lead = null, pending = null, other =
                         <button type="button" className="btn-s" disabled={busy}
                           onClick={() => setConfirming(null)}>{t('ng.cancel')}</button>
                       </span>
+                    ) : topUp?.id === e.id ? (
+                      <span className="btn-row tight" data-top-up={e.id}>
+                        <input
+                          data-top-up-amount
+                          inputMode="numeric"
+                          aria-label={t('quota.addAmount')}
+                          value={topUp.amount}
+                          disabled={busy}
+                          onChange={(event) => { setNote(null); setTopUp({ id: e.id, amount: event.target.value }); }}
+                          style={{ width: '9em' }}
+                        />
+                        {/* The row's own remaining figure is the headroom the
+                            store checks a top-up against. */}
+                        <button type="button" className="btn-s" disabled={busy || e.agentRemainingTokens === null || e.agentRemainingTokens < 1}
+                          onClick={() => { setNote(null); setTopUp({ id: e.id, amount: String(e.agentRemainingTokens) }); }}>
+                          {t('nv.allRemaining')}
+                        </button>
+                        <button type="button" className="btn-s primary" disabled={busy}
+                          onClick={() => addTokens(e.id)}>{t('quota.add')}</button>
+                        <button type="button" className="btn-s" disabled={busy}
+                          onClick={() => setTopUp(null)}>{t('ng.cancel')}</button>
+                      </span>
                     ) : (
                       <>
+                        {raisable(e) && (
+                          <button type="button" className="btn-s" disabled={busy}
+                            onClick={() => { setNote(null); setConfirming(null); setTopUp({ id: e.id, amount: '' }); }}>
+                            {t('quota.addTokens')}
+                          </button>
+                        )}{' '}
                         {retirable(e) && (
                           <button type="button" className="btn-s danger" disabled={busy}
                             onClick={() => { setNote(null); setConfirming({ id: e.id, kind: 'retire' }); }}>
@@ -248,6 +302,9 @@ export default function NativeEngagements({ lead = null, pending = null, other =
         </div>
       )}
 
+      {/* The outcome of the last row action (retire, cleanup retry, add
+          tokens), including a refusal's own explanation. */}
+      {note && <p role="status" data-engagement-note>{note}</p>}
       <div className="btn-row" style={{ marginTop: 14 }}>
         <button className="btn" onClick={data.refresh}>{t('nu.refresh')}</button>
         <button className="btn" onClick={data.firstPage}>{t('nu.firstPage')}</button>

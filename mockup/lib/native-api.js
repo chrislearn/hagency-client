@@ -574,6 +574,12 @@ export async function refuseEngagement(engagementId, commandId) {
 export async function retireEngagement(engagementId, commandId) {
   return validateEngagementReceipt(await request(`/api/engagements/${encodeURIComponent(engagementId)}/retire`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commandId }) }));
 }
+/* ADR-186 §C: add tokens to a reserved or active engagement's allocation.
+ * Checked by the store like an approval; a refusal carries the store's
+ * explanation as `error.detail`. The answer is the bounded receipt. */
+export async function raiseEngagementAllocation(engagementId, commandId, addTokens) {
+  return validateEngagementReceipt(await request(`/api/engagements/${encodeURIComponent(engagementId)}/allocation`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commandId, addTokens }) }));
+}
 export async function retryEngagementCleanup(engagementId, commandId) {
   return validateEngagementReceipt(await request(`/api/engagements/${encodeURIComponent(engagementId)}/cleanup-retry`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commandId }) }));
 }

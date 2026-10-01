@@ -154,9 +154,11 @@ pub(super) fn lift(tx: &Transaction<'_>, engagement: &str, now: u64) -> Result<b
             |r| r.get(0),
         )
         .optional()?;
-    if let Some(dispatch) = queued.or(paused_in) {
-        let available = allocation.saturating_sub(spent.unwrap_or(0));
-        say(
+    // The first thread that can carry it says it: a queued dispatch with no
+    // admitted request in a Matrix session has nowhere to say anything.
+    let available = allocation.saturating_sub(spent.unwrap_or(0));
+    for dispatch in [queued, paused_in].into_iter().flatten() {
+        let said = say(
             tx,
             &dispatch,
             QUOTA_RESUMED_KIND,
@@ -164,10 +166,15 @@ pub(super) fn lift(tx: &Transaction<'_>, engagement: &str, now: u64) -> Result<b
             &resumed_body(available),
             now,
         )?;
+        if said {
+            break;
+        }
     }
     Ok(true)
 }
 
+/// Say one quota notice in `dispatch`'s thread, best effort in its own
+/// savepoint. Returns whether a notice row now exists for it.
 fn say(
     tx: &Transaction<'_>,
     dispatch: &str,
@@ -175,11 +182,15 @@ fn say(
     key: &str,
     body: &str,
     now: u64,
-) -> Result<(), Error> {
+) -> Result<bool, Error> {
+    let count = |tx: &Transaction<'_>| -> Result<u64, Error> {
+        Ok(tx.query_row("SELECT COUNT(*) FROM task_notices", [], |r| r.get(0))?)
+    };
+    let before = count(tx)?;
     tx.execute_batch("SAVEPOINT quota_notice")?;
     match task_intents::keyed_dispatch_notice(tx, dispatch, kind, key, body, now) {
         Ok(()) => tx.execute_batch("RELEASE quota_notice")?,
         Err(_) => tx.execute_batch("ROLLBACK TO quota_notice; RELEASE quota_notice")?,
     }
-    Ok(())
+    Ok(count(tx)? > before)
 }

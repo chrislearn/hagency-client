@@ -490,4 +490,94 @@ mod quota {
                 .is_some()
         );
     }
+
+    /// §C: a top-up is checked like an approval, is idempotent by command
+    /// id, lifts the hold only when the allocation is above the spend, says
+    /// "Resumed" once, and lets queued work dispatch with no restart.
+    #[test]
+    fn native_quota_top_up_lifts_the_pause_and_is_idempotent() {
+        let mut f = Fixture::new(50);
+        f.admit("$request", 3000);
+        let (_, _, source) = f.working(3004);
+        f.db.record_usage_observation(&source, "over", &codex(45, 10, 0), 3100)
+            .unwrap();
+        assert!(f.db.quota_status(&f.engagement).unwrap().paused);
+        f.queue_more();
+        assert!(
+            f.db.claim_dispatch("runner_two", 3200, 60_000, 120_000, 8)
+                .unwrap()
+                .is_none()
+        );
+        // More than the resource can give is refused like an approval, with
+        // the human message; nothing changes.
+        match f.db.raise_allocation("top_big", &f.engagement, 1_000_000, 3300) {
+            Err(Error::OverCommit { message }) => assert!(message.contains("would exceed"), "{message}"),
+            other => panic!("expected over_commit, got {other:?}"),
+        }
+        assert_eq!(f.db.quota_status(&f.engagement).unwrap().allocated_tokens, 50);
+        // A top-up that still leaves the spend at or above the allocation is
+        // recorded but keeps the hold, and says nothing.
+        let small = f.db.raise_allocation("top_small", &f.engagement, 5, 3400).unwrap();
+        assert_eq!(small.allocated_tokens.map(u64::from), Some(55));
+        let status = f.db.quota_status(&f.engagement).unwrap();
+        assert_eq!((status.allocated_tokens, status.spent_tokens), (55, Some(55)));
+        assert!(status.paused, "55 of 55 is still used up");
+        assert_eq!(f.quota_notices().len(), 1);
+        // Headroom: the 1000-token pool less this engagement's 55.
+        assert_eq!(f.db.engagement_headroom(&f.engagement, 3500).unwrap(), Some(945));
+        // "All remaining" raises by exactly the headroom; the hold lifts.
+        let raised = f.db.raise_allocation("top_all", &f.engagement, 945, 3500).unwrap();
+        assert_eq!(raised.allocated_tokens.map(u64::from), Some(1000));
+        assert_eq!(u64::from(raised.requested_tokens), 100, "the ask is kept");
+        let status = f.db.quota_status(&f.engagement).unwrap();
+        assert!(!status.paused);
+        assert_eq!(status.allocated_tokens, 1000);
+        // Idempotent: the same command replays, the allocation is not
+        // raised twice; the same command with another amount conflicts.
+        assert_eq!(
+            f.db.raise_allocation("top_all", &f.engagement, 945, 3600)
+                .unwrap()
+                .allocated_tokens
+                .map(u64::from),
+            Some(1000)
+        );
+        assert_eq!(f.db.quota_status(&f.engagement).unwrap().allocated_tokens, 1000);
+        assert!(matches!(
+            f.db.raise_allocation("top_all", &f.engagement, 944, 3600),
+            Err(Error::Conflict)
+        ));
+        // One "Resumed" notice, in the thread the pause was said in (the
+        // queued plain session has no admitted request to say it under).
+        assert_eq!(
+            f.quota_notices(),
+            [
+                (
+                    "quota_paused".to_owned(),
+                    "Paused: used 55 of 50 tokens. The owner can add tokens in the Hagency console."
+                        .to_owned()
+                ),
+                (
+                    "quota_resumed".to_owned(),
+                    "Resumed: 945 tokens available.".to_owned()
+                ),
+            ]
+        );
+        // The queued work dispatches now, without a restart.
+        let cap = f
+            .db
+            .claim_dispatch("runner_two", 3700, 60_000, 120_000, 8)
+            .unwrap()
+            .expect("the lifted hold lets queued work dispatch");
+        assert_eq!(cap.dispatch_id, "later_dispatch");
+        // The Palpo-facing projection and the draw carry the new figure.
+        assert_eq!(u64::from(f.db.get(&f.engagement).unwrap().allocation()), 1000);
+        let report = f.db.resource_ceiling(&resource("pool", "seat", 0).id(), 3700).unwrap();
+        assert_eq!(report.reserved, 1000);
+        // A decided-and-ended engagement cannot be topped up.
+        f.db.revoke("revoke_one", &f.engagement).unwrap();
+        assert!(matches!(
+            f.db.raise_allocation("top_after", &f.engagement, 1, 3800),
+            Err(Error::State)
+        ));
+    }
 }

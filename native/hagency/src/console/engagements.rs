@@ -30,6 +30,7 @@ pub(super) fn router() -> Router {
         .push(Router::with_path("engagements/{id}/cleanup-retry").post(cleanup_retry))
         .push(Router::with_path("engagements/{id}/candidates").get(candidates))
         .push(Router::with_path("engagements/{id}/approve").post(approve))
+        .push(Router::with_path("engagements/{id}/allocation").post(allocation))
         .push(Router::with_path("engagements/audit").get(audit))
 }
 
@@ -124,6 +125,19 @@ impl CommandBody for Command {
     }
 }
 impl CommandBody for ApproveCommand {
+    fn command_id(&self) -> &str {
+        &self.command_id
+    }
+}
+
+/// The top-up body (ADR-186 §C1): the command id and the tokens to add.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct AllocationCommand {
+    command_id: String,
+    add_tokens: u64,
+}
+impl CommandBody for AllocationCommand {
     fn command_id(&self) -> &str {
         &self.command_id
     }
@@ -429,6 +443,55 @@ async fn approve(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         // unreadable engagement.
         Err(error) => verdict_store_error(res, error),
         ok => receipt(res, ok),
+    }
+}
+
+/// The operator's top-up (ADR-186 §C): `DomainStore::raise_allocation`
+/// raises a reserved or active engagement's allocation by `addTokens`,
+/// checked like an approval against the headroom left after its current
+/// allocation, idempotent by `commandId` (the store's decision receipts).
+/// The store lifts a quota hold the new allocation clears, in the same
+/// transaction; Palpo reads the new figure on its next status refresh. The
+/// answer is the bounded decision receipt, like every engagement mutation.
+#[handler]
+async fn allocation(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    let Some((id, AllocationCommand {
+        command_id: command,
+        add_tokens,
+    })) = decision_body::<AllocationCommand>(req, depot, res).await
+    else {
+        return;
+    };
+    if add_tokens == 0 {
+        failed(res, Error::Invalid);
+        return;
+    }
+    let Some(store) = domain(depot, res) else {
+        return;
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|d| u64::try_from(d.as_millis()).ok())
+        .unwrap_or_default();
+    let result = store
+        .raise_allocation(command, id.clone(), add_tokens, now)
+        .await;
+    if result.is_ok() && recheck(depot).is_err() {
+        verdict_store_error(res, hagency_store::Error::OutcomeUnknown);
+        return;
+    }
+    match result {
+        Ok(engagement) => receipt(res, Ok(engagement)),
+        Err(hagency_store::Error::InsufficientCapacity) => match store.engagement(id).await {
+            Ok(engagement) => capacity_refusal(res, &store, &engagement, add_tokens, now).await,
+            Err(_) => refusal(res, StatusCode::CONFLICT, "insufficient_capacity"),
+        },
+        // Only a reserved or active engagement holds an allocation to raise.
+        Err(hagency_store::Error::State) => {
+            refusal(res, StatusCode::CONFLICT, "engagement_not_live")
+        }
+        Err(error) => verdict_store_error(res, error),
     }
 }
 
