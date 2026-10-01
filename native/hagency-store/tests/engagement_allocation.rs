@@ -417,6 +417,17 @@ mod quota {
             )
             .unwrap();
         assert_eq!(closed, 1, "the turn's thread is recorded as closed");
+        // Live, the finished turn also moves its task to the next execution
+        // epoch, which is what cancelled the notice on the rig.
+        let advanced = f
+            .sql()
+            .execute(
+                "UPDATE canonical_tasks SET config=json_set(config,'$.execution_epoch',json_extract(config,'$.execution_epoch')+1) \
+                 WHERE id=(SELECT task_id FROM task_notices WHERE json_extract(config,'$.kind')='quota_paused')",
+                [],
+            )
+            .unwrap();
+        assert_eq!(advanced, 1);
         let _ = f.db.claim_verified_task_notice(3250, 60_000).unwrap();
         let state: String = f
             .sql()
