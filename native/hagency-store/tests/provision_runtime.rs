@@ -321,6 +321,81 @@ fn native_reattach_scope_carries_its_managed_account() {
     }
 }
 
+/// Live 2026-10-01: a request into a project the operator created in the
+/// console after startup failed provisioning with `Domain("not_found")`,
+/// because the home plan only knew the projects in its startup config. TS
+/// creates an engagement-provisioned home without `--project`; so does this.
+#[tokio::test]
+async fn native_managed_home_for_a_project_without_a_configured_source() {
+    use hagency_store::agent_home::{HomeProject, ManagedHomePlan, ProjectMode};
+    let root = tempfile::tempdir().unwrap();
+    let state = root.path().join("state");
+    let homes = root.path().join("homes");
+    hagency_store::private::directory(&homes).unwrap();
+    let project = root.path().join("source-project");
+    hagency_store::private::directory(&project).unwrap();
+    let bin = root.path().join("bin");
+    hagency_store::private::directory(&bin).unwrap();
+    let binary = bin.join("hagency");
+    std::fs::copy(std::env::current_exe().unwrap(), &binary).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let binary = binary.canonicalize().unwrap();
+    // Only an older project has a source; the request targets `project_one`.
+    let plan = || {
+        ManagedHomePlan::new(
+            homes.canonicalize().unwrap(),
+            vec![HomeProject {
+                project_id: "project_configured_at_startup".into(),
+                source: project.canonicalize().unwrap(),
+                mode: ProjectMode::Copy,
+            }],
+            binary.clone(),
+        )
+        .unwrap()
+    };
+    let mut db = DomainRepository::open(&state).unwrap();
+    let pool = resource("pool", "seat", 1000);
+    let effect = provision(&mut db, &pool);
+    let scope = db
+        .provision_runtime_scope(&effect, &registration())
+        .unwrap();
+    let domain = DomainStore::start(db, 16).unwrap();
+    let created = plan()
+        .materialize(
+            domain.clone(),
+            effect.clone(),
+            registration(),
+            Instant::now() + Duration::from_secs(10),
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        )
+        .await
+        .unwrap();
+    let work = created.workdir_path().unwrap();
+    created.check_provision_scope(&scope).unwrap();
+    assert_eq!(std::fs::read_dir(work.join("projects")).unwrap().count(), 0);
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(work.parent().unwrap().join("agent.json")).unwrap())
+            .unwrap();
+    assert_eq!(manifest["managedProjects"], serde_json::json!([]));
+    scope.claim_warm().unwrap();
+    domain.complete_original_provision(scope).await.unwrap();
+    drop(created);
+    domain.shutdown().await.unwrap();
+    // The project-less home reopens after a restart, and a project directory
+    // that appears inside it later is refused rather than adopted.
+    let mut db = DomainRepository::open(&state).unwrap();
+    let (rebuilt, registered, scope) = db.reattach_provision_scope(&effect.engagement_id).unwrap();
+    let reopened = plan().reopen(&scope, &rebuilt, &registered).unwrap();
+    assert_eq!(reopened.workdir_path().unwrap(), work);
+    drop(reopened);
+    hagency_store::private::directory(&work.join("projects/project_one")).unwrap();
+    assert!(plan().reopen(&scope, &rebuilt, &registered).is_err());
+}
+
 #[tokio::test]
 async fn native_managed_home_reopens_after_a_restart() {
     use hagency_store::agent_home::{HomeProject, ManagedHomePlan, ProjectMode};

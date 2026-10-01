@@ -910,6 +910,9 @@ impl Jobs {
             )
             .await
             .unwrap_or(Err(Error::Timeout));
+            if let Err(error) = &result && *error != Error::AwaitingOwner {
+                eprintln!("provision room step failed: effect={} error={error:?}", job.operation.scope.effect.id);
+            }
             let result = if result.as_ref().is_err_and(|e| *e != Error::AwaitingOwner)
                 && job
                     .operation

@@ -1513,12 +1513,38 @@ async fn native_provisioning_inline_home_projects() {
         finish(f, fake, c).await;
     }
 }
+/// Live 2026-10-01: a request into a project created in the console after
+/// startup has no configured source. It provisions with a project-less home,
+/// as TS does, instead of failing with `Domain("not_found")`.
+#[tokio::test]
+async fn native_provisioning_inline_home_without_a_configured_project() {
+    let home = HomeFixture::new();
+    let mut server = Server::new().await;
+    let (f, mut fake, c) = ready_inline_home(
+        Some((REP_TOKEN, vec![(OWNER.into(), server.peer.anchor())])),
+        common::load_limits(),
+        Some(home.plan(
+            hagency_store::agent_home::ProjectMode::Copy,
+            "other_project",
+        )),
+    )
+    .await;
+    drive(&f, &mut fake, &c, &mut server, true, |_, _| {})
+        .await
+        .unwrap();
+    let actual = actual_home(&f, &c);
+    let work = actual.workdir_path().unwrap();
+    assert_eq!(std::fs::read_dir(work.join("projects")).unwrap().count(), 0);
+    assert_account_only(&f, &c);
+    finish(f, fake, c).await;
+}
 #[tokio::test]
 async fn native_provisioning_inline_home_refusals() {
     for variant in [
         "partial_home",
         "partial_custody",
-        "missing_mapping",
+        // A project without a configured source is no longer refused: its home
+        // is created without a managed project, as TS does (live 2026-10-01).
         "replaced_source",
         "external_link",
         "large_file",
@@ -1528,11 +1554,7 @@ async fn native_provisioning_inline_home_refusals() {
         let server = Server::new().await;
         let home_plan = home.plan(
             hagency_store::agent_home::ProjectMode::Copy,
-            if variant == "missing_mapping" {
-                "other_project"
-            } else {
-                "project_provision"
-            },
+            "project_provision",
         );
         let engagement = server.device.strip_prefix("DEVICE_").unwrap();
         let marker = home

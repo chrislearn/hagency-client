@@ -350,6 +350,11 @@ impl TokenProvisioningHost {
             }
             return Err(Error::AwaitingOwner);
         }
+        if let Err(error) = &result {
+            // Never silent: the effect is only recorded as unknown, so the
+            // reason exists nowhere else.
+            eprintln!("provision attempt failed: effect={} activated={activated} error={error:?}", effect.id);
+        }
         let mut result = result;
         if activated && let Err(error) = result {
             result = Err(match &job.factory {

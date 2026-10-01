@@ -122,14 +122,20 @@ fn home_binding(
     effect: &Effect,
     registration: &Registration,
     root: &Root,
-    source: &Source,
+    source: Option<&Source>,
     binary: &Binary,
 ) -> Result<String, Error> {
-    canonical::transport_digest(
-        &json!({"kind":"native-agent-home-v1","effect":effect,"registration":registration,
-        "root":root.path,"source":source.root.path,"mode":source.mode,"binary":binary.path}),
-    )
-    .map_err(Into::into)
+    // A home with a configured project keeps its original binding bytes, so
+    // homes created before project-less homes existed still reopen.
+    let value = match source {
+        Some(source) => {
+            json!({"kind":"native-agent-home-v1","effect":effect,"registration":registration,
+            "root":root.path,"source":source.root.path,"mode":source.mode,"binary":binary.path})
+        }
+        None => json!({"kind":"native-agent-home-v1","effect":effect,"registration":registration,
+            "root":root.path,"source":null,"binary":binary.path}),
+    };
+    canonical::transport_digest(&value).map_err(Into::into)
 }
 /// Immutable private Host configuration. No serde/debug/clone or proof callback.
 pub struct ManagedHomePlan {
@@ -179,7 +185,10 @@ pub struct ManagedAgentHome {
     workdir: Root,
     custody: Root,
     root: Arc<Root>,
-    source: Arc<Source>,
+    /// None: the target project has no configured source, so the home holds
+    /// no managed project (TS parity: an engagement-provisioned agent home is
+    /// created without `--project`).
+    source: Option<Arc<Source>>,
     binary: Arc<Binary>,
     project_root: Option<Root>,
     project_path: PathBuf,
@@ -208,22 +217,28 @@ impl ManagedAgentHome {
     }
     fn check(&self) -> Result<(), Error> {
         self.root.check()?;
-        self.source.root.check()?;
+        if let Some(source) = &self.source {
+            source.root.check()?;
+        }
         self.binary.check()?;
         self.home.check()?;
         self.workdir.check()?;
         self.custody.check()?;
-        match &self.project_root {
-            Some(project) => project.check()?,
-            None => {
+        match (&self.source, &self.project_root) {
+            (Some(_), Some(project)) => project.check()?,
+            (Some(source), None) => {
                 if !std::fs::symlink_metadata(&self.project_path)?
                     .file_type()
                     .is_symlink()
-                    || self.project_path.canonicalize()? != self.source.root.path
+                    || self.project_path.canonicalize()? != source.root.path
                 {
                     return Err(Error::Private);
                 }
             }
+            (None, _) => match std::fs::symlink_metadata(&self.project_path) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                _ => return Err(Error::Private),
+            },
         }
         if bounded(&self.home.path.join("state/home-binding"), 64)? != self.binding.as_bytes()
             || project::hash(&bounded(&self.home.path.join("agent.json"), 32 * 1024)?)
@@ -333,13 +348,15 @@ impl ManagedHomePlan {
         {
             return Err(Error::Conflict);
         }
-        let source = self
-            .sources
-            .get(&request.target_project_id)
-            .cloned()
-            .ok_or(Error::NotFound)?;
+        let source = self.sources.get(&request.target_project_id).cloned();
         let provision = canonical::transport_digest(&json!([effect, registration]))?;
-        let binding = home_binding(effect, registration, &self.root, &source, &self.binary)?;
+        let binding = home_binding(
+            effect,
+            registration,
+            &self.root,
+            source.as_deref(),
+            &self.binary,
+        )?;
         let mut jobs = self.jobs.lock().map_err(|_| Error::OutcomeUnknown)?;
         if jobs.contains_key(&effect.id) {
             return Err(Error::Busy);
@@ -362,9 +379,9 @@ impl ManagedHomePlan {
         let manifest = String::from_utf8(bounded(&custody.join("complete"), 64)?)
             .map_err(|_| Error::Private)?;
         let reopened = Arc::new(ManagedAgentHome {
-            project_root: match source.mode {
-                ProjectMode::Copy => Some(Root::open(project_path.clone(), true)?),
-                ProjectMode::Symlink => None,
+            project_root: match source.as_ref().map(|s| s.mode) {
+                Some(ProjectMode::Copy) => Some(Root::open(project_path.clone(), true)?),
+                Some(ProjectMode::Symlink) | None => None,
             },
             home: Root::open(home, true)?,
             workdir: Root::open(workdir, true)?,
@@ -410,13 +427,17 @@ impl ManagedHomePlan {
         if effect.engagement_id != request.engagement_id()? {
             return Err(Error::Conflict);
         }
-        let source = self
-            .sources
-            .get(&request.target_project_id)
-            .cloned()
-            .ok_or(Error::NotFound)?;
+        // A project created after startup (in the console) has no configured
+        // source: the home is created without a managed project, as TS does.
+        let source = self.sources.get(&request.target_project_id).cloned();
         let provision = canonical::transport_digest(&json!([effect, registration]))?;
-        let binding = home_binding(&effect, &registration, &self.root, &source, &self.binary)?;
+        let binding = home_binding(
+            &effect,
+            &registration,
+            &self.root,
+            source.as_deref(),
+            &self.binary,
+        )?;
         let job = {
             let mut jobs = self.jobs.lock().map_err(|_| Error::OutcomeUnknown)?;
             if let Some(job) = jobs.get(&effect.id) {
@@ -529,7 +550,7 @@ impl ManagedHomePlan {
 }
 struct Creation {
     root: Arc<Root>,
-    source: Arc<Source>,
+    source: Option<Arc<Source>>,
     binary: Arc<Binary>,
     request: ProjectRequest,
     resource: project::Resource,
@@ -556,7 +577,9 @@ fn create(creation: Creation) -> Result<Arc<ManagedAgentHome>, Error> {
     let cancel = cancel.as_ref();
     checkpoint(deadline, cancel)?;
     root.check()?;
-    source.root.check()?;
+    if let Some(source) = &source {
+        source.root.check()?;
+    }
     binary.check()?;
     let agents = root.path.join("agents");
     private::directory(&agents)?;
@@ -587,8 +610,9 @@ fn create(creation: Creation) -> Result<Arc<ManagedAgentHome>, Error> {
     private::write_new(&home.join("state/home-binding"), binding.as_bytes())?;
     let workdir = home.join("workdir");
     let project_path = workdir.join("projects").join(&request.target_project_id);
-    match source.mode {
-        ProjectMode::Copy => {
+    match source.as_ref().map(|s| s.mode) {
+        Some(ProjectMode::Copy) => {
+            let source = source.as_ref().ok_or(Error::Conflict)?;
             private::create_directory_new(&project_path)?;
             let target = Dir::open_ambient_dir(&project_path, ambient_authority())?;
             let mut remaining = CopyBudget {
@@ -599,18 +623,31 @@ fn create(creation: Creation) -> Result<Arc<ManagedAgentHome>, Error> {
             };
             copy(&source.root.dir, &target, Path::new("."), 0, &mut remaining)?;
         }
-        ProjectMode::Symlink => link(&source.root.path, &project_path, true)?,
+        Some(ProjectMode::Symlink) => {
+            let source = source.as_ref().ok_or(Error::Conflict)?;
+            link(&source.root.path, &project_path, true)?
+        }
+        None => {}
     }
-    source.root.check()?;
+    if let Some(source) = &source {
+        source.root.check()?;
+    }
     root.check()?;
     checkpoint(deadline, cancel)?;
-    let mode = match source.mode {
-        ProjectMode::Copy => "copy",
-        ProjectMode::Symlink => "symlink",
-    };
-    let mapping = json!({"name":request.target_project_id,"path":project_path,"source":mode,"originPath":source.root.path});
+    let managed = source.as_ref().map(|source| {
+        let mode = match source.mode {
+            ProjectMode::Copy => "copy",
+            ProjectMode::Symlink => "symlink",
+        };
+        (
+            json!({"name":request.target_project_id,"path":project_path,"source":mode,"originPath":source.root.path}),
+            json!({"name":request.target_project_id,"workdirPath":format!("projects/{}",request.target_project_id),
+                "path":project_path,"source":mode,"originPath":source.root.path}),
+        )
+    });
+    let (mappings, projection): (Vec<_>, Vec<_>) = managed.into_iter().unzip();
     let manifest = json!({"id":id,"name":request.agent_definition.name,"type":resource.framework,"agentModelVersion":"1.1",
-        "layoutVersion":1,"homeDir":home,"workdir":workdir,"stateDir":home.join("state"),"managedProjects":[mapping],
+        "layoutVersion":1,"homeDir":home,"workdir":workdir,"stateDir":home.join("state"),"managedProjects":mappings,
         "human":{"owner":request.owner_mxid},"task":null,"runtimeProfile":{"primary":{"framework":resource.framework,
             "provider":resource.provider,"model":resource.model,"reasoning":resource.reasoning}},"nativeProvisionBinding":binding});
     let bytes = serde_json::to_vec_pretty(&manifest)?;
@@ -625,8 +662,6 @@ fn create(creation: Creation) -> Result<Arc<ManagedAgentHome>, Error> {
         ("workdir/docs/plan.md","## Current\nRead the assigned canonical task through the native task/MCP tools.\n".into()),
         ("workdir/docs/progress.md",String::new()),("supervisor/docs/plan.md","## Current\nObserve shared canonical task state; keep only supervisor-local notes here.\n".into()),
         ("supervisor/docs/progress.md",String::new())] {checkpoint(deadline,cancel)?;private::write_new(&home.join(path),content.as_bytes())?;}
-    let projection = json!([{"name":request.target_project_id,"workdirPath":format!("projects/{}",request.target_project_id),
-        "path":project_path,"source":mode,"originPath":source.root.path}]);
     let projects = format!(
         "# Projects\n\n<!-- hagency-managed-projects:start -->\n## Provisioned project mappings\n\nProjects are relative to workdir/. Copy edits stay in the managed copy; symlink edits affect originPath.\nBindings come from agent.json, not manual task state.\n\n```json\n{}\n```\n<!-- hagency-managed-projects:end -->\n",
         serde_json::to_string_pretty(&projection)?
@@ -664,9 +699,9 @@ fn create(creation: Creation) -> Result<Arc<ManagedAgentHome>, Error> {
         private::write_new(&workdir.join("task-writer.cmd"), wrapper.as_bytes())?;
     }
     private::write_new(&home.join("agent.json"), &bytes)?;
-    let project_root = match source.mode {
-        ProjectMode::Copy => Some(Root::open(project_path.clone(), true)?),
-        ProjectMode::Symlink => None,
+    let project_root = match source.as_ref().map(|s| s.mode) {
+        Some(ProjectMode::Copy) => Some(Root::open(project_path.clone(), true)?),
+        Some(ProjectMode::Symlink) | None => None,
     };
     let created = Arc::new(ManagedAgentHome {
         home: Root::open(home, true)?,
