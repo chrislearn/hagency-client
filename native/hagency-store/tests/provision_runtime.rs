@@ -540,6 +540,11 @@ fn native_warm_runtime_scope_refusals() {
                 // Valid-shaped out-of-band fixture corruption, not a permitted
                 // public profile mutation or a production authority write.
                 let sql = rusqlite::Connection::open(state.join("domain.sqlite3")).unwrap();
+                // A raised ceiling is budget, not what the agent runs: the
+                // running agent stays qualified (a live re-attach was refused
+                // as Unqualified after one, 2026-10-01).
+                sql.execute("UPDATE resources SET config=json_set(config,'$.ceiling.tokens',300000000) WHERE id=?1",[pool.id()]).unwrap();
+                db.validate_warm_runtime_scope(&scope).unwrap();
                 sql.execute("UPDATE resources SET config=json_set(config,'$.model','gpt-5.6-terra') WHERE id=?1",[pool.id()]).unwrap();
                 assert!(db.validate_warm_runtime_scope(&scope).is_err());
             }
