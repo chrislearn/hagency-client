@@ -316,7 +316,7 @@ fn native_graph_cancellation_schema9_custody() {
     // Reproduce that old state rather than pretending it has schema 10 custody.
     common::remove_graph_schema(&inspect);
     inspect
-        .execute_batch("ALTER TABLE runner_sessions DROP COLUMN model_override; ALTER TABLE runner_sessions DROP COLUMN mode_override; DELETE FROM resource_leases; DROP TABLE IF EXISTS agent_lifecycle; ALTER TABLE decisions DROP COLUMN kind; ALTER TABLE decisions DROP COLUMN at; PRAGMA user_version=9;")
+        .execute_batch("ALTER TABLE runner_sessions DROP COLUMN model_override; ALTER TABLE runner_sessions DROP COLUMN mode_override; DELETE FROM resource_leases; DROP TABLE IF EXISTS agent_lifecycle; ALTER TABLE decisions DROP COLUMN kind; ALTER TABLE decisions DROP COLUMN at; ALTER TABLE engagements DROP COLUMN allocated_tokens; PRAGMA user_version=9;")
         .unwrap();
     db = DomainRepository::open(&root.path().join("state")).unwrap();
     assert_eq!(

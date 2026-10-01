@@ -232,8 +232,9 @@ pub(crate) fn ceiling_report(
     };
     // Commitments aggregated in SQLite like budget() (domain.rs:293): SUM
     // over the resource's holding engagements, never a store scan in Rust.
+    // Each holds its granted amount when one is set (ADR-186 §A4).
     let reserved: u64 = db.query_row(
-            "SELECT COALESCE(SUM(tokens),0) FROM engagements WHERE resource_id=?1 AND state IN ('reserved','active')",
+            "SELECT COALESCE(SUM(COALESCE(allocated_tokens,tokens)),0) FROM engagements WHERE resource_id=?1 AND state IN ('reserved','active')",
             params![resource_id],
             |r| r.get(0),
         )?;

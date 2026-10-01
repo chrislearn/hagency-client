@@ -98,7 +98,20 @@ try {
   await page.locator('[data-native-state="ready"]').waitFor();
   await page.goto(`${config.base}/console/engagements/`);
   await page.locator('[data-native-state="ready"]').waitFor();
-  await page.locator('[data-verdict-panel] tr', { hasText: config.pendingAgent }).getByRole('button', { name: /^(Approve|批准)$/ }).click();
+  /* ADR-186 §A: the amount field starts at the request; an amount above the
+   * headroom is refused with the store's explanation shown in the row;
+   * "All remaining" fills in the candidate's headroom (the 1000-token pool
+   * less the seeded UsageWorker's 100); the approval then grants 80. */
+  const pendingRow = page.locator('[data-verdict-panel] tr', { hasText: config.pendingAgent });
+  const amount = pendingRow.locator('input[data-approve-amount]');
+  if (await amount.inputValue() !== '100') throw new Error(`the amount field did not start at the request: ${await amount.inputValue()}`);
+  await amount.fill('99999');
+  await pendingRow.getByRole('button', { name: /^(Approve|批准)$/ }).click();
+  await pendingRow.locator('p[role="alert"]').filter({ hasText: /would exceed/ }).waitFor();
+  await pendingRow.getByRole('button', { name: /^(All remaining|全部剩余)$/ }).click();
+  if (await amount.inputValue() !== '900') throw new Error(`All remaining filled ${await amount.inputValue()}, not the 900 headroom`);
+  await amount.fill('80');
+  await pendingRow.getByRole('button', { name: /^(Approve|批准)$/ }).click();
   await page.locator('[data-verdict-panel] p[role="status"]').filter({ hasText: /approved — provisioning enqueued|已批准/ }).waitFor();
 
   /* (b) REFUSE another pending engagement: the harness admits one on request. */

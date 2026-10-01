@@ -293,4 +293,17 @@ pub struct Engagement {
     pub route: Option<String>,
     #[serde(default)]
     pub auto_joined: bool,
+    /// ADR-186 §A4: the amount the operator granted when it differs from the
+    /// ask, or raised by a top-up (§C). `None` means the requested amount is
+    /// the allocation — every engagement decided before ADR-186 reads that
+    /// way, and the projection then serializes exactly as it did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allocated_tokens: Option<Tokens>,
+}
+impl Engagement {
+    /// The tokens this engagement holds: the granted amount when one is set,
+    /// otherwise the requested one (`COALESCE(allocated_tokens, tokens)`).
+    pub fn allocation(&self) -> Tokens {
+        self.allocated_tokens.unwrap_or(self.requested_tokens)
+    }
 }

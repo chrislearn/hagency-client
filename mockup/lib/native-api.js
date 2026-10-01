@@ -89,7 +89,13 @@ async function request(path, options = {}, responseLimit = 64 * 1024) {
     if (!response.ok) {
       if (value?.code === 'console_busy' && response.status === 429) throw new Error('busy');
       const known = { busy: 503, outcome_unknown: 504, resource_revision_conflict: 409, resource_publication_scope_required: 403, resource_configuration_scope_required: 403, resource_in_use: 409, invalid_resource_command: 400, account_scope_required: 403, account_state_conflict: 409, account_revision_conflict: 409, invalid_account_command: 400, engagement_not_live: 409, engagement_not_pending: 409, decision_conflict: 409, over_commit: 409, no_ceiling: 409, insufficient_capacity: 409, agent_unavailable: 409, registration_generation: 409, command_conflict: 409, stale_generation: 409, invalid_side_query: 400, sides_unavailable: 503 };
-      if (known[value?.code] === response.status || RECOVERY_ERRORS[value?.code] === response.status) throw new Error(value.code);
+      if (known[value?.code] === response.status || RECOVERY_ERRORS[value?.code] === response.status) {
+        // ADR-186 §A2: a refusal may carry the store's human explanation of
+        // the binding limit beside its code; it rides the error as `detail`.
+        const refused = new Error(value.code);
+        if (typeof value.message === 'string' && value.message.length > 0 && value.message.length <= 2048) refused.detail = value.message;
+        throw refused;
+      }
       throw new Error(response.status === 401 ? 'console_access_required' : (response.status === 404 ? 'not_found' : 'native_unavailable'));
     }
     return value;
@@ -546,8 +552,9 @@ export function validateEngagementReceipt(v) {
  * the existing /api/agents/{id}/refuse route and answers the rejected
  * engagement. The command id is minted client-side: it is the store's
  * idempotency key, never the route's. */
-export async function approveEngagement(engagementId, commandId) {
-  return validateEngagementReceipt(await request(`/api/engagements/${encodeURIComponent(engagementId)}/approve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commandId }) }));
+export async function approveEngagement(engagementId, commandId, allocatedTokens = null) {
+  const body = allocatedTokens === null ? { commandId } : { commandId, allocatedTokens };
+  return validateEngagementReceipt(await request(`/api/engagements/${encodeURIComponent(engagementId)}/approve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
 }
 export async function refuseEngagement(engagementId, commandId) {
   const v = await request(`/api/agents/${encodeURIComponent(engagementId)}/refuse`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commandId }) });

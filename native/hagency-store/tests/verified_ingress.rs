@@ -1241,7 +1241,7 @@ fn native_verified_ingress_recovery_schema_eleven_has_unknown_boundary() {
     drop(f.db);
     let sql = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3")).unwrap();
     remove_ingress_schema(&sql);
-    sql.execute_batch("ALTER TABLE runner_sessions DROP COLUMN model_override; ALTER TABLE runner_sessions DROP COLUMN mode_override; DROP TABLE IF EXISTS agent_lifecycle; ALTER TABLE decisions DROP COLUMN kind; ALTER TABLE decisions DROP COLUMN at; PRAGMA user_version=11;").unwrap();
+    sql.execute_batch("ALTER TABLE runner_sessions DROP COLUMN model_override; ALTER TABLE runner_sessions DROP COLUMN mode_override; DROP TABLE IF EXISTS agent_lifecycle; ALTER TABLE decisions DROP COLUMN kind; ALTER TABLE decisions DROP COLUMN at; ALTER TABLE engagements DROP COLUMN allocated_tokens; PRAGMA user_version=11;").unwrap();
     drop(sql);
     f.db = DomainRepository::open(&f.root.path().join("state")).unwrap();
     assert!(f.db.matrix_ingress_scope("a").is_err());

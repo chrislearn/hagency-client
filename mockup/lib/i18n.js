@@ -801,6 +801,9 @@ const en = {
   'nv.confirmRefuse': 'Reject this request? The project is told the request was declined.',
   'nv.confirm': 'Confirm',
   'nv.cancel': 'Cancel',
+  'nv.amount': 'Tokens',
+  'nv.allRemaining': 'All remaining',
+  'nv.amountInvalid': 'enter a whole number of tokens above zero',
   'na.readonly': 'derived from the engagement projections',
 
   'na.none': 'No engagements, no roster rows: an agent appears here once it is lent',
@@ -2482,6 +2485,9 @@ const zh = {
   'nv.confirmRefuse': '拒绝该请求？项目方会被告知请求已被拒绝。',
   'nv.confirm': '确认',
   'nv.cancel': '取消',
+  'nv.amount': 'Token 数',
+  'nv.allRemaining': '全部剩余',
+  'nv.amountInvalid': '请输入大于零的整数 token 数',
   'na.readonly': '由接洽投影派生',
 
   'na.none': '没有接洽就没有名册行：智能体被出借后才出现在这里',

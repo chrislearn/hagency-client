@@ -530,7 +530,9 @@ async fn refresh_statuses(domain: &DomainStore, probes: &Probes, fleet: &str, re
             S::Rejected => ("rejected", None, false),
             S::Revoked | S::Failed => ("ended", None, false),
         };
-        let allocated = matches!(e.state, S::Reserved | S::Active).then(|| json!(e.requested_tokens));
+        // ADR-186 §A4/§C4: the granted amount, raised by any top-up; the
+        // request when the operator granted it unchanged.
+        let allocated = matches!(e.state, S::Reserved | S::Active).then(|| json!(e.allocation()));
         // The serving identity is the fleet-namespaced account the App Service
         // factory created for this engagement; `ready` is TS's rule (active and
         // bound) plus the observed fact the agent is joined in the target room.

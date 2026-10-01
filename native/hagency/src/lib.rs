@@ -764,6 +764,20 @@ fn refusal(res: &mut Response, status: StatusCode, code: &str) {
     ));
 }
 
+/// A refusal whose store verdict carries its own human explanation (ADR-186
+/// §A2: the over-commit message naming the binding limit). The code and the
+/// generic `error` sentence stay exactly as `refusal` serves them; `message`
+/// is added beside them, never in place of the code.
+fn refusal_explained(res: &mut Response, status: StatusCode, code: &str, message: &str) {
+    res.status_code(status);
+    res.render(Json(serde_json::json!({
+        "ok": false,
+        "code": code,
+        "error": refusal_message(code),
+        "message": message,
+    })));
+}
+
 fn local_authority(req: &Request, depot: &Depot, res: &mut Response) -> bool {
     res.headers_mut()
         .insert("cache-control", "no-store".parse().expect("static header"));

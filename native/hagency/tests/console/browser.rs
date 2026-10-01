@@ -1291,6 +1291,15 @@ async fn native_console_regression_browser() {
         )
         .unwrap();
     assert_eq!(approve_state, "reserved");
+    // ADR-186 §A: the walk approved with an amount of 80, not the request.
+    let approve_allocated: Option<u64> = sql
+        .query_row(
+            "SELECT allocated_tokens FROM engagements WHERE id=?1",
+            [&approve_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(approve_allocated, Some(80));
     let provision: String = sql
         .query_row(
             "SELECT state FROM effects WHERE engagement_id=?1 AND kind='provision'",

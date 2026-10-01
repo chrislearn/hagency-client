@@ -161,8 +161,9 @@ impl DomainRepository {
         // `orphaned_committed` stays 0, exactly the invariant the retained
         // comment promises for a fleet running this code ("a delete no
         // longer leaves one behind"). The field is still served.
+        // ADR-186 §A4: a commitment is the granted amount when one is set.
         let mut query = self.db.prepare(
-            "SELECT e.id,e.project_id,e.tokens,e.projection \
+            "SELECT e.id,e.project_id,COALESCE(e.allocated_tokens,e.tokens),e.projection \
              FROM engagements e WHERE e.fleet_id=?1 AND e.state IN ('reserved','active') ORDER BY e.id",
         )?;
         let mut commitments = Vec::new();
