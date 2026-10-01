@@ -370,7 +370,13 @@ async fn approve(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         verdict_store_error(res, hagency_store::Error::OutcomeUnknown);
         return;
     }
-    receipt(res, result);
+    match result {
+        // A refused approval (over the remaining allocation, no ceiling, a
+        // decided engagement) is a verdict refusal the console names, not an
+        // unreadable engagement.
+        Err(error) => verdict_store_error(res, error),
+        ok => receipt(res, ok),
+    }
 }
 
 /// Field-by-field rebuild of the admission evidence into fresh observation

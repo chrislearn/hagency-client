@@ -115,6 +115,28 @@ async fn native_engagement_verdict_approve_reserves_and_enqueues_provision() {
     f.close().await;
 }
 
+/// Scenario: approving a request larger than the remaining allocation is a
+/// named verdict refusal (`over_commit`), not an unreadable engagement. The
+/// console showed "the native API is unavailable" for this (live, 2026-09-30).
+#[tokio::test]
+async fn native_engagement_verdict_over_commit_is_named() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let service = f.service();
+    let pending = f.new_engagement_requesting("over_the_ceiling", 5000).await;
+    let cookie = lifecycle_session(&service).await;
+    let mut response = post(
+        &format!("/console/api/engagements/{pending}/approve"),
+        &cookie,
+    )
+    .json(&json!({"commandId": "cmd_over_commit"}))
+    .send(&service)
+    .await;
+    assert_eq!(response.status_code, Some(StatusCode::CONFLICT));
+    let body = response.take_json::<Value>().await.unwrap();
+    assert_eq!(body["code"], "over_commit");
+    f.close().await;
+}
+
 /// Scenario: the operator refuses a pending engagement from the console; the
 /// existing refuse route ends it rejected with no provision work.
 #[tokio::test]
