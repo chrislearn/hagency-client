@@ -287,6 +287,7 @@ impl Sdk {
                 content: &attempt.content,
                 query_id: attempt.query_id.as_deref().ok_or(Error::Storage)?,
                 response,
+                all_devices: !self.approval,
             },
         )
         .await?;

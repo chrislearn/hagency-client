@@ -372,6 +372,7 @@ impl Sdk {
                 content: &a.card.content,
                 query_id: a.query_id.as_deref().ok_or(Error::Storage)?,
                 response,
+                all_devices: false,
             },
         )
         .await?;

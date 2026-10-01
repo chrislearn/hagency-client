@@ -13,6 +13,9 @@ pub(super) struct Input<'a> {
     pub content: &'a Value,
     pub query_id: &'a str,
     pub response: &'a Value,
+    /// ADR-185: an agent's own message goes to every consistent device of
+    /// its owner; an approval card (`false`) only to the anchor-signed ones.
+    pub all_devices: bool,
 }
 /// The prepared writes and the recipient set they were shared with: the
 /// owner's devices the accepted identity has signed (ADR-183 B-1). The
@@ -30,8 +33,13 @@ pub(super) async fn prepare(
         content,
         query_id,
         response,
+        all_devices,
     } = input;
-    let recipients = super::keys::accept(machine, users, query_id, response).await?;
+    let recipients = if all_devices {
+        super::keys::accept_all_devices(machine, users, query_id, response).await?
+    } else {
+        super::keys::accept(machine, users, query_id, response).await?
+    };
     if machine
         .get_missing_sessions(users.iter().map(|u| u.as_ref()))
         .await
@@ -45,7 +53,11 @@ pub(super) async fn prepare(
         .await
         .map_err(|_| Error::OutcomeUnknown)?;
     let settings = EncryptionSettings {
-        sharing_strategy: CollectStrategy::OnlyTrustedDevices,
+        sharing_strategy: if all_devices {
+            CollectStrategy::AllDevices
+        } else {
+            CollectStrategy::OnlyTrustedDevices
+        },
         ..EncryptionSettings::default()
     };
     let shares = machine

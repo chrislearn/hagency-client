@@ -682,7 +682,11 @@ impl Sdk {
             .iter()
             .map(|u| OwnedUserId::try_from(u.as_str()).map_err(|_| Error::Wire))
             .collect::<Result<Vec<_>, _>>()?;
-        let accepted = super::keys::accept_counted(machine, &users, &query.id, &response).await?;
+        // ADR-185: an agent enrolls with every consistent owner device; the
+        // approval bot still needs one the owner's identity signed.
+        let accepted =
+            super::keys::accept_counted(machine, &users, &query.id, &response, self.approval)
+                .await?;
         check_anchors(record, &response)?;
         if public_identity(machine).await? != *record.public.as_ref().ok_or(Error::Storage)? {
             return Err(Error::Identity);
