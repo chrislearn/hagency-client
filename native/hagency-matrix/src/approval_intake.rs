@@ -399,28 +399,41 @@ impl Inner {
         let mut rooms = vec![];
         for id in engagements {
             let a = self.domain.approval_room_authority(id.clone()).await?;
-            let configured = self
-                .config
-                .rooms
-                .iter()
-                .find(|r| r.room_id == a.room_id)
-                .ok_or(Error::Generation)?;
             let identity = &self.config.identity;
             if a.fleet_id != primary.fleet_id
                 || a.server_name != identity.server_name
                 || a.registration_generation != identity.transport.registration_generation
                 || a.bot_mxid != identity.transport.sender_mxid
-                || configured.privacy
-                    != (RoomPrivacy::Direct {
-                        human_mxid: a.owner_mxid.clone(),
-                    })
             {
                 return Err(Error::Generation);
             }
+            // The approval room is the project's owner DM, admitted with the
+            // request (TS: the binding's `ownerDmRoomId`). A project created
+            // after startup has its own, which the startup room list cannot
+            // name; its generation is the store's row (1 before the first
+            // observation). The store's observation still admits only an
+            // encrypted, invite-only room of exactly the owner and this bot.
+            let generation = match self.config.rooms.iter().find(|r| r.room_id == a.room_id) {
+                Some(configured) => {
+                    if configured.privacy
+                        != (RoomPrivacy::Direct {
+                            human_mxid: a.owner_mxid.clone(),
+                        })
+                    {
+                        return Err(Error::Generation);
+                    }
+                    configured.generation
+                }
+                None => self
+                    .domain
+                    .approval_room_capture(a.clone())
+                    .await?
+                    .map_or(1, |capture| capture.generation),
+            };
             rooms.push(Room {
                 authority: a,
                 device: identity.transport.device_id.clone(),
-                generation: configured.generation,
+                generation,
             });
         }
         Ok(rooms)
@@ -447,12 +460,15 @@ impl Inner {
                 hagency_core::replies::MatrixRoomObservation,
             > = std::collections::BTreeMap::new();
             for r in rooms {
-                let configured = self
-                    .config
-                    .rooms
-                    .iter()
-                    .find(|t| t.room_id == r.authority.room_id)
-                    .ok_or(Error::Generation)?;
+                // `approval_rooms` derived each room and checked any startup
+                // entry for it; this is that same room, never a new one.
+                let configured = &crate::HostRoom {
+                    room_id: r.authority.room_id.clone(),
+                    generation: r.generation,
+                    privacy: RoomPrivacy::Direct {
+                        human_mxid: r.authority.owner_mxid.clone(),
+                    },
+                };
                 let observation = if let Some(v) = snapshots.get(&configured.room_id) {
                     v.clone()
                 } else {
@@ -600,7 +616,14 @@ impl Inner {
                 .await?
                 .success()?;
             crate::outgoing::state::encode(&keys, 256 * 1024)?;
-            let filter=json!({"room":{"rooms":self.config.rooms.iter().map(|r|&r.room_id).collect::<Vec<_>>(),"timeline":{"limit":100},"ephemeral":{"types":[]},"account_data":{"types":[]},"state":{"lazy_load_members":false}},"presence":{"types":[]},"account_data":{"types":[]}}).to_string();
+            let allowed: BTreeSet<&str> = self
+                .config
+                .rooms
+                .iter()
+                .map(|r| r.room_id.as_str())
+                .chain(rooms.iter().map(|r| r.authority.room_id.as_str()))
+                .collect();
+            let filter=json!({"room":{"rooms":allowed,"timeline":{"limit":100},"ephemeral":{"types":[]},"account_data":{"types":[]},"state":{"lazy_load_members":false}},"presence":{"types":[]},"account_data":{"types":[]}}).to_string();
             let mut query = vec![
                 ("timeout", "0"),
                 ("full_state", "true"),
@@ -614,7 +637,7 @@ impl Inner {
                 .request(&["_matrix", "client", "v3", "sync"], Some(&query), cancel)
                 .await?
                 .success()?;
-            let raw = self.scope_sync(raw)?;
+            let raw = self.scope_sync_to(raw, &allowed)?;
             // Complete response freezes before any SDK crypto or cursor mutation.
             view = owner
                 .approval(Command::Start(Box::new(Batch::new(
