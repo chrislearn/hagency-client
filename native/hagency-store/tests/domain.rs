@@ -800,3 +800,28 @@ fn domain_agent_detail_projects_rooms_dispatch_and_tasks() {
     assert!(quiet.rooms.is_empty());
     assert!(quiet.tasks.is_empty());
 }
+
+/// ADR-187 §C: the first master key observed for an owner is pinned; the same
+/// key is accepted again; a different key is refused and recorded for the
+/// operator, never adopted; only an operator re-pin changes the anchor.
+#[test]
+fn native_owner_anchor_is_pinned_on_first_use_and_never_replaced() {
+    let (_dir, mut db) = setup();
+    let owner = "@owner:example.test";
+    let first = "A".repeat(43);
+    let other = "B".repeat(43);
+    assert!(db.owner_anchor(owner).unwrap().is_none());
+    let pinned = db.observe_owner_anchor(owner, &first, 10).unwrap();
+    assert_eq!((pinned.master_key.as_str(), pinned.source.as_str()), (first.as_str(), "first_use"));
+    assert_eq!(db.observe_owner_anchor(owner, &first, 20).unwrap().pinned_at, 10);
+    assert!(matches!(db.observe_owner_anchor(owner, &other, 30), Err(Error::Conflict)));
+    let held = db.owner_anchor(owner).unwrap().unwrap();
+    assert_eq!(held.master_key, first, "a different key never replaces the pin");
+    assert_eq!(held.mismatch_key.as_deref(), Some(other.as_str()));
+    let repinned = db.repin_owner_anchor(owner, &other, 40).unwrap();
+    assert_eq!((repinned.master_key.as_str(), repinned.source.as_str()), (other.as_str(), "operator"));
+    assert_eq!(repinned.mismatch_key, None);
+    assert!(db.observe_owner_anchor("not-an-mxid", &first, 50).is_err());
+    assert!(db.observe_owner_anchor(owner, "short", 50).is_err());
+    assert_eq!(db.owner_anchors().unwrap().len(), 1);
+}

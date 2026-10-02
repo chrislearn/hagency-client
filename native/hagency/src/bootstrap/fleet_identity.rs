@@ -194,6 +194,77 @@ pub(crate) async fn ensure(state: &Path, fleet_id: &str, server_name: &str) -> R
     Ok(Identities { approval, representative })
 }
 
+/// ADR-187 §C: the owner's master key as the homeserver reports it now, read
+/// with the representative's device. `None` when the owner has no
+/// cross-signing yet: that is a wait, never "no anchor needed".
+pub(crate) async fn fetch_master_key(state: &Path, owner: &str) -> Result<Option<String>, Error> {
+    let raw = private::read_secret(&state.join("palpo-appservice.json")).map_err(|_| Error::Appservice)?;
+    let appservice: Value = serde_json::from_slice(&raw).map_err(|_| Error::Appservice)?;
+    let homeserver = text(&appservice, "homeserver").ok_or(Error::Appservice)?;
+    let token = String::from_utf8(
+        private::read_secret(&state.join("matrix.representative_token")).map_err(|_| Error::Appservice)?,
+    )
+    .map_err(|_| Error::Store)?;
+    let client = Client {
+        http: reqwest::Client::builder()
+            .redirect(Policy::none())
+            .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(20))
+            .build()
+            .map_err(|_| Error::Unreachable)?,
+        origin: Url::parse(&homeserver).map_err(|_| Error::Appservice)?,
+        as_token: String::new(),
+        server_name: String::new(),
+    };
+    let (status, value) = client
+        .send(
+            reqwest::Method::POST,
+            &["_matrix", "client", "v3", "keys", "query"],
+            None,
+            token.trim(),
+            Some(json!({"device_keys": {owner: []}})),
+        )
+        .await?;
+    if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+        return Err(Error::Revoked("representative"));
+    }
+    if !status.is_success() {
+        return Err(Error::Unreachable);
+    }
+    let keys: Vec<String> = value
+        .pointer(&format!("/master_keys/{}/keys", owner.replace('~', "~0").replace('/', "~1")))
+        .and_then(Value::as_object)
+        .map(|keys| keys.values().filter_map(Value::as_str).map(str::to_owned).collect())
+        .unwrap_or_default();
+    match keys.as_slice() {
+        [] => Ok(None),
+        [key] => Ok(Some(key.clone())),
+        _ => Err(Error::Refused(owner.to_owned())),
+    }
+}
+
+/// ADR-187 §C: the anchor to trust for `owner`. A pinned anchor is returned
+/// as pinned (a later change is caught by enrollment's own key check); with
+/// none pinned, the key the homeserver reports now is pinned on first use.
+pub(crate) async fn owner_anchor(
+    domain: &hagency_store::DomainStore,
+    state: &Path,
+    owner: &str,
+    now: u64,
+) -> Result<Option<String>, Error> {
+    if let Some(pinned) = domain.owner_anchor(owner.to_owned()).await.map_err(|_| Error::Store)? {
+        return Ok(Some(pinned.master_key));
+    }
+    let Some(key) = fetch_master_key(state, owner).await? else {
+        return Ok(None);
+    };
+    let pinned = domain
+        .observe_owner_anchor(owner.to_owned(), key, now)
+        .await
+        .map_err(|_| Error::Store)?;
+    Ok(Some(pinned.master_key))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -241,6 +312,12 @@ mod tests {
                         } else {
                             let local = if auth.contains("approval") { "approval" } else { "representative" };
                             (200, json!({"user_id": format!("@{FLEET}_{local}:example.test")}))
+                        }
+                    } else if line.starts_with("POST /_matrix/client/v3/keys/query") {
+                        if request.contains("@nokey:") {
+                            (200, json!({"master_keys": {}}))
+                        } else {
+                            (200, json!({"master_keys": {"@owner:example.test": {"keys": {"ed25519:K": "K".repeat(43)}}}}))
                         }
                     } else {
                         (404, json!({}))
@@ -298,5 +375,17 @@ mod tests {
             Error::Revoked("representative")
         );
         assert_eq!(*logins.lock().unwrap(), 2);
+    }
+
+    #[tokio::test]
+    async fn native_fleet_identity_reads_the_owner_master_key() {
+        let (origin, _) = homeserver(Arc::new(Mutex::new(false))).await;
+        let dir = state(&origin);
+        ensure(dir.path(), FLEET, "example.test").await.unwrap();
+        assert_eq!(
+            fetch_master_key(dir.path(), "@owner:example.test").await.unwrap(),
+            Some("K".repeat(43))
+        );
+        assert_eq!(fetch_master_key(dir.path(), "@nokey:example.test").await.unwrap(), None);
     }
 }

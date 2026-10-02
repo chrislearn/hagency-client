@@ -4315,6 +4315,18 @@ impl DomainStore {
             .await
     }
     /// Revoked, never-attached engagements whose retirement is pending (read-only).
+    pub async fn owner_anchor(&self, owner: String) -> Result<Option<crate::OwnerAnchor>, Error> {
+        self.call(weight(&owner)?, move |db| db.owner_anchor(&owner)).await
+    }
+    pub async fn owner_anchors(&self) -> Result<Vec<crate::OwnerAnchor>, Error> {
+        self.call(weight(&())?, |db| db.owner_anchors()).await
+    }
+    pub async fn observe_owner_anchor(&self, owner: String, key: String, now: u64) -> Result<crate::OwnerAnchor, Error> {
+        self.call(weight(&(&owner, &key))?, move |db| db.observe_owner_anchor(&owner, &key, now)).await
+    }
+    pub async fn repin_owner_anchor(&self, owner: String, key: String, now: u64) -> Result<crate::OwnerAnchor, Error> {
+        self.call(weight(&(&owner, &key))?, move |db| db.repin_owner_anchor(&owner, &key, now)).await
+    }
     pub async fn pending_unattached_retirements(&self, fleet_id: String) -> Result<Vec<String>, Error> {
         self.call(weight(&fleet_id)?, move |db| db.pending_unattached_retirements(&fleet_id))
             .await
