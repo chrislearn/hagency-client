@@ -54,6 +54,9 @@ pub(crate) struct Inner {
     /// store binding is unchanged; working rooms join the sync filter, intake
     /// targets and send checks alongside the identity rooms.
     pub(crate) joined: std::sync::Mutex<BTreeMap<String, bool>>,
+    /// Joined rooms the agent does not work in (encrypted, shared): observed
+    /// so a change can be noticed, never published as a room scope.
+    pub(crate) joined_shared: std::sync::Mutex<BTreeSet<String>>,
     /// When this agent's display name was last reconciled, in wall-clock ms;
     /// 0 is "never". The 300 s throttle of `reconcile_agent_profile`
     /// (bridge-matrix.js:5939-5940).
@@ -269,6 +272,7 @@ impl Inner {
             uploads: crate::upload::Registry::new(),
             room_facts: Mutex::new(BTreeMap::new()),
             joined: std::sync::Mutex::new(BTreeMap::new()),
+            joined_shared: std::sync::Mutex::new(BTreeSet::new()),
             profile_checked_at: std::sync::atomic::AtomicU64::new(0),
             #[cfg(test)]
             handoff_fault: std::sync::atomic::AtomicU8::new(0),
@@ -562,7 +566,8 @@ impl Inner {
             .rooms
             .iter()
             .any(|r| r.room_id == target.room_id)
-            || self.joined.lock().unwrap().contains_key(&target.room_id);
+            || (self.joined.lock().unwrap().contains_key(&target.room_id)
+                && !self.joined_shared.lock().unwrap().contains(&target.room_id));
         let coordinator = self
             .config
             .factory_rooms

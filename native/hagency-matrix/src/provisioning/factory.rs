@@ -335,6 +335,13 @@ impl ProvisionedAgent {
                 .unwrap()
                 .entry(room.room_id.clone())
                 .or_insert(false);
+            // A room already found encrypted and shared is only re-read, not
+            // published: the store admits working joined rooms only.
+            if room.state == JoinedRoomState::EncryptedShared {
+                inner.joined_shared.lock().unwrap().insert(room.room_id.clone());
+            } else {
+                inner.joined_shared.lock().unwrap().remove(&room.room_id);
+            }
             let observation = match inner.collect_room_observation(&target, &cancel).await {
                 Ok(observation) => observation,
                 Err(error) => {
