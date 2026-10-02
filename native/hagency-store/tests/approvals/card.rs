@@ -73,7 +73,7 @@ fn native_approval_wire_corpus() {
         println!("HAGENCY_APPROVAL_WIRE_CORPUS={corpus}");
     } else {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../tests/fixtures/native-approval-wire.json");
+            .join("tests/fixtures/native-approval-wire.json");
         let expected: serde_json::Value =
             serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         assert_eq!(corpus, expected);
