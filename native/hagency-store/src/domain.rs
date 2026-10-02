@@ -2461,6 +2461,10 @@ impl DomainRepository {
         tx.commit()?;
         Ok(result)
     }
+    /// ADR-188 §3: a repeat of the notice, at most once per gap.
+    pub fn claim_joined_room_renotice(&mut self, engagement: &str, room: &str, now: u64, not_before: u64) -> Result<bool, Error> {
+        joined_rooms::claim_renotice(&self.db, engagement, room, now, not_before)
+    }
     /// ADR-188 §3: true only for the first caller; that caller posts the notice.
     pub fn claim_joined_room_notice(&mut self, engagement: &str, room: &str, now: u64) -> Result<bool, Error> {
         joined_rooms::claim_notice(&self.db, engagement, room, now)

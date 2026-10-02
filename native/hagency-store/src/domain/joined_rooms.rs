@@ -150,6 +150,15 @@ pub(super) fn set_state(
     get(db, engagement, room)?.ok_or(Error::Conflict)
 }
 
+/// ADR-188 §3, reminder: claim a repeat of the notice when it was last posted
+/// at or before `not_before`. True only for the caller that moves it.
+pub(super) fn claim_renotice(db: &Connection, engagement: &str, room: &str, now: u64, not_before: u64) -> Result<bool, Error> {
+    Ok(db.execute(
+        "UPDATE joined_rooms SET notice_at=?3 WHERE engagement_id=?1 AND room_id=?2 AND state='encrypted_shared' AND notice_at IS NOT NULL AND notice_at<=?4",
+        params![engagement, room, now, not_before],
+    )? == 1)
+}
+
 /// Claim the one "can't work here" notice: true only for the first caller
 /// since the room was (re)joined.
 pub(super) fn claim_notice(db: &Connection, engagement: &str, room: &str, now: u64) -> Result<bool, Error> {

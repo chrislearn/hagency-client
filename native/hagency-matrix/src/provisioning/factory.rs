@@ -376,6 +376,26 @@ impl ProvisionedAgent {
                     .await?
                 {
                     self.encrypted_shared_notice(&room.room_id, now, &cancel).await;
+                } else if let Some(last) = room.notice_at
+                    && now >= last.saturating_add(RENOTICE_GAP_MS)
+                    && self
+                        .latest_other_message(&room.room_id, &transport.sender_mxid, &cancel)
+                        .await
+                        .is_some_and(|at| at > last)
+                    && inner
+                        .domain
+                        .claim_joined_room_renotice(
+                            engagement.clone(),
+                            room.room_id.clone(),
+                            now,
+                            now - RENOTICE_GAP_MS,
+                        )
+                        .await?
+                {
+                    // Someone posted since the last notice: remind them, at
+                    // most once per gap. Only senders and times are read;
+                    // the room's messages are never decrypted.
+                    self.encrypted_shared_notice(&room.room_id, now, &cancel).await;
                 }
                 continue;
             }
@@ -440,6 +460,36 @@ impl ProvisionedAgent {
             },
         ))
     }
+    /// The newest message time from anyone but the agent, read from the
+    /// room's recent events without decrypting them. None when unreadable.
+    async fn latest_other_message(
+        &self,
+        room: &str,
+        agent: &str,
+        cancel: &crate::CancellationToken,
+    ) -> Option<u64> {
+        let value = self
+            .collector
+            .inner
+            .http
+            .request(
+                &["_matrix", "client", "v3", "rooms", room, "messages"],
+                Some(&[("dir", "b"), ("limit", "20")]),
+                cancel,
+            )
+            .await
+            .and_then(|response| response.success())
+            .ok()?;
+        value["chunk"]
+            .as_array()?
+            .iter()
+            .filter(|e| {
+                matches!(e["type"].as_str(), Some("m.room.encrypted" | "m.room.message"))
+                    && e["sender"].as_str().is_some_and(|s| s != agent)
+            })
+            .filter_map(|e| e["origin_server_ts"].as_u64())
+            .max()
+    }
     /// ADR-188 §3: the one plain notice in an encrypted room with other
     /// people in it. Its replies could be read only by the owner, so the
     /// agent says so instead of working there. Best effort: a failed send is
@@ -448,7 +498,7 @@ impl ProvisionedAgent {
         let txn = format!("joined-notice-{now}");
         let body = serde_json::json!({
             "msgtype": "m.notice",
-            "body": "I can't work in an encrypted room with other people in it: only my owner could read my replies. Talk to me in an unencrypted room, or in a room with just my owner and me.",
+            "body": "I can't work in an encrypted room with other people in it: only my owner could read my replies. Encryption can't be turned off in a room, so for working with me create a new room with encryption off, or talk to me in a room with just my owner and me.",
         })
         .to_string();
         let segments = ["_matrix", "client", "v3", "rooms", room, "send", "m.room.message", txn.as_str()];
@@ -1039,6 +1089,9 @@ impl Collector {
         .map_err(|_| Error::OutcomeUnknown)?
     }
 }
+
+/// A reminder in an encrypted shared room is repeated at most this often.
+const RENOTICE_GAP_MS: u64 = 15 * 60 * 1000;
 
 /// ADR-188: one session per (engagement, transport generation, room
 /// generation, joined room), distinct from the legacy `invite_…` sessions.

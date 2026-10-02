@@ -4345,6 +4345,9 @@ impl DomainStore {
     pub async fn set_joined_room_state(&self, engagement: String, room: String, state: crate::JoinedRoomState, now: u64) -> Result<crate::JoinedRoom, Error> {
         self.call(weight(&(&engagement, &room))?, move |db| db.set_joined_room_state(&engagement, &room, state, now)).await
     }
+    pub async fn claim_joined_room_renotice(&self, engagement: String, room: String, now: u64, not_before: u64) -> Result<bool, Error> {
+        self.call(weight(&(&engagement, &room))?, move |db| db.claim_joined_room_renotice(&engagement, &room, now, not_before)).await
+    }
     pub async fn claim_joined_room_notice(&self, engagement: String, room: String, now: u64) -> Result<bool, Error> {
         self.call(weight(&(&engagement, &room))?, move |db| db.claim_joined_room_notice(&engagement, &room, now)).await
     }

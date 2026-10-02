@@ -119,6 +119,10 @@ fn native_joined_room_record_state_and_notice() {
         .unwrap();
     assert!(f.db.claim_joined_room_notice(&eng, SIDE, 2004).unwrap());
     assert!(!f.db.claim_joined_room_notice(&eng, SIDE, 2005).unwrap());
+    // A reminder repeats it only once the gap since the last one has passed.
+    assert!(!f.db.claim_joined_room_renotice(&eng, SIDE, 2005, 2003).unwrap());
+    assert!(f.db.claim_joined_room_renotice(&eng, SIDE, 2005, 2004).unwrap());
+    assert!(!f.db.claim_joined_room_renotice(&eng, SIDE, 2005, 2004).unwrap());
 
     // Retired rooms leave the live list and stay retired until a new join,
     // which makes them working again with the notice cleared.
