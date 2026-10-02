@@ -494,7 +494,8 @@ try {
   const heldLogout = new Promise((resolve) => { releaseLogout = resolve; });
   const logoutStarted = new Promise((resolve) => { observedLogout = resolve; });
   await context.route(`${config.base}/console/session`, async (route) => { observedLogout(); await heldLogout; await route.continue(); });
-  page.on('request', (request) => { if (request.url().includes('/console/api/')) readsDuringLogout += 1; });
+  const logoutReads = [];
+  page.on('request', (request) => { if (request.url().includes('/console/api/')) { readsDuringLogout += 1; logoutReads.push(`${request.method()} ${request.url()}`); } });
   // The ONE End access on screen is the rail's control (the usage page's
   // main carries no logout of its own) — target it by its locale-stable
   // attribute, valid for both the en in-process lane and the zh executable.
@@ -503,12 +504,12 @@ try {
   await logoutStarted;
   await page.evaluate(() => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); window.dispatchEvent(new PopStateEvent('popstate')); });
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  assert.equal(readsDuringLogout, 0);
+  assert.equal(readsDuringLogout, 0, `reads during logout: ${logoutReads.join(', ')}`);
   const ended = page.waitForResponse((response) => response.url().endsWith('/console/session') && response.request().method() === 'DELETE');
   releaseLogout(); await ended;
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await page.locator('[data-native-state="access"]').waitFor();
-  assert.equal(readsDuringLogout, 0);
+  assert.equal(readsDuringLogout, 0, `reads during logout: ${logoutReads.join(', ')}`);
   assert.equal(await page.locator('[data-kind]').count(), 0);
   assert.deepEqual(failures, []);
   console.log(config.executable ? 'PASS native executable browser without Node runtime PATH' : 'PASS bilingual retained browser, dynamic engagement, null evidence, privacy and logout');
