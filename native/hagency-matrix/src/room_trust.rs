@@ -124,10 +124,10 @@ impl RoomTrust {
         if self.managed.contains(room_id) || self.marked.contains(room_id) {
             return RoomTrustReason::Managed;
         }
-        if let Some(inviter) = inviter_mxid {
-            if self.trusted_inviters.contains(inviter) {
-                return RoomTrustReason::TrustedInviter;
-            }
+        if let Some(inviter) = inviter_mxid
+            && self.trusted_inviters.contains(inviter)
+        {
+            return RoomTrustReason::TrustedInviter;
         }
         RoomTrustReason::UnknownRoom
     }

@@ -288,10 +288,11 @@ fn ensure_bootstrap(spec: &WorktreeSpec, worktree_path: &Path) -> Result<(), Wor
         ));
     }
     let bootstrap_digest = resource_digest(&serde_json::to_string(bootstrap).unwrap_or_default());
-    if let Some(state) = &state {
-        if state.status == BootstrapStatus::Complete && state.digest == bootstrap_digest {
-            return Ok(());
-        }
+    if let Some(state) = &state
+        && state.status == BootstrapStatus::Complete
+        && state.digest == bootstrap_digest
+    {
+        return Ok(());
     }
     if state.is_some() && !git(worktree_path, &["status", "--porcelain"])?.is_empty() {
         let reason = if state
@@ -346,6 +347,12 @@ fn registered_worktrees(
 
 /// `WorktreeManager` (router/src/worktree.ts:152-271).
 pub struct WorktreeManager;
+
+impl Default for WorktreeManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl WorktreeManager {
     pub fn new() -> Self {

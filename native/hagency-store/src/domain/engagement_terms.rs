@@ -194,6 +194,7 @@ impl DomainRepository {
     /// TS PUT /api/offers/:role → setOffer. Caps absent (null) clear; present
     /// values must be positive integers below 2^53; `published` is true only
     /// for an explicit true (TS `published === true`).
+    #[allow(clippy::too_many_arguments)]
     pub fn set_offer(
         &mut self,
         role: &str,
@@ -271,10 +272,9 @@ impl DomainRepository {
         now: u64,
     ) -> Result<WhitelistEntry, Error> {
         if !valid_room_id(project_room_id) {
-            return Err(hagency_core::InvalidInput(
-                "projectRoomId must be a Matrix room id".into(),
-            )
-            .into());
+            return Err(
+                hagency_core::InvalidInput("projectRoomId must be a Matrix room id").into(),
+            );
         }
         // TS (engagement-store.js:399-400) validates the MXID only when a
         // value was PROVIDED; the absent case falls back to 'operator' with
@@ -282,7 +282,7 @@ impl DomainRepository {
         let added_by = match added_by {
             Some(by) if !by.is_empty() => {
                 if !valid_mxid(by) {
-                    return Err(hagency_core::InvalidInput("addedBy must be an MXID".into()).into());
+                    return Err(hagency_core::InvalidInput("addedBy must be an MXID").into());
                 }
                 by
             }
@@ -476,11 +476,7 @@ impl DomainRepository {
                 // TS edit() returns `next.find(d => d.id === id) || next.at(-1)
                 // || null` after a delete: the row is gone, so the answer is
                 // the LAST REMAINING definition, never the deleted row.
-                previous
-                    .iter()
-                    .filter(|d| d.id != old.id)
-                    .next_back()
-                    .cloned()
+                previous.iter().rfind(|d| d.id != old.id).cloned()
             }
             Some(input) => {
                 let old = old.cloned();
@@ -498,27 +494,28 @@ impl DomainRepository {
                 let role = role.trim().to_owned();
                 if !valid_agent_name(&name) {
                     return Err(hagency_core::InvalidInput(
-                        "Agent name must start with a lowercase letter and contain only lowercase letters, numbers, underscores or hyphens (64 characters maximum)".into(),
+                        "Agent name must start with a lowercase letter and contain only lowercase letters, numbers, underscores or hyphens (64 characters maximum)",
                     )
                     .into());
                 }
                 if previous
                     .iter()
-                    .any(|d| definition_id.map_or(true, |id| d.id != id) && d.name == name)
+                    .any(|d| definition_id.is_none_or(|id| d.id != id) && d.name == name)
                 {
                     return Err(Error::Conflict);
                 }
-                if let Some(old) = &old {
-                    if in_use(&tx, &old.name)? && (name != old.name || role != old.role) {
-                        return Err(Error::Conflict);
-                    }
+                if let Some(old) = &old
+                    && in_use(&tx, &old.name)?
+                    && (name != old.name || role != old.role)
+                {
+                    return Err(Error::Conflict);
                 }
                 if !Self::definition_qualifies(&resource, &role) {
                     return Err(Error::Unqualified);
                 }
                 if old.is_none() && previous.len() >= 200 {
                     return Err(hagency_core::InvalidInput(
-                        "This resource already has 200 Agent definitions".into(),
+                        "This resource already has 200 Agent definitions",
                     )
                     .into());
                 }
@@ -526,9 +523,7 @@ impl DomainRepository {
                     None => old.as_ref().map(|o| o.enabled).unwrap_or(true),
                     Some(Value::Bool(v)) => *v,
                     Some(_) => {
-                        return Err(
-                            hagency_core::InvalidInput("enabled must be a boolean".into()).into(),
-                        );
+                        return Err(hagency_core::InvalidInput("enabled must be a boolean").into());
                     }
                 };
                 let id = match &old {
@@ -619,6 +614,6 @@ impl DomainRepository {
 fn random_hex() -> Result<String, Error> {
     let mut bytes = [0u8; 16];
     getrandom::fill(&mut bytes)
-        .map_err(|_| hagency_core::InvalidInput("definition id unavailable".into()))?;
+        .map_err(|_| hagency_core::InvalidInput("definition id unavailable"))?;
     Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
 }

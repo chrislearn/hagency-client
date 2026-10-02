@@ -1,12 +1,12 @@
 use super::*;
 
-/// Task #13: the retained `POST /api/project-sides/:id/registration-file`
-/// (`backend-v2.js:10031-10168`) on the native console. The assertions are
-/// the TS-visible outcomes: the response's key set and values (camelCase,
-/// fingerprints, never tokens), the YAML file's field-for-field shape
-/// (`renderRegistrationYaml`, `appservice-receiver.js:111-136`), the
-/// stored token at the exact path the appservice profile reads
-/// (`bootstrap/config.rs:646`), and TS's staging behaviour on a reissue.
+// Task #13: the retained `POST /api/project-sides/:id/registration-file`
+// (`backend-v2.js:10031-10168`) on the native console. The assertions are
+// the TS-visible outcomes: the response's key set and values (camelCase,
+// fingerprints, never tokens), the YAML file's field-for-field shape
+// (`renderRegistrationYaml`, `appservice-receiver.js:111-136`), the
+// stored token at the exact path the appservice profile reads
+// (`bootstrap/config.rs:646`), and TS's staging behaviour on a reissue.
 
 fn yaml_field(yaml: &str, key: &str) -> String {
     // `trim_start()`: namespaced keys (`rooms:`) are indented two spaces.

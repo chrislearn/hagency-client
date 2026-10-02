@@ -160,8 +160,7 @@ pub fn parse(raw: &str) -> Result<(Registration, Value, Value, String, u64), Err
         || machine.chars().any(char::is_whitespace)
         || machine == as_token
         || machine == hs_token
-        || generation < 1
-        || generation > hagency_core::JSON_SAFE_MAX
+        || !(1..=hagency_core::JSON_SAFE_MAX).contains(&generation)
     {
         return Err(Error::Invalid("transport"));
     }
@@ -315,6 +314,7 @@ mod tests {
     }
     #[test]
     fn native_palpo_import_refuses_what_ts_refuses() {
+        #[allow(clippy::type_complexity)]
         let cases: Vec<(&str, Box<dyn Fn(&mut Value)>)> = vec![
             (
                 "callback fleet",

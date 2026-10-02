@@ -1,13 +1,13 @@
 use super::*;
 
-/// `PUT /api/project-sides/:id/allocation` and `GET …/budget`
-/// (backend-v2.js:9541, :9567) on the console wire: the write behind the
-/// configuration scope, the read beside the scope-free project-sides list,
-/// and the fleet totals block (backend-v2.js:15700-15720) that names its
-/// own denominator. Every expected figure is derived from the shared seed:
-/// two approved (reserved) engagements of 100 tokens each commit 200, the
-/// third admitted-but-pending one commits nothing, and exactly one of the
-/// three agents carries observed usage.
+// `PUT /api/project-sides/:id/allocation` and `GET …/budget`
+// (backend-v2.js:9541, :9567) on the console wire: the write behind the
+// configuration scope, the read beside the scope-free project-sides list,
+// and the fleet totals block (backend-v2.js:15700-15720) that names its
+// own denominator. Every expected figure is derived from the shared seed:
+// two approved (reserved) engagements of 100 tokens each commit 200, the
+// third admitted-but-pending one commits nothing, and exactly one of the
+// three agents carries observed usage.
 
 /// One login is the whole console (the operator's decision; the per-scope
 /// issue routes are gone): the former configuration-scoped helper is the

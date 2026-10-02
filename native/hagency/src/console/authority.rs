@@ -93,6 +93,7 @@ fn matches(grant: &Grant, digest: &[u8; 32], now: Instant) -> bool {
     bool::from(grant.hash.ct_eq(digest)) && fresh(grant, now)
 }
 /// The persisted link and login hashes; `None` when absent or unreadable.
+#[allow(clippy::type_complexity)]
 fn load(path: &std::path::Path) -> Option<(Option<[u8; 32]>, Vec<[u8; 32]>)> {
     use std::io::Read;
     let file = hagency_store::private::open(path, false).ok()?;

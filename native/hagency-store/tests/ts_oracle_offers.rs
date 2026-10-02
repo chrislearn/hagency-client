@@ -12,6 +12,8 @@ use hagency_store::DomainRepository;
 use serde_json::json;
 
 struct Book {
+    // Keeps the state directory alive for the test.
+    #[allow(dead_code)]
     root: tempfile::TempDir,
     db: DomainRepository,
 }

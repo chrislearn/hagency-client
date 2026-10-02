@@ -72,10 +72,8 @@ pub fn active_pairs(engagements: &[Engagement]) -> Vec<(String, String)> {
     engagements
         .iter()
         .filter(|e| e.state == EngagementState::Active)
-        .filter_map(|e| {
-            seen.insert((e.agent_name.as_str().to_owned(), e.project_room_id.clone()))
-                .then(|| (e.agent_name.as_str().to_owned(), e.project_room_id.clone()))
-        })
+        .filter(|&e| seen.insert((e.agent_name.as_str().to_owned(), e.project_room_id.clone())))
+        .map(|e| (e.agent_name.as_str().to_owned(), e.project_room_id.clone()))
         .collect()
 }
 

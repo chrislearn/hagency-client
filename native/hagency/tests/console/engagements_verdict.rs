@@ -174,7 +174,7 @@ async fn native_engagement_verdict_audit_lists_newest_first() {
     tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
     let cookie = lifecycle_session(&service).await;
     let approved = f.new_engagement().await;
-    let mut response = post(
+    let response = post(
         &format!("/console/api/engagements/{approved}/approve"),
         &cookie,
     )
@@ -201,7 +201,7 @@ async fn native_engagement_verdict_audit_lists_newest_first() {
             .unwrap()
             .id
     };
-    let mut response = post(&format!("/console/api/agents/{refused}/refuse"), &cookie)
+    let response = post(&format!("/console/api/agents/{refused}/refuse"), &cookie)
         .json(&json!({"commandId": "cmd_audit_2"}))
         .send(&service)
         .await;

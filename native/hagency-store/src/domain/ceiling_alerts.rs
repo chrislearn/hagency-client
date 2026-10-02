@@ -460,6 +460,7 @@ impl DomainRepository {
                 .clone()
                 .map(|o| o.trim().chars().take(128).collect::<String>())
                 .filter(|o| !o.is_empty());
+            #[allow(clippy::type_complexity)]
             let row: (Option<String>, Option<String>, Option<String>, Option<String>, Option<String>) = tx
                 .query_row(
                     "SELECT assignee, runbook, impact, recovery_condition, resource_id FROM ceiling_alerts WHERE dedupe_key=?1",
@@ -658,8 +659,6 @@ pub const ALERT_STATUSES: [&str; 5] =
     ["open", "acknowledged", "assigned", "resolved", "suppressed"];
 /// `lib/alert-store.js:5` parity.
 pub const ALERT_SEVERITIES: [&str; 3] = ["info", "warning", "critical"];
-/// `lib/alert-store.js:6` parity.
-pub const ALERT_SOURCES: [&str; 4] = ["backend", "bridge", "supervisor", "system"];
 /// `TRANSITIONS`, `lib/alert-store.js:8-14`: open→{acknowledged, assigned,
 /// resolved, suppressed}; acknowledged→{assigned, resolved}; assigned→
 /// {resolved}; suppressed→{open, assigned}; resolved terminal.

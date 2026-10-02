@@ -124,14 +124,12 @@ async fn put_credential(req: &mut Request, depot: &mut Depot, res: &mut Response
         .get("apiBaseUrl")
         .or_else(|| object.get("api_base_url"))
         .and_then(Value::as_str)
-    {
-        if let Err(error) = store
+        && let Err(error) = store
             .set_api_base_url(id.clone(), Some(url.to_string()))
             .await
-        {
-            side_error(res, error);
-            return;
-        }
+    {
+        side_error(res, error);
+        return;
     }
     match store.set_credential(id, credential, false).await {
         Ok(Some(side)) => res.render(Json(json!({"ok": true, "side": side}))),

@@ -61,10 +61,9 @@ impl DomainRepository {
                  JOIN runner_sessions n ON n.id=d.session_id \
                  WHERE n.engagement_id=?1 AND s.settled_at IS NULL ORDER BY s.dispatch_id",
             )?;
-            let rows = stmt
-                .query_map([engagement], |r| r.get(0))?
-                .collect::<Result<Vec<_>, _>>()?;
-            rows
+
+            stmt.query_map([engagement], |r| r.get(0))?
+                .collect::<Result<Vec<_>, _>>()?
         };
         for dispatch in &legacy {
             if !dispatches.contains(dispatch) {

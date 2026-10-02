@@ -161,6 +161,8 @@ pub(crate) struct Connected {
     pub(crate) imported: super::palpo_import::Imported,
     pub(crate) started: bool,
 }
+// The wrapped errors are read through `Debug` when a refusal is logged.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub(crate) enum ImportError {
     Invalid(&'static str),

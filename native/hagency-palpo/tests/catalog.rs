@@ -1,7 +1,7 @@
 #[allow(dead_code)] // Other transport fixtures use the remaining shared helpers.
 mod common;
 use common::*;
-use hagency_core::{authority::Registration, canonical, project::Resource};
+use hagency_core::{authority::Registration, project::Resource};
 use hagency_palpo::{Adapter, CancellationToken, Error, HostConfig, Step};
 use hagency_store::{DomainRepository, DomainStore, Store, outbound::RegistrationIdentity};
 use serde_json::{Value, json};

@@ -931,7 +931,7 @@ impl Inner {
                         .and_then(Value::as_str)
                         .map(str::to_owned);
                 }
-                "com.hagency.admin.binding.v1" => {
+                "com.hagency.admin.binding.v1"
                     // TS parity (lib/fleet-protocol.js:52): the binding is a
                     // per-fleet state event keyed by the fleet id (never the
                     // empty key). TS reads the exact tuple
@@ -941,10 +941,9 @@ impl Inner {
                     // Palpo also writes one under the empty key when it
                     // creates a project or approval room; TS never reads that
                     // tuple, so neither does the collector (not a refusal).
-                    if !key.is_empty() {
+                    if !key.is_empty() => {
                         ts_binding = Some(Value::Object(content.clone()));
                     }
-                }
                 // Board #95: rooms bound by EARLIER Rust builds carry the
                 // legacy `com.hagency.project.binding.v1` under the empty
                 // state key. Read it too so such a room keeps working after
@@ -956,11 +955,10 @@ impl Inner {
                 // gate downstream — a legacy binding naming a foreign fleet is
                 // refused there with exactly today's error. Native never
                 // writes this event again (no writer exists).
-                "com.hagency.project.binding.v1" => {
-                    if key.is_empty() {
+                "com.hagency.project.binding.v1"
+                    if key.is_empty() => {
                         legacy_binding = Some(Value::Object(content.clone()));
                     }
-                }
                 _ => {}
             }
         }

@@ -41,6 +41,7 @@ fn receipt(db: &Connection, id: &str, replayed: bool) -> Result<CommandNoticeRec
     .ok_or(Error::NotFound)
 }
 fn frozen(db: &Connection, id: &str) -> Result<(CommandNotice, ReplyRoute, String), Error> {
+    #[allow(clippy::type_complexity)]
     let row: Option<(String, String, String, Option<String>, String, String, String)> = db
         .query_row(
             "SELECT session_id,transaction_id,body,html,route,digest,source_event_id FROM command_notices WHERE id=?1",

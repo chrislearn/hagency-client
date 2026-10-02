@@ -528,11 +528,7 @@ fn native_bot_command_lines_never_wake() {
         };
         // The same shape that DOES wake, so the difference is the `!` alone.
         let ordinary = f.event("a", "ordinary", None, &mentions, 1010);
-        if direct {
-            assert!(f.db.admit_matrix_event(&ordinary, 1011).unwrap().wake);
-        } else {
-            assert!(f.db.admit_matrix_event(&ordinary, 1011).unwrap().wake);
-        }
+        assert!(f.db.admit_matrix_event(&ordinary, 1011).unwrap().wake);
         let mut command = f.event("a", "command", None, &mentions, 1012);
         command.event.body = "!help\n".into();
         let receipt = f.db.admit_matrix_event(&command, 1013).unwrap();
@@ -1896,9 +1892,7 @@ fn native_bot_command_is_answered_once_for_the_event_not_once_per_agent() {
     // Each agent's poll offers it — before anyone has answered.
     for session in ["a", "b", "c"] {
         assert_eq!(
-            f.db.pending_command_lines(session.into(), 16)
-                .unwrap()
-                .len(),
+            f.db.pending_command_lines(session, 16).unwrap().len(),
             1,
             "session {session} has the unanswered line before anyone answers"
         );
@@ -1934,9 +1928,7 @@ fn native_bot_command_is_answered_once_for_the_event_not_once_per_agent() {
     // exactly one `!help` reply.
     for session in ["a", "b", "c"] {
         assert!(
-            f.db.pending_command_lines(session.into(), 16)
-                .unwrap()
-                .is_empty(),
+            f.db.pending_command_lines(session, 16).unwrap().is_empty(),
             "session {session} must not be offered an answered event"
         );
     }
@@ -1992,7 +1984,7 @@ fn native_bot_command_is_answered_after_the_session_outgrows_the_window() {
     // `command_notices` rows are both `delivered`, belonging to the OLDER
     // `!help`; only the newer one was left unanswered.
     let first_claim =
-        f.db.claim_command_notice_for_session("a".into(), 1013, 60_000)
+        f.db.claim_command_notice_for_session("a", 1013, 60_000)
             .unwrap()
             .unwrap();
     assert_eq!(first_claim.claim.notice.source_event_id, "$help1");
@@ -2037,7 +2029,7 @@ fn native_bot_command_is_answered_after_the_session_outgrows_the_window() {
         assert!(!f.db.admit_matrix_event(&second, 1201).unwrap().wake);
     }
     for session in ["a", "b"] {
-        let offered = f.db.pending_command_lines(session.into(), 16).unwrap();
+        let offered = f.db.pending_command_lines(session, 16).unwrap();
         assert_eq!(
             offered.len(),
             1,
@@ -2063,13 +2055,13 @@ fn native_bot_command_is_answered_after_the_session_outgrows_the_window() {
     // (claim -> one-shot begin -> deliver), so "exactly one reply" is a
     // delivered `m.notice`, not merely one queued row.
     let claimed =
-        f.db.claim_command_notice_for_session("a".into(), 1013, 60_000)
+        f.db.claim_command_notice_for_session("a", 1013, 60_000)
             .unwrap()
             .expect("the later !help is claimable by its owning session");
     assert_eq!(claimed.claim.notice.source_event_id, "$help2");
     // The other agent cannot claim it: the row belongs to `a`.
     assert!(
-        f.db.claim_command_notice_for_session("b".into(), 1013, 60_000)
+        f.db.claim_command_notice_for_session("b", 1013, 60_000)
             .unwrap()
             .is_none(),
         "b must have nothing to claim for a's answer"
@@ -2108,9 +2100,7 @@ fn native_bot_command_is_answered_after_the_session_outgrows_the_window() {
     );
     for session in ["a", "b"] {
         assert!(
-            f.db.pending_command_lines(session.into(), 16)
-                .unwrap()
-                .is_empty(),
+            f.db.pending_command_lines(session, 16).unwrap().is_empty(),
             "session {session} must not be re-offered an answered command"
         );
     }
@@ -2133,7 +2123,7 @@ fn native_thread_directive_is_offered_after_the_session_outgrows_the_window() {
     directive.event.body = "/thread mode plan".into();
     // A directive is consumed before routing: admitted, recorded, wakes nobody.
     assert!(!f.db.admit_matrix_event(&directive, 1201).unwrap().wake);
-    let offered = f.db.pending_thread_directives("a".into(), 16).unwrap();
+    let offered = f.db.pending_thread_directives("a", 16).unwrap();
     assert_eq!(
         offered.len(),
         1,
@@ -2172,14 +2162,14 @@ fn native_failed_bot_command_answer_is_not_repeated_by_another_agent() {
     // the row stays `sending` under a lease that then lapses, which is exactly
     // the unknown outcome the send path refuses to guess about.
     let claimed =
-        f.db.claim_command_notice_for_session("a".into(), 1012, 1000)
+        f.db.claim_command_notice_for_session("a", 1012, 1000)
             .unwrap()
             .unwrap();
     f.db.begin_command_notice_send(&claimed.claim.notice.id, &claimed.claim.token, 1013)
         .unwrap();
     // Past the lease, the store reconciles the un-settled send to `uncertain`.
     assert!(
-        f.db.claim_command_notice_for_session("b".into(), 3013, 1000)
+        f.db.claim_command_notice_for_session("b", 3013, 1000)
             .unwrap()
             .is_none(),
         "b must not claim an answer whose send outcome is unknown"
@@ -2193,9 +2183,7 @@ fn native_failed_bot_command_answer_is_not_repeated_by_another_agent() {
     // The event is neither offered again nor answered twice, by anyone.
     for session in ["a", "b", "c"] {
         assert!(
-            f.db.pending_command_lines(session.into(), 16)
-                .unwrap()
-                .is_empty(),
+            f.db.pending_command_lines(session, 16).unwrap().is_empty(),
             "session {session} must not re-offer a command whose reply was attempted"
         );
     }

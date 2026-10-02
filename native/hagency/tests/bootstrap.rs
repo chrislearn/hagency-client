@@ -1432,7 +1432,7 @@ async fn native_worktree_production_config_two_threads() {
     ] {
         let out = std::process::Command::new("git")
             .args(&args)
-            .current_dir(&f.second_work())
+            .current_dir(f.second_work())
             .output()
             .unwrap();
         assert!(out.status.success(), "git {args:?}: {:?}", out.stderr);
@@ -1441,7 +1441,7 @@ async fn native_worktree_production_config_two_threads() {
     for args in [vec!["add", "README.md"], vec!["commit", "-m", "base"]] {
         let out = std::process::Command::new("git")
             .args(&args)
-            .current_dir(&f.second_work())
+            .current_dir(f.second_work())
             .output()
             .unwrap();
         assert!(out.status.success(), "git {args:?}: {:?}", out.stderr);

@@ -57,6 +57,7 @@ pub fn approval_room_power_levels(actor_mxid: &str) -> Result<Value, Error> {
 /// ten keys `approvalRoomPowerLevels` owns — a current state carrying any
 /// other key compares equal on these and is left alone; a difference on any
 /// of them is a difference.
+#[cfg(test)]
 pub fn normalized_power_levels(current: &Value) -> Value {
     json!({
         "ban": current.get("ban").cloned().unwrap_or(Value::Null),
@@ -73,6 +74,7 @@ pub fn normalized_power_levels(current: &Value) -> Value {
 
 /// Whether the room's power levels must be (re)written
 /// (bridge-matrix.js:8877-8887): absent state, or a normalized difference.
+#[cfg(test)]
 pub fn power_levels_differ(current: Option<&Value>, expected: &Value) -> bool {
     match current {
         None => true,

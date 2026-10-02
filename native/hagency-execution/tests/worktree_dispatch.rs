@@ -108,7 +108,7 @@ async fn native_worktree_two_threads_distinct_worktrees() {
     // TS per-agent mode (backend-v2.js:2994, resolve at :2057-2075): the
     // workspace settings ride the AGENT record through the production
     // admission path — not a host or serve-level switch.
-    let mut value = serde_json::to_value(&request("allocation", "Worker", &pool, 100)).unwrap();
+    let mut value = serde_json::to_value(request("allocation", "Worker", &pool, 100)).unwrap();
     value["agentDefinition"]["workspaceMode"] = json!("worktree");
     value["agentDefinition"]["worktreesDir"] = json!(worktrees.to_string_lossy().into_owned());
     let request: ProjectRequest = serde_json::from_value(value).unwrap();

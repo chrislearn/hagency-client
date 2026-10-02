@@ -1608,7 +1608,6 @@ async fn native_matrix_intake_pill_and_plain_mentions_wake_without_m_mentions() 
 #[tokio::test]
 async fn native_matrix_intake_threaded_followup_after_task_done() {
     use hagency_core::{
-        agent_inbox::AgentInboxPlan,
         ingress::VerifiedTaskRequest,
         replies::ReplyDeliveryObservation,
         task_intents::TaskDefinition,

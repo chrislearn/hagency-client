@@ -97,6 +97,9 @@ pub const STAGED_NOTE: &str = "The credential this side is USING has not changed
 /// TS only ever compares against two of them (`backend-v2.js:10060-10061`,
 /// `liveIsBroken = accessState === 'rejected' || 'blocked'`), so the pair
 /// that matters is spelled out here rather than left as bare strings.
+// Only `Unverified` is observed natively so far (see `side_access_verdict`);
+// the other verdicts are exercised by the staging-rule tests.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SideAccessVerdict {
     /// A verify proved the homeserver accepts the live credential.

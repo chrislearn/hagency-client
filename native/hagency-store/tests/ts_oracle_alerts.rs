@@ -188,7 +188,7 @@ fn ts_oracle_alerts_transition_map_legal_pairs_and_terminal() {
 fn ts_oracle_alerts_server_online_resolves_only_the_matching_offline() {
     // The retained store resolves by `server_online`'s correlation; native has
     // no such ingest point.
-    assert!(false, "no native server_offline/server_online ingest path");
+    panic!("no native server_offline/server_online ingest path");
 }
 
 /// TS: `transitions through the state machine correctly` (the `assigned` legs)
@@ -200,7 +200,7 @@ fn ts_oracle_alerts_server_online_resolves_only_the_matching_offline() {
 #[test]
 #[ignore = "parity gap: no `assigned` state natively (no assignee column, no agent-token authority)"]
 fn ts_oracle_alerts_assigned_state_and_agent_token_resolve() {
-    assert!(false, "native carries no assigned state");
+    panic!("native carries no assigned state");
 }
 
 /// TS: `lists alerts with filters and returns stats` (`/api/alerts?sourceAgent=`
@@ -211,7 +211,7 @@ fn ts_oracle_alerts_assigned_state_and_agent_token_resolve() {
 #[test]
 #[ignore = "parity gap: no alert filters or /api/alerts/stats route natively"]
 fn ts_oracle_alerts_list_filters_and_stats() {
-    assert!(false, "native has no alert stats route or filter query");
+    panic!("native has no alert stats route or filter query");
 }
 
 /// TS: `adds and retrieves notes` (`POST /api/alerts/:id/notes`).
@@ -221,7 +221,7 @@ fn ts_oracle_alerts_list_filters_and_stats() {
 #[test]
 #[ignore = "parity gap: native has one note string, not a notes list"]
 fn ts_oracle_alerts_adds_and_retrieves_notes() {
-    assert!(false, "native has no notes list");
+    panic!("native has no notes list");
 }
 
 /// TS: `deletes an alert` (`DELETE /api/alerts/:id`).
@@ -230,7 +230,7 @@ fn ts_oracle_alerts_adds_and_retrieves_notes() {
 #[test]
 #[ignore = "parity gap: no alert delete route natively"]
 fn ts_oracle_alerts_deletes_an_alert() {
-    assert!(false, "native has no delete route");
+    panic!("native has no delete route");
 }
 
 /// TS: `patch updates actionable metadata and can restore original severity`
@@ -241,7 +241,7 @@ fn ts_oracle_alerts_deletes_an_alert() {
 #[test]
 #[ignore = "parity gap: no alert PATCH route natively"]
 fn ts_oracle_alerts_patch_restores_original_severity() {
-    assert!(false, "native has no alert patch route");
+    panic!("native has no alert patch route");
 }
 
 /// TS: `suppressed alert reopens on new occurrence after suppressUntil expires`
@@ -253,7 +253,7 @@ fn ts_oracle_alerts_patch_restores_original_severity() {
 #[test]
 #[ignore = "parity gap: native suppression has no suppressUntil window"]
 fn ts_oracle_alerts_suppressed_reopens_after_window() {
-    assert!(false, "native suppression has no window");
+    panic!("native suppression has no window");
 }
 
 /// TS: `downgrades incomplete paging alerts to diagnostic info` and `keeps
@@ -264,7 +264,7 @@ fn ts_oracle_alerts_suppressed_reopens_after_window() {
 #[test]
 #[ignore = "parity gap: actionability downgrade needs non-ceiling alert kinds"]
 fn ts_oracle_alerts_downgrades_incomplete_paging_alerts() {
-    assert!(false, "native raises no paging-kind alerts");
+    panic!("native raises no paging-kind alerts");
 }
 
 /// TS: the three rollback cases (`ingest rolls back...`, `transition rollback
@@ -277,5 +277,5 @@ fn ts_oracle_alerts_downgrades_incomplete_paging_alerts() {
 #[test]
 #[ignore = "parity gap: no persistence-failure injection seam in the native alert store"]
 fn ts_oracle_alerts_write_rollbacks() {
-    assert!(false, "native alert writes are already atomic");
+    panic!("native alert writes are already atomic");
 }

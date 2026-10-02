@@ -101,12 +101,12 @@ pub struct Credential {
 fn credential(value: &Value) -> Result<Credential, Error> {
     let object = value
         .as_object()
-        .ok_or_else(|| InvalidInput("credential must be an object"))?;
+        .ok_or(InvalidInput("credential must be an object"))?;
     let kind = text(
         object
             .get("kind")
             .and_then(Value::as_str)
-            .ok_or_else(|| InvalidInput("credential.kind must be 1..64 characters"))?,
+            .ok_or(InvalidInput("credential.kind must be 1..64 characters"))?,
         64,
     )?;
     if !CREDENTIAL_KINDS.contains(&kind.as_str()) {
@@ -128,14 +128,18 @@ fn credential(value: &Value) -> Result<Credential, Error> {
                 object
                     .get("asToken")
                     .and_then(Value::as_str)
-                    .ok_or_else(|| InvalidInput("credential.asToken must be 1..4096 characters"))?,
+                    .ok_or(InvalidInput(
+                        "credential.asToken must be 1..4096 characters",
+                    ))?,
                 4096,
             )?),
             hs_token: Some(text(
                 object
                     .get("hsToken")
                     .and_then(Value::as_str)
-                    .ok_or_else(|| InvalidInput("credential.hsToken must be 1..4096 characters"))?,
+                    .ok_or(InvalidInput(
+                        "credential.hsToken must be 1..4096 characters",
+                    ))?,
                 4096,
             )?),
             url: match object.get("url") {
@@ -148,9 +152,9 @@ fn credential(value: &Value) -> Result<Credential, Error> {
                 object
                     .get("namespace")
                     .and_then(Value::as_str)
-                    .ok_or_else(|| {
-                        InvalidInput("credential.namespace must be 1..255 characters")
-                    })?,
+                    .ok_or(InvalidInput(
+                        "credential.namespace must be 1..255 characters",
+                    ))?,
                 255,
             )?),
             sender_localpart: Some(
@@ -158,7 +162,7 @@ fn credential(value: &Value) -> Result<Credential, Error> {
                     object
                         .get("senderLocalpart")
                         .and_then(Value::as_str)
-                        .ok_or_else(|| {
+                        .ok_or({
                             InvalidInput("credential.senderLocalpart must be 1..255 characters")
                         })?,
                     255,
@@ -180,7 +184,7 @@ fn credential(value: &Value) -> Result<Credential, Error> {
                 object
                     .get("registrationToken")
                     .and_then(Value::as_str)
-                    .ok_or_else(|| {
+                    .ok_or({
                         InvalidInput("credential.registrationToken must be 1..4096 characters")
                     })?,
                 4096,
@@ -508,7 +512,7 @@ impl DomainRepository {
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        if stage && value.is_some() {
+        if stage && let Some(staged) = &value {
             // Guard the same way TS does: staging a FIRST credential would
             // leave the side unable to act while `hasCredential` says otherwise.
             let live: Option<Option<String>> = tx
@@ -519,7 +523,7 @@ impl DomainRepository {
                 )
                 .optional()?;
             if live.flatten().is_some() {
-                let credential = credential(&value.expect("guarded above"))?;
+                let credential = credential(staged)?;
                 tx.execute(
                     "UPDATE side_records SET pending_credential=?2,pending_issued_at=?3,updated_at=?3 WHERE server_name=?1",
                     params![id, serde_json::to_string(&credential)?, now as i64],
@@ -637,12 +641,12 @@ impl DomainRepository {
         }
         let object = input
             .as_object()
-            .ok_or_else(|| InvalidInput("project must be an object"))?;
+            .ok_or(InvalidInput("project must be an object"))?;
         let name = text(
             object
                 .get("name")
                 .and_then(Value::as_str)
-                .ok_or_else(|| InvalidInput("project.name must be 1..255 characters"))?,
+                .ok_or(InvalidInput("project.name must be 1..255 characters"))?,
             255,
         )?;
         // The slug keeps letters in any script: `\p{L}\p{N}._-`, others become '-'.

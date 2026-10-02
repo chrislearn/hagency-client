@@ -174,10 +174,7 @@ fn ts_oracle_project_sides_a_url_is_refused_as_a_server_name() {
 #[test]
 #[ignore = "parity gap: native registrations carry no credential/verdict/allocation/staging columns"]
 fn ts_oracle_project_sides_credential_verdict_allocation_staging() {
-    assert!(
-        false,
-        "the native registration row has no credential family"
-    );
+    panic!("the native registration row has no credential family");
 }
 
 /// TS: the knock family (`tests/api-project-side-knock.test.js`, 7 cases) —
@@ -188,7 +185,7 @@ fn ts_oracle_project_sides_credential_verdict_allocation_staging() {
 #[test]
 #[ignore = "parity gap: no knock route or homeserver room-directory client natively"]
 fn ts_oracle_project_side_knock_resolves_alias_and_knocks() {
-    assert!(false, "native has no knock route");
+    panic!("native has no knock route");
 }
 
 /// TS: the project add/archive family (`tests/api-project-side-projects.test.js`)
@@ -199,7 +196,7 @@ fn ts_oracle_project_side_knock_resolves_alias_and_knocks() {
 #[test]
 #[ignore = "parity gap: no project add/archive route and no agent<->project binding table"]
 fn ts_oracle_project_side_projects_add_archive_and_staff_join() {
-    assert!(false, "native has no project add/archive route");
+    panic!("native has no project add/archive route");
 }
 
 // Out of scope, listed as skipped in the report (not ported, no test):

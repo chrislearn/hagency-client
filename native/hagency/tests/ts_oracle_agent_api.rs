@@ -479,7 +479,7 @@ async fn ts_oracle_health_reports_agent_tokens() {
 async fn ts_oracle_system_message_passes_without_a_token() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
-    let mut response = TestClient::post(format!("{BASE}/console/api/messages"))
+    let response = TestClient::post(format!("{BASE}/console/api/messages"))
         .add_header("host", "127.0.0.1:13300", true)
         .add_header("origin", BASE, true)
         .add_header("sec-fetch-site", "same-origin", true)

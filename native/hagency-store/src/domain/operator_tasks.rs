@@ -293,32 +293,31 @@ fn task_row(
 /// The retained comments array, in insertion order (`sequence`). Bounded by
 /// `MAX_TASK_COMMENTS` at write time, so this read is finite by construction.
 fn comments(db: &rusqlite::Connection, id: &str) -> Result<Vec<OperatorTaskComment>, Error> {
-    Ok(db
-        .prepare(
-            "SELECT author,body,created_at FROM operator_task_comments WHERE task_id=?1 \
+    db.prepare(
+        "SELECT author,body,created_at FROM operator_task_comments WHERE task_id=?1 \
              ORDER BY sequence LIMIT ?2",
-        )?
-        .query_map(params![id, MAX_TASK_COMMENTS as i64], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, u64>(2)?,
-            ))
-        })?
-        .map(|r| {
-            let (author, text, ts) = r?;
-            Ok(OperatorTaskComment {
-                author,
-                text,
-                ts: iso8601(ts),
-            })
+    )?
+    .query_map(params![id, MAX_TASK_COMMENTS as i64], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, u64>(2)?,
+        ))
+    })?
+    .map(|r| {
+        let (author, text, ts) = r?;
+        Ok(OperatorTaskComment {
+            author,
+            text,
+            ts: iso8601(ts),
         })
-        .collect::<Result<Vec<_>, Error>>()?)
+    })
+    .collect::<Result<Vec<_>, Error>>()
 }
 
 fn read_task(db: &rusqlite::Connection, id: &str) -> Result<OperatorTask, Error> {
     let stored = db
-        .query_row(&format!("{SELECT} WHERE id=?1"), [id], |r| row(r))
+        .query_row(&format!("{SELECT} WHERE id=?1"), [id], row)
         .optional()?
         .ok_or(Error::NotFound)?;
     task_row(stored, comments(db, id)?)
@@ -478,10 +477,10 @@ impl DomainRepository {
         if filters.limit.is_some_and(|l| l > MAX_TASK_PAGE) {
             return Err(hagency_core::InvalidInput("task page exceeds its bound").into());
         }
-        Ok(list_rows(&self.db, filters)?
+        list_rows(&self.db, filters)?
             .into_iter()
             .map(|id| read_task(&self.db, &id))
-            .collect::<Result<Vec<_>, _>>()?)
+            .collect::<Result<Vec<_>, _>>()
     }
 
     /// `updateTask` (`lib/task-store.js:169-214`) — the operator's full-field
@@ -495,7 +494,7 @@ impl DomainRepository {
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current: Option<Row> = tx
-            .query_row(&format!("{SELECT} WHERE id=?1"), [id], |r| row(r))
+            .query_row(&format!("{SELECT} WHERE id=?1"), [id], row)
             .optional()?;
         let Some(mut stored) = current else {
             return Err(Error::NotFound);
@@ -592,7 +591,7 @@ impl DomainRepository {
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current: Option<Row> = tx
-            .query_row(&format!("{SELECT} WHERE id=?1"), [id], |r| row(r))
+            .query_row(&format!("{SELECT} WHERE id=?1"), [id], row)
             .optional()?;
         let Some(stored) = current else {
             return Err(Error::NotFound);
@@ -686,7 +685,7 @@ impl DomainRepository {
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current: Option<Row> = tx
-            .query_row(&format!("{SELECT} WHERE id=?1"), [id], |r| row(r))
+            .query_row(&format!("{SELECT} WHERE id=?1"), [id], row)
             .optional()?;
         let Some(stored) = current else {
             return Ok(None);

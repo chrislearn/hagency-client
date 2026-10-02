@@ -42,9 +42,8 @@ pub use attempt_events::{
 pub use catalog_publication::{PublishedCatalog, publication_fingerprint};
 mod ceiling_alerts;
 pub use ceiling_alerts::{
-    ALERT_SEVERITIES, ALERT_SOURCES, ALERT_STATUSES, ALERT_SUPPRESS_DEFAULT_MS, AlertListFilter,
-    AlertNote, AlertPatch, AlertStats, AlertTransition, CeilingAlert, MAX_OPEN_CEILING_ALERTS,
-    SweepOutcome, allowed_transitions,
+    ALERT_STATUSES, AlertListFilter, AlertNote, AlertPatch, AlertStats, AlertTransition,
+    CeilingAlert, MAX_OPEN_CEILING_ALERTS, SweepOutcome, allowed_transitions,
 };
 mod command_notices;
 mod conversation_lifecycle;
@@ -87,7 +86,6 @@ mod quota_holds;
 mod reminders;
 mod room_trust;
 pub use reminders::{Reminder, ReminderReceipt, ReminderSweep};
-pub use room_trust::RoomTrustRecord;
 mod side_registration;
 pub use owned_completion::OwnedCompletion;
 pub use owned_dispatch::{
@@ -1412,6 +1410,7 @@ impl DomainRepository {
              FROM engagements e WHERE e.id>?1 AND (?2 IS NULL OR e.state=?2) \
              ORDER BY e.id LIMIT ?3",
         )?;
+        #[allow(clippy::type_complexity)]
         let rows: Vec<(String, String, Option<i64>, bool, Option<i64>)> = query
             .query_map(params![after, state, limit as i64], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
@@ -2033,7 +2032,7 @@ impl DomainRepository {
         let remaining = [
             by_ceiling,
             seat_ok
-                .then(|| spent_budget.seat.remaining)
+                .then_some(spent_budget.seat.remaining)
                 .flatten()
                 .map(u64::from),
             spent_budget.pool.remaining.map(u64::from),

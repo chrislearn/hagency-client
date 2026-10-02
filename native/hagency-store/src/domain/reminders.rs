@@ -97,7 +97,7 @@ impl DomainRepository {
             "INSERT INTO reminders(engagement_id,session_id,msg,created_at,fire_at) VALUES(?1,?2,?3,?4,?5)",
             params![engagement_id, d.session_id, msg, now, fire_at],
         )?;
-        let id = i64::try_from(tx.last_insert_rowid()).map_err(|_| Error::Capacity)?;
+        let id = tx.last_insert_rowid();
         tx.commit()?;
         Ok(ReminderReceipt {
             id,

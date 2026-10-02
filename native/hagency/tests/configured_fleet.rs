@@ -574,7 +574,7 @@ async fn native_configured_fleet_delegated_task_delivery() {
             .filter(|event| {
                 event["content"]["body"]
                     .as_str()
-                    .map_or(false, |b| b.starts_with("Task created: "))
+                    .is_some_and(|b| b.starts_with("Task created: "))
             })
             .count(),
         1,
@@ -864,7 +864,7 @@ async fn qualify_profile(media: bool, local: bool) {
                                 .filter(|event| {
                                     event["content"]["body"]
                                         .as_str()
-                                        .map_or(false, |b| b.starts_with("Verified factory task "))
+                                        .is_some_and(|b| b.starts_with("Verified factory task "))
                                 })
                                 .count()
                                 == round as usize
@@ -880,7 +880,7 @@ async fn qualify_profile(media: bool, local: bool) {
                     .filter(|event| {
                         event["content"]["body"]
                             .as_str()
-                            .map_or(false, |b| b.starts_with("Verified factory task "))
+                            .is_some_and(|b| b.starts_with("Verified factory task "))
                     })
                     .nth(round as usize - 1)
                     .expect("this round's decrypted reply");

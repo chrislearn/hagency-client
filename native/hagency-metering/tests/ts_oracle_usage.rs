@@ -290,5 +290,5 @@ fn ts_oracle_usage_other_signals_survive_a_missing_measurement() {
 #[test]
 #[ignore = "parity gap: fleet metering carries no ceilingTokens column (declared ceiling lives on the engagement usage read)"]
 fn ts_oracle_usage_measured_and_declared_stay_distinct() {
-    assert!(false, "native fleet metering has no ceiling column");
+    panic!("native fleet metering has no ceiling column");
 }

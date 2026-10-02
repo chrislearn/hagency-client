@@ -14,6 +14,8 @@ use common::*;
 use hagency_store::{DomainRepository, Error};
 
 struct Fixture {
+    // Keeps the state directory alive for the test.
+    #[allow(dead_code)]
     root: tempfile::TempDir,
     db: DomainRepository,
     engagement: String,
@@ -68,7 +70,7 @@ fn ts_oracle_side_budget_unknown_engagement_is_not_found_not_a_budget_refusal() 
 #[test]
 #[ignore = "parity gap: no per-side allocation and no auto-join natively (admission gates on the resource ceiling)"]
 fn ts_oracle_side_budget_auto_join_and_side_allocation() {
-    assert!(false, "native has no side allocation and never auto-joins");
+    panic!("native has no side allocation and never auto-joins");
 }
 
 /// TS: the alarm family (`tests/api-engagement-side-budget.test.js:303`) —
@@ -84,7 +86,7 @@ fn ts_oracle_side_budget_auto_join_and_side_allocation() {
 #[test]
 #[ignore = "parity gap: native raises only agent_ceiling_overrun; no side-budget alert kind"]
 fn ts_oracle_side_budget_alarm_kind_and_dedupe() {
-    assert!(false, "native has no side-budget alert kind");
+    panic!("native has no side-budget alert kind");
 }
 
 /// TS: `an operator can bind, and the record shows it`, `the response says
@@ -102,5 +104,5 @@ fn ts_oracle_side_budget_alarm_kind_and_dedupe() {
 #[test]
 #[ignore = "parity gap: native has no projectSide field and no agent project-side binding route"]
 fn ts_oracle_agent_project_side_binding_family() {
-    assert!(false, "native has no agent<->side binding");
+    panic!("native has no agent<->side binding");
 }

@@ -229,7 +229,7 @@ static REGISTRY: [Manifest; 5] = [CLAUDE, CODEX_ACP, CODEX, HERMES, OCTOS];
 /// serializeFramework (backend-v2.js:13356-13381), field for field.
 fn serialize_framework(f: &Manifest) -> Value {
     // `[...exact, ...prefix].sort()` — the TS flattening, byte for byte.
-    let mut refused: Vec<&str> = f.guard_exact.iter().copied().collect();
+    let mut refused: Vec<&str> = f.guard_exact.to_vec();
     refused.extend(f.guard_prefix.iter().copied());
     refused.sort_unstable();
     json!({
@@ -556,15 +556,14 @@ async fn capability(_req: &mut Request, depot: &mut Depot, res: &mut Response) {
         if profiles.contains_key(&row.name) {
             continue;
         }
-        if let Ok(Some(detail)) = store.agent_detail(&row.name).await {
-            if let Some((_, resource)) = row_ids
+        if let Ok(Some(detail)) = store.agent_detail(&row.name).await
+            && let Some((_, resource)) = row_ids
                 .iter()
                 .zip(flat.iter())
                 .find(|(id, _)| id.as_str() == detail.resource_id)
-            {
-                profiles.insert(row.name.clone(), resource.profile());
-                agent_preset.insert(row.name.clone(), detail.resource_id.clone());
-            }
+        {
+            profiles.insert(row.name.clone(), resource.profile());
+            agent_preset.insert(row.name.clone(), detail.resource_id.clone());
         }
     }
     let policy = policy_view();

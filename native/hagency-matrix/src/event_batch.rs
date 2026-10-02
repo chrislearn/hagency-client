@@ -445,17 +445,16 @@ impl Batch {
         // indices continue after the raw candidates and the handoff admits
         // them exactly once (idempotent on the domain receipt).
         for entry in recovered {
-            match self.event(&entry.room, &entry.original, &entry.value, &entry.kind) {
-                Ok(Some(Candidate::Target(event))) => {
-                    let index = events.len();
-                    events.push(*event);
-                    dispositions.push(Disposition::new(
-                        Source::new(&entry.room, &entry.original)?,
-                        serde_json::to_value(&entry.kind).map_err(|_| Error::Storage)?,
-                        Decision::Candidate { index },
-                    )?);
-                }
-                _ => {}
+            if let Ok(Some(Candidate::Target(event))) =
+                self.event(&entry.room, &entry.original, &entry.value, &entry.kind)
+            {
+                let index = events.len();
+                events.push(*event);
+                dispositions.push(Disposition::new(
+                    Source::new(&entry.room, &entry.original)?,
+                    serde_json::to_value(&entry.kind).map_err(|_| Error::Storage)?,
+                    Decision::Candidate { index },
+                )?);
             }
         }
         // Candidate content plus the complete private disposition ledger is bounded.
@@ -590,7 +589,7 @@ impl Batch {
                 event_id: id.into(),
                 sender_mxid: string("sender")?.into(),
                 thread_root: None,
-                body: body.into(),
+                body,
                 kind: msgtype.into(),
                 origin_ts: value
                     .get("origin_server_ts")

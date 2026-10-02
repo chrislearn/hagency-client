@@ -1,3 +1,5 @@
+// The browser and live-action harnesses each mount the shared Matrix fixture.
+#![allow(clippy::duplicate_mod)]
 #[path = "console/accounts.rs"]
 mod accounts;
 #[path = "console/agents.rs"]

@@ -115,12 +115,12 @@ async fn native_console_live_actions_walk() {
     // shared host where a healthy browser walk alone takes ~60s.
     tokio::time::timeout(Duration::from_secs(180), async {
         while let Some(line) = lines.next_line().await.unwrap() {
-            if let Ok(value) = serde_json::from_str::<Value>(&line) {
-                if value.get("step").is_some() {
-                    steps.push(value);
-                    println!("{line}");
-                    continue;
-                }
+            if let Ok(value) = serde_json::from_str::<Value>(&line)
+                && value.get("step").is_some()
+            {
+                steps.push(value);
+                println!("{line}");
+                continue;
             }
             println!("{line}");
         }

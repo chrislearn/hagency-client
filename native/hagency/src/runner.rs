@@ -76,7 +76,7 @@ async fn self_update(req: &mut Request, depot: &mut Depot, res: &mut Response) {
             return;
         }
     };
-    let body: serde_json::Value = match serde_json::from_slice(&raw) {
+    let body: serde_json::Value = match serde_json::from_slice(raw) {
         Ok(value) => value,
         Err(_) => {
             refusal(res, StatusCode::BAD_REQUEST, "invalid_agent_update");

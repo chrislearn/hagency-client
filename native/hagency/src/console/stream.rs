@@ -244,8 +244,8 @@ async fn stream(req: &mut Request, depot: &mut Depot, res: &mut Response) {
                     // :4554, approval_verdict :10945, agent_blocked :5497,
                     // alert_created lib/alert-store.js:332, …). One bounded
                     // entity read; the diff is in-memory.
-                    if let Ok(current) = store.console_entities().await {
-                        if current != previous {
+                    if let Ok(current) = store.console_entities().await
+                        && current != previous {
                             for (name, payload) in diff_events(&previous, &current) {
                                 let _ = sender
                                     .send_data(format!(
@@ -256,7 +256,6 @@ async fn stream(req: &mut Request, depot: &mut Depot, res: &mut Response) {
                             }
                             previous = current;
                         }
-                    }
                     let Ok(feed) = store.console_feed().await else {
                         continue;
                     };

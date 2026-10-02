@@ -291,6 +291,7 @@ impl DomainRepository {
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        #[allow(clippy::type_complexity)]
         let row: Option<(String, Option<String>, String, Option<String>, String)> = tx
             .query_row(
                 "SELECT mentions,default_recipient,room_recipients,recipient,suppressed FROM operator_messages WHERE id=?1",

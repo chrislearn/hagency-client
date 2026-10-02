@@ -19,6 +19,8 @@ use serde_json::{Value, json};
 ///   room.
 /// - `m.mentions` is always the empty allowlist; `m.relates_to` is set only
 ///   when `source_event_id` starts with `$` (TS line 15-18).
+// Not called yet: the request-room approval notice is still unsent natively.
+#[allow(dead_code, clippy::too_many_arguments)]
 pub fn engagement_approval_content(
     engagement_id: &str,
     role: &str,

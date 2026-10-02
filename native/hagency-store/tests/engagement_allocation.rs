@@ -185,6 +185,7 @@ mod quota {
         pub root: tempfile::TempDir,
         pub db: DomainRepository,
         pub engagement: String,
+        #[allow(dead_code)]
         pub proof: hagency_core::authority::VerifiedRequest,
     }
     pub(super) fn codex(fresh: u64, output: u64, cached: u64) -> UsageObservation {

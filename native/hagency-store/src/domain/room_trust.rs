@@ -5,7 +5,7 @@
 //! frozen target (`HostConfig.rooms`) nor operator-allowlisted.
 use super::DomainRepository;
 use crate::Error;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{OptionalExtension, params};
 
 /// One row of the `room_trust` table: a room the service marked trusted.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -101,17 +101,4 @@ impl DomainRepository {
             })),
         }
     }
-}
-
-/// Connection-scoped read used by the matrix crate's classifier without a
-/// mutable repository handle (the classifier runs on a read path).
-pub(crate) fn room_trust_meta(db: &Connection, room_id: &str) -> Result<Option<String>, Error> {
-    let value: Option<String> = db
-        .query_row(
-            "SELECT meta FROM room_trust WHERE room_id=?1",
-            [room_id],
-            |r| r.get(0),
-        )
-        .optional()?;
-    Ok(value)
 }

@@ -999,7 +999,7 @@ fn error_response(res: &mut Response, error: GraphError, fallback: &str) {
     ));
 }
 
-fn store_for<'a>(depot: &'a Depot) -> Option<&'a GraphStore> {
+fn store_for(depot: &Depot) -> Option<&GraphStore> {
     console(depot).ok()?.graphs()
 }
 

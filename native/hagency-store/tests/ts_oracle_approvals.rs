@@ -293,7 +293,7 @@ fn ts_approval_consume_is_at_most_once() {
 
 /// TS `api-approvals.test.js:28` — *bridge-owned binding and one-shot verdict
 /// flow are enforced*. This case is asserted at the HTTP surface (bridge secret
-/// + agent token), which lives in the `hagency` service crate's fixture
+/// and agent token), which lives in the `hagency` service crate's fixture
 /// harnesses, not the store.
 #[test]
 #[ignore = "parity gap: the bridge-secret / agent-token HTTP gate is asserted by hagency tests/http (service crate), not the store"]

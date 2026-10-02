@@ -859,10 +859,7 @@ fn native_account_and_registration_cli_through_running_service() {
     );
 
     // The service is still up — the whole point is that it never had to stop.
-    assert_eq!(
-        operator_get(address, &token, "/api/native/v1/resources?limit=100").starts_with('['),
-        true
-    );
+    assert!(operator_get(address, &token, "/api/native/v1/resources?limit=100").starts_with('['));
     drop(running);
 }
 

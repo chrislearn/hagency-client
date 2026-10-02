@@ -104,7 +104,7 @@ async fn offers_route_put_and_read_back_camel_case() {
     assert!(row.get("updatedBy").is_some());
 
     // Unknown role: TS answers 400 with `unknown role: ...`.
-    let mut denied = put("/api/native/v1/offers/not_a_role".into())
+    let denied = put("/api/native/v1/offers/not_a_role".into())
         .json(&json!({"published":true}))
         .send(&*service)
         .await;
@@ -130,7 +130,7 @@ async fn whitelist_route_round_trip() {
     assert_eq!(value["entry"]["addedBy"], json!("operator"));
 
     // A non-room id is refused (TS: projectRoomId must be a Matrix room id).
-    let mut denied = post("/api/native/v1/whitelist".into())
+    let denied = post("/api/native/v1/whitelist".into())
         .json(&json!({"projectRoomId":"not a room"}))
         .send(&*service)
         .await;
@@ -157,7 +157,7 @@ async fn whitelist_route_round_trip() {
     assert_eq!(value["projectRoomId"], json!("!room:example.test"));
     assert_eq!(value["stillActive"], json!([]));
 
-    let mut missing = delete("/api/native/v1/whitelist/!room:example.test".into())
+    let missing = delete("/api/native/v1/whitelist/!room:example.test".into())
         .send(&*service)
         .await;
     assert_eq!(missing.status_code, Some(StatusCode::NOT_FOUND));
@@ -169,12 +169,12 @@ async fn whitelist_route_round_trip() {
 async fn delete_routes_guards() {
     let dir = tempfile::tempdir().unwrap();
     let service = app(&dir.path().join("state")).await;
-    let mut seat = delete("/api/native/v1/seats/seat_none".into())
+    let seat = delete("/api/native/v1/seats/seat_none".into())
         .send(&*service)
         .await;
     assert_eq!(seat.status_code, Some(StatusCode::NOT_FOUND));
 
-    let mut preset = delete("/api/native/v1/framework-presets/preset_none".into())
+    let preset = delete("/api/native/v1/framework-presets/preset_none".into())
         .send(&*service)
         .await;
     assert_eq!(preset.status_code, Some(StatusCode::NOT_FOUND));
@@ -201,7 +201,7 @@ async fn delete_routes_guards() {
     assert_eq!(added["definition"]["name"], json!("helper"));
     assert_eq!(added["definition"]["enabled"], json!(true));
 
-    let mut denied = delete(format!("/api/native/v1/framework-presets/{id}"))
+    let denied = delete(format!("/api/native/v1/framework-presets/{id}"))
         .send(&*service)
         .await;
     assert_eq!(denied.status_code, Some(StatusCode::CONFLICT));

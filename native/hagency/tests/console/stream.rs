@@ -24,7 +24,7 @@ async fn stream_session(service: &Service, host: &str, base: &str) -> String {
         .as_str()
         .unwrap()
         .to_owned();
-    let mut response = TestClient::post(format!("{base}/console/session"))
+    let response = TestClient::post(format!("{base}/console/session"))
         .add_header("host", host, true)
         .add_header("origin", base, true)
         .add_header("sec-fetch-site", "same-origin", true)

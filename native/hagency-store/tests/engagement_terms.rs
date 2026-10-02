@@ -29,7 +29,7 @@ fn offers_list_every_role_with_ts_default_shape() {
     // backend-v2.js:15338-15339 — count/budget/rate/updatedAt null,
     // published false, catalogPublished derived from qualifying resources.
     let offers = db.offers().unwrap();
-    assert!(offers.len() >= 1);
+    assert!(!offers.is_empty());
     let r = role();
     let row = offers.iter().find(|o| o["role"] == r).expect("role row");
     assert_eq!(row["count"], json!(null));

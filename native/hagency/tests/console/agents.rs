@@ -481,7 +481,7 @@ async fn native_console_agent_start_stop_is_at_most_once() {
     let stopped: Option<u64> = raw
         .query_row(
             "SELECT stopped_at FROM agent_lifecycle WHERE engagement_id=?1",
-            [&*id],
+            [id],
             |r| r.get(0),
         )
         .unwrap();
@@ -500,7 +500,7 @@ async fn native_console_agent_start_stop_is_at_most_once() {
             .unwrap()
             .query_row(
                 "SELECT started_at FROM agent_lifecycle WHERE engagement_id=?1",
-                [&*id],
+                [id],
                 |r| r.get(0),
             )
             .unwrap();
@@ -556,7 +556,7 @@ async fn native_console_agent_preset_apply_refuses_without_durable_transition() 
     let (row_resource, projected): (String, String) = raw
         .query_row(
             "SELECT resource_id,json_extract(projection,'$.resourceId') FROM engagements WHERE id=?1",
-            [&*id],
+            [id],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .unwrap();
@@ -565,7 +565,7 @@ async fn native_console_agent_preset_apply_refuses_without_durable_transition() 
     let payload: String = raw
         .query_row(
             "SELECT json_extract(payload,'$.resource.presetId') FROM effects WHERE engagement_id=?1 AND kind='provision'",
-            [&*id],
+            [id],
             |r| r.get(0),
         )
         .unwrap();

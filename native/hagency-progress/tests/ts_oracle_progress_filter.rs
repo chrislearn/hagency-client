@@ -37,7 +37,7 @@ fn ts_oracle_no_filter_reports_start_steps_and_completion() {
 fn ts_oracle_bash_is_reported_as_a_verb_never_a_command() {
     assert_eq!(Verb::for_tool("Bash").text(), "ran commands");
     let d = Filter::default().decide(Some("PostToolUse"), Some("Bash"));
-    assert_eq!(d.report, true);
+    assert!(d.report);
     assert_eq!(d.verb.map(|v| v.text()), Some("ran commands"));
 }
 
@@ -231,7 +231,7 @@ fn ts_oracle_an_unknown_kind_is_generic_activity_never_its_own_name() {
         Some("AcpTool")
     );
     let d = Filter::default().decide(Some("PostToolUse"), Some("AcpTool"));
-    assert_eq!(d.report, true);
+    assert!(d.report);
     assert_eq!(d.verb.map(|v| v.text()), Some("worked"));
 }
 
@@ -342,10 +342,9 @@ fn ts_oracle_an_empty_step_is_still_nothing_to_say() {
 
 #[test]
 fn ts_oracle_a_failure_is_read_from_the_update_kind_activity_counting_drops() {
-    assert_eq!(
-        acp_failed(&json!({"sessionUpdate": "tool_call_update", "status": "failed"})),
-        true
-    );
+    assert!(acp_failed(
+        &json!({"sessionUpdate": "tool_call_update", "status": "failed"})
+    ));
     assert_eq!(
         acp_tool(&json!({"sessionUpdate": "tool_call_update", "status": "failed", "kind": "read"})),
         None
@@ -355,15 +354,13 @@ fn ts_oracle_a_failure_is_read_from_the_update_kind_activity_counting_drops() {
 #[test]
 fn ts_oracle_only_failed_counts_as_failure() {
     for status in ["pending", "in_progress", "completed", "", ""] {
-        assert_eq!(
-            acp_failed(&json!({"sessionUpdate": "tool_call_update", "status": status})),
-            false
-        );
+        assert!(!acp_failed(
+            &json!({"sessionUpdate": "tool_call_update", "status": status})
+        ));
     }
-    assert_eq!(
-        acp_failed(&json!({"sessionUpdate": "tool_call", "status": "failed"})),
-        false
-    );
+    assert!(!acp_failed(
+        &json!({"sessionUpdate": "tool_call", "status": "failed"})
+    ));
 }
 
 #[test]

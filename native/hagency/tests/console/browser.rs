@@ -1229,15 +1229,11 @@ async fn native_console_regression_browser() {
                     // Ticket issuance is limited to one per second; the
                     // browser walk before each request can outpace it.
                     tokio::time::sleep(Duration::from_millis(1010)).await;
-                    let scoped = if line == "LIFECYCLE_TICKET" {
+                    // One console link covers every scope, so both tickets are the same call.
+                    let scoped =
                         hagency::console::client::access(&f.root.path().join("state"), address)
                             .await
-                            .unwrap()
-                    } else {
-                        hagency::console::client::access(&f.root.path().join("state"), address)
-                            .await
-                            .unwrap()
-                    };
+                            .unwrap();
                     tickets.push(line.clone());
                     json!({"url": scoped})
                 }

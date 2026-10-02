@@ -1,9 +1,7 @@
 mod common;
 use common::*;
 use hagency_core::tasks::*;
-use hagency_store::{
-    DomainRepository, EffectOutcome, Error, ThreadDirective, ThreadMode, confirmation,
-};
+use hagency_store::{DomainRepository, EffectOutcome, ThreadDirective, ThreadMode, confirmation};
 use serde_json::json;
 
 fn setup() -> (tempfile::TempDir, DomainRepository) {
