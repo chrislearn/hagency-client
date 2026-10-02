@@ -4315,6 +4315,9 @@ impl DomainStore {
             .await
     }
     /// Revoked, never-attached engagements whose retirement is pending (read-only).
+    pub async fn engagement_owner(&self, id: String) -> Result<Option<String>, Error> {
+        self.call(weight(&id)?, move |db| db.engagement_owner(&id)).await
+    }
     pub async fn owner_anchor(&self, owner: String) -> Result<Option<crate::OwnerAnchor>, Error> {
         self.call(weight(&owner)?, move |db| db.owner_anchor(&owner)).await
     }

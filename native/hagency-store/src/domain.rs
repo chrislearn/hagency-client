@@ -2397,6 +2397,18 @@ impl DomainRepository {
     /// will ever run for them; the provisioning host settles each one whose
     /// credential was never stored (TS `lib/matrix-work-executor.js`: a logout
     /// with no stored credential is already done).
+    /// ADR-187: the owner the engagement's request named (read-only).
+    pub fn engagement_owner(&self, id: &str) -> Result<Option<String>, Error> {
+        Ok(self
+            .db
+            .query_row(
+                "SELECT json_extract(context,'$.ownerMxid') FROM engagements WHERE id=?1",
+                [id],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten())
+    }
     /// ADR-187 §C: an owner's pinned anchor, if any (read-only).
     pub fn owner_anchor(&self, owner: &str) -> Result<Option<owner_anchors::OwnerAnchor>, Error> {
         owner_anchors::get(&self.db, owner)

@@ -326,6 +326,53 @@ impl TokenProvisioningHost {
         if self.warm.is_some() || self.homes.is_none() || self.rooms.is_none() {
             return Err(Error::Config);
         }
+        self.check_approvals(&approvals)?;
+        self.factory_approvals = super::ApprovalLink::Fixed(Some(approvals));
+        self.warm = Some(plan);
+        Ok(self)
+    }
+    /// ADR-187: an imported fleet's warm factory. Each owner's approval-bot
+    /// device is attached by the fleet service with `attach_owner_approvals`
+    /// before that owner's first provision.
+    pub fn with_warm_plan(mut self, plan: WarmHostPlan) -> Result<Self, Error> {
+        if self.warm.is_some() || self.homes.is_none() || self.rooms.is_none() {
+            return Err(Error::Config);
+        }
+        self.factory_approvals = super::ApprovalLink::PerOwner(Mutex::new(BTreeMap::new()));
+        self.warm = Some(plan);
+        Ok(self)
+    }
+    /// ADR-187 amendment: the approval-bot device that serves `owner`.
+    pub fn attach_owner_approvals(
+        &self,
+        owner: &str,
+        approvals: Arc<crate::ApprovalCollector>,
+    ) -> Result<(), Error> {
+        self.check_approvals(&approvals)?;
+        let super::ApprovalLink::PerOwner(map) = &self.factory_approvals else {
+            return Err(Error::Config);
+        };
+        let mut map = map.lock().map_err(|_| Error::OutcomeUnknown)?;
+        match map.get(owner) {
+            Some(existing) if !Arc::ptr_eq(existing, &approvals) => Err(Error::Conflict),
+            _ => {
+                map.insert(owner.to_owned(), approvals);
+                Ok(())
+            }
+        }
+    }
+    /// Whether `owner` has an approval device attached (always true for a
+    /// coordinator install, whose one bot serves its configured owners).
+    pub(crate) fn approvals_ready_for(&self, owner: &str) -> bool {
+        match &self.factory_approvals {
+            super::ApprovalLink::Fixed(link) => link.is_some(),
+            super::ApprovalLink::PerOwner(map) => map
+                .lock()
+                .map(|m| m.contains_key(owner))
+                .unwrap_or(false),
+        }
+    }
+    fn check_approvals(&self, approvals: &crate::ApprovalCollector) -> Result<(), Error> {
         let config = &approvals.inner.config;
         if !config.approval
             || config.endpoint != self.endpoint
@@ -336,9 +383,26 @@ impl TokenProvisioningHost {
         {
             return Err(Error::Config);
         }
-        self.factory_approvals = Some(approvals);
-        self.warm = Some(plan);
-        Ok(self)
+        Ok(())
+    }
+    /// The approval collector this engagement's agent uses.
+    fn approvals_for(&self, effect: &Effect) -> Result<Arc<crate::ApprovalCollector>, Error> {
+        match &self.factory_approvals {
+            super::ApprovalLink::Fixed(link) => link.clone().ok_or(Error::Config),
+            super::ApprovalLink::PerOwner(map) => {
+                let owner = effect
+                    .payload
+                    .get("request")
+                    .and_then(|r| r.get("ownerMxid"))
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or(Error::Config)?;
+                map.lock()
+                    .map_err(|_| Error::OutcomeUnknown)?
+                    .get(owner)
+                    .cloned()
+                    .ok_or(Error::AwaitingOwner)
+            }
+        }
     }
     pub(super) async fn finish_factory(
         &self,
@@ -353,7 +417,7 @@ impl TokenProvisioningHost {
         let scope = domain
             .provision_runtime_scope(effect.clone(), self.registration.clone())
             .await?;
-        let approvals = self.factory_approvals.as_ref().ok_or(Error::Config)?;
+        let approvals = self.approvals_for(effect)?;
         // Only the original producing writer may contribute this capability.
         approvals
             .inner
@@ -464,7 +528,7 @@ impl TokenProvisioningHost {
         cancel: &CancellationToken,
     ) -> Result<(), Error> {
         let plan = self.warm.as_ref().ok_or(Error::Config)?;
-        let approvals = self.factory_approvals.as_ref().ok_or(Error::Config)?;
+        let approvals = self.approvals_for(effect)?;
         approvals
             .inner
             .domain

@@ -47,7 +47,7 @@ pub struct TokenProvisioningHost {
     factory_rooms: Arc<tokio::sync::Mutex<()>>,
     closed: std::sync::atomic::AtomicBool,
     warm: Option<hagency_execution::WarmHostPlan>,
-    factory_approvals: Option<Arc<crate::ApprovalCollector>>,
+    factory_approvals: ApprovalLink,
     as_namespace: Option<String>,
     homes: Option<hagency_store::agent_home::ManagedHomePlan>,
     rooms: Option<RoomPlan>,
@@ -64,6 +64,14 @@ pub struct TokenProvisioningHost {
 struct RoomPlan {
     representative: String,
     anchors: AnchorSource,
+}
+/// The approval collector a warm agent's approvals ride on.
+enum ApprovalLink {
+    /// A coordinator install: the one configured approval bot.
+    Fixed(Option<Arc<crate::ApprovalCollector>>),
+    /// An imported fleet (ADR-187 amendment): one approval-bot device per
+    /// owner, attached by the fleet service before that owner's provision.
+    PerOwner(Mutex<BTreeMap<String, Arc<crate::ApprovalCollector>>>),
 }
 /// Where an agent's owner anchor comes from (ADR-187 §C).
 enum AnchorSource {
@@ -145,7 +153,7 @@ impl TokenProvisioningHost {
             factory_rooms: Arc::new(tokio::sync::Mutex::new(())),
             closed: std::sync::atomic::AtomicBool::new(false),
             warm: None,
-            factory_approvals: None,
+            factory_approvals: ApprovalLink::Fixed(None),
             as_namespace,
             homes: None,
             rooms: None,
@@ -659,6 +667,20 @@ impl TokenProvisioningHost {
         };
         if let Some(job) = resume {
             return self.resume_provision(domain, &job, cancel).await;
+        }
+        // ADR-187: an imported fleet's warm agent needs its owner's
+        // approval-bot device. Until the fleet service attached it the
+        // provision waits, before any claim: a refusal after the claim would
+        // be cached for the life of the process.
+        if self.warm.is_some() && matches!(self.factory_approvals, ApprovalLink::PerOwner(_)) {
+            let owner = domain
+                .engagement_owner(engagement.to_owned())
+                .await
+                .map_err(|_| Error::Storage)?
+                .ok_or(Error::Config)?;
+            if !self.approvals_ready_for(&owner) {
+                return Err(Error::AwaitingOwner);
+            }
         }
         let job = {
             let mut jobs = self.jobs.lock().map_err(|_| Error::OutcomeUnknown)?;
