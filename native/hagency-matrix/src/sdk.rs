@@ -935,6 +935,18 @@ fn read(path: &Path, max: u64) -> Result<Vec<u8>, Error> {
     }
     Ok(b)
 }
+/// Which senders' devices this SDK decrypts. The approval bot keeps the
+/// owner's cross-signing as its trust anchor (ADR-183 B). An agent decrypts its
+/// owner's messages from any of the owner's devices, as TS does (matrix-bot-sdk
+/// `decryptRoomEvent` with no settings): an unverified client must not
+/// silently drop what the owner writes to their agent.
+fn trust_requirement(approval: bool) -> TrustRequirement {
+    if approval {
+        TrustRequirement::CrossSigned
+    } else {
+        TrustRequirement::Untrusted
+    }
+}
 fn files(root: &Path) -> Result<(), Error> {
     let entries = fs::read_dir(root)
         .map_err(|_| Error::Storage)?
@@ -1110,7 +1122,7 @@ impl Sdk {
             DmRoomDefinition::default(),
         );
         client.decryption_settings = DecryptionSettings {
-            sender_device_trust_requirement: TrustRequirement::CrossSigned,
+            sender_device_trust_requirement: trust_requirement(init.approval),
         };
         client.handle_verification_events = false;
         let meta = SessionMeta {
@@ -1592,7 +1604,7 @@ impl Sdk {
         let guard = self.client.olm_machine().await;
         let machine = guard.as_ref()?;
         let settings = DecryptionSettings {
-            sender_device_trust_requirement: TrustRequirement::CrossSigned,
+            sender_device_trust_requirement: trust_requirement(self.approval),
         };
         let decrypted = machine
             .decrypt_room_event(&raw, &room, &settings)

@@ -428,6 +428,7 @@ impl Operation {
         cancel: &CancellationToken,
         deadline: Instant,
         resuming: bool,
+        phase: Phase,
     ) -> Result<Vec<HostRoom>, Error> {
         let root = self.root.clone();
         let binding = self.binding.clone();
@@ -441,38 +442,79 @@ impl Operation {
         let records = tokio::task::spawn_blocking(move || inspect.values())
             .await
             .map_err(|_| Error::OutcomeUnknown)??;
-        // Every POST accepted but the owner not yet in the DM: the wait for
-        // the owner resumes here, GET-only, on each coordinator turn. Only the
-        // job that observed the wait may resume it: on disk, a wait and a
-        // completed custody whose record was lost look the same, and the
-        // latter stays unknown, as does any wait a restart interrupted.
-        let resumed = resuming && records[..6].iter().all(Option::is_some) && records[6].is_none();
-        let dm = if records.iter().all(Option::is_some) || resumed {
-            for index in [0, 2, 4] {
-                if records[index].as_ref().is_none_or(|v| !v.is_null()) {
-                    return Err(Error::Storage);
-                }
+        match phase {
+            Phase::Rooms => {
+                self.agent_rooms(job, &custody, &records, cancel, deadline, resuming)
+                    .await
             }
-            let created: SavedResponse =
-                serde_json::from_value(records[1].clone().ok_or(Error::Storage)?)
-                    .map_err(|_| Error::Storage)?;
-            let invited: SavedResponse =
-                serde_json::from_value(records[3].clone().ok_or(Error::Storage)?)
-                    .map_err(|_| Error::Storage)?;
-            let joined: SavedResponse =
-                serde_json::from_value(records[5].clone().ok_or(Error::Storage)?)
-                    .map_err(|_| Error::Storage)?;
-            let dm = self.dm_id(&created)?;
-            if success(&invited)?.as_object().is_none_or(|v| !v.is_empty())
-                || success(&joined)?.get("room_id").and_then(Value::as_str)
-                    != Some(self.request.target_room_id.as_str())
-                || records[6]
-                    .as_ref()
-                    .is_some_and(|c| c != &json!({"dm":dm,"project":self.request.target_room_id}))
-            {
+            Phase::Owner => {
+                self.owner(job, &custody, &records, cancel, deadline, resuming)
+                    .await
+            }
+        }
+    }
+    /// The stored create/invite/join responses of a finished rooms step.
+    fn stored_dm(&self, records: &[Option<Value>], done: usize) -> Result<String, Error> {
+        for index in [0, 2, 4] {
+            if records[index].as_ref().is_none_or(|v| !v.is_null()) {
                 return Err(Error::Storage);
             }
-            dm
+        }
+        let created: SavedResponse =
+            serde_json::from_value(records[1].clone().ok_or(Error::Storage)?)
+                .map_err(|_| Error::Storage)?;
+        let invited: SavedResponse =
+            serde_json::from_value(records[3].clone().ok_or(Error::Storage)?)
+                .map_err(|_| Error::Storage)?;
+        let joined: SavedResponse =
+            serde_json::from_value(records[5].clone().ok_or(Error::Storage)?)
+                .map_err(|_| Error::Storage)?;
+        let dm = self.dm_id(&created)?;
+        if success(&invited)?.as_object().is_none_or(|v| !v.is_empty())
+            || success(&joined)?.get("room_id").and_then(Value::as_str)
+                != Some(self.request.target_room_id.as_str())
+            || records[done].as_ref()
+                != Some(&json!({"dm":dm,"project":self.request.target_room_id}))
+        {
+            return Err(Error::Storage);
+        }
+        Ok(dm)
+    }
+    /// ADR-184 step 1-2: the agent-only DM and the project join. The owner is
+    /// not invited here; enrollment runs next, then `owner`.
+    async fn agent_rooms(
+        &self,
+        job: &Job,
+        custody: &Arc<Custody>,
+        records: &[Option<Value>],
+        cancel: &CancellationToken,
+        deadline: Instant,
+        resuming: bool,
+    ) -> Result<Vec<HostRoom>, Error> {
+        let custody = custody.clone();
+        let legacy = records[..7].iter().all(Option::is_some)
+            && records[AGENT_ROOMS..].iter().all(Option::is_none);
+        // An owner invite with no `complete` is either a wait for the owner or
+        // a completed custody whose last record was lost; on disk they look
+        // the same. Only the job that observed the wait may replay it.
+        if !legacy
+            && records[OWNER_INVITE_POSSIBLE].is_some()
+            && records[COMPLETE].is_none()
+            && !resuming
+        {
+            return Err(Error::OutcomeUnknown);
+        }
+        if !legacy
+            && records[COMPLETE].is_some()
+            && (records[OWNER_INVITE_RESPONSE].is_none() || records[AGENT_ROOMS] != records[COMPLETE])
+        {
+            return Err(Error::Storage);
+        }
+        let dm = if legacy {
+            // Pre-ADR-184 custody: `complete` already includes the owner.
+            self.stored_dm(records, COMPLETE)?
+        } else if records[..6].iter().all(Option::is_some) && records[AGENT_ROOMS].is_some() {
+            self.stored_dm(records, AGENT_ROOMS)?
         } else {
             if records.iter().any(Option::is_some) {
                 return Err(Error::OutcomeUnknown);
@@ -497,7 +539,7 @@ impl Operation {
             .await?;
             self.project(cancel, deadline).await?;
             let response = self.post(&self.agent_write,&["_matrix","client","v3","createRoom"],json!({
-                "preset":"private_chat","is_direct":true,"invite":[self.request.owner_mxid],
+                "preset":"private_chat","is_direct":true,"invite":[],
                 "name":self.request.agent_definition.name,"creation_content":{"m.federate":false},
                 "initial_state":[{"type":"m.room.encryption","state_key":"","content":{"algorithm":"m.megolm.v1.aes-sha2"}},
                     {"type":"m.room.history_visibility","state_key":"","content":{"history_visibility":"invited"}},
@@ -585,6 +627,109 @@ impl Operation {
         if !self.member(&project, "join") {
             return Err(Error::Recipients);
         }
+        if records[AGENT_ROOMS].is_none() && !legacy {
+            write(
+                &custody,
+                "agent-rooms",
+                json!({"dm":dm,"project":self.request.target_room_id}),
+            )
+            .await?;
+        }
+        self.writer(cancel, deadline).await?;
+        Ok(self.rooms(&dm))
+    }
+    /// ADR-184 step 4: invite the owner once the agent is enrolled, then wait
+    /// for the owner's join (no deadline; ADR-147 as amended 2026-09-22).
+    async fn owner(
+        &self,
+        job: &Job,
+        custody: &Arc<Custody>,
+        records: &[Option<Value>],
+        cancel: &CancellationToken,
+        deadline: Instant,
+        resuming: bool,
+    ) -> Result<Vec<HostRoom>, Error> {
+        let custody = custody.clone();
+        let legacy = records[..7].iter().all(Option::is_some)
+            && records[AGENT_ROOMS..].iter().all(Option::is_none);
+        if legacy {
+            let dm = self.stored_dm(records, COMPLETE)?;
+            *job.dm.lock().map_err(|_| Error::OutcomeUnknown)? = Some(dm.clone());
+            return Ok(self.rooms(&dm));
+        }
+        if records[AGENT_ROOMS].is_none() {
+            return Err(Error::Storage);
+        }
+        let dm = self.stored_dm(records, AGENT_ROOMS)?;
+        *job.dm.lock().map_err(|_| Error::OutcomeUnknown)? = Some(dm.clone());
+        if records[COMPLETE].is_some() {
+            if records[OWNER_INVITE_POSSIBLE].as_ref().is_none_or(|v| !v.is_null())
+                || records[OWNER_INVITE_RESPONSE].is_none()
+                || records[COMPLETE].as_ref()
+                    != Some(&json!({"dm":dm,"project":self.request.target_room_id}))
+            {
+                return Err(Error::Storage);
+            }
+            self.writer(cancel, deadline).await?;
+            return Ok(self.rooms(&dm));
+        }
+        let resumed = match (
+            records[OWNER_INVITE_POSSIBLE].is_some(),
+            records[OWNER_INVITE_RESPONSE].is_some(),
+        ) {
+            (false, false) => {
+                if self.reattach {
+                    return Err(Error::Storage);
+                }
+                write(&custody, "owner-invite-possible", Value::Null).await?;
+                self.agent_current(cancel, deadline).await?;
+                let response = self
+                    .post(
+                        &self.agent_write,
+                        &["_matrix", "client", "v3", "rooms", &dm, "invite"],
+                        json!({"user_id": self.request.owner_mxid}),
+                        cancel,
+                        deadline,
+                    )
+                    .await?;
+                write(
+                    &custody,
+                    "owner-invite-response",
+                    serde_json::to_value(&response).map_err(|_| Error::Storage)?,
+                )
+                .await?;
+                if success(&response)?
+                    .as_object()
+                    .is_none_or(|v| !v.is_empty())
+                {
+                    return Err(Error::Wire);
+                }
+                false
+            }
+            // The invite may have crossed the wire and its response was lost:
+            // inspect, never repeat. `joined_dm` refuses unless the owner is
+            // invited or joined, which is exactly the accepted-invite state.
+            (true, false) => {
+                self.joined_dm(&dm, cancel, deadline).await?;
+                resuming
+            }
+            (true, true) => {
+                let response: SavedResponse = serde_json::from_value(
+                    records[OWNER_INVITE_RESPONSE].clone().ok_or(Error::Storage)?,
+                )
+                .map_err(|_| Error::Storage)?;
+                if success(&response)?.as_object().is_none_or(|v| !v.is_empty()) {
+                    return Err(Error::Storage);
+                }
+                // Only the job that observed the wait resumes it; a restart
+                // mid-wait stays with the operator, as before ADR-184.
+                if !resuming {
+                    return Err(Error::OutcomeUnknown);
+                }
+                true
+            }
+            (false, true) => return Err(Error::Storage),
+        };
         // The owner's join has no deadline. A first attempt polls to its own
         // budget, since owners usually join within seconds; a resumed attempt
         // looks once and hands the wait back to the next coordinator turn.
@@ -633,18 +778,28 @@ impl Operation {
             checkpoint(cancel, deadline)?;
         }
         self.writer(cancel, deadline).await?;
-        if records[6].is_none() {
-            write(
-                &custody,
-                "complete",
-                json!({"dm":dm,"project":self.request.target_room_id}),
-            )
-            .await?;
-        }
+        write(
+            &custody,
+            "complete",
+            json!({"dm":dm,"project":self.request.target_room_id}),
+        )
+        .await?;
         self.writer(cancel, deadline).await?;
         Ok(self.rooms(&dm))
     }
 }
+/// Which half of the rooms step runs (ADR-184).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum Phase {
+    /// The agent-only DM and the project join, before enrollment.
+    Rooms,
+    /// The owner's DM invite and join, after enrollment.
+    Owner,
+}
+const COMPLETE: usize = 6;
+const AGENT_ROOMS: usize = 7;
+const OWNER_INVITE_POSSIBLE: usize = 8;
+const OWNER_INVITE_RESPONSE: usize = 9;
 #[derive(Default)]
 pub(super) struct Jobs(Mutex<Option<Arc<Job>>>);
 struct Job {
@@ -652,6 +807,10 @@ struct Job {
     busy: Arc<Semaphore>,
     result: Mutex<Option<Result<Vec<HostRoom>, Error>>>,
     dm: Mutex<Option<String>>,
+    /// This job itself observed the owner wait (ADR-184). Kept apart from
+    /// `result`: a resumed turn replays the rooms phase before the owner phase,
+    /// and that replay's result must not erase the observation.
+    awaiting: std::sync::atomic::AtomicBool,
 }
 impl Jobs {
     pub fn rooms(&self) -> Result<Vec<HostRoom>, Error> {
@@ -689,7 +848,12 @@ impl Jobs {
             None => Ok(None),
         }
     }
-    pub async fn run(&self, operation: Operation, cancel: &CancellationToken) -> Result<(), Error> {
+    pub async fn run(
+        &self,
+        operation: Operation,
+        phase: Phase,
+        cancel: &CancellationToken,
+    ) -> Result<(), Error> {
         if cancel.is_cancelled() {
             return Err(Error::Cancelled);
         }
@@ -719,6 +883,7 @@ impl Jobs {
                     busy: Arc::new(Semaphore::new(1)),
                     result: Mutex::new(None),
                     dm: Mutex::new(None),
+                    awaiting: std::sync::atomic::AtomicBool::new(false),
                 });
                 *guard = Some(job.clone());
                 job
@@ -735,7 +900,13 @@ impl Jobs {
             let _permit = permit;
             let result = timeout_at(
                 deadline,
-                job.operation.run(&job, &cancel, deadline, resuming),
+                job.operation.run(
+                    &job,
+                    &cancel,
+                    deadline,
+                    resuming || job.awaiting.load(std::sync::atomic::Ordering::Acquire),
+                    phase,
+                ),
             )
             .await
             .unwrap_or(Err(Error::Timeout));
@@ -756,6 +927,12 @@ impl Jobs {
             } else {
                 result
             };
+            if phase == Phase::Owner {
+                job.awaiting.store(
+                    result.as_ref().is_err_and(|e| *e == Error::AwaitingOwner),
+                    std::sync::atomic::Ordering::Release,
+                );
+            }
             let response = result.as_ref().map(|_| ()).map_err(Clone::clone);
             *job.result.lock().map_err(|_| Error::OutcomeUnknown)? = Some(result);
             response

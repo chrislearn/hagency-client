@@ -887,10 +887,66 @@ async fn native_matrix_outgoing_crypto_real_verified_dm_and_group_ciphertext() {
         fake.close().await;
     }
 }
+/// ADR-185: an agent's own reply is shared with its owner's device even when
+/// the owner's identity never signed it (Rinx, 2026-10-01: the replies were
+/// withheld and unreadable). The owner decrypts the actual ciphertext.
+#[tokio::test]
+async fn native_matrix_outgoing_crypto_reaches_an_unverified_owner_device() {
+    let (f, mut fake, c) = ready(true, true).await;
+    let claim = final_claim(&f).await;
+    let peer = c
+        .inner
+        .owner
+        .lock()
+        .await
+        .as_ref()
+        .unwrap()
+        .outgoing_fixture(true)
+        .await;
+    // The owner's identity stays anchored; only this device is not signed by
+    // it: keep the device's own signature, drop the identity's.
+    let mut keys = peer.query.clone();
+    keys["device_keys"]["@owner:example.test"]["HUMAN"]["signatures"]["@owner:example.test"]
+        .as_object_mut()
+        .unwrap()
+        .retain(|id, _| id == "ed25519:HUMAN");
+    let cancel = CancellationToken::new();
+    let (r, plain) = common::scripted(c.send_final(claim, &cancel), async {
+        preflight(&mut fake, true).await;
+        fake.next().await.json(200, keys.clone());
+        preflight(&mut fake, true).await;
+        fake.next().await.json(200, keys.clone());
+        let share = fake.next().await;
+        assert!(
+            share.target.contains("/sendToDevice/m.room.encrypted/"),
+            "the room key is shared, not withheld: {}",
+            share.target
+        );
+        peer.share(serde_json::from_slice(&share.body).unwrap())
+            .await;
+        share.json(200, json!({}));
+        preflight(&mut fake, true).await;
+        fake.next().await.json(200, keys.clone());
+        let message = fake.next().await;
+        assert!(message.target.contains("/send/m.room.encrypted/"));
+        let value: Value = serde_json::from_slice(&message.body).unwrap();
+        let plain = peer.decrypt(value).await;
+        message.json(200, json!({"event_id":"$encrypted"}));
+        plain
+    })
+    .await;
+    assert_eq!(r.unwrap().state, OutgoingState::Delivered);
+    assert_eq!(plain["content"]["body"], "Answer **verified** 中文");
+    c.close().await.unwrap();
+    f.store.shutdown().await.unwrap();
+    fake.close().await;
+}
 #[tokio::test]
 async fn native_matrix_outgoing_crypto_unverified_missing_or_changed_keys_never_fall_back() {
+    // "unverified" left this list (ADR-185): an agent's message reaches its
+    // owner's unsigned device; asserted positively in
+    // `native_matrix_outgoing_crypto_reaches_an_unverified_owner_device`.
     for variant in [
-        "unverified",
         "own_missing",
         "changed_before_share",
         "malformed_master",

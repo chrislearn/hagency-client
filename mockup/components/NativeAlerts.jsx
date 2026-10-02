@@ -95,7 +95,7 @@ export default function NativeAlerts() {
         <p role="status">{t('al.loading')}</p>
       ) : rows.length === 0 ? (
         <div className="empty">
-          <div className="big">{t('al.noMatch')}</div>
+          <div className="big">{agent !== 'all' ? t('al.noMatch') : t('al.allClear')}</div>
           <p className="small">{t('al.noneOpen')}</p>
         </div>
       ) : (

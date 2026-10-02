@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { runtimeLabel } from '@/lib/agent-detail';
 import { useData } from '@/components/Data';
 import { PrefsSwitch, useT } from '@/components/Prefs';
@@ -117,17 +117,65 @@ export default function Rail() {
   return data.nativeConsole ? <NativeRail /> : <LegacyRail />;
 }
 
+/* The native console's own navigation: every page it serves, grouped by the
+ * job it does, and nothing it cannot open. The retained SECTIONS above keep
+ * describing the legacy rail. */
+const NATIVE_SECTIONS = [
+  { head: 'rail.secResource', rows: [{ key: 'resources', icon: 'layers' }, { key: 'workforce', icon: 'users' }, { key: 'accounts', icon: 'key' }] },
+  { head: 'rail.secEngagement', rows: [{ key: 'engagements', icon: 'swap' }, { key: 'approvals', icon: 'check' }, { key: 'invites', icon: 'mail' }, { key: 'projectSides', icon: 'link' }] },
+  { head: 'rail.secWork', rows: [{ key: 'tasks', icon: 'list' }, { key: 'projectBoard', icon: 'columns' }, { key: 'taskGraphs', icon: 'graph' }] },
+  { head: 'rail.secMonitor', rows: [{ key: 'usage', icon: 'gauge' }, { key: 'alerts', icon: 'bell' }] },
+];
+/* One 16px stroke icon set for the native rail (paths in a 24px box). */
+const ICON_PATHS = {
+  layers: 'M12 3 3 8l9 5 9-5-9-5ZM3 13l9 5 9-5M3 17.5l9 5 9-5',
+  users: 'M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20M10 11.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM20 20v-1.5a3.5 3.5 0 0 0-2.5-3.3M15.5 4.6a3.5 3.5 0 0 1 0 6.8',
+  key: 'M14.5 9.5a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM13.2 12.7 21 20.5M17.5 17l2-2',
+  swap: 'M4 8h14l-4-4M20 16H6l4 4',
+  check: 'M4 12.5 9 17.5 20 6.5',
+  mail: 'M3.5 6h17v12h-17zM3.5 6.5l8.5 6.5 8.5-6.5',
+  link: 'M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1',
+  list: 'M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01',
+  columns: 'M4 4h5v16H4zM10.5 4h5v11h-5zM17 4h3v7h-3z',
+  graph: 'M6 6.5a2 2 0 1 0 0-.01M18 6.5a2 2 0 1 0 0-.01M12 18.5a2 2 0 1 0 0-.01M7.5 8l3.5 8.5M16.5 8 13 16.5',
+  gauge: 'M4 18a8 8 0 1 1 16 0M12 18l4-5',
+  bell: 'M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16ZM10 20.5a2 2 0 0 0 4 0',
+};
+const RailIcon = ({ name }) => <svg className="ico" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={ICON_PATHS[name]} /></svg>;
+const NATIVE_PATHS = { workforce: '/console/agents/', taskGraphs: '/console/task-graphs/', projectSides: '/console/project-sides/', projectBoard: '/console/project-board/' };
+const nativeHref = (key) => NATIVE_PATHS[key] ?? `/console/${key}/`;
+const nativeCurrent = (path, key) => {
+  const href = nativeHref(key).replace(/^\/console/, '').replace(/\/$/, '') || '/';
+  return path === href || path.startsWith(`${href}/`) || (key === 'resources' && path === '/');
+};
+
 function NativeRail() {
   const t = useT();
   const pathname = usePathname();
   const data = useData();
   const path = routePath(pathname);
-  return <nav className="rail" aria-label={t('rail.nav')}>
-    <div className="rail-brand"><b>HAGENCY</b><span>{t('nr.nativeConsole')}</span></div>
-    <div className="rail-fleet">{SECTIONS.map((sec) => <div key={sec.head}>
+  // On phones the page list scrolls sideways; keep the current page in view.
+  useEffect(() => {
+    const reveal = () => {
+      const strip = document.querySelector('.rail-fleet'), current = strip?.querySelector('[aria-current="page"]');
+      if (strip && current && strip.scrollWidth > strip.clientWidth) strip.scrollLeft = current.offsetLeft - strip.offsetLeft - (strip.clientWidth - current.offsetWidth) / 2;
+    };
+    reveal();
+    window.addEventListener('resize', reveal);
+    return () => window.removeEventListener('resize', reveal);
+  }, [path]);
+  // On phones the session and preference controls fold behind a menu button.
+  const [menuOpen, setMenuOpen] = useState(false);
+  return <nav className={`rail${menuOpen ? ' menu-open' : ''}`} aria-label={t('rail.nav')}>
+    <div className="rail-brand"><b>HAGENCY</b><span>{t('nr.nativeConsole')}</span>
+      <button type="button" className="rail-menu-btn" aria-expanded={menuOpen} aria-label={t('rail.menu')} onClick={() => setMenuOpen(!menuOpen)}>
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d={menuOpen ? 'M6 6l12 12M18 6 6 18' : 'M4 7h16M4 12h16M4 17h16'} /></svg>
+      </button>
+    </div>
+    <div className="rail-fleet">{NATIVE_SECTIONS.map((sec) => <div key={sec.head}>
       <h2 className="rail-sec">{t(sec.head)}</h2>
       <ul className="rail-list">{sec.rows.map((row) => <li key={row.key}>
-        {['usage', 'resources', 'alerts', 'engagements', 'workforce', 'tasks', 'taskGraphs'].includes(row.key) ? <a className="fleet-row" href={row.key === 'workforce' ? '/console/agents/' : row.key === 'taskGraphs' ? '/console/task-graphs/' : `/console/${row.key}/`} aria-current={isCurrent(path, row) ? 'page' : undefined}><span className="ico">{row.icon}</span><span className="grow">{t(`nav.${row.key}`)}</span></a>
+        {['usage', 'resources', 'alerts', 'engagements', 'workforce', 'tasks', 'taskGraphs', 'accounts', 'approvals', 'invites', 'projectSides', 'projectBoard'].includes(row.key) ? <a className="fleet-row" href={nativeHref(row.key)} aria-current={nativeCurrent(path, row.key) ? 'page' : undefined}><RailIcon name={row.icon} /><span className="grow">{t(`nav.${row.key}`)}</span></a>
           : <span className="fleet-row" aria-disabled="true" title={t('nu.unavailableRoute')}><span className="ico">{row.icon}</span><span className="grow">{t(`nav.${row.key}`)}</span><span>—</span></span>}
       </li>)}</ul>
     </div>)}</div>

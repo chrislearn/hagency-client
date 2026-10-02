@@ -1341,3 +1341,33 @@ async fn native_outbound_custody_worker_elapsed_lease() {
     ));
     store.shutdown().await.unwrap();
 }
+
+#[test]
+fn native_outbound_work_retry_does_not_block_the_lane() {
+    // A work item waiting for a retry (a request whose resource is unknown)
+    // steps aside; the independent probe behind it is claimed at once.
+    let (_dir, mut db, s) = setup();
+    for id in ["blocked", "probe"] {
+        receive(&mut db, &s, delivery(id, Lane::Work));
+        ack(&mut db, &s, Lane::Work, id);
+    }
+    let blocked = claim(&mut db, &s, Lane::Work, "blocked-1", 200).unwrap();
+    assert_eq!(start(&mut db, &blocked, 201).delivery.id, "blocked");
+    db.outbound(Command::ProcessingUnknown(blocked.clone()), 202)
+        .unwrap();
+    db.outbound(
+        Command::Inspect {
+            scope: s.clone(),
+            attempt_id: blocked.id().into(),
+            outcome: Inspection::Retry,
+        },
+        203,
+    )
+    .unwrap();
+    let probe = claim(&mut db, &s, Lane::Work, "probe-1", 204).unwrap();
+    assert_eq!(start(&mut db, &probe, 205).delivery.id, "probe");
+    complete(&mut db, &probe, 206);
+    assert!(claim(&mut db, &s, Lane::Work, "too-early", 207).is_none());
+    let again = claim(&mut db, &s, Lane::Work, "blocked-2", 203 + 20_000).unwrap();
+    assert_eq!(start(&mut db, &again, 203 + 20_001).delivery.id, "blocked");
+}

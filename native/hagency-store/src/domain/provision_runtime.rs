@@ -96,8 +96,8 @@ fn current(
         return Err(Error::Generation);
     }
     let resource = read_resource(db, &scope.resource.id())?;
-    if canonical::transport_digest(&json!(resource))?
-        != canonical::transport_digest(&json!(scope.resource))?
+    if canonical::transport_digest(&runtime_identity(&resource))?
+        != canonical::transport_digest(&runtime_identity(&scope.resource))?
         || accounts::association(db, &scope.resource)? != scope.account
     {
         return Err(Error::Unqualified);
@@ -355,4 +355,19 @@ impl DomainRepository {
             .map(|association| self.managed_account(accounts::provision_account_id(association)))
             .transpose()
     }
+}
+
+/// The part of a resource the running agent depends on: what it runs and on
+/// which seat. The monthly ceiling, the publication flag and the derived role
+/// cache are budget and catalog facts; editing them (raising a ceiling) must
+/// not detach the agents already running on the resource.
+fn runtime_identity(resource: &hagency_core::project::Resource) -> serde_json::Value {
+    json!({
+        "preset_id": resource.preset_id,
+        "seat_id": resource.seat_id,
+        "framework": resource.framework,
+        "model": resource.model,
+        "provider": resource.provider,
+        "reasoning": resource.reasoning,
+    })
 }

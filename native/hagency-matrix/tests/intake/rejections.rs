@@ -290,10 +290,9 @@ async fn native_matrix_rejection_crypto_trust_upgrade_cannot_reinterpret_source(
         .as_array_mut()
         .unwrap()
         .truncate(1);
-    assert_eq!(
-        run(&c, &mut fake, unverified, true).await.unwrap().rejected,
-        1
-    );
+    // An agent admits its owner's unverified device (TS parity).
+    let first = run(&c, &mut fake, unverified, true).await.unwrap();
+    assert_eq!((first.admitted, first.rejected), (1, 0));
     c.inner
         .owner
         .lock()
@@ -307,8 +306,13 @@ async fn native_matrix_rejection_crypto_trust_upgrade_cannot_reinterpret_source(
         .as_array_mut()
         .unwrap()
         .remove(0);
+    // A later trust change never reinterprets the already-decided source: it
+    // replays as admitted, and only the new message is admitted fresh.
     let result = run(&c, &mut fake, encrypted, true).await.unwrap();
-    assert_eq!((result.admitted, result.rejected), (1, 1));
+    assert_eq!(
+        (result.admitted, result.replayed, result.rejected),
+        (1, 1, 0)
+    );
     assert!(f.available().await);
     c.close().await.unwrap();
     f.store.shutdown().await.unwrap();

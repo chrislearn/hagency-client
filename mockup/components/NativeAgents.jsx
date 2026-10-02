@@ -23,6 +23,7 @@
  */
 import { useState } from 'react';
 import Link from 'next/link';
+import TechnicalDetails from '@/components/TechnicalDetails';
 import PageHead from '@/components/PageHead';
 import NativeStatusStrip from '@/components/NativeStatusStrip';
 import { NativeAccessNotice } from '@/components/NativeUsage';
@@ -114,9 +115,7 @@ export default function NativeAgents() {
 
       {/* The server's own gap list, rendered verbatim: the page never
           decides which columns are unknown. */}
-      <p className="sub dim" style={{ fontSize: 12 }}>
-        {t('na.unavailable', { list: unavailable.join(', ') })}
-      </p>
+      {unavailable.length > 0 && <TechnicalDetails><p>{t('na.unavailable', { list: unavailable.join(', ') })}</p></TechnicalDetails>}
 
       {/* Item 7: the roster starts empty — "an agent appears once it is
        * lent" is a ready-state fact, not a first paint. */}
@@ -128,7 +127,7 @@ export default function NativeAgents() {
         </div>
       ) : (
         <div className="list">
-          <table>
+          <table className="roster">
             <thead>
               <tr>
                 <th>{t('col.agent')}</th>

@@ -25,7 +25,9 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import TechnicalDetails from '@/components/TechnicalDetails';
 import PageHead from '@/components/PageHead';
+import NativeStatusStrip from '@/components/NativeStatusStrip';
 import { Toast, useToast } from '@/components/Toast';
 import { useT } from '@/components/Prefs';
 import {
@@ -135,26 +137,25 @@ export default function NativeTasks() {
       {refreshing && <p role="status">{t('tk.refreshing')}</p>}
       <Toast toast={toast} />
 
-      <PageHead title={t('tk.title')}>
+      <PageHead title={t('tk.title')} sub={t('tk.note')}>
         <Link className="btn" href="/project-board">{t('tk.boardLink')}</Link>
+        {canWrite && !draft && (
+          <button className="btn primary" onClick={() => { setDraft(emptyDraft()); setEditingId(null); }}>{t('tk.create')}</button>
+        )}
+        <NativeStatusStrip />
       </PageHead>
-      <h2 style={{ marginTop: 0 }}>{t('tk.title')}<span className="note"> {t('tk.note')}</span></h2>
 
       <div className="cards">
         {STATUSES.map((s) => (
           <div className="card" key={s}>
-            <div className="cap">{s}</div>
+            <div className="cap">{s.replaceAll('_', ' ')}</div>
             <div className={`val${s === 'blocked' && counts[s] > 0 ? ' warn' : ''}`}>{counts[s]}</div>
           </div>
         ))}
       </div>
 
       {!canWrite && <p className="note" style={{ marginTop: 12 }}>{t('tk.scopeRequired')}</p>}
-      {unavailable.length > 0 && (
-        <p className="note faint" style={{ marginTop: 8, fontSize: 12 }}>
-          {t('tk.unavailableNote', { list: unavailable.join(', ') })}
-        </p>
-      )}
+      {unavailable.length > 0 && <TechnicalDetails><p>{t('tk.unavailableNote', { list: unavailable.join(', ') })}</p></TechnicalDetails>}
 
       <div className="btn-row" style={{ margin: '22px 0 12px' }}>
         <label style={{ fontSize: 12, color: 'var(--ink-dim)' }}>
@@ -180,9 +181,6 @@ export default function NativeTasks() {
         </label>
         <span style={{ flex: 1 }} />
         <span className="sub dim" style={{ fontSize: 12 }}>{t('common.shown', { a: visible.length, b: rows.length })}</span>
-        {canWrite && !draft && (
-          <button className="btn primary" onClick={() => { setDraft(emptyDraft()); setEditingId(null); }}>{t('tk.create')}</button>
-        )}
       </div>
 
       {draft && canWrite && (

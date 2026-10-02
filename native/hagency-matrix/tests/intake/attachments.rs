@@ -224,9 +224,9 @@ async fn native_matrix_attachment_restart_replay() {
 #[tokio::test]
 async fn native_matrix_attachment_privacy_refusals() {
     let (f, mut fake, c) = ready(true).await;
-    let values = vec![file("unverified", false, false)];
-    let value = packet(&c, values, false, "unverified_file").await;
-    assert_eq!(run(&c, &mut fake, value, true).await.unwrap().rejected, 1);
+    // An unverified owner device is no longer a refusal for an agent (TS
+    // parity, `sdk::trust_requirement`); its admission is asserted in
+    // `native_matrix_intake_crypto_verified_human_dm_no_mention_and_spoof_refusal`.
     let mut invalid = vec![];
     // "plaintext_url" left this list: TS parity (lib/matrix-file.js:38,
     // `content.file?.url || content.url`) — when an encrypted event also

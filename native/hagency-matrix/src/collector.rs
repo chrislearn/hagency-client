@@ -605,6 +605,19 @@ impl Inner {
         };
         let result = async {
             let state = read?;
+            // The server's creation time of a direct room THIS agent created
+            // (its own DM): the room's visibility starts there (ADR-184).
+            let own_created = matches!(target.privacy, RoomPrivacy::Direct { .. })
+                .then(|| {
+                    state.as_array()?.iter().find_map(|e| {
+                        (e["type"] == "m.room.create"
+                            && e["state_key"] == ""
+                            && e["sender"] == t.sender_mxid.as_str())
+                        .then(|| e["origin_server_ts"].as_u64())
+                        .flatten()
+                    })
+                })
+                .flatten();
             // Representable unsafe membership/privacy must reach the domain's
             // shared-room invalidation path rather than becoming a local-only error.
             let (mut observation, facts) = self.room(target, state)?;
@@ -627,6 +640,15 @@ impl Inner {
                     .await?;
             } else {
                 self.domain.observe_matrix_room(observation.clone()).await?;
+                if let Some(created_at) = own_created {
+                    self.domain
+                        .own_direct_room_created(
+                            t.engagement_id.clone(),
+                            target.room_id.clone(),
+                            created_at,
+                        )
+                        .await?;
+                }
             }
             self.room_facts
                 .lock()

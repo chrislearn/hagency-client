@@ -7,7 +7,7 @@ use hagency_core::{
 };
 use matrix_sdk_base::sync::SyncResponse;
 use matrix_sdk_common::deserialized_responses::{
-    AlgorithmInfo, TimelineEventKind, VerificationState,
+    AlgorithmInfo, TimelineEventKind, VerificationLevel, VerificationState,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -496,8 +496,18 @@ impl Batch {
             TimelineEventKind::UnableToDecrypt { .. } => return Err(CryptoIneligible),
             TimelineEventKind::Decrypted(d) => {
                 let info = &d.encryption_info;
-                if !matches!(info.verification_state, VerificationState::Verified)
-                    || info.sender.as_str() != string("sender")?
+                // The owner's unverified devices are accepted (TS parity; see
+                // `sdk::trust_requirement`). An unknown or insecurely sourced
+                // device and a mismatched sender stay refused.
+                if !matches!(
+                    info.verification_state,
+                    VerificationState::Verified
+                        | VerificationState::Unverified(
+                            VerificationLevel::UnverifiedIdentity
+                                | VerificationLevel::VerificationViolation
+                                | VerificationLevel::UnsignedDevice
+                        )
+                ) || info.sender.as_str() != string("sender")?
                     || info.forwarder.is_some()
                 {
                     return Err(CryptoIneligible);
@@ -823,7 +833,20 @@ impl Batch {
         if let Some(values) = &self.dispositions {
             disposition::validate(values, self.events.len(), self.filtered)?;
             if self.phase == Phase::Derived || !values.is_empty() {
-                let raw = disposition::raw_events(&self.raw).map_err(|_| Error::Storage)?;
+                // A pre-project provisioning request (an agent request in the
+                // reception room) is derived into `pre_project`, not a
+                // disposition row, so its raw event has no row to match here.
+                let raw = disposition::raw_events(&self.raw)
+                    .map_err(|_| Error::Storage)?
+                    .into_iter()
+                    .filter(|(room, event)| {
+                        !self.pre_project.iter().any(|p| {
+                            p.input.room_id == *room
+                                && event.get("event_id").and_then(Value::as_str)
+                                    == Some(p.input.event_id.as_str())
+                        })
+                    })
+                    .collect::<Vec<_>>();
                 // Board #10: recovered candidates (from the retained pending
                 // store) are appended after the raw rows, so the ledger may be
                 // longer than the raw timeline. The raw rows must still match
@@ -1118,5 +1141,77 @@ mod mention_fallback_tests {
             vec!["@worker:example.test".to_string()],
             "a non-pill href falls through to the plain-text pass"
         );
+    }
+}
+
+#[cfg(test)]
+mod restore_tests {
+    use super::*;
+
+    /// A Derived batch whose raw timeline carries an agent request in the
+    /// reception room keeps that request in `pre_project`, with no disposition
+    /// row. Restoring the journal must accept it: the live coordinator refused
+    /// its own SDK store with `Storage` after every clean restart that
+    /// followed a request (2026-09-30).
+    #[test]
+    fn native_matrix_pre_project_batch_is_restorable() {
+        let room = "!reception:example.test";
+        let event = serde_json::json!({
+            "type": "m.room.message", "event_id": "$request", "sender": "@owner:example.test",
+            "origin_server_ts": 1_000u64, "room_id": room,
+            "content": {"msgtype": "com.hagency.engagement.request.v1", "body": "{}"}
+        });
+        let raw = serde_json::json!({
+            "next_batch": "s1",
+            "rooms": {"join": {room: {"timeline": {"limited": false, "events": [event]}}}}
+        });
+        let route = ReplyRoute {
+            session_id: "coordinator".into(),
+            session_generation: 1,
+            engagement_id: "en_coordinator".into(),
+            fleet_id: "hf_fleet".into(),
+            project_id: "project".into(),
+            registration_generation: 1,
+            server_name: "example.test".into(),
+            room_id: "!dm:example.test".into(),
+            room_generation: 1,
+            sender_mxid: "@coordinator:example.test".into(),
+            device_id: "DEVICE".into(),
+            transport_generation: 1,
+            owner_mxid: "@owner:example.test".into(),
+            privacy: RoomPrivacy::Direct {
+                human_mxid: "@owner:example.test".into(),
+            },
+            encrypted: true,
+            thread_root: None,
+        };
+        let mut batch = Batch::new(raw, vec![route], "identity".into()).unwrap();
+        batch.phase = Phase::Derived;
+        batch.dispositions = Some(vec![]);
+        batch.pre_project.push(PreProjectEvent {
+            input: Message {
+                server_name: "example.test".into(),
+                room_id: room.into(),
+                event_id: "$request".into(),
+                sender_mxid: "@owner:example.test".into(),
+                thread_root: None,
+                body: "{}".into(),
+                kind: "com.hagency.engagement.request.v1".into(),
+                origin_ts: 1_000,
+            },
+            proof: Proof::Plain,
+        });
+        assert!(
+            batch
+                .validate_restored("identity", "@coordinator:example.test", "DEVICE")
+                .is_ok(),
+            "a request recorded as pre_project has no disposition row to match"
+        );
+        // An ordinary raw event with no row is still refused.
+        batch.pre_project.clear();
+        assert!(matches!(
+            batch.validate_restored("identity", "@coordinator:example.test", "DEVICE"),
+            Err(Error::Storage)
+        ));
     }
 }

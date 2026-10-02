@@ -72,16 +72,18 @@ fn rail_pages() -> Vec<String> {
         .collect();
     assert_eq!(
         keys.len(),
-        7,
+        12,
         "the native rail's link set changed size; re-derive and confirm the pages ship: {keys:?}"
     );
     keys.into_iter()
         .map(|key| match key.as_str() {
-            // Mirrors the NativeRail ternary (Rail.jsx): the workforce row is
-            // served by the agents roster, taskGraphs by the task-graphs page,
-            // every other row by its own path.
+            // Mirrors NATIVE_PATHS (Rail.jsx): the workforce row is served by
+            // the agents roster, the camel-cased keys by their hyphenated
+            // pages, every other row by its own path.
             "workforce" => "/console/agents/".to_owned(),
             "taskGraphs" => "/console/task-graphs/".to_owned(),
+            "projectSides" => "/console/project-sides/".to_owned(),
+            "projectBoard" => "/console/project-board/".to_owned(),
             other => format!("/console/{other}/"),
         })
         .collect()

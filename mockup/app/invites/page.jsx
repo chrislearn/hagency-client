@@ -94,8 +94,7 @@ function NativeInvites() {
 
   return (
     <div data-native-state={data.phase} aria-busy={data.refreshing === true}>
-      <PageHead title={t('ni.title')}><NativeStatusStrip /></PageHead>
-      <h2 style={{ marginTop: 0 }}>{t('ni.title')}<span className="note"> {t('ni.subtitle')}</span></h2>
+      <PageHead title={t('ni.title')} sub={t('ni.subtitle')}><NativeStatusStrip /></PageHead>
 
       {error && (
         <section className="panel" role="alert">
@@ -108,7 +107,7 @@ function NativeInvites() {
       {rows !== null && (
         <>
           {rows.length === 0 ? (
-            <div className="empty"><div className="big">{t('ni.none')}</div></div>
+            <div className="empty"><div className="big">{t('ni.none')}</div><div className="small">{t('ni.queuedNote')}</div></div>
           ) : (
             <div className="cards">
               {rows.map((invite) => (
@@ -145,7 +144,7 @@ function NativeInvites() {
             </div>
           )}
           {note && <p role="status">{note}</p>}
-          <p className="dim" style={{ fontSize: 12 }}>{t('ni.queuedNote')}</p>
+          {rows.length > 0 && <p className="dim" style={{ fontSize: 13 }}>{t('ni.queuedNote')}</p>}
         </>
       )}
     </div>

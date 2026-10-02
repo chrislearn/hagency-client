@@ -124,7 +124,7 @@ export default function NativeTaskGraphs() {
           </select>
         </label>
         {graphs.length === 0 ? (
-          <p>{t('tg.empty')}</p>
+          <div className="empty"><div className="big">{t('tg.empty')}</div><div className="small">{t('tg.emptyHint')}</div></div>
         ) : (
           <table>
             <thead>
@@ -178,7 +178,7 @@ export default function NativeTaskGraphs() {
       )}
 
       <section className="panel">
-        <h3>{t('tg.create')}</h3>
+        <h2>{t('tg.create')}</h2>
         <form onSubmit={submitCreate}>
           <label>{t('tg.owner')}{' '}
             <input value={form.owner}
@@ -190,6 +190,7 @@ export default function NativeTaskGraphs() {
           </label>
           {form.nodes.map((node, i) => (
             <fieldset key={i}>
+              <legend>{t('tg.nodeLegend', { n: i + 1 })}</legend>
               <label>{t('tg.nodeId')}{' '}
                 <input value={node.id} onChange={(e) => setNode(i, 'id', e.target.value)} required />
               </label>{' '}
@@ -204,11 +205,13 @@ export default function NativeTaskGraphs() {
               </label>
             </fieldset>
           ))}
-          <button type="button" className="btn"
-            onClick={() => setForm({ ...form, nodes: [...form.nodes, { ...EMPTY_NODE }] })}>
-            {t('tg.addNode')}
-          </button>{' '}
-          <button type="submit" className="btn" disabled={busy}>{t('tg.submitCreate')}</button>
+          <div className="form-foot">
+            <button type="button" className="btn"
+              onClick={() => setForm({ ...form, nodes: [...form.nodes, { ...EMPTY_NODE }] })}>
+              + {t('tg.addNode')}
+            </button>
+            <button type="submit" className="btn primary" disabled={busy}>{t('tg.submitCreate')}</button>
+          </div>
         </form>
       </section>
       <Toast toast={toast} />

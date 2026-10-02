@@ -1,5 +1,6 @@
 'use client';
 import PageHead from '@/components/PageHead';
+import { fmtTokens } from '@/lib/mock-data';
 import NativeStatusStrip from '@/components/NativeStatusStrip';
 import TechnicalDetails from '@/components/TechnicalDetails';
 import { useData } from '@/components/Data';
@@ -21,7 +22,9 @@ export function NativeAccessNotice() {
 }
 function Counts({ value, label }) {
   const t = useT();
-  return <section className="panel" style={{ marginTop: 0 }}><h3>{label}</h3><dl>{KINDS.map((kind) => <div key={kind} className="kv">
+  // Nothing measured yet: one line says so; the per-kind cells stay for detail.
+  const none = KINDS.every((kind) => value?.[kind] == null);
+  return <section className={`panel${none ? ' all-unknown' : ''}`} style={{ marginTop: 0 }}><h3>{label}</h3>{none && <p className="dim">{t('nu.noObservations')}</p>}<dl>{KINDS.map((kind) => <div key={kind} className="kv">
     <dt>{t(`nu.${kind}`)}</dt><dd data-kind={kind}>{value?.[kind] == null ? t('nu.unknown') : value[kind].toLocaleString()}</dd>
   </div>)}</dl></section>;
 }
@@ -58,6 +61,13 @@ export default function NativeUsage() {
       <button className="btn" onClick={data.nextPage} disabled={!data.next_after}>{t('nu.nextPage')}</button></div>
       </section>
       {report && <div data-engagement-id={report.engagement_id}>
+        {/* The three numbers an operator came for, before the evidence behind them. */}
+        <div className="cards usage-kpis">
+          {['tokens_drawn', 'tokens_used', 'remaining_tokens'].map((key) => <div className="card" key={key} title={report.ceiling[key] == null ? undefined : report.ceiling[key].toLocaleString()}>
+            <div className="cap">{t(`nu.kpi.${key}`)}</div>
+            <div className={`val${report.ceiling[key] == null ? ' unknown' : ''}`}>{report.ceiling[key] == null ? '—' : fmtTokens(report.ceiling[key])}</div>
+          </div>)}
+        </div>
         <section className="panel"><h2 className="sec" style={{ marginTop: 0 }}>{t('nu.summary')}</h2><p>{t('nu.sources', { n: report.summary.sources })}</p>
           <p>{t('nu.incompleteSources', { latest: report.summary.latest_incomplete_sources, history: report.summary.historically_incomplete_sources })}</p>
           <p>{t('nu.regressions', { n: report.summary.regression_observations })}</p>

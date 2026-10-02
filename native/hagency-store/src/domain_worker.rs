@@ -2339,6 +2339,17 @@ impl DomainStore {
         })
         .await
     }
+    pub async fn own_direct_room_created(
+        &self,
+        engagement_id: String,
+        room_id: String,
+        created_at: u64,
+    ) -> Result<(), Error> {
+        self.call(weight(&(&engagement_id, &room_id))?, move |db| {
+            db.own_direct_room_created(&engagement_id, &room_id, created_at, writer_time()?)
+        })
+        .await
+    }
     pub async fn refresh_matrix_group_room(
         &self,
         input: MatrixRoomObservation,

@@ -15,6 +15,7 @@ import { nativeRequest } from '@/lib/native-api';
 import { useT } from '@/components/Prefs';
 import { errorText } from '@/lib/i18n';
 import { useData } from '@/components/Data';
+import { fmtTokens } from '@/lib/mock-data';
 
 const newCommand = () => `console_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 
@@ -64,7 +65,7 @@ function PendingRow({ e, onDone }) {
         {candidate
           ? `${candidate.resource} · ${candidate.framework} · ${candidate.model}`
             + (candidate.remainingTokens === null || candidate.remainingTokens === undefined
-              ? '' : ` · ${t('nv.remaining')} ${candidate.remainingTokens}`)
+              ? '' : ` · ${t('nv.remaining')} ${fmtTokens(candidate.remainingTokens)}`)
           : (note ?? '…')}
       </td>
       <td>
@@ -129,7 +130,7 @@ export default function NativeVerdict() {
           )}
         {flash && <p role="status">{flash}</p>}
       </section>
-      <section className="panel" style={{ marginTop: 18 }}>
+      <section className="panel verdict-audit" style={{ marginTop: 18 }}>
         <h2>{t('nv.audit')} <span className="note">{t('nv.auditHelp')}</span></h2>
         {audit === null
           ? <p className="dim">…</p>

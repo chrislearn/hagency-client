@@ -18,6 +18,12 @@ pub(super) const STAGES: &[&str] = &[
     "join-possible",
     "join-response",
     "complete",
+    // ADR-184: the agent's rooms exist and it is enrolled before the owner is
+    // invited. Custody without these stages is the pre-ADR-184 order, whose
+    // `complete` already includes the owner's join.
+    "agent-rooms",
+    "owner-invite-possible",
+    "owner-invite-response",
 ];
 const PLAIN: usize = 32 * 1024;
 const ENVELOPE: usize = 256 * 1024;

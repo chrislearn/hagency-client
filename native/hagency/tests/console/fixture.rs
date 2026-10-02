@@ -232,14 +232,19 @@ impl Fixture {
         self.custody.shutdown().await.unwrap();
     }
     pub async fn new_engagement(&self) -> String {
+        self.new_engagement_requesting("new_after_browser_build", 100)
+            .await
+    }
+    /// A pending engagement asking for `tokens` from the 1000-token pool.
+    pub async fn new_engagement_requesting(&self, request: &str, tokens: u64) -> String {
         let pool = common::resource("private_usage_pool", "private_usage_seat", 1000);
         self.domain
             .admit(
                 common::proof(&common::request(
-                    "new_after_browser_build",
+                    request,
                     "NewUsageWorker",
                     &pool,
-                    100,
+                    tokens,
                 )),
                 1000,
             )

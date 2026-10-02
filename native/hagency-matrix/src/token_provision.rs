@@ -664,7 +664,10 @@ impl ProvisionedTokenAccount {
     ) -> Result<(), Error> {
         let original = self.scope.as_ref().ok_or(Error::Config)?;
         let operation = rooms::Operation::new(self, original.clone(), representative_token)?;
-        let result = self.room_jobs.run(operation, cancel).await;
+        let result = self
+            .room_jobs
+            .run(operation, rooms::Phase::Rooms, cancel)
+            .await;
         if result.is_ok() {
             // The custody verified this credential against the server
             // (whoami + invite accepted); the collector built from this
@@ -675,6 +678,20 @@ impl ProvisionedTokenAccount {
                 .map_err(|_| Error::OutcomeUnknown)? = Some(representative_token.to_owned());
         }
         result
+    }
+    /// ADR-184: invite the owner to the agent's DM only after enrollment, then
+    /// wait for the owner's join. Returns `AwaitingOwner` while the owner has
+    /// not joined; a later turn resumes the wait.
+    pub async fn invite_owner(
+        &self,
+        representative_token: &str,
+        cancel: &CancellationToken,
+    ) -> Result<(), Error> {
+        let original = self.scope.as_ref().ok_or(Error::Config)?;
+        let operation = rooms::Operation::new(self, original.clone(), representative_token)?;
+        self.room_jobs
+            .run(operation, rooms::Phase::Owner, cancel)
+            .await
     }
     /// Use only this account's actual created/joined room observations.
     pub async fn enroll_created_rooms(

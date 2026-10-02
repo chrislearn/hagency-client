@@ -310,6 +310,51 @@ impl DomainRepository {
         Ok(())
     }
 
+    /// The agent created this direct room itself (its `m.room.create` sender),
+    /// so the room is visible to it from `created_at`, the server's creation
+    /// time, not from the first local observation. Backdates the room scope
+    /// and the agent's routes in it; refuses any room that is not this
+    /// agent's own available direct room. Never moves a cutoff later.
+    pub fn own_direct_room_created(
+        &mut self,
+        engagement_id: &str,
+        room_id: &str,
+        created_at: u64,
+        now: u64,
+    ) -> Result<(), Error> {
+        clock(now)?;
+        if created_at == 0 || created_at > now {
+            return Err(Error::Invalid(hagency_core::InvalidInput(
+                "room creation time is not before now",
+            )));
+        }
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let c = context(&tx, engagement_id)?;
+        let sender: String = tx
+            .query_row(
+                "SELECT sender_mxid FROM matrix_transports WHERE engagement_id=?1",
+                params![engagement_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or(Error::NotFound)?;
+        let changed = tx.execute(
+            "UPDATE matrix_room_scopes SET visibility_since=MIN(visibility_since,?4) WHERE server_name=?1 AND room_id=?2 AND direct_sender=?3 AND available=1 AND fleet_id=?5 AND project_id=?6",
+            params![c.registration.server_name, room_id, sender, created_at, c.registration.fleet_id, c.project],
+        )?;
+        if changed != 1 {
+            return Err(Error::RunnerAuthority);
+        }
+        tx.execute(
+            "UPDATE matrix_session_routes SET ingress_since=MIN(ingress_since,(SELECT visibility_since FROM matrix_room_scopes WHERE server_name=?1 AND room_id=?2)) WHERE server_name=?1 AND room_id=?2 AND ingress_since IS NOT NULL AND session_id IN (SELECT id FROM runner_sessions WHERE engagement_id=?3)",
+            params![c.registration.server_name, room_id, engagement_id],
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// Host-coordinated authenticated project membership refresh. The prior
     /// generation is captured BEFORE HTTP; this is not an automatic retry or
     /// recovery of an unavailable scope. Existing sessions are never rebound.
@@ -600,7 +645,11 @@ pub(super) fn resolve(
     bounded_row(tx, "runner_sessions", "id", &binding.id, 10_000)?;
     tx.execute("INSERT INTO runner_sessions(id,engagement_id,binding,matrix_generation) VALUES(?1,?2,?3,?4)",params![binding.id,binding.engagement_id,serialize(binding)?,session_generation])?;
     tx.execute("INSERT INTO matrix_session_routes(session_id,server_name,room_id,room_generation,transport_generation,registration_generation,config) VALUES(?1,?2,?3,?4,?5,?6,?7)",params![binding.id,route.server_name,route.room_id,route.room_generation,route.transport_generation,route.registration_generation,serialize(&route)?])?;
-    tx.execute("UPDATE matrix_session_routes SET ingress_since=(SELECT MAX(t.observed_at,r.visibility_since) FROM matrix_transports t JOIN matrix_room_scopes r ON r.server_name=t.server_name AND r.room_id=?2 WHERE t.engagement_id=?3) WHERE session_id=?1",params![binding.id,binding.room_id,binding.engagement_id])?;
+    // The agent's OWN direct room (it created it; ADR-184 invites the owner
+    // only afterwards) is visible to it from its creation, so its cutoff is the
+    // room's visibility alone: nothing the owner writes there predates it.
+    // Every other room keeps MAX(transport observed, room visible).
+    tx.execute("UPDATE matrix_session_routes SET ingress_since=(SELECT CASE WHEN r.direct_sender=t.sender_mxid THEN r.visibility_since ELSE MAX(t.observed_at,r.visibility_since) END FROM matrix_transports t JOIN matrix_room_scopes r ON r.server_name=t.server_name AND r.room_id=?2 WHERE t.engagement_id=?3) WHERE session_id=?1",params![binding.id,binding.room_id,binding.engagement_id])?;
     check(tx, &binding.id)?;
     Ok(binding.clone())
 }

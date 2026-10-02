@@ -44,9 +44,10 @@ export default function NativeStatusStrip() {
     <span
       data-native-status={state}
       data-native-status-cell="readiness"
+      title={state === 'not-ready' && answer !== null ? answer.components.map((c) => `${c.name}=${c.state}`).join('\n') : undefined}
       style={{ color: state === 'ready' ? 'var(--ok)' : state === 'not-ready' ? 'var(--warn)' : 'var(--ink-dim)' }}
     >{t('ns.title')}: {word}</span>
-    {state === 'not-ready' && answer !== null && <span data-native-status-cell="components" className="note">
+    {state === 'not-ready' && answer !== null && <span data-native-status-cell="components" className="note" title={answer.components.map((c) => `${c.name}=${c.state}`).join('\n')}>
       {answer.components.map((c) => `${c.name}=${c.state}`).join(' ')}
     </span>}
     <span data-native-status-cell="version" className="note">{t('ns.version')}: {HAGENCY_NATIVE_VERSION}</span>

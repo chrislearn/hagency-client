@@ -17,6 +17,10 @@ use std::collections::BTreeSet;
 pub(super) struct Accepted {
     pub recipients: BTreeSet<(String, String)>,
     pub unverified: BTreeSet<(String, String)>,
+    /// The `unverified` devices whose keys ARE consistent (self-signed and
+    /// served for that user), only not signed by the owner's identity. An
+    /// agent's own messages reach these too (ADR-185); approval cards do not.
+    pub unsigned: BTreeSet<(String, String)>,
 }
 
 pub(super) async fn accept(
@@ -25,16 +29,34 @@ pub(super) async fn accept(
     query_id: &str,
     response: &Value,
 ) -> Result<BTreeSet<(String, String)>, Error> {
-    Ok(accept_counted(machine, users, query_id, response)
+    Ok(accept_counted(machine, users, query_id, response, true)
         .await?
         .recipients)
 }
 
+/// ADR-185: an agent's recipients are every consistent device of its users,
+/// signed by the owner's identity or not. The identity checks of
+/// `accept_counted` (anchor, master and self-signing keys, own device) apply
+/// unchanged.
+pub(super) async fn accept_all_devices(
+    machine: &OlmMachine,
+    users: &[OwnedUserId],
+    query_id: &str,
+    response: &Value,
+) -> Result<BTreeSet<(String, String)>, Error> {
+    let accepted = accept_counted(machine, users, query_id, response, false).await?;
+    Ok(accepted.recipients.union(&accepted.unsigned).cloned().collect())
+}
+
+/// `signed_only`: each recipient user must have at least one device signed by
+/// its identity (ADR-183 B, approval cards). An agent (`false`, ADR-185) needs
+/// at least one consistent device, signed or not.
 pub(super) async fn accept_counted(
     machine: &OlmMachine,
     users: &[OwnedUserId],
     query_id: &str,
     response: &Value,
+    signed_only: bool,
 ) -> Result<Accepted, Error> {
     validate_keys_shape(users, response)?;
     let query = get_keys::v3::Response::try_from_http_response(http::Response::new(
@@ -61,6 +83,7 @@ pub(super) async fn accept_counted(
         .map_err(|_| Error::OutcomeUnknown)?;
     let mut recipients = BTreeSet::new();
     let mut unverified = BTreeSet::new();
+    let mut unsigned = BTreeSet::new();
     let mut own_seen = false;
     for user in users {
         let identity = machine
@@ -127,6 +150,12 @@ pub(super) async fn accept_counted(
                 recipients.insert((user.to_string(), id.to_string()));
                 verified += 1;
             } else {
+                if consistent {
+                    unsigned.insert((user.to_string(), id.to_string()));
+                    if !signed_only {
+                        verified += 1;
+                    }
+                }
                 unverified.insert((user.to_string(), id.to_string()));
             }
         }
@@ -149,6 +178,7 @@ pub(super) async fn accept_counted(
     Ok(Accepted {
         recipients,
         unverified,
+        unsigned,
     })
 }
 fn consistent_device(raw: &Value, device: &Device, user: &str, id: &str) -> Result<bool, Error> {

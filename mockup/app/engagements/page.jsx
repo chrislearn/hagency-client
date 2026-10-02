@@ -453,17 +453,26 @@ function SideActions({ side, live, onDone }) {
   );
 }
 
+/* The native engagements page in two tabs: the requests an operator acts on
+ * (verdicts, the list, the audit) and what this contributor offers. */
+function NativeEngagementsTabs() {
+  const t = useT();
+  const [tab, setTab] = useState('requests');
+  const tabs = <div className="tabs" role="tablist" aria-label={t('nav.engagements')}>
+    {[['requests', t('ng.tabRequests')], ['offers', t('ng.tabOffers')]].map(([key, label]) => (
+      <button key={key} type="button" role="tab" className="tab" aria-selected={tab === key} onClick={() => setTab(key)}>{label}</button>
+    ))}
+  </div>;
+  return (
+    <>
+      <NativeEngagements listHidden={tab !== 'requests'} lead={tabs} pending={<NativeVerdict />} other={tab === 'requests' ? null : <NativeOfferBook />} />
+    </>
+  );
+}
+
 export default function EngagementsPage() {
   const data = useData();
-  if (data.nativeConsole) {
-    return (
-      <>
-        <NativeEngagements />
-        <NativeOfferBook />
-        <NativeVerdict />
-      </>
-    );
-  }
+  if (data.nativeConsole) return <NativeEngagementsTabs />;
   return <LegacyEngagements />;
 }
 

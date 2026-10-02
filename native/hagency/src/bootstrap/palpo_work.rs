@@ -582,7 +582,6 @@ pub(super) async fn run(
     let mut invites_due = std::time::Instant::now();
     // A work item that could not finish is retried on a slower clock: each
     // retry is a new custody attempt row, and those are finite.
-    let mut work_due = std::time::Instant::now();
     while !cancel.is_cancelled() {
         refresh_statuses(domain, probes, fleet, &reader).await;
         if !bot.is_empty() && std::time::Instant::now() >= invites_due {
@@ -590,15 +589,9 @@ pub(super) async fn run(
             invites_due = std::time::Instant::now() + Duration::from_secs(15);
         }
         let matrix = matrix_once(adapter, probes, fleet, &appservice.representative, generation).await;
-        let work = if std::time::Instant::now() >= work_due {
-            let outcome = work_once(adapter, probes, domain, &reader, fleet).await;
-            if matches!(outcome, Outcome::Later) {
-                work_due = std::time::Instant::now() + Duration::from_secs(20);
-            }
-            outcome
-        } else {
-            Outcome::Idle
-        };
+        // A retried item steps aside in custody (WORK_RETRY_MS), not the
+        // whole lane: the independent items behind it are claimed now.
+        let work = work_once(adapter, probes, domain, &reader, fleet).await;
         let pause = match (matrix, work) {
             (Outcome::Done, _) | (_, Outcome::Done) => Duration::from_millis(100),
             (_, Outcome::Later) | (Outcome::Later, _) => Duration::from_secs(3),
