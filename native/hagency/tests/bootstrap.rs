@@ -913,10 +913,16 @@ async fn native_continuous_driver_operator_resolution() {
             .unwrap();
         // The host ends the refused runtime itself, so the exit identity is
         // the stop signal; a runtime that exits on its own reads `code:N`.
-        assert!(
-            reason.starts_with("protocol:signal:") || reason.starts_with("protocol:code:"),
-            "{reason}"
-        );
+        // Only the macOS guardian reaps the leader and reports its wait status
+        // (ADR-181); elsewhere the identity is `none`.
+        if cfg!(target_os = "macos") {
+            assert!(
+                reason.starts_with("protocol:signal:") || reason.starts_with("protocol:code:"),
+                "{reason}"
+            );
+        } else {
+            assert!(reason.starts_with("protocol:none:"), "{reason}");
+        }
         assert!(
             started_at.is_some() && settled_at >= started_at,
             "{started_at:?} {settled_at:?}"
