@@ -608,6 +608,7 @@ impl Fixture {
             .matches("approval startup refused")
             .count()
     }
+    #[cfg(unix)]
     pub fn revoke_local_provider_permissions(&self) {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(
@@ -619,6 +620,7 @@ impl Fixture {
     /// The provider directory back to its private mode, so the next handoff
     /// is admitted again (ADR-182: the refusal was that attempt's, not the
     /// worker's).
+    #[cfg(unix)]
     pub fn restore_local_provider_permissions(&self) {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(

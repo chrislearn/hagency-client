@@ -901,6 +901,7 @@ async fn native_warm_local_codex_custody() {
 
 /// The idle status once `accept` holds, polled under a 3 s bound: the checks
 /// run every 100 ms, so a state that never arrives is a failed scenario.
+#[cfg(unix)]
 async fn idle_status(
     warm: &WarmRuntime,
     accept: impl Fn(&WarmIdleStatus) -> bool,
