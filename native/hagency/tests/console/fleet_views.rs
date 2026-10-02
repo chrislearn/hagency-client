@@ -40,7 +40,7 @@ async fn native_console_fleet_views_read() {
     assert_eq!(capability.status_code, Some(StatusCode::OK));
     let view: Value = capability.take_json().await.unwrap();
     // The envelope the bearer test pins: the role array plus its provenance.
-    assert_eq!(view["source"], "lib/role-capacity.json");
+    assert_eq!(view["source"], "native/hagency-core/role-capacity.json");
     assert_eq!(view["roles"].as_array().unwrap().len(), 6);
 
     f.close().await;

@@ -443,7 +443,7 @@ struct PolicyView {
 }
 
 fn policy_view() -> PolicyView {
-    serde_json::from_str(include_str!("../../../lib/role-capacity.json"))
+    serde_json::from_str(include_str!("../../hagency-core/role-capacity.json"))
         .expect("the same embedded policy the qualification module validates")
 }
 
@@ -659,7 +659,7 @@ async fn capability(_req: &mut Request, depot: &mut Depot, res: &mut Response) {
         "generatedAt": now_ms(),
         "tiers": ["strong", "medium", "lightweight"],
         "agents": roster.len(),
-        "source": "lib/role-capacity.json",
+        "source": "native/hagency-core/role-capacity.json",
         "roles": roles,
         "resources": resources_map,
     })));

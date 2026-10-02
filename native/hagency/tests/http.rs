@@ -787,7 +787,7 @@ async fn fleet_views_capability_matches_ts_shape() {
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let value: Value = response.take_json().await.unwrap();
     assert!(value["generatedAt"].as_u64().is_some());
-    assert_eq!(value["source"], "lib/role-capacity.json");
+    assert_eq!(value["source"], "native/hagency-core/role-capacity.json");
     assert_eq!(value["tiers"], json!(["strong", "medium", "lightweight"]));
     assert_eq!(value["agents"], 0);
     let roles = value["roles"].as_array().unwrap();

@@ -3,9 +3,9 @@ on:
   push:
     # 2026-09-13: probe/** are the integration scratch branches for the Rust port;
     # hosted Ubuntu and macOS verdicts on them run alongside the operator's local gates.
-    branches: [master, stable, feat/native-windows-directory-sync-20260911, 'probe/**']
+    branches: [main, master, stable, feat/native-windows-directory-sync-20260911, 'probe/**']
   pull_request:
-    branches: [master, stable]
+    branches: [main, master, stable]
 concurrency:
   group: native-${{ github.event.pull_request.head.ref || github.ref_name }}
   cancel-in-progress: true
@@ -79,46 +79,6 @@ jobs:
           node-version: '22.22.0'
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      # The Markdown oracle imports pinned pure JS dependencies; skip every
-      # installation script and native addon build in this Rust-only job.
-      - run: npm ci --ignore-scripts --omit=dev
-      - run: node native/scripts/matrix-format-vectors.mjs --check
-      - run: node native/scripts/metering-vectors.mjs --check
-      # The retained JavaScript computes POSIX layout facts with the host path
-      # module; on Windows path.join/resolve yield drive-letter backslash paths,
-      # so its oracle exists only on POSIX hosts. The recorded fixture is still
-      # replayed by the Rust tests on every OS in the test step below.
-      - run: node native/scripts/attribution-vectors.mjs --check
-        if: runner.os != 'Windows'
-      # Same POSIX-only oracle as the attribution vectors: the retained reader
-      # joins and relativizes with the host path module. The recorded fixture is
-      # replayed by the Rust reader tests on every OS in the test step below.
-      - run: node native/scripts/reader-vectors.mjs --check
-        if: runner.os != 'Windows'
-      - run: node native/scripts/usage-vectors.mjs --check
-      - run: node native/scripts/ceiling-vectors.mjs --check
-      - run: node native/scripts/corpus-retention-vectors.mjs --check
-      - run: node native/scripts/account-vectors.mjs --check
-      - run: node native/scripts/canonical-vectors.mjs --check
-      - run: node native/scripts/allocation-vectors.mjs --check
-      - run: node native/scripts/project-vectors.mjs --check
-      - run: node native/scripts/qualification-vectors.mjs --check
-      - run: node native/scripts/task-vectors.mjs --check
-      - run: node native/scripts/graph-vectors.mjs --check
-      - run: node native/scripts/payload-vectors.mjs --check
-      - run: node native/scripts/execution-vectors.mjs --check
-      - run: node native/scripts/progress-vectors.mjs --check
-      # The console-origin oracle evaluates the retained Next proxy (no imports,
-      # so it loads on every OS) and slices two blocks out of backend-v2.js,
-      # which cannot be imported without node_modules. Pinned by sha256 inside
-      # the fixture, so a drifted retained rule fails here rather than silently
-      # re-blessing a different answer.
-      - run: node native/scripts/console-origin-vectors.mjs --check
-      # The approval oracle executes the retained bridge's three approval
-      # producers plus the proxy's write-origin predicate. The retained source
-      # is lifted by line anchor rather than imported (matrix-bot-sdk is absent
-      # in a bare checkout) and pinned by sha256 inside the fixture.
-      - run: node native/scripts/approval-vectors.mjs --check
       - run: node native/scripts/check-rust-spec-bindings.mjs
       - run: node --test native/scripts/check-production-callers.test.mjs
       - run: node native/scripts/check-production-callers.mjs

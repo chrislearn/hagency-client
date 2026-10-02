@@ -28,7 +28,7 @@
 // The import attribute is required, not optional: Node 24 refuses a bare JSON
 // import and the assertion scripts load this module in plain Node. Next accepts
 // the attribute too, so one spelling serves both the bundler and the checker.
-import roleCapacity from '../../lib/role-capacity.json' with { type: 'json' };
+import roleCapacity from '../../native/hagency-core/role-capacity.json' with { type: 'json' };
 // The derivations are shared with the live data source rather than duplicated
 // here. See lib/derive.js: two copies of fills() would drift, and this fixture is
 // what the assertion suite checks, so a drift would be invisible.

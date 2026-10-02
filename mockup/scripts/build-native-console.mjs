@@ -57,8 +57,9 @@ await writeFile(
   `\n/* Appended by build-native-console.mjs (ADR-145): build-time constants.\n * The globalThis mirror exists for the bundle test: minifiers keep property\n * names and string literals while they may mangle the module-scoped binding. */\nHAGENCY_NATIVE_VERSION = ${JSON.stringify(version)};\nHAGENCY_NATIVE_SCHEMA_HEAD = ${schemaHead};\nglobalThis.__hagencyNativeVersion = ${JSON.stringify(version)};\nglobalThis.__hagencySchemaHead = ${schemaHead};\n`,
   { flag: 'a' },
 );
-await mkdir(join(work, 'lib'), { mode: 0o700 });
-await cp(join(source, '..', 'lib', 'role-capacity.json'), join(work, 'lib', 'role-capacity.json'));
+// mock-data.js imports ../../native/hagency-core/role-capacity.json; mirror that path beside the staged tree.
+await mkdir(join(work, 'native', 'hagency-core'), { recursive: true, mode: 0o700 });
+await cp(join(source, '..', 'native', 'hagency-core', 'role-capacity.json'), join(work, 'native', 'hagency-core', 'role-capacity.json'));
 await symlink(await realpath(join(source, 'node_modules')), join(staged, 'node_modules'), 'dir');
 const env = Object.fromEntries(['PATH', 'HOME', 'TMPDIR', 'LANG'].filter((k) => process.env[k]).map((k) => [k, process.env[k]]));
 Object.assign(env, { NEXT_TELEMETRY_DISABLED: '1', NEXT_PUBLIC_HAGENCY_NATIVE_CONSOLE: '1' });

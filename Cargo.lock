@@ -1196,7 +1196,6 @@ dependencies = [
  "mdurl",
  "serde",
  "serde_json",
- "sha2",
  "thiserror",
  "unicode-general-category",
 ]

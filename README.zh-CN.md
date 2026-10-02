@@ -2,467 +2,197 @@
 
 # Hagency
 
-**交互式编码 agent 舰队的控制面。**
+**把 Codex agent 借给 Palpo Matrix 服务器上的项目，并由所有者审批、按 token 预算运行。**
 
-Hagency 把 Claude Code 和 Codex agent 跑在 tmux pane 里，并补上它们本身没有的东西：
-身份、消息总线、共享任务系统、人类监督，以及一个可选的 Matrix 门面。它是
-local-first 的 —— 后端在构造上就只监听 loopback，任何东西都不需要离开这台机器。
+Hagency 是一个 Rust 服务：`hagency serve`。提供方把资源（模型、思考强度、每月 token 上限）发布到已连接的 Palpo homeserver。项目在这些资源上定义 agent 并申请 token；提供方批准一个额度后，Hagency 为该 agent 创建独立的 Matrix 身份，让它进入项目房间。之后成员 @ 提及 agent 来派活，并在一个加密的私密房间里审批它的高风险操作。
 
-Hagency 是 [agent-chat](https://github.com/shisuiki/agent-chat) 的 fork。许多内部
-标识符仍带 `hagency` / `HAGENCY_` 前缀；那些是稳定接口，刻意保持不变，
-见下文[命名](#命名)。
-
-**通过 Palpo Matrix 服务器使用 Hagency？** 请先读[使用指南](docs/user-guide/README.zh-CN.md)。
-
-**要修改原生 Rust 服务？** 请先读[代码导读：从 Palpo 申请到 agent 回复](docs/architecture-walkthrough.zh-CN.md)。
+**通过 Palpo 服务器使用 Hagency？** 请先读[使用指南](docs/user-guide/README.zh-CN.md)。
+**要修改服务？** 请先读[代码导读](docs/architecture-walkthrough.zh-CN.md)。
 
 ## 目录
 
 | 章节 | |
-|---|---|
-| [能做什么](#能做什么) | 能力面 |
-| [架构](#架构) | 组件与分层 |
-| [安装](#安装) | 五条路径，按主机用途选 |
-| [快速上手](#快速上手) | 第一个 agent，第一条消息 |
-| [运维](#运维) | 升级、回滚、验证 |
-| [配置](#配置) | `.env` 参考 |
-| [安全立场](#安全立场) | 强制了什么，假设了什么 |
-| [开发](#开发) | 测试与门禁 |
+| --- | --- |
+| [功能](#功能) | 能力范围 |
+| [架构](#架构) | 一个进程、它的线程与 crate |
+| [构建与安装](#构建与安装) | 从源码构建，作为 systemd 或 launchd 服务安装 |
+| [首次运行](#首次运行) | 控制台访问与连接 Palpo |
+| [运维](#运维) | 健康检查、日志、备份、凭据轮换 |
+| [配置](#配置) | 状态目录与 `agent-driver.json` |
+| [安全状况](#安全状况) | 哪些是强制的，哪些是假设 |
+| [开发](#开发) | 测试与 CI 检查 |
 
-## 能做什么
+## 功能
 
-**舰队生命周期。** 以 tmux session 的形式启动、停止、列出、恢复 agent。每 agent
-独立的 home 目录、项目挂载，以及可复用的 framework preset。
-
-**消息总线。** agent 之间并不直接对话 —— 它们对话的对象是总线。DM、群组、信箱语义
-（agent 忙时消息会留存）、离线补投、投递回执、附件。消息可携带结构化的
-`schema: {kind, version, payload}` 信封，第三方执行后端就是靠这个接入的。
-
-**任务系统。** 任务存储加上**任务图**：一个 DAG，每个节点带 assignee、依赖和可选
-条件。上游结果会被注入下游派发，且只有被指派者能关闭自己的节点。
-
-**注意力路由。** 后端发出 SSE，push relay 消费它，并通过*向 agent 的 tmux pane 里
-打字*来投递。它还从 pane 输出推断状态 —— 空闲/活跃、卡在提示上、上下文压缩。
-
-**11 个 MCP 工具**：`whoami`、`send_message`、`post`、`check_inbox`、`check_group`、
-`list_tasks`、`get_task`、`accept_task`、`transition_task`、`comment_task`、
-`update_task_execution`。
-
-**人在环审批。** 编码运行时的权限请求被转给**归属开发者**，而不是房间里的所有人。
-
-**可选 Matrix 桥。** 把 agent 放进真实的 Matrix 房间，于是你能用手机上的 Element
-找到它们。每 agent 独立账号、E2EE、信任模型，以及 20 个 `!` 运维命令。
-
-**可选 supervisor。** 盯着 agent 并升级：连续 N 次负面评估后先 nudge，再升级。
-它只能发消息，不能启动、停止或改派。
-
-接口面：**101 个 REST 端点**、**19 个 CLI 子命令**、**11 个 MCP 工具**、
-**7 个 dashboard 页面**、**4 个运行依赖**。
+- **资源与目录。** 提供方在控制台配置资源，新资源会自动发布到 Palpo；上限、席位和内部 id 不对外公开。
+- **由项目定义 agent。** 项目成员在 Palpo 网页端基于已发布的资源定义 agent，并填写申请的 token 数和每日速率。每份定义都会成为一条等待提供方决定的接洽。
+- **批准时分配额度。** 提供方在资源上限、席位和资源池余量之内批准一个额度，也可以选“全部剩余”。agent 用完额度后会暂停，不会丢弃工作；追加 token 后继续。
+- **自动创建。** 批准后会通过 App Service 创建 agent 的 Matrix 账号，并让它加入项目房间。同时还会创建它与所有者的加密私聊，并先上传 agent 的密钥，再邀请所有者。
+- **按提及工作。** 在项目房间里，agent 只在被人提及时行动；它会把周围的讨论作为上下文，并在对话的讨论串里回复。在私聊中，所有者发来的每条消息都会送达它。
+- **所有者审批。** 沙箱之外的命令和文件修改、协作类工具以及文件收发，都会以卡片形式发到加密的私密审批室，交给所有者。只有所有者本人已验证设备的裁决才有效；无人回应的卡片按拒绝处理。
+- **一个控制台。** 资源、接洽、项目方、审批、邀请、任务、用量和告警，都由同一个二进制在回环端口上提供。
 
 ## 架构
 
-| 组件 | 职责 |
+```text
+Palpo homeserver  <── outbound HTTPS ──  hagency serve (127.0.0.1:13300)
+                                           ├─ Palpo long poll: requests, probes, catalog, statuses
+                                           ├─ per-agent driver threads: Matrix /sync, intake, replies
+                                           ├─ domain + custody SQLite, one writer thread each
+                                           ├─ console and operator API
+                                           └─ per dispatch: hagency guardian ─> codex app-server ─> hagency mcp
+```
+
+- **只有出站连接。** `hagency serve` 不对外开放任何端口；它长轮询 Palpo 的 fleet API，并为每个 agent 轮询 Matrix `/sync`，因此可以运行在 NAT 之后。
+- **单一二进制。** 同一个可执行文件既是守护进程，也是掌管每个 runner 进程树的 guardian、为 Codex 提供任务工具的 MCP 助手，还是运维 CLI。
+- **crate。** Rust 工作区位于 [native/](native/)。`hagency-core` 承载领域类型，`hagency-store` 承载持久化规则，`hagency-matrix` 承载 Matrix 副作用，`hagency-palpo` 是 fleet 传输层，`hagency-execution` 和 `hagency-runtime` 负责 Codex 运行，`hagency-platform` 负责进程监管。
+
+[代码导读](docs/architecture-walkthrough.zh-CN.md)按流程逐一走读代码，并附有图示。
+
+## 构建与安装
+
+前置条件：
+
+| | |
 | --- | --- |
-| `backend-v2.js` | 中央 API、持久 JSON 存储、agent 注册表、任务图、告警、SSE 流、鉴权边界 |
-| `server.js` | Dashboard 与队列/提醒投递面 |
-| `push-relay.js` | SSE 消费者，向 tmux pane 注入通知 |
-| `mcp-server.js` | 每 agent 一个 MCP server，暴露消息与任务工具 |
-| `bridge-matrix.js` | 可选的 Matrix 桥，对接外部房间与运维人员 |
-| `services/hagency-services.mjs` | 非 systemd 的进程 supervisor（macOS 上的运行方式） |
-| `bin/hagency` | 统一 CLI 分发器 |
-| `remote/` | 给其它机器用的最小远程 relay 包 |
+| Rust | [rust-toolchain.toml](rust-toolchain.toml) 中固定的工具链 |
+| Node.js 22 | 仅在构建时用于导出控制台 |
+| Codex CLI | runner；`agent-driver.json` 写明它的路径和 SHA-256 |
+| 主机 | 带 systemd 的 Linux，或带 launchd 的 macOS |
+| Palpo | 管理员可以执行 “Add Hagency” 的 homeserver |
 
-三层同心结构，在 `scripts/architecture-boundaries.json` 中声明，并**由 CI 强制**：
-
-- **内核** —— `agent-state`、`task-graph`、`task-store`、`agent-launch-policy`。
-  禁止 import backend、dashboard 或 `remote/`。
-- **控制面** —— REST API、SSE、JSON 持久化，单进程。
-- **边缘** —— tmux/CLI 胶水、Matrix 桥、dashboard、MCP。全部可选。
-
-默认本地端口：
-
-| 服务 | 默认 |
-| --- | --- |
-| 后端 API | `http://127.0.0.1:8090` |
-| Dashboard | `http://127.0.0.1:8084` |
-
-systemd 单元（Linux），全部带沙箱与资源限制：
-
-| 单元 | 入口 | 说明 |
-| --- | --- | --- |
-| `hagency-backend.service` | `backend-v2.js` | 最先启动 |
-| `hagency.service` | `server.js` | Dashboard 与本地队列面 |
-| `hagency-push-relay.service` | `push-relay.js` | tmux 通知 relay |
-| `bridge-matrix.service` | `bridge-matrix.js` | 可选，`--with-bridge` |
-| `hagency-stable-autodeploy.service` | 监视器 | 可选；非特权运行 |
-
-## 安装
-
-五条路径，按主机用途选 —— 完整细节见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
-
-| 路径 | 主机 | 何时用 |
-| --- | --- | --- |
-| Bootstrap | Linux + systemd | 常规情况 |
-| 手动 clone | Linux + systemd | 想把 checkout 放在指定位置 |
-| **macOS** | macOS | Mac 主机：launchd + 受管服务 |
-| 容器 | 任意 | 只跑控制面，没有本地 agent |
-| 远程 relay | Linux 或 macOS | 只跑 agent，回报给别处的后端 |
-
-### Bootstrap（推荐，Linux）
+构建二进制和控制台：
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/hagency-org/hagency/master/install/bootstrap.sh)
+cargo build --release --locked -p hagency
+(cd mockup && npm ci)
+node mockup/scripts/build-native-console.mjs --output /abs/path/console-assets
 ```
 
-下载已发布的 release tarball，**用 `SHA256SUMS` 校验**后解包 —— 不需要 git。
-校验不通过会直接中止，而不是退回克隆。安装器参数放在 `--` 之后：
+控制台的输出目录必须是新建的，且只属于你本人。
+
+安装为服务：
 
 ```bash
-bash <(curl -fsSL .../bootstrap.sh) -- --dry-run
-bash <(curl -fsSL .../bootstrap.sh) --ref v1.2.0 -- --with-bridge
-bash <(curl -fsSL .../bootstrap.sh) --list
+install/install-native.sh \
+  --install-dir /abs/path/bin \
+  --state-dir /abs/path/state \
+  --console-dir /abs/path/console-assets \
+  --config-dir /abs/path/config
 ```
 
-### 手动 clone（Linux）
+- **它做什么。** 安装脚本先运行 `hagency init`，它要求状态目录为空，并生成 `operator.token`。随后把配置文件以 0600 权限复制进状态目录，再渲染并启动服务：Linux 上是 [deploy/hagency-native.service](deploy/hagency-native.service)，macOS 上是 [deploy/io.hagency.native.plist](deploy/io.hagency.native.plist)。只有 `/ready` 返回 200 时才算成功。
+- **输入。** `--install-dir` 中必须有 `hagency` 二进制。`--config-dir` 提供 `agent-driver.json`，以及私有的 `matrix.*`、`palpo.*` 和 `approval.*` 文件。
+- **拒绝情形。** 如果 unit 已存在，除非加上 `--overwrite`，否则会拒绝。
 
-```bash
-git clone https://github.com/hagency-org/hagency.git
-cd hagency
-./install-full.sh --dry-run   # 先审阅每一步动作
-./install-full.sh
-```
+原生服务目前还没有正式发布的版本。[release-native.yml](.github/workflows/release-native.yml) 只在手动触发时构建各平台二进制和 `SHA256SUMS`。
 
-| 参数 | 用途 |
-| --- | --- |
-| `--dry-run` | 只打印计划动作，不做任何改动 |
-| `--no-start` | 安装文件但不 enable/restart 服务 |
-| `--with-bridge` | 同时安装并启动 `bridge-matrix.service` |
-| `--env-file PATH` | 使用自定义 env 文件 |
-| `--bin-dir PATH` | 把 CLI 命令链接到自定义目录 |
-| `--systemd-dir PATH` | 把 service 文件渲染到自定义目录 |
-| `--service-user USER` | 为指定用户渲染单元 |
-| `--skip-mcp` | 跳过 Claude Code 与 Codex 的 MCP 配置 |
-| `--skip-npm` | 跳过 `npm install` |
-| `--skip-prereq-check` | 跳过宿主前置检查 |
+## 首次运行
 
-`install.sh` 与 `install-v2.sh` 是已废弃的转发壳，会委派到这里。
+1. 打开控制台：
 
-### macOS
+   ```bash
+   hagency console-access --state-dir /abs/path/state
+   ```
 
-`install-full.sh` 在 macOS 上会拒绝运行，因为它渲染的是 systemd 单元。
-
-```bash
-./install/install-macos.sh --dry-run
-./install/install-macos.sh
-```
-
-用 launchd 用户 agent 代替 systemd，用 `hagency-services.mjs` 作 supervisor，
-Matrix 桥默认关闭，且没有 autodeploy 监视器。缺失的前置（`node >= 22`、`tmux`）
-会用 Homebrew 安装。
-
-> **如果已存在无关的 tmux session，它会拒绝继续。** Hagency 会把 tmux session
-> 注册成 agent，而 relay 的投递方式就是往它们的 pane 里打字 —— 在共享主机上，
-> 这意味着它可能打进别人的工作里。请先停掉或改名，或用
-> `--allow-existing-tmux` 在知情的前提下接受这个风险。
-
-### 前置条件
-
-| | Linux | macOS |
-| --- | --- | --- |
-| Node.js | `22+` | `22+` |
-| tmux、git、bash | 必需 | 必需 |
-| systemd + sudo | 必需 | 不适用（launchd） |
-| Homebrew | 不适用 | 装前置时必需 |
-
-可选：Claude Code 或 Codex CLI 用于自动 MCP 注册；只有跑桥时才需要 Matrix 凭证。
-
-### 卸载
-
-```bash
-./uninstall.sh              # 保留 ~/.hagency、data/、.env
-./uninstall.sh --yes        # 非交互
-./uninstall.sh --purge-data --purge-hagency-home   # 破坏性，需二次确认
-```
-
-卸载器只移除指向*本* checkout 的符号链接与单元，且只删它自己拥有的 skill 目录。
-
-## 快速上手
-
-```bash
-# 启动一个 agent
-hagency up-v1 alice codex --project "$HOME/projects/example" --project-mode symlink --fresh
-
-# 跟它说话
-hagency send alice "status?"
-
-# 看舰队
-hagency ls
-hagency service status
-```
-
-然后打开 `http://127.0.0.1:8084`。
-
-Dashboard 页面：
-
-| 路径 | 用途 |
-| --- | --- |
-| `/` | 舰队监控 |
-| `/agents/<name>` | agent 详情、终端捕获、任务、审计、DM 框 |
-| `/tasks` | 任务列表与操作 |
-| `/projects` | 项目板 |
-| `/pool` | agent 池 |
-| `/alerts` | 告警 |
-| `/config` | agent 与 preset 配置 |
-
-联系 agent 有五条路径：dashboard 的 DM 框、Matrix、`hagency send`、直接 attach
-到 pane，或 REST API。全部都是**等 agent 空闲时**才投递 —— 没有打断机制。
+   它会打印一个 120 秒内有效的链接；打开后会换成一个 `HttpOnly` 会话 cookie。
+2. 连接 Palpo，按[使用指南](docs/user-guide/README.zh-CN.md)操作：
+   - Palpo 管理员执行 **Add Hagency**。
+   - 所有者下载配置文件，并在 **项目方 → 连接 Palpo 项目服务器** 中导入。
+   - 所有者再到 Palpo 网页端验证连接。
+3. 在控制台配置资源。资源会出现在 Palpo 中，项目可以在其上定义 agent。
+4. 在 **接洽** 页面批准申请。创建完成后，agent 会加入项目房间。
 
 ## 运维
 
-### 验证
+| 任务 | 命令 |
+| --- | --- |
+| 存活 / 就绪 | `curl -s 127.0.0.1:13300/health` · `curl -s 127.0.0.1:13300/ready`（返回 503 时会写明未就绪的组件） |
+| 服务状态（Linux） | `systemctl status hagency-native` · `journalctl -u hagency-native` |
+| 日志（macOS） | `<install-dir>/logs/hagency-native.stdout.log`、`…stderr.log` |
+| 日志级别 | `RUST_LOG`（默认 `info`） |
+| 停止（macOS） | `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/io.hagency.native.plist`（被 kill 的进程会被 `KeepAlive` 重新拉起） |
+| 查看 | `hagency engagements`、`hagency resources`、`hagency alerts`（`--state-dir`、`--json`） |
+| 在线备份 | `hagency backup --state-dir <state> --out <new dir>` |
+| 恢复 | `hagency restore --state-dir <empty dir> --from <backup>` |
+| 轮换运维令牌 | `hagency rotate --state-dir <state> operator-token` |
 
-```bash
-systemctl status hagency-backend hagency hagency-push-relay
-node services/standalone-doctor.mjs     # 跨组件健康
-hagency check-mcp
-node -e 'import("./lib/version.js").then(m=>console.log(m.formatBuildIdentity()))'
-```
-
-### 升级，失败自动回退
-
-```bash
-./upgrade.sh --list          # 当前版本与可用发布
-./upgrade.sh --to v1.3.0     # 把门、应用、健康检查、失败即回退
-```
-
-它拒绝在脏工作树上运行，会在一个一次性 worktree 里对**目标** ref 把门，因此有问题
-的目标绝不会碰到线上 checkout；新版本起不来就回退。退出码 `1` 表示回退成功，
-`2` 表示回退也失败、需要人介入。
-
-### 自动部署（可选）
-
-监视器轮询部署分支、对候选把门、然后重启。它以**非特权**身份运行，仅通过一条窄
-sudoers 规则为 `systemctl restart` 提权，且发布门禁**默认开启**。
-
-健康门禁失败时，它把线上 checkout 回退到上一个健康 ref，并**隔离**那个坏 ref，
-于是同一个 commit 不会被无限重部。推一个修复即可清除隔离。见
-[docs/ROLLBACK.md](docs/ROLLBACK.md)。
-
-### stable 分支自动部署（线上）
-
-线上部署 checkout 是**可丢弃的**。在把候选提升为部署目标之前，先跑预检门禁：
-
-```bash
-npm run verify:cd-preflight
-```
-
-监视器用 reset 类操作修复线上 checkout，而不是 fast-forward pull，这样已分叉或
-脏掉的 checkout 永远不会卡住部署：
-
-```bash
-git reset --hard HEAD
-git clean -fd
-git reset --hard origin/stable
-```
-
-部署之后，验证已加载的远程 relay：
-
-```bash
-hagency verify-remote --samples 2 --interval 16 --expect-version <short-sha>
-```
-
-### 发布
-
-以 tag 驱动。推 `v1.3.0` 会跑门禁，并发布两个可复现、带校验和的 tarball ——
-全栈包与远程 relay 包。见 [docs/RELEASING.md](docs/RELEASING.md)。
+收到 SIGTERM 后，服务按顺序收尾（fleet、runner、Matrix 会话，最后是数据库），HTTP 服务器最后停止。systemd 给它 20 秒。
 
 ## 配置
 
-配置主要在 `.env`，由安装器从 `.env.example` 创建。
+`hagency serve` 不读取环境变量文件。它的配置就是 `--state-dir` 中的文件：
 
-> 受管服务这条路径**不会**自动加载 `.env`，请先 source：
-> `set -a; . ./.env; set +a`
+| 文件 | 用途 |
+| --- | --- |
+| `operator.token` | 运维 bearer 密钥，由 `hagency init` 生成 |
+| `agent-driver.json` | runner 与 Matrix 设置，见下文 |
+| `matrix.*`、`approval.*` | agent 身份与审批机器人身份的访问令牌、SDK 存储密钥和 CA 证书 |
+| `palpo-transport.json`、`palpo.machine_token`、`palpo-appservice.json` | 所有者导入 Palpo 配置时写入 |
+| `domain.sqlite3`、`custody.sqlite3` | 持久状态（WAL、`synchronous=FULL`）；一个状态目录只能由一个进程打开 |
 
-### 核心
+`agent-driver.json` 是严格 JSON，未知字段会被拒绝。主要字段：
 
-| 变量 | 必需 | 默认 | 含义 |
-| --- | --- | --- | --- |
-| `API_TOKEN` | **是** | 无 | 后端、dashboard 代理、MCP 与 relay 的运维 bearer token |
-| `HAGENCY_API` | 否 | `http://127.0.0.1:8090` | 后端 API 基址 |
-| `HAGENCY_RUNTIME_DIR` | 否 | 仓库根 | `data/` 与 `logs/` 的运行根目录 |
-| `HAGENCY_BACKEND_PORT` | 否 | `8090` | 后端端口 |
-| `HAGENCY_WEB_PORT` | 否 | `8084` | Dashboard 端口 |
-| `HAGENCY_BACKEND_HOST` | 否 | `127.0.0.1` | 后端监听地址。**仅容器场景** —— 见[安全立场](#安全立场) |
-| `HAGENCY_WEB_HOST` | 否 | `127.0.0.1` | Dashboard 监听地址，同上 |
-| `HAGENCY_WEB_URL` | 否 | `http://127.0.0.1:8084` | 公开 dashboard 地址，用于推送队列调用与 Matrix 链接 |
-| `HAGENCY_QUEUE_URL` | 否 | `${HAGENCY_WEB_URL}/api/queue` | 推送通知的队列端点 |
-| `HAGENCY_DASHBOARD_TOKEN` | 否 | 空 | 非本地 dashboard 变更所需的 bearer token |
-| `HAGENCY_SERVER` | 远程：是 | `local` 或主机名 | 运行报告里的 server 身份 |
-| `MSG_BASE_URL` | 遗留 | 由 `HAGENCY_WEB_URL` 推导 | 覆盖 Matrix `/msg` 链接基址 |
+| 字段 | 含义 |
+| --- | --- |
+| `profile` | 驱动配置类型 |
+| `executable`、`executable_sha256` | Codex 二进制及其预期哈希 |
+| `workspaces` | 工作区 id → 绝对路径 |
+| `operation_ms`、`response_ms` | 每个派发的操作预算和响应预算 |
+| `approval_owner_wait_ms` | 卡片等待所有者答复多久后按拒绝处理。默认 1000 毫秒，请务必设置 |
+| `send_file`、`receive_file`、`file_limit` | 开启文件工具，以及接收文件的大小上限 |
+| `coordination_tools` | 开启委派与 agent 间协作工具，每次调用都需所有者批准 |
+| `matrix`、`approval` | agent 与审批机器人的 homeserver 地址、身份、设备和房间 |
+| `factory_service` | 负责为已批准 agent 执行创建的 coordinator |
 
-`backend-v2.js` 与 `server.js` 在缺少非空 `API_TOKEN` 时会 fail fast。
+权威定义见 [native/hagency/src/bootstrap/config.rs](native/hagency/src/bootstrap/config.rs) 中的 `Config`。
 
-### Agent 运行时
-
-| 变量 | 默认 | 含义 |
-| --- | --- | --- |
-| `HAGENCY_HOMEDIR` | `~/.hagency` | agent home 根目录 |
-| `HAGENCY_AGENT_TOKEN_MODE` | `hard` | 每 agent token 的强制模式 |
-| `AGENT_IDLE_THRESHOLD_MS` | `20000` | 推送投递的空闲阈值 |
-| `AGENT_SCOPE_MONITOR_ENABLED` | `true` | 本地资源监控 |
-| `OFFLINE_CATCHUP_LIST_LIMIT` | `50` | 离线补投消息上限 |
-| `REMINDER_MERGE_PREVIEW_LIMIT` | `20` | 提醒合并预览上限 |
-
-编码 agent 的权限策略由**启动器强制**，不由 agent 自选：Claude 跑 `auto-mode`，
-Codex 跑 Level 2（`workspace-write` + `on-request`）。会改变策略的 `extraArgs`
-会被拒绝。
-
-### Push relay
-
-| 变量 | 默认 | 含义 |
-| --- | --- | --- |
-| `PUSH_RELAY_MODE` | `local` | 本地或远程 relay 档位 |
-| `PUSH_RELAY_SCAN_INTERVAL_MS` | `30000` | 运行时扫描间隔 |
-| `PUSH_RELAY_RECONNECT_MS` | `5000` | SSE 重连间隔 |
-| `PUSH_RELAY_HEARTBEAT_INTERVAL_MS` | `15000` | 心跳间隔 |
-
-### Matrix 桥
-
-| 变量 | 默认 | 含义 |
-| --- | --- | --- |
-| `MATRIX_HOMESERVER` | `https://matrix.example.com` | homeserver 地址 |
-| `MATRIX_SERVER_NAME` | homeserver 主机名 | Matrix server name |
-| `MATRIX_BOT_USERNAME` | `agent-bridge` | 桥机器人用户名 |
-| `MATRIX_BOT_PASSWORD` | 空 | 桥机器人密码 —— **无法自动生成** |
-| `MATRIX_BRIDGE_SECRET` | 空 | 后端与桥之间的共享密钥；安装器会生成 |
-| `MATRIX_REG_TOKEN` | 空 | 注册 token |
-| `MATRIX_AGENT_PREFIX` | `ac_` | agent Matrix 账号名的前缀 |
-| `MATRIX_AGENT_TOKEN_<AGENT>` | 空 | 某个 agent 的 Matrix access token，由你提供。agent 名大写、非字母数字转 `_`（`wf_coordinator` → `MATRIX_AGENT_TOKEN_WF_COORDINATOR`）。agent 密码不再由一个共享密钥派生 —— 见 ADR-014 决策 3 |
-| `MATRIX_DEFAULT_WAKE` | `off` | 仅 @ 寻址。未指名的群消息不唤醒任何人 |
-| `MATRIX_TRUST_MODE` | `enforce` | `enforce`、`audit` 或 `off`。公开 homeserver 上用 `enforce` |
-| `MATRIX_TRUSTED_INVITER_MXIDS` | 空 | 其邀请可自动加入的用户 |
-| `MATRIX_OPERATOR_MXIDS` | 空 | 允许执行特权命令的用户 |
-| `MATRIX_GREETING_MXIDS` | 空 | 目录里查不到时主动 DM 的用户 |
-| `MATRIX_IGNORED_SENDER_MXIDS` | 空 | 完全忽略的发送者 |
-| `MATRIX_INVITE_POLL_MS` | `60000` | 邀请轮询间隔，下限 5000。公开 homeserver 限流很严 |
-
-### Supervisor
-
-| 变量 | 默认 | 含义 |
-| --- | --- | --- |
-| `SUPERVISOR_ENABLED` | `false` | 启用 supervisor 循环 |
-| `SUPERVISOR_LLM_PROVIDER` | `deepseek` | 模型提供方 |
-| `SUPERVISOR_LLM_MODEL` | `deepseek-chat` | 模型 |
-| `SUPERVISOR_LLM_KEY` | 占位 | 提供方 API key |
-| `SUPERVISOR_LIFECYCLE_SWEEP_INTERVAL_MS` | `60000` | 生命周期巡检间隔 |
-
-### 部署与发布门禁
-
-| 变量 | 默认 | 含义 |
-| --- | --- | --- |
-| `HAGENCY_DEPLOY_BRANCH` | `stable` | 部署监视器 watch 的分支 |
-| `HAGENCY_RELEASE_GATE` | `worktree` | 候选门禁。`none` 关闭它 —— 必须是显式选择 |
-| `HAGENCY_DEPLOY_SERVICES` | 按脚本而定 | 部署时重启的服务 |
-| `HAGENCY_ALERT_URL` | 空 | 部署失败告警的可选端点 |
-| `HAGENCY_ALERT_TOKEN` | 空 | 上者的 bearer token |
-| `HAGENCY_VERIFY_REMOTE_BIN` | `bin/verify-remote` | 远程验证助手 |
-
-## 安全立场
+## 安全状况
 
 Hagency **强制**的：
 
-- **agent 不能给自己扩权。** 启动策略由启动器施加，改策略的参数会被拒绝。
-- **agent 不能编排别的 agent。** 没有 MCP 工具能创建任务图，那需要运维 token。
-- **审批走归属人**，不走房间。
-- **服务带沙箱。** 每个单元都有 `NoNewPrivileges`、`ProtectSystem=full`、
-  能力与系统调用限制，以及资源限制。
-- **后端在构造上只绑 loopback** —— 在 Linux/systemd 路径上，这是一个没有环境变量
-  可覆盖的函数默认值。
+- **只监听回环地址。** `hagency serve` 拒绝任何非回环的监听地址。需要远程访问时，请用 SSH 隧道或反向代理。
+- **控制台请求。** 控制台要求请求带正确的 `Host`，写操作带同源的 `Origin`，并且不带转发类请求头。运维 API 使用以常量时间比对的 bearer 令牌。
+- **所有者审批。** 审批只接受所有者本人已验证设备发出的裁决，且必须在成员只有所有者和审批机器人的加密房间里。一旦出现第三名成员或失去加密，该房间即被停用。送达失败或等待超时都按拒绝处理。
+- **runner 设栅栏。** 每个派发都有自己的凭证和栅栏编号。过期 runner 的调用会被拒绝，并且只有在证明其进程树已全部退出后，回复才会发布。
+- **Codex 沙箱。** Codex 以 `workspace-write` 和 `on-request` 审批运行，禁用网络，不额外开放可写目录。Codex 回显的设置会被校验。
+- **凭据只写不读。** 没有任何路由会返回已保存的令牌；控制台只显示指纹。
+- **加固的 unit。** systemd unit 设置了 `NoNewPrivileges`、`ProtectSystem=full`、空的 capability 集合和系统调用过滤。
 
-它**假设**的，你应当知道：
+它所**假设**的：
 
-- **loopback 信任是机器级的，不是用户级的。** 本机任何进程都被当作 local。共享
-  主机上，真正的控制手段是 per-agent token（`HAGENCY_AGENT_TOKEN_MODE=hard`）。
-- **非 loopback 绑定是给容器用的。** `HAGENCY_*_HOST` 的存在是为了让容器能
-  通过发布端口被访问。每次启动都会大声记录；值写错时会退回 loopback 而不是放宽。
-- **任务图的完成是自报的。** 节点由被指派者宣布关闭，没有任何东西校验这个声明。
-- **已存在的 tmux session 会被收编。** Hagency 会注册它找到的东西。
-- **存在已知的依赖债** —— 53 条传递性告警，已做成棘轮，新的进不来。见
-  [docs/SECURITY-DEBT.md](docs/SECURITY-DEBT.md)。
-
-面向公网部署时，把 dashboard 放到 HTTPS 反向代理后面，并让 `HAGENCY_API`
-只监听 loopback。
+- **同机信任。** 回环信任以整台机器为范围，任何本机进程都能访问该端口。请确保 `operator.token` 和状态目录只有你本人可读。
+- **群聊对成员开放。** 任何已加入的成员提及 agent 都能给它派活。控制手段是房间成员、额度和所有者审批。
+- **不启用联邦。** 所有成员都必须在 fleet 自己的服务器上。
+- **沙箱资格验证未完成。** 沙箱设置已请求并校验，但其在各操作系统上实际效果的资格验证尚未完成。
 
 ## 开发
 
 ```bash
-npm install
-
-# 直接跑服务
-API_TOKEN=dev-token node backend-v2.js
-API_TOKEN=dev-token node server.js
-API_TOKEN=dev-token node push-relay.js
-
-# 或者跑在 supervisor 下
-set -a; . ./.env; set +a
-HAGENCY_RUNTIME_DIR="$PWD" node services/hagency-services.mjs start
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --all-targets --locked
 ```
 
-测试与门禁：
+行为通过 [specs/](specs/) 中的任务契约与测试绑定，相应决策记录在 [knowledge/decisions/](knowledge/decisions/) 中。CI（[rust.yml](.github/workflows/rust.yml)）还会运行：
+- `node native/scripts/check-rust-spec-bindings.mjs`：每个契约选择器都对应真实存在的测试。
+- `node native/scripts/check-production-callers.mjs`：每一行 `Production caller:` 都能在生产调用图中找到。
+- 控制台浏览器测试。
 
-```bash
-npm test                              # 全量
-npm run test:kernel
-npm run check:syntax
-npm run check:cli-contract
-npm run check:architecture-boundaries # import 与路由归属规则
-npm run audit:baseline                # 告警棘轮
-AGENT_NAME=hagency-develop npm run verify:ci
-```
-
-远程包与发布产物：
-
-```bash
-npm run build:remote:check
-npm run check:remote-sync
-./scripts/build-release-package.sh --out-dir dist
-```
-
-运行数据、日志、`.env`、生成的 `remote-dist/` 与 `dist/` 都被忽略，不是事实来源。
-
-## 命名
-
-项目名是 **Hagency**。内部标识符仍沿用上游的 `hagency` / `hagency` /
-`HAGENCY_` / `HAGENCY_` 命名，这是刻意的：systemd 单元名、CLI 命令名、`.env`
-变量名、MCP server 名以及 `~/.hagency` 数据目录，都在
-[docs/RELEASING.md](docs/RELEASING.md) 的兼容性契约覆盖范围内。重命名它们属于
-一次带迁移的大版本，而不是一次文档改动。
+代码导读中的[如何修改](docs/architecture-walkthrough.zh-CN.md#14-如何修改)一节说明新规则、迁移、agent 工具和控制台路由应放在哪里。
 
 ## 文档
 
 | 文档 | 内容 |
 | --- | --- |
-| [docs/user-guide/README.zh-CN.md](docs/user-guide/README.zh-CN.md) | 使用指南：把 Hagency 连接到 Palpo、房间、谁能和 agent 对话、token |
-| [docs/architecture-walkthrough.zh-CN.md](docs/architecture-walkthrough.zh-CN.md) | 原生服务代码导读：Palpo 连接、接洽、agent 创建、消息处理、审批、token、线程 |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 五条安装路径、平台矩阵、加固 |
-| [docs/RELEASING.md](docs/RELEASING.md) | 版本策略、SemVer 覆盖面、发版流程 |
-| [docs/ROLLBACK.md](docs/ROLLBACK.md) | 自动部署与手工回滚、状态文件 |
-| [docs/SECURITY-DEBT.md](docs/SECURITY-DEBT.md) | 依赖告警与棘轮 |
-| [docs/LICENSING.md](docs/LICENSING.md) | fork 溯源与 Apache 2.0 的署名义务 |
-| [docs/TESTING.md](docs/TESTING.md) | 测试架子、导致 flaky 的内存泄漏、并发取舍 |
-| [OPERATIONS.md](OPERATIONS.md) | 运维手册：健康、部署、事故 |
-| [CHANGELOG.md](CHANGELOG.md) | 发布历史 |
-| [remote/README.md](remote/README.md) | 远程 relay 包 |
-| [services/README.md](services/README.md) | 受管服务与两个 doctor |
+| [docs/user-guide/README.zh-CN.md](docs/user-guide/README.zh-CN.md) | 连接 Palpo、房间、谁能和 agent 对话、token |
+| [docs/architecture-walkthrough.zh-CN.md](docs/architecture-walkthrough.zh-CN.md) | 按流程走读代码 |
+| [knowledge/decisions/](knowledge/decisions/) | 架构决策记录 |
+| [specs/](specs/) | 与测试绑定的任务契约 |
+| [docs/LICENSING.md](docs/LICENSING.md) | fork 来源与 Apache 2.0 署名义务 |
 
-以下已归档，仅作历史参考，请以上面的运维手册为准：
-`ROADMAP-remote.md` —— 已被取代的远程规划归档。
+## 许可证
 
-## 许可
+**Apache License 2.0**：见 [`LICENSE`](LICENSE) 和 [`NOTICE`](NOTICE)。
 
-**Apache License 2.0** —— 见 [`LICENSE`](LICENSE) 与 [`NOTICE`](NOTICE)。
-
-Hagency fork 自 [agent-chat](https://github.com/shisuiki/agent-chat)，后者已于
-2026-07-29 采用 Apache 2.0，两者现在同许可。本树中**有 717 个 commit 继承自上游**，
-因此 `NOTICE` 里署名了上游作者 —— 再分发时请保留它与 `LICENSE`，并标注你改过的
-文件。见 [docs/LICENSING.md](docs/LICENSING.md)。
+Hagency 是 [agent-chat](https://github.com/shisuiki/agent-chat) 的 fork，后者于 2026-07-29 采用 Apache 2.0。`NOTICE` 记录了上游作者。再分发时请保留它和 `LICENSE`，并标注你修改过的文件。见 [docs/LICENSING.md](docs/LICENSING.md)。
