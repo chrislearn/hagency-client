@@ -14,6 +14,9 @@ internal identifiers still carry the `hagency` / `HAGENCY_` prefix; those
 are stable interfaces and are deliberately unchanged. See
 [Naming](#naming) below.
 
+**Using Hagency through a Palpo Matrix server?** Start with the
+[user guide](docs/user-guide/README.md).
+
 ## Contents
 
 | Section | |
@@ -481,6 +484,7 @@ version with a migration, not a documentation change.
 
 | Document | Covers |
 | --- | --- |
+| [docs/user-guide/README.md](docs/user-guide/README.md) | User guide: connecting a Hagency to Palpo, rooms, who can talk to an agent, tokens |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | All five install paths, platform matrix, hardening |
 | [docs/RELEASING.md](docs/RELEASING.md) | Versioning, the SemVer surface, cutting a release |
 | [docs/ROLLBACK.md](docs/ROLLBACK.md) | Auto-deploy and manual rollback, state files |
