@@ -216,6 +216,18 @@ impl TokenProvisioningHost {
         });
         Ok(self)
     }
+    /// ADR-187 §A.5: the fleet's membership sweep, acting with the
+    /// representative's credential instead of a coordinator's.
+    pub fn membership_sweep(&self, domain: DomainStore) -> Result<crate::MembershipSweep, Error> {
+        let plan = self.rooms.as_ref().ok_or(Error::Config)?;
+        let authorization = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", plan.representative))
+            .map_err(|_| Error::Config)?;
+        Ok(crate::MembershipSweep {
+            http: crate::http::Http::for_host(&self.endpoint, Some(&authorization), &self.limits, &self.roots)?,
+            domain,
+            registration: self.registration.clone(),
+        })
+    }
     /// The anchors this engagement's agent enrolls or re-attaches with.
     pub(crate) async fn anchors_for(
         &self,

@@ -150,38 +150,7 @@ impl crate::Collector {
     /// the retained backoff instead of waiting out the hour. Ends only on
     /// `cancel` — a bridge-side fault is never terminal (operator rule 1).
     pub async fn membership_sweep_loop(self: std::sync::Arc<Self>, cancel: CancellationToken) {
-        // FIRST SWEEP AFTER ONE FULL PERIOD, like the retained schedule:
-        // `setInterval` (`trackLifecycleInterval`, backend-v2.js:17422-17426,
-        // called at :17511-17517) fires its first callback only after the
-        // whole interval, so the retained service makes no invite in its
-        // first hour. `tokio::time::interval`'s first tick completes
-        // IMMEDIATELY, so the start instant is offset — a service boot must
-        // not reach a customer's homeserver before the hour it always waited.
-        let mut interval = tokio::time::interval_at(
-            tokio::time::Instant::now() + MEMBERSHIP_SWEEP_INTERVAL,
-            MEMBERSHIP_SWEEP_INTERVAL,
-        );
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        let mut backoff = SWEEP_BACKOFF_MIN;
-        loop {
-            tokio::select! {
-                _ = cancel.cancelled() => break,
-                _ = interval.tick() => {}
-            }
-            let outcome = self.sweep_project_room_membership(&cancel).await;
-            if outcome.read_failed {
-                eprintln!(
-                    "[readmit] sweep failed: engagements unreadable; retrying in {backoff:?}"
-                );
-                tokio::select! {
-                    _ = cancel.cancelled() => break,
-                    _ = tokio::time::sleep(backoff) => {}
-                }
-                backoff = (backoff * 2).min(SWEEP_BACKOFF_MAX);
-            } else {
-                backoff = SWEEP_BACKOFF_MIN;
-            }
-        }
+        run_loop(&cancel, || self.sweep_project_room_membership(&cancel)).await
     }
 
     /// Re-admit agents whose room membership was lost while they had nothing
@@ -194,7 +163,6 @@ impl crate::Collector {
         cancel: &CancellationToken,
     ) -> SweepOutcome {
         let inner = &self.inner;
-        let mut outcome = SweepOutcome::default();
         let Ok(reg) = inner
             .domain
             .provisioning_registration_for_engagement(
@@ -202,13 +170,75 @@ impl crate::Collector {
             )
             .await
         else {
-            outcome.read_failed = true;
-            return outcome;
+            return SweepOutcome {
+                read_failed: true,
+                ..SweepOutcome::default()
+            };
         };
+        sweep(&inner.http, &inner.domain, &reg, cancel).await
+    }
+}
+
+/// ADR-187 §A.5: an imported fleet's sweep, acting with the representative's
+/// credential (the account with invite standing in every project room).
+pub struct MembershipSweep {
+    pub(crate) http: crate::http::Http,
+    pub(crate) domain: hagency_store::DomainStore,
+    pub(crate) registration: hagency_core::authority::Registration,
+}
+impl MembershipSweep {
+    pub async fn pass(&self, cancel: &CancellationToken) -> SweepOutcome {
+        sweep(&self.http, &self.domain, &self.registration, cancel).await
+    }
+    pub async fn run(self: std::sync::Arc<Self>, cancel: CancellationToken) {
+        run_loop(&cancel, || self.pass(&cancel)).await
+    }
+}
+
+/// One sweep per hour, the first after one full period; a failed read is
+/// retried with the retained backoff. Ends only on `cancel`.
+async fn run_loop<F, Fut>(cancel: &CancellationToken, mut pass: F)
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = SweepOutcome>,
+{
+    let mut interval = tokio::time::interval_at(
+        tokio::time::Instant::now() + MEMBERSHIP_SWEEP_INTERVAL,
+        MEMBERSHIP_SWEEP_INTERVAL,
+    );
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut backoff = SWEEP_BACKOFF_MIN;
+    loop {
+        tokio::select! {
+            _ = cancel.cancelled() => break,
+            _ = interval.tick() => {}
+        }
+        let outcome = pass().await;
+        if outcome.read_failed {
+            eprintln!("[readmit] sweep failed: engagements unreadable; retrying in {backoff:?}");
+            tokio::select! {
+                _ = cancel.cancelled() => break,
+                _ = tokio::time::sleep(backoff) => {}
+            }
+            backoff = (backoff * 2).min(SWEEP_BACKOFF_MAX);
+        } else {
+            backoff = SWEEP_BACKOFF_MIN;
+        }
+    }
+}
+
+/// One membership pass over the fleet's active (agent, room) pairs.
+async fn sweep(
+    http: &crate::http::Http,
+    domain: &hagency_store::DomainStore,
+    reg: &hagency_core::authority::Registration,
+    cancel: &CancellationToken,
+) -> SweepOutcome {
+        let mut outcome = SweepOutcome::default();
         let mut engagements = Vec::new();
         let mut after = String::new();
         loop {
-            let Ok(page) = inner.domain.engagements(after.clone(), 100).await else {
+            let Ok(page) = domain.engagements(after.clone(), 100).await else {
                 outcome.read_failed = true;
                 return outcome;
             };
@@ -246,8 +276,7 @@ impl crate::Collector {
             };
             let agent_mxid = format!("@{}_{}:{}", reg.fleet_id, engagement_id, reg.server_name);
             let body = json!({ "user_id": agent_mxid }).to_string();
-            let result = inner
-                .http
+            let result = http
                 .post(
                     &["_matrix", "client", "v3", "rooms", &room, "invite"],
                     body,
@@ -278,7 +307,6 @@ impl crate::Collector {
             }
         }
         outcome
-    }
 }
 
 /// The engagement id backing an (agent, room) pair — the first live one
@@ -451,4 +479,40 @@ mod tests {
         assert_eq!(outcome.failed, 0);
         fake.close().await;
     }
+
+    /// ADR-187 §A.5: an imported fleet's sweep invites with the
+    /// representative's credential, not a coordinator's.
+    #[tokio::test]
+    async fn native_fleet_sweep_acts_with_the_representative_credential() {
+        use crate::collector::fixtures as common;
+        let f = common::Fixture::new();
+        let mut fake = common::Fake::start(false).await;
+        let endpoint = reqwest::Url::parse(&fake.endpoint).unwrap();
+        let authorization =
+            reqwest::header::HeaderValue::from_static("Bearer representative-token-0123456789");
+        let sweep = MembershipSweep {
+            http: crate::http::Http::for_host(
+                &endpoint,
+                Some(&authorization),
+                &crate::Limits::default(),
+                &[reqwest::Certificate::from_pem(include_bytes!("../tests/fixtures/ca.pem")).unwrap()],
+            )
+            .unwrap(),
+            domain: f.store.clone(),
+            registration: common::domain::registration(),
+        };
+        let cancel = CancellationToken::new();
+        let (outcome, ()) = tokio::join!(sweep.pass(&cancel), async {
+            let request = fake.next().await;
+            assert_eq!(request.method, "POST");
+            assert_eq!(
+                request.headers["authorization"],
+                "Bearer representative-token-0123456789"
+            );
+            request.json(200, json!({}));
+        });
+        assert_eq!(outcome.invited, 1, "{outcome:?}");
+        fake.close().await;
+    }
 }
+
