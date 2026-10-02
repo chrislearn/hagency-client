@@ -164,6 +164,15 @@ impl<R, W, E> Wire<R, W, E> {
     pub fn termination(&self) -> Option<&Termination> {
         self.termination.as_ref()
     }
+    /// Whether `frame` is exactly the prepared write in flight with every byte
+    /// already written, so sending it again only observes its flush and can
+    /// transmit nothing new.
+    pub fn awaits_flush_only(&self, frame: &PreparedFrame) -> bool {
+        matches!(&self.writing, Some(writing)
+            if writing.prepared == Some(frame.id)
+                && frame.bytes.is_none()
+                && writing.offset == writing.bytes.len())
+    }
     pub fn write_progress(&self) -> Option<WriteProgress> {
         self.writing.as_ref().map(|w| WriteProgress {
             accepted_bytes: w.offset,
