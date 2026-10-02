@@ -486,6 +486,10 @@ try {
   await projectSidesWalk(page);
   await page.goto(`${config.base}/console/usage/?engagement_id=${config.engagement}`);
   await page.locator('[data-native-state="ready"]').first().waitFor();
+  // The fleet panel's own multi-step load (totals, sides, then one budget per
+  // side) must have settled before the logout count starts, or a read sent
+  // while still signed in would be counted as one sent after End access.
+  await page.locator('[data-fleet-state="ready"], [data-fleet-state="error"]').first().waitFor();
   const storage = await page.evaluate(() => ({ local: Object.fromEntries(Object.entries(localStorage)), session: Object.fromEntries(Object.entries(sessionStorage)) }));
   assert.deepEqual(Object.keys(storage.local).sort(), ['hagency.locale', 'hagency.theme']);
   assert.deepEqual(storage.session, {});

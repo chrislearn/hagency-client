@@ -55,8 +55,8 @@ export default function FleetUsagePanel() {
     return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
   }, [load]);
   if (data.phase === 'access') return null;
-  if (state.phase === 'loading') return <section className="panel"><p role="status">{t('nu.loading')}</p></section>;
-  if (state.phase === 'error') return <section className="panel" role="alert"><h2 className="sec" style={{ marginTop: 0 }}>{t('us.fleetFailed')}</h2>
+  if (state.phase === 'loading') return <section className="panel" data-fleet-state="loading"><p role="status">{t('nu.loading')}</p></section>;
+  if (state.phase === 'error') return <section className="panel" role="alert" data-fleet-state="error"><h2 className="sec" style={{ marginTop: 0 }}>{t('us.fleetFailed')}</h2>
     <p>{t('nu.retryHelp')}</p><button className="btn" onClick={() => void load()}>{t('nu.refresh')}</button></section>;
   const totals = state.totals?.totals;
   const fmt = (v) => v == null ? t('us.unknown') : v.toLocaleString();
@@ -85,7 +85,7 @@ export default function FleetUsagePanel() {
     } finally { setSaving(null); }
   };
   return <>
-    <section className="panel">
+    <section className="panel" data-fleet-state="ready">
       <h2 className="sec" style={{ marginTop: 0 }}>{t('us.fleet')}</h2>
       {totals ? <dl>
         <div className="kv"><dt>{t('us.fleetAgents')}</dt><dd>{totals.agents.toLocaleString()}</dd></div>
