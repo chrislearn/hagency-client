@@ -121,13 +121,16 @@ async fn native_palpo_service_configuration_refusal() {
                 let value = fs::read_to_string(&path).unwrap();
                 fs::write(&path, value.replacen('{', "{\"profile\":\"duplicate\",", 1)).unwrap();
             }
+            // Plain HTTP is allowed only to a literal loopback address (ADR-042),
+            // and the fake peer listens on 127.0.0.1. Point plain HTTP at a
+            // non-loopback documentation address, which must be refused before
+            // any connection is attempted.
             "http" => f.rewrite(|v| {
-                v["endpoint"] = json!(
-                    v["endpoint"]
-                        .as_str()
-                        .unwrap()
-                        .replacen("https:", "http:", 1)
-                )
+                v["endpoint"] = json!(v["endpoint"].as_str().unwrap().replacen(
+                    "https://127.0.0.1:",
+                    "http://192.0.2.1:",
+                    1
+                ))
             }),
             "short_token" => fs::write(f.state.join("palpo.machine_token"), b"short").unwrap(),
             "oversized" => fs::write(&path, vec![b' '; 16 * 1024 + 1]).unwrap(),
