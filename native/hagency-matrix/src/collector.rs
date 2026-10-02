@@ -817,7 +817,51 @@ impl Inner {
             .iter()
             .map(|r| r.room_id.as_str())
             .collect::<BTreeSet<_>>();
-        self.scope_sync_to(value, &allowed)
+        let mut value = self.scope_sync_to(value, &allowed)?;
+        // ADR-188: a joined room's first sync after it enters the filter is
+        // a limited (truncated) timeline, and so is any later gap. The intake
+        // refuses limited timelines, which for an identity room is right; for
+        // a joined room it would fence the whole transport. A joined room
+        // only ever admits messages after the agent joined, so its gap is
+        // dropped here and the room carries on from the next event.
+        let identity = self
+            .config
+            .observed_rooms()
+            .map(|r| r.room_id.as_str())
+            .collect::<BTreeSet<_>>();
+        if let Some(joined) = value
+            .pointer_mut("/rooms/join")
+            .and_then(Value::as_object_mut)
+        {
+            for (room, update) in joined.iter_mut() {
+                if identity.contains(room.as_str())
+                    || update.pointer("/timeline/limited") != Some(&Value::Bool(true))
+                {
+                    continue;
+                }
+                let dropped = update
+                    .pointer("/timeline/events")
+                    .and_then(Value::as_array)
+                    .map_or(0, Vec::len);
+                eprintln!("joined room {room}: limited timeline, {dropped} earlier event(s) not read");
+                update["timeline"]["events"] = Value::Array(Vec::new());
+                update["timeline"]["limited"] = Value::Bool(false);
+            }
+        }
+        // A joined room the agent just left (or was removed from) arrives
+        // under `leave` with its last events; the intake refuses those too.
+        // Leaving is noticed by the driver's own membership check instead.
+        if let Some(left) = value
+            .pointer_mut("/rooms/leave")
+            .and_then(Value::as_object_mut)
+        {
+            for (room, update) in left.iter_mut() {
+                if !identity.contains(room.as_str()) && update.get("timeline").is_some() {
+                    update["timeline"]["events"] = Value::Array(Vec::new());
+                }
+            }
+        }
+        Ok(value)
     }
     /// ADR-188: the identity rooms, then the working joined rooms.
     pub(crate) fn host_rooms(&self) -> Vec<HostRoom> {

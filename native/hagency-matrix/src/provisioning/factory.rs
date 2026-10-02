@@ -797,8 +797,16 @@ impl TokenProvisioningHost {
         domain
             .register_workspace(format!("work_{}", effect.engagement_id))
             .await?;
+        // The DM session of a later transport incarnation is a new session:
+        // the store never rebinds a session id whose route a fence retired,
+        // so generation 1 keeps the original id and every later one names its
+        // generation (as the project sessions already do).
         let binding = SessionBinding {
-            id: format!("session_{}", effect.engagement_id),
+            id: if generation == 1 {
+                format!("session_{}", effect.engagement_id)
+            } else {
+                format!("session_{}_{generation}", effect.engagement_id)
+            },
             engagement_id: effect.engagement_id.clone(),
             room_id,
             thread_root: None,
