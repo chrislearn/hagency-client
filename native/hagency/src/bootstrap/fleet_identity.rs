@@ -113,6 +113,38 @@ async fn device(client: &Client, state: &Path, name: &'static str, token_file: &
         }
         return Ok(device);
     }
+    // A token without its identity record (an instance the rig script built,
+    // which kept the identities elsewhere): adopt the device the token
+    // already is, never log in a second one. The token's own whoami names
+    // the device; room custody is bound to this exact token.
+    if let Ok(token) = private::read_secret(&token_path) {
+        let token = String::from_utf8(token).map_err(|_| Error::Store)?;
+        let (status, who) = client.whoami(token.trim(), None).await?;
+        if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
+            return Err(Error::Revoked(name));
+        }
+        if !status.is_success() || text(&who, "user_id").as_deref() != Some(user.as_str()) {
+            return Err(Error::Revoked(name));
+        }
+        let device_id = match text(&who, "device_id") {
+            Some(device) => device,
+            None => {
+                let legacy = state
+                    .parent()
+                    .map(|root| root.join("coordinator").join(format!("{name}.identity.json")))
+                    .and_then(|path| private::read_secret(&path).ok())
+                    .and_then(|raw| serde_json::from_slice::<Value>(&raw).ok())
+                    .ok_or(Error::Revoked(name))?;
+                if text(&legacy, "user_id").as_deref() != Some(user.as_str()) {
+                    return Err(Error::Revoked(name));
+                }
+                text(&legacy, "device_id").ok_or(Error::Revoked(name))?
+            }
+        };
+        let identity_value = json!({"user_id": user, "device_id": device_id});
+        private::replace(&identity, identity_value.to_string().as_bytes()).map_err(|_| Error::Store)?;
+        return Ok(Device { user_id: user, device_id });
+    }
     // Acting as the user creates it on Palpo (TS `mintAgentIdentity`), then
     // App Service login gives it a device of its own.
     let (status, who) = client.whoami(&client.as_token, Some(&user)).await?;
@@ -388,4 +420,30 @@ mod tests {
         );
         assert_eq!(fetch_master_key(dir.path(), "@nokey:example.test").await.unwrap(), None);
     }
+
+    #[tokio::test]
+    async fn native_fleet_identity_adopts_a_rig_token_without_a_second_device() {
+        let (origin, logins) = homeserver(Arc::new(Mutex::new(false))).await;
+        let root = tempfile::tempdir().unwrap();
+        let state = root.path().join("native-state");
+        let rig = root.path().join("coordinator");
+        std::fs::create_dir_all(&state).unwrap();
+        std::fs::create_dir_all(&rig).unwrap();
+        private::replace(&state.join("palpo-appservice.json"),
+            json!({"homeserver": origin, "as_token": "as-secret"}).to_string().as_bytes()).unwrap();
+        // What the rig left: tokens in the state, identities beside it.
+        private::replace(&state.join("matrix.representative_token"), b"tok-representative-rig").unwrap();
+        private::replace(&state.join("approval.access_token"), b"tok-approval-rig").unwrap();
+        for (name, device) in [("representative", "RIGREP"), ("approval", "RIGAPP")] {
+            private::replace(&rig.join(format!("{name}.identity.json")),
+                json!({"user_id": format!("@{FLEET}_{name}:example.test"), "device_id": device}).to_string().as_bytes()).unwrap();
+        }
+        let adopted = ensure(&state, FLEET, "example.test").await.unwrap();
+        assert_eq!(*logins.lock().unwrap(), 0, "no second device");
+        assert_eq!(adopted.representative.device_id, "RIGREP");
+        assert_eq!(adopted.approval.device_id, "RIGAPP");
+        assert_eq!(std::fs::read(state.join("matrix.representative_token")).unwrap(), b"tok-representative-rig");
+        assert!(state.join("representative.identity.json").exists());
+    }
 }
+
