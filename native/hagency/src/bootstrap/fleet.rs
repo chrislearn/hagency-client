@@ -135,9 +135,15 @@ struct AgentOwner {
     driver: Option<Driver>,
     files: Option<FileOwner>,
     receives: Option<ReceiveOwner>,
+    /// ADR-187 §A.5: an imported fleet's agent polls its own invitations
+    /// (TS `pollAgentInvites`); stopped with the agent.
+    invites: Option<(CancellationToken, tokio::task::JoinHandle<()>)>,
 }
 impl AgentOwner {
     fn quiesce(&self) {
+        if let Some((cancel, _)) = &self.invites {
+            cancel.cancel();
+        }
         if let Some(driver) = &self.driver {
             driver.cancel();
         }
@@ -366,12 +372,18 @@ impl Service {
         }
         // Retain the partially constructed owner before any failing startup or
         // await. Its original factory is also still held by the coordinator.
+        let invites = matches!(self.provider, Provider::Fleet { .. }).then(|| {
+            let cancel = CancellationToken::new();
+            let task = super::invites::start(shared.clone(), cancel.clone());
+            (cancel, task)
+        });
         self.agents.push(AgentOwner {
             shared,
             status: StatusHandle::for_mode(DriverMode::Continuous),
             driver: None,
             files: None,
             receives: None,
+            invites,
         });
         let owner = self.agents.last_mut().ok_or(Failure::Startup)?;
         let start = async {

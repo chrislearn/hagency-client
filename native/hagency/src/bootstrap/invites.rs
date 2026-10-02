@@ -106,11 +106,24 @@ pub async fn poll_round(
             .room_owner(invite.room_id.clone())
             .await
             .map_err(|_| "room_owner_unavailable")?;
-        let trusted = owner.as_deref().is_some_and(|owner| {
-            invite.inviter.as_deref().is_some_and(|inviter| {
-                inviter.eq_ignore_ascii_case(owner)
-            })
-        });
+        // ADR-187: the agent's own owner is a trusted inviter too (the
+        // store-held equivalent of TS `MATRIX_TRUSTED_INVITER_MXIDS` for an
+        // imported fleet), so an owner's invitation into a room that is no
+        // project's is joined, not parked.
+        let agent_owner = domain
+            .engagement_owner(collector.engagement_id().to_owned())
+            .await
+            .ok()
+            .flatten();
+        let trusted = [owner.as_deref(), agent_owner.as_deref()]
+            .into_iter()
+            .flatten()
+            .any(|owner| {
+                invite
+                    .inviter
+                    .as_deref()
+                    .is_some_and(|inviter| inviter.eq_ignore_ascii_case(owner))
+            });
         if trusted {
             // Join now; a refusal surfaces below through the worklist
             // reconcile rather than aborting the round.
