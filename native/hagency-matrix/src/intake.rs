@@ -593,6 +593,9 @@ impl Inner {
             // A verdict given in the console reserved the engagement without a
             // Matrix approval event: start its provisioning here.
             host.resume_pending_provisions(&self.domain, cancel).await?;
+            // A revoked agent that never got a credential has no worker to
+            // retire it; its cleanup is settled here.
+            host.settle_unattached_retirements(&self.domain).await?;
         }
         // Capture current targets before acquiring a new remote response. A resumed
         // handoff uses only its original journal targets, regardless of a new plan.
@@ -733,6 +736,24 @@ impl Inner {
                         )
                         .await?;
                     return Err(Error::Generation);
+                }
+                // TS `lib/fleet-protocol.js` recordEvent consumes a reception
+                // request event and never admits from it: the fleet request
+                // lane holds the request and keeps retrying it. A definite
+                // refusal of this duplicate admission (a resource this install
+                // never had, a role no resource serves, a project room this
+                // account may not read) is therefore consumed too, instead of
+                // failing every later event of this intake behind it on every
+                // turn.
+                Err(
+                    error @ (Error::Unauthorized
+                    | Error::Domain("not_found" | "unqualified" | "invalid")),
+                ) if msg.kind != "com.hagency.engagement.approval.v1" => {
+                    eprintln!(
+                        "reception request {} not admitted from Matrix ({error:?}); the fleet request lane keeps it",
+                        msg.event_id
+                    );
+                    replayed += 1;
                 }
                 Err(error) => return Err(error),
             }

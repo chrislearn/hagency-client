@@ -488,6 +488,49 @@ impl TokenProvisioningHost {
         }
         Ok(started)
     }
+    /// Settle the retirement of every revoked engagement whose agent never got a
+    /// credential. The `retire` effect is otherwise run only by the agent's own
+    /// live worker, and an agent whose provisioning never stored an account has
+    /// none, so its cleanup would stay pending forever. TS
+    /// `lib/matrix-work-executor.js` answers a logout with no stored credential
+    /// as already done; the same holds here. An agent whose credential
+    /// directory exists is left to its worker: it may hold rooms to leave.
+    pub(crate) async fn settle_unattached_retirements(
+        &self,
+        domain: &DomainStore,
+    ) -> Result<usize, Error> {
+        let pending = domain
+            .pending_unattached_retirements(self.registration.fleet_id.clone())
+            .await
+            .map_err(|_| Error::Storage)?;
+        let mut settled = 0;
+        for engagement in pending {
+            let credential = self
+                .state
+                .join(format!("agent-matrix-provision_{engagement}"));
+            if std::fs::symlink_metadata(&credential).is_ok() {
+                continue;
+            }
+            let Some(effect) = domain
+                .claim_effect_for(format!("retire_{engagement}"))
+                .await
+                .map_err(|_| Error::Storage)?
+            else {
+                continue;
+            };
+            domain
+                .observe_effect(
+                    effect.id,
+                    effect.fence,
+                    EffectOutcome::Applied {
+                        receipt: r#"{"credential":"none","logout":"not_required"}"#.into(),
+                    },
+                )
+                .await?;
+            settled += 1;
+        }
+        Ok(settled)
+    }
     pub(crate) async fn account(
         &self,
         domain: &DomainStore,

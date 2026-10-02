@@ -4314,6 +4314,11 @@ impl DomainStore {
         self.call(weight(&fleet_id)?, move |db| db.pending_provisions(&fleet_id))
             .await
     }
+    /// Revoked, never-attached engagements whose retirement is pending (read-only).
+    pub async fn pending_unattached_retirements(&self, fleet_id: String) -> Result<Vec<String>, Error> {
+        self.call(weight(&fleet_id)?, move |db| db.pending_unattached_retirements(&fleet_id))
+            .await
+    }
     /// Original writer check for an already-acknowledged physical account owner.
     pub async fn validate_provision_account(
         &self,

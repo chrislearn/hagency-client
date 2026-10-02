@@ -415,7 +415,15 @@ async fn run_continuous(input: Attempt<'_>) -> Result<Option<Box<Report>>, Failu
                 }
                 continue;
             }
-            Err(error) => return Err(error),
+            // This worker is the only executor of its engagement's retirement
+            // and nothing restarts it for a revoked engagement, so a revoke
+            // that lands while it is failing is still carried out first.
+            Err(error) => {
+                if retire_requested(&input, &engagement).await.unwrap_or(false) {
+                    return Ok(None);
+                }
+                return Err(error);
+            }
         }) else {
             tokio::select! {
                 _ = input.cancel.cancelled() => return Ok(None),

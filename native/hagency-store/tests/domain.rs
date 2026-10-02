@@ -27,6 +27,43 @@ fn native_probe_binds_an_unbound_reception_once() {
     assert!(matches!(db.bind_reception(&reg.fleet_id, reg.generation, &other), Err(Error::Conflict)));
 }
 
+/// An agent revoked while its provisioning was still running never published a
+/// transport, so no worker will claim its retirement. It is listed for the
+/// provisioning host until settled, and settling completes its cleanup.
+#[test]
+fn native_revoked_unattached_agent_lists_its_retirement_until_settled() {
+    let (_dir, mut db) = setup();
+    let pool = resource("unattached_account", "unattached_seat", 100);
+    db.put_resource(&pool).unwrap();
+    let request = request("unattached_one", "Unattached", &pool, 40);
+    let proof = proof(&request);
+    let fleet = registration().fleet_id;
+    db.admit(&proof, 1000).unwrap();
+    db.approve("unattached_approve", &proof, 1000).unwrap();
+    let engagement = request.engagement_id().unwrap();
+    db.claim_effect_for(&format!("provision_{engagement}"))
+        .unwrap()
+        .unwrap();
+    assert!(db.pending_unattached_retirements(&fleet).unwrap().is_empty());
+    let revoked = db.revoke("unattached_revoke", &engagement).unwrap();
+    assert_eq!(revoked.cleanup, CleanupState::Pending);
+    assert_eq!(db.pending_unattached_retirements(&fleet).unwrap(), vec![engagement.clone()]);
+    assert!(db.pending_unattached_retirements("hf_other_fleet").unwrap().is_empty());
+    let effect = db
+        .claim_effect_for(&format!("retire_{engagement}"))
+        .unwrap()
+        .unwrap();
+    let settled = db
+        .observe_effect(
+            &effect.id,
+            effect.fence,
+            &EffectOutcome::Applied { receipt: r#"{"credential":"none"}"#.into() },
+        )
+        .unwrap();
+    assert_eq!(settled.cleanup, CleanupState::Complete);
+    assert!(db.pending_unattached_retirements(&fleet).unwrap().is_empty());
+}
+
 /// A console verdict reserves the engagement and queues its provision effect
 /// without claiming it; the host reads that backlog on its next turn and it
 /// leaves the list the moment the effect is claimed.

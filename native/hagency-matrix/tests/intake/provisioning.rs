@@ -994,6 +994,74 @@ async fn native_provisioning_admits_a_custom_event_type_request() {
     c.close().await.unwrap();
 }
 
+/// TS `lib/fleet-protocol.js` recordEvent consumes a reception request event
+/// without admitting from it. A request naming a resource this install never
+/// had (a previous install's catalog) is refused by the store; that refusal
+/// consumes the event instead of failing the intake on every turn, so the
+/// request after it is still admitted.
+#[tokio::test]
+async fn native_provisioning_consumes_a_request_for_an_unknown_resource() {
+    let (f, mut fake, c) = ready_provisioning().await;
+    let before = rows(&f, "engagements");
+    let mut stale = custom_request_event("$stale_request", "request_stale", 250);
+    stale["content"]["agentDefinition"]["resourceId"] = "resource_5127284fc92a53c813f5c97e".into();
+    stale["content"]["agentDefinition"]["name"] = "Stale".into();
+    let result = run_provisioning(
+        &c,
+        &mut fake,
+        provisioning_sync(
+            "provision_stale",
+            vec![stale, custom_request_event("$custom_request", "request_one", 250)],
+        ),
+    )
+    .await;
+    let stage = status(&c, &mut fake).await.stage;
+    let summary = result.unwrap_or_else(|e| panic!("intake failed: {e:?}, stage={stage}"));
+    assert_eq!(summary.admitted, 1);
+    assert_eq!(summary.replayed, 1);
+    assert_eq!(rows(&f, "engagements"), before + 1);
+    c.close().await.unwrap();
+}
+
+/// The same for a request naming a project room this account may not read
+/// (the homeserver answers 403): the request is consumed and the next one is
+/// still admitted.
+#[tokio::test]
+async fn native_provisioning_consumes_a_request_for_an_unreadable_project_room() {
+    let (f, mut fake, c) = ready_provisioning().await;
+    let before = rows(&f, "engagements");
+    let mut elsewhere = custom_request_event("$elsewhere_request", "request_elsewhere", 250);
+    elsewhere["content"]["targetRoomId"] = PROJECT.replacen('!', "!unreadable", 1).into();
+    elsewhere["content"]["agentDefinition"]["name"] = "Elsewhere".into();
+    let cancel = CancellationToken::new();
+    let intake = c.intake(plan(), &cancel);
+    let (result, ()) = common::scripted(intake, async {
+        fake.next().await.json(200, common::who());
+        let request = fake.next().await;
+        assert!(request.target.contains("sync?"));
+        request.json(
+            200,
+            provisioning_sync(
+                "provision_elsewhere",
+                vec![elsewhere, custom_request_event("$custom_request", "request_one", 250)],
+            ),
+        );
+        fake.next().await.json(200, session_state());
+        fake.next().await.json(200, reception_state());
+        let unreadable = fake.next().await;
+        assert!(unreadable.target.contains("unreadable"), "{}", unreadable.target);
+        unreadable.json(403, json!({"errcode": "M_FORBIDDEN"}));
+        fake.next().await.json(200, project_state());
+    })
+    .await;
+    let stage = status(&c, &mut fake).await.stage;
+    let summary = result.unwrap_or_else(|e| panic!("intake failed: {e:?}, stage={stage}"));
+    assert_eq!(summary.admitted, 1);
+    assert_eq!(summary.replayed, 1);
+    assert_eq!(rows(&f, "engagements"), before + 1);
+    c.close().await.unwrap();
+}
+
 /// Board #71 (TS parity: lib/engagement-store.js:503-511 + lib/bot-commands.js:573):
 /// a request whose body omits `requestId` is accepted — the intake derives the
 /// idempotency key from the source event id, the exact key the retained bridge
