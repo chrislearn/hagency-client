@@ -181,6 +181,8 @@ pub(crate) enum Provider {
         /// ADR-187 amendment: each owner's approval pump; an agent's approval
         /// requests go to its owner's.
         owner_notices: Arc<Mutex<BTreeMap<String, tokio::sync::mpsc::Sender<hagency_execution::ApprovalRequests>>>>,
+        /// Each admitted agent's transport, for its public approval notice.
+        agents: super::approval::AgentDirectory,
     },
 }
 impl Provider {
@@ -357,6 +359,11 @@ impl Service {
             collector: agent.shared_collector(),
             workspace: WorkspaceAccess::new(),
         };
+        if let Provider::Fleet { agents, .. } = &self.provider
+            && let Ok(mut agents) = agents.lock()
+        {
+            agents.insert(engagement.clone(), shared.collector.clone());
+        }
         // Retain the partially constructed owner before any failing startup or
         // await. Its original factory is also still held by the coordinator.
         self.agents.push(AgentOwner {

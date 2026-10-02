@@ -174,6 +174,7 @@ struct Running {
     host: Arc<TokenProvisioningHost>,
     service: Option<Service>,
     owner_notices: Arc<Mutex<BTreeMap<String, mpsc::Sender<hagency_execution::ApprovalRequests>>>>,
+    agents: approval::AgentDirectory,
     homeserver: String,
     matrix_limits: hagency_matrix::Limits,
 }
@@ -219,12 +220,14 @@ fn build(
     let host = Arc::new(host);
     let sweep = Arc::new(host.membership_sweep(domain.clone()).map_err(|_| refused("membership sweep"))?);
     let owner_notices = Arc::new(Mutex::new(BTreeMap::new()));
+    let agents: approval::AgentDirectory = Arc::new(Mutex::new(BTreeMap::new()));
     let service = Service::with_provider(
         domain.clone(),
         Provider::Fleet {
             host: host.clone(),
             sweep,
             owner_notices: owner_notices.clone(),
+            agents: agents.clone(),
         },
         runtime.setup,
     )?;
@@ -232,6 +235,7 @@ fn build(
         host,
         service: Some(service),
         owner_notices,
+        agents,
         homeserver,
         matrix_limits: runtime.matrix_limits,
     })
@@ -361,7 +365,7 @@ async fn prepare_owners(
             .map_err(|_| Failure::OutcomeUnknown)?
             .insert(owner.clone(), sender);
         pumps.push(tokio::spawn(supervise_pump(
-            approval::Pump::new(collector, None, domain.clone()),
+            approval::Pump::new(collector, None, domain.clone()).with_agents(running.agents.clone()),
             receiver,
             owner,
             cancel.clone(),
