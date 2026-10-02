@@ -95,3 +95,16 @@ An install configured with a coordinator keeps working unchanged until it is re-
 - **Paste the owner's master key in the console (ADR-102 as written).** It keeps the out-of-band anchor, but adds a security-settings step for every owner. Not chosen: the operator chose trust on first use.
 - **Move the rig script into Hagency.** This keeps a coordinator TS does not have, and needs the owner's password. Not chosen.
 - **Keep provisioning inside some agent's intake.** That would tie every agent's creation to one agent's health, which is the coupling this decision removes.
+
+## Amendment 2026-10-02: one approval device per owner
+
+Design work for slices 2, 4 and 5 found that an approval-bot device's encryption trust is frozen at its first enrollment (ADR-102's frozen user set, kept by §C.5: `sdk/enrollment.rs` refuses a different anchor list or user set). One device can therefore only ever serve the owners it first enrolled with. A Palpo server can have several project owners requesting agents from the same Hagency.
+
+The operator chose, on 2026-10-02, **one approval-bot device per owner**:
+- **§B.1 changes:** the approval bot `@<fleet>_approval` gets one device, with its own SDK store and key, **for each owner**. The device is created the first time that owner needs approvals, and reused from then on. Each device trusts only {the bot, that owner}. The bot account stays one account. "Created once" now means once per owner.
+- The owner's private approval room is served by that owner's device. Isolation between owners is unchanged.
+
+Two consequences recorded with this amendment:
+- **An operator re-pin (§C.2) does not repair agents already enrolled.** Their frozen key list keeps the old key, so their sends to the owner fail until the agent is provisioned again. The same holds for that owner's approval device: a re-pin gives the owner a new approval device.
+- **The approval pump is supervised.** A refused card must not stop approvals for every agent of the fleet: the pump restarts with backoff (ADR-183 decision 0).
+
