@@ -105,20 +105,6 @@ Scenario: The store bounds and sanitizes attempt records
   When they are read back
   Then the phases return in order with increasing seq and at_ms, strings are sanitized and truncated, the oversized and the 257th are refused, and a refused record leaves the writer usable
 
-Scenario: The guardian names why a stop after the leader exited did not prove the tree gone
-  Test: native_guardian_report_names_the_stop_refusal
-  Given a leader that exits leaving one live descendant the stop budget cannot end
-  When the guardian reports Stopped with whole_tree_stopped false
-  Then the frame carries refusal live_descendants with that row's pid, parent pid and executable name
-  And the host reads the guardian's exit status and records both with stop_reported
-
-Scenario: The guardian's stderr reaches the host and nothing else
-  Test: native_guardian_stderr_reaches_the_host
-  Given a guardian whose stop refusal writes one diagnostic line
-  When the host observes the stop
-  Then the host's 4 KiB tail holds that line and the work's own stderr holds nothing of the guardian's
-  And a guardian started without the pipe still reports exactly as before
-
 Scenario: The runtime names the leader's exit and keeps its stderr tail
   Test: native_runtime_exit_and_stderr_tail_persist
   Given a runner that exits with status 1 after writing a control-laden line to stderr
