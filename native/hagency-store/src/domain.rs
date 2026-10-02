@@ -2388,6 +2388,19 @@ impl DomainRepository {
         let rows = statement.query_map([fleet_id], |r| r.get(0))?;
         Ok(rows.collect::<Result<_, _>>()?)
     }
+    /// Revoked engagements of one fleet whose retirement is still pending and
+    /// whose agent never published a Matrix transport (read-only). No worker
+    /// will ever run for them; the provisioning host settles each one whose
+    /// credential was never stored (TS `lib/matrix-work-executor.js`: a logout
+    /// with no stored credential is already done).
+    pub fn pending_unattached_retirements(&self, fleet_id: &str) -> Result<Vec<String>, Error> {
+        project::identifier(fleet_id, 128)?;
+        let mut statement = self.db.prepare(
+            "SELECT e.id FROM effects f JOIN engagements e ON e.id=f.engagement_id JOIN registrations r ON r.fleet_id=e.fleet_id WHERE e.fleet_id=?1 AND f.kind='retire' AND f.state='pending' AND e.state='revoked' AND e.generation=r.generation AND NOT EXISTS(SELECT 1 FROM matrix_transports t WHERE t.engagement_id=e.id) ORDER BY f.id LIMIT 16",
+        )?;
+        let rows = statement.query_map([fleet_id], |r| r.get(0))?;
+        Ok(rows.collect::<Result<_, _>>()?)
+    }
     fn claim_matching_effect(&mut self, expected: Option<&str>) -> Result<Option<Effect>, Error> {
         let tx = self
             .db
