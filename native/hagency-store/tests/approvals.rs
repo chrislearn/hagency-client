@@ -379,6 +379,14 @@ fn native_owner_approval_context() {
             "{field}"
         );
     }
+    // Codex 0.157+ names its default environment "local" on every approval
+    // request; a turn registered with no environment runs in exactly it.
+    let mut local = f.input(0, 1);
+    local.params["environmentId"] = json!("local");
+    assert!(
+        f.db.request_owner_approval(&f.caps[0], &local, 1010).is_ok(),
+        "the default local environment matches a turn with none"
+    );
     let input = f.input(0, 1);
     let mut bad = f.caps[0].clone();
     bad.fence += 1;
