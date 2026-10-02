@@ -22,6 +22,9 @@ fn state() -> Value {
     ])
 }
 fn config(f: &common::Fixture, endpoint: &str) -> HostConfig {
+    config_with_room(f, endpoint, "!private:example.test")
+}
+fn config_with_room(f: &common::Fixture, endpoint: &str, room: &str) -> HostConfig {
     HostConfig::new(
         HostIdentity {
             server_name: "example.test".into(),
@@ -39,7 +42,7 @@ fn config(f: &common::Fixture, endpoint: &str) -> HostConfig {
         f.root.path().join("approval-sdk"),
         [42; 32],
         vec![HostRoom {
-            room_id: "!private:example.test".into(),
+            room_id: room.into(),
             generation: 1,
             privacy: RoomPrivacy::Direct {
                 human_mxid: "@owner:example.test".into(),
@@ -218,6 +221,49 @@ async fn native_fleet_approval_service_turn_lost_observer() {
     );
     common::shutdown_domain(&f.store, "approval lost service observer").await;
 }
+/// Live 2026-10-01: an agent in a project created after startup was
+/// activated, then failed with `Generation` and never re-attached: its
+/// project's owner DM was not in the approval bot's startup room list. The
+/// approval room comes from the project's admitted owner DM (TS: the
+/// binding's `ownerDmRoomId`), so the bot observes it like a listed one.
+#[tokio::test]
+async fn native_matrix_approval_room_of_a_project_created_after_startup() {
+    let f = common::Fixture::new();
+    let mut fake = common::Fake::start(true).await;
+    let c = ApprovalCollector::new(
+        HostApprovalConfig::new(
+            config_with_room(&f, &fake.endpoint, "!startup:example.test"),
+            vec![f.identity.transport.engagement_id.clone()],
+        )
+        .unwrap(),
+        f.store.clone(),
+    )
+    .unwrap();
+    let authority = f
+        .store
+        .approval_room_authority(f.identity.transport.engagement_id.clone())
+        .await
+        .unwrap();
+    assert_eq!(authority.room_id, "!private:example.test");
+    let cancel = CancellationToken::new();
+    let (r, ()) = common::scripted(c.observe(&cancel), async {
+        preflight(&mut fake).await;
+    })
+    .await;
+    r.unwrap();
+    let capture = f
+        .store
+        .approval_room_capture(authority)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(capture.available);
+    assert_eq!(capture.generation, 1);
+    assert_eq!(capture.device_id, "BOT_DEVICE");
+    common::shutdown_domain(&f.store, "approval room after startup").await;
+    fake.close().await;
+}
+
 async fn ready() -> (
     common::Fixture,
     common::Fake,

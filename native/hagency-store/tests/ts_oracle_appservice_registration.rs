@@ -233,6 +233,12 @@ fn ts_registration_file_is_named_for_the_side() {
     let (dir, mut db) = repo();
     let issued = db.issue_side_registration(&request("https://u.example"), 1000).unwrap();
     let expected = dir.path().join("state/registrations/example.test.yaml");
-    assert_eq!(Path::new(&issued.path), expected);
     assert!(expected.exists(), "the YAML is on disk at the reported path");
+    // The store reports the canonical host path; macOS spells the temporary
+    // directory through the /var -> /private/var alias, so both sides are
+    // compared as the same canonical file.
+    assert_eq!(
+        Path::new(&issued.path).canonicalize().unwrap(),
+        expected.canonicalize().unwrap()
+    );
 }

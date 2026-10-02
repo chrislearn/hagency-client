@@ -74,13 +74,17 @@ async fn native_console_engagements_read() {
         "ownerBindingRequired",
         "createdAtMs",
         "endedAtMs",
+        // ADR-186: the allocation, the known spend and the quota hold.
+        "allocatedTokens",
+        "spentTokens",
+        "quotaPaused",
     ] {
         assert!(row.get(key).is_some(), "missing wire key {key}");
     }
     assert_eq!(
         row.as_object().unwrap().len(),
-        11,
-        "exactly the eleven declared keys"
+        14,
+        "exactly the fourteen declared keys"
     );
     assert!(row["requestedTokens"].as_u64().is_some());
     assert!(row["id"].as_str().is_some_and(|id| !id.is_empty()));

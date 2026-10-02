@@ -2,7 +2,7 @@
 use crate::{Error, database};
 use hagency_core::{
     InvalidInput, JSON_SAFE_MAX,
-    allocation::{self, Budget},
+    allocation::{self, Budget, Tokens},
     authority::{Registration, VerifiedRequest},
     canonical,
     ceiling::{self as ceiling_wording, SpendContext},
@@ -85,6 +85,7 @@ mod owned_dispatch;
 mod stopped_inspection;
 pub use outcome_resolution::{OutcomeAction, OutcomeResolution};
 mod provision_runtime;
+mod quota_holds;
 mod reminders;
 mod room_trust;
 pub use reminders::{Reminder, ReminderReceipt, ReminderSweep};
@@ -136,7 +137,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 56;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 58;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -268,8 +269,13 @@ fn read_engagement(db: &Connection, id: &str) -> Result<Engagement, Error> {
 }
 fn write_engagement(tx: &Transaction<'_>, value: &Engagement) -> Result<(), Error> {
     tx.execute(
-        "UPDATE engagements SET state=?2,projection=?3 WHERE id=?1",
-        params![value.id, state_name(&value.state), serialize(value)?],
+        "UPDATE engagements SET state=?2,projection=?3,allocated_tokens=?4 WHERE id=?1",
+        params![
+            value.id,
+            state_name(&value.state),
+            serialize(value)?,
+            value.allocated_tokens.map(u64::from)
+        ],
     )?;
     Ok(())
 }
@@ -340,6 +346,9 @@ pub struct AgentRosterRow {
     /// `usage_sources.latest_counts` display volume summed the way the usage
     /// report sums it. `None` when nothing was measured — unknown, not zero.
     pub consumed: Option<u64>,
+    /// ADR-186 §B: the engagement holds an open quota hold — its allocation
+    /// is used up, the running turn finishes and nothing new is dispatched.
+    pub quota_paused: bool,
     /// The operator's durable stop (`agent_lifecycle`, TS's `manualDown`):
     /// the engagement's newest lifecycle row is stopped-and-not-restarted.
     /// Roster-internal — it shapes `liveness`, and is deliberately NOT a
@@ -377,6 +386,24 @@ pub struct EngagementLabel {
     /// state (`engagement_ends.ended_at`). Both optional: null is unknown.
     pub created_at_ms: Option<u64>,
     pub ended_at_ms: Option<u64>,
+    /// ADR-186 §A4: the tokens the engagement holds — the granted amount,
+    /// raised by any top-up, else the request.
+    pub allocated_tokens: u64,
+    /// ADR-186 §B1/§B4: known fresh spend (input + output + cache writes)
+    /// over every period; `None` while unknown — no complete observation —
+    /// rendered as unknown, never as zero.
+    pub spent_tokens: Option<u64>,
+    /// ADR-186 §B2: an open quota hold — "paused: quota".
+    pub quota_paused: bool,
+}
+/// ADR-186 §B: one engagement's quota, as the pause reads it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuotaStatus {
+    pub allocated_tokens: u64,
+    /// Known fresh spend; `None` while unknown, which never pauses.
+    pub spent_tokens: Option<u64>,
+    pub paused: bool,
 }
 /// One session (room) of the agent detail read: the room the session's
 /// binding names plus its live dispatch state, when one exists. Exactly
@@ -703,7 +730,8 @@ fn budget(
         .and_then(|s| s.declaration);
     // Aggregate in SQLite, not by cloning or scanning the whole lifetime store in Rust.
     // SQLite SUM fails rather than wrapping; Tokens also enforces JSON-safe precision.
-    let mut statement = db.prepare("SELECT preset_id,seat_id,SUM(tokens) FROM engagements WHERE state IN ('reserved','active') AND (preset_id=?1 OR seat_id=?2) GROUP BY preset_id,seat_id")?;
+    // ADR-186 §A4: an engagement holds its granted amount when one is set.
+    let mut statement = db.prepare("SELECT preset_id,seat_id,SUM(COALESCE(allocated_tokens,tokens)) FROM engagements WHERE state IN ('reserved','active') AND (preset_id=?1 OR seat_id=?2) GROUP BY preset_id,seat_id")?;
     let rows = statement.query_map(params![resource.preset_id, resource.seat_id], |r| {
         Ok((
             r.get::<_, String>(0)?,
@@ -734,6 +762,100 @@ fn budget(
         exclude_engagement_id: exclude_engagement_id.map(str::to_owned),
         for_auto_join,
     })?)
+}
+
+/// The headroom an approval or a top-up is checked against (ADR-186 §A2):
+/// the drawn ceiling (`drawn = max(reserved, spent)`, unknown spend falling
+/// back to the commitment figure, saturating at zero) beside the declared
+/// seat and the resource pool, the smallest non-null figure binding.
+/// Commitments are counted as they stand, so an engagement that already holds
+/// tokens is inside them: its own allocation is not headroom.
+struct Headroom {
+    report: CeilingReport,
+    by_ceiling: Option<u64>,
+    /// `None` when no limit is declared or the seat's period mismatches.
+    remaining: Option<u64>,
+    period_mismatch: bool,
+}
+fn headroom(db: &Connection, resource: &Resource, at: u64) -> Result<Headroom, Error> {
+    let report = usage::ceiling_report(db, &resource.id(), at)?;
+    let spent_budget = budget(db, resource, None, false)?;
+    // backend-v2.js:14057: a seat declaration whose period mismatches the
+    // pool's nulls the whole figure rather than falling back to the pool.
+    let period_mismatch = spent_budget.seat.status == allocation::SeatStatus::PeriodMismatch;
+    let by_ceiling = report
+        .ceiling_tokens
+        .map(|c| c.saturating_sub(report.drawn));
+    let remaining = [
+        by_ceiling,
+        spent_budget.seat.remaining.map(u64::from),
+        spent_budget.pool.remaining.map(u64::from),
+    ]
+    .into_iter()
+    .flatten()
+    .min()
+    .filter(|_| !period_mismatch);
+    Ok(Headroom {
+        report,
+        by_ceiling,
+        remaining,
+        period_mismatch,
+    })
+}
+/// Refuse `granted` tokens the resource cannot give (ADR-186 §A2), with the
+/// retained refusal identities: `over_commit` carrying the human message
+/// when the ceiling binds, `insufficient_capacity` when the seat or pool
+/// does, `no_ceiling` when nothing is declared.
+fn check_grant(
+    tx: &Connection,
+    resource: &Resource,
+    agent: &str,
+    granted: u64,
+    now: u64,
+) -> Result<(), Error> {
+    // Admission uses the drawn ceiling (backend-v2.js:14036-14060), and
+    // approve is the operator verdict path, so `for_auto_join` is false —
+    // auto-join is the other remainingFor caller, not this one.
+    let Headroom {
+        report,
+        by_ceiling,
+        remaining,
+        period_mismatch,
+    } = headroom(tx, resource, now)?;
+    if period_mismatch {
+        return Err(Error::NoCeiling);
+    }
+    let remaining = remaining.ok_or(Error::NoCeiling)?;
+    if remaining >= granted {
+        return Ok(());
+    }
+    if by_ceiling.is_some_and(|b| b < granted) {
+        // The ceiling side is binding: the refusal names both draws,
+        // the binding one, the measurement's period key and the
+        // cache-read discrepancy, exactly as the JavaScript does.
+        let period_name = match report.period {
+            UsagePeriodKind::Daily => "daily",
+            UsagePeriodKind::Monthly => "monthly",
+        };
+        let message = ceiling_wording::over_commit_message(
+            agent,
+            granted,
+            remaining,
+            Some(&SpendContext {
+                period: Some(period_name.into()),
+                reserved: Some(report.reserved),
+                spent: report.spent,
+                consumed: report.consumed,
+                ceiling_tokens: report.ceiling_tokens,
+                preset_name: Some(report.preset_name),
+                spend_period_key: report.spend_period_key,
+            }),
+        );
+        return Err(Error::OverCommit { message });
+    }
+    // The declared shared seat is the binding side: the resource-pool
+    // refusal keeps its pre-existing identity and shape.
+    Err(Error::InsufficientCapacity)
 }
 
 impl DomainRepository {
@@ -956,9 +1078,20 @@ impl DomainRepository {
                         56,
                         include_str!("migrations/065-final-reply-incidental.sql"),
                     ),
+                    // ADR-186 §A: no board number; the file carries its list
+                    // version.
+                    (
+                        57,
+                        include_str!("migrations/057-engagement-allocation.sql"),
+                    ),
+                    // ADR-186 §B: no board number; the file carries its list
+                    // version.
+                    (58, include_str!("migrations/058-quota-holds.sql")),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
+                    "SELECT allocated_tokens FROM engagements LIMIT 0",
+                    "SELECT id,engagement_id,dispatch_id,spend,allocation,began_at,lifted_at,lifted_allocation FROM quota_holds LIMIT 0",
                     "SELECT fleet_id,allocated_tokens,updated_at FROM side_allocations LIMIT 0",
                     "SELECT engagement_id,stopped_at,reason,operator,started_at FROM agent_lifecycle LIMIT 0",
                     "SELECT server_name,label,api_base_url,credential,pending_credential,pending_issued_at,representative,access_state,access_detail,access_checked_at,access_issued_at,allocated_tokens,active,created_at,updated_at FROM side_records LIMIT 0",
@@ -1323,6 +1456,9 @@ impl DomainRepository {
             .min();
             // Compare before the state moves into the label.
             let pending = engagement.state == EngagementState::Pending;
+            let allocated_tokens = u64::from(engagement.allocation());
+            let spent_tokens = quota_holds::spend(&self.db, &engagement.id)?;
+            let quota_paused = quota_holds::paused(&self.db, &engagement.id)?;
             labels.push(EngagementLabel {
                 id: engagement.id.clone(),
                 agent_name: engagement.agent_name.as_str().to_owned(),
@@ -1335,6 +1471,9 @@ impl DomainRepository {
                 owner_binding_required: pending && !has_binding,
                 created_at_ms: observed_at.and_then(|v| u64::try_from(v).ok()),
                 ended_at_ms: ended_at.and_then(|v| u64::try_from(v).ok()),
+                allocated_tokens,
+                spent_tokens,
+                quota_paused,
             });
         }
         Ok(labels)
@@ -1633,6 +1772,7 @@ impl DomainRepository {
                 // between dispatches is Online, which is the other half of
                 // what the live run reported (board #106).
                 let online = online || serving;
+                let quota_paused = quota_holds::paused(&self.db, &engagement.id)?;
                 Ok(AgentRosterRow {
                     name: engagement.agent_name.as_str().to_owned(),
                     framework: resource.framework,
@@ -1646,6 +1786,7 @@ impl DomainRepository {
                     liveness,
                     manual_down,
                     consumed: consumed.and_then(|v| u64::try_from(v).ok()),
+                    quota_paused,
                 })
             })
             .collect()
@@ -1936,6 +2077,7 @@ impl DomainRepository {
         let value = Engagement {
             route: Some(route.to_owned()),
             auto_joined,
+            allocated_tokens: None,
             id,
             request_id: request.request_id.clone(),
             project_id: request.target_project_id.clone(),
@@ -1969,13 +2111,39 @@ impl DomainRepository {
         Ok(value)
     }
     /// Only an authenticated operator command calls this, after the Matrix adapter
-    /// re-verifies current owner/room authority. No production HTTP route exists yet.
+    /// re-verifies current owner/room authority. Grants exactly the requested
+    /// amount; `approve_allocating` is the console's amount-choosing form.
     pub fn approve(
         &mut self,
         command_id: &str,
         proof: &VerifiedRequest,
         now: u64,
     ) -> Result<Engagement, Error> {
+        self.approve_allocating(command_id, proof, now, None)
+    }
+    /// ADR-186 §A: the approval grants `allocated` tokens instead of the
+    /// request when the operator chose an amount. The amount is checked
+    /// against exactly the headroom the plain approval checks, and an amount
+    /// of `None` is the plain approval, byte for byte (same decision digest,
+    /// no `allocated_tokens` written), so a replayed pre-ADR command id still
+    /// matches its receipt.
+    pub fn approve_allocating(
+        &mut self,
+        command_id: &str,
+        proof: &VerifiedRequest,
+        now: u64,
+        allocated: Option<u64>,
+    ) -> Result<Engagement, Error> {
+        let allocated = allocated
+            .map(|value| {
+                if value == 0 {
+                    return Err(Error::from(InvalidInput(
+                        "allocated tokens must be positive",
+                    )));
+                }
+                Ok(Tokens::try_from(value)?)
+            })
+            .transpose()?;
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -1997,7 +2165,10 @@ impl DomainRepository {
         if generation != proof.registration().generation {
             return Err(Error::Generation);
         }
-        let digest = decision_digest("approve", &id)?;
+        let digest = match allocated {
+            None => decision_digest("approve", &id)?,
+            Some(amount) => canonical::digest(&json!(["approve", id, u64::from(amount)]))?,
+        };
         if let Some(value) = replay_decision(&tx, command_id, &digest)? {
             return Ok(value);
         }
@@ -2012,65 +2183,14 @@ impl DomainRepository {
         {
             return Err(Error::Unqualified);
         }
-        // Admission uses the drawn ceiling (backend-v2.js:14036-14060):
-        // `drawn = max(reserved, spent)` with unknown spend falling back to
-        // the commitment figure, never to zero; `by_ceiling` saturates at
-        // zero; the admitted figure is the minimum of the non-null limits.
-        // The engagement being decided is excluded exactly like the retained
-        // JavaScript decide() call (`excludeEngagementId: id`), and approve is
-        // the operator verdict path, so `for_auto_join` is false — auto-join
-        // is the other remainingFor caller, not this one.
-        let report = usage::ceiling_report(&tx, &resource.id(), now)?;
-        let spent_budget = budget(&tx, &resource, Some(id.as_str()), false)?;
-        // backend-v2.js:14057: a seat declaration whose period mismatches the
-        // pool's nulls the whole figure rather than falling back to the pool.
-        if spent_budget.seat.status == allocation::SeatStatus::PeriodMismatch {
-            return Err(Error::NoCeiling);
-        }
-        let requested = u64::from(value.requested_tokens);
-        let by_ceiling = report
-            .ceiling_tokens
-            .map(|c| c.saturating_sub(report.drawn));
-        let remaining = [
-            by_ceiling,
-            spent_budget.seat.remaining.map(u64::from),
-            spent_budget.pool.remaining.map(u64::from),
-        ]
-        .into_iter()
-        .flatten()
-        .min()
-        .ok_or(Error::NoCeiling)?;
-        if remaining < requested {
-            if by_ceiling.is_some_and(|b| b < requested) {
-                // The ceiling side is binding: the refusal names both draws,
-                // the binding one, the measurement's period key and the
-                // cache-read discrepancy, exactly as the JavaScript does.
-                let period_name = match report.period {
-                    UsagePeriodKind::Daily => "daily",
-                    UsagePeriodKind::Monthly => "monthly",
-                };
-                let message = ceiling_wording::over_commit_message(
-                    value.agent_name.as_str(),
-                    requested,
-                    remaining,
-                    Some(&SpendContext {
-                        period: Some(period_name.into()),
-                        reserved: Some(report.reserved),
-                        spent: report.spent,
-                        consumed: report.consumed,
-                        ceiling_tokens: report.ceiling_tokens,
-                        preset_name: Some(report.preset_name),
-                        spend_period_key: report.spend_period_key,
-                    }),
-                );
-                return Err(Error::OverCommit { message });
-            }
-            // The declared shared seat is the binding side: the resource-pool
-            // refusal keeps its pre-existing identity and shape.
-            return Err(Error::InsufficientCapacity);
-        }
+        let granted = u64::from(allocated.unwrap_or(value.requested_tokens));
+        // The engagement being decided is still pending, so it holds nothing
+        // yet and the headroom is exactly the retained decide() figure with
+        // `excludeEngagementId: id`.
+        check_grant(&tx, &resource, value.agent_name.as_str(), granted, now)?;
         value.state = EngagementState::Reserved;
         value.project_name = proof.project_name().map(str::to_owned);
+        value.allocated_tokens = allocated;
         write_engagement(&tx, &value)?;
         tx.execute(
             "UPDATE engagements SET preset_id=?2,seat_id=?3 WHERE id=?1",
@@ -2081,6 +2201,79 @@ impl DomainRepository {
         record_decision(&tx, command_id, &digest, &value, Some("engagement.approved"))?;
         tx.commit()?;
         Ok(value)
+    }
+    /// ADR-186 §A3: what the engagement's resource can still give, as the
+    /// smallest of the ceiling, seat and pool headroom — the very figure an
+    /// approval is checked against, and what "All remaining" fills in. `None`
+    /// when no limit is declared or the seat's period mismatches the pool's
+    /// (approval refuses `no_ceiling` then): unknown, never a zero.
+    pub fn engagement_headroom(&self, id: &str, at: u64) -> Result<Option<u64>, Error> {
+        let engagement = read_engagement(&self.db, id)?;
+        let resource = read_resource(&self.db, &engagement.resource_id)?;
+        Ok(headroom(&self.db, &resource, at)?.remaining)
+    }
+    /// ADR-186 §C: raise an active (or still-provisioning) engagement's
+    /// allocation by `add` tokens. Checked exactly like an approval: `add`
+    /// must fit the smallest of ceiling, seat and pool headroom as it stands,
+    /// with this engagement's current allocation already counted in it — so
+    /// the new allocation fits the headroom left without it. Idempotent by
+    /// command id through the decision receipts; a reused id with another
+    /// amount conflicts. When the new allocation is above the spend, the
+    /// quota hold lifts in the same transaction and the agent says
+    /// "Resumed"; queued work is claimed on the next claim, no restart.
+    pub fn raise_allocation(
+        &mut self,
+        command_id: &str,
+        id: &str,
+        add: u64,
+        now: u64,
+    ) -> Result<Engagement, Error> {
+        project::identifier(id, 128)?;
+        if add == 0 {
+            return Err(InvalidInput("added tokens must be positive").into());
+        }
+        let add = Tokens::try_from(add)?;
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let digest = canonical::digest(&json!(["allocation", id, u64::from(add)]))?;
+        if let Some(value) = replay_decision(&tx, command_id, &digest)? {
+            return Ok(value);
+        }
+        let mut value = read_engagement(&tx, id)?;
+        if !matches!(
+            value.state,
+            EngagementState::Reserved | EngagementState::Active
+        ) {
+            return Err(Error::State);
+        }
+        let resource = read_resource(&tx, &value.resource_id)?;
+        check_grant(&tx, &resource, value.agent_name.as_str(), u64::from(add), now)?;
+        let raised = u64::from(value.allocation())
+            .checked_add(u64::from(add))
+            .ok_or(InvalidInput("token count overflow"))?;
+        value.allocated_tokens = Some(Tokens::try_from(raised)?);
+        write_engagement(&tx, &value)?;
+        quota_holds::lift(&tx, id, now)?;
+        record_decision(
+            &tx,
+            command_id,
+            &digest,
+            &value,
+            Some("engagement.allocation_raised"),
+        )?;
+        tx.commit()?;
+        Ok(value)
+    }
+    /// ADR-186 §B: the engagement's allocation, its known spend (`None`
+    /// while unknown) and whether it holds an open quota hold.
+    pub fn quota_status(&self, id: &str) -> Result<QuotaStatus, Error> {
+        let engagement = read_engagement(&self.db, id)?;
+        Ok(QuotaStatus {
+            allocated_tokens: u64::from(engagement.allocation()),
+            spent_tokens: quota_holds::spend(&self.db, id)?,
+            paused: quota_holds::paused(&self.db, id)?,
+        })
     }
     pub fn reject(&mut self, command_id: &str, id: &str) -> Result<Engagement, Error> {
         self.end(command_id, id, false)

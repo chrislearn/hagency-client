@@ -168,7 +168,12 @@ export default function NativeAgents() {
                   {/* Board #60 item 2: the LIVE DISPATCH's word, a separate
                       fact from the engagement lifecycle word beside it —
                       null means no live dispatch, said as unknown. */}
-                  <td className="dim">{a.liveness === null ? t('nu.unknown') : t(`na.liveness.${a.liveness}`)}</td>
+                  <td className="dim">
+                    {a.liveness === null ? t('nu.unknown') : t(`na.liveness.${a.liveness}`)}
+                    {/* ADR-186 §B: the allocation is used up — the running
+                        turn finishes, nothing new starts until a top-up. */}
+                    {a.quota_paused && <> <span className="stranded warn-chip" data-quota-paused>{t('quota.paused')}</span></>}
+                  </td>
                   <td className="dim">{a.engagement_id}</td>
                   <td className="num dim">{fmtTokens(a.requested_tokens)}</td>
                   {/* Tokens observed consumed; null when unmeasured, never

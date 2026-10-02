@@ -799,13 +799,22 @@ impl Inner {
     /// SDK application view to configured rooms. Account-scoped to-device and
     /// key metadata remain intact so crypto can progress; unrelated room state
     /// and timeline events never enter the SDK or an intake journal.
-    pub(crate) fn scope_sync(&self, mut value: Value) -> Result<Value, Error> {
-        self.sync_bounds(&value)?;
+    pub(crate) fn scope_sync(&self, value: Value) -> Result<Value, Error> {
         let allowed = self
             .config
             .observed_rooms()
             .map(|r| r.room_id.as_str())
             .collect::<BTreeSet<_>>();
+        self.scope_sync_to(value, &allowed)
+    }
+    /// `scope_sync` over an explicit room set: the approval bot's rooms are
+    /// derived from the store per engagement, not only its startup list.
+    pub(crate) fn scope_sync_to(
+        &self,
+        mut value: Value,
+        allowed: &BTreeSet<&str>,
+    ) -> Result<Value, Error> {
+        self.sync_bounds(&value)?;
         if let Some(rooms) = value.get_mut("rooms").and_then(Value::as_object_mut) {
             for rooms in rooms.values_mut() {
                 rooms

@@ -16,6 +16,10 @@ try {
   const context = await browser.newContext({ serviceWorkers: 'block' });
   const page = await context.newPage();
   const failures = []; const urls = [];
+  // ADR-186 §A: the walk asks for more than the headroom ONCE on purpose.
+  // That one 409 (its console mirror and its wire response) is named here
+  // and consumed when it happens; any other refusal still fails the walk.
+  const deliberate = { console: 0, wire: 0 };
   page.on('pageerror', (error) => failures.push(error.message));
   // "No console error" excludes two structural noises of the PACKAGED
   // export, pinned by the wire assertion below — not a blanket weakening:
@@ -29,6 +33,7 @@ try {
     // The stream EventSource's 401 connect — exempted on the wire below and
     // named there; its console mirror is the same single event.
     if (/status of 401 \(Unauthorized\)/.test(message.text())) return;
+    if (deliberate.console > 0 && /status of 409 \(Conflict\)/.test(message.text())) { deliberate.console -= 1; return; }
     failures.push(message.text());
   });
   // The wire assertion that keeps the filter honest: EVERY refused response
@@ -41,6 +46,7 @@ try {
     const path = response.url().replace(config.base, '');
     if (method === 'HEAD' && !path.startsWith('/console/api/')) return;
     if (method === 'GET' && path === '/console/api/stream' && response.status() === 401) return;
+    if (deliberate.wire > 0 && method === 'POST' && response.status() === 409 && /^\/console\/api\/engagements\/[^/]+\/approve$/.test(path)) { deliberate.wire -= 1; return; }
     refused.push(`${response.status()} ${method} ${path}`);
   });
   await context.route('**/*', async (route) => {
@@ -98,8 +104,25 @@ try {
   await page.locator('[data-native-state="ready"]').waitFor();
   await page.goto(`${config.base}/console/engagements/`);
   await page.locator('[data-native-state="ready"]').waitFor();
-  await page.locator('[data-verdict-panel] tr', { hasText: config.pendingAgent }).getByRole('button', { name: /^(Approve|批准)$/ }).click();
+  /* ADR-186 §A: the amount field starts at the request; an amount above the
+   * headroom is refused with the store's explanation shown in the row;
+   * "All remaining" fills in the candidate's headroom (the 1000-token pool
+   * less the seeded UsageWorker's 100); the approval then grants 80. */
+  const pendingRow = page.locator('[data-verdict-panel] tr', { hasText: config.pendingAgent });
+  const amount = pendingRow.locator('input[data-approve-amount]');
+  if (await amount.inputValue() !== '100') throw new Error(`the amount field did not start at the request: ${await amount.inputValue()}`);
+  await amount.fill('99999');
+  deliberate.console = 1; deliberate.wire = 1;
+  await pendingRow.getByRole('button', { name: /^(Approve|批准)$/ }).click();
+  await pendingRow.locator('p[role="alert"]').filter({ hasText: /would exceed/ }).waitFor();
+  assert.equal(deliberate.wire, 0, 'the over-headroom approval was refused on the wire');
+  await pendingRow.getByRole('button', { name: /^(All remaining|全部剩余)$/ }).click();
+  if (await amount.inputValue() !== '900') throw new Error(`All remaining filled ${await amount.inputValue()}, not the 900 headroom`);
+  await amount.fill('80');
+  await pendingRow.getByRole('button', { name: /^(Approve|批准)$/ }).click();
   await page.locator('[data-verdict-panel] p[role="status"]').filter({ hasText: /approved — provisioning enqueued|已批准/ }).waitFor();
+  // The deliberate refusal is spent; nothing after it is excused.
+  deliberate.console = 0; deliberate.wire = 0;
 
   /* (b) REFUSE another pending engagement: the harness admits one on request. */
   const second = (await fixture('REFUSE_ENGAGEMENT')).agent;
@@ -119,6 +142,15 @@ try {
     const panel = await page.locator('[data-verdict-panel]').innerText().catch(() => '(no verdict panel)');
     throw new Error(`refused flash never rendered; verdict panel says:\n${panel}\n${error.message}`);
   }
+
+  /* ADR-186 §C: ADD TOKENS to the seeded running engagement from its row in
+   * the list; the row's note says what was added and the harness checks the
+   * stored allocation (100 requested + 25). */
+  const runningRow = page.locator(`tr[data-engagement-row="${config.engagement}"]`);
+  await runningRow.getByRole('button', { name: /^(Add tokens|追加 token)$/ }).click();
+  await runningRow.locator('input[data-top-up-amount]').fill('25');
+  await runningRow.getByRole('button', { name: /^(Add|追加)$/ }).click();
+  await page.locator('p[data-engagement-note]').filter({ hasText: /added 25 tokens|已追加 25/ }).waitFor();
 
   /* (c) STOP an agent (same lifecycle scope): the roster's stop control with
    * its #43 feedback notice. The seeded UsageWorker holds a live started

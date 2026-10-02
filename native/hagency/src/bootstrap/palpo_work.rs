@@ -350,8 +350,13 @@ enum Outcome {
 
 /// Matrix lane: record the probe events of one relayed transaction.
 async fn matrix_once(adapter: &Adapter, probes: &Probes, fleet: &str, representative: &str, generation: u64) -> Outcome {
-    let Ok(Some(work)) = adapter.take(Lane::Matrix, attempt("matrix")).await else {
-        return Outcome::Idle;
+    let work = match adapter.take(Lane::Matrix, attempt("matrix")).await {
+        Ok(Some(work)) => work,
+        Ok(None) => return Outcome::Idle,
+        Err(error) => {
+            eprintln!("palpo matrix: claim refused: {error:?}");
+            return Outcome::Later;
+        }
     };
     let transaction = work.payload.get("transactionId").and_then(Value::as_str).unwrap_or_default().to_owned();
     let events = work
@@ -391,8 +396,14 @@ async fn matrix_once(adapter: &Adapter, probes: &Probes, fleet: &str, representa
 
 /// Work lane: verify one probe and bind the reception.
 async fn work_once(adapter: &Adapter, probes: &Probes, domain: &DomainStore, reader: &Reader, fleet: &str) -> Outcome {
-    let Ok(Some(work)) = adapter.take(Lane::Work, attempt("work")).await else {
-        return Outcome::Idle;
+    let work = match adapter.take(Lane::Work, attempt("work")).await {
+        Ok(Some(work)) => work,
+        Ok(None) => return Outcome::Idle,
+        Err(error) => {
+            // Never silent: a refused claim looks exactly like an empty lane.
+            eprintln!("palpo work: claim refused: {error:?}");
+            return Outcome::Later;
+        }
     };
     if work.kind == Kind::Request {
         if let Some(id) = work.payload.get("requestId").and_then(Value::as_str) {
@@ -530,7 +541,9 @@ async fn refresh_statuses(domain: &DomainStore, probes: &Probes, fleet: &str, re
             S::Rejected => ("rejected", None, false),
             S::Revoked | S::Failed => ("ended", None, false),
         };
-        let allocated = matches!(e.state, S::Reserved | S::Active).then(|| json!(e.requested_tokens));
+        // ADR-186 §A4/§C4: the granted amount, raised by any top-up; the
+        // request when the operator granted it unchanged.
+        let allocated = matches!(e.state, S::Reserved | S::Active).then(|| json!(e.allocation()));
         // The serving identity is the fleet-namespaced account the App Service
         // factory created for this engagement; `ready` is TS's rule (active and
         // bound) plus the observed fact the agent is joined in the target room.

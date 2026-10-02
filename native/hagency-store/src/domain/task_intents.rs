@@ -200,6 +200,21 @@ pub(super) fn waiting_notice(
     body: &str,
     now: u64,
 ) -> Result<(), Error> {
+    // One notice per dispatch per kind, the retained product's
+    // `INSERT OR IGNORE` with `${kind}:${dispatchId}` keys.
+    keyed_dispatch_notice(tx, dispatch, kind, &format!("{kind}:{dispatch}"), body, now)
+}
+/// `waiting_notice` with the caller's own once-key: a notice said once per
+/// some other fact than the dispatch (ADR-186: once per quota hold), rooted
+/// in the dispatch's thread exactly as `waiting_notice` roots it.
+pub(super) fn keyed_dispatch_notice(
+    tx: &Transaction<'_>,
+    dispatch: &str,
+    kind: &str,
+    id_key: &str,
+    body: &str,
+    now: u64,
+) -> Result<(), Error> {
     let bound: Option<(Option<String>, String)> = tx
         .query_row(
             "SELECT task_id,session_id FROM runner_dispatches WHERE id=?1",
@@ -222,18 +237,15 @@ pub(super) fn waiting_notice(
         return Ok(());
     };
     let task = execution::task(tx, &task_id)?;
-    // One notice per dispatch per kind, the retained product's
-    // `INSERT OR IGNORE` with `${kind}:${dispatchId}` keys.
-    let id_key = format!("{kind}:{dispatch}");
     if tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM task_notices WHERE id=?1)",
-        [&notice_id(&task_id, &id_key)?],
+        [&notice_id(&task_id, id_key)?],
         |r| r.get::<_, bool>(0),
     )? {
         return Ok(());
     }
     let root = super::verified_ingress::input_message(tx, &session, root)?;
-    add_keyed_notice(tx, &task, &root, kind, &id_key, body.into(), now)?;
+    add_keyed_notice(tx, &task, &root, kind, id_key, body.into(), now)?;
     Ok(())
 }
 /// Say a launch retry in the thread, best effort in its own savepoint: the

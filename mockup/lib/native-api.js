@@ -55,7 +55,7 @@ export function validateEngagements(v) {
    * implementation accident of `slice`, not a designed rule; the native
    * verifier's scalar bound is the contract. */
   if (!object(v, ['engagements', 'next_after']) || !Array.isArray(v.engagements) || v.engagements.length > 16
-    || !(v.next_after === null || id(v.next_after)) || v.engagements.some((e) => !object(e, ['id', 'agentName', 'projectName', 'role', 'requestedTokens', 'state', 'cleanup', 'agentRemainingTokens', 'ownerBindingRequired', 'createdAtMs', 'endedAtMs'])
+    || !(v.next_after === null || id(v.next_after)) || v.engagements.some((e) => !object(e, ['id', 'agentName', 'projectName', 'role', 'requestedTokens', 'state', 'cleanup', 'agentRemainingTokens', 'ownerBindingRequired', 'createdAtMs', 'endedAtMs', 'allocatedTokens', 'spentTokens', 'quotaPaused'])
       || !id(e.id) || typeof e.agentName !== 'string' || e.agentName.length > 128
       || !(e.projectName === null || (typeof e.projectName === 'string' && [...e.projectName].length <= 255))
       || typeof e.role !== 'string' || e.role.length > 128 || !number(e.requestedTokens) || !STATES.includes(e.state) || !CLEANUP.includes(e.cleanup)
@@ -65,7 +65,12 @@ export function validateEngagements(v) {
       || !(e.agentRemainingTokens === null || number(e.agentRemainingTokens))
       || typeof e.ownerBindingRequired !== 'boolean'
       || !(e.createdAtMs === null || number(e.createdAtMs))
-      || !(e.endedAtMs === null || number(e.endedAtMs)))) throw new Error('invalid_native_response');
+      || !(e.endedAtMs === null || number(e.endedAtMs))
+      /* ADR-186: the allocation held, the known spend (null while unknown,
+       * never a zero) and the quota hold. */
+      || !number(e.allocatedTokens)
+      || !(e.spentTokens === null || number(e.spentTokens))
+      || typeof e.quotaPaused !== 'boolean')) throw new Error('invalid_native_response');
   return v;
 }
 const RECOVERY_ERRORS = { agent_lifecycle_scope_required: 403, resolution_conflict: 409, dispatch_not_resolvable: 409, invalid_console_request: 400 };
@@ -89,7 +94,13 @@ async function request(path, options = {}, responseLimit = 64 * 1024) {
     if (!response.ok) {
       if (value?.code === 'console_busy' && response.status === 429) throw new Error('busy');
       const known = { busy: 503, outcome_unknown: 504, resource_revision_conflict: 409, resource_publication_scope_required: 403, resource_configuration_scope_required: 403, resource_in_use: 409, invalid_resource_command: 400, account_scope_required: 403, account_state_conflict: 409, account_revision_conflict: 409, invalid_account_command: 400, engagement_not_live: 409, engagement_not_pending: 409, decision_conflict: 409, over_commit: 409, no_ceiling: 409, insufficient_capacity: 409, agent_unavailable: 409, registration_generation: 409, command_conflict: 409, stale_generation: 409, invalid_side_query: 400, sides_unavailable: 503 };
-      if (known[value?.code] === response.status || RECOVERY_ERRORS[value?.code] === response.status) throw new Error(value.code);
+      if (known[value?.code] === response.status || RECOVERY_ERRORS[value?.code] === response.status) {
+        // ADR-186 §A2: a refusal may carry the store's human explanation of
+        // the binding limit beside its code; it rides the error as `detail`.
+        const refused = new Error(value.code);
+        if (typeof value.message === 'string' && value.message.length > 0 && value.message.length <= 2048) refused.detail = value.message;
+        throw refused;
+      }
       throw new Error(response.status === 401 ? 'console_access_required' : (response.status === 404 ? 'not_found' : 'native_unavailable'));
     }
     return value;
@@ -258,7 +269,7 @@ export function alertsView(location) { return /^\/console\/alerts\/?$/.test(loca
  * `liveness` (the live dispatch's own word, distinct from the engagement
  * `state`) and `consumed` (observed tokens, null when unmeasured) are
  * served now, so this list is empty. */
-const ROSTER_KEYS = ['name', 'framework', 'role', 'state', 'engagement_id', 'requested_tokens', 'online', 'last_seen_ms', 'last_activity_ms', 'liveness', 'consumed'];
+const ROSTER_KEYS = ['name', 'framework', 'role', 'state', 'engagement_id', 'requested_tokens', 'online', 'last_seen_ms', 'last_activity_ms', 'liveness', 'consumed', 'quota_paused'];
 export function validateAgents(v) {
   if (!object(v, ['at_ms', 'unavailable', 'agents', 'permissions']) || !number(v.at_ms)
     || !Array.isArray(v.unavailable) || v.unavailable.length > 32 || v.unavailable.some((n) => !text(n, 64))
@@ -271,7 +282,8 @@ export function validateAgents(v) {
       || !(a.last_seen_ms === null || number(a.last_seen_ms))
       || !(a.last_activity_ms === null || number(a.last_activity_ms))
       || !(a.liveness === null || text(a.liveness, 32))
-      || !(a.consumed === null || number(a.consumed)))) throw new Error('invalid_native_response');
+      || !(a.consumed === null || number(a.consumed))
+      || typeof a.quota_paused !== 'boolean')) throw new Error('invalid_native_response');
   return v;
 }
 export async function fetchAgents() {
@@ -546,8 +558,9 @@ export function validateEngagementReceipt(v) {
  * the existing /api/agents/{id}/refuse route and answers the rejected
  * engagement. The command id is minted client-side: it is the store's
  * idempotency key, never the route's. */
-export async function approveEngagement(engagementId, commandId) {
-  return validateEngagementReceipt(await request(`/api/engagements/${encodeURIComponent(engagementId)}/approve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commandId }) }));
+export async function approveEngagement(engagementId, commandId, allocatedTokens = null) {
+  const body = allocatedTokens === null ? { commandId } : { commandId, allocatedTokens };
+  return validateEngagementReceipt(await request(`/api/engagements/${encodeURIComponent(engagementId)}/approve`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
 }
 export async function refuseEngagement(engagementId, commandId) {
   const v = await request(`/api/agents/${encodeURIComponent(engagementId)}/refuse`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commandId }) });
@@ -560,6 +573,12 @@ export async function refuseEngagement(engagementId, commandId) {
  * act — native has no sweeper or timer (engagements.rs:12). */
 export async function retireEngagement(engagementId, commandId) {
   return validateEngagementReceipt(await request(`/api/engagements/${encodeURIComponent(engagementId)}/retire`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commandId }) }));
+}
+/* ADR-186 §C: add tokens to a reserved or active engagement's allocation.
+ * Checked by the store like an approval; a refusal carries the store's
+ * explanation as `error.detail`. The answer is the bounded receipt. */
+export async function raiseEngagementAllocation(engagementId, commandId, addTokens) {
+  return validateEngagementReceipt(await request(`/api/engagements/${encodeURIComponent(engagementId)}/allocation`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commandId, addTokens }) }));
 }
 export async function retryEngagementCleanup(engagementId, commandId) {
   return validateEngagementReceipt(await request(`/api/engagements/${encodeURIComponent(engagementId)}/cleanup-retry`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commandId }) }));

@@ -4244,6 +4244,51 @@ impl DomainStore {
         )
         .await
     }
+    /// ADR-186 §A: the console approval with an operator-chosen amount;
+    /// `None` is the plain approval.
+    pub async fn approve_allocating(
+        &self,
+        command: String,
+        proof: VerifiedRequest,
+        now: u64,
+        allocated: Option<u64>,
+    ) -> Result<Engagement, Error> {
+        self.call(
+            weight(&(
+                &command,
+                proof.request(),
+                proof.registration(),
+                proof.project_name(),
+                proof.audit(),
+                allocated,
+            ))?,
+            move |db| db.approve_allocating(&command, &proof, now, allocated),
+        )
+        .await
+    }
+    /// ADR-186 §A3: the smallest of ceiling, seat and pool headroom behind
+    /// one engagement — the figure approval and top-up are checked against.
+    pub async fn engagement_headroom(&self, id: String, at: u64) -> Result<Option<u64>, Error> {
+        self.call(weight(&id)?, move |db| db.engagement_headroom(&id, at))
+            .await
+    }
+    /// ADR-186 §C: the operator's top-up of a running engagement.
+    pub async fn raise_allocation(
+        &self,
+        command: String,
+        id: String,
+        add: u64,
+        now: u64,
+    ) -> Result<Engagement, Error> {
+        self.call(weight(&(&command, &id, add))?, move |db| {
+            db.raise_allocation(&command, &id, add, now)
+        })
+        .await
+    }
+    /// ADR-186 §B: allocation, known spend and the open quota hold.
+    pub async fn quota_status(&self, id: String) -> Result<crate::QuotaStatus, Error> {
+        self.call(weight(&id)?, move |db| db.quota_status(&id)).await
+    }
     pub async fn reject(&self, command: String, id: String) -> Result<Engagement, Error> {
         self.call(weight(&(&command, &id))?, move |db| {
             db.reject(&command, &id)

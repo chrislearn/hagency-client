@@ -239,6 +239,16 @@ impl DomainRepository {
         };
         tx.execute("UPDATE usage_sources SET high_water=?2,latest_counts=?3,latest_observation=?4,historical_incomplete=?5,regressions=?6,observations=?7,observed_at=?8,latest_incomplete=?9,latest_regressed=?10 WHERE id=?1",params![source.id,serialize(&water)?,serialize(&observation.counts())?,serialize(observation)?,history||incomplete,add(regressions,u64::from(regressed))?,add(count,1)?,now,incomplete,regressed])?;
         tx.execute("INSERT INTO usage_receipts(source_id,call_id,digest,observation,response) VALUES(?1,?2,?3,?4,?5)",params![source.id,call_id,digest,serialize(observation)?,serialize(&receipt)?])?;
+        // ADR-186 §B: the spend just moved, so this is where a used-up
+        // allocation opens the quota hold. The running turn is the one this
+        // source observes; it finishes, and the pause notice lands in its
+        // thread.
+        let dispatch: String = tx.query_row(
+            "SELECT dispatch_id FROM usage_sources WHERE id=?1",
+            [&source.id],
+            |r| r.get(0),
+        )?;
+        super::quota_holds::evaluate(&tx, &engagement, Some(&dispatch), now)?;
         tx.execute("INSERT INTO usage_clock(singleton,observed_at) VALUES(1,?1) ON CONFLICT(singleton) DO UPDATE SET observed_at=excluded.observed_at",[now])?;
         tx.commit()?;
         Ok(receipt)

@@ -347,6 +347,9 @@ impl Jobs {
                 Ok(()) => checkpoint(&cancel, deadline),
                 Err(error) => Err(error),
             };
+            if let Err(error) = &result {
+                eprintln!("provision enrollment failed: effect={} error={error:?}", scope.effect.id);
+            }
             // Enrollment does not complete the factory. Any failed original
             // physical step is retained as unknown, never NotApplied/Active.
             let result = if result.is_err()

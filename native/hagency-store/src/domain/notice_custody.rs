@@ -54,7 +54,10 @@ fn current(db: &Connection, id: &str) -> Result<bool, Error> {
         "SELECT n.task_epoch,n.cancel_requested,COALESCE(i.state<>'closed',1) FROM task_notices n LEFT JOIN task_intents i ON i.task_id=n.task_id WHERE n.id=?1",
         [id], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
     )?;
-    if cancelled || !active || epoch != Some(execution::task(db, &notice.task_id)?.execution_epoch)
+    // A quota notice (ADR-186) is said as its turn ends: see `retire`.
+    let quota = matches!(notice.kind.as_str(), "quota_paused" | "quota_resumed");
+    if cancelled
+        || (!quota && (!active || epoch != Some(execution::task(db, &notice.task_id)?.execution_epoch)))
     {
         return Ok(false);
     }
@@ -108,8 +111,14 @@ fn activate(tx: &Transaction<'_>, id: &str, input: &ReplyDeliveryObservation) ->
 }
 /// Called during route reconciliation as well as before custody operations.
 /// Possible sends remain uncertain and keep their attempt fence for inspection.
+///
+/// A quota notice (ADR-186) outlives its turn: the pause begins when the turn
+/// that crossed the allocation reports its usage, which is exactly when that
+/// turn ends (its task moves to the next execution epoch, and a delegated
+/// task's thread closes), so tying it to the turn would cancel every pause
+/// notice before it is sent. It still needs the session's current route.
 pub(super) fn retire(tx: &Transaction<'_>) -> Result<(), Error> {
-    tx.execute("UPDATE task_notices SET cancel_requested=1,state=CASE WHEN state IN ('sending','uncertain') THEN 'uncertain' ELSE 'cancelled' END,claim_hash=NULL,claim_until=NULL,error_code='scope_retired' WHERE verified_route IS NOT NULL AND state IN ('pending','claimed','sending','uncertain','failed') AND NOT EXISTS(SELECT 1 FROM current_matrix_routes r JOIN canonical_tasks t ON t.session_id=r.session_id LEFT JOIN task_intents i ON i.task_id=t.id WHERE t.id=task_notices.task_id AND json_extract(t.config,'$.execution_epoch')=task_notices.task_epoch AND COALESCE(i.state<>'closed',1))",[])?;
+    tx.execute("UPDATE task_notices SET cancel_requested=1,state=CASE WHEN state IN ('sending','uncertain') THEN 'uncertain' ELSE 'cancelled' END,claim_hash=NULL,claim_until=NULL,error_code='scope_retired' WHERE verified_route IS NOT NULL AND state IN ('pending','claimed','sending','uncertain','failed') AND NOT EXISTS(SELECT 1 FROM current_matrix_routes r JOIN canonical_tasks t ON t.session_id=r.session_id LEFT JOIN task_intents i ON i.task_id=t.id WHERE t.id=task_notices.task_id AND (json_extract(task_notices.config,'$.kind') IN ('quota_paused','quota_resumed') OR (json_extract(t.config,'$.execution_epoch')=task_notices.task_epoch AND COALESCE(i.state<>'closed',1))))",[])?;
     Ok(())
 }
 pub(super) fn reconcile(tx: &Transaction<'_>, now: u64, restart: bool) -> Result<(), Error> {

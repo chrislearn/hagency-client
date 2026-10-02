@@ -17,6 +17,8 @@ mod browser;
 mod configuration;
 #[path = "console/engagements.rs"]
 mod engagements;
+#[path = "console/engagements_allocation.rs"]
+mod engagements_allocation;
 #[path = "console/engagements_retire.rs"]
 mod engagements_retire;
 #[path = "console/engagements_verdict.rs"]

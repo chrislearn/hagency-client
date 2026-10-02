@@ -18,7 +18,8 @@
 //! receipt — `id`, `state`, `cleanup` — never the full engagement
 //! row and no project, room, resource or token field.
 use super::{Error, Session, body, console, failed, recheck, usage::query};
-use crate::{refusal, resources::domain};
+use crate::{refusal, refusal_explained, resources::domain};
+use hagency_store::DomainStore;
 use hagency_core::project::{Engagement, EngagementState, identifier};
 use salvo::prelude::*;
 use serde::Deserialize;
@@ -29,6 +30,7 @@ pub(super) fn router() -> Router {
         .push(Router::with_path("engagements/{id}/cleanup-retry").post(cleanup_retry))
         .push(Router::with_path("engagements/{id}/candidates").get(candidates))
         .push(Router::with_path("engagements/{id}/approve").post(approve))
+        .push(Router::with_path("engagements/{id}/allocation").post(allocation))
         .push(Router::with_path("engagements/audit").get(audit))
 }
 
@@ -51,8 +53,10 @@ fn verdict_store_error(res: &mut Response, error: hagency_store::Error) {
             refusal(res, StatusCode::CONFLICT, "insufficient_capacity")
         }
         hagency_store::Error::NoCeiling => refusal(res, StatusCode::CONFLICT, "no_ceiling"),
-        hagency_store::Error::OverCommit { .. } => {
-            refusal(res, StatusCode::CONFLICT, "over_commit")
+        // ADR-186 §A2: the refusal carries the store's own explanation of
+        // the binding limit, which the console shows beside the amount.
+        hagency_store::Error::OverCommit { message } => {
+            refusal_explained(res, StatusCode::CONFLICT, "over_commit", &message)
         }
         hagency_store::Error::Invalid(_) => refusal(res, StatusCode::BAD_REQUEST, "invalid"),
         error => store_error(res, error),
@@ -101,6 +105,44 @@ struct Command {
     command_id: String,
 }
 
+/// The approval body (ADR-186 §A1): the command id and, optionally, the
+/// amount the operator grants. Absent means the requested amount.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ApproveCommand {
+    command_id: String,
+    #[serde(default)]
+    allocated_tokens: Option<u64>,
+}
+
+/// The engagement's own body shapes, each carrying the operator's command id.
+trait CommandBody: serde::de::DeserializeOwned {
+    fn command_id(&self) -> &str;
+}
+impl CommandBody for Command {
+    fn command_id(&self) -> &str {
+        &self.command_id
+    }
+}
+impl CommandBody for ApproveCommand {
+    fn command_id(&self) -> &str {
+        &self.command_id
+    }
+}
+
+/// The top-up body (ADR-186 §C1): the command id and the tokens to add.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct AllocationCommand {
+    command_id: String,
+    add_tokens: u64,
+}
+impl CommandBody for AllocationCommand {
+    fn command_id(&self) -> &str {
+        &self.command_id
+    }
+}
+
 /// Validate path and body, returning (engagement id, command id) or having
 /// already served the refusal. The command id is the operator's idempotency
 /// key: the store replays it by digest, so a re-POST with the same key and the
@@ -113,6 +155,18 @@ async fn decision(
     depot: &Depot,
     res: &mut Response,
 ) -> Option<(String, String)> {
+    decision_body::<Command>(req, depot, res)
+        .await
+        .map(|(id, input)| (id, input.command_id))
+}
+
+/// `decision` for a body that carries more than the command id: the same
+/// path, scope, size and command-id checks, and the parsed body returned.
+async fn decision_body<T: CommandBody>(
+    req: &mut Request,
+    depot: &Depot,
+    res: &mut Response,
+) -> Option<(String, T)> {
     if req.uri().query().is_some() {
         failed(res, Error::Invalid);
         return None;
@@ -138,18 +192,18 @@ async fn decision(
             return None;
         }
     };
-    let input: Command = match serde_json::from_slice(&raw) {
+    let input: T = match serde_json::from_slice(&raw) {
         Ok(input) => input,
         Err(_) => {
             failed(res, Error::Invalid);
             return None;
         }
     };
-    if identifier(&input.command_id, 512).is_err() {
+    if identifier(input.command_id(), 512).is_err() {
         failed(res, Error::Invalid);
         return None;
     }
-    Some((id, input.command_id))
+    Some((id, input))
 }
 
 fn receipt(res: &mut Response, result: Result<Engagement, hagency_store::Error>) {
@@ -259,15 +313,13 @@ async fn candidates(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         .ok()
         .and_then(|d| u64::try_from(d.as_millis()).ok())
         .unwrap_or_default();
-    let headroom = match store
-        .resource_headroom(engagement.resource_id.clone(), now)
+    // ADR-186 §A3: the same smallest of ceiling, seat and pool headroom the
+    // approval is checked against, so "All remaining" can never be refused.
+    let headroom = store
+        .engagement_headroom(engagement.id.clone(), now)
         .await
-    {
-        Ok((_, report)) => report
-            .ceiling_tokens
-            .map(|ceiling| ceiling.saturating_sub(report.drawn)),
-        Err(_) => None,
-    };
+        .ok()
+        .flatten();
     let locked = engagement.state != EngagementState::Pending;
     res.render(Json(serde_json::json!({
         "candidates": [{
@@ -298,9 +350,18 @@ async fn candidates(req: &mut Request, depot: &mut Depot, res: &mut Response) {
 /// budget guards bind unchanged.
 #[handler]
 async fn approve(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    let Some((id, command)) = decision(req, depot, res).await else {
+    let Some((id, ApproveCommand {
+        command_id: command,
+        allocated_tokens,
+    })) = decision_body::<ApproveCommand>(req, depot, res).await
+    else {
         return;
     };
+    // ADR-186 §A1: a chosen amount is a positive integer.
+    if allocated_tokens == Some(0) {
+        failed(res, Error::Invalid);
+        return;
+    }
     let Some(store) = domain(depot, res) else {
         return;
     };
@@ -365,17 +426,101 @@ async fn approve(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         );
         return;
     };
-    let result = store.approve(command, verified, now).await;
+    let granted = allocated_tokens.unwrap_or(u64::from(engagement.requested_tokens));
+    let result = store
+        .approve_allocating(command, verified, now, allocated_tokens)
+        .await;
     if result.is_ok() && recheck(depot).is_err() {
         verdict_store_error(res, hagency_store::Error::OutcomeUnknown);
         return;
     }
     match result {
+        Err(hagency_store::Error::InsufficientCapacity) => {
+            capacity_refusal(res, &store, &engagement, granted, now).await
+        }
         // A refused approval (over the remaining allocation, no ceiling, a
         // decided engagement) is a verdict refusal the console names, not an
         // unreadable engagement.
         Err(error) => verdict_store_error(res, error),
         ok => receipt(res, ok),
+    }
+}
+
+/// The operator's top-up (ADR-186 §C): `DomainStore::raise_allocation`
+/// raises a reserved or active engagement's allocation by `addTokens`,
+/// checked like an approval against the headroom left after its current
+/// allocation, idempotent by `commandId` (the store's decision receipts).
+/// The store lifts a quota hold the new allocation clears, in the same
+/// transaction; Palpo reads the new figure on its next status refresh. The
+/// answer is the bounded decision receipt, like every engagement mutation.
+#[handler]
+async fn allocation(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    let Some((id, AllocationCommand {
+        command_id: command,
+        add_tokens,
+    })) = decision_body::<AllocationCommand>(req, depot, res).await
+    else {
+        return;
+    };
+    if add_tokens == 0 {
+        failed(res, Error::Invalid);
+        return;
+    }
+    let Some(store) = domain(depot, res) else {
+        return;
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|d| u64::try_from(d.as_millis()).ok())
+        .unwrap_or_default();
+    let result = store
+        .raise_allocation(command, id.clone(), add_tokens, now)
+        .await;
+    if result.is_ok() && recheck(depot).is_err() {
+        verdict_store_error(res, hagency_store::Error::OutcomeUnknown);
+        return;
+    }
+    match result {
+        Ok(engagement) => receipt(res, Ok(engagement)),
+        Err(hagency_store::Error::InsufficientCapacity) => match store.engagement(id).await {
+            Ok(engagement) => capacity_refusal(res, &store, &engagement, add_tokens, now).await,
+            Err(_) => refusal(res, StatusCode::CONFLICT, "insufficient_capacity"),
+        },
+        // Only a reserved or active engagement holds an allocation to raise.
+        Err(hagency_store::Error::State) => {
+            refusal(res, StatusCode::CONFLICT, "engagement_not_live")
+        }
+        Err(error) => verdict_store_error(res, error),
+    }
+}
+
+/// ADR-186 §A2 for the seat or pool side: the store keeps the bare
+/// `insufficient_capacity` identity (no ceiling report binds), so the route
+/// names the headroom the approval was checked against, read in a second
+/// job. If that read fails the code alone is served — the refusal itself is
+/// already decided.
+async fn capacity_refusal(
+    res: &mut Response,
+    store: &DomainStore,
+    engagement: &Engagement,
+    granted: u64,
+    now: u64,
+) {
+    match store.engagement_headroom(engagement.id.clone(), now).await {
+        Ok(Some(left)) => {
+            let message = format!(
+                "{} (the shared seat or resource pool is the binding limit)",
+                hagency_core::ceiling::over_commit_message(
+                    engagement.agent_name.as_str(),
+                    granted,
+                    left,
+                    None,
+                )
+            );
+            refusal_explained(res, StatusCode::CONFLICT, "insufficient_capacity", &message)
+        }
+        _ => refusal(res, StatusCode::CONFLICT, "insufficient_capacity"),
     }
 }
 

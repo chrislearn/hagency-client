@@ -440,6 +440,14 @@ fn claim(
     if state != "pending" || !["accepted", "retired"].contains(&lease.as_str()) || retry > now {
         return Ok(Reply::Claim(None));
     }
+    // A delivery put back for a later attempt keeps its earlier attempts only
+    // as history. Without this, one request that keeps waiting (TS
+    // submission_pending) adds a row per retry until the attempt bound refuses
+    // every claim, and the whole work lane stops.
+    tx.execute(
+        "DELETE FROM outbound_attempts WHERE binding=?1 AND lane=?2 AND delivery_id=?3 AND state='retry'",
+        params![s.binding, lane.as_str(), delivery],
+    )?;
     if tx.query_row("SELECT COUNT(*) FROM outbound_attempts", [], |r| {
         r.get::<_, i64>(0)
     })? >= max

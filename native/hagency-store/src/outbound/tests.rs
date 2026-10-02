@@ -1371,3 +1371,40 @@ fn native_outbound_work_retry_does_not_block_the_lane() {
     let again = claim(&mut db, &s, Lane::Work, "blocked-2", 203 + 20_000).unwrap();
     assert_eq!(start(&mut db, &again, 203 + 20_001).delivery.id, "blocked");
 }
+
+#[test]
+fn native_outbound_custody_waiting_request_never_exhausts_attempts() {
+    // A request that keeps waiting (TS submission_pending) is retried for as
+    // long as it takes. Its superseded attempts must not accumulate up to the
+    // attempt bound, or every later claim is refused and the lane stops.
+    let (_dir, mut db, s) = setup();
+    db.max_attempts = 3;
+    receive(&mut db, &s, delivery("waiting", Lane::Work));
+    ack(&mut db, &s, Lane::Work, "waiting");
+    let step = 1_000_000_000;
+    for round in 0..10u64 {
+        let now = 10 + round * step;
+        let ticket = claim(&mut db, &s, Lane::Work, &format!("retry-{round}"), now)
+            .unwrap_or_else(|| panic!("round {round}: the waiting request is claimable again"));
+        start(&mut db, &ticket, now + 1);
+        db.outbound(Command::ProcessingUnknown(ticket.clone()), now + 2).unwrap();
+        db.outbound(
+            Command::Inspect {
+                scope: s.clone(),
+                attempt_id: ticket.id().into(),
+                outcome: Inspection::Retry,
+            },
+            now + 2,
+        )
+        .unwrap();
+        let kept: i64 = db
+            .db
+            .query_row("SELECT COUNT(*) FROM outbound_attempts", [], |r| r.get(0))
+            .unwrap();
+        assert!(kept <= 1, "round {round}: {kept} attempts kept for one waiting request");
+    }
+    // The lane still serves the next request behind it.
+    receive(&mut db, &s, delivery("next", Lane::Work));
+    ack(&mut db, &s, Lane::Work, "next");
+    assert!(claim(&mut db, &s, Lane::Work, "next-attempt", 11 * step).is_some());
+}
