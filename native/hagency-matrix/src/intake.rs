@@ -557,9 +557,8 @@ impl Inner {
         for id in &plan.sessions {
             observe!(Targets);
             let route = self.domain.matrix_intake_route(id.clone()).await?;
-            let room = self
-                .config
-                .rooms
+            let rooms = self.host_rooms();
+            let room = rooms
                 .iter()
                 .find(|r| r.room_id == route.room_id)
                 .ok_or(Error::Generation)?;
@@ -620,7 +619,7 @@ impl Inner {
                 let cursor = owner.cursor().await?;
                 let filter = json!({
                     "room": {
-                        "rooms": self.config.observed_rooms().map(|r| &r.room_id).collect::<Vec<_>>(),
+                        "rooms": self.observed().iter().map(|r| r.room_id.clone()).collect::<Vec<_>>(),
                         "timeline": {"limit": MAX_TIMELINE}, "ephemeral": {"types": []},
                         "account_data": {"types": []}, "state": {"lazy_load_members": false}
                     },

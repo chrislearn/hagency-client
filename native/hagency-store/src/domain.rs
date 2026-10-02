@@ -87,6 +87,7 @@ pub use outcome_resolution::{OutcomeAction, OutcomeResolution};
 mod provision_runtime;
 mod quota_holds;
 pub(crate) mod owner_anchors;
+pub(crate) mod joined_rooms;
 mod reminders;
 mod room_trust;
 pub use reminders::{Reminder, ReminderReceipt, ReminderSweep};
@@ -138,7 +139,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 59;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 60;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -1090,12 +1091,15 @@ impl DomainRepository {
                     (58, include_str!("migrations/058-quota-holds.sql")),
                     // ADR-187 §C: owner anchors pinned on first use.
                     (59, include_str!("migrations/059-owner-anchors.sql")),
+                    // ADR-188: rooms an agent joined by invitation.
+                    (60, include_str!("migrations/074-joined-rooms.sql")),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
                     "SELECT allocated_tokens FROM engagements LIMIT 0",
                     "SELECT id,engagement_id,dispatch_id,spend,allocation,began_at,lifted_at,lifted_allocation FROM quota_holds LIMIT 0",
                     "SELECT owner_mxid,master_key,source,pinned_at,mismatch_key,mismatch_at FROM owner_anchors LIMIT 0",
+                    "SELECT engagement_id,room_id,state,joined_at,updated_at,notice_at FROM joined_rooms LIMIT 0",
                     "SELECT fleet_id,allocated_tokens,updated_at FROM side_allocations LIMIT 0",
                     "SELECT engagement_id,stopped_at,reason,operator,started_at FROM agent_lifecycle LIMIT 0",
                     "SELECT server_name,label,api_base_url,credential,pending_credential,pending_issued_at,representative,access_state,access_detail,access_checked_at,access_issued_at,allocated_tokens,active,created_at,updated_at FROM side_records LIMIT 0",
@@ -2436,6 +2440,30 @@ impl DomainRepository {
         // A refused key still records the mismatch for the operator.
         tx.commit()?;
         result
+    }
+    /// ADR-188: the engagement's joined rooms that are not retired.
+    pub fn joined_rooms(&self, engagement: &str) -> Result<Vec<joined_rooms::JoinedRoom>, Error> {
+        joined_rooms::live(&self.db, engagement)
+    }
+    pub fn joined_room(&self, engagement: &str, room: &str) -> Result<Option<joined_rooms::JoinedRoom>, Error> {
+        joined_rooms::get(&self.db, engagement, room)
+    }
+    /// ADR-188 §2: the agent joined `room` by invitation.
+    pub fn record_joined_room(&mut self, engagement: &str, room: &str, now: u64) -> Result<joined_rooms::JoinedRoom, Error> {
+        let tx = self.db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let result = joined_rooms::record(&tx, engagement, room, now)?;
+        tx.commit()?;
+        Ok(result)
+    }
+    pub fn set_joined_room_state(&mut self, engagement: &str, room: &str, state: joined_rooms::JoinedRoomState, now: u64) -> Result<joined_rooms::JoinedRoom, Error> {
+        let tx = self.db.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let result = joined_rooms::set_state(&tx, engagement, room, state, now)?;
+        tx.commit()?;
+        Ok(result)
+    }
+    /// ADR-188 §3: true only for the first caller; that caller posts the notice.
+    pub fn claim_joined_room_notice(&mut self, engagement: &str, room: &str, now: u64) -> Result<bool, Error> {
+        joined_rooms::claim_notice(&self.db, engagement, room, now)
     }
     /// ADR-187 §C: the operator's explicit re-pin.
     pub fn repin_owner_anchor(&mut self, owner: &str, key: &str, now: u64) -> Result<owner_anchors::OwnerAnchor, Error> {

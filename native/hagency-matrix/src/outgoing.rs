@@ -807,9 +807,8 @@ impl Inner {
         {
             return Err(Error::Generation);
         }
-        let target = self
-            .config
-            .rooms
+        let rooms = self.host_rooms();
+        let target = rooms
             .iter()
             .find(|r| r.room_id == route.room_id && r.privacy == route.privacy)
             .ok_or(Error::Generation)?;

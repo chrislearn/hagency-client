@@ -49,6 +49,11 @@ pub(crate) struct Inner {
     /// Verification-time-only room snapshots + authority facts (ADR-095),
     /// captured at intake and read by the provisioning hook; never stored.
     pub(crate) room_facts: Mutex<BTreeMap<String, (MatrixRoomObservation, RoomAuthorityFacts)>>,
+    /// ADR-188: rooms this agent joined by invitation, read from the store on
+    /// every pass (room → working). Never part of `config.rooms`, so the
+    /// store binding is unchanged; working rooms join the sync filter, intake
+    /// targets and send checks alongside the identity rooms.
+    pub(crate) joined: std::sync::Mutex<BTreeMap<String, bool>>,
     /// When this agent's display name was last reconciled, in wall-clock ms;
     /// 0 is "never". The 300 s throttle of `reconcile_agent_profile`
     /// (bridge-matrix.js:5939-5940).
@@ -263,6 +268,7 @@ impl Inner {
             receiver: crate::receive::Receiver::new(),
             uploads: crate::upload::Registry::new(),
             room_facts: Mutex::new(BTreeMap::new()),
+            joined: std::sync::Mutex::new(BTreeMap::new()),
             profile_checked_at: std::sync::atomic::AtomicU64::new(0),
             #[cfg(test)]
             handoff_fault: std::sync::atomic::AtomicU8::new(0),
@@ -322,7 +328,7 @@ impl Inner {
                 let cursor = owner.cursor().await?;
                 let filter = json!({
                     "room": {
-                        "rooms": self.config.observed_rooms().map(|r| &r.room_id).collect::<Vec<_>>(),
+                        "rooms": self.observed().iter().map(|r| r.room_id.clone()).collect::<Vec<_>>(),
                         "timeline": {"limit": 0}, "ephemeral": {"types": []},
                         "account_data": {"types": []}, "state": {"lazy_load_members": false}
                     },
@@ -555,7 +561,8 @@ impl Inner {
             .config
             .rooms
             .iter()
-            .any(|r| r.room_id == target.room_id);
+            .any(|r| r.room_id == target.room_id)
+            || self.joined.lock().unwrap().contains_key(&target.room_id);
         let coordinator = self
             .config
             .factory_rooms
@@ -800,12 +807,32 @@ impl Inner {
     /// key metadata remain intact so crypto can progress; unrelated room state
     /// and timeline events never enter the SDK or an intake journal.
     pub(crate) fn scope_sync(&self, value: Value) -> Result<Value, Error> {
-        let allowed = self
-            .config
-            .observed_rooms()
+        let observed = self.observed();
+        let allowed = observed
+            .iter()
             .map(|r| r.room_id.as_str())
             .collect::<BTreeSet<_>>();
         self.scope_sync_to(value, &allowed)
+    }
+    /// ADR-188: the identity rooms, then the working joined rooms.
+    pub(crate) fn host_rooms(&self) -> Vec<HostRoom> {
+        let mut rooms = self.config.rooms.clone();
+        for (room_id, working) in self.joined.lock().unwrap().iter() {
+            if *working && !rooms.iter().any(|r| &r.room_id == room_id) {
+                rooms.push(HostRoom {
+                    room_id: room_id.clone(),
+                    generation: 1,
+                    privacy: RoomPrivacy::Group {},
+                });
+            }
+        }
+        rooms
+    }
+    /// `host_rooms` followed by the reception room, as `observed_rooms`.
+    pub(crate) fn observed(&self) -> Vec<HostRoom> {
+        let mut rooms = self.host_rooms();
+        rooms.extend(self.config.reception_room.iter().cloned());
+        rooms
     }
     /// `scope_sync` over an explicit room set: the approval bot's rooms are
     /// derived from the store per engagement, not only its startup list.

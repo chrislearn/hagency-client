@@ -23,7 +23,6 @@
 //! invitation WAS answered — by policy, never credited to a person).
 use super::Shared;
 use hagency_matrix::{CancellationToken, Collector};
-use sha2::{Digest, Sha256};
 use std::time::Duration;
 
 /// The retained product's invite-poll cadence: a few seconds
@@ -203,24 +202,18 @@ pub async fn poll_round(
     Ok(())
 }
 
-/// Bind a joined room to the agent's engagement as a session (the store
-/// equivalent of the TS DM binding, `matrix-direct-chat.js:174-177`):
-/// messages that arrive there are attributable to this agent's intake.
-/// The id is the room's digest — stable across rounds, so a re-join
-/// rebinds the same session rather than accumulating rows.
+/// ADR-188 §2: record a joined room for the agent's engagement. The agent's
+/// driver reads it on its next pass and, once the room is observed safe,
+/// reads and answers there. Re-joining a room makes it working again.
 async fn bind_joined_room(domain: &hagency_store::DomainStore, engagement_id: &str, room: &str) {
-    let digest = Sha256::digest(room.as_bytes());
-    let id = format!(
-        "invite_{}",
-        digest[..8].iter().map(|b| format!("{b:02x}")).collect::<String>()
-    );
-    let binding = hagency_core::tasks::SessionBinding {
-        id,
-        engagement_id: engagement_id.to_owned(),
-        room_id: room.to_owned(),
-        thread_root: None,
-    };
-    if let Err(error) = domain.register_session(binding).await {
-        tracing::warn!(?error, room, "joined room could not be bound as a session");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    if let Err(error) = domain
+        .record_joined_room(engagement_id.to_owned(), room.to_owned(), now)
+        .await
+    {
+        tracing::warn!(?error, room, "joined room could not be recorded");
     }
 }

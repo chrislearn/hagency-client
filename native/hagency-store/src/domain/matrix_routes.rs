@@ -30,6 +30,15 @@ fn context(db: &Connection, engagement: &str) -> Result<Context, Error> {
         approval_room,
     })
 }
+/// ADR-188 §2: a group room other than the project room is admitted only
+/// while it is one of the engagement's working joined rooms.
+fn joined_working(db: &Connection, engagement: &str, room: &str) -> Result<bool, Error> {
+    Ok(db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM joined_rooms WHERE engagement_id=?1 AND room_id=?2 AND state='working')",
+        params![engagement, room],
+        |r| r.get(0),
+    )?)
+}
 fn user(id: &str, server: &str) -> Result<(), Error> {
     matrix_user(id, server).map_err(|_| Error::RunnerAuthority)?;
     Ok(())
@@ -369,7 +378,9 @@ impl DomainRepository {
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let c = context(&tx, &input.engagement_id)?;
-        if !matches!(input.privacy, RoomPrivacy::Group {}) || input.room_id != c.project_room {
+        if !matches!(input.privacy, RoomPrivacy::Group {})
+            || (input.room_id != c.project_room && !joined_working(&tx, &input.engagement_id, &input.room_id)?)
+        {
             return Err(Error::RunnerAuthority);
         }
         if input.joined.len() > 1000
@@ -530,7 +541,10 @@ impl DomainRepository {
             if input.generation != 1 {
                 return Err(Error::Generation);
             }
-            if matches!(input.privacy, RoomPrivacy::Group {}) && input.room_id != c.project_room {
+            if matches!(input.privacy, RoomPrivacy::Group {})
+                && input.room_id != c.project_room
+                && !joined_working(tx, &input.engagement_id, &input.room_id)?
+            {
                 return Err(Error::RunnerAuthority);
             }
         }

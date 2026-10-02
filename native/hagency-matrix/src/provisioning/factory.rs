@@ -251,8 +251,205 @@ impl ProvisionedAgent {
                 workspace_id: self.workspace.clone(),
             });
         }
+        self.joined_rooms(&transport, &mut rooms, &mut inboxes).await?;
         let profile = profile.refresh_matrix_rooms(transport, rooms)?;
         Ok((profile, inboxes))
+    }
+    /// ADR-188: the rooms this agent joined by invitation, read from the
+    /// store on every pass. Each is observed on its own; a room that cannot
+    /// be observed or is not safe to work in is skipped this pass, never
+    /// fatal to the agent's identity rooms.
+    async fn joined_rooms(
+        &self,
+        transport: &hagency_core::replies::MatrixTransportObservation,
+        rooms: &mut Vec<OwnedClaimRoom>,
+        inboxes: &mut Vec<hagency_core::agent_inbox::AgentInboxPlan>,
+    ) -> Result<(), Error> {
+        use hagency_store::JoinedRoomState;
+        let inner = &self.collector.inner;
+        let engagement = transport.engagement_id.clone();
+        let joined = inner.domain.joined_rooms(engagement.clone()).await?;
+        // The store is the truth: forget rooms it no longer lists.
+        inner
+            .joined
+            .lock()
+            .unwrap()
+            .retain(|room, _| joined.iter().any(|j| &j.room_id == room));
+        if joined.is_empty() {
+            return Ok(());
+        }
+        if inner.config.factory_rooms.is_none() {
+            return Err(Error::Config);
+        }
+        let owner = inner.config.rooms.iter().find_map(|r| match &r.privacy {
+            RoomPrivacy::Direct { human_mxid } => Some(human_mxid.clone()),
+            RoomPrivacy::Group {} => None,
+        });
+        let Some(owner) = owner else {
+            return Ok(());
+        };
+        let cancel = crate::CancellationToken::new();
+        // ADR-188 §5: a room the agent is no longer in (it left, was kicked,
+        // or the room closed) retires. A failed read retires nothing.
+        let member_of: Option<Vec<String>> = match inner
+            .http
+            .request(&["_matrix", "client", "v3", "joined_rooms"], None, &cancel)
+            .await
+            .and_then(|response| response.success())
+        {
+            Ok(value) => value["joined_rooms"].as_array().map(|rooms| {
+                rooms.iter().filter_map(|r| r.as_str().map(str::to_owned)).collect()
+            }),
+            Err(_) => None,
+        };
+        let mut live = Vec::with_capacity(joined.len());
+        for room in joined {
+            if member_of.as_ref().is_some_and(|rooms| !rooms.contains(&room.room_id)) {
+                inner
+                    .domain
+                    .set_joined_room_state(
+                        engagement.clone(),
+                        room.room_id.clone(),
+                        JoinedRoomState::Retired,
+                        wall_ms(),
+                    )
+                    .await?;
+                inner.joined.lock().unwrap().remove(&room.room_id);
+                continue;
+            }
+            live.push(room);
+        }
+        for room in live {
+            // An identity room is never also a joined room.
+            if inner.config.rooms.iter().any(|r| r.room_id == room.room_id) {
+                continue;
+            }
+            let target = crate::HostRoom {
+                room_id: room.room_id.clone(),
+                generation: 1,
+                privacy: RoomPrivacy::Group {},
+            };
+            inner
+                .joined
+                .lock()
+                .unwrap()
+                .entry(room.room_id.clone())
+                .or_insert(false);
+            let observation = match inner.collect_room_observation(&target, &cancel).await {
+                Ok(observation) => observation,
+                Err(error) => {
+                    eprintln!(
+                        "joined room {} of {engagement} not observed this pass: {error:?}",
+                        room.room_id
+                    );
+                    inner.joined.lock().unwrap().insert(room.room_id.clone(), false);
+                    continue;
+                }
+            };
+            let owner_only = observation.joined.len() == 2
+                && observation.joined.contains(&owner)
+                && observation.joined.contains(&transport.sender_mxid);
+            let state = if observation.encrypted && !owner_only {
+                JoinedRoomState::EncryptedShared
+            } else {
+                JoinedRoomState::Working
+            };
+            let now = wall_ms();
+            if room.state != state {
+                inner
+                    .domain
+                    .set_joined_room_state(engagement.clone(), room.room_id.clone(), state, now)
+                    .await?;
+            }
+            if state == JoinedRoomState::EncryptedShared {
+                inner.joined.lock().unwrap().insert(room.room_id.clone(), false);
+                if inner
+                    .domain
+                    .claim_joined_room_notice(engagement.clone(), room.room_id.clone(), now)
+                    .await?
+                {
+                    self.encrypted_shared_notice(&room.room_id, now, &cancel).await;
+                }
+                continue;
+            }
+            // A room the store will not route (its owner left, it went
+            // unsafe) is skipped this pass; the identity rooms carry on.
+            match self.joined_session(transport, &target).await {
+                Ok((selected, inbox)) => {
+                    rooms.push(selected);
+                    inner.joined.lock().unwrap().insert(room.room_id.clone(), true);
+                    inboxes.push(inbox);
+                }
+                Err(error) => {
+                    eprintln!(
+                        "joined room {} of {engagement} not routable this pass: {error:?}",
+                        room.room_id
+                    );
+                    inner.joined.lock().unwrap().insert(room.room_id.clone(), false);
+                }
+            }
+        }
+        Ok(())
+    }
+    /// The session and claim selection for one working joined room.
+    async fn joined_session(
+        &self,
+        transport: &hagency_core::replies::MatrixTransportObservation,
+        target: &crate::HostRoom,
+    ) -> Result<(OwnedClaimRoom, hagency_core::agent_inbox::AgentInboxPlan), Error> {
+        let inner = &self.collector.inner;
+        let engagement = transport.engagement_id.clone();
+        let generation = inner.observed_room_generation(target).await?;
+        let binding = SessionBinding {
+            id: joined_session_id(&engagement, transport.generation, generation, &target.room_id),
+            engagement_id: engagement.clone(),
+            room_id: target.room_id.clone(),
+            thread_root: None,
+        };
+        let resolved = inner
+            .domain
+            .resolve_verified_matrix_session(binding.clone())
+            .await?;
+        if resolved.id != binding.id
+            || resolved.engagement_id != binding.engagement_id
+            || resolved.room_id != binding.room_id
+            || resolved.thread_root != binding.thread_root
+        {
+            return Err(Error::Conflict);
+        }
+        let route = inner.domain.matrix_intake_route(binding.id.clone()).await?;
+        if route.room_generation != generation
+            || route.transport_generation != transport.generation
+            || !matches!(route.privacy, RoomPrivacy::Group {})
+        {
+            return Err(Error::Generation);
+        }
+        Ok((
+            OwnedClaimRoom::new(target.room_id.clone(), generation, RoomPrivacy::Group {})?
+                .joined_group()?,
+            hagency_core::agent_inbox::AgentInboxPlan {
+                session_id: binding.id,
+                workspace_id: self.workspace.clone(),
+            },
+        ))
+    }
+    /// ADR-188 §3: the one plain notice in an encrypted room with other
+    /// people in it. Its replies could be read only by the owner, so the
+    /// agent says so instead of working there. Best effort: a failed send is
+    /// logged, and the notice is not repeated.
+    async fn encrypted_shared_notice(&self, room: &str, now: u64, cancel: &crate::CancellationToken) {
+        let txn = format!("joined-notice-{now}");
+        let body = serde_json::json!({
+            "msgtype": "m.notice",
+            "body": "I can't work in an encrypted room with other people in it: only my owner could read my replies. Talk to me in an unencrypted room, or in a room with just my owner and me.",
+        })
+        .to_string();
+        let segments = ["_matrix", "client", "v3", "rooms", room, "send", "m.room.message", txn.as_str()];
+        match self.collector.inner.http.put(&segments, body, cancel).await {
+            Ok(response) if response.status == 200 => {}
+            Ok(response) => eprintln!("encrypted-room notice in {room} refused: HTTP {}", response.status),
+            Err(error) => eprintln!("encrypted-room notice in {room} failed: {error:?}"),
+        }
     }
     pub async fn claim_profile(&self) -> Result<OwnedClaimProfile, Error> {
         if self.custody.closed.load(Ordering::Acquire) {
@@ -826,4 +1023,13 @@ impl Collector {
         .await
         .map_err(|_| Error::OutcomeUnknown)?
     }
+}
+
+/// ADR-188: one session per (engagement, transport generation, room
+/// generation, joined room), distinct from the legacy `invite_…` sessions.
+fn joined_session_id(engagement: &str, transport: u64, generation: u64, room: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(room.as_bytes());
+    let short: String = digest[..6].iter().map(|b| format!("{b:02x}")).collect();
+    format!("joined_{engagement}_{transport}_{generation}_{short}")
 }

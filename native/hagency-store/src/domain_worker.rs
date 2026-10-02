@@ -4333,6 +4333,21 @@ impl DomainStore {
     pub async fn repin_owner_anchor(&self, owner: String, key: String, now: u64) -> Result<crate::OwnerAnchor, Error> {
         self.call(weight(&(&owner, &key))?, move |db| db.repin_owner_anchor(&owner, &key, now)).await
     }
+    pub async fn joined_rooms(&self, engagement: String) -> Result<Vec<crate::JoinedRoom>, Error> {
+        self.call(weight(&engagement)?, move |db| db.joined_rooms(&engagement)).await
+    }
+    pub async fn joined_room(&self, engagement: String, room: String) -> Result<Option<crate::JoinedRoom>, Error> {
+        self.call(weight(&(&engagement, &room))?, move |db| db.joined_room(&engagement, &room)).await
+    }
+    pub async fn record_joined_room(&self, engagement: String, room: String, now: u64) -> Result<crate::JoinedRoom, Error> {
+        self.call(weight(&(&engagement, &room))?, move |db| db.record_joined_room(&engagement, &room, now)).await
+    }
+    pub async fn set_joined_room_state(&self, engagement: String, room: String, state: crate::JoinedRoomState, now: u64) -> Result<crate::JoinedRoom, Error> {
+        self.call(weight(&(&engagement, &room))?, move |db| db.set_joined_room_state(&engagement, &room, state, now)).await
+    }
+    pub async fn claim_joined_room_notice(&self, engagement: String, room: String, now: u64) -> Result<bool, Error> {
+        self.call(weight(&(&engagement, &room))?, move |db| db.claim_joined_room_notice(&engagement, &room, now)).await
+    }
     pub async fn pending_unattached_retirements(&self, fleet_id: String) -> Result<Vec<String>, Error> {
         self.call(weight(&fleet_id)?, move |db| db.pending_unattached_retirements(&fleet_id))
             .await
