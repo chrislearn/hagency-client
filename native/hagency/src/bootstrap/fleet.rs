@@ -769,6 +769,7 @@ mod tests {
             driver: None,
             files: Some(failed),
             receives: None,
+            invites: None,
         };
         let second_owner = AgentOwner {
             shared: two,
@@ -776,6 +777,7 @@ mod tests {
             driver: None,
             files: Some(healthy),
             receives: None,
+            invites: None,
         };
         first_owner.quiesce();
         assert!(first_guard.validate_current().await.is_err());
