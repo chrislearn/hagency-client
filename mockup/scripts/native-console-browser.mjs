@@ -76,8 +76,12 @@ async function projectSidesWalk(page) {
   // #45 parity row #33 joined this page: register-a-side and
   // generate-registration render beside the read-only observation.
   // #51 added the connection probe: register, generate, test connection
-  // and refresh — four controls now.
-  assert((await page.locator('main button').count()) === 4, 'register, generate, test connection and refresh are the controls');
+  // and refresh — four controls now. The Palpo import's Connect makes five;
+  // it stays disabled until a downloaded configuration is picked.
+  assert((await page.locator('main button').count()) === 5, 'connect, register, generate, test connection and refresh are the controls');
+  const connect = page.locator('[data-palpo-import] button');
+  assert(await connect.isDisabled(), 'Connect waits for a picked configuration');
+  assert.match(await page.locator('[data-palpo-import]').innerText(), /Download Hagency configuration/);
 }
 
 /* The tasks page's WRITE journey (board #107), shared by the tasks-only lane:

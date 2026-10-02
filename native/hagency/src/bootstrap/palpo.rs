@@ -40,10 +40,12 @@ impl Prepared {
                     field: "palpo-transport.json",
                     fix: "the file must be valid JSON for the palpo v2 transport profile",
                 })?;
-        if value.profile != "palpo_v2_resources_v1" || !value.endpoint.starts_with("https://") {
+        // The endpoint's scheme rule is the host credential's own (https, or
+        // plain http to a loopback Palpo), the same rule the import applies.
+        if value.profile != "palpo_v2_resources_v1" {
             return Err(Failure::Config {
-                field: "palpo-transport.json: profile and endpoint",
-                fix: "profile must be palpo_v2_resources_v1 and endpoint must start with https://",
+                field: "palpo-transport.json: profile",
+                fix: "profile must be palpo_v2_resources_v1",
             });
         }
         value.registration.validate().map_err(|_| Failure::Config {
@@ -104,6 +106,201 @@ impl Prepared {
     }
 }
 
+/// Whether `serve --palpo-transport` found an imported fleet at boot. A fresh
+/// install has none yet: TS starts with no outbound fleet and picks one up
+/// when the operator imports it, so an absent file is "waiting for the
+/// import", never a startup refusal. A present but broken file still refuses.
+pub(super) fn imported(state: &Path) -> Result<bool, Failure> {
+    match std::fs::symlink_metadata(state.join("palpo-transport.json")) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(_) => Err(Failure::Config {
+            field: "palpo-transport.json",
+            fix: "the file must be readable by the service owner (stat failed)",
+        }),
+    }
+}
+
+/// The service's one Palpo transport, startable while the service runs (TS
+/// `reconcileOutboundFleets`: an imported outbound fleet starts without a
+/// restart, a re-import replaces its client). Bootstrap starts the imported
+/// fleet at boot through this same handle, and closes it at shutdown.
+#[derive(Clone)]
+pub(crate) struct Live(Arc<LiveInner>);
+struct LiveInner {
+    state: std::path::PathBuf,
+    store: Store,
+    domain: DomainStore,
+    status: StatusHandle,
+    /// `--palpo-transport`: without it an import is saved for the next start
+    /// that enables the transport, and nothing connects now.
+    enabled: bool,
+    owner: tokio::sync::Mutex<Option<Owner>>,
+    /// Shutdown wins over a concurrent import: once set, nothing starts.
+    closed: std::sync::atomic::AtomicBool,
+    cancel: Mutex<Option<CancellationToken>>,
+}
+/// What an import reports: the saved fleet's public facts and whether the
+/// transport was started. Never a token.
+pub(crate) struct Connected {
+    pub(crate) imported: super::palpo_import::Imported,
+    pub(crate) started: bool,
+}
+#[derive(Debug)]
+pub(crate) enum ImportError {
+    Invalid(&'static str),
+    /// The native service runs exactly one Palpo fleet transport.
+    OtherFleet,
+    Store(hagency_store::Error),
+    Start(Failure),
+    Closed,
+}
+impl From<super::palpo_import::Error> for ImportError {
+    fn from(error: super::palpo_import::Error) -> Self {
+        match error {
+            super::palpo_import::Error::Invalid(field) => Self::Invalid(field),
+            super::palpo_import::Error::Store(error) => Self::Store(error),
+        }
+    }
+}
+impl Live {
+    pub(crate) fn new(
+        state: std::path::PathBuf,
+        store: Store,
+        domain: DomainStore,
+        status: StatusHandle,
+        enabled: bool,
+    ) -> Self {
+        Self(Arc::new(LiveInner {
+            state,
+            store,
+            domain,
+            status,
+            enabled,
+            owner: tokio::sync::Mutex::new(None),
+            closed: std::sync::atomic::AtomicBool::new(false),
+            cancel: Mutex::new(None),
+        }))
+    }
+    pub(crate) fn status(&self) -> &StatusHandle {
+        &self.0.status
+    }
+    /// Replace the running transport (if any) with one built from `prepared`.
+    async fn replace(&self, prepared: Prepared) -> Result<(), Failure> {
+        let mut owner = self.0.owner.lock().await;
+        if let Some(mut old) = owner.take() {
+            // A previous transport that does not acknowledge its close keeps
+            // its original join; the new one starts only after it settled.
+            old.close().await?;
+        }
+        if self.0.closed.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(Failure::Cancelled);
+        }
+        self.0.status.set("starting", None);
+        let started = Owner::start(
+            prepared,
+            self.0.store.clone(),
+            self.0.domain.clone(),
+            self.0.status.clone(),
+        );
+        *self.0.cancel.lock().unwrap_or_else(|e| e.into_inner()) = Some(started.cancel.clone());
+        *owner = Some(started);
+        Ok(())
+    }
+    pub(super) async fn start(&self, prepared: Prepared) -> Result<(), Failure> {
+        self.replace(prepared).await
+    }
+    /// The console import: validate the owner download exactly like the CLI,
+    /// save it through the running store, then connect.
+    pub(crate) async fn import(
+        &self,
+        raw: &str,
+        homeserver: &str,
+    ) -> Result<Connected, ImportError> {
+        if self.0.closed.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(ImportError::Closed);
+        }
+        let homeserver = super::palpo_import::homeserver(homeserver)?;
+        let (mut registration, mut appservice, machine, endpoint, generation) =
+            super::palpo_import::parse(raw)?;
+        appservice["homeserver"] = serde_json::json!(homeserver);
+        // One fleet per service: a different fleet would silently retarget
+        // every identity and request this service already holds.
+        if let Ok(raw) = std::fs::read(self.0.state.join("palpo-transport.json"))
+            && let Ok(current) = serde_json::from_slice::<Config>(&raw)
+            && current.registration.fleet_id != registration.fleet_id
+        {
+            return Err(ImportError::OtherFleet);
+        }
+        let domain = &self.0.domain;
+        // A re-import of the same fleet keeps a reception an earlier probe bound.
+        if let Ok(current) = domain
+            .provisioning_registration(registration.fleet_id.clone())
+            .await
+        {
+            registration.reception_room_id = current.reception_room_id;
+        }
+        domain
+            .register(registration.clone())
+            .await
+            .map_err(ImportError::Store)?;
+        super::palpo_import::write(
+            &self.0.state,
+            &registration,
+            &appservice,
+            &machine,
+            &endpoint,
+            generation,
+        )?;
+        // The project side the console lists and verifies: the homeserver
+        // address and the App Service credential the representative acts
+        // with (TS `PUT /api/project-sides/:id/credential`).
+        let side = registration.server_name.clone();
+        domain.ensure_side(side.clone()).await.map_err(ImportError::Store)?;
+        domain
+            .set_api_base_url(side.clone(), Some(homeserver.clone()))
+            .await
+            .map_err(ImportError::Store)?;
+        let credential = serde_json::json!({
+            "kind": "appservice",
+            "asToken": appservice["as_token"], "hsToken": appservice["hs_token"],
+            "namespace": appservice["namespace"],
+            "senderLocalpart": appservice["sender_localpart"], "url": appservice["url"],
+        });
+        domain
+            .set_credential(side, Some(credential), false)
+            .await
+            .map_err(ImportError::Store)?;
+        let imported = super::palpo_import::Imported {
+            fleet_id: registration.fleet_id.clone(),
+            server_name: registration.server_name.clone(),
+            representative: registration.representative_mxid.clone(),
+            approval_bot: registration.approval_bot_mxid.clone(),
+            endpoint,
+            reception: registration.reception_room_id.clone(),
+        };
+        if !self.0.enabled {
+            return Ok(Connected { imported, started: false });
+        }
+        let prepared = Prepared::load(&self.0.state).map_err(ImportError::Start)?;
+        self.replace(prepared).await.map_err(ImportError::Start)?;
+        Ok(Connected { imported, started: true })
+    }
+    pub(super) fn cancel(&self) {
+        self.0.closed.store(true, std::sync::atomic::Ordering::Release);
+        if let Some(cancel) = &*self.0.cancel.lock().unwrap_or_else(|e| e.into_inner()) {
+            cancel.cancel();
+        }
+    }
+    pub(super) async fn close(&self) -> Result<(), Failure> {
+        self.cancel();
+        match self.0.owner.lock().await.as_mut() {
+            Some(owner) => owner.close().await,
+            None => Ok(()),
+        }
+    }
+}
+
 #[derive(Clone, Serialize)]
 pub(crate) struct Status {
     configured: bool,
@@ -113,10 +310,18 @@ pub(crate) struct Status {
 #[derive(Clone)]
 pub(crate) struct StatusHandle(Arc<Mutex<Status>>);
 impl StatusHandle {
-    pub(super) fn new(configured: bool) -> Self {
+    pub(crate) fn new(configured: bool) -> Self {
         Self(Arc::new(Mutex::new(Status {
             configured,
             state: if configured { "starting" } else { "disabled" },
+            error: None,
+        })))
+    }
+    /// `--palpo-transport` with no fleet imported yet.
+    pub(super) fn awaiting() -> Self {
+        Self(Arc::new(Mutex::new(Status {
+            configured: true,
+            state: "awaiting_import",
             error: None,
         })))
     }

@@ -39,6 +39,8 @@ mod origin;
 mod offer_book;
 #[path = "console/graphs.rs"]
 mod graphs;
+#[path = "console/palpo_import.rs"]
+mod palpo_import;
 #[path = "console/project_sides.rs"]
 mod project_sides;
 #[path = "console/real_agent.rs"]

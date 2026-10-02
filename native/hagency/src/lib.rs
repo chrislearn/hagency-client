@@ -36,6 +36,7 @@ pub struct App {
     requests: Arc<Semaphore>,
     development: Option<bootstrap::StatusHandle>,
     palpo: Option<bootstrap::palpo::StatusHandle>,
+    palpo_live: Option<bootstrap::palpo::Live>,
     files: Option<file_service::FileHandle>,
     receives: Option<receive_service::ReceiveHandle>,
     fleet: Option<bootstrap::fleet::Routes>,
@@ -73,6 +74,7 @@ impl App {
             requests: Arc::new(Semaphore::new(8)),
             development: None,
             palpo: None,
+            palpo_live: None,
             files: None,
             receives: None,
             fleet: None,
@@ -139,6 +141,27 @@ impl App {
     pub(crate) fn with_palpo(mut self, status: bootstrap::palpo::StatusHandle) -> Self {
         self.palpo = Some(status);
         self
+    }
+
+    pub(crate) fn with_palpo_live(mut self, live: bootstrap::palpo::Live) -> Self {
+        self.palpo_live = Some(live);
+        self
+    }
+
+    /// The console's Palpo import, saving into `state` without connecting
+    /// (the transport is not enabled). For a host assembled without
+    /// `Bootstrap`, such as the console test fixture.
+    pub fn with_palpo_import(self, state: std::path::PathBuf) -> Self {
+        let Some(domain) = self.domain.clone() else {
+            return self;
+        };
+        let status = bootstrap::palpo::StatusHandle::new(false);
+        let live = bootstrap::palpo::Live::new(state, self.store.clone(), domain, status.clone(), false);
+        self.with_palpo(status).with_palpo_live(live)
+    }
+
+    pub(crate) fn palpo_live(&self) -> Option<&bootstrap::palpo::Live> {
+        self.palpo_live.as_ref()
     }
 
     pub(crate) fn with_files(mut self, files: file_service::FileHandle) -> Self {
@@ -401,7 +424,8 @@ fn readiness(depot: &mut Depot, res: &mut Response, refuse: bool) {
     // is not serving, and 503 during shutdown is the honest answer (on
     // /ready; /health keeps 200).
     let owner_state = |configured: bool, state: &'static str| -> ComponentState {
-        if !configured {
+        if !configured || state == "awaiting_import" {
+            // No Palpo fleet imported yet: nothing to serve, not a failure.
             ComponentState::Disabled
         } else if matches!(
             state,
@@ -713,6 +737,8 @@ fn refusal_message(code: &str) -> &'static str {
         "sides_unavailable" => "the project-sides observation is unavailable",
         "stream_unavailable" => "the change stream is unavailable",
         "registration_unavailable" => "the registration is unavailable",
+        "palpo_fleet_conflict" => "another Palpo fleet is already connected to this Hagency",
+        "palpo_import_unavailable" => "the Palpo configuration could not be saved or connected; retry",
         // Service state.
         "console_unavailable" => "the native console is unavailable",
         "native_unavailable" => "the native API is unavailable",

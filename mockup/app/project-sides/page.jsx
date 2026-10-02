@@ -7,6 +7,7 @@ import NativeProjectSides from '@/components/NativeProjectSides';
 import ConnectionControl from './connection-control';
 import SideRegistrationControl from './registration-control';
 import RegisterSideControl from './register-side';
+import ImportPalpoControl from './import-palpo';
 
 /*
  * The native project-sides route (ADR-132). Deliberately a separate path
@@ -37,6 +38,9 @@ export default function ProjectSidesPage() {
         {/* The page reads top-down: its header and the registered projects
             first, then the controls that add or test a project. */}
         <NativeProjectSides />
+        {/* Connecting a Palpo server comes first: it is how a project
+            server is added; the manual forms below are for other homeservers. */}
+        <ImportPalpoControl />
         <RegisterSideControl />
         <SideRegistrationControl sides={data.sides ?? []} />
         <ConnectionControl sides={data.sides ?? []} />

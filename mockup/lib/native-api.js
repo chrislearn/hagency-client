@@ -1106,3 +1106,30 @@ export async function updateTaskGraphNode(id, nodeId, patch) {
   return validateGraph(v.graph);
 }
 export function taskGraphsView(location) { return /^\/console\/task-graphs\/?$/.test(location.pathname); }
+/* The Palpo owner download, imported through the console (TS: the "import
+ * Palpo authorized configuration" step of /projects/new). Its own fetch: a
+ * refusal carries the refused field, and saving may wait for a previous
+ * transport to close. The answer is public facts only, never a token. */
+export async function importPalpo(configuration, homeserver) {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), 20000);
+  try {
+    const response = await fetch(`${ROOT}/api/palpo/import`, {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal: abort.signal,
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ configuration, homeserver }),
+    });
+    let value = null;
+    try { value = await response.json(); } catch { /* not JSON: handled below */ }
+    if (response.status === 401) throw new Error('console_access_required');
+    if (!response.ok || value?.ok !== true) {
+      const refused = new Error(typeof value?.code === 'string' ? value.code : 'native_unavailable');
+      if (typeof value?.field === 'string') refused.field = value.field.slice(0, 120);
+      throw refused;
+    }
+    if (typeof value.fleetId !== 'string' || typeof value.serverName !== 'string') throw new Error('invalid_native_response');
+    return value;
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('outcome_unknown');
+    throw error;
+  } finally { clearTimeout(timer); }
+}
