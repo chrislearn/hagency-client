@@ -375,11 +375,18 @@ impl Batch {
                 // trust refusal (untrusted/forged sender, malformed) stays an
                 // immediate rejection exactly as before. One row per raw event
                 // is still exact (validate_restored's raw.len() == values.len()).
+                // Never silent: an undecryptable message either waits for its
+                // key or is refused, and the log says which and why, so a
+                // message lost in the first instant after enrollment can be
+                // traced (live 2026-10-02: one owner DM was never admitted).
+                let event = original.get("event_id").and_then(Value::as_str).unwrap_or("?");
                 if !utd_info.reason.is_missing_room_key() {
+                    eprintln!("intake: refused undecryptable {event} in {room}: {:?}", utd_info.reason);
                     Decision::Rejected {
                         reason: Rejection::CryptoIneligible,
                     }
                 } else {
+                    eprintln!("intake: waiting for the room key of {event} in {room}");
                     if pending.len() >= MAX_PENDING_UNDECRYPTABLE {
                         return Err(Error::Capacity);
                     }
