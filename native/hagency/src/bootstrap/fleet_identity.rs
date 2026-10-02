@@ -29,7 +29,7 @@ pub(crate) enum Error {
     #[error("the App Service could not act as {0}")]
     Refused(String),
     #[error("the stored {0} credential is no longer accepted; the operator must re-create it")]
-    Revoked(&'static str),
+    Revoked(String),
     #[error("the state directory refused a write")]
     Store,
 }
@@ -41,8 +41,24 @@ pub(crate) struct Device {
 }
 #[derive(Debug)]
 pub(crate) struct Identities {
-    pub(crate) approval: Device,
+    /// A rig-built instance's one approval device, adopted for migration; an
+    /// imported fleet otherwise has one approval device per owner
+    /// (`owner_approval_device`), created when that owner first needs one.
+    pub(crate) approval: Option<Device>,
     pub(crate) representative: Device,
+}
+/// ADR-187 amendment: the approval-bot device that serves one owner.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OwnerApprovalDevice {
+    pub(crate) device: Device,
+    /// The stable label its SDK binding was created with.
+    pub(crate) label: String,
+    /// The room its SDK binding was created with; later approval rooms of the
+    /// same owner come from the store.
+    pub(crate) first_room: String,
+    pub(crate) token_file: String,
+    pub(crate) key_file: String,
+    pub(crate) sdk_root: String,
 }
 
 struct Client {
@@ -90,7 +106,7 @@ fn text(value: &Value, key: &str) -> Option<String> {
 }
 
 /// One namespace user's device: reuse the stored one, or create it once.
-async fn device(client: &Client, state: &Path, name: &'static str, token_file: &str, localpart: &str) -> Result<Device, Error> {
+async fn device(client: &Client, state: &Path, name: &str, token_file: &str, localpart: &str) -> Result<Device, Error> {
     let user = format!("@{localpart}:{}", client.server_name);
     let identity = state.join(format!("{name}.identity.json"));
     let token_path = state.join(token_file);
@@ -99,7 +115,7 @@ async fn device(client: &Client, state: &Path, name: &'static str, token_file: &
         let token = String::from_utf8(token).map_err(|_| Error::Store)?;
         let (status, who) = client.whoami(token.trim(), None).await?;
         if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-            return Err(Error::Revoked(name));
+            return Err(Error::Revoked(name.to_owned()));
         }
         if !status.is_success() {
             return Err(Error::Unreachable);
@@ -109,7 +125,7 @@ async fn device(client: &Client, state: &Path, name: &'static str, token_file: &
             device_id: text(&stored, "device_id").ok_or(Error::Store)?,
         };
         if text(&who, "user_id").as_deref() != Some(device.user_id.as_str()) || device.user_id != user {
-            return Err(Error::Revoked(name));
+            return Err(Error::Revoked(name.to_owned()));
         }
         return Ok(device);
     }
@@ -121,10 +137,10 @@ async fn device(client: &Client, state: &Path, name: &'static str, token_file: &
         let token = String::from_utf8(token).map_err(|_| Error::Store)?;
         let (status, who) = client.whoami(token.trim(), None).await?;
         if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-            return Err(Error::Revoked(name));
+            return Err(Error::Revoked(name.to_owned()));
         }
         if !status.is_success() || text(&who, "user_id").as_deref() != Some(user.as_str()) {
-            return Err(Error::Revoked(name));
+            return Err(Error::Revoked(name.to_owned()));
         }
         let device_id = match text(&who, "device_id") {
             Some(device) => device,
@@ -134,11 +150,11 @@ async fn device(client: &Client, state: &Path, name: &'static str, token_file: &
                     .map(|root| root.join("coordinator").join(format!("{name}.identity.json")))
                     .and_then(|path| private::read_secret(&path).ok())
                     .and_then(|raw| serde_json::from_slice::<Value>(&raw).ok())
-                    .ok_or(Error::Revoked(name))?;
+                    .ok_or_else(|| Error::Revoked(name.to_owned()))?;
                 if text(&legacy, "user_id").as_deref() != Some(user.as_str()) {
-                    return Err(Error::Revoked(name));
+                    return Err(Error::Revoked(name.to_owned()));
                 }
-                text(&legacy, "device_id").ok_or(Error::Revoked(name))?
+                text(&legacy, "device_id").ok_or_else(|| Error::Revoked(name.to_owned()))?
             }
         };
         let identity_value = json!({"user_id": user, "device_id": device_id});
@@ -219,11 +235,128 @@ pub(crate) async fn ensure(state: &Path, fleet_id: &str, server_name: &str) -> R
         &format!("{fleet_id}_representative"),
     )
     .await?;
-    let approval = device(&client, state, "approval", "approval.access_token", &format!("{fleet_id}_approval")).await?;
+    // A rig-built instance's approval device is adopted, never re-created.
+    let approval = if state.join("approval.access_token").exists() {
+        Some(device(&client, state, "approval", "approval.access_token", &format!("{fleet_id}_approval")).await?)
+    } else {
+        None
+    };
     private::replace(&state.join("matrix.appservice_token"), as_token.as_bytes()).map_err(|_| Error::Store)?;
-    key(state, "approval.sdk_key")?;
     key(state, "matrix.provisioning_key")?;
     Ok(Identities { approval, representative })
+}
+
+/// The file-name slug of an owner: stable, private, filesystem-safe.
+fn owner_slug(owner: &str) -> String {
+    hagency_core::project::hash(owner.as_bytes())[..16].to_owned()
+}
+
+/// ADR-187 amendment: the approval-bot device serving `owner`, created the
+/// first time that owner needs approvals and reused from then on. A
+/// rig-built instance's one approval device is adopted as the device of the
+/// owner its configuration named, with its original label and room, so its
+/// SDK store still opens.
+pub(crate) async fn owner_approval_device(
+    state: &Path,
+    fleet_id: &str,
+    server_name: &str,
+    owner: &str,
+    approval_room: &str,
+) -> Result<OwnerApprovalDevice, Error> {
+    let slug = owner_slug(owner);
+    let record_path = state.join(format!("approval-{slug}.json"));
+    if let Ok(raw) = private::read_secret(&record_path) {
+        let value: Value = serde_json::from_slice(&raw).map_err(|_| Error::Store)?;
+        let field = |key: &str| text(&value, key).ok_or(Error::Store);
+        if field("owner")? != owner {
+            return Err(Error::Store);
+        }
+        return Ok(OwnerApprovalDevice {
+            device: Device { user_id: field("user_id")?, device_id: field("device_id")? },
+            label: field("label")?,
+            first_room: field("first_room")?,
+            token_file: field("token_file")?,
+            key_file: field("key_file")?,
+            sdk_root: field("sdk_root")?,
+        });
+    }
+    let bot = format!("@{fleet_id}_approval:{server_name}");
+    let legacy = legacy_approval(state, owner, &bot);
+    let record = match legacy {
+        Some(record) => record,
+        None => {
+            let raw = private::read_secret(&state.join("palpo-appservice.json")).map_err(|_| Error::Appservice)?;
+            let appservice: Value = serde_json::from_slice(&raw).map_err(|_| Error::Appservice)?;
+            let client = Client {
+                http: reqwest::Client::builder()
+                    .redirect(Policy::none())
+                    .connect_timeout(Duration::from_secs(5))
+                    .timeout(Duration::from_secs(20))
+                    .build()
+                    .map_err(|_| Error::Unreachable)?,
+                origin: Url::parse(&text(&appservice, "homeserver").ok_or(Error::Appservice)?)
+                    .map_err(|_| Error::Appservice)?,
+                as_token: text(&appservice, "as_token").ok_or(Error::Appservice)?,
+                server_name: server_name.to_owned(),
+            };
+            let name = format!("approval-{slug}");
+            let token_file = format!("{name}.access_token");
+            // `device` keys its records by a static name; one per owner here.
+            let device = owner_device(&client, state, &name, &token_file, &format!("{fleet_id}_approval")).await?;
+            let key_file = format!("{name}.sdk_key");
+            key(state, &key_file)?;
+            OwnerApprovalDevice {
+                device,
+                label: format!("fleet_{}", &slug[..12]),
+                first_room: approval_room.to_owned(),
+                token_file,
+                key_file,
+                sdk_root: format!("approval-sdk-{slug}"),
+            }
+        }
+    };
+    let value = json!({
+        "owner": owner, "user_id": record.device.user_id, "device_id": record.device.device_id,
+        "label": record.label, "first_room": record.first_room, "token_file": record.token_file,
+        "key_file": record.key_file, "sdk_root": record.sdk_root,
+    });
+    private::replace(&record_path, value.to_string().as_bytes()).map_err(|_| Error::Store)?;
+    Ok(record)
+}
+
+/// A rig-built instance's approval device, when its configuration named
+/// `owner`: adopted with the original label, room, token, key and store.
+fn legacy_approval(state: &Path, owner: &str, bot: &str) -> Option<OwnerApprovalDevice> {
+    let driver: Value = serde_json::from_slice(&private::read_secret(&state.join("agent-driver.json")).ok()?).ok()?;
+    let approval = driver.get("approval")?;
+    if text(approval, "sender_mxid")? != bot {
+        return None;
+    }
+    let room = approval.get("rooms")?.as_array()?.first()?;
+    if room.pointer("/privacy/human_mxid")?.as_str()? != owner {
+        return None;
+    }
+    let identity: Value =
+        serde_json::from_slice(&private::read_secret(&state.join("approval.identity.json")).ok()?).ok()?;
+    Some(OwnerApprovalDevice {
+        device: Device { user_id: text(&identity, "user_id")?, device_id: text(&identity, "device_id")? },
+        label: text(approval, "engagement_id")?,
+        first_room: text(room, "id")?,
+        token_file: "approval.access_token".into(),
+        key_file: "approval.sdk_key".into(),
+        sdk_root: "approval-sdk".into(),
+    })
+}
+
+/// `device` for a per-owner name (its identity record is `<name>.identity.json`).
+async fn owner_device(
+    client: &Client,
+    state: &Path,
+    name: &str,
+    token_file: &str,
+    localpart: &str,
+) -> Result<Device, Error> {
+    device(client, state, name, token_file, localpart).await
 }
 
 /// ADR-187 §C: the owner's master key as the homeserver reports it now, read
@@ -258,7 +391,7 @@ pub(crate) async fn fetch_master_key(state: &Path, owner: &str) -> Result<Option
         )
         .await?;
     if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
-        return Err(Error::Revoked("representative"));
+        return Err(Error::Revoked("representative".into()));
     }
     if !status.is_success() {
         return Err(Error::Unreachable);
@@ -385,28 +518,26 @@ mod tests {
         let (origin, logins) = homeserver(revoked.clone()).await;
         let dir = state(&origin);
         let first = ensure(dir.path(), FLEET, "example.test").await.unwrap();
-        assert_eq!(first.approval.user_id, format!("@{FLEET}_approval:example.test"));
+        assert_eq!(first.approval, None, "approval devices are per owner, created on need");
         assert_eq!(first.representative.user_id, format!("@{FLEET}_representative:example.test"));
-        assert_eq!(*logins.lock().unwrap(), 2);
-        for file in ["approval.access_token", "matrix.representative_token", "matrix.appservice_token",
-            "approval.sdk_key", "matrix.provisioning_key"] {
+        assert_eq!(*logins.lock().unwrap(), 1);
+        for file in ["matrix.representative_token", "matrix.appservice_token", "matrix.provisioning_key"] {
             assert!(dir.path().join(file).exists(), "{file}");
         }
         let key = std::fs::read(dir.path().join("matrix.provisioning_key")).unwrap();
         assert_eq!(key.len(), 32);
         // A second run reuses both devices and both keys.
         let again = ensure(dir.path(), FLEET, "example.test").await.unwrap();
-        assert_eq!(again.approval, first.approval);
         assert_eq!(again.representative, first.representative);
-        assert_eq!(*logins.lock().unwrap(), 2, "no second login");
+        assert_eq!(*logins.lock().unwrap(), 1, "no second login");
         assert_eq!(std::fs::read(dir.path().join("matrix.provisioning_key")).unwrap(), key);
         // A revoked stored credential is refused, never silently replaced.
         *revoked.lock().unwrap() = true;
         assert_eq!(
             ensure(dir.path(), FLEET, "example.test").await.unwrap_err(),
-            Error::Revoked("representative")
+            Error::Revoked("representative".into())
         );
-        assert_eq!(*logins.lock().unwrap(), 2);
+        assert_eq!(*logins.lock().unwrap(), 1);
     }
 
     #[tokio::test]
@@ -441,9 +572,56 @@ mod tests {
         let adopted = ensure(&state, FLEET, "example.test").await.unwrap();
         assert_eq!(*logins.lock().unwrap(), 0, "no second device");
         assert_eq!(adopted.representative.device_id, "RIGREP");
-        assert_eq!(adopted.approval.device_id, "RIGAPP");
+        assert_eq!(adopted.approval.unwrap().device_id, "RIGAPP");
         assert_eq!(std::fs::read(state.join("matrix.representative_token")).unwrap(), b"tok-representative-rig");
         assert!(state.join("representative.identity.json").exists());
+    }
+
+    #[tokio::test]
+    async fn native_fleet_identity_creates_one_approval_device_per_owner() {
+        let (origin, logins) = homeserver(Arc::new(Mutex::new(false))).await;
+        let dir = state(&origin);
+        ensure(dir.path(), FLEET, "example.test").await.unwrap();
+        let alice = owner_approval_device(dir.path(), FLEET, "example.test", "@alice:example.test", "!a:example.test")
+            .await
+            .unwrap();
+        let bob = owner_approval_device(dir.path(), FLEET, "example.test", "@bob:example.test", "!b:example.test")
+            .await
+            .unwrap();
+        assert_eq!(*logins.lock().unwrap(), 3, "the representative, then one device per owner");
+        assert_ne!(alice.device.device_id, bob.device.device_id);
+        assert_ne!(alice.sdk_root, bob.sdk_root);
+        assert_eq!(alice.device.user_id, format!("@{FLEET}_approval:example.test"));
+        assert!(dir.path().join(&alice.key_file).exists());
+        let again = owner_approval_device(dir.path(), FLEET, "example.test", "@alice:example.test", "!other:example.test")
+            .await
+            .unwrap();
+        assert_eq!(again, alice, "reused, with its original first room");
+        assert_eq!(*logins.lock().unwrap(), 3);
+    }
+
+    #[tokio::test]
+    async fn native_fleet_identity_adopts_the_rig_approval_device_for_its_owner() {
+        let (origin, logins) = homeserver(Arc::new(Mutex::new(false))).await;
+        let dir = state(&origin);
+        private::replace(&dir.path().join("approval.identity.json"),
+            json!({"user_id": format!("@{FLEET}_approval:example.test"), "device_id": "RIGAPP"}).to_string().as_bytes()).unwrap();
+        private::replace(&dir.path().join("agent-driver.json"), json!({"approval": {
+            "sender_mxid": format!("@{FLEET}_approval:example.test"), "engagement_id": "en_coordinator",
+            "rooms": [{"id": "!approval:example.test", "generation": 1, "privacy": {"kind": "direct", "human_mxid": "@owner:example.test"}}]
+        }}).to_string().as_bytes()).unwrap();
+        let owner = owner_approval_device(dir.path(), FLEET, "example.test", "@owner:example.test", "!approval:example.test")
+            .await
+            .unwrap();
+        assert_eq!(*logins.lock().unwrap(), 0, "adopted, not created");
+        assert_eq!((owner.label.as_str(), owner.first_room.as_str()), ("en_coordinator", "!approval:example.test"));
+        assert_eq!((owner.token_file.as_str(), owner.sdk_root.as_str()), ("approval.access_token", "approval-sdk"));
+        // Another owner still gets a device of its own.
+        let other = owner_approval_device(dir.path(), FLEET, "example.test", "@other:example.test", "!o:example.test")
+            .await
+            .unwrap();
+        assert_eq!(*logins.lock().unwrap(), 1);
+        assert_ne!(other.sdk_root, owner.sdk_root);
     }
 }
 

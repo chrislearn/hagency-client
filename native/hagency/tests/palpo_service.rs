@@ -121,13 +121,12 @@ async fn native_palpo_service_configuration_refusal() {
                 let value = fs::read_to_string(&path).unwrap();
                 fs::write(&path, value.replacen('{', "{\"profile\":\"duplicate\",", 1)).unwrap();
             }
+            // Plain http is accepted only to a loopback Palpo (the importer's
+            // and TS's rule); plaintext to any other peer is refused at start.
             "http" => f.rewrite(|v| {
-                v["endpoint"] = json!(
-                    v["endpoint"]
-                        .as_str()
-                        .unwrap()
-                        .replacen("https:", "http:", 1)
-                )
+                let endpoint = v["endpoint"].as_str().unwrap().to_owned();
+                let path = &endpoint[endpoint.find("/api/").unwrap()..];
+                v["endpoint"] = json!(format!("http://192.0.2.10:8443{path}"))
             }),
             "short_token" => fs::write(f.state.join("palpo.machine_token"), b"short").unwrap(),
             "oversized" => fs::write(&path, vec![b' '; 16 * 1024 + 1]).unwrap(),

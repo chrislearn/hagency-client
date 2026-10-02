@@ -612,7 +612,7 @@ impl TokenProvisioningHost {
         *custody.binding.lock().map_err(|_| Error::OutcomeUnknown)? = Some(binding);
         Ok(())
     }
-    pub(super) fn take_agent(&self, engagement: &str) -> Result<ProvisionedAgent, Error> {
+    pub fn take_agent(&self, engagement: &str) -> Result<ProvisionedAgent, Error> {
         let job = self
             .jobs
             .lock()
@@ -663,7 +663,7 @@ impl TokenProvisioningHost {
     /// `reattach`, which rebuilds it from the completion's own receipt and the
     /// custody on disk; discovery itself still never derives an owner from a
     /// canonical Active row.
-    fn take_next_agent(&self) -> Result<Option<ProvisionedAgent>, Error> {
+    pub fn take_next_agent(&self) -> Result<Option<ProvisionedAgent>, Error> {
         if self.closed.load(Ordering::Acquire) {
             return Err(Error::Generation);
         }
@@ -697,7 +697,7 @@ impl TokenProvisioningHost {
         drop(jobs);
         next.map(|id| self.take_agent(&id)).transpose()
     }
-    pub(super) async fn close_agents(&self) -> Result<(), Error> {
+    pub async fn close_agents(&self) -> Result<(), Error> {
         self.closed.store(true, Ordering::Release);
         let jobs = self
             .jobs

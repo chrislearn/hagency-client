@@ -224,6 +224,11 @@ impl TokenProvisioningHost {
         });
         Ok(self)
     }
+    /// The engagements this host's factory completed and a restart brings
+    /// back, in id order (the fleet service's re-attach list). Read-only.
+    pub async fn provisioned_engagements(&self, domain: &DomainStore) -> Result<Vec<String>, Error> {
+        Ok(domain.inline_factory_engagements().await?)
+    }
     /// ADR-187 §A.5: the fleet's membership sweep, acting with the
     /// representative's credential instead of a coordinator's.
     pub fn membership_sweep(&self, domain: DomainStore) -> Result<crate::MembershipSweep, Error> {
@@ -309,7 +314,7 @@ impl TokenProvisioningHost {
     /// missing or changed. A failure here concerns this agent only and leaves
     /// its durable state exactly as it was, except that genuine negative Matrix
     /// evidence still fences as everywhere else.
-    pub(crate) async fn reattach_completed(
+    pub async fn reattach_completed(
         &self,
         domain: &DomainStore,
         engagement: &str,
@@ -524,7 +529,7 @@ impl TokenProvisioningHost {
     }
     /// The provisions waiting for their owner, with the wall-clock millisecond
     /// each started waiting. Read-only; for the fleet's status.
-    pub(crate) fn awaiting_owner_engagements(&self) -> Vec<(String, u64)> {
+    pub fn awaiting_owner_engagements(&self) -> Vec<(String, u64)> {
         let Ok(jobs) = self.jobs.lock() else {
             return Vec::new();
         };

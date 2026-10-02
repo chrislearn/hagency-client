@@ -170,11 +170,74 @@ impl AgentOwner {
         }
     }
 }
+/// Where the fleet's agents come from: a coordinator install's Collector, or
+/// (ADR-187) an imported fleet's own provisioning host.
+#[derive(Clone)]
+pub(crate) enum Provider {
+    Coordinator(Arc<Collector>),
+    Fleet {
+        host: Arc<hagency_matrix::TokenProvisioningHost>,
+        sweep: Arc<hagency_matrix::MembershipSweep>,
+    },
+}
+impl Provider {
+    async fn provisioned_engagements(&self, domain: &DomainStore) -> Result<Vec<String>, hagency_matrix::Error> {
+        match self {
+            Self::Coordinator(c) => c.provisioned_engagements().await,
+            Self::Fleet { host, .. } => host.provisioned_engagements(domain).await,
+        }
+    }
+    async fn reattach(
+        &self,
+        domain: &DomainStore,
+        engagement: &str,
+        cancel: &CancellationToken,
+    ) -> Result<hagency_matrix::ProvisionedAgent, hagency_matrix::Error> {
+        match self {
+            Self::Coordinator(c) => {
+                c.reattach_provisioned_agent(engagement, cancel).await?;
+                c.take_provisioned_agent(engagement)
+            }
+            Self::Fleet { host, .. } => {
+                let (task_host, domain, id, cancel) =
+                    (host.clone(), domain.clone(), engagement.to_owned(), cancel.clone());
+                tokio::spawn(async move { task_host.reattach_completed(&domain, &id, &cancel).await })
+                    .await
+                    .map_err(|_| hagency_matrix::Error::OutcomeUnknown)??;
+                host.take_agent(engagement)
+            }
+        }
+    }
+    fn awaiting_owner_engagements(&self) -> Vec<(String, u64)> {
+        match self {
+            Self::Coordinator(c) => c.awaiting_owner_engagements(),
+            Self::Fleet { host, .. } => host.awaiting_owner_engagements(),
+        }
+    }
+    fn take_next(&self) -> Result<Option<hagency_matrix::ProvisionedAgent>, hagency_matrix::Error> {
+        match self {
+            Self::Coordinator(c) => c.take_next_provisioned_agent(),
+            Self::Fleet { host, .. } => host.take_next_agent(),
+        }
+    }
+    fn sweep(&self, cancel: CancellationToken) -> tokio::task::JoinHandle<()> {
+        match self {
+            Self::Coordinator(c) => tokio::spawn(c.clone().membership_sweep_loop(cancel)),
+            Self::Fleet { sweep, .. } => tokio::spawn(sweep.clone().run(cancel)),
+        }
+    }
+    async fn close_agents(&self) -> Result<(), hagency_matrix::Error> {
+        match self {
+            Self::Coordinator(c) => c.close_provisioned_agents().await,
+            Self::Fleet { host, .. } => host.close_agents().await,
+        }
+    }
+}
 /// Host-only original fleet service. Bootstrap owns it; no HTTP/runtime input
 /// can install a backend, reconstruct a factory owner or assert readiness.
 pub struct Service {
     setup: Setup,
-    coordinator: Arc<Collector>,
+    provider: Provider,
     domain: DomainStore,
     routes: Routes,
     agents: Vec<AgentOwner>,
@@ -186,6 +249,14 @@ impl Service {
     pub fn new(
         domain: DomainStore,
         coordinator: Arc<Collector>,
+        setup: Setup,
+    ) -> Result<Self, Failure> {
+        Self::with_provider(domain, Provider::Coordinator(coordinator), setup)
+    }
+    /// ADR-187: a fleet service whose agents come from `provider`.
+    pub(crate) fn with_provider(
+        domain: DomainStore,
+        provider: Provider,
         setup: Setup,
     ) -> Result<Self, Failure> {
         if !setup.state.is_absolute()
@@ -219,7 +290,7 @@ impl Service {
         };
         Ok(Self {
             setup,
-            coordinator,
+            provider,
             domain,
             routes,
             agents: vec![],
@@ -352,7 +423,7 @@ impl Service {
         notices: &tokio::sync::mpsc::Sender<hagency_execution::ApprovalRequests>,
         cancel: &CancellationToken,
     ) {
-        let known = match self.coordinator.provisioned_engagements().await {
+        let known = match self.provider.provisioned_engagements(&self.domain).await {
             Ok(known) => known,
             Err(error) => {
                 tracing::warn!(?error, "factory agents could not be listed for re-attach");
@@ -363,14 +434,7 @@ impl Service {
             if cancel.is_cancelled() || self.routes.closed.load(Ordering::Acquire) {
                 return;
             }
-            let attached = match self
-                .coordinator
-                .reattach_provisioned_agent(&engagement, cancel)
-                .await
-            {
-                Ok(()) => self.coordinator.take_provisioned_agent(&engagement),
-                Err(error) => Err(error),
-            };
+            let attached = self.provider.reattach(&self.domain, &engagement, cancel).await;
             match attached {
                 Ok(agent) => {
                     if self.admit(agent, notices.clone(), true).await.is_ok() {
@@ -398,7 +462,7 @@ impl Service {
     /// rows, and drop the rows of provisions that stopped waiting without
     /// being admitted. Status only: no decision reads these rows.
     fn reconcile_awaiting_owners(&self) {
-        let waiting = self.coordinator.awaiting_owner_engagements();
+        let waiting = self.provider.awaiting_owner_engagements();
         for (engagement, since) in &waiting {
             let present = self
                 .routes
@@ -450,21 +514,14 @@ impl Service {
                 self.0.abort();
             }
         }
-        let _sweep = SweepGuard(tokio::spawn(
-            self.coordinator
-                .clone()
-                .membership_sweep_loop(cancel.clone()),
-        ));
+        let _sweep = SweepGuard(self.provider.sweep(cancel.clone()));
         self.reattach_known_agents(&notices, cancel).await;
         let mut tick = tokio::time::interval(Duration::from_millis(100));
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             tokio::select! {biased;_ = cancel.cancelled()=>return Ok(()),_ = tick.tick()=>{}}
             self.reconcile_awaiting_owners();
-            let next = self
-                .coordinator
-                .take_next_provisioned_agent()
-                .map_err(|_| Failure::OutcomeUnknown);
+            let next = self.provider.take_next().map_err(|_| Failure::OutcomeUnknown);
             match next {
                 Ok(Some(agent)) => {
                     self.admit(agent, notices.clone(), false).await?;
@@ -506,10 +563,8 @@ impl Service {
             return drained.and(result);
         }
         if self.factory_close.is_none() {
-            let coordinator = self.coordinator.clone();
-            self.factory_close = Some(tokio::spawn(async move {
-                coordinator.close_provisioned_agents().await
-            }));
+            let provider = self.provider.clone();
+            self.factory_close = Some(tokio::spawn(async move { provider.close_agents().await }));
         }
         let result = match tokio::time::timeout(
             Duration::from_secs(2),
