@@ -56,3 +56,33 @@ Bad, because affected homeservers require one additional bounded count probe.
   consecutive uploads and grew the server pool from 150 to 950 keys.
 - Retain undecryptable events only: insufficient, because retention cannot
   recover a key that was never shareable.
+
+## Amendment (2026-10-02): the native service does not implement this yet
+
+This decision was implemented only in the JavaScript Matrix bridge
+(`bridge-matrix.js`: `MATRIX_OTK_COUNT_RECONCILE_MS`, an empty `/keys/upload`
+probe, then `updateSyncData`), which was removed when the repository became the
+native Rust service. The decision itself stands; the native implementation is
+owed.
+
+What the native service does today:
+
+- It passes `/sync` to matrix-sdk-crypto unchanged (`receive_sync_response` in
+  `native/hagency-matrix/src/sdk.rs`), so absent counts stay absent, as decided
+  above.
+- It uploads device keys, one-time keys and a fallback key once, during
+  enrollment (`native/hagency-matrix/src/sdk/enrollment.rs`). After that it
+  never sends the SDK's later `KeysUpload` requests, so one-time keys are not
+  replenished even when the homeserver does report a count. ADR-102 ("no ...
+  OTK replenishment") and ADR-043 ("one-time-key/device maintenance" as a
+  remaining gate) record the same gap.
+
+Consequence: each new owner device or session claims one of the original
+one-time keys. Once they are gone, new Olm sessions use the fallback key, which
+is never rotated. Sessions still establish, but with a reused key and weaker
+forward secrecy, for every long-lived agent and the approval bot.
+
+To close the gap, the native Matrix owner must send matrix-sdk-crypto's
+post-enrollment key uploads (including fallback-key rotation) through its
+existing custody, and add this ADR's bounded count probe for homeservers that
+omit `device_one_time_keys_count`. Tracked in hagency-org/hagency-rs#19.
