@@ -72,11 +72,26 @@ async fn native_console_issue_side_registration_matches_ts() {
     let body: Value = response.take_json().await.unwrap();
     // The TS key set — `ok` plus the camelCase body — and nothing else.
     // (serde_json's default map is ordered, so compare sorted.)
-    let mut keys: Vec<&str> = body.as_object().unwrap().keys().map(|k| k.as_str()).collect();
+    let mut keys: Vec<&str> = body
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(|k| k.as_str())
+        .collect();
     keys.sort_unstable();
     let mut expected = [
-        "staged", "path", "mode", "registrationId", "senderLocalpart", "representative",
-        "namespace", "url", "asTokenFingerprint", "hsTokenFingerprint", "nextSteps", "ok",
+        "staged",
+        "path",
+        "mode",
+        "registrationId",
+        "senderLocalpart",
+        "representative",
+        "namespace",
+        "url",
+        "asTokenFingerprint",
+        "hsTokenFingerprint",
+        "nextSteps",
+        "ok",
     ];
     expected.sort_unstable();
     assert_eq!(keys, expected);
@@ -106,7 +121,9 @@ async fn native_console_issue_side_registration_matches_ts() {
     assert_eq!(yaml_field(&yaml, "sender_localpart"), "hagency");
     assert_eq!(yaml_field(&yaml, "rate_limited"), "false");
     assert_eq!(yaml_field(&yaml, "rooms"), "[]");
-    assert!(yaml.contains("  users:\n    - exclusive: true\n      regex: \"@ac_.*\"\n  aliases: []\n"));
+    assert!(
+        yaml.contains("  users:\n    - exclusive: true\n      regex: \"@ac_.*\"\n  aliases: []\n")
+    );
     let as_token = yaml_field(&yaml, "as_token");
     let hs_token = yaml_field(&yaml, "hs_token");
     assert_eq!(as_token.len(), 64);
@@ -158,8 +175,8 @@ async fn native_console_issue_side_registration_matches_ts() {
     let staged_yaml = std::fs::read_to_string(&yaml_path).unwrap();
     let staged_as_token = yaml_field(&staged_yaml, "as_token");
     assert_ne!(staged_as_token, as_token);
-    let still_live = String::from_utf8(std::fs::read(state.join("matrix.appservice_token")).unwrap())
-        .unwrap();
+    let still_live =
+        String::from_utf8(std::fs::read(state.join("matrix.appservice_token")).unwrap()).unwrap();
     assert_eq!(still_live, as_token);
     let credential = f
         .domain

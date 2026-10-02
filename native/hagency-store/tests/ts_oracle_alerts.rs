@@ -124,7 +124,9 @@ fn ts_oracle_alerts_transition_map_legal_pairs_and_terminal() {
     engaged(&mut alarm, "transitions", 1_500_000, 1000);
     set_ceiling(&mut alarm, 1_000_000);
     alarm.db.sweep_ceiling_overruns(1_000_000).unwrap();
-    let key = alarm.db.open_ceiling_alerts(200).unwrap()[0].dedupe_key.clone();
+    let key = alarm.db.open_ceiling_alerts(200).unwrap()[0]
+        .dedupe_key
+        .clone();
     // open → acknowledged
     let alert = alarm
         .db
@@ -155,18 +157,20 @@ fn ts_oracle_alerts_transition_map_legal_pairs_and_terminal() {
     assert_eq!(alert.status, "resolved");
     // resolved is TERMINAL — the retained store refuses with `bad_transition`,
     // which the console maps to 400.
-    assert!(alarm
-        .db
-        .transition_ceiling_alert(AlertTransition {
-            key,
-            to: "open",
-            actor: "operator".into(),
-            note: None,
-            assignee: None,
-            suppress_until_ms: None,
-            now: 2_200_000,
-        })
-        .is_err());
+    assert!(
+        alarm
+            .db
+            .transition_ceiling_alert(AlertTransition {
+                key,
+                to: "open",
+                actor: "operator".into(),
+                note: None,
+                assignee: None,
+                suppress_until_ms: None,
+                now: 2_200_000,
+            })
+            .is_err()
+    );
     // The served map agrees: resolved offers nothing.
     assert!(allowed_transitions("resolved").is_empty());
 }
@@ -275,5 +279,3 @@ fn ts_oracle_alerts_downgrades_incomplete_paging_alerts() {
 fn ts_oracle_alerts_write_rollbacks() {
     assert!(false, "native alert writes are already atomic");
 }
-
-

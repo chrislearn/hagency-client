@@ -26,7 +26,10 @@ fn ts_oracle_no_filter_reports_start_steps_and_completion() {
     let filter = Filter::default();
     // TS: absent config means "nobody configured this", never "report nothing".
     assert_eq!(decision(Some("start"), None, &filter)["report"], true);
-    assert_eq!(decision(Some("PostToolUse"), Some("Read"), &filter)["report"], true);
+    assert_eq!(
+        decision(Some("PostToolUse"), Some("Read"), &filter)["report"],
+        true
+    );
     assert_eq!(decision(Some("Stop"), None, &filter)["report"], true);
 }
 
@@ -52,36 +55,58 @@ fn ts_oracle_events_can_be_reduced_to_start_and_finish() {
     let filter = Filter::parse(&json!({"events": ["start", "done"]}), None).unwrap();
     assert_eq!(decision(Some("start"), None, &filter)["report"], true);
     assert_eq!(decision(Some("Stop"), None, &filter)["report"], true);
-    assert_eq!(decision(Some("PostToolUse"), Some("Read"), &filter)["report"], false);
+    assert_eq!(
+        decision(Some("PostToolUse"), Some("Read"), &filter)["report"],
+        false
+    );
 }
 
 #[test]
 fn ts_oracle_a_tool_can_be_excluded_outright() {
     let filter = Filter::parse(&json!({"tools": {"exclude": ["Bash"]}}), None).unwrap();
-    assert_eq!(decision(Some("PostToolUse"), Some("Bash"), &filter)["report"], false);
-    assert_eq!(decision(Some("PostToolUse"), Some("Read"), &filter)["report"], true);
+    assert_eq!(
+        decision(Some("PostToolUse"), Some("Bash"), &filter)["report"],
+        false
+    );
+    assert_eq!(
+        decision(Some("PostToolUse"), Some("Read"), &filter)["report"],
+        true
+    );
 }
 
 #[test]
 fn ts_oracle_an_include_list_makes_everything_else_silent() {
     let filter = Filter::parse(&json!({"tools": {"include": ["Read"]}}), None).unwrap();
-    assert_eq!(decision(Some("PostToolUse"), Some("Read"), &filter)["report"], true);
-    assert_eq!(decision(Some("PostToolUse"), Some("Edit"), &filter)["report"], false);
+    assert_eq!(
+        decision(Some("PostToolUse"), Some("Read"), &filter)["report"],
+        true
+    );
+    assert_eq!(
+        decision(Some("PostToolUse"), Some("Edit"), &filter)["report"],
+        false
+    );
 }
 
 #[test]
 fn ts_oracle_a_step_with_no_tool_name_is_refused_not_worked() {
     let filter = Filter::default();
     // TS: malformed payload must not become a line in a customer's room.
-    assert_eq!(decision(Some("PostToolUse"), None, &filter)["report"], false);
-    assert_eq!(decision(Some("PostToolUse"), Some(""), &filter)["report"], false);
+    assert_eq!(
+        decision(Some("PostToolUse"), None, &filter)["report"],
+        false
+    );
+    assert_eq!(
+        decision(Some("PostToolUse"), Some(""), &filter)["report"],
+        false
+    );
 }
 
 /* ── "per-customer rules" ── */
 
 #[test]
 fn ts_oracle_a_group_with_its_own_rule_uses_it_and_says_so() {
-    let raw = json!({"events": ["start", "step", "done"], "perGroup": {"acme": {"events": ["done"]}}});
+    let raw =
+        json!({"events": ["start", "step", "done"], "perGroup": {"acme": {"events": ["done"]}}});
     let scoped = Filter::parse(&raw, Some("acme")).unwrap();
     assert_eq!(scoped.source(), Source::PerGroup);
     assert_eq!(decision(Some("start"), None, &scoped)["report"], false);
@@ -90,7 +115,8 @@ fn ts_oracle_a_group_with_its_own_rule_uses_it_and_says_so() {
 
 #[test]
 fn ts_oracle_a_group_with_no_rule_of_its_own_uses_the_defaults() {
-    let raw = json!({"events": ["start", "step", "done"], "perGroup": {"acme": {"events": ["done"]}}});
+    let raw =
+        json!({"events": ["start", "step", "done"], "perGroup": {"acme": {"events": ["done"]}}});
     let other = Filter::parse(&raw, Some("other")).unwrap();
     assert_eq!(other.source(), Source::File);
     assert_eq!(decision(Some("start"), None, &other)["report"], true);
@@ -101,7 +127,10 @@ fn ts_oracle_a_per_group_rule_replaces_rather_than_merging() {
     let raw = json!({"tools": {"exclude": ["Bash"]}, "perGroup": {"acme": {"events": ["step"]}}});
     let scoped = Filter::parse(&raw, Some("acme")).unwrap();
     // TS: the scoped rule REPLACES the top level, so Bash is NOT excluded here.
-    assert_eq!(decision(Some("PostToolUse"), Some("Bash"), &scoped)["report"], true);
+    assert_eq!(
+        decision(Some("PostToolUse"), Some("Bash"), &scoped)["report"],
+        true
+    );
 }
 
 /* ── "failing closed on configuration, open on absence" ── */
@@ -120,23 +149,45 @@ fn ts_oracle_bad_config_is_refused_not_repaired() {
         json!([]),
         json!("events=done"),
     ] {
-        assert!(matches!(
-            Filter::parse(&bad, None),
-            Err(hagency_progress::Error::Config(_))
-        ), "refused, not repaired: {bad}");
+        assert!(
+            matches!(
+                Filter::parse(&bad, None),
+                Err(hagency_progress::Error::Config(_))
+            ),
+            "refused, not repaired: {bad}"
+        );
     }
 }
 
 #[test]
 fn ts_oracle_the_interval_has_a_floor_that_cannot_be_configured_away() {
-    assert_eq!(Filter::parse(&json!({"minIntervalMs": 0}), None).unwrap().min_interval_ms(), 5000.0);
-    assert_eq!(Filter::parse(&json!({"minIntervalMs": 1}), None).unwrap().min_interval_ms(), 5000.0);
-    assert_eq!(Filter::parse(&json!({"minIntervalMs": 120000}), None).unwrap().min_interval_ms(), 120000.0);
+    assert_eq!(
+        Filter::parse(&json!({"minIntervalMs": 0}), None)
+            .unwrap()
+            .min_interval_ms(),
+        5000.0
+    );
+    assert_eq!(
+        Filter::parse(&json!({"minIntervalMs": 1}), None)
+            .unwrap()
+            .min_interval_ms(),
+        5000.0
+    );
+    assert_eq!(
+        Filter::parse(&json!({"minIntervalMs": 120000}), None)
+            .unwrap()
+            .min_interval_ms(),
+        120000.0
+    );
 }
 
 #[test]
 fn ts_oracle_deciding_is_pure_same_inputs_same_answer() {
-    let filter = Filter::parse(&json!({"events": ["step"], "tools": {"exclude": ["Bash"]}}), None).unwrap();
+    let filter = Filter::parse(
+        &json!({"events": ["step"], "tools": {"exclude": ["Bash"]}}),
+        None,
+    )
+    .unwrap();
     let once = decision(Some("PostToolUse"), Some("Read"), &filter);
     let twice = decision(Some("PostToolUse"), Some("Read"), &filter);
     assert_eq!(once, twice);
@@ -154,14 +205,23 @@ fn ts_oracle_a_tool_call_becomes_the_same_shape_a_hook_payload_has() {
 
 #[test]
 fn ts_oracle_kinds_map_to_the_tool_names_an_operator_filters_by() {
-    assert_eq!(acp_tool(&json!({"sessionUpdate": "tool_call", "kind": "execute"})), Some("Bash"));
+    assert_eq!(
+        acp_tool(&json!({"sessionUpdate": "tool_call", "kind": "execute"})),
+        Some("Bash")
+    );
     let filter = Filter::parse(&json!({"tools": {"exclude": ["Bash"]}}), None).unwrap();
-    assert_eq!(decision(Some("PostToolUse"), Some("Bash"), &filter)["report"], false);
+    assert_eq!(
+        decision(Some("PostToolUse"), Some("Bash"), &filter)["report"],
+        false
+    );
 }
 
 #[test]
 fn ts_oracle_thinking_is_dropped_rather_than_reported() {
-    assert_eq!(acp_tool(&json!({"sessionUpdate": "tool_call", "kind": "think"})), None);
+    assert_eq!(
+        acp_tool(&json!({"sessionUpdate": "tool_call", "kind": "think"})),
+        None
+    );
 }
 
 #[test]
@@ -178,14 +238,21 @@ fn ts_oracle_an_unknown_kind_is_generic_activity_never_its_own_name() {
 #[test]
 fn ts_oracle_a_repeat_update_for_one_call_is_not_counted_again() {
     assert_eq!(
-        acp_tool(&json!({"sessionUpdate": "tool_call_update", "kind": "read", "status": "completed"})),
+        acp_tool(
+            &json!({"sessionUpdate": "tool_call_update", "kind": "read", "status": "completed"})
+        ),
         None
     );
 }
 
 #[test]
 fn ts_oracle_everything_that_is_not_a_tool_call_is_ignored() {
-    for kind in ["agent_message_chunk", "plan", "user_message_chunk", "agent_thought_chunk"] {
+    for kind in [
+        "agent_message_chunk",
+        "plan",
+        "user_message_chunk",
+        "agent_thought_chunk",
+    ] {
         assert_eq!(acp_tool(&json!({"sessionUpdate": kind})), None);
     }
     assert_eq!(acp_tool(&Value::Null), None);
@@ -240,9 +307,18 @@ fn ts_oracle_a_clean_turn_is_unchanged() {
     let mut counts = Counts::default();
     counts.add(Verb::Read, 3).unwrap();
     counts.add(Verb::Edited, 1).unwrap();
-    assert_eq!(build_summary(Kind::Done, &counts, 0, None).unwrap(), "finished — read ×3, edited");
-    assert_eq!(build_summary(Kind::Done, &Counts::default(), 0, None).unwrap(), "finished");
-    assert_eq!(build_summary(Kind::Start, &Counts::default(), 0, None).unwrap(), "started");
+    assert_eq!(
+        build_summary(Kind::Done, &counts, 0, None).unwrap(),
+        "finished — read ×3, edited"
+    );
+    assert_eq!(
+        build_summary(Kind::Done, &Counts::default(), 0, None).unwrap(),
+        "finished"
+    );
+    assert_eq!(
+        build_summary(Kind::Start, &Counts::default(), 0, None).unwrap(),
+        "started"
+    );
 }
 
 #[test]
@@ -253,7 +329,10 @@ fn ts_oracle_failures_reach_a_step_line_too() {
     );
     let mut counts = Counts::default();
     counts.add(Verb::Read, 1).unwrap();
-    assert_eq!(build_summary(Kind::Step, &counts, 1, None).unwrap(), "read, 1 failed");
+    assert_eq!(
+        build_summary(Kind::Step, &counts, 1, None).unwrap(),
+        "read, 1 failed"
+    );
 }
 
 #[test]
@@ -263,23 +342,38 @@ fn ts_oracle_an_empty_step_is_still_nothing_to_say() {
 
 #[test]
 fn ts_oracle_a_failure_is_read_from_the_update_kind_activity_counting_drops() {
-    assert_eq!(acp_failed(&json!({"sessionUpdate": "tool_call_update", "status": "failed"})), true);
-    assert_eq!(acp_tool(&json!({"sessionUpdate": "tool_call_update", "status": "failed", "kind": "read"})), None);
+    assert_eq!(
+        acp_failed(&json!({"sessionUpdate": "tool_call_update", "status": "failed"})),
+        true
+    );
+    assert_eq!(
+        acp_tool(&json!({"sessionUpdate": "tool_call_update", "status": "failed", "kind": "read"})),
+        None
+    );
 }
 
 #[test]
 fn ts_oracle_only_failed_counts_as_failure() {
     for status in ["pending", "in_progress", "completed", "", ""] {
-        assert_eq!(acp_failed(&json!({"sessionUpdate": "tool_call_update", "status": status})), false);
+        assert_eq!(
+            acp_failed(&json!({"sessionUpdate": "tool_call_update", "status": status})),
+            false
+        );
     }
-    assert_eq!(acp_failed(&json!({"sessionUpdate": "tool_call", "status": "failed"})), false);
+    assert_eq!(
+        acp_failed(&json!({"sessionUpdate": "tool_call", "status": "failed"})),
+        false
+    );
 }
 
 #[test]
 fn ts_oracle_no_reason_travels_with_the_count() {
     let line = build_summary(Kind::Done, &Counts::default(), 3, None).unwrap();
     for banned in ["error", "ENOENT", "/home", "denied", "refused"] {
-        assert!(!line.to_lowercase().contains(&banned.to_lowercase()), "{line} leaks {banned}");
+        assert!(
+            !line.to_lowercase().contains(&banned.to_lowercase()),
+            "{line} leaks {banned}"
+        );
     }
 }
 
@@ -337,6 +431,9 @@ fn ts_oracle_failures_still_take_precedence() {
 fn ts_oracle_no_cause_is_offered_for_the_silence() {
     let line = build_summary(Kind::Done, &counts_worked(3), 0, Some(0)).unwrap();
     for banned in ["tool", "mcp", "backend", "permission", "unreachable"] {
-        assert!(!line.to_lowercase().contains(&banned.to_lowercase()), "{line} leaks {banned}");
+        assert!(
+            !line.to_lowercase().contains(&banned.to_lowercase()),
+            "{line} leaks {banned}"
+        );
     }
 }

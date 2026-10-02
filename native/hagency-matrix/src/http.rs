@@ -649,7 +649,14 @@ impl Http {
     ) -> Result<Response, Error> {
         for attempt in 0..RATE_LIMIT_TRIES {
             match self
-                .dial(method.clone(), segments, query, body.clone(), cancel, deadline)
+                .dial(
+                    method.clone(),
+                    segments,
+                    query,
+                    body.clone(),
+                    cancel,
+                    deadline,
+                )
                 .await
             {
                 Ok(response) if response.status == 429 => {
@@ -684,7 +691,14 @@ impl Http {
     ) -> Result<Response, Failed> {
         for attempt in 0..CONNECT_DIALS {
             match self
-                .perform_once(method.clone(), segments, query, body.clone(), cancel, deadline)
+                .perform_once(
+                    method.clone(),
+                    segments,
+                    query,
+                    body.clone(),
+                    cancel,
+                    deadline,
+                )
                 .await
             {
                 Err(Failed::Connect) => {}

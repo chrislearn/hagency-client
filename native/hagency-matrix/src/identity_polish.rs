@@ -179,12 +179,15 @@ pub fn owner_membership_verdict(joined: Option<&[String]>, owner_mxid: &str) -> 
     }
 }
 
-
 /// The agent's own rejoin (bridge-matrix.js:10936-10943, the join half of the
 /// retained invite-then-join pair): POST /join/{roomId} as the agent. A kicked
 /// member needs a fresh invite no agent can mint for itself — the caller
 /// surfaces the warning and keeps the failure non-terminal when this refuses.
-pub async fn agent_rejoin(http: &Http, room_id: &str, cancel: &CancellationToken) -> Result<(), Error> {
+pub async fn agent_rejoin(
+    http: &Http,
+    room_id: &str,
+    cancel: &CancellationToken,
+) -> Result<(), Error> {
     let response = http
         .post(
             &["_matrix", "client", "v3", "join", room_id],
@@ -257,7 +260,11 @@ mod tests {
     fn machine_generated_names_are_exactly_the_retained_four() {
         let mxid = "@agent_project_request:example.test";
         assert!(is_machine_generated(mxid, mxid, "UsageWorker"));
-        assert!(is_machine_generated("agent_project_request", mxid, "UsageWorker"));
+        assert!(is_machine_generated(
+            "agent_project_request",
+            mxid,
+            "UsageWorker"
+        ));
         assert!(is_machine_generated("UsageWorker", mxid, "UsageWorker"));
         assert!(is_machine_generated("🤖 UsageWorker", mxid, "UsageWorker"));
         assert!(!is_machine_generated("Ada's agent", mxid, "UsageWorker"));
@@ -304,20 +311,33 @@ mod tests {
     #[test]
     fn invite_power_classifies_and_names_the_project_remedy() {
         // The test's own fixture: invite 50, users_default 0, representative absent.
-        let levels = json!({"invite": 50, "users_default": 0, "users": {"@someone:palpo.test": 100}});
+        let levels =
+            json!({"invite": 50, "users_default": 0, "users": {"@someone:palpo.test": 100}});
         let power = representative_invite_power(Some(&levels), "@hagency:palpo.test");
         assert!(power.known && !power.can);
         assert_eq!((power.mine, power.required), (0, 50));
-        let remedy = invite_power_remedy(power.mine, power.required, "!room:palpo.test", "@ac_x:palpo.test");
+        let remedy = invite_power_remedy(
+            power.mine,
+            power.required,
+            "!room:palpo.test",
+            "@ac_x:palpo.test",
+        );
         assert!(remedy.contains("holds power 0"), "{remedy}");
         assert!(remedy.contains("needs 50"), "{remedy}");
-        assert!(remedy.contains("grants it that power or invites"), "{remedy}");
-        assert!(remedy.contains("nothing on our side can raise it"), "{remedy}");
+        assert!(
+            remedy.contains("grants it that power or invites"),
+            "{remedy}"
+        );
+        assert!(
+            remedy.contains("nothing on our side can raise it"),
+            "{remedy}"
+        );
 
         // `:561` — with enough power the diagnosis must NOT fire: same 403,
         // different problem, and mislabelling it sends the project to change a
         // setting that is already right.
-        let enough = json!({"invite": 50, "users_default": 0, "users": {"@hagency:palpo.test": 50}});
+        let enough =
+            json!({"invite": 50, "users_default": 0, "users": {"@hagency:palpo.test": 50}});
         assert!(representative_invite_power(Some(&enough), "@hagency:palpo.test").can);
 
         // `:577` — an unreadable read names no cause.
@@ -334,7 +354,10 @@ mod tests {
     /// case-insensitive.
     #[test]
     fn owner_membership_verdict_keeps_the_retained_three_way() {
-        let present = vec!["@owner:example.test".to_owned(), "@other:example.test".to_owned()];
+        let present = vec![
+            "@owner:example.test".to_owned(),
+            "@other:example.test".to_owned(),
+        ];
         assert_eq!(
             owner_membership_verdict(Some(&present), "@owner:example.test"),
             OwnerVerdict::Present
@@ -366,8 +389,10 @@ mod tests {
              invitation to that room, or point HAGENCY_OWNER_DM_ROOM (or the binding) at a \
              room they are actually in."
         );
-        assert!(owner_absent_warning(None, "!dm:example.test", "@owner:example.test")
-            .starts_with("approval request for an agent was delivered to"));
+        assert!(
+            owner_absent_warning(None, "!dm:example.test", "@owner:example.test")
+                .starts_with("approval request for an agent was delivered to")
+        );
     }
 
     #[test]

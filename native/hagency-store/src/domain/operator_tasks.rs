@@ -379,7 +379,9 @@ fn list_rows(db: &rusqlite::Connection, filters: &TaskFilters) -> Result<Vec<Str
     }
     let mut query = db.prepare(&sql)?;
     Ok(query
-        .query_map(rusqlite::params_from_iter(values), |r| r.get::<_, String>(0))?
+        .query_map(rusqlite::params_from_iter(values), |r| {
+            r.get::<_, String>(0)
+        })?
         .collect::<Result<Vec<_>, _>>()?)
 }
 
@@ -430,8 +432,7 @@ impl DomainRepository {
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let count: i64 =
-            tx.query_row("SELECT COUNT(*) FROM operator_tasks", [], |r| r.get(0))?;
+        let count: i64 = tx.query_row("SELECT COUNT(*) FROM operator_tasks", [], |r| r.get(0))?;
         if count >= MAX_OPERATOR_TASKS {
             return Err(Error::Capacity);
         }
@@ -486,11 +487,7 @@ impl DomainRepository {
     /// `updateTask` (`lib/task-store.js:169-214`) — the operator's full-field
     /// edit. `updated_at` moves only when a field actually changed, and the
     /// write is skipped entirely when nothing did.
-    pub fn update_operator_task(
-        &mut self,
-        id: &str,
-        patch: &Value,
-    ) -> Result<OperatorTask, Error> {
+    pub fn update_operator_task(&mut self, id: &str, patch: &Value) -> Result<OperatorTask, Error> {
         let object = patch.as_object().cloned().unwrap_or_default();
         let get = |key: &str| object.get(key);
         let present = |key: &str| object.contains_key(key);
@@ -556,14 +553,7 @@ impl DomainRepository {
                 "UPDATE operator_tasks SET title=?2,description=?3,priority=?4,granularity=?5,\
                  assignee=?6,labels=?7,parent_id=?8,updated_at=?9 WHERE id=?1",
                 params![
-                    id,
-                    stored.1,
-                    stored.2,
-                    stored.4,
-                    stored.5,
-                    stored.6,
-                    stored.16,
-                    stored.15,
+                    id, stored.1, stored.2, stored.4, stored.5, stored.6, stored.16, stored.15,
                     updated_at
                 ],
             )?;
@@ -653,8 +643,10 @@ impl DomainRepository {
     ) -> Result<OperatorTask, Error> {
         version_guard(now)?;
         let object = comment.as_object().cloned().unwrap_or_default();
-        let text = trimmed(object.get("text"), COMMENT_MAX).ok_or_else(|| invalid("invalid_comment"))?;
-        let author = trimmed(object.get("author"), ASSIGNEE_MAX).unwrap_or_else(|| "anonymous".to_owned());
+        let text =
+            trimmed(object.get("text"), COMMENT_MAX).ok_or_else(|| invalid("invalid_comment"))?;
+        let author =
+            trimmed(object.get("author"), ASSIGNEE_MAX).unwrap_or_else(|| "anonymous".to_owned());
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;

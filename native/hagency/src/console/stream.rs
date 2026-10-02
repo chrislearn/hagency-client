@@ -16,8 +16,8 @@
 //! `browser_boundary` semaphore (8) is released before streaming starts, so
 //! one live tab cannot starve the console's bounded request budget.
 use super::{Error, Session, failed, usage::query};
-use crate::resources::domain;
 use crate::refusal;
+use crate::resources::domain;
 use salvo::prelude::*;
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -63,18 +63,13 @@ fn diff_events(
     for (key, (_, state, entity)) in &task_now {
         match task_before.get(key) {
             None => out.push(("task_created".into(), entity.clone())),
-            Some((_, old, _)) if old != state => {
-                out.push(("task_updated".into(), entity.clone()))
-            }
+            Some((_, old, _)) if old != state => out.push(("task_updated".into(), entity.clone())),
             _ => {}
         }
     }
     for key in task_before.keys() {
         if !task_now.contains_key(key) {
-            out.push((
-                "task_deleted".into(),
-                json!({"id": key, "deleted": true}),
-            ));
+            out.push(("task_deleted".into(), json!({"id": key, "deleted": true})));
         }
     }
     let alert_before = rows(previous, "alerts");
@@ -122,9 +117,7 @@ fn diff_events(
             (None, "blocked") | (Some("recovered"), "blocked") => {
                 out.push(("agent_blocked".into(), entity.clone()))
             }
-            (Some("blocked"), "recovered") => {
-                out.push(("agent_recovered".into(), entity.clone()))
-            }
+            (Some("blocked"), "recovered") => out.push(("agent_recovered".into(), entity.clone())),
             _ => {}
         }
     }
@@ -145,7 +138,9 @@ fn diff_events(
         let was = graph_before.get(key).map(|(_, old, _)| old.as_str());
         let moved = was != Some(state.as_str());
         match state.as_str() {
-            "dispatched" if moved => out.push(("task_graph_node_dispatched".into(), entity.clone())),
+            "dispatched" if moved => {
+                out.push(("task_graph_node_dispatched".into(), entity.clone()))
+            }
             "complete" if moved => out.push(("task_graph_node_completed".into(), entity.clone())),
             _ => {}
         }
@@ -216,7 +211,10 @@ async fn stream(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     tokio::spawn(async move {
         let _ = sender.send_data(":\n\n".to_owned()).await;
         let _ = sender
-            .send_data(format!("event: hello\ndata: {}\n\n", json!({"version": last})))
+            .send_data(format!(
+                "event: hello\ndata: {}\n\n",
+                json!({"version": last})
+            ))
             .await;
         // #59: the entity baseline. The first poll diffs against it, so a
         // connect between two writes replays nothing and the next write
@@ -371,9 +369,7 @@ fn failure(res: &mut Response, error: hagency_store::Error) {
     let (status, code) = match error {
         hagency_store::Error::Invalid(_) => (StatusCode::BAD_REQUEST, "invalid_stream_query"),
         hagency_store::Error::Busy => (StatusCode::SERVICE_UNAVAILABLE, "busy"),
-        hagency_store::Error::OutcomeUnknown => {
-            (StatusCode::GATEWAY_TIMEOUT, "outcome_unknown")
-        }
+        hagency_store::Error::OutcomeUnknown => (StatusCode::GATEWAY_TIMEOUT, "outcome_unknown"),
         _ => (StatusCode::SERVICE_UNAVAILABLE, "stream_unavailable"),
     };
     refusal(res, status, code);

@@ -174,7 +174,13 @@ impl OwnedSession {
         let start = text.ceil_char_boundary(text.len().saturating_sub(max));
         text[start..]
             .chars()
-            .map(|c| if c.is_control() && c != '\n' { '\u{FFFD}' } else { c })
+            .map(|c| {
+                if c.is_control() && c != '\n' {
+                    '\u{FFFD}'
+                } else {
+                    c
+                }
+            })
             .collect()
     }
     /// Whether the connection still holds this prepared server request. False

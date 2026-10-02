@@ -232,16 +232,9 @@ async fn native_matrix_attachment_privacy_refusals() {
     // `content.file?.url || content.url`) — when an encrypted event also
     // carries a top-level content.url the descriptor wins and the stray url is
     // ignored, so it is no longer a refusal. Asserted positively below.
-    for (i, mode) in [
-        "descriptor",
-        "filename",
-        "path",
-        "mime",
-        "size",
-        "oversize",
-    ]
-    .iter()
-    .enumerate()
+    for (i, mode) in ["descriptor", "filename", "path", "mime", "size", "oversize"]
+        .iter()
+        .enumerate()
     {
         let mut value = file(&format!("bad_{i}"), false, false);
         match *mode {

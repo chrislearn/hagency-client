@@ -185,7 +185,8 @@ impl HostConfig {
         {
             return Err(Error::Config);
         }
-        let mut value = HeaderValue::from_str(&format!("Bearer {token}")).map_err(|_| Error::Config)?;
+        let mut value =
+            HeaderValue::from_str(&format!("Bearer {token}")).map_err(|_| Error::Config)?;
         value.set_sensitive(true);
         self.representative = Some(value);
         Ok(self)

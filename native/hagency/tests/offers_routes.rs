@@ -53,9 +53,7 @@ fn delete(path: String) -> salvo::test::RequestBuilder {
 async fn offers_route_lists_every_role_with_ts_default() {
     let dir = tempfile::tempdir().unwrap();
     let service = app(&dir.path().join("state")).await;
-    let mut response = get("/api/native/v1/offers".into())
-        .send(&*service)
-        .await;
+    let mut response = get("/api/native/v1/offers".into()).send(&*service).await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let value: Value = response.take_json().await.unwrap();
     let offers = value["offers"].as_array().expect("offers array");
@@ -80,12 +78,10 @@ async fn offers_route_lists_every_role_with_ts_default() {
 async fn offers_route_put_and_read_back_camel_case() {
     let dir = tempfile::tempdir().unwrap();
     let service = app(&dir.path().join("state")).await;
-    let mut response = put(
-        "/api/native/v1/offers/coding".into(),
-    )
-    .json(&json!({"count":3,"budgetCapPerEngagement":400000,"rateCap":20000,"published":true}))
-    .send(&*service)
-    .await;
+    let mut response = put("/api/native/v1/offers/coding".into())
+        .json(&json!({"count":3,"budgetCapPerEngagement":400000,"rateCap":20000,"published":true}))
+        .send(&*service)
+        .await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let value: Value = response.take_json().await.unwrap();
     assert_eq!(value["ok"], json!(true));
@@ -94,9 +90,7 @@ async fn offers_route_put_and_read_back_camel_case() {
     assert_eq!(value["offer"]["rateCap"], json!(20000));
     assert_eq!(value["offer"]["published"], json!(true));
 
-    let mut listed = get("/api/native/v1/offers".into())
-        .send(&*service)
-        .await;
+    let mut listed = get("/api/native/v1/offers".into()).send(&*service).await;
     let offers: Value = listed.take_json().await.unwrap();
     let row = offers["offers"]
         .as_array()
@@ -110,12 +104,10 @@ async fn offers_route_put_and_read_back_camel_case() {
     assert!(row.get("updatedBy").is_some());
 
     // Unknown role: TS answers 400 with `unknown role: ...`.
-    let mut denied = put(
-        "/api/native/v1/offers/not_a_role".into(),
-    )
-    .json(&json!({"published":true}))
-    .send(&*service)
-    .await;
+    let mut denied = put("/api/native/v1/offers/not_a_role".into())
+        .json(&json!({"published":true}))
+        .send(&*service)
+        .await;
     assert_eq!(denied.status_code, Some(StatusCode::BAD_REQUEST));
 }
 
@@ -144,9 +136,7 @@ async fn whitelist_route_round_trip() {
         .await;
     assert_eq!(denied.status_code, Some(StatusCode::BAD_REQUEST));
 
-    let mut listed = get("/api/native/v1/whitelist".into())
-        .send(&*service)
-        .await;
+    let mut listed = get("/api/native/v1/whitelist".into()).send(&*service).await;
     let value: Value = listed.take_json().await.unwrap();
     assert_eq!(
         value["whitelist"]
@@ -158,22 +148,18 @@ async fn whitelist_route_round_trip() {
         1
     );
 
-    let mut removed = delete(
-        "/api/native/v1/whitelist/!room:example.test".into(),
-    )
-    .send(&*service)
-    .await;
+    let mut removed = delete("/api/native/v1/whitelist/!room:example.test".into())
+        .send(&*service)
+        .await;
     assert_eq!(removed.status_code, Some(StatusCode::OK));
     let value: Value = removed.take_json().await.unwrap();
     assert_eq!(value["ok"], json!(true));
     assert_eq!(value["projectRoomId"], json!("!room:example.test"));
     assert_eq!(value["stillActive"], json!([]));
 
-    let mut missing = delete(
-        "/api/native/v1/whitelist/!room:example.test".into(),
-    )
-    .send(&*service)
-    .await;
+    let mut missing = delete("/api/native/v1/whitelist/!room:example.test".into())
+        .send(&*service)
+        .await;
     assert_eq!(missing.status_code, Some(StatusCode::NOT_FOUND));
 }
 
@@ -183,18 +169,14 @@ async fn whitelist_route_round_trip() {
 async fn delete_routes_guards() {
     let dir = tempfile::tempdir().unwrap();
     let service = app(&dir.path().join("state")).await;
-    let mut seat = delete(
-        "/api/native/v1/seats/seat_none".into(),
-    )
-    .send(&*service)
-    .await;
+    let mut seat = delete("/api/native/v1/seats/seat_none".into())
+        .send(&*service)
+        .await;
     assert_eq!(seat.status_code, Some(StatusCode::NOT_FOUND));
 
-    let mut preset = delete(
-        "/api/native/v1/framework-presets/preset_none".into(),
-    )
-    .send(&*service)
-    .await;
+    let mut preset = delete("/api/native/v1/framework-presets/preset_none".into())
+        .send(&*service)
+        .await;
     assert_eq!(preset.status_code, Some(StatusCode::NOT_FOUND));
 
     // A published resource with a definition: delete is refused with the TS
@@ -209,31 +191,25 @@ async fn delete_routes_guards() {
     let id = created["id"].as_str().unwrap().to_owned();
     // The route answers the PUBLIC resource id, and the definition routes key
     // on it (read_resource takes either spelling — both map to the row).
-    let mut added = post(
-        format!("/api/native/v1/framework-presets/{id}/agents"),
-    )
-    .json(&json!({"name":"helper","role":"coding"}))
-    .send(&*service)
-    .await;
+    let mut added = post(format!("/api/native/v1/framework-presets/{id}/agents"))
+        .json(&json!({"name":"helper","role":"coding"}))
+        .send(&*service)
+        .await;
     assert_eq!(added.status_code, Some(StatusCode::OK));
     let added: Value = added.take_json().await.unwrap();
     assert_eq!(added["ok"], json!(true));
     assert_eq!(added["definition"]["name"], json!("helper"));
     assert_eq!(added["definition"]["enabled"], json!(true));
 
-    let mut denied = delete(
-        format!("/api/native/v1/framework-presets/{id}"),
-    )
-    .send(&*service)
-    .await;
+    let mut denied = delete(format!("/api/native/v1/framework-presets/{id}"))
+        .send(&*service)
+        .await;
     assert_eq!(denied.status_code, Some(StatusCode::CONFLICT));
 
     // The definitions list carries the derived status shape.
-    let mut listed = get(
-        format!("/api/native/v1/framework-presets/{id}/agents"),
-    )
-    .send(&*service)
-    .await;
+    let mut listed = get(format!("/api/native/v1/framework-presets/{id}/agents"))
+        .send(&*service)
+        .await;
     let value: Value = listed.take_json().await.unwrap();
     let defs = value["agentDefinitions"].as_array().unwrap();
     assert_eq!(defs.len(), 1);
@@ -242,9 +218,9 @@ async fn delete_routes_guards() {
 
     // Remove the definition, then the resource deletes and echoes itself.
     let def_id = defs[0]["id"].as_str().unwrap().to_owned();
-    let mut removed = delete(
-        format!("/api/native/v1/framework-presets/{id}/agents/{def_id}"),
-    )
+    let mut removed = delete(format!(
+        "/api/native/v1/framework-presets/{id}/agents/{def_id}"
+    ))
     .send(&*service)
     .await;
     assert_eq!(removed.status_code, Some(StatusCode::OK));
@@ -252,11 +228,9 @@ async fn delete_routes_guards() {
     // TS edit() on delete returns the LAST REMAINING definition or null.
     assert_eq!(removed["definition"], json!(null));
 
-    let mut deleted = delete(
-        format!("/api/native/v1/framework-presets/{id}"),
-    )
-    .send(&*service)
-    .await;
+    let mut deleted = delete(format!("/api/native/v1/framework-presets/{id}"))
+        .send(&*service)
+        .await;
     assert_eq!(deleted.status_code, Some(StatusCode::OK));
     let deleted: Value = deleted.take_json().await.unwrap();
     assert_eq!(deleted["ok"], json!(true));

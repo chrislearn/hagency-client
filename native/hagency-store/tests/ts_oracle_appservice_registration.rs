@@ -73,13 +73,18 @@ fn ts_tokens_are_random_and_distinct_never_derived() {
     let as1 = yaml_field(&first, "as_token");
     let hs1 = yaml_field(&first, "hs_token");
     let as2 = yaml_field(&second, "as_token");
-    assert_ne!(as1, hs1, "as_token and hs_token authorise opposite directions");
+    assert_ne!(
+        as1, hs1,
+        "as_token and hs_token authorise opposite directions"
+    );
     assert_ne!(as1, as2, "two issues must not derive the same as_token");
     assert_ne!(hs1, yaml_field(&second, "hs_token"));
     for token in [&as1, &hs1] {
         assert_eq!(token.len(), 64, "32 bytes, hex");
         assert!(
-            token.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
+            token
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()),
             "hex, not base64: {token}"
         );
     }
@@ -99,7 +104,10 @@ fn ts_registration_carries_every_field_a_homeserver_needs() {
         "rate_limited",
         "namespaces",
     ] {
-        assert!(yaml.contains(&format!("\n{key}:")), "missing {key} in:\n{yaml}");
+        assert!(
+            yaml.contains(&format!("\n{key}:")),
+            "missing {key} in:\n{yaml}"
+        );
     }
     assert_eq!(yaml_field(&yaml, "url"), "https://us.example");
 }
@@ -231,9 +239,14 @@ fn ts_trailing_slash_is_trimmed_from_the_url() {
 #[test]
 fn ts_registration_file_is_named_for_the_side() {
     let (dir, mut db) = repo();
-    let issued = db.issue_side_registration(&request("https://u.example"), 1000).unwrap();
+    let issued = db
+        .issue_side_registration(&request("https://u.example"), 1000)
+        .unwrap();
     let expected = dir.path().join("state/registrations/example.test.yaml");
-    assert!(expected.exists(), "the YAML is on disk at the reported path");
+    assert!(
+        expected.exists(),
+        "the YAML is on disk at the reported path"
+    );
     // The store reports the canonical host path; macOS spells the temporary
     // directory through the /var -> /private/var alias, so both sides are
     // compared as the same canonical file.

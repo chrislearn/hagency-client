@@ -1,8 +1,8 @@
 use crate::{
     CeilingAlert, DomainRepository, Effect, EffectOutcome, EngagementLabel, Error, ShutdownOutcome,
     ShutdownSnapshot, SweepOutcome,
-    {AgentDefinition, RoleOffer, WhitelistEntry},
     shutdown::{Phase, Probe, mark},
+    {AgentDefinition, RoleOffer, WhitelistEntry},
 };
 use hagency_core::approvals::{
     ApprovalIntakeTarget, ApprovalRoomAuthority, ApprovalRoomCapture, ApprovalSummary,
@@ -10,11 +10,10 @@ use hagency_core::approvals::{
 };
 use hagency_core::{
     allocation::Budget,
-    commands::{
-        CommandNoticeClaimed, CommandNoticeReceipt, CommandNoticeRequest,
-        CommandNoticeSend,
-    },
     authority::{Registration, VerifiedRequest},
+    commands::{
+        CommandNoticeClaimed, CommandNoticeReceipt, CommandNoticeRequest, CommandNoticeSend,
+    },
     messages::{InboundMessage, InboxItem, MessageReceipt, MessageTarget},
     project::{CatalogResource, ConfiguredResource, Engagement, Resource, Seat},
     replies::*,
@@ -2127,7 +2126,11 @@ impl DomainStore {
     /// Secret-free read used only by a resumed send (task #9): is this journaled
     /// notice write still authorized to be re-put (still `sending`, not
     /// retired/cancelled, same fence)? False means park as uncertain.
-    pub async fn verified_notice_send_current(&self, id: String, fence: u64) -> Result<bool, Error> {
+    pub async fn verified_notice_send_current(
+        &self,
+        id: String,
+        fence: u64,
+    ) -> Result<bool, Error> {
         self.call(weight(&(&id, fence))?, move |db| {
             db.verified_notice_send_current(&id, fence)
         })
@@ -2218,10 +2221,7 @@ impl DomainStore {
         })
         .await
     }
-    pub async fn command_notice_receipt(
-        &self,
-        id: String,
-    ) -> Result<CommandNoticeReceipt, Error> {
+    pub async fn command_notice_receipt(&self, id: String) -> Result<CommandNoticeReceipt, Error> {
         self.call(weight(&id)?, move |db| db.command_notice_receipt(&id))
             .await
     }
@@ -3349,23 +3349,35 @@ impl DomainStore {
         now: u64,
     ) -> Result<WhitelistEntry, Error> {
         self.call(weight(&project_room_id)?, move |db| {
-            db.add_whitelist(&project_room_id, display_name.as_deref(), added_by.as_deref(), now)
+            db.add_whitelist(
+                &project_room_id,
+                display_name.as_deref(),
+                added_by.as_deref(),
+                now,
+            )
         })
         .await
     }
-    pub async fn remove_whitelist(&self, project_room_id: String) -> Result<(String, Vec<String>), Error> {
+    pub async fn remove_whitelist(
+        &self,
+        project_room_id: String,
+    ) -> Result<(String, Vec<String>), Error> {
         self.call(weight(&project_room_id)?, move |db| {
             db.remove_whitelist(&project_room_id)
         })
         .await
     }
     pub async fn delete_resource(&self, id: String) -> Result<CatalogResource, Error> {
-        self.call(weight(&id)?, move |db| db.delete_resource(&id)).await
+        self.call(weight(&id)?, move |db| db.delete_resource(&id))
+            .await
     }
     pub async fn delete_seat(&self, id: String) -> Result<(), Error> {
         self.call(weight(&id)?, move |db| db.delete_seat(&id)).await
     }
-    pub async fn agent_definitions(&self, resource_id: String) -> Result<Vec<serde_json::Value>, Error> {
+    pub async fn agent_definitions(
+        &self,
+        resource_id: String,
+    ) -> Result<Vec<serde_json::Value>, Error> {
         self.call(weight(&resource_id)?, move |db| {
             db.agent_definitions(&resource_id)
         })
@@ -3379,21 +3391,13 @@ impl DomainStore {
         now: u64,
     ) -> Result<Option<AgentDefinition>, Error> {
         self.call(weight(&(&resource_id, &definition_id))?, move |db| {
-            db.edit_agent_definition(
-                &resource_id,
-                definition_id.as_deref(),
-                input.as_ref(),
-                now,
-            )
+            db.edit_agent_definition(&resource_id, definition_id.as_deref(), input.as_ref(), now)
         })
         .await
     }
     /// Console verdict audit (backend-v2.js:14980-14983): call-only wrapper
     /// over the repository's own bounded `listAudit` read; no new semantics.
-    pub async fn decisions_audit(
-        &self,
-        limit: usize,
-    ) -> Result<Vec<serde_json::Value>, Error> {
+    pub async fn decisions_audit(&self, limit: usize) -> Result<Vec<serde_json::Value>, Error> {
         self.call(weight(&limit)?, move |db| db.decisions_audit(limit))
             .await
     }
@@ -3529,10 +3533,13 @@ impl DomainStore {
         joined: bool,
         by: String,
     ) -> Result<Option<crate::PendingInvite>, Error> {
-        self.call(weight(&(&room_id, &agent, accepted, joined, &by))?, move |db| {
-            let now = i64::try_from(writer_time()?).map_err(|_| Error::Unavailable)?;
-            db.settle_pending_invite(&room_id, &agent, accepted, joined, &by, now)
-        })
+        self.call(
+            weight(&(&room_id, &agent, accepted, joined, &by))?,
+            move |db| {
+                let now = i64::try_from(writer_time()?).map_err(|_| Error::Unavailable)?;
+                db.settle_pending_invite(&room_id, &agent, accepted, joined, &by, now)
+            },
+        )
         .await
     }
     /// Task #12 wire intake: remember an untrusted invitation (TS
@@ -3545,10 +3552,20 @@ impl DomainStore {
         mode: String,
         since_ts: i64,
     ) -> Result<bool, Error> {
-        self.call(weight(&(&room_id, &agent, &inviter, &mode, since_ts))?, move |db| {
-            let now = i64::try_from(writer_time()?).map_err(|_| Error::Unavailable)?;
-            db.remember_pending_invite(&room_id, &agent, inviter.as_deref(), &mode, since_ts, now)
-        })
+        self.call(
+            weight(&(&room_id, &agent, &inviter, &mode, since_ts))?,
+            move |db| {
+                let now = i64::try_from(writer_time()?).map_err(|_| Error::Unavailable)?;
+                db.remember_pending_invite(
+                    &room_id,
+                    &agent,
+                    inviter.as_deref(),
+                    &mode,
+                    since_ts,
+                    now,
+                )
+            },
+        )
         .await
     }
     pub async fn backfill_pending_invite_inviter(
@@ -3619,7 +3636,8 @@ impl DomainStore {
     /// Board #53: delete one reminder by integer id (the TS `DELETE
     /// /api/reminders/:id` mutation).
     pub async fn delete_reminder(&self, id: i64) -> Result<(), Error> {
-        self.call(weight(&id)?, move |db| db.delete_reminder(id)).await
+        self.call(weight(&id)?, move |db| db.delete_reminder(id))
+            .await
     }
     /// Board #53: fire every due reminder (the delivery queue's 1 s due loop,
     /// `processDueReminders`), in one bounded writer transaction.
@@ -3874,7 +3892,8 @@ impl DomainStore {
         .await
     }
     pub async fn operator_task(&self, id: String) -> Result<crate::OperatorTask, Error> {
-        self.call(weight(&id)?, move |db| db.operator_task(&id)).await
+        self.call(weight(&id)?, move |db| db.operator_task(&id))
+            .await
     }
     pub async fn create_operator_task(
         &self,
@@ -3931,10 +3950,8 @@ impl DomainStore {
         now: u64,
         activity_limit: u64,
     ) -> Result<serde_json::Value, Error> {
-        self.call(64, move |db| {
-            db.operator_project_board(now, activity_limit)
-        })
-        .await
+        self.call(64, move |db| db.operator_project_board(now, activity_limit))
+            .await
     }
     pub async fn account_choices(&self) -> Result<Vec<crate::AccountChoice>, Error> {
         self.call(256, |db| db.account_choices()).await
@@ -4038,9 +4055,16 @@ impl DomainStore {
         self.call(command.weight(), move |db| db.publish_resource(command))
             .await
     }
-    pub async fn bind_reception(&self, fleet_id: String, generation: u64, room: String) -> Result<(), Error> {
-        self.call(weight(&(&fleet_id, &room))?, move |db| db.bind_reception(&fleet_id, generation, &room))
-            .await
+    pub async fn bind_reception(
+        &self,
+        fleet_id: String,
+        generation: u64,
+        room: String,
+    ) -> Result<(), Error> {
+        self.call(weight(&(&fleet_id, &room))?, move |db| {
+            db.bind_reception(&fleet_id, generation, &room)
+        })
+        .await
     }
     pub async fn register(&self, registration: Registration) -> Result<(), Error> {
         self.call(weight(&registration)?, move |db| db.register(&registration))
@@ -4089,7 +4113,8 @@ impl DomainStore {
         self.call(weight(&id)?, move |db| db.side(&id)).await
     }
     pub async fn credential_for(&self, id: String) -> Result<Option<crate::Credential>, Error> {
-        self.call(weight(&id)?, move |db| db.credential_for(&id)).await
+        self.call(weight(&id)?, move |db| db.credential_for(&id))
+            .await
     }
     pub async fn pending_credential_for(
         &self,
@@ -4104,10 +4129,9 @@ impl DomainStore {
         value: Option<serde_json::Value>,
         stage: bool,
     ) -> Result<Option<crate::SideRecord>, Error> {
-        self.call(
-            weight(&(&id, &value, stage))?,
-            move |db| db.set_credential(&id, value, stage),
-        )
+        self.call(weight(&(&id, &value, stage))?, move |db| {
+            db.set_credential(&id, value, stage)
+        })
         .await
     }
     pub async fn promote_pending_credential(
@@ -4123,10 +4147,9 @@ impl DomainStore {
         state: String,
         detail: Option<String>,
     ) -> Result<Option<crate::SideRecord>, Error> {
-        self.call(
-            weight(&(&id, &state, &detail))?,
-            move |db| db.observe_access(&id, &state, detail.as_deref()),
-        )
+        self.call(weight(&(&id, &state, &detail))?, move |db| {
+            db.observe_access(&id, &state, detail.as_deref())
+        })
         .await
     }
     pub async fn set_representative(
@@ -4161,10 +4184,12 @@ impl DomainStore {
         .await
     }
     pub async fn deactivate_side(&self, id: String) -> Result<Option<crate::SideRecord>, Error> {
-        self.call(weight(&id)?, move |db| db.deactivate_side(&id)).await
+        self.call(weight(&id)?, move |db| db.deactivate_side(&id))
+            .await
     }
     pub async fn reactivate_side(&self, id: String) -> Result<Option<crate::SideRecord>, Error> {
-        self.call(weight(&id)?, move |db| db.reactivate_side(&id)).await
+        self.call(weight(&id)?, move |db| db.reactivate_side(&id))
+            .await
     }
     pub async fn remove_side(&self, id: String, force: bool) -> Result<(), Error> {
         self.call(weight(&(&id, force))?, move |db| db.remove_side(&id, force))
@@ -4287,7 +4312,8 @@ impl DomainStore {
     }
     /// ADR-186 §B: allocation, known spend and the open quota hold.
     pub async fn quota_status(&self, id: String) -> Result<crate::QuotaStatus, Error> {
-        self.call(weight(&id)?, move |db| db.quota_status(&id)).await
+        self.call(weight(&id)?, move |db| db.quota_status(&id))
+            .await
     }
     pub async fn reject(&self, command: String, id: String) -> Result<Engagement, Error> {
         self.call(weight(&(&command, &id))?, move |db| {
@@ -4311,13 +4337,20 @@ impl DomainStore {
     }
     /// Approved-but-unprovisioned engagements of one fleet (read-only).
     pub async fn pending_provisions(&self, fleet_id: String) -> Result<Vec<String>, Error> {
-        self.call(weight(&fleet_id)?, move |db| db.pending_provisions(&fleet_id))
-            .await
+        self.call(weight(&fleet_id)?, move |db| {
+            db.pending_provisions(&fleet_id)
+        })
+        .await
     }
     /// Revoked, never-attached engagements whose retirement is pending (read-only).
-    pub async fn pending_unattached_retirements(&self, fleet_id: String) -> Result<Vec<String>, Error> {
-        self.call(weight(&fleet_id)?, move |db| db.pending_unattached_retirements(&fleet_id))
-            .await
+    pub async fn pending_unattached_retirements(
+        &self,
+        fleet_id: String,
+    ) -> Result<Vec<String>, Error> {
+        self.call(weight(&fleet_id)?, move |db| {
+            db.pending_unattached_retirements(&fleet_id)
+        })
+        .await
     }
     /// Original writer check for an already-acknowledged physical account owner.
     pub async fn validate_provision_account(

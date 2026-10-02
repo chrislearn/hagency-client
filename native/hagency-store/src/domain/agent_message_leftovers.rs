@@ -223,9 +223,26 @@ impl DomainRepository {
             )
             .optional()?;
         let Some((
-            id, from, recipient, kind, priority, summary, full, mentions, attachments, created_at,
-            reply_to, group, source, source_room, source_event_id, sender_mxid, schema_kind,
-            schema_version, schema_payload, suppressed,
+            id,
+            from,
+            recipient,
+            kind,
+            priority,
+            summary,
+            full,
+            mentions,
+            attachments,
+            created_at,
+            reply_to,
+            group,
+            source,
+            source_room,
+            source_event_id,
+            sender_mxid,
+            schema_kind,
+            schema_version,
+            schema_payload,
+            suppressed,
         )) = row
         else {
             return Ok(None);
@@ -281,7 +298,8 @@ impl DomainRepository {
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
             )
             .optional()?;
-        let Some((mentions, default_recipient, room_recipients, recipient, suppressed)) = row else {
+        let Some((mentions, default_recipient, room_recipients, recipient, suppressed)) = row
+        else {
             return Ok(SuppressOutcome::Unknown);
         };
         // `messageTargetsAgent` (`:4424`), minus the inferred membership the
@@ -322,11 +340,7 @@ impl DomainRepository {
     /// `GET /api/agents/:name/delivery-events` (`backend-v2.js:16988`): the
     /// agent's delivery events, newest first, bounded — the read the retained
     /// `readDeliveryEvents({agent, limit})` performed over the jsonl log.
-    pub fn delivery_events(
-        &self,
-        agent: &str,
-        limit: u32,
-    ) -> Result<Vec<DeliveryEventRow>, Error> {
+    pub fn delivery_events(&self, agent: &str, limit: u32) -> Result<Vec<DeliveryEventRow>, Error> {
         let bound = i64::from(limit.clamp(1, 1000));
         let mut query = self.db.prepare(
             "SELECT id,message_id,kind,agent,source,reason,context,created_at FROM delivery_events WHERE agent=?1 ORDER BY id DESC LIMIT ?2",
@@ -402,4 +416,3 @@ impl DomainRepository {
         Ok(())
     }
 }
-

@@ -1387,7 +1387,8 @@ fn native_outbound_custody_waiting_request_never_exhausts_attempts() {
         let ticket = claim(&mut db, &s, Lane::Work, &format!("retry-{round}"), now)
             .unwrap_or_else(|| panic!("round {round}: the waiting request is claimable again"));
         start(&mut db, &ticket, now + 1);
-        db.outbound(Command::ProcessingUnknown(ticket.clone()), now + 2).unwrap();
+        db.outbound(Command::ProcessingUnknown(ticket.clone()), now + 2)
+            .unwrap();
         db.outbound(
             Command::Inspect {
                 scope: s.clone(),
@@ -1401,7 +1402,10 @@ fn native_outbound_custody_waiting_request_never_exhausts_attempts() {
             .db
             .query_row("SELECT COUNT(*) FROM outbound_attempts", [], |r| r.get(0))
             .unwrap();
-        assert!(kept <= 1, "round {round}: {kept} attempts kept for one waiting request");
+        assert!(
+            kept <= 1,
+            "round {round}: {kept} attempts kept for one waiting request"
+        );
     }
     // The lane still serves the next request behind it.
     receive(&mut db, &s, delivery("next", Lane::Work));

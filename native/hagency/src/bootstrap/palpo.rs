@@ -34,12 +34,15 @@ struct Work {
 }
 impl Prepared {
     pub(super) fn load(state: &Path) -> Result<Self, Failure> {
-        let value: Config =
-            serde_json::from_slice(&read(&state.join("palpo-transport.json"), 16 * 1024, "palpo-transport.json")?)
-                .map_err(|_| Failure::Config {
-                    field: "palpo-transport.json",
-                    fix: "the file must be valid JSON for the palpo v2 transport profile",
-                })?;
+        let value: Config = serde_json::from_slice(&read(
+            &state.join("palpo-transport.json"),
+            16 * 1024,
+            "palpo-transport.json",
+        )?)
+        .map_err(|_| Failure::Config {
+            field: "palpo-transport.json",
+            fix: "the file must be valid JSON for the palpo v2 transport profile",
+        })?;
         // The endpoint's scheme rule is the host credential's own (https, or
         // plain http to a loopback Palpo), the same rule the import applies.
         if value.profile != "palpo_v2_resources_v1" {
@@ -53,16 +56,18 @@ impl Prepared {
             fix: "the six-field registration must be present and well-formed",
         })?;
         let registration_fingerprint = hagency_store::publication_fingerprint(&value.registration)
-        .map_err(|_| Failure::Config {
-            field: "palpo-transport.json: registration",
-            fix: "the registration digest must compute; keep the fields ASCII",
-        })?;
-        let work = super::palpo_work::Appservice::load(state, &value.registration.server_name).map(|appservice| Work {
-            appservice,
-            probes: super::palpo_work::Probes::new(state),
-            fleet: value.registration.fleet_id.clone(),
-            generation: value.machine_generation,
-        });
+            .map_err(|_| Failure::Config {
+                field: "palpo-transport.json: registration",
+                fix: "the registration digest must compute; keep the fields ASCII",
+            })?;
+        let work = super::palpo_work::Appservice::load(state, &value.registration.server_name).map(
+            |appservice| Work {
+                appservice,
+                probes: super::palpo_work::Probes::new(state),
+                fleet: value.registration.fleet_id.clone(),
+                generation: value.machine_generation,
+            },
+        );
         let registration = RegistrationIdentity {
             binding: "native-palpo-v2".into(),
             side_id: value.registration.server_name,
@@ -70,7 +75,11 @@ impl Prepared {
             registration_generation: value.registration.generation,
             registration_fingerprint,
         };
-        let token = read(&state.join("palpo.machine_token"), 4096, "palpo.machine_token")?;
+        let token = read(
+            &state.join("palpo.machine_token"),
+            4096,
+            "palpo.machine_token",
+        )?;
         let token = std::str::from_utf8(&token).map_err(|_| Failure::Config {
             field: "palpo.machine_token",
             fix: "the token must be valid UTF-8 (max 4096 bytes, owner-private 0600)",
@@ -97,12 +106,18 @@ impl Prepared {
                     })?;
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(_) => return Err(Failure::Config {
-                field: "palpo.ca.pem",
-                fix: "the file must be readable by the service owner (stat failed)",
-            }),
+            Err(_) => {
+                return Err(Failure::Config {
+                    field: "palpo.ca.pem",
+                    fix: "the file must be readable by the service owner (stat failed)",
+                });
+            }
         }
-        Ok(Self { host, registration, work })
+        Ok(Self {
+            host,
+            registration,
+            work,
+        })
     }
 }
 
@@ -256,7 +271,10 @@ impl Live {
         // address and the App Service credential the representative acts
         // with (TS `PUT /api/project-sides/:id/credential`).
         let side = registration.server_name.clone();
-        domain.ensure_side(side.clone()).await.map_err(ImportError::Store)?;
+        domain
+            .ensure_side(side.clone())
+            .await
+            .map_err(ImportError::Store)?;
         domain
             .set_api_base_url(side.clone(), Some(homeserver.clone()))
             .await
@@ -280,14 +298,22 @@ impl Live {
             reception: registration.reception_room_id.clone(),
         };
         if !self.0.enabled {
-            return Ok(Connected { imported, started: false });
+            return Ok(Connected {
+                imported,
+                started: false,
+            });
         }
         let prepared = Prepared::load(&self.0.state).map_err(ImportError::Start)?;
         self.replace(prepared).await.map_err(ImportError::Start)?;
-        Ok(Connected { imported, started: true })
+        Ok(Connected {
+            imported,
+            started: true,
+        })
     }
     pub(super) fn cancel(&self) {
-        self.0.closed.store(true, std::sync::atomic::Ordering::Release);
+        self.0
+            .closed
+            .store(true, std::sync::atomic::Ordering::Release);
         if let Some(cancel) = &*self.0.cancel.lock().unwrap_or_else(|e| e.into_inner()) {
             cancel.cancel();
         }
@@ -438,8 +464,16 @@ impl Owner {
                 // The custody consumer runs beside it and stops with it.
                 let consumer = async {
                     if let Some(work) = &prepared.work {
-                        super::palpo_work::run(&adapter, &work.probes, &domain, &work.appservice,
-                            &work.fleet, work.generation, &signal).await;
+                        super::palpo_work::run(
+                            &adapter,
+                            &work.probes,
+                            &domain,
+                            &work.appservice,
+                            &work.fleet,
+                            work.generation,
+                            &signal,
+                        )
+                        .await;
                     }
                 };
                 let (result, ()) = tokio::join!(

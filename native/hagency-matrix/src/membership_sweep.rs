@@ -42,8 +42,7 @@ use std::collections::BTreeSet;
 /// The retained interval (backend-v2.js:9351): hourly, because the condition
 /// is standing and a tighter loop would re-ask a foreign homeserver about
 /// rooms nothing has changed.
-pub const MEMBERSHIP_SWEEP_INTERVAL: std::time::Duration =
-    std::time::Duration::from_secs(3600);
+pub const MEMBERSHIP_SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3600);
 /// The bridge-fault backoff (RULES.md operator rule 1): 1 s doubling to 60 s,
 /// reset by the first pass that read its engagements.
 const SWEEP_BACKOFF_MIN: std::time::Duration = std::time::Duration::from_secs(1);
@@ -189,10 +188,7 @@ impl crate::Collector {
     /// pairs deduplicated, skips rooms the fleet's registration does not
     /// cover without any call, and asks the membership question exactly the
     /// way the acceptance path asks it: one invite per pair per pass.
-    pub async fn sweep_project_room_membership(
-        &self,
-        cancel: &CancellationToken,
-    ) -> SweepOutcome {
+    pub async fn sweep_project_room_membership(&self, cancel: &CancellationToken) -> SweepOutcome {
         let inner = &self.inner;
         let mut outcome = SweepOutcome::default();
         let Ok(reg) = inner
@@ -217,7 +213,11 @@ impl crate::Collector {
             if counted < 100 {
                 break;
             }
-            after = engagements.last().expect("a full page is non-empty").id.clone();
+            after = engagements
+                .last()
+                .expect("a full page is non-empty")
+                .id
+                .clone();
         }
         for (agent, room) in active_pairs(&engagements) {
             outcome.pairs += 1;
@@ -419,35 +419,35 @@ mod tests {
         let cancel = CancellationToken::new();
         let fleet = common::domain::registration().fleet_id;
         let engagement = f.identity.transport.engagement_id.clone();
-        let (outcome, ()) = tokio::join!(
-            c.sweep_project_room_membership(&cancel),
-            async {
-                let request = fake.next().await;
-                assert_eq!(request.method, "POST");
-                // ONE path segment, the same spelling every other ported room
-                // call sends (retire.rs's leave asserts the identical shape).
-                assert_eq!(
-                    request.target,
-                    "/_matrix/client/v3/rooms/!project:example.test/invite"
-                );
-                assert_eq!(
-                    request.headers["authorization"],
-                    format!("Bearer {}", common::TOKEN)
-                );
-                let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
-                assert_eq!(
-                    body["user_id"],
-                    format!("@{fleet}_{engagement}:example.test"),
-                    "the composed provisioned-account identity"
-                );
-                request.json(200, json!({}));
-            }
-        );
+        let (outcome, ()) = tokio::join!(c.sweep_project_room_membership(&cancel), async {
+            let request = fake.next().await;
+            assert_eq!(request.method, "POST");
+            // ONE path segment, the same spelling every other ported room
+            // call sends (retire.rs's leave asserts the identical shape).
+            assert_eq!(
+                request.target,
+                "/_matrix/client/v3/rooms/!project:example.test/invite"
+            );
+            assert_eq!(
+                request.headers["authorization"],
+                format!("Bearer {}", common::TOKEN)
+            );
+            let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+            assert_eq!(
+                body["user_id"],
+                format!("@{fleet}_{engagement}:example.test"),
+                "the composed provisioned-account identity"
+            );
+            request.json(200, json!({}));
+        });
         assert_eq!(
             outcome.invited, 1,
             "a 200 is a real re-admission, not the already-present answer: {outcome:?}"
         );
-        assert_eq!(outcome.pairs, 1, "one live pair, one call — never per engagement");
+        assert_eq!(
+            outcome.pairs, 1,
+            "one live pair, one call — never per engagement"
+        );
         assert_eq!(outcome.failed, 0);
         fake.close().await;
     }

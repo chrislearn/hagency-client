@@ -20,8 +20,8 @@ pub(crate) mod accounts;
 mod activity;
 pub use activity::{ActivityEvent, ActivityUpdate};
 mod agent_fences;
-mod agent_message_leftovers;
 mod agent_lifecycle;
+mod agent_message_leftovers;
 mod console_feed;
 pub use agent_fences::{AgentFence, FenceReason};
 pub use agent_message_leftovers::{
@@ -52,8 +52,8 @@ mod conversations;
 mod delivery_feedback;
 mod directives;
 pub use directives::{
-    SessionOverrides, THREAD_DIRECTIVE_OPERATOR_REFUSAL, ThreadDirective, ThreadMode,
-    confirmation, parse,
+    SessionOverrides, THREAD_DIRECTIVE_OPERATOR_REFUSAL, ThreadDirective, ThreadMode, confirmation,
+    parse,
 };
 mod exec_policy;
 mod execution;
@@ -76,9 +76,7 @@ pub use operator_tasks::{
 mod invites;
 pub use invites::PendingInvite;
 mod offer_book;
-pub use offer_book::{
-    Contribution, OfferBook, OfferResource, OfferRole, OfferServing, Preview,
-};
+pub use offer_book::{Contribution, OfferBook, OfferResource, OfferRole, OfferServing, Preview};
 mod outcome_resolution;
 mod owned_completion;
 mod owned_dispatch;
@@ -91,9 +89,6 @@ mod room_trust;
 pub use reminders::{Reminder, ReminderReceipt, ReminderSweep};
 pub use room_trust::RoomTrustRecord;
 mod side_registration;
-pub use side_registration::{
-    IssueSideRegistration, IssueSideRegistrationRequest, SideCredential,
-};
 pub use owned_completion::OwnedCompletion;
 pub use owned_dispatch::{
     OwnedClaimProfile, OwnedClaimRoom, OwnedDispatchScope, OwnedFailure, OwnedObservation,
@@ -103,6 +98,7 @@ pub use peers::{
     PeerSweepOutcome,
 };
 pub use provision_runtime::OwnedProvisionScope;
+pub use side_registration::{IssueSideRegistration, IssueSideRegistrationRequest, SideCredential};
 pub(crate) mod file_delivery;
 mod peers;
 pub(crate) mod received_files;
@@ -978,10 +974,7 @@ impl DomainRepository {
                     // assignment); the walker requires the next sequential
                     // list version, so the file keeps 046 and the tuple
                     // carries 40. Integration renumbers on merge.
-                    (
-                        40,
-                        include_str!("migrations/046-side-registrations.sql"),
-                    ),
+                    (40, include_str!("migrations/046-side-registrations.sql")),
                     (41, include_str!("migrations/040-command-notices.sql")),
                     // Integration of lane/agentctl: its board-assigned number
                     // was 049; it lands as the next sequential tuple 42 (file
@@ -1025,31 +1018,19 @@ impl DomainRepository {
                     // Integration of ../regissue task/12: its board-assigned
                     // number was 060; it lands as the next sequential tuple 49
                     // (file name kept).
-                    (
-                        49,
-                        include_str!("migrations/060-pending-invites.sql"),
-                    ),
+                    (49, include_str!("migrations/060-pending-invites.sql")),
                     // Integration of lane/sidelife: the addition notice named
                     // migration 042; the branch file carries 040 — it lands as
                     // the next sequential tuple 50 (file name kept).
-                    (
-                        50,
-                        include_str!("migrations/040-side-credentials.sql"),
-                    ),
+                    (50, include_str!("migrations/040-side-credentials.sql")),
                     // Integration of ../provision task/53: its board-assigned
                     // number was 066; it lands as the next sequential tuple 51
                     // (file name kept).
-                    (
-                        51,
-                        include_str!("migrations/066-reminders.sql"),
-                    ),
+                    (51, include_str!("migrations/066-reminders.sql")),
                     // Integration of lane/activity task/1: its board-assigned
                     // number was 040; it lands as the next sequential tuple 52
                     // (file name kept).
-                    (
-                        52,
-                        include_str!("migrations/040-dispatch-activity.sql"),
-                    ),
+                    (52, include_str!("migrations/040-dispatch-activity.sql")),
                     // Task #80's migration number is 073 (the board's
                     // assignment); the walker requires the next sequential
                     // list version, so the file keeps 073 and the tuple
@@ -1059,10 +1040,7 @@ impl DomainRepository {
                     // assignment); the walker requires the next sequential
                     // list version, so the file keeps 069 and the tuple
                     // carries 54.
-                    (
-                        54,
-                        include_str!("migrations/069-thread-directives.sql"),
-                    ),
+                    (54, include_str!("migrations/069-thread-directives.sql")),
                     // Board #49's migration number is 067 (the board's
                     // assignment); integrated as the next sequential tuple 55.
                     // The file keeps its assigned 067 name.
@@ -1080,10 +1058,7 @@ impl DomainRepository {
                     ),
                     // ADR-186 §A: no board number; the file carries its list
                     // version.
-                    (
-                        57,
-                        include_str!("migrations/057-engagement-allocation.sql"),
-                    ),
+                    (57, include_str!("migrations/057-engagement-allocation.sql")),
                     // ADR-186 §B: no board number; the file carries its list
                     // version.
                     (58, include_str!("migrations/058-quota-holds.sql")),
@@ -1235,7 +1210,12 @@ impl DomainRepository {
     /// lib/fleet-protocol.js sets `receptionRoomId` on the fleet record). This is
     /// not a rotation: same generation, only an unbound reception may be set,
     /// and a different already-bound reception is a conflict.
-    pub fn bind_reception(&mut self, fleet_id: &str, generation: u64, room: &str) -> Result<(), Error> {
+    pub fn bind_reception(
+        &mut self,
+        fleet_id: &str,
+        generation: u64,
+        room: &str,
+    ) -> Result<(), Error> {
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -1537,7 +1517,11 @@ impl DomainRepository {
             .prepare("SELECT kind,at,result FROM decisions ORDER BY rowid DESC LIMIT ?1")?;
         let rows = query
             .query_map([limit as i64], |r| {
-                Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<i64>>(1)?, r.get::<_, String>(2)?))
+                Ok((
+                    r.get::<_, Option<String>>(0)?,
+                    r.get::<_, Option<i64>>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
             })?
             .collect::<Result<Vec<_>, rusqlite::Error>>()?;
         rows.into_iter()
@@ -1791,7 +1775,7 @@ impl DomainRepository {
             })
             .collect()
     }
-/// The read-only agent detail (board #22, TS `backend-v2.js:12155`):
+    /// The read-only agent detail (board #22, TS `backend-v2.js:12155`):
     /// `None` when no engagement names the agent (the route's 404), else the
     /// agent-keyed identity — the same most-live representative engagement
     /// the roster picks — plus the resource id, project id, the rooms its
@@ -2043,7 +2027,9 @@ impl DomainRepository {
         let report = usage::ceiling_report(&tx, &resource.id(), now)?;
         let spent_budget = budget(&tx, &resource, None, true)?;
         let seat_ok = spent_budget.seat.status != allocation::SeatStatus::PeriodMismatch;
-        let by_ceiling = report.ceiling_tokens.map(|c| c.saturating_sub(report.drawn));
+        let by_ceiling = report
+            .ceiling_tokens
+            .map(|c| c.saturating_sub(report.drawn));
         let remaining = [
             by_ceiling,
             seat_ok
@@ -2198,7 +2184,13 @@ impl DomainRepository {
         )?;
         let payload = json!({"request":request,"registrationGeneration":generation,"runtimeName":value.runtime_name,"resource":resource,"approvalEvidence":proof.audit()});
         tx.execute("INSERT INTO effects(id,engagement_id,kind,state,payload) VALUES(?1,?2,'provision','pending',?3)", params![format!("provision_{id}"),id,serialize(&payload)?])?;
-        record_decision(&tx, command_id, &digest, &value, Some("engagement.approved"))?;
+        record_decision(
+            &tx,
+            command_id,
+            &digest,
+            &value,
+            Some("engagement.approved"),
+        )?;
         tx.commit()?;
         Ok(value)
     }
@@ -2248,7 +2240,13 @@ impl DomainRepository {
             return Err(Error::State);
         }
         let resource = read_resource(&tx, &value.resource_id)?;
-        check_grant(&tx, &resource, value.agent_name.as_str(), u64::from(add), now)?;
+        check_grant(
+            &tx,
+            &resource,
+            value.agent_name.as_str(),
+            u64::from(add),
+            now,
+        )?;
         let raised = u64::from(value.allocation())
             .checked_add(u64::from(add))
             .ok_or(InvalidInput("token count overflow"))?;

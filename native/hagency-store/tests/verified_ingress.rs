@@ -58,8 +58,10 @@ impl Fixture {
             .unwrap();
             agents.push(agent.id);
         }
-        let mut joined: BTreeSet<String> =
-            names.iter().map(|name| format!("@{name}:example.test")).collect();
+        let mut joined: BTreeSet<String> = names
+            .iter()
+            .map(|name| format!("@{name}:example.test"))
+            .collect();
         joined.insert("@owner:example.test".into());
         if !direct {
             joined.extend([
@@ -356,7 +358,12 @@ fn native_verified_ingress_policy() {
 fn native_verified_ingress_human_notice_wakes_like_text() {
     let mut f = Fixture::new(false);
     for (id, kind, mentions, expected) in [
-        ("notice_addressed", "m.notice", vec!["@a:example.test"], true),
+        (
+            "notice_addressed",
+            "m.notice",
+            vec!["@a:example.test"],
+            true,
+        ),
         ("text_addressed", "m.text", vec!["@a:example.test"], true),
         ("notice_unaddressed", "m.notice", vec![], false),
         ("text_unaddressed", "m.text", vec![], false),
@@ -395,11 +402,10 @@ fn native_verified_ingress_top_level_group_answer_names_the_question() {
         &[source.sequence],
     )
     .unwrap();
-    let cap = f
-        .db
-        .claim_dispatch("runner", 1013, 60_000, 120_000, 8)
-        .unwrap()
-        .unwrap();
+    let cap =
+        f.db.claim_dispatch("runner", 1013, 60_000, 120_000, 8)
+            .unwrap()
+            .unwrap();
     f.db.start_dispatch(&cap, 1014).unwrap();
     f.db.mutate_task(
         &cap,
@@ -418,7 +424,7 @@ fn native_verified_ingress_top_level_group_answer_names_the_question() {
         &FinalReply {
             call_id: "final".into(),
             body: "The answer".into(),
-                        incidental: false,
+            incidental: false,
         },
         1016,
     )
@@ -465,11 +471,10 @@ fn native_verified_ingress_threaded_followup_answer_stays_in_thread() {
         &[source.sequence],
     )
     .unwrap();
-    let cap = f
-        .db
-        .claim_dispatch("runner", 1013, 60_000, 120_000, 8)
-        .unwrap()
-        .unwrap();
+    let cap =
+        f.db.claim_dispatch("runner", 1013, 60_000, 120_000, 8)
+            .unwrap()
+            .unwrap();
     f.db.start_dispatch(&cap, 1014).unwrap();
     f.db.mutate_task(
         &cap,
@@ -516,7 +521,11 @@ fn native_verified_ingress_threaded_followup_answer_stays_in_thread() {
 fn native_bot_command_lines_never_wake() {
     for direct in [false, true] {
         let mut f = Fixture::new(direct);
-        let mentions: Vec<&str> = if direct { vec![] } else { vec!["@a:example.test"] };
+        let mentions: Vec<&str> = if direct {
+            vec![]
+        } else {
+            vec!["@a:example.test"]
+        };
         // The same shape that DOES wake, so the difference is the `!` alone.
         let ordinary = f.event("a", "ordinary", None, &mentions, 1010);
         if direct {
@@ -666,7 +675,7 @@ fn native_verified_ingress_task_activation() {
                 &FinalReply {
                     call_id: "final".into(),
                     body: "Actual intent completed".into(),
-                        incidental: false,
+                    incidental: false,
                 },
                 1020,
             )
@@ -695,7 +704,7 @@ fn native_verified_ingress_followup() {
                 &FinalReply {
                     call_id: "first".into(),
                     body: "First answer".into(),
-                        incidental: false,
+                    incidental: false,
                 },
                 1018,
             )
@@ -768,7 +777,7 @@ fn native_verified_ingress_followup() {
                 &FinalReply {
                     call_id: "second".into(),
                     body: "Second answer".into(),
-                        incidental: false,
+                    incidental: false,
                 },
                 1027,
             )
@@ -1218,7 +1227,7 @@ fn native_verified_ingress_recovery() {
             &FinalReply {
                 call_id: "result".into(),
                 body: "Recovered activation".into(),
-                        incidental: false,
+                incidental: false,
             },
             2011,
         )
@@ -1338,11 +1347,10 @@ fn native_runner_launch_retry_notice() {
     f.activate(1013);
     f.db.enqueue_inbox_dispatch(&dispatch("first", &task), &[seq])
         .unwrap();
-    let cap = f
-        .db
-        .claim_dispatch("fixture_runner", 1015, 60000, 120000, 8)
-        .unwrap()
-        .unwrap();
+    let cap =
+        f.db.claim_dispatch("fixture_runner", 1015, 60000, 120000, 8)
+            .unwrap()
+            .unwrap();
     f.db.fail_before_start(&cap, 1016, 1000).unwrap();
     let (kind, body): (String, String) = f
         .sql()
@@ -1576,41 +1584,36 @@ fn native_workspace_quarantined_notice() {
         exclusive: true,
     }];
     f.db.enqueue_inbox_dispatch(&first, &[seq]).unwrap();
-    let cap = f
-        .db
-        .claim_dispatch("fixture_runner", 1015, 60_000, 120_000, 8)
-        .unwrap()
-        .unwrap();
+    let cap =
+        f.db.claim_dispatch("fixture_runner", 1015, 60_000, 120_000, 8)
+            .unwrap()
+            .unwrap();
     f.db.start_dispatch(&cap, 1016).unwrap();
     // A different session's task needs the same workspace: its dispatch is
     // enqueued while the workspace is still clean (enqueue refuses a dirty
     // workspace, the claim is what waits).
     let event = f.event("b", "root_b", None, &["@b:example.test"], 1017);
     let source = f.db.admit_matrix_event(&event, 1018).unwrap();
-    let other = f
-        .db
-        .create_verified_task_intent(&f.intent("b", "request", source.sequence), 1019)
-        .unwrap();
+    let other =
+        f.db.create_verified_task_intent(&f.intent("b", "request", source.sequence), 1019)
+            .unwrap();
     while let Some(claim) = f.db.claim_verified_task_notice(1020, 1000).unwrap() {
-        f.db
-            .begin_verified_task_notice_send(&claim.claim.notice.id, &claim.claim.token, 1020)
+        f.db.begin_verified_task_notice_send(&claim.claim.notice.id, &claim.claim.token, 1020)
             .unwrap();
-        f.db
-            .deliver_verified_task_notice(
-                &claim.claim.notice.id,
-                &claim.claim.token,
-                &notice_delivery(&claim),
-                1021,
-            )
-            .unwrap();
+        f.db.deliver_verified_task_notice(
+            &claim.claim.notice.id,
+            &claim.claim.token,
+            &notice_delivery(&claim),
+            1021,
+        )
+        .unwrap();
     }
     let mut second = dispatch("second", &other);
     second.resources = vec![ResourceLease {
         id: "ws".into(),
         exclusive: true,
     }];
-    f.db
-        .enqueue_inbox_dispatch(&second, &[source.sequence])
+    f.db.enqueue_inbox_dispatch(&second, &[source.sequence])
         .unwrap();
     // The lease lapses: the sweep settles the started dispatch as
     // outcome_unknown and marks its exclusive workspace dirty.
@@ -1618,8 +1621,7 @@ fn native_workspace_quarantined_notice() {
         .unwrap();
     // The queued dispatch is not a claim candidate, and the thread hears why.
     assert!(
-        f.db
-            .claim_dispatch("fixture_runner", 62_025, 60_000, 120_000, 8)
+        f.db.claim_dispatch("fixture_runner", 62_025, 60_000, 120_000, 8)
             .unwrap()
             .is_none()
     );
@@ -1653,43 +1655,37 @@ fn native_waiting_for_approval_notice() {
         exclusive: true,
     }];
     f.db.enqueue_inbox_dispatch(&first, &[seq]).unwrap();
-    let cap = f
-        .db
-        .claim_dispatch("fixture_runner", 1015, 60_000, 120_000, 8)
-        .unwrap()
-        .unwrap();
+    let cap =
+        f.db.claim_dispatch("fixture_runner", 1015, 60_000, 120_000, 8)
+            .unwrap()
+            .unwrap();
     f.db.start_dispatch(&cap, 1016).unwrap();
     f.db.park_dispatch(&cap, true, 1017).unwrap();
     let event = f.event("b", "root_b", None, &["@b:example.test"], 1018);
     let source = f.db.admit_matrix_event(&event, 1019).unwrap();
-    let other = f
-        .db
-        .create_verified_task_intent(&f.intent("b", "request", source.sequence), 1020)
-        .unwrap();
+    let other =
+        f.db.create_verified_task_intent(&f.intent("b", "request", source.sequence), 1020)
+            .unwrap();
     while let Some(claim) = f.db.claim_verified_task_notice(1021, 1000).unwrap() {
-        f.db
-            .begin_verified_task_notice_send(&claim.claim.notice.id, &claim.claim.token, 1021)
+        f.db.begin_verified_task_notice_send(&claim.claim.notice.id, &claim.claim.token, 1021)
             .unwrap();
-        f.db
-            .deliver_verified_task_notice(
-                &claim.claim.notice.id,
-                &claim.claim.token,
-                &notice_delivery(&claim),
-                1022,
-            )
-            .unwrap();
+        f.db.deliver_verified_task_notice(
+            &claim.claim.notice.id,
+            &claim.claim.token,
+            &notice_delivery(&claim),
+            1022,
+        )
+        .unwrap();
     }
     let mut second = dispatch("second", &other);
     second.resources = vec![ResourceLease {
         id: "ws".into(),
         exclusive: true,
     }];
-    f.db
-        .enqueue_inbox_dispatch(&second, &[source.sequence])
+    f.db.enqueue_inbox_dispatch(&second, &[source.sequence])
         .unwrap();
     assert!(
-        f.db
-            .claim_dispatch("fixture_runner", 1026, 60_000, 120_000, 8)
+        f.db.claim_dispatch("fixture_runner", 1026, 60_000, 120_000, 8)
             .unwrap()
             .is_none()
     );
@@ -1736,11 +1732,10 @@ fn native_outcome_resolved_settlement_notices() {
             exclusive: true,
         }];
         f.db.enqueue_inbox_dispatch(&first, &[seq]).unwrap();
-        let cap = f
-            .db
-            .claim_dispatch("fixture_runner", 1015, 60_000, 120_000, 8)
-            .unwrap()
-            .unwrap();
+        let cap =
+            f.db.claim_dispatch("fixture_runner", 1015, 60_000, 120_000, 8)
+                .unwrap()
+                .unwrap();
         f.db.start_dispatch(&cap, 1016).unwrap();
         // The lease lapses: the sweep settles the started dispatch as
         // outcome_unknown, quarantining the session and dirtying the
@@ -1768,10 +1763,9 @@ fn native_outcome_resolved_settlement_notices() {
                 [],
             )
             .unwrap();
-        let inspection = f
-            .db
-            .begin_outcome_inspection(&f.agents[0], "first", 60_000, 61_030)
-            .unwrap();
+        let inspection =
+            f.db.begin_outcome_inspection(&f.agents[0], "first", 60_000, 61_030)
+                .unwrap();
         let command = OutcomeResolution {
             original: "first".into(),
             request_id: "operator_resolution".into(),
@@ -1781,8 +1775,7 @@ fn native_outcome_resolved_settlement_notices() {
             operator_note: "Fixture inspection of the stopped run".into(),
             replacement: None,
         };
-        f.db
-            .resolve_stopped_dispatch(&f.agents[0], &command, 61_031)
+        f.db.resolve_stopped_dispatch(&f.agents[0], &command, 61_031)
             .unwrap();
         let (kind, body): (String, String) = f
             .sql()
@@ -1998,35 +1991,33 @@ fn native_bot_command_is_answered_after_the_session_outgrows_the_window() {
     // custody the service uses. This is the live store's own shape: its two
     // `command_notices` rows are both `delivered`, belonging to the OLDER
     // `!help`; only the newer one was left unanswered.
-    let first_claim = f
-        .db
-        .claim_command_notice_for_session("a".into(), 1013, 60_000)
-        .unwrap()
-        .unwrap();
+    let first_claim =
+        f.db.claim_command_notice_for_session("a".into(), 1013, 60_000)
+            .unwrap()
+            .unwrap();
     assert_eq!(first_claim.claim.notice.source_event_id, "$help1");
     let first_send = f
         .db
         .begin_command_notice_send(&first_claim.claim.notice.id, &first_claim.claim.token, 1014)
         .unwrap();
     assert_eq!(
-        f.db
-            .deliver_command_notice(
-                &first_claim.claim.notice.id,
-                &first_claim.claim.token,
-                &ReplyDeliveryObservation {
-                    transaction_id: first_send.notice.transaction_id.clone(),
-                    digest: first_send.digest.clone(),
-                    server_name: first_send.route.server_name.clone(),
-                    room_id: first_send.route.room_id.clone(),
-                    sender_mxid: first_send.route.sender_mxid.clone(),
-                    device_id: first_send.route.device_id.clone(),
-                    event_id: "$help1_answer".into(),
-                    encrypted: first_send.route.encrypted,
-                },
-                1015,
-            )
-            .unwrap()
-            .state,
+        f.db.deliver_command_notice(
+            &first_claim.claim.notice.id,
+            &first_claim.claim.token,
+            &ReplyDeliveryObservation {
+                transaction_id: first_send.notice.transaction_id.clone(),
+                digest: first_send.digest.clone(),
+                server_name: first_send.route.server_name.clone(),
+                room_id: first_send.route.room_id.clone(),
+                sender_mxid: first_send.route.sender_mxid.clone(),
+                device_id: first_send.route.device_id.clone(),
+                event_id: "$help1_answer".into(),
+                encrypted: first_send.route.encrypted,
+            },
+            1015,
+        )
+        .unwrap()
+        .state,
         "delivered"
     );
     // Ordinary room traffic, seen by both agents exactly as a real room event
@@ -2071,11 +2062,10 @@ fn native_bot_command_is_answered_after_the_session_outgrows_the_window() {
     // The winner really SAYS it — through the same custody the service uses
     // (claim -> one-shot begin -> deliver), so "exactly one reply" is a
     // delivered `m.notice`, not merely one queued row.
-    let claimed = f
-        .db
-        .claim_command_notice_for_session("a".into(), 1013, 60_000)
-        .unwrap()
-        .expect("the later !help is claimable by its owning session");
+    let claimed =
+        f.db.claim_command_notice_for_session("a".into(), 1013, 60_000)
+            .unwrap()
+            .expect("the later !help is claimable by its owning session");
     assert_eq!(claimed.claim.notice.source_event_id, "$help2");
     // The other agent cannot claim it: the row belongs to `a`.
     assert!(
@@ -2084,13 +2074,11 @@ fn native_bot_command_is_answered_after_the_session_outgrows_the_window() {
             .is_none(),
         "b must have nothing to claim for a's answer"
     );
-    let send = f
-        .db
-        .begin_command_notice_send(&claimed.claim.notice.id, &claimed.claim.token, 1014)
-        .unwrap();
-    let delivered = f
-        .db
-        .deliver_command_notice(
+    let send =
+        f.db.begin_command_notice_send(&claimed.claim.notice.id, &claimed.claim.token, 1014)
+            .unwrap();
+    let delivered =
+        f.db.deliver_command_notice(
             &claimed.claim.notice.id,
             &claimed.claim.token,
             &ReplyDeliveryObservation {
@@ -2145,10 +2133,7 @@ fn native_thread_directive_is_offered_after_the_session_outgrows_the_window() {
     directive.event.body = "/thread mode plan".into();
     // A directive is consumed before routing: admitted, recorded, wakes nobody.
     assert!(!f.db.admit_matrix_event(&directive, 1201).unwrap().wake);
-    let offered = f
-        .db
-        .pending_thread_directives("a".into(), 16)
-        .unwrap();
+    let offered = f.db.pending_thread_directives("a".into(), 16).unwrap();
     assert_eq!(
         offered.len(),
         1,
@@ -2186,11 +2171,10 @@ fn native_failed_bot_command_answer_is_not_repeated_by_another_agent() {
     // `a` claims it and begins the send, and the outcome is never established:
     // the row stays `sending` under a lease that then lapses, which is exactly
     // the unknown outcome the send path refuses to guess about.
-    let claimed = f
-        .db
-        .claim_command_notice_for_session("a".into(), 1012, 1000)
-        .unwrap()
-        .unwrap();
+    let claimed =
+        f.db.claim_command_notice_for_session("a".into(), 1012, 1000)
+            .unwrap()
+            .unwrap();
     f.db.begin_command_notice_send(&claimed.claim.notice.id, &claimed.claim.token, 1013)
         .unwrap();
     // Past the lease, the store reconciles the un-settled send to `uncertain`.
@@ -2230,11 +2214,16 @@ fn native_verified_ingress_activity_notice_stays_in_source_thread() {
     use hagency_store::{AttemptEvent, AttemptPhase};
     for direct in [false, true] {
         let mut f = Fixture::new(direct);
-        let mentions: Vec<&str> = if direct { vec![] } else { vec!["@a:example.test"] };
+        let mentions: Vec<&str> = if direct {
+            vec![]
+        } else {
+            vec!["@a:example.test"]
+        };
         let mut follow = f.event("a", "question", None, &mentions, 1010);
         follow.event.thread_root = Some("$question".into());
         let source = f.db.admit_matrix_event(&follow, 1011).unwrap();
-        f.db.create_canonical_task("t", "a", "Add 11", 1012).unwrap();
+        f.db.create_canonical_task("t", "a", "Add 11", 1012)
+            .unwrap();
         f.db.enqueue_inbox_dispatch(
             &DispatchInput {
                 id: "d".into(),
@@ -2246,11 +2235,10 @@ fn native_verified_ingress_activity_notice_stays_in_source_thread() {
             &[source.sequence],
         )
         .unwrap();
-        let cap = f
-            .db
-            .claim_dispatch("runner", 1013, 60_000, 120_000, 8)
-            .unwrap()
-            .unwrap();
+        let cap =
+            f.db.claim_dispatch("runner", 1013, 60_000, 120_000, 8)
+                .unwrap()
+                .unwrap();
         f.db.start_dispatch(&cap, 1014).unwrap();
         // The lifecycle hook that queues the ⏳ notice.
         f.db.record_attempt_event(
@@ -2263,11 +2251,10 @@ fn native_verified_ingress_activity_notice_stays_in_source_thread() {
             1015,
         )
         .unwrap();
-        let claim = f
-            .db
-            .claim_verified_task_notice(1016, 1000)
-            .unwrap()
-            .unwrap();
+        let claim =
+            f.db.claim_verified_task_notice(1016, 1000)
+                .unwrap()
+                .unwrap();
         assert_eq!(
             claim.route.thread_root.as_deref(),
             if direct { None } else { Some("$question") },

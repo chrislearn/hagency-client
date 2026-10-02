@@ -157,7 +157,13 @@ async fn native_codex_mcp_approval_rejects_uncorrelated() {
 /// reported `Failure::Protocol` with no reason recorded.
 #[tokio::test]
 async fn native_codex_mcp_unsupported_form_is_declined_and_the_turn_survives() {
-    for case in ["url", "input_form", "null_meta", "wrong_kind", "nonobject_args"] {
+    for case in [
+        "url",
+        "input_form",
+        "null_meta",
+        "wrong_kind",
+        "nonobject_args",
+    ] {
         let (mut s, mut p) = setup().await;
         observe(&mut s, &mut p, item("file-item", false))
             .await
@@ -175,9 +181,11 @@ async fn native_codex_mcp_unsupported_form_is_declined_and_the_turn_survives() {
         }
         // The turn survives: a Notice, not an error, and the session is still
         // running rather than ended.
-        let update = observe(&mut s, &mut p, event).await.unwrap_or_else(|error| {
-            panic!("{case}: the unsupported form must not kill the turn: {error:?}")
-        });
+        let update = observe(&mut s, &mut p, event)
+            .await
+            .unwrap_or_else(|error| {
+                panic!("{case}: the unsupported form must not kill the turn: {error:?}")
+            });
         assert!(matches!(update, Update::Notice), "{case}");
         assert_eq!(s.phase(), Phase::Running, "{case}");
         assert_eq!(s.last_server_request(), Some("mcp_elicitation"), "{case}");

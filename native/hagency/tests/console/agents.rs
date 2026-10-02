@@ -176,9 +176,21 @@ async fn native_console_agent_detail_observation() {
     assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
     let value = response.take_json::<Value>().await.unwrap();
     let keys = [
-        "name", "framework", "role", "state", "engagement_id", "requested_tokens",
-        "online", "last_seen_ms", "resource_id", "project_id", "engagements",
-        "rooms", "dispatch", "tasks", "reminders",
+        "name",
+        "framework",
+        "role",
+        "state",
+        "engagement_id",
+        "requested_tokens",
+        "online",
+        "last_seen_ms",
+        "resource_id",
+        "project_id",
+        "engagements",
+        "rooms",
+        "dispatch",
+        "tasks",
+        "reminders",
     ];
     let object = value.as_object().unwrap();
     assert_eq!(object.len(), keys.len(), "exactly the declared detail keys");
@@ -237,7 +249,10 @@ async fn native_console_agent_detail_covers_an_ended_agent() {
     assert_eq!(value["name"], "PageWorker");
     assert_eq!(value["state"], "pending");
     assert_eq!(value["online"], false, "no session means no live dispatch");
-    assert!(value["last_seen_ms"].is_null(), "never attempted: null, not zero");
+    assert!(
+        value["last_seen_ms"].is_null(),
+        "never attempted: null, not zero"
+    );
     assert!(value["dispatch"].is_null(), "no live dispatch");
     assert!(value["rooms"].as_array().unwrap().is_empty());
     assert!(value["tasks"].as_array().unwrap().is_empty());
@@ -480,14 +495,15 @@ async fn native_console_agent_start_stop_is_at_most_once() {
     let body = response.take_json::<Value>().await.unwrap();
     assert_eq!(body["ok"], true);
     assert_eq!(body["state"], "launching");
-    let started: Option<u64> = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3"))
-        .unwrap()
-        .query_row(
-            "SELECT started_at FROM agent_lifecycle WHERE engagement_id=?1",
-            [&*id],
-            |r| r.get(0),
-        )
-        .unwrap();
+    let started: Option<u64> =
+        rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3"))
+            .unwrap()
+            .query_row(
+                "SELECT started_at FROM agent_lifecycle WHERE engagement_id=?1",
+                [&*id],
+                |r| r.get(0),
+            )
+            .unwrap();
     assert!(started.is_some(), "serving is re-armed durably");
     // A second start hits the retained `agent already online` (409).
     let mut response = post(&format!("/console/api/agents/{id}/start"), &lifecycle)
@@ -553,7 +569,10 @@ async fn native_console_agent_preset_apply_refuses_without_durable_transition() 
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(payload, other.preset_id, "the next dispatch reads this payload");
+    assert_eq!(
+        payload, other.preset_id,
+        "the next dispatch reads this payload"
+    );
     drop(raw);
     // Unknown preset: 400, and the binding survives (TS parity).
     let mut response = put(&format!("/console/api/agents/{id}/preset"), &lifecycle)
@@ -1280,9 +1299,12 @@ async fn native_console_agent_launch_env_observation() {
     assert_eq!(anonymous.status_code, Some(StatusCode::UNAUTHORIZED));
     let cookie = session(&service).await;
     // The read takes no selection: query parameters are refused.
-    let response = get("/console/api/agents/UsageWorker/launch-env?agent=x", &cookie)
-        .send(&service)
-        .await;
+    let response = get(
+        "/console/api/agents/UsageWorker/launch-env?agent=x",
+        &cookie,
+    )
+    .send(&service)
+    .await;
     assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST));
     // An agent the service never engaged is the TS route's 404.
     let mut response = get("/console/api/agents/Nobody/launch-env", &cookie)
@@ -1302,12 +1324,19 @@ async fn native_console_agent_launch_env_observation() {
     // Exactly the TS envelope: one `runtimeProfile` key.
     assert_eq!(value.as_object().unwrap().len(), 1);
     let profile = value["runtimeProfile"].as_object().unwrap();
-    assert_eq!(profile.len(), 2, "TS normalizeRuntimeProfile: primary + supervisor");
+    assert_eq!(
+        profile.len(),
+        2,
+        "TS normalizeRuntimeProfile: primary + supervisor"
+    );
     let primary = value["runtimeProfile"]["primary"].as_object().unwrap();
     assert_eq!(primary["framework"], "codex");
     assert_eq!(primary["model"], "gpt-5.6-sol");
     assert_eq!(primary["reasoning"], "medium");
-    assert!(primary["provider"].is_null(), "no provider on the seeded resource");
+    assert!(
+        primary["provider"].is_null(),
+        "no provider on the seeded resource"
+    );
     assert!(
         value["runtimeProfile"]["supervisor"].is_null(),
         "the port stores no supervisor profile: null, the TS shape when none"
@@ -1327,15 +1356,13 @@ async fn native_console_agent_delete_soft_is_reversible() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
     let cookie = lifecycle_session(&service).await;
-    let mut response = TestClient::delete(format!(
-        "{BASE}/console/api/agents/UsageWorker"
-    ))
-    .add_header("host", "127.0.0.1:13300", true)
-    .add_header("origin", BASE, true)
-    .add_header("sec-fetch-site", "same-origin", true)
-    .add_header("cookie", &cookie, true)
-    .send(&service)
-    .await;
+    let mut response = TestClient::delete(format!("{BASE}/console/api/agents/UsageWorker"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .add_header("origin", BASE, true)
+        .add_header("sec-fetch-site", "same-origin", true)
+        .add_header("cookie", &cookie, true)
+        .send(&service)
+        .await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let value = response.take_json::<Value>().await.unwrap();
     assert_eq!(value["ok"], true);
@@ -1357,11 +1384,19 @@ async fn native_console_agent_delete_soft_is_reversible() {
         .take_json::<Value>()
         .await
         .unwrap();
-    assert_eq!(value["agent"], served, "the delete returns the served record");
+    assert_eq!(
+        value["agent"], served,
+        "the delete returns the served record"
+    );
     assert_eq!(value["agent"]["name"], "UsageWorker");
     assert_eq!(value["agent"]["state"], "active");
     // The envelope carries exactly TS's four soft-delete keys.
-    let mut keys: Vec<&str> = value.as_object().unwrap().keys().map(|k| k.as_str()).collect();
+    let mut keys: Vec<&str> = value
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(|k| k.as_str())
+        .collect();
     keys.sort_unstable();
     assert_eq!(keys, ["agent", "deprecated", "message", "ok"]);
     // REVERSIBLE: the engagement is untouched, so nothing an `undelete`
@@ -1394,15 +1429,14 @@ async fn native_console_agent_delete_force_releases_active_engagements() {
     let service = f.service();
     let cookie = lifecycle_session(&service).await;
     let id = f.engagement.clone();
-    let mut response = TestClient::delete(format!(
-        "{BASE}/console/api/agents/UsageWorker?force=true"
-    ))
-    .add_header("host", "127.0.0.1:13300", true)
-    .add_header("origin", BASE, true)
-    .add_header("sec-fetch-site", "same-origin", true)
-    .add_header("cookie", &cookie, true)
-    .send(&service)
-    .await;
+    let mut response =
+        TestClient::delete(format!("{BASE}/console/api/agents/UsageWorker?force=true"))
+            .add_header("host", "127.0.0.1:13300", true)
+            .add_header("origin", BASE, true)
+            .add_header("sec-fetch-site", "same-origin", true)
+            .add_header("cookie", &cookie, true)
+            .send(&service)
+            .await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let value = response.take_json::<Value>().await.unwrap();
     assert_eq!(value["ok"], true);
@@ -1460,10 +1494,12 @@ async fn native_console_agent_delete_force_releases_active_engagements() {
 async fn native_console_agent_message_leftovers() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
-    let anonymous = TestClient::get(format!("{BASE}/console/api/agents/UsageWorker/delivery-events"))
-        .add_header("host", "127.0.0.1:13300", true)
-        .send(&service)
-        .await;
+    let anonymous = TestClient::get(format!(
+        "{BASE}/console/api/agents/UsageWorker/delivery-events"
+    ))
+    .add_header("host", "127.0.0.1:13300", true)
+    .send(&service)
+    .await;
     assert_eq!(anonymous.status_code, Some(StatusCode::UNAUTHORIZED));
     let cookie = session(&service).await;
 
@@ -1638,30 +1674,26 @@ async fn native_console_agent_delete_not_found_and_invalid_name() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
     let cookie = lifecycle_session(&service).await;
-    let mut missing = TestClient::delete(format!(
-        "{BASE}/console/api/agents/NoSuchAgent"
-    ))
-    .add_header("host", "127.0.0.1:13300", true)
-    .add_header("origin", BASE, true)
-    .add_header("sec-fetch-site", "same-origin", true)
-    .add_header("cookie", &cookie, true)
-    .send(&service)
-    .await;
+    let mut missing = TestClient::delete(format!("{BASE}/console/api/agents/NoSuchAgent"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .add_header("origin", BASE, true)
+        .add_header("sec-fetch-site", "same-origin", true)
+        .add_header("cookie", &cookie, true)
+        .send(&service)
+        .await;
     assert_eq!(missing.status_code, Some(StatusCode::NOT_FOUND));
     let body = missing.take_json::<Value>().await.unwrap();
     assert_eq!(body["error"], "agent not found");
     assert_eq!(body["code"], "agent_not_found");
     // An invalid name shape is refused BEFORE any store work (the same
     // AgentName bound the detail read uses).
-    let mut invalid = TestClient::delete(format!(
-        "{BASE}/console/api/agents/1bad%20name"
-    ))
-    .add_header("host", "127.0.0.1:13300", true)
-    .add_header("origin", BASE, true)
-    .add_header("sec-fetch-site", "same-origin", true)
-    .add_header("cookie", &cookie, true)
-    .send(&service)
-    .await;
+    let mut invalid = TestClient::delete(format!("{BASE}/console/api/agents/1bad%20name"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .add_header("origin", BASE, true)
+        .add_header("sec-fetch-site", "same-origin", true)
+        .add_header("cookie", &cookie, true)
+        .send(&service)
+        .await;
     assert_eq!(invalid.status_code, Some(StatusCode::BAD_REQUEST));
     assert_eq!(
         invalid.take_json::<Value>().await.unwrap()["code"],
@@ -1695,7 +1727,11 @@ async fn native_console_agent_lifecycle_is_one_login() {
         }
         .send(&service)
         .await;
-        assert_eq!(response.status_code, Some(StatusCode::UNAUTHORIZED), "anonymous {path}");
+        assert_eq!(
+            response.status_code,
+            Some(StatusCode::UNAUTHORIZED),
+            "anonymous {path}"
+        );
     }
     let cookie = session(&service).await;
     // Start refuses an agent that never stopped — TS parity 409
@@ -1720,11 +1756,19 @@ async fn native_console_agent_lifecycle_is_one_login() {
     .json(&json!({"expectedRevision":revision,"published":false}))
     .send(&service)
     .await;
-    assert_eq!(response.status_code, Some(StatusCode::OK), "publication is not scope-refused");
+    assert_eq!(
+        response.status_code,
+        Some(StatusCode::OK),
+        "publication is not scope-refused"
+    );
     let response = post("/console/api/accounts", &cookie)
         .json(&json!({"profile":ACCOUNT_PROFILE}))
         .send(&service)
         .await;
-    assert_eq!(response.status_code, Some(StatusCode::OK), "account prepare is not scope-refused");
+    assert_eq!(
+        response.status_code,
+        Some(StatusCode::OK),
+        "account prepare is not scope-refused"
+    );
     f.close().await;
 }

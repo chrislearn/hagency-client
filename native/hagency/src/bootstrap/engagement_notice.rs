@@ -34,7 +34,8 @@ pub fn engagement_approval_content(
         .flatten()
         .collect::<Vec<_>>()
         .join(" · ");
-    let mut body = format!("已批准 / Approved {role} for {allocated_tokens} tokens.\nAgent: {mxid}\n");
+    let mut body =
+        format!("已批准 / Approved {role} for {allocated_tokens} tokens.\nAgent: {mxid}\n");
     if !configuration.is_empty() {
         body.push_str(&format!("Serving: {configuration}\n"));
     }

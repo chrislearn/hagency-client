@@ -61,11 +61,7 @@ fn agent_name(req: &Request) -> Result<String, Error> {
 /// `backend-v2.js:3249`) — bounded text, never a path component.
 fn message_id(req: &Request) -> Result<String, Error> {
     let id = req.param::<String>("id").ok_or(Error::Invalid)?;
-    if id.is_empty()
-        || id.len() > 128
-        || id.chars().any(char::is_control)
-        || id.contains('/')
-    {
+    if id.is_empty() || id.len() > 128 || id.chars().any(char::is_control) || id.contains('/') {
         return Err(Error::Invalid);
     }
     Ok(id)
@@ -82,7 +78,9 @@ fn now_ms() -> u64 {
 /// The TS name shape `/^[\w\-]+$/` (`backend-v2.js:16372`).
 fn agent_not_found(res: &mut Response) {
     res.status_code(StatusCode::NOT_FOUND);
-    res.render(Json(json!({"error": "agent not found", "code": "agent_not_found"})));
+    res.render(Json(
+        json!({"error": "agent not found", "code": "agent_not_found"}),
+    ));
 }
 
 #[handler]
@@ -342,17 +340,15 @@ async fn suppress(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         return;
     }
     match result {
-        Ok(hagency_store::SuppressOutcome::Recorded(suppression)) => {
-            res.render(Json(json!({
-                "ok": true,
-                "id": id,
-                "agent": agent,
-                "suppressed": true,
-                "was_unread": suppression.was_unread,
-                "is_unread_now": suppression.is_unread_now,
-                "suppressedRecipients": suppression.suppressed_recipients,
-            })))
-        }
+        Ok(hagency_store::SuppressOutcome::Recorded(suppression)) => res.render(Json(json!({
+            "ok": true,
+            "id": id,
+            "agent": agent,
+            "suppressed": true,
+            "was_unread": suppression.was_unread,
+            "is_unread_now": suppression.is_unread_now,
+            "suppressedRecipients": suppression.suppressed_recipients,
+        }))),
         Ok(hagency_store::SuppressOutcome::Unknown) => {
             res.status_code(StatusCode::NOT_FOUND);
             res.render(Json(json!({"error": "message not found"})));

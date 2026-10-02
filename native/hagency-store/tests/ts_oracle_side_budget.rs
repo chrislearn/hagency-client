@@ -43,7 +43,10 @@ fn open() -> Fixture {
 fn ts_oracle_side_budget_unknown_engagement_is_not_found_not_a_budget_refusal() {
     let fixture = open();
     // The known engagement resolves...
-    assert_eq!(fixture.db.get(&fixture.engagement).unwrap().id, fixture.engagement);
+    assert_eq!(
+        fixture.db.get(&fixture.engagement).unwrap().id,
+        fixture.engagement
+    );
     // ...and an unknown one is NotFound, so the route maps it to 404.
     assert!(matches!(
         fixture.db.get("engagement_does_not_exist"),

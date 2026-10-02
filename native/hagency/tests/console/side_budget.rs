@@ -33,10 +33,13 @@ async fn native_console_side_allocation_write_and_read() {
     let service = f.service();
     let operator = configuration(&service).await;
     let body = json!({"allocated_tokens": 500});
-    let mut response = put("/console/api/project-sides/example.test/allocation", &operator)
-        .json(&body)
-        .send(&service)
-        .await;
+    let mut response = put(
+        "/console/api/project-sides/example.test/allocation",
+        &operator,
+    )
+    .json(&body)
+    .send(&service)
+    .await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let value: Value = response.take_json().await.unwrap();
     assert_eq!(
@@ -64,10 +67,13 @@ async fn native_console_side_allocation_write_and_read() {
     // The camelCase spelling is accepted exactly like the retained
     // `req.body?.allocated_tokens ?? req.body?.allocatedTokens`
     // (backend-v2.js:9543).
-    let mut response = put("/console/api/project-sides/example.test/allocation", &operator)
-        .json(&json!({"allocatedTokens": 50}))
-        .send(&service)
-        .await;
+    let mut response = put(
+        "/console/api/project-sides/example.test/allocation",
+        &operator,
+    )
+    .json(&json!({"allocatedTokens": 50}))
+    .send(&service)
+    .await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let value: Value = response.take_json().await.unwrap();
     assert_eq!(value["budget"]["allocated"], 50);
@@ -90,10 +96,13 @@ async fn native_console_side_allocation_write_and_read() {
 
     // The clear: NULL is unallocated — not unlimited — and remaining goes
     // null with it (lib/project-side-store.js:443-452).
-    let mut response = put("/console/api/project-sides/example.test/allocation", &operator)
-        .json(&json!({}))
-        .send(&service)
-        .await;
+    let mut response = put(
+        "/console/api/project-sides/example.test/allocation",
+        &operator,
+    )
+    .json(&json!({}))
+    .send(&service)
+    .await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let value: Value = response.take_json().await.unwrap();
     assert_eq!(value["budget"]["allocated"], Value::Null);
@@ -118,10 +127,13 @@ async fn native_console_side_allocation_write_and_read() {
     // A list observation takes no selection: the budget reads likewise
     // refuse every query parameter.
     assert_eq!(
-        get("/console/api/project-sides/example.test/budget?limit=1", &operator)
-            .send(&service)
-            .await
-            .status_code,
+        get(
+            "/console/api/project-sides/example.test/budget?limit=1",
+            &operator
+        )
+        .send(&service)
+        .await
+        .status_code,
         Some(StatusCode::BAD_REQUEST)
     );
 }
@@ -142,7 +154,10 @@ async fn native_console_usage_totals() {
     assert_eq!(value["ok"], true);
     let totals = &value["totals"];
     assert_eq!(totals["agents"], 3, "UsageWorker, AlertWorker, PageWorker");
-    assert_eq!(totals["tokensMeasuredFor"], 1, "only UsageWorker is observed");
+    assert_eq!(
+        totals["tokensMeasuredFor"], 1,
+        "only UsageWorker is observed"
+    );
     assert_eq!(totals["tokensPartial"], true);
     assert!(
         totals["tokensDrawn"].is_u64() && totals["tokensDrawn"].as_u64().unwrap() > 0,

@@ -178,10 +178,9 @@ fn ts_approval_fail_closed_denies_pending_and_names_the_reason() {
     let mut f = Fixture::new();
     let a = f.admit(0, 1);
     assert_eq!(a.state, "pending");
-    let denied = f
-        .db
-        .deny_for_failed_delivery(&a.id, "matrix_delivery_failed", 1012)
-        .unwrap();
+    let denied =
+        f.db.deny_for_failed_delivery(&a.id, "matrix_delivery_failed", 1012)
+            .unwrap();
     assert_eq!(denied.state, "decided");
     assert_eq!(denied.choice, Some(ApprovalChoice::Deny));
     // The reason is durably named, and the queue no longer shows it pending.
@@ -285,10 +284,11 @@ fn ts_approval_consume_is_at_most_once() {
     // Owner denies: the deny path is the same `decided/deny` shape.
     f.db.deny_for_failed_delivery(&a.id, "matrix_delivery_failed", 1012)
         .unwrap();
-    let first = f
-        .db
-        .consume_owner_approval(&f.caps[0], &a.id, 1014);
-    assert!(matches!(first, Ok(_) | Err(Error::NotConsumable) | Err(Error::RunnerAuthority)));
+    let first = f.db.consume_owner_approval(&f.caps[0], &a.id, 1014);
+    assert!(matches!(
+        first,
+        Ok(_) | Err(Error::NotConsumable) | Err(Error::RunnerAuthority)
+    ));
 }
 
 /// TS `api-approvals.test.js:28` — *bridge-owned binding and one-shot verdict

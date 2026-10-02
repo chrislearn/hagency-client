@@ -183,18 +183,16 @@ pub(super) async fn request(
                 16 * 1024,
             )
         }
-        Operation::ScheduleReminder { msg, delay_ms } => {
-            (
-                Prepared {
-                    path: "/api/native/v1/runner/reminders".into(),
-                    body: serde_json::to_vec(&json!({"msg":msg,"delay_ms":delay_ms}))
-                        .map_err(|_| Error::Invalid)?,
-                    method: "POST",
-                    mutation: true,
-                },
-                16 * 1024,
-            )
-        }
+        Operation::ScheduleReminder { msg, delay_ms } => (
+            Prepared {
+                path: "/api/native/v1/runner/reminders".into(),
+                body: serde_json::to_vec(&json!({"msg":msg,"delay_ms":delay_ms}))
+                    .map_err(|_| Error::Invalid)?,
+                method: "POST",
+                mutation: true,
+            },
+            16 * 1024,
+        ),
         Operation::Tasks { after, limit } => {
             if !after.is_empty() {
                 identifier(after, 128).map_err(|_| Error::Invalid)?;

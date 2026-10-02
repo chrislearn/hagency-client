@@ -339,9 +339,7 @@ impl DomainRepository {
             // `pending` and the terminal revision superseded it unsent
             // (`update_and_enqueue`, activity.rs:345) — only the final ✅ ever
             // went out, with no anchor, hence never an `m.replace` edit.
-            AttemptPhase::Claimed
-            | AttemptPhase::Initialized
-            | AttemptPhase::TurnStarted => {
+            AttemptPhase::Claimed | AttemptPhase::Initialized | AttemptPhase::TurnStarted => {
                 Some(super::activity::ActivityEvent::Started)
             }
             AttemptPhase::Parked => Some(super::activity::ActivityEvent::Waiting),

@@ -131,7 +131,11 @@ fn native_operator_task_lifecycle_matches_retained_store() {
     assert_eq!(edited.title, "Wire the board properly");
     assert_eq!(edited.priority, "p0");
     assert!(edited.assignee.is_none(), "a null assignee clears it");
-    assert_eq!(edited.labels, ["x"], "a non-array clears and a list replaces");
+    assert_eq!(
+        edited.labels,
+        ["x"],
+        "a non-array clears and a list replaces"
+    );
     assert_eq!(edited.description, "now with detail");
     assert_eq!(edited.status, "created", "PATCH cannot move the status");
     assert_eq!(edited.created_at, "2023-11-14T22:13:20.000Z");
@@ -178,11 +182,17 @@ fn native_operator_task_lifecycle_matches_retained_store() {
         .transition_operator_task(&created.id, "accepted", &json!({}), 1_700_000_020_000)
         .unwrap();
     assert_eq!(accepted.status, "accepted");
-    assert_eq!(accepted.started_at.as_deref(), Some("2023-11-14T22:13:40.000Z"));
+    assert_eq!(
+        accepted.started_at.as_deref(),
+        Some("2023-11-14T22:13:40.000Z")
+    );
     let running = db
         .transition_operator_task(&created.id, "in_progress", &json!({}), 1_700_000_030_000)
         .unwrap();
-    assert_eq!(running.started_at, accepted.started_at, "started_at is kept");
+    assert_eq!(
+        running.started_at, accepted.started_at,
+        "started_at is kept"
+    );
     // blocked requires both metadata fields, and refuses without them.
     assert!(matches!(
         db.transition_operator_task(&created.id, "blocked", &json!({}), 4),
@@ -217,7 +227,10 @@ fn native_operator_task_lifecycle_matches_retained_store() {
         .transition_operator_task(&created.id, "done", &json!({}), 1_700_000_060_000)
         .unwrap();
     assert_eq!(done.status, "done");
-    assert_eq!(done.completed_at.as_deref(), Some("2023-11-14T22:14:20.000Z"));
+    assert_eq!(
+        done.completed_at.as_deref(),
+        Some("2023-11-14T22:14:20.000Z")
+    );
     assert!(matches!(
         db.transition_operator_task(&created.id, "in_progress", &json!({}), 7),
         Err(Error::Invalid(_))
@@ -226,7 +239,11 @@ fn native_operator_task_lifecycle_matches_retained_store() {
     // deleteTask: the row and its comments go; a missing id is None.
     let removed = db.delete_operator_task(&created.id).unwrap().unwrap();
     assert_eq!(removed.id, created.id);
-    assert_eq!(removed.comments.len(), 1, "the reply carries the last state");
+    assert_eq!(
+        removed.comments.len(),
+        1,
+        "the reply carries the last state"
+    );
     assert!(matches!(
         db.operator_task(&created.id),
         Err(Error::NotFound)
@@ -239,7 +256,10 @@ fn native_operator_task_lifecycle_matches_retained_store() {
     assert_eq!(board["generatedAt"], "2023-11-14T22:14:30.000Z");
     assert_eq!(board["staleAfterMs"], 300_000);
     assert_eq!(board["activityLimit"], 20);
-    assert_eq!(board["totals"]["projects"], 0, "no project is registered here");
+    assert_eq!(
+        board["totals"]["projects"], 0,
+        "no project is registered here"
+    );
     for status in ["created", "accepted", "in_progress", "blocked", "done"] {
         assert!(
             board["totals"]["tasks"][status].is_u64(),
@@ -267,20 +287,10 @@ fn native_operator_task_blocked_metadata_is_durable() {
         let task = db
             .create_operator_task(&json!({"title":"Durable"}), 1)
             .unwrap();
-        db.transition_operator_task(
-            &task.id,
-            "accepted",
-            &json!({}),
-            1_700_000_000_000,
-        )
-        .unwrap();
+        db.transition_operator_task(&task.id, "accepted", &json!({}), 1_700_000_000_000)
+            .unwrap();
         let blocked = db
-            .transition_operator_task(
-                &task.id,
-                "in_progress",
-                &json!({}),
-                1_700_000_001_000,
-            )
+            .transition_operator_task(&task.id, "in_progress", &json!({}), 1_700_000_001_000)
             .unwrap();
         db.transition_operator_task(
             &blocked.id,

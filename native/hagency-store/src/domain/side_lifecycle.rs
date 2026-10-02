@@ -9,8 +9,8 @@
 //! representative's server-must-match rule, the project room-uniqueness rule,
 //! and the active-side removal refusal — exactly as the TS store does; the
 //! routes add no guard of their own.
-use super::graphs;
 use super::DomainRepository;
+use super::graphs;
 use crate::Error;
 use hagency_core::InvalidInput;
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
@@ -21,7 +21,13 @@ use serde_json::Value;
 const CREDENTIAL_KINDS: [&str; 2] = ["appservice", "registrationToken"];
 
 /// A credential's access verdict: a word, never a value.
-const ACCESS_STATES: [&str; 5] = ["unverified", "accepted", "rejected", "unreachable", "blocked"];
+const ACCESS_STATES: [&str; 5] = [
+    "unverified",
+    "accepted",
+    "rejected",
+    "unreachable",
+    "blocked",
+];
 
 /// A server name: a DNS name or IP literal, optionally `:port`, lowercase.
 /// Not a URL — the server name is an identity component; the API base URL is a
@@ -104,7 +110,9 @@ fn credential(value: &Value) -> Result<Credential, Error> {
         64,
     )?;
     if !CREDENTIAL_KINDS.contains(&kind.as_str()) {
-        return Err(InvalidInput("credential.kind must be one of appservice, registrationToken").into());
+        return Err(
+            InvalidInput("credential.kind must be one of appservice, registrationToken").into(),
+        );
     }
     let opt = |key: &str| -> Result<Option<String>, Error> {
         match object.get(key) {
@@ -140,7 +148,9 @@ fn credential(value: &Value) -> Result<Credential, Error> {
                 object
                     .get("namespace")
                     .and_then(Value::as_str)
-                    .ok_or_else(|| InvalidInput("credential.namespace must be 1..255 characters"))?,
+                    .ok_or_else(|| {
+                        InvalidInput("credential.namespace must be 1..255 characters")
+                    })?,
                 255,
             )?),
             sender_localpart: Some(
@@ -235,21 +245,21 @@ pub struct SideRecord {
 }
 
 type Row = (
-    String,           // server_name
-    String,           // label
-    Option<String>,   // api_base_url
-    Option<String>,   // credential (JSON)
-    Option<String>,   // pending_credential (JSON)
-    Option<i64>,      // pending_issued_at
-    Option<String>,   // representative (JSON)
-    String,           // access_state
-    Option<String>,   // access_detail
-    Option<i64>,      // access_checked_at
-    Option<i64>,      // access_issued_at
-    Option<i64>,      // allocated_tokens
-    i64,              // active
-    i64,              // created_at
-    i64,              // updated_at
+    String,         // server_name
+    String,         // label
+    Option<String>, // api_base_url
+    Option<String>, // credential (JSON)
+    Option<String>, // pending_credential (JSON)
+    Option<i64>,    // pending_issued_at
+    Option<String>, // representative (JSON)
+    String,         // access_state
+    Option<String>, // access_detail
+    Option<i64>,    // access_checked_at
+    Option<i64>,    // access_issued_at
+    Option<i64>,    // allocated_tokens
+    i64,            // active
+    i64,            // created_at
+    i64,            // updated_at
 );
 
 fn side_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
@@ -376,7 +386,9 @@ fn representative(mxid: &str, server: &str, now: u64) -> Result<Representative, 
     if host != server {
         // `InvalidInput` carries only a static word; the dynamic host is
         // checked, not echoed (the route reports it via its own wording).
-        return Err(InvalidInput("representative mxid must live on this project side's server").into());
+        return Err(
+            InvalidInput("representative mxid must live on this project side's server").into(),
+        );
     }
     let localpart = mxid[1..mxid.find(':').expect("contains colon")].to_string();
     Ok(Representative {
@@ -410,7 +422,11 @@ impl DomainRepository {
     /// (`verify` needs it to call whoami). TS stores it on `upsertSide`; the
     /// native create route (`register`) has no such field, so the lifecycle
     /// route records it here. Absent means "we do not know".
-    pub fn set_api_base_url(&mut self, id: &str, api_base_url: Option<&str>) -> Result<Option<SideRecord>, Error> {
+    pub fn set_api_base_url(
+        &mut self,
+        id: &str,
+        api_base_url: Option<&str>,
+    ) -> Result<Option<SideRecord>, Error> {
         let id = server_name(id)?;
         let api_base_url = match api_base_url {
             None => None,
@@ -451,11 +467,7 @@ impl DomainRepository {
                 |r| r.get(0),
             )
             .optional()?;
-        value
-            .flatten()
-            .as_deref()
-            .map(parse_credential)
-            .transpose()
+        value.flatten().as_deref().map(parse_credential).transpose()
     }
 
     /// The staged credential waiting to be installed (TS `pendingCredentialFor`).
@@ -469,11 +481,7 @@ impl DomainRepository {
                 |r| r.get(0),
             )
             .optional()?;
-        value
-            .flatten()
-            .as_deref()
-            .map(parse_credential)
-            .transpose()
+        value.flatten().as_deref().map(parse_credential).transpose()
     }
 
     /// Replace the credential alone (TS `setCredential`). `stage` keeps the old
@@ -489,13 +497,11 @@ impl DomainRepository {
     ) -> Result<Option<SideRecord>, Error> {
         let id = server_name(id)?;
         let now = graphs::now_ms()?;
-        let exists: bool = self
-            .db
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM side_records WHERE server_name=?1)",
-                [&id],
-                |r| r.get(0),
-            )?;
+        let exists: bool = self.db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM side_records WHERE server_name=?1)",
+            [&id],
+            |r| r.get(0),
+        )?;
         if !exists {
             return Ok(None);
         }
@@ -621,17 +627,17 @@ impl DomainRepository {
         input: &Value,
     ) -> Result<Option<SideProjectRecord>, Error> {
         let side_id = server_name(side)?;
-        let exists: bool = self
-            .db
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM side_records WHERE server_name=?1)",
-                [&side_id],
-                |r| r.get(0),
-            )?;
+        let exists: bool = self.db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM side_records WHERE server_name=?1)",
+            [&side_id],
+            |r| r.get(0),
+        )?;
         if !exists {
             return Ok(None);
         }
-        let object = input.as_object().ok_or_else(|| InvalidInput("project must be an object"))?;
+        let object = input
+            .as_object()
+            .ok_or_else(|| InvalidInput("project must be an object"))?;
         let name = text(
             object
                 .get("name")
@@ -664,10 +670,9 @@ impl DomainRepository {
             if key.to_ascii_lowercase().contains("room")
                 && !["room_id", "roomId", "room"].contains(&key.as_str())
             {
-                return Err(InvalidInput(
-                    "project room must be sent as room_id, roomId or room",
-                )
-                .into());
+                return Err(
+                    InvalidInput("project room must be sent as room_id, roomId or room").into(),
+                );
             }
         }
         let room_raw = object
@@ -686,15 +691,18 @@ impl DomainRepository {
         };
         if let Some(room_id) = &room_id {
             if !room_id.starts_with('!') {
-                return Err(InvalidInput("project.roomId must be a room id starting with !").into());
+                return Err(
+                    InvalidInput("project.roomId must be a room id starting with !").into(),
+                );
             }
             let at = room_id.find(':');
-            let host = at.map(|i| room_id[i + 1..].to_ascii_lowercase()).unwrap_or_default();
+            let host = at
+                .map(|i| room_id[i + 1..].to_ascii_lowercase())
+                .unwrap_or_default();
             if host != side_id {
-                return Err(InvalidInput(
-                    "project.roomId must live on this project side's server",
-                )
-                .into());
+                return Err(
+                    InvalidInput("project.roomId must live on this project side's server").into(),
+                );
             }
             let clash: Option<String> = self.db.query_row(
                 "SELECT id FROM side_projects WHERE server_name=?1 AND room_id=?2 AND id<>?3 LIMIT 1",
@@ -736,7 +744,9 @@ impl DomainRepository {
             "UPDATE side_records SET updated_at=?2 WHERE server_name=?1",
             params![side_id, now as i64],
         )?;
-        Ok(project_row(&self.db, &side_id)?.into_iter().find(|p| p.id == id))
+        Ok(project_row(&self.db, &side_id)?
+            .into_iter()
+            .find(|p| p.id == id))
     }
 
     /// Archive (or un-archive) a project (TS `setProjectArchived`). No delete.
@@ -761,7 +771,9 @@ impl DomainRepository {
             "UPDATE side_records SET updated_at=?2 WHERE server_name=?1",
             params![side_id, now as i64],
         )?;
-        Ok(project_row(&self.db, &side_id)?.into_iter().find(|p| p.id == project_id))
+        Ok(project_row(&self.db, &side_id)?
+            .into_iter()
+            .find(|p| p.id == project_id))
     }
 
     /// Deactivate a side (TS `deactivateSide`).

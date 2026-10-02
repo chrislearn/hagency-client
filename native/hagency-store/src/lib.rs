@@ -12,7 +12,6 @@ mod domain_worker;
 pub mod private;
 pub mod task_context;
 pub use domain::PrivateApprovalCard;
-pub use domain::{PublishedCatalog, publication_fingerprint};
 pub use domain::StaleMatrixSessionReceipt;
 pub use domain::resource_publication::{
     ResourcePublicationAccess, ResourcePublicationCommand, ResourcePublicationResult,
@@ -20,35 +19,37 @@ pub use domain::resource_publication::{
 };
 pub use domain::uploads::UploadSettlement;
 pub use domain::{
-    ALERT_STATUSES, AgentDefinition, AgentDetail, AgentDetailRoom, AgentFence, AgentRosterRow, AlertListFilter, AlertNote, AlertPatch,
-    AlertStats, AlertTransition, AttemptClock, EngagementLabel, RoleOffer, WhitelistEntry, AttachmentTicket,
-    AttemptClockRow, AttemptEvent, AttemptEventRow, AttemptPhase, CeilingAlert, CeilingReport,
-    CorpusSweepOutcome, Credential, DomainRepository, ENDED_LIMIT, EXECUTION_RETENTION_BATCH,
+    ALERT_STATUSES, ActivityEvent, ActivityUpdate, AgentDefinition, AgentDetail, AgentDetailRoom,
+    AgentFence, AgentRosterRow, AlertListFilter, AlertNote, AlertPatch, AlertStats,
+    AlertTransition, AttachmentTicket, AttemptClock, AttemptClockRow, AttemptEvent,
+    AttemptEventRow, AttemptPhase, CeilingAlert, CeilingReport, Contribution, CorpusSweepOutcome,
+    Credential, DeliveryEventRow, DomainRepository, ENDED_LIMIT, EXECUTION_RETENTION_BATCH,
     EXECUTION_RETENTION_DISPATCHES, EXECUTION_RETENTION_ROWS, Effect, EffectOutcome, EffectState,
-    EngagementPruneOutcome, EngagementRetentionStatus, ExecutionPruneOutcome, FenceReason,
-    IssueSideRegistration, IssueSideRegistrationRequest, KnownTokens, SideCredential, MAX_ENGAGEMENT_USAGE_PERIODS, MAX_ENGAGEMENT_USAGE_SOURCES,
-    MAX_OPEN_CEILING_ALERTS, MAX_SOURCE_USAGE_RECEIPTS, MAX_USAGE_PERIODS, MAX_USAGE_RECEIPTS,
-    MAX_USAGE_SOURCES, MESSAGE_RETENTION_FLOOR, OVER_BUDGET_NOTICE_KIND, OverBudgetNotice,
-    Contribution, OfferBook, OfferResource, OfferRole, OfferServing, Preview,
-    OwnedClaimProfile, OwnedClaimRoom, OwnedCompletion, OwnedDispatchScope, OwnedFailure,
-    OwnedObservation, OwnedProvisionScope, PEER_RECEIPT_CEILING, PEER_RETENTION_CEILING,
-    Reminder, ReminderReceipt, ReminderSweep,
-    PEER_RETENTION_FLOOR, PeerRetentionStatus, PeerSweepOutcome, PendingInvite, ProjectSide, QuotaStatus, Representative,
-    RetentionStatus, SideProject, SideProjectRecord, SideRecord, SourceUsage, SweepOutcome, SideBudget, SideCommitment, UploadAdmission, UploadClaim, UploadIdentity,
-    RuntimeProfile, RuntimeProfileRole,
-    DeliveryEventRow, NewOperatorMessage, OperatorMessage, SuppressOutcome, Suppression, Tombstone,
+    EngagementLabel, EngagementPruneOutcome, EngagementRetentionStatus, ExecutionPruneOutcome,
+    FenceReason, IssueSideRegistration, IssueSideRegistrationRequest, KnownTokens,
+    MAX_ENGAGEMENT_USAGE_PERIODS, MAX_ENGAGEMENT_USAGE_SOURCES, MAX_OPEN_CEILING_ALERTS,
+    MAX_SOURCE_USAGE_RECEIPTS, MAX_TASK_COMMENTS, MAX_TASK_PAGE, MAX_USAGE_PERIODS,
+    MAX_USAGE_RECEIPTS, MAX_USAGE_SOURCES, MESSAGE_RETENTION_FLOOR, NewOperatorMessage,
+    OVER_BUDGET_NOTICE_KIND, OfferBook, OfferResource, OfferRole, OfferServing, OperatorMessage,
+    OperatorTask, OperatorTaskComment, OverBudgetNotice, OwnedClaimProfile, OwnedClaimRoom,
+    OwnedCompletion, OwnedDispatchScope, OwnedFailure, OwnedObservation, OwnedProvisionScope,
+    PEER_RECEIPT_CEILING, PEER_RETENTION_CEILING, PEER_RETENTION_FLOOR, PeerRetentionStatus,
+    PeerSweepOutcome, PendingInvite, Preview, ProjectSide, QuotaStatus, Reminder, ReminderReceipt,
+    ReminderSweep, Representative, RetentionStatus, RoleOffer, RuntimeProfile, RuntimeProfileRole,
+    SideBudget, SideCommitment, SideCredential, SideProject, SideProjectRecord, SideRecord,
+    SourceUsage, SuppressOutcome, Suppression, SweepOutcome, TASK_GRANULARITIES, TASK_PRIORITIES,
+    TASK_STATUSES, TaskFilters, Tombstone, UploadAdmission, UploadClaim, UploadIdentity,
     UploadPreparation, UploadSend, UsageCeiling, UsageEvidence, UsagePeriod, UsagePeriodKind,
-    UsageReceipt, UsageReport, UsageSource, UsageSummary, UsageTotals, allowed_transitions,
-    over_budget_notice_body, MAX_TASK_COMMENTS, MAX_TASK_PAGE, OperatorTask, OperatorTaskComment,
-    TASK_GRANULARITIES, TASK_PRIORITIES, TASK_STATUSES, TaskFilters, operator_transitions,
-    ActivityEvent, ActivityUpdate,
+    UsageReceipt, UsageReport, UsageSource, UsageSummary, UsageTotals, WhitelistEntry,
+    allowed_transitions, operator_transitions, over_budget_notice_body,
 };
 pub use domain::{DeliveryFeedback, DeliveryWarning, DirectTarget, MentionState, MentionTarget};
+pub use domain::{OutcomeAction, OutcomeResolution};
+pub use domain::{PublishedCatalog, publication_fingerprint};
 pub use domain::{
     SessionOverrides, THREAD_DIRECTIVE_OPERATOR_REFUSAL, ThreadDirective, ThreadMode, confirmation,
     parse,
 };
-pub use domain::{OutcomeAction, OutcomeResolution};
 pub use domain_worker::DomainStore;
 pub mod outbound;
 mod repository;

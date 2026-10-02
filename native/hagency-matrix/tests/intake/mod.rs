@@ -1599,7 +1599,6 @@ async fn native_matrix_intake_pill_and_plain_mentions_wake_without_m_mentions() 
     fake.close().await;
 }
 
-
 /// Board #98. The owner posts a question at the project room's top level; the
 /// agent's task binds to it as a thread session; the task then completes (the
 /// live rig showed the agent's own ✅ notice). The owner now replies IN THAT
@@ -1633,7 +1632,10 @@ async fn native_matrix_intake_threaded_followup_after_task_done() {
             None,
         )],
     );
-    assert_eq!(run(&c, &mut fake, question, false).await.unwrap().admitted, 1);
+    assert_eq!(
+        run(&c, &mut fake, question, false).await.unwrap().admitted,
+        1
+    );
     let inbox = f.store.inbox("root".into(), 0, 10, None).await.unwrap();
     assert_eq!(inbox.len(), 1);
     let sequence = inbox[0].message.sequence;
@@ -1651,7 +1653,10 @@ async fn native_matrix_intake_threaded_followup_after_task_done() {
         })
         .await
         .unwrap();
-    assert_ne!(task.session_id, "root", "the task opens its own thread session");
+    assert_ne!(
+        task.session_id, "root",
+        "the task opens its own thread session"
+    );
     // The acknowledgement activates the intent, exactly as the host does.
     let n = f
         .store
@@ -1754,9 +1759,7 @@ async fn native_matrix_intake_threaded_followup_after_task_done() {
         c.intake(HostIntakePlan::new(plan).unwrap(), &cancel),
         async {
             fake.next().await.json(200, common::who());
-            fake.next()
-                .await
-                .json(200, sync("followup", vec![follow]));
+            fake.next().await.json(200, sync("followup", vec![follow]));
             fake.next().await.json(200, state(false));
         }
     );
@@ -1838,7 +1841,10 @@ async fn native_matrix_intake_threaded_followup_to_room_session() {
             None,
         )],
     );
-    assert_eq!(run(&c, &mut fake, question, false).await.unwrap().admitted, 1);
+    assert_eq!(
+        run(&c, &mut fake, question, false).await.unwrap().admitted,
+        1
+    );
     // 2. Element's exact threaded follow-up.
     let mut follow = event(
         "followup",

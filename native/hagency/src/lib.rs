@@ -1,8 +1,8 @@
 use hagency_core::custody::{Delivery, MAX_DELIVERY_BYTES};
 use hagency_store::{DomainStore, Error, Store};
 mod alerts;
-pub mod bot_commands;
 pub mod bootstrap;
+pub mod bot_commands;
 pub mod console;
 pub(crate) mod file_service;
 pub(crate) mod fleet_views;
@@ -156,7 +156,8 @@ impl App {
             return self;
         };
         let status = bootstrap::palpo::StatusHandle::new(false);
-        let live = bootstrap::palpo::Live::new(state, self.store.clone(), domain, status.clone(), false);
+        let live =
+            bootstrap::palpo::Live::new(state, self.store.clone(), domain, status.clone(), false);
         self.with_palpo(status).with_palpo_live(live)
     }
 
@@ -472,7 +473,10 @@ fn readiness(depot: &mut Depot, res: &mut Response, refuse: bool) {
     // invariant), so nothing here reads the store. Native has no multi-server
     // heartbeat registry nor a request-path message counter; those are stated
     // as their honest native value, not fabricated.
-    let fleet = app.as_ref().and_then(|a| a.fleet.as_ref()).map(|f| f.snapshot());
+    let fleet = app
+        .as_ref()
+        .and_then(|a| a.fleet.as_ref())
+        .map(|f| f.snapshot());
     let (agents, online_agents, blocked_agents) = match &fleet {
         Some(snap) => {
             let registered = snap["registered_backends"].as_u64().unwrap_or(0) as usize;
@@ -483,13 +487,23 @@ fn readiness(depot: &mut Depot, res: &mut Response, refuse: bool) {
             // the TS agentFlowHealth reports as `blocked`.
             let online = rows
                 .iter()
-                .filter(|r| !matches!(r["status"]["state"].as_str(),
-                    Some("closed" | "unavailable" | "outcome_unknown" | "stopped")))
+                .filter(|r| {
+                    !matches!(
+                        r["status"]["state"].as_str(),
+                        Some("closed" | "unavailable" | "outcome_unknown" | "stopped")
+                    )
+                })
                 .count();
             let blocked = rows
                 .iter()
-                .filter(|r| matches!(r["status"]["state"].as_str(),
-                    Some("fenced" | "awaiting_operator" | "refresh_refused" | "approval_refused")))
+                .filter(|r| {
+                    matches!(
+                        r["status"]["state"].as_str(),
+                        Some(
+                            "fenced" | "awaiting_operator" | "refresh_refused" | "approval_refused"
+                        )
+                    )
+                })
                 .count();
             (registered, online, blocked)
         }
@@ -498,7 +512,10 @@ fn readiness(depot: &mut Depot, res: &mut Response, refuse: bool) {
     // Native talks to exactly one homeserver transport (palpo); there is no
     // multi-server registry, so `servers` is 1 when configured and
     // `onlineServers` is 1 when running.
-    let palpo_state = app.as_ref().and_then(|a| a.palpo.as_ref()).map(|p| p.state());
+    let palpo_state = app
+        .as_ref()
+        .and_then(|a| a.palpo.as_ref())
+        .map(|p| p.state());
     let servers = usize::from(palpo_state.is_some());
     let online_servers = usize::from(palpo_state == Some("running"));
     // The TS rollup's `messages` is the in-process delivery queue length.
@@ -606,9 +623,7 @@ fn readiness(depot: &mut Depot, res: &mut Response, refuse: bool) {
         .as_object()
         .map(|map| {
             map.iter()
-                .filter(|(_, v)| {
-                    matches!(v["status"].as_str(), Some("unhealthy" | "degraded"))
-                })
+                .filter(|(_, v)| matches!(v["status"].as_str(), Some("unhealthy" | "degraded")))
                 .map(|(name, v)| format!("{name}:{}", v["status"].as_str().unwrap_or("")))
                 .collect()
         })
@@ -695,8 +710,12 @@ fn refusal_message(code: &str) -> &'static str {
         "operator_required" => "an operator credential is required",
         // Scopes.
         "task_scope_required" => "task management scope is required",
-        "resource_publication_scope_required" => "resource publication management scope is required",
-        "resource_configuration_scope_required" => "resource configuration management scope is required",
+        "resource_publication_scope_required" => {
+            "resource publication management scope is required"
+        }
+        "resource_configuration_scope_required" => {
+            "resource configuration management scope is required"
+        }
         "account_scope_required" => "account enrollment management scope is required",
         "agent_lifecycle_scope_required" => "agent lifecycle management scope is required",
         // Request bodies.
@@ -738,7 +757,9 @@ fn refusal_message(code: &str) -> &'static str {
         "stream_unavailable" => "the change stream is unavailable",
         "registration_unavailable" => "the registration is unavailable",
         "palpo_fleet_conflict" => "another Palpo fleet is already connected to this Hagency",
-        "palpo_import_unavailable" => "the Palpo configuration could not be saved or connected; retry",
+        "palpo_import_unavailable" => {
+            "the Palpo configuration could not be saved or connected; retry"
+        }
         // Service state.
         "console_unavailable" => "the native console is unavailable",
         "native_unavailable" => "the native API is unavailable",
@@ -774,8 +795,12 @@ fn refusal_message(code: &str) -> &'static str {
         "agent_unavailable" => "the agent is unavailable",
         "agent_preset_unavailable" => "the agent preset is unavailable",
         "agent_start_unavailable" => "the agent cannot be started",
-        "agent_record_not_writable" => "the agent record is not writable from an agent-authenticated route",
-        "project_side_not_settable_here" => "projectSide cannot be set here: this route is agent-authenticated; use PUT /api/agents/:name/project-side with the operator token",
+        "agent_record_not_writable" => {
+            "the agent record is not writable from an agent-authenticated route"
+        }
+        "project_side_not_settable_here" => {
+            "projectSide cannot be set here: this route is agent-authenticated; use PUT /api/agents/:name/project-side with the operator token"
+        }
         "role_required" => "a role is required",
         "resource_required" => "a resource is required",
         "roles_are_model_derived" => "roles are derived from the model",

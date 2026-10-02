@@ -56,7 +56,11 @@ async fn import(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         .ok()
         .and_then(|app| app.palpo_live().cloned())
     else {
-        refusal(res, StatusCode::SERVICE_UNAVAILABLE, "palpo_import_unavailable");
+        refusal(
+            res,
+            StatusCode::SERVICE_UNAVAILABLE,
+            "palpo_import_unavailable",
+        );
         return;
     };
     let result = live.import(&input.configuration, &input.homeserver).await;
@@ -91,7 +95,11 @@ async fn import(req: &mut Request, depot: &mut Depot, res: &mut Response) {
             refusal(res, StatusCode::CONFLICT, "palpo_fleet_conflict");
         }
         Err(ImportError::Store(_) | ImportError::Start(_) | ImportError::Closed) => {
-            refusal(res, StatusCode::SERVICE_UNAVAILABLE, "palpo_import_unavailable");
+            refusal(
+                res,
+                StatusCode::SERVICE_UNAVAILABLE,
+                "palpo_import_unavailable",
+            );
         }
     }
 }

@@ -64,7 +64,11 @@ async fn native_console_offer_reads_require_operator_authority() {
             .add_header("host", "127.0.0.1:13300", true)
             .send(&service)
             .await;
-        assert_eq!(anonymous.status_code, Some(StatusCode::UNAUTHORIZED), "{path}");
+        assert_eq!(
+            anonymous.status_code,
+            Some(StatusCode::UNAUTHORIZED),
+            "{path}"
+        );
     }
     let cookie = session(&service).await;
     for (name, value) in [
@@ -89,16 +93,32 @@ async fn native_console_offer_reads_require_operator_authority() {
         );
     }
     // Foreign query parameters are refused; the one declared key is accepted.
-    for query in ["?limit=1", "?room=x", "?projectRoomId=a&projectRoomId=b", "?projectRoomId=%31"] {
+    for query in [
+        "?limit=1",
+        "?room=x",
+        "?projectRoomId=a&projectRoomId=b",
+        "?projectRoomId=%31",
+    ] {
         let response = get(&format!("/console/api/offer-book{query}"), &cookie)
             .send(&service)
             .await;
-        assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST), "{query}");
+        assert_eq!(
+            response.status_code,
+            Some(StatusCode::BAD_REQUEST),
+            "{query}"
+        );
     }
     // The two list/preview reads take no selection at all beyond their keys.
-    for path in ["/console/api/contributions?limit=1", "/console/api/engagements/preview?nope=1"] {
+    for path in [
+        "/console/api/contributions?limit=1",
+        "/console/api/engagements/preview?nope=1",
+    ] {
         let response = get(path, &cookie).send(&service).await;
-        assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST), "{path}");
+        assert_eq!(
+            response.status_code,
+            Some(StatusCode::BAD_REQUEST),
+            "{path}"
+        );
     }
     f.close().await;
 }
@@ -140,9 +160,12 @@ async fn native_console_offer_book_serves_real_state() {
         .collect();
     assert_eq!(resource_names, ["private_alert_pool", "private_usage_pool"]);
     // The named-room form echoes the room and still publishes no trust.
-    let mut named = get("/console/api/offer-book?projectRoomId=!room:example.test", &cookie)
-        .send(&service)
-        .await;
+    let mut named = get(
+        "/console/api/offer-book?projectRoomId=!room:example.test",
+        &cookie,
+    )
+    .send(&service)
+    .await;
     assert_eq!(named.status_code, Some(StatusCode::OK));
     let named = named.take_json::<Value>().await.unwrap();
     assert_eq!(named["projectRoomId"], json!("!room:example.test"));
@@ -157,7 +180,9 @@ async fn native_console_contributions_serve_real_relationships() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
     let cookie = session(&service).await;
-    let mut response = get("/console/api/contributions", &cookie).send(&service).await;
+    let mut response = get("/console/api/contributions", &cookie)
+        .send(&service)
+        .await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let value = response.take_json::<Value>().await.unwrap();
     let rows = value["contributions"].as_array().unwrap();
@@ -173,7 +198,11 @@ async fn native_console_contributions_serve_real_relationships() {
     assert_eq!(worker["project"], json!("project_one"));
     assert_eq!(worker["projectRoomId"], json!("!project:example.test"));
     assert_eq!(worker["ownerMxid"], json!("@owner:example.test"));
-    assert_eq!(worker["active"], json!(true), "its provision effect applied");
+    assert_eq!(
+        worker["active"],
+        json!(true),
+        "its provision effect applied"
+    );
     // The membership probe has no native source: `null` (never checked), NOT
     // `false` ("the agent is not in the room") — the two must not collapse.
     for row in rows {
@@ -187,8 +216,15 @@ async fn native_console_contributions_serve_real_relationships() {
     // NOT used: it forbids any `roomId` substring, which this route's own
     // `projectRoomId` key contains.
     let text = value.to_string();
-    for private in ["!private:example.test", "private_session", "private_workspace"] {
-        assert!(!text.contains(private), "unexpected private output {private}");
+    for private in [
+        "!private:example.test",
+        "private_session",
+        "private_workspace",
+    ] {
+        assert!(
+            !text.contains(private),
+            "unexpected private output {private}"
+        );
     }
     f.close().await;
 }
@@ -215,10 +251,16 @@ async fn native_console_preview_is_a_dry_run() {
     // The agent is the first live coding engagement's own agent and its figure
     // is that resource's real headroom — derived from the fixture, not assumed.
     let live = live_coding(&db);
-    assert_eq!(value["agent"], json!(live[0].0), "the first live coding agent");
+    assert_eq!(
+        value["agent"],
+        json!(live[0].0),
+        "the first live coding agent"
+    );
     // A live engagement exists because it did not create a second one: the row
     // count is unchanged across the call.
-    let mut list = get("/console/api/engagements", &cookie).send(&service).await;
+    let mut list = get("/console/api/engagements", &cookie)
+        .send(&service)
+        .await;
     let listed = list.take_json::<Value>().await.unwrap();
     let listed_count = listed["engagements"].as_array().unwrap().len();
     // An unknown role is refused, not answered.
@@ -227,7 +269,9 @@ async fn native_console_preview_is_a_dry_run() {
         .await;
     assert_eq!(refused.status_code, Some(StatusCode::BAD_REQUEST));
     assert_eq!(digest(&db), before, "the preview must not write");
-    let mut after = get("/console/api/engagements", &cookie).send(&service).await;
+    let mut after = get("/console/api/engagements", &cookie)
+        .send(&service)
+        .await;
     let after = after.take_json::<Value>().await.unwrap();
     assert_eq!(
         after["engagements"].as_array().unwrap().len(),

@@ -959,14 +959,22 @@ impl Peer {
                 }
             } else if url.path().ends_with("/createRoom") {
                 assert!(!rep && !human && !self.created);
-                assert_eq!(body["invite"], json!([]), "ADR-184: the DM is created agent-only");
+                assert_eq!(
+                    body["invite"],
+                    json!([]),
+                    "ADR-184: the DM is created agent-only"
+                );
                 self.created = true;
                 self.posts += 1;
                 (200, json!({"room_id":DM}))
-            } else if url.path().ends_with("/invite") && request.target.contains("factory_owner_dm") {
+            } else if url.path().ends_with("/invite") && request.target.contains("factory_owner_dm")
+            {
                 assert!(!rep && !human && self.created && self.joined && !self.owner_invited);
                 assert!(
-                    self.peer.writes.iter().any(|(t, _)| t.ends_with("/keys/device_signing/upload"))
+                    self.peer
+                        .writes
+                        .iter()
+                        .any(|(t, _)| t.ends_with("/keys/device_signing/upload"))
                         && self.peer.claims >= 1,
                     "ADR-184: the owner is invited only after the agent's keys are published"
                 );

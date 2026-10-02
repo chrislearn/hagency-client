@@ -273,10 +273,7 @@ impl DomainRepository {
     /// the exact-match filters; the comma lists and pagination are applied
     /// after the read so the retained clamp (`min(parseInt(limit)||100,
     /// 500)`) decides the page size, not SQL.
-    pub fn list_alerts(
-        &self,
-        filter: &AlertListFilter,
-    ) -> Result<Vec<CeilingAlert>, Error> {
+    pub fn list_alerts(&self, filter: &AlertListFilter) -> Result<Vec<CeilingAlert>, Error> {
         let mut statement = self.db.prepare(&format!(
             "SELECT {ALERT_COLUMNS} FROM ceiling_alerts
              WHERE (?1 IS NULL OR source_agent = ?1)
@@ -286,11 +283,7 @@ impl DomainRepository {
         ))?;
         let mut rows = statement
             .query_map(
-                params![
-                    filter.source_agent,
-                    filter.alert_type,
-                    filter.assignee,
-                ],
+                params![filter.source_agent, filter.alert_type, filter.assignee,],
                 alert_from_row,
             )?
             .collect::<Result<Vec<_>, _>>()?;
@@ -394,11 +387,7 @@ impl DomainRepository {
     /// `info` with `originalSeverity` and `missingActionableFields`
     /// recorded (`alert-store.js:102-138`); supplying them restores the
     /// original severity.
-    pub fn update_alert(
-        &mut self,
-        key: &str,
-        patch: &AlertPatch,
-    ) -> Result<CeilingAlert, Error> {
+    pub fn update_alert(&mut self, key: &str, patch: &AlertPatch) -> Result<CeilingAlert, Error> {
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -426,7 +415,11 @@ impl DomainRepository {
         }
         if let Some(linked) = &patch.linked_task_id {
             let linked = linked.trim().chars().take(128).collect::<String>();
-            let linked = if linked.is_empty() { None } else { Some(linked) };
+            let linked = if linked.is_empty() {
+                None
+            } else {
+                Some(linked)
+            };
             tx.execute(
                 "UPDATE ceiling_alerts SET linked_task_id=?2 WHERE dedupe_key=?1",
                 params![key, linked],
@@ -441,7 +434,11 @@ impl DomainRepository {
         ] {
             if let Some(value) = value {
                 let trimmed = value.trim().chars().take(bound).collect::<String>();
-                let value = if trimmed.is_empty() { None } else { Some(trimmed) };
+                let value = if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                };
                 tx.execute(
                     &format!("UPDATE ceiling_alerts SET {column}=?2 WHERE dedupe_key=?1"),
                     params![key, value],
@@ -458,9 +455,11 @@ impl DomainRepository {
             || patch.owner.is_some();
         if action_touched {
             let requested = original_severity.unwrap_or(severity);
-            let owner = patch.owner.clone().map(|o| {
-                o.trim().chars().take(128).collect::<String>()
-            }).filter(|o| !o.is_empty());
+            let owner = patch
+                .owner
+                .clone()
+                .map(|o| o.trim().chars().take(128).collect::<String>())
+                .filter(|o| !o.is_empty());
             let row: (Option<String>, Option<String>, Option<String>, Option<String>, Option<String>) = tx
                 .query_row(
                     "SELECT assignee, runbook, impact, recovery_condition, resource_id FROM ceiling_alerts WHERE dedupe_key=?1",
@@ -745,9 +744,11 @@ impl DomainRepository {
         // `open` clears it (`alert-store.js:435-437`); every other target
         // leaves the stored window alone.
         let suppress_until = match to {
-            "suppressed" => Some(Some(
-                suppress_until_ms.unwrap_or_else(|| now.saturating_add(ALERT_SUPPRESS_DEFAULT_MS)),
-            )),
+            "suppressed" => {
+                Some(Some(suppress_until_ms.unwrap_or_else(|| {
+                    now.saturating_add(ALERT_SUPPRESS_DEFAULT_MS)
+                })))
+            }
             "open" => Some(None),
             _ => None,
         };
@@ -887,10 +888,9 @@ fn alert_notes_tx(db: &rusqlite::Connection, key: &str) -> Result<Vec<AlertNote>
 }
 
 /// One alert row by dedupe key, through the read's own row type.
-fn read_alert(db: &rusqlite::Connection, key: &str) -> Result<CeilingAlert, Error> {    db.query_row(
-        &format!(
-            "SELECT {ALERT_COLUMNS} FROM ceiling_alerts WHERE dedupe_key=?1"
-        ),
+fn read_alert(db: &rusqlite::Connection, key: &str) -> Result<CeilingAlert, Error> {
+    db.query_row(
+        &format!("SELECT {ALERT_COLUMNS} FROM ceiling_alerts WHERE dedupe_key=?1"),
         [key],
         alert_from_row,
     )

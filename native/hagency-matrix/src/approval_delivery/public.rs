@@ -155,11 +155,7 @@ impl PublicFrozen {
     }
     /// The packet this notice builds, through the same TS builder.
     fn packet(&self) -> Value {
-        build_public_approval_notice(
-            &self.agent,
-            &self.project,
-            self.thread_root.as_deref(),
-        )
+        build_public_approval_notice(&self.agent, &self.project, self.thread_root.as_deref())
     }
     /// Destination agreement with the live rows: the re-derived authority
     /// must address this notice exactly (stale or caller-influenced state is
@@ -294,8 +290,17 @@ mod tests {
             "TS packet: {content}"
         );
         for forbidden in [
-            "request_id", "requestId", "digest", "tool", "tool_name", "preview", "scope",
-            "scope_key", "params", "command", "echo",
+            "request_id",
+            "requestId",
+            "digest",
+            "tool",
+            "tool_name",
+            "preview",
+            "scope",
+            "scope_key",
+            "params",
+            "command",
+            "echo",
         ] {
             assert!(
                 !content.contains(forbidden),
@@ -313,7 +318,10 @@ mod tests {
         let sent: Value = serde_json::from_str(&content).unwrap();
         assert!(sent.get("m.relates_to").is_none(), "{content}");
         assert_eq!(sent.as_object().unwrap().len(), 3, "{content}");
-        assert_eq!(sent["body"], "Agent agent-one is waiting for approval from its owner.");
+        assert_eq!(
+            sent["body"],
+            "Agent agent-one is waiting for approval from its owner."
+        );
     }
 
     /// The PUT path TS builds (bridge-matrix.js:10823-10825): `m.room.message`

@@ -155,7 +155,10 @@ async fn native_matrix_write_rate_limit_retries_like_get() {
                 last.json(200, json!({"event_id":"$ok"}));
             }
         );
-        assert_eq!(result.unwrap().success().unwrap(), json!({"event_id":"$ok"}));
+        assert_eq!(
+            result.unwrap().success().unwrap(),
+            json!({"event_id":"$ok"})
+        );
         assert_eq!(fake.requests(), RATE_LIMIT_TRIES as u64);
         fake.no_request().await;
         fixture.store.shutdown().await.unwrap();

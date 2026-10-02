@@ -180,7 +180,10 @@ impl Collector {
     /// with the agent's own sync (`bridge-matrix.js:7894-8131`). Taking the
     /// permit here made a parked poll refuse the agent's refresh with `Busy`,
     /// and the agent stopped ingesting room events (the live 19447 run).
-    pub async fn observe_invites(&self, cancel: &CancellationToken) -> Result<Vec<crate::invites::ObservedInvite>, Error> {
+    pub async fn observe_invites(
+        &self,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<crate::invites::ObservedInvite>, Error> {
         let inner = self.inner.clone();
         let cancel = cancel.clone();
         let job = async move {
@@ -199,7 +202,11 @@ impl Collector {
     /// No `busy` permit, for `observe_invites`' reason: this is a stateless
     /// `POST /join` on `Http`, and holds nothing the SDK owner holds. A join
     /// parked on the permit used to refuse the agent's own refresh with `Busy`.
-    pub async fn join_room(&self, room_id: &str, cancel: &CancellationToken) -> Result<String, Error> {
+    pub async fn join_room(
+        &self,
+        room_id: &str,
+        cancel: &CancellationToken,
+    ) -> Result<String, Error> {
         let inner = self.inner.clone();
         let room_id = room_id.to_owned();
         let cancel = cancel.clone();

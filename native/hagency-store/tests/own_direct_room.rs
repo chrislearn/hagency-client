@@ -6,7 +6,14 @@ use std::collections::BTreeSet;
 
 /// One provisioned agent with an observed transport and room; returns the
 /// repository, its engagement and the observed room.
-fn agent(direct: bool) -> (tempfile::TempDir, DomainRepository, String, MatrixRoomObservation) {
+fn agent(
+    direct: bool,
+) -> (
+    tempfile::TempDir,
+    DomainRepository,
+    String,
+    MatrixRoomObservation,
+) {
     let temp = tempfile::tempdir().unwrap();
     let mut db = DomainRepository::open(&temp.path().join("state")).unwrap();
     db.register(&registration()).unwrap();
@@ -39,7 +46,12 @@ fn agent(direct: bool) -> (tempfile::TempDir, DomainRepository, String, MatrixRo
         engagement_id: e.id.clone(),
         registration_generation: 1,
         transport_generation: 1,
-        room_id: if direct { "!direct:example.test" } else { "!project:example.test" }.into(),
+        room_id: if direct {
+            "!direct:example.test"
+        } else {
+            "!project:example.test"
+        }
+        .into(),
         generation: 1,
         privacy: if direct {
             RoomPrivacy::Direct {

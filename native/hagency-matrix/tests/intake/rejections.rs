@@ -23,7 +23,10 @@ async fn ready(private: bool) -> (common::Fixture, common::Fake, Collector) {
 /// `drive_with`-style deliberate-deadline tests keep using `ready`'s old
 /// tier via their own local fixtures — this local variant only serves
 /// `archived_terminal_source`.
-async fn ready_limits(private: bool, limits: crate::Limits) -> (common::Fixture, common::Fake, Collector) {
+async fn ready_limits(
+    private: bool,
+    limits: crate::Limits,
+) -> (common::Fixture, common::Fake, Collector) {
     let f = common::Fixture::new();
     let mut fake = common::Fake::start(true).await;
     let mut config = config(&f, &fake.endpoint, f.identity.clone(), 1, private);
@@ -37,9 +40,7 @@ fn malformed() -> Vec<Value> {
     // "media" left this list: TS parity (bridge-matrix.js:6799-6831) admits a
     // plaintext room's m.file/m.image as a visible message, so a plaintext url
     // attachment is no longer a malformed-shape rejection.
-    for kind in [
-        "body", "sender", "id", "relation", "mentions", "oversize",
-    ] {
+    for kind in ["body", "sender", "id", "relation", "mentions", "oversize"] {
         let mut value = event(kind, "Rejected", &["@worker:example.test"], None);
         match kind {
             "body" => {
@@ -78,20 +79,15 @@ fn malformed() -> Vec<Value> {
 #[tokio::test]
 async fn native_matrix_intake_edit_events_are_ignored_not_refused() {
     let (f, mut fake, c) = ready(false).await;
-    let mut edit = event(
-        "edit",
-        "* ✅ 已完成",
-        &["@worker:example.test"],
-        None,
-    );
-    edit["content"]["m.relates_to"] =
-        json!({"rel_type":"m.replace","event_id":"$activity_notice"});
+    let mut edit = event("edit", "* ✅ 已完成", &["@worker:example.test"], None);
+    edit["content"]["m.relates_to"] = json!({"rel_type":"m.replace","event_id":"$activity_notice"});
     edit["content"]["m.new_content"] = json!({"msgtype":"m.notice","body":"✅ 已完成"});
     let mut reaction = event("reaction", "", &[], None);
     // A real reaction is an `m.reaction` EVENT, not an `m.room.message` carrying
     // an `m.annotation` relation — the event type is what makes it not ours.
     reaction["type"] = json!("m.reaction");
-    reaction["content"] = json!({"m.relates_to": {"rel_type":"m.annotation","event_id":"$question","key":"👀"}});
+    reaction["content"] =
+        json!({"m.relates_to": {"rel_type":"m.annotation","event_id":"$question","key":"👀"}});
     let result = run(&c, &mut fake, sync("edits", vec![edit, reaction]), false)
         .await
         .unwrap();
@@ -208,7 +204,14 @@ async fn native_matrix_rejection_crypto_missing_keys_and_later_verified_message(
     // terminally. (The old native rule tombstoned it — board #10 reverts that.)
     assert_eq!((result.admitted, result.rejected), (0, 1));
     // Nothing is admitted while the key is missing.
-    assert_eq!(f.store.inbox("root".into(), 0, 10, None).await.unwrap().len(), 0);
+    assert_eq!(
+        f.store
+            .inbox("root".into(), 0, 10, None)
+            .await
+            .unwrap()
+            .len(),
+        0
+    );
     assert!(f.available().await);
     // The key now arrives and the same ciphertext is re-delivered. It becomes
     // input EXACTLY ONCE, and the independently encrypted next message is
@@ -249,7 +252,14 @@ async fn native_matrix_retains_undecryptable_event_until_late_room_key() {
     before_key["to_device"]["events"] = json!([]);
     let result = run(&c, &mut fake, before_key, true).await.unwrap();
     assert_eq!((result.admitted, result.rejected), (0, 0));
-    assert_eq!(f.store.inbox("root".into(), 0, 10, None).await.unwrap().len(), 0);
+    assert_eq!(
+        f.store
+            .inbox("root".into(), 0, 10, None)
+            .await
+            .unwrap()
+            .len(),
+        0
+    );
     assert!(f.available().await);
     // Second sync: ONLY the key arrives — the event is not re-delivered.
     let mut late_key = encrypted.clone();
@@ -472,13 +482,17 @@ async fn native_matrix_unreachable_homeserver_does_not_fence() {
     let (f, mut fake, c) = ready(false).await;
     let cancel = CancellationToken::new();
     let (result, ()) = common::scripted(c.intake(plan(), &cancel), async {
-        fake.next()
-            .await
-            .json(503, json!({"errcode":"M_UNKNOWN","error":"homeserver restarting"}));
+        fake.next().await.json(
+            503,
+            json!({"errcode":"M_UNKNOWN","error":"homeserver restarting"}),
+        );
     })
     .await;
     assert_eq!(result, Err(Error::Remote(503)));
-    assert!(f.available().await, "an unreachable homeserver fences nothing");
+    assert!(
+        f.available().await,
+        "an unreachable homeserver fences nothing"
+    );
     c.close().await.unwrap();
     f.store.shutdown().await.unwrap();
     fake.close().await;

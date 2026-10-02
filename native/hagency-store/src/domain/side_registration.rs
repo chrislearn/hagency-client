@@ -291,8 +291,10 @@ impl GeneratedRegistration {
     fn yaml(&self) -> String {
         let exclusive = if self.exclusive { "true" } else { "false" };
         let lines = [
-            "# Hagency appservice registration. Generated — do not hand-edit the tokens.".to_owned(),
-            "# Install on the project side's homeserver and restart it: registrations load once.".to_owned(),
+            "# Hagency appservice registration. Generated — do not hand-edit the tokens."
+                .to_owned(),
+            "# Install on the project side's homeserver and restart it: registrations load once."
+                .to_owned(),
             format!("id: {}", self.id),
             format!("url: \"{}\"", self.url),
             format!("as_token: {}", self.as_token),
@@ -355,10 +357,7 @@ fn state_directory(db: &rusqlite::Connection) -> Result<PathBuf, Error> {
     // private state directory — the same root `bootstrap/config.rs` reads
     // `matrix.appservice_token` from. Derived, never stored twice.
     let database = PathBuf::from(db.path().ok_or(Error::State)?);
-    database
-        .parent()
-        .map(Path::to_path_buf)
-        .ok_or(Error::State)
+    database.parent().map(Path::to_path_buf).ok_or(Error::State)
 }
 
 /// `writeFileSync` semantics under the private-file policy: a NEW file is
@@ -483,10 +482,7 @@ impl crate::DomainRepository {
             mode: "0600",
             registration_id: generated.id,
             sender_localpart: generated.sender_localpart.clone(),
-            representative: format!(
-                "@{}:{server_name}",
-                generated.sender_localpart
-            ),
+            representative: format!("@{}:{server_name}", generated.sender_localpart),
             namespace: generated.namespace.clone(),
             url: generated.url.clone(),
             as_token_fingerprint: fingerprint(&generated.as_token),

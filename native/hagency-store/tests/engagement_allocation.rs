@@ -39,7 +39,9 @@ fn native_allocation_approve_with_a_lower_amount() {
     let id = admitted(&mut db, "low_request", "LowWorker", 300);
     let pool = resource("alloc_pool", "alloc_seat", 0);
     let p = proof(&request("low_request", "LowWorker", &pool, 300));
-    let approved = db.approve_allocating("approve_low", &p, 1000, Some(120)).unwrap();
+    let approved = db
+        .approve_allocating("approve_low", &p, 1000, Some(120))
+        .unwrap();
     assert_eq!(approved.state, EngagementState::Reserved);
     assert_eq!(u64::from(approved.requested_tokens), 300, "the ask is kept");
     assert_eq!(approved.allocated_tokens.map(u64::from), Some(120));
@@ -80,7 +82,9 @@ fn native_allocation_plain_approval_keeps_the_request() {
     let id = admitted(&mut db, "plain_request", "PlainWorker", 200);
     let pool = resource("alloc_pool", "alloc_seat", 0);
     let p = proof(&request("plain_request", "PlainWorker", &pool, 200));
-    let approved = db.approve_allocating("approve_plain", &p, 1000, None).unwrap();
+    let approved = db
+        .approve_allocating("approve_plain", &p, 1000, None)
+        .unwrap();
     assert_eq!(approved.allocated_tokens, None);
     assert_eq!(u64::from(approved.allocation()), 200);
     assert_eq!(allocated_column(&dir, &id), None);
@@ -151,7 +155,9 @@ fn native_allocation_all_remaining() {
         db.approve_allocating("approve_rest_over", &p, 1000, Some(all + 1)),
         Err(Error::OverCommit { .. })
     ));
-    let approved = db.approve_allocating("approve_rest", &p, 1000, Some(all)).unwrap();
+    let approved = db
+        .approve_allocating("approve_rest", &p, 1000, Some(all))
+        .unwrap();
     assert_eq!(approved.allocated_tokens.map(u64::from), Some(750));
     assert_eq!(db.engagement_headroom(&id, 1000).unwrap(), Some(0));
     assert_eq!(db.engagement_headroom(&first, 1000).unwrap(), Some(0));
@@ -437,7 +443,10 @@ mod quota {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_ne!(state, "cancelled", "the pause notice survives its thread closing");
+        assert_ne!(
+            state, "cancelled",
+            "the pause notice survives its thread closing"
+        );
         // A further observation while paused says nothing more.
         f.db.record_usage_observation(&source, "more", &codex(60, 10, 7), 3300)
             .unwrap();
@@ -452,20 +461,26 @@ mod quota {
         );
         assert_eq!(f.dispatch_state("later_dispatch"), "queued");
         // The engagement is not ended or revoked by the pause.
-        assert_eq!(f.db.get(&f.engagement).unwrap().state, EngagementState::Active);
+        assert_eq!(
+            f.db.get(&f.engagement).unwrap().state,
+            EngagementState::Active
+        );
         // Both console reads show it.
-        let label = f
-            .db
-            .engagement_labels("", None, 10)
-            .unwrap()
-            .into_iter()
-            .find(|l| l.id == f.engagement)
-            .unwrap();
+        let label =
+            f.db.engagement_labels("", None, 10)
+                .unwrap()
+                .into_iter()
+                .find(|l| l.id == f.engagement)
+                .unwrap();
         assert!(label.quota_paused);
         assert_eq!(label.allocated_tokens, 50);
         assert_eq!(label.spent_tokens, Some(70));
         let roster = f.db.agent_roster().unwrap();
-        assert!(roster.iter().any(|r| r.engagement_id == f.engagement && r.quota_paused));
+        assert!(
+            roster
+                .iter()
+                .any(|r| r.engagement_id == f.engagement && r.quota_paused)
+        );
     }
 
     /// §B1/§B4: a runtime observation is always marked incomplete by the
@@ -489,7 +504,10 @@ mod quota {
             ..CodexUsage::default()
         })
         .unwrap();
-        assert!(observation.incomplete(), "runtime usage is incomplete by construction");
+        assert!(
+            observation.incomplete(),
+            "runtime usage is incomplete by construction"
+        );
         f.db.record_usage_observation(&source, "runtime", &observation, 3100)
             .unwrap();
         let status = f.db.quota_status(&f.engagement).unwrap();
@@ -545,23 +563,41 @@ mod quota {
         );
         // More than the resource can give is refused like an approval, with
         // the human message; nothing changes.
-        match f.db.raise_allocation("top_big", &f.engagement, 1_000_000, 3300) {
-            Err(Error::OverCommit { message }) => assert!(message.contains("would exceed"), "{message}"),
+        match f
+            .db
+            .raise_allocation("top_big", &f.engagement, 1_000_000, 3300)
+        {
+            Err(Error::OverCommit { message }) => {
+                assert!(message.contains("would exceed"), "{message}")
+            }
             other => panic!("expected over_commit, got {other:?}"),
         }
-        assert_eq!(f.db.quota_status(&f.engagement).unwrap().allocated_tokens, 50);
+        assert_eq!(
+            f.db.quota_status(&f.engagement).unwrap().allocated_tokens,
+            50
+        );
         // A top-up that still leaves the spend at or above the allocation is
         // recorded but keeps the hold, and says nothing.
-        let small = f.db.raise_allocation("top_small", &f.engagement, 5, 3400).unwrap();
+        let small =
+            f.db.raise_allocation("top_small", &f.engagement, 5, 3400)
+                .unwrap();
         assert_eq!(small.allocated_tokens.map(u64::from), Some(55));
         let status = f.db.quota_status(&f.engagement).unwrap();
-        assert_eq!((status.allocated_tokens, status.spent_tokens), (55, Some(55)));
+        assert_eq!(
+            (status.allocated_tokens, status.spent_tokens),
+            (55, Some(55))
+        );
         assert!(status.paused, "55 of 55 is still used up");
         assert_eq!(f.quota_notices().len(), 1);
         // Headroom: the 1000-token pool less this engagement's 55.
-        assert_eq!(f.db.engagement_headroom(&f.engagement, 3500).unwrap(), Some(945));
+        assert_eq!(
+            f.db.engagement_headroom(&f.engagement, 3500).unwrap(),
+            Some(945)
+        );
         // "All remaining" raises by exactly the headroom; the hold lifts.
-        let raised = f.db.raise_allocation("top_all", &f.engagement, 945, 3500).unwrap();
+        let raised =
+            f.db.raise_allocation("top_all", &f.engagement, 945, 3500)
+                .unwrap();
         assert_eq!(raised.allocated_tokens.map(u64::from), Some(1000));
         assert_eq!(u64::from(raised.requested_tokens), 100, "the ask is kept");
         let status = f.db.quota_status(&f.engagement).unwrap();
@@ -576,7 +612,10 @@ mod quota {
                 .map(u64::from),
             Some(1000)
         );
-        assert_eq!(f.db.quota_status(&f.engagement).unwrap().allocated_tokens, 1000);
+        assert_eq!(
+            f.db.quota_status(&f.engagement).unwrap().allocated_tokens,
+            1000
+        );
         assert!(matches!(
             f.db.raise_allocation("top_all", &f.engagement, 944, 3600),
             Err(Error::Conflict)
@@ -598,15 +637,19 @@ mod quota {
             ]
         );
         // The queued work dispatches now, without a restart.
-        let cap = f
-            .db
-            .claim_dispatch("runner_two", 3700, 60_000, 120_000, 8)
-            .unwrap()
-            .expect("the lifted hold lets queued work dispatch");
+        let cap =
+            f.db.claim_dispatch("runner_two", 3700, 60_000, 120_000, 8)
+                .unwrap()
+                .expect("the lifted hold lets queued work dispatch");
         assert_eq!(cap.dispatch_id, "later_dispatch");
         // The Palpo-facing projection and the draw carry the new figure.
-        assert_eq!(u64::from(f.db.get(&f.engagement).unwrap().allocation()), 1000);
-        let report = f.db.resource_ceiling(&resource("pool", "seat", 0).id(), 3700).unwrap();
+        assert_eq!(
+            u64::from(f.db.get(&f.engagement).unwrap().allocation()),
+            1000
+        );
+        let report =
+            f.db.resource_ceiling(&resource("pool", "seat", 0).id(), 3700)
+                .unwrap();
         assert_eq!(report.reserved, 1000);
         // A decided-and-ended engagement cannot be topped up.
         f.db.revoke("revoke_one", &f.engagement).unwrap();

@@ -55,7 +55,10 @@ fn native_thread_directive_session_override_persists_and_clears() {
     provision(&mut db, "Worker", 1000);
 
     let applied = db
-        .set_session_overrides("session", &ThreadDirective::Model(Some("claude-sonnet-5".into())))
+        .set_session_overrides(
+            "session",
+            &ThreadDirective::Model(Some("claude-sonnet-5".into())),
+        )
         .unwrap();
     assert_eq!(applied.model.as_deref(), Some("claude-sonnet-5"));
     assert_eq!(applied.mode, None);
@@ -88,8 +91,11 @@ fn native_thread_directive_model_override_reaches_launch_scope() {
     let (_dir, mut db) = setup();
     provision(&mut db, "Worker", 1000);
 
-    db.set_session_overrides("session", &ThreadDirective::Model(Some("claude-haiku-4-5".into())))
-        .unwrap();
+    db.set_session_overrides(
+        "session",
+        &ThreadDirective::Model(Some("claude-haiku-4-5".into())),
+    )
+    .unwrap();
 
     db.enqueue_dispatch(&DispatchInput {
         id: "dispatch".into(),

@@ -233,7 +233,11 @@ impl Authority {
         if state.retired {
             return Err(Error::Unavailable);
         }
-        if !state.ticket.as_ref().is_some_and(|t| matches(t, &digest, now)) {
+        if !state
+            .ticket
+            .as_ref()
+            .is_some_and(|t| matches(t, &digest, now))
+        {
             return Err(Error::Unauthorized);
         }
         let value = secret()?;
@@ -455,7 +459,10 @@ mod tests {
         second.revoke(&session).unwrap();
         drop(second);
         let third = Authority::persistent(dir.path());
-        assert!(matches!(third.authenticate(&cookie), Err(Error::Unauthorized)));
+        assert!(matches!(
+            third.authenticate(&cookie),
+            Err(Error::Unauthorized)
+        ));
         third.authenticate(&again).unwrap();
     }
     /// TS parity: the ticket is a reusable credential and the login it
@@ -469,10 +476,17 @@ mod tests {
         // a fresh link simply replaces the unexchanged one.
         let second = authority.issue_at(now).unwrap();
         assert_ne!(ticket, second);
-        assert!(authority.exchange_at(&ticket, now).is_err(), "replaced link is retired");
+        assert!(
+            authority.exchange_at(&ticket, now).is_err(),
+            "replaced link is retired"
+        );
         // The surviving link exchanges ANY number of times — a reload of
         // the access URL never meets a one-time burn.
-        for at in [now, now + Duration::from_secs(1), now + Duration::from_secs(2)] {
+        for at in [
+            now,
+            now + Duration::from_secs(1),
+            now + Duration::from_secs(2),
+        ] {
             let cookie = authority.exchange_at(&second, at).unwrap();
             authority
                 .check_at(&Session(hash(&cookie).unwrap()), at)
@@ -483,7 +497,9 @@ mod tests {
             .exchange_at(&second, now + Duration::from_secs(365 * 24 * 60 * 60))
             .unwrap();
         let ticket = authority.issue_at(now + Duration::from_secs(1)).unwrap();
-        let cookie = authority.exchange_at(&ticket, now + Duration::from_secs(1)).unwrap();
+        let cookie = authority
+            .exchange_at(&ticket, now + Duration::from_secs(1))
+            .unwrap();
         let session = Session(hash(&cookie).unwrap());
         // The session has NO timer: a reload after any delay still works.
         authority
@@ -495,7 +511,10 @@ mod tests {
         assert!(authority.can_lifecycle(&session).unwrap());
         // Logout ends it — the bound TS parity keeps.
         authority.revoke(&session).unwrap();
-        assert!(matches!(authority.check(&session), Err(Error::Unauthorized)));
+        assert!(matches!(
+            authority.check(&session),
+            Err(Error::Unauthorized)
+        ));
         authority.retire();
         assert!(authority.issue().is_err());
     }

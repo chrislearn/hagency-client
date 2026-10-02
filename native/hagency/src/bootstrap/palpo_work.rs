@@ -103,7 +103,9 @@ impl Probes {
     }
     fn palpo_request(&self, id: &str) -> bool {
         let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
-        Self::read(&self.requests).iter().any(|r| r.as_str() == Some(id))
+        Self::read(&self.requests)
+            .iter()
+            .any(|r| r.as_str() == Some(id))
     }
     fn queue_receipt(&self, receipt: Value) {
         let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -120,7 +122,10 @@ impl ProbeReceipts for Probes {
         Self::read(&self.outbox)
     }
     fn statuses(&self) -> Vec<Value> {
-        self.statuses.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.statuses
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
     fn published(&self, receipts: &[Value]) {
         let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -152,7 +157,8 @@ impl Reader {
         })
     }
     async fn get(&self, segments: &[&str]) -> Result<Option<Value>, ()> {
-        self.call_as(&self.user, reqwest::Method::GET, segments, &[], None).await
+        self.call_as(&self.user, reqwest::Method::GET, segments, &[], None)
+            .await
     }
     /// One App Service request acting as `user` (a member of the fleet namespace).
     async fn call_as(
@@ -192,28 +198,65 @@ impl Reader {
         serde_json::from_slice(&bytes).map(Some).map_err(|_| ())
     }
     async fn event(&self, room: &str, event: &str) -> Result<Value, ()> {
-        self.get(&["_matrix", "client", "v3", "rooms", room, "event", event]).await?.ok_or(())
+        self.get(&["_matrix", "client", "v3", "rooms", room, "event", event])
+            .await?
+            .ok_or(())
     }
     /// TS `plaintextPrivate` reads, in the shape `probe::decide` takes.
     async fn room_facts(&self, room: &str) -> Result<Value, ()> {
-        let members = self.get(&["_matrix", "client", "v3", "rooms", room, "joined_members"]).await?.ok_or(())?;
+        let members = self
+            .get(&["_matrix", "client", "v3", "rooms", room, "joined_members"])
+            .await?
+            .ok_or(())?;
         let rules = self
-            .get(&["_matrix", "client", "v3", "rooms", room, "state", "m.room.join_rules", ""])
+            .get(&[
+                "_matrix",
+                "client",
+                "v3",
+                "rooms",
+                room,
+                "state",
+                "m.room.join_rules",
+                "",
+            ])
             .await?
             .ok_or(())?;
         let encryption = self
-            .get(&["_matrix", "client", "v3", "rooms", room, "state", "m.room.encryption", ""])
+            .get(&[
+                "_matrix",
+                "client",
+                "v3",
+                "rooms",
+                room,
+                "state",
+                "m.room.encryption",
+                "",
+            ])
             .await?
             .unwrap_or(Value::Null);
-        Ok(json!({"joined": members.get("joined").cloned().unwrap_or(Value::Null),
-            "join_rules": rules, "encryption": encryption}))
+        Ok(
+            json!({"joined": members.get("joined").cloned().unwrap_or(Value::Null),
+            "join_rules": rules, "encryption": encryption}),
+        )
     }
 }
 
 impl Reader {
-    async fn state_as(&self, user: &str, room: &str, kind: &str, key: &str) -> Result<Option<Value>, ()> {
-        self.call_as(user, reqwest::Method::GET, &["_matrix", "client", "v3", "rooms", room, "state", kind, key], &[], None)
-            .await
+    async fn state_as(
+        &self,
+        user: &str,
+        room: &str,
+        kind: &str,
+        key: &str,
+    ) -> Result<Option<Value>, ()> {
+        self.call_as(
+            user,
+            reqwest::Method::GET,
+            &["_matrix", "client", "v3", "rooms", room, "state", kind, key],
+            &[],
+            None,
+        )
+        .await
     }
     /// The authority facts `verify_request` checks, read fresh as `user`
     /// (TS `plaintextPrivate` / `verifyFleetTarget` / the private-owner reads).
@@ -224,7 +267,13 @@ impl Reader {
         binding: Option<&str>,
     ) -> Result<hagency_core::authority::RoomObservation, ()> {
         let members = self
-            .call_as(user, reqwest::Method::GET, &["_matrix", "client", "v3", "rooms", room, "joined_members"], &[], None)
+            .call_as(
+                user,
+                reqwest::Method::GET,
+                &["_matrix", "client", "v3", "rooms", room, "joined_members"],
+                &[],
+                None,
+            )
             .await?
             .ok_or(())?;
         let joined = members
@@ -234,25 +283,45 @@ impl Reader {
             .keys()
             .cloned()
             .collect();
-        let rules = self.state_as(user, room, "m.room.join_rules", "").await?.ok_or(())?;
+        let rules = self
+            .state_as(user, room, "m.room.join_rules", "")
+            .await?
+            .ok_or(())?;
         let encryption = self.state_as(user, room, "m.room.encryption", "").await?;
-        let levels = self.state_as(user, room, "m.room.power_levels", "").await?.unwrap_or(Value::Null);
+        let levels = self
+            .state_as(user, room, "m.room.power_levels", "")
+            .await?
+            .unwrap_or(Value::Null);
         let name = self.state_as(user, room, "m.room.name", "").await?;
         let binding = match binding {
-            Some(fleet) => self.state_as(user, room, "com.hagency.admin.binding.v1", fleet).await?,
+            Some(fleet) => {
+                self.state_as(user, room, "com.hagency.admin.binding.v1", fleet)
+                    .await?
+            }
             None => None,
         };
         Ok(hagency_core::authority::RoomObservation {
             room_id: room.to_owned(),
             joined,
             invite_only: rules.get("join_rule").and_then(Value::as_str) == Some("invite"),
-            encryption: encryption.and_then(|e| e.get("algorithm").and_then(Value::as_str).map(str::to_owned)),
+            encryption: encryption.and_then(|e| {
+                e.get("algorithm")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            }),
             powers: levels
                 .get("users")
                 .and_then(Value::as_object)
-                .map(|u| u.iter().filter_map(|(k, v)| Some((k.clone(), v.as_i64()?))).collect())
+                .map(|u| {
+                    u.iter()
+                        .filter_map(|(k, v)| Some((k.clone(), v.as_i64()?)))
+                        .collect()
+                })
                 .unwrap_or_default(),
-            default_power: levels.get("users_default").and_then(Value::as_i64).unwrap_or(0),
+            default_power: levels
+                .get("users_default")
+                .and_then(Value::as_i64)
+                .unwrap_or(0),
             invite_power: levels.get("invite").and_then(Value::as_i64).unwrap_or(0),
             binding,
             name: name.and_then(|n| n.get("name").and_then(Value::as_str).map(str::to_owned)),
@@ -270,7 +339,9 @@ async fn admit_request(
     fleet: &str,
     payload: &Value,
 ) -> Result<String, String> {
-    use hagency_core::authority::{ProjectRequest, RequestObservation, SourceObservation, verify_request};
+    use hagency_core::authority::{
+        ProjectRequest, RequestObservation, SourceObservation, verify_request,
+    };
     let request: ProjectRequest =
         serde_json::from_value(payload.clone()).map_err(|e| format!("request shape: {e}"))?;
     let registration = domain
@@ -279,27 +350,57 @@ async fn admit_request(
         .map_err(|_| "fleet registration unavailable".to_owned())?;
     let rep = registration.representative_mxid.clone();
     let event = reader
-        .call_as(&rep, reqwest::Method::GET,
-            &["_matrix", "client", "v3", "rooms", &request.source_room_id, "event", &request.source_event_id], &[], None)
+        .call_as(
+            &rep,
+            reqwest::Method::GET,
+            &[
+                "_matrix",
+                "client",
+                "v3",
+                "rooms",
+                &request.source_room_id,
+                "event",
+                &request.source_event_id,
+            ],
+            &[],
+            None,
+        )
         .await
         .map_err(|_| "source event unreadable".to_owned())?
         .ok_or("source event missing")?;
     let source = SourceObservation {
         event_id: request.source_event_id.clone(),
         room_id: request.source_room_id.clone(),
-        sender: event.get("sender").and_then(Value::as_str).unwrap_or_default().to_owned(),
-        event_type: event.get("type").and_then(Value::as_str).unwrap_or_default().to_owned(),
+        sender: event
+            .get("sender")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
+        event_type: event
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_owned(),
         content: event.get("content").cloned().unwrap_or(Value::Null),
     };
-    let reception = reader.observe(&rep, &request.source_room_id, None).await.map_err(|_| "reception unreadable".to_owned())?;
+    let reception = reader
+        .observe(&rep, &request.source_room_id, None)
+        .await
+        .map_err(|_| "reception unreadable".to_owned())?;
     let project = reader
         .observe(&rep, &request.target_room_id, Some(fleet))
         .await
         .map_err(|_| "project room unreadable (is the representative joined?)".to_owned())?;
     let owner_room = reader
-        .observe(&registration.approval_bot_mxid, &request.owner_dm_room_id, None)
+        .observe(
+            &registration.approval_bot_mxid,
+            &request.owner_dm_room_id,
+            None,
+        )
         .await
-        .map_err(|_| "private approval room unreadable (has the approval bot joined?)".to_owned())?;
+        .map_err(|_| {
+            "private approval room unreadable (has the approval bot joined?)".to_owned()
+        })?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -312,8 +413,12 @@ async fn admit_request(
         project,
         owner_room,
     };
-    let verified = verify_request(&registration, request, observation).map_err(|e| format!("verification: {}", e.0))?;
-    let engagement = domain.admit(verified, now).await.map_err(|e| format!("admission: {e:?}"))?;
+    let verified = verify_request(&registration, request, observation)
+        .map_err(|e| format!("verification: {}", e.0))?;
+    let engagement = domain
+        .admit(verified, now)
+        .await
+        .map_err(|e| format!("admission: {e:?}"))?;
     Ok(engagement.id)
 }
 
@@ -333,13 +438,21 @@ fn now_iso() -> String {
     let day = doy - (153 * mp + 2) / 5 + 1;
     let month = if mp < 10 { mp + 3 } else { mp - 9 };
     let year = yoe + era * 400 + i64::from(month <= 2);
-    format!("{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.000Z", rem / 3600, rem % 3600 / 60, rem % 60)
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.000Z",
+        rem / 3600,
+        rem % 3600 / 60,
+        rem % 60
+    )
 }
 
 fn attempt(lane: &str) -> String {
     let mut bytes = [0u8; 8];
     let _ = getrandom::fill(&mut bytes);
-    format!("host_{lane}_{}", bytes.iter().map(|b| format!("{b:02x}")).collect::<String>())
+    format!(
+        "host_{lane}_{}",
+        bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
+    )
 }
 
 enum Outcome {
@@ -349,7 +462,13 @@ enum Outcome {
 }
 
 /// Matrix lane: record the probe events of one relayed transaction.
-async fn matrix_once(adapter: &Adapter, probes: &Probes, fleet: &str, representative: &str, generation: u64) -> Outcome {
+async fn matrix_once(
+    adapter: &Adapter,
+    probes: &Probes,
+    fleet: &str,
+    representative: &str,
+    generation: u64,
+) -> Outcome {
     let work = match adapter.take(Lane::Matrix, attempt("matrix")).await {
         Ok(Some(work)) => work,
         Ok(None) => return Outcome::Idle,
@@ -358,7 +477,12 @@ async fn matrix_once(adapter: &Adapter, probes: &Probes, fleet: &str, representa
             return Outcome::Later;
         }
     };
-    let transaction = work.payload.get("transactionId").and_then(Value::as_str).unwrap_or_default().to_owned();
+    let transaction = work
+        .payload
+        .get("transactionId")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
     let events = work
         .payload
         .get("body")
@@ -369,12 +493,17 @@ async fn matrix_once(adapter: &Adapter, probes: &Probes, fleet: &str, representa
     let mut recorded = 0;
     for event in events {
         let content = event.get("content").cloned().unwrap_or(Value::Null);
-        let challenge = content.get("challenge").and_then(Value::as_str).unwrap_or_default();
+        let challenge = content
+            .get("challenge")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         if event.get("type").and_then(Value::as_str) != Some(PROBE_EVENT)
             || event.get("sender").and_then(Value::as_str) != Some(representative)
             || content.get("fleetId").and_then(Value::as_str) != Some(fleet)
             || !(16..=128).contains(&challenge.len())
-            || !challenge.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+            || !challenge
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
         {
             continue;
         }
@@ -388,14 +517,23 @@ async fn matrix_once(adapter: &Adapter, probes: &Probes, fleet: &str, representa
             "receivedAt": now_iso(), "mode": "edge", "generation": generation, "transactionId": transaction}));
         recorded += 1;
     }
-    match adapter.complete(work.ticket, json!({"probes": recorded})).await {
+    match adapter
+        .complete(work.ticket, json!({"probes": recorded}))
+        .await
+    {
         Ok(()) => Outcome::Done,
         Err(_) => Outcome::Later,
     }
 }
 
 /// Work lane: verify one probe and bind the reception.
-async fn work_once(adapter: &Adapter, probes: &Probes, domain: &DomainStore, reader: &Reader, fleet: &str) -> Outcome {
+async fn work_once(
+    adapter: &Adapter,
+    probes: &Probes,
+    domain: &DomainStore,
+    reader: &Reader,
+    fleet: &str,
+) -> Outcome {
     let work = match adapter.take(Lane::Work, attempt("work")).await {
         Ok(Some(work)) => work,
         Ok(None) => return Outcome::Idle,
@@ -412,7 +550,10 @@ async fn work_once(adapter: &Adapter, probes: &Probes, domain: &DomainStore, rea
         return match admit_request(reader, domain, fleet, &work.payload).await {
             Ok(engagement) => {
                 eprintln!("palpo request admitted as {engagement} (pending the console verdict)");
-                match adapter.complete(work.ticket, json!({"engagementId": engagement})).await {
+                match adapter
+                    .complete(work.ticket, json!({"engagementId": engagement}))
+                    .await
+                {
                     Ok(()) => Outcome::Done,
                     Err(_) => Outcome::Later,
                 }
@@ -431,7 +572,11 @@ async fn work_once(adapter: &Adapter, probes: &Probes, domain: &DomainStore, rea
         return Outcome::Later;
     }
     let body = work.payload.clone();
-    let id = body.get("sourceEventId").and_then(Value::as_str).unwrap_or_default().to_owned();
+    let id = body
+        .get("sourceEventId")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
     let Some(seen) = probes.event(&id) else {
         // The relayed transaction has not been processed yet (TS probe_pending).
         let _ = adapter.retry_later(work.ticket).await;
@@ -443,12 +588,25 @@ async fn work_once(adapter: &Adapter, probes: &Probes, domain: &DomainStore, rea
         challenge: seen["challenge"].as_str().unwrap_or_default().to_owned(),
     };
     let verified = async {
-        let registration = domain.provisioning_registration(fleet.to_owned()).await.map_err(|_| None)?;
-        let event = reader.event(&receipt.source_room_id, &id).await.map_err(|_| None)?;
-        let facts = reader.room_facts(&receipt.source_room_id).await.map_err(|_| None)?;
+        let registration = domain
+            .provisioning_registration(fleet.to_owned())
+            .await
+            .map_err(|_| None)?;
+        let event = reader
+            .event(&receipt.source_room_id, &id)
+            .await
+            .map_err(|_| None)?;
+        let facts = reader
+            .room_facts(&receipt.source_room_id)
+            .await
+            .map_err(|_| None)?;
         let bound = decide(&registration, Some(&receipt), &body, &event, &facts).map_err(Some)?;
         domain
-            .bind_reception(registration.fleet_id.clone(), registration.generation, bound.source_room_id.clone())
+            .bind_reception(
+                registration.fleet_id.clone(),
+                registration.generation,
+                bound.source_room_id.clone(),
+            )
             .await
             .map_err(|_| None)?;
         Ok::<_, Option<ProbeError>>(bound)
@@ -469,7 +627,9 @@ async fn work_once(adapter: &Adapter, probes: &Probes, domain: &DomainStore, rea
         Err(refusal) => {
             eprintln!(
                 "palpo probe {id} not verified yet: {}",
-                refusal.map(|e| e.to_string()).unwrap_or_else(|| "Matrix or store unavailable".into())
+                refusal
+                    .map(|e| e.to_string())
+                    .unwrap_or_else(|| "Matrix or store unavailable".into())
             );
             let _ = adapter.retry_later(work.ticket).await;
             Outcome::Later
@@ -485,34 +645,72 @@ async fn work_once(adapter: &Adapter, probes: &Probes, domain: &DomainStore, rea
 async fn approval_invites_once(reader: &Reader, bot: &str, fleet: &str, server: &str) {
     let filter = r#"{"room":{"timeline":{"limit":0},"ephemeral":{"types":[]},"account_data":{"types":[]}},"presence":{"types":[]},"account_data":{"types":[]}}"#;
     let Ok(Some(sync)) = reader
-        .call_as(bot, reqwest::Method::GET, &["_matrix", "client", "v3", "sync"], &[("timeout", "0"), ("filter", filter)], None)
+        .call_as(
+            bot,
+            reqwest::Method::GET,
+            &["_matrix", "client", "v3", "sync"],
+            &[("timeout", "0"), ("filter", filter)],
+            None,
+        )
         .await
     else {
         return;
     };
-    let Some(invites) = sync.pointer("/rooms/invite").and_then(Value::as_object) else { return };
+    let Some(invites) = sync.pointer("/rooms/invite").and_then(Value::as_object) else {
+        return;
+    };
     for (room, invite) in invites {
-        let state = invite.pointer("/invite_state/events").and_then(Value::as_array).cloned().unwrap_or_default();
-        let find = |kind: &str| state.iter().find(|e| e.get("type").and_then(Value::as_str) == Some(kind));
-        let encrypted = find("m.room.encryption").and_then(|e| e.pointer("/content/algorithm")).and_then(Value::as_str)
+        let state = invite
+            .pointer("/invite_state/events")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let find = |kind: &str| {
+            state
+                .iter()
+                .find(|e| e.get("type").and_then(Value::as_str) == Some(kind))
+        };
+        let encrypted = find("m.room.encryption")
+            .and_then(|e| e.pointer("/content/algorithm"))
+            .and_then(Value::as_str)
             == Some("m.megolm.v1.aes-sha2");
-        let invite_only = find("m.room.join_rules").and_then(|e| e.pointer("/content/join_rule")).and_then(Value::as_str)
+        let invite_only = find("m.room.join_rules")
+            .and_then(|e| e.pointer("/content/join_rule"))
+            .and_then(Value::as_str)
             == Some("invite");
         let inviter = state
             .iter()
-            .find(|e| e.get("type").and_then(Value::as_str) == Some("m.room.member")
-                && e.get("state_key").and_then(Value::as_str) == Some(bot))
+            .find(|e| {
+                e.get("type").and_then(Value::as_str) == Some("m.room.member")
+                    && e.get("state_key").and_then(Value::as_str) == Some(bot)
+            })
             .and_then(|e| e.get("sender").and_then(Value::as_str))
             .unwrap_or_default();
-        let local_human = inviter.ends_with(&format!(":{server}")) && !inviter.starts_with(&format!("@{fleet}_"));
+        let local_human =
+            inviter.ends_with(&format!(":{server}")) && !inviter.starts_with(&format!("@{fleet}_"));
         if !(encrypted && invite_only && local_human) {
-            eprintln!("palpo approval bot: leaving invite to {room} pending (encrypted={encrypted} invite_only={invite_only} inviter={inviter})");
+            eprintln!(
+                "palpo approval bot: leaving invite to {room} pending (encrypted={encrypted} invite_only={invite_only} inviter={inviter})"
+            );
             continue;
         }
         let joined = reader
-            .call_as(bot, reqwest::Method::POST, &["_matrix", "client", "v3", "join", room], &[], Some(json!({})))
+            .call_as(
+                bot,
+                reqwest::Method::POST,
+                &["_matrix", "client", "v3", "join", room],
+                &[],
+                Some(json!({})),
+            )
             .await;
-        eprintln!("palpo approval bot: join {room} invited by {inviter}: {}", if joined.is_ok() { "ok" } else { "failed, retrying" });
+        eprintln!(
+            "palpo approval bot: join {room} invited by {inviter}: {}",
+            if joined.is_ok() {
+                "ok"
+            } else {
+                "failed, retrying"
+            }
+        );
     }
 }
 
@@ -522,18 +720,28 @@ async fn approval_invites_once(reader: &Reader, bot: &str, fleet: &str, server: 
 /// bound), which the provisioning slice establishes.
 async fn refresh_statuses(domain: &DomainStore, probes: &Probes, fleet: &str, reader: &Reader) {
     use hagency_core::project::EngagementState as S;
-    let Ok(engagements) = domain.engagements(String::new(), 100).await else { return };
+    let Ok(engagements) = domain.engagements(String::new(), 100).await else {
+        return;
+    };
     let observed = now_iso();
     let mut out = Vec::new();
     for e in engagements {
         if !probes.palpo_request(&e.request_id) {
             continue;
         }
-        let Ok(Some((context, _, _))) = domain.provisioning_request_evidence(fleet.to_owned(), e.request_id.clone()).await else {
+        let Ok(Some((context, _, _))) = domain
+            .provisioning_request_evidence(fleet.to_owned(), e.request_id.clone())
+            .await
+        else {
             continue;
         };
-        let Ok(c) = serde_json::from_str::<Value>(&context) else { continue };
-        let resource = domain.resource_configuration(e.resource_id.clone()).await.ok();
+        let Ok(c) = serde_json::from_str::<Value>(&context) else {
+            continue;
+        };
+        let resource = domain
+            .resource_configuration(e.resource_id.clone())
+            .await
+            .ok();
         let (state, phase, bound) = match e.state {
             S::Pending => ("pending", None, false),
             S::Reserved => ("active", Some("provisioning"), false),
@@ -547,16 +755,33 @@ async fn refresh_statuses(domain: &DomainStore, probes: &Probes, fleet: &str, re
         // The serving identity is the fleet-namespaced account the App Service
         // factory created for this engagement; `ready` is TS's rule (active and
         // bound) plus the observed fact the agent is joined in the target room.
-        let server = reader.user.split_once(':').map(|(_, s)| s).unwrap_or_default();
+        let server = reader
+            .user
+            .split_once(':')
+            .map(|(_, s)| s)
+            .unwrap_or_default();
         let agent = format!("@{fleet}_{}:{server}", e.id);
         let target = c["targetRoomId"].as_str().unwrap_or_default().to_owned();
         let joined = bound
             && reader
-                .get(&["_matrix", "client", "v3", "rooms", &target, "joined_members"])
+                .get(&[
+                    "_matrix",
+                    "client",
+                    "v3",
+                    "rooms",
+                    &target,
+                    "joined_members",
+                ])
                 .await
                 .ok()
                 .flatten()
-                .is_some_and(|m| m.pointer(&format!("/joined/{}", agent.replace('~', "~0").replace('/', "~1"))).is_some());
+                .is_some_and(|m| {
+                    m.pointer(&format!(
+                        "/joined/{}",
+                        agent.replace('~', "~0").replace('/', "~1")
+                    ))
+                    .is_some()
+                });
         out.push(json!({
             "v": 1, "fleetId": fleet, "requestId": e.request_id, "engagementId": e.id, "state": state,
             "targetProjectId": c["targetProjectId"], "targetRoomId": c["targetRoomId"],
@@ -586,7 +811,11 @@ pub(super) async fn run(
         eprintln!("palpo work: invalid homeserver in palpo-appservice.json; probes wait");
         return;
     };
-    let server = appservice.representative.split_once(':').map(|(_, s)| s.to_owned()).unwrap_or_default();
+    let server = appservice
+        .representative
+        .split_once(':')
+        .map(|(_, s)| s.to_owned())
+        .unwrap_or_default();
     let bot = domain
         .provisioning_registration(fleet.to_owned())
         .await
@@ -601,7 +830,14 @@ pub(super) async fn run(
             approval_invites_once(&reader, &bot, fleet, &server).await;
             invites_due = std::time::Instant::now() + Duration::from_secs(15);
         }
-        let matrix = matrix_once(adapter, probes, fleet, &appservice.representative, generation).await;
+        let matrix = matrix_once(
+            adapter,
+            probes,
+            fleet,
+            &appservice.representative,
+            generation,
+        )
+        .await;
         // A retried item steps aside in custody (WORK_RETRY_MS), not the
         // whole lane: the independent items behind it are claimed now.
         let work = work_once(adapter, probes, domain, &reader, fleet).await;

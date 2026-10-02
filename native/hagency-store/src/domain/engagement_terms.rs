@@ -74,7 +74,9 @@ pub(super) fn read_offer(db: &Connection, role: &str) -> Result<Option<RoleOffer
                     budget_cap_per_engagement: r.get(2)?,
                     rate_cap: r.get(3)?,
                     published: r.get::<_, i64>(4)? == 1,
-                    updated_at: r.get::<_, Option<i64>>(5)?.and_then(|v| u64::try_from(v).ok()),
+                    updated_at: r
+                        .get::<_, Option<i64>>(5)?
+                        .and_then(|v| u64::try_from(v).ok()),
                     updated_by: r.get(6)?,
                 })
             },
@@ -269,7 +271,10 @@ impl DomainRepository {
         now: u64,
     ) -> Result<WhitelistEntry, Error> {
         if !valid_room_id(project_room_id) {
-            return Err(hagency_core::InvalidInput("projectRoomId must be a Matrix room id".into()).into());
+            return Err(hagency_core::InvalidInput(
+                "projectRoomId must be a Matrix room id".into(),
+            )
+            .into());
         }
         // TS (engagement-store.js:399-400) validates the MXID only when a
         // value was PROVIDED; the absent case falls back to 'operator' with
@@ -332,7 +337,10 @@ impl DomainRepository {
         if existing.is_none() {
             return Err(Error::NotFound);
         }
-        tx.execute("DELETE FROM room_whitelist WHERE project_room_id=?1", [project_room_id])?;
+        tx.execute(
+            "DELETE FROM room_whitelist WHERE project_room_id=?1",
+            [project_room_id],
+        )?;
         // The room lives in the serialized request context (`targetRoomId`),
         // not a column — the engagement projection carries it too, but the
         // context row is the one every writer sets at INSERT time.
@@ -409,11 +417,7 @@ impl DomainRepository {
     fn definition_qualifies(resource: &Resource, role: &str) -> bool {
         resource.provisionable()
             && qualification::roles().any(|r| r == role)
-            && resource
-                .ceiling
-                .as_ref()
-                .and_then(|c| c.tokens)
-                .is_some()
+            && resource.ceiling.as_ref().and_then(|c| c.tokens).is_some()
             && qualification::qualifies(&resource.profile(), role, None)
     }
 
@@ -468,10 +472,7 @@ impl DomainRepository {
                 if in_use(&tx, &old.name)? {
                     return Err(Error::Conflict);
                 }
-                tx.execute(
-                    "DELETE FROM agent_definitions WHERE id=?1",
-                    [&old.id],
-                )?;
+                tx.execute("DELETE FROM agent_definitions WHERE id=?1", [&old.id])?;
                 // TS edit() returns `next.find(d => d.id === id) || next.at(-1)
                 // || null` after a delete: the row is gone, so the answer is
                 // the LAST REMAINING definition, never the deleted row.
@@ -526,8 +527,8 @@ impl DomainRepository {
                     Some(Value::Bool(v)) => *v,
                     Some(_) => {
                         return Err(
-                            hagency_core::InvalidInput("enabled must be a boolean".into()).into()
-                        )
+                            hagency_core::InvalidInput("enabled must be a boolean".into()).into(),
+                        );
                     }
                 };
                 let id = match &old {
@@ -545,7 +546,12 @@ impl DomainRepository {
                 if old.is_some() {
                     tx.execute(
                         "UPDATE agent_definitions SET name=?2,role=?3,enabled=?4 WHERE id=?1",
-                        params![definition.id, definition.name, definition.role, definition.enabled],
+                        params![
+                            definition.id,
+                            definition.name,
+                            definition.role,
+                            definition.enabled
+                        ],
                     )?;
                 } else {
                     tx.execute(

@@ -1471,11 +1471,18 @@ async fn native_worktree_production_config_two_threads() {
         out
     }
     let found = receipts(&worktrees);
-    assert_eq!(found.len(), 2, "two threads must leave two worktree receipts");
+    assert_eq!(
+        found.len(),
+        2,
+        "two threads must leave two worktree receipts"
+    );
     let first = found[0].parent().unwrap().to_path_buf();
     let second = found[1].parent().unwrap().to_path_buf();
     assert_ne!(first, second, "the two threads ran in distinct worktrees");
-    assert!(first != f.work && second != f.work, "not the shared workspace");
+    assert!(
+        first != f.work && second != f.work,
+        "not the shared workspace"
+    );
     assert!(first != f.second_work() && second != f.second_work());
     // No receipt leaked into a shared workspace.
     assert!(receipts(&f.work).is_empty());

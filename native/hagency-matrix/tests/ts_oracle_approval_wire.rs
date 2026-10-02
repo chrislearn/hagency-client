@@ -73,7 +73,13 @@ fn ts_public_approval_notice_stage_is_redacted_and_non_actionable() {
         "rooms": serde_json::json!({}),
     });
     let text = wire.to_string();
-    for secret in ["owner_mxid", "room_id", "input_preview", "card", "description"] {
+    for secret in [
+        "owner_mxid",
+        "room_id",
+        "input_preview",
+        "card",
+        "description",
+    ] {
         assert!(
             !text.contains(secret),
             "the delivery status leaks no {secret}"
@@ -117,7 +123,12 @@ fn ts_approval_decisions_are_the_closed_four_and_bound_to_the_sender() {
         choice: None,
     };
     let value = serde_json::to_value(&summary).unwrap();
-    let keys: Vec<&str> = value.as_object().unwrap().keys().map(String::as_str).collect();
+    let keys: Vec<&str> = value
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
     assert_eq!(
         keys.len(),
         4,

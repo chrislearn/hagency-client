@@ -70,7 +70,8 @@ pub struct UsageTotals {
 }
 
 fn u64_to_i64(value: u64) -> Result<i64, Error> {
-    i64::try_from(value).map_err(|_| hagency_core::InvalidInput("allocation exceeds storage").into())
+    i64::try_from(value)
+        .map_err(|_| hagency_core::InvalidInput("allocation exceeds storage").into())
 }
 
 fn i64_to_u64(value: i64) -> Result<u64, Error> {
@@ -184,7 +185,10 @@ impl DomainRepository {
                 .ok_or(hagency_core::InvalidInput("commitment sum overflow"))?;
             commitments.push(SideCommitment {
                 id,
-                agent: projection["agentName"].as_str().unwrap_or_default().to_owned(),
+                agent: projection["agentName"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned(),
                 role: projection["role"].as_str().unwrap_or_default().to_owned(),
                 project: project.clone(),
                 project_name: projection["projectName"].as_str().map(str::to_owned),

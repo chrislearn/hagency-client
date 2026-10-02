@@ -24,9 +24,9 @@ impl DomainRepository {
     /// Read every recorded trusted room (bounded). The matrix classifier merges
     /// these with the frozen targets and the operator allowlist.
     pub fn room_trust_records(&self) -> Result<Vec<RoomTrustRecord>, Error> {
-        let mut statement = self
-            .db
-            .prepare("SELECT room_id, meta, added_at FROM room_trust ORDER BY added_at DESC LIMIT ?1")?;
+        let mut statement = self.db.prepare(
+            "SELECT room_id, meta, added_at FROM room_trust ORDER BY added_at DESC LIMIT ?1",
+        )?;
         let limit = i64::try_from(ROOM_TRUST_LIMIT).map_err(|_| Error::State)?;
         let rows = statement.query_map([limit], |r| {
             Ok((
@@ -50,7 +50,12 @@ impl DomainRepository {
     /// TS `markRoomTrusted` parity: idempotently record a room as trusted
     /// (`state.trustedManagedRooms[roomId] = {...meta, addedAt}`; no-op if present).
     /// The caller's `now` is the wall clock. Returns true when the row was created.
-    pub fn mark_room_trusted(&mut self, room_id: &str, meta: &str, now: u64) -> Result<bool, Error> {
+    pub fn mark_room_trusted(
+        &mut self,
+        room_id: &str,
+        meta: &str,
+        now: u64,
+    ) -> Result<bool, Error> {
         hagency_core::tasks::text(room_id, 512)?;
         let existing: Option<i64> = self
             .db

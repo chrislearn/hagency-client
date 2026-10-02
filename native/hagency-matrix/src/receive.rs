@@ -195,7 +195,13 @@ impl Collector {
         let checked = match handle.descriptor() {
             Some(descriptor) => {
                 downloader
-                    .download_bounded_until(handle.media_id(), descriptor, cancel, deadline, max_bytes)
+                    .download_bounded_until(
+                        handle.media_id(),
+                        descriptor,
+                        cancel,
+                        deadline,
+                        max_bytes,
+                    )
                     .await?
             }
             None => {

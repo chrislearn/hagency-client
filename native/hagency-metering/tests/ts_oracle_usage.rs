@@ -15,8 +15,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, UNIX_EPOCH};
 
-use hagency_metering::reader::{FleetCache, ReaderLimits, SessionReader, bounds_report, meter_fleet};
 use hagency_metering::attribution::transcript_search;
+use hagency_metering::reader::{
+    FleetCache, ReaderLimits, SessionReader, bounds_report, meter_fleet,
+};
 use serde_json::json;
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -42,7 +44,10 @@ fn temp_home(label: &str) -> TempHome {
         .expect("workspace root")
         .join("tmp");
     let unique = COUNTER.fetch_add(1, Ordering::SeqCst);
-    let path = root.join(format!("usage-oracle-{}-{label}-{unique}", std::process::id()));
+    let path = root.join(format!(
+        "usage-oracle-{}-{label}-{unique}",
+        std::process::id()
+    ));
     fs::create_dir_all(&path).expect("create temp home");
     TempHome(path)
 }
@@ -150,7 +155,11 @@ fn ts_oracle_usage_fleet_total_sums_what_was_measured() {
 #[test]
 fn ts_oracle_usage_fleet_with_nothing_measured_reports_null() {
     let home = temp_home("none");
-    let value = meter(&[agent("a1", "claude", Some("/ws"))], &home, 1_800_000_000_000);
+    let value = meter(
+        &[agent("a1", "claude", Some("/ws"))],
+        &home,
+        1_800_000_000_000,
+    );
     assert_eq!(value["totals"], json!(null), "null, not a zero total");
     assert_eq!(value["total"], json!(null));
     assert_eq!(value["attributed"], json!(0));
@@ -235,7 +244,10 @@ fn ts_oracle_usage_reader_reports_every_bound_that_bit() {
     let workspace = "/Users/usage-oracle/work";
     let search = transcript_search("claude", workspace, &home.display().to_string()).unwrap();
     fs::create_dir_all(&search.dir).unwrap();
-    for (name, age_ms, output) in [("current.jsonl", 60_000u64, 3u64), ("old.jsonl", 40 * 86_400_000, 2)] {
+    for (name, age_ms, output) in [
+        ("current.jsonl", 60_000u64, 3u64),
+        ("old.jsonl", 40 * 86_400_000, 2),
+    ] {
         let path = Path::new(&search.dir).join(name);
         fs::write(&path, transcript(workspace, output, 1)).unwrap();
         set_mtime(&path, now - age_ms);

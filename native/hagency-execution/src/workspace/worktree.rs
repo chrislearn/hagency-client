@@ -21,10 +21,33 @@ use std::process::Command;
 /// term/proxy/XDG/SSL — and NOTHING else, so a backend credential in the
 /// parent environment never reaches the bootstrap subprocess.
 const INHERITED_BOOTSTRAP_ENV_KEYS: &[&str] = &[
-    "PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL",
-    "LC_CTYPE", "TERM", "NO_COLOR", "FORCE_COLOR", "XDG_CONFIG_HOME", "XDG_CACHE_HOME",
-    "XDG_DATA_HOME", "XDG_STATE_HOME", "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS",
-    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "SHELL",
+    "TMPDIR",
+    "TMP",
+    "TEMP",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TERM",
+    "NO_COLOR",
+    "FORCE_COLOR",
+    "XDG_CONFIG_HOME",
+    "XDG_CACHE_HOME",
+    "XDG_DATA_HOME",
+    "XDG_STATE_HOME",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "NODE_EXTRA_CA_CERTS",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
 ];
 
 #[derive(Debug, Clone, thiserror::Error)]
@@ -89,7 +112,8 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 fn realpath(path: &Path) -> Result<PathBuf, WorktreeError> {
-    path.canonicalize().map_err(|e| err(format!("canonicalize {}: {e}", path.display())))
+    path.canonicalize()
+        .map_err(|e| err(format!("canonicalize {}: {e}", path.display())))
 }
 
 /// Run `git <args>` in `cwd`, returning trimmed stdout. A non-zero exit is an
@@ -124,11 +148,13 @@ fn git_succeeds(cwd: &Path, args: &[&str]) -> Result<bool, WorktreeError> {
 /// `ensureInside` (router/src/worktree.ts:61-66): the target must be a strict
 /// child of the worktrees dir.
 fn ensure_inside(parent: &Path, child: &Path) -> Result<(), WorktreeError> {
-    let relative = child.strip_prefix(parent).map_err(|_| {
-        err("worktree target must be a strict child of worktrees_dir")
-    })?;
+    let relative = child
+        .strip_prefix(parent)
+        .map_err(|_| err("worktree target must be a strict child of worktrees_dir"))?;
     if relative.as_os_str().is_empty() {
-        return Err(err("worktree target must be a strict child of worktrees_dir"));
+        return Err(err(
+            "worktree target must be a strict child of worktrees_dir",
+        ));
     }
     Ok(())
 }
@@ -147,13 +173,15 @@ fn identity(spec: &WorktreeSpec, repository_path: &Path, worktrees_dir: &Path) -
     let safe_label = format!("{agent}/{thread}");
     let resource_id = format!(
         "worktree:{}",
-        resource_digest(&serde_json::to_string(&[
-            repository_path.to_string_lossy().into_owned(),
-            worktrees_dir.to_string_lossy().into_owned(),
-            spec.agent_id.clone(),
-            spec.thread_root_event_id.clone(),
-        ])
-        .unwrap_or_default())
+        resource_digest(
+            &serde_json::to_string(&[
+                repository_path.to_string_lossy().into_owned(),
+                worktrees_dir.to_string_lossy().into_owned(),
+                spec.agent_id.clone(),
+                spec.thread_root_event_id.clone(),
+            ])
+            .unwrap_or_default()
+        )
     );
     WorktreeInfo {
         path: target,
@@ -219,7 +247,11 @@ fn read_bootstrap_state(path: &Path) -> Option<BootstrapState> {
     })
 }
 
-fn write_bootstrap_state(path: &Path, status: BootstrapStatus, digest: &str) -> Result<(), WorktreeError> {
+fn write_bootstrap_state(
+    path: &Path,
+    status: BootstrapStatus,
+    digest: &str,
+) -> Result<(), WorktreeError> {
     let status = match status {
         BootstrapStatus::Running => "running",
         BootstrapStatus::Failed => "failed",
@@ -251,7 +283,9 @@ fn ensure_bootstrap(spec: &WorktreeSpec, worktree_path: &Path) -> Result<(), Wor
     let state_exists = state_path.exists();
     let state = read_bootstrap_state(&state_path);
     if state_exists && state.is_none() {
-        return Err(err("worktree bootstrap state is corrupt; operator repair is required"));
+        return Err(err(
+            "worktree bootstrap state is corrupt; operator repair is required",
+        ));
     }
     let bootstrap_digest = resource_digest(&serde_json::to_string(bootstrap).unwrap_or_default());
     if let Some(state) = &state {
@@ -260,7 +294,10 @@ fn ensure_bootstrap(spec: &WorktreeSpec, worktree_path: &Path) -> Result<(), Wor
         }
     }
     if state.is_some() && !git(worktree_path, &["status", "--porcelain"])?.is_empty() {
-        let reason = if state.as_ref().is_some_and(|s| s.status != BootstrapStatus::Complete) {
+        let reason = if state
+            .as_ref()
+            .is_some_and(|s| s.status != BootstrapStatus::Complete)
+        {
             "worktree bootstrap previously failed and left a dirty workspace"
         } else {
             "worktree bootstrap configuration changed while the workspace is dirty"
@@ -287,7 +324,9 @@ fn ensure_bootstrap(spec: &WorktreeSpec, worktree_path: &Path) -> Result<(), Wor
 
 /// `registeredWorktrees` (router/src/worktree.ts:259-270): parse
 /// `git worktree list --porcelain` into branch → path.
-fn registered_worktrees(repository_path: &Path) -> Result<BTreeMap<String, PathBuf>, WorktreeError> {
+fn registered_worktrees(
+    repository_path: &Path,
+) -> Result<BTreeMap<String, PathBuf>, WorktreeError> {
     let output = git(repository_path, &["worktree", "list", "--porcelain"])?;
     let mut result = BTreeMap::new();
     let mut current: Option<PathBuf> = None;

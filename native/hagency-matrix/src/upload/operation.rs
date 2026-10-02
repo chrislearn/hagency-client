@@ -49,7 +49,9 @@ pub(super) async fn run(
         None
     };
     let request = inner.http.prepare_upload(
-        plaintext.as_deref().unwrap_or(state.input.media.ciphertext()),
+        plaintext
+            .as_deref()
+            .unwrap_or(state.input.media.ciphertext()),
         hagency_core::uploads::MAX_UPLOAD_BYTES as usize,
     )?;
     // Capture the durable identity and fence before the send is consumed, so

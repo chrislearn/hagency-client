@@ -81,8 +81,12 @@ pub(crate) enum Rejection {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Decision {
-    Candidate { index: usize },
-    Rejected { reason: Rejection },
+    Candidate {
+        index: usize,
+    },
+    Rejected {
+        reason: Rejection,
+    },
     NotTarget,
     /// Board #10 (TS `bridge-matrix.js:6646`): an `m.room.encrypted` event
     /// whose room key had not arrived. The raw envelope is retained in the
@@ -119,10 +123,7 @@ impl Disposition {
         history
             .find(|r| {
                 r.source.matches_key(source)
-                    && !matches!(
-                        r.decision,
-                        Decision::Candidate { .. } | Decision::Deferred
-                    )
+                    && !matches!(r.decision, Decision::Candidate { .. } | Decision::Deferred)
             })
             .map(|r| {
                 if source.immutable != r.source.immutable {

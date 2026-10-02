@@ -35,11 +35,7 @@ impl ObservedInvite {
     /// (`backend-v2.js:16287-16302`): `is_direct === true` is `direct`,
     /// everything else `group`.
     pub fn mode(&self) -> &'static str {
-        if self.is_direct {
-            "direct"
-        } else {
-            "group"
-        }
+        if self.is_direct { "direct" } else { "group" }
     }
 }
 
@@ -72,10 +68,7 @@ pub async fn invite_sync(
     cancel: &CancellationToken,
 ) -> Result<Value, Error> {
     let filter = invite_filter();
-    let mut query = vec![
-        ("timeout", "0"),
-        ("filter", filter.as_str()),
-    ];
+    let mut query = vec![("timeout", "0"), ("filter", filter.as_str())];
     if let Some(since) = since {
         query.push(("since", since));
     }
@@ -122,8 +115,7 @@ pub fn parse_invites(sync: &Value, own_mxid: &str) -> Vec<ObservedInvite> {
                 .get("sender")
                 .and_then(Value::as_str)
                 .map(str::to_owned);
-            observed.is_direct =
-                event.pointer("/content/is_direct") == Some(&Value::Bool(true));
+            observed.is_direct = event.pointer("/content/is_direct") == Some(&Value::Bool(true));
             observed.origin_server_ts = event.get("origin_server_ts").and_then(Value::as_i64);
             break;
         }
@@ -161,7 +153,11 @@ pub async fn join_room(
 /// (`bridge-matrix.js:9135-9147`) — the decision is the record, so a
 /// failed leave must not leave the contributor unable to say no. Errors
 /// are the caller's to log, never to act on.
-pub async fn leave_room(http: &Http, room_id: &str, cancel: &CancellationToken) -> Result<(), Error> {
+pub async fn leave_room(
+    http: &Http,
+    room_id: &str,
+    cancel: &CancellationToken,
+) -> Result<(), Error> {
     http.post(
         &["_matrix", "client", "v3", "rooms", room_id, "leave"],
         "{}".to_owned(),

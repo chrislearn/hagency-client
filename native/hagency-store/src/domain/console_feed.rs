@@ -19,10 +19,7 @@ use serde_json::json;
 /// One category's fingerprint: the row count and a digest of the rows'
 /// changing columns, so a state transition with no count change still
 /// reads as a change.
-fn category(
-    db: &Connection,
-    counter: &str,
-) -> Result<(i64, String), Error> {
+fn category(db: &Connection, counter: &str) -> Result<(i64, String), Error> {
     let (count, digest): (i64, String) =
         db.query_row(counter, [], |row| Ok((row.get(0)?, row.get(1)?)))?;
     Ok((count, digest))
@@ -33,33 +30,26 @@ impl super::DomainRepository {
     /// plus a single `version` digest over all three, so a client that
     /// keeps only one cursor still learns that SOMETHING changed.
     pub fn console_feed(&self) -> Result<serde_json::Value, Error> {
-        let dispatches = category(&self.db,
+        let dispatches = category(
+            &self.db,
             "SELECT COUNT(*),COALESCE((SELECT group_concat(d.id||':'||d.state,'|') FROM \
-             (SELECT id,state FROM runner_dispatches ORDER BY id LIMIT 200) d),'')")?;
-        let tasks = category(&self.db,
+             (SELECT id,state FROM runner_dispatches ORDER BY id LIMIT 200) d),'')",
+        )?;
+        let tasks = category(
+            &self.db,
             "SELECT COUNT(*),COALESCE((SELECT group_concat(t.id||':'||json_extract(t.config,'$.status'),'|') FROM \
-             (SELECT id,config FROM canonical_tasks ORDER BY id LIMIT 200) t),'')")?;
-        let alerts = category(&self.db,
+             (SELECT id,config FROM canonical_tasks ORDER BY id LIMIT 200) t),'')",
+        )?;
+        let alerts = category(
+            &self.db,
             "SELECT COUNT(*),COALESCE((SELECT group_concat(dedupe_key||':'||CAST(last_seen_ms AS TEXT),'|') FROM \
-             (SELECT dedupe_key,last_seen_ms FROM ceiling_alerts ORDER BY dedupe_key LIMIT 200) a),'')")?;
-        let agents = hagency_core::canonical::digest(&json!([
-            "agents",
-            dispatches.0,
-            &dispatches.1,
-        ]))?;
-        let tasksv = hagency_core::canonical::digest(&json!([
-            "tasks",
-            tasks.0,
-            &tasks.1,
-        ]))?;
-        let alertsv = hagency_core::canonical::digest(&json!([
-            "alerts",
-            alerts.0,
-            &alerts.1,
-        ]))?;
-        let version = hagency_core::canonical::digest(&json!([
-            &agents, &tasksv, &alertsv,
-        ]))?;
+             (SELECT dedupe_key,last_seen_ms FROM ceiling_alerts ORDER BY dedupe_key LIMIT 200) a),'')",
+        )?;
+        let agents =
+            hagency_core::canonical::digest(&json!(["agents", dispatches.0, &dispatches.1,]))?;
+        let tasksv = hagency_core::canonical::digest(&json!(["tasks", tasks.0, &tasks.1,]))?;
+        let alertsv = hagency_core::canonical::digest(&json!(["alerts", alerts.0, &alerts.1,]))?;
+        let version = hagency_core::canonical::digest(&json!([&agents, &tasksv, &alertsv,]))?;
         Ok(json!({
             "version": version,
             "agents": {"version": agents, "count": dispatches.0},
@@ -152,10 +142,7 @@ impl super::DomainRepository {
             )?;
             let rows = stmt
                 .query_map([], |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                    ))
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
             for (id, state) in rows {
@@ -255,9 +242,9 @@ impl super::DomainRepository {
         }
         let mut graph_heads = Vec::new();
         {
-            let mut stmt = self.db.prepare(
-                "SELECT id,state,created_at FROM task_graphs ORDER BY id LIMIT 500",
-            )?;
+            let mut stmt = self
+                .db
+                .prepare("SELECT id,state,created_at FROM task_graphs ORDER BY id LIMIT 500")?;
             let rows = stmt
                 .query_map([], |row| {
                     Ok((
@@ -281,7 +268,13 @@ impl super::DomainRepository {
             }
         }
         let version = hagency_core::canonical::digest(&json!([
-            &tasks, &alerts, &approvals, &fences, &messages, &graphs, &graph_heads,
+            &tasks,
+            &alerts,
+            &approvals,
+            &fences,
+            &messages,
+            &graphs,
+            &graph_heads,
         ]))?;
         Ok(json!({
             "version": version,

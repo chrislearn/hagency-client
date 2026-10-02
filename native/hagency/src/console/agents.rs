@@ -920,7 +920,11 @@ async fn delete(req: &mut Request, depot: &mut Depot, res: &mut Response) {
                     return;
                 }
                 // TS names the code and the agent it could not remove.
-                refusal(res, StatusCode::SERVICE_UNAVAILABLE, "engagement_release_failed");
+                refusal(
+                    res,
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "engagement_release_failed",
+                );
                 let _ = error;
                 return;
             }
@@ -975,7 +979,13 @@ async fn delete(req: &mut Request, depot: &mut Depot, res: &mut Response) {
 /// (the store replays an identical command id by digest).
 fn delete_command_id(name: &str, engagement: &str) -> String {
     let digest = Sha256::digest(format!("delete_agent\u{0}{name}\u{0}{engagement}").as_bytes());
-    format!("delete_{}", digest[..16].iter().map(|b| format!("{b:02x}")).collect::<String>())
+    format!(
+        "delete_{}",
+        digest[..16]
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
+    )
 }
 
 fn store_error(res: &mut Response, error: hagency_store::Error) {

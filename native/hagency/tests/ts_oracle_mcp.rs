@@ -7,10 +7,7 @@
 //! the retained JS driver; native's equivalent is the MCP session the runner
 //! speaks, with the same closed schema, the same refusal words and the same
 //! capability-derived (never id-named) approval.
-use hagency::{
-    mcp::Session,
-    task_client::Context,
-};
+use hagency::{mcp::Session, task_client::Context};
 use hagency_core::tasks::RunnerCapability;
 use serde_json::{Value, json};
 
@@ -123,11 +120,24 @@ async fn ts_mcp_approval_catalog_is_exact_and_closed() {
         .iter()
         .find(|t| t["name"] == "consume_approval")
         .expect("consume_approval is catalogued");
-    assert_eq!(get["inputSchema"]["properties"].as_object().unwrap().len(), 1);
+    assert_eq!(
+        get["inputSchema"]["properties"].as_object().unwrap().len(),
+        1
+    );
     assert!(get["inputSchema"]["properties"].get("id").is_some());
     assert_eq!(get["inputSchema"]["additionalProperties"], json!(false));
-    assert_eq!(consume["inputSchema"]["properties"].as_object().unwrap().len(), 2);
-    assert!(consume["inputSchema"]["properties"].get("call_id").is_some());
+    assert_eq!(
+        consume["inputSchema"]["properties"]
+            .as_object()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert!(
+        consume["inputSchema"]["properties"]
+            .get("call_id")
+            .is_some()
+    );
     assert_eq!(consume["inputSchema"]["additionalProperties"], json!(false));
     // Neither tool declares an approval id, owner, room, choice or action.
     for tool in [get, consume] {

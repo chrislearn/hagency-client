@@ -428,7 +428,9 @@ impl DomainRepository {
             Some("started") => {}
             Some(_) if held => {}
             Some(_) => {
-                return Err(hagency_core::InvalidInput("activity requires an active runner").into());
+                return Err(
+                    hagency_core::InvalidInput("activity requires an active runner").into(),
+                );
             }
         }
         tx.execute_batch("SAVEPOINT activity_notice")?;

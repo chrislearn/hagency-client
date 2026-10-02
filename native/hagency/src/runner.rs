@@ -88,7 +88,11 @@ async fn self_update(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     // before the not-writable refusal, so the operator pointer is the answer
     // even on a body no other field of which could ever apply.
     if body.get("projectSide").is_some() || body.get("project_side").is_some() {
-        refusal(res, StatusCode::BAD_REQUEST, "project_side_not_settable_here");
+        refusal(
+            res,
+            StatusCode::BAD_REQUEST,
+            "project_side_not_settable_here",
+        );
         return;
     }
     refusal(res, StatusCode::CONFLICT, "agent_record_not_writable");

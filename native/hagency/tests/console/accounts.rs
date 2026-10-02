@@ -567,7 +567,9 @@ async fn native_console_account_enrollment_creates_the_first_resource() {
     let service = f.service();
     let manager = management(&service).await;
     // Pre-state: the seeded resources exist and none is account-owned.
-    let mut before = read(&manager, "/console/api/resources?limit=16").send(&service).await;
+    let mut before = read(&manager, "/console/api/resources?limit=16")
+        .send(&service)
+        .await;
     let before_body: Value = serde_json::from_str(&before.take_string().await.unwrap()).unwrap();
     let before_ids: Vec<String> = before_body["resources"]
         .as_array()
@@ -585,7 +587,10 @@ async fn native_console_account_enrollment_creates_the_first_resource() {
         let account_owned: u32 = sql
             .query_row("SELECT COUNT(*) FROM resource_accounts", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(account_owned, 0, "no account-owned resource before enrollment");
+        assert_eq!(
+            account_owned, 0,
+            "no account-owned resource before enrollment"
+        );
     }
     // Prepare the account (the "Add account" act).
     let mut prepared = command("/console/api/accounts", &manager)
@@ -610,7 +615,9 @@ async fn native_console_account_enrollment_creates_the_first_resource() {
     // The created resource is listed on the resources read the console's
     // Resources page consumes — the first account-owned resource, created in
     // the console. Assert the DELTA and the new resource's IDENTITY.
-    let mut listed = read(&manager, "/console/api/resources?limit=16").send(&service).await;
+    let mut listed = read(&manager, "/console/api/resources?limit=16")
+        .send(&service)
+        .await;
     assert_eq!(listed.status_code, Some(StatusCode::OK));
     let listed: Value = serde_json::from_str(&listed.take_string().await.unwrap()).unwrap();
     let resources = listed["resources"].as_array().unwrap();
@@ -619,9 +626,15 @@ async fn native_console_account_enrollment_creates_the_first_resource() {
         before_ids.len() + 1,
         "enrollment added exactly one resource"
     );
-    let after_ids: Vec<&str> = resources.iter().map(|r| r["id"].as_str().unwrap()).collect();
+    let after_ids: Vec<&str> = resources
+        .iter()
+        .map(|r| r["id"].as_str().unwrap())
+        .collect();
     for id in &before_ids {
-        assert!(after_ids.contains(&id.as_str()), "seeded resource {id} untouched");
+        assert!(
+            after_ids.contains(&id.as_str()),
+            "seeded resource {id} untouched"
+        );
     }
     let new = resources
         .iter()

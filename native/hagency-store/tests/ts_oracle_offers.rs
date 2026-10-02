@@ -64,7 +64,10 @@ fn ts_oracle_offer_resources_disclosed_without_private_deployment() {
     let book = open();
     let value = serde_json::to_value(book.db.offer_book(None).unwrap()).unwrap();
     let text = value.to_string();
-    assert!(!text.contains("workspacePath"), "deployment does not travel");
+    assert!(
+        !text.contains("workspacePath"),
+        "deployment does not travel"
+    );
     assert!(!text.contains("private/ws"));
     let coding = value["roles"]
         .as_array()
@@ -134,7 +137,8 @@ fn ts_oracle_offer_no_room_named_is_null_not_false() {
 #[ignore = "parity gap: native has no whitelist; offer-book whitelisted is always null"]
 fn ts_oracle_offer_whitelisted_room_is_told_it_will_auto_join() {
     let book = open();
-    let value = serde_json::to_value(book.db.offer_book(Some("!book:hq.example")).unwrap()).unwrap();
+    let value =
+        serde_json::to_value(book.db.offer_book(Some("!book:hq.example")).unwrap()).unwrap();
     assert_eq!(value["whitelisted"], json!(true));
 }
 
@@ -182,10 +186,7 @@ fn ts_oracle_offer_serving_discloses_capability_not_deployment() {
     assert_eq!(coding["serving"]["framework"], json!("codex"));
     assert_eq!(coding["serving"]["model"], json!("gpt-5.6-sol"));
     assert_eq!(coding["serving"]["tier"], json!("medium"));
-    assert!(
-        coding["serving"]["tier"].is_string(),
-        "a tier is disclosed"
-    );
+    assert!(coding["serving"]["tier"].is_string(), "a tier is disclosed");
     // The live agent identity is a deployment fact native does not publish in
     // this branch (`backend-v2.js:15298-15301`); the capability is what travels.
     assert_eq!(coding["serving"]["agent"], json!(null));

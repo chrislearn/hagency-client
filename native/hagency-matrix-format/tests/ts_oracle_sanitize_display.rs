@@ -59,14 +59,20 @@ fn ts_sanitize_preserves_whitespace() {
 #[ignore = "parity gap: native has no display sanitiser"]
 fn ts_sanitize_strips_ansi() {
     assert_eq!(sanitize_for_display("\x1b[31mred text\x1b[0m"), "red text");
-    assert_eq!(sanitize_for_display("\x1b[1;32mbold green\x1b[0m"), "bold green");
+    assert_eq!(
+        sanitize_for_display("\x1b[1;32mbold green\x1b[0m"),
+        "bold green"
+    );
 }
 
 /// TS `sanitize-display.test.js:41` — strips C1 control characters.
 #[test]
 #[ignore = "parity gap: native has no display sanitiser"]
 fn ts_sanitize_strips_c1() {
-    assert_eq!(sanitize_for_display("test\u{80}data\u{9f}end"), "testdataend");
+    assert_eq!(
+        sanitize_for_display("test\u{80}data\u{9f}end"),
+        "testdataend"
+    );
 }
 
 /// TS `sanitize-display.test.js:45` — handles combined injection attempt.

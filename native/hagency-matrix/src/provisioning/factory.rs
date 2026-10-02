@@ -489,7 +489,10 @@ impl TokenProvisioningHost {
         // refresh retires it, and the store admits only generation + 1 after
         // that). After a restart no worker of the fenced incarnation is alive,
         // so the same account and device continue under the new generation.
-        let generation = match domain.matrix_transport_state(effect.engagement_id.clone()).await? {
+        let generation = match domain
+            .matrix_transport_state(effect.engagement_id.clone())
+            .await?
+        {
             Some(state) if !state.available => state
                 .observation
                 .generation

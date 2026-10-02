@@ -2,7 +2,9 @@
 //! deserialization occurs solely after authenticated journal decryption.
 use crate::{Error, wire};
 use hagency_core::{
-    canonical, ingress::*, messages::InboundMessage,
+    canonical,
+    ingress::*,
+    messages::InboundMessage,
     replies::{ReplyRoute, RoomPrivacy},
 };
 use matrix_sdk_base::sync::SyncResponse;
@@ -87,16 +89,11 @@ impl PreProjectEvent {
 /// `sourceEventId`) are omitted here exactly as the msgtype body omits them.
 fn custom_request_body(content: &serde_json::Map<String, Value>) -> Result<String, Rejection> {
     let get = |key: &str| content.get(key).ok_or(Rejection::Malformed);
-    let requester = get("requesterMxid")?
-        .as_str()
-        .ok_or(Rejection::Malformed)?;
+    let requester = get("requesterMxid")?.as_str().ok_or(Rejection::Malformed)?;
     let definition = get("agentDefinition")?
         .as_object()
         .ok_or(Rejection::Malformed)?;
-    let name = definition
-        .get("name")
-        .ok_or(Rejection::Malformed)?
-        .clone();
+    let name = definition.get("name").ok_or(Rejection::Malformed)?.clone();
     let resource = definition
         .get("resourceId")
         .ok_or(Rejection::Malformed)?
@@ -561,8 +558,15 @@ impl Batch {
             )
         } else {
             (
-                content.get("msgtype").and_then(Value::as_str).ok_or(Malformed)?,
-                content.get("body").and_then(Value::as_str).ok_or(Malformed)?.to_owned(),
+                content
+                    .get("msgtype")
+                    .and_then(Value::as_str)
+                    .ok_or(Malformed)?,
+                content
+                    .get("body")
+                    .and_then(Value::as_str)
+                    .ok_or(Malformed)?
+                    .to_owned(),
             )
         };
         // ADR-095: the provisioning discriminator is admitted before target
@@ -721,7 +725,12 @@ impl Batch {
         }
         let attachment = if matches!(kind, "m.file" | "m.image") {
             match (&proof, target.encrypted) {
-                (Proof::Verified { device, session, .. }, true) => Some(
+                (
+                    Proof::Verified {
+                        device, session, ..
+                    },
+                    true,
+                ) => Some(
                     crate::attachments::Manifest::new(
                         &self.sdk_identity,
                         target,
@@ -1001,10 +1010,7 @@ fn event_thread(value: &Value) -> Option<&str> {
         .then(|| relation.get("event_id").and_then(Value::as_str))
         .flatten()
 }
-fn address_mentions(
-    content: &serde_json::Map<String, Value>,
-    server: &str,
-) -> BTreeSet<String> {
+fn address_mentions(content: &serde_json::Map<String, Value>, server: &str) -> BTreeSet<String> {
     let mut found = BTreeSet::new();
     if let Some(formatted) = content.get("formatted_body").and_then(Value::as_str) {
         for localpart in pill_localparts(formatted) {
@@ -1102,7 +1108,9 @@ mod mention_fallback_tests {
         value.as_object().unwrap().clone()
     }
     fn mentioned(value: serde_json::Value, server: &str) -> Vec<String> {
-        address_mentions(&content(value), server).into_iter().collect()
+        address_mentions(&content(value), server)
+            .into_iter()
+            .collect()
     }
 
     /// TS:bridge-matrix.js:3133-3174. `m.mentions` is empty here, so the address

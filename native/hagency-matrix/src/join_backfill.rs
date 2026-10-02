@@ -75,10 +75,7 @@ pub fn pending_join_backfill(
         {
             continue;
         }
-        match event
-            .pointer("/content/membership")
-            .and_then(Value::as_str)
-        {
+        match event.pointer("/content/membership").and_then(Value::as_str) {
             Some("invite") => {
                 invite_idx = Some(index);
                 join_idx = None;
@@ -158,7 +155,12 @@ mod tests {
         // /messages?dir=b newest-first: the join (1200) comes FIRST in the chunk.
         let chunk = json!([
             member("join", 1200),
-            msg_from("$real", "!request architect 300000 20000", "@lin:matrix.test", 1100),
+            msg_from(
+                "$real",
+                "!request architect 300000 20000",
+                "@lin:matrix.test",
+                1100
+            ),
             member("invite", 1000)
         ]);
         let window = pending_join_backfill(Some(&chunk), BOT, None);
@@ -177,13 +179,20 @@ mod tests {
             member("invite", 1000)
         ]);
         let window = pending_join_backfill(Some(&chunk), BOT, None);
-        assert_eq!(window.events, vec!["$request".to_owned(), "$cancel".to_owned()]);
+        assert_eq!(
+            window.events,
+            vec!["$request".to_owned(), "$cancel".to_owned()]
+        );
     }
 
     /// TS `:123`: a command sent between the invite and the join is delivered.
     #[test]
     fn ts_oracle_backfill_between_invite_and_join() {
-        let chunk = json!([member("join", 1200), msg("$b", "!request a b"), member("invite", 1000)]);
+        let chunk = json!([
+            member("join", 1200),
+            msg("$b", "!request a b"),
+            member("invite", 1000)
+        ]);
         assert_eq!(
             pending_join_backfill(Some(&chunk), BOT, None).events,
             vec!["$b".to_owned()]
@@ -221,7 +230,10 @@ mod tests {
     /// construction; commands are executable, so missing beats replaying.
     #[test]
     fn ts_oracle_backfill_no_invite_routs_nothing() {
-        let chunk = json!([msg("$older", "!approve"), msg("$old", "!request architect 999999 99999")]);
+        let chunk = json!([
+            msg("$older", "!approve"),
+            msg("$old", "!request architect 999999 99999")
+        ]);
         let window = pending_join_backfill(Some(&chunk), BOT, None);
         assert!(window.events.is_empty());
         assert_eq!(window.boundary, Boundary::Unproven);
@@ -233,11 +245,21 @@ mod tests {
     fn ts_oracle_backfill_earlier_cycle_not_replayed() {
         let chunk = json!([
             member("join", 1600),
-            msg_from("$thisCycle", "!request architect 300000 20000", "@lin:matrix.test", 1500),
+            msg_from(
+                "$thisCycle",
+                "!request architect 300000 20000",
+                "@lin:matrix.test",
+                1500
+            ),
             member("invite", 1400),
             member("leave", 1300),
             member("join", 1200),
-            msg_from("$oldCycle", "!request architect 999999 99999", "@lin:matrix.test", 1100),
+            msg_from(
+                "$oldCycle",
+                "!request architect 999999 99999",
+                "@lin:matrix.test",
+                1100
+            ),
             member("invite", 1000)
         ]);
         assert_eq!(
@@ -266,7 +288,10 @@ mod tests {
     #[test]
     fn ts_oracle_backfill_join_is_not_invite() {
         let chunk = json!([msg("$m", "!request architect 1 1"), member("join", 1000)]);
-        assert_eq!(pending_join_backfill(Some(&chunk), BOT, None).boundary, Boundary::Unproven);
+        assert_eq!(
+            pending_join_backfill(Some(&chunk), BOT, None).boundary,
+            Boundary::Unproven
+        );
     }
 
     /// TS `:204`: our own messages are never fed back to us.
@@ -274,7 +299,12 @@ mod tests {
     fn ts_oracle_backfill_own_messages_excluded() {
         let chunk = json!([
             member("join", 1200),
-            msg_from("$theirs", "!request architect 1 1", "@lin:matrix.test", 1100),
+            msg_from(
+                "$theirs",
+                "!request architect 1 1",
+                "@lin:matrix.test",
+                1100
+            ),
             msg_from("$mine", "!help", BOT, 1100),
             member("invite", 1000)
         ]);
@@ -288,7 +318,12 @@ mod tests {
     /// double-handle one event.
     #[test]
     fn ts_oracle_backfill_seen_skipped() {
-        let chunk = json!([member("join", 1200), msg("$fresh", "b"), msg("$dup", "a"), member("invite", 1000)]);
+        let chunk = json!([
+            member("join", 1200),
+            msg("$fresh", "b"),
+            msg("$dup", "a"),
+            member("invite", 1000)
+        ]);
         let seen = std::collections::BTreeSet::from(["$dup".to_owned()]);
         assert_eq!(
             pending_join_backfill(Some(&chunk), BOT, Some(&seen)).events,
@@ -316,13 +351,12 @@ mod tests {
     /// throwing, and with no identity there is no boundary to find.
     #[test]
     fn ts_oracle_backfill_malformed_page_yields_nothing() {
-        for bad in [
-            None,
-            Some(json!("nope")),
-            Some(json!({})),
-            Some(json!(42)),
-        ] {
-            assert!(pending_join_backfill(bad.as_ref(), BOT, None).events.is_empty());
+        for bad in [None, Some(json!("nope")), Some(json!({})), Some(json!(42))] {
+            assert!(
+                pending_join_backfill(bad.as_ref(), BOT, None)
+                    .events
+                    .is_empty()
+            );
         }
         assert_eq!(
             pending_join_backfill(Some(&json!([member("invite", 1000)])), "", None).boundary,

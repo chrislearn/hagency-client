@@ -45,7 +45,11 @@ pub enum TrustMode {
 
 impl TrustMode {
     pub fn from_env() -> Self {
-        Self::from_word(std::env::var("MATRIX_TRUST_MODE").unwrap_or_default().as_str())
+        Self::from_word(
+            std::env::var("MATRIX_TRUST_MODE")
+                .unwrap_or_default()
+                .as_str(),
+        )
     }
     /// TS `MATRIX_TRUST_MODE` resolution: only `enforce` enforces; the default
     /// and every other spelling are audit.
@@ -130,7 +134,11 @@ impl RoomTrust {
 
     /// The enforce gate: under `enforce`, an untrusted room's messages are not
     /// processed; under `audit` they are (only logged).
-    pub fn admit(&self, room_id: &str, inviter_mxid: Option<&str>) -> Result<RoomTrustReason, Error> {
+    pub fn admit(
+        &self,
+        room_id: &str,
+        inviter_mxid: Option<&str>,
+    ) -> Result<RoomTrustReason, Error> {
         let reason = self.classify(room_id, inviter_mxid);
         if self.mode == TrustMode::Enforce && !reason.trusted() {
             return Err(Error::Config);

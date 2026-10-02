@@ -318,8 +318,8 @@ pub(super) fn read(path: &Path, limit: usize, field: &'static str) -> Result<Vec
         fix: "the file must be present, owner-private (0600), a regular non-symlink file within its byte limit",
     };
     let file = private::open(path, false).map_err(|_| refuse())?;
-    let length = usize::try_from(file.metadata().map_err(|_| refuse())?.len())
-        .map_err(|_| refuse())?;
+    let length =
+        usize::try_from(file.metadata().map_err(|_| refuse())?.len()).map_err(|_| refuse())?;
     if length > limit {
         return Err(Failure::Config {
             field,
@@ -394,12 +394,10 @@ fn verify_executable(path: &Path, expected: &str) -> Result<(), Failure> {
         if count == 0 {
             break;
         }
-        total = total
-            .checked_add(count as u64)
-            .ok_or(Failure::Config {
-                field: "agent-driver.json: executable",
-                fix: "the executable byte count overflowed while hashing",
-            })?;
+        total = total.checked_add(count as u64).ok_or(Failure::Config {
+            field: "agent-driver.json: executable",
+            fix: "the executable byte count overflowed while hashing",
+        })?;
         if total > EXECUTABLE_BYTES || total > actual.len() {
             return Err(Failure::Config {
                 field: "agent-driver.json: executable",
@@ -492,7 +490,7 @@ impl Prepared {
                 return Err(Failure::Config {
                     field: "serve --agent-driver/--development-driver",
                     fix: "a driver configuration requires one of the driver flags; run serve with --agent-driver or --development-driver",
-                })
+                });
             }
         };
         let bytes = read(&state.join(file), CONFIG_BYTES, file)?;
@@ -592,9 +590,11 @@ impl Prepared {
             }
         }
         if !combined_sessions.is_empty() {
-            hagency_matrix::HostIntakePlan::new(combined_sessions.clone()).map_err(|_| Failure::Config {
-                field: "agent-driver.json: intake_sessions/agent_inboxes",
-                fix: "every combined session id must be 1-128 chars of [A-Za-z0-9_-]",
+            hagency_matrix::HostIntakePlan::new(combined_sessions.clone()).map_err(|_| {
+                Failure::Config {
+                    field: "agent-driver.json: intake_sessions/agent_inboxes",
+                    fix: "every combined session id must be 1-128 chars of [A-Za-z0-9_-]",
+                }
             })?;
         }
         config.intake_sessions = combined_sessions;
@@ -643,12 +643,11 @@ impl Prepared {
         let mut rooms = Vec::new();
         for room in config.matrix.rooms {
             claim_rooms.push(
-                OwnedClaimRoom::new(room.id.clone(), room.generation, room.privacy.clone()).map_err(
-                    |_| Failure::Config {
+                OwnedClaimRoom::new(room.id.clone(), room.generation, room.privacy.clone())
+                    .map_err(|_| Failure::Config {
                         field: "agent-driver.json: matrix.rooms",
                         fix: "each room needs a valid id, generation and privacy",
-                    },
-                )?,
+                    })?,
             );
             rooms.push(HostRoom {
                 room_id: room.id,
@@ -725,9 +724,11 @@ impl Prepared {
             })?;
         }
         if config.receive_file {
-            hagency_core::received_files::receive_limit(config.file_limit).map_err(|_| Failure::Config {
-                field: "agent-driver.json: file_limit",
-                fix: "the receive limit must be valid for the received-files contract",
+            hagency_core::received_files::receive_limit(config.file_limit).map_err(|_| {
+                Failure::Config {
+                    field: "agent-driver.json: file_limit",
+                    fix: "the receive limit must be valid for the received-files contract",
+                }
             })?;
             host = host.with_receive_tools().map_err(|_| Failure::Config {
                 field: "agent-driver.json: receive_file",
@@ -735,10 +736,12 @@ impl Prepared {
             })?;
         }
         if config.coordination_tools {
-            host = host.with_coordination_tools().map_err(|_| Failure::Config {
-                field: "agent-driver.json: coordination_tools",
-                fix: "the coordination tools must install on the execution host",
-            })?;
+            host = host
+                .with_coordination_tools()
+                .map_err(|_| Failure::Config {
+                    field: "agent-driver.json: coordination_tools",
+                    fix: "the coordination tools must install on the execution host",
+                })?;
         }
         let namespace = hagency_core::canonical::digest(&serde_json::json!([
             "native_file_storage_v1",
@@ -759,7 +762,11 @@ impl Prepared {
             namespace,
             limit: config.file_limit,
         });
-        let token = read(&state.join("matrix.access_token"), 4096, "matrix.access_token")?;
+        let token = read(
+            &state.join("matrix.access_token"),
+            4096,
+            "matrix.access_token",
+        )?;
         let token = std::str::from_utf8(&token).map_err(|_| Failure::Config {
             field: "matrix.access_token",
             fix: "the token must be valid UTF-8",
@@ -834,20 +841,32 @@ impl Prepared {
                     } => (Some(peer_masters), Some(home), Some(namespace_prefix)),
                 };
                 let token = if as_namespace.is_some() {
-                    read(&state.join("matrix.appservice_token"), 4096, "matrix.appservice_token")?
+                    read(
+                        &state.join("matrix.appservice_token"),
+                        4096,
+                        "matrix.appservice_token",
+                    )?
                 } else {
-                    read(&state.join("matrix.registration_token"), 64, "matrix.registration_token")?
+                    read(
+                        &state.join("matrix.registration_token"),
+                        64,
+                        "matrix.registration_token",
+                    )?
                 };
                 let token = std::str::from_utf8(&token).map_err(|_| Failure::Config {
                     field: "matrix.appservice_token / matrix.registration_token",
                     fix: "the provisioning token must be valid UTF-8",
                 })?;
-                let key: [u8; 32] = read(&state.join("matrix.provisioning_key"), 32, "matrix.provisioning_key")?
-                    .try_into()
-                    .map_err(|_| Failure::Config {
-                        field: "matrix.provisioning_key",
-                        fix: "the provisioning key must be exactly 32 bytes",
-                    })?;
+                let key: [u8; 32] = read(
+                    &state.join("matrix.provisioning_key"),
+                    32,
+                    "matrix.provisioning_key",
+                )?
+                .try_into()
+                .map_err(|_| Failure::Config {
+                    field: "matrix.provisioning_key",
+                    fix: "the provisioning key must be exactly 32 bytes",
+                })?;
                 let mut host = if let Some(namespace) = as_namespace {
                     hagency_matrix::TokenProvisioningHost::application_service(
                         registration.clone(),
@@ -877,7 +896,11 @@ impl Prepared {
                     fix: "the provisioning host must construct from the registration, origin, token and key",
                 })?;
                 if let Some(peer_masters) = peer_masters {
-                    let token = read(&state.join("matrix.representative_token"), 4096, "matrix.representative_token")?;
+                    let token = read(
+                        &state.join("matrix.representative_token"),
+                        4096,
+                        "matrix.representative_token",
+                    )?;
                     let token = std::str::from_utf8(&token).map_err(|_| Failure::Config {
                         field: "matrix.representative_token",
                         fix: "the token must be valid UTF-8",
@@ -911,17 +934,16 @@ impl Prepared {
                     })?;
                 }
                 let ca = state.join("matrix.ca.pem");
-                if ca
-                    .try_exists()
-                    .map_err(|_| Failure::Config {
-                        field: "matrix.ca.pem",
-                        fix: "the CA file must be statable (permission or path error)",
-                    })?
-                {
-                    host = host.with_root_pem(&read(&ca, 16 * 1024, "matrix.ca.pem")?).map_err(|_| Failure::Config {
-                        field: "matrix.ca.pem",
-                        fix: "the CA bundle must be a usable PEM root (max 16 KiB)",
-                    })?;
+                if ca.try_exists().map_err(|_| Failure::Config {
+                    field: "matrix.ca.pem",
+                    fix: "the CA file must be statable (permission or path error)",
+                })? {
+                    host = host
+                        .with_root_pem(&read(&ca, 16 * 1024, "matrix.ca.pem")?)
+                        .map_err(|_| Failure::Config {
+                            field: "matrix.ca.pem",
+                            fix: "the CA bundle must be a usable PEM root (max 16 KiB)",
+                        })?;
                 }
                 provisioning = Some(host);
             }
@@ -951,10 +973,12 @@ impl Prepared {
             field: "matrix.ca.pem",
             fix: "the CA file must be statable (permission or path error)",
         })? {
-            matrix = matrix.with_root_pem(&read(&ca, 16 * 1024, "matrix.ca.pem")?).map_err(|_| Failure::Config {
-                field: "matrix.ca.pem",
-                fix: "the CA bundle must be a usable PEM root (max 16 KiB)",
-            })?;
+            matrix = matrix
+                .with_root_pem(&read(&ca, 16 * 1024, "matrix.ca.pem")?)
+                .map_err(|_| Failure::Config {
+                    field: "matrix.ca.pem",
+                    fix: "the CA bundle must be a usable PEM root (max 16 KiB)",
+                })?;
         }
         let limits = Limits {
             operation_ms: config.operation_ms,
@@ -1005,7 +1029,11 @@ impl Prepared {
                         privacy: room.privacy,
                     })
                     .collect();
-                let token = read(&state.join("approval.access_token"), 4096, "approval.access_token")?;
+                let token = read(
+                    &state.join("approval.access_token"),
+                    4096,
+                    "approval.access_token",
+                )?;
                 let token = std::str::from_utf8(&token).map_err(|_| Failure::Config {
                     field: "approval.access_token",
                     fix: "the approval bot token must be valid UTF-8",
@@ -1034,27 +1062,26 @@ impl Prepared {
                     fix: "the approval host must construct from the identity, origin, token, key, rooms and limits",
                 })?;
                 let ca = state.join("approval.ca.pem");
-                if ca
-                    .try_exists()
-                    .map_err(|_| Failure::Config {
-                        field: "approval.ca.pem",
-                        fix: "the CA file must be statable (permission or path error)",
-                    })?
-                {
-                    config = config.with_root_pem(&read(&ca, 16 * 1024, "matrix.ca.pem")?).map_err(|_| Failure::Config {
-                        field: "approval.ca.pem",
-                        fix: "the CA bundle must be a usable PEM root (max 16 KiB)",
-                    })?;
+                if ca.try_exists().map_err(|_| Failure::Config {
+                    field: "approval.ca.pem",
+                    fix: "the CA file must be statable (permission or path error)",
+                })? {
+                    config = config
+                        .with_root_pem(&read(&ca, 16 * 1024, "matrix.ca.pem")?)
+                        .map_err(|_| Failure::Config {
+                            field: "approval.ca.pem",
+                            fix: "the CA bundle must be a usable PEM root (max 16 KiB)",
+                        })?;
                 }
                 // The capacity must fit the operation limits exactly as
                 // `ApprovalHost::fits` checks them, or `start_mode` refuses.
                 let host_approvals = approval_host(owner_wait_ms, limits)?;
-                host = host
-                    .with_approvals(host_approvals.clone())
-                    .map_err(|_| Failure::Config {
-                        field: "agent-driver.json: approval block",
-                        fix: "the execution host must accept the approval host attachment",
-                    })?;
+                host =
+                    host.with_approvals(host_approvals.clone())
+                        .map_err(|_| Failure::Config {
+                            field: "agent-driver.json: approval block",
+                            fix: "the execution host must accept the approval host attachment",
+                        })?;
                 runtime_approvals = Some(host_approvals);
                 Some(Approval {
                     config,
@@ -1112,10 +1139,12 @@ impl Prepared {
                 fix: "the warm plan must apply the file, coordination and receive capabilities",
             })?;
             if uses_local_codex {
-                warm = warm.with_local_codex_from_host(&host).map_err(|_| Failure::Config {
-                    field: "agent-driver.json: local_codex",
-                    fix: "the warm bridge must accept the host's local codex binding",
-                })?;
+                warm = warm
+                    .with_local_codex_from_host(&host)
+                    .map_err(|_| Failure::Config {
+                        field: "agent-driver.json: local_codex",
+                        fix: "the warm bridge must accept the host's local codex binding",
+                    })?;
             }
             (
                 Some(warm),

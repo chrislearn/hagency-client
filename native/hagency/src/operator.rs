@@ -12,9 +12,7 @@
 use crate::{App, refusal};
 use hagency_core::authority::Registration;
 use hagency_core::project::identifier;
-use hagency_store::{
-    AccountReadinessMode, DomainStore, Error, LoginAttempt, LoginVerdict,
-};
+use hagency_store::{AccountReadinessMode, DomainStore, Error, LoginAttempt, LoginVerdict};
 use salvo::prelude::*;
 use serde::Deserialize;
 use std::{
@@ -64,12 +62,7 @@ fn account_id(req: &Request) -> Result<String, ()> {
 }
 
 async fn read_body(req: &mut Request, res: &mut Response) -> Option<Vec<u8>> {
-    match tokio::time::timeout(
-        Duration::from_secs(2),
-        req.payload_with_max_size(64 * 1024),
-    )
-    .await
-    {
+    match tokio::time::timeout(Duration::from_secs(2), req.payload_with_max_size(64 * 1024)).await {
         Ok(Ok(bytes)) => Some(bytes.to_vec()),
         Ok(Err(_)) => {
             refusal(res, StatusCode::PAYLOAD_TOO_LARGE, "body_rejected");

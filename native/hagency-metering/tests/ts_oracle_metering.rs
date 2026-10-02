@@ -68,7 +68,10 @@ fn codex_text() -> String {
 }
 
 fn claude_totals() -> TokenCounts {
-    match parse_session(Framework::Claude, &claude_text()).unwrap().totals {
+    match parse_session(Framework::Claude, &claude_text())
+        .unwrap()
+        .totals
+    {
         Some(totals) => totals,
         None => unreachable!("the fixture records usage"),
     }
@@ -303,7 +306,11 @@ fn ts_oracle_relative_path_has_no_project_dir() {
 /// claude `narrowed === true`, codex `narrowed === false`.
 #[test]
 fn ts_oracle_claude_narrows_codex_cannot() {
-    assert!(transcript_search("claude", WS, "/home/me").unwrap().narrowed);
+    assert!(
+        transcript_search("claude", WS, "/home/me")
+            .unwrap()
+            .narrowed
+    );
     assert!(!transcript_search("codex", WS, "/home/me").unwrap().narrowed);
 }
 
@@ -408,10 +415,7 @@ fn ok_row(agent: &str, workspace: &str, cache_read: u64) -> AgentRow {
 /// `/shared with a2/`, `total === null`.
 #[test]
 fn ts_oracle_shared_workspace_is_ambiguous() {
-    let summary = summarize_fleet(
-        vec![ok_row("a1", WS, 100), ok_row("a2", WS, 100)],
-        "/",
-    );
+    let summary = summarize_fleet(vec![ok_row("a1", WS, 100), ok_row("a2", WS, 100)], "/");
     assert!(summary.agents.iter().all(|a| !a.available));
     let reason = summary.agents[0].reason.clone().unwrap();
     assert!(reason.contains("shared with a2"), "reason: {reason}");
@@ -490,7 +494,11 @@ fn bounds(dropped_by_count: u64, entries_unwalked: u64) -> Option<ScanBounds> {
 #[test]
 fn ts_oracle_codex_recurses_claude_does_not() {
     assert!(transcript_search("codex", "/w", "/home").unwrap().recursive);
-    assert!(!transcript_search("claude", "/w", "/home").unwrap().recursive);
+    assert!(
+        !transcript_search("claude", "/w", "/home")
+            .unwrap()
+            .recursive
+    );
 }
 
 /// TS `metering-discovery.test.js:72` `THE BUG: a session under YYYY/MM/DD is
@@ -502,7 +510,11 @@ fn ts_oracle_codex_nested_date_tree_is_described() {
         .expect("codex has a search");
     assert!(search.recursive);
     assert!(!search.narrowed);
-    assert!(search.dir.contains(".codex/sessions"), "dir: {}", search.dir);
+    assert!(
+        search.dir.contains(".codex/sessions"),
+        "dir: {}",
+        search.dir
+    );
 }
 
 /// TS `metering-discovery.test.js:132` `a non-recursive search does NOT descend`:
@@ -513,7 +525,11 @@ fn ts_oracle_claude_search_is_flat() {
         .expect("claude has a search");
     assert!(!search.recursive);
     assert!(search.narrowed);
-    assert!(search.dir.contains(".claude/projects"), "dir: {}", search.dir);
+    assert!(
+        search.dir.contains(".claude/projects"),
+        "dir: {}",
+        search.dir
+    );
 }
 
 /// TS `metering-discovery.test.js:315` `workdir alone does NOT meter, and the
@@ -566,7 +582,10 @@ fn ts_oracle_scan_bounds_stated_in_reason() {
     );
     let reason = row.reason.unwrap();
     assert!(reason.contains("never opened"), "reason: {reason}");
-    assert!(reason.contains("HAGENCY_METERING_MAX_FILES"), "reason: {reason}");
+    assert!(
+        reason.contains("HAGENCY_METERING_MAX_FILES"),
+        "reason: {reason}"
+    );
 }
 
 /// TS `metering-discovery.test.js:149` `an out-of-window file in a NON-narrowed
@@ -585,7 +604,10 @@ fn ts_oracle_complete_scan_has_no_caveat() {
     let reason = row.reason.unwrap();
     assert!(reason.contains("no transcripts found"), "reason: {reason}");
     assert!(!reason.contains("never opened"), "reason: {reason}");
-    assert!(!reason.contains("HAGENCY_METERING_MAX_FILES"), "reason: {reason}");
+    assert!(
+        !reason.contains("HAGENCY_METERING_MAX_FILES"),
+        "reason: {reason}"
+    );
 }
 
 /// TS `metering-discovery.test.js:101` `and the tokens actually arrive, end to

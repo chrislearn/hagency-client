@@ -67,7 +67,9 @@ fn ts_oracle_a_live_allocation_prevents_retirement() {
     );
     // A different agent's engagement is not this agent's business.
     assert!(
-        db.agent_active_engagements("someone-else").unwrap().is_empty(),
+        db.agent_active_engagements("someone-else")
+            .unwrap()
+            .is_empty(),
         "another agent's allocation does not block this one's retirement"
     );
 }
@@ -101,7 +103,9 @@ fn ts_oracle_retirement_verifies_remote_identity() {
 #[ignore = "parity gap: no native /api/framework-presets route (no agent-definition CRUD)"]
 #[test]
 fn ts_oracle_resource_definitions_persist_without_provisioning() {
-    panic!("TS asserts a definition persists and unique qualified names are enforced; native has no framework-presets route");
+    panic!(
+        "TS asserts a definition persists and unique qualified names are enforced; native has no framework-presets route"
+    );
 }
 
 /// TS `resource-agent-definitions.test.js:65` `explicit definition provisions a
@@ -117,7 +121,9 @@ fn ts_oracle_resource_definitions_persist_without_provisioning() {
 #[ignore = "parity gap: no native framework-preset definition-allocation choice (native provisions from the verified request's agentDefinition)"]
 #[test]
 fn ts_oracle_explicit_definition_provisions_a_second_agent() {
-    panic!("TS asserts the definition allocation choice provisions a second agent; native has no such choice on the verdict");
+    panic!(
+        "TS asserts the definition allocation choice provisions a second agent; native has no such choice on the verdict"
+    );
 }
 
 /// TS `resource-agent-definitions.test.js:88` `allocation choices reject foreign
@@ -125,7 +131,9 @@ fn ts_oracle_explicit_definition_provisions_a_second_agent() {
 #[ignore = "parity gap: no native framework-preset definition-allocation choice"]
 #[test]
 fn ts_oracle_allocation_choices_reject_foreign_agents() {
-    panic!("TS asserts definition allocation choices reject a foreign agent and a reserved identity change; native has no definition choice");
+    panic!(
+        "TS asserts definition allocation choices reject a foreign agent and a reserved identity change; native has no definition choice"
+    );
 }
 
 /// TS `resource-agent-definitions.test.js:101` `published capability resources
@@ -201,7 +209,9 @@ fn ts_oracle_palpo_labels_populate_metadata() {
 #[ignore = "parity gap: no native outbound remote-removal verification (the local fence exists: agent_fences/retire.rs)"]
 #[test]
 fn ts_oracle_last_palpo_allocation_retirement_fences_admission() {
-    panic!("TS asserts the retirement fences admission AND verifies remote removal; native has the fence but no remote verification call");
+    panic!(
+        "TS asserts the retirement fences admission AND verifies remote removal; native has the fence but no remote verification call"
+    );
 }
 
 /// TS `palpo-agent-definitions.test.js:104` `incomplete Palpo retirement stays
@@ -213,7 +223,9 @@ fn ts_oracle_last_palpo_allocation_retirement_fences_admission() {
 #[ignore = "parity gap: no native outbound retirement retry (fence half is agent_fences.rs, cited)"]
 #[test]
 fn ts_oracle_incomplete_palpo_retirement_stays_fenced() {
-    panic!("TS asserts the retirement stays fenced and retries the original identity; native's fence exists (agent_fences) but no outbound retry call");
+    panic!(
+        "TS asserts the retirement stays fenced and retries the original identity; native's fence exists (agent_fences) but no outbound retry call"
+    );
 }
 
 /// TS `palpo-agent-definitions.test.js:118` `revoking one of two allocations
@@ -225,7 +237,9 @@ fn ts_oracle_incomplete_palpo_retirement_stays_fenced() {
 #[ignore = "parity gap: no native route to revoke ONE allocation while keeping the Agent (the store rule is covered by test_ts_oracle_a_live_allocation_prevents_retirement)"]
 #[test]
 fn ts_oracle_revoking_one_allocation_keeps_the_agent() {
-    panic!("TS asserts a partial revocation keeps the Agent on Matrix; native's rule is asserted at the store level, but no route revokes one of two allocations");
+    panic!(
+        "TS asserts a partial revocation keeps the Agent on Matrix; native's rule is asserted at the store level, but no route revokes one of two allocations"
+    );
 }
 
 /// TS `palpo-agent-definitions.test.js:137` `new resources automatically publish
@@ -263,7 +277,9 @@ fn ts_oracle_new_resources_publish_roles_not_acceptance() {
 #[ignore = "parity gap: no native framework-presets route (no automatic Palpo catalog follow on resource edits)"]
 #[test]
 fn ts_oracle_palpo_catalog_follows_resource_edits() {
-    panic!("TS asserts the Palpo catalog follows resource edits/deletion/withdrawal; native has no such route");
+    panic!(
+        "TS asserts the Palpo catalog follows resource edits/deletion/withdrawal; native has no such route"
+    );
 }
 
 /// TS `palpo-agent-definitions.test.js:190` `Palpo requests on a fresh resource
@@ -271,7 +287,9 @@ fn ts_oracle_palpo_catalog_follows_resource_edits() {
 #[ignore = "parity gap: no native framework-presets route (no Palpo request routing on a fresh resource)"]
 #[test]
 fn ts_oracle_palpo_fresh_resource_waits_for_approval() {
-    panic!("TS asserts a fresh resource's requests wait for approval without consuming an exhausted project budget; native has no such route");
+    panic!(
+        "TS asserts a fresh resource's requests wait for approval without consuming an exhausted project budget; native has no such route"
+    );
 }
 
 /// TS `palpo-agent-definitions.test.js:233` `Palpo pool approval separates
@@ -296,8 +314,16 @@ fn ts_oracle_palpo_pool_approval_separates_ceilings() {
     .unwrap();
     let value =
         serde_json::to_value(hagency_core::allocation::resource_budget(&input).unwrap()).unwrap();
-    assert_eq!(value["pool"]["committed"], json!(300), "only the preset's pool");
-    assert_eq!(value["seat"]["committed"], json!(200), "only the shared seat");
+    assert_eq!(
+        value["pool"]["committed"],
+        json!(300),
+        "only the preset's pool"
+    );
+    assert_eq!(
+        value["seat"]["committed"],
+        json!(200),
+        "only the shared seat"
+    );
     // Headroom is the `min` of the non-null limits: pool 1000-300 = 700, seat
     // 500-200 = 300, so the shared seat is what binds.
     assert_eq!(value["pool"]["remaining"], json!(700));
@@ -314,7 +340,9 @@ fn ts_oracle_palpo_pool_approval_separates_ceilings() {
 #[ignore = "parity gap: no native framework-presets route (store-level provisioning idempotence is cited from provision_runtime.rs)"]
 #[test]
 fn ts_oracle_concurrent_palpo_definitions_reserve_once() {
-    panic!("TS asserts concurrent definitions reserve one pool once and preserve retry; native's idempotence is at provision_runtime.rs");
+    panic!(
+        "TS asserts concurrent definitions reserve one pool once and preserve retry; native's idempotence is at provision_runtime.rs"
+    );
 }
 
 /// TS `palpo-agent-definitions.test.js:275` `Palpo definitions provision
@@ -322,7 +350,9 @@ fn ts_oracle_concurrent_palpo_definitions_reserve_once() {
 #[ignore = "parity gap: no native framework-presets route for definition-driven provisioning"]
 #[test]
 fn ts_oracle_palpo_definitions_provision_distinct_agents() {
-    panic!("TS asserts definitions provision distinct agents on the requested resource; native has no such route");
+    panic!(
+        "TS asserts definitions provision distinct agents on the requested resource; native has no such route"
+    );
 }
 
 /// TS `palpo-agent-definitions.test.js:313` `Palpo definition allocation refuses
@@ -330,7 +360,9 @@ fn ts_oracle_palpo_definitions_provision_distinct_agents() {
 #[ignore = "parity gap: no native framework-preset definition-allocation choice"]
 #[test]
 fn ts_oracle_palpo_definition_refuses_substitution() {
-    panic!("TS asserts a definition allocation refuses substitution; native has no definition choice");
+    panic!(
+        "TS asserts a definition allocation refuses substitution; native has no definition choice"
+    );
 }
 
 /// TS `palpo-agent-definitions.test.js:334` `Palpo definitions reject

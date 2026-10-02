@@ -24,26 +24,23 @@ async fn native_retire_leave_room_request_shape() {
     let mut fake = Fake::start(true).await;
     let retire = client(&fake, TOKEN);
     let cancel = CancellationToken::new();
-    let (verdict, ()) = tokio::join!(
-        retire.leave_room("!project:example.test", &cancel),
-        async {
-            let request = fake.next().await;
-            assert_eq!(request.method, "POST");
-            // The room id is ONE path segment. The port's shared `Http` path
-            // layer leaves `:` literal (the same spelling every other ported
-            // room call sends, e.g. `…/rooms/{roomId}/state`); TS's
-            // `encodeURIComponent` wrote `%3A` for the same segment, and a
-            // homeserver decodes the two to the identical room id.
-            assert_eq!(
-                request.target,
-                "/_matrix/client/v3/rooms/!project:example.test/leave"
-            );
-            assert_eq!(request.headers["authorization"], format!("Bearer {TOKEN}"));
-            assert_eq!(request.headers["content-type"], "application/json");
-            assert_eq!(request.body, b"{}".to_vec());
-            request.json(200, json!({}));
-        }
-    );
+    let (verdict, ()) = tokio::join!(retire.leave_room("!project:example.test", &cancel), async {
+        let request = fake.next().await;
+        assert_eq!(request.method, "POST");
+        // The room id is ONE path segment. The port's shared `Http` path
+        // layer leaves `:` literal (the same spelling every other ported
+        // room call sends, e.g. `…/rooms/{roomId}/state`); TS's
+        // `encodeURIComponent` wrote `%3A` for the same segment, and a
+        // homeserver decodes the two to the identical room id.
+        assert_eq!(
+            request.target,
+            "/_matrix/client/v3/rooms/!project:example.test/leave"
+        );
+        assert_eq!(request.headers["authorization"], format!("Bearer {TOKEN}"));
+        assert_eq!(request.headers["content-type"], "application/json");
+        assert_eq!(request.body, b"{}".to_vec());
+        request.json(200, json!({}));
+    });
     assert_eq!(verdict.unwrap(), RetireVerdict::Revoked);
     fake.close().await;
 }
@@ -55,17 +52,14 @@ async fn native_retire_logout_request_shape_and_unknown_token() {
     let mut fake = Fake::start(true).await;
     let retire = client(&fake, TOKEN);
     let cancel = CancellationToken::new();
-    let (verdict, ()) = tokio::join!(
-        retire.logout(&cancel),
-        async {
-            let request = fake.next().await;
-            assert_eq!(request.method, "POST");
-            assert_eq!(request.target, "/_matrix/client/v3/logout");
-            assert_eq!(request.headers["authorization"], format!("Bearer {TOKEN}"));
-            assert_eq!(request.body, b"{}".to_vec());
-            request.json(401, json!({"errcode": "M_UNKNOWN_TOKEN"}));
-        }
-    );
+    let (verdict, ()) = tokio::join!(retire.logout(&cancel), async {
+        let request = fake.next().await;
+        assert_eq!(request.method, "POST");
+        assert_eq!(request.target, "/_matrix/client/v3/logout");
+        assert_eq!(request.headers["authorization"], format!("Bearer {TOKEN}"));
+        assert_eq!(request.body, b"{}".to_vec());
+        request.json(401, json!({"errcode": "M_UNKNOWN_TOKEN"}));
+    });
     assert_eq!(verdict.unwrap(), RetireVerdict::Revoked);
     fake.close().await;
 }
@@ -78,14 +72,11 @@ async fn native_retire_leave_unknown_token_is_refused() {
     let mut fake = Fake::start(true).await;
     let retire = client(&fake, TOKEN);
     let cancel = CancellationToken::new();
-    let (verdict, ()) = tokio::join!(
-        retire.leave_room("!project:example.test", &cancel),
-        async {
-            let request = fake.next().await;
-            assert!(request.target.ends_with("/leave"));
-            request.json(401, json!({"errcode": "M_UNKNOWN_TOKEN"}));
-        }
-    );
+    let (verdict, ()) = tokio::join!(retire.leave_room("!project:example.test", &cancel), async {
+        let request = fake.next().await;
+        assert!(request.target.ends_with("/leave"));
+        request.json(401, json!({"errcode": "M_UNKNOWN_TOKEN"}));
+    });
     assert_eq!(verdict.unwrap(), RetireVerdict::Refused(401));
     fake.close().await;
 }
@@ -97,18 +88,15 @@ async fn native_retire_refusal_reports_ts_status_word() {
     let mut fake = Fake::start(true).await;
     let retire = client(&fake, "synthetic-representative-token");
     let cancel = CancellationToken::new();
-    let (verdict, ()) = tokio::join!(
-        retire.logout(&cancel),
-        async {
-            let request = fake.next().await;
-            assert_eq!(request.target, "/_matrix/client/v3/logout");
-            assert_eq!(
-                request.headers["authorization"],
-                "Bearer synthetic-representative-token"
-            );
-            request.json(403, json!({"errcode": "M_FORBIDDEN"}));
-        }
-    );
+    let (verdict, ()) = tokio::join!(retire.logout(&cancel), async {
+        let request = fake.next().await;
+        assert_eq!(request.target, "/_matrix/client/v3/logout");
+        assert_eq!(
+            request.headers["authorization"],
+            "Bearer synthetic-representative-token"
+        );
+        request.json(403, json!({"errcode": "M_FORBIDDEN"}));
+    });
     assert_eq!(verdict.unwrap(), RetireVerdict::Refused(403));
     fake.close().await;
 }
@@ -130,28 +118,25 @@ async fn native_retire_live_worker_leaves_every_room_then_logs_out() {
     )
     .unwrap();
     let cancel = CancellationToken::new();
-    let (retirement, ()) = tokio::join!(
-        collector.retire_agent(&cancel),
-        async {
-            // The one room this host config names (`Fixture::config`):
-            // `!direct:example.test`.
-            let leave = fake.next().await;
-            assert_eq!(leave.method, "POST");
-            assert_eq!(
-                leave.target,
-                "/_matrix/client/v3/rooms/!direct:example.test/leave"
-            );
-            assert_eq!(leave.headers["authorization"], format!("Bearer {TOKEN}"));
-            assert_eq!(leave.body, b"{}".to_vec());
-            leave.json(200, json!({}));
-            let logout = fake.next().await;
-            assert_eq!(logout.method, "POST");
-            assert_eq!(logout.target, "/_matrix/client/v3/logout");
-            assert_eq!(logout.headers["authorization"], format!("Bearer {TOKEN}"));
-            assert_eq!(logout.body, b"{}".to_vec());
-            logout.json(200, json!({}));
-        }
-    );
+    let (retirement, ()) = tokio::join!(collector.retire_agent(&cancel), async {
+        // The one room this host config names (`Fixture::config`):
+        // `!direct:example.test`.
+        let leave = fake.next().await;
+        assert_eq!(leave.method, "POST");
+        assert_eq!(
+            leave.target,
+            "/_matrix/client/v3/rooms/!direct:example.test/leave"
+        );
+        assert_eq!(leave.headers["authorization"], format!("Bearer {TOKEN}"));
+        assert_eq!(leave.body, b"{}".to_vec());
+        leave.json(200, json!({}));
+        let logout = fake.next().await;
+        assert_eq!(logout.method, "POST");
+        assert_eq!(logout.target, "/_matrix/client/v3/logout");
+        assert_eq!(logout.headers["authorization"], format!("Bearer {TOKEN}"));
+        assert_eq!(logout.body, b"{}".to_vec());
+        logout.json(200, json!({}));
+    });
     let retirement = retirement.unwrap();
     assert_eq!(retirement.leaves, vec![RetireVerdict::Revoked]);
     assert_eq!(retirement.logout, RetireVerdict::Revoked);

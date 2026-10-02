@@ -181,8 +181,14 @@ pub(super) fn insert_intent(
     let session = &task.session_id;
     let task_id = &task.id;
     let epoch = task.execution_epoch;
-    let digest =
-        canonical::payload_digest(&json!(["final_reply", task_id, epoch, route, body, incidental]))?;
+    let digest = canonical::payload_digest(&json!([
+        "final_reply",
+        task_id,
+        epoch,
+        route,
+        body,
+        incidental
+    ]))?;
     let existing: Option<(String, String)> = tx
         .query_row(
             "SELECT id,digest FROM final_replies WHERE task_id=?1 AND execution_epoch=?2",
@@ -247,8 +253,15 @@ impl DomainRepository {
             }
             return receipt(&tx, &id, true);
         }
-        let (id, replayed) =
-            insert_intent(&tx, &task, &cap.dispatch_id, &route, &input.body, input.incidental, now)?;
+        let (id, replayed) = insert_intent(
+            &tx,
+            &task,
+            &cap.dispatch_id,
+            &route,
+            &input.body,
+            input.incidental,
+            now,
+        )?;
         let own: u64 = tx.query_row(
             "SELECT COUNT(*) FROM final_reply_calls WHERE dispatch_id=?1",
             [&cap.dispatch_id],

@@ -39,7 +39,10 @@ async fn native_palpo_import_route_saves_the_owner_download() {
         .send(&service)
         .await;
     assert_eq!(anonymous.status_code, Some(StatusCode::UNAUTHORIZED));
-    assert!(!state.join("palpo-transport.json").exists(), "an anonymous import writes nothing");
+    assert!(
+        !state.join("palpo-transport.json").exists(),
+        "an anonymous import writes nothing"
+    );
 
     let cookie = lifecycle_session(&service).await;
     let mut saved = post("/console/api/palpo/import", &cookie)
@@ -51,27 +54,51 @@ async fn native_palpo_import_route_saves_the_owner_download() {
     assert_eq!(answer["ok"], json!(true));
     assert_eq!(answer["fleetId"], json!(fleet));
     assert_eq!(answer["serverName"], json!("example.test"));
-    assert_eq!(answer["representative"], json!(format!("@{fleet}_representative:example.test")));
-    assert_eq!(answer["receptionBound"], json!(false), "Palpo's probe binds the reception later");
-    assert_eq!(answer["started"], json!(false), "the fixture's transport is not enabled");
+    assert_eq!(
+        answer["representative"],
+        json!(format!("@{fleet}_representative:example.test"))
+    );
+    assert_eq!(
+        answer["receptionBound"],
+        json!(false),
+        "Palpo's probe binds the reception later"
+    );
+    assert_eq!(
+        answer["started"],
+        json!(false),
+        "the fixture's transport is not enabled"
+    );
     let text = answer.to_string();
-    for secret in ["as-token-value-secret", "hs-token-value-secret", "machine-token-secret-0123456789"] {
+    for secret in [
+        "as-token-value-secret",
+        "hs-token-value-secret",
+        "machine-token-secret-0123456789",
+    ] {
         assert!(!text.contains(secret), "the answer never carries a token");
     }
     // The three files the transport reads, and the fleet row.
     let transport: Value =
-        serde_json::from_slice(&std::fs::read(state.join("palpo-transport.json")).unwrap()).unwrap();
+        serde_json::from_slice(&std::fs::read(state.join("palpo-transport.json")).unwrap())
+            .unwrap();
     assert_eq!(transport["registration"]["fleetId"], json!(fleet));
     assert_eq!(
         std::fs::read_to_string(state.join("palpo.machine_token")).unwrap(),
         "machine-token-secret-0123456789"
     );
     let appservice: Value =
-        serde_json::from_slice(&std::fs::read(state.join("palpo-appservice.json")).unwrap()).unwrap();
-    assert_eq!(appservice["homeserver"], json!("https://matrix.example.test"));
+        serde_json::from_slice(&std::fs::read(state.join("palpo-appservice.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        appservice["homeserver"],
+        json!("https://matrix.example.test")
+    );
     let db = rusqlite::Connection::open(state.join("domain.sqlite3")).unwrap();
     let rows: i64 = db
-        .query_row("SELECT COUNT(*) FROM registrations WHERE fleet_id=?1", [&fleet], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM registrations WHERE fleet_id=?1",
+            [&fleet],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(rows, 1);
     // The project side is listed and holds the App Service credential, so the
@@ -81,8 +108,14 @@ async fn native_palpo_import_route_saves_the_owner_download() {
         .await;
     assert_eq!(side.status_code, Some(StatusCode::OK));
     let side = side.take_json::<Value>().await.unwrap().to_string();
-    assert!(side.contains("matrix.example.test"), "the side records the homeserver: {side}");
-    assert!(!side.contains("as-token-value-secret"), "the side view never carries a token");
+    assert!(
+        side.contains("matrix.example.test"),
+        "the side records the homeserver: {side}"
+    );
+    assert!(
+        !side.contains("as-token-value-secret"),
+        "the side view never carries a token"
+    );
 
     // A re-import of the same fleet is accepted; another fleet is refused.
     let again = post("/console/api/palpo/import", &cookie)
@@ -118,8 +151,14 @@ async fn native_palpo_import_route_refuses_a_foreign_file() {
     assert!(answer["field"].as_str().unwrap().starts_with("transport"));
     let mut plain = body(&download(&fleet()));
     plain["homeserver"] = json!("http://matrix.example.test");
-    let refused = post("/console/api/palpo/import", &cookie).json(&plain).send(&service).await;
+    let refused = post("/console/api/palpo/import", &cookie)
+        .json(&plain)
+        .send(&service)
+        .await;
     assert_eq!(refused.status_code, Some(StatusCode::BAD_REQUEST));
-    assert!(!state.join("palpo-transport.json").exists(), "a refused import writes nothing");
+    assert!(
+        !state.join("palpo-transport.json").exists(),
+        "a refused import writes nothing"
+    );
     f.close().await;
 }

@@ -88,7 +88,13 @@ pub(crate) async fn leave_room(
     room_id: &str,
     cancel: &CancellationToken,
 ) -> Result<RetireVerdict, Error> {
-    act(http, &["_matrix", "client", "v3", "rooms", room_id, "leave"], false, cancel).await
+    act(
+        http,
+        &["_matrix", "client", "v3", "rooms", room_id, "leave"],
+        false,
+        cancel,
+    )
+    .await
 }
 
 /// Log one device out through an already-authenticated client.
@@ -145,10 +151,7 @@ impl Collector {
     /// The caller is the agent's own worker, between passes, so no other
     /// collector job is in flight; this act is terminal for the credential and
     /// is deliberately not pooled with the ordinary request permit.
-    pub async fn retire_agent(
-        &self,
-        cancel: &CancellationToken,
-    ) -> Result<AgentRetirement, Error> {
+    pub async fn retire_agent(&self, cancel: &CancellationToken) -> Result<AgentRetirement, Error> {
         let rooms: Vec<String> = self
             .inner
             .config
@@ -233,8 +236,12 @@ impl RetireClient {
         }
         self.roots
             .push(reqwest::Certificate::from_pem(pem).map_err(|_| Error::Config)?);
-        self.http =
-            Http::for_host(&self.base, Some(&self.authorization), &self.limits, &self.roots)?;
+        self.http = Http::for_host(
+            &self.base,
+            Some(&self.authorization),
+            &self.limits,
+            &self.roots,
+        )?;
         Ok(self)
     }
 

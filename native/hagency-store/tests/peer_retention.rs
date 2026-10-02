@@ -915,7 +915,8 @@ fn native_retained_peer_corpus_migration_head_is_current() {
         // the columns and fails on the duplicate. Rebuild the 024 shape
         // first (the ceiling_alerts.rs:749 pattern) so 025 adds the columns
         // to a bare 024 table and 026/027 replay as no-ops.
-        sql.execute_batch("DROP TABLE ceiling_alerts; DROP TABLE IF EXISTS room_trust;").unwrap();
+        sql.execute_batch("DROP TABLE ceiling_alerts; DROP TABLE IF EXISTS room_trust;")
+            .unwrap();
         sql.execute_batch(include_str!("../src/migrations/024-ceiling-alerts.sql"))
             .unwrap();
         // 032's ADD COLUMN is not replay-idempotent: the rewind replays it

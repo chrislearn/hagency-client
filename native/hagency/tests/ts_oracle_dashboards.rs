@@ -63,7 +63,8 @@ async fn ts_oracle_dashboard_report_is_the_exact_client_contract() {
         .collect();
     assert_eq!(keys, REPORT_KEYS);
     assert_eq!(
-        value["engagement_id"], json!(f.engagement),
+        value["engagement_id"],
+        json!(f.engagement),
         "the report describes the engagement that was read"
     );
     assert_eq!(value["at_ms"], json!(2000));
@@ -86,7 +87,11 @@ async fn ts_oracle_dashboard_report_is_the_exact_client_contract() {
             "ceiling.{field} is an integer or null, never NaN"
         );
     }
-    assert_eq!(ceiling["tokens_drawn"], json!(100), "the reserved commitment");
+    assert_eq!(
+        ceiling["tokens_drawn"],
+        json!(100),
+        "the reserved commitment"
+    );
     for field in [
         "sources",
         "latest_incomplete_sources",
@@ -128,7 +133,10 @@ async fn ts_oracle_dashboard_unknown_state_is_refused_not_defaulted() {
         json!(null),
         "nothing measured is null, not a zero response"
     );
-    assert_eq!(value["summary"]["known_high_water_lower_bound"], json!(null));
+    assert_eq!(
+        value["summary"]["known_high_water_lower_bound"],
+        json!(null)
+    );
     assert!(value["daily"].is_null() && value["monthly"].is_null());
     f.close().await;
 }

@@ -212,8 +212,7 @@ impl Fixture {
         db.register_workspace("root_work").unwrap();
         drop(db);
         let fake = matrix::Fake::start(true).await;
-        let mut peer =
-            Peer::new(application_service, media, fake.endpoint.clone(), count).await;
+        let mut peer = Peer::new(application_service, media, fake.endpoint.clone(), count).await;
         peer.provision_targets = !paced_startup;
         let reserve = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = reserve.local_addr().unwrap();
@@ -982,7 +981,10 @@ impl Agent {
         {"type":"m.room.create","state_key":"","sender":self.user,"content":{"creator":self.user,"m.federate":false}},
         {"type":"m.room.history_visibility","state_key":"","content":{"history_visibility":"invited"}}]);
         if self.owner_invited {
-            state.as_array_mut().unwrap().push(member(OWNER, if self.owner {"join"} else {"invite"}));
+            state
+                .as_array_mut()
+                .unwrap()
+                .push(member(OWNER, if self.owner { "join" } else { "invite" }));
         }
         state
     }
@@ -1475,14 +1477,24 @@ impl Peer {
                 }
             } else if path.ends_with("/createRoom") {
                 assert!(!agent.created);
-                assert_eq!(body["invite"], json!([]), "ADR-184: the DM is created agent-only");
+                assert_eq!(
+                    body["invite"],
+                    json!([]),
+                    "ADR-184: the DM is created agent-only"
+                );
                 agent.created = true;
                 agent.room_posts += 1;
                 (200, json!({"room_id":agent.dm}))
-            } else if path.ends_with("/invite") && request.target.contains(&format!("fleet_dm_{index}")) {
+            } else if path.ends_with("/invite")
+                && request.target.contains(&format!("fleet_dm_{index}"))
+            {
                 assert!(agent.created && agent.joined && !agent.owner_invited);
                 assert!(
-                    agent.crypto.writes.iter().any(|(t, _)| t.ends_with("/keys/device_signing/upload"))
+                    agent
+                        .crypto
+                        .writes
+                        .iter()
+                        .any(|(t, _)| t.ends_with("/keys/device_signing/upload"))
                         && agent.crypto.claims >= 1,
                     "ADR-184: the owner is invited only after the agent's keys are published"
                 );

@@ -19,8 +19,8 @@
 //! row and no project, room, resource or token field.
 use super::{Error, Session, body, console, failed, recheck, usage::query};
 use crate::{refusal, refusal_explained, resources::domain};
-use hagency_store::DomainStore;
 use hagency_core::project::{Engagement, EngagementState, identifier};
+use hagency_store::DomainStore;
 use salvo::prelude::*;
 use serde::Deserialize;
 
@@ -36,13 +36,9 @@ pub(super) fn router() -> Router {
 
 fn verdict_store_error(res: &mut Response, error: hagency_store::Error) {
     match error {
-        hagency_store::Error::State => {
-            refusal(res, StatusCode::CONFLICT, "engagement_not_pending")
-        }
+        hagency_store::Error::State => refusal(res, StatusCode::CONFLICT, "engagement_not_pending"),
         hagency_store::Error::NotFound => refusal(res, StatusCode::NOT_FOUND, "not_found"),
-        hagency_store::Error::Conflict => {
-            refusal(res, StatusCode::CONFLICT, "decision_conflict")
-        }
+        hagency_store::Error::Conflict => refusal(res, StatusCode::CONFLICT, "decision_conflict"),
         hagency_store::Error::Generation => {
             refusal(res, StatusCode::CONFLICT, "registration_generation")
         }
@@ -350,10 +346,13 @@ async fn candidates(req: &mut Request, depot: &mut Depot, res: &mut Response) {
 /// budget guards bind unchanged.
 #[handler]
 async fn approve(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    let Some((id, ApproveCommand {
-        command_id: command,
-        allocated_tokens,
-    })) = decision_body::<ApproveCommand>(req, depot, res).await
+    let Some((
+        id,
+        ApproveCommand {
+            command_id: command,
+            allocated_tokens,
+        },
+    )) = decision_body::<ApproveCommand>(req, depot, res).await
     else {
         return;
     };
@@ -391,10 +390,7 @@ async fn approve(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         }
     };
     let evidence = match store
-        .provisioning_request_evidence(
-            registration.fleet_id.clone(),
-            engagement.request_id.clone(),
-        )
+        .provisioning_request_evidence(registration.fleet_id.clone(), engagement.request_id.clone())
         .await
     {
         Ok(Some((context, stored, _))) => (context, stored),
@@ -416,7 +412,8 @@ async fn approve(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         .ok()
         .and_then(|d| u64::try_from(d.as_millis()).ok())
         .unwrap_or_default();
-    let Some(verified) = rebuild_verified(&registration, evidence, engagement.request_id.clone(), now)
+    let Some(verified) =
+        rebuild_verified(&registration, evidence, engagement.request_id.clone(), now)
     else {
         verdict_store_error(
             res,
@@ -455,10 +452,13 @@ async fn approve(req: &mut Request, depot: &mut Depot, res: &mut Response) {
 /// answer is the bounded decision receipt, like every engagement mutation.
 #[handler]
 async fn allocation(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    let Some((id, AllocationCommand {
-        command_id: command,
-        add_tokens,
-    })) = decision_body::<AllocationCommand>(req, depot, res).await
+    let Some((
+        id,
+        AllocationCommand {
+            command_id: command,
+            add_tokens,
+        },
+    )) = decision_body::<AllocationCommand>(req, depot, res).await
     else {
         return;
     };
@@ -611,7 +611,13 @@ async fn audit(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         // falls back to the default, never a failure state TS did not have;
         // the store clamps the upper bound to AUDIT_LIMIT (2000).
         Some(v) if v.bytes().all(|c| c.is_ascii_digit()) => match v.parse::<usize>() {
-            Ok(value) => if value == 0 { 200 } else { value },
+            Ok(value) => {
+                if value == 0 {
+                    200
+                } else {
+                    value
+                }
+            }
             Err(_) => {
                 failed(res, Error::Invalid);
                 return;

@@ -43,7 +43,17 @@ fn offers_list_every_role_with_ts_default_shape() {
     assert!(!catalog); // no published resource qualifies yet
 
     // A set offer (PUT /api/offers/:role) stores caps and echoes them back.
-    let saved = db.set_offer(r, Some(3), Some(400_000), Some(20_000), true, "operator", 1000).unwrap();
+    let saved = db
+        .set_offer(
+            r,
+            Some(3),
+            Some(400_000),
+            Some(20_000),
+            true,
+            "operator",
+            1000,
+        )
+        .unwrap();
     assert_eq!(saved.count, Some(3));
     assert_eq!(saved.budget_cap_per_engagement, Some(400_000));
     assert_eq!(saved.rate_cap, Some(20_000));
@@ -57,12 +67,31 @@ fn offers_list_every_role_with_ts_default_shape() {
     assert_eq!(row["updatedAt"], json!(1000));
 
     // posInt: zero and 2^53 are refused, not stored (TS floor-then-validate).
-    assert!(db.set_offer(r, Some(0), None, None, true, "operator", 1000).is_err());
-    assert!(db.set_offer(r, Some(9_007_199_254_740_992), None, None, true, "operator", 1000).is_err());
+    assert!(
+        db.set_offer(r, Some(0), None, None, true, "operator", 1000)
+            .is_err()
+    );
+    assert!(
+        db.set_offer(
+            r,
+            Some(9_007_199_254_740_992),
+            None,
+            None,
+            true,
+            "operator",
+            1000
+        )
+        .is_err()
+    );
     // Unknown role is refused (TS: unknown role -> 400).
-    assert!(db.set_offer("not_a_role", None, None, None, true, "operator", 1000).is_err());
+    assert!(
+        db.set_offer("not_a_role", None, None, None, true, "operator", 1000)
+            .is_err()
+    );
     // Caps are cleared by null on a later set (TS: null clears).
-    let saved = db.set_offer(r, None, None, None, true, "operator", 2000).unwrap();
+    let saved = db
+        .set_offer(r, None, None, None, true, "operator", 2000)
+        .unwrap();
     assert_eq!(saved.count, None);
     assert_eq!(saved.budget_cap_per_engagement, None);
     assert_eq!(saved.rate_cap, None);
@@ -73,18 +102,32 @@ fn whitelist_adds_removes_and_reports_still_active() {
     let (_dir, mut db) = setup();
     // TS addToWhitelist: bad room id refused; good one stored with trimmed name.
     assert!(db.add_whitelist("not a room", None, None, 1000).is_err());
-    assert!(db.add_whitelist("#room:example.test", None, None, 1000).is_err());
-    db.add_whitelist("!room:example.test", Some("  My Project  "), None, 1000).unwrap();
+    assert!(
+        db.add_whitelist("#room:example.test", None, None, 1000)
+            .is_err()
+    );
+    db.add_whitelist("!room:example.test", Some("  My Project  "), None, 1000)
+        .unwrap();
     let entries = db.whitelist().unwrap();
-    assert!(entries.iter().any(|e| e.project_room_id == "!room:example.test"));
-    let entry = entries.iter().find(|e| e.project_room_id == "!room:example.test").unwrap();
+    assert!(
+        entries
+            .iter()
+            .any(|e| e.project_room_id == "!room:example.test")
+    );
+    let entry = entries
+        .iter()
+        .find(|e| e.project_room_id == "!room:example.test")
+        .unwrap();
     assert_eq!(entry.display_name.as_deref(), Some("My Project"));
     assert_eq!(entry.added_by, "operator");
     assert!(db.is_whitelisted("!room:example.test").unwrap());
 
     // TS removeFromWhitelist: absent room is NotFound; removal returns the
     // active engagement ids for the room (future requests only).
-    assert!(matches!(db.remove_whitelist("!missing:example.test"), Err(Error::NotFound)));
+    assert!(matches!(
+        db.remove_whitelist("!missing:example.test"),
+        Err(Error::NotFound)
+    ));
     let (_, still) = db.remove_whitelist("!room:example.test").unwrap();
     assert!(still.is_empty()); // no engagements for this room yet
     assert!(!db.is_whitelisted("!room:example.test").unwrap());
@@ -109,7 +152,8 @@ fn admission_routing_records_ts_verdicts() {
 
     // Whitelisted but unpublished offer: overOffer (TS: no offer means not on
     // offer — never unlimited).
-    db.add_whitelist("!project:example.test", None, None, 1000).unwrap();
+    db.add_whitelist("!project:example.test", None, None, 1000)
+        .unwrap();
     let mut req = request("route_two", "Router2", &pool, 100);
     req.role = r.to_owned();
     let verified = proof(&req);
@@ -119,7 +163,8 @@ fn admission_routing_records_ts_verdicts() {
 
     // Published with a rate cap and an unstated rate: overOffer (an unstated
     // rate is unknown, not zero — TS comment at engagement-store.js:200-209).
-    db.set_offer(r, None, None, Some(20_000), true, "operator", 1000).unwrap();
+    db.set_offer(r, None, None, Some(20_000), true, "operator", 1000)
+        .unwrap();
     let mut req = request("route_three", "Router3", &pool, 100);
     req.role = r.to_owned();
     let verified = proof(&req);
@@ -137,7 +182,8 @@ fn admission_routing_records_ts_verdicts() {
     assert!(e.auto_joined);
 
     // A count cap of 1 with one active engagement for the role: overOffer.
-    db.set_offer(r, Some(1), None, Some(20_000), true, "operator", 1000).unwrap();
+    db.set_offer(r, Some(1), None, Some(20_000), true, "operator", 1000)
+        .unwrap();
     let mut req = request("route_five", "Router5", &pool, 100);
     req.role = r.to_owned();
     req.rate_per_day = Some(hagency_core::allocation::Tokens::try_from(10_000u64).unwrap());
@@ -157,13 +203,27 @@ fn resource_delete_guards_and_cascade() {
     db.put_resource(&pool).unwrap();
     let id = pool.id();
     // Agent definitions block delete (TS 409 'Remove unused Agent definitions...').
-    db.edit_agent_definition(&id, None, Some(&json!({"name":"helper","role":role()})), 1000).unwrap();
+    db.edit_agent_definition(
+        &id,
+        None,
+        Some(&json!({"name":"helper","role":role()})),
+        1000,
+    )
+    .unwrap();
     assert!(matches!(db.delete_resource(&id), Err(Error::Conflict)));
-    db.edit_agent_definition(&id, Some("rad_00000000000000000000000000000001"), None, 1000).ok();
+    db.edit_agent_definition(
+        &id,
+        Some("rad_00000000000000000000000000000001"),
+        None,
+        1000,
+    )
+    .ok();
     // Wait: deleting by the fake id is NotFound; delete the real one instead.
     let defs = db.agent_definitions(&id).unwrap();
     let real_id = defs[0]["id"].as_str().unwrap();
-    let removed = db.edit_agent_definition(&id, Some(real_id), None, 1000).unwrap();
+    let removed = db
+        .edit_agent_definition(&id, Some(real_id), None, 1000)
+        .unwrap();
     // TS edit() delete returns next.find(id) || next.at(-1) || null: with no
     // rows left, that is null.
     assert!(removed.is_none());
@@ -182,9 +242,18 @@ fn agent_definitions_ts_rules() {
     let r = role();
 
     // Name rules (TS resource-agent-definitions.js:24-26).
-    assert!(db.edit_agent_definition(&id, None, Some(&json!({"name":"Bad","role":r})), 1000).is_err());
-    assert!(db.edit_agent_definition(&id, None, Some(&json!({"name":"1bad","role":r})), 1000).is_err());
-    let created = db.edit_agent_definition(&id, None, Some(&json!({"name":"good_one","role":r})), 1000).unwrap().unwrap();
+    assert!(
+        db.edit_agent_definition(&id, None, Some(&json!({"name":"Bad","role":r})), 1000)
+            .is_err()
+    );
+    assert!(
+        db.edit_agent_definition(&id, None, Some(&json!({"name":"1bad","role":r})), 1000)
+            .is_err()
+    );
+    let created = db
+        .edit_agent_definition(&id, None, Some(&json!({"name":"good_one","role":r})), 1000)
+        .unwrap()
+        .unwrap();
     assert!(created.id.starts_with("rad_"));
     assert_eq!(created.name, "good_one");
     assert_eq!(created.role, r);
@@ -201,11 +270,24 @@ fn agent_definitions_ts_rules() {
     ));
 
     // Enabled must be a boolean.
-    assert!(db.edit_agent_definition(&id, None, Some(&json!({"name":"other","role":r,"enabled":"yes"})), 2000).is_err());
+    assert!(
+        db.edit_agent_definition(
+            &id,
+            None,
+            Some(&json!({"name":"other","role":r,"enabled":"yes"})),
+            2000
+        )
+        .is_err()
+    );
 
     // Role the resource cannot supply is refused (TS 'cannot supply').
     assert!(matches!(
-        db.edit_agent_definition(&id, None, Some(&json!({"name":"other","role":"reviewer_but_not_supplying"})), 2000),
+        db.edit_agent_definition(
+            &id,
+            None,
+            Some(&json!({"name":"other","role":"reviewer_but_not_supplying"})),
+            2000
+        ),
         Err(Error::Unqualified)
     ));
 
@@ -216,23 +298,36 @@ fn agent_definitions_ts_rules() {
     assert_eq!(rows[0]["activeEngagements"], json!(0));
 
     // Update keeps id and created_at (TS edit keeps both).
-    let updated = db.edit_agent_definition(
-        &id,
-        Some(&created.id),
-        Some(&json!({"name":"good_two","role":r})),
-        3000,
-    ).unwrap().unwrap();
+    let updated = db
+        .edit_agent_definition(
+            &id,
+            Some(&created.id),
+            Some(&json!({"name":"good_two","role":r})),
+            3000,
+        )
+        .unwrap()
+        .unwrap();
     assert_eq!(updated.id, created.id);
     assert_eq!(updated.name, "good_two");
     assert_eq!(updated.created_at, 1000);
     // Unknown definition id is NotFound.
     assert!(matches!(
-        db.edit_agent_definition(&id, Some("rad_missing"), Some(&json!({"name":"x_y","role":r})), 3000),
+        db.edit_agent_definition(
+            &id,
+            Some("rad_missing"),
+            Some(&json!({"name":"x_y","role":r})),
+            3000
+        ),
         Err(Error::NotFound)
     ));
     // Unknown resource is NotFound.
     assert!(matches!(
-        db.edit_agent_definition("res_missing", None, Some(&json!({"name":"x_y","role":r})), 3000),
+        db.edit_agent_definition(
+            "res_missing",
+            None,
+            Some(&json!({"name":"x_y","role":r})),
+            3000
+        ),
         Err(Error::NotFound)
     ));
 }
@@ -241,15 +336,23 @@ fn agent_definitions_ts_rules() {
 fn seat_delete_requires_declaration() {
     let (_dir, mut db) = setup();
     // A seat row with NO declaration: TS DELETE returns 404.
-    db.put_seat(&Seat { id: "seat_bare".into(), declaration: None }).unwrap();
+    db.put_seat(&Seat {
+        id: "seat_bare".into(),
+        declaration: None,
+    })
+    .unwrap();
     assert!(matches!(db.delete_seat("seat_bare"), Err(Error::NotFound)));
     // A declared seat deletes.
     let declared = serde_json::from_value::<Seat>(json!({
         "id":"seat_declared",
         "declaration":{"tokens":1000,"period":"monthly"}
-    })).unwrap();
+    }))
+    .unwrap();
     db.put_seat(&declared).unwrap();
     db.delete_seat("seat_declared").unwrap();
     // Unknown seat: 404 (TS: no declaration for that seat).
-    assert!(matches!(db.delete_seat("seat_unknown"), Err(Error::NotFound)));
+    assert!(matches!(
+        db.delete_seat("seat_unknown"),
+        Err(Error::NotFound)
+    ));
 }
