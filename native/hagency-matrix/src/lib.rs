@@ -45,7 +45,7 @@ pub use media_upload::{
     MediaUploadError, MediaUploadLimits, MediaUploader, UploadAttempt, UploadState,
 };
 pub use outgoing::{OutgoingState, OutgoingSummary};
-pub use provisioning::{ProvisionedAgent, TokenProvisioningHost};
+pub use provisioning::{PassReport, ProvisionedAgent, TokenProvisioningHost};
 pub use receive::{ReceiveError, ReceivedAttachment, ReceivedScope};
 pub use retire::{AgentRetirement, RetireClient, RetireVerdict};
 pub use token_provision::{

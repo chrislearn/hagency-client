@@ -16,6 +16,15 @@ use std::{
 const MAX_JOBS: usize = 16;
 mod factory;
 pub use factory::ProvisionedAgent;
+/// What one provisioning pass did, per engagement (ADR-182: one
+/// engagement's refusal never stops the others).
+#[derive(Debug, Default)]
+pub struct PassReport {
+    pub started: Vec<String>,
+    pub awaiting: Vec<String>,
+    pub failed: Vec<(String, Error)>,
+    pub retired: usize,
+}
 struct Job {
     factory: Option<Arc<factory::Custody>>,
     home: Mutex<Option<Arc<hagency_store::agent_home::ManagedAgentHome>>>,
@@ -437,56 +446,45 @@ impl TokenProvisioningHost {
             })
             .collect()
     }
-    /// Resume every provision waiting for its owner: one look each. Still
-    /// waiting is counted, not reported; any other refusal is the provision's
-    /// own and is returned as it would have been inline.
-    pub(crate) async fn resume_awaiting_owners(
+    /// ADR-187 §A.2 / ADR-182: one provisioning pass, every engagement on its
+    /// own. Provisions waiting for their owner get one look, console-approved
+    /// provisions start, and never-attached retirements settle. A refusal is
+    /// that engagement's alone: it is collected in the report and the pass
+    /// goes on to the next one. Only a store read the pass itself needs fails
+    /// the pass.
+    pub async fn provision_pass(
         &self,
         domain: &DomainStore,
         cancel: &CancellationToken,
-    ) -> Result<usize, Error> {
+    ) -> Result<PassReport, Error> {
+        let mut report = PassReport::default();
         let waiting: Vec<String> = self
             .awaiting_owner_engagements()
             .into_iter()
             .map(|(engagement, _)| engagement)
             .collect();
-        let mut still = 0;
-        for engagement in waiting {
-            match self
-                .account(domain, &self.registration, &engagement, cancel)
-                .await
-            {
-                Ok(()) => {}
-                Err(Error::AwaitingOwner) => still += 1,
-                Err(error) => return Err(error),
-            }
-        }
-        Ok(still)
-    }
-    /// Provision every engagement the operator approved outside Matrix (the
-    /// console verdict reserves and queues the effect but runs no account
-    /// step). One claim each, the same `account` the Matrix verdict runs inline;
-    /// an owner not yet joined is the ordinary non-terminal wait.
-    pub(crate) async fn resume_pending_provisions(
-        &self,
-        domain: &DomainStore,
-        cancel: &CancellationToken,
-    ) -> Result<usize, Error> {
         let pending = domain
             .pending_provisions(self.registration.fleet_id.clone())
             .await
             .map_err(|_| Error::Storage)?;
-        let mut started = 0;
-        for engagement in pending {
-            match self
-                .account(domain, &self.registration, &engagement, cancel)
-                .await
+        for engagement in waiting.into_iter().chain(pending) {
+            if cancel.is_cancelled() {
+                return Err(Error::Cancelled);
+            }
+            if report.started.contains(&engagement)
+                || report.awaiting.contains(&engagement)
+                || report.failed.iter().any(|(e, _)| e == &engagement)
             {
-                Ok(()) | Err(Error::AwaitingOwner) => started += 1,
-                Err(error) => return Err(error),
+                continue;
+            }
+            match self.account(domain, &self.registration, &engagement, cancel).await {
+                Ok(()) => report.started.push(engagement),
+                Err(Error::AwaitingOwner) => report.awaiting.push(engagement),
+                Err(error) => report.failed.push((engagement, error)),
             }
         }
-        Ok(started)
+        report.retired = self.settle_unattached_retirements(domain).await?;
+        Ok(report)
     }
     /// Settle the retirement of every revoked engagement whose agent never got a
     /// credential. The `retire` effect is otherwise run only by the agent's own

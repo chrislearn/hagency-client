@@ -589,13 +589,13 @@ impl Inner {
         // turn. The wait itself has no deadline and is not an error; any
         // other refusal is the provision's own, as it would have been inline.
         if let Some(host) = &self.config.provisioning {
-            host.resume_awaiting_owners(&self.domain, cancel).await?;
-            // A verdict given in the console reserved the engagement without a
-            // Matrix approval event: start its provisioning here.
-            host.resume_pending_provisions(&self.domain, cancel).await?;
-            // A revoked agent that never got a credential has no worker to
-            // retire it; its cleanup is settled here.
-            host.settle_unattached_retirements(&self.domain).await?;
+            // Waiting owners, console-approved provisions and never-attached
+            // retirements, each engagement on its own (ADR-182): one
+            // engagement's refusal is logged and never fails this intake.
+            let report = host.provision_pass(&self.domain, cancel).await?;
+            for (engagement, error) in &report.failed {
+                eprintln!("provision of {engagement} refused this pass: {error:?}");
+            }
         }
         // Capture current targets before acquiring a new remote response. A resumed
         // handoff uses only its original journal targets, regardless of a new plan.
