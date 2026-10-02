@@ -327,7 +327,13 @@ pub(crate) async fn owner_approval_device(
 /// A rig-built instance's approval device, when its configuration named
 /// `owner`: adopted with the original label, room, token, key and store.
 fn legacy_approval(state: &Path, owner: &str, bot: &str) -> Option<OwnerApprovalDevice> {
-    let driver: Value = serde_json::from_slice(&private::read_secret(&state.join("agent-driver.json")).ok()?).ok()?;
+    // The driver configuration holds no secret and is larger than a token
+    // file: an ordinary bounded read, not `read_secret` (512 bytes).
+    let path = state.join("agent-driver.json");
+    if std::fs::metadata(&path).ok()?.len() > 64 * 1024 {
+        return None;
+    }
+    let driver: Value = serde_json::from_slice(&std::fs::read(&path).ok()?).ok()?;
     let approval = driver.get("approval")?;
     if text(approval, "sender_mxid")? != bot {
         return None;
@@ -606,10 +612,11 @@ mod tests {
         let dir = state(&origin);
         private::replace(&dir.path().join("approval.identity.json"),
             json!({"user_id": format!("@{FLEET}_approval:example.test"), "device_id": "RIGAPP"}).to_string().as_bytes()).unwrap();
+        // A real rig configuration is kilobytes, past a token file's bound.
         private::replace(&dir.path().join("agent-driver.json"), json!({"approval": {
             "sender_mxid": format!("@{FLEET}_approval:example.test"), "engagement_id": "en_coordinator",
             "rooms": [{"id": "!approval:example.test", "generation": 1, "privacy": {"kind": "direct", "human_mxid": "@owner:example.test"}}]
-        }}).to_string().as_bytes()).unwrap();
+        }, "padding": "x".repeat(3000)}).to_string().as_bytes()).unwrap();
         let owner = owner_approval_device(dir.path(), FLEET, "example.test", "@owner:example.test", "!approval:example.test")
             .await
             .unwrap();
