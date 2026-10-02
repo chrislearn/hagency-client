@@ -264,7 +264,9 @@ impl ManagedAgentHome {
 }
 impl ManagedHomePlan {
     pub fn new(root: PathBuf, projects: Vec<HomeProject>, binary: PathBuf) -> Result<Self, Error> {
-        if projects.is_empty() || projects.len() > 16 {
+        // An imported fleet's projects appear at runtime (ADR-187): a plan may
+        // map none, and an unmapped project gets a home with no source copy.
+        if projects.len() > 16 {
             return Err(Error::Capacity);
         }
         let root = Arc::new(Root::open(root, true)?);

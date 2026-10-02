@@ -136,9 +136,16 @@ struct LiveInner {
     /// that enables the transport, and nothing connects now.
     enabled: bool,
     owner: tokio::sync::Mutex<Option<Owner>>,
+    /// ADR-187: an imported fleet's service (agents, approvals) with no
+    /// coordinator; absent on a coordinator install, which runs its own.
+    fleet: Option<FleetMode>,
     /// Shutdown wins over a concurrent import: once set, nothing starts.
     closed: std::sync::atomic::AtomicBool,
     cancel: Mutex<Option<CancellationToken>>,
+}
+struct FleetMode {
+    address: std::net::SocketAddr,
+    service: tokio::sync::Mutex<Option<super::fleet_service::FleetService>>,
 }
 /// What an import reports: the saved fleet's public facts and whether the
 /// transport was started. Never a token.
@@ -178,15 +185,45 @@ impl Live {
             status,
             enabled,
             owner: tokio::sync::Mutex::new(None),
+            fleet: None,
             closed: std::sync::atomic::AtomicBool::new(false),
             cancel: Mutex::new(None),
         }))
+    }
+    /// ADR-187: this service also runs an imported fleet's agents and
+    /// approvals itself (no coordinator install). Set before sharing.
+    pub(crate) fn with_fleet_service(self, address: std::net::SocketAddr) -> Self {
+        let mut inner = Arc::try_unwrap(self.0).unwrap_or_else(|_| panic!("set before sharing"));
+        inner.fleet = Some(FleetMode {
+            address,
+            service: tokio::sync::Mutex::new(None),
+        });
+        Self(Arc::new(inner))
+    }
+    /// The fleet service's stage, when one runs.
+    pub(crate) async fn fleet_stage(&self) -> Option<&'static str> {
+        let fleet = self.0.fleet.as_ref()?;
+        fleet.service.lock().await.as_ref().map(|s| s.stage.get())
+    }
+    async fn start_fleet(&self, registration: &Registration) {
+        let Some(fleet) = &self.0.fleet else { return };
+        let mut service = fleet.service.lock().await;
+        if service.is_none() && !self.0.closed.load(std::sync::atomic::Ordering::Acquire) {
+            *service = Some(super::fleet_service::FleetService::start(
+                self.0.state.clone(),
+                fleet.address,
+                self.0.domain.clone(),
+                registration.fleet_id.clone(),
+                registration.server_name.clone(),
+            ));
+        }
     }
     pub(crate) fn status(&self) -> &StatusHandle {
         &self.0.status
     }
     /// Replace the running transport (if any) with one built from `prepared`.
     async fn replace(&self, prepared: Prepared) -> Result<(), Failure> {
+        let registration = prepared.registration.clone();
         let mut owner = self.0.owner.lock().await;
         if let Some(mut old) = owner.take() {
             // A previous transport that does not acknowledge its close keeps
@@ -205,6 +242,11 @@ impl Live {
         );
         *self.0.cancel.lock().unwrap_or_else(|e| e.into_inner()) = Some(started.cancel.clone());
         *owner = Some(started);
+        drop(owner);
+        // A re-import of the same fleet keeps the running fleet service.
+        if let Ok(registration) = self.0.domain.provisioning_registration(registration.fleet_id.clone()).await {
+            self.start_fleet(&registration).await;
+        }
         Ok(())
     }
     pub(super) async fn start(&self, prepared: Prepared) -> Result<(), Failure> {
@@ -288,12 +330,24 @@ impl Live {
     }
     pub(super) fn cancel(&self) {
         self.0.closed.store(true, std::sync::atomic::Ordering::Release);
+        if let Some(fleet) = &self.0.fleet
+            && let Ok(service) = fleet.service.try_lock()
+            && let Some(service) = service.as_ref()
+        {
+            service.cancel();
+        }
         if let Some(cancel) = &*self.0.cancel.lock().unwrap_or_else(|e| e.into_inner()) {
             cancel.cancel();
         }
     }
     pub(super) async fn close(&self) -> Result<(), Failure> {
         self.cancel();
+        // The fleet's agents and approvals close before the transport.
+        if let Some(fleet) = &self.0.fleet
+            && let Some(service) = fleet.service.lock().await.take()
+        {
+            service.close().await;
+        }
         match self.0.owner.lock().await.as_mut() {
             Some(owner) => owner.close().await,
             None => Ok(()),

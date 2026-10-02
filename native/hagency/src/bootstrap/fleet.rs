@@ -178,6 +178,9 @@ pub(crate) enum Provider {
     Fleet {
         host: Arc<hagency_matrix::TokenProvisioningHost>,
         sweep: Arc<hagency_matrix::MembershipSweep>,
+        /// ADR-187 amendment: each owner's approval pump; an agent's approval
+        /// requests go to its owner's.
+        owner_notices: Arc<Mutex<BTreeMap<String, tokio::sync::mpsc::Sender<hagency_execution::ApprovalRequests>>>>,
     },
 }
 impl Provider {
@@ -331,6 +334,24 @@ impl Service {
             return Err(Failure::Registration);
         }
         let engagement = agent.session().engagement_id.clone();
+        // An imported fleet's agent uses its owner's approval pump.
+        let notices = match &self.provider {
+            Provider::Coordinator(_) => notices,
+            Provider::Fleet { owner_notices, .. } => {
+                let owner = self
+                    .domain
+                    .engagement_owner(engagement.clone())
+                    .await
+                    .map_err(|_| Failure::OutcomeUnknown)?
+                    .ok_or(Failure::Registration)?;
+                owner_notices
+                    .lock()
+                    .map_err(|_| Failure::OutcomeUnknown)?
+                    .get(&owner)
+                    .cloned()
+                    .ok_or(Failure::Registration)?
+            }
+        };
         let shared = Shared {
             domain: self.domain.clone(),
             collector: agent.shared_collector(),

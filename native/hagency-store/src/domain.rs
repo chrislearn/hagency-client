@@ -2409,6 +2409,19 @@ impl DomainRepository {
             .optional()?
             .flatten())
     }
+    /// ADR-187: the owner and their private approval room, as the engagement's
+    /// request named them (read-only).
+    pub fn engagement_owner_room(&self, id: &str) -> Result<Option<(String, String)>, Error> {
+        Ok(self
+            .db
+            .query_row(
+                "SELECT json_extract(context,'$.ownerMxid'),json_extract(context,'$.ownerDmRoomId') FROM engagements WHERE id=?1",
+                [id],
+                |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?)),
+            )
+            .optional()?
+            .and_then(|(owner, room)| owner.zip(room)))
+    }
     /// ADR-187 §C: an owner's pinned anchor, if any (read-only).
     pub fn owner_anchor(&self, owner: &str) -> Result<Option<owner_anchors::OwnerAnchor>, Error> {
         owner_anchors::get(&self.db, owner)
