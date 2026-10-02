@@ -477,6 +477,44 @@ async fn native_provisioning_inline_rooms_enrollment() {
     super::account_enrollment::decrypt_in_room(&account, &enrolled, &mut server.peer, DM).await;
     finish(f, fake, c).await;
 }
+/// ADR-187 §C: an imported fleet enrolls the agent with its owner's anchor
+/// pinned in the store, exactly as a configured anchor would.
+#[tokio::test]
+async fn native_provisioning_enrolls_with_the_pinned_owner_anchor() {
+    let mut server = Server::new().await;
+    let (f, mut fake, c) = ready_inline_plan(Some((REP_TOKEN, vec![]))).await;
+    f.store
+        .observe_owner_anchor(OWNER.into(), server.peer.anchor(), 1)
+        .await
+        .unwrap();
+    let result = drive(&f, &mut fake, &c, &mut server, true, |_, _| {})
+        .await
+        .unwrap();
+    assert_eq!(result.admitted, 2);
+    assert_eq!(server.posts, 4);
+    let account = observed_account(&f, &c);
+    let enrolled = account.observed_enrollment().unwrap().unwrap();
+    let owner = enrolled.inner.owner.lock().await;
+    assert!(matches!(
+        owner.as_ref().unwrap().enrollment(Command::Status).await,
+        Ok(View::Complete)
+    ));
+    drop(owner);
+    finish(f, fake, c).await;
+}
+/// ADR-187 §C.3: with no anchor pinned for the owner the provision waits, and
+/// no room is created while it waits.
+#[tokio::test]
+async fn native_provisioning_waits_for_an_unpinned_owner_anchor() {
+    let mut server = Server::new().await;
+    let (f, mut fake, c) = ready_inline_plan(Some((REP_TOKEN, vec![]))).await;
+    let _ = drive(&f, &mut fake, &c, &mut server, true, |_, _| {}).await;
+    assert_eq!(server.posts, 0, "no room is created before the owner's anchor is pinned");
+    assert!(!room_root(&f).join("complete").exists());
+    c.close().await.unwrap();
+    f.store.shutdown().await.unwrap();
+    fake.close().await;
+}
 #[tokio::test]
 async fn native_provisioning_inline_rooms_refusals() {
     for variant in 0..9 {

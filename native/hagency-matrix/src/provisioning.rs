@@ -63,7 +63,22 @@ pub struct TokenProvisioningHost {
 }
 struct RoomPlan {
     representative: String,
-    anchors: Vec<(String, String)>,
+    anchors: AnchorSource,
+}
+/// Where an agent's owner anchor comes from (ADR-187 §C).
+enum AnchorSource {
+    /// A coordinator install's configured list (ADR-102 as written).
+    Static(Vec<(String, String)>),
+    /// An imported fleet: the owner's anchor pinned in the store on first use.
+    Pinned,
+}
+/// Why the anchors are needed: a first enrollment waits for an unpinned or
+/// disputed owner key; a re-attach keeps the pinned key and lets the
+/// enrollment's own key check catch a change.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AnchorUse {
+    Enroll,
+    Reattach,
 }
 impl TokenProvisioningHost {
     pub fn new(
@@ -176,9 +191,65 @@ impl TokenProvisioningHost {
         )?;
         self.rooms = Some(RoomPlan {
             representative: representative_token.to_owned(),
-            anchors,
+            anchors: AnchorSource::Static(anchors),
         });
         Ok(self)
+    }
+    /// ADR-187 §C: an imported fleet's agent rooms, enrolled with each
+    /// owner's anchor pinned on first use. The fleet service pins the owner's
+    /// key before a pass; until it is pinned the provision waits.
+    pub fn with_agent_rooms_pinned_anchors(
+        mut self,
+        representative_token: &str,
+    ) -> Result<Self, Error> {
+        if self.rooms.is_some()
+            || !(16..=4096).contains(&representative_token.len())
+            || !representative_token
+                .bytes()
+                .all(|b| (33..=126).contains(&b))
+        {
+            return Err(Error::Config);
+        }
+        self.rooms = Some(RoomPlan {
+            representative: representative_token.to_owned(),
+            anchors: AnchorSource::Pinned,
+        });
+        Ok(self)
+    }
+    /// The anchors this engagement's agent enrolls or re-attaches with.
+    pub(crate) async fn anchors_for(
+        &self,
+        domain: &DomainStore,
+        effect: &hagency_store::Effect,
+        purpose: AnchorUse,
+    ) -> Result<Vec<(String, String)>, Error> {
+        let plan = self.rooms.as_ref().ok_or(Error::Config)?;
+        match &plan.anchors {
+            AnchorSource::Static(anchors) => Ok(anchors.clone()),
+            AnchorSource::Pinned => {
+                let owner = effect
+                    .payload
+                    .get("request")
+                    .and_then(|r| r.get("ownerMxid"))
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or(Error::Config)?
+                    .to_owned();
+                let pinned = domain
+                    .owner_anchor(owner.clone())
+                    .await
+                    .map_err(|_| Error::Storage)?;
+                match (pinned, purpose) {
+                    (Some(anchor), AnchorUse::Reattach) => Ok(vec![(owner, anchor.master_key)]),
+                    (Some(anchor), AnchorUse::Enroll) if anchor.mismatch_key.is_none() => {
+                        Ok(vec![(owner, anchor.master_key)])
+                    }
+                    // No key pinned yet, or a disputed one: wait, without a
+                    // deadline, exactly like an owner who has not joined.
+                    (_, AnchorUse::Enroll) => Err(Error::AwaitingOwner),
+                    (None, AnchorUse::Reattach) => Err(Error::Recipients),
+                }
+            }
+        }
     }
     /// Original physical v1 homes, still not runtime fulfillment or Applied.
     pub fn with_managed_homes(
@@ -321,11 +392,14 @@ impl TokenProvisioningHost {
         activated: &mut bool,
     ) -> Result<(), Error> {
         if let Some(plan) = &self.rooms {
+            // The owner's anchor first: no room is created while it is not
+            // pinned (ADR-187 §C.3).
+            let anchors = self.anchors_for(domain, effect, AnchorUse::Enroll).await?;
             account
                 .create_agent_rooms(&plan.representative, cancel)
                 .await?;
             account
-                .enroll_created_rooms(1, self.key, plan.anchors.clone(), cancel)
+                .enroll_created_rooms(1, self.key, anchors, cancel)
                 .await?;
             // ADR-184: the agent's keys are published; only now may the owner
             // arrive and write to it.

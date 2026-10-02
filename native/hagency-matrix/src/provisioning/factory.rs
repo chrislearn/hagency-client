@@ -376,9 +376,9 @@ impl TokenProvisioningHost {
         custody.ready(cancel).await?;
         // GET-only current verification on the original successful SDK job;
         // its Complete ledger prevents any signing upload/session claim replay.
-        let rooms = self.rooms.as_ref().ok_or(Error::Config)?;
+        let anchors = self.anchors_for(domain, effect, super::AnchorUse::Enroll).await?;
         account
-            .enroll_created_rooms(1, self.key, rooms.anchors.clone(), cancel)
+            .enroll_created_rooms(1, self.key, anchors, cancel)
             .await?;
         custody.ready(cancel).await?;
         if cancel.is_cancelled() {
@@ -503,7 +503,7 @@ impl TokenProvisioningHost {
                 &rooms.representative,
                 generation,
                 self.key,
-                rooms.anchors.clone(),
+                self.anchors_for(domain, effect, super::AnchorUse::Reattach).await?,
                 cancel,
             )
             .await?;

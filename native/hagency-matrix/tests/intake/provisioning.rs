@@ -411,8 +411,15 @@ async fn ready_inline_credentials(
     .unwrap()
     .with_root_pem(include_bytes!("../fixtures/ca.pem"))
     .unwrap();
+    // An empty anchor list cannot be a configured plan (the profile refuses
+    // it), so the fixture reads it as ADR-187's pinned mode: each owner's
+    // anchor comes from the store.
     if let Some((token, anchors)) = plan {
-        host = host.with_agent_rooms_enrollment(token, anchors).unwrap();
+        host = if anchors.is_empty() {
+            host.with_agent_rooms_pinned_anchors(token).unwrap()
+        } else {
+            host.with_agent_rooms_enrollment(token, anchors).unwrap()
+        };
     }
     if let Some(home) = home {
         host = host.with_managed_homes(home).unwrap();
