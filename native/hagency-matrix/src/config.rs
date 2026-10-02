@@ -74,6 +74,9 @@ pub struct HostConfig {
     pub(crate) provisioning: Option<std::sync::Arc<crate::TokenProvisioningHost>>,
     pub(crate) enrollment: Option<crate::enrollment::state::Profile>,
     pub(crate) approval: bool,
+    /// ADR-187: an imported fleet's approval bot is anchored on the fleet,
+    /// not on a primary engagement.
+    pub(crate) approval_fleet: Option<String>,
     pub(crate) endpoint: Url,
     pub(crate) authorization: HeaderValue,
     /// The representative/bot credential the retained bridge used to
@@ -154,6 +157,7 @@ impl HostConfig {
             provisioning: None,
             enrollment: None,
             approval: false,
+            approval_fleet: None,
             endpoint: url,
             authorization,
             representative: None,

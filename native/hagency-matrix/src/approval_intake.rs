@@ -45,6 +45,31 @@ impl HostApprovalConfig {
             engagements,
         })
     }
+    /// ADR-187: an imported fleet's approval-bot device, anchored on the fleet.
+    /// It serves the owners' approval rooms of the fleet's agents as they are
+    /// admitted; it needs no engagement of its own.
+    pub fn for_fleet(mut config: HostConfig, anchor: FleetApprovalAnchor) -> Result<Self, Error> {
+        let identity = &config.identity;
+        if config.approval
+            || config.enrollment.is_some()
+            || anchor.server_name != identity.server_name
+            || anchor.registration_generation != identity.transport.registration_generation
+            || anchor.bot_mxid != identity.transport.sender_mxid
+            || config
+                .rooms
+                .iter()
+                .any(|r| !matches!(r.privacy, RoomPrivacy::Direct { .. }))
+        {
+            return Err(Error::Config);
+        }
+        identifier(&anchor.fleet_id, 128).map_err(|_| Error::Config)?;
+        config.approval = true;
+        config.approval_fleet = Some(anchor.fleet_id);
+        Ok(Self {
+            config,
+            engagements: vec![],
+        })
+    }
     /// Explicit approval-purpose fresh ordinary account. Peer masters come from
     /// the host outside the Matrix query channel, never a request or event.
     pub fn with_fresh_account_enrollment(
@@ -61,6 +86,14 @@ impl HostApprovalConfig {
         )?);
         Ok(self)
     }
+}
+/// ADR-187: what an imported fleet's approval bot is anchored on.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FleetApprovalAnchor {
+    pub fleet_id: String,
+    pub server_name: String,
+    pub registration_generation: u64,
+    pub bot_mxid: String,
 }
 pub struct HostApprovalPlan {
     requests: Vec<String>,
@@ -392,15 +425,22 @@ fn room_evidence(error: &Error) -> bool {
 }
 impl Inner {
     pub(crate) async fn approval_rooms(&self, engagements: &[String]) -> Result<Vec<Room>, Error> {
-        let primary = self
-            .domain
-            .approval_room_authority(self.config.identity.transport.engagement_id.clone())
-            .await?;
+        // A coordinator install anchors on its primary engagement; an imported
+        // fleet's approval bot on the fleet itself (ADR-187).
+        let fleet_id = match &self.config.approval_fleet {
+            Some(fleet) => fleet.clone(),
+            None => {
+                self.domain
+                    .approval_room_authority(self.config.identity.transport.engagement_id.clone())
+                    .await?
+                    .fleet_id
+            }
+        };
         let mut rooms = vec![];
         for id in engagements {
             let a = self.domain.approval_room_authority(id.clone()).await?;
             let identity = &self.config.identity;
-            if a.fleet_id != primary.fleet_id
+            if a.fleet_id != fleet_id
                 || a.server_name != identity.server_name
                 || a.registration_generation != identity.transport.registration_generation
                 || a.bot_mxid != identity.transport.sender_mxid

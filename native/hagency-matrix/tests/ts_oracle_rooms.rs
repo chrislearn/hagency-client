@@ -239,3 +239,27 @@ fn ts_room_side_credential_selection_vocabulary() {}
 #[test]
 #[ignore = "covered: identity_polish::owner_absent_warning (this crate) asserts the retained owner-absent words; the TS pre-delivery probe vocabulary has no native counterpart"]
 fn ts_owner_visibility_absent_warning_and_probe_vocabulary() {}
+
+/// ADR-187: an imported fleet's approval bot is anchored on the fleet. It
+/// needs no engagement of its own, and a mismatched bot, server or
+/// registration generation is refused; the coordinator constructor still
+/// refuses an empty engagement set.
+#[test]
+fn native_fleet_approval_config_is_anchored_on_the_fleet() {
+    let f = Fixture::new();
+    let endpoint = "http://127.0.0.1:1/";
+    let anchor = hagency_matrix::FleetApprovalAnchor {
+        fleet_id: format!("hf_{}", "a".repeat(32)),
+        server_name: f.identity.server_name.clone(),
+        registration_generation: f.identity.transport.registration_generation,
+        bot_mxid: f.identity.transport.sender_mxid.clone(),
+    };
+    assert!(HostApprovalConfig::for_fleet(f.config(endpoint), anchor.clone()).is_ok());
+    let mut other_bot = anchor.clone();
+    other_bot.bot_mxid = "@someone:example.test".into();
+    assert!(HostApprovalConfig::for_fleet(f.config(endpoint), other_bot).is_err());
+    let mut other_generation = anchor.clone();
+    other_generation.registration_generation += 1;
+    assert!(HostApprovalConfig::for_fleet(f.config(endpoint), other_generation).is_err());
+    assert!(HostApprovalConfig::new(f.config(endpoint), vec![]).is_err());
+}

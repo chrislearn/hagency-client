@@ -174,7 +174,7 @@ pub use presence::{ack_request, typing_request};
 mod approval_intake;
 pub use approval_intake::{
     ApprovalCollector, ApprovalCustodyStage, ApprovalCustodyStatus, ApprovalIntakeSummary,
-    ApprovalServiceTurn, HostApprovalConfig, HostApprovalPlan,
+    ApprovalServiceTurn, FleetApprovalAnchor, HostApprovalConfig, HostApprovalPlan,
 };
 
 mod approval_delivery;
