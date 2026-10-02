@@ -1322,8 +1322,7 @@ pub struct Bootstrap {
     listen: SocketAddr,
     prepared: Option<config::Prepared>,
     palpo_prepared: Option<palpo::Prepared>,
-    palpo: Option<palpo::Owner>,
-    palpo_status: palpo::StatusHandle,
+    palpo: palpo::Live,
     driver: Option<driver::Driver>,
     fleet: Option<fleet::Service>,
     shared: Option<Shared>,
@@ -1414,12 +1413,19 @@ impl Bootstrap {
         } else {
             None
         };
-        let palpo_prepared = if options.palpo_transport {
+        // A fresh install has no imported fleet yet: it waits for the console
+        // import instead of refusing to start.
+        let palpo_imported = options.palpo_transport && palpo::imported(&state)?;
+        let palpo_prepared = if palpo_imported {
             Some(palpo::Prepared::load(&state)?)
         } else {
             None
         };
-        let palpo_status = palpo::StatusHandle::new(options.palpo_transport);
+        let palpo_status = if options.palpo_transport && !palpo_imported {
+            palpo::StatusHandle::awaiting()
+        } else {
+            palpo::StatusHandle::new(options.palpo_transport)
+        };
         tracing::trace!(target: "hagency_startup_observation", "native startup boundary: custody_entered");
         let store = Store::start(
             Repository::open(&state).map_err(|_| Failure::Startup)?,
@@ -1561,6 +1567,14 @@ impl Bootstrap {
             .with_domain(domain.clone())
             .with_development(status.clone())
             .with_palpo(palpo_status.clone());
+        let palpo = palpo::Live::new(
+            state.clone(),
+            store.clone(),
+            domain.clone(),
+            palpo_status,
+            options.palpo_transport,
+        );
+        app = app.with_palpo_live(palpo.clone());
         if let Some(files) = &files {
             app = app.with_files(files.handle());
         }
@@ -1578,8 +1592,7 @@ impl Bootstrap {
             listen,
             prepared,
             palpo_prepared,
-            palpo: None,
-            palpo_status,
+            palpo,
             driver: None,
             fleet,
             shared,
@@ -1660,9 +1673,7 @@ impl Bootstrap {
         if let Some(sweep) = &mut self.reminder_sweep {
             sweep.abort();
         }
-        if let Some(palpo) = &self.palpo {
-            palpo.cancel();
-        }
+        self.palpo.cancel();
         if let Some(shared) = &self.shared {
             shared.workspace.retire();
         }
@@ -1676,9 +1687,7 @@ impl Bootstrap {
         if let Some(driver) = &mut self.driver {
             children_failed |= driver.close().await.is_err();
         }
-        if let Some(palpo) = &mut self.palpo {
-            children_failed |= palpo.close().await.is_err();
-        }
+        children_failed |= self.palpo.close().await.is_err();
         if let Some(fleet) = &mut self.fleet {
             children_failed |= fleet.drain_agents().await.is_err();
         }
@@ -1811,12 +1820,7 @@ impl Bootstrap {
         tokio::select! { biased; result=&mut serving=>{result.map_err(|_|Failure::Server)?;return Err(Failure::Server);}, _=tokio::task::yield_now()=>{} }
         tracing::trace!(target: "hagency_startup_observation", "native startup boundary: driver_entered");
         if let Some(prepared) = self.palpo_prepared.take() {
-            self.palpo = Some(palpo::Owner::start(
-                prepared,
-                self.store.clone(),
-                self.domain.clone(),
-                self.palpo_status.clone(),
-            ));
+            self.palpo.start(prepared).await?;
         }
         if let Some(pump) = self.approval.as_ref() {
             // ADR-183 decision 0: a component refusal does not exit the

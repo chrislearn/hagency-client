@@ -157,17 +157,43 @@ pub fn parse(raw: &str) -> Result<(Registration, Value, Value, String, u64), Err
     Ok((row, appservice, json!(machine), endpoint, generation))
 }
 
+/// The Matrix client API the fleet's App Service identities act through.
+pub(crate) fn homeserver(homeserver: &str) -> Result<String, Error> {
+    let origin = reqwest::Url::parse(homeserver).map_err(|_| Error::Invalid("homeserver"))?;
+    if origin.scheme() != "https" && !matches!(origin.host_str(), Some("127.0.0.1" | "localhost")) {
+        return Err(Error::Invalid("homeserver must be https"));
+    }
+    Ok(origin.as_str().trim_end_matches('/').to_owned())
+}
+
+/// The three private files `serve --palpo-transport` reads; one writer for the
+/// CLI and the console import.
+pub(crate) fn write(
+    state: &Path,
+    registration: &Registration,
+    appservice: &Value,
+    machine: &Value,
+    endpoint: &str,
+    generation: u64,
+) -> Result<(), Error> {
+    let transport = json!({
+        "profile": "palpo_v2_resources_v1", "endpoint": endpoint,
+        "registration": registration, "machine_generation": generation,
+    });
+    let encode = |value: &Value| serde_json::to_vec_pretty(value).map_err(|_| Error::Invalid("encode"));
+    private::replace(&state.join("palpo-transport.json"), &encode(&transport)?)?;
+    private::replace(&state.join("palpo.machine_token"), machine.as_str().unwrap_or_default().as_bytes())?;
+    private::replace(&state.join("palpo-appservice.json"), &encode(appservice)?)?;
+    Ok(())
+}
+
 /// Import into an initialized private state (service stopped or not yet run).
 pub fn run(state: &Path, file: &Path, homeserver: &str, reception: Option<&str>) -> Result<Imported, Error> {
-    let origin = reqwest::Url::parse(homeserver).map_err(|_| Error::Invalid("--homeserver"))?;
-    if origin.scheme() != "https" && !matches!(origin.host_str(), Some("127.0.0.1" | "localhost")) {
-        return Err(Error::Invalid("--homeserver must be https"));
-    }
+    let origin = self::homeserver(homeserver).map_err(|_| Error::Invalid("--homeserver must be https"))?;
     private::read_secret(&state.join("operator.token"))?;
     let raw = std::fs::read_to_string(file).map_err(|_| Error::Invalid("file unreadable"))?;
     let (registration, mut appservice, machine, endpoint, generation) = parse(&raw)?;
-    // The Matrix client API the fleet's App Service identities act through.
-    appservice["homeserver"] = json!(origin.as_str().trim_end_matches('/'));
+    appservice["homeserver"] = json!(origin);
     let _custody = Repository::open(state)?;
     let mut domain = DomainRepository::open(state)?;
     // A re-import of the same fleet keeps a reception an earlier probe bound.
@@ -179,14 +205,7 @@ pub fn run(state: &Path, file: &Path, homeserver: &str, reception: Option<&str>)
         registration.reception_room_id = room.to_owned();
     }
     domain.register(&registration)?;
-    let transport = json!({
-        "profile": "palpo_v2_resources_v1", "endpoint": endpoint,
-        "registration": registration, "machine_generation": generation,
-    });
-    let encode = |value: &Value| serde_json::to_vec_pretty(value).map_err(|_| Error::Invalid("encode"));
-    private::replace(&state.join("palpo-transport.json"), &encode(&transport)?)?;
-    private::replace(&state.join("palpo.machine_token"), machine.as_str().unwrap_or_default().as_bytes())?;
-    private::replace(&state.join("palpo-appservice.json"), &encode(&appservice)?)?;
+    write(state, &registration, &appservice, &machine, &endpoint, generation)?;
     Ok(Imported {
         fleet_id: registration.fleet_id.clone(),
         server_name: registration.server_name.clone(),
