@@ -14,6 +14,8 @@ Hagency 是 [agent-chat](https://github.com/shisuiki/agent-chat) 的 fork。许�
 
 **通过 Palpo Matrix 服务器使用 Hagency？** 请先读[使用指南](docs/user-guide/README.zh-CN.md)。
 
+**要修改原生 Rust 服务？** 请先读[代码导读：从 Palpo 申请到 agent 回复](docs/architecture-walkthrough.zh-CN.md)。
+
 ## 目录
 
 | 章节 | |
@@ -441,6 +443,7 @@ npm run check:remote-sync
 | 文档 | 内容 |
 | --- | --- |
 | [docs/user-guide/README.zh-CN.md](docs/user-guide/README.zh-CN.md) | 使用指南：把 Hagency 连接到 Palpo、房间、谁能和 agent 对话、token |
+| [docs/architecture-walkthrough.zh-CN.md](docs/architecture-walkthrough.zh-CN.md) | 原生服务代码导读：Palpo 连接、接洽、agent 创建、消息处理、审批、token、线程 |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 五条安装路径、平台矩阵、加固 |
 | [docs/RELEASING.md](docs/RELEASING.md) | 版本策略、SemVer 覆盖面、发版流程 |
 | [docs/ROLLBACK.md](docs/ROLLBACK.md) | 自动部署与手工回滚、状态文件 |
