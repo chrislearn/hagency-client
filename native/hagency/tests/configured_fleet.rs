@@ -1,5 +1,8 @@
 //! Actual configured service process and two genuine inline factories. All
 //! network traffic stays on the local TLS fixture; no live accounts or models.
+// Most scenarios here are Unix-only (cfg(unix)); on other platforms their
+// shared helpers and imports are compiled but unused.
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
 #[path = "configured_fleet/mod.rs"]
 mod configured_fleet;
 #[path = "fixtures/matrix_crypto_peer.rs"]

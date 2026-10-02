@@ -1,4 +1,7 @@
 //! Real native pipes/helper/API with an offline peer; not a live factory/model.
+// Most scenarios here are Unix-only (cfg(unix)); on other platforms their
+// shared helpers and imports are compiled but unused.
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
 #[path = "../../hagency-store/tests/common/mod.rs"]
 mod common;
 use common::*;
