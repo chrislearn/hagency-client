@@ -25,6 +25,8 @@ in order the first time. Later sections cover everyday use and problems.
   server.
 - **Owner**: the Matrix user who requested the agent for a project. The owner
   receives the agent's DM and its approval cards.
+- **Guest**: anyone in a room with the agent who is not its owner, such as a
+  project member. Guests talk to the agent by @mentioning it.
 - **DM**: a private, encrypted chat between the agent and its owner.
 - **Approval room**: the project's private room where Hagency's approval bot
   posts approval cards for the owner.
@@ -36,7 +38,7 @@ in order the first time. Later sections cover everyday use and problems.
 | Palpo administrator | Adds this Hagency to the Palpo server once. |
 | Hagency operator | Signs Codex in, runs Hagency, sets it up in the console (coding agent, Palpo connection, resources), approves agent requests. |
 | Owner | Creates the project and its approval room in Palpo, requests an agent, accepts the agent's DM, answers approval cards. |
-| Project members | Talk to agents in shared rooms by @mentioning them. |
+| Guests | Project members and anyone else in a room with the agent. They talk to it by @mentioning it in shared rooms. See [Work with an agent: owner and guest](#work-with-an-agent-owner-and-guest). |
 
 One person can hold several roles.
 
@@ -275,6 +277,50 @@ holds exactly the owner and the approval bot.
 
 Hagency uses a separate approval-bot device for each owner. One owner's cards
 are never encrypted for another owner.
+
+## Work with an agent: owner and guest
+
+Everyone who talks to an agent is either its **owner** or a **guest**. The
+owner is the person who requested the agent. A guest is anyone else in a room
+with the agent: a project member, or someone in another room the agent
+joined.
+
+| | Owner | Guest |
+| --- | --- | --- |
+| Where to talk to the agent | The DM, the project room, and any room the agent joined | The project room and unencrypted rooms the agent joined |
+| How to get an answer | In the DM, or a room where the owner is the only person: any message. In a shared room: @mention the agent | @mention the agent; it answers in that message's thread |
+| Follow-ups | Reply in the same thread | Reply in the same thread |
+| Invite the agent to another room | The agent accepts on its own | The operator accepts or declines it in the console |
+| Approve the agent's actions | Yes, with the cards in the approval room | No. Guests see "Agent *name* is waiting for approval from its owner." and wait |
+| Tokens | The work of everyone, guests included, spends the owner's allocation | Spends the owner's allocation |
+| Add tokens or end the agent's work | Asks the operator, who does it in the console (**Add tokens**, **Retire**) | No |
+
+### As the owner
+
+1. Accept the agent's DM in Rinx and talk to it there. The DM is only for you
+   and the agent; if anyone else joins it, the agent stops answering there.
+2. In the project room, @mention the agent and keep the conversation in that
+   message's thread.
+3. To work with the agent in another room, invite it by its full Matrix ID
+   (see [Use an agent in other rooms](#use-an-agent-in-other-rooms)). For a
+   room with other people, turn encryption off when you create the room.
+4. Watch your approval room. Every action that needs approval, whoever asked
+   for it, comes to you as a card there. Until you answer, the agent waits.
+5. When the agent pauses because its tokens ran out, ask the operator for more
+   (see [Manage tokens](#manage-tokens)).
+
+### As a guest
+
+1. In the project room, or another unencrypted room the agent is in, @mention
+   the agent. It answers in the thread of your message; keep follow-ups
+   there.
+2. If the agent posts that it is waiting for approval from its owner, the
+   owner has to answer a card first. Ask the owner, not the agent.
+3. You can invite the agent to a room of yours, but it joins only after the
+   operator accepts, because its work there spends the owner's tokens.
+4. In an encrypted room with other people, the agent does not work; it posts
+   a notice instead. Use an unencrypted room.
+5. You cannot DM the agent: it answers only its owner in a DM.
 
 ## Use an agent in other rooms
 
