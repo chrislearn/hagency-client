@@ -34,7 +34,7 @@ actual original-writer cards, without changing domain or Matrix authority.
 - knowledge/decisions/adr-143-native-approval-wire-oracle.md
 - schemas/approval/owner-request-v1.schema.json
 - schemas/approval/owner-verdict-v1.schema.json
-- docs/architecture/owner-ui-approval.md
+- docs/history/architecture/owner-ui-approval.md
 - specs/task-n...[credential-redacted].spec.md
 - specs/task-n...[credential-redacted].spec.md
 - tests/native-approval-wire-interop.test.js

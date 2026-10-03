@@ -56,7 +56,7 @@ No Palpo code, configuration, container or Robrix binary was changed.
 Real Codex Agents received CSV bytes (apple3, pear5), calculated the total and
 sent an 8-byte TXT containing exactly total=8 followed by newline. Group, plain
 DM and encrypted DM each produced acknowledged attachments. All three were
-downloaded through https://crew.ominix.io:19443 and verified against SHA-256
+downloaded through https://matrix.example.org and verified against SHA-256
 901b49d032c66e911bcf78faf69e02b439d2ce6568238f0806915c387ac0411e.
 The group upload did not create an Agent input before the subsequent mention;
 its output retained that thread root. Both DM outputs had no thread relation.

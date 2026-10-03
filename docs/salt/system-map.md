@@ -16,7 +16,7 @@ Top-level implementation:
 | `bridge-matrix.js` | Optional Matrix bridge and agent puppet integration. |
 | `scripts/` | Build, audit, provisioning, task/supervisor helper scripts. |
 | `tests/` | Vitest API, unit, CLI, runtime, Matrix, Supervisor, and parity tests. |
-| `docs/architecture/` | Older architecture documents that remain useful but need verification against current code. |
+| `docs/history/architecture/` | Older architecture documents that remain useful but need verification against current code. |
 
 Current size indicators from `wc -l`:
 

@@ -1,10 +1,12 @@
+> 历史文档：描述的是已在 hagency-rs #17 中移除的 TypeScript 版本。当前服务请见[架构说明](../../architecture-walkthrough.zh-CN.md)。
+
 # 项目方申请、Hagency 批准、Agent 完成任务：人工验证
 
 日期：2026-09-06。状态：已完成环境预检查，等待操作员开始本轮申请。
 
 本指南验证当前可运行路径：项目房间直接发起角色申请。当前测试环境使用注册令牌；
 它不验收尚未实现的 Palpo 自助 App Service 入驻与独立接洽大厅。
-对应未来需求见 [Palpo 接入需求草案](../../knowledge/requirements/req-palpo-hagency-onboarding.md)。
+对应未来需求见 [Palpo 接入需求草案](../../../knowledge/requirements/req-palpo-hagency-onboarding.md)。
 
 ## 本轮约定
 

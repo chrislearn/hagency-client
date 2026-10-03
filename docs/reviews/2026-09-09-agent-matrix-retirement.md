@@ -37,7 +37,7 @@ row confirmed completion. No other allocation was revoked and no chat/model
 task was sent by this acceptance.
 
 - Edison: `pa_edison_b93c487ea36f8c32`.
-- Matrix user: `@hf_82042a93a7734deeab65e02226608831_agent_pa_edison_b93c487ea36f8c32:hfux-closure-20260906.test`.
+- Matrix user: `@hf_82042a93a7734deeab65e02226608831_agent_pa_edison_b93c487ea36f8c32:test.example.org`.
 - Matrix account deactivated; all four remaining room memberships removed.
 - App Service authentication: HTTP403. Authenticated App Service user discovery:
   HTTP404. Representative authentication and discovery: HTTP200.
@@ -92,7 +92,7 @@ Browser evidence is `/tmp/hagency-edison-retirement-browser.json` and the
 corresponding before/after PNGs. Local test logs use the
 `/tmp/hagency-agent-retirement-` and `/tmp/palpo-agent-retirement-` prefixes.
 The server backup is
-`/Users/cloud/palpo-web-admin/backups/before-agent-retirement-1788980055/`.
+`~/palpo-web-admin/backups/before-agent-retirement-1788980055/` on the test host.
 Rollback must preserve later state and the retirement; restoring old source is
 not authorization to reactivate Edison or restore stale database contents.
 

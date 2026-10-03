@@ -21,7 +21,7 @@ renamed. Authorization, capacity and manual approval are unchanged.
   names, generates distinct safe Matrix/runtime identities, and exercises retries.
 - Playwright fixture: approved ordinary user submits 小白-01 through the actual
   form and API. No browser errors.
-- Live Playwright on https://crew.ominix.io:19444: existing test user submits
+- Live Playwright on https://palpo.example.org: existing test user submits
   中文验证-0909 into its existing project. HTTP201 first queues the request;
   the outbound worker delivers it and Palpo observes provider state pending.
 - Hagency independently reports engagement en_mtuclqk1_04c8a1 pending, exact

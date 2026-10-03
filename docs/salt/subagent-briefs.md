@@ -112,7 +112,7 @@ Key conclusions:
 
 - Current reliable documentation spine: `README.md`, `OPERATIONS.md`, `skills/hagency/SKILL.md`, v1 workspace templates, and actual routes in code.
 - The old `docs/{agent}` model conflicts with the current flat v1 workspace model. `docs/agent-role-and-scope-editing.md`, `docs/agent-roles-and-guardrails.md`, and `docs/Hibiki/agents.md` still describe old per-agent folders.
-- `docs/architecture/system-components.md` has stale route names and API tables, including an outdated `/api/sse` path where current code exposes `/api/stream`.
+- `docs/history/architecture/system-components.md` has stale route names and API tables, including an outdated `/api/sse` path where current code exposes `/api/stream`.
 - `ROADMAP-remote.md` reads as an implementation roadmap even though remote support is now a documented feature.
 - Recommended `docs/salt` structure: principles, kernel, edges, agent-home-v1, message/trust, operations map, stale-doc index.
 

@@ -1,3 +1,5 @@
+> Historical: describes the TypeScript product removed in hagency-rs #17. For the current service see [the architecture walkthrough](../../architecture-walkthrough.md).
+
 # Owner-scoped Matrix UI approval
 
 Agent-chat is the authorization authority. Robrix2 only renders the structured
@@ -38,7 +40,7 @@ The versioned JSON Schemas live under `schemas/approval/`.
   The wire namespace is pinned by the deployed Robrix2 client and does not follow
   product renames.
 
-[ADR115](../../knowledge/decisions/adr-115-native-approval-wire-interop.md) explicitly
+[ADR115](../../../knowledge/decisions/adr-115-native-approval-wire-interop.md) explicitly
 amends v1 for exact 32-hex retained IDs and 40-hex native IDs. Older clients need
 an upgrade for native cards. IDs and all binding fields are preserved unchanged.
 Native request-only `upstream_rpc_id` preserves integer/string type; neither RPC

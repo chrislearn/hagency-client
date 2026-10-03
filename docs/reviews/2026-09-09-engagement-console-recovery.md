@@ -5,7 +5,7 @@ supersedes the room-only revoke behavior recorded below for outbound Palpo Agent
 Edison has since been deactivated and removed from its remaining rooms.
 
 The operator reported a failed revoke and asked about a project displayed as
-`!JDnsWYWgimwnmX8QTc:hfux-closure-20260906.test`.
+`!JDnsWYWgimwnmX8QTc:test.example.org`.
 
 Edison's engagement `en_mtsfvnyd_16ee86` was already ended with reason
 `revoked from the console`. Its original contribution binding was absent and

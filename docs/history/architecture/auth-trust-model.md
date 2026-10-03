@@ -1,3 +1,5 @@
+> Historical: describes the TypeScript product removed in hagency-rs #17. For the current service see [the architecture walkthrough](../../architecture-walkthrough.md).
+
 # Agentchat Authentication & Trust Model
 
 > **已移除(2026-08-12)**:本文提到的「潜意识 / subconscious」子系统已整体删除,详见
