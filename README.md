@@ -111,24 +111,26 @@ codex login
 
 On a machine without a browser, add `--device-auth`.
 
-Hagency never signs in for you. It only asks Codex whether it is signed in, and how (`codex login status`). It never reads or stores your credentials.
+Hagency never signs in for you. The console's Setup page only asks Codex whether it is signed in, and how (`codex login status`); `hagency setup` checks for a sign-in file instead (see [`hagency setup`](#prepare-a-state-directory-with-hagency-setup)). Hagency never reads or stores your credentials.
 
 ### 2. Get the hagency binary
 
 **A release build.** [release-native.yml](.github/workflows/release-native.yml) builds one binary per platform with the console embedded: macOS arm64 (`aarch64-apple-darwin`) and x86-64 (`x86_64-apple-darwin`), Linux x86-64 (`x86_64-unknown-linux-gnu`) and arm64 (`aarch64-unknown-linux-gnu`), plus `SHA256SUMS`. It runs on manual dispatch only and does not publish a release: a tag publishes nothing. The current release, `nv0.1.0-rc.1`, is a pre-release on the project's [GitHub Releases page](https://github.com/hagency-org/hagency-rs/releases); its `.tar.gz` assets and `SHA256SUMS` were built by the workflow and attached by hand.
 
-1. From the GitHub Releases page, download `hagency-nv<version>-<target>.tar.gz` for your platform, and `SHA256SUMS`.
-2. Extract the archive. It holds the `hagency` binary, already executable:
+1. From the GitHub Releases page, download `SHA256SUMS` and the archive for your platform, `hagency-nv0.1.0-rc.1-<target>.tar.gz`, where `<target>` is `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu` or `aarch64-unknown-linux-gnu`. On an Apple silicon Mac, that is `hagency-nv0.1.0-rc.1-aarch64-apple-darwin.tar.gz`.
+2. Verify the archive. `SHA256SUMS` lists the SHA-256 of each archive; this checks the archive you downloaded and skips the others:
 
    ```bash
-   tar -xzf hagency-nv<version>-<target>.tar.gz
+   shasum -a 256 -c --ignore-missing SHA256SUMS    # Linux: sha256sum -c --ignore-missing SHA256SUMS
    ```
 
-3. Verify the binary. `SHA256SUMS` lists the SHA-256 of each platform's `hagency` binary, not of the archive. Compare the line for your target with:
+3. Extract the archive. It holds only the `hagency` binary, already executable:
 
    ```bash
-   shasum -a 256 hagency    # Linux: sha256sum hagency
+   tar -xzf hagency-nv0.1.0-rc.1-aarch64-apple-darwin.tar.gz
    ```
+
+   `./hagency --version` prints `0.1.0`: the `rc.1` suffix is only in the tag and the asset names.
 
 4. On macOS, the binaries are not code-signed. Remove the download quarantine, or macOS refuses to run the binary:
 
@@ -272,7 +274,7 @@ hagency setup --state-dir /abs/path/state
 - validates the file with the same loader `serve` uses. A file that fails is renamed to `fleet-runtime.json.rejected`, so the service never starts on it.
 - refuses to replace an existing `fleet-runtime.json` unless you pass `--force`. With `--force`, it keeps the old file as `fleet-runtime.json.bak-<seconds>`. A running service keeps the configuration it loaded at start, so restart it to use the new file.
 
-It prints the Codex binary it chose, the file it wrote, and whether Codex is signed in. If Codex is not signed in, it prints the command to run, `CODEX_HOME=<folder> codex login`. It ends with the next commands to run. Pass `--listen` if `serve` will use an address other than `127.0.0.1:13300`. `--console-assets` only fills in the printed `serve` command.
+It prints the Codex binary it chose, the file it wrote, and whether Codex is signed in. Setup decides that only by whether the Codex sign-in folder holds `auth.json`; it does not run `codex login status`. A sign-in that Codex keeps only in the system keychain therefore shows as not signed in here, while the console's Setup page asks Codex (`codex login status`) and reports it. If Codex is not signed in, it prints the command to run, `CODEX_HOME=<folder> codex login`. It ends with the next commands to run. Pass `--listen` if `serve` will use an address other than `127.0.0.1:13300`. `--console-assets` only fills in the printed `serve` command.
 
 With a `local_codex` block, Codex runs with `HOME` set to `local_codex.home` and `CODEX_HOME` set to `local_codex.codex_home`. Without one, both are `<state>/runtime-home`. Managed accounts and `hagency account login` serve coordinator installs only.
 

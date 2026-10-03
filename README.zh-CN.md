@@ -113,24 +113,26 @@ codex login
 
 机器上没有浏览器时，加上 `--device-auth`。
 
-Hagency 从不替你登录。它只询问 Codex 是否已登录、以何种方式登录（`codex login status`）。它从不读取，也从不保存你的凭据。
+Hagency 从不替你登录。控制台的设置页面只询问 Codex 是否已登录、以何种方式登录（`codex login status`）；`hagency setup` 则检查登录文件是否存在（见[`hagency setup`](#用-hagency-setup-准备状态目录)）。Hagency 从不读取，也从不保存你的凭据。
 
 ### 2. 获取 hagency 二进制
 
 **发布构建。** [release-native.yml](.github/workflows/release-native.yml) 为每个平台构建一个内嵌控制台的二进制：macOS arm64（`aarch64-apple-darwin`）和 x86-64（`x86_64-apple-darwin`）、Linux x86-64（`x86_64-unknown-linux-gnu`）和 arm64（`aarch64-unknown-linux-gnu`），另附 `SHA256SUMS`。它只在手动触发时运行，并且不会发布 release：推送标签不会发布任何内容。当前版本 `nv0.1.0-rc.1` 是项目 [GitHub Releases 页面](https://github.com/hagency-org/hagency-rs/releases)上的预发布版本（pre-release）；其中的 `.tar.gz` 资产和 `SHA256SUMS` 由该工作流构建，再手动附加到该版本上。
 
-1. 在 GitHub Releases 页面下载对应平台的 `hagency-nv<version>-<target>.tar.gz`，以及 `SHA256SUMS`。
-2. 解压归档。其中的 `hagency` 二进制已带可执行权限：
+1. 在 GitHub Releases 页面下载 `SHA256SUMS` 和对应平台的归档 `hagency-nv0.1.0-rc.1-<target>.tar.gz`，其中 `<target>` 为 `aarch64-apple-darwin`、`x86_64-apple-darwin`、`x86_64-unknown-linux-gnu` 或 `aarch64-unknown-linux-gnu`。在 Apple 芯片的 Mac 上，即 `hagency-nv0.1.0-rc.1-aarch64-apple-darwin.tar.gz`。
+2. 校验归档。`SHA256SUMS` 列出每个归档的 SHA-256；下面的命令校验你下载的归档，并跳过其他归档：
 
    ```bash
-   tar -xzf hagency-nv<version>-<target>.tar.gz
+   shasum -a 256 -c --ignore-missing SHA256SUMS    # Linux：sha256sum -c --ignore-missing SHA256SUMS
    ```
 
-3. 校验二进制。`SHA256SUMS` 列出的是每个平台 `hagency` 二进制的 SHA-256，而不是归档的。用下面的命令计算，并与你的平台对应的那一行比较：
+3. 解压归档。其中只有 `hagency` 二进制，已带可执行权限：
 
    ```bash
-   shasum -a 256 hagency    # Linux：sha256sum hagency
+   tar -xzf hagency-nv0.1.0-rc.1-aarch64-apple-darwin.tar.gz
    ```
+
+   `./hagency --version` 输出 `0.1.0`：`rc.1` 后缀只出现在标签和资产名称中。
 
 4. 在 macOS 上，这些二进制没有代码签名。请移除下载隔离属性，否则 macOS 会拒绝运行它：
 
@@ -274,7 +276,7 @@ hagency setup --state-dir /abs/path/state
 - 用 `serve` 所用的同一个加载器校验该文件。校验失败的文件会被改名为 `fleet-runtime.json.rejected`，因此服务绝不会用它启动。
 - 已有 `fleet-runtime.json` 时拒绝覆盖，除非传入 `--force`。传入 `--force` 时，旧文件保留为 `fleet-runtime.json.bak-<秒数>`。运行中的服务一直使用启动时读取的配置，因此要重启服务才能使用新文件。
 
-它会输出所选的 Codex 二进制、写入的文件，以及 Codex 是否已登录。未登录时，它会输出要运行的命令 `CODEX_HOME=<目录> codex login`。最后列出接下来要运行的命令。如果 `serve` 不使用 `127.0.0.1:13300`，请传入 `--listen`。`--console-assets` 只用于填写输出中的 `serve` 命令。
+它会输出所选的 Codex 二进制、写入的文件，以及 Codex 是否已登录。它只根据 Codex 登录目录中是否有 `auth.json` 判断是否已登录，不运行 `codex login status`。因此 Codex 只保存在系统钥匙串中的登录在这里显示为未登录，而控制台的设置页面会询问 Codex（`codex login status`）并报告该登录。未登录时，它会输出要运行的命令 `CODEX_HOME=<目录> codex login`。最后列出接下来要运行的命令。如果 `serve` 不使用 `127.0.0.1:13300`，请传入 `--listen`。`--console-assets` 只用于填写输出中的 `serve` 命令。
 
 有 `local_codex` 块时，Codex 运行时 `HOME` 为 `local_codex.home`，`CODEX_HOME` 为 `local_codex.codex_home`。没有该块时，两者都是 `<state>/runtime-home`。托管账户和 `hagency account login` 只用于协调者安装。
 

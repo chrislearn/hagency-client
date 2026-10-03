@@ -50,10 +50,16 @@ Palpo 网页端的界面是英文的，因此 Palpo 的页面和按钮名称保�
 - `hagency` 程序。发布构建已内置控制台。当前版本 `nv0.1.0-rc.1` 是项目
   [GitHub Releases 页面](https://github.com/hagency-org/hagency-rs/releases)上的
   预发布版本（pre-release）；其中的 `.tar.gz` 资产和 `SHA256SUMS` 由发布工作流
-  构建，再手动附加到该版本上。下载对应平台的
-  `hagency-nv<version>-<target>.tar.gz` 和 `SHA256SUMS`，解压归档，
-  并用 `SHA256SUMS` 校验二进制。在 macOS 上，二进制没有代码签名，请运行一次
-  `xattr -d com.apple.quarantine hagency`。仓库 README 的
+  构建，再手动附加到该版本上。下载 `SHA256SUMS` 和对应平台的归档
+  `hagency-nv0.1.0-rc.1-<target>.tar.gz`，其中 `<target>` 为
+  `aarch64-apple-darwin`、`x86_64-apple-darwin`、`x86_64-unknown-linux-gnu` 或
+  `aarch64-unknown-linux-gnu`（例如 Apple 芯片的 Mac 上为
+  `hagency-nv0.1.0-rc.1-aarch64-apple-darwin.tar.gz`）。先用
+  `shasum -a 256 -c --ignore-missing SHA256SUMS`（Linux：
+  `sha256sum -c --ignore-missing SHA256SUMS`）校验归档，再用 `tar -xzf` 解压；
+  其中只有 `hagency` 二进制。在 macOS 上，二进制没有代码签名，请运行一次
+  `xattr -d com.apple.quarantine hagency`。`./hagency --version` 输出 `0.1.0`；
+  `rc.1` 后缀只出现在标签和资产名称中。仓库 README 的
   [获取 hagency 二进制](../../README.zh-CN.md#2-获取-hagency-二进制)一节完整介绍如何获取它，
   包括如何从源码构建。
 - 运行 Hagency 的机器上已安装的 Codex。你在第 1 步中自己登录它。

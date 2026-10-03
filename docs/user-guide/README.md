@@ -51,10 +51,17 @@ You need:
   current release, `nv0.1.0-rc.1`, is a pre-release on the project's
   [GitHub Releases page](https://github.com/hagency-org/hagency-rs/releases);
   its `.tar.gz` assets and `SHA256SUMS` are built by the release workflow and
-  attached by hand. Download `hagency-nv<version>-<target>.tar.gz` for your
-  platform and `SHA256SUMS`, extract the archive and check the
-  binary against `SHA256SUMS`. On macOS, the binary is not code-signed, so run
-  `xattr -d com.apple.quarantine hagency` once. The repository README explains
+  attached by hand. Download `SHA256SUMS` and the archive for your platform,
+  `hagency-nv0.1.0-rc.1-<target>.tar.gz`, where `<target>` is
+  `aarch64-apple-darwin`, `x86_64-apple-darwin`, `x86_64-unknown-linux-gnu` or
+  `aarch64-unknown-linux-gnu` (for example
+  `hagency-nv0.1.0-rc.1-aarch64-apple-darwin.tar.gz` on an Apple silicon Mac).
+  Verify the archive with `shasum -a 256 -c --ignore-missing SHA256SUMS`
+  (Linux: `sha256sum -c --ignore-missing SHA256SUMS`), then extract it with
+  `tar -xzf`; it holds only the `hagency` binary. On macOS, the binary is not
+  code-signed, so run `xattr -d com.apple.quarantine hagency` once.
+  `./hagency --version` prints `0.1.0`; the `rc.1` suffix is only in the tag
+  and the asset names. The repository README explains
   how to [get the binary](../../README.md#2-get-the-hagency-binary) in full,
   including how to build it from source.
 - Codex installed on the machine that runs Hagency. You sign it in yourself
