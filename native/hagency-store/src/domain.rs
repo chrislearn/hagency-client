@@ -81,6 +81,8 @@ mod owned_completion;
 mod owned_dispatch;
 mod stopped_inspection;
 pub use outcome_resolution::{OutcomeAction, OutcomeResolution};
+pub(crate) mod joined_rooms;
+pub(crate) mod owner_anchors;
 mod provision_runtime;
 mod quota_holds;
 mod reminders;
@@ -131,7 +133,7 @@ pub struct DomainRepository {
     warm_scopes: std::collections::BTreeMap<String, OwnedProvisionScope>,
 }
 /// Current domain schema version (the last sequential migration).
-pub const DOMAIN_SCHEMA_VERSION: i32 = 58;
+pub const DOMAIN_SCHEMA_VERSION: i32 = 60;
 
 impl DomainRepository {
     pub(super) fn drop_observed(self, probe: &std::sync::Arc<crate::shutdown::Probe>) {
@@ -1060,11 +1062,17 @@ impl DomainRepository {
                     // ADR-186 §B: no board number; the file carries its list
                     // version.
                     (58, include_str!("migrations/058-quota-holds.sql")),
+                    // ADR-187 §C: owner anchors pinned on first use.
+                    (59, include_str!("migrations/059-owner-anchors.sql")),
+                    // ADR-188: rooms an agent joined by invitation.
+                    (60, include_str!("migrations/074-joined-rooms.sql")),
                 ],
                 sql: include_str!("domain.sql"),
                 verify: &[
                     "SELECT allocated_tokens FROM engagements LIMIT 0",
                     "SELECT id,engagement_id,dispatch_id,spend,allocation,began_at,lifted_at,lifted_allocation FROM quota_holds LIMIT 0",
+                    "SELECT owner_mxid,master_key,source,pinned_at,mismatch_key,mismatch_at FROM owner_anchors LIMIT 0",
+                    "SELECT engagement_id,room_id,state,joined_at,updated_at,notice_at FROM joined_rooms LIMIT 0",
                     "SELECT fleet_id,allocated_tokens,updated_at FROM side_allocations LIMIT 0",
                     "SELECT engagement_id,stopped_at,reason,operator,started_at FROM agent_lifecycle LIMIT 0",
                     "SELECT server_name,label,api_base_url,credential,pending_credential,pending_issued_at,representative,access_state,access_detail,access_checked_at,access_issued_at,allocated_tokens,active,created_at,updated_at FROM side_records LIMIT 0",
@@ -2390,6 +2398,125 @@ impl DomainRepository {
     /// will ever run for them; the provisioning host settles each one whose
     /// credential was never stored (TS `lib/matrix-work-executor.js`: a logout
     /// with no stored credential is already done).
+    /// ADR-187: the owner the engagement's request named (read-only).
+    pub fn engagement_owner(&self, id: &str) -> Result<Option<String>, Error> {
+        Ok(self
+            .db
+            .query_row(
+                "SELECT json_extract(context,'$.ownerMxid') FROM engagements WHERE id=?1",
+                [id],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .optional()?
+            .flatten())
+    }
+    /// ADR-187: the owner and their private approval room, as the engagement's
+    /// request named them (read-only).
+    pub fn engagement_owner_room(&self, id: &str) -> Result<Option<(String, String)>, Error> {
+        Ok(self
+            .db
+            .query_row(
+                "SELECT json_extract(context,'$.ownerMxid'),json_extract(context,'$.ownerDmRoomId') FROM engagements WHERE id=?1",
+                [id],
+                |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?)),
+            )
+            .optional()?
+            .and_then(|(owner, room)| owner.zip(room)))
+    }
+    /// ADR-187 §C: an owner's pinned anchor, if any (read-only).
+    pub fn owner_anchor(&self, owner: &str) -> Result<Option<owner_anchors::OwnerAnchor>, Error> {
+        owner_anchors::get(&self.db, owner)
+    }
+    pub fn owner_anchors(&self) -> Result<Vec<owner_anchors::OwnerAnchor>, Error> {
+        owner_anchors::list(&self.db)
+    }
+    /// ADR-187 §C: the key the homeserver reports now, against the pin.
+    pub fn observe_owner_anchor(
+        &mut self,
+        owner: &str,
+        key: &str,
+        now: u64,
+    ) -> Result<owner_anchors::OwnerAnchor, Error> {
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let result = owner_anchors::observe(&tx, owner, key, now);
+        // A refused key still records the mismatch for the operator.
+        tx.commit()?;
+        result
+    }
+    /// ADR-188: the engagement's joined rooms that are not retired.
+    pub fn joined_rooms(&self, engagement: &str) -> Result<Vec<joined_rooms::JoinedRoom>, Error> {
+        joined_rooms::live(&self.db, engagement)
+    }
+    pub fn joined_room(
+        &self,
+        engagement: &str,
+        room: &str,
+    ) -> Result<Option<joined_rooms::JoinedRoom>, Error> {
+        joined_rooms::get(&self.db, engagement, room)
+    }
+    /// ADR-188 §2: the agent joined `room` by invitation.
+    pub fn record_joined_room(
+        &mut self,
+        engagement: &str,
+        room: &str,
+        now: u64,
+    ) -> Result<joined_rooms::JoinedRoom, Error> {
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let result = joined_rooms::record(&tx, engagement, room, now)?;
+        tx.commit()?;
+        Ok(result)
+    }
+    pub fn set_joined_room_state(
+        &mut self,
+        engagement: &str,
+        room: &str,
+        state: joined_rooms::JoinedRoomState,
+        now: u64,
+    ) -> Result<joined_rooms::JoinedRoom, Error> {
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let result = joined_rooms::set_state(&tx, engagement, room, state, now)?;
+        tx.commit()?;
+        Ok(result)
+    }
+    /// ADR-188 §3: a repeat of the notice, at most once per gap.
+    pub fn claim_joined_room_renotice(
+        &mut self,
+        engagement: &str,
+        room: &str,
+        now: u64,
+        not_before: u64,
+    ) -> Result<bool, Error> {
+        joined_rooms::claim_renotice(&self.db, engagement, room, now, not_before)
+    }
+    /// ADR-188 §3: true only for the first caller; that caller posts the notice.
+    pub fn claim_joined_room_notice(
+        &mut self,
+        engagement: &str,
+        room: &str,
+        now: u64,
+    ) -> Result<bool, Error> {
+        joined_rooms::claim_notice(&self.db, engagement, room, now)
+    }
+    /// ADR-187 §C: the operator's explicit re-pin.
+    pub fn repin_owner_anchor(
+        &mut self,
+        owner: &str,
+        key: &str,
+        now: u64,
+    ) -> Result<owner_anchors::OwnerAnchor, Error> {
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let result = owner_anchors::repin(&tx, owner, key, now)?;
+        tx.commit()?;
+        Ok(result)
+    }
     pub fn pending_unattached_retirements(&self, fleet_id: &str) -> Result<Vec<String>, Error> {
         project::identifier(fleet_id, 128)?;
         let mut statement = self.db.prepare(

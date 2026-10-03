@@ -1213,3 +1213,203 @@ fn workspace_map<'de, D: serde::Deserializer<'de>>(
     }
     deserializer.deserialize_map(Map)
 }
+
+/// ADR-187 §A.1: an imported fleet's local runtime settings — the operator's
+/// Codex executable, local Codex binding, file capabilities, limits and agent
+/// homes. Everything about Matrix identities comes from the imported fleet,
+/// not from here. Lives in `<state>/fleet-runtime.json`.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FleetRuntimeConfig {
+    profile: String,
+    executable: PathBuf,
+    executable_sha256: String,
+    #[serde(default)]
+    local_codex: Option<LocalCodex>,
+    #[serde(default)]
+    send_file: bool,
+    #[serde(default)]
+    receive_file: bool,
+    #[serde(default)]
+    coordination_tools: bool,
+    file_limit: usize,
+    operation_ms: u64,
+    response_ms: u64,
+    #[serde(default = "default_approval_wait")]
+    approval_owner_wait_ms: u64,
+    #[serde(default)]
+    matrix_request_interval_ms: Option<u64>,
+    #[serde(default)]
+    matrix_sdk_timeout_ms: Option<u64>,
+    idle_ms: u64,
+    home: HomeConfiguration,
+}
+/// What the fleet service builds its provisioning host and agents from.
+pub(super) struct FleetRuntime {
+    pub(super) warm: hagency_execution::WarmHostPlan,
+    pub(super) homes: hagency_store::agent_home::ManagedHomePlan,
+    pub(super) setup: super::fleet::Setup,
+    pub(super) matrix_limits: hagency_matrix::Limits,
+}
+/// Whether this state directory configures an imported fleet's runtime.
+pub(super) fn fleet_runtime_configured(state: &Path) -> bool {
+    state.join("fleet-runtime.json").exists()
+}
+pub(super) fn load_fleet_runtime(
+    state: &Path,
+    address: SocketAddr,
+    origin: &str,
+) -> Result<FleetRuntime, Failure> {
+    const FIELD: &str = "fleet-runtime.json";
+    let bytes = read(&state.join(FIELD), CONFIG_BYTES, FIELD)?;
+    let config: FleetRuntimeConfig = serde_json::from_slice(&bytes).map_err(|error| {
+        tracing::error!(line = error.line(), column = error.column(), "invalid fleet runtime configuration");
+        Failure::Config {
+            field: FIELD,
+            fix: "repair the JSON at the logged line and column; the document must match profile palpo_fleet_runtime_v1",
+        }
+    })?;
+    if config.profile != "palpo_fleet_runtime_v1"
+        || !(100..=1_200_000).contains(&config.idle_ms)
+        || config
+            .local_codex
+            .as_ref()
+            .is_some_and(|local| local.profile != "provider_owned_codex_v1")
+    {
+        return Err(Failure::Config {
+            field: FIELD,
+            fix: "profile palpo_fleet_runtime_v1, idle_ms 100-1200000, and local_codex (if any) with profile provider_owned_codex_v1",
+        });
+    }
+    verify_executable(&config.executable, &config.executable_sha256)?;
+    let own = std::env::current_exe()
+        .and_then(|path| path.canonicalize())
+        .map_err(|_| Failure::Config {
+            field: "running executable path",
+            fix: "the process executable path must be resolvable",
+        })?;
+    let mut environment = BTreeMap::new();
+    if config.local_codex.is_none() {
+        let runtime_home = state.join("runtime-home");
+        private::directory(&runtime_home).map_err(|_| Failure::Config {
+            field: "state-dir runtime-home",
+            fix: "the runtime home must exist, be owner-private (0700) and writable",
+        })?;
+        environment.insert("HOME".into(), runtime_home.clone().into_os_string());
+        environment.insert("CODEX_HOME".into(), runtime_home.into_os_string());
+    }
+    if let Some(system) = std::env::var_os("SystemRoot") {
+        environment.insert("SystemRoot".into(), system);
+    }
+    let limits = Limits {
+        operation_ms: config.operation_ms,
+        response_ms: config.response_ms,
+    };
+    // The warm bridge's local Codex binding is taken from a host built for
+    // it; the fleet's agents get their own homes, so its one workspace is a
+    // private placeholder no dispatch is ever routed to.
+    let workspace = state.join("fleet-workspace");
+    private::directory(&workspace).map_err(|_| Failure::Config {
+        field: "state-dir fleet-workspace",
+        fix: "the directory must exist, be owner-private (0700) and writable",
+    })?;
+    let mut host = Host::new(
+        own.clone(),
+        config.executable.clone(),
+        environment.clone(),
+        BTreeMap::from([("fleet_workspace".to_owned(), workspace)]),
+    )
+    .map_err(|_| Failure::Config {
+        field: FIELD,
+        fix: "the executable and workspace must form an execution host",
+    })?;
+    let uses_local_codex = config.local_codex.is_some();
+    if let Some(local) = config.local_codex {
+        let local = hagency_execution::LocalCodex::new(
+            local.preset,
+            local.seat,
+            local.home,
+            local.codex_home,
+        )
+        .map_err(|_| Failure::Config {
+            field: "fleet-runtime.json: local_codex",
+            fix: "preset, seat, home and codex_home must form a valid local codex binding",
+        })?;
+        host = host.with_local_codex(local).map_err(|_| Failure::Config {
+            field: "fleet-runtime.json: local_codex",
+            fix: "the execution host must accept the local codex binding",
+        })?;
+    }
+    let contexts = state.join("factory-task-contexts");
+    private::directory(&contexts).map_err(|_| Failure::Config {
+        field: "state-dir factory-task-contexts",
+        fix: "the directory must exist, be owner-private (0700) and writable",
+    })?;
+    let bridge = hagency_execution::WarmTaskBridge::new(own.clone(), address, contexts).map_err(|_| {
+        Failure::Config {
+            field: "state-dir factory-task-contexts",
+            fix: "the warm task bridge must construct from the executable, listen address and contexts directory",
+        }
+    })?;
+    let mut warm = hagency_execution::WarmHostPlan::new(
+        own,
+        config.executable,
+        environment,
+        bridge,
+        approval_host(config.approval_owner_wait_ms, limits)?,
+        hagency_execution::WarmLimits {
+            initialize: Limits {
+                operation_ms: limits.operation_ms.min(30_000),
+                response_ms: limits.response_ms,
+            },
+            idle_ms: config.idle_ms,
+        },
+    )
+    .and_then(|plan| {
+        plan.with_file_access(config.file_limit, config.send_file, config.receive_file)
+    })
+    .map(|plan| {
+        if config.coordination_tools {
+            plan.with_coordination_tools()
+        } else {
+            plan
+        }
+    })
+    .map_err(|_| Failure::Config {
+        field: "fleet-runtime.json: plan",
+        fix: "the warm plan must apply the file, coordination and receive capabilities",
+    })?;
+    if uses_local_codex {
+        warm = warm
+            .with_local_codex_from_host(&host)
+            .map_err(|_| Failure::Config {
+                field: "fleet-runtime.json: local_codex",
+                fix: "the warm bridge must accept the host's local codex binding",
+            })?;
+    }
+    let homes = hagency_store::agent_home::ManagedHomePlan::new(
+        config.home.root,
+        config.home.projects,
+        config.home.task_client,
+    )
+    .map_err(|_| Failure::Config {
+        field: "fleet-runtime.json: home",
+        fix: "the home root, task client and at most 16 projects must form a managed home plan",
+    })?;
+    Ok(FleetRuntime {
+        warm,
+        homes,
+        setup: super::fleet::Setup {
+            state: state.to_owned(),
+            limit: config.file_limit,
+            send: config.send_file,
+            receive: config.receive_file,
+            limits,
+        },
+        matrix_limits: matrix_limits(
+            origin,
+            config.matrix_request_interval_ms,
+            config.matrix_sdk_timeout_ms,
+        )?,
+    })
+}

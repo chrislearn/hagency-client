@@ -4343,6 +4343,106 @@ impl DomainStore {
         .await
     }
     /// Revoked, never-attached engagements whose retirement is pending (read-only).
+    pub async fn engagement_owner(&self, id: String) -> Result<Option<String>, Error> {
+        self.call(weight(&id)?, move |db| db.engagement_owner(&id))
+            .await
+    }
+    pub async fn engagement_owner_room(
+        &self,
+        id: String,
+    ) -> Result<Option<(String, String)>, Error> {
+        self.call(weight(&id)?, move |db| db.engagement_owner_room(&id))
+            .await
+    }
+    pub async fn owner_anchor(&self, owner: String) -> Result<Option<crate::OwnerAnchor>, Error> {
+        self.call(weight(&owner)?, move |db| db.owner_anchor(&owner))
+            .await
+    }
+    pub async fn owner_anchors(&self) -> Result<Vec<crate::OwnerAnchor>, Error> {
+        self.call(weight(&())?, |db| db.owner_anchors()).await
+    }
+    pub async fn observe_owner_anchor(
+        &self,
+        owner: String,
+        key: String,
+        now: u64,
+    ) -> Result<crate::OwnerAnchor, Error> {
+        self.call(weight(&(&owner, &key))?, move |db| {
+            db.observe_owner_anchor(&owner, &key, now)
+        })
+        .await
+    }
+    pub async fn repin_owner_anchor(
+        &self,
+        owner: String,
+        key: String,
+        now: u64,
+    ) -> Result<crate::OwnerAnchor, Error> {
+        self.call(weight(&(&owner, &key))?, move |db| {
+            db.repin_owner_anchor(&owner, &key, now)
+        })
+        .await
+    }
+    pub async fn joined_rooms(&self, engagement: String) -> Result<Vec<crate::JoinedRoom>, Error> {
+        self.call(weight(&engagement)?, move |db| db.joined_rooms(&engagement))
+            .await
+    }
+    pub async fn joined_room(
+        &self,
+        engagement: String,
+        room: String,
+    ) -> Result<Option<crate::JoinedRoom>, Error> {
+        self.call(weight(&(&engagement, &room))?, move |db| {
+            db.joined_room(&engagement, &room)
+        })
+        .await
+    }
+    pub async fn record_joined_room(
+        &self,
+        engagement: String,
+        room: String,
+        now: u64,
+    ) -> Result<crate::JoinedRoom, Error> {
+        self.call(weight(&(&engagement, &room))?, move |db| {
+            db.record_joined_room(&engagement, &room, now)
+        })
+        .await
+    }
+    pub async fn set_joined_room_state(
+        &self,
+        engagement: String,
+        room: String,
+        state: crate::JoinedRoomState,
+        now: u64,
+    ) -> Result<crate::JoinedRoom, Error> {
+        self.call(weight(&(&engagement, &room))?, move |db| {
+            db.set_joined_room_state(&engagement, &room, state, now)
+        })
+        .await
+    }
+    pub async fn claim_joined_room_renotice(
+        &self,
+        engagement: String,
+        room: String,
+        now: u64,
+        not_before: u64,
+    ) -> Result<bool, Error> {
+        self.call(weight(&(&engagement, &room))?, move |db| {
+            db.claim_joined_room_renotice(&engagement, &room, now, not_before)
+        })
+        .await
+    }
+    pub async fn claim_joined_room_notice(
+        &self,
+        engagement: String,
+        room: String,
+        now: u64,
+    ) -> Result<bool, Error> {
+        self.call(weight(&(&engagement, &room))?, move |db| {
+            db.claim_joined_room_notice(&engagement, &room, now)
+        })
+        .await
+    }
     pub async fn pending_unattached_retirements(
         &self,
         fleet_id: String,

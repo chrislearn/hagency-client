@@ -37,9 +37,9 @@ pub use media_download::{MediaDownloadError, MediaDownloadLimits, MediaDownloade
 pub use media_upload::{
     MediaUploadError, MediaUploadLimits, MediaUploader, UploadAttempt, UploadState,
 };
-pub use membership_sweep::{MEMBERSHIP_SWEEP_INTERVAL, SweepOutcome};
+pub use membership_sweep::{MEMBERSHIP_SWEEP_INTERVAL, MembershipSweep, SweepOutcome};
 pub use outgoing::{OutgoingState, OutgoingSummary};
-pub use provisioning::{ProvisionedAgent, TokenProvisioningHost};
+pub use provisioning::{PassReport, ProvisionedAgent, TokenProvisioningHost};
 pub use receive::{ReceiveError, ReceivedAttachment, ReceivedScope};
 pub use representative_sync::{
     BoxFuture, CircuitBreak, EventMeta, HistoryPage, PageReader, PageSink, PendingVerdict,
@@ -174,7 +174,7 @@ pub use presence::{ack_request, typing_request};
 mod approval_intake;
 pub use approval_intake::{
     ApprovalCollector, ApprovalCustodyStage, ApprovalCustodyStatus, ApprovalIntakeSummary,
-    ApprovalServiceTurn, HostApprovalConfig, HostApprovalPlan,
+    ApprovalServiceTurn, FleetApprovalAnchor, HostApprovalConfig, HostApprovalPlan,
 };
 
 mod approval_delivery;

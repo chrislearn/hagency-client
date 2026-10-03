@@ -116,6 +116,13 @@ fn live(db: &Connection, c: &Context, now: u64) -> Result<(), Error> {
     }
     Ok(())
 }
+/// The request's environment against the turn's. Codex 0.157+ names its
+/// default local environment `"local"` on every approval request; a turn
+/// registered with no environment runs in exactly that one, so `"local"`
+/// matches it. Any other value must equal the turn's.
+fn same_environment(request: Option<&str>, turn: Option<&str>) -> bool {
+    request == turn || (turn.is_none() && request == Some("local"))
+}
 fn authorize(db: &Connection, cap: &RunnerCapability, c: &Context, now: u64) -> Result<(), Error> {
     let d = execution::authorize(db, cap, now, &["started", "parked"])?;
     if c.dispatch != cap.dispatch_id
@@ -383,24 +390,41 @@ impl DomainRepository {
         let now = sample()?; // The original writer queue and SQLite lock waits have ended.
         clock(now)?;
         let c = context(&tx, &input.context_id)?;
-        authorize(&tx, cap, &c, now)?;
+        // Never silent: each refusal below says which rule refused (no
+        // credential or parameter value beyond the ids compared).
+        authorize(&tx, cap, &c, now).inspect_err(|error| {
+            eprintln!(
+                "owner approval refused: dispatch authority ({error:?}) for {}",
+                c.dispatch
+            );
+        })?;
         if input
             .params
             .get("environmentId")
             .is_some_and(|value| !value.is_null() && !value.is_string())
         {
+            eprintln!("owner approval refused: environmentId is not a string");
             return Err(Error::RunnerAuthority);
         }
         if input.params.get("threadId").and_then(Value::as_str) != Some(&c.thread)
             || input.params.get("turnId").and_then(Value::as_str) != Some(&c.turn)
             || input.params.get("itemId").and_then(Value::as_str) != Some(&input.item_id)
-            || input
-                .params
-                .get("environmentId")
-                .filter(|v| !v.is_null())
-                .and_then(Value::as_str)
-                != c.environment.as_deref()
+            || !same_environment(
+                input
+                    .params
+                    .get("environmentId")
+                    .filter(|v| !v.is_null())
+                    .and_then(Value::as_str),
+                c.environment.as_deref(),
+            )
         {
+            eprintln!(
+                "owner approval refused: request thread/turn/item/environment differ from the turn (environment request={:?} turn={:?}, thread match={}, turn match={})",
+                input.params.get("environmentId"),
+                c.environment,
+                input.params.get("threadId").and_then(Value::as_str) == Some(&c.thread),
+                input.params.get("turnId").and_then(Value::as_str) == Some(&c.turn),
+            );
             return Err(Error::RunnerAuthority);
         }
         let scope = policy::derive(HostRequest {
@@ -421,6 +445,7 @@ impl DomainRepository {
                 .as_ref()
                 .is_none_or(|s| s.scope.kind != ScopeKind::NetworkHost)
         {
+            eprintln!("owner approval refused: a read-only turn may only ask for network access");
             return Err(Error::RunnerAuthority);
         }
         let source = canonical::digest(&json!([c.connection, input.upstream_id]))?;
@@ -439,6 +464,7 @@ impl DomainRepository {
             return summary(&tx, &id);
         }
         if input.expires_at <= now || input.expires_at - now > 600_000 {
+            eprintln!("owner approval refused: expiry outside (now, now+600s]");
             return Err(Error::RunnerAuthority);
         }
         let pending:(u64,u64,u64)=tx.query_row("SELECT COUNT(*),COALESCE(SUM(c.engagement_id=?1),0),COALESCE(SUM(c.dispatch_id=?2 AND c.fence=?3),0) FROM owner_approvals a JOIN approval_contexts c ON c.id=a.context_id WHERE a.state IN ('pending','decided','applying','uncertain')",params![c.binding.engagement,c.dispatch,c.fence],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;

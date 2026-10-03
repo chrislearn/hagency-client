@@ -68,6 +68,19 @@ fn service_sender(db: &Connection, sender: &str) -> Result<bool, Error> {
 /// a human notice is TEXT for every purpose — including waking the agent it
 /// addresses. ADR-054-era ingress admitted a notice but would not let it wake;
 /// the msgtype changes nothing about which senders and kinds carry a request.
+/// ADR-188 §3: in a room the agent joined by invitation whose only human is
+/// its owner, every owner message wakes it, as in its DM.
+fn owner_only_joined_room(
+    tx: &rusqlite::Transaction<'_>,
+    route: &ReplyRoute,
+    sender: &str,
+) -> Result<bool, Error> {
+    Ok(tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM joined_rooms j JOIN engagements e ON e.id=j.engagement_id JOIN projects p ON p.fleet_id=e.fleet_id AND p.id=e.project_id AND p.generation=e.generation JOIN matrix_room_scopes r ON r.server_name=?4 AND r.room_id=j.room_id WHERE j.engagement_id=?1 AND j.room_id=?2 AND j.state='working' AND p.owner_mxid=?3 AND json_array_length(r.joined)=2 AND EXISTS(SELECT 1 FROM json_each(r.joined) m WHERE m.value=?3) AND EXISTS(SELECT 1 FROM json_each(r.joined) m WHERE m.value=?5))",
+        params![route.engagement_id, route.room_id, sender, route.server_name, route.sender_mxid],
+        |r| r.get(0),
+    )?)
+}
 fn human_waking_kind(kind: &str) -> bool {
     matches!(
         kind,
@@ -685,7 +698,10 @@ impl DomainRepository {
             && kind
             && match &route.privacy {
                 RoomPrivacy::Direct { human_mxid } => &event.sender_mxid == human_mxid,
-                RoomPrivacy::Group {} => input.mentions.contains(&route.sender_mxid),
+                RoomPrivacy::Group {} => {
+                    input.mentions.contains(&route.sender_mxid)
+                        || owner_only_joined_room(&tx, &route, &event.sender_mxid)?
+                }
             }
             // A `!` line is a bot command, never agent input. The retained
             // bridge checked `cmdBody.startsWith('!')` on text only, BEFORE any

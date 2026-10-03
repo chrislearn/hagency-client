@@ -379,6 +379,15 @@ fn native_owner_approval_context() {
             "{field}"
         );
     }
+    // Codex 0.157+ names its default environment "local" on every approval
+    // request; a turn registered with no environment runs in exactly it.
+    let mut local = f.input(0, 1);
+    local.params["environmentId"] = json!("local");
+    assert!(
+        f.db.request_owner_approval(&f.caps[0], &local, 1010)
+            .is_ok(),
+        "the default local environment matches a turn with none"
+    );
     let input = f.input(0, 1);
     let mut bad = f.caps[0].clone();
     bad.fence += 1;
@@ -1047,7 +1056,7 @@ fn native_owner_approval_recovery_schema12() {
     drop(db);
     let sql = rusqlite::Connection::open(directory.join("domain.sqlite3")).unwrap();
     remove_approval_schema(&sql);
-    sql.execute_batch("ALTER TABLE runner_sessions DROP COLUMN model_override; ALTER TABLE runner_sessions DROP COLUMN mode_override; DROP TABLE IF EXISTS agent_lifecycle; ALTER TABLE decisions DROP COLUMN kind; ALTER TABLE decisions DROP COLUMN at; DROP TABLE IF EXISTS quota_holds; ALTER TABLE engagements DROP COLUMN allocated_tokens; PRAGMA user_version=12;").unwrap();
+    sql.execute_batch("ALTER TABLE runner_sessions DROP COLUMN model_override; ALTER TABLE runner_sessions DROP COLUMN mode_override; DROP TABLE IF EXISTS agent_lifecycle; ALTER TABLE decisions DROP COLUMN kind; ALTER TABLE decisions DROP COLUMN at; DROP TABLE IF EXISTS quota_holds; DROP TABLE IF EXISTS owner_anchors; DROP TABLE IF EXISTS joined_rooms; ALTER TABLE engagements DROP COLUMN allocated_tokens; PRAGMA user_version=12;").unwrap();
     for _ in 0..2 {
         let db = DomainRepository::open(&directory).unwrap();
         assert_eq!(

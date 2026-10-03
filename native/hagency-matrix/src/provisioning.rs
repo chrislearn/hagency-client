@@ -16,6 +16,15 @@ use std::{
 const MAX_JOBS: usize = 16;
 mod factory;
 pub use factory::ProvisionedAgent;
+/// What one provisioning pass did, per engagement (ADR-182: one
+/// engagement's refusal never stops the others).
+#[derive(Debug, Default)]
+pub struct PassReport {
+    pub started: Vec<String>,
+    pub awaiting: Vec<String>,
+    pub failed: Vec<(String, Error)>,
+    pub retired: usize,
+}
 struct Job {
     factory: Option<Arc<factory::Custody>>,
     home: Mutex<Option<Arc<hagency_store::agent_home::ManagedAgentHome>>>,
@@ -38,7 +47,7 @@ pub struct TokenProvisioningHost {
     factory_rooms: Arc<tokio::sync::Mutex<()>>,
     closed: std::sync::atomic::AtomicBool,
     warm: Option<hagency_execution::WarmHostPlan>,
-    factory_approvals: Option<Arc<crate::ApprovalCollector>>,
+    factory_approvals: ApprovalLink,
     as_namespace: Option<String>,
     homes: Option<hagency_store::agent_home::ManagedHomePlan>,
     rooms: Option<RoomPlan>,
@@ -54,7 +63,30 @@ pub struct TokenProvisioningHost {
 }
 struct RoomPlan {
     representative: String,
-    anchors: Vec<(String, String)>,
+    anchors: AnchorSource,
+}
+/// The approval collector a warm agent's approvals ride on.
+enum ApprovalLink {
+    /// A coordinator install: the one configured approval bot.
+    Fixed(Option<Arc<crate::ApprovalCollector>>),
+    /// An imported fleet (ADR-187 amendment): one approval-bot device per
+    /// owner, attached by the fleet service before that owner's provision.
+    PerOwner(Mutex<BTreeMap<String, Arc<crate::ApprovalCollector>>>),
+}
+/// Where an agent's owner anchor comes from (ADR-187 §C).
+enum AnchorSource {
+    /// A coordinator install's configured list (ADR-102 as written).
+    Static(Vec<(String, String)>),
+    /// An imported fleet: the owner's anchor pinned in the store on first use.
+    Pinned,
+}
+/// Why the anchors are needed: a first enrollment waits for an unpinned or
+/// disputed owner key; a re-attach keeps the pinned key and lets the
+/// enrollment's own key check catch a change.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AnchorUse {
+    Enroll,
+    Reattach,
 }
 impl TokenProvisioningHost {
     pub fn new(
@@ -121,7 +153,7 @@ impl TokenProvisioningHost {
             factory_rooms: Arc::new(tokio::sync::Mutex::new(())),
             closed: std::sync::atomic::AtomicBool::new(false),
             warm: None,
-            factory_approvals: None,
+            factory_approvals: ApprovalLink::Fixed(None),
             as_namespace,
             homes: None,
             rooms: None,
@@ -167,9 +199,91 @@ impl TokenProvisioningHost {
         )?;
         self.rooms = Some(RoomPlan {
             representative: representative_token.to_owned(),
-            anchors,
+            anchors: AnchorSource::Static(anchors),
         });
         Ok(self)
+    }
+    /// ADR-187 §C: an imported fleet's agent rooms, enrolled with each
+    /// owner's anchor pinned on first use. The fleet service pins the owner's
+    /// key before a pass; until it is pinned the provision waits.
+    pub fn with_agent_rooms_pinned_anchors(
+        mut self,
+        representative_token: &str,
+    ) -> Result<Self, Error> {
+        if self.rooms.is_some()
+            || !(16..=4096).contains(&representative_token.len())
+            || !representative_token
+                .bytes()
+                .all(|b| (33..=126).contains(&b))
+        {
+            return Err(Error::Config);
+        }
+        self.rooms = Some(RoomPlan {
+            representative: representative_token.to_owned(),
+            anchors: AnchorSource::Pinned,
+        });
+        Ok(self)
+    }
+    /// The engagements this host's factory completed and a restart brings
+    /// back, in id order (the fleet service's re-attach list). Read-only.
+    pub async fn provisioned_engagements(
+        &self,
+        domain: &DomainStore,
+    ) -> Result<Vec<String>, Error> {
+        Ok(domain.inline_factory_engagements().await?)
+    }
+    /// ADR-187 §A.5: the fleet's membership sweep, acting with the
+    /// representative's credential instead of a coordinator's.
+    pub fn membership_sweep(&self, domain: DomainStore) -> Result<crate::MembershipSweep, Error> {
+        let plan = self.rooms.as_ref().ok_or(Error::Config)?;
+        let authorization =
+            reqwest::header::HeaderValue::from_str(&format!("Bearer {}", plan.representative))
+                .map_err(|_| Error::Config)?;
+        Ok(crate::MembershipSweep {
+            http: crate::http::Http::for_host(
+                &self.endpoint,
+                Some(&authorization),
+                &self.limits,
+                &self.roots,
+            )?,
+            domain,
+            registration: self.registration.clone(),
+        })
+    }
+    /// The anchors this engagement's agent enrolls or re-attaches with.
+    pub(crate) async fn anchors_for(
+        &self,
+        domain: &DomainStore,
+        effect: &hagency_store::Effect,
+        purpose: AnchorUse,
+    ) -> Result<Vec<(String, String)>, Error> {
+        let plan = self.rooms.as_ref().ok_or(Error::Config)?;
+        match &plan.anchors {
+            AnchorSource::Static(anchors) => Ok(anchors.clone()),
+            AnchorSource::Pinned => {
+                let owner = effect
+                    .payload
+                    .get("request")
+                    .and_then(|r| r.get("ownerMxid"))
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or(Error::Config)?
+                    .to_owned();
+                let pinned = domain
+                    .owner_anchor(owner.clone())
+                    .await
+                    .map_err(|_| Error::Storage)?;
+                match (pinned, purpose) {
+                    (Some(anchor), AnchorUse::Reattach) => Ok(vec![(owner, anchor.master_key)]),
+                    (Some(anchor), AnchorUse::Enroll) if anchor.mismatch_key.is_none() => {
+                        Ok(vec![(owner, anchor.master_key)])
+                    }
+                    // No key pinned yet, or a disputed one: wait, without a
+                    // deadline, exactly like an owner who has not joined.
+                    (_, AnchorUse::Enroll) => Err(Error::AwaitingOwner),
+                    (None, AnchorUse::Reattach) => Err(Error::Recipients),
+                }
+            }
+        }
     }
     /// Original physical v1 homes, still not runtime fulfillment or Applied.
     pub fn with_managed_homes(
@@ -209,7 +323,7 @@ impl TokenProvisioningHost {
     /// missing or changed. A failure here concerns this agent only and leaves
     /// its durable state exactly as it was, except that genuine negative Matrix
     /// evidence still fences as everywhere else.
-    pub(crate) async fn reattach_completed(
+    pub async fn reattach_completed(
         &self,
         domain: &DomainStore,
         engagement: &str,
@@ -312,11 +426,14 @@ impl TokenProvisioningHost {
         activated: &mut bool,
     ) -> Result<(), Error> {
         if let Some(plan) = &self.rooms {
+            // The owner's anchor first: no room is created while it is not
+            // pinned (ADR-187 §C.3).
+            let anchors = self.anchors_for(domain, effect, AnchorUse::Enroll).await?;
             account
                 .create_agent_rooms(&plan.representative, cancel)
                 .await?;
             account
-                .enroll_created_rooms(1, self.key, plan.anchors.clone(), cancel)
+                .enroll_created_rooms(1, self.key, anchors, cancel)
                 .await?;
             // ADR-184: the agent's keys are published; only now may the owner
             // arrive and write to it.
@@ -424,7 +541,7 @@ impl TokenProvisioningHost {
     }
     /// The provisions waiting for their owner, with the wall-clock millisecond
     /// each started waiting. Read-only; for the fleet's status.
-    pub(crate) fn awaiting_owner_engagements(&self) -> Vec<(String, u64)> {
+    pub fn awaiting_owner_engagements(&self) -> Vec<(String, u64)> {
         let Ok(jobs) = self.jobs.lock() else {
             return Vec::new();
         };
@@ -440,56 +557,48 @@ impl TokenProvisioningHost {
             })
             .collect()
     }
-    /// Resume every provision waiting for its owner: one look each. Still
-    /// waiting is counted, not reported; any other refusal is the provision's
-    /// own and is returned as it would have been inline.
-    pub(crate) async fn resume_awaiting_owners(
+    /// ADR-187 §A.2 / ADR-182: one provisioning pass, every engagement on its
+    /// own. Provisions waiting for their owner get one look, console-approved
+    /// provisions start, and never-attached retirements settle. A refusal is
+    /// that engagement's alone: it is collected in the report and the pass
+    /// goes on to the next one. Only a store read the pass itself needs fails
+    /// the pass.
+    pub async fn provision_pass(
         &self,
         domain: &DomainStore,
         cancel: &CancellationToken,
-    ) -> Result<usize, Error> {
+    ) -> Result<PassReport, Error> {
+        let mut report = PassReport::default();
         let waiting: Vec<String> = self
             .awaiting_owner_engagements()
             .into_iter()
             .map(|(engagement, _)| engagement)
             .collect();
-        let mut still = 0;
-        for engagement in waiting {
-            match self
-                .account(domain, &self.registration, &engagement, cancel)
-                .await
-            {
-                Ok(()) => {}
-                Err(Error::AwaitingOwner) => still += 1,
-                Err(error) => return Err(error),
-            }
-        }
-        Ok(still)
-    }
-    /// Provision every engagement the operator approved outside Matrix (the
-    /// console verdict reserves and queues the effect but runs no account
-    /// step). One claim each, the same `account` the Matrix verdict runs inline;
-    /// an owner not yet joined is the ordinary non-terminal wait.
-    pub(crate) async fn resume_pending_provisions(
-        &self,
-        domain: &DomainStore,
-        cancel: &CancellationToken,
-    ) -> Result<usize, Error> {
         let pending = domain
             .pending_provisions(self.registration.fleet_id.clone())
             .await
             .map_err(|_| Error::Storage)?;
-        let mut started = 0;
-        for engagement in pending {
+        for engagement in waiting.into_iter().chain(pending) {
+            if cancel.is_cancelled() {
+                return Err(Error::Cancelled);
+            }
+            if report.started.contains(&engagement)
+                || report.awaiting.contains(&engagement)
+                || report.failed.iter().any(|(e, _)| e == &engagement)
+            {
+                continue;
+            }
             match self
                 .account(domain, &self.registration, &engagement, cancel)
                 .await
             {
-                Ok(()) | Err(Error::AwaitingOwner) => started += 1,
-                Err(error) => return Err(error),
+                Ok(()) => report.started.push(engagement),
+                Err(Error::AwaitingOwner) => report.awaiting.push(engagement),
+                Err(error) => report.failed.push((engagement, error)),
             }
         }
-        Ok(started)
+        report.retired = self.settle_unattached_retirements(domain).await?;
+        Ok(report)
     }
     /// Settle the retirement of every revoked engagement whose agent never got a
     /// credential. The `retire` effect is otherwise run only by the agent's own
@@ -578,6 +687,20 @@ impl TokenProvisioningHost {
         };
         if let Some(job) = resume {
             return self.resume_provision(domain, &job, cancel).await;
+        }
+        // ADR-187: an imported fleet's warm agent needs its owner's
+        // approval-bot device. Until the fleet service attached it the
+        // provision waits, before any claim: a refusal after the claim would
+        // be cached for the life of the process.
+        if self.warm.is_some() && matches!(self.factory_approvals, ApprovalLink::PerOwner(_)) {
+            let owner = domain
+                .engagement_owner(engagement.to_owned())
+                .await
+                .map_err(|_| Error::Storage)?
+                .ok_or(Error::Config)?;
+            if !self.approvals_ready_for(&owner) {
+                return Err(Error::AwaitingOwner);
+            }
         }
         let job = {
             let mut jobs = self.jobs.lock().map_err(|_| Error::OutcomeUnknown)?;

@@ -135,9 +135,15 @@ struct AgentOwner {
     driver: Option<Driver>,
     files: Option<FileOwner>,
     receives: Option<ReceiveOwner>,
+    /// ADR-187 §A.5: an imported fleet's agent polls its own invitations
+    /// (TS `pollAgentInvites`); stopped with the agent.
+    invites: Option<(CancellationToken, tokio::task::JoinHandle<()>)>,
 }
 impl AgentOwner {
     fn quiesce(&self) {
+        if let Some((cancel, _)) = &self.invites {
+            cancel.cancel();
+        }
         if let Some(driver) = &self.driver {
             driver.cancel();
         }
@@ -170,11 +176,90 @@ impl AgentOwner {
         }
     }
 }
+/// Where the fleet's agents come from: a coordinator install's Collector, or
+/// (ADR-187) an imported fleet's own provisioning host.
+#[derive(Clone)]
+pub(crate) enum Provider {
+    Coordinator(Arc<Collector>),
+    Fleet {
+        host: Arc<hagency_matrix::TokenProvisioningHost>,
+        sweep: Arc<hagency_matrix::MembershipSweep>,
+        /// ADR-187 amendment: each owner's approval pump; an agent's approval
+        /// requests go to its owner's.
+        owner_notices: Arc<
+            Mutex<BTreeMap<String, tokio::sync::mpsc::Sender<hagency_execution::ApprovalRequests>>>,
+        >,
+        /// Each admitted agent's transport, for its public approval notice.
+        agents: super::approval::AgentDirectory,
+    },
+}
+impl Provider {
+    async fn provisioned_engagements(
+        &self,
+        domain: &DomainStore,
+    ) -> Result<Vec<String>, hagency_matrix::Error> {
+        match self {
+            Self::Coordinator(c) => c.provisioned_engagements().await,
+            Self::Fleet { host, .. } => host.provisioned_engagements(domain).await,
+        }
+    }
+    async fn reattach(
+        &self,
+        domain: &DomainStore,
+        engagement: &str,
+        cancel: &CancellationToken,
+    ) -> Result<hagency_matrix::ProvisionedAgent, hagency_matrix::Error> {
+        match self {
+            Self::Coordinator(c) => {
+                c.reattach_provisioned_agent(engagement, cancel).await?;
+                c.take_provisioned_agent(engagement)
+            }
+            Self::Fleet { host, .. } => {
+                let (task_host, domain, id, cancel) = (
+                    host.clone(),
+                    domain.clone(),
+                    engagement.to_owned(),
+                    cancel.clone(),
+                );
+                tokio::spawn(
+                    async move { task_host.reattach_completed(&domain, &id, &cancel).await },
+                )
+                .await
+                .map_err(|_| hagency_matrix::Error::OutcomeUnknown)??;
+                host.take_agent(engagement)
+            }
+        }
+    }
+    fn awaiting_owner_engagements(&self) -> Vec<(String, u64)> {
+        match self {
+            Self::Coordinator(c) => c.awaiting_owner_engagements(),
+            Self::Fleet { host, .. } => host.awaiting_owner_engagements(),
+        }
+    }
+    fn take_next(&self) -> Result<Option<hagency_matrix::ProvisionedAgent>, hagency_matrix::Error> {
+        match self {
+            Self::Coordinator(c) => c.take_next_provisioned_agent(),
+            Self::Fleet { host, .. } => host.take_next_agent(),
+        }
+    }
+    fn sweep(&self, cancel: CancellationToken) -> tokio::task::JoinHandle<()> {
+        match self {
+            Self::Coordinator(c) => tokio::spawn(c.clone().membership_sweep_loop(cancel)),
+            Self::Fleet { sweep, .. } => tokio::spawn(sweep.clone().run(cancel)),
+        }
+    }
+    async fn close_agents(&self) -> Result<(), hagency_matrix::Error> {
+        match self {
+            Self::Coordinator(c) => c.close_provisioned_agents().await,
+            Self::Fleet { host, .. } => host.close_agents().await,
+        }
+    }
+}
 /// Host-only original fleet service. Bootstrap owns it; no HTTP/runtime input
 /// can install a backend, reconstruct a factory owner or assert readiness.
 pub struct Service {
     setup: Setup,
-    coordinator: Arc<Collector>,
+    provider: Provider,
     domain: DomainStore,
     routes: Routes,
     agents: Vec<AgentOwner>,
@@ -186,6 +271,14 @@ impl Service {
     pub fn new(
         domain: DomainStore,
         coordinator: Arc<Collector>,
+        setup: Setup,
+    ) -> Result<Self, Failure> {
+        Self::with_provider(domain, Provider::Coordinator(coordinator), setup)
+    }
+    /// ADR-187: a fleet service whose agents come from `provider`.
+    pub(crate) fn with_provider(
+        domain: DomainStore,
+        provider: Provider,
         setup: Setup,
     ) -> Result<Self, Failure> {
         if !setup.state.is_absolute()
@@ -219,7 +312,7 @@ impl Service {
         };
         Ok(Self {
             setup,
-            coordinator,
+            provider,
             domain,
             routes,
             agents: vec![],
@@ -260,19 +353,48 @@ impl Service {
             return Err(Failure::Registration);
         }
         let engagement = agent.session().engagement_id.clone();
+        // An imported fleet's agent uses its owner's approval pump.
+        let notices = match &self.provider {
+            Provider::Coordinator(_) => notices,
+            Provider::Fleet { owner_notices, .. } => {
+                let owner = self
+                    .domain
+                    .engagement_owner(engagement.clone())
+                    .await
+                    .map_err(|_| Failure::OutcomeUnknown)?
+                    .ok_or(Failure::Registration)?;
+                owner_notices
+                    .lock()
+                    .map_err(|_| Failure::OutcomeUnknown)?
+                    .get(&owner)
+                    .cloned()
+                    .ok_or(Failure::Registration)?
+            }
+        };
         let shared = Shared {
             domain: self.domain.clone(),
             collector: agent.shared_collector(),
             workspace: WorkspaceAccess::new(),
         };
+        if let Provider::Fleet { agents, .. } = &self.provider
+            && let Ok(mut agents) = agents.lock()
+        {
+            agents.insert(engagement.clone(), shared.collector.clone());
+        }
         // Retain the partially constructed owner before any failing startup or
         // await. Its original factory is also still held by the coordinator.
+        let invites = matches!(self.provider, Provider::Fleet { .. }).then(|| {
+            let cancel = CancellationToken::new();
+            let task = super::invites::start(shared.clone(), cancel.clone());
+            (cancel, task)
+        });
         self.agents.push(AgentOwner {
             shared,
             status: StatusHandle::for_mode(DriverMode::Continuous),
             driver: None,
             files: None,
             receives: None,
+            invites,
         });
         let owner = self.agents.last_mut().ok_or(Failure::Startup)?;
         let start = async {
@@ -352,7 +474,7 @@ impl Service {
         notices: &tokio::sync::mpsc::Sender<hagency_execution::ApprovalRequests>,
         cancel: &CancellationToken,
     ) {
-        let known = match self.coordinator.provisioned_engagements().await {
+        let known = match self.provider.provisioned_engagements(&self.domain).await {
             Ok(known) => known,
             Err(error) => {
                 tracing::warn!(?error, "factory agents could not be listed for re-attach");
@@ -363,14 +485,10 @@ impl Service {
             if cancel.is_cancelled() || self.routes.closed.load(Ordering::Acquire) {
                 return;
             }
-            let attached = match self
-                .coordinator
-                .reattach_provisioned_agent(&engagement, cancel)
-                .await
-            {
-                Ok(()) => self.coordinator.take_provisioned_agent(&engagement),
-                Err(error) => Err(error),
-            };
+            let attached = self
+                .provider
+                .reattach(&self.domain, &engagement, cancel)
+                .await;
             match attached {
                 Ok(agent) => {
                     if self.admit(agent, notices.clone(), true).await.is_ok() {
@@ -398,7 +516,7 @@ impl Service {
     /// rows, and drop the rows of provisions that stopped waiting without
     /// being admitted. Status only: no decision reads these rows.
     fn reconcile_awaiting_owners(&self) {
-        let waiting = self.coordinator.awaiting_owner_engagements();
+        let waiting = self.provider.awaiting_owner_engagements();
         for (engagement, since) in &waiting {
             let present = self
                 .routes
@@ -450,11 +568,7 @@ impl Service {
                 self.0.abort();
             }
         }
-        let _sweep = SweepGuard(tokio::spawn(
-            self.coordinator
-                .clone()
-                .membership_sweep_loop(cancel.clone()),
-        ));
+        let _sweep = SweepGuard(self.provider.sweep(cancel.clone()));
         self.reattach_known_agents(&notices, cancel).await;
         let mut tick = tokio::time::interval(Duration::from_millis(100));
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -462,8 +576,8 @@ impl Service {
             tokio::select! {biased;_ = cancel.cancelled()=>return Ok(()),_ = tick.tick()=>{}}
             self.reconcile_awaiting_owners();
             let next = self
-                .coordinator
-                .take_next_provisioned_agent()
+                .provider
+                .take_next()
                 .map_err(|_| Failure::OutcomeUnknown);
             match next {
                 Ok(Some(agent)) => {
@@ -506,10 +620,8 @@ impl Service {
             return drained.and(result);
         }
         if self.factory_close.is_none() {
-            let coordinator = self.coordinator.clone();
-            self.factory_close = Some(tokio::spawn(async move {
-                coordinator.close_provisioned_agents().await
-            }));
+            let provider = self.provider.clone();
+            self.factory_close = Some(tokio::spawn(async move { provider.close_agents().await }));
         }
         let result = match tokio::time::timeout(
             Duration::from_secs(2),
@@ -674,6 +786,7 @@ mod tests {
             driver: None,
             files: Some(failed),
             receives: None,
+            invites: None,
         };
         let second_owner = AgentOwner {
             shared: two,
@@ -681,6 +794,7 @@ mod tests {
             driver: None,
             files: Some(healthy),
             receives: None,
+            invites: None,
         };
         first_owner.quiesce();
         assert!(first_guard.validate_current().await.is_err());

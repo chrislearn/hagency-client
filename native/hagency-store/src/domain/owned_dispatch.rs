@@ -18,6 +18,9 @@ pub struct OwnedClaimRoom {
     generation: u64,
     privacy: hagency_core::replies::RoomPrivacy,
     plaintext_project: bool,
+    /// ADR-188: a room the agent joined by invitation. Such rooms may come
+    /// and go across refreshes; the identity rooms may not.
+    joined: bool,
 }
 impl OwnedClaimRoom {
     pub fn new(
@@ -37,7 +40,19 @@ impl OwnedClaimRoom {
             generation,
             privacy,
             plaintext_project: false,
+            joined: false,
         })
+    }
+    /// ADR-188 §2: a group room the agent joined by invitation. The claim
+    /// writer still requires a working `joined_rooms` row for the engagement
+    /// before an unencrypted one is claimable.
+    pub fn joined_group(mut self) -> Result<Self, Error> {
+        if !matches!(self.privacy, hagency_core::replies::RoomPrivacy::Group {}) {
+            return Err(Error::RunnerAuthority);
+        }
+        self.plaintext_project = true;
+        self.joined = true;
+        Ok(self)
     }
     /// Explicit host selection for its authenticated shared project. The writer
     /// still requires the route to name this engagement's registered project.
@@ -82,20 +97,30 @@ impl OwnedClaimProfile {
     ) -> Result<Self, Error> {
         let mut value: serde_json::Value = serde_json::from_str(&self.0)?;
         let prior = value["rooms"].as_array().ok_or(Error::RunnerAuthority)?;
-        if value["transport"] != json!(transport) || prior.len() != rooms.len() {
+        // The identity rooms (every prior room not marked joined) must all be
+        // present, unchanged in privacy; joined rooms may be added or dropped.
+        let identity: Vec<&serde_json::Value> = prior
+            .iter()
+            .filter(|old| old["joined"] != json!(true))
+            .collect();
+        if value["transport"] != json!(transport)
+            || rooms.iter().filter(|r| !r.joined).count() != identity.len()
+            || rooms.len() > 16
+        {
             return Err(Error::RunnerAuthority);
         }
         let mut seen = std::collections::BTreeSet::new();
         for room in &rooms {
             if !seen.insert(&room.id)
-                || !prior
-                    .iter()
-                    .any(|old| old["id"] == room.id && old["privacy"] == json!(room.privacy))
+                || (!room.joined
+                    && !identity
+                        .iter()
+                        .any(|old| old["id"] == room.id && old["privacy"] == json!(room.privacy)))
             {
                 return Err(Error::RunnerAuthority);
             }
         }
-        value["rooms"]=json!(rooms.iter().map(|r|json!({"id":r.id,"generation":r.generation,"privacy":r.privacy,"plaintext_project":r.plaintext_project})).collect::<Vec<_>>());
+        value["rooms"]=json!(rooms.iter().map(|r|json!({"id":r.id,"generation":r.generation,"privacy":r.privacy,"plaintext_project":r.plaintext_project,"joined":r.joined})).collect::<Vec<_>>());
         let encoded = serde_json::to_string(&value)?;
         if encoded.len() > 16 * 1024 {
             return Err(Error::Capacity);

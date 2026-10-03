@@ -264,3 +264,30 @@ async fn console_decline_leaves_best_effort_and_the_record_remembers_no() {
     f.store.shutdown().await.unwrap();
     fake.close().await;
 }
+
+/// ADR-187: the agent's own owner is a trusted inviter even into a room that
+/// is no project's (a room the owner created), so the agent joins instead of
+/// parking the invitation for the console.
+#[tokio::test]
+async fn agent_owner_invite_into_a_non_project_room_joins() {
+    let f = Fixture::new();
+    let mut fake = matrix::Fake::start(false).await;
+    let collector = Collector::new(f.config(&fake.endpoint), f.store.clone()).unwrap();
+    let cancel = CancellationToken::new();
+    let (result, _) = tokio::join!(poll_round(&collector, &f.store, &cancel), async {
+        let request = fake.next().await;
+        assert!(request.target.starts_with("/_matrix/client/v3/sync?"));
+        request.json(200, invite_sync("!side:example.test", OWNER));
+        let request = fake.next().await;
+        assert_eq!(request.method, "POST");
+        assert!(request.target.contains("/_matrix/client/v3/join/"));
+        request.json(200, json!({"room_id": "!side:example.test"}));
+    });
+    result.unwrap();
+    assert!(
+        f.store.pending_invites().await.unwrap().is_empty(),
+        "joined, not parked"
+    );
+    f.store.shutdown().await.unwrap();
+    fake.close().await;
+}

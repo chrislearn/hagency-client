@@ -5,6 +5,8 @@ mod config;
 mod driver;
 pub(crate) mod engagement_notice;
 pub mod fleet;
+pub(crate) mod fleet_identity;
+pub(crate) mod fleet_service;
 pub mod intake_refusal;
 pub mod invites;
 pub(crate) mod palpo;
@@ -1566,13 +1568,18 @@ impl Bootstrap {
             .with_domain(domain.clone())
             .with_development(status.clone())
             .with_palpo(palpo_status.clone());
-        let palpo = palpo::Live::new(
+        let mut palpo = palpo::Live::new(
             state.clone(),
             store.clone(),
             domain.clone(),
             palpo_status,
             options.palpo_transport,
         );
+        // ADR-187: without a coordinator install (--agent-driver), this
+        // service runs an imported fleet's agents and approvals itself.
+        if options.palpo_transport && !options.agent_driver {
+            palpo = palpo.with_fleet_service(listen);
+        }
         app = app.with_palpo_live(palpo.clone());
         if let Some(files) = &files {
             app = app.with_files(files.handle());

@@ -93,8 +93,14 @@ pub(crate) struct Pump {
     /// for the public notice (TS `agentSenderFor`, bridge-matrix.js:9377).
     /// `None` in an approval-only host, which then keeps the bot's transport.
     agent: Option<Arc<Collector>>,
+    /// ADR-187: an imported fleet's agents, by engagement. The waiting agent
+    /// sends the public notice with its own transport, as TS does.
+    agents: Option<AgentDirectory>,
     domain: DomainStore,
 }
+/// The admitted agents' Matrix transports, by engagement (fleet mode).
+pub(crate) type AgentDirectory =
+    Arc<std::sync::Mutex<std::collections::BTreeMap<String, Arc<Collector>>>>;
 
 /// The construction deliverables (Q3), all in one place:
 /// `HostApprovalConfig::new` over the approval bot's own `HostConfig`,
@@ -153,8 +159,14 @@ impl Pump {
         Self {
             collector,
             agent,
+            agents: None,
             domain,
         }
+    }
+    /// ADR-187: resolve the public notice's sender per waiting agent.
+    pub(crate) fn with_agents(mut self, agents: AgentDirectory) -> Self {
+        self.agents = Some(agents);
+        self
     }
 
     /// Explicit configured Matrix SDK enrollment, not provider credential login.
@@ -283,9 +295,14 @@ impl Pump {
                     if let Err(error) = self
                         .collector
                         .send_private_approval_notice(
-                            notice_card,
+                            notice_card.clone(),
                             public_thread,
-                            self.agent.clone(),
+                            self.agent.clone().or_else(|| {
+                                let engagement = &notice_card.target().authority.engagement_id;
+                                self.agents
+                                    .as_ref()
+                                    .and_then(|agents| agents.lock().ok()?.get(engagement).cloned())
+                            }),
                             &cancel,
                         )
                         .await
