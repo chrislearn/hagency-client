@@ -17,7 +17,7 @@
 | Hagency | 运行编程 agent 并把它们借给项目的服务。一次安装就是一个 **车队（fleet）**。 |
 | Palpo | 项目所在的 Matrix homeserver。它的网页端负责安装 Hagency 的 App Service，并向项目展示 agent 申请。 |
 | 车队 id | `hf_` 加 32 个十六进制字符。Hagency 拥有的每个 Matrix 账号都以它为前缀，例如 `@hf_…_representative`。 |
-| 代表（representative） | 车队自己的 Matrix 账号（App Service 的 sender）。它拥有接待室，把 agent 邀请进项目房间，并读取所有者的密钥。 |
+| 代表（representative） | 车队自己的 Matrix 账号（App Service 的 sender）。它拥有接待房间，把 agent 邀请进项目房间，并读取所有者的密钥。 |
 | 审批机器人 | Matrix 账号 `@<fleet>_approval`。它向所有者发送权限卡片，并读取所有者的裁决。在导入的车队上，它为每位所有者各配一台设备。 |
 | 车队服务 | `hagency serve` 中负责为导入的车队创建 agent、运行审批的部分，不需要协调者（coordinator）agent（ADR-187）。 |
 | 协调者 | 较早的部署方式：一个在 `agent-driver.json` 中配置的完整 agent 接洽，由它的接入流程承载创建和审批。已经采用它的安装仍可继续使用（ADR-187 §D）。 |
@@ -27,7 +27,7 @@
 | 接洽（engagement） | 一个项目获批的一个 agent。它是分配 token、创建、暂停、追加额度和退役的基本单位。 |
 | 所有者 | 接洽被接纳时记录在 `projects.owner_mxid` 中的项目方用户。只有所有者能回复审批卡片、与 agent 私聊。 |
 | 所有者锚点 | 所有者的交叉签名主密钥，agent 和审批机器人都信任它。在导入的车队上，它在首次使用时固定下来（第 7 节）。 |
-| 接待室 | 一个未加密、仅限邀请的房间，由 Palpo 与代表共用。申请和连接探测以自定义事件的形式送到这里。 |
+| 接待房间 | 一个未加密、仅限邀请的房间，由 Palpo 与代表共用。申请和连接探测以自定义事件的形式送到这里。 |
 | 项目房间 | 人和 agent 一起工作的房间。它不加密，这样车队的接入流程才能读取。 |
 | 审批室 | 一个加密房间，成员恰好是所有者和审批机器人。 |
 | agent 私聊 | 一个加密房间，成员恰好是所有者和一个 agent。 |
@@ -45,7 +45,7 @@
 | [mockup/](../mockup/) | 控制台的 Next.js 源码。Node 只是构建工具；`hagency serve` 提供其静态导出（第 13 节）。 |
 | [deploy/](../deploy/)、[install/install-native.sh](../install/install-native.sh) | `hagency serve` 的 systemd unit 与 launchd plist，以及渲染它们的安装脚本 |
 | [specs/](../specs/)、[knowledge/](../knowledge/) | 与测试绑定的任务契约，以及背后的 ADR 和需求 |
-| [docs/](.) | 产品文档：本导读、[使用指南](user-guide/README.zh-CN.md)、运维 [guides/](guides/) 和 [history/](history/README.md)（TypeScript 时代的历史架构文档和指南）。`docs/` 下除 `user-guide/`、`guides/`、`history/` 和本导读之外的所有内容都是内部工作笔记，不是产品文档；唯一的例外是 `hagency-store` 编译进去的 agent 工作区模板（`workspace-*-template.md`）。 |
+| [docs/](.) | 产品文档：本导读、[使用指南](user-guide/README.zh-CN.md)、运维 [guides/](guides/) 和 [history/](history/README.md)（TypeScript 时代的历史架构文档和指南）。`docs/` 下除 `user-guide/`、`guides/`、`history/` 和本导读之外的所有内容都是内部工作笔记，不是产品文档。例外有两个：许可说明 [LICENSING.md](LICENSING.md)，以及 `hagency-store` 编译进去的 agent 工作区模板（`workspace-*-template.md`）。 |
 
 代码注释中常带行号引用 `backend-v2.js`、`bridge-matrix.js` 和 `lib/*.js`。它们指向被本服务取代的 TypeScript 产品。那部分代码已从仓库中删除；注释引用到时，请在 git 历史中查阅。
 
@@ -214,7 +214,7 @@ HTTP 服务器最后停止，有 5 秒宽限期。
 
 ## 6. 连接 Palpo 服务器
 
-管理员的“添加 Hagency”和所有者的“下载 Hagency 配置”都在 Palpo 网页端完成。运维者在控制台上传这份 JSON 时，Hagency 的部分才开始。
+管理员的“添加 Hagency（Add Hagency）”和所有者的“下载 Hagency 配置（Download Hagency configuration）”都在 Palpo 网页端完成。运维者在控制台上传这份 JSON 时，Hagency 的部分才开始。
 
 ```mermaid
 sequenceDiagram
@@ -247,16 +247,16 @@ sequenceDiagram
    - 传输模式为 `outbound`，端点是 `https://…/api/fleet/v2/<fleet>`（只有回环地址允许纯 `http`）。
    - 属于另一个车队的文件会以 `palpo_fleet_conflict` 拒绝：一个服务只运行一个车队。
 3. 导入保存校验过的内容：
-   - **领域存储：** 一行 `registrations`（车队、服务器、代表、审批机器人，以及在探测绑定前保持为空的接待室），一行项目方记录及其 App Service 凭据。
+   - **领域存储：** 一行 `registrations`（车队、服务器、代表、审批机器人，以及在探测绑定前保持为空的接待房间），一行项目方记录及其 App Service 凭据。
    - **状态目录：** 三个私有文件。
-   - 设置了 `--palpo-transport` 时，传输立即启动，无需重启。重新导入同一个车队会保留已绑定的接待室和正在运行的车队服务。
+   - 设置了 `--palpo-transport` 时，传输立即启动，无需重启。重新导入同一个车队会保留已绑定的接待房间和正在运行的车队服务。
 4. 凭据只写不读。`hagency-store/src/domain/side_lifecycle.rs` 中的 `SideRecord` 只暴露 `credential_kind` 和 `has_credential`，从不暴露 token。导入路由只返回公开信息。
 5. 传输层是 [hagency-palpo](../native/hagency-palpo/src/)。
    - `adapter.rs` 在两条通道上长轮询 `GET {endpoint}/poll`，然后调用 `POST ack` 和 `POST updates`。
    - **matrix 通道**转发 App Service 事务。**work 通道**承载探测和 agent 申请等作业。
    - 轮询等待 25 秒，目录每 15 秒重新发布一次（`config.rs`）。
    - 没有任何入站监听。位于 NAT 之后的 homeserver 无需暴露 Hagency 即可工作。
-6. 在 Palpo 中点击“验证连接并创建接待室”，代表会发布一个 `com.hagency.connection.probe.v1` 事件。[bootstrap/palpo_work.rs](../native/hagency/src/bootstrap/palpo_work.rs) 中的 `work_once` 以代表身份重新读取该事件，[bootstrap/probe.rs](../native/hagency/src/bootstrap/probe.rs) 中的 `decide` 检查房间。只有房间仅限邀请且未加密、代表已加入、且尚未绑定其他接待室时，才会绑定该房间。回执随下一次 `updates` 返回 Palpo。探测失败会一直重试，直到成功。
+6. 在 Palpo 中点击“验证连接并创建接待房间（Verify connection & create reception）”，代表会发布一个 `com.hagency.connection.probe.v1` 事件。[bootstrap/palpo_work.rs](../native/hagency/src/bootstrap/palpo_work.rs) 中的 `work_once` 以代表身份重新读取该事件，[bootstrap/probe.rs](../native/hagency/src/bootstrap/probe.rs) 中的 `decide` 检查房间。只有房间仅限邀请且未加密、代表已加入、且尚未绑定其他接待房间时，才会绑定该房间。回执随下一次 `updates` 返回 Palpo。探测失败会一直重试，直到成功。
 7. 同一个循环（`palpo_work.rs` 中的 `run`）每 15 秒让审批机器人接受私有审批室的邀请（`approval_invites_once`）。
 
 测试示例：[hagency/tests/console/palpo_import.rs](../native/hagency/tests/console/palpo_import.rs) 中的 `native_palpo_import_route_saves_the_owner_download` 和 `native_palpo_import_route_refuses_a_foreign_file`。
@@ -300,7 +300,7 @@ flowchart LR
 
 **Codex 登录。** 车队 agent 的 Codex 凭据来自 `fleet-runtime.json`（[bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs) 中的 `FleetRuntimeConfig`），该文件由 `hagency setup` 写入：默认带 `local_codex` 块（preset `local_codex`、席位 `local_codex_seat`、用户的 `HOME` 和 Codex 目录），传入 `--no-local-codex` 时不带。setup 会报告该目录中是否有登录（`auth.json`），没有时输出 `CODEX_HOME=… codex login` 命令。配置了 `local_codex` 块时，agent 通过该块的 `codex_home` 复用主机上已有的 Codex 登录。没有该块时，`HOME` 和 `CODEX_HOME` 指向 `<state>/runtime-home`。车队运行时没有托管账户：`hagency account` 的凭据命名空间和 `agent-driver.json` 的 `managed_account` 只适用于协调者安装（启动环境在 [hagency-execution/src/host.rs](../native/hagency-execution/src/host.rs) 中设置）。
 
-**申请只有一条接入路径。** 在导入的车队上，接待室中的申请只由 Palpo work 通道接纳（`palpo_work.rs` 中的 `admit_request`，第 9 节）。
+**申请只有一条接入路径。** 在导入的车队上，接待房间中的申请只由 Palpo work 通道接纳（`palpo_work.rs` 中的 `admit_request`，第 9 节）。
 
 ## 8. 资源与目录
 
@@ -324,7 +324,7 @@ flowchart LR
 
 ## 9. 从 agent 申请到创建完成
 
-项目成员在 Palpo 网页端定义一个 agent：名称、一份已发布的资源、角色、申请的 token 数和每日速率。Palpo 在接待室中发布 `com.hagency.engagement.request.v1`，并排入一个作业。
+项目成员在 Palpo 网页端定义一个 agent：名称、一份已发布的资源、角色、申请的 token 数和每日速率。Palpo 在接待房间中发布 `com.hagency.engagement.request.v1`，并排入一个作业。
 
 ```mermaid
 stateDiagram-v2
@@ -343,7 +343,7 @@ stateDiagram-v2
 ```
 
 **接纳。** [bootstrap/palpo_work.rs](../native/hagency/src/bootstrap/palpo_work.rs) 中的 `admit_request` 重新读取源事件，观察相关房间，并调用 `hagency-core/src/authority.rs` 中的 `verify_request`。以下条件必须成立：
-- 接待室和项目房间都仅限邀请且未加密。
+- 接待房间和项目房间都仅限邀请且未加密。
 - 申请人、所有者和代表都已加入项目房间。
 - 所有者在该房间的权限等级为 100。
 - 房间的 `com.hagency.admin.binding.v1` 状态写明了本车队、项目和所有者。
@@ -386,7 +386,7 @@ stateDiagram-v2
 
 | 房间 | 加密 | 成员 | 什么会唤醒 agent | 规则所在位置 |
 | --- | --- | --- | --- | --- |
-| 接待室 | 否 | Palpo 的账号和代表 | 无。它承载申请和探测。 | `verify_request`、`probe.rs` |
+| 接待房间 | 否 | Palpo 的账号和代表 | 无。它承载申请和探测。 | `verify_request`、`probe.rs` |
 | 项目房间 | 否 | 项目成员、代表、各 agent | 提及该 agent 的人类消息 | `hagency-store/src/domain/verified_ingress.rs` 中的 `admit_matrix_input` |
 | agent 私聊 | 是 | 所有者和一个 agent | 所有者发来的任何消息 | `admit_matrix_input`；房间形态见 `domain/matrix_routes.rs` |
 | 审批室 | 是 | 所有者和审批机器人 | 无。它承载卡片和裁决。 | `domain/approvals.rs` 中的 `observe_approval_room` |
@@ -425,7 +425,7 @@ stateDiagram-v2
    - 逐个观察其余房间。成员不恰好是所有者和 agent 的加密房间记为 `encrypted_shared`；其他房间记为 `working`。
    - 对 working 房间，`joined_session` 解析出会话 `joined_<engagement>_<transport>_<generation>_<hash>`，并通过 `OwnedClaimRoom::joined_group` 把房间加入领取配置。
    - 无法观察或无法路由的房间在本轮跳过，绝不影响身份房间。
-3. **Collector。** [hagency-matrix/src/collector.rs](../native/hagency-matrix/src/collector.rs) 中的 `Inner` 结构体在内存中维护两张表：`joined`（房间 → 是否工作）和 `joined_shared`。`host_rooms()` 返回身份房间加上 working 的加入房间，`observed()` 再加上接待室。这些集合决定同步过滤器、接入目标和发送检查。
+3. **Collector。** [hagency-matrix/src/collector.rs](../native/hagency-matrix/src/collector.rs) 中的 `Inner` 结构体在内存中维护两张表：`joined`（房间 → 是否工作）和 `joined_shared`。`host_rooms()` 返回身份房间加上 working 的加入房间，`observed()` 再加上接待房间。这些集合决定同步过滤器、接入目标和发送检查。
 4. **存储准入。** `domain/matrix_routes.rs` 中的房间范围写入者，只有在 `joined_working` 找到一行 working 记录时，才接受项目房间以外的群聊房间。`domain/owned_dispatch.rs` 中的 `refresh_matrix_rooms` 允许加入的房间增减，但身份房间必须保持不变，且配置最多容纳 16 个房间。`domain/execution.rs` 中的领取查询同样检查 working 记录。
 5. **唤醒规则。** 在 `admit_matrix_input` 中，群聊房间里的消息如果提及了 agent，或者 `owner_only_joined_room` 发现这是一个成员只有所有者和 agent 的 working 加入房间，就会唤醒 agent。
 6. **加密且有他人。** agent 留在房间里，发一条纯文本 `m.notice`，说明自己无法在这里工作。之后如果有人发言，它最多每 15 分钟重复一次这条通知（`RENOTICE_GAP_MS`）。它只读取发送者和时间戳，从不读取消息内容。每一轮都会重新判断状态，所以当房间里只剩所有者时，它会变为 `working`。
