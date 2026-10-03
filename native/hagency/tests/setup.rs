@@ -180,3 +180,21 @@ fn native_setup_without_local_codex_needs_no_codex_folder() {
         serde_json::from_slice(&std::fs::read(state.join("fleet-runtime.json")).unwrap()).unwrap();
     assert!(written.get("local_codex").is_none());
 }
+
+/// ADR-189: a build without the embedded console refuses `start` by name and
+/// leaves no half-made state behind.
+#[test]
+fn native_start_without_a_console_refuses_before_touching_state() {
+    if option_env!("HAGENCY_CONSOLE_DIR").is_some() {
+        return; // a release-style build carries the console
+    }
+    let root = tempfile::tempdir().unwrap();
+    let state = root.path().join("state");
+    let output = Command::new(env!("CARGO_BIN_EXE_hagency"))
+        .args(["start", "--no-open", "--state-dir", state.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--console-assets"));
+    assert!(!state.exists());
+}

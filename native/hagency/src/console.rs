@@ -77,8 +77,19 @@ impl Console {
     /// the same `state_dir` `serve` opens; tests pass `None` for the legacy
     /// asset-only shape.
     pub fn load_with_state(path: &Path, state_dir: Option<&Path>) -> Result<Self, Error> {
+        Self::with_assets(assets::Assets::load(path)?, state_dir)
+    }
+    /// ADR-189: the console compiled into this binary, when it carries one.
+    pub fn embedded_with_state(state_dir: Option<&Path>) -> Result<Self, Error> {
+        Self::with_assets(assets::Assets::embedded()?, state_dir)
+    }
+    /// Whether this binary carries the console build (a release build).
+    pub fn embedded_available() -> bool {
+        assets::embedded_available()
+    }
+    fn with_assets(assets: assets::Assets, state_dir: Option<&Path>) -> Result<Self, Error> {
         Ok(Self(Arc::new(Inner {
-            assets: assets::Assets::load(path)?,
+            assets,
             authority: match state_dir {
                 Some(dir) => Authority::persistent(dir),
                 None => Authority::new(),
