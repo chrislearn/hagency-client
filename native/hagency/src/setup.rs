@@ -315,6 +315,25 @@ mod tests {
     }
 
     #[test]
+    fn a_changed_codex_binary_makes_the_runtime_stale() {
+        let root = tempfile::tempdir().unwrap();
+        let binary = root.path().join("codex");
+        std::fs::write(&binary, b"version one").unwrap();
+        let digest = sha256_file(&binary).unwrap();
+        std::fs::write(
+            root.path().join(RUNTIME_FILE),
+            serde_json::json!({"executable": binary, "executable_sha256": digest}).to_string(),
+        )
+        .unwrap();
+        assert!(runtime_matches(root.path(), &binary));
+        // A Codex update replaces the binary in place.
+        std::fs::write(&binary, b"version two").unwrap();
+        assert!(!runtime_matches(root.path(), &binary));
+        // A different binary path is stale too.
+        assert!(!runtime_matches(root.path(), &root.path().join("other")));
+    }
+
+    #[test]
     fn a_script_with_nothing_beside_it_is_refused_by_name() {
         let root = tempfile::tempdir().unwrap();
         let script = root.path().join("codex");
@@ -402,4 +421,21 @@ async fn run_agent(executable: &Path, args: &[&str]) -> Result<(bool, String), S
     text.push_str(&String::from_utf8_lossy(&output.stderr));
     text.truncate(4096);
     Ok((output.status.success(), text))
+}
+
+/// Whether `<state>/fleet-runtime.json` still names this Codex binary with its
+/// current SHA-256. A Codex update changes the binary, and `serve` refuses a
+/// pinned digest that no longer matches (`refused_config`); the setup page
+/// rewrites the file when this is false.
+pub fn runtime_matches(state: &Path, executable: &Path) -> bool {
+    let Ok(bytes) = std::fs::read(state.join(RUNTIME_FILE)) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return false;
+    };
+    value["executable"].as_str() == executable.to_str()
+        && sha256_file(executable)
+            .ok()
+            .is_some_and(|digest| value["executable_sha256"].as_str() == Some(digest.as_str()))
 }
