@@ -94,7 +94,7 @@ export default function SetupPage() {
   }, [t, data.ready]);
   useEffect(() => { if (data.nativeConsole) load(); }, [data.nativeConsole, load]);
   // ADR-189: a signed-in agent is configured without a click.
-  const autoConfigure = setup && !setup.runtimeConfigured && (setup.agents ?? []).some((a) => a.found && a.signedIn);
+  const autoConfigure = setup && setup.applicable !== false && !setup.runtimeConfigured && (setup.agents ?? []).some((a) => a.found && a.signedIn);
   useEffect(() => { if (autoConfigure) check(); }, [autoConfigure]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function check() {
@@ -121,7 +121,7 @@ export default function SetupPage() {
     <Step n={1} title={t('st.agentsTitle')} done={setup?.runtimeConfigured}>
       <p>{t('st.agentsHelp')}</p>
       {setup === null ? <p className="dim">{t('st.loading')}</p> : agents.map((agent) => <AgentCard key={agent.kind} agent={agent} />)}
-      <p>{setup?.runtimeConfigured ? t('st.runtimeReady') : ready ? t('st.runtimePending') : t('st.runtimeWaiting')}</p>
+      <p>{setup?.runtimeConfigured ? t('st.runtimeReady') : setup?.runtimeStale ? t('st.runtimeStale') : ready ? t('st.runtimePending') : t('st.runtimeWaiting')}</p>
       <button type="button" className="btn" disabled={busy} onClick={check}>{busy ? t('st.checking') : t('st.checkAgain')}</button>
     </Step>
     <Step n={2} title={t('st.palpoTitle')} done={setup?.palpo?.imported}>

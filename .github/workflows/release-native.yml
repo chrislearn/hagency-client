@@ -150,7 +150,8 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
-          find . -type f -name 'hagency-nv*' | sort | xargs sha256sum > SHA256SUMS
+          find . -type f -name hagency | sort | xargs sha256sum > SHA256SUMS
+          [ -s SHA256SUMS ] || { echo "::error::no release binaries found to checksum"; exit 1; }
           cat SHA256SUMS
       - uses: actions/upload-artifact@v4
         with:

@@ -67,6 +67,14 @@ async fn report(
     configured_now: Option<Result<(), String>>,
 ) -> serde_json::Value {
     let runtime = live.state_dir().join("fleet-runtime.json").is_file();
+    // A configured runtime that no longer names the detected Codex (an
+    // update changed the binary) is stale: serve refuses it until rewritten.
+    let stale = runtime
+        && agents
+            .iter()
+            .find(|a| a.kind == "codex")
+            .and_then(|a| a.path.as_deref())
+            .is_some_and(|path| !crate::setup::runtime_matches(live.state_dir(), path));
     let resources = match domain {
         Some(store) => store
             .catalog(String::new(), 64)
@@ -79,7 +87,8 @@ async fn report(
         "ok": true,
         "applicable": live.fleet_address().is_some(),
         "agents": agents,
-        "runtimeConfigured": runtime,
+        "runtimeConfigured": runtime && !stale,
+        "runtimeStale": stale,
         "palpo": {
             "imported": live.is_imported(),
             "transport": live.status().get(),
@@ -134,24 +143,30 @@ async fn check(depot: &mut Depot, res: &mut Response) {
     };
     let codex = crate::setup::detect_codex().await;
     let state = live.state_dir().to_owned();
-    let configured_now =
-        if !state.join("fleet-runtime.json").is_file() && codex.found && codex.signed_in {
-            let options = crate::setup::Options {
-                state_dir: state,
-                listen: address,
-                codex: codex.path.clone(),
-                codex_home: None,
-                no_local_codex: false,
-                force: false,
-            };
-            let result = tokio::task::spawn_blocking(move || crate::setup::configure(&options))
-                .await
-                .map_err(|_| "configuration did not finish".to_owned())
-                .and_then(|r| r.map(|_| ()));
-            Some(result)
-        } else {
-            None
+    let present = state.join("fleet-runtime.json").is_file();
+    let stale = present
+        && codex
+            .path
+            .as_deref()
+            .is_some_and(|path| !crate::setup::runtime_matches(&state, path));
+    let configured_now = if (!present || stale) && codex.found && codex.signed_in {
+        let options = crate::setup::Options {
+            state_dir: state,
+            listen: address,
+            codex: codex.path.clone(),
+            codex_home: None,
+            no_local_codex: false,
+            // Rewrite a stale file (the old one is kept as a .bak copy).
+            force: stale,
         };
+        let result = tokio::task::spawn_blocking(move || crate::setup::configure(&options))
+            .await
+            .map_err(|_| "configuration did not finish".to_owned())
+            .and_then(|r| r.map(|_| ()));
+        Some(result)
+    } else {
+        None
+    };
     if let Err(error) = recheck(depot) {
         failed(res, error);
         return;
