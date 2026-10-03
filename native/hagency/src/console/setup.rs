@@ -77,6 +77,7 @@ async fn report(
     };
     let mut value = json!({
         "ok": true,
+        "applicable": live.fleet_address().is_some(),
         "agents": agents,
         "runtimeConfigured": runtime,
         "palpo": {
@@ -99,8 +100,10 @@ async fn report(
 
 #[handler]
 async fn status(depot: &mut Depot, res: &mut Response) {
+    // Setup applies to an imported fleet only. Elsewhere the page and its
+    // banner have nothing to show, which is an answer, not a failure.
     let Some(live) = live(depot) else {
-        refusal(res, StatusCode::SERVICE_UNAVAILABLE, "setup_unavailable");
+        res.render(Json(json!({"ok": true, "applicable": false, "agents": []})));
         return;
     };
     let agents = vec![crate::setup::detect_codex().await];

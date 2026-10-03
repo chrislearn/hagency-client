@@ -85,9 +85,17 @@ export default function SetupPage() {
   const [note, setNote] = useState(null);
 
   const load = useCallback(async () => {
-    try { setSetup(await fetchSetup()); setNote(null); } catch (error) { setNote(errorText(t, error.message)); }
-  }, [t]);
+    try {
+      // Wait for the provider's sign-in, like the other pages that read on their own.
+      await data.ready;
+      setSetup(await fetchSetup());
+      setNote(null);
+    } catch (error) { setNote(errorText(t, error.message)); }
+  }, [t, data.ready]);
   useEffect(() => { if (data.nativeConsole) load(); }, [data.nativeConsole, load]);
+  // ADR-189: a signed-in agent is configured without a click.
+  const autoConfigure = setup && !setup.runtimeConfigured && (setup.agents ?? []).some((a) => a.found && a.signedIn);
+  useEffect(() => { if (autoConfigure) check(); }, [autoConfigure]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function check() {
     if (busy) return;
@@ -104,6 +112,7 @@ export default function SetupPage() {
   }
 
   if (!data.nativeConsole) return <PageHead title={t('nav.setup')} sub={t('st.nativeOnly')} />;
+  if (setup && setup.applicable === false) return <><PageHead title={t('nav.setup')} sub={t('st.sub')} /><p>{t('st.notFleet')}</p></>;
   const agents = setup?.agents ?? [];
   const ready = agents.some((a) => a.found && a.signedIn);
   return <>

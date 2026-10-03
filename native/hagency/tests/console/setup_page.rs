@@ -21,6 +21,8 @@ async fn native_setup_status_reports_agents_and_steps() {
     assert_eq!(answer.status_code, Some(StatusCode::OK));
     let value = answer.take_json::<Value>().await.unwrap();
     assert_eq!(value["ok"], json!(true));
+    // The fixture is not an imported fleet: the banner stays hidden.
+    assert_eq!(value["applicable"], json!(false));
     assert_eq!(value["agents"][0]["kind"], json!("codex"));
     assert!(value["agents"][0]["found"].is_boolean());
     assert!(value["agents"][0]["signedIn"].is_boolean());
