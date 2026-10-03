@@ -4,10 +4,11 @@
 
 **Lend Codex agents to projects on a Palpo Matrix server, with owner approval and token budgets.**
 
-Hagency is one Rust service, `hagency serve`. The *operator* is the person who runs Hagency and offers its resources to Palpo. The operator publishes resources to a connected Palpo homeserver. A resource is a model, a reasoning effort and a monthly token ceiling. Projects define agents on those resources and request tokens. The operator approves an amount. Hagency then gives the agent its own Matrix identity in the project's room. People @mention the agent to give it work. The owner approves the agent's risky operations from a private encrypted room.
+Hagency is one Rust binary, `hagency`, that runs as a service on your machine. The *operator* is the person who runs Hagency and offers its resources to Palpo. The operator publishes resources to a connected Palpo homeserver. A resource is a model, a reasoning effort and a monthly token ceiling. Projects define agents on those resources and request tokens. The operator approves an amount. Hagency then gives the agent its own Matrix identity in the project's room. People @mention the agent to give it work. The owner approves the agent's risky operations from a private encrypted room.
 
-This repository holds the Rust service in [native/](native/) and the console source in [mockup/](mockup/). The console is a Next.js app that is exported to static files at build time. `hagency serve` serves those files.
+This repository holds the Rust service in [native/](native/) and the console source in [mockup/](mockup/). The console is a Next.js app that is exported to static files at build time and embedded in the binary.
 
+**Running Hagency?** Follow [Set up Hagency](#set-up-hagency).
 **Using Hagency through a Palpo server?** Start with the [user guide](docs/user-guide/README.md).
 **Changing the service?** Start with the [code walkthrough](docs/architecture-walkthrough.md).
 
@@ -17,8 +18,8 @@ This repository holds the Rust service in [native/](native/) and the console sou
 | --- | --- |
 | [What it does](#what-it-does) | The capability surface |
 | [Architecture](#architecture) | One process, its threads and its crates |
-| [Build and install](#build-and-install) | From source, as a systemd or launchd service |
-| [First run](#first-run) | Start the service, connect Palpo, approve an agent |
+| [Set up Hagency](#set-up-hagency) | Sign in to Codex, start Hagency, finish setup in the console |
+| [Set up from the command line](#set-up-from-the-command-line) | `hagency setup`, `hagency serve`, the installer, coordinator installs, the operator API |
 | [Operating](#operating) | Health, logs, backup, credential rotation |
 | [Configuration](#configuration) | The state directory, `fleet-runtime.json` and `agent-driver.json` |
 | [Security posture](#security-posture) | What is enforced, and what is assumed |
@@ -40,7 +41,7 @@ This repository holds the Rust service in [native/](native/) and the console sou
   - file transfers.
 
   Only a verified verdict from the owner's own device counts. An unanswered card is denied.
-- **One console.** The same binary serves the console on its loopback port. It covers resources, accounts, agents, engagements, project sides, approvals, invitations, tasks, usage and alerts.
+- **One console.** The same binary serves the console on its loopback port. It covers setup, resources, accounts, agents, engagements, project sides, approvals, invitations, tasks, usage and alerts.
 
 ### Where an agent works
 
@@ -59,7 +60,7 @@ Work in a joined room spends the same allocation. Its approval cards still go to
 ## Architecture
 
 ```text
-Palpo homeserver  <── outbound HTTPS ──  hagency serve (127.0.0.1:13300)
+Palpo homeserver  <── outbound HTTPS ──  hagency start (127.0.0.1:13300)
                                            ├─ Palpo transport: requests, probes, catalog, statuses
                                            ├─ fleet service: provisioning loop, one approval pump per owner
                                            ├─ per agent: a driver thread (Matrix /sync, intake, replies) and an invite poller
@@ -68,9 +69,10 @@ Palpo homeserver  <── outbound HTTPS ──  hagency serve (127.0.0.1:13300)
                                            └─ per dispatch: hagency guardian ─> codex app-server ─> hagency mcp
 ```
 
-- **Outbound only.** `hagency serve` opens no port to the outside. It polls Palpo's fleet API and polls Matrix `/sync` for each agent, so it can run behind NAT.
+- **Outbound only.** The service opens no port to the outside. It polls Palpo's fleet API and polls Matrix `/sync` for each agent, so it can run behind NAT.
 - **Single binary.** The same executable is:
-  - the daemon;
+  - the daemon, with the console embedded;
+  - the per-user service registration;
   - the guardian that owns each runner's process tree;
   - the MCP helper that gives Codex its task tools;
   - the operator CLI.
@@ -87,78 +89,205 @@ Palpo homeserver  <── outbound HTTPS ──  hagency serve (127.0.0.1:13300)
 
 The [code walkthrough](docs/architecture-walkthrough.md) follows each flow through the code, with diagrams.
 
-## Build and install
+## Set up Hagency
 
-### Service modes
-
-| Mode | Use it for | `serve` flags | Configuration |
-| --- | --- | --- | --- |
-| Fleet (default, recommended) | New installs: an imported Palpo fleet, with no coordinator agent (ADR-187) | `--palpo-transport` | `fleet-runtime.json`, written by `hagency setup`, plus the files the console import writes |
-| Coordinator | Existing installs that run a coordinator agent | `--agent-driver --palpo-transport` | `agent-driver.json` and its `matrix.*` and `approval.*` files |
-
-`--agent-driver` and `--development-driver` are mutually exclusive. Without `--palpo-transport`, a console import is saved and starts on the next start with the flag.
-
-### Build
-
-Requirements:
+You need:
 
 | | |
 | --- | --- |
-| Rust | The toolchain pinned in [rust-toolchain.toml](rust-toolchain.toml) |
-| Node.js 22 | Build time only, to export the console |
-| Codex CLI | The runner. `hagency setup` finds it and records its path and SHA-256 in the runtime configuration. |
-| Host | Linux with systemd, or macOS with launchd |
+| Host | macOS, or Linux with systemd. You use the console on the machine that runs Hagency. |
+| Coding agent | Codex CLI, installed and on your `PATH` |
 | Palpo | A homeserver whose admin can run **Add Hagency** |
 
-To build the binary and the console:
+Your terminal work is steps 1 to 3. The rest happens in the console.
 
-1. Build the binary:
+### 1. Sign in to the coding agent
 
-   ```bash
-   cargo build --release --locked -p hagency
-   ```
+Sign in to Codex yourself, in a terminal on this machine:
 
-2. Install the console's build dependencies:
+```bash
+codex login
+```
+
+On a machine without a browser, add `--device-auth`.
+
+Hagency never signs in for you. It only asks Codex whether it is signed in, and how (`codex login status`). It never reads or stores your credentials.
+
+### 2. Get the hagency binary
+
+**A release build.** [release-native.yml](.github/workflows/release-native.yml) builds one binary per platform with the console embedded: macOS arm64 and x86-64, Linux x86-64 and arm64, plus `SHA256SUMS`. It runs on manual dispatch only and publishes no GitHub release yet. Download the binary from the run's artifacts.
+
+**From source.** You need the Rust toolchain pinned in [rust-toolchain.toml](rust-toolchain.toml), and Node.js 22 at build time only.
+
+1. Install the console's build dependencies:
 
    ```bash
    (cd mockup && npm ci)
    ```
 
-3. Export the console to a new directory:
+2. Build the console into a new directory:
 
    ```bash
-   node mockup/scripts/build-native-console.mjs --output /abs/path/console-assets
+   node mockup/scripts/build-native-console.mjs --output /abs/path/console
    ```
 
    The script refuses an existing directory and creates the new one with mode 0700.
 
-4. Copy the binary into the install directory. The installer runs `<install-dir>/hagency` and refuses to start if it is missing:
+3. Build the binary with that console embedded. Use an absolute path:
 
    ```bash
-   install -m 0755 target/release/hagency /abs/path/bin/hagency
+   HAGENCY_CONSOLE_DIR=/abs/path/console cargo build --release --locked -p hagency
    ```
 
-### Install a fleet as a service
+   The build refuses a directory without the console's `manifest.json`.
 
-Fleet mode is the installer's default. Which user runs it matters, because the service runs as that user and uses that user's Codex sign-in:
+Without `HAGENCY_CONSOLE_DIR`, the binary has no console. `hagency start` then refuses to run unless you pass `--console-assets /abs/path/console`. The same flag serves a console folder instead of the embedded one, for console development.
+
+Put the binary where it will stay, for example `~/.local/bin/hagency`. The service in step 3 runs the binary from that path.
+
+### 3. Start Hagency
+
+Choose one:
+
+- **As a service (recommended):**
+
+  ```bash
+  hagency service install
+  ```
+
+- **In this terminal:**
+
+  ```bash
+  hagency start
+  ```
+
+  Stop it with Ctrl-C.
+
+`hagency start`:
+- uses a default state directory: `~/Library/Application Support/Hagency` on macOS, `~/.local/share/hagency` on Linux (or `$XDG_DATA_HOME/hagency`). Pass `--state-dir DIR` for another one.
+- initializes the directory when it is new or empty. It refuses a non-empty directory that is not a Hagency state directory.
+- listens on `127.0.0.1:13300`. `--listen` accepts loopback addresses only.
+- runs as an imported fleet (`serve --palpo-transport`) with the embedded console. It starts without `fleet-runtime.json` and without a Palpo import; you complete both in the console.
+- prints a console sign-in link and opens it in your browser. Pass `--no-open` to only print it.
+
+`hagency service install` registers a per-user service that runs `hagency start --no-open`, and starts it:
+- **macOS:** a LaunchAgent, `~/Library/LaunchAgents/io.hagency.plist`. It starts at login and restarts after a crash. Its log is `~/Library/Logs/Hagency/hagency.log`.
+- **Linux:** a `systemd --user` unit, `~/.config/systemd/user/hagency.service`. No `sudo` is needed. A user service stops when you log out. To keep it running, run `loginctl enable-linger $USER` once.
+- The service runs as you, so it uses your Codex sign-in. It records your current `PATH`, so it finds the same `codex` you do.
+- It takes `--state-dir`, `--listen` and `--no-open`, like `start`. When the service answers, the command prints the sign-in link and opens it.
+- Run it again to replace the service, for example after you move the binary.
+- `hagency service uninstall` stops and removes the service. It keeps the state directory.
+
+### 4. Open the console
+
+Open the printed link in a browser on this machine. The link opens the whole console. Opening it exchanges it for an `HttpOnly` session cookie, and a restart does not sign you out. The link stays valid until you print a new one, so keep it private.
+
+To print a new link:
+
+```bash
+# macOS
+hagency console-access --state-dir "$HOME/Library/Application Support/Hagency"
+# Linux
+hagency console-access --state-dir ~/.local/share/hagency
+```
+
+Pass the same `--state-dir` and `--listen` you gave `start`, if you changed them. The link is printed only to a terminal. The service log shows only this command.
+
+### 5. Finish setup in the console
+
+Open **Setup** in the console menu. It has three steps. Each step shows a check mark when it is done.
+
+1. **Coding agents.** Hagency finds Codex on the service's `PATH` and shows its path, its version and whether it is signed in.
+   - **Not installed:** install Codex, then click **Check again**.
+   - **Not signed in:** run `codex login` in a terminal on this machine, then click **Check again**.
+   - **Signed in:** click **Check again**. Hagency writes and validates `fleet-runtime.json` with the defaults under [Configuration](#configuration). The fleet service picks it up within 5 s, without a restart.
+   - The step shows how Codex is signed in: a ChatGPT plan or an API key. With a plan, it notes that plan sign-ins are meant for personal use, and suggests an API key before you offer the agent to other people. It does not block.
+2. **Connect Palpo.**
+   1. In Palpo web, the Palpo admin runs **Add Hagency**.
+   2. In Palpo web, sign in with the account that owns this Hagency. Open **My Hagency access** and click **Download Hagency configuration**.
+   3. In this step, pick the file, enter the homeserver's Matrix address and click **Connect**. The Palpo transport starts without a restart. One Hagency runs one Palpo fleet.
+   4. In Palpo web, click **Verify connection & create reception**. The fleet service then creates the fleet's representative device and keys. The approval bot gets one device per owner, created when the fleet service first prepares that owner's approved agent (once the owner has a cross-signing key).
+
+   The same import is also under **Project sides → Connect a Palpo project server**.
+3. **Offer a resource.** This step needs step 1.
+   1. Choose a **Model**. The list holds only the model and reasoning pairs Hagency qualifies ([role-capacity.json](native/hagency-core/role-capacity.json)). For Codex these are `gpt-5.6-sol` with `low`, `medium` or `high`.
+   2. Set the **Monthly token ceiling**. The default is 20,000,000.
+   3. Click **Offer to Palpo**.
+
+   Hagency creates the resource on the seat of your Codex sign-in and publishes it. Palpo receives it within 15 s, and projects can define agents on it. Offer more models in the same step. Edit or withdraw resources under **My resources**.
+
+### 6. Approve agents
+
+Projects define agents on your resources in Palpo web. Approve each request under **Engagements**. The agent joins the project room when provisioning completes. The [user guide](docs/user-guide/README.md) describes the owner's side.
+
+Everything after setup happens in the console.
+
+## Set up from the command line
+
+Use these for automation, recovery and coordinator installs. The setup above needs none of them.
+
+### Service modes
+
+| Mode | Use it for | How it runs | Configuration |
+| --- | --- | --- | --- |
+| Fleet (default, recommended) | An imported Palpo fleet, with no coordinator agent (ADR-187) | `hagency start`, or `serve --palpo-transport` | `fleet-runtime.json`, written by the Setup page or `hagency setup`, plus the files the console import writes |
+| Coordinator | Existing installs that run a coordinator agent | `serve --agent-driver --palpo-transport` | `agent-driver.json` and its `matrix.*` and `approval.*` files |
+
+`--agent-driver` and `--development-driver` are mutually exclusive. Without `--palpo-transport`, a console import is saved and starts on the next start with the flag. `serve` serves the embedded console when the binary has one; `--console-assets` overrides it.
+
+### Prepare a state directory with `hagency setup`
+
+`hagency setup` does what the Setup page's first step does, with options:
+
+```bash
+hagency setup --state-dir /abs/path/state
+```
+
+`hagency setup`:
+- initializes the directory as `hagency init` does when it is new or empty. It refuses a non-empty directory that has no `operator.token`.
+- finds the Codex binary: `--codex PATH`, or else `codex` on `PATH`. If that is the npm launcher script, setup uses the native binary that the npm package ships beside it.
+- finds the Codex sign-in folder: `--codex-home DIR`, or else `$CODEX_HOME`, or else `~/.codex`. The folder must exist; if it does not, setup asks you to run `codex login` first. With `--no-local-codex`, setup does not look for this folder, so no `~/.codex` is needed: agents sign in to `<state>/runtime-home` instead, setup reports that folder, and the file gets no `local_codex` block.
+- creates `<state>/agent-homes` and writes `fleet-runtime.json` with mode 0600 and the defaults listed under [Configuration](#configuration).
+- validates the file with the same loader `serve` uses. A file that fails is renamed to `fleet-runtime.json.rejected`, so the service never starts on it.
+- refuses to replace an existing `fleet-runtime.json` unless you pass `--force`. With `--force`, it keeps the old file as `fleet-runtime.json.bak-<seconds>`.
+
+It prints the Codex binary it chose, the file it wrote, and whether Codex is signed in. If Codex is not signed in, it prints the command to run, `CODEX_HOME=<folder> codex login`. It ends with the next commands to run. Pass `--listen` if `serve` will use an address other than `127.0.0.1:13300`. `--console-assets` only fills in the printed `serve` command.
+
+With a `local_codex` block, Codex runs with `HOME` set to `local_codex.home` and `CODEX_HOME` set to `local_codex.codex_home`. Without one, both are `<state>/runtime-home`. Managed accounts and `hagency account login` serve coordinator installs only.
+
+### Run in the foreground with `hagency serve`
+
+```bash
+hagency serve --state-dir /abs/path/state --palpo-transport
+```
+
+Then print a console link with `hagency console-access --state-dir /abs/path/state`, and continue at [step 5](#5-finish-setup-in-the-console).
+
+### Install a fleet with install-native.sh
+
+[install/install-native.sh](install/install-native.sh) installs a system service from a binary and a console folder. It predates `hagency service install`, which replaces it for fleet installs.
+
+Which user runs it matters, because the service runs as that user and uses that user's Codex sign-in:
 
 - **Linux.** The installer writes the unit to `/etc/systemd/system` and runs `systemctl`, so run it with `sudo`. It renders the unit's `User=` as the user running it, so the service runs as `root`.
   - The `local_codex` binding that setup writes accepts its home folder and Codex folder only when they are owned by the service user (`root`) and have no group or other write permission. `--codex-home` therefore cannot point at another user's `~/.codex`.
   - If `codex` is not on root's `PATH`, pass `--codex /abs/path/to/codex`.
   - The simplest path on Linux is `--no-local-codex`. After the install, sign Codex in to the service's runtime home with `sudo env CODEX_HOME=<state>/runtime-home codex login`.
-- **macOS.** Run it as yourself. It installs a LaunchAgent for your user, which uses your Codex sign-in.
+  - With this installer, run every command that reads the state directory as root (`sudo`), including `hagency console-access`.
+- **macOS.** Run it as yourself. It installs a LaunchAgent, `io.hagency.native`, for your user, which uses your Codex sign-in.
 
 ```bash
 install/install-native.sh \
   --install-dir /abs/path/bin \
   --state-dir /abs/path/state \
-  --console-dir /abs/path/console-assets
+  --console-dir /abs/path/console
 ```
 
+- **Before you run it.** Copy the binary to `<install-dir>/hagency`; the installer refuses to start without it. Build the console folder as in [step 2](#2-get-the-hagency-binary).
 - **Steps.** The installer:
   1. runs `hagency init`, which needs an empty state directory and creates `operator.token`;
   2. copies any files from `--config-dir` into the state directory with mode 0600;
-  3. runs `hagency setup` (see [First run](#first-run)), which finds Codex and writes a validated `fleet-runtime.json`. It skips this step when `--config-dir` supplied a `fleet-runtime.json`. If setup fails, the install stops and shows setup's message;
+  3. runs `hagency setup`, which finds Codex and writes a validated `fleet-runtime.json`. It skips this step when `--config-dir` supplied a `fleet-runtime.json`. If setup fails, the install stops and shows setup's message;
   4. renders [deploy/hagency-native.service](deploy/hagency-native.service) on Linux or [deploy/io.hagency.native.plist](deploy/io.hagency.native.plist) on macOS with the mode's `serve` flags (`serve --palpo-transport` for a fleet), and starts it;
   5. succeeds only when `/ready` answers 200 within 60 s.
 - **Codex options.** The installer passes these to `hagency setup`:
@@ -169,100 +298,55 @@ install/install-native.sh \
 - **Refusals.** The installer refuses a missing `--console-dir`, a non-empty state directory, a missing binary, Linux without systemd, and an existing unit unless you pass `--overwrite`.
 - **Retrying after a refusal.** Every refusal after step 1 leaves the state directory initialized: Linux without systemd, an existing unit without `--overwrite`, a bad file in `--config-dir`, and a setup failure. Empty the state directory or choose a new one before you run the installer again. After a setup failure you can instead finish with `hagency setup --state-dir …`.
 
-The service is now running, and the installer showed setup's report. Continue with [Connect an imported fleet](#connect-an-imported-fleet) at step 2.
-
-**In the foreground.** Without the installer, run `hagency setup --state-dir DIR`, then `hagency serve --palpo-transport …`, as in [Connect an imported fleet](#connect-an-imported-fleet).
+Then print a console link with `hagency console-access --state-dir /abs/path/state`, and continue at [step 5](#5-finish-setup-in-the-console).
 
 ### Coordinator install (existing installs)
 
-An existing coordinator install keeps working as configured. To install one as a service, pass `--mode coordinator` and a `--config-dir` that contains `agent-driver.json`:
+An existing coordinator install keeps working as configured. `hagency start` and the Setup page's first step do not apply to it. To install one as a service, pass `--mode coordinator` and a `--config-dir` that contains `agent-driver.json`:
 
 ```bash
 install/install-native.sh --mode coordinator \
   --install-dir /abs/path/bin \
   --state-dir /abs/path/state \
-  --console-dir /abs/path/console-assets \
+  --console-dir /abs/path/console \
   --config-dir /abs/path/config [--overwrite]
 ```
 
 - **Configuration.** `agent-driver.json` is required; without it the installer refuses to start. `--config-dir` may also supply `fleet-runtime.json`, `development-driver.json`, `palpo-transport.json` and the private `matrix.*`, `palpo.*` and `approval.*` files. The installer refuses any other file name.
 - **Service.** The unit runs `serve --agent-driver --palpo-transport`. `hagency setup` does not run. The other steps and refusals are the same as for a fleet.
 
-There is no published release yet. [release-native.yml](.github/workflows/release-native.yml) builds per-target binaries and `SHA256SUMS` on manual dispatch only.
+### Create a resource with the operator API
 
-## First run
+The Setup page's **Offer to Palpo** uses the same writer as this call. Replace the state directory, and the listen address if you changed it from the default `127.0.0.1:13300`:
 
-### Connect an imported fleet
+```bash
+curl -s -X POST http://127.0.0.1:13300/api/native/v1/resources \
+  -H "Authorization: Bearer $(cat /abs/path/state/operator.token)" \
+  -H 'Content-Type: application/json' \
+  -d '{"presetId":"local_codex","seatId":"local_codex_seat","framework":"codex",
+       "model":"gpt-5.6-sol","provider":"openai","reasoning":"medium",
+       "ceiling":{"tokens":20000000,"period":"monthly"},"published":true}'
+```
 
-If you used the installer, it has done steps 1 and 3 and shown setup's report: do step 2, then continue at step 4.
+With install-native.sh on Linux, only root can read `operator.token`. Use a root shell (`sudo -s`): with `sudo curl …`, the `$(cat …)` still runs as you and cannot read the token. No seat has to be registered first. The answer is the resource's public catalog entry.
 
-1. Prepare the state directory:
-
-   ```bash
-   hagency setup --state-dir /abs/path/state
-   ```
-
-   `hagency setup`:
-   - initializes the directory as `hagency init` does when it is new or empty. It refuses a non-empty directory that has no `operator.token`.
-   - finds the Codex binary: `--codex PATH`, or else `codex` on `PATH`. If that is the npm launcher script, setup uses the native binary that the npm package ships beside it.
-   - finds the Codex sign-in folder: `--codex-home DIR`, or else `$CODEX_HOME`, or else `~/.codex`. The folder must exist; if it does not, setup asks you to run `codex login` first. With `--no-local-codex`, setup does not look for this folder, so no `~/.codex` is needed: agents sign in to `<state>/runtime-home` instead, setup reports that folder, and the file gets no `local_codex` block.
-   - creates `<state>/agent-homes` and writes `fleet-runtime.json` with mode 0600 and the defaults listed under [Configuration](#configuration).
-   - validates the file with the same loader `serve` uses. A file that fails is renamed to `fleet-runtime.json.rejected`, so the service never starts on it.
-   - refuses to replace an existing `fleet-runtime.json` unless you pass `--force`. With `--force`, it keeps the old file as `fleet-runtime.json.bak-<seconds>`.
-
-   It prints the Codex binary it chose, the file it wrote, and whether Codex is signed in. If Codex is not signed in, it prints the command to run, `CODEX_HOME=<folder> codex login`. It ends with the next commands to run. Pass `--listen` if `serve` will use an address other than `127.0.0.1:13300`. `--console-assets` only fills in the printed `serve` command.
-2. If setup said Codex is not signed in, run the command it printed. On a machine without a browser, add `--device-auth` to `codex login`. With a `local_codex` block, Codex runs with `HOME` set to `local_codex.home` and `CODEX_HOME` set to `local_codex.codex_home`. Without one, both are `<state>/runtime-home`. Managed accounts and `hagency account login` serve coordinator installs only.
-3. Start the service, unless the installer already did:
-
-   ```bash
-   hagency serve --state-dir /abs/path/state --palpo-transport \
-     --console-assets /abs/path/console-assets
-   ```
-
-4. Open the console:
-
-   ```bash
-   hagency console-access --state-dir /abs/path/state
-   ```
-
-   On Linux, run this as root (`sudo`), because the state directory belongs to the service user. Open the printed link in a browser on this machine. The link stays valid until you print a new one. Opening the link exchanges it for an `HttpOnly` session cookie; a restart does not sign you out.
-5. In Palpo web, the Palpo admin runs **Add Hagency**.
-6. In Palpo web, sign in with the account that owns this Hagency. Open **My Hagency access** and click **Download Hagency configuration**.
-7. In the console, the operator opens **Project sides → Connect a Palpo project server**, picks the file and enters the homeserver's Matrix address. The service starts the Palpo transport without a restart. One service runs one Palpo fleet.
-8. In Palpo web, the Palpo account that owns this Hagency clicks **Verify connection & create reception**. The fleet service then creates the fleet's representative device and local keys. The approval bot gets one device per owner, created when the fleet service first prepares that owner's approved agent (once the owner has a cross-signing key).
-9. Create the first resource with the operator API. The console creates further resources only as copies of an existing one, so the first one cannot come from the console. Replace the state directory, and the listen address if you changed it from the default `127.0.0.1:13300`:
-
-   ```bash
-   curl -s -X POST http://127.0.0.1:13300/api/native/v1/resources \
-     -H "Authorization: Bearer $(cat /abs/path/state/operator.token)" \
-     -H 'Content-Type: application/json' \
-     -d '{"presetId":"local_codex","seatId":"local_codex_seat","framework":"codex",
-          "model":"gpt-5.6-sol","provider":"openai","reasoning":"medium",
-          "ceiling":{"tokens":20000000,"period":"monthly"},"published":true}'
-   ```
-
-   On Linux, run this as root (`sudo`), because the state directory belongs to the service user and only it can read `operator.token`. Use a root shell (`sudo -s`): with `sudo curl …`, the `$(cat …)` still runs as you and cannot read the token. No seat has to be registered first. The answer is the resource's public catalog entry.
-
-   - **Qualified pairs only.** Palpo sees a resource only if its `model` and `reasoning` form a pair qualified for at least one role in [native/hagency-core/role-capacity.json](native/hagency-core/role-capacity.json). For Codex those are `gpt-5.6-sol` with `low`, `medium` or `high`. Any other pair is stored, but not published.
-   - **Matching the login.** With `local_codex`, `seatId` must equal `local_codex.seat`, `framework` must be `codex`, and `provider` must be `openai` or left out. `hagency setup` writes the preset `local_codex` and the seat `local_codex_seat`, which the example uses. The API does not check the match. A mismatched resource is accepted and published, but its agents are refused when Hagency provisions them, after the operator approves.
-
-   A qualified resource then appears in Palpo, where projects can define agents on it. Copy it in the console to offer other models, reasoning efforts or ceilings.
-10. Approve requests under **Engagements**. The agent joins the project room when provisioning completes.
-
-The [user guide](docs/user-guide/README.md) describes steps 5 to 8 from the Palpo side.
+- **Qualified pairs only.** Palpo sees a resource only if its `model` and `reasoning` form a pair qualified for at least one role in [native/hagency-core/role-capacity.json](native/hagency-core/role-capacity.json). Any other pair is stored, but not published. The Setup page offers qualified pairs only.
+- **Matching the login.** With `local_codex`, `seatId` must equal `local_codex.seat`, `framework` must be `codex`, and `provider` must be `openai` or left out. Setup writes the preset `local_codex` and the seat `local_codex_seat`, which the example uses. The API does not check the match. A mismatched resource is accepted and published, but its agents are refused when Hagency provisions them, after the operator approves.
 
 ## Operating
 
-On Linux, run these as root (`sudo`), because the state directory belongs to the service user.
+The commands below name the per-user service from `hagency service install`. With install-native.sh, the service is `hagency-native` (Linux) or `io.hagency.native` (macOS), and on Linux you run these as root (`sudo`), because the state directory belongs to the service user.
 
 | Task | Command |
 | --- | --- |
 | Check liveness | `curl -s 127.0.0.1:13300/health` |
 | Check readiness | `curl -s 127.0.0.1:13300/ready`. A 503 names each component that is not ready. |
-| Service status (Linux) | `systemctl status hagency-native` · `journalctl -u hagency-native` |
-| Logs (macOS) | `<install-dir>/logs/hagency-native.stdout.log` and `…stderr.log` |
+| Service status (Linux) | `systemctl --user status hagency` · `journalctl --user -u hagency` |
+| Logs (macOS) | `~/Library/Logs/Hagency/hagency.log`. With install-native.sh: `<install-dir>/logs/hagency-native.stdout.log` and `…stderr.log`. |
 | Set the log level | `RUST_LOG` (default `info`) |
-| Stop (macOS) | `launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/io.hagency.native.plist`. `KeepAlive` restarts a killed process. |
+| Restart | `launchctl kickstart -k gui/$(id -u)/io.hagency` (macOS) · `systemctl --user restart hagency` (Linux) |
+| Stop and remove | `hagency service uninstall`. It keeps the state directory. The service restarts a crashed process. |
+| New console link | `hagency console-access --state-dir <state>` |
 | Inspect | `hagency engagements`, `hagency resources`, `hagency alerts` (with `--state-dir`; add `--json` for raw output) |
 | Back up while running | `hagency backup --state-dir <state> --out <new dir>` |
 | Restore | `hagency restore --state-dir <empty dir> --from <backup>` |
@@ -270,7 +354,7 @@ On Linux, run these as root (`sudo`), because the state directory belongs to the
 
 **Fleet service progress.** The fleet service logs each stage change as `fleet service stage`. The stages are:
 
-1. `awaiting_runtime_config`: `fleet-runtime.json` is missing. Run `hagency setup`.
+1. `awaiting_runtime_config`: `fleet-runtime.json` is missing. Finish **Setup → Coding agents** in the console, or run `hagency setup`.
 2. `awaiting_reception`: Palpo's **Verify connection** has not bound the reception room yet.
 3. `identities`: the service is creating the fleet's accounts and keys.
 4. `running`: the provisioning loop and the approval pumps run.
@@ -281,16 +365,16 @@ The two `awaiting_*` stages are checked again every 5 s. A failed `identities` s
 
 **Restart while an agent waits for its owner.** Restarting the service while a new agent waits for its owner to join the DM strands that agent. See the user guide's [Known limitations](docs/user-guide/README.md#known-limitations).
 
-**Shutdown.** On SIGTERM, the service stops the runners, the Palpo transport and the fleet service. It then closes the Matrix sessions and the databases, and stops its HTTP server last. systemd allows 20 s.
+**Shutdown.** On SIGTERM, the service stops the runners, the Palpo transport and the fleet service. It then closes the Matrix sessions and the databases, and stops its HTTP server last. The installer's systemd unit allows 20 s.
 
 ## Configuration
 
-`hagency serve` reads no environment file. Its configuration is the files in `--state-dir`:
+The service reads no environment file. Its configuration is the files in its state directory:
 
 | File | Purpose |
 | --- | --- |
 | `operator.token` | Operator bearer secret, created by `hagency init` |
-| `fleet-runtime.json` | Codex runtime settings for an imported fleet, described below. Written by `hagency setup`. |
+| `fleet-runtime.json` | Codex runtime settings for an imported fleet, described below. Written by the Setup page or `hagency setup`. |
 | `agent-homes/` | The agents' home directories (`home.root` as `hagency setup` writes it) |
 | `palpo-transport.json`, `palpo.machine_token`, `palpo-appservice.json` | Written by the Palpo import |
 | `representative.identity.json`, `matrix.representative_token`, `matrix.appservice_token`, `matrix.provisioning_key` | The fleet's representative and provisioning credentials. The fleet service creates them once. |
@@ -305,15 +389,15 @@ The two `awaiting_*` stages are checked again every 5 s. A failed `identities` s
 
 Configuration files must be owner-private (mode 0600). `fleet-runtime.json` and `agent-driver.json` refuse unknown fields.
 
-`hagency setup` writes `fleet-runtime.json` and validates it; the table below is the file format, for reading it or for supplying your own through the installer's `--config-dir`. Setup writes these values:
+The Setup page and `hagency setup` write `fleet-runtime.json` and validate it with the same code; the table below is the file format, for reading it or for supplying your own through the installer's `--config-dir`. Setup writes these values:
 
 - `executable` and `executable_sha256`: the Codex binary it found, and its hash;
 - `file_limit` 4194304 (4 MiB), `operation_ms` 300000, `response_ms` 2000, `approval_owner_wait_ms` 180000, `idle_ms` 1200000;
 - `send_file` and `receive_file` `true`;
 - `home`: `root` is `<state>/agent-homes`, `task_client` is the running `hagency` binary, `projects` is `[]`;
-- `local_codex`, unless you pass `--no-local-codex`: preset `local_codex`, seat `local_codex_seat`, `home` set to your `HOME`, `codex_home` set to the Codex sign-in folder.
+- `local_codex`, unless you pass `--no-local-codex`: preset `local_codex`, seat `local_codex_seat`, `home` set to your `HOME`, `codex_home` set to the Codex sign-in folder (`$CODEX_HOME`, or `~/.codex`; the Setup page always uses this default, `hagency setup --codex-home` chooses another).
 
-To change a value, edit the file (keep mode 0600) and restart the service, or run `hagency setup --force` again with other options.
+To change a value, edit the file (keep mode 0600) and restart the service, or run `hagency setup --state-dir <state> --force` with other options.
 
 `fleet-runtime.json` fields:
 
@@ -384,14 +468,16 @@ The authoritative definitions are `FleetRuntimeConfig` and `Config` in [native/h
 
 What Hagency **enforces**:
 
-- **Loopback only.** `hagency serve` refuses any listen address that is not loopback. The console checks the `Host` header, and that `Origin` is `http://<listen address>`, on login and on every write ([native/hagency/src/console.rs](native/hagency/src/console.rs)), so it cannot be put behind a reverse proxy. Open the console on the machine where Hagency runs. Reaching it from another machine is not a supported setup.
+- **Loopback only.** The service refuses any listen address that is not loopback. The console checks the `Host` header, and that `Origin` is `http://<listen address>`, on login and on every write ([native/hagency/src/console.rs](native/hagency/src/console.rs)), so it cannot be put behind a reverse proxy. Open the console on the machine where Hagency runs. Reaching it from another machine is not a supported setup.
 - **Console requests.** The console requires the exact `Host` header and refuses forwarded headers. Writes need a same-origin `Origin`. The operator API requires the same exact `Host`, refuses `Forwarded`, `X-Forwarded-For`, `Origin` and `Sec-Fetch-Site`, then compares the bearer token's SHA-256 in constant time.
 - **Owner approvals.** Approvals come only from the owner's verified device. They arrive in an encrypted room whose only members are the owner and the approval bot. A third member or lost encryption disables the room. A failed delivery or an expired wait counts as a deny.
 - **One approval device per owner.** Each owner's approval-bot device trusts only that owner. Owners' approvals stay isolated from each other.
 - **Fenced runners.** Each dispatch has a capability and a fence number. A stale runner's calls are refused. A reply is published only after its process tree is proven gone.
 - **Codex sandbox.** Codex runs with `workspace-write` and `on-request` approvals, no network, and only its workspace writable. Hagency checks the settings Codex echoes back.
 - **Write-only credentials.** No route returns a stored token. The Palpo import's answer carries only public facts.
-- **Hardened unit.** The systemd unit sets `NoNewPrivileges`, `ProtectSystem=full`, an empty capability set and a syscall filter.
+- **No coding-agent credentials.** The Setup page runs only the Codex binary it found on `PATH`, only with `--version` and `login status`, and records it by path and SHA-256. Hagency never runs a login and never reads or stores the agent's credentials. Every setup write needs the operator's console session.
+- **Sign-in link stays out of logs.** `hagency start` prints the console link only to an interactive terminal. A service start writes only the `console-access` command to its log.
+- **Hardened unit (installer only).** install-native.sh's systemd unit sets `NoNewPrivileges`, `ProtectSystem=full`, an empty capability set and a syscall filter. The per-user service from `hagency service install` has none of these settings; it runs with your user's rights.
 
 What it **assumes**:
 

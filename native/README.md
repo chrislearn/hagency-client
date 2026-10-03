@@ -1,6 +1,6 @@
 # Hagency Rust workspace
 
-This directory holds the Rust workspace that builds `hagency`, the single binary that runs the Hagency service. The [top-level README](../README.md) covers installation, first run, operation and the security posture. The [code walkthrough](../docs/architecture-walkthrough.md) follows each flow through the code. This page is a map of the workspace.
+This directory holds the Rust workspace that builds `hagency`, the single binary that runs the Hagency service. The [top-level README](../README.md) covers setup, operation and the security posture. The [code walkthrough](../docs/architecture-walkthrough.md) follows each flow through the code. This page is a map of the workspace.
 
 ## Build and test
 
@@ -14,6 +14,16 @@ cargo test --workspace --all-targets --locked -- \
 ```
 
 The two `--skip` flags drop the tests that need a real qualified host (ADR-140, ADR-144). Without them, those two tests fail on an ordinary machine. CI passes the same flags (see below).
+
+This build has no console. To embed one (ADR-189), build the console first and name its absolute path in `HAGENCY_CONSOLE_DIR`:
+
+```bash
+(cd mockup && npm ci)
+node mockup/scripts/build-native-console.mjs --output /abs/path/console
+HAGENCY_CONSOLE_DIR=/abs/path/console cargo build --release --locked -p hagency
+```
+
+[hagency/build.rs](hagency/build.rs) includes every file of that directory in the binary and refuses a directory without `manifest.json`. At start the embedded files are checked against their manifest, as a console folder is. [release-native.yml](../.github/workflows/release-native.yml) builds release binaries this way.
 
 To test one crate or one test target:
 
@@ -45,9 +55,11 @@ cargo test --workspace --all-targets --locked --no-fail-fast -- \
 
 | Subcommand | Who runs it | What it does |
 | --- | --- | --- |
-| `serve` | systemd or launchd | The service. It listens on `127.0.0.1:13300` by default and refuses any address that is not loopback. [install/install-native.sh](../install/install-native.sh) installs it as a unit: `--mode fleet` (the default) or `--mode coordinator`. |
+| `start` | The operator, or the per-user service | Starts an imported fleet (ADR-189): uses the default state directory (`~/Library/Application Support/Hagency` on macOS, `~/.local/share/hagency` on Linux) unless `--state-dir` is given, initializes it if new, and runs `serve --palpo-transport` with the embedded console. It prints a console sign-in link to an interactive terminal and opens it unless `--no-open`. `--console-assets` serves a console folder instead; without an embedded console it is required. |
+| `service install`, `service uninstall` | The operator | Registers and starts a per-user service that runs `start --no-open` ([hagency/src/service.rs](hagency/src/service.rs)): a LaunchAgent `io.hagency` on macOS, logging to `~/Library/Logs/Hagency/hagency.log`, or a `systemd --user` unit `hagency.service` on Linux. It records the binary's path and the current `PATH`. `uninstall` removes the service and keeps the state directory. |
+| `serve` | The operator, or install-native.sh's units | The service with explicit flags. It listens on `127.0.0.1:13300` by default and refuses any address that is not loopback. [install/install-native.sh](../install/install-native.sh) installs it as a system unit: `--mode fleet` (the default) or `--mode coordinator`. Coordinator installs use `serve`. |
 | `init` | The operator | Requires an empty or new directory; writes `operator.token` and creates both databases. |
-| `setup` | The operator, or the installer in fleet mode | Prepares a state directory for an imported fleet ([hagency/src/setup.rs](hagency/src/setup.rs)): initializes it if new, finds Codex and its sign-in folder, writes `fleet-runtime.json` and validates it with `serve`'s loader. Options: `--codex`, `--codex-home`, `--no-local-codex`, `--force` (keeps the old file as `.bak-<seconds>`), `--listen`, `--console-assets`. |
+| `setup` | The operator, or the installer in fleet mode | The CLI form of the console's Setup page, step 1. Prepares a state directory for an imported fleet ([hagency/src/setup.rs](hagency/src/setup.rs)): initializes it if new, finds Codex and its sign-in folder, writes `fleet-runtime.json` and validates it with `serve`'s loader. Options: `--codex`, `--codex-home`, `--no-local-codex`, `--force` (keeps the old file as `.bak-<seconds>`), `--listen`, `--console-assets`. |
 | `console-access` | The operator | Prints a console link that stays valid until a new one is printed |
 | `engagements`, `resources`, `alerts` | The operator | Read-only views from the running service |
 | `backup`, `restore`, `rotate` | The operator | Online backup, restore into an empty directory, and operator-token rotation |
@@ -65,7 +77,7 @@ cargo test --workspace --all-targets --locked --no-fail-fast -- \
 | `--palpo-transport` | Run the Palpo transport and resource publication. With an imported fleet, also run the fleet service (ADR-187). With `--agent-driver`, the fleet service does not run. |
 | `--agent-driver` | Run a coordinator install from `agent-driver.json` |
 | `--development-driver` | Run one development attempt from `development-driver.json`. It cannot be combined with `--agent-driver`. |
-| `--console-assets` | The console directory built by `mockup/scripts/build-native-console.mjs`. It must be owner-private (0700). The directory must not itself be a symlink and must have no symlinks inside it (no symlinked file or subdirectory); a symlinked ancestor, such as macOS `/tmp`, is accepted. Every file must match its `manifest.json` entry. Otherwise `serve` refuses to start. |
+| `--console-assets` | Optional. Serves this console directory instead of the embedded console. Without either, `serve` runs with no console. The directory is the one built by `mockup/scripts/build-native-console.mjs`. It must be owner-private (0700). The directory must not itself be a symlink and must have no symlinks inside it (no symlinked file or subdirectory); a symlinked ancestor, such as macOS `/tmp`, is accepted. Every file must match its `manifest.json` entry. Otherwise `serve` refuses to start. |
 | `--queue-capacity` | The queue size of both writer threads, custody and domain. The default is 16. |
 
 ## Crates
@@ -94,7 +106,9 @@ Most library crates state their role and limits in a `//!` comment at the top of
 | Area | Files |
 | --- | --- |
 | Startup and shutdown | `Bootstrap::open_with_options`, `Bootstrap::serve` and `Bootstrap::close` in [hagency/src/bootstrap.rs](hagency/src/bootstrap.rs) |
-| Configuration files | [hagency/src/bootstrap/config.rs](hagency/src/bootstrap/config.rs): `FleetRuntimeConfig` (`fleet-runtime.json`) and `Config` (`agent-driver.json`). [hagency/src/setup.rs](hagency/src/setup.rs) writes `fleet-runtime.json`. |
+| Start and service (ADR-189) | `Command::Start` and `serve` in [hagency/src/main.rs](hagency/src/main.rs); `default_state_dir`, `announce` and the service units in [hagency/src/service.rs](hagency/src/service.rs); the embedded console in [hagency/build.rs](hagency/build.rs) and [hagency/src/console/assets.rs](hagency/src/console/assets.rs) |
+| Configuration files | [hagency/src/bootstrap/config.rs](hagency/src/bootstrap/config.rs): `FleetRuntimeConfig` (`fleet-runtime.json`) and `Config` (`agent-driver.json`). [hagency/src/setup.rs](hagency/src/setup.rs) writes `fleet-runtime.json` and detects Codex (`detect_codex`). |
+| Setup page (ADR-189) | [hagency/src/console/setup.rs](hagency/src/console/setup.rs) serves `GET /console/api/setup`, `POST /console/api/setup/check` and `POST /console/api/setup/resource`. The page is [mockup/app/setup/page.jsx](../mockup/app/setup/page.jsx). |
 | Palpo import | [hagency/src/bootstrap/palpo_import.rs](hagency/src/bootstrap/palpo_import.rs) parses the download. [hagency/src/console/palpo_import.rs](hagency/src/console/palpo_import.rs) serves `POST /console/api/palpo/import`. |
 | Fleet service (ADR-187) | [hagency/src/bootstrap/fleet_service.rs](hagency/src/bootstrap/fleet_service.rs) runs the stages and the provisioning loop. [hagency/src/bootstrap/fleet_identity.rs](hagency/src/bootstrap/fleet_identity.rs) creates the fleet's accounts, keys and per-owner approval devices, and pins owner keys. |
 | Invites and joined rooms (ADR-188) | [hagency/src/bootstrap/invites.rs](hagency/src/bootstrap/invites.rs) polls each agent's invites. [hagency-matrix/src/provisioning/factory.rs](hagency-matrix/src/provisioning/factory.rs) evaluates joined rooms and posts the encrypted-room notice. |
@@ -116,6 +130,6 @@ Recent tables:
 
 ## Decisions and contracts
 
-- [knowledge/decisions/](../knowledge/decisions/) holds the architecture decision records. ADR-187 and ADR-188 cover the newest behaviour.
+- [knowledge/decisions/](../knowledge/decisions/) holds the architecture decision records. ADR-187, ADR-188 and ADR-189 cover the newest behaviour.
 - [specs/](../specs/) holds the task contracts that bind behaviour to tests.
 - Code comments that cite `backend-v2.js`, `bridge-matrix.js` or `lib/*.js` refer to the earlier JavaScript implementation that this service replaced. Those files are in git history.

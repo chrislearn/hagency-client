@@ -13,8 +13,8 @@ in order the first time. Later sections cover everyday use and problems.
 - **Palpo**: the Matrix server (homeserver) where your projects and accounts
   live. Palpo has its own web admin pages.
 - **Rinx**: the Matrix chat app you use to talk to agents.
-- **Hagency console**: the Hagency web page where the operator connects Palpo,
-  manages resources and approves agent requests.
+- **Hagency console**: the Hagency web page where the operator sets up
+  Hagency, connects Palpo, manages resources and approves agent requests.
 - **Fleet**: one Hagency installation as a Palpo server sees it. Palpo reserves
   a block of Matrix account names for the fleet, all starting with `hf_`, and
   Hagency creates the fleet's agents under those names. One Hagency serves one
@@ -34,7 +34,7 @@ in order the first time. Later sections cover everyday use and problems.
 | Role | What they do |
 | --- | --- |
 | Palpo administrator | Adds this Hagency to the Palpo server once. |
-| Hagency operator | Runs Hagency, signs Codex in, connects the fleet, manages resources, approves agent requests in the console. |
+| Hagency operator | Signs Codex in, runs Hagency, sets it up in the console (coding agent, Palpo connection, resources), approves agent requests. |
 | Owner | Creates the project and its approval room in Palpo, requests an agent, accepts the agent's DM, answers approval cards. |
 | Project members | Talk to agents in shared rooms by @mentioning them. |
 
@@ -47,20 +47,95 @@ You need:
 - A Palpo server reachable over `https`, for example
   `https://matrix.your-server.example`.
 - An administrator account on that Palpo server.
-- The `hagency` program and the console files, built from this repository.
-  The repository [README](../../README.md) explains how to build them.
-- A Codex sign-in on the machine that runs Hagency (Step 4).
-- Codex installed on that machine. In Step 2, the installer or
-  `hagency setup` finds it and writes `fleet-runtime.json`, the local Codex
-  runtime settings, for you.
+- The `hagency` program. A release build has the console built in. The
+  repository README explains how to
+  [get the binary](../../README.md#2-get-the-hagency-binary), including how to
+  build it from source.
+- Codex installed on the machine that runs Hagency. You sign it in yourself
+  in Step 1.
 - An owner account that has cross-signing set up in Rinx (for example, by
   setting up secure backup or verifying a session). Hagency waits until the
   owner has a cross-signing key before it creates an agent for them.
 
-## Step 1: Add Hagency in Palpo
+Steps 1 to 5 are for the operator. Steps 6 to 8 involve the owner.
 
-These pages belong to Palpo, not to Hagency, so their exact layout may differ
-in your Palpo version.
+## Step 1: Sign in to Codex
+
+Fleet agents run Codex with the Codex sign-in on the machine that runs
+Hagency. They do not use accounts added in the console.
+
+On that machine, sign Codex in yourself:
+
+```bash
+codex login
+```
+
+On a machine without a browser, add `--device-auth`.
+
+Hagency never signs in for you, and it never reads or stores your
+credentials. It only asks Codex whether it is signed in.
+
+## Step 2: Start Hagency and open the console
+
+1. Start Hagency in one of two ways:
+   - **As a service (recommended):**
+
+     ```bash
+     hagency service install
+     ```
+
+     The service runs as you and starts again when you log in. On Linux it
+     is a `systemd --user` unit, so you do not need `sudo`. To keep it
+     running after you log out, run `loginctl enable-linger $USER` once.
+   - **In the terminal:**
+
+     ```bash
+     hagency start
+     ```
+
+     It keeps running until you press Ctrl-C.
+
+   Both keep Hagency's data in a default folder on this machine. The
+   repository README describes both commands under
+   [Start Hagency](../../README.md#3-start-hagency).
+2. Hagency prints a console link and opens it in your browser. On a machine
+   without a desktop, open the printed link in a browser on the same machine.
+3. The console opens and keeps you signed in until you click **End access**
+   or close the browser. Restarting Hagency does not sign you out. The link
+   keeps working until you print a new one, so keep it private.
+
+To print a new link later:
+
+```bash
+# macOS
+hagency console-access --state-dir "$HOME/Library/Application Support/Hagency"
+# Linux
+hagency console-access --state-dir ~/.local/share/hagency
+```
+
+## Step 3: Set up the coding agent in the console
+
+1. In the console menu, open **Setup**. The page has three steps:
+   **Coding agents**, **Connect Palpo** and **Offer a resource**. A step
+   shows a check mark when it is done.
+2. Under **Coding agents**, Hagency shows Codex's path, its version and
+   whether it is signed in.
+   - If Codex is not installed, install it and click **Check again**.
+   - If Codex is not signed in, run `codex login` in a terminal on this
+     machine (Step 1) and click **Check again**.
+3. When Codex is signed in, click **Check again**. Hagency configures itself
+   to run Codex. The page then says "Hagency is configured to run this
+   agent."
+
+The page shows how Codex is signed in: **ChatGPT plan** or **API key**. A
+ChatGPT plan sign-in is meant for personal use. Before you offer the agent to
+other people, consider signing Codex in with an API key. The page notes this
+but does not stop you.
+
+## Step 4: Connect Palpo
+
+These Palpo pages belong to Palpo, not to Hagency, so their exact layout may
+differ in your Palpo version.
 
 1. Sign in to the Palpo web admin as an administrator.
 2. Add a Hagency to the server. Name the Matrix account that will own it,
@@ -69,82 +144,23 @@ in your Palpo version.
 4. Open **My Hagency access** and click **Download Hagency configuration**.
    Palpo downloads a JSON file. Keep it private: it contains the fleet's
    credentials.
+5. In the console, on the **Setup** page, go to **Connect Palpo**.
+6. Under **Configuration file**, choose the JSON file. The console shows
+   "Fleet on *your server*:" and the fleet ID.
+7. Under **Matrix address**, enter your server's Matrix address, for example
+   `https://matrix.your-server.example`. It must use `https`.
+8. Click **Connect**. The console shows "Connected to *your server*." No
+   restart is needed.
+9. Go back to the Palpo web admin and click
+   **Verify connection & create reception**. When Palpo reports success,
+   projects on the server can request agents.
 
 Adding a Hagency needs an administrator because it reserves a block of
 account names for the fleet. After this step, nobody needs administrator
 rights for daily use.
 
-## Step 2: Start Hagency and open the console
-
-Run these commands on the machine that runs Hagency. Replace the paths with
-your own.
-
-1. Start Hagency in one of two ways, a or b:
-
-   a. **As a service (recommended).** Run the installer from this repository.
-      Fleet mode is its default. On Linux run it with sudo (see the README):
-
-      ```bash
-      install/install-native.sh \
-        --install-dir /path/to/bin \
-        --state-dir /path/to/state \
-        --console-dir /path/to/console-assets
-      ```
-
-      It creates the state directory, runs `hagency setup` (see b),
-      installs the service and starts it. The repository README lists its
-      options and explains which user the service runs as under
-      [Build and install](../../README.md#build-and-install). Then go to
-      item 2.
-
-   b. **In the foreground.** Prepare the state directory, then start Hagency
-      with the Palpo connection and the console:
-
-      ```bash
-      hagency setup --state-dir /path/to/state
-      hagency serve \
-        --state-dir /path/to/state \
-        --listen 127.0.0.1:13300 \
-        --palpo-transport \
-        --console-assets /path/to/console-assets
-      ```
-
-      - `hagency setup` creates the state directory if it is new, finds Codex
-        and writes `fleet-runtime.json`. It reports whether Codex is signed in
-        (Step 4). It does not replace an existing `fleet-runtime.json` unless
-        you pass `--force`, and then it keeps the old file as a backup.
-      - `--listen` must be a loopback address with a port. `127.0.0.1:13300`
-        is the default. If you change it, pass the same `--listen` to
-        `hagency setup`.
-      - Do not add `--agent-driver`. That flag starts the older setup with a
-        coordinator agent, and then Hagency does not run the fleet itself.
-
-2. In a second terminal, print a console link:
-
-   ```bash
-   hagency console-access --state-dir /path/to/state
-   ```
-
-   If you changed `--listen`, pass the same `--listen` here.
-
-3. Open the link in a browser on the same machine. The console opens and
-   keeps you signed in until you click **End access** or close the browser.
-   Restarting Hagency does not sign you out. The link keeps working until you
-   print a new one, so keep it private.
-
-## Step 3: Connect the fleet in the console
-
-1. In the console, open **Project sides**.
-2. Find the panel **Connect a Palpo project server**.
-3. Under **Configuration file**, choose the JSON file from Step 1. The
-   console shows "Fleet on *your server*:" and the fleet ID.
-4. Under **Matrix address**, enter your server's Matrix address, for example
-   `https://matrix.your-server.example`. It must use `https`.
-5. Click **Connect**. The console shows "Connected to *your server*." No
-   restart is needed.
-6. Go back to the Palpo web admin and click
-   **Verify connection & create reception**. When Palpo reports success,
-   projects on the server can request agents.
+The same import is also on **Project sides**, in the panel
+**Connect a Palpo project server**.
 
 The fleet runs without a coordinator agent. Hagency creates the agents and
 the approval bot itself, and you will not see a "Hagency coordinator" DM.
@@ -152,76 +168,43 @@ the approval bot itself, and you will not see a "Hagency coordinator" DM.
 One Hagency connects to one Palpo fleet. Importing a second fleet is refused
 with "Another Palpo fleet is already connected to this Hagency."
 
-## Step 4: Sign Codex in and check your resources
+## Step 5: Offer a resource
 
-Fleet agents run Codex with a Codex sign-in on the machine that runs Hagency.
-They do not use accounts added in the console.
+1. On the **Setup** page, go to **Offer a resource**. This step needs
+   Step 3.
+2. Under **Model**, choose a model and reasoning effort. The list holds only
+   the pairs Hagency has qualified. For Codex that is `gpt-5.6-sol` with
+   `low`, `medium` or `high` reasoning.
+3. Under **Monthly token ceiling**, keep 20,000,000 or type another whole
+   number.
+4. Click **Offer to Palpo**. The page shows "Offered. Project owners can now
+   request agents on this resource."
 
-1. Sign Codex in, if it is not signed in yet. `hagency setup`, run by the
-   installer or by you in Step 2, reports whether Codex is signed in. If it
-   is not, setup prints the command to run on the Hagency machine, for
-   example:
+To offer another model or reasoning effort, repeat these steps.
 
-   ```bash
-   CODEX_HOME=/path/to/codex-home codex login
-   ```
+Manage your resources on **My resources**. Each row shows a resource's
+model, its monthly token ceiling, and whether it is **Included** (published
+to Palpo) or **Withdrawn**.
 
-   By default, fleet agents use this machine's own Codex sign-in folder
-   (`$CODEX_HOME`, or `~/.codex`). If setup ran with `--no-local-codex`, they
-   use the folder `runtime-home` in the state directory instead, and the
-   printed command names that folder. On a machine without a browser, add
-   `--device-auth` to `codex login`. Codex keeps the sign-in in that folder.
-   Hagency does not store your credentials.
-2. Check your resources, and create the first one if there is none:
-   - **(a) Check My resources.** In the console, open **My resources**. Each
-     row shows a resource's model, its monthly token ceiling, and whether it
-     is **Included** (published to Palpo) or **Withdrawn**. With no
-     resources, the console suggests creating the first resource from a
-     managed account on the Accounts page. Ignore that hint, and do not use
-     **Managed accounts** or **Enroll resource** for a fleet: a resource made
-     there is bound to a managed account, and fleet agents cannot run on it.
-   - **(b) If the list is empty, run the operator API once.** The console
-     cannot create a fleet's first resource. The operator creates it on the
-     machine that runs Hagency, with your own `--listen` address and state
-     directory:
-
-     ```bash
-     curl -s -X POST http://127.0.0.1:13300/api/native/v1/resources \
-       -H "Authorization: Bearer $(cat /path/to/state/operator.token)" \
-       -H 'Content-Type: application/json' \
-       -d '{"presetId":"local_codex","seatId":"local_codex_seat","framework":"codex","model":"gpt-5.6-sol","provider":"openai","reasoning":"medium","ceiling":{"tokens":20000000,"period":"monthly"},"published":true}'
-     ```
-
-     The repository README shows this step in
-     [First run](../../README.md#first-run).
-   - **(c) The rules.** Palpo sees a resource only if its model and reasoning
-     effort are a pair Hagency has qualified for at least one role. For Codex
-     that is `gpt-5.6-sol` with `low`, `medium` or `high` reasoning. Hagency
-     stores any other pair but does not publish it. With a `local_codex`
-     block, `seatId` must also equal `local_codex.seat` (`hagency setup`
-     writes `local_codex_seat`, as in the command above), with `framework`
-     `codex` and `provider` `openai` or left out. Hagency accepts and
-     publishes a resource that does not match, but refuses to run agents on
-     it.
-
-   After that, use the console for everything else (items 3 to 5 below).
-3. To change a resource, click **Edit configuration** on its row. Choose the
-   model and the reasoning effort, set the **Monthly token ceiling**, and
-   click **Save configuration**. The page offers only models and reasoning
-   efforts that Hagency supports. A resource cannot be changed while an agent
-   is reserved or active on it.
-4. To offer another model or reasoning effort on the same Codex sign-in,
-   click **New resource configuration**, choose an existing resource as the
-   **Source configuration**, set the model, reasoning effort and ceiling, and
-   click **Create another configuration**. New resources are published at
-   once.
-5. To stop offering a resource, click **Withdraw from native catalog**.
-   **Include in native catalog** offers it again.
+- To change a resource, click **Edit configuration** on its row. Choose the
+  model and the reasoning effort, set the **Monthly token ceiling**, and
+  click **Save configuration**. A resource cannot be changed while an agent
+  is reserved or active on it.
+- To stop offering a resource, click **Withdraw from native catalog**.
+  **Include in native catalog** offers it again.
+- Do not use **Managed accounts** or **Enroll resource** for a fleet. A
+  resource made there is bound to a managed account, and fleet agents cannot
+  run on it. With no resources, **My resources** suggests that path; use
+  **Setup** instead.
 
 Hagency sends published resources to Palpo every 15 seconds. Owners choose
 from them when they request an agent.
 
-## Step 5: Request and approve an agent
+The repository README describes the command-line alternatives, including the
+[operator API](../../README.md#create-a-resource-with-the-operator-api) for
+creating a resource.
+
+## Step 6: Request and approve an agent
 
 1. **Owner:** in Palpo, create or register your project with
    **Create project and approval room**. Then define an agent for the
@@ -239,7 +222,7 @@ from them when they request an agent.
 After approval, Hagency creates the agent. The agent joins the project room
 and invites the owner to a new DM.
 
-## Step 6: Accept the DM and talk to the agent
+## Step 7: Accept the DM and talk to the agent
 
 1. **Owner:** in Rinx, accept the invitation to the agent's DM. The agent
    waits, with no time limit, until you join. If Hagency restarts before you
@@ -251,12 +234,12 @@ and invites the owner to a new DM.
    something. The agent answers in the thread of that message. Keep
    follow-ups in the same thread.
 
-## Step 7: Approve agent actions
+## Step 8: Approve agent actions
 
 Some actions, such as running certain commands, need the owner's approval.
 
 The approval room is the private room the owner created in Palpo with
-**Create project and approval room** in Step 5. Palpo invites Hagency's
+**Create project and approval room** in Step 6. Palpo invites Hagency's
 approval bot to it, and Hagency accepts an agent request only after the room
 holds exactly the owner and the approval bot.
 
@@ -366,13 +349,15 @@ Agent DMs and approval rooms are end-to-end encrypted.
 - Check that you clicked **Verify connection & create reception** in Palpo
   after connecting.
 - Check the Hagency log line "fleet service stage". It shows what the fleet
-  is waiting for: `awaiting_runtime_config` (`fleet-runtime.json` is missing:
-  run `hagency setup`) or `awaiting_reception` (Palpo has not verified the
-  connection yet).
+  is waiting for: `awaiting_runtime_config` (Hagency is not configured for
+  Codex yet: finish **Setup → Coding agents**, Step 3) or
+  `awaiting_reception` (Palpo has not verified the connection yet). The
+  service's log is `~/Library/Logs/Hagency/hagency.log` on macOS, and
+  `journalctl --user -u hagency` shows it on Linux.
 
 **The Approve button is greyed out.**
 No published resource can serve the request. Check **My resources** in
-Step 4.
+Step 5.
 
 **The agent ignores my messages in a group room.**
 In a room with other people, the agent answers only when you @mention it.
@@ -407,8 +392,9 @@ administrator to allow previews for the sites you need.
 
 - **A restart while an agent waits for its owner strands that agent.** See
   [Troubleshooting](#troubleshooting).
-- **The console's empty-resources hint does not fit a fleet.** See
-  [Step 4](#step-4-sign-codex-in-and-check-your-resources), item 2.
+- **The console's empty-resources hint does not fit a fleet.** With no
+  resources, **My resources** points at managed accounts. Use **Setup**
+  instead (see [Step 5](#step-5-offer-a-resource)).
 - **A changed owner key cannot be accepted in the console.** Hagency trusts
   the cross-signing key it first sees for an owner. If the owner later resets
   cross-signing, the console has no control to trust the new key.
