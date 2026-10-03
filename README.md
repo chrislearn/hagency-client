@@ -241,7 +241,7 @@ Open **Setup** in the console menu. It has three steps. Each step shows a check 
 
 ### 6. Approve agents
 
-Projects define agents on your resources in Palpo web. Approve each request under **Engagements**. The agent joins the project room when provisioning completes. The [user guide](docs/user-guide/README.md) describes the owner's side.
+Projects define agents on your resources in Palpo web. Approve each request under **Engagements**. The agent joins the project room when provisioning completes. The [user guide](docs/user-guide/README.md#work-with-an-agent-owner-and-guest) describes how owners and guests work with an agent.
 
 Everything after setup happens in the console.
 

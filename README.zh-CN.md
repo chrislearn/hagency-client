@@ -243,7 +243,7 @@ hagency console-access --state-dir "${XDG_DATA_HOME:-$HOME/.local/share}/hagency
 
 ### 6. 批准 agent
 
-项目在 Palpo 网页端基于你的资源定义 agent。在 **接洽（Engagements）** 下批准每条申请。agent 创建完成后会加入项目房间。[使用指南](docs/user-guide/README.zh-CN.md)介绍所有者一侧的操作。
+项目在 Palpo 网页端基于你的资源定义 agent。在 **接洽（Engagements）** 下批准每条申请。agent 创建完成后会加入项目房间。[使用指南](docs/user-guide/README.zh-CN.md#与-agent-协作所有者与访客)介绍所有者和访客如何与 agent 协作。
 
 设置完成后，所有操作都在控制台中进行。
 
