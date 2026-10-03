@@ -37,6 +37,14 @@ pub async fn access(state: &Path, address: SocketAddr) -> Result<String, Error> 
         .await
         .map_err(|_| Error::Unavailable)?
 }
+/// Whether the service answers on `address` (a TCP connect), without
+/// issuing a sign-in link.
+pub async fn reachable(address: SocketAddr) -> bool {
+    matches!(
+        tokio::time::timeout(Duration::from_secs(1), TcpStream::connect(address)).await,
+        Ok(Ok(_))
+    )
+}
 async fn exchange(address: SocketAddr, token: &str) -> Result<String, Error> {
     let stream = TcpStream::connect(address)
         .await
