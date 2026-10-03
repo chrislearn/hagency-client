@@ -53,6 +53,8 @@ async fn native_setup_offer_is_refused_outside_a_fleet() {
     let state = f.root.path().join("state");
     let service = Service::new(f.app.clone().with_palpo_import(state).router());
     let cookie = lifecycle_session(&service).await;
+    let mut before = get("/console/api/setup", &cookie).send(&service).await;
+    let before = before.take_json::<Value>().await.unwrap()["offer"]["resources"].clone();
     let mut refused = post("/console/api/setup/resource", &cookie)
         .json(&json!({"model": "gpt-5.6-sol", "reasoning": "medium"}))
         .send(&service)
@@ -62,6 +64,9 @@ async fn native_setup_offer_is_refused_outside_a_fleet() {
     assert_eq!(value["code"], json!("setup_not_fleet"));
     let mut status = get("/console/api/setup", &cookie).send(&service).await;
     let value = status.take_json::<Value>().await.unwrap();
-    assert_eq!(value["offer"]["resources"], json!(0));
+    assert_eq!(
+        value["offer"]["resources"], before,
+        "no resource was created"
+    );
     assert!(!value["offer"]["choices"].as_array().unwrap().is_empty());
 }
