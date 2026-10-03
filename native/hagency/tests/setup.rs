@@ -1,0 +1,200 @@
+//! `hagency setup`: a fresh state directory comes out with a
+//! `fleet-runtime.json` that `serve`'s own loader accepts.
+#![cfg(unix)]
+use std::{os::unix::fs::PermissionsExt, path::Path, process::Command};
+
+fn run(home: &Path, args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_hagency"))
+        .arg("setup")
+        .args(args)
+        .env("HOME", home)
+        .env_remove("CODEX_HOME")
+        .output()
+        .unwrap()
+}
+
+/// A native-looking Codex binary and a signed-in Codex folder under a fake
+/// home, both private as the local Codex binding requires.
+fn codex(root: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
+    let home = root.join("home");
+    let codex_home = home.join(".codex");
+    std::fs::create_dir_all(&codex_home).unwrap();
+    for dir in [&home, &codex_home] {
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    std::fs::write(codex_home.join("auth.json"), "{}").unwrap();
+    let binary = root.join("bin").join("codex");
+    std::fs::create_dir_all(binary.parent().unwrap()).unwrap();
+    std::fs::write(&binary, b"\xcf\xfa\xed\xfe fake native codex").unwrap();
+    std::fs::set_permissions(&binary, std::fs::Permissions::from_mode(0o755)).unwrap();
+    (home, binary)
+}
+
+#[test]
+fn native_setup_writes_a_runtime_serve_accepts() {
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path().canonicalize().unwrap();
+    let (home, binary) = codex(&root);
+    let state = root.join("state");
+    let codex_arg = binary.to_str().unwrap();
+    let state_arg = state.to_str().unwrap();
+
+    let first = run(&home, &["--state-dir", state_arg, "--codex", codex_arg]);
+    assert!(
+        first.status.success(),
+        "setup must succeed: {}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&first.stdout);
+    assert!(stdout.contains("Initialized"), "{stdout}");
+    assert!(stdout.contains("Wrote and validated"), "{stdout}");
+    assert!(state.join("operator.token").is_file());
+    let file = state.join("fleet-runtime.json");
+    assert_eq!(
+        std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    let written: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    assert_eq!(written["profile"], "palpo_fleet_runtime_v1");
+    assert_eq!(written["executable"], codex_arg);
+    assert_eq!(written["local_codex"]["seat"], "local_codex_seat");
+    assert_eq!(
+        written["local_codex"]["codex_home"],
+        home.join(".codex").to_str().unwrap()
+    );
+
+    // A second run never replaces the file silently.
+    let again = run(&home, &["--state-dir", state_arg, "--codex", codex_arg]);
+    assert!(!again.status.success());
+    assert!(String::from_utf8_lossy(&again.stderr).contains("--force"));
+
+    // --force replaces it and keeps the old one.
+    let forced = run(
+        &home,
+        &["--state-dir", state_arg, "--codex", codex_arg, "--force"],
+    );
+    assert!(
+        forced.status.success(),
+        "{}",
+        String::from_utf8_lossy(&forced.stderr)
+    );
+    let backups = std::fs::read_dir(&state)
+        .unwrap()
+        .filter(|e| {
+            e.as_ref()
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with("fleet-runtime.json.bak-")
+        })
+        .count();
+    assert_eq!(backups, 1);
+}
+
+#[test]
+fn native_setup_refuses_a_directory_that_is_not_hagency_state() {
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path().canonicalize().unwrap();
+    let (home, binary) = codex(&root);
+    let state = root.join("other");
+    std::fs::create_dir_all(&state).unwrap();
+    std::fs::write(state.join("unrelated.txt"), "x").unwrap();
+    let output = run(
+        &home,
+        &[
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--codex",
+            binary.to_str().unwrap(),
+        ],
+    );
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("operator.token"));
+    assert!(!state.join("fleet-runtime.json").exists());
+}
+
+#[test]
+fn native_setup_follows_the_npm_launcher_to_the_native_binary() {
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path().canonicalize().unwrap();
+    let (home, _) = codex(&root);
+    let package = root.join("lib/node_modules/@openai/codex");
+    std::fs::create_dir_all(package.join("bin")).unwrap();
+    std::fs::write(package.join("bin/codex.js"), "#!/usr/bin/env node\n").unwrap();
+    let native =
+        package.join("node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin");
+    std::fs::create_dir_all(&native).unwrap();
+    std::fs::write(native.join("codex"), b"\xcf\xfa\xed\xfe native").unwrap();
+    let state = root.join("state");
+    let output = run(
+        &home,
+        &[
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--codex",
+            package.join("bin/codex.js").to_str().unwrap(),
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let written: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(state.join("fleet-runtime.json")).unwrap()).unwrap();
+    assert_eq!(
+        written["executable"],
+        native.join("codex").to_str().unwrap()
+    );
+}
+
+#[test]
+fn native_setup_without_local_codex_needs_no_codex_folder() {
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path().canonicalize().unwrap();
+    let (home, binary) = codex(&root);
+    std::fs::remove_dir_all(home.join(".codex")).unwrap();
+    let state = root.join("state");
+    let output = run(
+        &home,
+        &[
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--codex",
+            binary.to_str().unwrap(),
+            "--no-local-codex",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(state.join("runtime-home").to_str().unwrap()),
+        "{stdout}"
+    );
+    let written: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(state.join("fleet-runtime.json")).unwrap()).unwrap();
+    assert!(written.get("local_codex").is_none());
+}
+
+/// ADR-189: a build without the embedded console refuses `start` by name and
+/// leaves no half-made state behind.
+#[test]
+fn native_start_without_a_console_refuses_before_touching_state() {
+    if option_env!("HAGENCY_CONSOLE_DIR").is_some() {
+        return; // a release-style build carries the console
+    }
+    let root = tempfile::tempdir().unwrap();
+    let state = root.path().join("state");
+    let output = Command::new(env!("CARGO_BIN_EXE_hagency"))
+        .args(["start", "--no-open", "--state-dir", state.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--console-assets"));
+    assert!(!state.exists());
+}

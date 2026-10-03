@@ -27,11 +27,21 @@ struct Entry {
 pub(super) struct Asset {
     pub(super) bytes: Bytes,
     pub(super) mime: String,
-    _proof: Snapshot,
+    /// The validated file handle for a console folder; none for the
+    /// embedded console, whose bytes are part of the binary.
+    _proof: Option<Snapshot>,
 }
 pub(super) struct Assets {
     values: BTreeMap<String, Asset>,
-    _manifest: Snapshot,
+    _manifest: Option<Snapshot>,
+}
+
+mod embedded {
+    include!(concat!(env!("OUT_DIR"), "/embedded_console.rs"));
+}
+/// ADR-189: whether this binary carries the console build.
+pub(super) fn embedded_available() -> bool {
+    !embedded::FILES.is_empty()
 }
 
 fn root(path: &Path) -> Result<Dir, Error> {
@@ -132,15 +142,71 @@ fn mime(path: &str) -> Option<&'static str> {
         _ => None,
     }
 }
+fn key(path: &str) -> String {
+    // Derived, not hand-mapped: the front door is `/console/`, and a page
+    // `<route>/index.html` serves at `/console/<route>/` (board #88).
+    if path == "index.html" {
+        "/console/".into()
+    } else if document(path) {
+        format!("/console/{}", &path[..path.len() - "index.html".len()])
+    } else {
+        format!("/console/{path}")
+    }
+}
+fn manifest(bytes: &[u8]) -> Result<Manifest, Error> {
+    let input: Manifest = serde_json::from_slice(bytes).map_err(|_| Error::Assets)?;
+    if input.version != 1 || input.assets.is_empty() || input.assets.len() > 512 {
+        return Err(Error::Assets);
+    }
+    Ok(input)
+}
 impl Assets {
-    pub(super) fn load(path: &Path) -> Result<Self, Error> {
-        let dir = root(path)?;
-        let manifest = snapshot(&dir, "manifest.json", 128 * 1024)?;
-        let input: Manifest =
-            serde_json::from_slice(manifest.bytes()).map_err(|_| Error::Assets)?;
-        if input.version != 1 || input.assets.is_empty() || input.assets.len() > 512 {
+    /// ADR-189: the console compiled into the binary, checked against its own
+    /// manifest with the same rules as a console folder.
+    pub(super) fn embedded() -> Result<Self, Error> {
+        use sha2::{Digest, Sha256};
+        let files: BTreeMap<&str, &[u8]> = embedded::FILES.iter().copied().collect();
+        let input = manifest(files.get("manifest.json").ok_or(Error::Assets)?)?;
+        let mut total = 0usize;
+        let mut values = BTreeMap::new();
+        for entry in input.assets {
+            let expected = mime(&entry.path).ok_or(Error::Assets)?;
+            if entry.mime != expected || entry.size > 4 * 1024 * 1024 || entry.sha256.len() != 64 {
+                return Err(Error::Assets);
+            }
+            total = total
+                .checked_add(entry.size)
+                .filter(|n| *n <= 32 * 1024 * 1024)
+                .ok_or(Error::Assets)?;
+            let bytes = *files.get(entry.path.as_str()).ok_or(Error::Assets)?;
+            let digest: String = Sha256::digest(bytes)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            if bytes.len() != entry.size || digest != entry.sha256 {
+                return Err(Error::Assets);
+            }
+            let asset = Asset {
+                bytes: Bytes::from_static(bytes),
+                mime: entry.mime,
+                _proof: None,
+            };
+            if values.insert(key(&entry.path), asset).is_some() {
+                return Err(Error::Assets);
+            }
+        }
+        if !values.contains_key("/console/usage/") {
             return Err(Error::Assets);
         }
+        Ok(Self {
+            values,
+            _manifest: None,
+        })
+    }
+    pub(super) fn load(path: &Path) -> Result<Self, Error> {
+        let dir = root(path)?;
+        let manifest_file = snapshot(&dir, "manifest.json", 128 * 1024)?;
+        let input = manifest(manifest_file.bytes())?;
         let mut total = 0usize;
         let mut values = BTreeMap::new();
         for entry in input.assets {
@@ -157,25 +223,11 @@ impl Assets {
             if proof.len() != entry.size || digest != entry.sha256 {
                 return Err(Error::Assets);
             }
-            // Derived, not hand-mapped: the front door is `/console/`, and a
-            // page `<route>/index.html` serves at `/console/<route>/`. A page
-            // the build ships is therefore reachable without editing this
-            // file (board #88); the old hand map meant adding a page silently
-            // required a code change in two places.
-            let key = if entry.path == "index.html" {
-                "/console/".into()
-            } else if document(&entry.path) {
-                format!(
-                    "/console/{}",
-                    &entry.path[..entry.path.len() - "index.html".len()]
-                )
-            } else {
-                format!("/console/{}", entry.path)
-            };
+            let key = key(&entry.path);
             let asset = Asset {
                 bytes: Bytes::copy_from_slice(proof.bytes()),
                 mime: entry.mime,
-                _proof: proof,
+                _proof: Some(proof),
             };
             if values.insert(key, asset).is_some() {
                 return Err(Error::Assets);
@@ -186,7 +238,7 @@ impl Assets {
         }
         Ok(Self {
             values,
-            _manifest: manifest,
+            _manifest: Some(manifest_file),
         })
     }
     pub(super) fn get(&self, path: &str) -> Option<&Asset> {

@@ -121,7 +121,7 @@ export default function Rail() {
  * job it does, and nothing it cannot open. The retained SECTIONS above keep
  * describing the legacy rail. */
 const NATIVE_SECTIONS = [
-  { head: 'rail.secResource', rows: [{ key: 'resources', icon: 'layers' }, { key: 'workforce', icon: 'users' }, { key: 'accounts', icon: 'key' }] },
+  { head: 'rail.secResource', rows: [{ key: 'setup', icon: 'check' }, { key: 'resources', icon: 'layers' }, { key: 'workforce', icon: 'users' }, { key: 'accounts', icon: 'key' }] },
   { head: 'rail.secEngagement', rows: [{ key: 'engagements', icon: 'swap' }, { key: 'approvals', icon: 'check' }, { key: 'invites', icon: 'mail' }, { key: 'projectSides', icon: 'link' }] },
   { head: 'rail.secWork', rows: [{ key: 'tasks', icon: 'list' }, { key: 'projectBoard', icon: 'columns' }, { key: 'taskGraphs', icon: 'graph' }] },
   { head: 'rail.secMonitor', rows: [{ key: 'usage', icon: 'gauge' }, { key: 'alerts', icon: 'bell' }] },
@@ -175,7 +175,7 @@ function NativeRail() {
     <div className="rail-fleet">{NATIVE_SECTIONS.map((sec) => <div key={sec.head}>
       <h2 className="rail-sec">{t(sec.head)}</h2>
       <ul className="rail-list">{sec.rows.map((row) => <li key={row.key}>
-        {['usage', 'resources', 'alerts', 'engagements', 'workforce', 'tasks', 'taskGraphs', 'accounts', 'approvals', 'invites', 'projectSides', 'projectBoard'].includes(row.key) ? <a className="fleet-row" href={nativeHref(row.key)} aria-current={nativeCurrent(path, row.key) ? 'page' : undefined}><RailIcon name={row.icon} /><span className="grow">{t(`nav.${row.key}`)}</span></a>
+        {['setup', 'usage', 'resources', 'alerts', 'engagements', 'workforce', 'tasks', 'taskGraphs', 'accounts', 'approvals', 'invites', 'projectSides', 'projectBoard'].includes(row.key) ? <a className="fleet-row" href={nativeHref(row.key)} aria-current={nativeCurrent(path, row.key) ? 'page' : undefined}><RailIcon name={row.icon} /><span className="grow">{t(`nav.${row.key}`)}</span></a>
           : <span className="fleet-row" aria-disabled="true" title={t('nu.unavailableRoute')}><span className="ico">{row.icon}</span><span className="grow">{t(`nav.${row.key}`)}</span><span>—</span></span>}
       </li>)}</ul>
     </div>)}</div>

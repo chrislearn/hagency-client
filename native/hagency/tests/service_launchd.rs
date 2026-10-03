@@ -77,7 +77,11 @@ fn assert_plist_contract() {
     // need operator-supplied config and a reachable Matrix host the CI leg
     // cannot seed honestly; the spawn leg below exercises the same binary's
     // foreground start/stop contract.
-    assert!(arguments.contains(&"--agent-driver".to_string()));
+    // The imported-fleet mode is the default (ADR-187); the installer turns
+    // the comment marker into `<string>--agent-driver</string>` only for a
+    // coordinator install.
+    assert!(!arguments.contains(&"--agent-driver".to_string()));
+    assert!(plist.contains("<!--__AGENT_DRIVER_ARG__-->"));
     assert!(arguments.contains(&"--palpo-transport".to_string()));
     assert!(arguments.contains(&"--console-assets".to_string()));
     assert!(

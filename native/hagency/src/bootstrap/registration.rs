@@ -35,7 +35,7 @@ pub enum Command {
         /// Path to the downloaded JSON file.
         #[arg(long)]
         file: PathBuf,
-        /// The fleet's Matrix client API, e.g. https://crew.ominix.io:19443.
+        /// The fleet's Matrix client API, e.g. https://matrix.example.org.
         #[arg(long)]
         homeserver: String,
         /// A reception room Palpo already verified for this fleet (its connection

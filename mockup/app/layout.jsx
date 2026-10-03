@@ -2,6 +2,7 @@ import { Roboto, Noto_Sans_SC } from 'next/font/google';
 import './globals.css';
 import Rail from '@/components/Rail';
 import TableLabels from '@/components/TableLabels';
+import SetupBanner from '@/components/SetupBanner';
 import { PrefsProvider } from '@/components/Prefs';
 import { DataProvider } from '@/components/Data';
 
@@ -86,7 +87,7 @@ export default function RootLayout({ children }) {
           <DataProvider>
             <div className="app">
               <Rail />
-              <main className="main">{children}</main>
+              <main className="main"><SetupBanner />{children}</main>
               <TableLabels />
             </div>
           </DataProvider>

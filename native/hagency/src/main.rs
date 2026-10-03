@@ -1,7 +1,6 @@
 #[path = "mcp/stdio.rs"]
 mod mcp_stdio;
 use clap::{Parser, Subcommand};
-use hagency_store::{DomainRepository, Repository, private};
 use std::{net::SocketAddr, path::PathBuf};
 
 #[derive(Parser)]
@@ -38,6 +37,31 @@ enum Command {
     Init {
         #[arg(long)]
         state_dir: PathBuf,
+    },
+    /// Prepare a state directory for an imported Palpo fleet: initialize it
+    /// if new, find Codex and write a validated fleet-runtime.json.
+    Setup {
+        #[arg(long)]
+        state_dir: PathBuf,
+        /// The address `serve` will listen on (loopback).
+        #[arg(long, default_value = "127.0.0.1:13300")]
+        listen: SocketAddr,
+        /// The Codex executable; found on PATH when omitted.
+        #[arg(long)]
+        codex: Option<PathBuf>,
+        /// The folder holding the Codex sign-in; $CODEX_HOME or ~/.codex when omitted.
+        /// Not used with --no-local-codex.
+        #[arg(long)]
+        codex_home: Option<PathBuf>,
+        /// Run agents with <state>/runtime-home instead of this machine's Codex sign-in.
+        #[arg(long)]
+        no_local_codex: bool,
+        /// Replace an existing fleet-runtime.json (the old file is kept as a backup).
+        #[arg(long)]
+        force: bool,
+        /// The console build, only to print the exact serve command.
+        #[arg(long)]
+        console_assets: Option<PathBuf>,
     },
     /// Prepare or inspect fresh host-owned Codex credential namespaces.
     /// With --listen the command drives the RUNNING service's operator API;
@@ -199,6 +223,27 @@ enum Command {
         #[arg(long)]
         console_assets: Option<PathBuf>,
     },
+    /// Start Hagency for an imported Palpo fleet (ADR-189): initialize the
+    /// state directory if needed, serve the console and print its sign-in link.
+    Start {
+        /// Defaults to ~/Library/Application Support/Hagency (macOS) or
+        /// ~/.local/share/hagency (Linux).
+        #[arg(long)]
+        state_dir: Option<PathBuf>,
+        #[arg(long, default_value = "127.0.0.1:13300")]
+        listen: SocketAddr,
+        /// Do not open the console in the browser.
+        #[arg(long)]
+        no_open: bool,
+        /// Serve the console from this folder instead of the embedded build.
+        #[arg(long)]
+        console_assets: Option<PathBuf>,
+    },
+    /// Register Hagency as a per-user service that runs `hagency start`.
+    Service {
+        #[command(subcommand)]
+        command: hagency::service::Command,
+    },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -250,18 +295,50 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(unix)]
         Command::Guardian => return Err("guardian requires isolated synchronous startup".into()),
         Command::Init { state_dir } => {
-            private::directory(&state_dir)?;
-            if std::fs::read_dir(&state_dir)?.next().is_some() {
-                return Err("init requires empty state; no existing data will be imported".into());
-            }
-            let mut bytes = [0u8; 32];
-            getrandom::fill(&mut bytes).map_err(|_| "secure randomness unavailable")?;
-            let token: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
-            private::write_new(&state_dir.join("operator.token"), token.as_bytes())?;
-            drop(Repository::open(&state_dir)?);
-            drop(DomainRepository::open(&state_dir)?);
+            hagency::setup::init_state(&state_dir)?;
             println!(
                 "Initialized native state. Operator token is in operator.token; keep it private."
+            );
+        }
+        Command::Setup {
+            state_dir,
+            listen,
+            codex,
+            codex_home,
+            no_local_codex,
+            force,
+            console_assets,
+        } => {
+            let report = hagency::setup::run(&hagency::setup::Options {
+                state_dir: state_dir.clone(),
+                listen,
+                codex,
+                codex_home,
+                no_local_codex,
+                force,
+            })?;
+            if report.initialized {
+                println!(
+                    "Initialized {} (operator token in operator.token; keep it private).",
+                    state_dir.display()
+                );
+            }
+            println!("Codex: {}", report.executable.display());
+            println!("Wrote and validated {}", report.runtime_file.display());
+            if !report.signed_in {
+                println!(
+                    "Codex is not signed in yet. Run:\n  CODEX_HOME={} codex login",
+                    report.codex_home.display()
+                );
+            } else {
+                println!("Codex sign-in: {}", report.codex_home.display());
+            }
+            let assets = console_assets
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "<console-build>".into());
+            println!(
+                "\nNext:\n  1. hagency serve --palpo-transport --state-dir {state} --listen {listen} --console-assets {assets}\n  2. hagency console-access --state-dir {state} --listen {listen}   (open the printed link)\n  3. In the console, import the configuration you downloaded from Palpo.",
+                state = state_dir.display(),
             );
         }
         Command::Account {
@@ -403,20 +480,7 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             palpo_transport,
             console_assets,
         } => {
-            let console = console_assets
-                .as_deref()
-                .map(|assets| {
-                    // The graph routes persist `task_graphs.json` beside
-                    // `domain.sqlite3` (TS: the document in the data dir).
-                    hagency::console::Console::load_with_state(assets, Some(&state_dir)).map_err(
-                        |_| hagency::bootstrap::Failure::Config {
-                            field: "--console-assets",
-                            fix: "the directory must be the bundle built by mockup/scripts/build-native-console.mjs, owner-private (0700) and reached without a symlink in any path component, with a manifest.json whose entries all match the files",
-                        },
-                    )
-                })
-                .transpose()?;
-            let mut bootstrap = hagency::bootstrap::Bootstrap::open_with_options(
+            serve(
                 &state_dir,
                 listen,
                 queue_capacity,
@@ -425,35 +489,47 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                     agent_driver,
                     palpo_transport,
                 },
-            )?;
-            if let Some(console) = console {
-                bootstrap = bootstrap.with_console(console);
+                console_assets.as_deref(),
+                None,
+            )
+            .await?;
+        }
+        Command::Start {
+            state_dir,
+            listen,
+            no_open,
+            console_assets,
+        } => {
+            let state_dir = match state_dir {
+                Some(dir) => dir,
+                None => hagency::service::default_state_dir()?,
+            };
+            if console_assets.is_none() && !hagency::console::Console::embedded_available() {
+                return Err(
+                    "this build has no embedded console; pass --console-assets <console-build>"
+                        .into(),
+                );
             }
-            let cancel = hagency_matrix::CancellationToken::new();
-            let signal = cancel.clone();
-            tokio::spawn(async move {
-                #[cfg(unix)]
-                {
-                    let mut termination =
-                        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                            .expect("install SIGTERM handler");
-                    tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = termination.recv() => {} }
-                }
-                #[cfg(not(unix))]
-                let _ = tokio::signal::ctrl_c().await;
-                signal.cancel();
-            });
-            if let Err(error) = bootstrap.serve(&cancel).await {
-                tracing::error!("native server stopped; closing retained owners");
-                if bootstrap.close().await.is_err() {
-                    // ADR-182: what could not be proven is in the store (an
-                    // agent fence, an unknown verdict); the process exits.
-                    tracing::error!(
-                        "native shutdown ended with an unknown verdict; see the agent fences and status"
-                    );
-                }
-                return Err(error.into());
+            if !state_dir.join("operator.token").is_file() {
+                hagency::setup::init_state(&state_dir)?;
+                println!("Initialized {}", state_dir.display());
             }
+            serve(
+                &state_dir,
+                listen,
+                16,
+                hagency::bootstrap::Options {
+                    development_driver: false,
+                    agent_driver: false,
+                    palpo_transport: true,
+                },
+                console_assets.as_deref(),
+                Some((state_dir.clone(), listen, !no_open)),
+            )
+            .await?;
+        }
+        Command::Service { command } => {
+            println!("{}", hagency::service::run(command)?);
         }
         Command::ConsoleAccess { state_dir, listen } => {
             // One link, one login: every variant issued the same full-access
@@ -512,6 +588,76 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
             )
             .await;
         }
+    }
+    Ok(())
+}
+
+/// The `serve` body shared by `serve` and `start`. With `announce`, the
+/// console sign-in link is printed (and opened) once the service answers.
+async fn serve(
+    state_dir: &std::path::Path,
+    listen: SocketAddr,
+    queue_capacity: usize,
+    options: hagency::bootstrap::Options,
+    console_assets: Option<&std::path::Path>,
+    announce: Option<(PathBuf, SocketAddr, bool)>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // The graph routes persist `task_graphs.json` beside `domain.sqlite3`.
+    let console = match console_assets {
+        Some(assets) => Some(
+            hagency::console::Console::load_with_state(assets, Some(state_dir)).map_err(|_| {
+                hagency::bootstrap::Failure::Config {
+                    field: "--console-assets",
+                    fix: "the directory must be the bundle built by mockup/scripts/build-native-console.mjs, owner-private (0700), not itself a symlink and with no symlinks inside it, with a manifest.json whose entries all match the files",
+                }
+            })?,
+        ),
+        None if hagency::console::Console::embedded_available() => Some(
+            hagency::console::Console::embedded_with_state(Some(state_dir)).map_err(|_| {
+                hagency::bootstrap::Failure::Config {
+                    field: "embedded console",
+                    fix: "this binary's embedded console does not match its manifest; rebuild it",
+                }
+            })?,
+        ),
+        None => None,
+    };
+    let mut bootstrap = hagency::bootstrap::Bootstrap::open_with_options(
+        state_dir,
+        listen,
+        queue_capacity,
+        options,
+    )?;
+    if let Some(console) = console {
+        bootstrap = bootstrap.with_console(console);
+    }
+    let cancel = hagency_matrix::CancellationToken::new();
+    let signal = cancel.clone();
+    tokio::spawn(async move {
+        #[cfg(unix)]
+        {
+            let mut termination =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                    .expect("install SIGTERM handler");
+            tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = termination.recv() => {} }
+        }
+        #[cfg(not(unix))]
+        let _ = tokio::signal::ctrl_c().await;
+        signal.cancel();
+    });
+    if let Some((state, address, open)) = announce {
+        tokio::spawn(hagency::service::announce(state, address, open));
+    }
+    if let Err(error) = bootstrap.serve(&cancel).await {
+        tracing::error!("native server stopped; closing retained owners");
+        if bootstrap.close().await.is_err() {
+            // ADR-182: what could not be proven is in the store (an agent
+            // fence, an unknown verdict); the process exits.
+            tracing::error!(
+                "native shutdown ended with an unknown verdict; see the agent fences and status"
+            );
+        }
+        return Err(error.into());
     }
     Ok(())
 }
