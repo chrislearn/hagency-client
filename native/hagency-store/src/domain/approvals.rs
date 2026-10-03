@@ -393,7 +393,10 @@ impl DomainRepository {
         // Never silent: each refusal below says which rule refused (no
         // credential or parameter value beyond the ids compared).
         authorize(&tx, cap, &c, now).inspect_err(|error| {
-            eprintln!("owner approval refused: dispatch authority ({error:?}) for {}", c.dispatch);
+            eprintln!(
+                "owner approval refused: dispatch authority ({error:?}) for {}",
+                c.dispatch
+            );
         })?;
         if input
             .params
@@ -1080,7 +1083,17 @@ impl DomainRepository {
             .collect::<Result<Vec<_>, rusqlite::Error>>()?;
         rows.into_iter()
             .map(
-                |(engagement, agent, fleet, project, server, room, owner, room_generation, incarnation)| {
+                |(
+                    engagement,
+                    agent,
+                    fleet,
+                    project,
+                    server,
+                    room,
+                    owner,
+                    room_generation,
+                    incarnation,
+                )| {
                     Ok(ApprovalBindingSummary {
                         engagement_id: engagement,
                         agent,
@@ -1095,7 +1108,7 @@ impl DomainRepository {
                     })
                 },
             )
-             .collect()
+            .collect()
     }
     /// The operator unbind (board #52, TS `DELETE /api/approval-bindings/:agent/:roomId`
     /// at backend-v2.js:9030-9046). The TS BIND half (`PUT /api/approval-bindings`,

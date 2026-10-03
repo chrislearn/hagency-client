@@ -312,8 +312,8 @@ impl Operation {
         // "I could not ask" must never be reported as an absence (`:9264`).
         let members: Vec<String> = room.joined.iter().cloned().collect();
         let verdict = crate::identity_polish::owner_membership_verdict(Some(&members), owner);
-        let joined = verdict == crate::identity_polish::OwnerVerdict::Present
-            && room.joined.len() == 2;
+        let joined =
+            verdict == crate::identity_polish::OwnerVerdict::Present && room.joined.len() == 2;
         if !joined
             && !events.iter().any(|e| {
                 e["type"] == "m.room.member"
@@ -506,7 +506,8 @@ impl Operation {
         }
         if !legacy
             && records[COMPLETE].is_some()
-            && (records[OWNER_INVITE_RESPONSE].is_none() || records[AGENT_ROOMS] != records[COMPLETE])
+            && (records[OWNER_INVITE_RESPONSE].is_none()
+                || records[AGENT_ROOMS] != records[COMPLETE])
         {
             return Err(Error::Storage);
         }
@@ -663,7 +664,9 @@ impl Operation {
         let dm = self.stored_dm(records, AGENT_ROOMS)?;
         *job.dm.lock().map_err(|_| Error::OutcomeUnknown)? = Some(dm.clone());
         if records[COMPLETE].is_some() {
-            if records[OWNER_INVITE_POSSIBLE].as_ref().is_none_or(|v| !v.is_null())
+            if records[OWNER_INVITE_POSSIBLE]
+                .as_ref()
+                .is_none_or(|v| !v.is_null())
                 || records[OWNER_INVITE_RESPONSE].is_none()
                 || records[COMPLETE].as_ref()
                     != Some(&json!({"dm":dm,"project":self.request.target_room_id}))
@@ -715,10 +718,15 @@ impl Operation {
             }
             (true, true) => {
                 let response: SavedResponse = serde_json::from_value(
-                    records[OWNER_INVITE_RESPONSE].clone().ok_or(Error::Storage)?,
+                    records[OWNER_INVITE_RESPONSE]
+                        .clone()
+                        .ok_or(Error::Storage)?,
                 )
                 .map_err(|_| Error::Storage)?;
-                if success(&response)?.as_object().is_none_or(|v| !v.is_empty()) {
+                if success(&response)?
+                    .as_object()
+                    .is_none_or(|v| !v.is_empty())
+                {
                     return Err(Error::Storage);
                 }
                 // Only the job that observed the wait resumes it; a restart
@@ -910,8 +918,13 @@ impl Jobs {
             )
             .await
             .unwrap_or(Err(Error::Timeout));
-            if let Err(error) = &result && *error != Error::AwaitingOwner {
-                eprintln!("provision room step failed: effect={} error={error:?}", job.operation.scope.effect.id);
+            if let Err(error) = &result
+                && *error != Error::AwaitingOwner
+            {
+                eprintln!(
+                    "provision room step failed: effect={} error={error:?}",
+                    job.operation.scope.effect.id
+                );
             }
             let result = if result.as_ref().is_err_and(|e| *e != Error::AwaitingOwner)
                 && job

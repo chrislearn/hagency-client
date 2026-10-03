@@ -72,11 +72,9 @@ async fn list(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     // evidence (the route cannot know the fleet's server name a priori), so
     // the shape check passes the value's own suffix as the expected server.
     let room_valid = project_room_id.is_empty()
-        || project_room_id
-            .split_once(':')
-            .is_some_and(|(_, suffix)| {
-                hagency_core::replies::matrix_room(&project_room_id, suffix).is_ok()
-            });
+        || project_room_id.split_once(':').is_some_and(|(_, suffix)| {
+            hagency_core::replies::matrix_room(&project_room_id, suffix).is_ok()
+        });
     if !(1..=100).contains(&limit)
         || (!agent.is_empty() && identifier(&agent, 128).is_err())
         || !room_valid

@@ -1,9 +1,7 @@
 pub(crate) mod state;
 use crate::collector::observe;
 use crate::{CancellationToken, Collector, Error, collector::Inner, sdk::Owner};
-use hagency_core::{
-    commands::CommandNoticeClaimed, ingress::VerifiedNoticeClaim, replies::*,
-};
+use hagency_core::{commands::CommandNoticeClaimed, ingress::VerifiedNoticeClaim, replies::*};
 use hagency_matrix_format::MatrixContent;
 use serde_json::{Value, json};
 use state::{Attempt, Command, Kind, Phase, Write};
@@ -49,11 +47,7 @@ fn parse_activity_notice(kind: &str) -> Option<(String, Option<String>)> {
 /// send becomes an EDIT — body prefixed `* `, `m.new_content` the plain
 /// content, `m.relates_to` the replace relation (which replaces the thread
 /// relation, exactly as the TS override does).
-fn apply_activity_envelope(
-    mut content: Value,
-    dispatch_id: &str,
-    anchor: Option<&str>,
-) -> Value {
+fn apply_activity_envelope(mut content: Value, dispatch_id: &str, anchor: Option<&str>) -> Value {
     content["io.hagency.activity"] = json!({"dispatch_id": dispatch_id});
     if let Some(anchor) = anchor {
         let plain = content.clone();
@@ -253,147 +247,148 @@ impl Inner {
             return Err(Error::OutcomeUnknown);
         }
         let mut activity: Option<(String, Option<String>)> = None;
-        let (kind, id, fence, domain_digest, route, transaction_id, body, reply_to, incidental) = match &source {
-            Source::Final(claim) => {
-                let historical = owner
-                    .outgoing(Command::Lookup {
-                        id: claim.id.clone(),
-                        fence: claim.fence,
-                    })
-                    .await?;
-                if let Some(receipt) = historical.receipts.first() {
-                    if receipt.kind != Kind::Final {
-                        return Err(Error::Conflict);
+        let (kind, id, fence, domain_digest, route, transaction_id, body, reply_to, incidental) =
+            match &source {
+                Source::Final(claim) => {
+                    let historical = owner
+                        .outgoing(Command::Lookup {
+                            id: claim.id.clone(),
+                            fence: claim.fence,
+                        })
+                        .await?;
+                    if let Some(receipt) = historical.receipts.first() {
+                        if receipt.kind != Kind::Final {
+                            return Err(Error::Conflict);
+                        }
+                        if self
+                            .domain
+                            .final_reply_history_conflicts(claim.id.clone(), claim.fence)
+                            .await?
+                        {
+                            return Err(Error::Conflict);
+                        }
+                        return Ok(OutgoingSummary {
+                            id: Some(claim.id.clone()),
+                            state: OutgoingState::Delivered,
+                            replayed: true,
+                        });
                     }
-                    if self
+                    observe!(OutgoingPreview);
+                    let send = self.domain.preview_final_reply(claim.clone()).await?;
+                    (
+                        Kind::Final,
+                        send.id,
+                        claim.fence,
+                        send.digest,
+                        send.route,
+                        send.transaction_id,
+                        send.body,
+                        send.reply_to,
+                        send.incidental,
+                    )
+                }
+                Source::Notice(claim) => {
+                    observe!(OutgoingPreview);
+                    let receipt = self
                         .domain
-                        .final_reply_history_conflicts(claim.id.clone(), claim.fence)
-                        .await?
-                    {
-                        return Err(Error::Conflict);
+                        .verified_notice_receipt(claim.claim.notice.id.clone())
+                        .await?;
+                    let historical = owner
+                        .outgoing(Command::Lookup {
+                            id: receipt.id.clone(),
+                            fence: receipt.fence,
+                        })
+                        .await?;
+                    if let Some(original) = historical.receipts.first() {
+                        if original.kind != Kind::Notice {
+                            return Err(Error::Conflict);
+                        }
+                        if receipt.state != "delivered" {
+                            return Err(Error::Conflict);
+                        }
+                        return Ok(OutgoingSummary {
+                            id: Some(receipt.id),
+                            state: OutgoingState::Delivered,
+                            replayed: true,
+                        });
                     }
-                    return Ok(OutgoingSummary {
-                        id: Some(claim.id.clone()),
-                        state: OutgoingState::Delivered,
-                        replayed: true,
-                    });
-                }
-                observe!(OutgoingPreview);
-                let send = self.domain.preview_final_reply(claim.clone()).await?;
-                (
-                    Kind::Final,
-                    send.id,
-                    claim.fence,
-                    send.digest,
-                    send.route,
-                    send.transaction_id,
-                    send.body,
-                    send.reply_to,
-                    send.incidental,
-                )
-            }
-            Source::Notice(claim) => {
-                observe!(OutgoingPreview);
-                let receipt = self
-                    .domain
-                    .verified_notice_receipt(claim.claim.notice.id.clone())
-                    .await?;
-                let historical = owner
-                    .outgoing(Command::Lookup {
-                        id: receipt.id.clone(),
-                        fence: receipt.fence,
-                    })
-                    .await?;
-                if let Some(original) = historical.receipts.first() {
-                    if original.kind != Kind::Notice {
-                        return Err(Error::Conflict);
+                    if receipt.state != "claimed" {
+                        return Err(Error::Domain("notice_receipt_not_claimed"));
                     }
-                    if receipt.state != "delivered" {
-                        return Err(Error::Conflict);
+                    activity = parse_activity_notice(&claim.claim.notice.kind);
+                    (
+                        Kind::Notice,
+                        claim.claim.notice.id.clone(),
+                        receipt.fence,
+                        claim.digest.clone(),
+                        claim.route.clone(),
+                        claim.claim.notice.transaction_id.clone(),
+                        claim.claim.notice.body.clone(),
+                        None,
+                        false,
+                    )
+                }
+                Source::Command(claimed) => {
+                    observe!(OutgoingPreview);
+                    let receipt = self
+                        .domain
+                        .command_notice_receipt(claimed.claim.notice.id.clone())
+                        .await?;
+                    let historical = owner
+                        .outgoing(Command::Lookup {
+                            id: receipt.id.clone(),
+                            fence: receipt.fence,
+                        })
+                        .await?;
+                    if let Some(original) = historical.receipts.first() {
+                        if original.kind != Kind::Command {
+                            return Err(Error::Conflict);
+                        }
+                        if receipt.state != "delivered" {
+                            return Err(Error::Conflict);
+                        }
+                        return Ok(OutgoingSummary {
+                            id: Some(receipt.id),
+                            state: OutgoingState::Delivered,
+                            replayed: true,
+                        });
                     }
-                    return Ok(OutgoingSummary {
-                        id: Some(receipt.id),
-                        state: OutgoingState::Delivered,
-                        replayed: true,
-                    });
-                }
-                if receipt.state != "claimed" {
-                    return Err(Error::Domain("notice_receipt_not_claimed"));
-                }
-                activity = parse_activity_notice(&claim.claim.notice.kind);
-                (
-                    Kind::Notice,
-                    claim.claim.notice.id.clone(),
-                    receipt.fence,
-                    claim.digest.clone(),
-                    claim.route.clone(),
-                    claim.claim.notice.transaction_id.clone(),
-                    claim.claim.notice.body.clone(),
-                    None,
-                    false,
-                )
-            }
-            Source::Command(claimed) => {
-                observe!(OutgoingPreview);
-                let receipt = self
-                    .domain
-                    .command_notice_receipt(claimed.claim.notice.id.clone())
-                    .await?;
-                let historical = owner
-                    .outgoing(Command::Lookup {
-                        id: receipt.id.clone(),
-                        fence: receipt.fence,
-                    })
-                    .await?;
-                if let Some(original) = historical.receipts.first() {
-                    if original.kind != Kind::Command {
-                        return Err(Error::Conflict);
+                    if receipt.state != "claimed" {
+                        return Err(Error::Domain("command_notice_receipt_not_claimed"));
                     }
-                    if receipt.state != "delivered" {
-                        return Err(Error::Conflict);
-                    }
-                    return Ok(OutgoingSummary {
-                        id: Some(receipt.id),
-                        state: OutgoingState::Delivered,
-                        replayed: true,
-                    });
+                    (
+                        Kind::Command,
+                        claimed.claim.notice.id.clone(),
+                        receipt.fence,
+                        claimed.digest.clone(),
+                        claimed.route.clone(),
+                        claimed.claim.notice.transaction_id.clone(),
+                        claimed.claim.notice.body.clone(),
+                        // A command answer names nobody: it renders from the route's
+                        // thread root alone, exactly as the retained bridge sent it.
+                        None,
+                        false,
+                    )
                 }
-                if receipt.state != "claimed" {
-                    return Err(Error::Domain("command_notice_receipt_not_claimed"));
+                Source::File(file) => {
+                    let l = &file.locator;
+                    self.domain
+                        .validate_file_publication(file.cap.clone(), file.claim.clone())
+                        .await?;
+                    (
+                        Kind::File,
+                        l.delivery_id.clone(),
+                        l.fence,
+                        l.content_digest.clone(),
+                        l.route.clone(),
+                        l.transaction_id.clone(),
+                        String::new(),
+                        None,
+                        false,
+                    )
                 }
-                (
-                    Kind::Command,
-                    claimed.claim.notice.id.clone(),
-                    receipt.fence,
-                    claimed.digest.clone(),
-                    claimed.route.clone(),
-                    claimed.claim.notice.transaction_id.clone(),
-                    claimed.claim.notice.body.clone(),
-                    // A command answer names nobody: it renders from the route's
-                    // thread root alone, exactly as the retained bridge sent it.
-                    None,
-                    false,
-                )
-            }
-            Source::File(file) => {
-                let l = &file.locator;
-                self.domain
-                    .validate_file_publication(file.cap.clone(), file.claim.clone())
-                    .await?;
-                (
-                    Kind::File,
-                    l.delivery_id.clone(),
-                    l.fence,
-                    l.content_digest.clone(),
-                    l.route.clone(),
-                    l.transaction_id.clone(),
-                    String::new(),
-                    None,
-                    false,
-                )
-            }
-            Source::Resume => unreachable!(),
-        };
+                Source::Resume => unreachable!(),
+            };
         let joined = self.outgoing_preflight(&route, cancel).await?;
         let draft = if let Source::File(file) = &mut source {
             let mut start = file.start.take().ok_or(Error::Conflict)?;
@@ -905,18 +900,9 @@ impl Inner {
                     let invited = match &self.representative {
                         Some(representative) => representative
                             .post(
-                                &[
-                                    "_matrix",
-                                    "client",
-                                    "v3",
-                                    "rooms",
-                                    &route.room_id,
-                                    "invite",
-                                ],
-                                serde_json::to_string(
-                                    &json!({"user_id":route.sender_mxid}),
-                                )
-                                .map_err(|_| Error::Capacity)?,
+                                &["_matrix", "client", "v3", "rooms", &route.room_id, "invite"],
+                                serde_json::to_string(&json!({"user_id":route.sender_mxid}))
+                                    .map_err(|_| Error::Capacity)?,
                                 cancel,
                             )
                             .await
@@ -924,13 +910,9 @@ impl Inner {
                         None => true,
                     };
                     let restored = invited
-                        && crate::identity_polish::agent_rejoin(
-                            &self.http,
-                            &route.room_id,
-                            cancel,
-                        )
-                        .await
-                        .is_ok();
+                        && crate::identity_polish::agent_rejoin(&self.http, &route.room_id, cancel)
+                            .await
+                            .is_ok();
                     let retried = if restored {
                         self.http
                             .put(&send, write.body.clone(), cancel)

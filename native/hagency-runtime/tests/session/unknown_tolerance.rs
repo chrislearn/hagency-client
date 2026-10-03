@@ -29,10 +29,7 @@ async fn completes(session: &mut Session, peer: &mut Peer) {
         update(session, peer, end("completed")).await.unwrap(),
         Update::TurnEnded
     ));
-    assert!(matches!(
-        session.outcome(),
-        Some(Outcome::Completed { .. })
-    ));
+    assert!(matches!(session.outcome(), Some(Outcome::Completed { .. })));
 }
 
 #[tokio::test]
@@ -54,8 +51,11 @@ async fn native_codex_session_unknown_traffic_during_startup() {
         assert_eq!(request["method"], "thread/start");
         // An invented REQUEST races the thread/start response.
         write(&mut peer, invented_request()).await;
-        write(&mut peer, json!({"id": request["id"], "result": thread_result(false)}))
-            .await;
+        write(
+            &mut peer,
+            json!({"id": request["id"], "result": thread_result(false)}),
+        )
+        .await;
         read(&mut peer.stdin).await
     });
     result.expect("an invented request must not fail thread/start");
@@ -85,8 +85,11 @@ async fn native_codex_session_unknown_traffic_while_idle() {
         let request = read(&mut peer.stdin).await;
         assert_eq!(request["method"], "turn/start");
         let answer = read(&mut peer.stdin).await;
-        write(&mut peer, json!({"id": request["id"], "result": {"turn": turn("inProgress")}}))
-            .await;
+        write(
+            &mut peer,
+            json!({"id": request["id"], "result": {"turn": turn("inProgress")}}),
+        )
+        .await;
         answer
     });
     result.expect("unknown idle traffic must not fail turn start");
@@ -101,13 +104,12 @@ async fn native_codex_session_unknown_traffic_while_idle() {
         Update::Notice
     ));
     assert!(matches!(
-        update(&mut session, &mut peer, end("completed")).await.unwrap(),
+        update(&mut session, &mut peer, end("completed"))
+            .await
+            .unwrap(),
         Update::TurnEnded
     ));
-    assert!(matches!(
-        session.outcome(),
-        Some(Outcome::Completed { .. })
-    ));
+    assert!(matches!(session.outcome(), Some(Outcome::Completed { .. })));
 }
 
 #[tokio::test]
@@ -129,13 +131,12 @@ async fn native_codex_session_unknown_traffic_during_a_turn() {
     assert!(session.outcome().is_none());
 
     assert!(matches!(
-        update(&mut session, &mut peer, end("completed")).await.unwrap(),
+        update(&mut session, &mut peer, end("completed"))
+            .await
+            .unwrap(),
         Update::TurnEnded
     ));
-    assert!(matches!(
-        session.outcome(),
-        Some(Outcome::Completed { .. })
-    ));
+    assert!(matches!(session.outcome(), Some(Outcome::Completed { .. })));
 }
 
 #[tokio::test]
@@ -152,10 +153,11 @@ async fn native_codex_session_unknown_traffic_during_shutdown() {
         .await
         .unwrap();
     let (result, answer) = tokio::join!(session.next_update(), read(&mut peer.stdin));
-    assert!(matches!(result, Ok(Update::TurnEnded)), "{:?}", result.err());
+    assert!(
+        matches!(result, Ok(Update::TurnEnded)),
+        "{:?}",
+        result.err()
+    );
     assert_eq!(answer["error"]["code"], -32601);
-    assert!(matches!(
-        session.outcome(),
-        Some(Outcome::Completed { .. })
-    ));
+    assert!(matches!(session.outcome(), Some(Outcome::Completed { .. })));
 }

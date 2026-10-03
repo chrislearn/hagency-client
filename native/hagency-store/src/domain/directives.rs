@@ -91,8 +91,12 @@ pub fn parse(body: &str) -> Option<Result<ThreadDirective, String>> {
         "mode" => Some(match value {
             None => Err(THREAD_DIRECTIVE_USAGE.into()),
             Some(v) if is_clear_word(v) => Ok(ThreadDirective::Mode(None)),
-            Some(v) if v.eq_ignore_ascii_case("plan") => Ok(ThreadDirective::Mode(Some(ThreadMode::Plan))),
-            Some(v) if v.eq_ignore_ascii_case("auto") => Ok(ThreadDirective::Mode(Some(ThreadMode::Auto))),
+            Some(v) if v.eq_ignore_ascii_case("plan") => {
+                Ok(ThreadDirective::Mode(Some(ThreadMode::Plan)))
+            }
+            Some(v) if v.eq_ignore_ascii_case("auto") => {
+                Ok(ThreadDirective::Mode(Some(ThreadMode::Auto)))
+            }
             Some(_) => Err(THREAD_DIRECTIVE_USAGE.into()),
         }),
         _ => Some(Err(THREAD_DIRECTIVE_USAGE.into())),
@@ -128,7 +132,9 @@ fn is_clear_word(value: &str) -> bool {
 /// `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` — a plain model name/alias ≤64 chars.
 fn is_model(value: &str) -> bool {
     let mut chars = value.chars();
-    let Some(first) = chars.next() else { return false };
+    let Some(first) = chars.next() else {
+        return false;
+    };
     if !first.is_ascii_alphanumeric() || value.len() > 64 {
         return false;
     }
@@ -202,7 +208,10 @@ pub struct SessionOverrides {
 
 /// The session's model override, read directly from the row (no `DomainRepository`
 /// needed, so the dispatch projection can use it). `None` = no override.
-pub(super) fn model_override(db: &rusqlite::Connection, session: &str) -> Result<Option<String>, Error> {
+pub(super) fn model_override(
+    db: &rusqlite::Connection,
+    session: &str,
+) -> Result<Option<String>, Error> {
     db.query_row(
         "SELECT model_override FROM runner_sessions WHERE id=?1",
         [session],
@@ -356,7 +365,9 @@ mod tests {
         );
         // Mention pill + bare @name are stripped so the directive leads.
         assert_eq!(
-            model("[@coordinator](https://matrix.to/#/@coordinator) /thread model claude-haiku-4-5"),
+            model(
+                "[@coordinator](https://matrix.to/#/@coordinator) /thread model claude-haiku-4-5"
+            ),
             Some(Ok(ThreadDirective::Model(Some("claude-haiku-4-5".into()))))
         );
         assert_eq!(
@@ -393,8 +404,14 @@ mod tests {
     fn native_thread_directive_malformed_is_usage_or_refusal() {
         // `/thread` alone answers with usage, not a delivery failure.
         assert_eq!(model("/thread"), Some(Err(THREAD_DIRECTIVE_USAGE.into())));
-        assert_eq!(model("/thread model"), Some(Err(THREAD_DIRECTIVE_USAGE.into())));
-        assert_eq!(model("/thread mode maybe"), Some(Err(THREAD_DIRECTIVE_USAGE.into())));
+        assert_eq!(
+            model("/thread model"),
+            Some(Err(THREAD_DIRECTIVE_USAGE.into()))
+        );
+        assert_eq!(
+            model("/thread mode maybe"),
+            Some(Err(THREAD_DIRECTIVE_USAGE.into()))
+        );
         // A single-token model with shell metacharacters is refused with the
         // model refusal (TS `THREAD_DIRECTIVE_MODEL_PATTERN`).
         assert_eq!(

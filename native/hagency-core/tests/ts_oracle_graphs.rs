@@ -4,9 +4,7 @@
 //! the native `hagency_core::graphs` planning model, asserting the SAME
 //! outcome (cycle rejection, dependency-failure cascade, delete=cancel,
 //! chained root-then-downstream dispatch).
-use hagency_core::graphs::{
-    Graph, GraphDefinition, NodeDefinition, NodeObservation, NodeStatus,
-};
+use hagency_core::graphs::{Graph, GraphDefinition, NodeDefinition, NodeObservation, NodeStatus};
 
 /// TS `buildChainGraph` (api-task-graphs.test.js:13): a → b, a+b → c.
 fn chain_graph() -> GraphDefinition {
@@ -45,7 +43,12 @@ fn ts_oracle_graph_roots_dispatch_then_downstream() {
     // Complete a, then advance: b dispatches; c still waits on b.
     let done_a = first
         .graph
-        .observe("a", &NodeObservation::Complete { result: serde_json::json!({}) })
+        .observe(
+            "a",
+            &NodeObservation::Complete {
+                result: serde_json::json!({}),
+            },
+        )
         .unwrap();
     let second = done_a.advance().unwrap();
     assert_eq!(second.assignments.len(), 1);
@@ -76,7 +79,12 @@ fn ts_oracle_graph_failed_dependency_cascades() {
     // Fail a directly (it is Dispatched).
     let failed_a = first
         .graph
-        .observe("a", &NodeObservation::Failed { error: "A exploded".into() })
+        .observe(
+            "a",
+            &NodeObservation::Failed {
+                error: "A exploded".into(),
+            },
+        )
         .unwrap();
     let cascaded = failed_a.advance().unwrap();
     // b and c both cascade to failed.

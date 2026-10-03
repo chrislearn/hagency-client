@@ -29,7 +29,10 @@ fn ts_approval_intake_plan_is_bounded_and_closed() {
     // Derived from `HostApprovalPlan::new` (approval_intake.rs:69-81): only the
     // >64 bound and the identifier/duplicate rules are enforced — an empty plan
     // is accepted, so assert what the code does.
-    assert!(HostApprovalPlan::new(vec![]).is_ok(), "an empty plan is accepted");
+    assert!(
+        HostApprovalPlan::new(vec![]).is_ok(),
+        "an empty plan is accepted"
+    );
     assert!(
         HostApprovalPlan::new(vec!["dup".into(), "dup".into()]).is_err(),
         "a duplicate request id is refused"

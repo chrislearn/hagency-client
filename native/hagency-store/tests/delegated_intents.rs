@@ -524,9 +524,15 @@ fn native_delegated_completed_task_followup_admits() {
     else {
         panic!("an active delegated intent did not mint a dispatch")
     };
-    let assignee_cap = f
-        .db
-        .claim_owned_dispatch_for_host(&f.assignee_profile(), "runner_assignee", 3011, 60_000, 60_000, 8)
+    let assignee_cap =
+        f.db.claim_owned_dispatch_for_host(
+            &f.assignee_profile(),
+            "runner_assignee",
+            3011,
+            60_000,
+            60_000,
+            8,
+        )
         .unwrap()
         .expect("the assignee claims its delegated dispatch");
     assert_eq!(assignee_cap.dispatch_id, dispatch_id);

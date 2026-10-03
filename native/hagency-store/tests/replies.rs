@@ -134,7 +134,7 @@ fn content() -> FinalReply {
     FinalReply {
         call_id: "result".into(),
         body: "Verified **private result**".into(),
-                        incidental: false,
+        incidental: false,
     }
 }
 fn delivered(send: &ReplySend) -> ReplyDeliveryObservation {
@@ -163,24 +163,30 @@ fn native_retired_group_room_is_republished_by_a_fresh_observation() {
         f.db.matrix_room_state(&f.engagement, &f.room.room_id)
             .unwrap()
             .unwrap();
-    f.db.invalidate_matrix_room(&MatrixRoomInvalidation {
-        engagement_id: f.engagement.clone(),
-        registration_generation: 1,
-        transport_generation: 1,
-        room_id: f.room.room_id.clone(),
-        generation: prior.generation + 1,
-        reason: "Matrix full-state observation failed".into(),
-    }, 1009)
+    f.db.invalidate_matrix_room(
+        &MatrixRoomInvalidation {
+            engagement_id: f.engagement.clone(),
+            registration_generation: 1,
+            transport_generation: 1,
+            room_id: f.room.room_id.clone(),
+            generation: prior.generation + 1,
+            reason: "Matrix full-state observation failed".into(),
+        },
+        1009,
+    )
     .unwrap();
     let retired =
         f.db.matrix_room_state(&f.engagement, &f.room.room_id)
             .unwrap()
             .unwrap();
     assert!(!retired.available);
-    assert!(matches!(
-        f.db.refresh_matrix_group_room(&f.room, Some(&prior), 1010),
-        Err(Error::Generation)
-    ), "a view older than the retirement cannot republish");
+    assert!(
+        matches!(
+            f.db.refresh_matrix_group_room(&f.room, Some(&prior), 1010),
+            Err(Error::Generation)
+        ),
+        "a view older than the retirement cannot republish"
+    );
     let mut input = f.room.clone();
     input.generation = retired.generation;
     let observed =

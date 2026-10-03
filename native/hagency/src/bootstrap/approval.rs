@@ -99,7 +99,8 @@ pub(crate) struct Pump {
     domain: DomainStore,
 }
 /// The admitted agents' Matrix transports, by engagement (fleet mode).
-pub(crate) type AgentDirectory = Arc<std::sync::Mutex<std::collections::BTreeMap<String, Arc<Collector>>>>;
+pub(crate) type AgentDirectory =
+    Arc<std::sync::Mutex<std::collections::BTreeMap<String, Arc<Collector>>>>;
 
 /// The construction deliverables (Q3), all in one place:
 /// `HostApprovalConfig::new` over the approval bot's own `HostConfig`,

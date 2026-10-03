@@ -43,12 +43,11 @@ impl DomainRepository {
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let exists: bool = tx
-            .query_row(
-                "SELECT EXISTS(SELECT 1 FROM engagements WHERE id=?1)",
-                [engagement],
-                |r| r.get(0),
-            )?;
+        let exists: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM engagements WHERE id=?1)",
+            [engagement],
+            |r| r.get(0),
+        )?;
         if !exists {
             return Err(Error::NotFound);
         }
@@ -62,10 +61,9 @@ impl DomainRepository {
                  JOIN runner_sessions n ON n.id=d.session_id \
                  WHERE n.engagement_id=?1 AND s.settled_at IS NULL ORDER BY s.dispatch_id",
             )?;
-            let rows = stmt
-                .query_map([engagement], |r| r.get(0))?
-                .collect::<Result<Vec<_>, _>>()?;
-            rows
+
+            stmt.query_map([engagement], |r| r.get(0))?
+                .collect::<Result<Vec<_>, _>>()?
         };
         for dispatch in &legacy {
             if !dispatches.contains(dispatch) {
@@ -139,13 +137,16 @@ impl DomainRepository {
             )
             .optional()?;
         if stopped.is_none() {
-            let exists: bool = tx
-                .query_row(
-                    "SELECT EXISTS(SELECT 1 FROM engagements WHERE id=?1)",
-                    [engagement],
-                    |r| r.get(0),
-                )?;
-            return Err(if exists { Error::Conflict } else { Error::NotFound });
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM engagements WHERE id=?1)",
+                [engagement],
+                |r| r.get(0),
+            )?;
+            return Err(if exists {
+                Error::Conflict
+            } else {
+                Error::NotFound
+            });
         }
         let pending: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM dispatch_stops s JOIN runner_dispatches d ON d.id=s.dispatch_id \
@@ -217,7 +218,12 @@ impl DomainRepository {
         }
         tx.execute(
             "UPDATE engagements SET resource_id=?2,preset_id=?3,seat_id=?4 WHERE id=?1",
-            params![engagement, resource.id(), resource.preset_id, resource.seat_id],
+            params![
+                engagement,
+                resource.id(),
+                resource.preset_id,
+                resource.seat_id
+            ],
         )?;
         // `json()` takes JSON text — a bare id string is malformed JSON.
         tx.execute(

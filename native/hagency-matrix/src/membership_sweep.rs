@@ -42,8 +42,7 @@ use std::collections::BTreeSet;
 /// The retained interval (backend-v2.js:9351): hourly, because the condition
 /// is standing and a tighter loop would re-ask a foreign homeserver about
 /// rooms nothing has changed.
-pub const MEMBERSHIP_SWEEP_INTERVAL: std::time::Duration =
-    std::time::Duration::from_secs(3600);
+pub const MEMBERSHIP_SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(3600);
 /// The bridge-fault backoff (RULES.md operator rule 1): 1 s doubling to 60 s,
 /// reset by the first pass that read its engagements.
 const SWEEP_BACKOFF_MIN: std::time::Duration = std::time::Duration::from_secs(1);
@@ -73,10 +72,8 @@ pub fn active_pairs(engagements: &[Engagement]) -> Vec<(String, String)> {
     engagements
         .iter()
         .filter(|e| e.state == EngagementState::Active)
-        .filter_map(|e| {
-            seen.insert((e.agent_name.as_str().to_owned(), e.project_room_id.clone()))
-                .then(|| (e.agent_name.as_str().to_owned(), e.project_room_id.clone()))
-        })
+        .filter(|&e| seen.insert((e.agent_name.as_str().to_owned(), e.project_room_id.clone())))
+        .map(|e| (e.agent_name.as_str().to_owned(), e.project_room_id.clone()))
         .collect()
 }
 
@@ -158,10 +155,7 @@ impl crate::Collector {
     /// pairs deduplicated, skips rooms the fleet's registration does not
     /// cover without any call, and asks the membership question exactly the
     /// way the acceptance path asks it: one invite per pair per pass.
-    pub async fn sweep_project_room_membership(
-        &self,
-        cancel: &CancellationToken,
-    ) -> SweepOutcome {
+    pub async fn sweep_project_room_membership(&self, cancel: &CancellationToken) -> SweepOutcome {
         let inner = &self.inner;
         let Ok(reg) = inner
             .domain
@@ -234,79 +228,83 @@ async fn sweep(
     reg: &hagency_core::authority::Registration,
     cancel: &CancellationToken,
 ) -> SweepOutcome {
-        let mut outcome = SweepOutcome::default();
-        let mut engagements = Vec::new();
-        let mut after = String::new();
-        loop {
-            let Ok(page) = domain.engagements(after.clone(), 100).await else {
-                outcome.read_failed = true;
-                return outcome;
-            };
-            let counted = page.len();
-            engagements.extend(page);
-            if counted < 100 {
-                break;
-            }
-            after = engagements.last().expect("a full page is non-empty").id.clone();
+    let mut outcome = SweepOutcome::default();
+    let mut engagements = Vec::new();
+    let mut after = String::new();
+    loop {
+        let Ok(page) = domain.engagements(after.clone(), 100).await else {
+            outcome.read_failed = true;
+            return outcome;
+        };
+        let counted = page.len();
+        engagements.extend(page);
+        if counted < 100 {
+            break;
         }
-        for (agent, room) in active_pairs(&engagements) {
-            outcome.pairs += 1;
-            // The retained early exit (`!sideIdForRoom(roomId)`,
-            // backend-v2.js:14219): a room the side table does not cover is
-            // skipped here as well as inside the admit call, because
-            // re-learning "not ours" per hour is work with no possible
-            // outcome. Native's single-registration equivalent is the room's
-            // server name against the registration's.
-            let Some((_, server)) = room.split_once(':') else {
-                outcome.skipped_no_side += 1;
-                continue;
-            };
-            if !server.eq_ignore_ascii_case(&reg.server_name) {
-                outcome.skipped_no_side += 1;
-                continue;
+        after = engagements
+            .last()
+            .expect("a full page is non-empty")
+            .id
+            .clone();
+    }
+    for (agent, room) in active_pairs(&engagements) {
+        outcome.pairs += 1;
+        // The retained early exit (`!sideIdForRoom(roomId)`,
+        // backend-v2.js:14219): a room the side table does not cover is
+        // skipped here as well as inside the admit call, because
+        // re-learning "not ours" per hour is work with no possible
+        // outcome. Native's single-registration equivalent is the room's
+        // server name against the registration's.
+        let Some((_, server)) = room.split_once(':') else {
+            outcome.skipped_no_side += 1;
+            continue;
+        };
+        if !server.eq_ignore_ascii_case(&reg.server_name) {
+            outcome.skipped_no_side += 1;
+            continue;
+        }
+        // The native provisioned-account composition the enrollment
+        // fixtures model (`tests/provision_rooms/mod.rs:29-33`):
+        // `@{fleet}_{engagement}:{server}` — the identity the acceptance
+        // path itself admits. The engagement backing the pair is the
+        // first live one naming it, mirroring the retained
+        // `admitAgentToProjectRoom(engagement)` read.
+        let Some(engagement_id) = engagement_for(&engagements, &agent, &room) else {
+            continue;
+        };
+        let agent_mxid = format!("@{}_{}:{}", reg.fleet_id, engagement_id, reg.server_name);
+        let body = json!({ "user_id": agent_mxid }).to_string();
+        let result = http
+            .post(
+                &["_matrix", "client", "v3", "rooms", &room, "invite"],
+                body,
+                cancel,
+            )
+            .await;
+        let invite = match result {
+            Ok(response) => classify_invite(response.status, response.value.as_ref()),
+            // The transport's own Display, never a bare word: a timeout,
+            // a redirect refusal and a malformed body are three different
+            // operator actions (`native_sweep` logs this verbatim).
+            Err(error) => Invite::Failed(bounded_reason(&error.to_string())),
+        };
+        match invite {
+            Invite::Invited => {
+                outcome.invited += 1;
+                // Only a RE-admission is worth a line (retained
+                // backend-v2.js:14221-14223): `alreadyMember` is the
+                // expected answer and logging it would bury the one case
+                // an operator wants.
+                eprintln!("[readmit] {agent} was not in {room} and has been let back in");
             }
-            // The native provisioned-account composition the enrollment
-            // fixtures model (`tests/provision_rooms/mod.rs:29-33`):
-            // `@{fleet}_{engagement}:{server}` — the identity the acceptance
-            // path itself admits. The engagement backing the pair is the
-            // first live one naming it, mirroring the retained
-            // `admitAgentToProjectRoom(engagement)` read.
-            let Some(engagement_id) = engagement_for(&engagements, &agent, &room) else {
-                continue;
-            };
-            let agent_mxid = format!("@{}_{}:{}", reg.fleet_id, engagement_id, reg.server_name);
-            let body = json!({ "user_id": agent_mxid }).to_string();
-            let result = http
-                .post(
-                    &["_matrix", "client", "v3", "rooms", &room, "invite"],
-                    body,
-                    cancel,
-                )
-                .await;
-            let invite = match result {
-                Ok(response) => classify_invite(response.status, response.value.as_ref()),
-                // The transport's own Display, never a bare word: a timeout,
-                // a redirect refusal and a malformed body are three different
-                // operator actions (`native_sweep` logs this verbatim).
-                Err(error) => Invite::Failed(bounded_reason(&error.to_string())),
-            };
-            match invite {
-                Invite::Invited => {
-                    outcome.invited += 1;
-                    // Only a RE-admission is worth a line (retained
-                    // backend-v2.js:14221-14223): `alreadyMember` is the
-                    // expected answer and logging it would bury the one case
-                    // an operator wants.
-                    eprintln!("[readmit] {agent} was not in {room} and has been let back in");
-                }
-                Invite::AlreadyPresent => outcome.present += 1,
-                Invite::Failed(reason) => {
-                    outcome.failed += 1;
-                    eprintln!("[readmit] {agent} in {room}: {reason}");
-                }
+            Invite::AlreadyPresent => outcome.present += 1,
+            Invite::Failed(reason) => {
+                outcome.failed += 1;
+                eprintln!("[readmit] {agent} in {room}: {reason}");
             }
         }
-        outcome
+    }
+    outcome
 }
 
 /// The engagement id backing an (agent, room) pair — the first live one
@@ -447,35 +445,35 @@ mod tests {
         let cancel = CancellationToken::new();
         let fleet = common::domain::registration().fleet_id;
         let engagement = f.identity.transport.engagement_id.clone();
-        let (outcome, ()) = tokio::join!(
-            c.sweep_project_room_membership(&cancel),
-            async {
-                let request = fake.next().await;
-                assert_eq!(request.method, "POST");
-                // ONE path segment, the same spelling every other ported room
-                // call sends (retire.rs's leave asserts the identical shape).
-                assert_eq!(
-                    request.target,
-                    "/_matrix/client/v3/rooms/!project:example.test/invite"
-                );
-                assert_eq!(
-                    request.headers["authorization"],
-                    format!("Bearer {}", common::TOKEN)
-                );
-                let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
-                assert_eq!(
-                    body["user_id"],
-                    format!("@{fleet}_{engagement}:example.test"),
-                    "the composed provisioned-account identity"
-                );
-                request.json(200, json!({}));
-            }
-        );
+        let (outcome, ()) = tokio::join!(c.sweep_project_room_membership(&cancel), async {
+            let request = fake.next().await;
+            assert_eq!(request.method, "POST");
+            // ONE path segment, the same spelling every other ported room
+            // call sends (retire.rs's leave asserts the identical shape).
+            assert_eq!(
+                request.target,
+                "/_matrix/client/v3/rooms/!project:example.test/invite"
+            );
+            assert_eq!(
+                request.headers["authorization"],
+                format!("Bearer {}", common::TOKEN)
+            );
+            let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+            assert_eq!(
+                body["user_id"],
+                format!("@{fleet}_{engagement}:example.test"),
+                "the composed provisioned-account identity"
+            );
+            request.json(200, json!({}));
+        });
         assert_eq!(
             outcome.invited, 1,
             "a 200 is a real re-admission, not the already-present answer: {outcome:?}"
         );
-        assert_eq!(outcome.pairs, 1, "one live pair, one call — never per engagement");
+        assert_eq!(
+            outcome.pairs, 1,
+            "one live pair, one call — never per engagement"
+        );
         assert_eq!(outcome.failed, 0);
         fake.close().await;
     }
@@ -495,7 +493,10 @@ mod tests {
                 &endpoint,
                 Some(&authorization),
                 &crate::Limits::default(),
-                &[reqwest::Certificate::from_pem(include_bytes!("../tests/fixtures/ca.pem")).unwrap()],
+                &[
+                    reqwest::Certificate::from_pem(include_bytes!("../tests/fixtures/ca.pem"))
+                        .unwrap(),
+                ],
             )
             .unwrap(),
             domain: f.store.clone(),
@@ -515,4 +516,3 @@ mod tests {
         fake.close().await;
     }
 }
-

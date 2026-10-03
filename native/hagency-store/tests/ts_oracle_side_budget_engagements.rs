@@ -34,7 +34,13 @@ impl Book {
         resource("budget_pool", "budget_seat", 0)
     }
     fn committed(&self) -> u64 {
-        u64::from(self.db.resource_budget(&Self::pool().id()).unwrap().pool.committed)
+        u64::from(
+            self.db
+                .resource_budget(&Self::pool().id())
+                .unwrap()
+                .pool
+                .committed,
+        )
     }
     fn remaining(&self) -> Option<u64> {
         self.db
@@ -105,7 +111,12 @@ fn ts_side_budget_unallocated_is_not_unlimited() {
     }))
     .unwrap();
     b.db.put_seat(&seat).unwrap();
-    let request_proof = proof(&request("no_ceiling_one", "NoCeilingWorker", &mismatched, 1));
+    let request_proof = proof(&request(
+        "no_ceiling_one",
+        "NoCeilingWorker",
+        &mismatched,
+        1,
+    ));
     b.db.admit(&request_proof, 1000).unwrap();
     assert!(
         matches!(
@@ -149,7 +160,8 @@ fn ts_side_budget_remaining_is_read_at_the_verdict() {
     b.db.approve("approve_other", &other, 1000).unwrap();
     // The verdict sees the NEW remaining (300), not the remembered 1000.
     assert!(
-        b.db.approve("approve_verdict", &request_proof, 1000).is_err(),
+        b.db.approve("approve_verdict", &request_proof, 1000)
+            .is_err(),
         "the verdict reads the live remaining"
     );
 }
@@ -165,7 +177,10 @@ fn ts_side_budget_rejection_is_never_refused_for_budget() {
     let request_proof = proof(&request("reject_budget", "RejectWorker", &zero, 500));
     let e = b.db.admit(&request_proof, 1000).unwrap();
     // The approval would be refused, but the rejection is not.
-    assert!(b.db.approve("approve_reject", &request_proof, 1000).is_err());
+    assert!(
+        b.db.approve("approve_reject", &request_proof, 1000)
+            .is_err()
+    );
     assert!(
         b.db.reject("reject_cmd", &e.id).is_ok(),
         "a rejection takes no budget branch"

@@ -190,7 +190,10 @@ impl Attempt {
         let expected_relation = reply_relation(
             self.route.thread_root.as_deref(),
             self.reply_to.as_deref(),
-            matches!(self.route.privacy, hagency_core::replies::RoomPrivacy::Group {}),
+            matches!(
+                self.route.privacy,
+                hagency_core::replies::RoomPrivacy::Group {}
+            ),
             self.incidental,
         );
         // A journaled attempt carries the route's own answer relation EXCEPT
@@ -201,12 +204,10 @@ impl Attempt {
         // the activity key is present and the retained plain content under
         // `m.new_content` still carries the route's relation verbatim. The
         // room/thread authority is therefore still checked, never bypassed.
-        let relation_ok =
-            self.content.get("m.relates_to") == expected_relation.as_ref()
-                || (self.content["io.hagency.activity"].is_object()
-                    && self.content["m.relates_to"]["rel_type"] == "m.replace"
-                    && self.content["m.new_content"].get("m.relates_to")
-                        == expected_relation.as_ref());
+        let relation_ok = self.content.get("m.relates_to") == expected_relation.as_ref()
+            || (self.content["io.hagency.activity"].is_object()
+                && self.content["m.relates_to"]["rel_type"] == "m.replace"
+                && self.content["m.new_content"].get("m.relates_to") == expected_relation.as_ref());
         if !relation_ok
             || self.content["msgtype"]
                 != match self.kind {
@@ -446,7 +447,10 @@ pub(crate) fn encode(value: &Value, max: usize) -> Result<String, Error> {
 }
 pub(crate) enum Command {
     Read,
-    Lookup { id: String, fence: u64 },
+    Lookup {
+        id: String,
+        fence: u64,
+    },
     Start(Box<Attempt>),
     StartFile(Box<crate::sdk::file_publication::Start>),
     Begun,
@@ -476,12 +480,16 @@ mod reply_relation_tests {
     fn native_matrix_reply_relation_matches_ts() {
         assert_eq!(
             reply_relation(Some("$root"), Some("$q"), true, false),
-            Some(json!({"rel_type":"m.thread","event_id":"$root","is_falling_back":true,"m.in_reply_to":{"event_id":"$q"}}))
+            Some(
+                json!({"rel_type":"m.thread","event_id":"$root","is_falling_back":true,"m.in_reply_to":{"event_id":"$q"}})
+            )
         );
         // No question known: the thread root stands in, as it always has.
         assert_eq!(
             reply_relation(Some("$root"), None, true, false),
-            Some(json!({"rel_type":"m.thread","event_id":"$root","is_falling_back":true,"m.in_reply_to":{"event_id":"$root"}}))
+            Some(
+                json!({"rel_type":"m.thread","event_id":"$root","is_falling_back":true,"m.in_reply_to":{"event_id":"$root"}})
+            )
         );
         assert_eq!(
             reply_relation(None, Some("$q"), true, false),
@@ -491,7 +499,9 @@ mod reply_relation_tests {
         // thread starts a NEW thread rooted at the message it answers.
         assert_eq!(
             reply_relation(None, Some("$q"), true, true),
-            Some(json!({"rel_type":"m.thread","event_id":"$q","is_falling_back":true,"m.in_reply_to":{"event_id":"$q"}}))
+            Some(
+                json!({"rel_type":"m.thread","event_id":"$q","is_falling_back":true,"m.in_reply_to":{"event_id":"$q"}})
+            )
         );
         // A direct room carries no relation at all.
         assert_eq!(reply_relation(None, Some("$q"), false, true), None);

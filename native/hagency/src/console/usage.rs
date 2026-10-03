@@ -7,8 +7,9 @@ use serde::Serialize;
 /// The words `?state=` may name (board #60 item 3): the store's own
 /// engagement-state vocabulary (`domain.sql` `engagements.state` CHECK), so
 /// an unknown word is a 400 rather than a silently empty page.
-const ENGAGEMENT_STATES: [&str; 6] =
-    ["pending", "reserved", "active", "rejected", "revoked", "failed"];
+const ENGAGEMENT_STATES: [&str; 6] = [
+    "pending", "reserved", "active", "rejected", "revoked", "failed",
+];
 pub(super) fn router() -> Router {
     Router::new()
         .push(Router::with_path("engagements").get(engagements))

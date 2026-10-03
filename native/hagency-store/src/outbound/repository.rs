@@ -429,7 +429,7 @@ fn claim(
     // The Matrix lane is ordered: its head blocks the lane. Work items (probes,
     // requests) are independent, so one waiting for a retry must not starve the
     // rest (TS keeps a request at submission_pending and still verifies probes).
-    let row:Option<(String,String,String,u64)>=if lane == Lane::Work {
+    let row: Option<(String, String, String, u64)> = if lane == Lane::Work {
         tx.query_row("SELECT id,processing_state,lease_state,retry_at FROM inbox WHERE binding=?1 AND lane=?2 AND processing_state='pending' AND lease_state IN ('accepted','retired') AND retry_at<=?3 ORDER BY rowid LIMIT 1",params![s.binding,lane.as_str(),now],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional()?
     } else {
         tx.query_row("SELECT id,processing_state,lease_state,retry_at FROM inbox WHERE binding=?1 AND lane=?2 AND processing_state NOT IN ('done','retired') ORDER BY rowid LIMIT 1",params![s.binding,lane.as_str()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional()?

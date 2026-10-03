@@ -76,13 +76,22 @@ pub fn run(state: &Path, command: Command) -> Result<(), hagency_store::Error> {
             // advance. Nothing here softens or pre-empts it.
             domain.register(&registration)
         }
-        Command::Import { file, homeserver, reception } => {
+        Command::Import {
+            file,
+            homeserver,
+            reception,
+        } => {
             drop(domain);
             drop(_custody);
-            let imported = super::palpo_import::run(state, &file, &homeserver, reception.as_deref()).map_err(|error| {
-                eprintln!("Error: {error}");
-                hagency_store::Error::Invalid(hagency_core::InvalidInput("palpo import refused"))
-            })?;
+            let imported =
+                super::palpo_import::run(state, &file, &homeserver, reception.as_deref()).map_err(
+                    |error| {
+                        eprintln!("Error: {error}");
+                        hagency_store::Error::Invalid(hagency_core::InvalidInput(
+                            "palpo import refused",
+                        ))
+                    },
+                )?;
             println!(
                 "{}",
                 serde_json::json!({"imported": true, "fleetId": imported.fleet_id,
@@ -92,7 +101,8 @@ pub fn run(state: &Path, command: Command) -> Result<(), hagency_store::Error> {
             );
             Ok(())
         }
-        Command::Probe(args) => super::probe::run(state, args)
-            .map_err(|_| hagency_store::Error::Invalid(hagency_core::InvalidInput("probe refused"))),
+        Command::Probe(args) => super::probe::run(state, args).map_err(|_| {
+            hagency_store::Error::Invalid(hagency_core::InvalidInput("probe refused"))
+        }),
     }
 }

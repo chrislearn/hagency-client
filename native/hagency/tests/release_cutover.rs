@@ -28,7 +28,6 @@ const START_GATE_BUDGET: Duration = Duration::from_secs(20);
 // Non-test includes outside native/**. These exact original inputs participate
 // in BOTH the version-patched source copy and its content-addressed cache.
 const ROOT_BUILD_INPUTS: &[&str] = &[
-    "lib/role-capacity.json",
     "docs/workspace-claude-md-template.md",
     "docs/workspace-agents-md-template.md",
     "docs/workspace-supervisor-claude-template.md",
@@ -431,7 +430,7 @@ fn native_upgrade_shared_templates_are_build_inputs() {
             fs::read(copy.join(file)).unwrap()
         );
     }
-    for file in &ROOT_BUILD_INPUTS[1..] {
+    for file in ROOT_BUILD_INPUTS {
         let before = source_fingerprint_at(&source);
         let mut bytes = fs::read(source.join(file)).unwrap();
         bytes.extend_from_slice(b"\nfixture-only changed compile input\n");

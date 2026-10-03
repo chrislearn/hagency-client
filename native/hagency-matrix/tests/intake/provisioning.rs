@@ -1018,7 +1018,10 @@ async fn native_provisioning_consumes_a_request_for_an_unknown_resource() {
         &mut fake,
         provisioning_sync(
             "provision_stale",
-            vec![stale, custom_request_event("$custom_request", "request_one", 250)],
+            vec![
+                stale,
+                custom_request_event("$custom_request", "request_one", 250),
+            ],
         ),
     )
     .await;
@@ -1050,13 +1053,20 @@ async fn native_provisioning_consumes_a_request_for_an_unreadable_project_room()
             200,
             provisioning_sync(
                 "provision_elsewhere",
-                vec![elsewhere, custom_request_event("$custom_request", "request_one", 250)],
+                vec![
+                    elsewhere,
+                    custom_request_event("$custom_request", "request_one", 250),
+                ],
             ),
         );
         fake.next().await.json(200, session_state());
         fake.next().await.json(200, reception_state());
         let unreadable = fake.next().await;
-        assert!(unreadable.target.contains("unreadable"), "{}", unreadable.target);
+        assert!(
+            unreadable.target.contains("unreadable"),
+            "{}",
+            unreadable.target
+        );
         unreadable.json(403, json!({"errcode": "M_FORBIDDEN"}));
         fake.next().await.json(200, project_state());
     })
@@ -1098,7 +1108,10 @@ async fn native_provisioning_ingress_admits_a_request_without_request_id() {
             200,
             provisioning_sync(
                 "provision",
-                vec![idless("$ask_one", "Provisioned"), idless("$ask_two", "Second")],
+                vec![
+                    idless("$ask_one", "Provisioned"),
+                    idless("$ask_two", "Second"),
+                ],
             ),
         );
         fake.next().await.json(200, session_state());
@@ -1464,7 +1477,10 @@ async fn native_provisioning_admits_a_room_bound_by_the_ts_event() {
         &mut fake,
         provisioning_sync(
             "provision",
-            vec![request_event("$request_one", request_body("request_one", 250))],
+            vec![request_event(
+                "$request_one",
+                request_body("request_one", 250),
+            )],
         ),
         project,
     )
@@ -1493,7 +1509,10 @@ async fn native_provisioning_admits_a_room_bound_by_the_legacy_event() {
         &mut fake,
         provisioning_sync(
             "provision",
-            vec![request_event("$request_one", request_body("request_one", 250))],
+            vec![request_event(
+                "$request_one",
+                request_body("request_one", 250),
+            )],
         ),
         project,
     )
@@ -1527,7 +1546,10 @@ async fn native_provisioning_prefers_the_ts_binding_when_both_are_present() {
         &mut fake,
         provisioning_sync(
             "provision",
-            vec![request_event("$request_one", request_body("request_one", 250))],
+            vec![request_event(
+                "$request_one",
+                request_body("request_one", 250),
+            )],
         ),
         project,
     )
@@ -1556,7 +1578,10 @@ async fn native_provisioning_refuses_a_foreign_fleet_legacy_binding() {
         &mut fake,
         provisioning_sync(
             "provision",
-            vec![request_event("$request_one", request_body("request_one", 250))],
+            vec![request_event(
+                "$request_one",
+                request_body("request_one", 250),
+            )],
         ),
         project,
     )

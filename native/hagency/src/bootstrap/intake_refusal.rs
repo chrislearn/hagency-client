@@ -32,9 +32,9 @@ pub async fn run(state: &Path, digest: String) -> Result<usize, Failure> {
         domain.clone(),
     )
     .map_err(|_| Failure::Config {
-            field: "development-driver.json: matrix origin",
-            fix: "the collector must construct from the configured host origin and limits",
-        })?;
+        field: "development-driver.json: matrix origin",
+        fix: "the collector must construct from the configured host origin and limits",
+    })?;
     let result = collector
         .refuse_stale_session_batch(digest)
         .await

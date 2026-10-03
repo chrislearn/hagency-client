@@ -262,10 +262,7 @@ impl DomainRepository {
         )?;
         let found = query
             .query_row(params![role], |row| {
-                Ok((
-                    row.get::<_, Option<String>>(0)?,
-                    row.get::<_, String>(1)?,
-                ))
+                Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?))
             })
             .optional()?;
         let mut agent = None;
@@ -287,9 +284,7 @@ impl DomainRepository {
 
     /// Live (`reserved`/`active`) engagements per role — the offer book's
     /// `runningNow`. One aggregate, never a scan of the projection store.
-    fn live_engagements_by_role(
-        &self,
-    ) -> Result<std::collections::BTreeMap<String, u64>, Error> {
+    fn live_engagements_by_role(&self) -> Result<std::collections::BTreeMap<String, u64>, Error> {
         let mut query = self.db.prepare(
             "SELECT json_extract(projection,'$.role'),COUNT(*) FROM engagements \
              WHERE state IN ('reserved','active') GROUP BY 1",

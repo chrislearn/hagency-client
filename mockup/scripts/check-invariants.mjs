@@ -66,7 +66,7 @@ for (const r of ROUTES) {
 
 // 2. the mapping is IMPORTED from the shipped config, not copied
 {
-  const disk = JSON.parse(readFileSync('../lib/role-capacity.json', 'utf8'));
+  const disk = JSON.parse(readFileSync('../native/hagency-core/role-capacity.json', 'utf8'));
   /*
    * REQ-CONTRIBUTION-CONSOLE-VOCABULARY — the role vocabulary comes from the system's own
    * enumeration, so a console role name the borrower cannot recognise is impossible by

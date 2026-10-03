@@ -22,8 +22,8 @@
 //! Feature-gated with the browser lane: it needs the real bundle
 //! (`HAGENCY_NATIVE_CONSOLE_ASSETS` from `build:native`) and Chrome.
 
-use serde_json::Value;
 use salvo::prelude::*;
+use serde_json::Value;
 use std::{
     net::{SocketAddr, TcpListener as StdListener},
     path::PathBuf,
@@ -73,7 +73,10 @@ async fn native_console_live_actions_walk() {
         super::fixture::TOKEN.as_bytes(),
     )
     .unwrap();
-    let acceptor = salvo::conn::TcpListener::new(address).try_bind().await.unwrap();
+    let acceptor = salvo::conn::TcpListener::new(address)
+        .try_bind()
+        .await
+        .unwrap();
     let server = salvo::Server::new(acceptor);
     let handle = server.handle();
     let serving = tokio::spawn(server.try_serve(f.app.clone().router()));
@@ -84,14 +87,15 @@ async fn native_console_live_actions_walk() {
         .unwrap();
     let shots = f.root.path().join("shots");
     std::fs::create_dir_all(&shots).unwrap();
-    let mut child = Command::new(std::env::var_os("HAGENCY_BROWSER_NODE").unwrap_or_else(|| "node".into()))
-        .arg(driver())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .expect("actual browser tooling must exist");
+    let mut child =
+        Command::new(std::env::var_os("HAGENCY_BROWSER_NODE").unwrap_or_else(|| "node".into()))
+            .arg(driver())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("actual browser tooling must exist");
     child
         .stdin
         .take()
@@ -111,12 +115,12 @@ async fn native_console_live_actions_walk() {
     // shared host where a healthy browser walk alone takes ~60s.
     tokio::time::timeout(Duration::from_secs(180), async {
         while let Some(line) = lines.next_line().await.unwrap() {
-            if let Ok(value) = serde_json::from_str::<Value>(&line) {
-                if value.get("step").is_some() {
-                    steps.push(value);
-                    println!("{line}");
-                    continue;
-                }
+            if let Ok(value) = serde_json::from_str::<Value>(&line)
+                && value.get("step").is_some()
+            {
+                steps.push(value);
+                println!("{line}");
+                continue;
             }
             println!("{line}");
         }

@@ -31,7 +31,11 @@ fn git(repo: &Path, args: &[&str]) -> String {
         .current_dir(repo)
         .output()
         .expect("git runs");
-    assert!(out.status.success(), "git {args:?} failed: {}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     String::from_utf8_lossy(&out.stdout).trim().to_string()
 }
 
@@ -198,10 +202,20 @@ fn resource_identity_distinguishes_repository_root() {
     };
     let manager = WorktreeManager::new();
     let a = manager
-        .ensure(spec(&make("repo-a"), &root.path().join("wt-a"), "agent", "$same"))
+        .ensure(spec(
+            &make("repo-a"),
+            &root.path().join("wt-a"),
+            "agent",
+            "$same",
+        ))
         .unwrap();
     let b = manager
-        .ensure(spec(&make("repo-b"), &root.path().join("wt-b"), "agent", "$same"))
+        .ensure(spec(
+            &make("repo-b"),
+            &root.path().join("wt-b"),
+            "agent",
+            "$same",
+        ))
         .unwrap();
     assert_ne!(a.resource_id, b.resource_id);
 }
@@ -224,7 +238,10 @@ async fn async_preparation_does_not_block_the_event_loop() {
     // A timer must fire while the bootstrap still sleeps: the preparation is on
     // the blocking pool, not an async worker.
     tokio::time::sleep(Duration::from_millis(20)).await;
-    assert!(start.elapsed() < Duration::from_millis(500), "timer fired while bootstrap ran");
+    assert!(
+        start.elapsed() < Duration::from_millis(500),
+        "timer fired while bootstrap ran"
+    );
     let info = preparation.await.unwrap();
     assert!(info.created, "first async prepare creates the worktree");
 }
@@ -244,7 +261,14 @@ fn dirty_worktree_refuses_remove_without_force() {
     );
     assert!(info.path.exists(), "dirty worktree must survive eviction");
     // branch still registered in the source repo
-    let refs = git(&repo, &["show-ref", "--verify", &format!("refs/heads/{}", info.branch)]);
+    let refs = git(
+        &repo,
+        &[
+            "show-ref",
+            "--verify",
+            &format!("refs/heads/{}", info.branch),
+        ],
+    );
     assert!(refs.contains(&info.branch));
     // force remove works
     manager.remove(spec, true).unwrap();

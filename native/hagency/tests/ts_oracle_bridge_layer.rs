@@ -132,8 +132,8 @@ fn ts_oracle_pending_invite_settlement_conflicts_and_never_prunes_pending() {
 /// reads top-to-bottom like the test it names.
 mod rep_sync {
     use hagency_matrix::{
-        BoxFuture, CircuitBreak, Error, EventMeta, HistoryPage, PageReader, PageSink, PendingVerdict,
-        RepresentativeSync, SyncBatch, SyncDriver, SyncError, SyncHooks, SyncState,
+        BoxFuture, CircuitBreak, Error, EventMeta, HistoryPage, PageReader, PageSink,
+        PendingVerdict, RepresentativeSync, SyncBatch, SyncDriver, SyncError, SyncHooks, SyncState,
     };
     use serde_json::{Value, json};
     use std::{
@@ -241,8 +241,12 @@ mod rep_sync {
             self
         }
         pub(super) fn collector(&self) -> RepresentativeSync {
-            RepresentativeSync::new("project.test", "project.test@generation", "@rep:project.test")
-                .unwrap()
+            RepresentativeSync::new(
+                "project.test",
+                "project.test@generation",
+                "@rep:project.test",
+            )
+            .unwrap()
         }
         /// The same collectors run loop, on this fixture's own seams.
         pub(super) async fn run(&self, collector: &mut RepresentativeSync) {
@@ -378,11 +382,7 @@ mod rep_sync {
     }
 
     impl SyncHooks for Fixture {
-        fn events(
-            &self,
-            events: Vec<Value>,
-            meta: EventMeta,
-        ) -> BoxFuture<'_, Result<(), Error>> {
+        fn events(&self, events: Vec<Value>, meta: EventMeta) -> BoxFuture<'_, Result<(), Error>> {
             let shared = self.shared.clone();
             Box::pin(async move {
                 shared.delivered.lock().unwrap().push(labels(&events));
@@ -393,7 +393,11 @@ mod rep_sync {
                 }
                 // TS case 2: `if (events[0].event_id === '$work' && !failed)`.
                 let refuse = shared.refuse_event.lock().unwrap().clone();
-                if refuse.as_deref() == events.first().and_then(|e| e.get("event_id")).and_then(Value::as_str)
+                if refuse.as_deref()
+                    == events
+                        .first()
+                        .and_then(|e| e.get("event_id"))
+                        .and_then(Value::as_str)
                     && !shared.refused.swap(true, SeqCst)
                 {
                     return Err(Error::Remote(500));
@@ -571,10 +575,14 @@ mod rep_sync {
         let f = Fixture::new();
         f.max_polls(2)
             .cursor(Some("previous"))
-            .script(json!({"next_batch": "next-1", "rooms": {"join": {"!p:project.test": {
-                "timeline": {"limited": true, "prev_batch": "gap-page", "events": []}}}}}))
-            .script(json!({"next_batch": "next-2", "rooms": {"join": {"!p:project.test": {
-                "timeline": {"limited": false, "events": []}}}}}));
+            .script(
+                json!({"next_batch": "next-1", "rooms": {"join": {"!p:project.test": {
+                "timeline": {"limited": true, "prev_batch": "gap-page", "events": []}}}}}),
+            )
+            .script(
+                json!({"next_batch": "next-2", "rooms": {"join": {"!p:project.test": {
+                "timeline": {"limited": false, "events": []}}}}}),
+            );
         f.transient(1);
         let mut collector = f.collector();
         f.run(&mut collector).await;
@@ -590,10 +598,11 @@ mod rep_sync {
     /// without consuming the cursor.
     pub(super) async fn circuit_break_holds_cursor() {
         let f = Fixture::new();
-        f.cursor(Some("held"))
-            .script(json!({"next_batch": "uncommitted", "rooms": {"join": {"!p:project.test": {
+        f.cursor(Some("held")).script(
+            json!({"next_batch": "uncommitted", "rooms": {"join": {"!p:project.test": {
                 "timeline": {"events": [
-                    {"type": "m.room.message", "event_id": "$failed", "content": {}}]}}}}}));
+                    {"type": "m.room.message", "event_id": "$failed", "content": {}}]}}}}}),
+        );
         f.poison(true);
         let mut collector = f.collector();
         f.run(&mut collector).await;
@@ -712,11 +721,13 @@ mod rep_sync {
 
         // No cursor / no observed ids at all is the same unprovable refusal.
         let sink = Sink::default();
-        for (from, known) in [(None, vec!["$x".to_owned()]), (Some("gap-page"), Vec::new())] {
-            let error =
-                hagency_matrix::reconcile_timeline(from, &known, &unprovable, &sink)
-                    .await
-                    .unwrap_err();
+        for (from, known) in [
+            (None, vec!["$x".to_owned()]),
+            (Some("gap-page"), Vec::new()),
+        ] {
+            let error = hagency_matrix::reconcile_timeline(from, &known, &unprovable, &sink)
+                .await
+                .unwrap_err();
             assert!(error.boundary);
         }
         assert!(sink.seen.lock().unwrap().is_empty());
@@ -760,7 +771,7 @@ fn ts_oracle_invited_room_routing_direct_and_group_and_loop() {
 
 #[test]
 fn ts_oracle_join_backfill_covered_in_hagency_matrix() {
-    use hagency_matrix::join_backfill::{pending_join_backfill, Boundary};
+    use hagency_matrix::join_backfill::{Boundary, pending_join_backfill};
     use serde_json::json;
     // One smoke assertion per TS property group; the full 13-case port is the
     // source module's own test set (same names, same fixtures).
@@ -779,7 +790,10 @@ fn ts_oracle_join_backfill_covered_in_hagency_matrix() {
     assert_eq!(window.boundary, Boundary::InviteToEnd);
     // Fail-closed: no provable invite -> nothing routed (:150).
     let none = json!([{"type":"m.room.message","event_id":"$x","sender":"@lin:m.test","origin_server_ts":1,"content":{"body":"x"}}]);
-    assert_eq!(pending_join_backfill(Some(&none), bot, None).boundary, Boundary::Unproven);
+    assert_eq!(
+        pending_join_backfill(Some(&none), bot, None).boundary,
+        Boundary::Unproven
+    );
 }
 
 /// TS `tests/bot-commands-request.test.js` — `cmdRequest` reply half.
@@ -792,10 +806,9 @@ fn ts_oracle_join_backfill_covered_in_hagency_matrix() {
 /// id, `source.event_id == request.source_event_id`, and requester = sender
 /// `source.sender == request.requester_mxid`, authority.rs:222-224), not an
 /// agent-token POST — that one row stays a gap.
-
 use hagency::bot_commands::{
-    Dispatched, HostObservation, OfferServing, RequestEngagement, RequestOutcome, Acl,
-    dispatch, request_reply,
+    Acl, Dispatched, HostObservation, OfferServing, RequestEngagement, RequestOutcome, dispatch,
+    request_reply,
 };
 use serde_json::json;
 
@@ -824,11 +837,19 @@ fn ts_oracle_request_pending_told_why() {
         ..RequestOutcome::default()
     };
     assert_eq!(
-        request_reply(&["coding".into(), "400000".into()], Some(&pending("notWhitelisted"))).plain,
+        request_reply(
+            &["coding".into(), "400000".into()],
+            Some(&pending("notWhitelisted"))
+        )
+        .plain,
         "Requested coding for 400000 tokens — awaiting a decision, because this room is not on the contributor's whitelist."
     );
     assert_eq!(
-        request_reply(&["coding".into(), "400000".into()], Some(&pending("overCeiling"))).plain,
+        request_reply(
+            &["coding".into(), "400000".into()],
+            Some(&pending("overCeiling"))
+        )
+        .plain,
         "Requested coding for 400000 tokens — awaiting a decision, because the amount is above what the serving agent has left."
     );
 }
@@ -885,7 +906,13 @@ fn ts_oracle_request_dispatch_hands_args_to_caller() {
     let acl = Acl::default();
     let observed = HostObservation::default();
     assert_eq!(
-        dispatch("!request coding 400000 20000", "@a:example.test", &acl, false, &observed),
+        dispatch(
+            "!request coding 400000 20000",
+            "@a:example.test",
+            &acl,
+            false,
+            &observed
+        ),
         Dispatched::Request(vec![
             "coding".to_owned(),
             "400000".to_owned(),
@@ -895,7 +922,13 @@ fn ts_oracle_request_dispatch_hands_args_to_caller() {
     assert_eq!(
         json!(true),
         json!(matches!(
-            dispatch("!request coding 400000", "@a:example.test", &acl, false, &observed),
+            dispatch(
+                "!request coding 400000",
+                "@a:example.test",
+                &acl,
+                false,
+                &observed
+            ),
             Dispatched::Request(_)
         ))
     );

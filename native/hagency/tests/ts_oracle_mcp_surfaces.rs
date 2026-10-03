@@ -81,7 +81,6 @@ fn ts_heartbeat_retries_transient_failures_and_reconnects() {
     // The operator rule this encodes: bridge-side faults are retried, never
     // terminal. Native has no heartbeat loop; its equivalent liveness path is
     // the runner's update_task_execution heartbeat tool.
-    assert!(true);
 }
 
 // ---------------------------------------------------------------------------
@@ -179,9 +178,9 @@ fn ts_codex_permission_request_maps_and_failures_deny() {
 fn ts_check_inbox_records_progress_anchor() {
     // Reference rule: two buckets (group, dm); newest wins across both;
     // empty read is not an erase.
-    let mut anchor: Option<(&str, &str)> = None; // (bucket, target)
     let inbox_group = Some(("group", "!project:example.test"));
-    anchor = inbox_group; // a group message is remembered with its group
+    // (bucket, target): a group message is remembered with its group
+    let anchor: Option<(&str, &str)> = inbox_group;
     assert_eq!(anchor, Some(("group", "!project:example.test")));
     let empty: Option<(&str, &str)> = None;
     if empty.is_none() {

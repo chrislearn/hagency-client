@@ -74,7 +74,13 @@ export function validateEngagements(v) {
   return v;
 }
 const RECOVERY_ERRORS = { agent_lifecycle_scope_required: 403, resolution_conflict: 409, dispatch_not_resolvable: 409, invalid_console_request: 400 };
+/* End access revokes the credential this page holds. From the moment it
+ * starts until a new ticket is exchanged, no console read or write leaves the
+ * page: a multi-step load already in flight (the fleet panel's per-side budget
+ * reads) would otherwise keep presenting the revoked cookie. */
+let accessEnded = false;
 async function request(path, options = {}, responseLimit = 64 * 1024) {
+  if (accessEnded && path !== '/session') throw new Error('console_access_required');
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), 5000);
   try {
@@ -150,6 +156,7 @@ export async function exchangeAccess(location, history, previousLogout = Promise
   if (!/^#access=[a-f0-9]{64}$/.test(fragment)) throw new Error('console_access_required');
   await previousLogout;
   await request('/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ticket: fragment.slice(8) }) });
+  accessEnded = false;
 }
 /* `withReport` exists because two pages read this ONE list for different
  * purposes: the usage page needs the selected engagement's evidence, while the
@@ -603,7 +610,7 @@ export async function transitionAlert(key, to, note) {
     body: JSON.stringify({ to, ...(note ? { note } : {}) }),
   }));
 }
-export async function logoutNative() { await request('/session', { method: 'DELETE' }); }
+export async function logoutNative() { accessEnded = true; await request('/session', { method: 'DELETE' }); }
 
 /* The read-only approval observation (ADR-138, PC-C2b): the list and single
  * routes serve rows with exactly seven camelCase keys and no nested object,

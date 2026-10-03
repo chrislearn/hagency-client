@@ -1,15 +1,15 @@
+// The browser and live-action harnesses each mount the shared Matrix fixture.
+#![allow(clippy::duplicate_mod)]
 #[path = "console/accounts.rs"]
 mod accounts;
 #[path = "console/agents.rs"]
 mod agents;
-#[path = "console/stream.rs"]
-mod stream;
 #[path = "console/alerts.rs"]
 mod alerts;
-#[path = "console/approvals.rs"]
-mod approvals;
 #[path = "console/approval_bindings.rs"]
 mod approval_bindings;
+#[path = "console/approvals.rs"]
+mod approvals;
 #[path = "console/browser.rs"]
 #[cfg(feature = "native-console-browser")]
 mod browser;
@@ -27,43 +27,45 @@ mod engagements_verdict;
 mod exec_policy;
 #[path = "console/fixture.rs"]
 mod fixture;
-#[path = "console/invites.rs"]
-mod invites;
 #[path = "console/fleet_views.rs"]
 mod fleet_views;
-#[path = "console/matrix_diag.rs"]
-mod matrix_diag;
-#[path = "console/origin.rs"]
-mod origin;
-#[path = "console/offer_book.rs"]
-mod offer_book;
 #[path = "console/graphs.rs"]
 mod graphs;
+#[path = "console/invites.rs"]
+mod invites;
+#[path = "console/live_actions.rs"]
+#[cfg(feature = "native-console-browser")]
+mod live_actions;
+#[path = "console/matrix_diag.rs"]
+mod matrix_diag;
+#[path = "console/offer_book.rs"]
+mod offer_book;
+#[path = "console/origin.rs"]
+mod origin;
 #[path = "console/palpo_import.rs"]
 mod palpo_import;
 #[path = "console/project_sides.rs"]
 mod project_sides;
+#[path = "console/rail.rs"]
+#[cfg(feature = "native-console-browser")]
+mod rail;
 #[path = "console/real_agent.rs"]
 mod real_agent;
 #[path = "console/registration.rs"]
 mod registration;
-#[path = "console/rail.rs"]
-#[cfg(feature = "native-console-browser")]
-mod rail;
-#[path = "console/live_actions.rs"]
-#[cfg(feature = "native-console-browser")]
-mod live_actions;
 #[path = "console/resources.rs"]
 mod resources;
-#[path = "console/side_registration.rs"]
-mod side_registration;
 #[path = "console/side_budget.rs"]
 mod side_budget;
 #[path = "console/side_lifecycle.rs"]
 mod side_lifecycle;
+#[path = "console/side_registration.rs"]
+mod side_registration;
 #[path = "console/status_strip.rs"]
 #[cfg(feature = "native-console-browser")]
 mod status_strip;
+#[path = "console/stream.rs"]
+mod stream;
 #[path = "console/tasks.rs"]
 mod tasks;
 #[path = "console/ts_oracle_approvals.rs"]
@@ -617,10 +619,7 @@ async fn native_console_assets_refusal_names_field_and_fix() {
             );
             std::thread::sleep(std::time::Duration::from_millis(20));
         };
-        assert!(
-            !status.success(),
-            "an aliased bundle must not be admitted"
-        );
+        assert!(!status.success(), "an aliased bundle must not be admitted");
         let mut stderr = String::new();
         if let Some(mut pipe) = child.stderr.take() {
             use std::io::Read;

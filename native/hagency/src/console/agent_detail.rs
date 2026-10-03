@@ -24,8 +24,7 @@ use salvo::prelude::*;
 /// identifier that could address a session, authority or filesystem.
 fn agent_name(req: &Request) -> Result<String, Error> {
     let name = req.param::<String>("name").ok_or(Error::Invalid)?;
-    AgentName::try_from(name.clone())
-        .map_err(|_| Error::Invalid)?;
+    AgentName::try_from(name.clone()).map_err(|_| Error::Invalid)?;
     Ok(name)
 }
 

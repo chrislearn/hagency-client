@@ -72,7 +72,8 @@ struct Media {
 fn media(plaintext: &[u8]) -> Media {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("private-file"), plaintext).unwrap();
-    let dir = cap_std::fs::Dir::open_ambient_dir(root.path(), cap_std::ambient_authority()).unwrap();
+    let dir =
+        cap_std::fs::Dir::open_ambient_dir(root.path(), cap_std::ambient_authority()).unwrap();
     let workspace =
         hagency_files::Workspace::from_directory(dir, hagency_files::Limits::default()).unwrap();
     let snapshot = workspace
@@ -146,7 +147,10 @@ async fn ts_failed_upload_carries_the_status() {
     });
     let error = result.expect_err("a 413 is a refusal");
     assert!(
-        matches!(error, Failure::Transport(hagency_matrix::Error::Remote(413))),
+        matches!(
+            error,
+            Failure::Transport(hagency_matrix::Error::Remote(413))
+        ),
         "the status is carried: {error:?}"
     );
     fake.close().await;

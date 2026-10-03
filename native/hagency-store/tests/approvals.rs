@@ -384,7 +384,8 @@ fn native_owner_approval_context() {
     let mut local = f.input(0, 1);
     local.params["environmentId"] = json!("local");
     assert!(
-        f.db.request_owner_approval(&f.caps[0], &local, 1010).is_ok(),
+        f.db.request_owner_approval(&f.caps[0], &local, 1010)
+            .is_ok(),
         "the default local environment matches a turn with none"
     );
     let input = f.input(0, 1);

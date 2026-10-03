@@ -142,7 +142,9 @@ fn ts_oracle_auth_mode_is_api_key_when_a_key_is_set() {
 fn ts_oracle_same_host_shares_one_seat() {
     let _a = agent("local", "claude", None);
     let _b = agent("local", "claude", None);
-    panic!("TS asserts two agents on one credential home share one seatId; native derives no seat identity");
+    panic!(
+        "TS asserts two agents on one credential home share one seatId; native derives no seat identity"
+    );
 }
 
 /// TS `seat-store.test.js:58` `the machine's own hostname and "local" are ONE
@@ -153,7 +155,9 @@ fn ts_oracle_same_host_shares_one_seat() {
 fn ts_oracle_local_aliases_collapse_to_one_server() {
     let _local = agent("local", "claude", None);
     let _hostname = agent("mini1.lan", "claude", None);
-    panic!("TS asserts local/hostname/empty collapse to ONE seat while a real host does not; native derives no seat identity");
+    panic!(
+        "TS asserts local/hostname/empty collapse to ONE seat while a real host does not; native derives no seat identity"
+    );
 }
 
 /// TS `seat-store.test.js:147` `separates api-key mode from the subscription`:
@@ -163,7 +167,9 @@ fn ts_oracle_local_aliases_collapse_to_one_server() {
 fn ts_oracle_api_key_mode_separated_from_subscription() {
     let _keyed = agent("local", "claude", Some(json!("sk-live")));
     let _plain = agent("local", "claude", None);
-    panic!("TS asserts api-key and subscription agents on one host are different seats; native derives no seat identity");
+    panic!(
+        "TS asserts api-key and subscription agents on one host are different seats; native derives no seat identity"
+    );
 }
 
 /// TS `seat-store.test.js:158` `separates credential homes and hosts, not
@@ -175,7 +181,9 @@ fn ts_oracle_separates_credential_homes_and_hosts() {
     let _claude = agent("local", "claude", None);
     let _codex = agent("local", "codex", None);
     let _remote = agent("box2", "claude", None);
-    panic!("TS asserts three distinct seats with credentialHome ~/.claude and ~/.codex; native has no credential-home table");
+    panic!(
+        "TS asserts three distinct seats with credentialHome ~/.claude and ~/.codex; native has no credential-home table"
+    );
 }
 
 /// TS `seat-store.test.js:171` `gives codex and codex-acp ONE seat, because they
@@ -185,7 +193,9 @@ fn ts_oracle_separates_credential_homes_and_hosts() {
 fn ts_oracle_codex_and_codex_acp_share_a_seat() {
     let _codex = agent("local", "codex", None);
     let _acp = agent("local", "codex-acp", None);
-    panic!("TS asserts codex and codex-acp share one seat via ~/.codex; native derives no seat identity");
+    panic!(
+        "TS asserts codex and codex-acp share one seat via ~/.codex; native derives no seat identity"
+    );
 }
 
 /// TS `seat-store.test.js:178` `gives two DIFFERENT api keys different seats`,
@@ -195,7 +205,9 @@ fn ts_oracle_codex_and_codex_acp_share_a_seat() {
 fn ts_oracle_two_api_keys_are_two_seats() {
     let _aaa = agent("local", "claude", Some(json!("sk-aaa")));
     let _bbb = agent("local", "claude", Some(json!("sk-bbb")));
-    panic!("TS asserts two different keys are two seats and expose no key material; native derives no seat identity");
+    panic!(
+        "TS asserts two different keys are two seats and expose no key material; native derives no seat identity"
+    );
 }
 
 /// TS `seat-store.test.js:194` `says when a key split is approximate rather
@@ -215,7 +227,9 @@ fn ts_oracle_redacted_key_is_reported_as_approximate() {
 #[test]
 fn ts_oracle_never_exposes_a_path() {
     let _plain = agent("local", "claude", None);
-    panic!("TS asserts keyed/keyId markers and that no seat id carries a path; native derives no seat identity");
+    panic!(
+        "TS asserts keyed/keyId markers and that no seat id carries a path; native derives no seat identity"
+    );
 }
 
 /// TS `seat-store.test.js:220` `rotating the key changes the id, and the same
@@ -224,7 +238,9 @@ fn ts_oracle_never_exposes_a_path() {
 #[test]
 fn ts_oracle_key_rotation_changes_the_id() {
     let _a = agent("local", "claude", None);
-    panic!("TS asserts a rotated key changes the seat id and the same key reproduces it; native derives no seat identity");
+    panic!(
+        "TS asserts a rotated key changes the seat id and the same key reproduces it; native derives no seat identity"
+    );
 }
 
 /* ───────────────────────── over-subscription (buildSeats aggregation) ───────────────────────── */
@@ -235,7 +251,9 @@ fn ts_oracle_key_rotation_changes_the_id() {
 #[ignore = "parity gap: no native buildSeats (no per-seat aggregation of member ceilings)"]
 #[test]
 fn ts_oracle_sums_promises_out_of_one_seat() {
-    panic!("TS asserts one seat with declaredTokens 10_000_000 across two members; native computes one resource's budget, not a seat's membership");
+    panic!(
+        "TS asserts one seat with declaredTokens 10_000_000 across two members; native computes one resource's budget, not a seat's membership"
+    );
 }
 
 /// TS `seat-store.test.js:251` `reports over-subscription only when a quota has
@@ -245,7 +263,9 @@ fn ts_oracle_sums_promises_out_of_one_seat() {
 #[ignore = "parity gap: no native buildSeats (no overSubscribed/headroomTokens projection over a seat's members)"]
 #[test]
 fn ts_oracle_over_subscription_needs_a_declared_quota() {
-    panic!("TS asserts null-not-false when no quota is declared and signed headroom otherwise; native has no seat-level projection");
+    panic!(
+        "TS asserts null-not-false when no quota is declared and signed headroom otherwise; native has no seat-level projection"
+    );
 }
 
 /// TS `seat-store.test.js:278` `counts members whose preset carries no ceiling
@@ -254,7 +274,9 @@ fn ts_oracle_over_subscription_needs_a_declared_quota() {
 #[ignore = "parity gap: no native buildSeats (no membersWithoutCeiling count)"]
 #[test]
 fn ts_oracle_count_members_without_a_ceiling() {
-    panic!("TS asserts membersWithoutCeiling == 2 rather than reading the ceiling sum as the whole story; native has no seat-level projection");
+    panic!(
+        "TS asserts membersWithoutCeiling == 2 rather than reading the ceiling sum as the whole story; native has no seat-level projection"
+    );
 }
 
 /// TS `seat-store.test.js:295` `says on every seat that nothing is enforced`:
@@ -262,7 +284,9 @@ fn ts_oracle_count_members_without_a_ceiling() {
 #[ignore = "parity gap: no native buildSeats (no enforced marker; native computes no seat-level projection at all)"]
 #[test]
 fn ts_oracle_every_seat_says_nothing_is_enforced() {
-    panic!("TS asserts enforced == false on every seat; native has no seat-level projection to carry it");
+    panic!(
+        "TS asserts enforced == false on every seat; native has no seat-level projection to carry it"
+    );
 }
 
 /* ───────────────────────── declarations (normalizeDeclaration) ───────────────────────── */
@@ -272,7 +296,9 @@ fn ts_oracle_every_seat_says_nothing_is_enforced() {
 #[ignore = "parity gap: no native normalizeDeclaration (native stores the operator's Declaration verbatim with no field allowlist)"]
 #[test]
 fn ts_oracle_declaration_keeps_only_known_fields() {
-    panic!("TS asserts an unknown field is dropped from a declaration; native has no normalizeDeclaration");
+    panic!(
+        "TS asserts an unknown field is dropped from a declaration; native has no normalizeDeclaration"
+    );
 }
 
 /// TS `seat-store.test.js:307` `rejects a nonsense period and a negative quota
@@ -292,7 +318,9 @@ fn ts_oracle_declaration_rejects_nonsense_values() {
         "commitments": [],
     }));
     assert!(rejected.is_err(), "a negative quota is rejected natively");
-    panic!("TS additionally asserts the nonsense period is nulled at store time; native keeps it and only reports period_mismatch later");
+    panic!(
+        "TS additionally asserts the nonsense period is nulled at store time; native keeps it and only reports period_mismatch later"
+    );
 }
 
 /// TS `seat-store.test.js:313` `returns null when there is nothing to declare`:
@@ -300,7 +328,9 @@ fn ts_oracle_declaration_rejects_nonsense_values() {
 #[ignore = "parity gap: no native normalizeDeclaration (no null-when-empty collapse)"]
 #[test]
 fn ts_oracle_empty_declaration_is_null() {
-    panic!("TS asserts an empty or unknown-only declaration normalizes to null; native has no normalizeDeclaration");
+    panic!(
+        "TS asserts an empty or unknown-only declaration normalizes to null; native has no normalizeDeclaration"
+    );
 }
 
 /* ───────────────────────── digest material (no native surface) ───────────────────────── */
@@ -313,7 +343,9 @@ fn ts_oracle_empty_declaration_is_null() {
 fn ts_oracle_digest_material_cannot_collide() {
     let _a = agent("box:claude", "x", None);
     let _b = agent("box", "claude:x", None);
-    panic!("TS asserts JSON-encoded digest material keeps two triples distinct; native derives no seat identity");
+    panic!(
+        "TS asserts JSON-encoded digest material keeps two triples distinct; native derives no seat identity"
+    );
 }
 
 /// TS `seat-store.test.js:333` `produces an id with no control characters in it`.
@@ -321,5 +353,7 @@ fn ts_oracle_digest_material_cannot_collide() {
 #[test]
 fn ts_oracle_seat_id_has_no_control_characters() {
     let _a = agent("local", "claude", None);
-    panic!("TS asserts the generated seat id carries no control characters; native derives no seat identity");
+    panic!(
+        "TS asserts the generated seat id carries no control characters; native derives no seat identity"
+    );
 }

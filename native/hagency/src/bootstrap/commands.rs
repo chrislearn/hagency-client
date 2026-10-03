@@ -15,7 +15,7 @@
 use super::{Failure, StatusHandle};
 use hagency_core::commands::CommandNoticeRequest;
 use hagency_matrix::{CancellationToken, Collector, OutgoingState};
-use hagency_store::{DomainStore, ThreadDirective};
+use hagency_store::DomainStore;
 
 /// The rest wait for the next poll; one attempt must not become a send loop.
 const MAX_ANSWERS: usize = 4;

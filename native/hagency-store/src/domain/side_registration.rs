@@ -97,6 +97,9 @@ pub const STAGED_NOTE: &str = "The credential this side is USING has not changed
 /// TS only ever compares against two of them (`backend-v2.js:10060-10061`,
 /// `liveIsBroken = accessState === 'rejected' || 'blocked'`), so the pair
 /// that matters is spelled out here rather than left as bare strings.
+// Only `Unverified` is observed natively so far (see `side_access_verdict`);
+// the other verdicts are exercised by the staging-rule tests.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SideAccessVerdict {
     /// A verify proved the homeserver accepts the live credential.
@@ -291,8 +294,10 @@ impl GeneratedRegistration {
     fn yaml(&self) -> String {
         let exclusive = if self.exclusive { "true" } else { "false" };
         let lines = [
-            "# Hagency appservice registration. Generated — do not hand-edit the tokens.".to_owned(),
-            "# Install on the project side's homeserver and restart it: registrations load once.".to_owned(),
+            "# Hagency appservice registration. Generated — do not hand-edit the tokens."
+                .to_owned(),
+            "# Install on the project side's homeserver and restart it: registrations load once."
+                .to_owned(),
             format!("id: {}", self.id),
             format!("url: \"{}\"", self.url),
             format!("as_token: {}", self.as_token),
@@ -355,10 +360,7 @@ fn state_directory(db: &rusqlite::Connection) -> Result<PathBuf, Error> {
     // private state directory — the same root `bootstrap/config.rs` reads
     // `matrix.appservice_token` from. Derived, never stored twice.
     let database = PathBuf::from(db.path().ok_or(Error::State)?);
-    database
-        .parent()
-        .map(Path::to_path_buf)
-        .ok_or(Error::State)
+    database.parent().map(Path::to_path_buf).ok_or(Error::State)
 }
 
 /// `writeFileSync` semantics under the private-file policy: a NEW file is
@@ -483,10 +485,7 @@ impl crate::DomainRepository {
             mode: "0600",
             registration_id: generated.id,
             sender_localpart: generated.sender_localpart.clone(),
-            representative: format!(
-                "@{}:{server_name}",
-                generated.sender_localpart
-            ),
+            representative: format!("@{}:{server_name}", generated.sender_localpart),
             namespace: generated.namespace.clone(),
             url: generated.url.clone(),
             as_token_fingerprint: fingerprint(&generated.as_token),

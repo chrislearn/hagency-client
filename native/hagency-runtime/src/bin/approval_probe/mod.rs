@@ -363,7 +363,11 @@ fn mcp(reader: &mut impl BufRead, marker: &Path, unsupported_form: bool) -> io::
     // unsupported form is answered `decline` by the ADAPTER itself — never
     // `cancel`, which is the wire's "no" for a request it cannot answer at all,
     // and never a kill.
-    let expected: &[&str] = if unsupported_form { &["decline"] } else { &["accept", "decline"] };
+    let expected: &[&str] = if unsupported_form {
+        &["decline"]
+    } else {
+        &["accept", "decline"]
+    };
     if response["id"] != "approval-1"
         || !response["result"]["action"]
             .as_str()
@@ -395,12 +399,8 @@ fn mcp(reader: &mut impl BufRead, marker: &Path, unsupported_form: bool) -> io::
 fn tools(reader: &mut impl BufRead, marker: &Path) -> io::Result<bool> {
     let _ = reader; // this mode emits only; it reads no response
     let cwd = std::env::current_dir()?.to_string_lossy().into_owned();
-    let started = |item: Value| {
-        json!({"threadId":"owned-thread","turnId":"owned-turn","startedAtMs":1,"item":item})
-    };
-    let completed = |item: Value| {
-        json!({"threadId":"owned-thread","turnId":"owned-turn","completedAtMs":2,"item":item})
-    };
+    let started = |item: Value| json!({"threadId":"owned-thread","turnId":"owned-turn","startedAtMs":1,"item":item});
+    let completed = |item: Value| json!({"threadId":"owned-thread","turnId":"owned-turn","completedAtMs":2,"item":item});
     let command = |status: &str, exit: Value| {
         json!({"id":"tool-command","type":"commandExecution","command":"echo tool-count",
             "cwd":cwd,"commandActions":[],"status":status,"exitCode":exit})

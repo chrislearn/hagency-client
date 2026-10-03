@@ -13,7 +13,7 @@
  * Self-contained on purpose: the engagement evidence rides Data's own load;
  * this panel owns its snapshot so the two cannot tear mid-render.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchFleetUsage, setSideAllocation } from '@/lib/native-api';
 import { useData } from '@/components/Data';
 import { useT } from '@/components/Prefs';
@@ -43,15 +43,20 @@ export default function FleetUsagePanel() {
   useEffect(() => {
     if (data.phase === 'ready' || data.phase === 'stale') void load();
   }, [load, data.phase]);
+  /* Read the provider's phase when the event fires, not the phase this
+   * listener was registered with: between End access and the next effect
+   * pass, a listener holding the old 'ready' would send a dead credential. */
+  const phase = useRef(data.phase);
+  phase.current = data.phase;
   useEffect(() => {
-    const refresh = () => { if (document.visibilityState === 'visible' && (data.phase === 'ready' || data.phase === 'stale')) void load(); };
+    const refresh = () => { if (document.visibilityState === 'visible' && (phase.current === 'ready' || phase.current === 'stale')) void load(); };
     window.addEventListener('focus', refresh);
     document.addEventListener('visibilitychange', refresh);
     return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
-  }, [load, data.phase]);
+  }, [load]);
   if (data.phase === 'access') return null;
-  if (state.phase === 'loading') return <section className="panel"><p role="status">{t('nu.loading')}</p></section>;
-  if (state.phase === 'error') return <section className="panel" role="alert"><h2 className="sec" style={{ marginTop: 0 }}>{t('us.fleetFailed')}</h2>
+  if (state.phase === 'loading') return <section className="panel" data-fleet-state="loading"><p role="status">{t('nu.loading')}</p></section>;
+  if (state.phase === 'error') return <section className="panel" role="alert" data-fleet-state="error"><h2 className="sec" style={{ marginTop: 0 }}>{t('us.fleetFailed')}</h2>
     <p>{t('nu.retryHelp')}</p><button className="btn" onClick={() => void load()}>{t('nu.refresh')}</button></section>;
   const totals = state.totals?.totals;
   const fmt = (v) => v == null ? t('us.unknown') : v.toLocaleString();
@@ -80,7 +85,7 @@ export default function FleetUsagePanel() {
     } finally { setSaving(null); }
   };
   return <>
-    <section className="panel">
+    <section className="panel" data-fleet-state="ready">
       <h2 className="sec" style={{ marginTop: 0 }}>{t('us.fleet')}</h2>
       {totals ? <dl>
         <div className="kv"><dt>{t('us.fleetAgents')}</dt><dd>{totals.agents.toLocaleString()}</dd></div>

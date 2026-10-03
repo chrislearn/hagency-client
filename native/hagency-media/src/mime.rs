@@ -84,8 +84,18 @@ pub fn infer_attachment_kind(kind: Option<&str>, mime: Option<&str>, name: &str)
     let ext = extension(&lower);
     if matches!(
         ext.as_str(),
-        ".png" | ".jpg" | ".jpeg" | ".gif" | ".webp" | ".bmp" | ".svg" | ".avif" | ".heic"
-            | ".heif" | ".tif" | ".tiff"
+        ".png"
+            | ".jpg"
+            | ".jpeg"
+            | ".gif"
+            | ".webp"
+            | ".bmp"
+            | ".svg"
+            | ".avif"
+            | ".heic"
+            | ".heif"
+            | ".tif"
+            | ".tiff"
     ) {
         return "image";
     }
@@ -101,9 +111,15 @@ mod tests {
         // Mirrors the TS map exactly.
         assert_eq!(guess_mime_type_from_name("photo.JPG"), "image/jpeg");
         assert_eq!(guess_mime_type_from_name("a.tar.gz"), "application/gzip");
-        assert_eq!(guess_mime_type_from_name("noext"), "application/octet-stream");
+        assert_eq!(
+            guess_mime_type_from_name("noext"),
+            "application/octet-stream"
+        );
         assert_eq!(guess_mime_type_from_name("结果.txt"), "text/plain");
-        assert_eq!(normalize_mime_type(Some("  IMAGE/PNG ")), Some("image/png".into()));
+        assert_eq!(
+            normalize_mime_type(Some("  IMAGE/PNG ")),
+            Some("image/png".into())
+        );
         assert_eq!(normalize_mime_type(Some("not-a-mime")), None);
         assert_eq!(normalize_mime_type(None), None);
     }

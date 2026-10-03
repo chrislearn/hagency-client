@@ -95,8 +95,7 @@ fn human_waking_kind(kind: &str) -> bool {
 /// (`hagency::bot_commands`); the rule is one line and is asserted on both
 /// sides.
 fn is_bot_command(event: &InboundMessage) -> bool {
-    !matches!(event.kind.as_str(), "m.file" | "m.image")
-        && event.body.trim_start().starts_with('!')
+    !matches!(event.kind.as_str(), "m.file" | "m.image") && event.body.trim_start().starts_with('!')
 }
 fn record_message(
     tx: &Transaction<'_>,
@@ -745,10 +744,7 @@ impl DomainRepository {
                 // could not be addressed.
                 if addressed && !wake && human && kind {
                     let id_key = format!("completed_task_followup:{}", event.event_id);
-                    let notice_id = format!(
-                        "notice_{}",
-                        canonical::digest(&json!([id, &id_key]))?
-                    );
+                    let notice_id = format!("notice_{}", canonical::digest(&json!([id, &id_key]))?);
                     let said: bool = tx.query_row(
                         "SELECT EXISTS(SELECT 1 FROM task_notices WHERE id=?1)",
                         [&notice_id],
@@ -767,11 +763,9 @@ impl DomainRepository {
                         );
                         match queued {
                             Ok(_) => tx.execute_batch("RELEASE followup_notice")?,
-                            Err(_) => {
-                                tx.execute_batch(
-                                    "ROLLBACK TO followup_notice; RELEASE followup_notice",
-                                )?
-                            }
+                            Err(_) => tx.execute_batch(
+                                "ROLLBACK TO followup_notice; RELEASE followup_notice",
+                            )?,
                         }
                     }
                 }

@@ -19,12 +19,25 @@ fn native_probe_binds_an_unbound_reception_once() {
     reg.fleet_id = format!("hf_{}", "b".repeat(32));
     reg.representative_mxid = format!("@{}_representative:{}", reg.fleet_id, reg.server_name);
     db.register(&reg).unwrap();
-    assert!(matches!(db.bind_reception(&reg.fleet_id, reg.generation + 1, &bound), Err(Error::Generation)));
-    db.bind_reception(&reg.fleet_id, reg.generation, &bound).unwrap();
-    assert_eq!(db.provisioning_registration(&reg.fleet_id).unwrap().reception_room_id, bound);
-    db.bind_reception(&reg.fleet_id, reg.generation, &bound).unwrap();
+    assert!(matches!(
+        db.bind_reception(&reg.fleet_id, reg.generation + 1, &bound),
+        Err(Error::Generation)
+    ));
+    db.bind_reception(&reg.fleet_id, reg.generation, &bound)
+        .unwrap();
+    assert_eq!(
+        db.provisioning_registration(&reg.fleet_id)
+            .unwrap()
+            .reception_room_id,
+        bound
+    );
+    db.bind_reception(&reg.fleet_id, reg.generation, &bound)
+        .unwrap();
     let other = bound.replacen('!', "!other", 1);
-    assert!(matches!(db.bind_reception(&reg.fleet_id, reg.generation, &other), Err(Error::Conflict)));
+    assert!(matches!(
+        db.bind_reception(&reg.fleet_id, reg.generation, &other),
+        Err(Error::Conflict)
+    ));
 }
 
 /// An agent revoked while its provisioning was still running never published a
@@ -44,11 +57,22 @@ fn native_revoked_unattached_agent_lists_its_retirement_until_settled() {
     db.claim_effect_for(&format!("provision_{engagement}"))
         .unwrap()
         .unwrap();
-    assert!(db.pending_unattached_retirements(&fleet).unwrap().is_empty());
+    assert!(
+        db.pending_unattached_retirements(&fleet)
+            .unwrap()
+            .is_empty()
+    );
     let revoked = db.revoke("unattached_revoke", &engagement).unwrap();
     assert_eq!(revoked.cleanup, CleanupState::Pending);
-    assert_eq!(db.pending_unattached_retirements(&fleet).unwrap(), vec![engagement.clone()]);
-    assert!(db.pending_unattached_retirements("hf_other_fleet").unwrap().is_empty());
+    assert_eq!(
+        db.pending_unattached_retirements(&fleet).unwrap(),
+        vec![engagement.clone()]
+    );
+    assert!(
+        db.pending_unattached_retirements("hf_other_fleet")
+            .unwrap()
+            .is_empty()
+    );
     let effect = db
         .claim_effect_for(&format!("retire_{engagement}"))
         .unwrap()
@@ -57,11 +81,17 @@ fn native_revoked_unattached_agent_lists_its_retirement_until_settled() {
         .observe_effect(
             &effect.id,
             effect.fence,
-            &EffectOutcome::Applied { receipt: r#"{"credential":"none"}"#.into() },
+            &EffectOutcome::Applied {
+                receipt: r#"{"credential":"none"}"#.into(),
+            },
         )
         .unwrap();
     assert_eq!(settled.cleanup, CleanupState::Complete);
-    assert!(db.pending_unattached_retirements(&fleet).unwrap().is_empty());
+    assert!(
+        db.pending_unattached_retirements(&fleet)
+            .unwrap()
+            .is_empty()
+    );
 }
 
 /// A console verdict reserves the engagement and queues its provision effect
@@ -79,7 +109,10 @@ fn native_console_approval_leaves_a_pending_provision() {
     assert!(db.pending_provisions(&fleet).unwrap().is_empty());
     db.approve("console_approve", &proof, 1000).unwrap();
     let engagement = request.engagement_id().unwrap();
-    assert_eq!(db.pending_provisions(&fleet).unwrap(), vec![engagement.clone()]);
+    assert_eq!(
+        db.pending_provisions(&fleet).unwrap(),
+        vec![engagement.clone()]
+    );
     assert!(db.pending_provisions("hf_other_fleet").unwrap().is_empty());
     db.claim_effect_for(&format!("provision_{engagement}"))
         .unwrap()
@@ -685,12 +718,15 @@ fn domain_agent_roster_is_agent_keyed_with_real_worker_state() {
     // dispatch claimed and STARTED — the attempt clock is 1003.
     let online_proof = proof(&request("roster_one", "OnlineWorker", &pool, 100));
     let engagement = db.admit(&online_proof, 1000).unwrap().id;
-    db.approve("approve_roster_one", &online_proof, 1000).unwrap();
+    db.approve("approve_roster_one", &online_proof, 1000)
+        .unwrap();
     let effect = db.claim_effect().unwrap().unwrap();
     db.observe_effect(
         &effect.id,
         effect.fence,
-        &EffectOutcome::Applied { receipt: "roster fixture".into() },
+        &EffectOutcome::Applied {
+            receipt: "roster fixture".into(),
+        },
     )
     .unwrap();
     db.register_session(&SessionBinding {
@@ -707,22 +743,35 @@ fn domain_agent_roster_is_agent_keyed_with_real_worker_state() {
         id: "roster_dispatch".into(),
         session_id: "roster_session".into(),
         task_id: Some("roster_task".into()),
-        resources: vec![ResourceLease { id: "roster_workspace".into(), exclusive: true }],
+        resources: vec![ResourceLease {
+            id: "roster_workspace".into(),
+            exclusive: true,
+        }],
         payload: json!({}),
     })
     .unwrap();
-    let cap = db.claim_dispatch("roster_runner", 1002, 60000, 120000, 128).unwrap().unwrap();
-    let scope = db.owned_dispatch_scope(&cap, 1003).unwrap();
-    db.start_owned_dispatch(&cap, scope.fingerprint(), 1004).unwrap();
-    // IdleWorker: admit-only, no session — known but never staffed.
-    db.admit(&proof(&request("roster_two", "IdleWorker", &pool, 100)), 1000)
+    let cap = db
+        .claim_dispatch("roster_runner", 1002, 60000, 120000, 128)
+        .unwrap()
         .unwrap();
+    let scope = db.owned_dispatch_scope(&cap, 1003).unwrap();
+    db.start_owned_dispatch(&cap, scope.fingerprint(), 1004)
+        .unwrap();
+    // IdleWorker: admit-only, no session — known but never staffed.
+    db.admit(
+        &proof(&request("roster_two", "IdleWorker", &pool, 100)),
+        1000,
+    )
+    .unwrap();
 
     let roster = db.agent_roster().unwrap();
     assert_eq!(roster.len(), 2, "one row per agent the service knows");
     let online = roster.iter().find(|r| r.name == "OnlineWorker").unwrap();
     assert_eq!(online.state, EngagementState::Active);
-    assert!(online.online, "a live started dispatch is real worker state");
+    assert!(
+        online.online,
+        "a live started dispatch is real worker state"
+    );
     assert_eq!(online.last_seen_ms, Some(1002), "the newest attempt clock");
     assert_eq!(online.last_activity_ms, Some(1002));
     assert_eq!(online.engagement_id, engagement);
@@ -741,15 +790,21 @@ fn domain_agent_detail_projects_rooms_dispatch_and_tasks() {
     let (_dir, mut db) = setup();
     let pool = resource("detail_pool", "detail_seat", 1000);
     db.put_resource(&pool).unwrap();
-    assert!(db.agent_detail("Nobody").unwrap().is_none(), "unknown agent: 404");
+    assert!(
+        db.agent_detail("Nobody").unwrap().is_none(),
+        "unknown agent: 404"
+    );
     let detail_proof = proof(&request("detail_one", "DetailWorker", &pool, 100));
     let engagement = db.admit(&detail_proof, 1000).unwrap().id;
-    db.approve("approve_detail_one", &detail_proof, 1000).unwrap();
+    db.approve("approve_detail_one", &detail_proof, 1000)
+        .unwrap();
     let effect = db.claim_effect().unwrap().unwrap();
     db.observe_effect(
         &effect.id,
         effect.fence,
-        &EffectOutcome::Applied { receipt: "detail fixture".into() },
+        &EffectOutcome::Applied {
+            receipt: "detail fixture".into(),
+        },
     )
     .unwrap();
     db.register_session(&SessionBinding {
@@ -766,13 +821,20 @@ fn domain_agent_detail_projects_rooms_dispatch_and_tasks() {
         id: "detail_dispatch".into(),
         session_id: "detail_session".into(),
         task_id: Some("detail_task".into()),
-        resources: vec![ResourceLease { id: "detail_workspace".into(), exclusive: true }],
+        resources: vec![ResourceLease {
+            id: "detail_workspace".into(),
+            exclusive: true,
+        }],
         payload: json!({}),
     })
     .unwrap();
-    let cap = db.claim_dispatch("detail_runner", 1002, 60000, 120000, 128).unwrap().unwrap();
+    let cap = db
+        .claim_dispatch("detail_runner", 1002, 60000, 120000, 128)
+        .unwrap()
+        .unwrap();
     let scope = db.owned_dispatch_scope(&cap, 1003).unwrap();
-    db.start_owned_dispatch(&cap, scope.fingerprint(), 1004).unwrap();
+    db.start_owned_dispatch(&cap, scope.fingerprint(), 1004)
+        .unwrap();
 
     let detail = db.agent_detail("DetailWorker").unwrap().unwrap();
     assert_eq!(detail.name, "DetailWorker");
@@ -791,8 +853,11 @@ fn domain_agent_detail_projects_rooms_dispatch_and_tasks() {
     assert_eq!(detail.tasks[0].id, "detail_task");
     assert_eq!(detail.tasks[0].title, "Detail work");
     // Admit-only agent: known, no rooms, no dispatch, no tasks.
-    db.admit(&proof(&request("detail_two", "QuietWorker", &pool, 100)), 1000)
-        .unwrap();
+    db.admit(
+        &proof(&request("detail_two", "QuietWorker", &pool, 100)),
+        1000,
+    )
+    .unwrap();
     let quiet = db.agent_detail("QuietWorker").unwrap().unwrap();
     assert!(!quiet.online);
     assert_eq!(quiet.last_seen_ms, None);
@@ -812,14 +877,31 @@ fn native_owner_anchor_is_pinned_on_first_use_and_never_replaced() {
     let other = "B".repeat(43);
     assert!(db.owner_anchor(owner).unwrap().is_none());
     let pinned = db.observe_owner_anchor(owner, &first, 10).unwrap();
-    assert_eq!((pinned.master_key.as_str(), pinned.source.as_str()), (first.as_str(), "first_use"));
-    assert_eq!(db.observe_owner_anchor(owner, &first, 20).unwrap().pinned_at, 10);
-    assert!(matches!(db.observe_owner_anchor(owner, &other, 30), Err(Error::Conflict)));
+    assert_eq!(
+        (pinned.master_key.as_str(), pinned.source.as_str()),
+        (first.as_str(), "first_use")
+    );
+    assert_eq!(
+        db.observe_owner_anchor(owner, &first, 20)
+            .unwrap()
+            .pinned_at,
+        10
+    );
+    assert!(matches!(
+        db.observe_owner_anchor(owner, &other, 30),
+        Err(Error::Conflict)
+    ));
     let held = db.owner_anchor(owner).unwrap().unwrap();
-    assert_eq!(held.master_key, first, "a different key never replaces the pin");
+    assert_eq!(
+        held.master_key, first,
+        "a different key never replaces the pin"
+    );
     assert_eq!(held.mismatch_key.as_deref(), Some(other.as_str()));
     let repinned = db.repin_owner_anchor(owner, &other, 40).unwrap();
-    assert_eq!((repinned.master_key.as_str(), repinned.source.as_str()), (other.as_str(), "operator"));
+    assert_eq!(
+        (repinned.master_key.as_str(), repinned.source.as_str()),
+        (other.as_str(), "operator")
+    );
     assert_eq!(repinned.mismatch_key, None);
     assert!(db.observe_owner_anchor("not-an-mxid", &first, 50).is_err());
     assert!(db.observe_owner_anchor(owner, "short", 50).is_err());

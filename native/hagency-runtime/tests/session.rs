@@ -961,17 +961,15 @@ async fn native_codex_session_provider_failure_reason_is_retained() {
         }),
     );
     let mut echo = end("failed");
-    echo["params"]["turn"]["error"] = json!({ "message": REASON, "codexErrorInfo": "usageLimitExceeded" });
+    echo["params"]["turn"]["error"] =
+        json!({ "message": REASON, "codexErrorInfo": "usageLimitExceeded" });
     // The wire sends the cause and the failed turn in one instant (the same
     // captured order the sibling test replays), so both arrive in one read and
     // the echo is drained as terminal suffix. Keeping the FIRST reason is
     // idempotent: the restatement must not replace what the `error` said.
     let stream = bytes(&[refusal, echo]);
     peer.stdout.write_all(&stream).await.unwrap();
-    assert!(matches!(
-        session.next_update().await,
-        Ok(Update::TurnEnded)
-    ));
+    assert!(matches!(session.next_update().await, Ok(Update::TurnEnded)));
     assert!(matches!(session.outcome(), Some(Outcome::Failed)));
     assert_eq!(
         session.turn_failure(),
@@ -1325,7 +1323,11 @@ async fn native_codex_session_outcomes_terminal_drain_answers_received_server_re
     let (result, response) = tokio::join!(session.next_update(), read(&mut peer.stdin));
     // The drain must not silently discard it (board #94): it is answered, and the
     // completed turn is still the update the host sees.
-    assert!(matches!(result, Ok(Update::TurnEnded)), "{:?}", result.err());
+    assert!(
+        matches!(result, Ok(Update::TurnEnded)),
+        "{:?}",
+        result.err()
+    );
     assert_eq!(response["error"]["code"], -32601);
     assert!(matches!(session.outcome(), Some(Outcome::Completed { .. })));
 }
@@ -1456,7 +1458,10 @@ async fn native_codex_session_outcomes_refused_notifications_expose_only_fixed_s
     // stay strict above. A method this build does not know at all is different:
     // it is logged and ignored, the turn goes on, and the label still names it.
     let (mut session, mut peer) = running().await;
-    let invented = note("private-peer-method", json!({"private":"private-peer-text"}));
+    let invented = note(
+        "private-peer-method",
+        json!({"private":"private-peer-text"}),
+    );
     assert!(matches!(
         update(&mut session, &mut peer, invented).await,
         Ok(Update::Notice)

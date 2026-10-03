@@ -186,13 +186,18 @@ pub(crate) enum Provider {
         sweep: Arc<hagency_matrix::MembershipSweep>,
         /// ADR-187 amendment: each owner's approval pump; an agent's approval
         /// requests go to its owner's.
-        owner_notices: Arc<Mutex<BTreeMap<String, tokio::sync::mpsc::Sender<hagency_execution::ApprovalRequests>>>>,
+        owner_notices: Arc<
+            Mutex<BTreeMap<String, tokio::sync::mpsc::Sender<hagency_execution::ApprovalRequests>>>,
+        >,
         /// Each admitted agent's transport, for its public approval notice.
         agents: super::approval::AgentDirectory,
     },
 }
 impl Provider {
-    async fn provisioned_engagements(&self, domain: &DomainStore) -> Result<Vec<String>, hagency_matrix::Error> {
+    async fn provisioned_engagements(
+        &self,
+        domain: &DomainStore,
+    ) -> Result<Vec<String>, hagency_matrix::Error> {
         match self {
             Self::Coordinator(c) => c.provisioned_engagements().await,
             Self::Fleet { host, .. } => host.provisioned_engagements(domain).await,
@@ -210,11 +215,17 @@ impl Provider {
                 c.take_provisioned_agent(engagement)
             }
             Self::Fleet { host, .. } => {
-                let (task_host, domain, id, cancel) =
-                    (host.clone(), domain.clone(), engagement.to_owned(), cancel.clone());
-                tokio::spawn(async move { task_host.reattach_completed(&domain, &id, &cancel).await })
-                    .await
-                    .map_err(|_| hagency_matrix::Error::OutcomeUnknown)??;
+                let (task_host, domain, id, cancel) = (
+                    host.clone(),
+                    domain.clone(),
+                    engagement.to_owned(),
+                    cancel.clone(),
+                );
+                tokio::spawn(
+                    async move { task_host.reattach_completed(&domain, &id, &cancel).await },
+                )
+                .await
+                .map_err(|_| hagency_matrix::Error::OutcomeUnknown)??;
                 host.take_agent(engagement)
             }
         }
@@ -474,7 +485,10 @@ impl Service {
             if cancel.is_cancelled() || self.routes.closed.load(Ordering::Acquire) {
                 return;
             }
-            let attached = self.provider.reattach(&self.domain, &engagement, cancel).await;
+            let attached = self
+                .provider
+                .reattach(&self.domain, &engagement, cancel)
+                .await;
             match attached {
                 Ok(agent) => {
                     if self.admit(agent, notices.clone(), true).await.is_ok() {
@@ -561,7 +575,10 @@ impl Service {
         loop {
             tokio::select! {biased;_ = cancel.cancelled()=>return Ok(()),_ = tick.tick()=>{}}
             self.reconcile_awaiting_owners();
-            let next = self.provider.take_next().map_err(|_| Failure::OutcomeUnknown);
+            let next = self
+                .provider
+                .take_next()
+                .map_err(|_| Failure::OutcomeUnknown);
             match next {
                 Ok(Some(agent)) => {
                     self.admit(agent, notices.clone(), false).await?;

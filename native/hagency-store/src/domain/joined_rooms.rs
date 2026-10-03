@@ -63,10 +63,24 @@ fn valid_engagement(engagement: &str) -> bool {
 }
 
 fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(String, String, String, u64, u64, Option<u64>)> {
-    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
+    Ok((
+        r.get(0)?,
+        r.get(1)?,
+        r.get(2)?,
+        r.get(3)?,
+        r.get(4)?,
+        r.get(5)?,
+    ))
 }
 fn decode(
-    (engagement_id, room_id, state, joined_at, updated_at, notice_at): (String, String, String, u64, u64, Option<u64>),
+    (engagement_id, room_id, state, joined_at, updated_at, notice_at): (
+        String,
+        String,
+        String,
+        u64,
+        u64,
+        Option<u64>,
+    ),
 ) -> Result<JoinedRoom, Error> {
     Ok(JoinedRoom {
         engagement_id,
@@ -78,7 +92,11 @@ fn decode(
     })
 }
 
-pub(super) fn get(db: &Connection, engagement: &str, room: &str) -> Result<Option<JoinedRoom>, Error> {
+pub(super) fn get(
+    db: &Connection,
+    engagement: &str,
+    room: &str,
+) -> Result<Option<JoinedRoom>, Error> {
     db.query_row(
         "SELECT engagement_id,room_id,state,joined_at,updated_at,notice_at FROM joined_rooms WHERE engagement_id=?1 AND room_id=?2",
         params![engagement, room],
@@ -102,12 +120,19 @@ pub(super) fn live(db: &Connection, engagement: &str) -> Result<Vec<JoinedRoom>,
 
 /// A join the agent made: record the room as working. Joining a room again
 /// after it was retired makes it working again, with the notice cleared.
-pub(super) fn record(db: &Connection, engagement: &str, room: &str, now: u64) -> Result<JoinedRoom, Error> {
+pub(super) fn record(
+    db: &Connection,
+    engagement: &str,
+    room: &str,
+    now: u64,
+) -> Result<JoinedRoom, Error> {
     if !valid_engagement(engagement) || !valid_room(room) {
         return Err(hagency_core::InvalidInput("joined room").into());
     }
     let existing = get(db, engagement, room)?;
-    if existing.as_ref().is_none_or(|r| r.state == JoinedRoomState::Retired)
+    if existing
+        .as_ref()
+        .is_none_or(|r| r.state == JoinedRoomState::Retired)
         && live(db, engagement)?.len() >= MAX_JOINED_ROOMS
     {
         return Err(Error::Capacity);
@@ -152,7 +177,13 @@ pub(super) fn set_state(
 
 /// ADR-188 §3, reminder: claim a repeat of the notice when it was last posted
 /// at or before `not_before`. True only for the caller that moves it.
-pub(super) fn claim_renotice(db: &Connection, engagement: &str, room: &str, now: u64, not_before: u64) -> Result<bool, Error> {
+pub(super) fn claim_renotice(
+    db: &Connection,
+    engagement: &str,
+    room: &str,
+    now: u64,
+    not_before: u64,
+) -> Result<bool, Error> {
     Ok(db.execute(
         "UPDATE joined_rooms SET notice_at=?3 WHERE engagement_id=?1 AND room_id=?2 AND state='encrypted_shared' AND notice_at IS NOT NULL AND notice_at<=?4",
         params![engagement, room, now, not_before],
@@ -161,7 +192,12 @@ pub(super) fn claim_renotice(db: &Connection, engagement: &str, room: &str, now:
 
 /// Claim the one "can't work here" notice: true only for the first caller
 /// since the room was (re)joined.
-pub(super) fn claim_notice(db: &Connection, engagement: &str, room: &str, now: u64) -> Result<bool, Error> {
+pub(super) fn claim_notice(
+    db: &Connection,
+    engagement: &str,
+    room: &str,
+    now: u64,
+) -> Result<bool, Error> {
     Ok(db.execute(
         "UPDATE joined_rooms SET notice_at=?3 WHERE engagement_id=?1 AND room_id=?2 AND notice_at IS NULL AND state='encrypted_shared'",
         params![engagement, room, now],

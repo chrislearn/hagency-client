@@ -56,7 +56,12 @@ async fn ts_owner_approval_api_observation_surface() {
     // Each row is exactly the seven declared keys — no owner, no room, no card.
     // serde_json sorts object keys, so assert the SET, not the source order.
     for row in rows {
-        let mut keys: Vec<&str> = row.as_object().unwrap().keys().map(String::as_str).collect();
+        let mut keys: Vec<&str> = row
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
         keys.sort_unstable();
         let mut expected = [
             "id",
@@ -106,7 +111,10 @@ async fn ts_owner_approval_unknown_id_denies_without_fallback() {
         .send(&service)
         .await;
     assert_eq!(response.status_code, Some(StatusCode::NOT_FOUND));
-    assert_eq!(response.take_json::<Value>().await.unwrap()["code"], json!("not_found"));
+    assert_eq!(
+        response.take_json::<Value>().await.unwrap()["code"],
+        json!("not_found")
+    );
     f.close().await;
 }
 

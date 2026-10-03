@@ -379,7 +379,8 @@ impl DomainRepository {
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let c = context(&tx, &input.engagement_id)?;
         if !matches!(input.privacy, RoomPrivacy::Group {})
-            || (input.room_id != c.project_room && !joined_working(&tx, &input.engagement_id, &input.room_id)?)
+            || (input.room_id != c.project_room
+                && !joined_working(&tx, &input.engagement_id, &input.room_id)?)
         {
             return Err(Error::RunnerAuthority);
         }

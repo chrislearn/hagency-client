@@ -251,10 +251,7 @@ async fn native_matrix_owned_notice_failure() {
                     // restorable and the 403 stands as the verdict.
                     let rejoin = fake.next().await;
                     assert_eq!(rejoin.method, "POST");
-                    assert_eq!(
-                        rejoin.target,
-                        format!("/_matrix/client/v3/join/{ROOM}")
-                    );
+                    assert_eq!(rejoin.target, format!("/_matrix/client/v3/join/{ROOM}"));
                     rejoin.json(403, json!({"errcode":"M_FORBIDDEN"}));
                 }
             })
@@ -267,9 +264,8 @@ async fn native_matrix_owned_notice_failure() {
             // lost notice response is non-permanent, so the resume re-sends it
             // with the SAME transaction id — Matrix dedups the replay — and the
             // real acceptance then activates the task.
-            let (summary, ()) = common::scripted(
-                w.collector.resume_outgoing_custody(&cancel),
-                async {
+            let (summary, ()) =
+                common::scripted(w.collector.resume_outgoing_custody(&cancel), async {
                     let request = fake.next().await;
                     assert_eq!(request.method, "PUT");
                     assert_eq!(
@@ -280,9 +276,8 @@ async fn native_matrix_owned_notice_failure() {
                         )
                     );
                     request.json(200, json!({"event_id":"$notice"}));
-                },
-            )
-            .await;
+                })
+                .await;
             assert_eq!(summary.unwrap().state, OutgoingState::Delivered);
             assert_eq!(
                 w.intent_state(&intent.task_id),
@@ -409,7 +404,9 @@ async fn native_invite_poll_does_not_starve_the_agent_refresh() {
     })
     .await;
     assert_eq!(
-        admitted.expect("intake is never refused with Busy").admitted,
+        admitted
+            .expect("intake is never refused with Busy")
+            .admitted,
         1,
         "the mention woke the agent"
     );

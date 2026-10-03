@@ -226,17 +226,26 @@ impl TokenProvisioningHost {
     }
     /// The engagements this host's factory completed and a restart brings
     /// back, in id order (the fleet service's re-attach list). Read-only.
-    pub async fn provisioned_engagements(&self, domain: &DomainStore) -> Result<Vec<String>, Error> {
+    pub async fn provisioned_engagements(
+        &self,
+        domain: &DomainStore,
+    ) -> Result<Vec<String>, Error> {
         Ok(domain.inline_factory_engagements().await?)
     }
     /// ADR-187 §A.5: the fleet's membership sweep, acting with the
     /// representative's credential instead of a coordinator's.
     pub fn membership_sweep(&self, domain: DomainStore) -> Result<crate::MembershipSweep, Error> {
         let plan = self.rooms.as_ref().ok_or(Error::Config)?;
-        let authorization = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", plan.representative))
-            .map_err(|_| Error::Config)?;
+        let authorization =
+            reqwest::header::HeaderValue::from_str(&format!("Bearer {}", plan.representative))
+                .map_err(|_| Error::Config)?;
         Ok(crate::MembershipSweep {
-            http: crate::http::Http::for_host(&self.endpoint, Some(&authorization), &self.limits, &self.roots)?,
+            http: crate::http::Http::for_host(
+                &self.endpoint,
+                Some(&authorization),
+                &self.limits,
+                &self.roots,
+            )?,
             domain,
             registration: self.registration.clone(),
         })
@@ -461,7 +470,10 @@ impl TokenProvisioningHost {
         if let Err(error) = &result {
             // Never silent: the effect is only recorded as unknown, so the
             // reason exists nowhere else.
-            eprintln!("provision attempt failed: effect={} activated={activated} error={error:?}", effect.id);
+            eprintln!(
+                "provision attempt failed: effect={} activated={activated} error={error:?}",
+                effect.id
+            );
         }
         let mut result = result;
         if activated && let Err(error) = result {
@@ -576,7 +588,10 @@ impl TokenProvisioningHost {
             {
                 continue;
             }
-            match self.account(domain, &self.registration, &engagement, cancel).await {
+            match self
+                .account(domain, &self.registration, &engagement, cancel)
+                .await
+            {
                 Ok(()) => report.started.push(engagement),
                 Err(Error::AwaitingOwner) => report.awaiting.push(engagement),
                 Err(error) => report.failed.push((engagement, error)),

@@ -116,7 +116,11 @@ async fn native_codex_session_real_app_server_startup_exchange() {
         assert_eq!(request["method"], "initialize");
         // The real server answers, then emits its global notices, THEN reads
         // our `initialized` acknowledgement.
-        write(&mut peer, json!({"id": request["id"], "result": real_initialize_result()})).await;
+        write(
+            &mut peer,
+            json!({"id": request["id"], "result": real_initialize_result()}),
+        )
+        .await;
         for notice in real_startup_notices() {
             write(&mut peer, notice).await;
         }
@@ -130,7 +134,11 @@ async fn native_codex_session_real_app_server_startup_exchange() {
     let (result, ()) = tokio::join!(session.start_thread(), async {
         let request = read(&mut peer.stdin).await;
         assert_eq!(request["method"], "thread/start");
-        write(&mut peer, json!({"id": request["id"], "result": real_thread_result(thread)})).await;
+        write(
+            &mut peer,
+            json!({"id": request["id"], "result": real_thread_result(thread)}),
+        )
+        .await;
         for notice in real_thread_notices(thread) {
             write(&mut peer, notice).await;
         }

@@ -132,3 +132,13 @@ reset by the first success), shows `refresh_refused` with the failure count
 and the clock, and is never fenced by it. "No transport error retries" in the
 2026-09-19 amendment described the transport layer only; the worker's
 patience is this amendment's.
+
+## Amendment (Task #9): writes retry a 429 like reads
+
+Item 3 above says a POST/PUT 429 is not retried. Task #9 changed that for parity with
+the TypeScript `fetchWithRateLimit`: every JSON request, read or write, makes up to six
+tries against complete 429 responses (`RATE_LIMIT_TRIES` in `http.rs`), and all of them
+share one host-wide cooldown clock. A complete 429 is the server refusing the request,
+so nothing was applied and a retry cannot duplicate a write. A lost response is still
+never retried, and uploads and downloads stay single-attempt. Pinned by
+`native_matrix_write_rate_limit_retries_like_get`.

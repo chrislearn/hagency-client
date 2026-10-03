@@ -56,9 +56,8 @@ pub(super) fn get(db: &Connection, owner: &str) -> Result<Option<OwnerAnchor>, E
 }
 
 pub(super) fn list(db: &Connection) -> Result<Vec<OwnerAnchor>, Error> {
-    let mut statement = db.prepare(
-        "SELECT owner_mxid FROM owner_anchors ORDER BY owner_mxid LIMIT 1000",
-    )?;
+    let mut statement =
+        db.prepare("SELECT owner_mxid FROM owner_anchors ORDER BY owner_mxid LIMIT 1000")?;
     let owners: Vec<String> = statement
         .query_map([], |r| r.get(0))?
         .collect::<Result<_, _>>()?;
@@ -100,7 +99,12 @@ pub(super) fn observe(
 
 /// The operator re-pins an owner's anchor (after the owner reset their
 /// cross-signing): the new key replaces the pin and clears the mismatch.
-pub(super) fn repin(db: &Connection, owner: &str, key: &str, now: u64) -> Result<OwnerAnchor, Error> {
+pub(super) fn repin(
+    db: &Connection,
+    owner: &str,
+    key: &str,
+    now: u64,
+) -> Result<OwnerAnchor, Error> {
     if !valid_owner(owner) || !valid_key(key) {
         return Err(hagency_core::InvalidInput("owner anchor").into());
     }

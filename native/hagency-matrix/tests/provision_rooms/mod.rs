@@ -86,7 +86,10 @@ impl Server {
             {"type":"m.room.history_visibility","state_key":"","content":{"history_visibility":"invited"}}
         ]);
         if self.owner_invited {
-            state.as_array_mut().unwrap().push(json!({"type":"m.room.member","state_key":OWNER,
+            state
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"type":"m.room.member","state_key":OWNER,
                 "content":{"membership":if self.owner {"join"} else {"invite"}}}));
         }
         state
@@ -220,7 +223,11 @@ impl Server {
         }
         if request.target.ends_with("/createRoom") {
             assert!(!rep && !human && !self.created);
-            assert_eq!(body["invite"], json!([]), "ADR-184: the DM is created agent-only");
+            assert_eq!(
+                body["invite"],
+                json!([]),
+                "ADR-184: the DM is created agent-only"
+            );
             // The identity polish (board #11): the room name and the profile
             // display name are the SAME definition name.
             assert_eq!(
@@ -257,17 +264,21 @@ impl Server {
                 },
             });
             assert_eq!(
-                body["initial_state"][2],
-                lockdown,
+                body["initial_state"][2], lockdown,
                 "the approval DM carries the retained power-level lockdown"
             );
             self.created = true;
             self.posts += 1;
             return (200, json!({"room_id":DM}));
         }
-        if request.target.ends_with("/invite") && request.target.contains("physically_created_agent_dm") {
+        if request.target.ends_with("/invite")
+            && request.target.contains("physically_created_agent_dm")
+        {
             assert!(!rep && !human && self.created && self.joined && !self.owner_invited);
-            assert!(self.enrolled(), "ADR-184: the owner is invited only after the agent's keys are published");
+            assert!(
+                self.enrolled(),
+                "ADR-184: the owner is invited only after the agent's keys are published"
+            );
             assert_eq!(body, json!({"user_id":OWNER}));
             self.owner_invited = true;
             self.posts += 1;
@@ -509,7 +520,10 @@ async fn native_provisioning_waits_for_an_unpinned_owner_anchor() {
     let mut server = Server::new().await;
     let (f, mut fake, c) = ready_inline_plan(Some((REP_TOKEN, vec![]))).await;
     let _ = drive(&f, &mut fake, &c, &mut server, true, |_, _| {}).await;
-    assert_eq!(server.posts, 0, "no room is created before the owner's anchor is pinned");
+    assert_eq!(
+        server.posts, 0,
+        "no room is created before the owner's anchor is pinned"
+    );
     assert!(!room_root(&f).join("complete").exists());
     c.close().await.unwrap();
     f.store.shutdown().await.unwrap();
@@ -635,7 +649,11 @@ async fn native_provisioning_inline_rooms_refusals() {
     // A turn with the owner still absent looks once and keeps waiting.
     turn(&mut fake, &c, &mut server).await.unwrap();
     assert!(server.owner_reads > reads && !server.owner);
-    assert_eq!(server.peer.writes.len(), enrolled, "no key write while waiting");
+    assert_eq!(
+        server.peer.writes.len(),
+        enrolled,
+        "no key write while waiting"
+    );
     assert_eq!(effect_row(&f), Some(("provision".into(), "started".into())));
     // The owner joins; the next turn finishes the rooms and the enrollment.
     let mut owner = tokio::spawn(owner_join(fake.endpoint.clone()));

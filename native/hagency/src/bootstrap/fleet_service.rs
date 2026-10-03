@@ -18,8 +18,9 @@
 //! that owner's approval-bot device (amendment), then runs the host's pass,
 //! where one engagement's refusal never stops another (ADR-182).
 use super::{
-    Failure, approval, config, fleet_identity,
+    Failure, approval, config,
     fleet::{Provider, Service},
+    fleet_identity,
 };
 use hagency_core::replies::{MatrixTransportObservation, RoomPrivacy};
 use hagency_matrix::{
@@ -41,15 +42,17 @@ const BACKOFF_MIN: Duration = Duration::from_secs(1);
 const BACKOFF_MAX: Duration = Duration::from_secs(60);
 const PASS_PERIOD: Duration = Duration::from_secs(2);
 
-/// The fleet service's visible stage, for health and the console.
+/// The fleet service's stage. Each change is logged, so the operator can see
+/// which step the supervisor is waiting on.
 #[derive(Clone)]
 pub(crate) struct Stage(Arc<Mutex<&'static str>>);
 impl Stage {
     fn set(&self, stage: &'static str) {
-        *self.0.lock().unwrap_or_else(|e| e.into_inner()) = stage;
-    }
-    pub(crate) fn get(&self) -> &'static str {
-        *self.0.lock().unwrap_or_else(|e| e.into_inner())
+        let mut current = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        if *current != stage {
+            tracing::info!(from = *current, to = stage, "fleet service stage");
+            *current = stage;
+        }
     }
 }
 
@@ -57,7 +60,6 @@ impl Stage {
 pub(crate) struct FleetService {
     cancel: CancellationToken,
     task: tokio::task::JoinHandle<()>,
-    pub(crate) stage: Stage,
 }
 impl FleetService {
     pub(crate) fn start(
@@ -75,10 +77,10 @@ impl FleetService {
             domain,
             fleet_id,
             server_name,
-            stage.clone(),
+            stage,
             cancel.clone(),
         ));
-        Self { cancel, task, stage }
+        Self { cancel, task }
     }
     pub(crate) fn cancel(&self) {
         self.cancel.cancel();
@@ -189,7 +191,9 @@ fn build(
         .map_err(|_| Failure::OutcomeUnknown)?;
     let homeserver = format!(
         "{}/",
-        text(&appservice, "homeserver").ok_or(Failure::OutcomeUnknown)?.trim_end_matches('/')
+        text(&appservice, "homeserver")
+            .ok_or(Failure::OutcomeUnknown)?
+            .trim_end_matches('/')
     );
     let runtime = config::load_fleet_runtime(state, address, &homeserver)?;
     let key: [u8; 32] = private::read_secret(&state.join("matrix.provisioning_key"))
@@ -218,7 +222,10 @@ fn build(
     .and_then(|host| host.with_warm_plan(runtime.warm))
     .map_err(|_| refused("fleet provisioning host"))?;
     let host = Arc::new(host);
-    let sweep = Arc::new(host.membership_sweep(domain.clone()).map_err(|_| refused("membership sweep"))?);
+    let sweep = Arc::new(
+        host.membership_sweep(domain.clone())
+            .map_err(|_| refused("membership sweep"))?,
+    );
     let owner_notices = Arc::new(Mutex::new(BTreeMap::new()));
     let agents: approval::AgentDirectory = Arc::new(Mutex::new(BTreeMap::new()));
     let service = Service::with_provider(
@@ -256,7 +263,9 @@ async fn run(
     let (unused, _unused_rx) = mpsc::channel(1);
     // Owners first: re-attaching an existing agent needs its owner's approval
     // device attached before the agent service starts.
-    if let Err(error) = prepare_owners(&running, state, domain, registration, &mut pumps, cancel).await {
+    if let Err(error) =
+        prepare_owners(&running, state, domain, registration, &mut pumps, cancel).await
+    {
         tracing::warn!(?error, "fleet owners not ready before start");
     }
     let service_cancel = cancel.child_token();
@@ -279,7 +288,9 @@ async fn run(
             _ = cancel.cancelled() => break,
             _ = tick.tick() => {}
         }
-        if let Err(error) = prepare_owners(&running, state, domain, registration, &mut pumps, cancel).await {
+        if let Err(error) =
+            prepare_owners(&running, state, domain, registration, &mut pumps, cancel).await
+        {
             tracing::warn!(?error, "fleet owners not ready this pass");
         }
         match running.host.provision_pass(domain, cancel).await {
@@ -314,9 +325,21 @@ async fn prepare_owners(
         .pending_provisions(registration.fleet_id.clone())
         .await
         .map_err(|_| Failure::OutcomeUnknown)?;
-    engagements.extend(running.host.awaiting_owner_engagements().into_iter().map(|(e, _)| e));
+    engagements.extend(
+        running
+            .host
+            .awaiting_owner_engagements()
+            .into_iter()
+            .map(|(e, _)| e),
+    );
     // Agents already provisioned still need their owner's pump after a restart.
-    engagements.extend(running.host.provisioned_engagements(domain).await.unwrap_or_default());
+    engagements.extend(
+        running
+            .host
+            .provisioned_engagements(domain)
+            .await
+            .unwrap_or_default(),
+    );
     for engagement in engagements {
         let Some((owner, room)) = domain
             .engagement_owner_room(engagement.clone())
@@ -353,7 +376,15 @@ async fn prepare_owners(
         )
         .await
         .map_err(|_| Failure::OutcomeUnknown)?;
-        let collector = owner_collector(running, state, domain, registration, &owner, &anchor, &device)?;
+        let collector = owner_collector(
+            running,
+            state,
+            domain,
+            registration,
+            &owner,
+            &anchor,
+            &device,
+        )?;
         running
             .host
             .attach_owner_approvals(&owner, collector.clone())
@@ -365,7 +396,8 @@ async fn prepare_owners(
             .map_err(|_| Failure::OutcomeUnknown)?
             .insert(owner.clone(), sender);
         pumps.push(tokio::spawn(supervise_pump(
-            approval::Pump::new(collector, None, domain.clone()).with_agents(running.agents.clone()),
+            approval::Pump::new(collector, None, domain.clone())
+                .with_agents(running.agents.clone()),
             receiver,
             owner,
             cancel.clone(),
@@ -415,7 +447,9 @@ fn owner_collector(
         vec![HostRoom {
             room_id: device.first_room.clone(),
             generation: 1,
-            privacy: RoomPrivacy::Direct { human_mxid: owner.to_owned() },
+            privacy: RoomPrivacy::Direct {
+                human_mxid: owner.to_owned(),
+            },
         }],
         running.matrix_limits.clone(),
     )
@@ -429,9 +463,13 @@ fn owner_collector(
             bot_mxid: registration.approval_bot_mxid.clone(),
         },
     )
-    .and_then(|approval| approval.with_fresh_account_enrollment(vec![(owner.to_owned(), anchor.to_owned())]))
+    .and_then(|approval| {
+        approval.with_fresh_account_enrollment(vec![(owner.to_owned(), anchor.to_owned())])
+    })
     .map_err(|_| refused())?;
-    Ok(Arc::new(ApprovalCollector::new(approval, domain.clone()).map_err(|_| refused())?))
+    Ok(Arc::new(
+        ApprovalCollector::new(approval, domain.clone()).map_err(|_| refused())?,
+    ))
 }
 
 /// One owner's approval pump, supervised (ADR-187 amendment). Enrollment is
@@ -450,7 +488,9 @@ async fn supervise_pump(
     loop {
         match pump.initialize(&cancel).await {
             Ok(()) => break,
-            Err(error) => tracing::info!(%owner, ?error, "owner approval device not enrolled yet; retrying"),
+            Err(error) => {
+                tracing::info!(%owner, ?error, "owner approval device not enrolled yet; retrying")
+            }
         }
         tokio::select! {
             _ = cancel.cancelled() => return,

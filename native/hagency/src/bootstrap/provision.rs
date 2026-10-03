@@ -304,16 +304,15 @@ impl ObservedRoom {
                         .and_then(Value::as_str)
                         .map(str::to_owned);
                 }
-                "com.hagency.admin.binding.v1" => {
+                "com.hagency.admin.binding.v1"
                     // TS parity (lib/fleet-protocol.js:52): the binding is a
                     // per-fleet state event keyed by the fleet id, and TS reads
                     // only that key. Palpo also writes one under the empty key
                     // when it creates the room, and other fleets may bind the
                     // same room: those are not this fleet's binding.
-                    if key == fleet {
+                    if key == fleet => {
                         ts_binding = Some(Value::Object(content.clone()));
                     }
-                }
                 // Board #95: rooms bound by EARLIER Rust builds carry the
                 // legacy `com.hagency.project.binding.v1` under the empty
                 // state key. Read it too so such a room keeps working after
@@ -321,11 +320,10 @@ impl ObservedRoom {
                 // fleet/project field match is enforced by `verify_request`
                 // downstream — a foreign-fleet legacy binding is refused there
                 // with today's error. Native never writes this event again.
-                "com.hagency.project.binding.v1" => {
-                    if key.is_empty() {
+                "com.hagency.project.binding.v1"
+                    if key.is_empty() => {
                         legacy_binding = Some(Value::Object(content.clone()));
                     }
-                }
                 _ => {}
             }
         }

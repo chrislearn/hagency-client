@@ -296,9 +296,7 @@ pub async fn respond_with(
         peer.share(body).await;
         (200, json!({}))
     } else if request.method == "PUT"
-        && request
-            .target
-            .contains("/send/m.room.message/")
+        && request.target.contains("/send/m.room.message/")
         && request.target.contains("!project:example.test")
     {
         // The redacted public status notice is a plaintext PROJECT-ROOM send,

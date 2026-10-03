@@ -75,9 +75,15 @@ pub(super) const TASK_BLOCKED_NOTICE: &str = "Waiting: this task is blocked and 
 /// recovery kernel that queues the replacement.
 pub(super) fn operator_resolution_notice(action: &str) -> &'static str {
     match action {
-        "accept_completed" => "Operator inspection completed. The current result was accepted as complete; no dispatch was replayed.",
-        "keep_blocked" => "Operator inspection completed. The task remains blocked; no dispatch was replayed.",
-        _ => "Operator inspection completed. A new recovery dispatch was queued from an explicit recovery instruction; the previous dispatch remains outcome_unknown and was not replayed.",
+        "accept_completed" => {
+            "Operator inspection completed. The current result was accepted as complete; no dispatch was replayed."
+        }
+        "keep_blocked" => {
+            "Operator inspection completed. The task remains blocked; no dispatch was replayed."
+        }
+        _ => {
+            "Operator inspection completed. A new recovery dispatch was queued from an explicit recovery instruction; the previous dispatch remains outcome_unknown and was not replayed."
+        }
     }
 }
 
@@ -257,7 +263,13 @@ pub(super) fn launch_retry_notice(
     now: u64,
 ) -> Result<(), Error> {
     tx.execute_batch("SAVEPOINT launch_retry_notice")?;
-    match waiting_notice(tx, dispatch, "runner_launch_retry", RUNNER_LAUNCH_RETRY_NOTICE, now) {
+    match waiting_notice(
+        tx,
+        dispatch,
+        "runner_launch_retry",
+        RUNNER_LAUNCH_RETRY_NOTICE,
+        now,
+    ) {
         Ok(()) => tx.execute_batch("RELEASE launch_retry_notice")?,
         Err(_) => {
             tx.execute_batch("ROLLBACK TO launch_retry_notice; RELEASE launch_retry_notice")?
@@ -302,7 +314,9 @@ pub(super) fn claim_skip_notices(tx: &Transaction<'_>, now: u64) -> Result<(), E
         );
         match said {
             Ok(()) => tx.execute_batch("RELEASE claim_skip_notice")?,
-            Err(_) => tx.execute_batch("ROLLBACK TO claim_skip_notice; RELEASE claim_skip_notice")?,
+            Err(_) => {
+                tx.execute_batch("ROLLBACK TO claim_skip_notice; RELEASE claim_skip_notice")?
+            }
         }
     }
     Ok(())
@@ -326,7 +340,9 @@ pub(super) fn blocked_task_notices(tx: &Transaction<'_>, now: u64) -> Result<(),
         let said = waiting_notice(tx, &dispatch, "task_blocked", TASK_BLOCKED_NOTICE, now);
         match said {
             Ok(()) => tx.execute_batch("RELEASE blocked_task_notice")?,
-            Err(_) => tx.execute_batch("ROLLBACK TO blocked_task_notice; RELEASE blocked_task_notice")?,
+            Err(_) => {
+                tx.execute_batch("ROLLBACK TO blocked_task_notice; RELEASE blocked_task_notice")?
+            }
         }
     }
     Ok(())
@@ -999,7 +1015,14 @@ impl DomainRepository {
                     }
                     _ => return Ok(()),
                 };
-                add_notice(&tx, &execution::task(&tx, &n.task_id)?, &root, kind, body.into(), now)?;
+                add_notice(
+                    &tx,
+                    &execution::task(&tx, &n.task_id)?,
+                    &root,
+                    kind,
+                    body.into(),
+                    now,
+                )?;
                 Ok(())
             })();
             match queued {

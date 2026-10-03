@@ -1,9 +1,0 @@
-#!/bin/bash
-# register-agents has been deprecated.
-# Agent presence is now discovered via heartbeat (online/inactive),
-# no manual registration step is required.
-set -euo pipefail
-
-echo "register-agents is deprecated."
-echo "Use 'hagency-up' + running push-relay heartbeat to discover agents automatically."
-exit 1

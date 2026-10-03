@@ -157,13 +157,7 @@ impl SyncBatch {
                 room.get(section)
                     .and_then(|s| s.get("events"))
                     .and_then(Value::as_array)
-                    .map(|events| {
-                        events
-                            .iter()
-                            .cloned()
-                            .map(|e| stamp(e, room_id))
-                            .collect()
-                    })
+                    .map(|events| events.iter().cloned().map(|e| stamp(e, room_id)).collect())
                     .unwrap_or_default()
             };
             // A timeline event is projected; its room is stamped on.
@@ -634,7 +628,10 @@ enum Polled {
     /// The caller stopped it mid-flight; no counter moves.
     Stopped,
     Ok,
-    Failed { delivery: bool, error: SyncError },
+    Failed {
+        delivery: bool,
+        error: SyncError,
+    },
 }
 
 /// The production driver: the bounded `Http` client, one representative
@@ -665,9 +662,8 @@ impl RepresentativeHttp {
         {
             return Err(Error::Config);
         }
-        let mut authorization =
-            reqwest::header::HeaderValue::from_str(&format!("Bearer {token}"))
-                .map_err(|_| Error::Config)?;
+        let mut authorization = reqwest::header::HeaderValue::from_str(&format!("Bearer {token}"))
+            .map_err(|_| Error::Config)?;
         authorization.set_sensitive(true);
         Ok(Self {
             http: Http::for_host(&endpoint, Some(&authorization), limits, &[])?,
@@ -695,8 +691,8 @@ impl SyncDriver for RepresentativeHttp {
             // and account-data cut away, the timeline deliberately
             // UNRESTRICTED (a type allowlist silently swallowed every message
             // against the real homeserver).
-            let filter = json!({"account_data": {"types": []}, "to_device": {"types": []}})
-                .to_string();
+            let filter =
+                json!({"account_data": {"types": []}, "to_device": {"types": []}}).to_string();
             let timeout = SYNC_TIMEOUT_MS.to_string();
             let mut query = vec![
                 ("timeout", timeout.as_str()),
@@ -708,7 +704,11 @@ impl SyncDriver for RepresentativeHttp {
             }
             let response = self
                 .http
-                .request(&["_matrix", "client", "v3", "sync"], Some(&query), &self.cancel)
+                .request(
+                    &["_matrix", "client", "v3", "sync"],
+                    Some(&query),
+                    &self.cancel,
+                )
                 .await
                 .map_err(|error| SyncError::new(error.to_string()))?;
             if response.status == 401 {

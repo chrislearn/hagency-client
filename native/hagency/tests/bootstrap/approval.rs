@@ -186,7 +186,8 @@ fn assert_public_notice(
         content, &expected,
         "the exact TS packet (bridge-matrix.js:2583-2596)"
     );
-    let path = "/_matrix/client/v3/rooms/!project:example.test/send/m.room.message/approval_status_";
+    let path =
+        "/_matrix/client/v3/rooms/!project:example.test/send/m.room.message/approval_status_";
     assert!(
         target.starts_with(path),
         "the exact PUT path (bridge-matrix.js:10823): {target}"

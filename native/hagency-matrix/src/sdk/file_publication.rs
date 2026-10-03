@@ -7,9 +7,7 @@ use crate::{
     Error,
     outgoing::state::{self, Attempt, Kind, Phase},
 };
-use hagency_core::file_delivery::{
-    CapturedFile, FileDeliveryRequest, FilePublicationLocator,
-};
+use hagency_core::file_delivery::{CapturedFile, FileDeliveryRequest, FilePublicationLocator};
 use hagency_store::FilePublicationSend;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -151,7 +149,11 @@ fn content(binding: &Binding, ledger: Option<&Ledger>, context: &Context) -> Res
     {
         return Err(Error::Conflict);
     }
-    let name = binding.metadata.caption.as_ref().unwrap_or(&binding.metadata.filename);
+    let name = binding
+        .metadata
+        .caption
+        .as_ref()
+        .unwrap_or(&binding.metadata.filename);
     let filename = &binding.metadata.filename;
     // TS parity (lib/matrix-file.js:21-33): msgtype follows the file kind,
     // info.mimetype is the real guessed MIME (not a fixed octet-stream; ADR-098
@@ -202,10 +204,9 @@ pub(super) fn corrupt(attempt: &mut Attempt, variant: u8) {
             // The envelope now derives info.mimetype from the filename (TS
             // parity), so a coherent corruption must guess again for the new
             // name or reopen validation fails on a stale mime, not metadata.
-            attempt.content["info"]["mimetype"] =
-                json!(hagency_media::mime::guess_mime_type_from_name(
-                    &binding.metadata.filename
-                ));
+            attempt.content["info"]["mimetype"] = json!(
+                hagency_media::mime::guess_mime_type_from_name(&binding.metadata.filename)
+            );
         }
         11 => binding.captured.sha256 = "f".repeat(64),
         12 => {

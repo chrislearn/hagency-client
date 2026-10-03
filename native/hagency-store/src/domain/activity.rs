@@ -428,7 +428,9 @@ impl DomainRepository {
             Some("started") => {}
             Some(_) if held => {}
             Some(_) => {
-                return Err(hagency_core::InvalidInput("activity requires an active runner").into());
+                return Err(
+                    hagency_core::InvalidInput("activity requires an active runner").into(),
+                );
             }
         }
         tx.execute_batch("SAVEPOINT activity_notice")?;
@@ -517,7 +519,7 @@ mod tests {
     fn started_body_is_verbatim_ts() {
         let (_root, mut db) = open();
         let dispatch = seeded(&mut db);
-        let update = db.update(&dispatch, &ActivityEvent::Started, 1000).unwrap();
+        let update = db.update(dispatch, &ActivityEvent::Started, 1000).unwrap();
         assert_eq!(
             update.body,
             "⏳ 已开始处理，等待运行器的下一步事件\n已运行 0 秒 · 工具调用 0 次，已返回 0 次"
@@ -530,11 +532,11 @@ mod tests {
     fn waiting_and_tool_bodies_are_verbatim_ts() {
         let (_root, mut db) = open();
         let dispatch = seeded(&mut db);
-        db.update(&dispatch, &ActivityEvent::Started, 1000);
+        db.update(dispatch, &ActivityEvent::Started, 1000);
         // First tool is immediate; second coalesces until the 5 s window.
         let first = db
             .update(
-                &dispatch,
+                dispatch,
                 &ActivityEvent::ToolStart {
                     kind: "command".into(),
                     event_id: "e1".into(),
@@ -547,7 +549,7 @@ mod tests {
             "⏳ 正在运行命令\n已运行 3 秒 · 工具调用 1 次，已返回 0 次"
         );
         let none = db.update(
-            &dispatch,
+            dispatch,
             &ActivityEvent::ToolStart {
                 kind: "files".into(),
                 event_id: "e2".into(),
@@ -557,7 +559,7 @@ mod tests {
         assert!(none.is_none(), "a second tool within the window coalesces");
         let due = db
             .update(
-                &dispatch,
+                dispatch,
                 &ActivityEvent::ToolStart {
                     kind: "files".into(),
                     event_id: "e3".into(),
@@ -570,7 +572,7 @@ mod tests {
             "⏳ 正在读取或修改文件\n已运行 8 秒 · 工具调用 3 次，已返回 0 次"
         );
         // Waiting is immediate, with its own icon and words.
-        let waiting = db.update(&dispatch, &ActivityEvent::Waiting, 9600).unwrap();
+        let waiting = db.update(dispatch, &ActivityEvent::Waiting, 9600).unwrap();
         assert_eq!(
             waiting.body,
             "⏸️ 等待负责人授权；请在私人审批房间处理\n已运行 8 秒 · 工具调用 3 次，已返回 0 次"
@@ -586,23 +588,17 @@ mod tests {
         let dispatch = seeded(&mut db);
         // No row, no lifecycle event but started.
         assert!(
-            db.update(&dispatch, &ActivityEvent::Heartbeat, 1000)
+            db.update(dispatch, &ActivityEvent::Heartbeat, 1000)
                 .is_none()
         );
-        assert!(
-            db.update(&dispatch, &ActivityEvent::Waiting, 1000)
-                .is_none()
-        );
-        db.update(&dispatch, &ActivityEvent::Started, 1000);
+        assert!(db.update(dispatch, &ActivityEvent::Waiting, 1000).is_none());
+        db.update(dispatch, &ActivityEvent::Started, 1000);
         // A second started admits nothing.
-        assert!(
-            db.update(&dispatch, &ActivityEvent::Started, 2000)
-                .is_none()
-        );
+        assert!(db.update(dispatch, &ActivityEvent::Started, 2000).is_none());
         // tool_end without tool_start.
         assert!(
             db.update(
-                &dispatch,
+                dispatch,
                 &ActivityEvent::ToolEnd {
                     kind: "command".into(),
                     event_id: "nope".into()
@@ -613,20 +609,20 @@ mod tests {
         );
         // A repeated tool_start counts nothing (dedupe).
         db.update(
-            &dispatch,
+            dispatch,
             &ActivityEvent::ToolStart {
                 kind: "command".into(),
                 event_id: "e1".into(),
             },
             2000,
         );
-        let before = read(&db.db.transaction().unwrap(), &dispatch)
+        let before = read(&db.db.transaction().unwrap(), dispatch)
             .unwrap()
             .unwrap();
         assert_eq!(before.tools, 1);
         assert!(
             db.update(
-                &dispatch,
+                dispatch,
                 &ActivityEvent::ToolStart {
                     kind: "command".into(),
                     event_id: "e1".into()
@@ -639,11 +635,11 @@ mod tests {
         // change the phase (activity.ts:50): the row stays tool_start, so
         // the due body still reads 正在运行命令 with the elapsed time.
         assert!(
-            db.update(&dispatch, &ActivityEvent::Heartbeat, 20_000)
+            db.update(dispatch, &ActivityEvent::Heartbeat, 20_000)
                 .is_none()
         );
         let beat = db
-            .update(&dispatch, &ActivityEvent::Heartbeat, 32_000)
+            .update(dispatch, &ActivityEvent::Heartbeat, 32_000)
             .unwrap();
         assert_eq!(
             beat.body,
@@ -651,14 +647,14 @@ mod tests {
         );
         // Terminal: completed, then nothing.
         let done = db
-            .update(&dispatch, &ActivityEvent::Completed, 33_000)
+            .update(dispatch, &ActivityEvent::Completed, 33_000)
             .unwrap();
         assert_eq!(
             done.body,
             "✅ 本轮处理已结束\n已运行 32 秒 · 工具调用 1 次，已返回 0 次"
         );
         assert!(
-            db.update(&dispatch, &ActivityEvent::Heartbeat, 34_000)
+            db.update(dispatch, &ActivityEvent::Heartbeat, 34_000)
                 .is_none()
         );
     }
@@ -668,10 +664,10 @@ mod tests {
     fn the_anchor_keeps_the_first_delivered_event() {
         let (_root, mut db) = open();
         let dispatch = seeded(&mut db);
-        db.update(&dispatch, &ActivityEvent::Started, 1000);
-        assert!(db.delivered(&dispatch, "$first"));
-        assert!(db.delivered(&dispatch, "$second"));
-        let row = read(&db.db.transaction().unwrap(), &dispatch)
+        db.update(dispatch, &ActivityEvent::Started, 1000);
+        assert!(db.delivered(dispatch, "$first"));
+        assert!(db.delivered(dispatch, "$second"));
+        let row = read(&db.db.transaction().unwrap(), dispatch)
             .unwrap()
             .unwrap();
         assert_eq!(row.anchor.as_deref(), Some("$first"));

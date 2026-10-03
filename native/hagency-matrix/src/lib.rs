@@ -14,9 +14,9 @@ mod identity_polish;
 mod intake;
 mod invites;
 pub mod join_backfill;
-mod membership_sweep;
 mod media_download;
 mod media_upload;
+mod membership_sweep;
 mod outgoing;
 mod receive;
 mod representative_sync;
@@ -32,22 +32,22 @@ mod wire;
 pub use collector::{Collector, ObservationSummary};
 pub use config::{HostConfig, HostIdentity, HostRoom, Limits};
 pub use http::RequestPacing;
-pub use room_trust::{RoomTrust, RoomTrustReason, TrustMode};
+pub use intake::{HostIntakePlan, IntakeStatus, IntakeSummary};
+pub use media_download::{MediaDownloadError, MediaDownloadLimits, MediaDownloader, MediaId};
+pub use media_upload::{
+    MediaUploadError, MediaUploadLimits, MediaUploader, UploadAttempt, UploadState,
+};
+pub use membership_sweep::{MEMBERSHIP_SWEEP_INTERVAL, MembershipSweep, SweepOutcome};
+pub use outgoing::{OutgoingState, OutgoingSummary};
+pub use provisioning::{PassReport, ProvisionedAgent, TokenProvisioningHost};
+pub use receive::{ReceiveError, ReceivedAttachment, ReceivedScope};
 pub use representative_sync::{
     BoxFuture, CircuitBreak, EventMeta, HistoryPage, PageReader, PageSink, PendingVerdict,
     RepresentativeHttp, RepresentativeSync, SyncBatch, SyncDriver, SyncError, SyncHooks, SyncState,
     SyncStats, reconcile_timeline,
 };
-pub use intake::{HostIntakePlan, IntakeStatus, IntakeSummary};
-pub use membership_sweep::{MEMBERSHIP_SWEEP_INTERVAL, MembershipSweep, SweepOutcome};
-pub use media_download::{MediaDownloadError, MediaDownloadLimits, MediaDownloader, MediaId};
-pub use media_upload::{
-    MediaUploadError, MediaUploadLimits, MediaUploader, UploadAttempt, UploadState,
-};
-pub use outgoing::{OutgoingState, OutgoingSummary};
-pub use provisioning::{PassReport, ProvisionedAgent, TokenProvisioningHost};
-pub use receive::{ReceiveError, ReceivedAttachment, ReceivedScope};
 pub use retire::{AgentRetirement, RetireClient, RetireVerdict};
+pub use room_trust::{RoomTrust, RoomTrustReason, TrustMode};
 pub use token_provision::{
     ApplicationServiceCredential, ProvisionedTokenAccount, TokenAccountProvision,
 };

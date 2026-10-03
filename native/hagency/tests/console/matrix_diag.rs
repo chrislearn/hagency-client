@@ -23,9 +23,7 @@ fn mock_homeserver(responses: Vec<String>) -> std::net::SocketAddr {
             let Ok((mut stream, _)) = listener.accept() else {
                 return;
             };
-            stream
-                .set_read_timeout(Some(Duration::from_secs(3)))
-                .ok();
+            stream.set_read_timeout(Some(Duration::from_secs(3))).ok();
             let mut buf = [0u8; 4096];
             let _ = stream.read(&mut buf);
             let _ = stream.write_all(response.as_bytes());
@@ -143,7 +141,9 @@ async fn native_matrix_reach_reports_sides() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
     let cookie = session(&service).await;
-    let mut response = get("/console/api/matrix/reach", &cookie).send(&service).await;
+    let mut response = get("/console/api/matrix/reach", &cookie)
+        .send(&service)
+        .await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let value = response.take_json::<Value>().await.unwrap();
     let servers = value["homeservers"].as_array().unwrap();
@@ -164,9 +164,12 @@ async fn native_matrix_reach_reports_sides() {
     assert_eq!(value["appservice"]["listening"], json!(false));
     assert_eq!(value["appservice"]["port"], Value::Null);
     assert_eq!(value["appservice"]["inboundVia"], Value::Null);
-    assert!(value["appservice"]["reason"].as_str().unwrap().starts_with(
-        "HAGENCY_APPSERVICE_PORT is not set"
-    ));
+    assert!(
+        value["appservice"]["reason"]
+            .as_str()
+            .unwrap()
+            .starts_with("HAGENCY_APPSERVICE_PORT is not set")
+    );
     f.close().await;
 }
 
@@ -187,7 +190,9 @@ async fn native_matrix_callback_check_no_port() {
     assert_eq!(value["applicable"], json!(false));
     assert_eq!(
         value["reason"],
-        json!("neither an appservice port nor a co-located edge is configured, so there is nothing for your homeserver to reach")
+        json!(
+            "neither an appservice port nor a co-located edge is configured, so there is nothing for your homeserver to reach"
+        )
     );
     f.close().await;
 }

@@ -27,10 +27,7 @@ pub(super) fn router() -> Router {
         .push(Router::with_path("credential").put(put_credential))
         .push(Router::with_path("verify").post(verify))
         .push(Router::with_path("projects").post(add_project))
-        .push(
-            Router::with_path("projects/{projectId}/archive")
-                .post(archive_project),
-        )
+        .push(Router::with_path("projects/{projectId}/archive").post(archive_project))
         .push(Router::with_path("deactivate").post(deactivate))
         .push(Router::with_path("reactivate").post(reactivate))
         .delete(remove)
@@ -127,11 +124,12 @@ async fn put_credential(req: &mut Request, depot: &mut Depot, res: &mut Response
         .get("apiBaseUrl")
         .or_else(|| object.get("api_base_url"))
         .and_then(Value::as_str)
+        && let Err(error) = store
+            .set_api_base_url(id.clone(), Some(url.to_string()))
+            .await
     {
-        if let Err(error) = store.set_api_base_url(id.clone(), Some(url.to_string())).await {
-            side_error(res, error);
-            return;
-        }
+        side_error(res, error);
+        return;
     }
     match store.set_credential(id, credential, false).await {
         Ok(Some(side)) => res.render(Json(json!({"ok": true, "side": side}))),
@@ -176,8 +174,16 @@ async fn verify(req: &mut Request, depot: &mut Depot, res: &mut Response) {
             // No API base URL recorded: we do not know where the homeserver
             // answers, which is exactly the verdict TS's `ensureRepresentative`
             // reports as `unverified` with a missing-url detail.
-            verdict_and_answer(&store, &id, "unverified", Some("no api base url configured"), false, false, res)
-                .await;
+            verdict_and_answer(
+                &store,
+                &id,
+                "unverified",
+                Some("no api base url configured"),
+                false,
+                false,
+                res,
+            )
+            .await;
             return;
         }
     };
@@ -268,7 +274,9 @@ async fn verdict_and_answer(
         .await;
     match observed {
         Ok(_) => match store.side(id.to_string()).await {
-            Ok(Some(side)) => res.render(Json(json!({"ok": true, "promoted": promoted, "side": side}))),
+            Ok(Some(side)) => res.render(Json(
+                json!({"ok": true, "promoted": promoted, "side": side}),
+            )),
             Ok(None) => not_found(res),
             Err(error) => side_error(res, error),
         },
@@ -333,7 +341,10 @@ async fn whoami(
             None => {
                 return WhoamiOutcome {
                     state: "unverified".into(),
-                    detail: Some("no representative token and no registration token to obtain one with".into()),
+                    detail: Some(
+                        "no representative token and no registration token to obtain one with"
+                            .into(),
+                    ),
                     mxid: None,
                 };
             }
@@ -435,7 +446,9 @@ async fn add_project(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     };
     match store.upsert_project(id.clone(), input).await {
         Ok(Some(project)) => match store.side(id).await {
-            Ok(Some(side)) => res.render(Json(json!({"ok": true, "project": project, "side": side}))),
+            Ok(Some(side)) => {
+                res.render(Json(json!({"ok": true, "project": project, "side": side})))
+            }
             Ok(None) => not_found(res),
             Err(error) => side_error(res, error),
         },
@@ -484,7 +497,9 @@ async fn archive_project(req: &mut Request, depot: &mut Depot, res: &mut Respons
         Ok(Some(project)) => res.render(Json(json!({"ok": true, "project": project}))),
         Ok(None) => {
             res.status_code(StatusCode::NOT_FOUND);
-            res.render(Json(json!({"error": "project not found on this project side"})));
+            res.render(Json(
+                json!({"error": "project not found on this project side"}),
+            ));
         }
         Err(error) => side_error(res, error),
     }

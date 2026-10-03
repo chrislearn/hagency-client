@@ -128,7 +128,10 @@ async fn refusal(server: &mut tokio::process::Child) -> String {
     if let Some(mut pipe) = server.stderr.take() {
         let _ = pipe.read_to_string(&mut stderr).await;
     }
-    format!("exited before admission: {:?}; stderr:\n{stderr}", server.try_wait())
+    format!(
+        "exited before admission: {:?}; stderr:\n{stderr}",
+        server.try_wait()
+    )
 }
 
 #[tokio::test]
@@ -172,7 +175,11 @@ async fn native_console_rail_pages_are_shipped_and_served() {
         .output()
         .await
         .unwrap();
-    assert!(init.status.success(), "{}", String::from_utf8_lossy(&init.stderr));
+    assert!(
+        init.status.success(),
+        "{}",
+        String::from_utf8_lossy(&init.stderr)
+    );
     let address = address();
     let mut server = Command::new(binary)
         .args(["serve", "--state-dir"])

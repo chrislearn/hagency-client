@@ -1033,12 +1033,10 @@ async fn native_console_agent_lifecycle_browser() {
         while let Some(line) = lines.next_line().await.unwrap() {
             match line.as_str() {
                 "LIFECYCLE_TICKET" => {
-                    let lifecycle_url = hagency::console::client::access(
-                        &f.root.path().join("state"),
-                        address,
-                    )
-                    .await
-                    .unwrap();
+                    let lifecycle_url =
+                        hagency::console::client::access(&f.root.path().join("state"), address)
+                            .await
+                            .unwrap();
                     input
                         .write_all(format!("{}\n", json!({"url":lifecycle_url})).as_bytes())
                         .await
@@ -1231,21 +1229,11 @@ async fn native_console_regression_browser() {
                     // Ticket issuance is limited to one per second; the
                     // browser walk before each request can outpace it.
                     tokio::time::sleep(Duration::from_millis(1010)).await;
-                    let scoped = if line == "LIFECYCLE_TICKET" {
-                        hagency::console::client::access(
-                            &f.root.path().join("state"),
-                            address,
-                        )
-                        .await
-                        .unwrap()
-                    } else {
-                        hagency::console::client::access(
-                            &f.root.path().join("state"),
-                            address,
-                        )
-                        .await
-                        .unwrap()
-                    };
+                    // One console link covers every scope, so both tickets are the same call.
+                    let scoped =
+                        hagency::console::client::access(&f.root.path().join("state"), address)
+                            .await
+                            .unwrap();
                     tickets.push(line.clone());
                     json!({"url": scoped})
                 }

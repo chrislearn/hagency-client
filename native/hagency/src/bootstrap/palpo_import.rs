@@ -43,7 +43,10 @@ pub struct Imported {
 }
 
 fn text<'a>(value: &'a Value, key: &str, field: &'static str) -> Result<&'a str, Error> {
-    value.get(key).and_then(Value::as_str).ok_or(Error::Invalid(field))
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .ok_or(Error::Invalid(field))
 }
 
 fn token(value: &str, field: &'static str) -> Result<(), Error> {
@@ -64,17 +67,29 @@ pub fn parse(raw: &str) -> Result<(Registration, Value, Value, String, u64), Err
     if envelope.get("credentialVersion").is_some_and(|v| v != 1) {
         return Err(Error::Invalid("credentialVersion"));
     }
-    let registration = envelope.get("registration").ok_or(Error::Invalid("registration"))?;
+    let registration = envelope
+        .get("registration")
+        .ok_or(Error::Invalid("registration"))?;
     let fleet_id = text(registration, "id", "registration.id")?;
-    let suffix = fleet_id.strip_prefix("hf_").ok_or(Error::Invalid("registration.id"))?;
-    if suffix.len() != 32 || !suffix.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+    let suffix = fleet_id
+        .strip_prefix("hf_")
+        .ok_or(Error::Invalid("registration.id"))?;
+    if suffix.len() != 32
+        || !suffix
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
         return Err(Error::Invalid("registration.id"));
     }
     if envelope.get("fleetId").is_some_and(|v| v != fleet_id) {
         return Err(Error::Invalid("fleetId"));
     }
     let server_name = text(&envelope, "serverName", "serverName")?;
-    let sender = text(registration, "sender_localpart", "registration.sender_localpart")?;
+    let sender = text(
+        registration,
+        "sender_localpart",
+        "registration.sender_localpart",
+    )?;
     if sender != format!("{fleet_id}_representative") {
         return Err(Error::Invalid("registration.sender_localpart"));
     }
@@ -82,15 +97,27 @@ pub fn parse(raw: &str) -> Result<(Registration, Value, Value, String, u64), Err
         .chars()
         .flat_map(|c| {
             let special = ".*+?^${}()|[]\\".contains(c);
-            special.then_some('\\').into_iter().chain(std::iter::once(c))
+            special
+                .then_some('\\')
+                .into_iter()
+                .chain(std::iter::once(c))
         })
         .collect();
     let namespace = format!("^@{fleet_id}_[a-z0-9_]+:{escaped}$");
-    let namespaces = registration.get("namespaces").ok_or(Error::Invalid("registration.namespaces"))?;
+    let namespaces = registration
+        .get("namespaces")
+        .ok_or(Error::Invalid("registration.namespaces"))?;
     let users = namespaces.get("users").and_then(Value::as_array);
-    let empty = |key| namespaces.get(key).and_then(Value::as_array).is_some_and(Vec::is_empty);
+    let empty = |key| {
+        namespaces
+            .get(key)
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty)
+    };
     if !users.is_some_and(|u| {
-        u.len() == 1 && u[0].get("exclusive") == Some(&json!(true)) && u[0].get("regex") == Some(&json!(namespace))
+        u.len() == 1
+            && u[0].get("exclusive") == Some(&json!(true))
+            && u[0].get("regex") == Some(&json!(namespace))
     }) || !empty("rooms")
         || !empty("aliases")
     {
@@ -105,18 +132,27 @@ pub fn parse(raw: &str) -> Result<(Registration, Value, Value, String, u64), Err
     }
     let url = text(registration, "url", "registration.url")?;
     let parsed = reqwest::Url::parse(url).map_err(|_| Error::Invalid("registration.url"))?;
-    if !matches!(parsed.scheme(), "http" | "https") || !parsed.username().is_empty() || parsed.password().is_some()
-        || parsed.query().is_some() || parsed.fragment().is_some()
+    if !matches!(parsed.scheme(), "http" | "https")
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.query().is_some()
+        || parsed.fragment().is_some()
     {
         return Err(Error::Invalid("registration.url"));
     }
     // The outbound machine credential (normalizeOutboundTransport).
-    let transport = envelope.get("transport").ok_or(Error::Invalid("transport: only an outbound fleet can be imported"))?;
-    let keys_ok = transport
-        .as_object()
-        .is_some_and(|o| o.keys().all(|k| ["mode", "url", "token", "generation"].contains(&k.as_str())));
+    let transport = envelope.get("transport").ok_or(Error::Invalid(
+        "transport: only an outbound fleet can be imported",
+    ))?;
+    let keys_ok = transport.as_object().is_some_and(|o| {
+        o.keys()
+            .all(|k| ["mode", "url", "token", "generation"].contains(&k.as_str()))
+    });
     let machine = text(transport, "token", "transport.token")?;
-    let generation = transport.get("generation").and_then(Value::as_u64).ok_or(Error::Invalid("transport.generation"))?;
+    let generation = transport
+        .get("generation")
+        .and_then(Value::as_u64)
+        .ok_or(Error::Invalid("transport.generation"))?;
     if !keys_ok
         || transport.get("mode") != Some(&json!("outbound"))
         || machine.len() < 16
@@ -124,13 +160,16 @@ pub fn parse(raw: &str) -> Result<(Registration, Value, Value, String, u64), Err
         || machine.chars().any(char::is_whitespace)
         || machine == as_token
         || machine == hs_token
-        || generation < 1
-        || generation > hagency_core::JSON_SAFE_MAX
+        || !(1..=hagency_core::JSON_SAFE_MAX).contains(&generation)
     {
         return Err(Error::Invalid("transport"));
     }
-    let endpoint = reqwest::Url::parse(text(transport, "url", "transport.url")?).map_err(|_| Error::Invalid("transport.url"))?;
-    let local = matches!(endpoint.host_str(), Some("127.0.0.1" | "localhost" | "[::1]"));
+    let endpoint = reqwest::Url::parse(text(transport, "url", "transport.url")?)
+        .map_err(|_| Error::Invalid("transport.url"))?;
+    let local = matches!(
+        endpoint.host_str(),
+        Some("127.0.0.1" | "localhost" | "[::1]")
+    );
     if !endpoint.username().is_empty()
         || endpoint.password().is_some()
         || endpoint.query().is_some()
@@ -180,16 +219,26 @@ pub(crate) fn write(
         "profile": "palpo_v2_resources_v1", "endpoint": endpoint,
         "registration": registration, "machine_generation": generation,
     });
-    let encode = |value: &Value| serde_json::to_vec_pretty(value).map_err(|_| Error::Invalid("encode"));
+    let encode =
+        |value: &Value| serde_json::to_vec_pretty(value).map_err(|_| Error::Invalid("encode"));
     private::replace(&state.join("palpo-transport.json"), &encode(&transport)?)?;
-    private::replace(&state.join("palpo.machine_token"), machine.as_str().unwrap_or_default().as_bytes())?;
+    private::replace(
+        &state.join("palpo.machine_token"),
+        machine.as_str().unwrap_or_default().as_bytes(),
+    )?;
     private::replace(&state.join("palpo-appservice.json"), &encode(appservice)?)?;
     Ok(())
 }
 
 /// Import into an initialized private state (service stopped or not yet run).
-pub fn run(state: &Path, file: &Path, homeserver: &str, reception: Option<&str>) -> Result<Imported, Error> {
-    let origin = self::homeserver(homeserver).map_err(|_| Error::Invalid("--homeserver must be https"))?;
+pub fn run(
+    state: &Path,
+    file: &Path,
+    homeserver: &str,
+    reception: Option<&str>,
+) -> Result<Imported, Error> {
+    let origin =
+        self::homeserver(homeserver).map_err(|_| Error::Invalid("--homeserver must be https"))?;
     private::read_secret(&state.join("operator.token"))?;
     let raw = std::fs::read_to_string(file).map_err(|_| Error::Invalid("file unreadable"))?;
     let (registration, mut appservice, machine, endpoint, generation) = parse(&raw)?;
@@ -197,7 +246,9 @@ pub fn run(state: &Path, file: &Path, homeserver: &str, reception: Option<&str>)
     let _custody = Repository::open(state)?;
     let mut domain = DomainRepository::open(state)?;
     // A re-import of the same fleet keeps a reception an earlier probe bound.
-    let current = domain.provisioning_registration(&registration.fleet_id).ok();
+    let current = domain
+        .provisioning_registration(&registration.fleet_id)
+        .ok();
     let mut registration = registration;
     if let Some(current) = current {
         registration.reception_room_id = current.reception_room_id;
@@ -205,7 +256,14 @@ pub fn run(state: &Path, file: &Path, homeserver: &str, reception: Option<&str>)
         registration.reception_room_id = room.to_owned();
     }
     domain.register(&registration)?;
-    write(state, &registration, &appservice, &machine, &endpoint, generation)?;
+    write(
+        state,
+        &registration,
+        &appservice,
+        &machine,
+        &endpoint,
+        generation,
+    )?;
     Ok(Imported {
         fleet_id: registration.fleet_id.clone(),
         server_name: registration.server_name.clone(),
@@ -232,23 +290,71 @@ mod tests {
     #[test]
     fn native_palpo_import_accepts_the_owner_download_unbound() {
         let (row, appservice, _, endpoint, generation) = parse(&download().to_string()).unwrap();
-        assert_eq!(row.reception_room_id, "", "reception stays unbound until the probe");
-        assert_eq!(row.representative_mxid, format!("@{FLEET}_representative:example.test"));
-        assert_eq!(row.approval_bot_mxid, format!("@{FLEET}_approval:example.test"));
-        assert_eq!(endpoint, format!("https://palpo.example/api/fleet/v2/{FLEET}"));
+        assert_eq!(
+            row.reception_room_id, "",
+            "reception stays unbound until the probe"
+        );
+        assert_eq!(
+            row.representative_mxid,
+            format!("@{FLEET}_representative:example.test")
+        );
+        assert_eq!(
+            row.approval_bot_mxid,
+            format!("@{FLEET}_approval:example.test")
+        );
+        assert_eq!(
+            endpoint,
+            format!("https://palpo.example/api/fleet/v2/{FLEET}")
+        );
         assert_eq!(generation, 1);
-        assert_eq!(appservice["sender_localpart"], format!("{FLEET}_representative"));
+        assert_eq!(
+            appservice["sender_localpart"],
+            format!("{FLEET}_representative")
+        );
     }
     #[test]
     fn native_palpo_import_refuses_what_ts_refuses() {
+        #[allow(clippy::type_complexity)]
         let cases: Vec<(&str, Box<dyn Fn(&mut Value)>)> = vec![
-            ("callback fleet", Box::new(|v| { v.as_object_mut().unwrap().remove("transport"); })),
-            ("broad namespace", Box::new(|v| v["registration"]["namespaces"]["users"][0]["regex"] = json!("^@.*$"))),
-            ("non-exclusive", Box::new(|v| v["registration"]["namespaces"]["users"][0]["exclusive"] = json!(false))),
-            ("other fleet endpoint", Box::new(|v| v["transport"]["url"] = json!("https://palpo.example/api/fleet/v2/hf_ffffffffffffffffffffffffffffffff"))),
-            ("plain http remote", Box::new(|v| v["transport"]["url"] = json!(format!("http://palpo.example/api/fleet/v2/{FLEET}")))),
-            ("machine token reuses as_token", Box::new(|v| v["transport"]["token"] = json!("as-token-value"))),
-            ("wrong sender", Box::new(|v| v["registration"]["sender_localpart"] = json!("someone"))),
+            (
+                "callback fleet",
+                Box::new(|v| {
+                    v.as_object_mut().unwrap().remove("transport");
+                }),
+            ),
+            (
+                "broad namespace",
+                Box::new(|v| v["registration"]["namespaces"]["users"][0]["regex"] = json!("^@.*$")),
+            ),
+            (
+                "non-exclusive",
+                Box::new(|v| {
+                    v["registration"]["namespaces"]["users"][0]["exclusive"] = json!(false)
+                }),
+            ),
+            (
+                "other fleet endpoint",
+                Box::new(|v| {
+                    v["transport"]["url"] = json!(
+                        "https://palpo.example/api/fleet/v2/hf_ffffffffffffffffffffffffffffffff"
+                    )
+                }),
+            ),
+            (
+                "plain http remote",
+                Box::new(|v| {
+                    v["transport"]["url"] =
+                        json!(format!("http://palpo.example/api/fleet/v2/{FLEET}"))
+                }),
+            ),
+            (
+                "machine token reuses as_token",
+                Box::new(|v| v["transport"]["token"] = json!("as-token-value")),
+            ),
+            (
+                "wrong sender",
+                Box::new(|v| v["registration"]["sender_localpart"] = json!("someone")),
+            ),
             ("version 2", Box::new(|v| v["credentialVersion"] = json!(2))),
         ];
         for (name, change) in cases {

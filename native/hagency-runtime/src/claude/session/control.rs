@@ -272,7 +272,19 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
         &mut self,
         prepared: &mut PreparedApproval,
     ) -> Result<PreparedUpdate, Error> {
-        let operation = Operation::new(self, Phase::Running)?;
+        // The peer can read the whole response and end its turn before this
+        // host observes its own flush. A write whose bytes have all left only
+        // waits for that flush, so it may complete after the Result was
+        // observed; it transmits nothing new. Every other send still needs a
+        // running turn.
+        let expected = if self.phase == Phase::ResultObserved
+            && self.wire.awaits_flush_only(&prepared.frame)
+        {
+            Phase::ResultObserved
+        } else {
+            Phase::Running
+        };
+        let operation = Operation::new(self, expected)?;
         let result = operation.driver.send_inner(prepared).await;
         operation.finish(result)
     }

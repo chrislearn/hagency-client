@@ -240,12 +240,7 @@ impl Fixture {
         let pool = common::resource("private_usage_pool", "private_usage_seat", 1000);
         self.domain
             .admit(
-                common::proof(&common::request(
-                    request,
-                    "NewUsageWorker",
-                    &pool,
-                    tokens,
-                )),
+                common::proof(&common::request(request, "NewUsageWorker", &pool, tokens)),
                 1000,
             )
             .await

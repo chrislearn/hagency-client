@@ -16,7 +16,12 @@ pub(crate) fn router() -> Router {
         // The retained `/api/alerts/stats` BEFORE `{key}` — salvo matches
         // the literal segment first, so `stats` never shadows an id.
         .push(Router::with_path("stats").get(stats))
-        .push(Router::with_path("{key}").get(get).patch(patch).delete(delete))
+        .push(
+            Router::with_path("{key}")
+                .get(get)
+                .patch(patch)
+                .delete(delete),
+        )
         .push(Router::with_path("{key}/transition").post(transition))
         .push(Router::with_path("{key}/notes").post(add_note))
 }

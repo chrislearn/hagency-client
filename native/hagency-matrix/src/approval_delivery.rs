@@ -200,10 +200,7 @@ impl ApprovalCollector {
                 .as_ref()
                 .map(|agent| &agent.inner.http)
                 .unwrap_or(&inner.http);
-            http
-                .put(&segments, content, &cancel)
-                .await?
-                .success()?;
+            http.put(&segments, content, &cancel).await?.success()?;
             Ok(Value::Unit)
         })?;
         match job.wait().await? {

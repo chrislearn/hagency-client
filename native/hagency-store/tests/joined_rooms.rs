@@ -83,7 +83,14 @@ impl Fixture {
             )
             .unwrap();
     }
-    fn event(&self, session: &str, id: &str, sender: &str, mentions: &[&str], encrypted: bool) -> MatrixEventObservation {
+    fn event(
+        &self,
+        session: &str,
+        id: &str,
+        sender: &str,
+        mentions: &[&str],
+        encrypted: bool,
+    ) -> MatrixEventObservation {
         MatrixEventObservation {
             scope: self.db.matrix_ingress_scope(session).unwrap(),
             event: InboundMessage {
@@ -120,9 +127,20 @@ fn native_joined_room_record_state_and_notice() {
     assert!(f.db.claim_joined_room_notice(&eng, SIDE, 2004).unwrap());
     assert!(!f.db.claim_joined_room_notice(&eng, SIDE, 2005).unwrap());
     // A reminder repeats it only once the gap since the last one has passed.
-    assert!(!f.db.claim_joined_room_renotice(&eng, SIDE, 2005, 2003).unwrap());
-    assert!(f.db.claim_joined_room_renotice(&eng, SIDE, 2005, 2004).unwrap());
-    assert!(!f.db.claim_joined_room_renotice(&eng, SIDE, 2005, 2004).unwrap());
+    assert!(
+        !f.db
+            .claim_joined_room_renotice(&eng, SIDE, 2005, 2003)
+            .unwrap()
+    );
+    assert!(
+        f.db.claim_joined_room_renotice(&eng, SIDE, 2005, 2004)
+            .unwrap()
+    );
+    assert!(
+        !f.db
+            .claim_joined_room_renotice(&eng, SIDE, 2005, 2004)
+            .unwrap()
+    );
 
     // Retired rooms leave the live list and stay retired until a new join,
     // which makes them working again with the notice cleared.
@@ -139,7 +157,12 @@ fn native_joined_room_record_state_and_notice() {
     assert_eq!(again.state, JoinedRoomState::Working);
     assert_eq!(again.notice_at, None);
     assert!(matches!(
-        f.db.set_joined_room_state(&eng, "!unknown:example.test", JoinedRoomState::Working, 2009),
+        f.db.set_joined_room_state(
+            &eng,
+            "!unknown:example.test",
+            JoinedRoomState::Working,
+            2009
+        ),
         Err(Error::RunnerAuthority)
     ));
 }
@@ -158,7 +181,8 @@ fn native_joined_rooms_are_bounded() {
     ));
     f.db.set_joined_room_state(&eng, "!r0:example.test", JoinedRoomState::Retired, 2002)
         .unwrap();
-    f.db.record_joined_room(&eng, "!over:example.test", 2003).unwrap();
+    f.db.record_joined_room(&eng, "!over:example.test", 2003)
+        .unwrap();
 }
 
 /// A group room other than the project room becomes a room scope only while it
@@ -201,8 +225,18 @@ fn native_joined_room_wake_rules() {
     f.bind("joined_shared", SIDE);
     for (id, sender, mentions, expected) in [
         ("owner_plain", "@owner:example.test", vec![], false),
-        ("owner_mention", "@owner:example.test", vec!["@a:example.test"], true),
-        ("guest_mention", "@guest:example.test", vec!["@a:example.test"], true),
+        (
+            "owner_mention",
+            "@owner:example.test",
+            vec!["@a:example.test"],
+            true,
+        ),
+        (
+            "guest_mention",
+            "@guest:example.test",
+            vec!["@a:example.test"],
+            true,
+        ),
         ("guest_plain", "@guest:example.test", vec![], false),
     ] {
         let event = f.event("joined_shared", id, sender, &mentions, false);
@@ -216,10 +250,18 @@ fn native_joined_room_wake_rules() {
     // The guest leaves: the room is the owner's and the agent's alone.
     let prior = f.db.matrix_room_state(&eng, SIDE).unwrap().unwrap();
     let alone = f.room(SIDE, &[], false);
-    let observed = f.db.refresh_matrix_group_room(&alone, Some(&prior), 2020).unwrap();
+    let observed =
+        f.db.refresh_matrix_group_room(&alone, Some(&prior), 2020)
+            .unwrap();
     assert_eq!(observed.generation, 2);
     f.bind("joined_alone", SIDE);
-    let mut event = f.event("joined_alone", "alone_plain", "@owner:example.test", &[], false);
+    let mut event = f.event(
+        "joined_alone",
+        "alone_plain",
+        "@owner:example.test",
+        &[],
+        false,
+    );
     event.event.origin_ts = 2025;
     assert!(f.db.admit_matrix_event(&event, 2030).unwrap().wake);
 }
@@ -262,14 +304,19 @@ fn native_claim_profile_carries_joined_rooms() {
         .unwrap();
     // An identity room can never be dropped or swapped for a joined one.
     assert!(matches!(
-        shrunk.clone().refresh_matrix_rooms(transport.clone(), vec![joined(SIDE)]),
+        shrunk
+            .clone()
+            .refresh_matrix_rooms(transport.clone(), vec![joined(SIDE)]),
         Err(Error::RunnerAuthority)
     ));
     // A plain group room cannot sneak in as an identity room.
     assert!(matches!(
         shrunk.refresh_matrix_rooms(
             transport,
-            vec![dm(), OwnedClaimRoom::new(SIDE.into(), 1, RoomPrivacy::Group {}).unwrap()]
+            vec![
+                dm(),
+                OwnedClaimRoom::new(SIDE.into(), 1, RoomPrivacy::Group {}).unwrap()
+            ]
         ),
         Err(Error::RunnerAuthority)
     ));

@@ -107,7 +107,13 @@ fn launch(state: &Path, address: SocketAddr) -> Running {
     }
 }
 
-fn request(address: SocketAddr, method: &str, path: &str, token: &str, body: &str) -> (u16, String) {
+fn request(
+    address: SocketAddr,
+    method: &str,
+    path: &str,
+    token: &str,
+    body: &str,
+) -> (u16, String) {
     let mut stream = TcpStream::connect(address).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(5)))
@@ -126,7 +132,10 @@ fn request(address: SocketAddr, method: &str, path: &str, token: &str, body: &st
         .nth(1)
         .and_then(|code| code.parse::<u16>().ok())
         .unwrap();
-    (status, response.split("\r\n\r\n").nth(1).unwrap().to_owned())
+    (
+        status,
+        response.split("\r\n\r\n").nth(1).unwrap().to_owned(),
+    )
 }
 
 /// One custody record — the durable write whose survival proves the database
@@ -257,7 +266,10 @@ fn native_ops_backup_and_restore_refuse_to_clobber() {
         .arg(&out)
         .output()
         .unwrap();
-    assert!(!second.status.success(), "backup overwrote an existing snapshot");
+    assert!(
+        !second.status.success(),
+        "backup overwrote an existing snapshot"
+    );
 
     // Restoring over a non-empty state is refused: no existing data is replaced.
     let restore = native()
@@ -346,10 +358,7 @@ fn native_ops_verbs_require_initialized_state() {
     let root = tempfile::tempdir().unwrap();
     let empty = root.path().join("empty");
     fs::create_dir(&empty).unwrap();
-    for args in [
-        vec!["backup", "--state-dir"],
-        vec!["rotate", "--state-dir"],
-    ] {
+    for args in [vec!["backup", "--state-dir"], vec!["rotate", "--state-dir"]] {
         let mut command = native();
         command.args(&args).arg(&empty);
         if args[0] == "backup" {

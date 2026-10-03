@@ -34,7 +34,7 @@ Still relevant, because Apache 2.0 §4 requires retaining attribution. Measured
 | Inherited from upstream | **717** |
 | Added by us | 56 and counting |
 
-Per-file, for the components that matter most:
+Per-file, for the components that matter most. These JavaScript files were removed when the native Rust service replaced them; they remain in git history, and the Rust port derives from them, so the attribution still applies:
 
 | File | Upstream commits / total |
 |---|---|
@@ -67,7 +67,7 @@ git log --format='%an' upstream/master | sort | uniq -c | sort -rn
 
 - `LICENSE` — Apache License 2.0
 - `NOTICE` — attribution, including the upstream authors above
-- `package.json` — `"license": "Apache-2.0"`
+- `Cargo.toml` — `license = "Apache-2.0"` for every workspace crate
 
 Note our `LICENSE` and upstream's are not byte-identical (10,774 vs 10,258
 bytes); both are the same Apache License, Version 2.0, differing only in the
@@ -83,8 +83,9 @@ release, an image, or a fork:
    shipping `NOTICE` too;
 3. mark files you have changed as changed.
 
-The release tarballs built by `scripts/build-release-package.sh` include both
-`LICENSE` and `NOTICE`, because they come from `git archive` of the tracked tree.
+The native release workflow (`.github/workflows/release-native.yml`) currently
+stages only the `hagency` binary. Add `LICENSE` and `NOTICE` to the staged tree
+before publishing a release from it.
 
 ## Borrowing from other Apache 2.0 projects
 

@@ -51,10 +51,11 @@ impl Adapter {
             };
         }
         let step = self.publish_checked(Some(domain), cancel).await?;
-        if step == Step::Published && !included.is_empty() {
-            if let Some(source) = &self.receipts {
-                source.published(&included);
-            }
+        if step == Step::Published
+            && !included.is_empty()
+            && let Some(source) = &self.receipts
+        {
+            source.published(&included);
         }
         Ok(step)
     }

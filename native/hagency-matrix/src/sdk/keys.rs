@@ -45,7 +45,11 @@ pub(super) async fn accept_all_devices(
     response: &Value,
 ) -> Result<BTreeSet<(String, String)>, Error> {
     let accepted = accept_counted(machine, users, query_id, response, false).await?;
-    Ok(accepted.recipients.union(&accepted.unsigned).cloned().collect())
+    Ok(accepted
+        .recipients
+        .union(&accepted.unsigned)
+        .cloned()
+        .collect())
 }
 
 /// `signed_only`: each recipient user must have at least one device signed by

@@ -261,7 +261,10 @@ impl Inner {
         // still fails closed in `validate`.
         let request_id = match body.get("requestId") {
             None | Some(serde_json::Value::Null) => {
-                format!("ev_{}", hagency_core::project::hash(msg.event_id.as_bytes()))
+                format!(
+                    "ev_{}",
+                    hagency_core::project::hash(msg.event_id.as_bytes())
+                )
             }
             Some(serde_json::Value::String(key)) => key.clone(),
             Some(_) => return Err(Error::Wire),

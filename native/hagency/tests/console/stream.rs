@@ -24,24 +24,28 @@ async fn stream_session(service: &Service, host: &str, base: &str) -> String {
         .as_str()
         .unwrap()
         .to_owned();
-    let mut response = TestClient::post(format!("{base}/console/session"))
+    let response = TestClient::post(format!("{base}/console/session"))
         .add_header("host", host, true)
         .add_header("origin", base, true)
         .add_header("sec-fetch-site", "same-origin", true)
         .json(&json!({"ticket": ticket}))
         .send(service)
         .await;
-    assert_eq!(response.status_code, Some(StatusCode::OK), "session exchange");
-    let cookie = response.headers().get("set-cookie").unwrap().to_str().unwrap();
+    assert_eq!(
+        response.status_code,
+        Some(StatusCode::OK),
+        "session exchange"
+    );
+    let cookie = response
+        .headers()
+        .get("set-cookie")
+        .unwrap()
+        .to_str()
+        .unwrap();
     cookie.split(';').next().unwrap().to_owned()
 }
 
-async fn read_until(
-    sock: &mut tokio::net::TcpStream,
-    seen: &mut String,
-    needle: &str,
-    what: &str,
-) {
+async fn read_until(sock: &mut tokio::net::TcpStream, seen: &mut String, needle: &str, what: &str) {
     let mut buf = [0u8; 4096];
     let got = tokio::time::timeout(std::time::Duration::from_secs(5), async {
         loop {
@@ -56,7 +60,10 @@ async fn read_until(
         }
     })
     .await;
-    assert!(got.is_ok(), "timed out waiting for {what}; wire so far:\n{seen}");
+    assert!(
+        got.is_ok(),
+        "timed out waiting for {what}; wire so far:\n{seen}"
+    );
 }
 
 #[tokio::test]
@@ -109,7 +116,13 @@ async fn native_console_stream_emits_on_state_change() {
         )
         .await
         .unwrap();
-    read_until(&mut sock, &mut wire, "event: tasks", "the tasks change event").await;
+    read_until(
+        &mut sock,
+        &mut wire,
+        "event: tasks",
+        "the tasks change event",
+    )
+    .await;
     let frame = wire
         .split("event: tasks")
         .last()
@@ -258,18 +271,18 @@ async fn native_console_stream_snapshot_and_events() {
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let body = response.take_json::<Value>().await.unwrap();
     let events = body["events"].as_array().unwrap();
-    let kinds: Vec<&str> = events
-        .iter()
-        .map(|e| e["kind"].as_str().unwrap())
-        .collect();
+    let kinds: Vec<&str> = events.iter().map(|e| e["kind"].as_str().unwrap()).collect();
     for kind in ["agents_changed", "tasks_changed", "alerts_changed"] {
         assert!(kinds.contains(&kind), "kinds: {kinds:?}");
     }
     assert_eq!(body["gap"], false, "no gap on a fresh store");
     // The current cursor: nothing changed.
-    let mut response = get(&format!("/console/api/stream/events?after={version}"), &cookie)
-        .send(&service)
-        .await;
+    let mut response = get(
+        &format!("/console/api/stream/events?after={version}"),
+        &cookie,
+    )
+    .send(&service)
+    .await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let body = response.take_json::<Value>().await.unwrap();
     assert_eq!(

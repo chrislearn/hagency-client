@@ -26,12 +26,13 @@ pub(crate) fn router() -> Router {
         // keeps the TS shapes (backend-v2.js:15330-15385, 15823-15833, 15960).
         .push(Router::with_path("offers").get(offers))
         .push(Router::with_path("offers/{role}").put(put_offer))
-        .push(Router::with_path("whitelist").get(whitelist).post(post_whitelist))
-        .push(Router::with_path("whitelist/{roomId}").delete(remove_whitelist))
         .push(
-            Router::with_path("framework-presets/{id}")
-                .delete(delete_resource),
+            Router::with_path("whitelist")
+                .get(whitelist)
+                .post(post_whitelist),
         )
+        .push(Router::with_path("whitelist/{roomId}").delete(remove_whitelist))
+        .push(Router::with_path("framework-presets/{id}").delete(delete_resource))
         .push(
             Router::with_path("framework-presets/{id}/agents")
                 .get(definitions)
@@ -318,36 +319,61 @@ async fn put_offer(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     // here is exact for every finite f64 below 2^53 after flooring.
     let floor = |v: f64| -> Result<i64, Error> {
         if !v.is_finite() || v > 9_007_199_254_740_992.0 {
-            return Err(Error::Invalid(hagency_core::InvalidInput("cap must be a positive integer below 2^53")));
+            return Err(Error::Invalid(hagency_core::InvalidInput(
+                "cap must be a positive integer below 2^53",
+            )));
         }
         let floored = v.floor() as i64;
         if floored <= 0 {
-            return Err(Error::Invalid(hagency_core::InvalidInput("cap must be a positive integer below 2^53")));
+            return Err(Error::Invalid(hagency_core::InvalidInput(
+                "cap must be a positive integer below 2^53",
+            )));
         }
         Ok(floored)
     };
     let (count, cap_budget, cap_rate) =
         match (input.count, input.budget_cap_per_engagement, input.rate_cap) {
-        (Some(c), _, _) if !(c.is_finite() && c.floor() > 0.0 && c <= 9_007_199_254_740_992.0) => {
-            failure(res, Error::Invalid(hagency_core::InvalidInput("cap must be a positive integer below 2^53")));
-            return;
-        }
-        (_, Some(b), _) if !(b.is_finite() && b.floor() > 0.0 && b <= 9_007_199_254_740_992.0) => {
-            failure(res, Error::Invalid(hagency_core::InvalidInput("cap must be a positive integer below 2^53")));
-            return;
-        }
-        (_, _, Some(r)) if !(r.is_finite() && r.floor() > 0.0 && r <= 9_007_199_254_740_992.0) => {
-            failure(res, Error::Invalid(hagency_core::InvalidInput("cap must be a positive integer below 2^53")));
-            return;
-        }
-        _ => (
-            input.count.map(|v| floor(v).expect("validated above")),
-            input
-                .budget_cap_per_engagement
-                .map(|v| floor(v).expect("validated above")),
-            input.rate_cap.map(|v| floor(v).expect("validated above")),
-        ),
-    };
+            (Some(c), _, _)
+                if !(c.is_finite() && c.floor() > 0.0 && c <= 9_007_199_254_740_992.0) =>
+            {
+                failure(
+                    res,
+                    Error::Invalid(hagency_core::InvalidInput(
+                        "cap must be a positive integer below 2^53",
+                    )),
+                );
+                return;
+            }
+            (_, Some(b), _)
+                if !(b.is_finite() && b.floor() > 0.0 && b <= 9_007_199_254_740_992.0) =>
+            {
+                failure(
+                    res,
+                    Error::Invalid(hagency_core::InvalidInput(
+                        "cap must be a positive integer below 2^53",
+                    )),
+                );
+                return;
+            }
+            (_, _, Some(r))
+                if !(r.is_finite() && r.floor() > 0.0 && r <= 9_007_199_254_740_992.0) =>
+            {
+                failure(
+                    res,
+                    Error::Invalid(hagency_core::InvalidInput(
+                        "cap must be a positive integer below 2^53",
+                    )),
+                );
+                return;
+            }
+            _ => (
+                input.count.map(|v| floor(v).expect("validated above")),
+                input
+                    .budget_cap_per_engagement
+                    .map(|v| floor(v).expect("validated above")),
+                input.rate_cap.map(|v| floor(v).expect("validated above")),
+            ),
+        };
     match store
         .set_offer(
             role,
@@ -398,7 +424,12 @@ async fn post_whitelist(req: &mut Request, depot: &mut Depot, res: &mut Response
         .and_then(|d| u64::try_from(d.as_millis()).ok())
         .unwrap_or(0);
     match store
-        .add_whitelist(input.project_room_id, input.display_name, input.added_by, now)
+        .add_whitelist(
+            input.project_room_id,
+            input.display_name,
+            input.added_by,
+            now,
+        )
         .await
     {
         Ok(entry) => res.render(Json(serde_json::json!({"ok":true,"entry":entry}))),

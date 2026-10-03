@@ -60,7 +60,11 @@ async fn native_console_task_lifecycle_over_the_routes() {
     assert_eq!(task["granularity"], "task");
     assert_eq!(task["labels"], json!(["a", "b"]));
     assert_eq!(task["comments"], json!([]));
-    assert_eq!(task["next"], json!(["accepted"]), "the server serves the map");
+    assert_eq!(
+        task["next"],
+        json!(["accepted"]),
+        "the server serves the map"
+    );
 
     // A missing title is the retained store's own word.
     let mut response = post("/console/api/tasks", &cookie)
@@ -68,7 +72,10 @@ async fn native_console_task_lifecycle_over_the_routes() {
         .send(&service)
         .await;
     assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST));
-    assert_eq!(response.take_json::<Value>().await.unwrap()["code"], "invalid_task_command");
+    assert_eq!(
+        response.take_json::<Value>().await.unwrap()["code"],
+        "invalid_task_command"
+    );
 
     // GET /api/tasks — the list envelope, plus the two server-owned facts.
     let mut response = get("/console/api/tasks", &cookie).send(&service).await;
@@ -76,7 +83,11 @@ async fn native_console_task_lifecycle_over_the_routes() {
     let list = response.take_json::<Value>().await.unwrap();
     assert!(list["at_ms"].as_u64().unwrap() > 0);
     assert_eq!(list["permissions"]["configureResource"], true);
-    assert_eq!(list["unavailable"], json!(["health"]), "health is named, not zeroed");
+    assert_eq!(
+        list["unavailable"],
+        json!(["health"]),
+        "health is named, not zeroed"
+    );
     assert_eq!(list["tasks"].as_array().unwrap().len(), 1);
     assert_eq!(list["tasks"][0]["id"], id.as_str());
 
@@ -106,11 +117,19 @@ async fn native_console_task_lifecycle_over_the_routes() {
         );
     }
     // An unknown key, a duplicated key and an over-large page are refused.
-    for query in ["?bogus=1", "?limit=1&limit=2", &format!("?limit={}", MAX_TASK_PAGE + 1)] {
+    for query in [
+        "?bogus=1",
+        "?limit=1&limit=2",
+        &format!("?limit={}", MAX_TASK_PAGE + 1),
+    ] {
         let response = get(&format!("/console/api/tasks{query}"), &cookie)
             .send(&service)
             .await;
-        assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST), "{query}");
+        assert_eq!(
+            response.status_code,
+            Some(StatusCode::BAD_REQUEST),
+            "{query}"
+        );
     }
 
     // GET /api/tasks/:id — the bare row, no envelope.
@@ -152,7 +171,12 @@ async fn native_console_task_lifecycle_over_the_routes() {
     let commented = response.take_json::<Value>().await.unwrap()["task"].clone();
     assert_eq!(commented["comments"][0]["author"], "anonymous");
     assert_eq!(commented["comments"][0]["text"], "started");
-    assert!(commented["comments"][0]["ts"].as_str().unwrap().ends_with('Z'));
+    assert!(
+        commented["comments"][0]["ts"]
+            .as_str()
+            .unwrap()
+            .ends_with('Z')
+    );
 
     // POST /api/tasks/:id/transition — `status` is required, and the walk
     // follows the retained map.
@@ -161,7 +185,10 @@ async fn native_console_task_lifecycle_over_the_routes() {
         .send(&service)
         .await;
     assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST));
-    assert_eq!(response.take_json::<Value>().await.unwrap()["code"], "status_required");
+    assert_eq!(
+        response.take_json::<Value>().await.unwrap()["code"],
+        "status_required"
+    );
     let response = post(&format!("/console/api/tasks/{id}/transition"), &cookie)
         .json(&json!({"status":"in_progress"}))
         .send(&service)
@@ -310,7 +337,9 @@ async fn native_console_agent_tasks_and_project_board() {
     );
 
     // GET /api/project-board — the retained envelope with native's named gaps.
-    let mut response = get("/console/api/project-board", &cookie).send(&service).await;
+    let mut response = get("/console/api/project-board", &cookie)
+        .send(&service)
+        .await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let board = response.take_json::<Value>().await.unwrap();
     assert!(board["generatedAt"].as_str().unwrap().ends_with('Z'));
@@ -320,7 +349,10 @@ async fn native_console_agent_tasks_and_project_board() {
     // the board reports exactly that one project and its one active member.
     assert_eq!(board["totals"]["projects"], 1);
     assert_eq!(board["totals"]["agents"], 1);
-    assert_eq!(board["totals"]["tasks"]["created"], 2, "both new tasks are created");
+    assert_eq!(
+        board["totals"]["tasks"]["created"], 2,
+        "both new tasks are created"
+    );
     let projects = board["projects"].as_array().unwrap();
     assert_eq!(projects.len(), 1);
     assert_eq!(projects[0]["id"], "project_one");
@@ -379,14 +411,21 @@ async fn native_console_task_comment_bound() {
             .json(&json!({"text":format!("comment {index}")}))
             .send(&service)
             .await;
-        assert_eq!(response.status_code, Some(StatusCode::OK), "comment {index}");
+        assert_eq!(
+            response.status_code,
+            Some(StatusCode::OK),
+            "comment {index}"
+        );
     }
     let mut response = post(&format!("/console/api/tasks/{id}/comments"), &cookie)
         .json(&json!({"text":"one too many"}))
         .send(&service)
         .await;
     assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST));
-    assert_eq!(response.take_json::<Value>().await.unwrap()["code"], "invalid_task_command");
+    assert_eq!(
+        response.take_json::<Value>().await.unwrap()["code"],
+        "invalid_task_command"
+    );
     // The row still holds exactly the bound.
     let mut response = get(&format!("/console/api/tasks/{id}"), &cookie)
         .send(&service)

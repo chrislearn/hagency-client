@@ -41,6 +41,7 @@ fn receipt(db: &Connection, id: &str, replayed: bool) -> Result<CommandNoticeRec
     .ok_or(Error::NotFound)
 }
 fn frozen(db: &Connection, id: &str) -> Result<(CommandNotice, ReplyRoute, String), Error> {
+    #[allow(clippy::type_complexity)]
     let row: Option<(String, String, String, Option<String>, String, String, String)> = db
         .query_row(
             "SELECT session_id,transaction_id,body,html,route,digest,source_event_id FROM command_notices WHERE id=?1",
@@ -103,11 +104,7 @@ fn check_claim(db: &Connection, id: &str, token: &str, now: u64) -> Result<Strin
     }
     Ok(state)
 }
-fn observed(
-    db: &Connection,
-    id: &str,
-    input: &ReplyDeliveryObservation,
-) -> Result<String, Error> {
+fn observed(db: &Connection, id: &str, input: &ReplyDeliveryObservation) -> Result<String, Error> {
     input.validate()?;
     let (notice, route, digest) = frozen(db, id)?;
     if input.transaction_id != notice.transaction_id
@@ -156,9 +153,11 @@ impl DomainRepository {
             input.html
         ]))?;
         let prior: Option<String> = tx
-            .query_row("SELECT digest FROM command_notices WHERE id=?1", [&id], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT digest FROM command_notices WHERE id=?1",
+                [&id],
+                |r| r.get(0),
+            )
             .optional()?;
         if let Some(old) = prior {
             if old != digest {
@@ -254,11 +253,10 @@ impl DomainRepository {
             return Err(Error::RunnerAuthority);
         }
         let (notice, route, digest) = frozen(&tx, id)?;
-        let fence: u64 = tx.query_row(
-            "SELECT fence FROM command_notices WHERE id=?1",
-            [id],
-            |r| r.get(0),
-        )?;
+        let fence: u64 =
+            tx.query_row("SELECT fence FROM command_notices WHERE id=?1", [id], |r| {
+                r.get(0)
+            })?;
         tx.execute(
             "UPDATE command_notices SET state='sending',updated_at=?2 WHERE id=?1",
             params![id, now],
@@ -285,11 +283,9 @@ impl DomainRepository {
         }
         let found: u64 = self
             .db
-            .query_row(
-                "SELECT fence FROM command_notices WHERE id=?1",
-                [id],
-                |r| r.get(0),
-            )
+            .query_row("SELECT fence FROM command_notices WHERE id=?1", [id], |r| {
+                r.get(0)
+            })
             .optional()?
             .ok_or(Error::NotFound)?;
         if found != fence || !current(&self.db, id)? {
@@ -514,9 +510,10 @@ impl DomainRepository {
         {
             return Err(Error::RunnerAuthority);
         }
-        let count: u64 = tx.query_row("SELECT COUNT(*) FROM command_notice_inspections", [], |r| {
-            r.get(0)
-        })?;
+        let count: u64 =
+            tx.query_row("SELECT COUNT(*) FROM command_notice_inspections", [], |r| {
+                r.get(0)
+            })?;
         let own: u64 = tx.query_row(
             "SELECT COUNT(*) FROM command_notice_inspections WHERE notice_id=?1",
             [id],

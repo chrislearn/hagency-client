@@ -57,7 +57,8 @@ fn current(db: &Connection, id: &str) -> Result<bool, Error> {
     // A quota notice (ADR-186) is said as its turn ends: see `retire`.
     let quota = matches!(notice.kind.as_str(), "quota_paused" | "quota_resumed");
     if cancelled
-        || (!quota && (!active || epoch != Some(execution::task(db, &notice.task_id)?.execution_epoch)))
+        || (!quota
+            && (!active || epoch != Some(execution::task(db, &notice.task_id)?.execution_epoch)))
     {
         return Ok(false);
     }

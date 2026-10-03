@@ -44,11 +44,10 @@ fn ts_oracle_task_priority_and_granularity_vocabulary() {
         .collect();
     assert_eq!(priorities, vec!["p0", "p1", "p2", "p3"]);
 
-    let granularities: Vec<String> =
-        [Granularity::Epic, Granularity::Task, Granularity::Subtask]
-            .iter()
-            .map(|g| json!(g).as_str().unwrap().to_string())
-            .collect();
+    let granularities: Vec<String> = [Granularity::Epic, Granularity::Task, Granularity::Subtask]
+        .iter()
+        .map(|g| json!(g).as_str().unwrap().to_string())
+        .collect();
     let mut sorted = granularities.clone();
     sorted.sort();
     assert_eq!(sorted, vec!["epic", "subtask", "task"]);
@@ -109,12 +108,14 @@ fn ts_oracle_task_requires_real_title() {
             "title {bad:?} must be rejected"
         );
     }
-    assert!(TaskDefinition {
-        title: "a real task".to_string(),
-        ..Default::default()
-    }
-    .validate()
-    .is_ok());
+    assert!(
+        TaskDefinition {
+            title: "a real task".to_string(),
+            ..Default::default()
+        }
+        .validate()
+        .is_ok()
+    );
 }
 
 /// TS `rejects an out-of-vocabulary priority or granularity instead of

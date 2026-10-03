@@ -7,8 +7,8 @@
 //! header and the whoami target are asserted on the wire, never on a seam.
 #[path = "../../../hagency-matrix/tests/common/mod.rs"]
 pub mod matrix_common;
-use matrix_common::Fake;
 use super::*;
+use matrix_common::Fake;
 
 fn registration_json() -> Value {
     let fleet = format!("hf_{}", "c".repeat(32));
@@ -51,14 +51,16 @@ async fn native_console_side_verify_calls_whoami_and_records_the_verdict() {
     // Install the credential and its API base URL pointing at the fake homeserver.
     let mut fake = Fake::start(false).await;
     let endpoint = fake.endpoint.trim_end_matches('/').to_string();
-    let installed = TestClient::put(format!("{BASE}/console/api/project-sides/example.test/credential"))
-        .add_header("host", "127.0.0.1:13300", true)
-        .add_header("origin", BASE, true)
-        .add_header("sec-fetch-site", "same-origin", true)
-        .add_header("cookie", &cookie, true)
-        .json(&json!({"credential": appservice(), "apiBaseUrl": endpoint}))
-        .send(&service)
-        .await;
+    let installed = TestClient::put(format!(
+        "{BASE}/console/api/project-sides/example.test/credential"
+    ))
+    .add_header("host", "127.0.0.1:13300", true)
+    .add_header("origin", BASE, true)
+    .add_header("sec-fetch-site", "same-origin", true)
+    .add_header("cookie", &cookie, true)
+    .json(&json!({"credential": appservice(), "apiBaseUrl": endpoint}))
+    .send(&service)
+    .await;
     assert_eq!(installed.status_code, Some(StatusCode::OK));
 
     // Drive verify; the homeserver answers whoami.
@@ -70,8 +72,7 @@ async fn native_console_side_verify_calls_whoami_and_records_the_verdict() {
             "/_matrix/client/v3/account/whoami?user_id=@hagency:example.test"
         );
         assert_eq!(
-            request.headers["authorization"],
-            "Bearer as_token_verify_1",
+            request.headers["authorization"], "Bearer as_token_verify_1",
             "verify sends the stored as_token"
         );
         request.json(200, json!({"user_id": "@hagency:example.test"}));
@@ -88,7 +89,10 @@ async fn native_console_side_verify_calls_whoami_and_records_the_verdict() {
     assert_eq!(body["ok"], json!(true));
     assert_eq!(body["promoted"], json!(false));
     assert_eq!(body["side"]["accessState"], "accepted");
-    assert_eq!(body["side"]["representative"]["mxid"], "@hagency:example.test");
+    assert_eq!(
+        body["side"]["representative"]["mxid"],
+        "@hagency:example.test"
+    );
     f.close().await;
 }
 
@@ -112,14 +116,16 @@ async fn native_console_side_verify_promotes_a_staged_credential() {
     let endpoint = fake.endpoint.trim_end_matches('/').to_string();
 
     // A live credential, accepted (proven by a whoami we script now).
-    let installed = TestClient::put(format!("{BASE}/console/api/project-sides/example.test/credential"))
-        .add_header("host", "127.0.0.1:13300", true)
-        .add_header("origin", BASE, true)
-        .add_header("sec-fetch-site", "same-origin", true)
-        .add_header("cookie", &cookie, true)
-        .json(&json!({"credential": appservice(), "apiBaseUrl": endpoint}))
-        .send(&service)
-        .await;
+    let installed = TestClient::put(format!(
+        "{BASE}/console/api/project-sides/example.test/credential"
+    ))
+    .add_header("host", "127.0.0.1:13300", true)
+    .add_header("origin", BASE, true)
+    .add_header("sec-fetch-site", "same-origin", true)
+    .add_header("cookie", &cookie, true)
+    .json(&json!({"credential": appservice(), "apiBaseUrl": endpoint}))
+    .send(&service)
+    .await;
     assert_eq!(installed.status_code, Some(StatusCode::OK));
 
     // Stage a replacement directly through the store: the old credential keeps
@@ -141,8 +147,7 @@ async fn native_console_side_verify_promotes_a_staged_credential() {
     let scripted = async {
         let request = fake.next().await;
         assert_eq!(
-            request.headers["authorization"],
-            "Bearer as_token_verify_staged",
+            request.headers["authorization"], "Bearer as_token_verify_staged",
             "verify tries the staged credential first"
         );
         request.json(200, json!({"user_id": "@hagency:example.test"}));
@@ -157,7 +162,11 @@ async fn native_console_side_verify_promotes_a_staged_credential() {
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let body = response.take_json::<Value>().await.unwrap();
     assert_eq!(body["ok"], json!(true));
-    assert_eq!(body["promoted"], json!(true), "a proven staged credential is promoted");
+    assert_eq!(
+        body["promoted"],
+        json!(true),
+        "a proven staged credential is promoted"
+    );
     // The live credential is now the staged one.
     let live = f
         .domain

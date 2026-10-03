@@ -110,9 +110,8 @@ fn native_usage_report_ceiling_is_resource_scoped_while_summary_is_engagement_sc
     f.db.record_usage_observation(&source, "only_source", &claude(700, 300, 0, 4_000), 2000)
         .unwrap();
     // A SECOND engagement on the SAME resource that has never run a turn.
-    let bystander = f
-        .db
-        .admit(
+    let bystander =
+        f.db.admit(
             &proof(&request("ceiling_scope_request", "Bystander", &pool, 100)),
             3000,
         )
@@ -131,5 +130,8 @@ fn native_usage_report_ceiling_is_resource_scoped_while_summary_is_engagement_sc
     // two engagements is the whole point: the number is not the engagement's.
     assert_eq!(measured.ceiling.tokens_used, Some(5_000));
     assert_eq!(unobserved.ceiling.tokens_used, Some(5_000));
-    assert_eq!(unobserved.ceiling.tokens_drawn, measured.ceiling.tokens_drawn);
+    assert_eq!(
+        unobserved.ceiling.tokens_drawn,
+        measured.ceiling.tokens_drawn
+    );
 }

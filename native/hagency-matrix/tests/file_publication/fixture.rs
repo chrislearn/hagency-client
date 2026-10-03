@@ -36,8 +36,7 @@ pub(super) async fn accepted_plaintext(
     let (input, identity, ciphertext) = f.file_input_named(id, caption, filename).await?;
     let mut original = f.admit(input);
     let cancel = CancellationToken::new();
-    let (receipt, ()) =
-        common::scripted(original.run(&cancel), post_plaintext(&mut f.fake)).await;
+    let (receipt, ()) = common::scripted(original.run(&cancel), post_plaintext(&mut f.fake)).await;
     assert_eq!(
         receipt.unwrap().upload,
         hagency_core::uploads::UploadState::Accepted

@@ -251,7 +251,8 @@ impl ProvisionedAgent {
                 workspace_id: self.workspace.clone(),
             });
         }
-        self.joined_rooms(&transport, &mut rooms, &mut inboxes).await?;
+        self.joined_rooms(&transport, &mut rooms, &mut inboxes)
+            .await?;
         let profile = profile.refresh_matrix_rooms(transport, rooms)?;
         Ok((profile, inboxes))
     }
@@ -298,13 +299,19 @@ impl ProvisionedAgent {
             .and_then(|response| response.success())
         {
             Ok(value) => value["joined_rooms"].as_array().map(|rooms| {
-                rooms.iter().filter_map(|r| r.as_str().map(str::to_owned)).collect()
+                rooms
+                    .iter()
+                    .filter_map(|r| r.as_str().map(str::to_owned))
+                    .collect()
             }),
             Err(_) => None,
         };
         let mut live = Vec::with_capacity(joined.len());
         for room in joined {
-            if member_of.as_ref().is_some_and(|rooms| !rooms.contains(&room.room_id)) {
+            if member_of
+                .as_ref()
+                .is_some_and(|rooms| !rooms.contains(&room.room_id))
+            {
                 inner
                     .domain
                     .set_joined_room_state(
@@ -338,7 +345,11 @@ impl ProvisionedAgent {
             // A room already found encrypted and shared is only re-read, not
             // published: the store admits working joined rooms only.
             if room.state == JoinedRoomState::EncryptedShared {
-                inner.joined_shared.lock().unwrap().insert(room.room_id.clone());
+                inner
+                    .joined_shared
+                    .lock()
+                    .unwrap()
+                    .insert(room.room_id.clone());
             } else {
                 inner.joined_shared.lock().unwrap().remove(&room.room_id);
             }
@@ -349,7 +360,11 @@ impl ProvisionedAgent {
                         "joined room {} of {engagement} not observed this pass: {error:?}",
                         room.room_id
                     );
-                    inner.joined.lock().unwrap().insert(room.room_id.clone(), false);
+                    inner
+                        .joined
+                        .lock()
+                        .unwrap()
+                        .insert(room.room_id.clone(), false);
                     continue;
                 }
             };
@@ -369,13 +384,18 @@ impl ProvisionedAgent {
                     .await?;
             }
             if state == JoinedRoomState::EncryptedShared {
-                inner.joined.lock().unwrap().insert(room.room_id.clone(), false);
+                inner
+                    .joined
+                    .lock()
+                    .unwrap()
+                    .insert(room.room_id.clone(), false);
                 if inner
                     .domain
                     .claim_joined_room_notice(engagement.clone(), room.room_id.clone(), now)
                     .await?
                 {
-                    self.encrypted_shared_notice(&room.room_id, now, &cancel).await;
+                    self.encrypted_shared_notice(&room.room_id, now, &cancel)
+                        .await;
                 } else if let Some(last) = room.notice_at
                     && now >= last.saturating_add(RENOTICE_GAP_MS)
                     && self
@@ -395,7 +415,8 @@ impl ProvisionedAgent {
                     // Someone posted since the last notice: remind them, at
                     // most once per gap. Only senders and times are read;
                     // the room's messages are never decrypted.
-                    self.encrypted_shared_notice(&room.room_id, now, &cancel).await;
+                    self.encrypted_shared_notice(&room.room_id, now, &cancel)
+                        .await;
                 }
                 continue;
             }
@@ -404,7 +425,11 @@ impl ProvisionedAgent {
             match self.joined_session(transport, &target).await {
                 Ok((selected, inbox)) => {
                     rooms.push(selected);
-                    inner.joined.lock().unwrap().insert(room.room_id.clone(), true);
+                    inner
+                        .joined
+                        .lock()
+                        .unwrap()
+                        .insert(room.room_id.clone(), true);
                     inboxes.push(inbox);
                 }
                 Err(error) => {
@@ -412,7 +437,11 @@ impl ProvisionedAgent {
                         "joined room {} of {engagement} not routable this pass: {error:?}",
                         room.room_id
                     );
-                    inner.joined.lock().unwrap().insert(room.room_id.clone(), false);
+                    inner
+                        .joined
+                        .lock()
+                        .unwrap()
+                        .insert(room.room_id.clone(), false);
                 }
             }
         }
@@ -428,7 +457,12 @@ impl ProvisionedAgent {
         let engagement = transport.engagement_id.clone();
         let generation = inner.observed_room_generation(target).await?;
         let binding = SessionBinding {
-            id: joined_session_id(&engagement, transport.generation, generation, &target.room_id),
+            id: joined_session_id(
+                &engagement,
+                transport.generation,
+                generation,
+                &target.room_id,
+            ),
             engagement_id: engagement.clone(),
             room_id: target.room_id.clone(),
             thread_root: None,
@@ -484,8 +518,10 @@ impl ProvisionedAgent {
             .as_array()?
             .iter()
             .filter(|e| {
-                matches!(e["type"].as_str(), Some("m.room.encrypted" | "m.room.message"))
-                    && e["sender"].as_str().is_some_and(|s| s != agent)
+                matches!(
+                    e["type"].as_str(),
+                    Some("m.room.encrypted" | "m.room.message")
+                ) && e["sender"].as_str().is_some_and(|s| s != agent)
             })
             .filter_map(|e| e["origin_server_ts"].as_u64())
             .max()
@@ -494,17 +530,34 @@ impl ProvisionedAgent {
     /// people in it. Its replies could be read only by the owner, so the
     /// agent says so instead of working there. Best effort: a failed send is
     /// logged, and the notice is not repeated.
-    async fn encrypted_shared_notice(&self, room: &str, now: u64, cancel: &crate::CancellationToken) {
+    async fn encrypted_shared_notice(
+        &self,
+        room: &str,
+        now: u64,
+        cancel: &crate::CancellationToken,
+    ) {
         let txn = format!("joined-notice-{now}");
         let body = serde_json::json!({
             "msgtype": "m.notice",
             "body": "I can't work in an encrypted room with other people in it: only my owner could read my replies. Encryption can't be turned off in a room, so for working with me create a new room with encryption off, or talk to me in a room with just my owner and me.",
         })
         .to_string();
-        let segments = ["_matrix", "client", "v3", "rooms", room, "send", "m.room.message", txn.as_str()];
+        let segments = [
+            "_matrix",
+            "client",
+            "v3",
+            "rooms",
+            room,
+            "send",
+            "m.room.message",
+            txn.as_str(),
+        ];
         match self.collector.inner.http.put(&segments, body, cancel).await {
             Ok(response) if response.status == 200 => {}
-            Ok(response) => eprintln!("encrypted-room notice in {room} refused: HTTP {}", response.status),
+            Ok(response) => eprintln!(
+                "encrypted-room notice in {room} refused: HTTP {}",
+                response.status
+            ),
             Err(error) => eprintln!("encrypted-room notice in {room} failed: {error:?}"),
         }
     }
@@ -620,10 +673,9 @@ impl TokenProvisioningHost {
     pub(crate) fn approvals_ready_for(&self, owner: &str) -> bool {
         match &self.factory_approvals {
             super::ApprovalLink::Fixed(link) => link.is_some(),
-            super::ApprovalLink::PerOwner(map) => map
-                .lock()
-                .map(|m| m.contains_key(owner))
-                .unwrap_or(false),
+            super::ApprovalLink::PerOwner(map) => {
+                map.lock().map(|m| m.contains_key(owner)).unwrap_or(false)
+            }
         }
     }
     fn check_approvals(&self, approvals: &crate::ApprovalCollector) -> Result<(), Error> {
@@ -694,7 +746,9 @@ impl TokenProvisioningHost {
         custody.ready(cancel).await?;
         // GET-only current verification on the original successful SDK job;
         // its Complete ledger prevents any signing upload/session claim replay.
-        let anchors = self.anchors_for(domain, effect, super::AnchorUse::Enroll).await?;
+        let anchors = self
+            .anchors_for(domain, effect, super::AnchorUse::Enroll)
+            .await?;
         account
             .enroll_created_rooms(1, self.key, anchors, cancel)
             .await?;
@@ -807,7 +861,10 @@ impl TokenProvisioningHost {
         // refresh retires it, and the store admits only generation + 1 after
         // that). After a restart no worker of the fenced incarnation is alive,
         // so the same account and device continue under the new generation.
-        let generation = match domain.matrix_transport_state(effect.engagement_id.clone()).await? {
+        let generation = match domain
+            .matrix_transport_state(effect.engagement_id.clone())
+            .await?
+        {
             Some(state) if !state.available => state
                 .observation
                 .generation
@@ -821,7 +878,8 @@ impl TokenProvisioningHost {
                 &rooms.representative,
                 generation,
                 self.key,
-                self.anchors_for(domain, effect, super::AnchorUse::Reattach).await?,
+                self.anchors_for(domain, effect, super::AnchorUse::Reattach)
+                    .await?,
                 cancel,
             )
             .await?;

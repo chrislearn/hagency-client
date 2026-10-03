@@ -36,14 +36,21 @@ fn side_record_projection_omits_credential_bytes() {
     assert_eq!(side.access_state, "unverified");
     assert!(side.active);
 
-    db.set_credential(side_id(), Some(appservice()), false).unwrap();
+    db.set_credential(side_id(), Some(appservice()), false)
+        .unwrap();
     let side = db.side(side_id()).unwrap().expect("side exists");
     assert!(side.has_credential);
     assert_eq!(side.credential_kind.as_deref(), Some("appservice"));
     assert_eq!(side.sender_localpart.as_deref(), Some("hagency"));
     let text = serde_json::to_string(&side).unwrap();
-    assert!(!text.contains("as_token_abc123"), "no asToken value in projection");
-    assert!(!text.contains("hs_token_def456"), "no hsToken value in projection");
+    assert!(
+        !text.contains("as_token_abc123"),
+        "no asToken value in projection"
+    );
+    assert!(
+        !text.contains("hs_token_def456"),
+        "no hsToken value in projection"
+    );
     // The value IS readable by the one caller that talks to the homeserver.
     let credential = db.credential_for(side_id()).unwrap().expect("credential");
     assert_eq!(credential.as_token.as_deref(), Some("as_token_abc123"));
@@ -85,14 +92,25 @@ fn staged_replacement_keeps_old_credential_until_promoted() {
         .unwrap()
         .expect("side exists");
     assert!(side.awaiting_install, "staged credential is visible state");
-    assert_eq!(side.access_state, "accepted", "staging does not touch the verdict");
     assert_eq!(
-        db.credential_for(side_id()).unwrap().unwrap().as_token.as_deref(),
+        side.access_state, "accepted",
+        "staging does not touch the verdict"
+    );
+    assert_eq!(
+        db.credential_for(side_id())
+            .unwrap()
+            .unwrap()
+            .as_token
+            .as_deref(),
         Some("old_token"),
         "the old credential is still live"
     );
     assert_eq!(
-        db.pending_credential_for(side_id()).unwrap().unwrap().as_token.as_deref(),
+        db.pending_credential_for(side_id())
+            .unwrap()
+            .unwrap()
+            .as_token
+            .as_deref(),
         Some("new_token"),
         "the new credential waits as pending"
     );
@@ -100,7 +118,11 @@ fn staged_replacement_keeps_old_credential_until_promoted() {
     // A verify that proves the new credential promotes it.
     db.promote_pending_credential(side_id()).unwrap();
     assert_eq!(
-        db.credential_for(side_id()).unwrap().unwrap().as_token.as_deref(),
+        db.credential_for(side_id())
+            .unwrap()
+            .unwrap()
+            .as_token
+            .as_deref(),
         Some("new_token"),
         "promotion makes the staged credential live"
     );
@@ -117,9 +139,13 @@ fn non_stage_set_credential_resets_the_verdict() {
     let dir = tempfile::tempdir().unwrap();
     let mut db = DomainRepository::open(&dir.path().join("state")).unwrap();
     db.ensure_side(side_id()).unwrap();
-    db.set_credential(side_id(), Some(appservice()), false).unwrap();
+    db.set_credential(side_id(), Some(appservice()), false)
+        .unwrap();
     db.observe_access(side_id(), "accepted", None).unwrap();
-    assert_eq!(db.side(side_id()).unwrap().unwrap().access_state, "accepted");
+    assert_eq!(
+        db.side(side_id()).unwrap().unwrap().access_state,
+        "accepted"
+    );
 
     let replacement = json!({
         "kind": "appservice",
@@ -132,7 +158,10 @@ fn non_stage_set_credential_resets_the_verdict() {
         .set_credential(side_id(), Some(replacement), false)
         .unwrap()
         .unwrap();
-    assert_eq!(side.access_state, "unverified", "a new credential resets the verdict");
+    assert_eq!(
+        side.access_state, "unverified",
+        "a new credential resets the verdict"
+    );
     assert!(!side.awaiting_install);
     // Withdrawing clears the credential.
     let side = db.set_credential(side_id(), None, false).unwrap().unwrap();
@@ -147,13 +176,22 @@ fn representative_mxid_must_live_on_the_side_server() {
     let mut db = DomainRepository::open(&dir.path().join("state")).unwrap();
     db.ensure_side(side_id()).unwrap();
     // Correct host.
-    db.set_representative(side_id(), "@rep:example.test").unwrap();
+    db.set_representative(side_id(), "@rep:example.test")
+        .unwrap();
     assert_eq!(
-        db.side(side_id()).unwrap().unwrap().representative.unwrap().mxid,
+        db.side(side_id())
+            .unwrap()
+            .unwrap()
+            .representative
+            .unwrap()
+            .mxid,
         "@rep:example.test"
     );
     // Wrong host refused.
-    assert!(db.set_representative(side_id(), "@rep:elsewhere.test").is_err());
+    assert!(
+        db.set_representative(side_id(), "@rep:elsewhere.test")
+            .is_err()
+    );
 }
 
 /// A room may belong to one project only, and its server must be the side's.
@@ -163,7 +201,10 @@ fn project_room_is_unique_and_must_live_on_the_side() {
     let mut db = DomainRepository::open(&dir.path().join("state")).unwrap();
     db.ensure_side(side_id()).unwrap();
     let project = db
-        .upsert_project(side_id(), &json!({"name": "BigLittle", "roomId": "!room:example.test"}))
+        .upsert_project(
+            side_id(),
+            &json!({"name": "BigLittle", "roomId": "!room:example.test"}),
+        )
         .unwrap()
         .expect("project");
     assert_eq!(project.id, "biglittle", "the id is derived from the name");
@@ -171,13 +212,20 @@ fn project_room_is_unique_and_must_live_on_the_side() {
 
     // A second project claiming the same room is a conflict.
     assert!(matches!(
-        db.upsert_project(side_id(), &json!({"name": "Other", "roomId": "!room:example.test"})),
+        db.upsert_project(
+            side_id(),
+            &json!({"name": "Other", "roomId": "!room:example.test"})
+        ),
         Err(hagency_store::Error::Conflict)
     ));
     // A room on another server is refused.
-    assert!(db
-        .upsert_project(side_id(), &json!({"name": "Foreign", "roomId": "!room:elsewhere.test"}))
-        .is_err());
+    assert!(
+        db.upsert_project(
+            side_id(),
+            &json!({"name": "Foreign", "roomId": "!room:elsewhere.test"})
+        )
+        .is_err()
+    );
 }
 
 /// An active side refuses removal; deactivation first, then remove (TS :10584).
@@ -186,7 +234,10 @@ fn active_side_refuses_removal() {
     let dir = tempfile::tempdir().unwrap();
     let mut db = DomainRepository::open(&dir.path().join("state")).unwrap();
     db.ensure_side(side_id()).unwrap();
-    assert!(matches!(db.remove_side(side_id(), false), Err(hagency_store::Error::State)));
+    assert!(matches!(
+        db.remove_side(side_id(), false),
+        Err(hagency_store::Error::State)
+    ));
     db.deactivate_side(side_id()).unwrap();
     db.remove_side(side_id(), false).unwrap();
     assert!(db.side(side_id()).unwrap().is_none());

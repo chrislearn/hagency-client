@@ -25,9 +25,7 @@
 use super::engagements::check_lifecycle;
 use super::{Error, body, failed, recheck, usage::query};
 use crate::{refusal, resources::domain};
-use hagency_store::{
-    DomainRepository, IssueSideRegistrationRequest, Repository, private,
-};
+use hagency_store::{DomainRepository, IssueSideRegistrationRequest, Repository, private};
 use salvo::prelude::*;
 use serde::Deserialize;
 use std::path::Path;

@@ -82,14 +82,6 @@ Scenario: Every account response carries the five keys and no seeded identity va
   And the raw body of every response contains neither S nor P as a substring
   And no response carries a key named namespace_identity, identity_tuple, seat_id or preset_id
 
-Scenario: The account grant is mutually exclusive with the existing grants
-  Test: native_console_account_grant_is_mutually_exclusive
-  Level: unit
-  Given the console-access command line
-  When --manage-account-enrollment is combined with either existing management flag
-  Then the command is refused before any ticket is issued
-  And each of the three pairs is refused independently
-
 Scenario: A read-only session cannot prepare retire or enrol
   Test: native_console_account_mutations_require_the_scope
   Level: integration

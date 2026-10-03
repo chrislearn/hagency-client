@@ -653,7 +653,10 @@ async fn native_owned_mcp_unsupported_form_is_declined_and_the_turn_completes() 
     assert_eq!(f.count("SELECT COUNT(*) FROM owner_approvals"), 0);
     // The adapter's decline never becomes an owner approval: the operation
     // completed with no notice waiting, and no card was minted.
-    assert!(notices.recv().await.is_none(), "no owner approval is parked");
+    assert!(
+        notices.recv().await.is_none(),
+        "no owner approval is parked"
+    );
     // The probe only announces this after reading the decline and seeing the
     // turn continue; the wire shape is asserted in the probe itself.
     marker(&f, "approval-continued").await;
@@ -704,7 +707,9 @@ async fn native_owned_approval_records_runner_tool_activity() {
         "three real item/completed frames must count as three returns"
     );
     assert_eq!(
-        f.count("SELECT COUNT(*) FROM dispatch_activity_events WHERE event_key LIKE 'tool_start:%'"),
+        f.count(
+            "SELECT COUNT(*) FROM dispatch_activity_events WHERE event_key LIKE 'tool_start:%'"
+        ),
         3
     );
     assert_eq!(

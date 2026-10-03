@@ -1,5 +1,8 @@
 //! Actual configured service process and two genuine inline factories. All
 //! network traffic stays on the local TLS fixture; no live accounts or models.
+// Most scenarios here are Unix-only (cfg(unix)); on other platforms their
+// shared helpers and imports are compiled but unused.
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
 #[path = "configured_fleet/mod.rs"]
 mod configured_fleet;
 #[path = "fixtures/matrix_crypto_peer.rs"]
@@ -318,9 +321,13 @@ async fn native_configured_fleet_three_agents_reattach_after_restart() {
         f.wait_for_registered_agents().await;
         f.assert_project_scope();
         assert_eq!(f.count("SELECT COUNT(*) FROM canonical_tasks"), 0);
-        let account_posts: Vec<usize> =
-            f.peer.agents.iter().map(|a| a.account_posts).collect();
-        let key_writes = f.peer.agents.iter().map(|a| a.crypto.writes.len()).collect::<Vec<_>>();
+        let account_posts: Vec<usize> = f.peer.agents.iter().map(|a| a.account_posts).collect();
+        let key_writes = f
+            .peer
+            .agents
+            .iter()
+            .map(|a| a.crypto.writes.len())
+            .collect::<Vec<_>>();
         // Round 1: the original warm processes answer three exact mentions.
         f.peer.queue_project_mentions(true);
         f.until("three exact project mentions executing", |f| {
@@ -331,7 +338,12 @@ async fn native_configured_fleet_three_agents_reattach_after_restart() {
         })
         .await;
         let first: Vec<String> = (0..3)
-            .map(|i| f.receipt(i, "fleet-ready")["task_id"].as_str().unwrap().to_owned())
+            .map(|i| {
+                f.receipt(i, "fleet-ready")["task_id"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
             .collect();
         for index in 0..3 {
             fs::write(
@@ -386,7 +398,12 @@ async fn native_configured_fleet_three_agents_reattach_after_restart() {
         })
         .await;
         let second: Vec<String> = (0..3)
-            .map(|i| f.receipt(i, "fleet-ready")["task_id"].as_str().unwrap().to_owned())
+            .map(|i| {
+                f.receipt(i, "fleet-ready")["task_id"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned()
+            })
             .collect();
         assert!(
             second.iter().all(|t| !first.contains(t)),
@@ -560,7 +577,7 @@ async fn native_configured_fleet_delegated_task_delivery() {
             .filter(|event| {
                 event["content"]["body"]
                     .as_str()
-                    .map_or(false, |b| b.starts_with("Task created: "))
+                    .is_some_and(|b| b.starts_with("Task created: "))
             })
             .count(),
         1,
@@ -848,9 +865,9 @@ async fn qualify_profile(media: bool, local: bool) {
                                 .events
                                 .iter()
                                 .filter(|event| {
-                                    event["content"]["body"].as_str().map_or(false, |b| {
-                                        b.starts_with("Verified factory task ")
-                                    })
+                                    event["content"]["body"]
+                                        .as_str()
+                                        .is_some_and(|b| b.starts_with("Verified factory task "))
                                 })
                                 .count()
                                 == round as usize
@@ -866,7 +883,7 @@ async fn qualify_profile(media: bool, local: bool) {
                     .filter(|event| {
                         event["content"]["body"]
                             .as_str()
-                            .map_or(false, |b| b.starts_with("Verified factory task "))
+                            .is_some_and(|b| b.starts_with("Verified factory task "))
                     })
                     .nth(round as usize - 1)
                     .expect("this round's decrypted reply");

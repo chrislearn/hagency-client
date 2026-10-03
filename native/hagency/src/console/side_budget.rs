@@ -72,7 +72,10 @@ async fn set_allocation(req: &mut Request, depot: &mut Depot, res: &mut Response
             return;
         }
     };
-    let allocated = input.allocated_tokens.or(input.allocated_tokens_camel).flatten();
+    let allocated = input
+        .allocated_tokens
+        .or(input.allocated_tokens_camel)
+        .flatten();
     let Some(store) = domain(depot, res) else {
         return;
     };

@@ -54,8 +54,17 @@ impl Adapter {
         self
     }
     /// The oldest unfinished delivery of a lane (custody FIFO), if any.
-    pub async fn head(&self, lane: Lane) -> Result<Option<hagency_store::outbound::DeliveryView>, Error> {
-        match self.command(Command::Head { scope: self.scope(), lane }).await? {
+    pub async fn head(
+        &self,
+        lane: Lane,
+    ) -> Result<Option<hagency_store::outbound::DeliveryView>, Error> {
+        match self
+            .command(Command::Head {
+                scope: self.scope(),
+                lane,
+            })
+            .await?
+        {
             Reply::Head(view) => Ok(view),
             _ => Err(Error::Custody),
         }
@@ -68,12 +77,19 @@ impl Adapter {
         attempt: String,
     ) -> Result<Option<hagency_store::outbound::StartedWork>, Error> {
         let Reply::Claim(ticket) = self
-            .command(Command::Claim { scope: self.scope(), lane, id: attempt, lease_ms: 60_000 })
+            .command(Command::Claim {
+                scope: self.scope(),
+                lane,
+                id: attempt,
+                lease_ms: 60_000,
+            })
             .await?
         else {
             return Err(Error::Custody);
         };
-        let Some(ticket) = ticket else { return Ok(None) };
+        let Some(ticket) = ticket else {
+            return Ok(None);
+        };
         match self.command(Command::Start(ticket)).await? {
             Reply::Started(work) => Ok(Some(work)),
             _ => Err(Error::Custody),
@@ -92,7 +108,10 @@ impl Adapter {
     }
     /// Put a started delivery back for a later attempt (its prerequisite, such
     /// as the Matrix transaction a probe names, has not been processed yet).
-    pub async fn retry_later(&self, ticket: hagency_store::outbound::ClaimTicket) -> Result<(), Error> {
+    pub async fn retry_later(
+        &self,
+        ticket: hagency_store::outbound::ClaimTicket,
+    ) -> Result<(), Error> {
         let attempt = ticket.id().to_owned();
         self.command(Command::ProcessingUnknown(ticket)).await?;
         match self

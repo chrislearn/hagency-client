@@ -8,8 +8,8 @@
 //! Cases whose TS feature has no native equivalent are recorded as
 //! `#[ignore = "parity gap: ..."]` rather than silently dropped; deliberately
 //! out-of-scope ones are listed in `.peer/report-62.md` as skipped.
+use hagency::bootstrap::probe::{PROBE_EVENT, ProbeError, decide, receipt_from_event};
 use hagency_core::authority::Registration;
-use hagency::bootstrap::probe::{ProbeError, PROBE_EVENT, decide, receipt_from_event};
 use serde_json::{Value, json};
 
 const ROOM: &str = "!reception:example.test";
@@ -113,7 +113,13 @@ fn ts_fleet_probe_reverifies_the_source_event() {
     let receipt = receipt_from_event(&reg, &event).unwrap();
     let other = probe_event(&reg, ROOM, "$another", CHALLENGE);
     assert_eq!(
-        decide(&reg, Some(&receipt), &body(&reg, EVENT, CHALLENGE, ROOM), &other, &invite_room(&reg)),
+        decide(
+            &reg,
+            Some(&receipt),
+            &body(&reg, EVENT, CHALLENGE, ROOM),
+            &other,
+            &invite_room(&reg)
+        ),
         Err(ProbeError::ProbeMismatch)
     );
 }
@@ -127,7 +133,13 @@ fn ts_fleet_probe_requires_the_representative_joined() {
     let receipt = receipt_from_event(&reg, &event).unwrap();
     let absent = json!({"joined": {}, "join_rules": {"join_rule": "invite"}});
     assert_eq!(
-        decide(&reg, Some(&receipt), &body(&reg, EVENT, CHALLENGE, ROOM), &event, &absent),
+        decide(
+            &reg,
+            Some(&receipt),
+            &body(&reg, EVENT, CHALLENGE, ROOM),
+            &event,
+            &absent
+        ),
         Err(ProbeError::RepresentativeAbsent)
     );
 }
@@ -163,7 +175,13 @@ fn ts_fleet_probe_refuses_a_second_reception() {
     let mut bound = registration();
     bound.reception_room_id = "!other:example.test".into();
     assert_eq!(
-        decide(&bound, Some(&receipt), &body(&bound, EVENT, CHALLENGE, ROOM), &event, &invite_room(&bound)),
+        decide(
+            &bound,
+            Some(&receipt),
+            &body(&bound, EVENT, CHALLENGE, ROOM),
+            &event,
+            &invite_room(&bound)
+        ),
         Err(ProbeError::ReceptionConflict)
     );
 }
@@ -175,8 +193,14 @@ fn ts_fleet_probe_binds_the_reception_round_trip() {
     let reg = registration();
     let event = probe_event(&reg, ROOM, EVENT, CHALLENGE);
     let receipt = receipt_from_event(&reg, &event).unwrap();
-    let bound = decide(&reg, Some(&receipt), &body(&reg, EVENT, CHALLENGE, ROOM), &event, &invite_room(&reg))
-        .expect("valid probe binds");
+    let bound = decide(
+        &reg,
+        Some(&receipt),
+        &body(&reg, EVENT, CHALLENGE, ROOM),
+        &event,
+        &invite_room(&reg),
+    )
+    .expect("valid probe binds");
     assert_eq!(bound.source_room_id, ROOM);
     assert_eq!(bound.challenge, CHALLENGE);
 }
@@ -191,7 +215,10 @@ fn ts_fleet_probe_event_shape_is_enforced() {
     let mut wrong_sender = good.clone();
     wrong_sender["sender"] = json!("@intruder:example.test");
     assert_eq!(receipt_from_event(&reg, &wrong_sender), None);
-    assert_eq!(receipt_from_event(&reg, &probe_event(&reg, ROOM, EVENT, "short")), None);
+    assert_eq!(
+        receipt_from_event(&reg, &probe_event(&reg, ROOM, EVENT, "short")),
+        None
+    );
     let mut wrong_type = good.clone();
     wrong_type["type"] = json!("m.room.message");
     assert_eq!(receipt_from_event(&reg, &wrong_type), None);

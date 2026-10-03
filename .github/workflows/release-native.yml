@@ -45,8 +45,16 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+  # The full matrix (all OSes, console browser tests) must pass before any
+  # release binary is built.
+  full:
+    uses: ./.github/workflows/rust.yml
+    permissions:
+      contents: read
+      issues: write
+
   build:
-    needs: resolve
+    needs: [resolve, full]
     strategy:
       fail-fast: false
       matrix:

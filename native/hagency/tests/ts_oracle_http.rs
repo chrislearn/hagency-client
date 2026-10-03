@@ -13,7 +13,7 @@ use salvo::{
     prelude::*,
     test::{ResponseExt, TestClient},
 };
-use serde_json::{Value, json};
+use serde_json::json;
 
 const TOKEN: &str = "fixture_operator_token_32_bytes_minimum";
 const BASE: &str = "http://127.0.0.1:13300";

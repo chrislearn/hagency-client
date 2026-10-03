@@ -1,4 +1,4 @@
-use crate::workspace::{Root, WorktreeManager, WorktreeSpec, Workspaces};
+use crate::workspace::{Root, Workspaces, WorktreeManager, WorktreeSpec};
 use hagency_core::tasks::RunnerCapability;
 use hagency_platform::Launch;
 use hagency_runtime::codex::{

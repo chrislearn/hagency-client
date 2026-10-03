@@ -69,7 +69,8 @@ fn row_from(row: &rusqlite::Row<'_>) -> rusqlite::Result<PendingInvite> {
     })
 }
 
-const SELECT_COLUMNS: &str = "room_id,agent,inviter,project_server,seen_at,decided_at,decided_by,state";
+const SELECT_COLUMNS: &str =
+    "room_id,agent,inviter,project_server,seen_at,decided_at,decided_by,state";
 
 impl crate::DomainRepository {
     /// TS `rememberPendingInvite` (`bridge-matrix.js:2391-2417`): insert a
@@ -363,12 +364,28 @@ mod tests {
     #[test]
     fn remember_does_not_renotify_or_resurrect_a_decline() {
         let (_root, mut db) = open();
-        assert!(db
-            .remember_pending_invite("!room:a.test", "Worker", Some("@owner:a.test"), "group", 7, 100)
-            .unwrap());
-        assert!(!db
-            .remember_pending_invite("!room:a.test", "Worker", Some("@other:a.test"), "group", 8, 200)
-            .unwrap());
+        assert!(
+            db.remember_pending_invite(
+                "!room:a.test",
+                "Worker",
+                Some("@owner:a.test"),
+                "group",
+                7,
+                100
+            )
+            .unwrap()
+        );
+        assert!(
+            !db.remember_pending_invite(
+                "!room:a.test",
+                "Worker",
+                Some("@other:a.test"),
+                "group",
+                8,
+                200
+            )
+            .unwrap()
+        );
         let list = db.pending_invites().unwrap();
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].room_id, "!room:a.test");
@@ -380,9 +397,10 @@ mod tests {
         db.settle_pending_invite("!room:a.test", "Worker", false, true, "operator", 300)
             .unwrap();
         // The poll sees the invitation again — it must not resurrect it.
-        assert!(!db
-            .remember_pending_invite("!room:a.test", "Worker", None, "group", 9, 400)
-            .unwrap());
+        assert!(
+            !db.remember_pending_invite("!room:a.test", "Worker", None, "group", 9, 400)
+                .unwrap()
+        );
         let record = db
             .pending_invite("!room:a.test", "Worker")
             .unwrap()
@@ -396,27 +414,32 @@ mod tests {
     #[test]
     fn inviter_backfill_fills_only_a_pending_null() {
         let (_root, mut db) = open();
-        assert!(db
-            .remember_pending_invite("!room:a.test", "Worker", None, "direct", 5, 100)
-            .unwrap());
-        assert!(db
-            .backfill_pending_invite_inviter("!room:a.test", "Worker", "@owner:a.test")
-            .unwrap());
-        assert!(db
-            .pending_invite("!room:a.test", "Worker")
-            .unwrap()
-            .unwrap()
-            .inviter
-            .is_some());
+        assert!(
+            db.remember_pending_invite("!room:a.test", "Worker", None, "direct", 5, 100)
+                .unwrap()
+        );
+        assert!(
+            db.backfill_pending_invite_inviter("!room:a.test", "Worker", "@owner:a.test")
+                .unwrap()
+        );
+        assert!(
+            db.pending_invite("!room:a.test", "Worker")
+                .unwrap()
+                .unwrap()
+                .inviter
+                .is_some()
+        );
         // A second backfill changes nothing; a settled record is untouched.
-        assert!(!db
-            .backfill_pending_invite_inviter("!room:a.test", "Worker", "@other:a.test")
-            .unwrap());
+        assert!(
+            !db.backfill_pending_invite_inviter("!room:a.test", "Worker", "@other:a.test")
+                .unwrap()
+        );
         db.settle_pending_invite("!room:a.test", "Worker", true, true, "trusted-inviter", 200)
             .unwrap();
-        assert!(!db
-            .backfill_pending_invite_inviter("!room:a.test", "Worker", "@third:a.test")
-            .unwrap());
+        assert!(
+            !db.backfill_pending_invite_inviter("!room:a.test", "Worker", "@third:a.test")
+                .unwrap()
+        );
     }
 
     /// `listPendingInvites` is pending-only, newest first — the TS render
@@ -424,10 +447,14 @@ mod tests {
     #[test]
     fn list_is_pending_only_newest_first() {
         let (_root, mut db) = open();
-        db.remember_pending_invite("!old:a.test", "A", None, "group", 1, 100).unwrap();
-        db.remember_pending_invite("!new:a.test", "B", None, "group", 2, 300).unwrap();
-        db.remember_pending_invite("!mid:a.test", "C", None, "group", 3, 200).unwrap();
-        db.settle_pending_invite("!mid:a.test", "C", true, true, "trusted-inviter", 250).unwrap();
+        db.remember_pending_invite("!old:a.test", "A", None, "group", 1, 100)
+            .unwrap();
+        db.remember_pending_invite("!new:a.test", "B", None, "group", 2, 300)
+            .unwrap();
+        db.remember_pending_invite("!mid:a.test", "C", None, "group", 3, 200)
+            .unwrap();
+        db.settle_pending_invite("!mid:a.test", "C", true, true, "trusted-inviter", 250)
+            .unwrap();
         let list = db.pending_invites().unwrap();
         let order: Vec<&str> = list.iter().map(|r| r.room_id.as_str()).collect();
         assert_eq!(order, ["!new:a.test", "!old:a.test"]);
@@ -438,8 +465,15 @@ mod tests {
     #[test]
     fn settle_records_the_decider_and_keeps_the_binding() {
         let (_root, mut db) = open();
-        db.remember_pending_invite("!room:a.test", "Worker", Some("@owner:a.test"), "direct", 42, 100)
-            .unwrap();
+        db.remember_pending_invite(
+            "!room:a.test",
+            "Worker",
+            Some("@owner:a.test"),
+            "direct",
+            42,
+            100,
+        )
+        .unwrap();
         let settled = db
             .settle_pending_invite("!room:a.test", "Worker", true, true, "trusted-inviter", 500)
             .unwrap()
@@ -454,10 +488,11 @@ mod tests {
         assert_eq!(mode, "direct");
         assert_eq!(since, 42);
         // Settling an unknown invitation answers None, the TS null.
-        assert!(db
-            .settle_pending_invite("!none:a.test", "Worker", true, false, "operator", 600)
-            .unwrap()
-            .is_none());
+        assert!(
+            db.settle_pending_invite("!none:a.test", "Worker", true, false, "operator", 600)
+                .unwrap()
+                .is_none()
+        );
     }
 
     /// The console decide / poll join split: an operator accept that has
@@ -470,10 +505,24 @@ mod tests {
     #[test]
     fn console_accept_queues_the_join_and_the_poll_clears_it() {
         let (_root, mut db) = open();
-        db.remember_pending_invite("!one:a.test", "Worker", Some("@owner:a.test"), "group", 1, 100)
-            .unwrap();
-        db.remember_pending_invite("!two:a.test", "Worker", Some("@owner:a.test"), "group", 2, 200)
-            .unwrap();
+        db.remember_pending_invite(
+            "!one:a.test",
+            "Worker",
+            Some("@owner:a.test"),
+            "group",
+            1,
+            100,
+        )
+        .unwrap();
+        db.remember_pending_invite(
+            "!two:a.test",
+            "Worker",
+            Some("@owner:a.test"),
+            "group",
+            2,
+            200,
+        )
+        .unwrap();
         db.settle_pending_invite("!one:a.test", "Worker", true, false, "operator", 300)
             .unwrap();
         db.settle_pending_invite("!two:a.test", "Worker", true, false, "operator", 300)
@@ -481,7 +530,9 @@ mod tests {
         // Both accepted-not-yet-joined joins are owed, oldest seen first.
         let owed: Vec<(String, String)> = db.join_pending_invites("Worker").unwrap();
         assert_eq!(
-            owed.iter().map(|(r, a)| (r.as_str(), a.as_str())).collect::<Vec<_>>(),
+            owed.iter()
+                .map(|(r, a)| (r.as_str(), a.as_str()))
+                .collect::<Vec<_>>(),
             [("!one:a.test", "Worker"), ("!two:a.test", "Worker")]
         );
         // The poll joins one; the homeserver refused the other (still owed).
@@ -493,7 +544,8 @@ mod tests {
         assert!(db.mark_invite_joined("!two:a.test", "Worker").unwrap());
         assert!(db.join_pending_invites("Worker").unwrap().is_empty());
         // Another agent's owed join is not on this agent's worklist.
-        db.remember_pending_invite("!three:a.test", "Other", None, "group", 3, 400).unwrap();
+        db.remember_pending_invite("!three:a.test", "Other", None, "group", 3, 400)
+            .unwrap();
         db.settle_pending_invite("!three:a.test", "Other", true, false, "operator", 500)
             .unwrap();
         assert!(db.join_pending_invites("Worker").unwrap().is_empty());

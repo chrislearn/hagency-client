@@ -42,14 +42,18 @@ async fn native_console_task_graph_create_dispatches_roots() {
     assert_eq!(graph["nodes"]["a"]["status"], json!("dispatched"));
     assert_eq!(graph["nodes"]["b"]["status"], json!("pending"));
     assert_eq!(graph["nodes"]["c"]["status"], json!("pending"));
-    assert!(graph["nodes"]["a"]["message_id"].as_str().unwrap().starts_with("msg_"));
+    assert!(
+        graph["nodes"]["a"]["message_id"]
+            .as_str()
+            .unwrap()
+            .starts_with("msg_")
+    );
     let graph_id = graph["id"].as_str().unwrap().to_owned();
 
     // The durable dispatch message landed (oracle :58-64).
-    let messages: Value = serde_json::from_slice(
-        &std::fs::read(f.root.path().join("state/messages.json")).unwrap(),
-    )
-    .unwrap();
+    let messages: Value =
+        serde_json::from_slice(&std::fs::read(f.root.path().join("state/messages.json")).unwrap())
+            .unwrap();
     let rows = messages.as_array().unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0]["schema"]["kind"], json!("task_graph_dispatch"));
@@ -66,7 +70,10 @@ async fn native_console_task_graph_create_dispatches_roots() {
         &std::fs::read(f.root.path().join("state/task_graphs.json")).unwrap(),
     )
     .unwrap();
-    assert_eq!(persisted[&graph_id]["nodes"]["a"]["status"], json!("dispatched"));
+    assert_eq!(
+        persisted[&graph_id]["nodes"]["a"]["status"],
+        json!("dispatched")
+    );
 
     f.close().await;
 }
@@ -88,7 +95,9 @@ async fn native_console_task_graph_list_and_read() {
         .unwrap();
     let graph_id = created["graph"]["id"].as_str().unwrap().to_owned();
 
-    let mut list = get("/console/api/task-graphs", &cookie).send(&service).await;
+    let mut list = get("/console/api/task-graphs", &cookie)
+        .send(&service)
+        .await;
     assert_eq!(list.status_code, Some(StatusCode::OK));
     let graphs = list.take_json::<Value>().await.unwrap();
     assert_eq!(graphs.as_array().unwrap().len(), 1);
@@ -119,7 +128,10 @@ async fn native_console_task_graph_list_and_read() {
         .send(&service)
         .await;
     assert_eq!(read.status_code, Some(StatusCode::OK));
-    assert_eq!(read.take_json::<Value>().await.unwrap()["label"], json!("chain graph"));
+    assert_eq!(
+        read.take_json::<Value>().await.unwrap()["label"],
+        json!("chain graph")
+    );
     let missing = get("/console/api/task-graphs/graph_none", &cookie)
         .send(&service)
         .await;
@@ -153,7 +165,11 @@ async fn native_console_task_graph_delete_cancels() {
     assert_eq!(value["ok"], json!(true));
     assert_eq!(value["graph"]["status"], json!("cancelled"));
     for node in ["a", "b", "c"] {
-        assert_eq!(value["graph"]["nodes"][node]["status"], json!("cancelled"), "node {node}");
+        assert_eq!(
+            value["graph"]["nodes"][node]["status"],
+            json!("cancelled"),
+            "node {node}"
+        );
     }
     // A cancelled graph is still served (TS keeps the row).
     let read = get(&format!("/console/api/task-graphs/{graph_id}"), &cookie)
@@ -202,10 +218,9 @@ async fn native_console_task_graph_node_update_advances() {
     assert_eq!(value["graph"]["nodes"]["c"]["status"], json!("pending"));
 
     // A second dispatch message landed for b.
-    let messages: Value = serde_json::from_slice(
-        &std::fs::read(f.root.path().join("state/messages.json")).unwrap(),
-    )
-    .unwrap();
+    let messages: Value =
+        serde_json::from_slice(&std::fs::read(f.root.path().join("state/messages.json")).unwrap())
+            .unwrap();
     let rows = messages.as_array().unwrap();
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[1]["schema"]["payload"]["nodeId"], json!("b"));
@@ -240,7 +255,10 @@ async fn native_console_task_graph_rejects_invalid_input() {
     assert_eq!(cycle.status_code, Some(StatusCode::BAD_REQUEST));
 
     let mut missing_assignee = graph_body();
-    missing_assignee["nodes"]["a"].as_object_mut().unwrap().remove("assignee");
+    missing_assignee["nodes"]["a"]
+        .as_object_mut()
+        .unwrap()
+        .remove("assignee");
     let refused = post("/console/api/task-graphs", &cookie)
         .json(&missing_assignee)
         .send(&service)
