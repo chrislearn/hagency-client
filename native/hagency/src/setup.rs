@@ -88,7 +88,17 @@ pub fn run(options: &Options) -> Result<Report, String> {
             state.display()
         ));
     }
-    let state = state
+    let mut report = configure(options)?;
+    report.initialized = fresh;
+    Ok(report)
+}
+
+/// Write and validate `fleet-runtime.json` in an existing state directory
+/// (the setup page's path, ADR-189; `run` adds initialization).
+pub fn configure(options: &Options) -> Result<Report, String> {
+    let fresh = false;
+    let state = options
+        .state_dir
         .canonicalize()
         .map_err(|e| format!("state directory: {e}"))?;
 
@@ -312,4 +322,84 @@ mod tests {
         let error = codex_executable(Some(&script)).unwrap_err();
         assert!(error.contains("launcher script"), "{error}");
     }
+}
+
+/// What the setup page shows for one coding agent (ADR-189). Hagency runs
+/// only the agent's version flag and its own sign-in status command; it
+/// never signs in and never reads credentials.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentStatus {
+    pub kind: &'static str,
+    pub found: bool,
+    pub path: Option<PathBuf>,
+    pub version: Option<String>,
+    pub signed_in: bool,
+    /// `chatgpt` or `api_key`, as the agent reports its sign-in.
+    pub sign_in_kind: Option<&'static str>,
+    /// Why the agent could not be used, in words for the page.
+    pub problem: Option<String>,
+}
+
+/// Detect Codex: the binary `setup` would use, its version, and
+/// `codex login status`.
+pub async fn detect_codex() -> AgentStatus {
+    let mut status = AgentStatus {
+        kind: "codex",
+        found: false,
+        path: None,
+        version: None,
+        signed_in: false,
+        sign_in_kind: None,
+        problem: None,
+    };
+    let executable = match codex_executable(None) {
+        Ok(path) => path,
+        Err(problem) => {
+            status.problem = Some(problem);
+            return status;
+        }
+    };
+    status.found = true;
+    status.path = Some(executable.clone());
+    status.version = run_agent(&executable, &["--version"])
+        .await
+        .ok()
+        .map(|(_, out)| out.trim().to_owned())
+        .filter(|v| !v.is_empty());
+    match run_agent(&executable, &["login", "status"]).await {
+        Ok((true, out)) => {
+            status.signed_in = true;
+            status.sign_in_kind = if out.contains("ChatGPT") {
+                Some("chatgpt")
+            } else if out.contains("API key") {
+                Some("api_key")
+            } else {
+                None
+            };
+        }
+        Ok((false, _)) => {}
+        Err(problem) => status.problem = Some(problem),
+    }
+    status
+}
+
+/// Run a detected agent binary with fixed arguments, bounded in time and
+/// output. Returns whether it exited successfully and its stdout.
+async fn run_agent(executable: &Path, args: &[&str]) -> Result<(bool, String), String> {
+    let child = tokio::process::Command::new(executable)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .output();
+    let output = tokio::time::timeout(std::time::Duration::from_secs(10), child)
+        .await
+        .map_err(|_| format!("{} did not answer within 10 s", executable.display()))?
+        .map_err(|e| format!("{}: {e}", executable.display()))?;
+    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&output.stderr));
+    text.truncate(4096);
+    Ok((output.status.success(), text))
 }

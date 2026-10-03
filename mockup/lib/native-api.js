@@ -1140,3 +1140,31 @@ export async function importPalpo(configuration, homeserver) {
     throw error;
   } finally { clearTimeout(timer); }
 }
+
+/* ADR-189: the setup page. Status is read-only; check re-detects and, for a
+ * signed-in coding agent, configures the runtime. */
+async function setupCall(path, method) {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), 30000);
+  try {
+    const response = await fetch(`${ROOT}/api/${path}`, {
+      method, credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal: abort.signal,
+      headers: method === 'POST' ? { 'Content-Type': 'application/json' } : undefined,
+      body: method === 'POST' ? '{}' : undefined,
+    });
+    let value = null;
+    try { value = await response.json(); } catch { /* not JSON: handled below */ }
+    if (response.status === 401) throw new Error('console_access_required');
+    if (!response.ok || value?.ok !== true) throw new Error(typeof value?.code === 'string' ? value.code : 'native_unavailable');
+    if (!Array.isArray(value.agents)) throw new Error('invalid_native_response');
+    return value;
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('outcome_unknown');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+export function fetchSetup() { return setupCall('setup', 'GET'); }
+export function checkSetup() { return setupCall('setup/check', 'POST'); }
+

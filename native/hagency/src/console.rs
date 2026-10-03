@@ -19,6 +19,7 @@ pub mod palpo_import;
 mod project_sides;
 mod resource_configuration;
 mod resources;
+mod setup;
 mod side_budget;
 mod side_lifecycle;
 pub mod side_registration;
@@ -122,6 +123,7 @@ pub(crate) fn router() -> Router {
                 .push(exec_policy::router())
                 .push(stream::router())
                 .push(engagements::router())
+                .push(setup::router())
                 .push(graphs::router())
                 .push(invites::router())
                 .push(offer_book::router())
