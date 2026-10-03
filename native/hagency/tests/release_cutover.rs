@@ -729,7 +729,9 @@ fn native_package_entrypoints_reference_no_node() {
             !rendered.contains("__INSTALL_DIR__")
                 && !rendered.contains("__STATE_DIR__")
                 && !rendered.contains("__USER__")
-                && !rendered.contains("__CONSOLE_DIR__"),
+                && !rendered.contains("__CONSOLE_DIR__")
+                && !rendered.contains("__AGENT_DRIVER__")
+                && !rendered.contains("__AGENT_DRIVER_ARG__"),
             "renderer for {template} left placeholders unresolved"
         );
         // The render half must not be vacuous: non-empty, and it carries
