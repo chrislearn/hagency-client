@@ -303,6 +303,9 @@ fn install_systemd(exe: &Path, state: &Path, listen: SocketAddr, path: &str) -> 
         .map_err(|e| format!("{}: {e}", unit.display()))?;
     systemctl(&["daemon-reload"])?;
     systemctl(&["enable", "--now", "hagency.service"])?;
+    // `enable --now` does not restart a unit that is already running: a
+    // reinstall after replacing the binary must run the new one.
+    systemctl(&["restart", "hagency.service"])?;
     // A user service stops at logout unless lingering is on.
     eprintln!(
         "Note: to keep Hagency running after you log out, run `loginctl enable-linger $USER` once."

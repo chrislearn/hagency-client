@@ -65,6 +65,7 @@ async fn report(
     domain: Option<&hagency_store::DomainStore>,
     agents: Vec<crate::setup::AgentStatus>,
     configured_now: Option<Result<(), String>>,
+    replaced: bool,
 ) -> serde_json::Value {
     let runtime = live.state_dir().join("fleet-runtime.json").is_file();
     // A configured runtime that no longer names the detected Codex (an
@@ -99,6 +100,9 @@ async fn report(
         },
     });
     if let Some(result) = configured_now {
+        // The fleet service loads fleet-runtime.json when it starts; a file
+        // rewritten while it runs (a stale one) is used after a restart.
+        value["restartNeeded"] = json!(result.is_ok() && replaced);
         value["configured"] = json!(result.is_ok());
         if let Err(problem) = result {
             value["problem"] = json!(problem);
@@ -121,7 +125,7 @@ async fn status(depot: &mut Depot, res: &mut Response) {
         return;
     }
     res.render(Json(
-        report(&live, domain(depot).as_ref(), agents, None).await,
+        report(&live, domain(depot).as_ref(), agents, None, false).await,
     ));
 }
 
@@ -172,7 +176,14 @@ async fn check(depot: &mut Depot, res: &mut Response) {
         return;
     }
     res.render(Json(
-        report(&live, domain(depot).as_ref(), vec![codex], configured_now).await,
+        report(
+            &live,
+            domain(depot).as_ref(),
+            vec![codex],
+            configured_now,
+            stale,
+        )
+        .await,
     ));
 }
 

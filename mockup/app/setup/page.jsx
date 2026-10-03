@@ -104,6 +104,7 @@ export default function SetupPage() {
       const value = await checkSetup();
       setSetup(value);
       if (value.configured === false && value.problem) setNote(value.problem);
+      else if (value.restartNeeded) setNote(t('st.restartNeeded'));
     } catch (error) {
       setNote(error.message === 'setup_not_fleet' ? t('st.notFleet') : errorText(t, error.message));
     } finally {
