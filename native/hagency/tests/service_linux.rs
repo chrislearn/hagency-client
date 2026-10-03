@@ -87,13 +87,17 @@ fn refuse_not_linux() {
         exec_start.contains("127.0.0.1:13300"),
         "loopback listen is fixed"
     );
-    // The installed unit starts the FULL service (TS parity: the TS installer
-    // never installs a degraded backend): agent driver, Palpo transport lanes
-    // and the console assets are all named in ExecStart — no post-install
-    // hand-edit is ever needed.
+    // The installed unit starts the FULL service: Palpo transport lanes and
+    // the console assets are named in ExecStart, and the installer fills the
+    // mode placeholder (empty for an imported fleet, `--agent-driver ` for a
+    // coordinator install) — no post-install hand-edit is needed.
     assert!(
-        exec_start.contains("--agent-driver"),
-        "ExecStart enables the agent driver"
+        exec_start.contains("__AGENT_DRIVER__--palpo-transport"),
+        "ExecStart carries the installer's mode placeholder before --palpo-transport"
+    );
+    assert!(
+        !exec_start.contains("--agent-driver"),
+        "the template defaults to the imported-fleet mode (ADR-187)"
     );
     assert!(
         exec_start.contains("--palpo-transport"),

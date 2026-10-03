@@ -1,8 +1,10 @@
 #!/bin/sh
 # Hagency native service installer (ADR-127 systemd / ADR-133 launchd).
 #
-# FLOW (both OSes): init fresh state -> render the unit with explicit
-# placeholders -> install -> enable -> START GATE IS /ready, never /health
+# FLOW (both OSes): init fresh state -> prepare the mode's configuration
+# (fleet: `hagency setup` writes fleet-runtime.json; coordinator: the
+# supplied agent-driver.json) -> render the unit with explicit placeholders
+# -> install -> enable -> START GATE IS /ready, never /health
 # (health is 200-while-live and proves nothing at cutover; ready is the 503
 # boundary that names components).
 #
@@ -17,13 +19,19 @@
 # except where noted; the loopback listen is hard-coded in the units.
 set -eu
 
-USAGE="usage: $0 --install-dir DIR --state-dir DIR --console-dir DIR [--config-dir DIR] [--overwrite]
+USAGE="usage: $0 --install-dir DIR --state-dir DIR --console-dir DIR [--mode fleet|coordinator]
+          [--config-dir DIR] [--codex PATH] [--codex-home DIR] [--no-local-codex] [--overwrite]
   Linux : writes <systemd-dir>/hagency-native.service (default /etc/systemd/system), daemon-reload, enable --now
   macOS : writes ~/Library/LaunchAgents/io.hagency.native.plist, bootstrap
   --console-dir is the validated native console build (serve --console-assets); required.
-  --config-dir optionally supplies agent-driver.json and private matrix.*/palpo.* files
-  (installed into the state dir 0600 before start; the unit always carries the full
-  service flags, so no post-install hand-edit is ever needed)."
+  --mode fleet (default): an imported Palpo fleet without a coordinator (ADR-187).
+         The installer runs \`hagency setup\`, which finds Codex and writes a validated
+         fleet-runtime.json, unless --config-dir supplies one. --codex, --codex-home and
+         --no-local-codex are passed to setup.
+  --mode coordinator: the coordinator install; --config-dir must supply agent-driver.json.
+  --config-dir optionally supplies fleet-runtime.json, agent-driver.json and private
+  matrix.*/palpo.*/approval.* files (installed into the state dir 0600 before start;
+  the unit carries the mode's service flags, so no post-install hand-edit is needed)."
 
 INSTALL_DIR=""
 STATE_DIR=""
@@ -31,6 +39,10 @@ CONSOLE_DIR=""
 CONFIG_DIR=""
 SYSTEMD_DIR="${HAGENCY_SYSTEMD_DIR:-/etc/systemd/system}"
 OVERWRITE=0
+MODE="fleet"
+CODEX=""
+CODEX_HOME_DIR=""
+NO_LOCAL_CODEX=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --install-dir) INSTALL_DIR="${2:?}"; shift 2 ;;
@@ -39,6 +51,10 @@ while [ $# -gt 0 ]; do
     --config-dir)  CONFIG_DIR="${2:?}";  shift 2 ;;
     --systemd-dir) SYSTEMD_DIR="${2:?}"; shift 2 ;;
     --overwrite)   OVERWRITE=1; shift ;;
+    --mode)        MODE="${2:?}"; shift 2 ;;
+    --codex)       CODEX="${2:?}"; shift 2 ;;
+    --codex-home)  CODEX_HOME_DIR="${2:?}"; shift 2 ;;
+    --no-local-codex) NO_LOCAL_CODEX=1; shift ;;
     *) echo "refused: unknown argument $1" >&2; echo "$USAGE" >&2; exit 2 ;;
   esac
 done
@@ -46,6 +62,19 @@ done
 [ -n "$STATE_DIR" ]   || { echo "refused: --state-dir is required (placeholders are not defaults)" >&2; exit 2; }
 [ -n "$CONSOLE_DIR" ] || { echo "refused: --console-dir is required; the installed unit serves the console (TS parity: install-full.sh ships its assets)" >&2; exit 2; }
 [ -d "$CONSOLE_DIR" ] || { echo "refused: console dir $CONSOLE_DIR is not a directory; build it with the native console build script first" >&2; exit 1; }
+case "$MODE" in
+  fleet)
+    # The unit runs `serve --palpo-transport` without --agent-driver: the
+    # fleet service (ADR-187).
+    AGENT_DRIVER=""
+    AGENT_DRIVER_ARG="" ;;
+  coordinator)
+    [ -n "$CONFIG_DIR" ] && [ -f "$CONFIG_DIR/agent-driver.json" ] \
+      || { echo "refused: --mode coordinator needs --config-dir with agent-driver.json" >&2; exit 2; }
+    AGENT_DRIVER="--agent-driver "
+    AGENT_DRIVER_ARG="<string>--agent-driver</string>" ;;
+  *) echo "refused: --mode must be fleet or coordinator" >&2; exit 2 ;;
+esac
 
 BIN="$INSTALL_DIR/hagency"
 [ -x "$BIN" ] || { echo "refused: missing binary $BIN" >&2; exit 1; }
@@ -61,12 +90,21 @@ if [ -n "$CONFIG_DIR" ]; then
     [ -f "$file" ] || continue
     name="$(basename "$file")"
     case "$name" in
-      agent-driver.json|development-driver.json|palpo-transport.json|matrix.*|palpo.*|approval.*)
+      fleet-runtime.json|agent-driver.json|development-driver.json|palpo-transport.json|matrix.*|palpo.*|approval.*)
         install -m 0600 "$file" "$STATE_DIR/$name" || { echo "refused: could not install $name into $STATE_DIR" >&2; exit 1; }
         ;;
-      *) echo "refused: unexpected config file $name (allowed: agent-driver.json, palpo-transport.json, matrix.*, palpo.*, approval.*)" >&2; exit 1 ;;
+      *) echo "refused: unexpected config file $name (allowed: fleet-runtime.json, agent-driver.json, palpo-transport.json, matrix.*, palpo.*, approval.*)" >&2; exit 1 ;;
     esac
   done
+fi
+
+# Fleet mode: write and validate fleet-runtime.json unless one was supplied.
+if [ "$MODE" = fleet ] && [ ! -f "$STATE_DIR/fleet-runtime.json" ]; then
+  set -- --state-dir "$STATE_DIR" --console-assets "$CONSOLE_DIR"
+  [ -n "$CODEX" ] && set -- "$@" --codex "$CODEX"
+  [ -n "$CODEX_HOME_DIR" ] && set -- "$@" --codex-home "$CODEX_HOME_DIR"
+  [ "$NO_LOCAL_CODEX" -eq 1 ] && set -- "$@" --no-local-codex
+  "$BIN" setup "$@" || { echo "refused: hagency setup could not prepare fleet-runtime.json (see above)" >&2; exit 1; }
 fi
 
 wait_ready() {
@@ -88,13 +126,13 @@ case "$(uname -s)" in
     if [ -e "$UNIT" ] && [ "$OVERWRITE" -ne 1 ]; then
       echo "refused: $UNIT exists and --overwrite was not given" >&2; exit 1
     fi
-    sed -e "s|__INSTALL_DIR__|$INSTALL_DIR|g" -e "s|__STATE_DIR__|$STATE_DIR|g" -e "s|__USER__|$(id -un)|g" -e "s|__CONSOLE_DIR__|$CONSOLE_DIR|g" \
+    sed -e "s|__INSTALL_DIR__|$INSTALL_DIR|g" -e "s|__STATE_DIR__|$STATE_DIR|g" -e "s|__USER__|$(id -un)|g" -e "s|__CONSOLE_DIR__|$CONSOLE_DIR|g" -e "s|__AGENT_DRIVER__|${AGENT_DRIVER:-}|g" \
       "$(dirname "$0")/../deploy/hagency-native.service" > "$UNIT"
     systemctl daemon-reload
     systemctl enable --now hagency-native.service
     wait_ready curl && systemctl is-active --quiet hagency-native.service \
       || { echo "refused: unit enabled but not active after the /ready gate" >&2; exit 1; }
-    echo "installed: $UNIT (state: $STATE_DIR)"
+    echo "installed: $UNIT (state: $STATE_DIR, mode: $MODE)"
     ;;
   Darwin)
     PLIST="$HOME/Library/LaunchAgents/io.hagency.native.plist"
@@ -102,11 +140,11 @@ case "$(uname -s)" in
     if [ -e "$PLIST" ] && [ "$OVERWRITE" -ne 1 ]; then
       echo "refused: $PLIST exists and --overwrite was not given" >&2; exit 1
     fi
-    sed -e "s|__INSTALL_DIR__|$INSTALL_DIR|g" -e "s|__STATE_DIR__|$STATE_DIR|g" -e "s|__CONSOLE_DIR__|$CONSOLE_DIR|g" \
+    sed -e "s|__INSTALL_DIR__|$INSTALL_DIR|g" -e "s|__STATE_DIR__|$STATE_DIR|g" -e "s|__CONSOLE_DIR__|$CONSOLE_DIR|g" -e "s|<!--__AGENT_DRIVER_ARG__-->|${AGENT_DRIVER_ARG:-}|g" \
       "$(dirname "$0")/../deploy/io.hagency.native.plist" > "$PLIST"
     launchctl bootstrap "gui/$(id -u)" "$PLIST"
     wait_ready curl || { echo "refused: agent bootstrapped but /ready gate failed" >&2; exit 1; }
-    echo "installed: $PLIST (state: $STATE_DIR)"
+    echo "installed: $PLIST (state: $STATE_DIR, mode: $MODE)"
     echo "stop with: launchctl bootout gui/$(id -u) $PLIST  # NOT kill-by-pid; KeepAlive restarts a killed process"
     ;;
   *) echo "refused: unsupported OS $(uname -s)" >&2; exit 1 ;;

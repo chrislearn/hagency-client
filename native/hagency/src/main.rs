@@ -1,7 +1,6 @@
 #[path = "mcp/stdio.rs"]
 mod mcp_stdio;
 use clap::{Parser, Subcommand};
-use hagency_store::{DomainRepository, Repository, private};
 use std::{net::SocketAddr, path::PathBuf};
 
 #[derive(Parser)]
@@ -38,6 +37,30 @@ enum Command {
     Init {
         #[arg(long)]
         state_dir: PathBuf,
+    },
+    /// Prepare a state directory for an imported Palpo fleet: initialize it
+    /// if new, find Codex and write a validated fleet-runtime.json.
+    Setup {
+        #[arg(long)]
+        state_dir: PathBuf,
+        /// The address `serve` will listen on (loopback).
+        #[arg(long, default_value = "127.0.0.1:13300")]
+        listen: SocketAddr,
+        /// The Codex executable; found on PATH when omitted.
+        #[arg(long)]
+        codex: Option<PathBuf>,
+        /// The folder holding the Codex sign-in; $CODEX_HOME or ~/.codex when omitted.
+        #[arg(long)]
+        codex_home: Option<PathBuf>,
+        /// Run agents with <state>/runtime-home instead of this machine's Codex sign-in.
+        #[arg(long)]
+        no_local_codex: bool,
+        /// Replace an existing fleet-runtime.json (the old file is kept as a backup).
+        #[arg(long)]
+        force: bool,
+        /// The console build, only to print the exact serve command.
+        #[arg(long)]
+        console_assets: Option<PathBuf>,
     },
     /// Prepare or inspect fresh host-owned Codex credential namespaces.
     /// With --listen the command drives the RUNNING service's operator API;
@@ -250,18 +273,50 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
         #[cfg(unix)]
         Command::Guardian => return Err("guardian requires isolated synchronous startup".into()),
         Command::Init { state_dir } => {
-            private::directory(&state_dir)?;
-            if std::fs::read_dir(&state_dir)?.next().is_some() {
-                return Err("init requires empty state; no existing data will be imported".into());
-            }
-            let mut bytes = [0u8; 32];
-            getrandom::fill(&mut bytes).map_err(|_| "secure randomness unavailable")?;
-            let token: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
-            private::write_new(&state_dir.join("operator.token"), token.as_bytes())?;
-            drop(Repository::open(&state_dir)?);
-            drop(DomainRepository::open(&state_dir)?);
+            hagency::setup::init_state(&state_dir)?;
             println!(
                 "Initialized native state. Operator token is in operator.token; keep it private."
+            );
+        }
+        Command::Setup {
+            state_dir,
+            listen,
+            codex,
+            codex_home,
+            no_local_codex,
+            force,
+            console_assets,
+        } => {
+            let report = hagency::setup::run(&hagency::setup::Options {
+                state_dir: state_dir.clone(),
+                listen,
+                codex,
+                codex_home,
+                no_local_codex,
+                force,
+            })?;
+            if report.initialized {
+                println!(
+                    "Initialized {} (operator token in operator.token; keep it private).",
+                    state_dir.display()
+                );
+            }
+            println!("Codex: {}", report.executable.display());
+            println!("Wrote and validated {}", report.runtime_file.display());
+            if !report.signed_in {
+                println!(
+                    "Codex is not signed in yet. Run:\n  CODEX_HOME={} codex login",
+                    report.codex_home.display()
+                );
+            } else {
+                println!("Codex sign-in: {}", report.codex_home.display());
+            }
+            let assets = console_assets
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "<console-build>".into());
+            println!(
+                "\nNext:\n  1. hagency serve --palpo-transport --state-dir {state} --listen {listen} --console-assets {assets}\n  2. hagency console-access --state-dir {state} --listen {listen}   (open the printed link)\n  3. In the console, import the configuration you downloaded from Palpo.",
+                state = state_dir.display(),
             );
         }
         Command::Account {

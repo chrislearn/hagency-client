@@ -30,6 +30,15 @@ use std::{
     time::Duration,
 };
 
+/// Validate `<state>/fleet-runtime.json` exactly as `serve` will load it
+/// (`hagency setup` uses this). Creates the private directories the
+/// runtime needs, as `serve` would.
+pub fn check_fleet_runtime(state: &std::path::Path, address: SocketAddr) -> Result<(), Failure> {
+    // The Matrix origin only matters for request pacing, which setup never
+    // configures; the imported fleet supplies the real one at start.
+    config::load_fleet_runtime(state, address, "https://matrix.example.org").map(|_| ())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum Failure {
     /// Every configuration refusal names the field the operator must fix and
