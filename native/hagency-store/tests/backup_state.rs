@@ -52,7 +52,10 @@ fn native_backup_captures_an_initialized_state() {
             "ok",
             "{name} is not a sound snapshot"
         );
-        assert!(!out.join(format!("{name}-wal")).exists(), "{name} left a -wal");
+        assert!(
+            !out.join(format!("{name}-wal")).exists(),
+            "{name} left a -wal"
+        );
     }
 
     // And verify accepts what snapshot produced.

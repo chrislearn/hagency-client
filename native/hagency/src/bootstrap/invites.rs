@@ -107,16 +107,17 @@ pub async fn poll_round(
             .await
             .map_err(|_| "room_owner_unavailable")?;
         let trusted = owner.as_deref().is_some_and(|owner| {
-            invite.inviter.as_deref().is_some_and(|inviter| {
-                inviter.eq_ignore_ascii_case(owner)
-            })
+            invite
+                .inviter
+                .as_deref()
+                .is_some_and(|inviter| inviter.eq_ignore_ascii_case(owner))
         });
         if trusted {
             // Join now; a refusal surfaces below through the worklist
             // reconcile rather than aborting the round.
             match collector.join_room(&invite.room_id, cancel).await {
                 Ok(joined) => {
-                    bind_joined_room(&domain, collector.engagement_id(), &joined).await;
+                    bind_joined_room(domain, collector.engagement_id(), &joined).await;
                     let _ = domain
                         .settle_pending_invite(
                             invite.room_id.clone(),
@@ -166,7 +167,7 @@ pub async fn poll_round(
     {
         match collector.join_room(&room, cancel).await {
             Ok(joined) => {
-                bind_joined_room(&domain, collector.engagement_id(), &joined).await;
+                bind_joined_room(domain, collector.engagement_id(), &joined).await;
                 let _ = domain.mark_invite_joined(room, agent_name).await;
             }
             Err(_) => tracing::warn!(room, "console-accepted join refused; retrying next round"),
@@ -199,7 +200,10 @@ async fn bind_joined_room(domain: &hagency_store::DomainStore, engagement_id: &s
     let digest = Sha256::digest(room.as_bytes());
     let id = format!(
         "invite_{}",
-        digest[..8].iter().map(|b| format!("{b:02x}")).collect::<String>()
+        digest[..8]
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>()
     );
     let binding = hagency_core::tasks::SessionBinding {
         id,

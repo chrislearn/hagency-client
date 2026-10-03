@@ -44,7 +44,12 @@ async fn native_engagement_verdict_approve_reserves_and_enqueues_provision() {
     let body = listed.take_json::<Value>().await.unwrap();
     assert_eq!(body["locked"], false);
     assert_eq!(body["allocation"], json!({"kind": "project-definition"}));
-    let candidate = body["candidates"].as_array().unwrap().first().cloned().unwrap();
+    let candidate = body["candidates"]
+        .as_array()
+        .unwrap()
+        .first()
+        .cloned()
+        .unwrap();
     assert_eq!(candidate["choice"], json!({"kind": "project-definition"}));
     assert_eq!(candidate["name"], "NewUsageWorker");
     assert_eq!(candidate["resource"], "private_usage_pool");
@@ -54,15 +59,13 @@ async fn native_engagement_verdict_approve_reserves_and_enqueues_provision() {
     // console. An anonymous caller is refused before any store job; every
     // logged-in session may decide. The anonymous caller needs no ticket at
     // all (the console's authenticate hoop rejects it without a cookie).
-    let anonymous = TestClient::post(format!(
-        "{BASE}/console/api/engagements/{pending}/approve"
-    ))
-    .add_header("host", "127.0.0.1:13300", true)
-    .add_header("origin", BASE, true)
-    .add_header("sec-fetch-site", "same-origin", true)
-    .json(&json!({"commandId": "cmd_verdict_1"}))
-    .send(&service)
-    .await;
+    let anonymous = TestClient::post(format!("{BASE}/console/api/engagements/{pending}/approve"))
+        .add_header("host", "127.0.0.1:13300", true)
+        .add_header("origin", BASE, true)
+        .add_header("sec-fetch-site", "same-origin", true)
+        .json(&json!({"commandId": "cmd_verdict_1"}))
+        .send(&service)
+        .await;
     assert_eq!(anonymous.status_code, Some(StatusCode::UNAUTHORIZED));
 
     // Ticket issuance is rate-limited to one per second.
@@ -171,7 +174,7 @@ async fn native_engagement_verdict_audit_lists_newest_first() {
     tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
     let cookie = lifecycle_session(&service).await;
     let approved = f.new_engagement().await;
-    let mut response = post(
+    let response = post(
         &format!("/console/api/engagements/{approved}/approve"),
         &cookie,
     )
@@ -198,10 +201,10 @@ async fn native_engagement_verdict_audit_lists_newest_first() {
             .unwrap()
             .id
     };
-    let mut response = post(&format!("/console/api/agents/{refused}/refuse"), &cookie)
+    let response = post(&format!("/console/api/agents/{refused}/refuse"), &cookie)
         .json(&json!({"commandId": "cmd_audit_2"}))
         .send(&service)
-    .await;
+        .await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
 
     let mut listed = get("/console/api/engagements/audit", &cookie)
@@ -221,9 +224,11 @@ async fn native_engagement_verdict_audit_lists_newest_first() {
         assert!(entry["state"].is_string());
     }
     // The approval we drove is present with its retained word.
-    assert!(audit.iter().any(|e| {
-        e["type"] == "engagement.approved" && e["engagementId"] == approved.as_str()
-    }));
+    assert!(
+        audit.iter().any(|e| {
+            e["type"] == "engagement.approved" && e["engagementId"] == approved.as_str()
+        })
+    );
 
     // The retained clamp (lib/engagement-store.js:805 Math.min(limit, 2000)):
     // an over-cap limit clamps, it is never a failure state TS did not have.
@@ -244,10 +249,13 @@ async fn native_engagement_verdict_unknown_engagement_is_not_found() {
     // concurrent console tests); one ticket here, reused for the read.
     tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
     let cookie = lifecycle_session(&service).await;
-    let response = post("/console/api/engagements/en_does_not_exist/approve", &cookie)
-        .json(&json!({"commandId": "cmd_missing"}))
-        .send(&service)
-        .await;
+    let response = post(
+        "/console/api/engagements/en_does_not_exist/approve",
+        &cookie,
+    )
+    .json(&json!({"commandId": "cmd_missing"}))
+    .send(&service)
+    .await;
     assert_eq!(response.status_code, Some(StatusCode::NOT_FOUND));
     // Reads stay scope-free: the same session may read candidates.
     let response = get(

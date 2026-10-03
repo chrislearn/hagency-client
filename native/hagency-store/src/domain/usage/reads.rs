@@ -153,7 +153,11 @@ impl DomainRepository {
             // shape (`Some` of all-null kinds), which the console renders as
             // Unknown and never as a zero claiming the engagement consumed
             // nothing. One measured source is enough to publish real figures.
-            result.latest_counts = Some(if latest_measured > 0 { latest } else { unknown() });
+            result.latest_counts = Some(if latest_measured > 0 {
+                latest
+            } else {
+                unknown()
+            });
             result.known_high_water_lower_bound = Some(known);
         }
         Ok(result)

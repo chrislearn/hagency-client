@@ -146,7 +146,11 @@ impl Acl {
             .trim()
             .to_lowercase()
             == "true";
-        Self::new(list("MATRIX_OPERATOR_MXIDS"), list("MATRIX_ADMIN_MXIDS"), allow)
+        Self::new(
+            list("MATRIX_OPERATOR_MXIDS"),
+            list("MATRIX_ADMIN_MXIDS"),
+            allow,
+        )
     }
 
     /// Whether `sender` is an operator, for the `/thread` directive gate
@@ -371,9 +375,10 @@ pub fn agents(observed: &AgentsObservation, show_all: bool) -> Reply {
     if !show_all && filtered > 0 {
         lines.push(String::new());
         lines.push("Use !agents all to see all agents including offline.".to_owned());
-        html_lines
-            .push("<br><i>Use <code>!agents all</code> to see all agents including offline.</i>"
-                .to_owned());
+        html_lines.push(
+            "<br><i>Use <code>!agents all</code> to see all agents including offline.</i>"
+                .to_owned(),
+        );
     }
     Reply::rich(lines.join("\n"), html_lines.join(""))
 }
@@ -495,7 +500,10 @@ pub fn request_reply(args: &[String], outcome: Option<&RequestOutcome>) -> Reply
         return Reply::text(usage);
     };
     // `Number(String(tokensRaw).replace(/[_,]/g, ''))` (:533-536).
-    let cleaned: String = tokens_raw.chars().filter(|c| *c != '_' && *c != ',').collect();
+    let cleaned: String = tokens_raw
+        .chars()
+        .filter(|c| *c != '_' && *c != ',')
+        .collect();
     let parsed = cleaned.parse::<u64>();
     let Ok(requested_tokens) = parsed else {
         return Reply::text(format!("Not a token amount: {tokens_raw}"));
@@ -519,11 +527,7 @@ pub fn request_reply(args: &[String], outcome: Option<&RequestOutcome>) -> Reply
         // are disclosed to the borrower; the provider's deployment is not.
         let config = outcome.serving.as_ref().and_then(|s| {
             let model = s.model.as_deref()?;
-            let mut text = format!(
-                "{} · {}",
-                s.framework.as_deref().unwrap_or("?"),
-                model
-            );
+            let mut text = format!("{} · {}", s.framework.as_deref().unwrap_or("?"), model);
             if let Some(reasoning) = &s.reasoning {
                 text.push_str(&format!(" ({reasoning})"));
             }
@@ -721,9 +725,9 @@ pub fn dispatch(
         // engagement intake, then renders the reply from the outcome. The rest
         // are parsed-and-authorized verbs native has no renderer for.
         "!request" => Dispatched::Request(parsed.args),
-        "!groups" | "!group" | "!agent" | "!mcp" | "!bridge" | "!mkgroup"
-        | "!bindroom" | "!addmember" | "!rmember" | "!joingroup" | "!dm" | "!identity"
-        | "!spy" | "!rmgroup" | "!agentctl" | "!ctl" => Dispatched::Unrenderable,
+        "!groups" | "!group" | "!agent" | "!mcp" | "!bridge" | "!mkgroup" | "!bindroom"
+        | "!addmember" | "!rmember" | "!joingroup" | "!dm" | "!identity" | "!spy" | "!rmgroup"
+        | "!agentctl" | "!ctl" => Dispatched::Unrenderable,
         _ => Dispatched::Answer(unknown_command(command)),
     }
 }
@@ -869,9 +873,11 @@ mod tests {
             help.plain
                 .contains("  !spy <agent1> <agent2>         — Join an agent DM room to watch")
         );
-        assert!(help.plain.contains(
-            "  !request <role> <tokens> [per-day]  — ask this contributor for an agent"
-        ));
+        assert!(
+            help.plain.contains(
+                "  !request <role> <tokens> [per-day]  — ask this contributor for an agent"
+            )
+        );
         assert!(help.plain.ends_with("— Join an agent DM room to watch"));
         assert!(
             help.html
@@ -953,7 +959,10 @@ mod tests {
             "<span style=\"color:#69db7c\">●</span> <b>alpha</b> — <i>the planner</i><br>"
         ));
         let all = agents(&observed, true);
-        assert_eq!(all.plain, "=== All Agents ===\n● alpha — the planner\n○ beta");
+        assert_eq!(
+            all.plain,
+            "=== All Agents ===\n● alpha — the planner\n○ beta"
+        );
         assert!(
             all.html
                 .as_deref()
@@ -1125,9 +1134,18 @@ mod tests {
         assert!(!attach.plain.contains("MXID"));
         // Pending with each WHY word, and the default (:619-628).
         for (route, why) in [
-            (Some("notWhitelisted"), "this room is not on the contributor's whitelist"),
-            (Some("overOffer"), "the amount is above what they have published"),
-            (Some("overCeiling"), "the amount is above what the serving agent has left"),
+            (
+                Some("notWhitelisted"),
+                "this room is not on the contributor's whitelist",
+            ),
+            (
+                Some("overOffer"),
+                "the amount is above what they have published",
+            ),
+            (
+                Some("overCeiling"),
+                "the amount is above what the serving agent has left",
+            ),
             (None, "it needs a decision"),
         ] {
             assert_eq!(
@@ -1210,13 +1228,17 @@ mod tests {
             ..OfferBook::default()
         });
         assert!(!no_room.plain.contains("whitelisted"));
-        assert!(no_room.plain.contains("reviewer — nothing currently qualifies"));
+        assert!(
+            no_room
+                .plain
+                .contains("reviewer — nothing currently qualifies")
+        );
     }
 
-/// The command predicate that keeps a `!` line out of agent input
-/// (`bridge-matrix.js:7120-7122`).
-#[test]
-fn native_bot_command_predicate() {
+    /// The command predicate that keeps a `!` line out of agent input
+    /// (`bridge-matrix.js:7120-7122`).
+    #[test]
+    fn native_bot_command_predicate() {
         assert!(is_command("!help", "m.text"));
         assert!(is_command("  !status  ", "m.text"));
         assert!(!is_command("hello !help", "m.text"));
@@ -1270,7 +1292,13 @@ fn native_bot_command_predicate() {
         // `!request` is parsed, authorized and handed to the caller to submit
         // into the engagement intake (board #79; TS :365).
         assert_eq!(
-            dispatch("!request r 1000", "@a:example.test", &operator, false, &observed),
+            dispatch(
+                "!request r 1000",
+                "@a:example.test",
+                &operator,
+                false,
+                &observed
+            ),
             Dispatched::Request(vec!["r".to_owned(), "1000".to_owned()])
         );
         // A bridge running without a bot refuses a privileged command before

@@ -8,7 +8,7 @@
 3. Hagency 批准并创建该 agent。
 4. 有人 @ 提及 agent，并收到回复。
 
-每一步都给出要打开的文件和函数，按函数名搜索即可。ADR 位于 [knowledge/decisions](../knowledge/decisions/)。第 13 节列出代码目前实现了什么，以及哪些仍由 JavaScript 实现或尚待开发。第 14 节说明改动应放在哪里。
+每一步都给出要打开的文件和函数，按函数名搜索即可。ADR 位于 [knowledge/decisions](../knowledge/decisions/)。第 13 节列出哪些已经实现、哪些尚未实现。第 14 节说明改动应放在哪里。
 
 ## 1. 术语
 
@@ -33,20 +33,19 @@
 | 保管记录（custody） | 在外部副作用发生之前写入的持久记录，说明尝试了什么。崩溃之后，由它决定是“检查结果”还是“重新执行”。 |
 | 栅栏（fence） | 用来阻止过期工作的计数器或记录行。每个派发都带一个栅栏编号，持有旧编号的一方会被拒绝。 |
 
-## 2. 同一仓库中的两套实现
+## 2. 仓库结构
 
-本仓库包含 Hagency 的两套实现：
+| 路径 | 内容 |
+| --- | --- |
+| [native/](../native/) | Rust 工作区：`hagency` 二进制及其各 crate（第 4 节）、测试数据和 CI 检查脚本 |
+| [mockup/](../mockup/) | 控制台的 Next.js 源码。Node 只是构建工具；`hagency serve` 提供其静态导出（第 11 节） |
+| [deploy/](../deploy/)、[install/install-native.sh](../install/install-native.sh) | `hagency serve` 的 systemd unit 与 launchd plist，以及渲染它们的安装脚本 |
+| [specs/](../specs/)、[knowledge/](../knowledge/) | 与测试绑定的任务契约，以及背后的 ADR 和需求 |
+| [docs/](.) | 本导读、[使用指南](user-guide/README.zh-CN.md)、`hagency-store` 编译进去的 agent 工作区模板，以及设计历史 |
 
-| 实现 | 入口 | 运行什么 | 如何连接 Matrix |
-| --- | --- | --- | --- |
-| JavaScript | [backend-v2.js](../backend-v2.js)、[bridge-matrix.js](../bridge-matrix.js)、[push-relay.js](../push-relay.js) | tmux 窗格中的 Claude Code 和 Codex，HTTP API 位于 `:8090` | 入站 App Service 监听、edge 拉取、`/sync`，或出站 fleet 客户端（[lib/](../lib/)） |
-| 原生 Rust | [native/hagency/src/main.rs](../native/hagency/src/main.rs) → `hagency serve` | 由 guardian 托管的 Codex `app-server` 进程，只占一个回环端口（默认 `127.0.0.1:13300`） | 只有出站：对 Palpo fleet API 的长轮询，加上每个 agent 各自的 `/sync` |
+服务以 `hagency serve --agent-driver --palpo-transport --console-assets …` 的形式运行在 [deploy/hagency-native.service](../deploy/hagency-native.service)（Linux）或 [deploy/io.hagency.native.plist](../deploy/io.hagency.native.plist)（macOS）之下，只占一个回环端口（默认 `127.0.0.1:13300`），并且只通过出站连接访问 Palpo 和 Matrix。
 
-使用指南中连接 Palpo 的产品就是原生服务。[install/install-native.sh](../install/install-native.sh) 把它安装为 [deploy/hagency-native.service](../deploy/hagency-native.service)（Linux）或 [deploy/io.hagency.native.plist](../deploy/io.hagency.native.plist)（macOS），两者都运行 `hagency serve --agent-driver --palpo-transport --console-assets …`。
-
-根目录的 [README](../README.md) 描述的是 tmux 产品。对于原生服务，本文档取代 [native/README.md](../native/README.md)。
-
-有几项行为只存在于 JavaScript 中，第 13 节列出了它们。本文其余部分描述原生服务。
+代码注释中带行号引用的 `backend-v2.js`、`bridge-matrix.js` 和 `lib/*.js`，指的是被本服务取代的早期 JavaScript 实现；这些文件保留在 git 历史中。
 
 ## 3. 从可执行文件开始
 
@@ -507,7 +506,7 @@ flowchart LR
 
 HTTP 服务器最后停止，有 5 秒宽限期。
 
-## 13. 已实现、仅 JavaScript 实现、尚未实现
+## 13. 已实现与尚未实现
 
 使用指南中的“已知限制”是面向用户的清单；某项缺口补上时，请同步更新两处。
 
@@ -516,10 +515,10 @@ HTTP 服务器最后停止，有 5 秒宽限期。
 | Codex runner、Palpo 出站传输、agent 创建、所有者审批、额度暂停与追加、文件发送 | 原生已实现 |
 | Claude runner | 已有运行时协议代码；启动会被拒绝（`UnsupportedRunner`） |
 | agent 处理自己收到的邀请 | 尚未实现；只轮询 coordinator 收到的邀请 |
-| 在 Palpo 上退役 agent 账号（`retire-agent`） | 仅 JavaScript 实现（`lib/palpo-agent-retirement.js`）；原生只退出房间并注销 |
-| 在申请房间发送批准通知（“已批准 / Approved”） | 构建函数已存在（`bootstrap/engagement_notice.rs`），但没有调用方；JavaScript 会发送 |
-| 批准时检查项目方预算 | 仅 JavaScript 实现（`refuseOverSideAllocation`）；原生只保存并显示项目方预算 |
-| 入站 App Service 监听、edge 中转、Agent Ops 客户端（ADR-012） | 仅 JavaScript 实现 |
+| 在 Palpo 上退役 agent 账号（`retire-agent`） | 尚未实现；退役只退出房间并注销设备 |
+| 在申请房间发送批准通知（“已批准 / Approved”） | 构建函数已存在（`bootstrap/engagement_notice.rs`），但没有调用方 |
+| 批准时检查项目方预算 | 尚未实现；项目方预算只保存和显示 |
+| 入站 App Service 监听、Agent Ops 客户端（ADR-012） | 尚未实现；只通过出站连接访问 Matrix |
 | `!` 命令 | 原生处理 `!help`、`!offer`、`!request`、`!status`、`!agents`、`!sessions`；`bot_commands.rs` 中的权限表接受其余命令，但不会回复 |
 | 联邦 | 按设计拒绝；fleet 假定 homeserver 不启用联邦 |
 | runner 沙箱的实际效果 | 已请求并校验回显；各操作系统上的资格验证仍未完成（`hagency-execution/src/lib.rs`） |
@@ -548,6 +547,5 @@ HTTP 服务器最后停止，有 5 秒宽限期。
 ## 15. 延伸阅读
 
 - [user-guide/README.zh-CN.md](user-guide/README.zh-CN.md)：从用户角度看同一流程。
-- [FOR-PROJECT-SIDES.md](FOR-PROJECT-SIDES.md)：homeserver 运维方必须完成的配置。
 - [knowledge/decisions](../knowledge/decisions/) 中的 ADR-002（所有者）、ADR-016（项目方）、ADR-023（房间上下文与私聊）、ADR-025（由项目定义 agent）、ADR-184（密钥登记顺序）和 ADR-186（额度暂停）。
 - [specs/](../specs/)：把每项行为绑定到测试的任务契约。

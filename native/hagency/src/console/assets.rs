@@ -165,7 +165,10 @@ impl Assets {
             let key = if entry.path == "index.html" {
                 "/console/".into()
             } else if document(&entry.path) {
-                format!("/console/{}", &entry.path[..entry.path.len() - "index.html".len()])
+                format!(
+                    "/console/{}",
+                    &entry.path[..entry.path.len() - "index.html".len()]
+                )
             } else {
                 format!("/console/{}", entry.path)
             };

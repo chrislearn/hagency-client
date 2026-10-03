@@ -42,11 +42,22 @@ async fn native_console_pending_invites_list_and_decide() {
     assert_eq!(body["pending"], 1);
     let row = &body["invites"][0];
     // The TS backend's exact eight keys, camelCase, and their values.
-    let keys: Vec<&str> = row.as_object().unwrap().keys().map(|k| k.as_str()).collect();
+    let keys: Vec<&str> = row
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(|k| k.as_str())
+        .collect();
     let mut sorted = keys.clone();
     sorted.sort_unstable();
     let mut expected = [
-        "projectRoomId", "agent", "inviter", "projectServer", "state", "seenAt", "decidedAt",
+        "projectRoomId",
+        "agent",
+        "inviter",
+        "projectServer",
+        "state",
+        "seenAt",
+        "decidedAt",
         "decidedBy",
     ];
     expected.sort_unstable();
@@ -96,7 +107,11 @@ async fn native_console_pending_invites_list_and_decide() {
     assert_eq!(body["invite"]["decidedBy"], json!("operator"));
     // The worklist carries the join for the next poll round.
     assert_eq!(
-        f.domain.join_pending_invites(AGENT.into()).await.unwrap().len(),
+        f.domain
+            .join_pending_invites(AGENT.into())
+            .await
+            .unwrap()
+            .len(),
         1
     );
     // The list no longer shows it: pending-only.

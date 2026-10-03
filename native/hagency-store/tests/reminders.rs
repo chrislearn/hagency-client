@@ -105,10 +105,9 @@ impl Fixture {
 fn native_reminder_schedule_list_fire_delete() {
     let mut f = Fixture::new();
     // Schedule: positive delay, valid msg.
-    let receipt = f
-        .db
-        .schedule_reminder(&f.cap, "第一件事", 5_000, 2000)
-        .unwrap();
+    let receipt =
+        f.db.schedule_reminder(&f.cap, "第一件事", 5_000, 2000)
+            .unwrap();
     assert_eq!(receipt.remaining_ms, 5_000);
     assert_eq!(receipt.fire_at, 7_000);
     // Listed before firing.
@@ -117,8 +116,7 @@ fn native_reminder_schedule_list_fire_delete() {
     assert_eq!(listed[0].msg, "第一件事");
     assert!(listed[0].fired_at.is_none());
     // A second reminder, then fire only the due one.
-    f.db
-        .schedule_reminder(&f.cap, "第二件事", 5_000, 2000)
+    f.db.schedule_reminder(&f.cap, "第二件事", 5_000, 2000)
         .unwrap();
     // Not due yet at fire time 3000 < 7000.
     let sweep = f.db.fire_reminders(3_000, 512).unwrap();
@@ -140,10 +138,11 @@ fn native_reminder_schedule_list_fire_delete() {
             .unwrap()
     };
     assert!(rows.iter().all(|(_, wake)| *wake));
-    assert!(rows
-        .iter()
-        .any(|(config, _)| config.contains("[Self Time Reminder]")
-            && config.contains("Msg: 第一件事")));
+    assert!(
+        rows.iter()
+            .any(|(config, _)| config.contains("[Self Time Reminder]")
+                && config.contains("Msg: 第一件事"))
+    );
     // Re-firing is idempotent: fired_at is set, nothing is re-woken.
     let sweep = f.db.fire_reminders(9_000, 512).unwrap();
     assert_eq!(sweep.fired, 0);
@@ -162,19 +161,13 @@ fn native_reminder_refuses_bad_input() {
     let mut f = Fixture::new();
     // Missing msg (empty), zero/overflow delay.
     assert!(f.db.schedule_reminder(&f.cap, "", 1_000, 2000).is_err());
-    assert!(f
-        .db
-        .schedule_reminder(&f.cap, "ok", 0, 2000)
-        .is_err());
-    assert!(f
-        .db
-        .schedule_reminder(&f.cap, "ok", JSON_SAFE_MAX + 1, 2000)
-        .is_err());
+    assert!(f.db.schedule_reminder(&f.cap, "ok", 0, 2000).is_err());
+    assert!(
+        f.db.schedule_reminder(&f.cap, "ok", JSON_SAFE_MAX + 1, 2000)
+            .is_err()
+    );
     // A foreign capability cannot schedule (authorize_work fails).
     let mut foreign = f.cap.clone();
     foreign.secret = "0".repeat(64);
-    assert!(f
-        .db
-        .schedule_reminder(&foreign, "ok", 1_000, 2000)
-        .is_err());
+    assert!(f.db.schedule_reminder(&foreign, "ok", 1_000, 2000).is_err());
 }

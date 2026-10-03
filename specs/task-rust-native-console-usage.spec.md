@@ -89,13 +89,20 @@ Scenario: Lock contention cannot extend ticket or session authority
   When absolute expiry passes before that mutex becomes available
   Then the production clock is sampled after acquisition and the credential is refused
 
-Scenario: Ticket and session clocks enforce finite capacity
-  Test: native_console_finite_clock
+Scenario: A console link is reusable and its login does not expire on a timer
+  Test: native_console_login_is_reusable
   Level: unit
-  Test Double: production authority methods with deterministic monotonic clock values
-  Given finite issuance tickets and four session slots
-  When ticket replacement expiry session expiry or retirement occurs
-  Then stale credentials never regain authority or reset the absolute lifetime
+  Given one issued console link
+  When it is exchanged more than once and the logins are used later
+  Then every exchange yields a working login and no rate limit or session cap refuses it
+
+Scenario: Console logins survive a restart until revoked
+  Test: native_console_logins_survive_a_restart
+  Level: unit
+  Given a link and a login persisted in the state directory
+  When the authority is reopened, the login is revoked, and the authority is reopened again
+  Then the login works after the first restart and is refused after revocation
+  And a login made from the same link before revocation still works
 
 Scenario: Browser authority has finite isolated scope
   Test: native_console_authority

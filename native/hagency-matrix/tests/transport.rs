@@ -8,7 +8,7 @@ use std::{sync::Arc, time::Duration};
 #[tokio::test]
 async fn native_matrix_transport_identity_authenticated_https_and_sdk_restart() {
     let mut fake = Fake::start(true).await;
-    let mut f = Fixture::new();
+    let f = Fixture::new();
     let cancel = CancellationToken::new();
     let untrusted = Collector::new(f.config(&fake.endpoint), f.store.clone()).unwrap();
     assert_eq!(untrusted.collect(&cancel).await, Err(Error::Transport));

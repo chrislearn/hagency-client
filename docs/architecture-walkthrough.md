@@ -8,7 +8,7 @@ This walkthrough is for developers who will change the native Rust service in `n
 3. Hagency approves the agent and provisions it.
 4. A person @-mentions the agent and gets a reply.
 
-Each step names the file and function to open; search for the function name. ADRs live in [knowledge/decisions](../knowledge/decisions/). Section 13 lists what the code carries out today and what it leaves to the JavaScript implementation or to later work. Section 14 says where to make a change.
+Each step names the file and function to open; search for the function name. ADRs live in [knowledge/decisions](../knowledge/decisions/). Section 13 lists what is implemented and what is not built yet. Section 14 says where to make a change.
 
 ## 1. Vocabulary
 
@@ -33,20 +33,19 @@ Each step names the file and function to open; search for the function name. ADR
 | Custody | A durable record, written before an external side effect, that says what was attempted. After a crash it decides between "inspect" and "do again". |
 | Fence | A counter or row that stops stale work. A dispatch carries a fence number. Anything holding an older number is refused. |
 
-## 2. Two implementations share this repository
+## 2. Repository layout
 
-The repository holds two implementations of Hagency:
+| Path | Contents |
+| --- | --- |
+| [native/](../native/) | The Rust workspace: the `hagency` binary and its crates (section 4), test fixtures and CI gate scripts |
+| [mockup/](../mockup/) | The console's Next.js source. Node is a build-time tool; `hagency serve` serves the static export (section 11) |
+| [deploy/](../deploy/), [install/install-native.sh](../install/install-native.sh) | The systemd unit and launchd plist for `hagency serve`, and the installer that renders them |
+| [specs/](../specs/), [knowledge/](../knowledge/) | Task contracts bound to tests, and the ADRs and requirements behind them |
+| [docs/](.) | This walkthrough, the [user guide](user-guide/README.md), the agent workspace templates that `hagency-store` compiles in, and design history |
 
-| Implementation | Entry point | What it runs | How it reaches Matrix |
-| --- | --- | --- | --- |
-| JavaScript | [backend-v2.js](../backend-v2.js), [bridge-matrix.js](../bridge-matrix.js), [push-relay.js](../push-relay.js) | Claude Code and Codex in tmux panes, with an HTTP API on `:8090` | Inbound App Service listener, edge puller, `/sync`, or outbound fleet client ([lib/](../lib/)) |
-| Native Rust | [native/hagency/src/main.rs](../native/hagency/src/main.rs) → `hagency serve` | Codex `app-server` processes under a guardian, one loopback port (`127.0.0.1:13300` by default) | Outbound only: a long poll to Palpo's fleet API plus per-agent `/sync` |
+The service runs as `hagency serve --agent-driver --palpo-transport --console-assets …` under [deploy/hagency-native.service](../deploy/hagency-native.service) (Linux) or [deploy/io.hagency.native.plist](../deploy/io.hagency.native.plist) (macOS), on one loopback port (`127.0.0.1:13300` by default). It reaches Palpo and Matrix only through outbound connections.
 
-The Palpo-connected product in the user guide is the native service. [install/install-native.sh](../install/install-native.sh) installs it as [deploy/hagency-native.service](../deploy/hagency-native.service) (Linux) or [deploy/io.hagency.native.plist](../deploy/io.hagency.native.plist) (macOS), both running `hagency serve --agent-driver --palpo-transport --console-assets …`.
-
-The root [README](../README.md) describes the tmux product. For the native service, this document supersedes [native/README.md](../native/README.md).
-
-Several behaviours exist only in JavaScript. Section 13 lists them. The rest of this document describes the native service.
+Comments in the code cite `backend-v2.js`, `bridge-matrix.js` and `lib/*.js` with line numbers. Those cite the earlier JavaScript implementation that this service replaced; the files are in git history.
 
 ## 3. Start at the executable
 
@@ -507,7 +506,7 @@ flowchart LR
 
 The HTTP server stops last, with a 5 s grace period.
 
-## 13. Implemented, JavaScript-only, and not built yet
+## 13. Implemented and not built yet
 
 The user guide's "Known limitations" is the user-facing list; keep the two in step when a gap closes.
 
@@ -516,10 +515,10 @@ The user guide's "Known limitations" is the user-facing list; keep the two in st
 | Codex runner, Palpo outbound transport, provisioning, owner approvals, quota pause and top-up, file delivery | Implemented in native |
 | Claude runner | Runtime protocol code exists; launch is refused (`UnsupportedRunner`) |
 | Agents acting on their own invites | Not built; only the coordinator's invites are polled |
-| Retiring an agent's account on Palpo (`retire-agent`) | JavaScript only (`lib/palpo-agent-retirement.js`); native leaves rooms and logs out |
-| Approval notice in the request room ("已批准 / Approved") | Builder exists (`bootstrap/engagement_notice.rs`) with no caller; JavaScript sends it |
-| Project-side budget check at approval | JavaScript only (`refuseOverSideAllocation`); native stores and shows the side budget |
-| Inbound App Service listener, edge doorway, Agent Ops client (ADR-012) | JavaScript only |
+| Retiring an agent's account on Palpo (`retire-agent`) | Not built; retirement leaves rooms and logs the device out |
+| Approval notice in the request room ("已批准 / Approved") | Builder exists (`bootstrap/engagement_notice.rs`) with no caller |
+| Project-side budget check at approval | Not built; the side budget is stored and shown only |
+| Inbound App Service listener, Agent Ops client (ADR-012) | Not built; Matrix is reached outbound only |
 | `!` commands | Native handles `!help`, `!offer`, `!request`, `!status`, `!agents`, `!sessions`; the ACL in `bot_commands.rs` accepts the rest, which produce no reply |
 | Federation | Refused by design; the fleet assumes a non-federating homeserver |
 | Effective runner sandbox | Requested and echo-checked; qualification on each OS is still open (`hagency-execution/src/lib.rs`) |
@@ -548,6 +547,5 @@ The user guide's "Known limitations" is the user-facing list; keep the two in st
 ## 15. Where to go next
 
 - [user-guide/README.md](user-guide/README.md): the same flow from the user's side.
-- [FOR-PROJECT-SIDES.md](FOR-PROJECT-SIDES.md): what a homeserver operator must configure.
 - ADR-002 (owner), ADR-016 (project sides), ADR-023 (room context and DMs), ADR-025 (project-defined agents), ADR-184 (key enrollment order) and ADR-186 (allocation pause) in [knowledge/decisions](../knowledge/decisions/).
 - [specs/](../specs/): the task contracts that bind each behaviour to tests.

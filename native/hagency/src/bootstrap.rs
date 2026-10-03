@@ -8,10 +8,10 @@ pub mod fleet;
 pub mod intake_refusal;
 pub mod invites;
 pub(crate) mod palpo;
-mod palpo_work;
-pub mod provision;
-pub mod probe;
 pub mod palpo_import;
+mod palpo_work;
+pub mod probe;
+pub mod provision;
 pub mod registration;
 pub(crate) mod workspace;
 use approval::Pump;
@@ -1025,8 +1025,7 @@ pub fn start_reminder_sweep(
     tokio::task::JoinHandle<()>,
     tokio::sync::watch::Receiver<ReminderSweepTick>,
 ) {
-    let (sender, observed) =
-        tokio::sync::watch::channel(ReminderSweepTick::Refused("unstarted"));
+    let (sender, observed) = tokio::sync::watch::channel(ReminderSweepTick::Refused("unstarted"));
     let handle = tokio::spawn(async move {
         let mut interval = tokio::time::interval(period);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -1043,7 +1042,9 @@ pub fn start_reminder_sweep(
             let tick = match domain.fire_reminders(now, 512).await {
                 Ok(outcome) => ReminderSweepTick::Swept(outcome),
                 Err(hagency_store::Error::Busy) => {
-                    tracing::warn!("[reminder] sweep tick refused: busy; waiting for the next tick");
+                    tracing::warn!(
+                        "[reminder] sweep tick refused: busy; waiting for the next tick"
+                    );
                     ReminderSweepTick::Refused("busy")
                 }
                 Err(hagency_store::Error::OutcomeUnknown) => {
@@ -1463,19 +1464,18 @@ impl Bootstrap {
                             field: "agent-driver.json: managed_account",
                             fix: "the named managed account must exist in the store",
                         })?;
-                    prepared.claim = account
-                        .bind_claim_profile(prepared.claim)
-                        .map_err(|_| Failure::Config {
+                    prepared.claim = account.bind_claim_profile(prepared.claim).map_err(|_| {
+                        Failure::Config {
                             field: "agent-driver.json: managed_account",
                             fix: "the claim profile must bind to the managed account",
-                        })?;
-                    prepared.host = prepared
-                        .host
-                        .with_managed_account(account)
-                        .map_err(|_| Failure::Config {
+                        }
+                    })?;
+                    prepared.host = prepared.host.with_managed_account(account).map_err(|_| {
+                        Failure::Config {
                             field: "agent-driver.json: managed_account",
                             fix: "the host must accept the managed account credential",
-                        })?;
+                        }
+                    })?;
                 }
                 Ok::<_, Failure>(prepared)
             })
@@ -1521,14 +1521,13 @@ impl Bootstrap {
         // — never mint a second login. An approval-only host has no ordinary
         // agent transport and passes `None`, keeping the bot's own sender.
         let agent_transport = shared.as_ref().map(|shared| shared.collector.clone());
-        let approval = approval_collector
-            .map(|collector| {
-                Arc::new(approval::Pump::new(
-                    collector,
-                    agent_transport,
-                    domain.clone(),
-                ))
-            });
+        let approval = approval_collector.map(|collector| {
+            Arc::new(approval::Pump::new(
+                collector,
+                agent_transport,
+                domain.clone(),
+            ))
+        });
         tracing::trace!(target: "hagency_startup_observation", "native startup boundary: files_entered");
         let files = match (&shared, prepared.as_mut().and_then(|p| p.files.take())) {
             (Some(shared), Some(setup)) => Some(
@@ -1805,11 +1804,8 @@ impl Bootstrap {
         // Board #53: the reminder due loop, beside the ceiling and retention
         // tasks — same `start_*_sweep` shape, 1 s cadence (the TS
         // `processDueReminders` interval).
-        let (reminder_sweep, _reminder_tick) = start_reminder_sweep(
-            self.domain.clone(),
-            shutdown.clone(),
-            REMINDER_SWEEP_PERIOD,
-        );
+        let (reminder_sweep, _reminder_tick) =
+            start_reminder_sweep(self.domain.clone(), shutdown.clone(), REMINDER_SWEEP_PERIOD);
         self.reminder_sweep = Some(std::sync::Arc::new(reminder_sweep));
         tracing::trace!(target: "hagency_startup_observation", "native startup boundary: server_poll_entered");
         let server = Server::new(acceptor).max_connections(64);

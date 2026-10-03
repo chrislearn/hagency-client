@@ -758,7 +758,8 @@ fn native_ceiling_alert_schema_upgrade() {
     drop(db);
     let state = root.path().join("state");
     let sql = Connection::open(state.join("domain.sqlite3")).unwrap();
-    sql.execute_batch("DROP TABLE ceiling_alerts; DROP TABLE IF EXISTS room_trust;").unwrap();
+    sql.execute_batch("DROP TABLE ceiling_alerts; DROP TABLE IF EXISTS room_trust;")
+        .unwrap();
     sql.execute_batch(include_str!("../src/migrations/024-ceiling-alerts.sql"))
         .unwrap();
     // One open row (the captured overrun, verbatim) and one resolved row,

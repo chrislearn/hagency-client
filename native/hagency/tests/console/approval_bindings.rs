@@ -120,7 +120,11 @@ async fn native_console_approval_bindings_list() {
         "/console/api/approval-bindings?projectRoomId=!private:example.test",
     ] {
         let response = get(path, &cookie).send(&service).await;
-        assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST), "{path}");
+        assert_eq!(
+            response.status_code,
+            Some(StatusCode::BAD_REQUEST),
+            "{path}"
+        );
     }
     f.close().await;
 }
@@ -283,7 +287,10 @@ async fn native_console_approval_binding_unbind_revokes() {
 /// route is the SAFETY half only. The load-bearing refusal (TS :11537-11550):
 /// `projectSide` in the body is refused, never silently dropped; every other
 /// field is refused because there is nothing to apply it to.
-fn runner_patch(path: &str, cap: &hagency_core::tasks::RunnerCapability) -> salvo::test::RequestBuilder {
+fn runner_patch(
+    path: &str,
+    cap: &hagency_core::tasks::RunnerCapability,
+) -> salvo::test::RequestBuilder {
     TestClient::patch(format!("{BASE}{path}"))
         .add_header("host", "127.0.0.1:13300", true)
         .add_header("authorization", format!("Bearer {}", cap.secret), true)
@@ -362,13 +369,12 @@ async fn native_runner_agent_self_update_refusals() {
             .json(&json!({key: "matrix.example.test"}))
             .send(&service)
             .await;
-        assert_eq!(
-            response.status_code,
-            Some(StatusCode::BAD_REQUEST),
-            "{key}"
-        );
+        assert_eq!(response.status_code, Some(StatusCode::BAD_REQUEST), "{key}");
         let body = response.take_string().await.unwrap();
-        assert!(body.contains("project_side_not_settable_here"), "{key}: {body}");
+        assert!(
+            body.contains("project_side_not_settable_here"),
+            "{key}: {body}"
+        );
         // Lesson (first LIVE run): a refusal must say WHAT was refused and WHY,
         // never fall through to the generic word. The reason names the field
         // and the offending route class, and the remedy points at the operator
@@ -403,4 +409,3 @@ async fn native_runner_agent_self_update_refusals() {
     );
     f.close().await;
 }
-

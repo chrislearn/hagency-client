@@ -346,7 +346,10 @@ async fn run_continuous(input: Attempt<'_>) -> Result<Option<Box<Report>>, Failu
                 .reconcile_agent_profile(&engagement, input.cancel)
                 .await
         {
-            tracing::warn!(?error, "agent display-name reconcile refused; the worker continues");
+            tracing::warn!(
+                ?error,
+                "agent display-name reconcile refused; the worker continues"
+            );
         }
         let outcome = run(Attempt {
             domain: input.domain,
@@ -846,7 +849,10 @@ async fn run(input: Attempt<'_>) -> Result<Option<Completed>, Failure> {
     if let RuntimeOwner::Factory(agent) = &*owner {
         let engagement = agent.session().engagement_id.clone();
         if let Err(error) = notice::deliver(domain, collector, &engagement, cancel, None).await {
-            tracing::warn!(?error, "started activity notice refused; the attempt continues");
+            tracing::warn!(
+                ?error,
+                "started activity notice refused; the attempt continues"
+            );
         }
     }
     if cancel.is_cancelled() {

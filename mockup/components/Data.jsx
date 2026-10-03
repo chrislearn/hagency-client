@@ -117,6 +117,11 @@ function NativeDataProvider({ children }) {
   const generation = useRef(0);
   const inFlight = useRef(0);
   const admitted = useRef(false);
+  /* The live stream is open only while the console is admitted. EventSource
+   * reconnects on its own, so a stream left open after End access would send
+   * the dead credential again (the regression lane counts such reads). */
+  const [streamOpen, setStreamOpen] = useState(false);
+  const admit = (value) => { admitted.current = value; setStreamOpen(value); };
   const logoutPending = useRef(Promise.resolve());
   const endingAccess = useRef(false);
   const cursor = useRef('');
@@ -202,7 +207,7 @@ function NativeDataProvider({ children }) {
       return value;
     } catch (error) {
       if (mine !== generation.current) return;
-      if (error.message === 'console_access_required') admitted.current = false;
+      if (error.message === 'console_access_required') admit(false);
       setState((s) => ['native_unavailable', 'busy'].includes(error.message) && s.requestKey === requestKey && ['ready', 'stale'].includes(s.phase)
         ? { ...s, phase: 'stale', refreshing: false, error: error.message }
         : { ...initial, phase: error.message === 'console_access_required' ? 'access' : 'error', error: error.message });
@@ -213,12 +218,12 @@ function NativeDataProvider({ children }) {
     const enter = async () => {
       const mine = ++generation.current;
       admissionEpoch.current += 1;
-      admitted.current = false;
+      admit(false);
       setLogoutStatus(null); setAction(null);
       setState({ ...initial });
       try {
         await exchangeAccess(window.location, window.history, logoutPending.current);
-        if (!stopped && mine === generation.current) { admitted.current = true; ready.current.settle(); await load(''); }
+        if (!stopped && mine === generation.current) { admit(true); ready.current.settle(); await load(''); }
       } catch (error) { if (!stopped && mine === generation.current) setState({ ...initial, phase: 'access', error: error.message }); }
       /*
        * Settle `ready` on BOTH outcomes. A page that reads for itself must not
@@ -253,7 +258,7 @@ function NativeDataProvider({ children }) {
   useLiveStream((category) => {
     if (!['agents', 'tasks', 'alerts'].includes(category)) return;
     liveRefresh.current();
-  }, NATIVE_MODE);
+  }, NATIVE_MODE && streamOpen);
   const choose = (value) => {
     if (configurationView(window.location)) {
       window.history.pushState(window.history.state, '', `/console/resources/new/?source_resource_id=${encodeURIComponent(value)}`);
@@ -266,7 +271,7 @@ function NativeDataProvider({ children }) {
   const logout = async () => {
     if (endingAccess.current) return;
     endingAccess.current = true;
-    admitted.current = false;
+    admit(false);
     admissionEpoch.current += 1;
     const mine = ++generation.current;
     setLogoutStatus('pending');
@@ -293,7 +298,7 @@ function NativeDataProvider({ children }) {
       if (epoch !== admissionEpoch.current) return;
       const kind = error.message === 'resource_revision_conflict' ? 'conflict' : error.message === 'busy' ? 'busy' : ['outcome_unknown', 'native_unavailable', 'invalid_native_response'].includes(error.message) ? 'unknown' : 'refused';
       setAction({ ...identity, kind, error: error.message });
-      if (error.message === 'console_access_required') { admitted.current = false; generation.current += 1; setState({ ...initial, phase: 'access', error: error.message }); }
+      if (error.message === 'console_access_required') { admit(false); generation.current += 1; setState({ ...initial, phase: 'access', error: error.message }); }
     } finally { mutation.current = false; }
   };
   const configure = async (resource, changes) => {
@@ -311,7 +316,7 @@ function NativeDataProvider({ children }) {
       if (epoch !== admissionEpoch.current) return;
       const kind = error.message === 'resource_revision_conflict' ? 'conflict' : error.message === 'busy' ? 'busy' : ['outcome_unknown', 'native_unavailable', 'invalid_native_response'].includes(error.message) ? 'unknown' : 'refused';
       setAction({ ...identity, kind, error: error.message });
-      if (error.message === 'console_access_required') { admitted.current = false; generation.current += 1; setState({ ...initial, phase: 'access', error: error.message }); }
+      if (error.message === 'console_access_required') { admit(false); generation.current += 1; setState({ ...initial, phase: 'access', error: error.message }); }
     } finally { mutation.current = false; }
   };
   /* One display-state transition on an alert (ADR-124 amendment). The
@@ -332,7 +337,7 @@ function NativeDataProvider({ children }) {
       if (epoch !== admissionEpoch.current) return;
       const kind = error.message === 'bad_transition' ? 'refused' : error.message === 'busy' ? 'busy' : ['outcome_unknown', 'native_unavailable', 'invalid_native_response'].includes(error.message) ? 'unknown' : 'refused';
       setAction({ ...identity, kind, error: error.message });
-      if (error.message === 'console_access_required') { admitted.current = false; generation.current += 1; setState({ ...initial, phase: 'access', error: error.message }); }
+      if (error.message === 'console_access_required') { admit(false); generation.current += 1; setState({ ...initial, phase: 'access', error: error.message }); }
     } finally { mutation.current = false; }
   };
   return <DataContext.Provider value={{ ...state, action, publish, configure, transition, logoutStatus, ready: ready.current.promise, choose, refresh: () => load(), nextPage: () => load(state.next_after), firstPage: () => load(''), logout }}>{children}</DataContext.Provider>;

@@ -1,7 +1,10 @@
 use super::*;
 use crate::collector::observation::{Phase as ObservationPhase, Trace, observed};
 use crate::{HostConfig, HostIdentity, HostIntakePlan, HostRoom, collector::fixtures as common};
-use hagency_core::{commands::CommandNoticeRequest, ingress::VerifiedTaskRequest, task_intents::TaskDefinition, tasks::*};
+use hagency_core::{
+    commands::CommandNoticeRequest, ingress::VerifiedTaskRequest, task_intents::TaskDefinition,
+    tasks::*,
+};
 use serde_json::{Value, json};
 use std::{
     sync::atomic::Ordering,
@@ -57,10 +60,7 @@ async fn scripted<T: std::fmt::Debug, S: std::future::Future>(
     assert!(trace.has(ObservationPhase::OwnerReturned));
     result
 }
-async fn ready(
-    encrypted: bool,
-    direct: bool,
-) -> (common::Fixture, common::Fake, Collector) {
+async fn ready(encrypted: bool, direct: bool) -> (common::Fixture, common::Fake, Collector) {
     ready_named(encrypted, direct, "outgoing bootstrap", None).await
 }
 /// Board #61 row 3: like `ready` but the collector carries the representative
@@ -265,8 +265,14 @@ fn native_matrix_activity_envelope_first_send_and_edit() {
     // relation intact, activity key intact — no replace relation (TS
     // matrix-activity.js builds `next` before adding the replace link).
     assert_eq!(edit["m.new_content"]["body"], plain["body"]);
-    assert_eq!(edit["m.new_content"]["m.relates_to"]["rel_type"], "m.thread");
-    assert_eq!(edit["m.new_content"]["io.hagency.activity"]["dispatch_id"], "run_1");
+    assert_eq!(
+        edit["m.new_content"]["m.relates_to"]["rel_type"],
+        "m.thread"
+    );
+    assert_eq!(
+        edit["m.new_content"]["io.hagency.activity"]["dispatch_id"],
+        "run_1"
+    );
     assert!(edit["m.new_content"].get("m.replace").is_none());
     assert_eq!(edit["m.relates_to"]["rel_type"], "m.replace");
     assert_eq!(edit["m.relates_to"]["event_id"], "$activity_first");
@@ -351,16 +357,24 @@ async fn native_matrix_outgoing_kicked_agent_rejoins_and_the_message_is_delivere
         // retained invite-then-join pair): POST /join as the agent itself.
         let r = fake.next().await;
         assert_eq!(r.method, "POST");
-        assert!(r.target.contains("/_matrix/client/v3/join/!project:example.test"));
-        assert_eq!(r.headers["authorization"], format!("Bearer {}", common::TOKEN));
+        assert!(
+            r.target
+                .contains("/_matrix/client/v3/join/!project:example.test")
+        );
+        assert_eq!(
+            r.headers["authorization"],
+            format!("Bearer {}", common::TOKEN)
+        );
         r.json(200, json!({"room_id": "!project:example.test"}));
         // The resend: the very write the kick interrupted, SAME transaction
         // id — a server that somehow accepted before refusing dedupes.
         let resent = fake.next().await;
         assert_eq!(resent.method, "PUT");
-        assert!(resent
-            .target
-            .ends_with(&format!("/send/m.room.message/{transaction}")));
+        assert!(
+            resent
+                .target
+                .ends_with(&format!("/send/m.room.message/{transaction}"))
+        );
         let body: Value = serde_json::from_slice(&resent.body).unwrap();
         resent.json(200, json!({"event_id": "$rejoined"}));
         assert_eq!(body["body"], "Answer **verified** 中文");
@@ -414,15 +428,23 @@ async fn native_matrix_outgoing_kicked_agent_is_reinvited_by_the_representative_
         // The rejoin (bridge-matrix.js:10936-10943): POST /join as the agent.
         let join = fake.next().await;
         assert_eq!(join.method, "POST");
-        assert!(join.target.contains("/_matrix/client/v3/join/!project:example.test"));
-        assert_eq!(join.headers["authorization"], format!("Bearer {}", common::TOKEN));
+        assert!(
+            join.target
+                .contains("/_matrix/client/v3/join/!project:example.test")
+        );
+        assert_eq!(
+            join.headers["authorization"],
+            format!("Bearer {}", common::TOKEN)
+        );
         join.json(200, json!({"room_id": "!project:example.test"}));
         // The resend: the same write, same transaction id.
         let resent = fake.next().await;
         assert_eq!(resent.method, "PUT");
-        assert!(resent
-            .target
-            .ends_with(&format!("/send/m.room.message/{transaction}")));
+        assert!(
+            resent
+                .target
+                .ends_with(&format!("/send/m.room.message/{transaction}"))
+        );
         resent.json(200, json!({"event_id": "$reinvited"}));
     })
     .await;
@@ -535,7 +557,10 @@ async fn native_matrix_outgoing_incidental_group_answer_starts_a_thread_at_the_q
     assert_eq!(body["m.relates_to"]["rel_type"], "m.thread");
     assert_eq!(body["m.relates_to"]["event_id"], "$question");
     assert_eq!(body["m.relates_to"]["is_falling_back"], true);
-    assert_eq!(body["m.relates_to"]["m.in_reply_to"]["event_id"], "$question");
+    assert_eq!(
+        body["m.relates_to"]["m.in_reply_to"]["event_id"],
+        "$question"
+    );
     fake.quiesced(fake.requests(), &common::limits()).await;
     c.close().await.unwrap();
     f.store.shutdown().await.unwrap();

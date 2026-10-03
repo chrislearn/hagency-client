@@ -14,7 +14,7 @@ on:
     branches: [feat/contribution-console]
     paths:
       - 'mockup/**'
-      - 'lib/role-capacity.json'   # the prototype imports it, so it is an input
+      - 'native/hagency-core/role-capacity.json'   # the prototype imports it, so it is an input
       - '.github/workflows/mockup-pages.yml'
   workflow_dispatch:
 

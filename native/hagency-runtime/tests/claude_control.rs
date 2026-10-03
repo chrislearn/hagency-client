@@ -427,3 +427,113 @@ async fn native_claude_permission_bounds_and_cancel() {
         Err(Error::Closed)
     ));
 }
+
+/// Stdin whose flush can be held back, so the peer can read a complete
+/// response and answer before the host observes its own flush.
+struct HeldFlush {
+    inner: DuplexStream,
+    gate: std::sync::Arc<std::sync::Mutex<(bool, Option<std::task::Waker>)>>,
+}
+impl tokio::io::AsyncWrite for HeldFlush {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        std::pin::Pin::new(&mut self.inner).poll_write(cx, buf)
+    }
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        {
+            let mut gate = self.gate.lock().unwrap();
+            if !gate.0 {
+                gate.1 = Some(cx.waker().clone());
+                return std::task::Poll::Pending;
+            }
+        }
+        std::pin::Pin::new(&mut self.inner).poll_flush(cx)
+    }
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        std::pin::Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
+/// The peer reads the whole response and ends its turn before the host sees
+/// its own flush. The started write is still completed after the Result, and
+/// the answer events arrive first, in order.
+#[tokio::test]
+async fn native_claude_permission_answer_before_flush_completes_the_write() {
+    let gate = std::sync::Arc::new(std::sync::Mutex::new((true, None::<std::task::Waker>)));
+    let (stdin, input) = tokio::io::duplex(4096);
+    let (stdout, output) = tokio::io::duplex(4096);
+    let (stderr, error) = tokio::io::duplex(4096);
+    let stdin = HeldFlush {
+        inner: stdin,
+        gate: gate.clone(),
+    };
+    let mut driver = SessionDriver::new(stdout, stdin, stderr, limits()).unwrap();
+    let mut peer = Peer {
+        input: BufReader::new(input),
+        output,
+        _stderr: error,
+    };
+    let (initialized, ()) = tokio::join!(driver.initialize(), async {
+        let value = read(&mut peer).await;
+        peer.output
+            .write_all(&frame(json!({"type":"control_response","response":{
+            "subtype":"success","request_id":value["request_id"],"response":{}}})))
+            .await
+            .unwrap();
+    });
+    initialized.unwrap();
+    let (prompted, _) = tokio::join!(driver.prompt("offline"), read(&mut peer));
+    prompted.unwrap();
+    let init = frame(json!({"type":"system","subtype":"init","session_id":"session-one"}));
+    let (received, written) = tokio::join!(driver.next_message(), peer.output.write_all(&init));
+    written.unwrap();
+    received.unwrap();
+    driver.enable_approval_control(policy()).unwrap();
+    let permission = frame(request("early", json!({})));
+    let (received, written) =
+        tokio::join!(driver.next_message(), peer.output.write_all(&permission));
+    written.unwrap();
+    assert!(matches!(received.unwrap(), Message::Permission { .. }));
+    let mut prepared = driver
+        .prepare_approval("early", PermissionDecision::Allow)
+        .unwrap();
+    gate.lock().unwrap().0 = false;
+    let assistant = json!({"type":"assistant","session_id":"session-one","message":{"content":[]}});
+    let (first, ()) = tokio::join!(driver.send_prepared_approval(&mut prepared), async {
+        let response = read(&mut peer).await;
+        assert_eq!(response["response"]["request_id"], "early");
+        peer.output.write_all(&frame(assistant)).await.unwrap();
+        peer.output.write_all(&frame(result())).await.unwrap();
+    });
+    let mut early = vec![first.unwrap()];
+    while early.len() < 2 {
+        early.push(driver.send_prepared_approval(&mut prepared).await.unwrap());
+    }
+    assert!(
+        early
+            .iter()
+            .all(|update| matches!(update, PreparedUpdate::Message(_)))
+    );
+    assert_eq!(driver.phase(), Phase::ResultObserved);
+    {
+        let mut held = gate.lock().unwrap();
+        held.0 = true;
+        if let Some(waker) = held.1.take() {
+            waker.wake();
+        }
+    }
+    assert!(matches!(
+        driver.send_prepared_approval(&mut prepared).await.unwrap(),
+        PreparedUpdate::WriteAccepted(progress) if progress.flushed
+    ));
+    assert!(driver.termination().is_none());
+}

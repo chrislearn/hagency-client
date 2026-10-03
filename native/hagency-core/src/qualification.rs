@@ -82,7 +82,7 @@ fn ordered_roles<'de, D: Deserializer<'de>>(d: D) -> Result<Vec<(String, Role)>,
     d.deserialize_map(Roles)
 }
 static POLICY: LazyLock<Policy> = LazyLock::new(|| {
-    serde_json::from_str(include_str!("../../../lib/role-capacity.json"))
+    serde_json::from_str(include_str!("../role-capacity.json"))
         .expect("validated embedded role policy")
 });
 

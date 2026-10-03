@@ -57,12 +57,17 @@ fn ts_oracle_project_sides_projection_never_carries_a_credential() {
         )
         .unwrap();
     let text = serde_json::to_string(&sides.db.project_sides().unwrap()).unwrap();
-    for secret in [as_token, hs_token, "as_token", "hs_token", "asToken", "hsToken"] {
+    for secret in [
+        as_token, hs_token, "as_token", "hs_token", "asToken", "hsToken",
+    ] {
         assert!(!text.contains(secret), "a credential leaked: {secret}");
     }
     // The id IS the server name, and the withheld owner fields are absent.
     assert!(text.contains("example.test"));
-    assert!(!text.contains("owner_mxid"), "the owner is withheld (ADR-112)");
+    assert!(
+        !text.contains("owner_mxid"),
+        "the owner is withheld (ADR-112)"
+    );
     assert!(!text.contains("owner_room_id"));
 }
 
@@ -169,7 +174,7 @@ fn ts_oracle_project_sides_a_url_is_refused_as_a_server_name() {
 #[test]
 #[ignore = "parity gap: native registrations carry no credential/verdict/allocation/staging columns"]
 fn ts_oracle_project_sides_credential_verdict_allocation_staging() {
-    assert!(false, "the native registration row has no credential family");
+    panic!("the native registration row has no credential family");
 }
 
 /// TS: the knock family (`tests/api-project-side-knock.test.js`, 7 cases) —
@@ -180,7 +185,7 @@ fn ts_oracle_project_sides_credential_verdict_allocation_staging() {
 #[test]
 #[ignore = "parity gap: no knock route or homeserver room-directory client natively"]
 fn ts_oracle_project_side_knock_resolves_alias_and_knocks() {
-    assert!(false, "native has no knock route");
+    panic!("native has no knock route");
 }
 
 /// TS: the project add/archive family (`tests/api-project-side-projects.test.js`)
@@ -191,7 +196,7 @@ fn ts_oracle_project_side_knock_resolves_alias_and_knocks() {
 #[test]
 #[ignore = "parity gap: no project add/archive route and no agent<->project binding table"]
 fn ts_oracle_project_side_projects_add_archive_and_staff_join() {
-    assert!(false, "native has no project add/archive route");
+    panic!("native has no project add/archive route");
 }
 
 // Out of scope, listed as skipped in the report (not ported, no test):

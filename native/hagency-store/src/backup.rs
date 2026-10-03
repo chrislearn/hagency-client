@@ -54,7 +54,9 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 fn transient(name: &str) -> bool {
-    TRANSIENT_SUFFIXES.iter().any(|suffix| name.ends_with(suffix))
+    TRANSIENT_SUFFIXES
+        .iter()
+        .any(|suffix| name.ends_with(suffix))
 }
 
 /// A manifest path is relative, non-empty, in-tree and bounded. Absolute
@@ -84,11 +86,9 @@ fn vacuum_into(source: &Path, destination: &Path) -> Result<(), Error> {
     // `-shm`, which a read-only connection cannot establish. The caller's
     // own store lock is a separate `*.lock` file and is not taken here, so
     // this runs while the service holds the directory.
-    let connection = rusqlite::Connection::open_with_flags(
-        source,
-        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
-    )
-    .map_err(|_| Error::Schema)?;
+    let connection =
+        rusqlite::Connection::open_with_flags(source, rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE)
+            .map_err(|_| Error::Schema)?;
     connection
         .busy_timeout(Duration::from_millis(5_000))
         .map_err(|_| Error::Schema)?;
@@ -248,7 +248,9 @@ mod tests {
         connection
             .pragma_update(None, "journal_mode", "WAL")
             .unwrap();
-        connection.pragma_update(None, "wal_autocheckpoint", 0).unwrap();
+        connection
+            .pragma_update(None, "wal_autocheckpoint", 0)
+            .unwrap();
         connection
             .execute("CREATE TABLE t(id INTEGER PRIMARY KEY, v TEXT)", [])
             .unwrap();

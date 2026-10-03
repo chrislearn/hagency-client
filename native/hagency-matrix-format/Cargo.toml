@@ -16,8 +16,5 @@ mdurl = "=0.3.1"
 idna = "=1.1.0"
 unicode-general-category = "=0.6.0"
 
-[dev-dependencies]
-sha2.workspace = true
-
 [lints]
 workspace = true

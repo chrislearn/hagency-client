@@ -225,8 +225,11 @@ fn ts_engagement_same_id_different_ask_is_a_conflict() {
     let mut b = Book::open();
     let pool = resource("oracle_conflict_pool", "oracle_conflict_seat", 500);
     b.db.put_resource(&pool).unwrap();
-    b.db.admit(&proof(&request("conflict_one", "ConflictWorker", &pool, 50)), 1000)
-        .unwrap();
+    b.db.admit(
+        &proof(&request("conflict_one", "ConflictWorker", &pool, 50)),
+        1000,
+    )
+    .unwrap();
     let changed = proof(&request("conflict_one", "ConflictWorker", &pool, 100));
     assert!(
         matches!(b.db.admit(&changed, 1000), Err(Error::Conflict)),
@@ -241,14 +244,12 @@ fn ts_engagement_different_ids_are_different_requests() {
     let mut b = Book::open();
     let pool = resource("oracle_ids_pool", "oracle_ids_seat", 500);
     b.db.put_resource(&pool).unwrap();
-    let a = b
-        .db
-        .admit(&proof(&request("ids_a", "IdsA", &pool, 50)), 1000)
-        .unwrap();
-    let c = b
-        .db
-        .admit(&proof(&request("ids_b", "IdsB", &pool, 50)), 1000)
-        .unwrap();
+    let a =
+        b.db.admit(&proof(&request("ids_a", "IdsA", &pool, 50)), 1000)
+            .unwrap();
+    let c =
+        b.db.admit(&proof(&request("ids_b", "IdsB", &pool, 50)), 1000)
+            .unwrap();
     assert_ne!(a.id, c.id, "two ids are two requests");
 }
 

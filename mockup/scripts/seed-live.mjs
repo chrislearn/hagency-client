@@ -46,7 +46,7 @@ async function call(path, body, method) {
 /*
  * Deliberately unlike the fixture: `lend-*` names, and a model mix that differs
  * from it too (Sonnet and Fable rather than Opus, Codex at high rather than
- * medium). The models still come from lib/role-capacity.json, because tier
+ * medium). The models still come from native/hagency-core/role-capacity.json, because tier
  * matching is one of the things under test.
  */
 const PRESETS = [

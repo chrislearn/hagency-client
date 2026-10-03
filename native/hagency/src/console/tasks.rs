@@ -39,7 +39,13 @@ pub(super) fn router() -> Router {
         // (board #92 — a HEAD fell past the GET child and answered 405).
         .head(list)
         .post(create)
-        .push(Router::with_path("{id}").get(get).head(get).patch(patch).delete(delete))
+        .push(
+            Router::with_path("{id}")
+                .get(get)
+                .head(get)
+                .patch(patch)
+                .delete(delete),
+        )
         .push(Router::with_path("{id}/accept").post(accept))
         .push(Router::with_path("{id}/transition").post(transition))
         .push(Router::with_path("{id}/comments").post(comment))
@@ -49,8 +55,16 @@ pub(super) fn router() -> Router {
 /// the retained routes do (`/api/agents/:name/tasks`, `/api/project-board`).
 pub(super) fn extra_router() -> Router {
     Router::new()
-        .push(Router::with_path("agents/{name}/tasks").get(agent_tasks).head(agent_tasks))
-        .push(Router::with_path("project-board").get(project_board).head(project_board))
+        .push(
+            Router::with_path("agents/{name}/tasks")
+                .get(agent_tasks)
+                .head(agent_tasks),
+        )
+        .push(
+            Router::with_path("project-board")
+                .get(project_board)
+                .head(project_board),
+        )
 }
 
 fn now_ms() -> u64 {

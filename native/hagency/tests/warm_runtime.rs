@@ -1,4 +1,7 @@
 //! Real native pipes/helper/API with an offline peer; not a live factory/model.
+// Most scenarios here are Unix-only (cfg(unix)); on other platforms their
+// shared helpers and imports are compiled but unused.
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
 #[path = "../../hagency-store/tests/common/mod.rs"]
 mod common;
 use common::*;
@@ -901,6 +904,7 @@ async fn native_warm_local_codex_custody() {
 
 /// The idle status once `accept` holds, polled under a 3 s bound: the checks
 /// run every 100 ms, so a state that never arrives is a failed scenario.
+#[cfg(unix)]
 async fn idle_status(
     warm: &WarmRuntime,
     accept: impl Fn(&WarmIdleStatus) -> bool,

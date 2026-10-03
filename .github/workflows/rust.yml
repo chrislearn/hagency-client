@@ -1,18 +1,64 @@
-name: Native Rust
+name: Full matrix
+# The expensive lane: Ubuntu, macOS and Windows tests, the console browser
+# tests, the Linux cgroup qualification and a release build. Every PR already
+# gets the fast Ubuntu lane in ci.yml; this one runs
+#   - nightly (and opens/closes a regression issue on the scheduled run),
+#   - on manual dispatch and on `nv*` release tags,
+#   - before a native release build (release-native.yml calls it),
+#   - on "major" PRs: labelled `full-ci`, or touching the paths in `scope`.
 on:
+  schedule:
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+  workflow_call:
   push:
-    # 2026-09-13: probe/** are the integration scratch branches for the Rust port;
-    # hosted Ubuntu and macOS verdicts on them run alongside the operator's local gates.
-    branches: [master, stable, feat/native-windows-directory-sync-20260911, 'probe/**']
+    tags: ['nv*']
   pull_request:
-    branches: [master, stable]
+    branches: [main]
+    types: [opened, synchronize, reopened, labeled]
 concurrency:
-  group: native-${{ github.event.pull_request.head.ref || github.ref_name }}
+  group: full-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 permissions:
   contents: read
 jobs:
+  scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.scope.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Decide whether this event needs the full matrix
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          run=true
+          if [ "$EVENT" = "pull_request" ]; then
+            run=false
+            if jq -e 'index("full-ci")' <<<"$LABELS" >/dev/null; then
+              run=true
+            else
+              files=$(git diff --name-only "$BASE" HEAD)
+              echo "$files"
+              # Platform-sensitive code, the console, dependencies, the toolchain
+              # and CI/deploy definitions. Here-strings, not pipes: under
+              # pipefail an early grep -q exit can SIGPIPE the producer.
+              if grep -qE '^(native/hagency-(platform|runtime|execution|files|media-store|matrix)/|native/hagency/src/(console|runner|bootstrap)|mockup/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|\.github/workflows/|deploy/|install/)' <<<"$files"; then
+                run=true
+              fi
+            fi
+          fi
+          echo "run=$run" | tee -a "$GITHUB_OUTPUT"
   console-browser:
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
@@ -55,6 +101,8 @@ jobs:
           path: ${{ runner.temp }}/console-screenshots
           if-no-files-found: ignore
   native:
+    needs: scope
+    if: needs.scope.outputs.run == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -79,46 +127,6 @@ jobs:
           node-version: '22.22.0'
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
-      # The Markdown oracle imports pinned pure JS dependencies; skip every
-      # installation script and native addon build in this Rust-only job.
-      - run: npm ci --ignore-scripts --omit=dev
-      - run: node native/scripts/matrix-format-vectors.mjs --check
-      - run: node native/scripts/metering-vectors.mjs --check
-      # The retained JavaScript computes POSIX layout facts with the host path
-      # module; on Windows path.join/resolve yield drive-letter backslash paths,
-      # so its oracle exists only on POSIX hosts. The recorded fixture is still
-      # replayed by the Rust tests on every OS in the test step below.
-      - run: node native/scripts/attribution-vectors.mjs --check
-        if: runner.os != 'Windows'
-      # Same POSIX-only oracle as the attribution vectors: the retained reader
-      # joins and relativizes with the host path module. The recorded fixture is
-      # replayed by the Rust reader tests on every OS in the test step below.
-      - run: node native/scripts/reader-vectors.mjs --check
-        if: runner.os != 'Windows'
-      - run: node native/scripts/usage-vectors.mjs --check
-      - run: node native/scripts/ceiling-vectors.mjs --check
-      - run: node native/scripts/corpus-retention-vectors.mjs --check
-      - run: node native/scripts/account-vectors.mjs --check
-      - run: node native/scripts/canonical-vectors.mjs --check
-      - run: node native/scripts/allocation-vectors.mjs --check
-      - run: node native/scripts/project-vectors.mjs --check
-      - run: node native/scripts/qualification-vectors.mjs --check
-      - run: node native/scripts/task-vectors.mjs --check
-      - run: node native/scripts/graph-vectors.mjs --check
-      - run: node native/scripts/payload-vectors.mjs --check
-      - run: node native/scripts/execution-vectors.mjs --check
-      - run: node native/scripts/progress-vectors.mjs --check
-      # The console-origin oracle evaluates the retained Next proxy (no imports,
-      # so it loads on every OS) and slices two blocks out of backend-v2.js,
-      # which cannot be imported without node_modules. Pinned by sha256 inside
-      # the fixture, so a drifted retained rule fails here rather than silently
-      # re-blessing a different answer.
-      - run: node native/scripts/console-origin-vectors.mjs --check
-      # The approval oracle executes the retained bridge's three approval
-      # producers plus the proxy's write-origin predicate. The retained source
-      # is lifted by line anchor rather than imported (matrix-bot-sdk is absent
-      # in a bare checkout) and pinned by sha256 inside the fixture.
-      - run: node native/scripts/approval-vectors.mjs --check
       - run: node native/scripts/check-rust-spec-bindings.mjs
       - run: node --test native/scripts/check-production-callers.test.mjs
       - run: node native/scripts/check-production-callers.mjs
@@ -190,3 +198,37 @@ jobs:
             target/release/hagency
             target/release/hagency.exe
           if-no-files-found: error
+  regression-issue:
+    name: Reconcile nightly regression issue
+    needs: [console-browser, native]
+    if: always() && github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RESULTS: ${{ toJSON(needs) }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      ISSUE_TITLE: "[nightly] Full matrix regression"
+    steps:
+      - name: Open, refresh, or close the regression issue
+        run: |
+          set -euo pipefail
+          failed=$(jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | "- `\(.key)`: **\(.value.result)**"' <<<"$RESULTS")
+          gh label create nightly-regression --repo "$GITHUB_REPOSITORY" --color B60205 \
+            --description "Failure in the scheduled full matrix" --force
+          issue=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label nightly-regression \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$failed" ]; then
+            body=$(printf 'The scheduled full matrix failed.\n\n%s\n\n[Open the run](%s)' "$failed" "$RUN_URL")
+            if [ -n "$issue" ]; then
+              gh issue comment "$issue" --repo "$GITHUB_REPOSITORY" --body "$body"
+            else
+              gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" --label nightly-regression --body "$body"
+            fi
+          elif [ -n "$issue" ]; then
+            gh issue close "$issue" --repo "$GITHUB_REPOSITORY" --comment "The scheduled full matrix is green again: $RUN_URL"
+          else
+            echo "Full matrix is green; no open regression issue."
+          fi

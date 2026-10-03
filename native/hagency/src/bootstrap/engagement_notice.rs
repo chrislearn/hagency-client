@@ -19,6 +19,8 @@ use serde_json::{Value, json};
 ///   room.
 /// - `m.mentions` is always the empty allowlist; `m.relates_to` is set only
 ///   when `source_event_id` starts with `$` (TS line 15-18).
+// Not called yet: the request-room approval notice is still unsent natively.
+#[allow(dead_code, clippy::too_many_arguments)]
 pub fn engagement_approval_content(
     engagement_id: &str,
     role: &str,
@@ -34,7 +36,8 @@ pub fn engagement_approval_content(
         .flatten()
         .collect::<Vec<_>>()
         .join(" · ");
-    let mut body = format!("已批准 / Approved {role} for {allocated_tokens} tokens.\nAgent: {mxid}\n");
+    let mut body =
+        format!("已批准 / Approved {role} for {allocated_tokens} tokens.\nAgent: {mxid}\n");
     if !configuration.is_empty() {
         body.push_str(&format!("Serving: {configuration}\n"));
     }

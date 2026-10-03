@@ -78,6 +78,14 @@ Scenario: Cancellation and result barriers fence response bytes
   When the response writer advances
   Then observed barriers reach the host first and cancelled or ended requests cannot transmit further bytes while partial-write failures remain explicit
 
+Scenario: A response the peer answered before the host saw its flush completes after the Result
+  Test: native_claude_permission_answer_before_flush_completes_the_write
+  Level: integration
+  Test Double: in-memory stdin whose flush is held until the peer has answered
+  Given a prepared response whose bytes were all written while its flush is still pending
+  When the peer reads it and emits its answer events and the Result before the host observes the flush
+  Then the host receives those events first and the same send then completes the write without transmitting anything new
+
 Scenario: Callback state is bounded and started future drops close custody
   Test: native_claude_permission_bounds_and_cancel
   Level: integration

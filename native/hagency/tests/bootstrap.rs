@@ -913,10 +913,16 @@ async fn native_continuous_driver_operator_resolution() {
             .unwrap();
         // The host ends the refused runtime itself, so the exit identity is
         // the stop signal; a runtime that exits on its own reads `code:N`.
-        assert!(
-            reason.starts_with("protocol:signal:") || reason.starts_with("protocol:code:"),
-            "{reason}"
-        );
+        // Only the macOS guardian reaps the leader and reports its wait status
+        // (ADR-181); elsewhere the identity is `none`.
+        if cfg!(target_os = "macos") {
+            assert!(
+                reason.starts_with("protocol:signal:") || reason.starts_with("protocol:code:"),
+                "{reason}"
+            );
+        } else {
+            assert!(reason.starts_with("protocol:none:"), "{reason}");
+        }
         assert!(
             started_at.is_some() && settled_at >= started_at,
             "{started_at:?} {settled_at:?}"
@@ -1432,7 +1438,7 @@ async fn native_worktree_production_config_two_threads() {
     ] {
         let out = std::process::Command::new("git")
             .args(&args)
-            .current_dir(&f.second_work())
+            .current_dir(f.second_work())
             .output()
             .unwrap();
         assert!(out.status.success(), "git {args:?}: {:?}", out.stderr);
@@ -1441,7 +1447,7 @@ async fn native_worktree_production_config_two_threads() {
     for args in [vec!["add", "README.md"], vec!["commit", "-m", "base"]] {
         let out = std::process::Command::new("git")
             .args(&args)
-            .current_dir(&f.second_work())
+            .current_dir(f.second_work())
             .output()
             .unwrap();
         assert!(out.status.success(), "git {args:?}: {:?}", out.stderr);
@@ -1471,11 +1477,18 @@ async fn native_worktree_production_config_two_threads() {
         out
     }
     let found = receipts(&worktrees);
-    assert_eq!(found.len(), 2, "two threads must leave two worktree receipts");
+    assert_eq!(
+        found.len(),
+        2,
+        "two threads must leave two worktree receipts"
+    );
     let first = found[0].parent().unwrap().to_path_buf();
     let second = found[1].parent().unwrap().to_path_buf();
     assert_ne!(first, second, "the two threads ran in distinct worktrees");
-    assert!(first != f.work && second != f.work, "not the shared workspace");
+    assert!(
+        first != f.work && second != f.work,
+        "not the shared workspace"
+    );
     assert!(first != f.second_work() && second != f.second_work());
     // No receipt leaked into a shared workspace.
     assert!(receipts(&f.work).is_empty());

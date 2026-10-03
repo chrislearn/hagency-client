@@ -36,11 +36,7 @@ pub(super) fn router() -> Router {
     Router::with_path("task-graphs")
         .post(create)
         .get(list)
-        .push(
-            Router::with_path("{id}")
-                .get(read)
-                .delete(remove),
-        )
+        .push(Router::with_path("{id}").get(read).delete(remove))
         .push(Router::with_path("{id}/nodes/{node_id}").patch(update_node))
 }
 
@@ -89,7 +85,15 @@ fn graph_statuses() -> &'static [&'static str] {
     &["active", "complete", "failed", "cancelled"]
 }
 fn node_statuses() -> &'static [&'static str] {
-    &["pending", "dispatched", "active", "complete", "failed", "skipped", "cancelled"]
+    &[
+        "pending",
+        "dispatched",
+        "active",
+        "complete",
+        "failed",
+        "skipped",
+        "cancelled",
+    ]
 }
 fn terminal_node(status: &str) -> bool {
     matches!(status, "complete" | "failed" | "skipped" | "cancelled")
@@ -103,7 +107,10 @@ struct GraphError {
     message: String,
 }
 fn graph_error(code: &'static str, message: impl Into<String>) -> GraphError {
-    GraphError { code, message: message.into() }
+    GraphError {
+        code,
+        message: message.into(),
+    }
 }
 
 fn text(value: &Value, max: usize) -> Option<String> {
@@ -132,21 +139,31 @@ fn string_array(value: Option<&Value>, max: usize) -> Vec<String> {
 }
 
 fn normalize_graph_status(value: Option<&Value>) -> Result<String, GraphError> {
-    let normalized = value.and_then(|v| text(v, 32)).unwrap_or_else(|| "active".into());
+    let normalized = value
+        .and_then(|v| text(v, 32))
+        .unwrap_or_else(|| "active".into());
     if !graph_statuses().contains(&normalized.as_str()) {
         return Err(graph_error(
             "invalid_graph_status",
-            format!("invalid graph status: {}", value.and_then(Value::as_str).unwrap_or("")),
+            format!(
+                "invalid graph status: {}",
+                value.and_then(Value::as_str).unwrap_or("")
+            ),
         ));
     }
     Ok(normalized)
 }
 fn normalize_node_status(value: Option<&Value>, fallback: &str) -> Result<String, GraphError> {
-    let normalized = value.and_then(|v| text(v, 32)).unwrap_or_else(|| fallback.into());
+    let normalized = value
+        .and_then(|v| text(v, 32))
+        .unwrap_or_else(|| fallback.into());
     if !node_statuses().contains(&normalized.as_str()) {
         return Err(graph_error(
             "invalid_node_status",
-            format!("invalid node status: {}", value.and_then(Value::as_str).unwrap_or("")),
+            format!(
+                "invalid node status: {}",
+                value.and_then(Value::as_str).unwrap_or("")
+            ),
         ));
     }
     Ok(normalized)
@@ -156,7 +173,8 @@ fn normalize_result(value: Option<&Value>) -> Result<Value, GraphError> {
     let Some(value) = value else {
         return Ok(Value::Null);
     };
-    let bytes = serde_json::to_vec(value).map_err(|_| graph_error("invalid_nodes", "invalid result"))?;
+    let bytes =
+        serde_json::to_vec(value).map_err(|_| graph_error("invalid_nodes", "invalid result"))?;
     if bytes.len() > MAX_RESULT_BYTES {
         return Err(graph_error(
             "result_too_large",
@@ -218,12 +236,22 @@ fn normalize_condition(value: Option<&Value>) -> Result<Option<Value>, GraphErro
         return Ok(None);
     }
     let Some(object) = value.as_object() else {
-        return Err(graph_error("invalid_condition", "condition must be an object"));
+        return Err(graph_error(
+            "invalid_condition",
+            "condition must be an object",
+        ));
     };
     let mut out = Map::new();
     for key in ["dep", "path", "field", "op"] {
         if let Some(text) = object.get(key).and_then(|v| text(v, 512)) {
-            out.insert(if key == "field" { "path".into() } else { key.into() }, Value::String(text));
+            out.insert(
+                if key == "field" {
+                    "path".into()
+                } else {
+                    key.into()
+                },
+                Value::String(text),
+            );
         }
     }
     for key in ["eq", "neq", "in", "value"] {
@@ -231,17 +259,30 @@ fn normalize_condition(value: Option<&Value>) -> Result<Option<Value>, GraphErro
             out.insert(key.into(), v.clone());
         }
     }
-    if out.is_empty() { Ok(None) } else { Ok(Some(Value::Object(out))) }
+    if out.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(Value::Object(out)))
+    }
 }
 
 fn normalize_node(id_key: &str, raw: &Value) -> Result<Node, GraphError> {
     let id = text(raw.get("id").unwrap_or(&Value::Null), 255)
         .or_else(|| text(&Value::String(id_key.into()), 255))
         .ok_or_else(|| graph_error("invalid_node_id", "node id required"))?;
-    let assignee = text(raw.get("assignee").unwrap_or(&Value::Null), 255)
-        .ok_or_else(|| graph_error("invalid_node_assignee", format!("node '{id}' assignee required")))?;
-    let description = text(raw.get("description").unwrap_or(&Value::Null), 4000)
-        .ok_or_else(|| graph_error("invalid_node_description", format!("node '{id}' description required")))?;
+    let assignee = text(raw.get("assignee").unwrap_or(&Value::Null), 255).ok_or_else(|| {
+        graph_error(
+            "invalid_node_assignee",
+            format!("node '{id}' assignee required"),
+        )
+    })?;
+    let description =
+        text(raw.get("description").unwrap_or(&Value::Null), 4000).ok_or_else(|| {
+            graph_error(
+                "invalid_node_description",
+                format!("node '{id}' description required"),
+            )
+        })?;
     let has_result = raw.get("result").is_some();
     Ok(Node {
         id: id.clone(),
@@ -277,7 +318,10 @@ fn normalize_nodes(raw: Option<&Value>) -> Result<BTreeMap<String, Node>, GraphE
         return Err(graph_error("invalid_nodes", "nodes must be an object"));
     };
     if entries.is_empty() {
-        return Err(graph_error("invalid_nodes", "graph must contain at least one node"));
+        return Err(graph_error(
+            "invalid_nodes",
+            "graph must contain at least one node",
+        ));
     }
     let mut out = BTreeMap::new();
     for (key, raw_node) in entries {
@@ -306,7 +350,10 @@ fn normalize_nodes(raw: Option<&Value>) -> Result<BTreeMap<String, Node>, GraphE
         {
             return Err(graph_error(
                 "invalid_condition",
-                format!("node '{}' condition references missing dep '{dep}'", node.id),
+                format!(
+                    "node '{}' condition references missing dep '{dep}'",
+                    node.id
+                ),
             ));
         }
     }
@@ -411,7 +458,9 @@ impl GraphStore {
         let mut map = BTreeMap::new();
         if let Value::Object(entries) = &graphs {
             for (key, raw) in entries {
-                if let Ok(mut graph) = normalize_graph(raw, Some(key.clone()).filter(|k| !k.is_empty())) {
+                if let Ok(mut graph) =
+                    normalize_graph(raw, Some(key.clone()).filter(|k| !k.is_empty()))
+                {
                     if graph.id.is_empty() {
                         graph.id = key.clone();
                     }
@@ -443,24 +492,22 @@ impl GraphStore {
     }
 
     fn persist_graphs(&self, graphs: &BTreeMap<String, Graph>) -> Result<(), GraphError> {
-        let value = serde_json::to_value(graphs)
-            .map_err(|_| graph_error("graph_persistence_failed", "task graph persistence failed"))?;
+        let value = serde_json::to_value(graphs).map_err(|_| {
+            graph_error("graph_persistence_failed", "task graph persistence failed")
+        })?;
         if serde_json::to_vec(&value).map(|v| v.len()).unwrap_or(0) > MAX_GRAPH_BYTES {
-            return Err(graph_error("graph_persistence_failed", "task graph persistence failed"));
+            return Err(graph_error(
+                "graph_persistence_failed",
+                "task graph persistence failed",
+            ));
         }
-        hagency_store::private::replace(
-            &self.dir.join(GRAPHS_FILE),
-            value.to_string().as_bytes(),
-        )
-        .map_err(|_| graph_error("graph_persistence_failed", "task graph persistence failed"))
+        hagency_store::private::replace(&self.dir.join(GRAPHS_FILE), value.to_string().as_bytes())
+            .map_err(|_| graph_error("graph_persistence_failed", "task graph persistence failed"))
     }
     fn persist_messages(&self, messages: &[Value]) -> Result<(), GraphError> {
         let value = Value::Array(messages.to_vec());
-        hagency_store::private::replace(
-            &self.dir.join(MESSAGES_FILE),
-            value.to_string().as_bytes(),
-        )
-        .map_err(|_| graph_error("graph_dispatch_failed", "message persistence failed"))
+        hagency_store::private::replace(&self.dir.join(MESSAGES_FILE), value.to_string().as_bytes())
+            .map_err(|_| graph_error("graph_dispatch_failed", "message persistence failed"))
     }
     fn persist_counter(&self, counter: u64) -> Result<(), GraphError> {
         hagency_store::private::replace(
@@ -473,7 +520,12 @@ impl GraphStore {
     /// TS `dispatchTaskGraphMessage` -> `dispatchInternalDirectMessage`:
     /// one durable, name-addressed message with the `task_graph_dispatch`
     /// schema, deduped on the dispatch key. Returns the message id.
-    fn dispatch(&self, inner: &mut StoreInner, graph: &Graph, node: &Node) -> Result<String, GraphError> {
+    fn dispatch(
+        &self,
+        inner: &mut StoreInner,
+        graph: &Graph,
+        node: &Node,
+    ) -> Result<String, GraphError> {
         let dispatch_key = format!("task_graph_dispatch:{}:{}", graph.id, node.id);
         if let Some(existing) = inner.messages.iter().rev().find(|m| {
             m.get("schema")
@@ -486,7 +538,12 @@ impl GraphStore {
                 .get("id")
                 .and_then(Value::as_str)
                 .map(str::to_owned)
-                .ok_or_else(|| graph_error("graph_dispatch_failed", "task graph dispatch did not return a durable message id"));
+                .ok_or_else(|| {
+                    graph_error(
+                        "graph_dispatch_failed",
+                        "task graph dispatch did not return a durable message id",
+                    )
+                });
         }
         let next = inner.counter + 1;
         self.persist_counter(next)?;
@@ -556,14 +613,27 @@ impl GraphStore {
             .get("id")
             .and_then(Value::as_str)
             .map(str::to_owned)
-            .ok_or_else(|| graph_error("graph_dispatch_failed", "task graph dispatch did not return a durable message id"))
+            .ok_or_else(|| {
+                graph_error(
+                    "graph_dispatch_failed",
+                    "task graph dispatch did not return a durable message id",
+                )
+            })
     }
 
     fn create(&self, raw: &Value) -> Result<Graph, GraphError> {
-        let mut inner = self.inner.lock().map_err(|_| graph_error("graph_persistence_failed", "task graph persistence failed"))?;
-        let graph = normalize_graph(raw, Some(default_graph_id()).filter(|_| raw.get("id").is_none()))?;
+        let mut inner = self.inner.lock().map_err(|_| {
+            graph_error("graph_persistence_failed", "task graph persistence failed")
+        })?;
+        let graph = normalize_graph(
+            raw,
+            Some(default_graph_id()).filter(|_| raw.get("id").is_none()),
+        )?;
         if inner.graphs.contains_key(&graph.id) {
-            return Err(graph_error("graph_exists", format!("graph already exists: {}", graph.id)));
+            return Err(graph_error(
+                "graph_exists",
+                format!("graph already exists: {}", graph.id),
+            ));
         }
         let mut next = inner.graphs.clone();
         next.insert(graph.id.clone(), graph.clone());
@@ -593,7 +663,9 @@ impl GraphStore {
 
     /// TS `deleteGraph` (`lib/task-graph.js:421`): a cancel, not a removal.
     fn delete(&self, id: &str) -> Result<Option<Graph>, GraphError> {
-        let mut inner = self.inner.lock().map_err(|_| graph_error("graph_persistence_failed", "task graph persistence failed"))?;
+        let mut inner = self.inner.lock().map_err(|_| {
+            graph_error("graph_persistence_failed", "task graph persistence failed")
+        })?;
         if !inner.graphs.contains_key(id) {
             return Ok(None);
         }
@@ -617,24 +689,44 @@ impl GraphStore {
     }
 
     /// TS `updateNode` (`lib/task-graph.js:455`).
-    fn update_node(&self, id: &str, node_id: &str, patch: &Value) -> Result<(Graph, Node), GraphError> {
-        let mut inner = self.inner.lock().map_err(|_| graph_error("graph_persistence_failed", "task graph persistence failed"))?;
+    fn update_node(
+        &self,
+        id: &str,
+        node_id: &str,
+        patch: &Value,
+    ) -> Result<(Graph, Node), GraphError> {
+        let mut inner = self.inner.lock().map_err(|_| {
+            graph_error("graph_persistence_failed", "task graph persistence failed")
+        })?;
         if !inner.graphs.contains_key(id) {
-            return Err(graph_error("graph_not_found", format!("graph not found: {id}")));
+            return Err(graph_error(
+                "graph_not_found",
+                format!("graph not found: {id}"),
+            ));
         }
         if !inner.graphs[id].nodes.contains_key(node_id) {
-            return Err(graph_error("node_not_found", format!("node not found: {node_id}")));
+            return Err(graph_error(
+                "node_not_found",
+                format!("node not found: {node_id}"),
+            ));
         }
         let has_status = patch.get("status").is_some();
         let has_result = patch.get("result").is_some();
         let has_error = patch.get("error").is_some();
         if !has_status && !has_result && !has_error {
-            return Err(graph_error("invalid_patch", "node patch requires status, result, or error"));
+            return Err(graph_error(
+                "invalid_patch",
+                "node patch requires status, result, or error",
+            ));
         }
         let mut next = inner.graphs.clone();
         let graph = next.get_mut(id).expect("checked");
         let node = graph.nodes.get_mut(node_id).expect("checked");
-        let normalized_result = if has_result { Some(normalize_result(patch.get("result"))?) } else { None };
+        let normalized_result = if has_result {
+            Some(normalize_result(patch.get("result"))?)
+        } else {
+            None
+        };
         let mut changed = false;
         if has_status {
             let next_status = normalize_node_status(patch.get("status"), &node.status.clone())?;
@@ -668,7 +760,10 @@ impl GraphStore {
             }
         }
         if has_result
-            && (!has_status || node.status == "complete" || node.status == "active" || node.status == "dispatched")
+            && (!has_status
+                || node.status == "complete"
+                || node.status == "active"
+                || node.status == "dispatched")
         {
             node.result = normalized_result.clone().unwrap_or(Value::Null);
             changed = true;
@@ -690,7 +785,9 @@ impl GraphStore {
     /// TS `advanceGraph` (`lib/task-graph.js:522`): dispatch ready roots,
     /// cascade failed dependencies, finalize a terminal graph.
     fn advance(&self, id: &str) -> Result<Option<Graph>, GraphError> {
-        let mut inner = self.inner.lock().map_err(|_| graph_error("graph_persistence_failed", "task graph persistence failed"))?;
+        let mut inner = self.inner.lock().map_err(|_| {
+            graph_error("graph_persistence_failed", "task graph persistence failed")
+        })?;
         if !inner.graphs.contains_key(id) {
             return Ok(None);
         }
@@ -711,7 +808,12 @@ impl GraphStore {
                 let failed: Vec<String> = node
                     .depends_on
                     .iter()
-                    .filter(|dep| matches!(graph.nodes.get(*dep).map(|d| d.status.as_str()), Some("failed" | "cancelled")))
+                    .filter(|dep| {
+                        matches!(
+                            graph.nodes.get(*dep).map(|d| d.status.as_str()),
+                            Some("failed" | "cancelled")
+                        )
+                    })
                     .cloned()
                     .collect();
                 if !failed.is_empty() {
@@ -723,10 +825,12 @@ impl GraphStore {
                     progress = true;
                     continue;
                 }
-                let all_resolved = node
-                    .depends_on
-                    .iter()
-                    .all(|dep| matches!(graph.nodes.get(dep).map(|d| d.status.as_str()), Some("complete" | "skipped")));
+                let all_resolved = node.depends_on.iter().all(|dep| {
+                    matches!(
+                        graph.nodes.get(dep).map(|d| d.status.as_str()),
+                        Some("complete" | "skipped")
+                    )
+                });
                 if !all_resolved {
                     continue;
                 }
@@ -754,11 +858,16 @@ impl GraphStore {
                 break;
             }
         }
-        let all_terminal = !graph.nodes.is_empty()
-            && graph.nodes.values().all(|n| terminal_node(&n.status));
+        let all_terminal =
+            !graph.nodes.is_empty() && graph.nodes.values().all(|n| terminal_node(&n.status));
         if all_terminal && graph.status == "active" {
             let at = iso_now();
-            graph.status = if graph.nodes.values().any(|n| n.status == "failed") { "failed" } else { "complete" }.into();
+            graph.status = if graph.nodes.values().any(|n| n.status == "failed") {
+                "failed"
+            } else {
+                "complete"
+            }
+            .into();
             graph.completed_at = Some(at.clone());
             graph.updated_at = at;
             changed = true;
@@ -811,7 +920,10 @@ fn evaluate_condition(graph: &Graph, node: &Node) -> Option<bool> {
         .or_else(|| condition.get("field"))
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty());
-    let value = path.and_then(|p| nested(&dep.result, p)).cloned().unwrap_or_else(|| dep.result.clone());
+    let value = path
+        .and_then(|p| nested(&dep.result, p))
+        .cloned()
+        .unwrap_or_else(|| dep.result.clone());
     if let Some(eq) = condition.get("eq") {
         return Some(&value == eq);
     }
@@ -844,7 +956,11 @@ fn view_token() -> String {
     const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut out = String::with_capacity(32);
     for chunk in bytes.chunks(3) {
-        let b = [chunk[0], *chunk.get(1).unwrap_or(&0), *chunk.get(2).unwrap_or(&0)];
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
         let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
         out.push(TABLE[((n >> 18) & 63) as usize] as char);
         out.push(TABLE[((n >> 12) & 63) as usize] as char);
@@ -878,10 +994,12 @@ fn error_response(res: &mut Response, error: GraphError, fallback: &str) {
         _ => StatusCode::BAD_REQUEST,
     };
     res.status_code(status);
-    res.render(Json(json!({ "error": if error.message.is_empty() { fallback.into() } else { error.message } })));
+    res.render(Json(
+        json!({ "error": if error.message.is_empty() { fallback.into() } else { error.message } }),
+    ));
 }
 
-fn store_for<'a>(depot: &'a Depot) -> Option<&'a GraphStore> {
+fn store_for(depot: &Depot) -> Option<&GraphStore> {
     console(depot).ok()?.graphs()
 }
 
@@ -932,12 +1050,17 @@ async fn list(req: &mut Request, depot: &Depot, res: &mut Response) {
         refusal(res, StatusCode::SERVICE_UNAVAILABLE, "console_unavailable");
         return;
     };
-    let status = req.query::<String>("status").and_then(|s| text(&Value::String(s), 32));
+    let status = req
+        .query::<String>("status")
+        .and_then(|s| text(&Value::String(s), 32));
     let status = match status {
         Some(status) if !graph_statuses().contains(&status.as_str()) => {
             error_response(
                 res,
-                graph_error("invalid_graph_status", format!("invalid graph status: {status}")),
+                graph_error(
+                    "invalid_graph_status",
+                    format!("invalid graph status: {status}"),
+                ),
                 "failed to list task graphs",
             );
             return;

@@ -1,6 +1,5 @@
 use hagency_progress::*;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 
 fn verb(text: &str) -> Verb {
     match text {
@@ -80,28 +79,6 @@ fn acp_finished(input: &Value) -> String {
 fn native_progress_vectors() {
     let fixture: Value =
         serde_json::from_str(include_str!("../../fixtures/progress.json")).unwrap();
-    for (path, source) in [
-        (
-            "lib/progress-filter.js",
-            include_str!("../../../lib/progress-filter.js"),
-        ),
-        (
-            "bin/hagency-progress",
-            include_str!("../../../bin/hagency-progress"),
-        ),
-        (
-            "scripts/hagency-acp-agent.mjs",
-            include_str!("../../../scripts/hagency-acp-agent.mjs"),
-        ),
-    ] {
-        assert_eq!(
-            fixture["hashes"][path],
-            format!(
-                "{:x}",
-                Sha256::digest(source.replace("\r\n", "\n").as_bytes())
-            )
-        );
-    }
     for case in fixture["vectors"].as_array().unwrap() {
         let input = &case["input"];
         let expected = &case["expected"];

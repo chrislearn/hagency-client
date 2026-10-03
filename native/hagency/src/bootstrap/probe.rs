@@ -81,9 +81,7 @@ struct Matrix {
 impl Matrix {
     fn new(origin: &str, token: Vec<u8>) -> Result<Self, Error> {
         let token = String::from_utf8(token).map_err(|_| Error::Private)?;
-        if token.len() < 16
-            || token.len() > 512
-            || !token.bytes().all(|b| (33..=126).contains(&b))
+        if token.len() < 16 || token.len() > 512 || !token.bytes().all(|b| (33..=126).contains(&b))
         {
             return Err(Error::Private);
         }
@@ -94,7 +92,11 @@ impl Matrix {
             .timeout(Duration::from_secs(20))
             .build()
             .map_err(|_| Error::Matrix)?;
-        Ok(Self { client, origin, token })
+        Ok(Self {
+            client,
+            origin,
+            token,
+        })
     }
     async fn get(&self, segments: &[&str]) -> Result<Value, Error> {
         let mut url = self.origin.clone();
@@ -127,10 +129,28 @@ impl Matrix {
             .get(&["_matrix", "client", "v3", "rooms", room, "joined_members"])
             .await?;
         let rules = self
-            .get(&["_matrix", "client", "v3", "rooms", room, "state", "m.room.join_rules", ""])
+            .get(&[
+                "_matrix",
+                "client",
+                "v3",
+                "rooms",
+                room,
+                "state",
+                "m.room.join_rules",
+                "",
+            ])
             .await?;
         let encryption = self
-            .get(&["_matrix", "client", "v3", "rooms", room, "state", "m.room.encryption", ""])
+            .get(&[
+                "_matrix",
+                "client",
+                "v3",
+                "rooms",
+                room,
+                "state",
+                "m.room.encryption",
+                "",
+            ])
             .await;
         let encryption = match encryption {
             Ok(value) => value,
@@ -212,13 +232,17 @@ async fn bind(
     let room_state = matrix
         .room_facts(&source_room_id, &registration.server_name)
         .await?;
-    let bound = decide(&registration, Some(&receipt), &body, &event, &room_state)
-        .map_err(Error::Probe)?;
+    let bound =
+        decide(&registration, Some(&receipt), &body, &event, &room_state).map_err(Error::Probe)?;
     // TS:148-151 — set receptionRoomId on the fleet record and commit. Binding
     // is not a rotation, so it is the store's `bind_reception`, not `register`
     // (which refuses changed content at the same generation).
     domain
-        .bind_reception(&registration.fleet_id, registration.generation, &bound.source_room_id)
+        .bind_reception(
+            &registration.fleet_id,
+            registration.generation,
+            &bound.source_room_id,
+        )
         .map_err(|_| Error::Store)?;
     Ok(bound.source_room_id)
 }
@@ -257,10 +281,7 @@ pub enum ProbeError {
 /// (`lib/fleet-protocol.js:105-108`): sender is the representative, content
 /// carries the fleet id and a 16-128 char `[a-zA-Z0-9_-]` challenge, the room
 /// id and event id are well-formed.
-pub fn receipt_from_event(
-    registration: &Registration,
-    event: &Value,
-) -> Option<ProbeReceipt> {
+pub fn receipt_from_event(registration: &Registration, event: &Value) -> Option<ProbeReceipt> {
     let sender = event.get("sender")?.as_str()?;
     let room_id = event.get("room_id")?.as_str()?;
     let event_id = event.get("event_id")?.as_str()?;
@@ -343,7 +364,10 @@ pub fn decide(
         .and_then(Value::as_object)
         .map(|m| m.keys().cloned().collect::<Vec<_>>())
         .unwrap_or_default();
-    if !joined.iter().any(|m| m == &registration.representative_mxid) {
+    if !joined
+        .iter()
+        .any(|m| m == &registration.representative_mxid)
+    {
         return Err(ProbeError::RepresentativeAbsent);
     }
     // TS:146-147 — an already-bound registration refuses a different reception.

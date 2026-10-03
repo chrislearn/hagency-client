@@ -7,7 +7,6 @@ use crate::{
     Error, HostConfig,
     event_batch::{Acknowledgement, Batch, PendingEnvelope, Phase, Receipt, Recovered},
 };
-use matrix_sdk_common::deserialized_responses::TimelineEventKind;
 use hagency_core::canonical;
 use hagency_core::replies::ReplyRoute;
 use hagency_store::private;
@@ -16,6 +15,7 @@ use matrix_sdk_base::{
     store::{RoomLoadSettings, StoreConfig},
 };
 use matrix_sdk_common::cross_process_lock::CrossProcessLockConfig;
+use matrix_sdk_common::deserialized_responses::TimelineEventKind;
 use matrix_sdk_crypto::store::CryptoStore;
 use matrix_sdk_crypto::{DecryptionSettings, TrustRequirement};
 use matrix_sdk_sqlite::{SqliteCryptoStore, SqliteStateStore, SqliteStoreConfig};

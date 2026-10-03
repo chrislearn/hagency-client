@@ -65,25 +65,13 @@ together. The roster renders only controls with a real durable effect.
 
 ## Acceptance Criteria
 
-Scenario: The agent lifecycle scope gates its routes without false success
-  Test: native_console_agent_lifecycle_is_scoped
-  Level: integration
-  Test Double: the console fixture holding a read-only ticket and an agent-lifecycle ticket
-  Given both sessions against the lifecycle routes and the neighbouring mutation routes
-  When each route is called with each session
-  Then the read-only session is refused with agent_lifecycle_scope_required on all three and no engagement row changes
-  And the scoped session can stop while start and preset return their named unavailable words without changing a row
-  And it is refused by publication configuration account and every other mutation route with their own scope words
-
-Scenario: The console-access grant issues exactly one lifecycle scope
-  Test: native_cli_console_access_issues_agent_lifecycle_scope
+Scenario: One console login carries every action class
+  Test: native_console_one_login_full_authority
   Level: unit
-  Test Double: the console-access command line and the native issuer
-  Given the console-access command line
-  When --manage-agent-lifecycle is passed alone and combined with either existing management flag
-  Then alone it issues a ticket that grants the implemented lifecycle mutations and no publication configuration or account act
-  And each combination is refused before any ticket is issued
-  And issuance honours the one-per-second and one-outstanding rules with replacement invalidating the preceding ticket
+  Given one issued console link exchanged for a login
+  When the login is checked for read, lifecycle and configuration actions and then logged out
+  Then it is admitted for every action class
+  And logout revokes all of them at once
 
 Scenario: Start fails closed and stop is at-most-once over the store's own state
   Test: native_console_agent_start_stop_is_at_most_once
@@ -173,16 +161,12 @@ slice's entire store surface (F1's fix): the selector's resolution and the
 fence travel through it, and nothing else on the store becomes reachable from
 the console crate.
 
-**The CLI selector's grant-exclusivity and issuance clauses are pinned where they live (r1 F2).**
-The scenario's "grants the implemented lifecycle mutations and no publication
-configuration or account act" is asserted by `native_console_agent_lifecycle_is_scoped`'s
-neighbouring-refusal half (the lifecycle session is refused by the publication,
-configuration and account mutations with their own scope words), and the
-one-per-second / one-outstanding / replacement-invalidates rules are asserted by
-`native_console_finite_clock`. The CLI selector itself pins what only the CLI can:
-the flag combinations refuse before issuance, and the issued ticket's URL page and
-shape. A reader taking the CLI selector alone as the pin for the grant's exclusivity
-would over-credit it; this entry names where each clause lives.
+**Superseded: console scopes.** The console now issues one login that carries every
+action class (read, agent lifecycle, configuration, accounts), so the scoped tickets,
+their mutual exclusivity and the one-per-second / one-outstanding issuance rules this
+section described no longer exist. The single-login behaviour is pinned by
+`native_console_one_login_full_authority`, `native_console_login_is_reusable` and
+`native_console_logins_survive_a_restart`.
 
 ## Out of Scope
 

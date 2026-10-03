@@ -151,7 +151,9 @@ async fn edit_policy(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         .ok()
         .and_then(|d| u64::try_from(d.as_millis()).ok())
         .unwrap_or_default();
-    let result = store.set_execution_policy(id, input.execution_policy, now).await;
+    let result = store
+        .set_execution_policy(id, input.execution_policy, now)
+        .await;
     if result.is_ok() && recheck(depot).is_err() {
         failure(res, hagency_store::Error::Unavailable);
         return;

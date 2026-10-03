@@ -78,7 +78,10 @@ fn side_allocation_null_zero_and_saturation() {
     let budget = db.side_budget("example.test").unwrap();
     assert_eq!(budget.allocated, None);
     assert_eq!(budget.remaining, None);
-    assert_eq!(budget.committed, 100, "the clear erases only the allocation");
+    assert_eq!(
+        budget.committed, 100,
+        "the clear erases only the allocation"
+    );
 }
 
 /// The budget breakdown: what the 100 committed is made of, per commitment,
@@ -97,14 +100,22 @@ fn side_budget_commitment_breakdown() {
     assert_eq!(row.project, "project_one");
     assert_eq!(row.project_name.as_deref(), Some("实际项目名称"));
     assert_eq!(row.allocated_tokens, 100);
-    assert!(row.agent_exists, "computed against the engagement-keyed roster");
+    assert!(
+        row.agent_exists,
+        "computed against the engagement-keyed roster"
+    );
     assert!(budget.pool_commitments.is_empty());
     assert_eq!(budget.pool_committed, 0);
     assert_eq!(budget.total_committed, 100);
     assert_eq!(budget.orphaned_committed, 0);
     // A retired engagement stops committing: revoke releases the promise.
     // `revoke` takes the engagement id; the proof carries it.
-    let proof = proof(&request("side_request", "SideWorker", &resource("side_pool", "side_seat", 1000), 100));
+    let proof = proof(&request(
+        "side_request",
+        "SideWorker",
+        &resource("side_pool", "side_seat", 1000),
+        100,
+    ));
     let id = proof.request().engagement_id().unwrap();
     db.revoke("retire", &id).unwrap();
     let budget = db.side_budget("example.test").unwrap();

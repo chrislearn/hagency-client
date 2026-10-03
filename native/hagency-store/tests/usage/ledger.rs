@@ -151,18 +151,12 @@ fn ts_oracle_growth_lands_in_its_observed_bucket() {
     // 2026-08-10T00:00:00Z.
     f.db.record_usage_observation(&source, "august", &claude(1, 1, 1, 1), 1_786_320_000_000)
         .unwrap();
-    let period = f
-        .db
-        .usage_period(&f.engagement, UsagePeriodKind::Monthly, 1_786_320_000_000)
-        .unwrap()
-        .expect("the observation's own month has a bucket");
+    let period =
+        f.db.usage_period(&f.engagement, UsagePeriodKind::Monthly, 1_786_320_000_000)
+            .unwrap()
+            .expect("the observation's own month has a bucket");
     assert_eq!(period.key, "2026-08");
-    assert_eq!(
-        period
-            .observed_growth
-            .display_volume(),
-        Ok(Some(4))
-    );
+    assert_eq!(period.observed_growth.display_volume(), Ok(Some(4)));
 }
 
 /// TS `metering-ledger.test.js:161` `a session spanning two months splits across
@@ -177,18 +171,16 @@ fn ts_oracle_a_session_spanning_two_months_splits() {
         .unwrap();
     f.db.record_usage_observation(&source, "sep", &claude(25, 0, 0, 0), 1_788_224_400_000)
         .unwrap();
-    let august = f
-        .db
-        .usage_period(&f.engagement, UsagePeriodKind::Monthly, 1_786_320_000_000)
-        .unwrap()
-        .expect("August has a bucket");
+    let august =
+        f.db.usage_period(&f.engagement, UsagePeriodKind::Monthly, 1_786_320_000_000)
+            .unwrap()
+            .expect("August has a bucket");
     assert_eq!(august.key, "2026-08");
     assert_eq!(august.observed_growth.input, Some(10));
-    let september = f
-        .db
-        .usage_period(&f.engagement, UsagePeriodKind::Monthly, 1_788_224_400_000)
-        .unwrap()
-        .expect("September has a bucket");
+    let september =
+        f.db.usage_period(&f.engagement, UsagePeriodKind::Monthly, 1_788_224_400_000)
+            .unwrap()
+            .expect("September has a bucket");
     assert_eq!(september.key, "2026-09");
     // The growth appended in September is 15 (25 - the 10 already seen).
     assert_eq!(september.observed_growth.input, Some(15));
@@ -213,8 +205,7 @@ fn ts_oracle_an_unobserved_period_is_null() {
         .unwrap();
     // 2026-12-01T00:00:00Z: a month nobody measured.
     assert!(
-        f.db
-            .usage_period(&f.engagement, UsagePeriodKind::Monthly, 1_796_083_200_000)
+        f.db.usage_period(&f.engagement, UsagePeriodKind::Monthly, 1_796_083_200_000)
             .unwrap()
             .is_none(),
         "no bucket means no sweep measured this period — not a measured zero"
@@ -227,10 +218,9 @@ fn ts_oracle_an_unobserved_period_is_null() {
 fn ts_oracle_both_granularities_are_kept() {
     let mut f = Fixture::new(Framework::Claude);
     let (_, _, source) = f.start();
-    let receipt = f
-        .db
-        .record_usage_observation(&source, "both", &claude(2, 0, 0, 0), 1_786_320_000_000)
-        .unwrap();
+    let receipt =
+        f.db.record_usage_observation(&source, "both", &claude(2, 0, 0, 0), 1_786_320_000_000)
+            .unwrap();
     assert_eq!(receipt.daily_key, "2026-08-10");
     assert_eq!(receipt.monthly_key, "2026-08");
 }
@@ -242,10 +232,9 @@ fn ts_oracle_period_key_is_utc_and_zero_padded() {
     let mut f = Fixture::new(Framework::Claude);
     let (_, _, source) = f.start();
     // 2026-01-05T00:00:00Z.
-    let receipt = f
-        .db
-        .record_usage_observation(&source, "january", &claude(1, 0, 0, 0), 1_767_571_200_000)
-        .unwrap();
+    let receipt =
+        f.db.record_usage_observation(&source, "january", &claude(1, 0, 0, 0), 1_767_571_200_000)
+            .unwrap();
     assert_eq!(receipt.daily_key, "2026-01-05");
     assert_eq!(receipt.monthly_key, "2026-01");
 }
@@ -281,10 +270,9 @@ fn ts_oracle_a_write_happens_only_when_something_changed() {
         .unwrap();
     let before = f.count("usage_receipts");
     // The identical observation under a NEW call id: the high water does not move.
-    let again = f
-        .db
-        .record_usage_observation(&source, "twice", &observation, 2001)
-        .unwrap();
+    let again =
+        f.db.record_usage_observation(&source, "twice", &observation, 2001)
+            .unwrap();
     assert!(!again.regressed);
     assert_eq!(f.count("usage_receipts"), before + 1);
     // And the total is unchanged, which is the property the TS case asserts.
@@ -346,7 +334,9 @@ fn ts_oracle_a_reloaded_ledger_continues() {
 #[ignore = "parity gap: no native retired-session bucket or sessions/retiredSessions projection"]
 #[test]
 fn ts_oracle_pruned_sessions_are_folded_not_dropped() {
-    panic!("TS asserts a retired bucket preserves a pruned session's total; native keeps per-source rows with a capacity bound");
+    panic!(
+        "TS asserts a retired bucket preserves a pruned session's total; native keeps per-source rows with a capacity bound"
+    );
 }
 
 /// TS `metering-ledger.test.js:122` `the oldest sessions are the ones that lose
@@ -366,7 +356,9 @@ fn ts_oracle_oldest_sessions_lose_their_detail() {
 #[ignore = "parity gap: no native orphans view over usage sources"]
 #[test]
 fn ts_oracle_a_deleted_agent_is_an_orphan() {
-    panic!("TS asserts an orphans() view listing agents not in the live set; native has no such read");
+    panic!(
+        "TS asserts an orphans() view listing agents not in the live set; native has no such read"
+    );
 }
 
 /// TS `metering-ledger.test.js:250` `malformed stored state does not take the
@@ -390,5 +382,7 @@ fn ts_oracle_malformed_state_does_not_take_the_ledger_down() {
 #[ignore = "parity gap: native rejects a keyless observation (identifier(call_id)) rather than ignoring it"]
 #[test]
 fn ts_oracle_observations_without_a_session_key_are_ignored() {
-    panic!("TS asserts a keyless observation is silently ignored; native refuses it (Error::InvalidInput)");
+    panic!(
+        "TS asserts a keyless observation is silently ignored; native refuses it (Error::InvalidInput)"
+    );
 }

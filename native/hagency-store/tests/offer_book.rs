@@ -91,12 +91,20 @@ fn offer_book_lists_real_roles_with_real_state() {
     // strong-floor `architect`/`review`.
     assert_eq!(names, ["coding", "testing", "integration", "documentation"]);
     let coding = &roles[0];
-    assert_eq!(coding["runningNow"], json!(1), "the one approved engagement");
+    assert_eq!(
+        coding["runningNow"],
+        json!(1),
+        "the one approved engagement"
+    );
     assert_eq!(coding["crossFamilyOk"], json!(true));
     for cap in ["budgetCapPerEngagement", "rateCap", "count"] {
         assert_eq!(coding[cap], json!(null), "{cap} is unset, never 0");
     }
-    assert_eq!(coding["serving"]["agent"], json!(null), "preset identity stays private");
+    assert_eq!(
+        coding["serving"]["agent"],
+        json!(null),
+        "preset identity stays private"
+    );
     assert_eq!(coding["serving"]["framework"], json!("codex"));
     assert_eq!(coding["serving"]["model"], json!("gpt-5.6-sol"));
     assert_eq!(coding["serving"]["tier"], json!("medium"));
@@ -109,9 +117,14 @@ fn offer_book_lists_real_roles_with_real_state() {
     assert!(!names.contains(&"architect"));
     // A named room is echoed; native still publishes no auto-join trust for a
     // requester (the retained route's own `requireRequester` rule).
-    let named = serde_json::to_value(book.db.offer_book(Some("!room:example.test")).unwrap()).unwrap();
+    let named =
+        serde_json::to_value(book.db.offer_book(Some("!room:example.test")).unwrap()).unwrap();
     assert_eq!(named["projectRoomId"], json!("!room:example.test"));
-    assert_eq!(named["whitelisted"], json!(null), "never trusts, always approval");
+    assert_eq!(
+        named["whitelisted"],
+        json!(null),
+        "never trusts, always approval"
+    );
 }
 
 /// Contributions project the REAL agent<->project relationships. The two
@@ -127,7 +140,11 @@ fn contributions_project_real_relationships() {
     assert_eq!(value["projectRoomId"], json!("!project:example.test"));
     assert_eq!(value["ownerMxid"], json!("@owner:example.test"));
     assert_eq!(value["active"], json!(true));
-    assert_eq!(value["agentJoined"], json!(null), "never checked, not false");
+    assert_eq!(
+        value["agentJoined"],
+        json!(null),
+        "never checked, not false"
+    );
     assert_eq!(value["membershipCheckedAt"], json!(null));
 }
 

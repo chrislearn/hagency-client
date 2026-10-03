@@ -23,7 +23,11 @@ async fn native_private_approval_public_status_notice() {
     let status = value[public::STATUS_KEY].as_object().unwrap();
     // TS parity (bridge-matrix.js:2583-2596): the three fixed keys plus the
     // `m.relates_to` thread relation when the approval has a task root.
-    assert_eq!(obj.len(), 4, "three keys plus the thread relation: {content}");
+    assert_eq!(
+        obj.len(),
+        4,
+        "three keys plus the thread relation: {content}"
+    );
     assert_eq!(status.len(), 5, "exactly five status keys: {content}");
     assert_eq!(value["msgtype"], public::NOTICE_MSGTYPE);
     assert_eq!(value[public::STATUS_KEY]["state"], "waiting_for_owner");
@@ -67,13 +71,12 @@ async fn native_private_approval_public_status_notice() {
     // The notice posts exactly once, to the project room, never the private.
     let mut posted = Vec::new();
     drive_with(
-        f.collector
-            .send_private_approval_notice(
-                card,
-                Some(root.into()),
-                None,
-                &CancellationToken::new(),
-            ),
+        f.collector.send_private_approval_notice(
+            card,
+            Some(root.into()),
+            None,
+            &CancellationToken::new(),
+        ),
         &mut f.fake,
         &mut f.peer,
         |r, _, _| posted.push((r.method.clone(), r.target.clone(), r.body.clone())),
@@ -86,7 +89,8 @@ async fn native_private_approval_public_status_notice() {
     // m.room.message is the EVENT TYPE, never the msgtype; the transaction id
     // is deterministic per notice content.
     let target = &posted[0].1;
-    let prefix = "/_matrix/client/v3/rooms/!project:example.test/send/m.room.message/approval_status_";
+    let prefix =
+        "/_matrix/client/v3/rooms/!project:example.test/send/m.room.message/approval_status_";
     assert!(target.starts_with(prefix), "exact PUT path: {target}");
     assert_eq!(
         target.trim_start_matches(prefix).len(),

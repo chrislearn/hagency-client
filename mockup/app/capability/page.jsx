@@ -20,7 +20,7 @@ import { capabilityCount } from '@/lib/console-workflow';
  *
  * The role vocabulary is the system's own — six roles, three tiers, per-role
  * default tier and subsumption, all from lib/matrix-agent.js:11-35 — read here
- * through lib/role-capacity.json, which the prototype imports rather than copies
+ * through native/hagency-core/role-capacity.json, which the prototype imports rather than copies
  * so the two cannot drift.
  *
  * A contributor may NARROW this catalogue by withholding an offer. They may not
@@ -28,7 +28,7 @@ import { capabilityCount } from '@/lib/console-workflow';
  * it to mean anything.
  */
 /*
- * Exclusion reason ids published in lib/role-capacity.json, mapped to localized text. An id absent
+ * Exclusion reason ids published in native/hagency-core/role-capacity.json, mapped to localized text. An id absent
  * here falls back to that file's English prose rather than to a key name.
  */
 const EXCLUSION_REASONS = {
@@ -256,7 +256,7 @@ export default function CapabilityPage() {
                   models: c.excluded.flatMap((e) => e.models).join(', '),
                   /*
                    * Localized by ID, with the data file's English prose as the fallback.
-                   * `lib/role-capacity.json` carries `reason: "below the strong floor"`, and this
+                   * `native/hagency-core/role-capacity.json` carries `reason: "below the strong floor"`, and this
                    * printed it verbatim — so a Chinese console rendered
                    * 「已排除:… —— below the strong floor。」, an English clause inside a Chinese
                    * sentence, ending in a Chinese full stop. Third time this console has echoed an

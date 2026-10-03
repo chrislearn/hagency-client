@@ -747,7 +747,9 @@ pub(super) fn mutate_in_transaction(
                 &format!("task_operation:{}:{}", cap.dispatch_id, call_id),
                 format!(
                     "Task status: {}",
-                    serde_json::to_value(t.status)?.as_str().ok_or(Error::Schema)?
+                    serde_json::to_value(t.status)?
+                        .as_str()
+                        .ok_or(Error::Schema)?
                 ),
                 now,
             )?;
@@ -1549,9 +1551,9 @@ pub(super) fn recover_dispatch_in_transaction(
     );
     match resolved_notice {
         Ok(()) => tx.execute_batch("RELEASE outcome_resolved_notice")?,
-        Err(_) => {
-            tx.execute_batch("ROLLBACK TO outcome_resolved_notice; RELEASE outcome_resolved_notice")?
-        }
+        Err(_) => tx.execute_batch(
+            "ROLLBACK TO outcome_resolved_notice; RELEASE outcome_resolved_notice",
+        )?,
     }
     Ok(())
 }

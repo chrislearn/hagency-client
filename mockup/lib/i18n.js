@@ -12,7 +12,7 @@
  *     translated model name would be unsearchable.
  *   - TIER NAMES (strong / medium / lightweight) and role KEYS, because both are
  *     wire values the scheduler matches on. Role DISPLAY names live in
- *     lib/role-capacity.json, which is the manager's text rather than ours.
+ *     native/hagency-core/role-capacity.json, which is the manager's text rather than ours.
  *   - THE WORD "AGENT" ITSELF. In Chinese technical usage 代理 means *proxy*
  *     (HTTP 代理, 代理服务器), and an earlier version of this dictionary used it
  *     for both senses in adjacent keys: `ACP 代理没有终端窗格` (agent) beside
@@ -1272,7 +1272,7 @@ const en = {
   'cp.cUnfillable': 'Cannot fill',
   'cp.cBlocked': 'Blocked by rule',
   'cp.catalogue': 'Role catalogue',
-  'cp.catalogueNote': 'the system’s own six roles and tiers, read from lib/role-capacity.json',
+  'cp.catalogueNote': 'the system’s own six roles and tiers, read from native/hagency-core/role-capacity.json',
   'cp.onDemand': 'provisions on approval',
   'cp.runtimeNotProvisionable': 'On-demand provisioning is unavailable for: {names}. Use a Claude Code or Codex resource.',
   'cp.published': 'PUBLISHED',
@@ -1304,7 +1304,7 @@ const en = {
   'cp.blockedHead': 'Blocked by the cross-family rule',
   'cp.blockedNote': '{roles} cannot be offered from a single model family, however many agents run it.',
   'cp.mappingHead': 'The mapping',
-  'cp.mappingNote': 'imported from lib/role-capacity.json, not copied — so this page cannot drift from what ships',
+  'cp.mappingNote': 'imported from native/hagency-core/role-capacity.json, not copied — so this page cannot drift from what ships',
   // ── ③ 项目 Projects — invitations received, and the projects I joined (ADR-014) ──
   'pr.title': 'Projects',
   'pr.addSide': 'Take on a project side',
@@ -2981,7 +2981,7 @@ const zh = {
   'cp.cUnfillable': '无法填充',
   'cp.cBlocked': '被规则阻挡',
   'cp.catalogue': '角色目录',
-  'cp.catalogueNote': '系统自带的六个角色与档位,读自 lib/role-capacity.json',
+  'cp.catalogueNote': '系统自带的六个角色与档位,读自 native/hagency-core/role-capacity.json',
   'cp.onDemand': '批准后创建 agent',
   'cp.runtimeNotProvisionable': '以下资源暂不支持按需创建 agent：{names}。请使用 Claude Code 或 Codex 资源。',
   'cp.published': '已发布',
@@ -3013,7 +3013,7 @@ const zh = {
   'cp.blockedHead': '被跨家族规则阻挡',
   'cp.blockedNote': '{roles} 无法由单一模型家族提供,无论跑了多少个 agent。',
   'cp.mappingHead': '映射表',
-  'cp.mappingNote': '直接引用 lib/role-capacity.json 而非复制,所以这一页不会和实际发布的配置漂移',
+  'cp.mappingNote': '直接引用 native/hagency-core/role-capacity.json 而非复制,所以这一页不会和实际发布的配置漂移',
   // ── ③ 项目 Projects —— 收到的邀请，以及我加入的项目（ADR-014）──
   'pr.title': '项目',
   'pr.addSide': '接入一个项目方',

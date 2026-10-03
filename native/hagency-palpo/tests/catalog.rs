@@ -1,7 +1,7 @@
 #[allow(dead_code)] // Other transport fixtures use the remaining shared helpers.
 mod common;
 use common::*;
-use hagency_core::{authority::Registration, canonical, project::Resource};
+use hagency_core::{authority::Registration, project::Resource};
 use hagency_palpo::{Adapter, CancellationToken, Error, HostConfig, Step};
 use hagency_store::{DomainRepository, DomainStore, Store, outbound::RegistrationIdentity};
 use serde_json::{Value, json};
@@ -41,7 +41,8 @@ impl Context {
         let registration = domain_registration();
         domain.register(registration.clone()).await.unwrap();
         let identity = RegistrationIdentity {
-            registration_fingerprint: hagency_store::publication_fingerprint(&registration).unwrap(),
+            registration_fingerprint: hagency_store::publication_fingerprint(&registration)
+                .unwrap(),
             ..common::registration()
         };
         let config = HostConfig::new(identity, endpoint, TOKEN, 31, limits())
@@ -218,7 +219,8 @@ async fn native_catalog_outbound_queued_rotation() {
     // Preserve a real frozen update before blocking the original writer. This
     // separate connection only owns a fixture lock; it never writes authority.
     let identity = RegistrationIdentity {
-        registration_fingerprint: hagency_store::publication_fingerprint(&domain_registration()).unwrap(),
+        registration_fingerprint: hagency_store::publication_fingerprint(&domain_registration())
+            .unwrap(),
         ..common::registration()
     };
     let snapshot = ctx.domain.published_catalog(identity).await.unwrap();

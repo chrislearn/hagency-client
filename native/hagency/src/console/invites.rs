@@ -113,7 +113,9 @@ async fn decide(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         || room_id.len() > 256
         || agent.is_empty()
         || agent.len() > 64
-        || !agent.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        || !agent
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
     {
         refusal(res, StatusCode::BAD_REQUEST, "bad_request");
         return;

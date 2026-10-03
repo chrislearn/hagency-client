@@ -44,9 +44,12 @@ async fn native_console_clear_dirty_releases_the_dirty_workspace() {
     drop(sql);
     assert!(dirty(&f, "private_workspace"), "precondition: dirty");
 
-    let mut released = post("/console/api/resources/private_workspace/clear-dirty", &cookie)
-        .send(&service)
-        .await;
+    let mut released = post(
+        "/console/api/resources/private_workspace/clear-dirty",
+        &cookie,
+    )
+    .send(&service)
+    .await;
     assert_eq!(released.status_code, Some(StatusCode::OK));
     let body: Value = serde_json::from_str(&released.take_string().await.unwrap()).unwrap();
     assert_eq!(
@@ -79,15 +82,20 @@ async fn native_console_clear_dirty_refuses_a_quarantined_workspace() {
     .unwrap();
     drop(sql);
 
-    let mut refused = post("/console/api/resources/private_workspace/clear-dirty", &cookie)
-        .send(&service)
-        .await;
+    let mut refused = post(
+        "/console/api/resources/private_workspace/clear-dirty",
+        &cookie,
+    )
+    .send(&service)
+    .await;
     assert_eq!(refused.status_code, Some(StatusCode::CONFLICT));
     let body: Value = serde_json::from_str(&refused.take_string().await.unwrap()).unwrap();
     assert_eq!(body["code"], "inspection_required");
-    assert!(dirty(&f, "private_workspace"), "the quarantine is untouched");
+    assert!(
+        dirty(&f, "private_workspace"),
+        "the quarantine is untouched"
+    );
 }
-
 
 /// The operator edits an agent's execution policy and reads it back — the
 /// engagement's framework is Codex, so `yolo: true` is admissible
@@ -148,8 +156,11 @@ async fn native_console_execution_policy_refuses_bad_values_and_unknown_agents()
     .await;
     assert_eq!(bad.status_code, Some(StatusCode::BAD_REQUEST));
 
-    let missing = get("/console/api/agents/no_such_agent/execution-policy", &cookie)
-        .send(&service)
-        .await;
+    let missing = get(
+        "/console/api/agents/no_such_agent/execution-policy",
+        &cookie,
+    )
+    .send(&service)
+    .await;
     assert_eq!(missing.status_code, Some(StatusCode::NOT_FOUND));
 }

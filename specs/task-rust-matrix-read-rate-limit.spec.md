@@ -14,14 +14,18 @@ new dial repeats nothing. GETs reuse connections so far fewer dials are needed.
 
 ## Constraints
 
-- Only a JSON GET may repeat a request, and only after an actual complete429 response.
+- A JSON request (GET, POST or PUT) repeats after an actual complete 429 response, up to
+  six tries sharing one host-wide cooldown (TS `fetchWithRateLimit` parity, Task #9). A
+  complete 429 is the server refusing the request, so nothing was applied and a retry
+  sends nothing twice.
 - Any JSON request -- GET, POST or PUT -- whose failure is connect-phase is redialled:
   the dial failed before any connection existed, so no request byte left and a new
   dial repeats nothing. A write is therefore still sent at most once. A TLS
   verification failure is a refusal, not a connect-phase failure, and is never
   redialled.
-- At most four total attempts across both causes, one original absolute request
-  deadline, cancellable waits and existing response/body bounds. A connect-phase
+- At most six 429 tries and, separately, at most four connect dials, all inside one
+  original absolute request deadline, with cancellable waits and existing response/body
+  bounds. A connect-phase
   wait starts at100ms and doubles; one that cannot fit the deadline is not started.
   Never retry any other failed or unknown transport, including a lost response.
 - JSON GETs may reuse keep-alive connections of their own client, idle at most10s.
@@ -29,8 +33,9 @@ new dial repeats nothing. GETs reuse connections so far fewer dials are needed.
   reused connection can never make a write uncertain.
 - Honor integer Retry-After seconds and Matrix retry_after_ms using the larger
   delay. Invalid hints refuse; absent hints use bounded exponential1s backoff.
-- A POST/PUT429 and every upload/download remain single-attempt, and a write that
-  ends in Transport keeps its original custody semantics: the outcome is unknown.
+- Every upload/download remains single-attempt, and a write that ends in Transport
+  (for example a lost response) keeps its original custody semantics: the outcome is
+  unknown and it is never resent.
 - No response is positive authority until the ordinary fresh validation passes.
 - No automatic revival of retired routes or replay of old live requests.
 
@@ -55,14 +60,15 @@ Scenario: Retry budget and cancellation never grant a fresh deadline
   Test: native_matrix_get_rate_limit_bounds
   Given repeated429, invalid hints, excessive delay or cancellation
   When a GET runs
-  Then at most four attempts use one original finite request interval
+  Then at most six attempts use one original finite request interval
   And no early retry crosses a server delay or cancellation
 
-Scenario: Mutations and uncertain transport never repeat
-  Test: native_matrix_rate_limit_no_write_retry
-  Given POST/PUT429 or a lost GET response
+Scenario: A write 429 retries like a read and a lost response never repeats
+  Test: native_matrix_write_rate_limit_retries_like_get
+  Given POST/PUT answered by 429 five times and then 200, or a GET whose response is lost
   When the original HTTP call finishes
-  Then exactly one request was emitted
+  Then the write returns the 200 after exactly six requests
+  And the lost GET ends in Transport after exactly one request
 
 Scenario: A GET whose connection never existed is redialled and sent once
   Test: native_matrix_get_connect_retry_reaches_a_late_peer

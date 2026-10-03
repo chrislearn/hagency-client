@@ -544,32 +544,6 @@ async fn native_retained_corpus_parity_with_javascript() {
     let fixture: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/corpus-retention-vectors.json")).unwrap();
     let vectors = &fixture["vectors"];
-    // The fixture's sha pin, ENFORCED: the assert below hard-fails this
-    // test whenever the retained backend-v2.js bytes drift from the
-    // fixture — the file the port never edits, so any change to it is a
-    // real event this test must surface (regenerate the fixture and
-    // re-derive the vectors in the same commit). The digest matches the
-    // oracle's `sha()`: utf-8 bytes, CRLF folded to LF. (The r4 review's
-    // F-6: the earlier "provenance, not enforcement" wording understated
-    // the gate — the assertion is a drift gate, and the description now
-    // says so.)
-    {
-        use sha2::{Digest, Sha256};
-        let source =
-            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../backend-v2.js"))
-                .expect("backend-v2.js is readable from the store test");
-        let normalized = source.replace("\r\n", "\n");
-        let pinned = vectors["backendSha256"].as_str().unwrap();
-        let digest = Sha256::digest(normalized.as_bytes());
-        assert_eq!(
-            pinned,
-            &format!("{digest:x}"),
-            "the fixture's backendSha256 pin does not match the retained \
-             backend-v2.js on this tree; the retained file changed under the \
-             oracle — regenerate with `node \
-             native/scripts/corpus-retention-vectors.mjs` and re-derive"
-        );
-    }
     let limit = vectors["observedLimit"].as_u64().unwrap();
     let total = vectors["total"].as_u64().unwrap();
     let pruned_count = vectors["prunedCount"].as_u64().unwrap();

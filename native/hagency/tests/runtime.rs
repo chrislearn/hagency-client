@@ -51,8 +51,8 @@ impl Fixture {
         }
     }
     fn post(&self, body: Value, token: Option<&str>) -> RequestBuilder {
-        let mut req = TestClient::post(format!("{BASE}{URL}"))
-            .add_header("host", "127.0.0.1:13300", true);
+        let mut req =
+            TestClient::post(format!("{BASE}{URL}")).add_header("host", "127.0.0.1:13300", true);
         if let Some(token) = token {
             req = req.bearer_auth(token);
         }
@@ -64,13 +64,13 @@ impl Fixture {
 async fn native_compact_route_authority_and_shapes() {
     let f = Fixture::new();
     // Authority: no token → 401.
-    let res = f.post(json!({"agent": "Worker"}), None).send(&f.service).await;
-    assert_eq!(res.status_code, Some(StatusCode::UNAUTHORIZED));
-    // Missing agent → 400 "agent required" (the TS normalizeAgentName 400).
-    let mut res = f
-        .post(json!({}), Some(TOKEN))
+    let res = f
+        .post(json!({"agent": "Worker"}), None)
         .send(&f.service)
         .await;
+    assert_eq!(res.status_code, Some(StatusCode::UNAUTHORIZED));
+    // Missing agent → 400 "agent required" (the TS normalizeAgentName 400).
+    let mut res = f.post(json!({}), Some(TOKEN)).send(&f.service).await;
     assert_eq!(res.status_code, Some(StatusCode::BAD_REQUEST));
     assert_eq!(
         res.take_json::<Value>().await.unwrap(),

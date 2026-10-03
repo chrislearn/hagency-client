@@ -245,10 +245,7 @@ async fn ts_oracle_roster_view_names_returns_strings() {
     let mut sorted = names.clone();
     sorted.sort();
     assert_eq!(names, sorted, "TS sorts the names");
-    assert!(
-        names.iter().all(|n| !n.is_empty()),
-        "TS drops empty names"
-    );
+    assert!(names.iter().all(|n| !n.is_empty()), "TS drops empty names");
     // The names are the SAME agents the envelope carries — one source, two
     // shapes, never a second derivation.
     let mut envelope = get("/console/api/agents", &cookie).send(&service).await;
@@ -290,13 +287,14 @@ async fn ts_oracle_force_delete_cascades() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
     let cookie = lifecycle_session(&service).await;
-    let mut response = TestClient::delete(format!("{BASE}/console/api/agents/UsageWorker?force=true"))
-        .add_header("host", "127.0.0.1:13300", true)
-        .add_header("origin", BASE, true)
-        .add_header("sec-fetch-site", "same-origin", true)
-        .add_header("cookie", &cookie, true)
-        .send(&service)
-        .await;
+    let mut response =
+        TestClient::delete(format!("{BASE}/console/api/agents/UsageWorker?force=true"))
+            .add_header("host", "127.0.0.1:13300", true)
+            .add_header("origin", BASE, true)
+            .add_header("sec-fetch-site", "same-origin", true)
+            .add_header("cookie", &cookie, true)
+            .send(&service)
+            .await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let value = response.take_json::<Value>().await.unwrap();
     assert_eq!(value["ok"], json!(true));
@@ -385,15 +383,16 @@ async fn ts_oracle_agent_project_side_binding() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
     let cookie = lifecycle_session(&service).await;
-    let mut response =
-        TestClient::put(format!("{BASE}/console/api/agents/UsageWorker/project-side"))
-            .add_header("host", "127.0.0.1:13300", true)
-            .add_header("origin", BASE, true)
-            .add_header("sec-fetch-site", "same-origin", true)
-            .add_header("cookie", &cookie, true)
-            .json(&json!({"projectSide":"example.test"}))
-            .send(&service)
-            .await;
+    let mut response = TestClient::put(format!(
+        "{BASE}/console/api/agents/UsageWorker/project-side"
+    ))
+    .add_header("host", "127.0.0.1:13300", true)
+    .add_header("origin", BASE, true)
+    .add_header("sec-fetch-site", "same-origin", true)
+    .add_header("cookie", &cookie, true)
+    .json(&json!({"projectSide":"example.test"}))
+    .send(&service)
+    .await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let value = response.take_json::<Value>().await.unwrap();
     assert_eq!(value["agent"]["projectSide"], "example.test");
@@ -410,11 +409,10 @@ async fn ts_oracle_agent_matrix_identity_minting() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
     let cookie = lifecycle_session(&service).await;
-    let mut response =
-        post("/console/api/agents/UsageWorker/matrix-identity", &cookie)
-            .json(&json!({}))
-            .send(&service)
-            .await;
+    let mut response = post("/console/api/agents/UsageWorker/matrix-identity", &cookie)
+        .json(&json!({}))
+        .send(&service)
+        .await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let value = response.take_json::<Value>().await.unwrap();
     assert_eq!(
@@ -439,7 +437,10 @@ async fn ts_oracle_agent_provision_writes_project_mapping() {
         .await;
     assert_eq!(response.status_code, Some(StatusCode::CREATED));
     let value = response.take_json::<Value>().await.unwrap();
-    assert!(value["paths"]["workdir"].is_string(), "TS names the workdir");
+    assert!(
+        value["paths"]["workdir"].is_string(),
+        "TS names the workdir"
+    );
     f.close().await;
 }
 
@@ -478,11 +479,13 @@ async fn ts_oracle_health_reports_agent_tokens() {
 async fn ts_oracle_system_message_passes_without_a_token() {
     let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
     let service = f.service();
-    let mut response = TestClient::post(format!("{BASE}/console/api/messages"))
+    let response = TestClient::post(format!("{BASE}/console/api/messages"))
         .add_header("host", "127.0.0.1:13300", true)
         .add_header("origin", BASE, true)
         .add_header("sec-fetch-site", "same-origin", true)
-        .json(&json!({"from":"system","to":"alpha","type":"inform","summary":"sys","full":"sys msg"}))
+        .json(
+            &json!({"from":"system","to":"alpha","type":"inform","summary":"sys","full":"sys msg"}),
+        )
         .send(&service)
         .await;
     assert_eq!(response.status_code, Some(StatusCode::OK));
@@ -501,8 +504,7 @@ async fn ts_oracle_operator_can_attach_a_preset_at_registration() {
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let value = response.take_json::<Value>().await.unwrap();
     assert_eq!(
-        value["agent"]["presetId"],
-        "codex-default-namespace-v1",
+        value["agent"]["presetId"], "codex-default-namespace-v1",
         "the operator's preset survives registration"
     );
     f.close().await;

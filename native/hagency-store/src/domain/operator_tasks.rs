@@ -293,32 +293,31 @@ fn task_row(
 /// The retained comments array, in insertion order (`sequence`). Bounded by
 /// `MAX_TASK_COMMENTS` at write time, so this read is finite by construction.
 fn comments(db: &rusqlite::Connection, id: &str) -> Result<Vec<OperatorTaskComment>, Error> {
-    Ok(db
-        .prepare(
-            "SELECT author,body,created_at FROM operator_task_comments WHERE task_id=?1 \
+    db.prepare(
+        "SELECT author,body,created_at FROM operator_task_comments WHERE task_id=?1 \
              ORDER BY sequence LIMIT ?2",
-        )?
-        .query_map(params![id, MAX_TASK_COMMENTS as i64], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, u64>(2)?,
-            ))
-        })?
-        .map(|r| {
-            let (author, text, ts) = r?;
-            Ok(OperatorTaskComment {
-                author,
-                text,
-                ts: iso8601(ts),
-            })
+    )?
+    .query_map(params![id, MAX_TASK_COMMENTS as i64], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, u64>(2)?,
+        ))
+    })?
+    .map(|r| {
+        let (author, text, ts) = r?;
+        Ok(OperatorTaskComment {
+            author,
+            text,
+            ts: iso8601(ts),
         })
-        .collect::<Result<Vec<_>, Error>>()?)
+    })
+    .collect::<Result<Vec<_>, Error>>()
 }
 
 fn read_task(db: &rusqlite::Connection, id: &str) -> Result<OperatorTask, Error> {
     let stored = db
-        .query_row(&format!("{SELECT} WHERE id=?1"), [id], |r| row(r))
+        .query_row(&format!("{SELECT} WHERE id=?1"), [id], row)
         .optional()?
         .ok_or(Error::NotFound)?;
     task_row(stored, comments(db, id)?)
@@ -379,7 +378,9 @@ fn list_rows(db: &rusqlite::Connection, filters: &TaskFilters) -> Result<Vec<Str
     }
     let mut query = db.prepare(&sql)?;
     Ok(query
-        .query_map(rusqlite::params_from_iter(values), |r| r.get::<_, String>(0))?
+        .query_map(rusqlite::params_from_iter(values), |r| {
+            r.get::<_, String>(0)
+        })?
         .collect::<Result<Vec<_>, _>>()?)
 }
 
@@ -430,8 +431,7 @@ impl DomainRepository {
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let count: i64 =
-            tx.query_row("SELECT COUNT(*) FROM operator_tasks", [], |r| r.get(0))?;
+        let count: i64 = tx.query_row("SELECT COUNT(*) FROM operator_tasks", [], |r| r.get(0))?;
         if count >= MAX_OPERATOR_TASKS {
             return Err(Error::Capacity);
         }
@@ -477,20 +477,16 @@ impl DomainRepository {
         if filters.limit.is_some_and(|l| l > MAX_TASK_PAGE) {
             return Err(hagency_core::InvalidInput("task page exceeds its bound").into());
         }
-        Ok(list_rows(&self.db, filters)?
+        list_rows(&self.db, filters)?
             .into_iter()
             .map(|id| read_task(&self.db, &id))
-            .collect::<Result<Vec<_>, _>>()?)
+            .collect::<Result<Vec<_>, _>>()
     }
 
     /// `updateTask` (`lib/task-store.js:169-214`) — the operator's full-field
     /// edit. `updated_at` moves only when a field actually changed, and the
     /// write is skipped entirely when nothing did.
-    pub fn update_operator_task(
-        &mut self,
-        id: &str,
-        patch: &Value,
-    ) -> Result<OperatorTask, Error> {
+    pub fn update_operator_task(&mut self, id: &str, patch: &Value) -> Result<OperatorTask, Error> {
         let object = patch.as_object().cloned().unwrap_or_default();
         let get = |key: &str| object.get(key);
         let present = |key: &str| object.contains_key(key);
@@ -498,7 +494,7 @@ impl DomainRepository {
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current: Option<Row> = tx
-            .query_row(&format!("{SELECT} WHERE id=?1"), [id], |r| row(r))
+            .query_row(&format!("{SELECT} WHERE id=?1"), [id], row)
             .optional()?;
         let Some(mut stored) = current else {
             return Err(Error::NotFound);
@@ -556,14 +552,7 @@ impl DomainRepository {
                 "UPDATE operator_tasks SET title=?2,description=?3,priority=?4,granularity=?5,\
                  assignee=?6,labels=?7,parent_id=?8,updated_at=?9 WHERE id=?1",
                 params![
-                    id,
-                    stored.1,
-                    stored.2,
-                    stored.4,
-                    stored.5,
-                    stored.6,
-                    stored.16,
-                    stored.15,
+                    id, stored.1, stored.2, stored.4, stored.5, stored.6, stored.16, stored.15,
                     updated_at
                 ],
             )?;
@@ -602,7 +591,7 @@ impl DomainRepository {
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current: Option<Row> = tx
-            .query_row(&format!("{SELECT} WHERE id=?1"), [id], |r| row(r))
+            .query_row(&format!("{SELECT} WHERE id=?1"), [id], row)
             .optional()?;
         let Some(stored) = current else {
             return Err(Error::NotFound);
@@ -653,8 +642,10 @@ impl DomainRepository {
     ) -> Result<OperatorTask, Error> {
         version_guard(now)?;
         let object = comment.as_object().cloned().unwrap_or_default();
-        let text = trimmed(object.get("text"), COMMENT_MAX).ok_or_else(|| invalid("invalid_comment"))?;
-        let author = trimmed(object.get("author"), ASSIGNEE_MAX).unwrap_or_else(|| "anonymous".to_owned());
+        let text =
+            trimmed(object.get("text"), COMMENT_MAX).ok_or_else(|| invalid("invalid_comment"))?;
+        let author =
+            trimmed(object.get("author"), ASSIGNEE_MAX).unwrap_or_else(|| "anonymous".to_owned());
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -694,7 +685,7 @@ impl DomainRepository {
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current: Option<Row> = tx
-            .query_row(&format!("{SELECT} WHERE id=?1"), [id], |r| row(r))
+            .query_row(&format!("{SELECT} WHERE id=?1"), [id], row)
             .optional()?;
         let Some(stored) = current else {
             return Ok(None);

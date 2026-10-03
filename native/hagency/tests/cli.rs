@@ -629,10 +629,7 @@ fn native_console_access_has_no_scoped_flags() {
             !output.status.success(),
             "the retired {retired} must be refused, not accepted"
         );
-        assert!(
-            output.stdout.is_empty(),
-            "{retired} must issue no link"
-        );
+        assert!(output.stdout.is_empty(), "{retired} must issue no link");
         let stderr = String::from_utf8_lossy(&output.stderr).to_lowercase();
         assert!(
             stderr.contains("unexpected argument") || stderr.contains("found argument"),
@@ -815,8 +812,7 @@ fn native_account_and_registration_cli_through_running_service() {
         "prepare through the running service failed: {}",
         String::from_utf8_lossy(&prepared.stderr)
     );
-    let choices: Vec<serde_json::Value> =
-        serde_json::from_slice(&prepared.stdout).unwrap();
+    let choices: Vec<serde_json::Value> = serde_json::from_slice(&prepared.stdout).unwrap();
     assert_eq!(choices.len(), 1, "one prepared account");
     let id = choices[0]["id"].as_str().unwrap().to_owned();
 
@@ -827,8 +823,7 @@ fn native_account_and_registration_cli_through_running_service() {
         "inspect through the running service failed: {}",
         String::from_utf8_lossy(&inspect.stderr)
     );
-    let inspected: Vec<serde_json::Value> =
-        serde_json::from_slice(&inspect.stdout).unwrap();
+    let inspected: Vec<serde_json::Value> = serde_json::from_slice(&inspect.stdout).unwrap();
     assert_eq!(inspected.len(), 1);
     assert_eq!(inspected[0]["id"], choices[0]["id"]);
 
@@ -851,7 +846,12 @@ fn native_account_and_registration_cli_through_running_service() {
     });
     let reg_file = root.path().join("registration.json");
     fs::write(&reg_file, registration.to_string()).unwrap();
-    let registered = invoke(&["registration", "register", "--file", reg_file.to_str().unwrap()]);
+    let registered = invoke(&[
+        "registration",
+        "register",
+        "--file",
+        reg_file.to_str().unwrap(),
+    ]);
     assert!(
         registered.status.success(),
         "registration through the running service failed: {}",
@@ -859,11 +859,7 @@ fn native_account_and_registration_cli_through_running_service() {
     );
 
     // The service is still up — the whole point is that it never had to stop.
-    assert_eq!(
-        operator_get(address, &token, "/api/native/v1/resources?limit=100")
-            .starts_with('['),
-        true
-    );
+    assert!(operator_get(address, &token, "/api/native/v1/resources?limit=100").starts_with('['));
     drop(running);
 }
 
@@ -897,7 +893,11 @@ fn native_cli_side_registration_issues_without_hand_placing() {
             .env("OPENAI_API_KEY", "offline-fixture-key");
         command.output().unwrap()
     };
-    assert!(invoke(&["init", "--state-dir", state.to_str().unwrap()]).status.success());
+    assert!(
+        invoke(&["init", "--state-dir", state.to_str().unwrap()])
+            .status
+            .success()
+    );
     let document = root.path().join("fleet.json");
     fs::write(
         &document,
@@ -940,8 +940,14 @@ fn native_cli_side_registration_issues_without_hand_placing() {
     assert_eq!(body["ok"], serde_json::json!(true));
     assert_eq!(body["staged"], serde_json::json!(false));
     assert_eq!(body["mode"], serde_json::json!("0600"));
-    assert_eq!(body["registrationId"], serde_json::json!("hagency-example.test"));
-    assert_eq!(body["representative"], serde_json::json!("@hagency:example.test"));
+    assert_eq!(
+        body["registrationId"],
+        serde_json::json!("hagency-example.test")
+    );
+    assert_eq!(
+        body["representative"],
+        serde_json::json!("@hagency:example.test")
+    );
     assert_eq!(body["namespace"], serde_json::json!("@ac_.*"));
     assert_eq!(body["url"], serde_json::json!("http://127.0.0.1:13443"));
 

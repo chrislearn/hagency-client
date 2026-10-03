@@ -180,7 +180,10 @@ impl Collector {
     /// with the agent's own sync (`bridge-matrix.js:7894-8131`). Taking the
     /// permit here made a parked poll refuse the agent's refresh with `Busy`,
     /// and the agent stopped ingesting room events (the live 19447 run).
-    pub async fn observe_invites(&self, cancel: &CancellationToken) -> Result<Vec<crate::invites::ObservedInvite>, Error> {
+    pub async fn observe_invites(
+        &self,
+        cancel: &CancellationToken,
+    ) -> Result<Vec<crate::invites::ObservedInvite>, Error> {
         let inner = self.inner.clone();
         let cancel = cancel.clone();
         let job = async move {
@@ -199,7 +202,11 @@ impl Collector {
     /// No `busy` permit, for `observe_invites`' reason: this is a stateless
     /// `POST /join` on `Http`, and holds nothing the SDK owner holds. A join
     /// parked on the permit used to refuse the agent's own refresh with `Busy`.
-    pub async fn join_room(&self, room_id: &str, cancel: &CancellationToken) -> Result<String, Error> {
+    pub async fn join_room(
+        &self,
+        room_id: &str,
+        cancel: &CancellationToken,
+    ) -> Result<String, Error> {
         let inner = self.inner.clone();
         let room_id = room_id.to_owned();
         let cancel = cancel.clone();
@@ -924,7 +931,7 @@ impl Inner {
                         .and_then(Value::as_str)
                         .map(str::to_owned);
                 }
-                "com.hagency.admin.binding.v1" => {
+                "com.hagency.admin.binding.v1"
                     // TS parity (lib/fleet-protocol.js:52): the binding is a
                     // per-fleet state event keyed by the fleet id (never the
                     // empty key). TS reads the exact tuple
@@ -934,10 +941,9 @@ impl Inner {
                     // Palpo also writes one under the empty key when it
                     // creates a project or approval room; TS never reads that
                     // tuple, so neither does the collector (not a refusal).
-                    if !key.is_empty() {
+                    if !key.is_empty() => {
                         ts_binding = Some(Value::Object(content.clone()));
                     }
-                }
                 // Board #95: rooms bound by EARLIER Rust builds carry the
                 // legacy `com.hagency.project.binding.v1` under the empty
                 // state key. Read it too so such a room keeps working after
@@ -949,11 +955,10 @@ impl Inner {
                 // gate downstream — a legacy binding naming a foreign fleet is
                 // refused there with exactly today's error. Native never
                 // writes this event again (no writer exists).
-                "com.hagency.project.binding.v1" => {
-                    if key.is_empty() {
+                "com.hagency.project.binding.v1"
+                    if key.is_empty() => {
                         legacy_binding = Some(Value::Object(content.clone()));
                     }
-                }
                 _ => {}
             }
         }

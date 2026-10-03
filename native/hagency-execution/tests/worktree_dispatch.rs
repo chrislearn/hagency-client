@@ -11,8 +11,8 @@
 #[path = "../../hagency-store/tests/common/mod.rs"]
 mod common;
 use common::*;
-use hagency_core::tasks::*;
 use hagency_core::authority::ProjectRequest;
+use hagency_core::tasks::*;
 use hagency_execution::{Host, Limits, Operation, Protocol, ordinary_launch_path};
 use hagency_store::{DomainRepository, DomainStore, EffectOutcome};
 use serde_json::json;
@@ -108,7 +108,7 @@ async fn native_worktree_two_threads_distinct_worktrees() {
     // TS per-agent mode (backend-v2.js:2994, resolve at :2057-2075): the
     // workspace settings ride the AGENT record through the production
     // admission path — not a host or serve-level switch.
-    let mut value = serde_json::to_value(&request("allocation", "Worker", &pool, 100)).unwrap();
+    let mut value = serde_json::to_value(request("allocation", "Worker", &pool, 100)).unwrap();
     value["agentDefinition"]["workspaceMode"] = json!("worktree");
     value["agentDefinition"]["worktreesDir"] = json!(worktrees.to_string_lossy().into_owned());
     let request: ProjectRequest = serde_json::from_value(value).unwrap();
@@ -157,7 +157,10 @@ async fn native_worktree_two_threads_distinct_worktrees() {
     let env = || {
         let mut env = BTreeMap::from([
             (OsString::from("PATH"), OsString::from("")),
-            (OsString::from("HAGENCY_OFFLINE_MODE"), OsString::from("normal")),
+            (
+                OsString::from("HAGENCY_OFFLINE_MODE"),
+                OsString::from("normal"),
+            ),
             (
                 OsString::from("HAGENCY_OPERATION_BUDGET_MS"),
                 OsString::from(limits().operation_ms.to_string()),
@@ -181,7 +184,12 @@ async fn native_worktree_two_threads_distinct_worktrees() {
 
     // Thread A: full dispatch to a clean completion.
     domain
-        .create_canonical_task("task-a".into(), "session-a".into(), "Thread A".into(), now())
+        .create_canonical_task(
+            "task-a".into(),
+            "session-a".into(),
+            "Thread A".into(),
+            now(),
+        )
         .await
         .unwrap();
     domain
@@ -199,7 +207,12 @@ async fn native_worktree_two_threads_distinct_worktrees() {
 
     // Thread B: distinct worktree, same agent.
     domain
-        .create_canonical_task("task-b".into(), "session-b".into(), "Thread B".into(), now())
+        .create_canonical_task(
+            "task-b".into(),
+            "session-b".into(),
+            "Thread B".into(),
+            now(),
+        )
         .await
         .unwrap();
     domain
@@ -230,9 +243,18 @@ async fn native_worktree_two_threads_distinct_worktrees() {
     let shared = ordinary_launch_path(&work).unwrap();
 
     // The core acceptance: distinct worktrees, no cross-thread sharing.
-    assert_ne!(cwd_a, cwd_b, "two threads of one agent must get distinct worktrees");
-    assert_ne!(cwd_a, shared, "thread A must not run in the shared workspace");
-    assert_ne!(cwd_b, shared, "thread B must not run in the shared workspace");
+    assert_ne!(
+        cwd_a, cwd_b,
+        "two threads of one agent must get distinct worktrees"
+    );
+    assert_ne!(
+        cwd_a, shared,
+        "thread A must not run in the shared workspace"
+    );
+    assert_ne!(
+        cwd_b, shared,
+        "thread B must not run in the shared workspace"
+    );
     let worktrees_root = worktrees.canonicalize().unwrap();
     assert!(
         Path::new(&cwd_a).starts_with(&worktrees_root),

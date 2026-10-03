@@ -20,10 +20,10 @@
 //! run `std::process::Command` on the blocking pool with the TS's own
 //! timeouts and stdin discipline (`stdio: ignore` — "a CLI that reads it
 //! waits forever, which is how a health probe becomes an outage").
-use crate::resources::domain;
 use crate::refusal;
-use hagency_core::qualification::{self, Tier};
+use crate::resources::domain;
 use hagency_core::project::Resource;
+use hagency_core::qualification::{self, Tier};
 use salvo::prelude::*;
 use serde_json::{Value, json};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -107,15 +107,23 @@ const CODEX_ACP: Manifest = Manifest {
     display_name: "Codex (ACP)",
     transport: "acp",
     launchable: false,
-    not_launchable_reason: Some("hagency-up creates a tmux session and an ACP agent has no pane; start it with `hagency acp-up <name> <workspace> codex-acp` instead"),
+    not_launchable_reason: Some(
+        "hagency-up creates a tmux session and an ACP agent has no pane; start it with `hagency acp-up <name> <workspace> codex-acp` instead",
+    ),
     command: "codex-acp",
     default_args: &[],
     acp_args: &[],
     model_flag: Some("--model"),
-    permission_summary: Some("codex-acp asks before each tool call and hagency declines all but its own coordination tools; hagency passes NO filesystem sandbox flag on this transport"),
+    permission_summary: Some(
+        "codex-acp asks before each tool call and hagency declines all but its own coordination tools; hagency passes NO filesystem sandbox flag on this transport",
+    ),
     acp_model_flag: None,
-    acp_model_flag_note: Some("codex-acp accepts --model without complaint and then ignores it — verified: the handshake succeeds either way. Declaring null so hagency refuses the flag up front rather than letting an operator believe a model was selected when it was not."),
-    command_note: Some("codex-acp is an adapter, not codex itself: it wraps the Codex SDK and speaks ACP on stdio. Unlike octos and hermes, whose vendors ship ACP directly, this puts a third-party process in the chain, version-coupled to both the adapter and the codex CLI underneath it. Installed from @agentclientprotocol/codex-acp; the older @zed-industries/codex-acp is deprecated in favour of it."),
+    acp_model_flag_note: Some(
+        "codex-acp accepts --model without complaint and then ignores it — verified: the handshake succeeds either way. Declaring null so hagency refuses the flag up front rather than letting an operator believe a model was selected when it was not.",
+    ),
+    command_note: Some(
+        "codex-acp is an adapter, not codex itself: it wraps the Codex SDK and speaks ACP on stdio. Unlike octos and hermes, whose vendors ship ACP directly, this puts a third-party process in the chain, version-coupled to both the adapter and the codex CLI underneath it. Installed from @agentclientprotocol/codex-acp; the older @zed-industries/codex-acp is deprecated in favour of it.",
+    ),
     guard_exact: &[
         "--yolo",
         "--full-auto",
@@ -136,7 +144,12 @@ const CODEX: Manifest = Manifest {
     launchable: true,
     not_launchable_reason: None,
     command: "codex",
-    default_args: &["--sandbox", "workspace-write", "--ask-for-approval", "on-request"],
+    default_args: &[
+        "--sandbox",
+        "workspace-write",
+        "--ask-for-approval",
+        "on-request",
+    ],
     acp_args: &[],
     model_flag: Some("--model"),
     permission_summary: Some("level2 (workspace-write + on-request)"),
@@ -161,15 +174,21 @@ const HERMES: Manifest = Manifest {
     display_name: "Hermes",
     transport: "acp",
     launchable: false,
-    not_launchable_reason: Some("hagency-up creates a tmux session and an ACP agent has no pane; start it with `hagency acp-up <name> <workspace> hermes` instead"),
+    not_launchable_reason: Some(
+        "hagency-up creates a tmux session and an ACP agent has no pane; start it with `hagency acp-up <name> <workspace> hermes` instead",
+    ),
     command: "hermes-acp",
     default_args: &[],
     acp_args: &[],
     model_flag: Some("--model"),
     permission_summary: Some("hermes interactive approval prompts (bypass flags refused)"),
     acp_model_flag: None,
-    acp_model_flag_note: Some("hermes-acp takes no model flag. Passing one is FATAL: 'hermes-acp: error: unrecognized arguments: --model x' and the process dies before initialize, exactly as it did for --cwd. Model selection is hermes-side (`hermes model`)."),
-    command_note: Some("hermes-acp is the ACP entry point (acp_adapter.entry:main), installed by the [acp] extra. It is a separate binary rather than a subcommand, unlike `octos acp`."),
+    acp_model_flag_note: Some(
+        "hermes-acp takes no model flag. Passing one is FATAL: 'hermes-acp: error: unrecognized arguments: --model x' and the process dies before initialize, exactly as it did for --cwd. Model selection is hermes-side (`hermes model`).",
+    ),
+    command_note: Some(
+        "hermes-acp is the ACP entry point (acp_adapter.entry:main), installed by the [acp] extra. It is a separate binary rather than a subcommand, unlike `octos acp`.",
+    ),
     guard_exact: &["--yolo", "--accept-hooks"],
     guard_prefix: &[],
     guard_message: Some("Hermes approval policy flag is managed by hagency: {token}"),
@@ -180,18 +199,24 @@ const OCTOS: Manifest = Manifest {
     display_name: "Octos",
     transport: "acp",
     launchable: false,
-    not_launchable_reason: Some("hagency-up creates a tmux session and an ACP agent has no pane; start it with `hagency acp-up <name> <workspace> octos` instead"),
+    not_launchable_reason: Some(
+        "hagency-up creates a tmux session and an ACP agent has no pane; start it with `hagency acp-up <name> <workspace> octos` instead",
+    ),
     command: "octos",
     default_args: &[],
     // launch.acpArgs: ["acp", "--profile", "coding-full"] — the subcommand
     // the ACP launch path actually drives.
     acp_args: &["acp", "--profile", "coding-full"],
     model_flag: Some("--model"),
-    permission_summary: Some("octos sandbox as configured (hagency never passes --danger-full-access)"),
+    permission_summary: Some(
+        "octos sandbox as configured (hagency never passes --danger-full-access)",
+    ),
     // octos.json launch.acpArgs: ["acp", "--profile", "coding-full"] — the
     // first element is the subcommand the ACP launch path actually drives.
     acp_model_flag: Some("--model"),
-    acp_model_flag_note: Some("Verified: `octos acp --help` lists --model <MODEL> and the handshake survives it. Declared separately from launch.modelFlag because that one describes the tmux CLI, and the two are not the same surface — hermes-acp and codex-acp take no model flag at all even though their CLIs do."),
+    acp_model_flag_note: Some(
+        "Verified: `octos acp --help` lists --model <MODEL> and the handshake survives it. Declared separately from launch.modelFlag because that one describes the tmux CLI, and the two are not the same surface — hermes-acp and codex-acp take no model flag at all even though their CLIs do.",
+    ),
     command_note: None,
     guard_exact: &["--danger-full-access", "--yolo"],
     guard_prefix: &["--sandbox="],
@@ -204,7 +229,7 @@ static REGISTRY: [Manifest; 5] = [CLAUDE, CODEX_ACP, CODEX, HERMES, OCTOS];
 /// serializeFramework (backend-v2.js:13356-13381), field for field.
 fn serialize_framework(f: &Manifest) -> Value {
     // `[...exact, ...prefix].sort()` — the TS flattening, byte for byte.
-    let mut refused: Vec<&str> = f.guard_exact.iter().copied().collect();
+    let mut refused: Vec<&str> = f.guard_exact.to_vec();
     refused.extend(f.guard_prefix.iter().copied());
     refused.sort_unstable();
     json!({
@@ -284,7 +309,13 @@ fn run_bounded(command: &str, args: &[&str], timeout: Duration) -> Option<Child>
                     stderr
                 };
                 return Some(Child::Failed {
-                    message: message.lines().next().unwrap_or("").chars().take(120).collect(),
+                    message: message
+                        .lines()
+                        .next()
+                        .unwrap_or("")
+                        .chars()
+                        .take(120)
+                        .collect(),
                 });
             }
             Ok(None) => {
@@ -303,17 +334,26 @@ fn run_bounded(command: &str, args: &[&str], timeout: Duration) -> Option<Child>
 /// probeFramework, ported with its exact state ladder and fix strings.
 fn probe_sync(f: &Manifest) -> Value {
     // `which` first: a missing binary is missing, not an unexplained failure.
-    let on_path =
-        run_bounded("which", &[f.command], Duration::from_secs(3)).is_some_and(|o| {
-            matches!(o, Child::Success(_))
-        });
+    let on_path = run_bounded("which", &[f.command], Duration::from_secs(3))
+        .is_some_and(|o| matches!(o, Child::Success(_)));
     let mut version = Value::Null;
     let mut probe_error: Option<String> = None;
     if on_path {
         match run_bounded(f.command, &["--version"], Duration::from_secs(5)) {
             Some(Child::Success(stdout)) => {
-                let first = stdout.trim().lines().next().unwrap_or("").chars().take(80).collect::<String>();
-                version = if first.is_empty() { Value::Null } else { json!(first) };
+                let first = stdout
+                    .trim()
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .chars()
+                    .take(80)
+                    .collect::<String>();
+                version = if first.is_empty() {
+                    Value::Null
+                } else {
+                    json!(first)
+                };
             }
             Some(Child::TimedOut) => probe_error = Some("version probe timed out".into()),
             Some(Child::Failed { message }) => {
@@ -329,20 +369,28 @@ fn probe_sync(f: &Manifest) -> Value {
     // For an ACP framework, `--version` is not evidence it can start: probe
     // the subcommand the launch path actually drives (`acpArgs[0]`).
     let acp_subcommand = (f.transport == "acp").then(|| f.acp_args.first()).flatten();
-    if on_path && probe_error.is_none() && let Some(sub) = acp_subcommand {
+    if on_path
+        && probe_error.is_none()
+        && let Some(sub) = acp_subcommand
+    {
         match run_bounded(f.command, &[sub, "--help"], Duration::from_secs(5)) {
             Some(Child::Success(_)) => {}
-            Some(Child::TimedOut) => probe_error =
-                Some(format!("`{} {sub}` probe timed out", f.command)),
-            Some(Child::Failed { message }) => probe_error = Some(format!(
-                "installed {} has no working `{sub}` subcommand, which is how hagency starts it: {}",
-                f.command,
-                message.chars().take(100).collect::<String>()
-            )),
-            None => probe_error = Some(format!(
-                "installed {} has no working `{sub}` subcommand, which is how hagency starts it",
-                f.command
-            )),
+            Some(Child::TimedOut) => {
+                probe_error = Some(format!("`{} {sub}` probe timed out", f.command))
+            }
+            Some(Child::Failed { message }) => {
+                probe_error = Some(format!(
+                    "installed {} has no working `{sub}` subcommand, which is how hagency starts it: {}",
+                    f.command,
+                    message.chars().take(100).collect::<String>()
+                ))
+            }
+            None => {
+                probe_error = Some(format!(
+                    "installed {} has no working `{sub}` subcommand, which is how hagency starts it",
+                    f.command
+                ))
+            }
         }
     }
     let cred_rel = credential_home(f.id);
@@ -443,7 +491,7 @@ struct PolicyView {
 }
 
 fn policy_view() -> PolicyView {
-    serde_json::from_str(include_str!("../../../lib/role-capacity.json"))
+    serde_json::from_str(include_str!("../../hagency-core/role-capacity.json"))
         .expect("the same embedded policy the qualification module validates")
 }
 
@@ -508,13 +556,14 @@ async fn capability(_req: &mut Request, depot: &mut Depot, res: &mut Response) {
         if profiles.contains_key(&row.name) {
             continue;
         }
-        if let Ok(Some(detail)) = store.agent_detail(&row.name).await {
-            if let Some((_, resource)) =
-                row_ids.iter().zip(flat.iter()).find(|(id, _)| id.as_str() == detail.resource_id)
-            {
-                profiles.insert(row.name.clone(), resource.profile());
-                agent_preset.insert(row.name.clone(), detail.resource_id.clone());
-            }
+        if let Ok(Some(detail)) = store.agent_detail(&row.name).await
+            && let Some((_, resource)) = row_ids
+                .iter()
+                .zip(flat.iter())
+                .find(|(id, _)| id.as_str() == detail.resource_id)
+        {
+            profiles.insert(row.name.clone(), resource.profile());
+            agent_preset.insert(row.name.clone(), detail.resource_id.clone());
         }
     }
     let policy = policy_view();
@@ -576,10 +625,8 @@ async fn capability(_req: &mut Request, depot: &mut Depot, res: &mut Response) {
         families.sort();
         families.dedup();
         let cross_family = qualification::cross_family(role);
-        let represented: std::collections::BTreeSet<&str> = able
-            .iter()
-            .filter_map(|a| a["presetId"].as_str())
-            .collect();
+        let represented: std::collections::BTreeSet<&str> =
+            able.iter().filter_map(|a| a["presetId"].as_str()).collect();
         let provisionable = ranked
             .iter()
             .filter(|r| !represented.contains(row_id(r)))
@@ -659,7 +706,7 @@ async fn capability(_req: &mut Request, depot: &mut Depot, res: &mut Response) {
         "generatedAt": now_ms(),
         "tiers": ["strong", "medium", "lightweight"],
         "agents": roster.len(),
-        "source": "lib/role-capacity.json",
+        "source": "native/hagency-core/role-capacity.json",
         "roles": roles,
         "resources": resources_map,
     })));

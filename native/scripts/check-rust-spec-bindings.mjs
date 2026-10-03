@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { checkSpecBindings } from '../../scripts/check-spec-bindings.js';
+import { checkSpecBindings } from './check-spec-bindings.mjs';
 // Inventory every compiled selector, including the explicit browser lane.
 // Listing is not execution; browser evidence requires its separate enabled job.
 const raw = execFileSync('cargo', ['test', '--workspace', '--all-targets', '--all-features', '--locked', '--', '--list'], {

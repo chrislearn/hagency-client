@@ -273,7 +273,8 @@ async fn probe(req: &mut Request, _depot: &mut Depot, res: &mut Response) {
         None
     };
     if origin.is_none() {
-        let discovered = discover_base_url(if url.is_empty() { server_name } else { url }, &client).await;
+        let discovered =
+            discover_base_url(if url.is_empty() { server_name } else { url }, &client).await;
         via = Some(discovered.via.clone());
         match discovered.url {
             Some(url) => origin = Some(url),

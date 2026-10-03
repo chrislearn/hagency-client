@@ -37,7 +37,10 @@ fn agent_name(mxid: &str) -> String {
         .split(':')
         .next()
         .unwrap_or(mxid);
-    localpart.strip_prefix(AGENT_PREFIX).unwrap_or(localpart).to_string()
+    localpart
+        .strip_prefix(AGENT_PREFIX)
+        .unwrap_or(localpart)
+        .to_string()
 }
 
 /// Resolve a human's group message against what THIS port can actually know.

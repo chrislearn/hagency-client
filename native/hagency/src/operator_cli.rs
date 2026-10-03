@@ -12,10 +12,7 @@ use http_body_util::{BodyExt, Full};
 use hyper::{Method, Request, body::Bytes, client::conn::http1};
 use hyper_util::rt::TokioIo;
 use std::{
-    collections::BTreeMap,
-    net::SocketAddr,
-    path::Path,
-    process::Command as StdCommand,
+    collections::BTreeMap, net::SocketAddr, path::Path, process::Command as StdCommand,
     time::Duration,
 };
 use tokio::net::TcpStream;
@@ -172,11 +169,17 @@ pub async fn accounts(
                 "/api/native/v1/accounts",
                 address,
                 &token,
-                Some(serde_json::json!({"profile": profile}).to_string().into_bytes()),
+                Some(
+                    serde_json::json!({"profile": profile})
+                        .to_string()
+                        .into_bytes(),
+                ),
             )
             .await?;
             decode_status(status)?;
-            Ok(vec![serde_json::from_slice(&body).map_err(|_| Error::Invalid)?])
+            Ok(vec![
+                serde_json::from_slice(&body).map_err(|_| Error::Invalid)?,
+            ])
         }
         Command::Inspect => {
             let (status, body) = exchange(
@@ -200,7 +203,9 @@ pub async fn accounts(
             )
             .await?;
             decode_status(status)?;
-            Ok(vec![serde_json::from_slice(&body).map_err(|_| Error::Invalid)?])
+            Ok(vec![
+                serde_json::from_slice(&body).map_err(|_| Error::Invalid)?,
+            ])
         }
         Command::Login {
             id,
@@ -220,10 +225,7 @@ pub async fn accounts(
             decode_status(status)?;
             let begin: serde_json::Value =
                 serde_json::from_slice(&body).map_err(|_| Error::Invalid)?;
-            let attempt = begin
-                .get("attempt")
-                .cloned()
-                .ok_or(Error::Invalid)?;
+            let attempt = begin.get("attempt").cloned().ok_or(Error::Invalid)?;
             let home = begin.get("home").and_then(|v| v.as_str());
             let codex_home = begin.get("codexHome").and_then(|v| v.as_str());
             // Spawn the provider child with HOME/CODEX_HOME set exactly as the
@@ -290,11 +292,7 @@ pub async fn accounts(
 /// The fleet registration verb, driven through the running service's
 /// `POST /api/native/v1/project-sides` route (the same store contract the
 /// offline `registration register --file` writer and the console route use).
-pub async fn registration(
-    state: &Path,
-    address: SocketAddr,
-    file: &Path,
-) -> Result<(), Error> {
+pub async fn registration(state: &Path, address: SocketAddr, file: &Path) -> Result<(), Error> {
     let token = token(state)?;
     let raw = if file.as_os_str() == "-" {
         let mut buf = String::new();
@@ -309,7 +307,7 @@ pub async fn registration(
     // own contract (generation, identical-content no-op) still runs server-side.
     let registration: hagency_core::authority::Registration =
         serde_json::from_str(&raw).map_err(|_| Error::Invalid)?;
-            let (status, _) = exchange(
+    let (status, _) = exchange(
         Method::POST,
         "/api/native/v1/project-sides",
         address,

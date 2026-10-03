@@ -401,16 +401,17 @@ fn native_usage_totals_empty_bound_partial_and_measured() {
     // cache_write=30, cache_read=40 (observation.rs counter mapping), so
     // drawn = 10+20+30 = 60 (the ceiling kinds) and used = 100 (display).
     let (_, _, source) = f.start();
-    f.db
-        .record_usage_observation(&source, "totals_call", &claude(10, 20, 30, 40), 2000)
+    f.db.record_usage_observation(&source, "totals_call", &claude(10, 20, 30, 40), 2000)
         .unwrap();
     let mut pool = resource("usage_pool", "usage_seat", 1000);
     pool.framework = "claude".into();
     pool.model = "claude-sent-5".into();
     pool.reasoning = None;
-    f.db
-        .admit(&proof(&request("totals_request", "SecondWorker", &pool, 100)), 1000)
-        .unwrap();
+    f.db.admit(
+        &proof(&request("totals_request", "SecondWorker", &pool, 100)),
+        1000,
+    )
+    .unwrap();
     let totals = f.db.usage_totals().unwrap();
     assert_eq!(totals.agents, 2, "the denominator counts both agents");
     assert_eq!(totals.tokens_drawn, Some(60));
@@ -431,8 +432,7 @@ fn native_usage_totals_empty_bound_partial_and_measured() {
 fn native_usage_summary_ignores_a_bound_but_unobserved_source() {
     let mut f = Fixture::new(Framework::Codex);
     let (_, _, observed) = f.start();
-    f.db
-        .record_usage_observation(&observed, "measured_call", &codex(7, 2, 3), 2000)
+    f.db.record_usage_observation(&observed, "measured_call", &codex(7, 2, 3), 2000)
         .unwrap();
     // A second source in the SAME engagement, bound and never observed — the
     // live fleet's exact shape (five measured rows beside an unused dispatch).

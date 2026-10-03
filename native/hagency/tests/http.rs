@@ -696,13 +696,26 @@ async fn fleet_views_frameworks_match_ts_shape() {
     assert_eq!(ids, ["claude", "codex-acp", "codex", "hermes", "octos"]);
     for row in rows {
         let keys = [
-            "id", "displayName", "transport", "launchable", "notLaunchableReason",
-            "command", "defaultArgs", "modelFlag", "permissionSummary",
-            "acpModelFlag", "acpModelFlagNote", "commandNote", "refusedFlags",
+            "id",
+            "displayName",
+            "transport",
+            "launchable",
+            "notLaunchableReason",
+            "command",
+            "defaultArgs",
+            "modelFlag",
+            "permissionSummary",
+            "acpModelFlag",
+            "acpModelFlagNote",
+            "commandNote",
+            "refusedFlags",
             "guardMessage",
         ];
         for key in keys {
-            assert!(row.get(key).is_some(), "missing key {key} in framework {row:?}");
+            assert!(
+                row.get(key).is_some(),
+                "missing key {key} in framework {row:?}"
+            );
         }
     }
     // The guard flattening: claude refusedFlags == ["--allow-dangerously-skip-permissions",
@@ -747,14 +760,35 @@ async fn fleet_views_detect_matches_ts_shape() {
     assert_eq!(probes.len(), 5);
     for probe in probes {
         for key in [
-            "id", "displayName", "transport", "command", "onPath", "version",
-            "probeError", "credentialHome", "credentialPresent", "launchable",
-            "notLaunchableReason", "permissionSummary", "state", "fix", "startWith",
+            "id",
+            "displayName",
+            "transport",
+            "command",
+            "onPath",
+            "version",
+            "probeError",
+            "credentialHome",
+            "credentialPresent",
+            "launchable",
+            "notLaunchableReason",
+            "permissionSummary",
+            "state",
+            "fix",
+            "startWith",
         ] {
-            assert!(probe.get(key).is_some(), "missing key {key} in probe {probe:?}");
+            assert!(
+                probe.get(key).is_some(),
+                "missing key {key} in probe {probe:?}"
+            );
         }
-        assert!(matches!(probe["state"].as_str(), Some("absent" | "unusable" | "needs_auth" | "ready")));
-        assert!(matches!(probe["startWith"].as_str(), Some("hagency up" | "hagency acp-up")));
+        assert!(matches!(
+            probe["state"].as_str(),
+            Some("absent" | "unusable" | "needs_auth" | "ready")
+        ));
+        assert!(matches!(
+            probe["startWith"].as_str(),
+            Some("hagency up" | "hagency acp-up")
+        ));
     }
     store.shutdown().await.unwrap();
 }
@@ -787,7 +821,7 @@ async fn fleet_views_capability_matches_ts_shape() {
     assert_eq!(response.status_code, Some(StatusCode::OK));
     let value: Value = response.take_json().await.unwrap();
     assert!(value["generatedAt"].as_u64().is_some());
-    assert_eq!(value["source"], "lib/role-capacity.json");
+    assert_eq!(value["source"], "native/hagency-core/role-capacity.json");
     assert_eq!(value["tiers"], json!(["strong", "medium", "lightweight"]));
     assert_eq!(value["agents"], 0);
     let roles = value["roles"].as_array().unwrap();
@@ -795,16 +829,38 @@ async fn fleet_views_capability_matches_ts_shape() {
     let role_names: Vec<&str> = roles.iter().map(|r| r["role"].as_str().unwrap()).collect();
     assert_eq!(
         role_names,
-        ["architect", "review", "coding", "testing", "integration", "documentation"]
+        [
+            "architect",
+            "review",
+            "coding",
+            "testing",
+            "integration",
+            "documentation"
+        ]
     );
     for role in roles {
         for key in [
-            "role", "displayName", "defaultTier", "crossFamily", "crossFamilyOk",
-            "families", "fillable", "able", "unable", "overTier", "excluded",
+            "role",
+            "displayName",
+            "defaultTier",
+            "crossFamily",
+            "crossFamilyOk",
+            "families",
+            "fillable",
+            "able",
+            "unable",
+            "overTier",
+            "excluded",
         ] {
-            assert!(role.get(key).is_some(), "missing key {key} in role {role:?}");
+            assert!(
+                role.get(key).is_some(),
+                "missing key {key} in role {role:?}"
+            );
         }
-        assert_eq!(role["fillable"], 0, "empty store must not claim a fillable role");
+        assert_eq!(
+            role["fillable"], 0,
+            "empty store must not claim a fillable role"
+        );
         assert!(role["able"].as_array().unwrap().is_empty());
     }
     // The resources map carries every role, each with a `considered` count.
