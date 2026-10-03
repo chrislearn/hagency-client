@@ -217,6 +217,17 @@ impl Live {
         });
         Self(Arc::new(inner))
     }
+    /// ADR-189: the state directory and listen address the setup page uses.
+    pub(crate) fn state_dir(&self) -> &Path {
+        &self.0.state
+    }
+    pub(crate) fn fleet_address(&self) -> Option<std::net::SocketAddr> {
+        self.0.fleet.as_ref().map(|fleet| fleet.address)
+    }
+    /// Whether a Palpo configuration has been imported into this state.
+    pub(crate) fn is_imported(&self) -> bool {
+        imported(&self.0.state).unwrap_or(false)
+    }
     async fn start_fleet(&self, registration: &Registration) {
         let Some(fleet) = &self.0.fleet else { return };
         let mut service = fleet.service.lock().await;

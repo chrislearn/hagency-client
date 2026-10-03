@@ -65,17 +65,49 @@ jobs:
             target: aarch64-unknown-linux-gnu
           - os: macos-15
             target: aarch64-apple-darwin
+          - os: macos-15
+            target: x86_64-apple-darwin
+            cross: true
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
           key: release-native-${{ matrix.target }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+      # ADR-189: the console is embedded in the binary, so a release is one
+      # file. The build script refuses an existing output directory and
+      # creates it owner-private.
+      - name: Build the console
+        run: |
+          set -euo pipefail
+          npm ci --prefix mockup --no-audit --no-fund
+          node mockup/scripts/build-native-console.mjs --output "$RUNNER_TEMP/console"
+          echo "HAGENCY_CONSOLE_DIR=$RUNNER_TEMP/console" >> "$GITHUB_ENV"
       - name: Build the release binary
-        run: cargo build --release --locked -p hagency
+        run: |
+          cargo build --release --locked -p hagency --target ${{ matrix.target }}
+          mkdir -p target/release
+          cp target/${{ matrix.target }}/release/hagency target/release/hagency
+      - name: Smoke-test the embedded console
+        if: ${{ !matrix.cross }}
+        run: |
+          set -euo pipefail
+          STATE="$RUNNER_TEMP/smoke-state"
+          ./target/release/hagency start --state-dir "$STATE" --listen 127.0.0.1:18765 --no-open > "$RUNNER_TEMP/smoke.log" 2>&1 &
+          PID=$!
+          for i in $(seq 1 60); do curl -fsS -o /dev/null http://127.0.0.1:18765/console/setup/ && break; sleep 1; done
+          curl -fsS -o /dev/null http://127.0.0.1:18765/console/setup/ \
+            || { echo "::error::the embedded console did not serve /console/setup/"; cat "$RUNNER_TEMP/smoke.log"; exit 1; }
+          kill -TERM "$PID"; wait "$PID" || true
       - name: Verify the binary reports the workspace version
+        if: ${{ !matrix.cross }}
         run: |
           VERSION="$(./target/release/hagency --version | awk '{print $NF}')"
           [ "$VERSION" = "${{ needs.resolve.outputs.version }}" ] \
@@ -94,7 +126,9 @@ jobs:
           if find "$STAGE" -type f \( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \) | grep -q .; then
             echo "::error::residual JavaScript entry files in the release tree"; exit 1
           fi
-          if grep -rn 'node ' "$STAGE" --include='*' -l 2>/dev/null | grep -q .; then
+          # Text files only: the binary embeds the console's browser JavaScript
+          # (ADR-189), which is not a Node entry point.
+          if grep -rIl 'node ' "$STAGE" 2>/dev/null | grep -q .; then
             echo "::error::a shipped wrapper references node"; exit 1
           fi
       - name: Upload the per-target artifact
@@ -109,7 +143,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/download-artifacts@v5
+      - uses: actions/download-artifact@v4
         with:
           path: dist
       - name: Compute SHA256SUMS across all targets

@@ -55,6 +55,8 @@ mod real_agent;
 mod registration;
 #[path = "console/resources.rs"]
 mod resources;
+#[path = "console/setup_page.rs"]
+mod setup_page;
 #[path = "console/side_budget.rs"]
 mod side_budget;
 #[path = "console/side_lifecycle.rs"]

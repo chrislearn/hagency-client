@@ -15,6 +15,7 @@ pub(crate) mod receive_service;
 mod resources;
 mod runner;
 mod runtime;
+pub mod service;
 pub mod setup;
 pub mod task_client;
 mod usage;
