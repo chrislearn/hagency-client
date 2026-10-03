@@ -1,3 +1,5 @@
+> Historical: describes the TypeScript product removed in hagency-rs #17. For the current service see [the architecture walkthrough](../../architecture-walkthrough.md).
+
 # Group & Room System Architecture
 
 > **Scope**: How hagency groups, DM rooms, SPY rooms, and Matrix rooms are created, mapped, reconciled, and queried.

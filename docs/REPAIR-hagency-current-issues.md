@@ -323,7 +323,7 @@ POST /api/dispatch/release
 - `MATRIX_OPERATOR_MXIDS`
 - `MATRIX_TRUSTED_INVITER_MXIDS`
 - `MATRIX_TRUSTED_ROOM_IDS` 等
-- room trust 判定逻辑（bridge + docs/architecture/auth-trust-model.md）
+- room trust 判定逻辑（bridge + docs/history/architecture/auth-trust-model.md）
 
 **根因**
 把**运行时策略数据**放在**部署配置**里，导致：
@@ -638,7 +638,7 @@ hagency 当前不是“缺功能”，而是 **关键状态机没闭环**：
 | 调度占用/队列 | `backend-v2.js`（`dispatchBusy` / `dispatchQueues` / `provisionReservations`，`/api/dispatch*`） |
 | agent 生命周期 | `lib/agent-state.js`, `bin/hagency-up`, `backend-v2.js` registry |
 | Matrix 状态 | `bridge-matrix.js`, `data/bridge-state.json` |
-| 信任模型 | `.env` Matrix trust 变量, `docs/architecture/auth-trust-model.md` |
+| 信任模型 | `.env` Matrix trust 变量, `docs/history/architecture/auth-trust-model.md` |
 | 列表展示 | dashboard monitor/pool pages + `/api/agents` + `/api/pool` |
 
 ## 附录 B — 优先级总表

@@ -411,7 +411,7 @@ async fn run(command: Command) -> Result<(), Box<dyn std::error::Error>> {
                     hagency::console::Console::load_with_state(assets, Some(&state_dir)).map_err(
                         |_| hagency::bootstrap::Failure::Config {
                             field: "--console-assets",
-                            fix: "the directory must be the bundle built by mockup/scripts/build-native-console.mjs, owner-private (0700) and reached without a symlink in any path component, with a manifest.json whose entries all match the files",
+                            fix: "the directory must be the bundle built by mockup/scripts/build-native-console.mjs, owner-private (0700), not itself a symlink and with no symlinks inside it, with a manifest.json whose entries all match the files",
                         },
                     )
                 })

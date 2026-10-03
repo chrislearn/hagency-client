@@ -982,7 +982,7 @@ report separates live acceptance, historical failures and remaining project gate
 
 ## Final native checks verified — 2026-09-06 UTC
 
-The rebuilt Robrix app passes a live membership refresh check against Mini1:
+The rebuilt Robrix app passes a live membership refresh check against the test host:
 the exact fixture account is absent before join, present after join, and absent
 after leave in the same native process. Owned Matrix API calls provide fixture
 setup only; no native invite acceptance is claimed. Original five-member project
@@ -1027,7 +1027,7 @@ behavioral skips and one boundary pass. See the
 ## Operator desktop client connected — 2026-09-06
 
 Built the current Robrix2 source for macOS and opened a visible desktop window
-against the existing Mini1 Palpo deployment. The owned headless app exited
+against the existing test-host Palpo deployment. The owned headless app exited
 normally before the desktop reused its profile. The persisted login session is
 unchanged; the existing account, project timeline and encrypted owner room loaded.
 A targeted window capture and private launch receipt verify the visible result.
@@ -1098,7 +1098,7 @@ room and event receipts remain in the private cache's manual walkthrough folder.
 
 The operator encountered the server credential wizard while trying to establish
 the new project's customer record. Read-only inspection confirms the existing
-Mini1 side is accepted with a registration-token credential; its project metadata
+Test-host side is accepted with a registration-token credential; its project metadata
 list was empty. The current project request was pending with no fulfillment or
 recorded binding failure. Registered the operator-created room under that existing
 side through `POST /api/project-sides/:id/projects`, preserving credential kind,
@@ -1219,7 +1219,7 @@ at 3e4fbd33 and is implementing an initial `web-admin/` service against Palpo's 
 admin/Matrix APIs using the existing proposed HAFleet onboarding requirements.
 Initial scope is administrator authentication, fleet/App Service management and
 managed-agent identity CRUD with honest readiness reporting. This is ongoing work;
-it is not deployed and does not change the current Mini1 server or shared HAFleet tree.
+it is not deployed and does not change the current test-host server or shared HAFleet tree.
 
 ## HAFleet side of Palpo admin integration — 2026-09-06
 
@@ -1264,7 +1264,7 @@ subtask. Protocol details are in `docs/design/palpo-fleet-protocol-v1.md`.
 ## 2026-09-06 — Palpo admin deployment and live Playwright acceptance (in progress)
 
 - Deployed the separate `palpo-admin-web` worktree's Node web administration app
-  to Mini1's dedicated closure Palpo Docker network. A loopback SSH tunnel exposes
+  to the test host's dedicated closure Palpo Docker network. A loopback SSH tunnel exposes
   the app locally on 18080; reverse callback 19094 reaches isolated HAFleet AS18195.
 - Real Playwright administrator sign-in and provider/project/outsider authentication
   isolation pass. Cross-owner pairing is rejected, administrator operations return
@@ -1276,7 +1276,7 @@ subtask. Protocol details are in `docs/design/palpo-fleet-protocol-v1.md`.
 - A dedicated Palpo Rust worktree and isolated Linux builder/test PostgreSQL are
   validating the server fix before rollout. No startup-registration workaround
   or manual database mutation is counted as successful dynamic onboarding.
-- The isolated local HAFleet console created a Codex contribution preset and Mini1
+- The isolated local HAFleet console created a Codex contribution preset and a test-host
   project-side record through Playwright. Full connection, request, fulfillment
   and actual task execution remain pending the real server fix. A further default
   agent-prefix/import mismatch is being fixed before testing admission.
@@ -1369,9 +1369,9 @@ genuine Element followup event. The first ignored event remains failed evidence.
 No live messages, runtime-state edits or restarts were performed by this subtask.
 
 
-## 2026-09-06 — Mini1 Palpo admin deployment and live acceptance completed
+## 2026-09-06 — Test-host Palpo admin deployment and live acceptance completed
 
-Deployed the web administration worktree to Mini1. The live Palpo baseline keeps
+Deployed the web administration worktree to the test host. The live Palpo baseline keeps
 its existing dependency/schema version with the tested dynamic App Service auth
 backport; the rollback container and database backup remain available. The admin
 release is `palpo-web-admin:7568134cb58d3062`.
@@ -1415,7 +1415,7 @@ The corrected same-ID test verifies the explicit idempotency conflict. The extra
 refused submission has no agent binding or quota allocation and remains unusable.
 
 Final report and screenshots: operator-restricted cache
-`palpo-admin-e2e/2026-09-06/acceptance-report.md`. Mini1 and the isolated local
+`palpo-admin-e2e/2026-09-06/acceptance-report.md`. The test host and the isolated local
 HAFleet/Element services remain running; temporary native approval processes and
 the dedicated build VM were stopped, with profiles/artifacts retained. The original
 manual HAFleet runtime and Robrix session were not modified. No commit/push/reset.
@@ -1424,7 +1424,7 @@ manual HAFleet runtime and Robrix session were not modified. No commit/push/rese
 ## 2026-09-07 — Resource allocation operator walkthrough
 
 Checked current live resources, project-side allocation, active engagement and
-canonical task/usage state. Mini1 Palpo/admin containers remain healthy; expired
+canonical task/usage state. Test-host Palpo/admin containers remain healthy; expired
 local SSH forwards were restored with an owned background control socket in the
 private run cache, and a real push verification renewed the existing reception.
 The operator's complete App Service walkthrough and role-specific account reference
@@ -1441,7 +1441,7 @@ These are documented limitations, not zero usage or absence of the real project.
 ## 2026-09-07 — Operator requested restarting project-side onboarding
 
 Removed only the isolated HAFleet18194 project-side record
-`hfux-closure-20260906.test` / `Mini1 Palpo admin E2E` through the supported
+`test.example.org` / `test-host Palpo admin E2E` through the supported
 DELETE endpoint with explicit force, as requested by the operator. The endpoint
 returned 200 with cascade=performed: ended engagement `en_mtqrj5du_2459b5`,
 released its 100k commitment, deactivated its owner binding, withdrew the agent
@@ -1461,7 +1461,7 @@ No code change was made for that existing projection issue.
 
 ## 2026-09-07 — Remove preconfigured onboarding candidate
 
-The operator still saw Mini1 after deleting the side because matrix/reach also
+The operator still saw the test host after deleting the side because matrix/reach also
 lists MATRIX_SERVER_NAME / MATRIX_HOMESERVER supplied by the test launcher.
 Backed up private cache rig.py and removed homeserver defaults from its backend
 process only, retaining the bridge's live connection configuration. All three
@@ -1469,7 +1469,7 @@ router dispatches were completed and no side existed before the owned backend
 restart (new PID 67354, port18194). No repository code was changed.
 
 Playwright verified zero candidates and empty manual fields, successfully probed
-Mini1 after typing the server name/address, reached the empty step-2 name field,
+the test host after typing the server name/address, reached the empty step-2 name field,
 and reloaded to an empty candidate list. It did not create a side. Matrix18010
 and admin18080 both still answer HTTP200. Evidence is in private cache
 palpo-admin-e2e/2026-09-06/reset-candidate-*.
@@ -1551,7 +1551,7 @@ reverification, expiry gating, preserved request fields/ID and inline delivery
 receipts. No allocation or replacement request was inferred or submitted.
 
 30 Node tests, the existing browser workflow and six new Playwright recovery
-scenarios pass. Deployed to the dedicated Mini1 web-admin container; live real
+scenarios pass. Deployed to the dedicated test-host web-admin container; live real
 event verification succeeded at22:56:35Z after one honest probe_pending retry.
 The existing reception/project remain and Send is enabled. Full findings and
 evidence limits: reviews/2026-09-07-palpo-request-readiness.md. No commit/push.
@@ -1562,7 +1562,7 @@ evidence limits: reviews/2026-09-07-palpo-request-readiness.md. No commit/push.
 The operator submitted Palpo request1ce1c56f-9d12-488f-b523-714d512e5540
 for1,000,000tokens and200,000/day, then approved engagement
 en_mtruf5yz_6c4bc1 in HAFleet. Fulfillment completed with the actual joined
-agent mx_hfux_closure_20260906_te_coding_126926a91ba1. The operator sent the
+agent mx_test_example_org_coding_126926a91ba1. The operator sent the
 sum(a,b) task through a real Robrix mention and manually approved its heartbeat
 and done commands in the private encrypted owner room. Both verdicts were
 allowed and consumed; no assistant verdict was submitted.
@@ -1651,7 +1651,7 @@ restart. No global tool or network permission was introduced.
 architecture ownership, remote MCP synchronization and286 specification bindings.
 The native agent-spec lifecycle retains8 unsupported behavioral skips and is
 recorded as non-passing, with separate Vitest evidence. Actual Playwright sends
-against Mini1 Palpo verify multiple participants' discussion, successive mention
+against test-host Palpo verify multiple participants' discussion, successive mention
 summaries, recovery of the user's original Robrix2 DM, and encrypted private
 conversation across three turns and a service restart. The browser visibly
 decrypts replies that are encrypted on the wire. Private content is absent from
@@ -1696,16 +1696,16 @@ browser suites pass. Production build, scoped lint, architecture ownership and
 skips and remains non-passing; separate Vitest evidence is retained.
 
 Deployed backend18194 PID89234, console13202 PID31288 with isolated build
-`.next-resource-agents-v8`, and Mini1 Palpo web-admin image
+`.next-resource-agents-v8`, and test-host Palpo web-admin image
 `palpo-web-admin:318f47082b8092da`. Bridge18195 and Matrix device state were
 preserved. Actual Playwright creation of two temporary definitions through the
-HAFleet console and publication to Mini1 Palpo passed. Removed only the test
+HAFleet console and publication to test-host Palpo passed. Removed only the test
 resource/definitions and verified all three original Resources, Agent identities
 and engagement allocations unchanged. No second real request or approval was
 submitted and no budget increased. The project's 1M allocation is fully committed
 to the first Agent, which is a prerequisite for the operator's next request.
 
-Guide: guides/resource-agents.zh.md. Evidence and limits:
+Guide: history/guides/resource-agents.zh.md. Evidence and limits:
 reviews/2026-09-08-resource-agent-definitions.md. No root task-writer exists in
 this source checkout; no canonical task state was fabricated. No commit or push.
 
@@ -1726,10 +1726,10 @@ Tests retain real backend provisioning with localhost Matrix and controlled laun
 evidence; live UI inspection does not submit or approve an extra real request.
 
 Deployed local backend18194 PID20010, bridge18195 PID20071 and console13202 PID20150
-with `.next-resource-agents-v9`, plus the revised Mini1 Palpo web-admin. Before and
+with `.next-resource-agents-v9`, plus the revised test-host Palpo web-admin. Before and
 after restart, both existing Agents, three Resources, allocations and18 completed
 dispatches are unchanged. The private run cache retains backups, exact image
-receipt and verification evidence. Revised guide: guides/resource-agents.zh.md;
+receipt and verification evidence. Revised guide: history/guides/resource-agents.zh.md;
 review: reviews/2026-09-08-palpo-agent-definitions.md. No commit or push.
 
 ## 2026-09-08 — Expose the actual resource pool and automate publication
@@ -1754,7 +1754,7 @@ six unsupported behavioral skips and is non-passing; separate Vitest evidence is
 recorded. The exact bound source-authentication selector is checked separately.
 
 Deployed backend18194 PID40252, console13202 PID40253 with
-`.next-resource-pool-v10`, and Mini1 web-admin image
+`.next-resource-pool-v10`, and test-host web-admin image
 `palpo-web-admin:f67999ec23458a6a`. Preserved bridge18195 PID20071. Actual Playwright
 creation via HAFleet's web wizard appeared in the already-open Palpo after9311ms
 without manual publication or refresh. Deletion also propagated automatically and
@@ -1776,7 +1776,7 @@ Fixed the companion Palpo backend to wait for an authentic probe receipt, retryi
 only probe_pending at500ms intervals (20 attempts maximum) with the same event and
 challenge. Other errors fail immediately. A pause/revocation while verification
 is in flight remains authoritative.35 Node tests and both browser suites pass;
-syntax and diff checks pass. Deployed Mini1 image
+syntax and diff checks pass. Deployed test-host image
 `palpo-web-admin:b26d42db1b711ca9`. A single real Playwright click now verifies
 actual Matrix delivery successfully in1207ms, preserves the request draft and
 enables Send. The existing one active Palpo request is unchanged.
@@ -1801,7 +1801,7 @@ selector bindings pass. Native lifecycle has seven unsupported behavioral skips,
 zero failures, and is recorded as non-passing.
 
 Deployed backend18194 PID16597 with private runtime backups. Console13202 PID40253,
-bridge18195 PID20071 and Mini1 Palpo web-admin b26d42db1b711ca9 were preserved.
+bridge18195 PID20071 and test-host Palpo web-admin b26d42db1b711ca9 were preserved.
 Retried the original edison request using Playwright. Palpo acknowledged201;
 the initial verification script incorrectly asserted200 and failed after the
 successful submission. Corrected the assertion and completed read-only verification
@@ -1842,7 +1842,7 @@ reports9 unsupported behavioral skips,0 failures, non-passing. Details and the
 initial red regression are recorded in reviews/2026-09-08-palpo-pool-accounting.md.
 
 Deployed backend4587 and console4681 (.next-pool-budget-v11) to the existing local
-rig. Bridge20071 and Mini1 Palpo are preserved. Real browser review confirms
+rig. Bridge20071 and test-host Palpo are preserved. Real browser review confirms
 edison medium100M/0/100M with100k requested, pending and not provisioned. No live
 approval, budget change or model invocation. Two identities, three Resources,
 18 completed dispatches and the prior1.1M side cap are unchanged. The side cap
@@ -1870,9 +1870,9 @@ formatted HTML at the HAFleet send boundary, retaining plaintext and encryption.
 179 regressions across13 suites pass, with router build/generated output, lint,
 architecture and302 selector bindings. Native lifecycle reports0 failed and11
 unsupported behavioral skips, non-passing. Deployed backend65390 and bridge75228
-after preserving the complete runtime; console4681 and Mini1 Palpo are unchanged.
+after preserving the complete runtime; console4681 and test-host Palpo are unchanged.
 
-Mini1 live testing created two explicitly named test rooms, admitted Edison and
+Test-host live testing created two explicitly named test rooms, admitted Edison and
 coding, verified implicit DM replies, ordinary invitations, DM-to-group promotion,
 no unmentioned dispatch, individual and simultaneous mentions, background-context
 summarization, identity and thread relations. Five new model dispatches completed;
@@ -1882,10 +1882,10 @@ Existing identities, Resource definitions and allocated budgets are unchanged.
 No native Robrix rerun or live encrypted-room rerun is claimed. Full evidence and
 limits: reviews/2026-09-08-invited-agent-rooms-markdown.md. No commit or push.
 
-## 2026-09-08 — Restore and supervise Mini1 connectivity
+## 2026-09-08 — Restore and supervise test-host connectivity
 
 Reproduced both operator-reported Robrix history requests as connection refused:
-local18010/18080 and mini1-tunnel.sock were absent. Mini1 SSH and Palpo containers
+local18010/18080 and test-host-tunnel.sock were absent. Test-host SSH and Palpo containers
 were healthy. Restored all existing forward directions through a per-user launchd
 service, with KeepAlive,15s SSH liveness checks and explicit foreground/no-persist
 options overriding the user's ControlPersist600 setting. No Palpo, HAFleet or
@@ -1899,17 +1899,17 @@ URLs pass again, and Playwright opens the real room and its thread successfully.
 Reverse callback TCP connectivity also returns the bridge's authentication403
 (reachability evidence, not an unauthenticated health-check success).
 
-Service: ~/Library/LaunchAgents/com.hafleet.mini1-tunnel.plist.
-Private cache evidence: mini1-history-connectivity-recovery.json,
-mini1-tunnel-restart-test.json and mini1-recovered-history-browser.png.
+Service: ~/Library/LaunchAgents/com.hafleet.test-host-tunnel.plist.
+Private cache evidence: test-host-history-connectivity-recovery.json,
+test-host-tunnel-restart-test.json and test-host-recovered-history-browser.png.
 
-## 2026-09-08 — Open Mini1 Palpo on the operator's public domain
+## 2026-09-08 — Open test-host Palpo on the operator's public domain
 
-The operator requested public access and specified crew.ominix.io on a separate
-port. Confirmed DNS points to the configured Mini1 host, its certificate is valid, and18443
-is occupied by an unrelated service. Added crew.ominix.io:19443 to the existing
+The operator requested public access and specified a public domain on a separate
+port. Confirmed DNS points to the configured test host, its certificate is valid, and the
+other candidate port is occupied by an unrelated service. Added https://matrix.example.org to the existing
 /etc/caddy/Caddyfile, retaining all prior routes and gracefully reloading the
-existing io.ominix.caddy process. Backed up the original configuration first.
+existing Caddy process. Backed up the original configuration first.
 Only Matrix client/media and client discovery endpoints are exposed; original
 443website, Palpo containers, account IDs, rooms and local integrations remain.
 
@@ -1917,9 +1917,9 @@ Public HTTPS from this computer and Chrome validates TLS1.3 and the correct doma
 certificate. A temporary real provider login succeeded; whoami,9joined rooms,
 sync,13history events and4thread relations all returned200. The temporary session
 was logged out. No native Robrix restart or credential/profile edit was performed.
-Robrix can now use https://crew.ominix.io:19443 directly; the old local forward
+Robrix can now use https://matrix.example.org directly; the old local forward
 remains for existing clients and HAFleet's callback. See the public connection
-guide and private mini1-public-matrix deployment/verification evidence.
+guide and private test-host-public-matrix deployment/verification evidence.
 
 ## 2026-09-08 — Agent names and visible runner activity
 
@@ -1933,7 +1933,7 @@ private-thread edits after room promotion.
 161 distinct tests across 14 suites pass. Native agent-spec lifecycle has one
 boundary pass and five unsupported skips, explicitly non-passing. Full runtime
 backup preceded a graceful restart after the user's current execution finished:
-backend95185, bridge95205. Live Mini1 DM plus a two-Agent thread completed three
+backend95185, bridge95205. Live test-host DM plus a two-Agent thread completed three
 real Codex dispatches with one editable status each and 19 acknowledged updates.
 See docs/reviews/2026-09-08-runner-activity.md and the private rig evidence.
 
@@ -1969,7 +1969,7 @@ Five focused native tests and native build/check passed. Final native agent-spec
 lifecycle is 3 pass, 0 fail/skip/uncertain; original transient HTTP fixture failure
 and diagnostic reruns remain recorded. Actual native UI cancellation/retry and
 group/plain-DM/encrypted-DM downloads passed, with four saved files hashing to the
-expected total=8 newline payload. Updated/restarted Robrix2 Mini1 after preserving
+expected total=8 newline payload. Updated/restarted the test-host Robrix2 build after preserving
 the original executable/profile; final PID22930. No Palpo/HAFleet restart or code
 change for this fix. Native screenshots, files and checks are in the private rig's
 robrix-files-native-0908 evidence directory. No task-writer wrapper is provisioned
@@ -1983,7 +1983,7 @@ Robrix scoped cards. Added durable task completion epochs to prevent grant
 revival on thread follow-ups. Default and existing Agent policies remain sandboxed.
 154 focused HAFleet tests, 35 native approval tests, bilingual Playwright flows,
 builds and required code checks passed. HAFleet native lifecycle retains five
-Vitest-related skips; Robrix's two scoped scenarios pass. Live Mini1 encrypted
+Vitest-related skips; Robrix's two scoped scenarios pass. Live test-host encrypted
 card click, fresh-runner rule reuse, webpage revocation/reapproval and isolated
 real Codex YOLO verified. Initial shell-mode mismatch and blocked-task probe
 timeouts preserved in evidence. Deployed locally after idle check and backup;
@@ -2065,7 +2065,7 @@ OOM are preserved separately, with no automatic retries or skipped test files.
 
 Robrix and Palpo upstream integrations were committed independently with native
 validation. Only the separately requested Palpo web renewal/timeout repair was
-deployed to Mini1; the broad HAFleet/Robrix/Palpo-Rust integration is not deployed.
+deployed to the test host; the broad HAFleet/Robrix/Palpo-Rust integration is not deployed.
 No pushes or changes to the original concurrent website work. Root task-writer
 is absent at this source checkout, so no canonical task completion was invented.
 Review: docs/reviews/2026-09-08-upstream-integration.md.
@@ -2073,9 +2073,9 @@ Review: docs/reviews/2026-09-08-upstream-integration.md.
 
 ## 2026-09-08 outbound implementation and no-tunnel acceptance
 
-Implemented HAFleet durable outbound receive/publish and Palpo colocated Matrix relay, lease/ACK/sequence/generation checks, stored resource/status reads, automatic startup and import UI. HAFleet57d56da and Palpo9040bbcb were validated from isolated source trees before replacing the idle local services and pinned Mini1 containers. The minimal live Rust URL-CAS backport preserved existing authentication behavior and all registration identities. The original concurrent website checkout was untouched.
+Implemented HAFleet durable outbound receive/publish and Palpo colocated Matrix relay, lease/ACK/sequence/generation checks, stored resource/status reads, automatic startup and import UI. HAFleet57d56da and Palpo9040bbcb were validated from isolated source trees before replacing the idle local services and pinned test-host containers. The minimal live Rust URL-CAS backport preserved existing authentication behavior and all registration identities. The original concurrent website checkout was untouched.
 
-Real browser admin migration, owner download, HAFleet import and exact Mini1 Matrix proof passed. The owned SSH forwarding service and old bridge inbound listener were stopped. Repeated public browser/API checks and an independent Agent confirmed advancing heartbeat and three active usable verified requests. Old laptop18080 is retired; use https://crew.ominix.io:19444 and local HAFleet13202. Migration replays the old edision request as pending; no user request was auto-approved.
+Real browser admin migration, owner download, HAFleet import and exact test-host Matrix proof passed. The owned SSH forwarding service and old bridge inbound listener were stopped. Repeated public browser/API checks and an independent Agent confirmed advancing heartbeat and three active usable verified requests. Old laptop18080 is retired; use https://palpo.example.org and local HAFleet13202. Migration replays the old edision request as pending; no user request was auto-approved.
 
 Post-cutover inspection found stale private-device endpoint caches. Follow-up4953baf validates and reuses original devices across the endpoint change. All fifty existing dispatches were complete before the coordinated bridge restart. All three live sessions changed only baseUrl and resumed sync with unchanged tokens/devices and no private startup warnings. No-tunnel browser acceptance passed again after that restart.
 
@@ -2213,7 +2213,7 @@ No public deployment, commit, or push. The absent task-writer was not replaced.
 Updated Palpo form/API and HAFleet protocol validation. Chinese display names
 survive approval/provisioning fixtures while runtime/Matrix IDs remain ASCII.
 67 Palpo and23 HAFleet tests pass, plus the Chinese-name Playwright fixture.
-Deployed Mini1 web136171fcade9cd56 and restarted idle HAFleet backend/bridge.
+Deployed test-host web136171fcade9cd56 and restarted idle HAFleet backend/bridge.
 Live 中文验证-0909 request reached HAFleet as pending without allocation.
 Native agent-spec boundary passes;10 Node scenarios remain skipped.
 Full evidence: docs/reviews/2026-09-09-unicode-agent-names.md. No commit/push.
@@ -2234,7 +2234,7 @@ All four sampled historical messages remain unchanged. 165 HAFleet tests and71
 Palpo tests pass; production console build and468 spec bindings pass. Native
 lifecycle boundary passes but four Node scenarios remain Skip (non-passing).
 Unrelated usage502s remain recorded. Local backend7238/bridge7239/console7240;
-Mini1 Web image177462cdd1d6be2d. Matrix Rust service unchanged. No commit/push or
+Test-host Web image177462cdd1d6be2d. Matrix Rust service unchanged. No commit/push or
 fabricated canonical task transition. See
 docs/reviews/2026-09-09-agent-matrix-retirement.md.
 
@@ -2242,7 +2242,7 @@ docs/reviews/2026-09-09-agent-matrix-retirement.md.
 
 Implemented and deployed the requested Palpo Web signup → private administrator
 room → native Robrix Approve/Reject → Matrix registration → ordinary-user login
-flow in the isolated Palpo account-approval worktree. Real Mini1 approval created
+flow in the isolated Palpo account-approval worktree. Real test-host approval created
 a usable ordinary account; real rejection prevented login. The approved user
 created a project and sent Agent request f3b7e3d6-49e1-4655-9da0-dfafd226e1fb,
 which HAFleet received and left pending its owner's resource decision.
@@ -3931,7 +3931,7 @@ and retains independent bounded kill/empty observation and identity-checked
 removal. Actual cases include guardian death/descendants, stop, failed spawn, full
 guarantee refusal, real nested user/cgroup rejection and external cleanup after
 both test custodians abort. Helpers have bounded output/deadlines and retained
-pidfd cleanup. No cgroups were created or modified locally or on Mini1.
+pidfd cleanup. No cgroups were created or modified locally or on the test host.
 
 Local checks passed 21 platform tests, four Python admission/collector tests,
 and all-target Clippy on macOS plus Linux/Windows GNU cross-targets. The Linux-only
@@ -12910,7 +12910,7 @@ is claimed.
 - 2026-09-14 20:35: Rust port. Stack-28 landed as ab8de3dc by fast-forward (run 34922256612 green on the browser, Ubuntu and macOS jobs): the production-caller checker is now sound where it was not. It keys reachability by the implementing type rather than the bare function name, scopes type hints to the function they were observed in, strips comments before reading calls, decides a free function from an implementation method by the shape of the path the spec names, and resolves a trait implementation's method through the concrete type. Each fix closed a way the checker could have called a caller wired when it was not, and a reviewer confirmed the new fixtures bite by mutating the checker and watching them fail. Thirty-five landings. The second provisioning slice — the provider verdict, the provision effect and the session route — is complete on the merits and waits only on the re-review of its decision record.
 - 2026-09-14 21:39: Rust port. Stack-29 landed as 0c871f68 by fast-forward (run 34926192407 green on the browser, Ubuntu and macOS jobs after a rerun; the first attempt failed only on an unrelated command-line readiness poll that unwrapped a connection reset, fixed separately). The second half of provisioning is closed: an admitted engagement now becomes effective and routable through production code. The provider's verdict arrives in the pre-project reception room as its own versioned event, accepted only from the fleet's representative, re-verified against freshly fetched room authority rather than the stored snapshot, and recorded as the separate approval write; the provision effect is then claimed and observed complete inline, as the retained product does it; and the engagement's project room is bound as a session route so the intake plan's session resolves. Three refusal classes are tested — a verdict from the wrong sender, a verdict for an unknown request, and a second verdict — each asserting the named quarantine and the absence of an effect or route row. The four product questions the builder had answered on its own are now decided in a record whose three owning decision documents carry the rules, after a review caught it citing a document that said the opposite of what it was credited with. Thirty-six landings.
 - 2026-09-18 09:30: Rust port status check (read-only; no source, index or service touched). Integration now lives in `~/home/hagency-rust-migration-finish-20260915` on `feat/rust-migration`, pushed head 67e0e84a (2026-09-15), 725 commits ahead of master, draft PR 162 mergeable. Hosted at that head: Native Rust green on console-browser, Ubuntu and macOS; Windows (non-blocking, paused) red at `approval-vectors.mjs --check` ("buildPublicApprovalNotice: closing brace not found"). The general CI workflow is red: lint (`check-spec-bindings.js` reads `vitest list --json` corrupted by TAP from the node:test callers file), test (7 failures: spec-bindings, native-migration-inventory x2 on the unclassified `deploy/io.hagency.native.plist`, dashboard-native-resources x3, dashboard-native-usage x1) and native-controls macos-15-intel (`native-stage-release` final_inspect_failure hit its 30 s timeout). Since the push a newer Codex session (01a0b040, log 2026/09/17) has left 205 modified + 162 untracked + 1 deleted file uncommitted (+14041/-2113; ADR-151..179, Claude stream/session/permission crates, local Codex factory, outcome-resolution console). Verified on that dirty tree: `cargo check --workspace --all-targets --locked` passes (3m04s); the callers test passes 25/25 under both node:test and vitest (harness shim); dashboard-native-resources 5/5 and -usage 2/2 pass; the inventory test fails only because `git ls-files` still lists the unstaged-deleted `codex/json.rs`, and passes 3/3 against a copied index with the tree staged; `check-production-callers.mjs` reports no unknown gaps. Not verified: any full-workspace `cargo test` on the dirty tree (the log records focused selectors only), the spec-bindings checker. Open per the worktree's own plan: no M0–M9 phase complete; Codex live two-agent project-room execution fails (warm runtime loses authority before Started, root8 PID 49126); Claude and Octos production joins unqualified; groups/DMs, uncertain-media recovery, sustained soak, quotas/retention, measured budgets, release/cutover open. Four native `serve` processes stay retained by design (PIDs 20841, 18059, 83315, 49126). `target/` there is 128 GB with 104 GiB free on `/`.
-- 2026-09-18 10:25: Rust port, gating the uncommitted tree in `~/home/hagency-rust-migration-finish-20260915` (base 67e0e84a) ahead of commit and push. Privacy scan of all added content for the public repo: no IPs, local paths, SSH targets or credentials; `mini3` is new to the public history as a bare nickname (71 mentions, docs only; `Mini1` and `crew.ominix.io` are already public). Changes made there: `cargo fmt --all` (the tree failed `fmt --all --check` in ~100 files; Codex records it ran no formatter); the macOS whole-tree-stop cfg idiom applied at five sites in `hagency/tests/owned_matrix.rs`, `hagency/tests/owned_mcp.rs` and `hagency-progress-runtime/tests/owned.rs`, which still asserted the pre-port macOS contract and failed seven tests in the first whole-workspace run; the browser-protocol scenario of `task-rust-console-outcome-workflow` moved to a new Node-bound `task-console-outcome-protocol.spec.md`, because a rust-tagged spec named a Vitest selector and `check-rust-spec-bindings.mjs` exited 1. Gates on the resulting tree: fmt check, strict workspace clippy, 19 vector checks, Rust bindings 1131/0 missing, Node bindings 554/0 missing, callers test 25/25 and audit clean, `verify:ci` pass, console-browser job steps pass (73 tests, real Chrome), Node suite 4358 pass / 2 fail (both the inventory test reading the unstaged `codex/json.rs` deletion through `git ls-files`; 3/3 on a staged copy of the index). Whole-workspace `cargo test` as hosted: run 1 1209 pass / 10 fail (the seven macOS-contract tests, now fixed, plus three `approval_loss`), run 2 1218 pass / 1 fail (a different `approval_loss` test). That family fails only inside whole-workspace runs following a rebuild, always as the approval-notice channel closing before a notice arrives; the `hagency-execution` lib suite alone passed 14/14. Not reclassified as passing; hosted CI is the arbiter. Not done: commit and push. The auto-mode classifier denied committing in that worktree (Modify Shared Resources); the eleven-commit plan and messages are saved in the session scratchpad as `commit-slices.sh`. `agent-spec` is not installed on this host, so no lifecycle or lint output exists for the new spec.
+- 2026-09-18 10:25: Rust port, gating the uncommitted tree in `~/home/hagency-rust-migration-finish-20260915` (base 67e0e84a) ahead of commit and push. Privacy scan of all added content for the public repo: no IPs, local paths, SSH targets or credentials; `mini3` is new to the public history as a bare nickname (71 mentions, docs only; the test host's nickname and public domain are already public). Changes made there: `cargo fmt --all` (the tree failed `fmt --all --check` in ~100 files; Codex records it ran no formatter); the macOS whole-tree-stop cfg idiom applied at five sites in `hagency/tests/owned_matrix.rs`, `hagency/tests/owned_mcp.rs` and `hagency-progress-runtime/tests/owned.rs`, which still asserted the pre-port macOS contract and failed seven tests in the first whole-workspace run; the browser-protocol scenario of `task-rust-console-outcome-workflow` moved to a new Node-bound `task-console-outcome-protocol.spec.md`, because a rust-tagged spec named a Vitest selector and `check-rust-spec-bindings.mjs` exited 1. Gates on the resulting tree: fmt check, strict workspace clippy, 19 vector checks, Rust bindings 1131/0 missing, Node bindings 554/0 missing, callers test 25/25 and audit clean, `verify:ci` pass, console-browser job steps pass (73 tests, real Chrome), Node suite 4358 pass / 2 fail (both the inventory test reading the unstaged `codex/json.rs` deletion through `git ls-files`; 3/3 on a staged copy of the index). Whole-workspace `cargo test` as hosted: run 1 1209 pass / 10 fail (the seven macOS-contract tests, now fixed, plus three `approval_loss`), run 2 1218 pass / 1 fail (a different `approval_loss` test). That family fails only inside whole-workspace runs following a rebuild, always as the approval-notice channel closing before a notice arrives; the `hagency-execution` lib suite alone passed 14/14. Not reclassified as passing; hosted CI is the arbiter. Not done: commit and push. The auto-mode classifier denied committing in that worktree (Modify Shared Resources); the eleven-commit plan and messages are saved in the session scratchpad as `commit-slices.sh`. `agent-spec` is not installed on this host, so no lifecycle or lint output exists for the new spec.
 - 2026-09-18 11:05: Rust port. Committed the working tree on `feat/rust-migration` as eleven local commits (392ed71a..fa6a5ea2: nine area slices of the Codex session's work, then my two fixes); inventory test 3/3 and fmt check pass on the committed tree; not pushed. Operator then set the priority: Codex end to end first, Windows/Claude Code/OctosCode out of scope for now (memory `codex-e2e-first`). Root-caused the live blocker (warm Codex runtime losing authority before Started, root8): on macOS the guardian's whole-system census every ~25 ms treats any process anywhere whose parent exited unseen as an unexplained ancestry and stops the owned tree; the warm idle loop reads that as sticky LostAuthority. Reproduced offline against the real supervisor (48 quiet observations pass, the second observation under `sh -c '(sleep 0.4 &)'` churn fails). Root8's copied domain store ruled out generation/state drift. Fix in the integration worktree, uncommitted: leader starts with POSIX_SPAWN_SETSID and the tracker classifies an unseen-parent newcomer by a process sharing its group in the same census (ADR-029 amendment; XNU PID-allocation claim checked in kern_fork.c); unclassified newcomers still refuse. Three new tests, two of which fail on the old tracker; hagency-platform 34 pass, strict clippy clean. Whole-workspace run in progress. The live two-agent project-room run has not been repeated.
 - 2026-09-18 11:35: Rust port. Whole-workspace run 3 with the macOS tracker change: 147 suites, 1220 pass, 2 fail (both `approval_loss`); fmt check, strict workspace clippy, callers audit and Rust bindings (1134 selectors, 0 missing) pass. `approval_loss` characterised: relinking only the probe bin and running the lib suite at once failed 1 of 3 rounds while the second run on the same binary passed 3 of 3; across all runs, first-run-after-relink fails 4 of 6, already-executed binary 0 of 17. First-exec latency of a fresh binary on this host (the branch's own "pre-main exec starvation"), not the census gap; not fixed, not reclassified as passing. Tracker fix is uncommitted in the integration worktree (7 modified files, 1 new test file). Next: operator go-ahead to repeat the live two-agent project-room run on a fresh isolated instance.
 - 2026-09-18 13:10: Rust port, Codex end to end. Operator approved the live run, committing the tracker fix and pushing. Pushed 67e0e84a..d3b7d940 on `feat/rust-migration` (PR 162). Two isolated live two-agent instances on the existing Palpo (ports 19438, 19439; both closed cleanly afterwards, no retained owner touched). Tracker fix holds live: a warm runtime survived ten idle minutes under load and its project-room task reached `running`; stop proved `whole_tree_stopped`. Second defect found and fixed (b9612e14): another agent joining the shared project room retires the earlier agent's already-resolved inbox plan inside one poll and the driver turned that into a silent fatal OutcomeUnknown, so only the last agent to join survived; validated live (first agent resolved its `_1_3` session and stayed receiving), offline regression test owed. This corrects my earlier attribution of root8's first agent to the guardian. Third fix (f673319c): the Codex `systemError` thread status was refused as an unsupported event, hiding the provider's refusal; now the turn ends as Failed. HARD BLOCKER, external: the operator's Codex account usage limit is exhausted ("try again at Sep 24th, 2026 9:40 AM", shown by `codex exec`), so no live Codex task can complete; it is also why the Codex root session went silent. Second, infrastructure: Palpo's per-IP limiters are one shared bucket behind the Caddy proxy; it cost five adoption attempts and ended one coordinator with a Matrix intake timeout. It is config (`rc_registration`, `rc_message`; `per_second = 0` disables) in palpo.toml on the Palpo host, not code; the auto-mode classifier blocked remote docker inspection, so the edit is handed to the operator. Hosted CI on cde89a0c: Ubuntu failed the Rust bindings check on macOS-only selectors (fixed c994c520 with a platform tag rule), the Node test job failed on inventory drift because PR runs test the merge with master, which had moved six commits (merged master 6bb04198, fixture d3b7d940), macOS failed two configured-fleet two-agent fixtures never run hosted before (handoff `deadline` + `peer_unavailable`, unresolved, pass 6/6 locally). Hosted run for d3b7d940 in progress.
@@ -12970,7 +12970,7 @@ is claimed.
   projection site, verified sessions only.
 - Private qualification binary `hagency-e2e-batch5` built from c52b4ed1 (model
   overlay + redial trace + guardian refusal trace); tree restored clean.
-- LIVE BLOCKED 04:36Z: crew.ominix.io:19443 answers /versions but every
+- LIVE BLOCKED 04:36Z: matrix.example.org answers /versions but every
   authenticated request is 400 "Internal server error during authentication"
   for every token (a bogus one too); /publicRooms says "the database system is
   in recovery mode". Palpo's Postgres crashed or was restarted. Polling for

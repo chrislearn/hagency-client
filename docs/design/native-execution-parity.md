@@ -9,7 +9,7 @@ is coordination, not canonical task state or a completed migration claim.
 ## Target path
 
 Local Codex, Claude Code and OctosCode with the real local Octos backend; mini3
-supplies Palpo at `https://crew.ominix.io:19443/`. Use the existing real Robrix2
+supplies Palpo at `https://matrix.example.org`. Use the existing real Robrix2
 profile and preserve services/SDK stores. No remote model substitution, credential
 copying or mock backend counts.
 

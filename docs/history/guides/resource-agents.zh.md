@@ -1,3 +1,5 @@
+> 历史文档：描述的是已在 hagency-rs #17 中移除的 TypeScript 版本。当前服务请见[架构说明](../../architecture-walkthrough.zh-CN.md)。
+
 # 在 Palpo 定义 Agent，向 Hagency 申请资源
 
 Agent 由项目方在 Palpo 定义。Hagency 提供资源、审批额度，批准后自动
@@ -52,8 +54,6 @@ testing、integration、documentation；两份 high 资源还支持 architect。
 review 仍需要满足现有的跨模型家族条件。旧记录没有发布选择时保留原可见性，
 当前三份已有资源已按操作员要求显式发布。
 
-Palpo 后台通过 App Service 配对凭据访问 Hagency 的资源 API。当前 Mini1
-回调路径为 `host.docker.internal:19094`，经 SSH 反向隧道到本机
-Hagency `18195`，再转控制面 `18194`。目录由 Hagency 计算；Palpo 不复制
+Palpo 后台通过 App Service 配对凭据访问 Hagency 的资源 API（当时的部署经反向隧道回调 Hagency）。目录由 Hagency 计算；Palpo 不复制
 模型密钥，也不运行本地 Agent。提交申请时，Palpo 先写 Matrix 申请事件，
 再把事件 ID 和申请内容交给 Hagency；Hagency 核对发送者、项目和内容。

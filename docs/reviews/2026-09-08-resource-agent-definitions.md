@@ -3,7 +3,7 @@
 Historical implementation: the operator subsequently clarified that Palpo
 projects define Agents. ADR-025 and
 `2026-09-08-palpo-agent-definitions.md` supersede the provider definition UI
-described below. Use the revised `docs/guides/resource-agents.zh.md` walkthrough.
+described below. Use the revised `docs/history/guides/resource-agents.zh.md` walkthrough.
 
 The operator requested multiple resource configurations with multiple named
 Agents under each resource. ADR-024 amends the previous resource-first console
@@ -80,7 +80,7 @@ Private evidence lives in `palpo-admin-e2e/2026-09-06`: the
 `resource-agent-deployment.json`, `resource-agent-palpo-deploy.log`,
 `resource-agent-live-result.json`, `resource-agent-live-cleanup.json`,
 `resource-agent-lifecycle.json`, the corresponding screenshots and verification
-logs. The operator guide is `docs/guides/resource-agents.zh.md`.
+logs. The operator guide is `docs/history/guides/resource-agents.zh.md`.
 
 At inspection, the project's1M allocation is fully committed to the first Agent.
 An additional request needs additional project-side allocation; no budget was

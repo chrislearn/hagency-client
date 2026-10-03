@@ -66,6 +66,6 @@ Private evidence is under the existing `palpo-admin-e2e/2026-09-06` cache:
 `palpo-definition-after-restart.json`, browser screenshots and the copied test
 and native lifecycle logs. Initial failed browser/test attempts remain available.
 
-The revised operator guide is `docs/guides/resource-agents.zh.md`. There is no
+The revised operator guide is `docs/history/guides/resource-agents.zh.md`. There is no
 canonical task-writer in this source checkout. No task state was fabricated and
 no commit or push was performed.

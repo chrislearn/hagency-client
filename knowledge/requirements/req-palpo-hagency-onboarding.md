@@ -270,7 +270,7 @@ Scenario: 重启保留授权和操作状态
 - [Palpo 上游管理路由，固定版本](https://github.com/palpo-im/palpo/blob/3e4fbd332fe3845e99d91884d812493189f91860/crates/server/src/routing/admin/appservice.rs)。
 - [Palpo 管理员鉴权，固定版本](https://github.com/palpo-im/palpo/blob/3e4fbd332fe3845e99d91884d812493189f91860/crates/server/src/routing/admin.rs)。
 - Hagency 当前实现：`lib/project-side-store.js`、`lib/matrix-representative.js`、`lib/bot-commands.js`、`backend-v2.js`、`bridge-matrix.js`。
-- [现有环境的人工验证步骤](../../docs/guides/hagency-borrower-walkthrough.zh.md)。
+- [现有环境的人工验证步骤](../../docs/history/guides/hagency-borrower-walkthrough.zh.md)。
 
 ## Open Questions
 

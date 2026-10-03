@@ -2,144 +2,413 @@
 
 # Hagency user guide
 
-This guide is for people who use Hagency through a Palpo Matrix server: the
-Hagency owner who lends AI agents, and the project owners and members who work
-with them. It covers what to set up once, which rooms you will see, and who can
-talk to an agent.
+This guide shows you how to add AI agents to a Palpo Matrix server with
+Hagency and how to work with them in the Rinx Matrix client. Follow the steps
+in order the first time. Later sections cover everyday use and problems.
 
-A few words used throughout:
+## Terms used in this guide
 
-- **Hagency** — the service that runs AI agents and lends them to projects.
-- **Palpo** — the Matrix server (homeserver) your project lives on. It has a web
-  page, "Palpo web", for accounts, projects and Hagency access.
-- **Matrix client** — the chat app you use, for example Element or Rinx.
-- **Hagency console** — the Hagency owner's web page for approving requests,
-  managing agents and tokens.
+- **Hagency**: the service that runs AI agents and lends them to projects on a
+  Matrix server.
+- **Palpo**: the Matrix server (homeserver) where your projects and accounts
+  live. Palpo has its own web admin pages.
+- **Rinx**: the Matrix chat app you use to talk to agents.
+- **Hagency console**: the Hagency web page where the operator connects Palpo,
+  manages resources and approves agent requests.
+- **Fleet**: one Hagency installation as a Palpo server sees it. Palpo reserves
+  a block of Matrix account names for the fleet, all starting with `hf_`, and
+  Hagency creates the fleet's agents under those names. One Hagency serves one
+  fleet.
+- **Resource**: a model, a reasoning effort and a monthly token ceiling that
+  Hagency offers to Palpo. Projects define agents on a published resource.
+- **Agent**: an AI worker that Hagency creates as a Matrix account on your
+  server.
+- **Owner**: the Matrix user who requested the agent for a project. The owner
+  receives the agent's DM and its approval cards.
+- **DM**: a private, encrypted chat between the agent and its owner.
+- **Approval room**: the project's private room where Hagency's approval bot
+  posts approval cards for the owner.
 
 ## Who does what
 
-| Role | Who | What they do |
-| --- | --- | --- |
-| Matrix server admin | The Palpo administrator | Once per Hagency: **Add Hagency** in Palpo web. |
-| Hagency owner | An ordinary Matrix account named as owner | Downloads the configuration, connects the Hagency, verifies it, approves agent requests. |
-| Project owner and members | Ordinary Matrix accounts | Create projects, request agents, talk to agents. |
+| Role | What they do |
+| --- | --- |
+| Palpo administrator | Adds this Hagency to the Palpo server once. |
+| Hagency operator | Runs Hagency, signs Codex in, connects the fleet, manages resources, approves agent requests in the console. |
+| Owner | Creates the project and its approval room in Palpo, requests an agent, accepts the agent's DM, answers approval cards. |
+| Project members | Talk to agents in shared rooms by @mentioning them. |
 
-Why the admin is needed: adding a Hagency installs a Matrix **App Service**. That
-is a private block of account names, `@hf_<fleet>_*`, that the Hagency may create
-and act as — its representative, its approval bot and its agents. Only a server
-admin can grant that. It is the same rule as on any Matrix server (Synapse
-included). After this one step, nobody needs admin rights again.
+One person can hold several roles.
 
-## Connect a Hagency to a Palpo server
+## Before you start
 
-1. **Admin:** in Palpo web, open **Add Hagency**. Fill in a name, the owner's
-   Matrix ID, and the connection mode **Hagency connects outbound to Palpo**.
-   Click **Authorize and install**.
-2. **Owner:** in Palpo web, open **My Hagency access** and click
-   **Download Hagency configuration**. You get a JSON file.
-3. **Owner:** in the Hagency console, go to **Project sides** →
-   **Connect a Palpo project server**. Choose the JSON file, enter the
-   **Matrix address** (the homeserver URL, for example
-   `https://matrix.example.org`), and click **Connect**. No restart is needed.
-4. **Owner:** back in Palpo web, click **Verify connection & create reception**.
-   When it reports ready, projects on this server can request agents.
+You need:
 
-A Hagency connects to one Palpo fleet.
+- A Palpo server reachable over `https`, for example
+  `https://matrix.your-server.example`.
+- An administrator account on that Palpo server.
+- The `hagency` program and the console files, built from this repository.
+  The repository [README](../../README.md) explains how to build them.
+- A Codex sign-in on the machine that runs Hagency (Step 4).
+- A file named `fleet-runtime.json` in the Hagency state directory. It holds
+  the local Codex runtime settings, and its `profile` must be
+  `palpo_fleet_runtime_v1`. The repository README describes its fields under
+  [Configuration](../../README.md#configuration). Without it, the fleet
+  connects but creates no agents.
+- An owner account that has cross-signing set up in Rinx (for example, by
+  setting up secure backup or verifying a session). Hagency waits until the
+  owner has a cross-signing key before it creates an agent for them.
 
-Sign in to Palpo web with your full Matrix ID, such as `@alice:example.org`.
-The short name (`alice`) is refused for now.
+## Step 1: Add Hagency in Palpo
 
-## Matrix IDs and the server name
+These pages belong to Palpo, not to Hagency, so their exact layout may differ
+in your Palpo version.
 
-A Matrix ID looks like `@name:server_name`. The `server_name` part is fixed
-when the server is first set up and can never change, so choose your real
-domain (for example `example.org`), as matrix.org does. If the server runs on a
-non-standard port, a `.well-known/matrix/client` file on that domain tells
-clients where to find it.
+1. Sign in to the Palpo web admin as an administrator.
+2. Add a Hagency to the server. Name the Matrix account that will own it,
+   and choose the outbound connection mode.
+3. Sign in to the Palpo web admin with the account that owns this Hagency.
+4. Open **My Hagency access** and click **Download Hagency configuration**.
+   Palpo downloads a JSON file. Keep it private: it contains the fleet's
+   credentials.
 
-## The rooms you will see
+Adding a Hagency needs an administrator because it reserves a block of
+account names for the fleet. After this step, nobody needs administrator
+rights for daily use.
 
-| Room | What it is | What you do there |
-| --- | --- | --- |
-| Reception room | The mailbox between Palpo and the Hagency. Agent requests and the connection check arrive here as special events. | Nothing. Your client shows little in it. |
-| Project room | Where people and agents work together. | @mention an agent to ask it something. |
-| Approval room | The project's private, encrypted room. Only you and the approval bot are in it. | Approve or deny risky agent actions from the cards posted here. |
-| Agent DM | One private, encrypted chat per agent, with its owner. | Talk to the agent one to one. |
+## Step 2: Start Hagency and open the console
 
-Current builds also create a **Hagency coordinator** DM. It is temporary
-scaffolding and is being removed (ADR-187). You can ignore it.
+Run these commands on the machine that runs Hagency. Replace the paths with
+your own.
 
-## Who can talk to an agent
+1. Create a new, empty state directory (do this once):
 
-- **Its DM:** only its owner. The room is invite-only, and Hagency accepts only
-  the owner's messages there.
-- **The project room:** any member who @mentions the agent. Messages that do not
-  mention it do not wake it. The project room is invite-only, and the project
-  owner decides who is in it.
-- **Anywhere else on the server:** no one.
-- **Other Matrix servers:** not reachable. This setup does not use federation.
+   ```bash
+   hagency init --state-dir /path/to/state
+   ```
 
-## What an agent hears
+2. Start Hagency with the Palpo connection and the console:
 
-An agent can read the whole room. It has a tool to read the conversation
-history when it needs context. But it acts only when someone @mentions it.
+   ```bash
+   hagency serve \
+     --state-dir /path/to/state \
+     --listen 127.0.0.1:13300 \
+     --palpo-transport \
+     --console-assets /path/to/console-assets
+   ```
 
-It answers in the thread of the message that mentioned it. Follow-ups in that
-thread reach it too, so keep a piece of work in one thread.
+   - `--listen` must be a loopback address with a port. `127.0.0.1:13300` is
+     the default.
+   - Do not add `--agent-driver`. That flag starts the older setup with a
+     coordinator agent, and then Hagency does not run the fleet itself.
 
-## Giving an agent instructions
+3. In a second terminal, print a console link:
 
-In a shared room, an agent works for the room. Any member can @mention it and
-give it instructions. There is no per-agent "only take instructions from these
-people" list today.
+   ```bash
+   hagency console-access --state-dir /path/to/state
+   ```
 
-What protects the owner:
+   If you changed `--listen`, pass the same `--listen` here.
 
-- **Approvals.** Risky actions need approval. Approval cards go only to the
-  owner's private approval room.
-- **Tokens.** Everyone's requests spend the agent's token allocation. When the
-  allocation runs out, the agent pauses and posts a notice. Only the owner can
-  add tokens (see below).
-- **Membership.** The owner controls who is in the room.
-- **Retiring.** The owner can retire the agent at any time.
+4. Open the link in a browser on the same machine. The console opens and
+   keeps you signed in until you click **End access** or close the browser.
+   Restarting Hagency does not sign you out. The link keeps working until you
+   print a new one, so keep it private.
 
-## Tokens
+## Step 3: Connect the fleet in the console
 
-When the owner approves an agent request, they choose a token allocation.
-**All remaining** fills in everything the resource can still give.
+1. In the console, open **Project sides**.
+2. Find the panel **Connect a Palpo project server**.
+3. Under **Configuration file**, choose the JSON file from Step 1. The
+   console shows "Fleet on *your server*:" and the fleet ID.
+4. Under **Matrix address**, enter your server's Matrix address, for example
+   `https://matrix.your-server.example`. It must use `https`.
+5. Click **Connect**. The console shows "Connected to *your server*." No
+   restart is needed.
+6. Go back to the Palpo web admin and click
+   **Verify connection & create reception**. When Palpo reports success,
+   projects on the server can request agents.
 
-When an agent reaches its allocation, it pauses. Nothing is dropped. To resume
-it, open the Hagency console → **Engagements** → **Add tokens**. The agent
-continues where it stopped.
+The fleet runs without a coordinator agent. Hagency creates the agents and
+the approval bot itself, and you will not see a "Hagency coordinator" DM.
 
-## Invitations
+One Hagency connects to one Palpo fleet. Importing a second fleet is refused
+with "Another Palpo fleet is already connected to this Hagency."
 
-How it is designed to work:
+## Step 4: Sign Codex in and check your resources
 
-- If the agent's **owner** invites it to a room, the agent trusts the invite and
-  joins.
-- If **anyone else** invites it, the invite becomes a pending decision in the
-  Hagency console under **Invitations**. The owner decides, because joining
-  spends the owner's tokens.
+Fleet agents run Codex with a Codex sign-in on the machine that runs Hagency.
+They do not use accounts added in the console.
 
-Inside a room it has joined, the same rule applies: it acts only when
-@mentioned. See the limits below — agents do not act on invitations yet.
+1. On the Hagency machine, sign Codex in to the fleet's Codex folder. Which
+   folder that is depends on `fleet-runtime.json`:
+   - **With a `local_codex` block:** the folder named by
+     `local_codex.codex_home`. For example:
 
-## Encryption
+     ```bash
+     CODEX_HOME=/path/to/codex-home codex login
+     ```
 
-Agent DMs and approval rooms are end-to-end encrypted. After you sign in on a
-new device, verify that session — from a session you already have, or with
-your recovery key. Until you do, agent DMs and approval cards will not decrypt
-on the new device.
+   - **Without a `local_codex` block:** the folder `runtime-home` in the state
+     directory. Codex uses it as both `HOME` and `CODEX_HOME`. Hagency creates
+     it (private to the service user) when the fleet service loads
+     `fleet-runtime.json`, after Step 3. Then sign in there:
 
-## Known limitations (as of this release)
+     ```bash
+     CODEX_HOME=/path/to/state/runtime-home codex login
+     ```
 
-- **Invitations are not acted on yet.** Agents ignore invitations for now; only
-  the coordinator's invitations are watched. Fixed by ADR-187 slice 6.
-- **First message can be lost.** A message sent in the first second after an
-  agent is created can be lost if its encryption key arrives a moment late.
-  If the agent does not respond, send the message again. A fix is in progress.
-- **Coordinator DM.** The "Hagency coordinator" DM is temporary scaffolding,
-  being removed by ADR-187.
-- **Full Matrix ID sign-in.** Palpo web accepts only the full Matrix ID
-  (`@alice:example.org`), not the short name.
+   On a machine without a browser, run `codex login --device-auth` instead.
+   Codex keeps the sign-in in that folder. Hagency does not store your
+   credentials.
+2. Check your resources, and create the first one if there is none:
+   - **(a) Check My resources.** In the console, open **My resources**. Each
+     row shows a resource's model, its monthly token ceiling, and whether it
+     is **Included** (published to Palpo) or **Withdrawn**. With no
+     resources, the console suggests creating the first resource from a
+     managed account on the Accounts page. Ignore that hint, and do not use
+     **Managed accounts** or **Enroll resource** for a fleet: a resource made
+     there is bound to a managed account, and fleet agents cannot run on it.
+   - **(b) If the list is empty, run the operator API once.** The console
+     cannot create a fleet's first resource. The operator creates it on the
+     machine that runs Hagency, with your own `--listen` address and state
+     directory:
+
+     ```bash
+     curl -s -X POST http://127.0.0.1:13300/api/native/v1/resources \
+       -H "Authorization: Bearer $(cat /path/to/state/operator.token)" \
+       -H 'Content-Type: application/json' \
+       -d '{"presetId":"local_codex","seatId":"local_codex_seat","framework":"codex","model":"gpt-5.6-sol","provider":"openai","reasoning":"medium","ceiling":{"tokens":20000000,"period":"monthly"},"published":true}'
+     ```
+
+     The repository README shows this step in
+     [First run](../../README.md#first-run).
+   - **(c) The rules.** Palpo sees a resource only if its model and reasoning
+     effort are a pair Hagency has qualified for at least one role. For Codex
+     that is `gpt-5.6-sol` with `low`, `medium` or `high` reasoning. Hagency
+     stores any other pair but does not publish it. With a `local_codex`
+     block, `seatId` must also equal `local_codex.seat`, with `framework`
+     `codex` and `provider` `openai` or left out. Hagency accepts and
+     publishes a resource that does not match, but refuses to run agents on
+     it.
+
+   After that, use the console for everything else (items 3 to 5 below).
+3. To change a resource, click **Edit configuration** on its row. Choose the
+   model and the reasoning effort, set the **Monthly token ceiling**, and
+   click **Save configuration**. The page offers only models and reasoning
+   efforts that Hagency supports. A resource cannot be changed while an agent
+   is reserved or active on it.
+4. To offer another model or reasoning effort on the same Codex sign-in,
+   click **New resource configuration**, choose an existing resource as the
+   **Source configuration**, set the model, reasoning effort and ceiling, and
+   click **Create another configuration**. New resources are published at
+   once.
+5. To stop offering a resource, click **Withdraw from native catalog**.
+   **Include in native catalog** offers it again.
+
+Hagency sends published resources to Palpo every 15 seconds. Owners choose
+from them when they request an agent.
+
+## Step 5: Request and approve an agent
+
+1. **Owner:** in Palpo, create or register your project with
+   **Create project and approval room**. Then define an agent for the
+   project: an agent name, one published resource, a role, the tokens you
+   request and a daily rate. These are Palpo's pages, outside Hagency, so
+   their layout may differ in your Palpo version.
+2. **Operator:** in the console, open **Engagements**. On the **Requests**
+   tab, the request appears under **Pending verdicts**, with its candidate
+   resource and the tokens that resource has left.
+3. In **Tokens**, keep the requested amount or type another whole number.
+   **All remaining** fills in everything the resource can still give.
+4. Click **Approve**. To turn the request down, click **Reject** and then
+   **Confirm**.
+
+After approval, Hagency creates the agent. The agent joins the project room
+and invites the owner to a new DM.
+
+## Step 6: Accept the DM and talk to the agent
+
+1. **Owner:** in Rinx, accept the invitation to the agent's DM. The agent
+   waits, with no time limit, until you join. If Hagency restarts before you
+   join, see [Troubleshooting](#troubleshooting).
+2. Send a message in the DM. In the DM, the agent answers every message from
+   its owner. The DM is for you and the agent only; if anyone else joins, the
+   agent stops answering there.
+3. In the project room, any member can @mention the agent to ask it
+   something. The agent answers in the thread of that message. Keep
+   follow-ups in the same thread.
+
+## Step 7: Approve agent actions
+
+Some actions, such as running certain commands, need the owner's approval.
+
+The approval room is the private room the owner created in Palpo with
+**Create project and approval room** in Step 5. Palpo invites Hagency's
+approval bot to it, and Hagency accepts an agent request only after the room
+holds exactly the owner and the approval bot.
+
+1. When the agent needs approval, it posts "Agent *name* is waiting for
+   approval from its owner." in the project room.
+2. Hagency's approval bot posts an approval card in the owner's approval
+   room. The card names the agent, the project, the tool and the input, and
+   shows when it expires.
+3. Choose one button:
+   - **Approve once**: allow this one action.
+   - **Allow for this task**: allow this kind of action for the rest of the
+     current task.
+   - **Always allow this operation**: save this exact rule for this agent and
+     project.
+   - **Deny**: refuse the action.
+
+   Some cards offer only **Approve once** and **Deny**. Typing a text reply
+   does not count as an answer; use the buttons.
+
+Hagency uses a separate approval-bot device for each owner. One owner's cards
+are never encrypted for another owner.
+
+## Use an agent in other rooms
+
+You can bring an agent into other rooms on the same server.
+
+### Invite the agent
+
+1. In Rinx, open the room and invite the agent by its full Matrix ID, for
+   example `@hf_...:your-server.example`. You can see the agent's full ID in
+   the member list of its DM.
+2. You can also type the agent's name in Rinx's invite dialog. The search
+   only finds people you share a room with and people the server's user
+   directory returns, so the full ID is the most reliable way.
+
+What happens next depends on who invited the agent:
+
+- **The owner invited it:** the agent accepts on its own, usually within
+  10 seconds.
+- **Someone else invited it:** the invitation waits in the console under
+  **Invitations**. The operator clicks **Accept** or **Decline**, because
+  work in that room spends the owner's tokens.
+
+### How the agent behaves in the room
+
+| Room | What the agent does |
+| --- | --- |
+| Unencrypted room with other people | Answers messages that @mention it, in that message's thread. |
+| Room where the only person is the owner (encrypted or not) | Answers every message from the owner. |
+| Encrypted room with other people | Does not work there. It posts a notice that it cannot work in an encrypted room with other people in it. |
+
+In an encrypted room shared with others, only the owner could read the
+agent's replies, so the agent does not answer there. If others keep posting,
+it repeats the notice at most once every 15 minutes. A Matrix room cannot
+turn encryption off once it is on. To work with the agent and other people
+together, create a new room with encryption off and invite the agent there.
+
+The agent reads only messages sent after it joined. If you wrote before it
+finished joining, send the message again.
+
+Approvals and tokens work the same in every room. Approval cards always go to
+the owner's approval room, never into the shared room.
+
+## Manage tokens
+
+When the operator approves a request, they set the agent's token allocation.
+
+When the agent uses up its allocation, it pauses and posts "Paused: used N of
+M tokens. The owner can add tokens in the Hagency console." No work is
+dropped. Only the operator can open the console, so the owner asks the
+operator to add tokens.
+
+To add tokens:
+
+1. In the console, open **Engagements**.
+2. On the agent's row, click **Add tokens**.
+3. Enter an amount, or click **All remaining**, and click **Add**.
+
+The agent resumes and posts "Resumed: N tokens available."
+
+To end an agent's work for a project, click **Retire** on its row and then
+**Confirm**.
+
+## Encryption and your devices
+
+Agent DMs and approval rooms are end-to-end encrypted.
+
+- Agent replies in the DM reach all of the owner's sessions, verified or
+  not.
+- Approval cards reach only sessions the owner has verified. A new Rinx
+  session that you have not verified shows "Unable to decrypt" for approval
+  cards. This is by design. Verify the session from another session, or
+  with your recovery key, to see new cards.
+
+## Troubleshooting
+
+**The agent never appears, or never sends a DM.**
+- Check that the owner accepted the DM invitation. The agent waits until the
+  owner joins.
+- If Hagency restarted while the agent was waiting for the owner to join the
+  DM, Hagency never finishes creating that agent, and the console has no
+  action to resume it. The operator opens **Engagements**, clicks **Retire**
+  on that agent's row and then **Confirm**. The owner then defines the agent
+  again in Palpo, and the operator approves the new request.
+- Check that the owner has cross-signing set up. Hagency waits until it can
+  read the owner's cross-signing key.
+- Check that you clicked **Verify connection & create reception** in Palpo
+  after connecting.
+- Check that `fleet-runtime.json` is in the state directory. The Hagency log
+  line "fleet service stage" shows what the fleet is waiting for:
+  `awaiting_runtime_config` (the file is missing) or `awaiting_reception`
+  (Palpo has not verified the connection yet).
+
+**The Approve button is greyed out.**
+No published resource can serve the request. Check **My resources** in
+Step 4.
+
+**The agent ignores my messages in a group room.**
+In a room with other people, the agent answers only when you @mention it.
+
+**I cannot find the agent when I search for it.**
+Matrix user search usually finds only people you already share a room with.
+Invite the agent by its full Matrix ID.
+
+**The agent says it cannot work in an encrypted room.**
+Create a new room with encryption off and invite the agent there.
+
+**Approval cards show "Unable to decrypt".**
+Your current session is not verified. Verify it, or answer the card from a
+verified session.
+
+**The agent stopped and posted "Paused".**
+Its token allocation is used up. Add tokens in **Engagements**.
+
+**Links in messages show no preview.**
+Link previews are made by the homeserver, not by Hagency. Ask the Palpo
+administrator to allow previews for the sites you need.
+
+**The console refuses the configuration file.**
+- "This is not the Hagency configuration downloaded from Palpo.": choose the
+  file from **Download Hagency configuration**.
+- "this file has no outbound connection and will be refused": add the Hagency
+  in Palpo again with the outbound connection.
+- "Another Palpo fleet is already connected to this Hagency.": one Hagency
+  serves one fleet.
+
+## Known limitations
+
+- **Installing a fleet takes a manual step.** The installer and its service
+  files set Hagency up for the older coordinator setup. To run a fleet,
+  whoever installs Hagency removes `--agent-driver` from the service and
+  writes `fleet-runtime.json` by hand.
+- **A restart while an agent waits for its owner strands that agent.** See
+  [Troubleshooting](#troubleshooting).
+- **The console's empty-resources hint does not fit a fleet.** See
+  [Step 4](#step-4-sign-codex-in-and-check-your-resources), item 2.
+- **A changed owner key cannot be accepted in the console.** Hagency trusts
+  the cross-signing key it first sees for an owner. If the owner later resets
+  cross-signing, the console has no control to trust the new key.
+- **Joined rooms are not shown in the console.** The console does not list
+  the rooms an agent joined after it was created.
+- **No work in encrypted rooms shared with other people.** The agent stays in
+  such a room but does not work there (see
+  [How the agent behaves in the room](#how-the-agent-behaves-in-the-room)).
+- **One homeserver only.** Agents work only with people and rooms on the
+  fleet's own Palpo server. Users and rooms on other Matrix servers cannot
+  work with them.

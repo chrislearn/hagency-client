@@ -287,16 +287,16 @@ evidence are in the execution map.
   lost responses and offers explicit retries. See
   [the report](reviews/2026-09-09-engagement-console-recovery.md).
 
-- **Mini1 public Matrix, 2026-09-08:** operator explicitly requested public access
-  using crew.ominix.io on another port. Public homeserver URL is now
-  `https://crew.ominix.io:19443`; Matrix server identity remains
-  `hfux-closure-20260906.test`. Existing root Caddy service io.ominix.caddy proxies
-  only client/media APIs to Mini1 loopback18010, using its existing valid domain
-  certificate. Original443website stays intact;18443belongs to another service.
+- **Test-host public Matrix, 2026-09-08:** operator explicitly requested public access
+  using a public domain on another port. Public homeserver URL is now
+  `https://matrix.example.org`; Matrix server identity remains
+  `test.example.org`. Existing root Caddy service proxies
+  only client/media APIs to the test host's loopback port, using its existing valid domain
+  certificate. The original website stays intact; the other candidate port belongs to another service.
   Public Chrome login, sync, joined rooms, history and thread relations pass.
   Client access no longer needs a local tunnel; HAFleet's reverse callback and
   Palpo admin still retain their existing tunnel. See
-  [the connection guide](guides/mini1-public-matrix.zh.md).
+  (a removed deployment note).
 
 - **Invited Agent rooms and Markdown, 2026-09-08:** normal invitations may bind
   existing allocated Agents to additional rooms; binding authority is per room
@@ -304,13 +304,13 @@ evidence are in the execution map.
   fresh context boundary. Keep existing Agent device/crypto stores and never
   allocate from an invite. HAFleet now emits Matrix formatted HTML; Robrix did
   not need a renderer change. Local backend65390 and bridge75228 are deployed;
-  console4681 and Mini1 Palpo are unchanged. 179 regressions and five real model
+  console4681 and test-host Palpo are unchanged. 179 regressions and five real model
   dispatches pass; browser HTML/thread assertions pass. Native lifecycle has11
   unsupported skips (non-passing). See
   [the validation report](reviews/2026-09-08-invited-agent-rooms-markdown.md).
 
 - **Project registration versus server onboarding, 2026-09-06:** the operator's
-  new project room was registered under the already accepted Mini1 project side
+  new project room was registered under the already accepted test-host project side
   using the existing project metadata API. No server credential replacement is
   needed to add a project. The pending request's first-owner approval form is
   prefilled in the dedicated console browser with the verified borrower and
@@ -333,16 +333,16 @@ evidence are in the execution map.
 
 - **Palpo onboarding requirements, 2026-09-06:** the operator requested a product
   requirements document and a guided borrower/provider walkthrough. See
-  [the draft](../knowledge/requirements/req-palpo-hafleet-onboarding.md) and
-  [manual steps](guides/hafleet-borrower-walkthrough.zh.md). Dedicated reception
+  [the draft](../knowledge/requirements/req-palpo-hagency-onboarding.md) and
+  [manual steps](history/guides/hagency-borrower-walkthrough.zh.md). Dedicated reception
   rooms require a verified target-project authority extension; do not relax the
   current source-room binding or claim that the draft has been implemented.
   Current manual validation uses the existing registration-token deployment.
 
 - **Operator desktop walkthrough, 2026-09-06:** Robrix2 now runs as a visible
-  macOS app using the existing Mini1 test profile, account and encrypted session.
+  macOS app using the existing test-host test profile, account and encrypted session.
   The owned headless app exited normally and its driver was stopped before the
-  desktop launch. The private run cache's `desktop-mini1/` contains the launcher,
+  desktop launch. The private run cache's `desktop-test-host/` contains the launcher,
   build log and launch receipt. Do not restart the headless driver against this
   same profile while the desktop app is running.
 
@@ -496,7 +496,7 @@ evidence are in the execution map.
   `owner_unavailable` after a stale read also reopens setup. Never resolve this
   error by inferring the requester as owner or replacing working server credentials.
 - The 2026-09-06 operator retry completed through the rebuilt browser form and was
-  independently confirmed active/bound and joined on Mini1 Palpo. Private evidence
+  independently confirmed active/bound and joined on test-host Palpo. Private evidence
   is in the live run cache's `first-project-owner/`. The first runtime work message
   for that new agent is still pending manual validation. Before any router session
   exists, its runtime projection currently falls back to legacy tmux offline state;
@@ -550,7 +550,7 @@ evidence are in the execution map.
   active agent. A fresh bridge needs no historical local thread map for this path.
 
 
-- **Mini1 Palpo web admin live acceptance, 2026-09-06:** the implemented
+- **Test-host Palpo web admin live acceptance, 2026-09-06:** the implemented
   App Service → reception → verified project → manual resource approval → actual
   agent/code/tests/result path is deployed and demonstrated. Five deliverable
   tests pass and the canonical task is done with no queued dispatches. This is
@@ -569,20 +569,20 @@ evidence are in the execution map.
   admission. The private cache acceptance report records fixes and retained gaps.
 
 
-- **Walkthrough and connectivity refresh, 2026-09-07:** a healthy Mini1 deployment
+- **Walkthrough and connectivity refresh, 2026-09-07:** a healthy test-host deployment
   can be inaccessible when the local SSH forwards are gone. The dedicated
-  `mini1-tunnel.sock` under the private palpo-admin-e2e run cache now controls an
+  `test-host-tunnel.sock` under the private palpo-admin-e2e run cache now controls an
   owned background SSH master forwarding Matrix18010/admin18080 and reverse
   callback19094→AS18195. Check the listener/control socket before opening another
   tunnel. Current operator guide explicitly distinguishes homeserver project-side
   records, Palpo project rooms and HAFleet engagement bindings, and documents
   unenforced resource declaration/unattributed usage and incomplete project rollups.
 
-- **Mini1 tunnel supervision, 2026-09-08:** both Robrix history errors were TCP
+- **Test-host tunnel supervision, 2026-09-08:** both Robrix history errors were TCP
   connection refusal because the local18010/18080 SSH forwards and control socket
-  had disappeared. Mini1's Palpo containers remained healthy. Forwarding is now
-  owned by launchd `com.hafleet.mini1-tunnel`, installed at
-  `~/Library/LaunchAgents/com.hafleet.mini1-tunnel.plist`, with the
+  had disappeared. The test host's Palpo containers remained healthy. Forwarding is now
+  owned by launchd `com.hafleet.test-host-tunnel`, installed at
+  `~/Library/LaunchAgents/com.hafleet.test-host-tunnel.plist`, with the
   existing private-cache control socket and reverse19094→18195. Explicitly set
   `ControlPersist=no` and `ForkAfterAuthentication=no`: the user's SSH config
   otherwise enables ControlPersist600, detaches a master and defeats foreground
@@ -593,7 +593,7 @@ evidence are in the execution map.
 
 
 - **Onboarding reset, 2026-09-07:** the operator explicitly requested removal of
-  `Mini1 Palpo admin E2E`. The isolated18194 side was removed through its cleanup
+  `test-host Palpo admin E2E`. The isolated18194 side was removed through its cleanup
   API; its engagement ended, binding deactivated, agent retired and Matrix
   project-room memberships withdrawn. Console13202 `/projects/new` now offers
   fresh creation (Playwright verified). Do not silently recreate this side: the
@@ -607,7 +607,7 @@ evidence are in the execution map.
   the primary homeserver candidate injected by the launch environment. At the
   operator's request, private palpo-admin-e2e rig.py now omits MATRIX_HOMESERVER,
   MATRIX_HOMESERVER_URL and MATRIX_SERVER_NAME for backend18194 only. Bridge18195
-  retains the actual Mini1 connection. Console13202 now begins with no candidates;
+  retains the actual test-host connection. Console13202 now begins with no candidates;
   manual server/address probe succeeds without persisting a side. Do not restore
   the backend preset or recreate a side during the operator's fresh walkthrough.
 
@@ -630,9 +630,9 @@ evidence are in the execution map.
   Agent grants. Console13202 now runs .next-palpo-wizard-v3. This status proves
   identity access only; it does not allocate resources or prove Palpo reception
   readiness. The live side was unchanged by this UI-only repair.
-- **Robrix reception guidance:** !Z3rHf65DtOfCf0EaAv:hfux-closure-20260906.test is
+- **Robrix reception guidance:** !Z3rHf65DtOfCf0EaAv:test.example.org is
   a room ID, not a login account. The test provider @pwa_provider_20260906 on this
-  homeserver is joined to Mini1 live E2E provider · Reception. On the local Mac,
+  homeserver is joined to test-host live E2E provider · Reception. On the local Mac,
   password login uses the full provider ID plus explicit http://127.0.0.1:18010;
   read passwords only from the private operator cache when requested. Do not
   assume the operator's existing native account is this provider or alter its
@@ -655,7 +655,7 @@ evidence are in the execution map.
   approve resources. Live octos-code-use remained request-free while its actual
   connection was reverified at22:56:35Z (expiry23:26:35Z). Do not invent the
   operator's request quantities. See the request-readiness review and private
-  live evidence. Mini1 web-admin updates require a fresh browser login; they do
+  live evidence. Test-host web-admin updates require a fresh browser login; they do
   not restart Palpo Matrix or the local HAFleet runtime.
 
 
@@ -753,14 +753,14 @@ evidence are in the execution map.
   Resource catalog publication is opt-in, independent of role publication;
   Palpo shows sanitized resource/model/reasoning and enabled definition metadata.
   Backend18194 PID89234, console13202 PID31288 with
-  `.next-resource-agents-v8`, and Mini1 web-admin image
+  `.next-resource-agents-v8`, and test-host web-admin image
   `palpo-web-admin:318f47082b8092da` contain the change. Bridge18195 and its crypto
   state were preserved. Real browser creation/publication of two temporary
-  definitions reached Mini1 Palpo; cleanup preserved all original resources,
+  definitions reached test-host Palpo; cleanup preserved all original resources,
   Agent identities and allocations. The operator's medium Resource remains
   available for their own names/publication. The project's 1M allocation is
   fully committed; a second request needs additional project-side budget.
-  See guides/resource-agents.zh.md and
+  See history/guides/resource-agents.zh.md and
   reviews/2026-09-08-resource-agent-definitions.md for steps and verification
   limits, including the native lifecycle's four unsupported behavioral skips.
 
@@ -775,9 +775,9 @@ evidence are in the execution map.
   requested definition without a replacement selector. Existing local definition
   records/APIs remain compatible but their web creation entry and proxy writes
   are removed. Current deployment: backend18194 PID20010, bridge18195 PID20071,
-  console13202 PID20150 with `.next-resource-agents-v9`. Mini1 web-admin has the
+  console13202 PID20150 with `.next-resource-agents-v9`. Test-host web-admin has the
   revised name/resource request fields. Existing Agents, budgets and device state
-  are preserved. See guides/resource-agents.zh.md and
+  are preserved. See history/guides/resource-agents.zh.md and
   reviews/2026-09-08-palpo-agent-definitions.md. The operator's project-side 1M
   allocation is still fully committed; no new quota or real approval was invented.
 
@@ -795,18 +795,18 @@ evidence are in the execution map.
   preserving drafts and disabling new submission on unavailable catalog reads.
   Current backend18194 PID40252 and console13202 PID40253 use
   `.next-resource-pool-v10`; bridge18195 PID20071 and Matrix device state are
-  preserved. Mini1 web-admin image is `palpo-web-admin:f67999ec23458a6a`.
+  preserved. Test-host web-admin image is `palpo-web-admin:f67999ec23458a6a`.
   Actual Playwright web-wizard creation appeared in an already-open Palpo after
   9311ms without manual publication or refresh, and deletion automatically removed
   it. Only the temporary test Resource was deleted. Three actual Resources,
   two existing identities, allocations and18 completed dispatches are unchanged.
   Connection verification remains expired and the project-side1M budget fully
   committed; no extra request, approval or quota was created. See
-  guides/resource-agents.zh.md and reviews/2026-09-08-palpo-resource-pool.md.
+  history/guides/resource-agents.zh.md and reviews/2026-09-08-palpo-resource-pool.md.
 
 - **Send readiness restored, 2026-09-08:** diagnosis found expired connection
   verification, followed by a first reconnect's probe_pending race against real
-  asynchronous Matrix delivery. Mini1 web-admin now runs
+  asynchronous Matrix delivery. Test-host web-admin now runs
   `palpo-web-admin:b26d42db1b711ca9`; connect retries only the same pending probe
   for up to20 attempts at500ms intervals. It does not synthesize a receipt,
   automatically submit an Agent request, or override an intervening pause.
@@ -829,7 +829,7 @@ evidence are in the execution map.
   zero headroom, no allocation, replay, and successful later budgeted approval.
   Native lifecycle retains seven unsupported behavioral skips, non-passing.
   Backend18194 is now PID16597. Console13202 PID40253 and bridge18195 PID20071
-  remain unchanged; Mini1 web-admin remains b26d42db1b711ca9.
+  remain unchanged; test-host web-admin remains b26d42db1b711ca9.
   Retried the operator's ORIGINAL edison request through Palpo's browser button:
   request e0bc1093-7333-4bf5-8bdf-ce62a0067400 now maps to pending engagement
   en_mtsfvnyd_16ee86, integration,100000 tokens, medium Resource
@@ -839,7 +839,7 @@ evidence are in the execution map.
   18 completed dispatches and side budget1M/1M/0 are unchanged. The earlier quota
   question is no longer a prerequisite for SUBMISSION; quota is decided before
   APPROVAL. Do not say there are no pending HAFleet requests or retry the old
-  submission again. Guide: guides/resource-agents.zh.md. Private evidence:
+  submission again. Guide: history/guides/resource-agents.zh.md. Private evidence:
   palpo-pending-live-result.json and hafleet-edison-review.png in the E2E cache.
 
 - **Edison approval headroom repaired, 2026-09-08:** the operator displayed the
@@ -864,22 +864,22 @@ evidence are in the execution map.
  275 distinct regression checks and English/Chinese Playwright fixtures pass;
   native lifecycle has9 unsupported skips and remains non-passing.
   Local backend18194 PID4587 and console13202 PID4681 now use pool accounting and
-  `.next-pool-budget-v11`. Bridge18195 PID20071 and Mini1 Palpo are unchanged.
+  `.next-pool-budget-v11`. Bridge18195 PID20071 and test-host Palpo are unchanged.
   Real browser review shows edison on medium:100M configured,0 allocated,100M
   available,100k requested. It remains pending en_mtsfvnyd_16ee86; no live verdict
   was submitted. Existing two identities, three Resources,18 completed dispatches,
   first Agent's1M allocation and saved legacy side cap1.1M remain unchanged.
   The old side cap no longer governs edison. Do not raise it again to fund a named
   pool request. Read reviews/2026-09-08-palpo-pool-accounting.md and the updated
-  guides/resource-agents.zh.md. Evidence: edison-selected-pool-fixed.json/png.
+  history/guides/resource-agents.zh.md. Evidence: edison-selected-pool-fixed.json/png.
 
 - **Edison approved by operator, 2026-09-08:** fresh control-plane read now
   shows en_mtsfvnyd_16ee86 active, fulfillment complete, runtime
   pa_edison_b93c487ea36f8c32. This supersedes the earlier pending state. Real Matrix
   membership confirms Edison joined octos-code-use
-  (!tf0a2Zxm2OXQOoyYKa:hfux-closure-20260906.test), alongside the first Agent.
-  Edison is NOT a member of Mini1 live E2E provider · Reception
-  (!Z3rHf65DtOfCf0EaAv:hfux-closure-20260906.test); the representative delivered
+  (!tf0a2Zxm2OXQOoyYKa:test.example.org), alongside the first Agent.
+  Edison is NOT a member of test-host live E2E provider · Reception
+  (!Z3rHf65DtOfCf0EaAv:test.example.org); the representative delivered
   the approval receipt there. Guide the user to the project room to mention
   Edison. Read-only evidence: edison-room-membership.json in the private E2E cache,
   captured 2026-09-08T09:30:02.043Z. No message or verdict was sent by this check.
@@ -900,7 +900,7 @@ from live/backfill conversation context. DM m.replace relations must survive
 while nested thread relations are stripped; promotion guards check nested roots.
 Never interpret runner completed as canonical task done.
 
-The current Mini1 rig runs backend95185 / bridge95205 after a runtime backup at
+The current test-host rig runs backend95185 / bridge95205 after a runtime backup at
 activity-backup-20260908-095130. Three real Codex status workflows and 161 focused
 regressions passed; native agent-spec has five unsupported skips, not passes.
 
@@ -949,7 +949,7 @@ expected 8 bytes. Five focused tests passed; final native agent-spec lifecycle
 in evidence; its cause remains unconfirmed despite 15 diagnostic repetitions and
 two passing lifecycle reruns. See Robrix docs/reviews/2026-09-08-native-attachment-download.md.
 
-Robrix2 Mini1 desktop executable updated after binary/profile backup, preserving
+Robrix2 test-host desktop executable updated after binary/profile backup, preserving
 the original Matrix/crypto profile. Final PID22930, SHA256
 fc121703aadafbb34c97387f8a165b45e537f4ac3b59bd321e9ba88e241577ee.
 Evidence: palpo-admin-e2e/2026-09-06/robrix-files-native-0908 in the user's cache.
@@ -1036,9 +1036,9 @@ palpo-admin-e2e/2026-09-06/execution-auth-backup-20260908-154315.
   runtime and Robrix executable have not replaced the live installation.
 
 
-## 2026-09-08 outbound Mini1 deployment
+## 2026-09-08 outbound test-host deployment
 
-- Live backend, bridge and console now use the isolated hagency-outbound-20260908 worktree. Palpo browser/machine HTTPS origin is crew.ominix.io:19444; Matrix HTTPS origin is crew.ominix.io:19443. Local console remains 127.0.0.1:13202. The old laptop18010/18080 forwards, bridge18195 listener and Mini1 reverse19094 are disabled. Do not restore a tunnel as the default repair.
+- Live backend, bridge and console now use the isolated hagency-outbound-20260908 worktree. Palpo browser/machine HTTPS origin is palpo.example.org; Matrix HTTPS origin is matrix.example.org. Local console remains 127.0.0.1:13202. The old laptop18010/18080 forwards, bridge18195 listener and the test host's reverse port are disabled. Do not restore a tunnel as the default repair.
 - Generation1 migration retained the same dynamic AS registration, Matrix tokens, namespace, agents, projects and allocations. The exact real Matrix receipt established proof; automatic heartbeats maintain liveness without owner browser renewal. Requests retain independent observed/received expiry. A pending historical edision request was replayed but not approved or allocated.
 - Changed Matrix API URLs require a coordinated bridge restart for existing private clients. Verify the original cached token's full user_id and device_id at the configured endpoint with timeout/redirect refusal, then update only baseUrl. Never delete crypto caches or create replacement devices merely because a tunnel URL changed. Live three-device recovery is evidenced in outbound-direct-device-after.json.
 - Operational launch helper and protected rollback/evidence files remain under <local-evidence>/palpo-admin-e2e/2026-09-06. Do not commit downloaded credentials. Full acceptance, exact sources and remaining validation limits: docs/reviews/2026-09-08-palpo-outbound-implementation.md.
@@ -1104,7 +1104,7 @@ See docs/reviews/2026-09-09-unicode-agent-names.md for tests and live evidence.
 
 ## 2026-09-09 — Palpo account approval onboarding
 
-Palpo Web at https://crew.ominix.io:19444 now supports Request an account. The
+Palpo Web at https://palpo.example.org now supports Request an account. The
 companion app queues signup, encrypts pending passwords, posts existing Octos
 approval cards into the private Palpo · Account approvals room, validates actual
 Matrix administrator verdicts and registers ordinary accounts. Robrix and the
@@ -1116,8 +1116,8 @@ Source worktree: ~/home/palpo-account-approval-20260909, branch
 feat/account-approval-20260909. Final image palpo-web-admin:cc23a8c98efb31c9.
 Keep PALPO_ACCOUNT_CONFIG=/app/data/account-approval.json on later web deployments;
 the private key, bot credential and dedicated server-side admin token stay in
-the existing volume. The human approver is @palpoadmin_e2e_20260906:hfux-closure-20260906.test.
-Room !hLLaGNnA2IPHl3EO0N:hfux-closure-20260906.test is dedicated to account signup;
+the existing volume. The human approver is @palpoadmin_e2e_20260906:test.example.org.
+Room !hLLaGNnA2IPHl3EO0N:test.example.org is dedicated to account signup;
 it is distinct from HAFleet resource and runtime approval rooms.
 
 See the source worktree's web-admin/deploy/account-approval-acceptance-2026-09-09.md
@@ -1126,12 +1126,12 @@ autoapproves HAFleet resource allocation. Do not expose the private evidence
 directory's credentials or browser states.
 
 
-## 2026-09-09 — Mini1 Matrix login throttling
+## 2026-09-09 — Test-host Matrix login throttling
 
 The live homeserver used the default rc_login burst=5/per_second=0.003.
 GET login discovery and POST authentication consume the same bucket, and Caddy
 connections share the Docker gateway IP, so ordinary Robrix setup exhausted it.
-Mini1 /Users/cloud/palpo-hafleet-ux-closure-20260906/palpo.toml now explicitly
+The test host's `palpo.toml` now explicitly
 sets rc_login = { per_second = 0.1, burst = 20 }; throttling stays enabled.
 The prior protected config is palpo.toml.before-login-rate-1788971772.
 This is a deployment adjustment, not per-user or trusted-proxy isolation; do not
@@ -1209,7 +1209,7 @@ companion, outbound transport and signup/retirement flows from local 3d63ae11,
 plus App Service database authentication and atomic callback URL updates.
 Branch feat/hafleet-web-admin-outbound at aa16b9ec is based on upstream 62fa8566
 and retains its namespace changes. Publication uses a fresh snapshot so local
-Mini1 operational records and deployment addresses stay in the original local
+Test-host operational records and deployment addresses stay in the original local
 checkout; public deployment is a generic Compose example. GitHub permission is
 now ADMIN. Original Palpo main remains clean at 3d63ae11; PR creation is not merge
 or deployment. Raw validation is under <local-evidence>/palpo-pr/2026-09-09/.

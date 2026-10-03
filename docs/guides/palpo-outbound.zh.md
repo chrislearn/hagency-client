@@ -37,4 +37,4 @@ Palpo Web 与 Matrix homeserver 位于服务器侧。Matrix 把 Appservice 事�
 
 仓库包含持久化、丢响应、重启、凭据轮换、消息来源、跨项目权限、状态新鲜度和导入页面的回归。跨仓库 HTTP 验证使用真实 Hagency/Palpo 协议实现与隔离的 Matrix、执行后端数据；它不等同于真实模型执行。具体部署和线上验收记录见[本次评审报告](../reviews/2026-09-08-palpo-outbound-implementation.md)。
 
-本次 Mini1 部署的 Palpo 管理页为 `https://crew.ominix.io:19444`，Matrix 地址为 `https://crew.ominix.io:19443`，本地 Hagency 仍为 `http://127.0.0.1:13202`。旧的本地 `18080`、`18010` 转发已停止，请更新书签。既有账号、房间和资源分配保留。
+Hagency 控制台默认监听 `http://127.0.0.1:13300`（可用 `hagency serve --listen` 修改）。

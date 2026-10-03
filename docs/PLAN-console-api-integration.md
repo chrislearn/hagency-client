@@ -398,7 +398,7 @@ live engagements on a whitelist removal each fail exactly the assertion that nam
 Everything above validates hagency against hagency. `mockup/scripts/e2e-full-loop.mjs`
 validates it against a real homeserver, a real bridge, a real GUI client and a real
 browser at once: `@lin` posts `!request architect 300000 20000` into a room it creates on
-the Palpo deployed to mini1, the running `bridge-matrix.js` picks it up, Playwright clicks
+the Palpo deployed to the test host, the running `bridge-matrix.js` picks it up, Playwright clicks
 **Approve** in the console, and the suite asserts a binding appears and that revoking
 detaches it. 19 checks, stable across repeated runs.
 

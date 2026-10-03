@@ -1,4 +1,4 @@
-# Palpo outbound implementation and Mini1 acceptance
+# Palpo outbound implementation and test-host acceptance
 
 Implemented the accepted `REQ-PALPO-OUTBOUND` in isolated Hagency and Palpo
 worktrees and deployed it on September 8, 2026 (September 9 UTC). This completes
@@ -9,18 +9,18 @@ a claim that every Hagency feature or historical UI check passes.
 
 | Component | Current address or source |
 |---|---|
-| Palpo browser and outbound machine API | `https://crew.ominix.io:19444` |
-| Matrix client API, including Robrix homeserver | `https://crew.ominix.io:19443` |
+| Palpo browser and outbound machine API | `https://palpo.example.org` |
+| Matrix client API, including Robrix homeserver | `https://matrix.example.org` |
 | Local Hagency console | `http://127.0.0.1:13202` |
 | Hagency backend | Local loopback `18194` |
 | Hagency backend, bridge and console source | `~/home/hagency-outbound-20260908` |
-| Server-side Matrix relay | `http://palpo-web-admin-hfux-closure-20260906:8090/api/relay/v2/hf_82042a93a7734deeab65e02226608831` |
+| Server-side Matrix relay | `http://<relay-container>:8090/api/relay/v2/<fleet-id>` |
 
 The contributor bridge has no inbound Appservice listener. The owned
-`com.hagency.mini1-tunnel` launch agent is disabled and stopped: laptop ports
-18010/18080/18195 are closed, and Mini1 reverse port 19094 refuses connections.
+`com.hagency.test-host-tunnel` launch agent is disabled and stopped: laptop ports
+18010/18080/18195 are closed, and the test host's reverse port refuses connections.
 Administrative SSH access remains available; it does not carry fleet traffic.
-Mini1's own loopback 18080 remains the web container's reverse-proxy backend.
+The test host's own loopback port remains the web container's reverse-proxy backend.
 
 Use the public Palpo URL above. During migration the former laptop portal
 `http://127.0.0.1:18080` returned an immediate `403 host_forbidden`; after tunnel
@@ -87,13 +87,13 @@ All paths below refer to the checkout actually edited. Evidence directory:
 | Palpo Node and browser fixtures | 57 tests and three Chromium suites passed |
 | Rust URL-CAS | Three PostgreSQL tests passed on macOS; three CAS plus the existing dynamic-AS auth test passed on the Linux live backport |
 | Cross-repo actual HTTP fixture | Seven stages, 36 requests, three restarts, one idempotent admission; no Hagency listener or reverse callback |
-| Real Mini1 browser connection | Admin migration, owner download, Hagency file import, automatic heartbeat and exact Matrix relay receipt passed |
+| Real test-host browser connection | Admin migration, owner download, Hagency file import, automatic heartbeat and exact Matrix relay receipt passed |
 | After removing all owned forwards | Public APIs and both browser pages passed; advancing heartbeat and three active, usable, verified requests in two rounds |
 
 The cross-repo fixture uses actual transport, persistence, routing and protocol
 implementations with isolated Matrix/approval/execution data. It covers lost
 ACK and update responses, restart and offline request delivery. It is not a live
-model or native Robrix test. The live connection proof used Mini1 Matrix and
+model or native Robrix test. The live connection proof used test-host Matrix and
 real joined identities; it was verified at `2026-09-09T01:33:26.463Z` with
 `expiresAt: null`. No-tunnel browser acceptance completed at
 `2026-09-09T01:43:06.809Z`, independently corroborated by another Agent. It
