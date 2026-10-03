@@ -117,15 +117,17 @@ hagency console-access --state-dir ~/.local/share/hagency
 
 1. In the console menu, open **Setup**. The page has three steps:
    **Coding agents**, **Connect Palpo** and **Offer a resource**. A step
-   shows a check mark when it is done.
+   shows a check mark when it is done. Until all three steps are done,
+   every other console page shows a one-line note, "Setup is not
+   finished", with a link to **Setup**.
 2. Under **Coding agents**, Hagency shows Codex's path, its version and
    whether it is signed in.
    - If Codex is not installed, install it and click **Check again**.
    - If Codex is not signed in, run `codex login` in a terminal on this
      machine (Step 1) and click **Check again**.
-3. When Codex is signed in, click **Check again**. Hagency configures itself
-   to run Codex. The page then says "Hagency is configured to run this
-   agent."
+3. When Codex is signed in, you do not need to click anything. When the page
+   loads, Hagency configures itself to run Codex. The page then says
+   "Hagency is configured to run this agent."
 
 The page shows how Codex is signed in: **ChatGPT plan** or **API key**. A
 ChatGPT plan sign-in is meant for personal use. Before you offer the agent to
@@ -194,8 +196,7 @@ to Palpo) or **Withdrawn**.
   **Include in native catalog** offers it again.
 - Do not use **Managed accounts** or **Enroll resource** for a fleet. A
   resource made there is bound to a managed account, and fleet agents cannot
-  run on it. With no resources, **My resources** suggests that path; use
-  **Setup** instead.
+  run on it. With no resources, **My resources** points you to **Setup**.
 
 Hagency sends published resources to Palpo every 15 seconds. Owners choose
 from them when they request an agent.
@@ -392,9 +393,6 @@ administrator to allow previews for the sites you need.
 
 - **A restart while an agent waits for its owner strands that agent.** See
   [Troubleshooting](#troubleshooting).
-- **The console's empty-resources hint does not fit a fleet.** With no
-  resources, **My resources** points at managed accounts. Use **Setup**
-  instead (see [Step 5](#step-5-offer-a-resource)).
 - **A changed owner key cannot be accepted in the console.** Hagency trusts
   the cross-signing key it first sees for an owner. If the owner later resets
   cross-signing, the console has no control to trust the new key.

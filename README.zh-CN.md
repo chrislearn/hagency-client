@@ -195,12 +195,12 @@ hagency console-access --state-dir ~/.local/share/hagency
 
 ### 5. 在控制台中完成设置
 
-在控制台菜单中打开 **设置（Setup）**。它有三步。每一步完成后都会显示一个勾。
+在控制台菜单中打开 **设置（Setup）**。它有三步。每一步完成后都会显示一个勾。三步全部完成之前，控制台的其他每个页面都会显示一行提示“设置尚未完成”，并附有指向 **设置（Setup）** 的链接。协调者安装没有设置步骤：它不显示这行提示，它的设置页面会说明其运行配置在 `agent-driver.json` 中。
 
 1. **编程代理（Coding agents）。** Hagency 在服务的 `PATH` 上查找 Codex，并显示它的路径、版本以及是否已登录。
    - **未安装：** 安装 Codex，然后点击 **重新检查（Check again）**。
    - **未登录：** 在这台机器的终端里运行 `codex login`，然后点击 **重新检查（Check again）**。
-   - **已登录：** 点击 **重新检查（Check again）**。Hagency 用[配置](#配置)中的默认值写入并校验 `fleet-runtime.json`。车队服务在 5 秒内读取它，无需重启。
+   - **已登录：** 无需点击。页面加载时，Hagency 即用[配置](#配置)中的默认值写入并校验 `fleet-runtime.json`。车队服务在 5 秒内读取它，无需重启。
    - 这一步会显示 Codex 的登录方式：ChatGPT 订阅或 API 密钥。如果是订阅登录，它会提示订阅登录仅供个人使用，建议在把代理提供给他人之前改用 API 密钥。它不会阻止你继续。
 2. **连接 Palpo（Connect Palpo）。**
    1. Palpo 管理员在 Palpo 网页端执行 **添加 Hagency（Add Hagency）**。

@@ -195,12 +195,12 @@ Pass the same `--state-dir` and `--listen` you gave `start`, if you changed them
 
 ### 5. Finish setup in the console
 
-Open **Setup** in the console menu. It has three steps. Each step shows a check mark when it is done.
+Open **Setup** in the console menu. It has three steps. Each step shows a check mark when it is done. Until all three are done, every other console page shows a one-line note, "Setup is not finished", with a link to **Setup**. A coordinator install has no Setup steps: it shows no note, and its Setup page says that its runtime is configured in `agent-driver.json`.
 
 1. **Coding agents.** Hagency finds Codex on the service's `PATH` and shows its path, its version and whether it is signed in.
    - **Not installed:** install Codex, then click **Check again**.
    - **Not signed in:** run `codex login` in a terminal on this machine, then click **Check again**.
-   - **Signed in:** click **Check again**. Hagency writes and validates `fleet-runtime.json` with the defaults under [Configuration](#configuration). The fleet service picks it up within 5 s, without a restart.
+   - **Signed in:** nothing to click. When the page loads, Hagency writes and validates `fleet-runtime.json` with the defaults under [Configuration](#configuration). The fleet service picks it up within 5 s, without a restart.
    - The step shows how Codex is signed in: a ChatGPT plan or an API key. With a plan, it notes that plan sign-ins are meant for personal use, and suggests an API key before you offer the agent to other people. It does not block.
 2. **Connect Palpo.**
    1. In Palpo web, the Palpo admin runs **Add Hagency**.

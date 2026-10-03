@@ -311,7 +311,7 @@ flowchart LR
 资源在三个地方创建：
 - **设置页面。** `POST /console/api/setup/resource`（[console/setup.rs](../native/hagency/src/console/setup.rs) 中的 `offer`）用模型、推理档位和每月上限（省略时为 20,000,000 token）创建一份已发布的 `local_codex` 资源。`hagency-core/src/qualification.rs` 中的 `configuration_choices` 未认定资格的组合会被拒绝（`setup_unqualified_model`），且需要已有 `fleet-runtime.json`（`setup_runtime_missing`）。它从该文件的 `local_codex.seat` 取席位，因此资源总与登录匹配。它通过 `edit_resource` 写入，与运维 API 是同一个存储调用。
 - **运维 API。** `POST /api/native/v1/resources`（[resources.rs](../native/hagency/src/resources.rs) 中的 `put_resource`）按完整定义写入一份资源。API 不检查资源是否与 `local_codex` 登录匹配；有 `local_codex` 块时，由 `hagency-execution/src/local_codex.rs` 中的 `LocalCodex::admit_provision`（创建时）和 `LocalCodex::admit`（每次派发）拒绝以下资源：`seat_id` 与该块的 `seat` 不同、框架不是 `codex`、provider 已设置且不是 `openai`，或需要托管账户；没有该块时，任何 seat 都可以。
-- **控制台。** `console/resources.rs` 中的资源路由把创建交给 `resource_configuration::create`，它复制一份已有的来源资源（`source_resource_id`），换上新的模型、推理档位或上限。这个页面无法凭空创建资源；设置页面可以。资源页面的空状态提示仍指向托管账户登记（`console/accounts.rs`），但绑定托管账户的资源会被车队主机拒绝，因为车队主机没有托管账户（`hagency-execution/src/host.rs`）。
+- **控制台。** `console/resources.rs` 中的资源路由把创建交给 `resource_configuration::create`，它复制一份已有的来源资源（`source_resource_id`），换上新的模型、推理档位或上限。这个页面无法凭空创建资源；设置页面可以。没有资源时，该页面的空状态把导入的车队引向设置页面，把协调者安装引向托管账户登记（`console/accounts.rs`）；绑定托管账户的资源会被车队主机拒绝，因为车队主机没有托管账户（`hagency-execution/src/host.rs`）。
 
 `console/resource_configuration.rs` 还负责修改已有资源的模型、推理档位和每月上限，并用 `expectedRevision` 做乐观并发控制。
 
@@ -628,11 +628,12 @@ sequenceDiagram
 **控制台。** 控制台是 [mockup/](../mockup/) 中的 Next.js 应用。
 - `mockup/scripts/build-native-console.mjs` 静态导出原生页面，并附一个记录每个文件大小和 SHA-256 的 `manifest.json`。构建时 `HAGENCY_CONSOLE_DIR` 指向该导出目录时，[hagency/build.rs](../native/hagency/build.rs) 把其中每个文件内嵌进二进制。启动时，`serve` 若有 `--console-assets <dir>` 就加载它，否则加载内嵌文件（`Console::embedded_with_state`），两者都没有时不带控制台运行。两种来源都按清单校验，并在 `/console/` 下提供（[console/assets.rs](../native/hagency/src/console/assets.rs)）。客户端是 `mockup/lib/native-api.js`。
 - 设置页面（ADR-189，[mockup/app/setup/page.jsx](../mockup/app/setup/page.jsx)）使用 [console/setup.rs](../native/hagency/src/console/setup.rs) 中的三个路由：
-  - `GET /console/api/setup` 运行 `detect_codex`，报告编程代理、`runtimeConfigured`、Palpo 导入和传输状态，以及有资格的提供选项和资源数量。它不写入任何内容。
-  - `POST /console/api/setup/check` 重新检测。不存在 `fleet-runtime.json`、且找到已登录的 Codex 时，它用服务自己的监听地址调用 `setup::configure`。协调者安装会被拒绝（`setup_not_fleet`）。
+  - `GET /console/api/setup` 总是返回 200，且不写入任何内容。它运行 `detect_codex`，报告 `applicable`、编程代理、`runtimeConfigured`、Palpo 导入和传输状态，以及有资格的提供选项和资源数量。只有车队主机（其 Palpo 句柄带有车队地址）上 `applicable` 才为 true；协调者安装报告 false。没有 Palpo 句柄的主机只得到 `{"ok": true, "applicable": false, "agents": []}`，而不是 503。`applicable` 为 false 时，页面说明运行配置在 `agent-driver.json` 中。
+  - `POST /console/api/setup/check` 重新检测。不存在 `fleet-runtime.json`、且找到已登录的 Codex 时，它用服务自己的监听地址调用 `setup::configure`。协调者安装会被拒绝（`setup_not_fleet`）。状态显示 Codex 已登录、但尚未配置运行时时，页面会自行调用它，无需点击；用户安装 Codex 或登录之后，由 **重新检查（Check again）** 调用它。
   - `POST /console/api/setup/resource` 创建首份或更多资源（第 8 节）。
 
   这两个写入路由与 Palpo 导入一样，需要具备生命周期权限的控制台会话（`check_lifecycle`）。车队服务每 5 秒检查一次 `awaiting_runtime_config`，下一次检查时就会读取新的 `fleet-runtime.json`。
+- 设置提示条（[mockup/components/SetupBanner.jsx](../mockup/components/SetupBanner.jsx)，挂载在 `mockup/app/layout.jsx` 中）在控制台登录后，每次切换页面时读取 `GET /console/api/setup`。`applicable` 为 true、且尚缺已配置的运行时、Palpo 导入或资源之一时，除设置页面外的每个页面都会显示一行指向设置页面的链接。
 - 登录：
   1. `hagency console-access` 出示 `operator.token`，得到一个在签发新链接之前一直有效的链接（控制台授权为它记录 `expires: None`；`console.rs` 在响应中设置、`console/client.rs` 校验的 `expires_in: 120` 并不生效）。
   2. 页面在 `POST /console/session` 用它换取一个 `HttpOnly; SameSite=Strict` 的 cookie。
@@ -659,7 +660,6 @@ sequenceDiagram
 | --- | --- |
 | Codex runner、Palpo 出站传输、车队服务、创建、所有者审批、加入的房间、额度暂停与追加、文件投递 | 已在原生实现 |
 | Claude runner | 已有运行时协议代码；启动会被拒绝（`UnsupportedRunner`） |
-| 资源页面的空状态 | 设置页面可以创建车队的首份资源（第 8 节），但资源页面的空状态提示仍指向托管账户登记，而车队会拒绝托管账户。 |
 | 设置页面上的编程代理 | 只有 Codex。Claude Code 和 Octos 各自需要一个检测器和一个运行时（ADR-189）。 |
 | Linux 上的用户级服务 | `hagency service install` 写入并启用一个 `systemd --user` unit；unit 文本有单元测试，但这条路径还没有在真实的 Linux 主机上运行过。除非开启 lingering，用户级服务会在退出登录时停止。 |
 | 发布 | [release-native.yml](../.github/workflows/release-native.yml) 为每个平台构建一个内嵌控制台的二进制，冒烟测试 `/console/setup/`，并计算 `SHA256SUMS`，但只在手动触发时运行。标签触发器被注释掉了，因此目前还不发布 GitHub release。 |
