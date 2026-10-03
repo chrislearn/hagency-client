@@ -45,8 +45,9 @@ cargo test --workspace --all-targets --locked --no-fail-fast -- \
 
 | Subcommand | Who runs it | What it does |
 | --- | --- | --- |
-| `serve` | systemd or launchd | The service. It listens on `127.0.0.1:13300` by default and refuses any address that is not loopback. |
+| `serve` | systemd or launchd | The service. It listens on `127.0.0.1:13300` by default and refuses any address that is not loopback. [install/install-native.sh](../install/install-native.sh) installs it as a unit: `--mode fleet` (the default) or `--mode coordinator`. |
 | `init` | The operator | Requires an empty or new directory; writes `operator.token` and creates both databases. |
+| `setup` | The operator, or the installer in fleet mode | Prepares a state directory for an imported fleet ([hagency/src/setup.rs](hagency/src/setup.rs)): initializes it if new, finds Codex and its sign-in folder, writes `fleet-runtime.json` and validates it with `serve`'s loader. Options: `--codex`, `--codex-home`, `--no-local-codex`, `--force` (keeps the old file as `.bak-<seconds>`), `--listen`, `--console-assets`. |
 | `console-access` | The operator | Prints a console link that stays valid until a new one is printed |
 | `engagements`, `resources`, `alerts` | The operator | Read-only views from the running service |
 | `backup`, `restore`, `rotate` | The operator | Online backup, restore into an empty directory, and operator-token rotation |
@@ -93,7 +94,7 @@ Most library crates state their role and limits in a `//!` comment at the top of
 | Area | Files |
 | --- | --- |
 | Startup and shutdown | `Bootstrap::open_with_options`, `Bootstrap::serve` and `Bootstrap::close` in [hagency/src/bootstrap.rs](hagency/src/bootstrap.rs) |
-| Configuration files | [hagency/src/bootstrap/config.rs](hagency/src/bootstrap/config.rs): `FleetRuntimeConfig` (`fleet-runtime.json`) and `Config` (`agent-driver.json`) |
+| Configuration files | [hagency/src/bootstrap/config.rs](hagency/src/bootstrap/config.rs): `FleetRuntimeConfig` (`fleet-runtime.json`) and `Config` (`agent-driver.json`). [hagency/src/setup.rs](hagency/src/setup.rs) writes `fleet-runtime.json`. |
 | Palpo import | [hagency/src/bootstrap/palpo_import.rs](hagency/src/bootstrap/palpo_import.rs) parses the download. [hagency/src/console/palpo_import.rs](hagency/src/console/palpo_import.rs) serves `POST /console/api/palpo/import`. |
 | Fleet service (ADR-187) | [hagency/src/bootstrap/fleet_service.rs](hagency/src/bootstrap/fleet_service.rs) runs the stages and the provisioning loop. [hagency/src/bootstrap/fleet_identity.rs](hagency/src/bootstrap/fleet_identity.rs) creates the fleet's accounts, keys and per-owner approval devices, and pins owner keys. |
 | Invites and joined rooms (ADR-188) | [hagency/src/bootstrap/invites.rs](hagency/src/bootstrap/invites.rs) polls each agent's invites. [hagency-matrix/src/provisioning/factory.rs](hagency-matrix/src/provisioning/factory.rs) evaluates joined rooms and posts the encrypted-room notice. |

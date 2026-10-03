@@ -45,7 +45,7 @@
 | [mockup/](../mockup/) | 控制台的 Next.js 源码。Node 只是构建工具；`hagency serve` 提供其静态导出（第 13 节）。 |
 | [deploy/](../deploy/)、[install/install-native.sh](../install/install-native.sh) | `hagency serve` 的 systemd unit 与 launchd plist，以及渲染它们的安装脚本 |
 | [specs/](../specs/)、[knowledge/](../knowledge/) | 与测试绑定的任务契约，以及背后的 ADR 和需求 |
-| [docs/](.) | 本导读、[使用指南](user-guide/README.zh-CN.md)、运维 [guides/](guides/)、`hagency-store` 编译进去的 agent 工作区模板，以及 [history/](history/README.md)（TypeScript 时代的历史架构文档和指南） |
+| [docs/](.) | 产品文档：本导读、[使用指南](user-guide/README.zh-CN.md)、运维 [guides/](guides/) 和 [history/](history/README.md)（TypeScript 时代的历史架构文档和指南）。`docs/` 下除 `user-guide/`、`guides/`、`history/` 和本导读之外的所有内容都是内部工作笔记，不是产品文档；唯一的例外是 `hagency-store` 编译进去的 agent 工作区模板（`workspace-*-template.md`）。 |
 
 代码注释中常带行号引用 `backend-v2.js`、`bridge-matrix.js` 和 `lib/*.js`。它们指向被本服务取代的 TypeScript 产品。那部分代码已从仓库中删除；注释引用到时，请在 git 历史中查阅。
 
@@ -59,7 +59,8 @@
 | `guardian`（隐藏，仅 Unix） | `serve`，作为子进程 | 掌管一个 runner 的进程树（第 11 节）。 |
 | `mcp` | Codex，作为 MCP 服务器 | 为 agent 提供工具的任务助手（第 12 节）。 |
 | `task …` | agent，在 shell 中 | 以 CLI 形式提供相同的任务操作。 |
-| `intake-refuse-stale-session` | 运维者 | 按摘要拒绝一个已知的、过期的会话前 SDK 批次（[bootstrap/intake_refusal.rs](../native/hagency/src/bootstrap/intake_refusal.rs)）。 |
+| `intake-refuse-stale-session` | 运维者 | 按摘要拒绝一个已被隔离、且属于会话前的 SDK 批次：其中每个事件的 `origin_ts` 都早于所属会话路由的 `ingress_since`，即该会话开始接纳 Matrix 输入的时刻。它为每个事件记录一条过期会话回执，不重试任何模型、SDK 应用或领域接纳（[bootstrap/intake_refusal.rs](../native/hagency/src/bootstrap/intake_refusal.rs)；`hagency-matrix/src/intake.rs` 中的 `refuse_stale_session_batch`，`hagency-store/src/domain/verified_ingress.rs` 中的 `stale_matrix_session_receipt`）。 |
+| `setup` | 运维者，或车队模式下的安装脚本 | 为导入的车队准备状态目录：新目录时先初始化，查找 Codex 及其登录目录，写入 `fleet-runtime.json`，并用 `serve` 的加载器校验（[bootstrap.rs](../native/hagency/src/bootstrap.rs) 中的 `check_fleet_runtime`；[setup.rs](../native/hagency/src/setup.rs)）。 |
 | `init`、`account`、`registration`、`side-registration`、`provision` | 运维者 | 离线创建状态目录和凭据。只有 `account` 和 `registration register` 可以改用 `--listen` 操作正在运行的服务。 |
 | `console-access`、`engagements`、`resources`、`alerts` | 运维者 | 运行中服务的回环客户端。 |
 | `backup`、`restore`、`rotate` | 运维者 | 在线 SQLite 备份、恢复和凭据轮换（[ops/](../native/hagency/src/ops/)）。 |
@@ -75,7 +76,7 @@
 | 有 `--palpo-transport`、没有 `--agent-driver` | **导入的车队**（ADR-187） | 车队服务。导入车队后由 `palpo::Live::with_fleet_service` 启动（第 7 节） |
 | 有 `--agent-driver`（有无 `--palpo-transport` 均可） | **协调者安装** | `agent-driver.json`：协调者的驱动、审批泵和工厂（`fleet::Service::new`） |
 
-[deploy/](../deploy/) 中的 unit 目前传入 `--agent-driver --palpo-transport --console-assets …`，因此启动的是协调者安装（第 15 节）。
+[deploy/](../deploy/) 中的 unit 带有 `__AGENT_DRIVER__` 占位符（plist 中是 `<!--__AGENT_DRIVER_ARG__-->`）。[install-native.sh](../install/install-native.sh) 按 `--mode` 填写它：默认的 `fleet` 填空，unit 运行 `serve --palpo-transport`；`coordinator` 填 `--agent-driver`，且安装脚本只在 `--config-dir` 中有 `agent-driver.json` 时才接受。车队模式下，除非 `--config-dir` 已提供 `fleet-runtime.json`，安装脚本会运行 `hagency setup`。
 
 `open_with_options` 先打开保管存储，再打开领域存储。在协调者安装中，它还会构建审批机器人泵、文件与接收服务以及工厂服务。最后构建 Palpo 传输（`palpo::Live`）。尚未导入车队的新安装不会拒绝启动；传输会等待控制台导入。
 
@@ -100,14 +101,14 @@
 | --- | --- | --- |
 | `operator.token` | 运维 bearer 密钥 | `hagency init` |
 | `palpo-transport.json`、`palpo.machine_token`、`palpo-appservice.json` | 导入车队的传输配置和 App Service 注册信息 | Palpo 导入，[bootstrap/palpo_import.rs](../native/hagency/src/bootstrap/palpo_import.rs) 中的 `write` |
-| `fleet-runtime.json` | 导入的车队：本地 Codex 可执行文件及其哈希、文件工具、限额和 agent 主目录（profile `palpo_fleet_runtime_v1`） | 运维者手写（[bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs) 中的 `load_fleet_runtime`） |
+| `fleet-runtime.json` | 导入的车队：本地 Codex 可执行文件及其哈希、文件工具、限额和 agent 主目录（profile `palpo_fleet_runtime_v1`） | `hagency setup`（[setup.rs](../native/hagency/src/setup.rs)），它还会为 `home.root` 创建 `agent-homes/`；或由运维者通过安装脚本的 `--config-dir` 提供。由 [bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs) 中的 `load_fleet_runtime` 加载 |
 | `representative.identity.json`、`matrix.representative_token`、`matrix.appservice_token`、`matrix.provisioning_key`、`approval-<owner>.*`、`approval-sdk-<owner>/` | 导入的车队：代表的设备、App Service token、agent 的创建密钥，以及每位所有者一台审批设备 | 车队服务（[bootstrap/fleet_identity.rs](../native/hagency/src/bootstrap/fleet_identity.rs)） |
 | `runtime-home/` | 未配置 `local_codex` 块的导入车队：agent 的 `HOME` 和 `CODEX_HOME`（第 7 节） | `serve` 加载 `fleet-runtime.json` 时以仅所有者可访问的权限创建（[bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs) 中的 `load_fleet_runtime`） |
 | `fleet-workspace/` | 导入车队：车队主机的私有占位工作区，不会有派发路由到这里 | `serve`，在同一次加载中创建 |
 | `factory-task-contexts/` | 导入车队：预热任务桥交给每次派发的任务上下文 | `serve`，在同一次加载中创建 |
 | `console-logins.json` | 控制台访问链接和每个登录的 SHA-256 哈希，因此重启不会让运维者退出登录 | 控制台（[console/authority.rs](../native/hagency/src/console/authority.rs)） |
 | `agent-driver.json`、`matrix.*`、`approval.*` | 协调者安装：runner、工作区、Matrix 与审批设置、工厂服务 | 运维者（[bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs)） |
-| `agent-matrix-provision_<engagement>/` | 每个已创建 agent 的凭据和 SDK 存储 | 创建流程（[hagency-matrix/src/token_provision.rs](../native/hagency-matrix/src/token_provision.rs)；完整名称见 [hagency-matrix/src/provisioning.rs:622](../native/hagency-matrix/src/provisioning.rs#L622)） |
+| `agent-matrix-provision_<engagement>/` | 每个已创建 agent 的凭据和 SDK 存储 | 创建流程（[hagency-matrix/src/token_provision.rs](../native/hagency-matrix/src/token_provision.rs)；目录名在 `TokenAccountProvision::configured` 中确定，为 `agent-matrix-` 加上副作用 id `provision_<engagement>`） |
 | `domain.sqlite3`、`custody.sqlite3` | 领域状态；Palpo 传输的保管记录（第 5 节） | [native/hagency-store](../native/hagency-store/src/) |
 
 ## 4. 各个 crate
@@ -262,7 +263,7 @@ sequenceDiagram
 
 ## 7. 车队服务（ADR-187）
 
-导入的车队不需要协调者 agent。规则由 [ADR-187](../knowledge/decisions/adr-187-palpo-fleet-without-coordinator.md) 及其修订规定。[bootstrap/fleet_service.rs](../native/hagency/src/bootstrap/fleet_service.rs) 中的 `FleetService::start` 运行一个监管任务。它依次经过四个阶段，每次切换都写日志，并按退避重试，从不退出：
+导入的车队不需要协调者 agent。规则由 [ADR-187](../knowledge/decisions/adr-187-palpo-fleet-without-coordinator.md) 及其修订规定。[bootstrap/fleet_service.rs](../native/hagency/src/bootstrap/fleet_service.rs) 中的 `FleetService::start` 运行一个监管任务。它依次经过四个阶段，每次切换都写日志，从不退出。两个 `awaiting_*` 阶段以固定的 5 秒间隔轮询；`identities` 阶段和被拒绝的配置按 1 秒到 60 秒退避（`BACKOFF_MIN`、`BACKOFF_MAX`）：
 
 ```mermaid
 flowchart LR
@@ -297,14 +298,14 @@ flowchart LR
 - 启动 agent 自己的邀请轮询器（`AgentOwner.invites`，第 10 节）；
 - 启动它的驱动以及文件和接收服务。
 
-**Codex 登录。** 车队 agent 的 Codex 凭据来自 `fleet-runtime.json`（[bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs) 中的 `FleetRuntimeConfig`）。配置了 `local_codex` 块时，agent 通过该块的 `codex_home` 复用主机上已有的 Codex 登录。没有该块时，`HOME` 和 `CODEX_HOME` 指向 `<state>/runtime-home`。车队运行时没有托管账户：`hagency account` 的凭据命名空间和 `agent-driver.json` 的 `managed_account` 只适用于协调者安装（启动环境在 [hagency-execution/src/host.rs](../native/hagency-execution/src/host.rs) 中设置）。
+**Codex 登录。** 车队 agent 的 Codex 凭据来自 `fleet-runtime.json`（[bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs) 中的 `FleetRuntimeConfig`），该文件由 `hagency setup` 写入：默认带 `local_codex` 块（preset `local_codex`、席位 `local_codex_seat`、用户的 `HOME` 和 Codex 目录），传入 `--no-local-codex` 时不带。setup 会报告该目录中是否有登录（`auth.json`），没有时输出 `CODEX_HOME=… codex login` 命令。配置了 `local_codex` 块时，agent 通过该块的 `codex_home` 复用主机上已有的 Codex 登录。没有该块时，`HOME` 和 `CODEX_HOME` 指向 `<state>/runtime-home`。车队运行时没有托管账户：`hagency account` 的凭据命名空间和 `agent-driver.json` 的 `managed_account` 只适用于协调者安装（启动环境在 [hagency-execution/src/host.rs](../native/hagency-execution/src/host.rs) 中设置）。
 
 **申请只有一条接入路径。** 在导入的车队上，接待室中的申请只由 Palpo work 通道接纳（`palpo_work.rs` 中的 `admit_request`，第 9 节）。
 
 ## 8. 资源与目录
 
 资源在两个地方创建：
-- **运维 API。** `POST /api/native/v1/resources`（[resources.rs](../native/hagency/src/resources.rs) 中的 `put_resource`）按完整定义写入一份资源。在导入的车队上，这是创建首份资源的唯一途径。API 本身不检查这一绑定；有 `local_codex` 块时，由 `hagency-execution/src/local_codex.rs` 中的 `LocalCodex::admit_provision`（创建时）和 `LocalCodex::admit`（每次派发）拒绝以下资源：`seat_id` 与该块的 `seat` 不同、框架不是 `codex`、provider 已设置且不是 `openai`，或需要托管账户；没有该块时，任何 seat 都可以。
+- **运维 API。** `POST /api/native/v1/resources`（[resources.rs](../native/hagency/src/resources.rs) 中的 `put_resource`）按完整定义写入一份资源。在导入的车队上，这是创建首份资源的唯一途径。API 不检查资源是否与 `local_codex` 登录匹配；有 `local_codex` 块时，由 `hagency-execution/src/local_codex.rs` 中的 `LocalCodex::admit_provision`（创建时）和 `LocalCodex::admit`（每次派发）拒绝以下资源：`seat_id` 与该块的 `seat` 不同、框架不是 `codex`、provider 已设置且不是 `openai`，或需要托管账户；没有该块时，任何 seat 都可以。
 - **控制台。** `console/resources.rs` 中的资源路由把创建交给 `resource_configuration::create`，它复制一份已有的来源资源（`source_resource_id`），换上新的模型、推理档位或上限。控制台无法凭空创建资源。它的空状态提示指向托管账户登记（`console/accounts.rs`），但绑定托管账户的资源会被车队主机拒绝，因为车队主机没有托管账户（`hagency-execution/src/host.rs`）。
 
 `console/resource_configuration.rs` 还负责修改已有资源的模型、推理档位和每月上限，并用 `expectedRevision` 做乐观并发控制。
@@ -355,7 +356,7 @@ stateDiagram-v2
 - **写入：** `projects` 记录（所有者、审批室）和处于 `pending` 的 `engagements` 记录。
 
 **批准。** 控制台的“接洽”页面使用三条路由：
-- `GET …/candidates` 返回 `remainingTokens`，“全部剩余”按钮填入的就是它。
+- `GET …/candidates` 返回 `remainingTokens`，“全部剩余（All remaining）”按钮填入的就是它。
 - `POST …/approve {allocatedTokens?}` 批准。agents 路由 `…/refuse` 拒绝待处理的申请。
 - `approve_allocating` 调用 `check_grant`。`check_grant` 把申请量与 `headroom` 比较，后者取上限、席位和资源池三者余量中的最小值。上限一侧把每笔占用计为 `max(reserved, spent)`；席位和资源池按承诺量计算。拒绝结果为 `OverCommit`（消息会指出起约束作用的限额）、`InsufficientCapacity` 或 `NoCeiling`。
 - 成功后接洽进入 `reserved`，并排入一个 `provision_<id>` 副作用。
@@ -406,7 +407,7 @@ stateDiagram-v2
 
 [bootstrap/invites.rs](../native/hagency/src/bootstrap/invites.rs) 中的 `poll_round` 每 10 秒为一个 agent 运行一次：
 - 来自受信任邀请者的邀请会立即加入。受信任指该房间记录的项目所有者，或 agent 自己的所有者。
-- 其他任何邀请，包括读不出邀请者的邀请，都会成为 `pending_invites` 中的一行。运维者在控制台的“邀请”页面接受或拒绝（`console/invites.rs`），下一轮随即加入或离开。
+- 其他任何邀请，包括读不出邀请者的邀请，都会成为 `pending_invites` 中的一行。运维者在控制台的“邀请（Invitations）”页面接受或拒绝（`console/invites.rs`），下一轮随即加入或离开。
 - 拒绝会被记住，同一个邀请不会再出现。
 - 每次成功加入都会把房间记录为加入的房间（`bind_joined_room`）。
 
@@ -593,7 +594,7 @@ sequenceDiagram
   - `decide_verdict` 对照绑定关系和请求的过期时间重新检查上述全部内容。
 
   纯文本、`!` 命令和控制台点击都不能批准。
-- **过期。** 所有者在 `approval_owner_wait_ms` 内未答复时，`deny_for_owner_wait_expiry` 记录一次与所有者点“拒绝”相同的拒绝，这一轮在没有该权限的情况下继续（ADR-046，所有者等待过期修订）。代码默认值（`bootstrap/config.rs` 中的 `default_approval_wait`）是 1000 毫秒，几乎立即拒绝；请在 `fleet-runtime.json` 或 `agent-driver.json` 中设置 `approval_owner_wait_ms`。
+- **过期。** 所有者在 `approval_owner_wait_ms` 内未答复时，`deny_for_owner_wait_expiry` 记录一次与所有者点“拒绝”相同的拒绝，这一轮在没有该权限的情况下继续（ADR-046，所有者等待过期修订）。代码默认值（`bootstrap/config.rs` 中的 `default_approval_wait`）是 1000 毫秒，几乎立即拒绝；请在 `fleet-runtime.json` 或 `agent-driver.json` 中设置 `approval_owner_wait_ms`。`hagency setup` 写入 180000。
 - **应用。** `consume_owner_approval` 在把响应写给 Codex 之前，先把请求移到 `applying`。重启后，处于 `applying` 的请求变为 `uncertain`，恢复流程会检查它而不是重发。
 
 执行策略中保存了一个 `yolo` 标志（`domain/exec_policy.rs`），但所有原生审批上下文都以 `yolo: false` 构建，存储也会拒绝 yolo 上下文。
@@ -648,8 +649,7 @@ sequenceDiagram
 | Codex runner、Palpo 出站传输、车队服务、创建、所有者审批、加入的房间、额度暂停与追加、文件投递 | 已在原生实现 |
 | Claude runner | 已有运行时协议代码；启动会被拒绝（`UnsupportedRunner`） |
 | 车队的首份资源 | 没有控制台途径。用运维 API 创建（`POST /api/native/v1/resources`，第 8 节）。控制台的空状态提示指向托管账户登记，而车队会拒绝托管账户。 |
-| 部署导入的车队 | 车队服务只在不带 `--agent-driver` 时运行，但随附的 unit 传入了 `--agent-driver`。`fleet-runtime.json` 需要手写，且 `install-native.sh --config-dir` 不接受这个文件。 |
-| agent 等待所有者加入私聊期间重启 | 不会恢复。只有观察到等待的那个作业才会继续它；重启后创建步骤返回 `OutcomeUnknown`（`token_provision/rooms.rs`），没有任何机制重新驱动它，控制台也没有恢复操作。变通办法：运维者在控制台结束该接洽（**接洽 → 结束接洽**，它会取消创建作业并安排退役），然后所有者重新申请 agent。 |
+| agent 等待所有者加入私聊期间重启 | 不会恢复。只有观察到等待的那个作业才会继续它；重启后创建步骤返回 `OutcomeUnknown`（`token_provision/rooms.rs`），没有任何机制重新驱动它，控制台也没有恢复操作。变通办法：运维者在控制台结束该接洽（**接洽（Engagements）→ 结束接洽（Retire）**，它会取消创建作业并安排退役），然后所有者重新申请 agent。 |
 | 所有者锚点不一致与重新固定 | 仅在存储层：`owner_anchors.rs` 记录不一致，`DomainStore::repin_owner_anchor` 重新固定；没有控制台路由显示或调用它们。后果：`owner_anchor` 不会重新查询已固定的密钥，所以所有者密钥变化只会表现为注册被拒绝，而重新固定也无法修复已经注册的 agent（ADR-187 修订）。 |
 | 控制台中的加入房间与车队阶段 | 没有展示。ADR-188 描述了“已加入 · 不工作”标签，以及已退役房间中排队工作的展示，两者都未实现。车队服务的阶段只写在日志里。 |
 | 在应用前被隔离的接入批次 | 未修复的缺陷：被历史校验拒绝的批次在 SDK 应用之前就被隔离，于是游标停在上一个已提交的 token，而 `sdk.rs` 中的 `Sdk::open` 期望被隔离批次自己的 token。后果：该 agent 的 SDK 存储拒绝重新打开（`Error::Storage`），直到运维者介入。 |

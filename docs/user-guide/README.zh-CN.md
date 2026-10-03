@@ -49,10 +49,8 @@ Rinx Matrix 客户端中与 agent 协作。第一次使用时请按顺序完成�
 - 用本仓库构建出的 `hagency` 程序和控制台文件。构建方法见仓库的
   [README](../../README.zh-CN.md)。
 - 运行 Hagency 的机器上已登录的 Codex（见第 4 步）。
-- Hagency 状态目录中的 `fleet-runtime.json` 文件。它保存本机 Codex 运行设置，
-  其中 `profile` 必须是 `palpo_fleet_runtime_v1`。各字段见仓库 README 的
-  [配置](../../README.zh-CN.md#配置)一节。没有这个文件时，车队可以连接，但不会
-  创建任何 agent。
+- 该机器上已安装的 Codex。在第 2 步中，安装脚本或 `hagency setup` 会找到它，
+  并为你写入 `fleet-runtime.json`，即本机 Codex 运行设置。
 - 一个已在 Rinx 中设置好交叉签名（cross-signing）的所有者账号，例如已设置
   安全备份，或已验证过会话。所有者有交叉签名密钥之前，Hagency 不会为其创建
   agent。
@@ -75,27 +73,44 @@ Rinx Matrix 客户端中与 agent 协作。第一次使用时请按顺序完成�
 
 在运行 Hagency 的机器上执行以下命令。请把路径换成你自己的路径。
 
-1. 创建一个新的空状态目录（只需一次）：
+1. 用以下两种方式之一启动 Hagency（a 或 b）：
 
-   ```bash
-   hagency init --state-dir /path/to/state
-   ```
+   a. **作为服务运行（推荐）。** 运行本仓库中的安装脚本。车队模式是它的默认
+      模式。在 Linux 上请用 sudo 运行它（见 README）：
 
-2. 启动 Hagency，并启用 Palpo 连接和控制台：
+      ```bash
+      install/install-native.sh \
+        --install-dir /path/to/bin \
+        --state-dir /path/to/state \
+        --console-dir /path/to/console-assets
+      ```
 
-   ```bash
-   hagency serve \
-     --state-dir /path/to/state \
-     --listen 127.0.0.1:13300 \
-     --palpo-transport \
-     --console-assets /path/to/console-assets
-   ```
+      它会创建状态目录，运行 `hagency setup`（见 b），安装服务并启动它。
+      各选项以及服务以哪个用户运行，见仓库 README 的
+      [构建与安装](../../README.zh-CN.md#构建与安装)一节。然后转到第 2 项。
 
-   - `--listen` 必须是带端口的本机回环地址。默认值是 `127.0.0.1:13300`。
-   - 不要加 `--agent-driver`。这个参数会启动带协调者（coordinator）agent 的旧方式，
-     此时 Hagency 不会自己运行车队。
+   b. **在前台运行。** 先准备状态目录，再启动 Hagency，并启用 Palpo 连接和
+      控制台：
 
-3. 在另一个终端中生成控制台链接：
+      ```bash
+      hagency setup --state-dir /path/to/state
+      hagency serve \
+        --state-dir /path/to/state \
+        --listen 127.0.0.1:13300 \
+        --palpo-transport \
+        --console-assets /path/to/console-assets
+      ```
+
+      - `hagency setup` 在状态目录是新目录时创建它，查找 Codex，并写入
+        `fleet-runtime.json`。它会报告 Codex 是否已登录（第 4 步）。已有
+        `fleet-runtime.json` 时，除非传入 `--force`，它不会替换；传入后，旧文件
+        会保留为备份。
+      - `--listen` 必须是带端口的本机回环地址。默认值是 `127.0.0.1:13300`。
+        如果改了它，也要给 `hagency setup` 传入相同的 `--listen`。
+      - 不要加 `--agent-driver`。这个参数会启动带协调者（coordinator）agent 的
+        旧方式，此时 Hagency 不会自己运行车队。
+
+2. 在另一个终端中生成控制台链接：
 
    ```bash
    hagency console-access --state-dir /path/to/state
@@ -103,7 +118,7 @@ Rinx Matrix 客户端中与 agent 协作。第一次使用时请按顺序完成�
 
    如果你改过 `--listen`，这里也要传入相同的 `--listen`。
 
-4. 用同一台机器上的浏览器打开该链接。控制台会打开，并保持登录，直到你点击
+3. 用同一台机器上的浏览器打开该链接。控制台会打开，并保持登录，直到你点击
    **结束访问**（End access）或关闭浏览器。重启 Hagency 不会让你退出登录。在你
    生成新链接之前，这个链接一直有效，请妥善保管。
 
@@ -131,25 +146,19 @@ Rinx Matrix 客户端中与 agent 协作。第一次使用时请按顺序完成�
 车队的 agent 使用运行 Hagency 的机器上已登录的 Codex 运行，不使用在控制台中添加
 的账户。
 
-1. 在 Hagency 所在的机器上，把 Codex 登录到车队的 Codex 目录。是哪个目录，
-   取决于 `fleet-runtime.json`：
-   - **有 `local_codex` 块时：** `local_codex.codex_home` 指定的目录。例如：
+1. 如果 Codex 还没有登录，先登录。`hagency setup`（由安装脚本运行，或由你在
+   第 2 步运行）会报告 Codex 是否已登录。未登录时，setup 会输出要在 Hagency
+   所在机器上运行的命令，例如：
 
-     ```bash
-     CODEX_HOME=/path/to/codex-home codex login
-     ```
+   ```bash
+   CODEX_HOME=/path/to/codex-home codex login
+   ```
 
-   - **没有 `local_codex` 块时：** 状态目录中的 `runtime-home` 目录。Codex 把它
-     同时用作 `HOME` 和 `CODEX_HOME`。车队服务在第 3 步之后加载
-     `fleet-runtime.json` 时，Hagency 会创建它（仅服务用户可访问）。然后在那里
-     登录：
-
-     ```bash
-     CODEX_HOME=/path/to/state/runtime-home codex login
-     ```
-
-   如果机器上没有浏览器，改用 `codex login --device-auth`。登录信息由 Codex 保存
-   在该目录中，Hagency 不保存你的凭据。
+   默认情况下，车队 agent 使用本机自己的 Codex 登录目录（`$CODEX_HOME`，或
+   `~/.codex`）。如果 setup 运行时带了 `--no-local-codex`，agent 改用状态目录
+   中的 `runtime-home` 目录，输出的命令也会指向该目录。机器上没有浏览器时，给
+   `codex login` 加上 `--device-auth`。登录信息由 Codex 保存在该目录中，
+   Hagency 不保存你的凭据。
 2. 检查资源；如果还没有资源，就创建首个资源：
    - **（a）检查我的资源。** 在控制台中打开 **我的资源**（My resources）。每一行
      显示资源的模型、每月 token 上限，以及它是 **已包含**（Included，已发布给
@@ -172,8 +181,9 @@ Rinx Matrix 客户端中与 agent 协作。第一次使用时请按顺序完成�
    - **（c）规则。** 只有当资源的模型和推理档位是 Hagency 已为至少一个角色认定
      资格的组合时，Palpo 才能看到它。对 Codex 来说，就是 `gpt-5.6-sol` 搭配
      `low`、`medium` 或 `high` 推理档位。其他组合会被保存，但不会发布。有
-     `local_codex` 块时，`seatId` 还必须等于 `local_codex.seat`，且 `framework`
-     为 `codex`、`provider` 为 `openai` 或省略。不匹配的资源会被接受并发布，但
+     `local_codex` 块时，`seatId` 还必须等于 `local_codex.seat`（`hagency setup`
+     写入的是 `local_codex_seat`，与上面的命令一致），且 `framework` 为
+     `codex`、`provider` 为 `openai` 或省略。不匹配的资源会被接受并发布，但
      Hagency 拒绝在其上运行 agent。
 
    之后其余操作都在控制台中完成（见下面第 3 至 5 项）。
@@ -318,9 +328,9 @@ agent 私聊和审批室都是端到端加密的。
   所有者在 Palpo 中重新定义该 agent，运维者批准新的申请。
 - 确认所有者已设置交叉签名。Hagency 要读到所有者的交叉签名密钥后才会继续。
 - 确认连接后已在 Palpo 中点击 **Verify connection & create reception**。
-- 确认状态目录中有 `fleet-runtime.json`。Hagency 日志中的“fleet service
-  stage”一行会显示车队在等什么：`awaiting_runtime_config`（缺少该文件）或
-  `awaiting_reception`（Palpo 尚未验证连接）。
+- 查看 Hagency 日志中的“fleet service stage”一行，它会显示车队在等什么：
+  `awaiting_runtime_config`（缺少 `fleet-runtime.json`：请运行
+  `hagency setup`）或 `awaiting_reception`（Palpo 尚未验证连接）。
 
 **“批准”按钮是灰色的。**
 没有已发布的资源能满足这条申请。请按第 4 步检查 **我的资源**。
@@ -354,9 +364,6 @@ Matrix 的用户搜索通常只能找到与你同在某个房间的人。请用 
 
 ## 已知限制
 
-- **安装车队需要手动一步。** 安装程序和它的服务文件按旧的协调者方式设置
-  Hagency。要运行车队，安装 Hagency 的人需要从服务中去掉 `--agent-driver`，并
-  手动编写 `fleet-runtime.json`。
 - **agent 等待所有者期间重启会使它停滞。** 见[常见问题](#常见问题)。
 - **控制台的空资源提示不适用于车队。** 见[第 4 步](#第-4-步登录-codex-并检查资源)第 2 项。
 - **控制台无法接受所有者变更后的密钥。** Hagency 信任它第一次看到的所有者交叉

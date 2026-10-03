@@ -93,7 +93,7 @@ if [ -n "$CONFIG_DIR" ]; then
       fleet-runtime.json|agent-driver.json|development-driver.json|palpo-transport.json|matrix.*|palpo.*|approval.*)
         install -m 0600 "$file" "$STATE_DIR/$name" || { echo "refused: could not install $name into $STATE_DIR" >&2; exit 1; }
         ;;
-      *) echo "refused: unexpected config file $name (allowed: fleet-runtime.json, agent-driver.json, palpo-transport.json, matrix.*, palpo.*, approval.*)" >&2; exit 1 ;;
+      *) echo "refused: unexpected config file $name (allowed: fleet-runtime.json, agent-driver.json, development-driver.json, palpo-transport.json, matrix.*, palpo.*, approval.*)" >&2; exit 1 ;;
     esac
   done
 fi

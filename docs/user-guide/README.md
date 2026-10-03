@@ -50,11 +50,9 @@ You need:
 - The `hagency` program and the console files, built from this repository.
   The repository [README](../../README.md) explains how to build them.
 - A Codex sign-in on the machine that runs Hagency (Step 4).
-- A file named `fleet-runtime.json` in the Hagency state directory. It holds
-  the local Codex runtime settings, and its `profile` must be
-  `palpo_fleet_runtime_v1`. The repository README describes its fields under
-  [Configuration](../../README.md#configuration). Without it, the fleet
-  connects but creates no agents.
+- Codex installed on that machine. In Step 2, the installer or
+  `hagency setup` finds it and writes `fleet-runtime.json`, the local Codex
+  runtime settings, for you.
 - An owner account that has cross-signing set up in Rinx (for example, by
   setting up secure backup or verifying a session). Hagency waits until the
   owner has a cross-signing key before it creates an agent for them.
@@ -81,28 +79,47 @@ rights for daily use.
 Run these commands on the machine that runs Hagency. Replace the paths with
 your own.
 
-1. Create a new, empty state directory (do this once):
+1. Start Hagency in one of two ways, a or b:
 
-   ```bash
-   hagency init --state-dir /path/to/state
-   ```
+   a. **As a service (recommended).** Run the installer from this repository.
+      Fleet mode is its default. On Linux run it with sudo (see the README):
 
-2. Start Hagency with the Palpo connection and the console:
+      ```bash
+      install/install-native.sh \
+        --install-dir /path/to/bin \
+        --state-dir /path/to/state \
+        --console-dir /path/to/console-assets
+      ```
 
-   ```bash
-   hagency serve \
-     --state-dir /path/to/state \
-     --listen 127.0.0.1:13300 \
-     --palpo-transport \
-     --console-assets /path/to/console-assets
-   ```
+      It creates the state directory, runs `hagency setup` (see b),
+      installs the service and starts it. The repository README lists its
+      options and explains which user the service runs as under
+      [Build and install](../../README.md#build-and-install). Then go to
+      item 2.
 
-   - `--listen` must be a loopback address with a port. `127.0.0.1:13300` is
-     the default.
-   - Do not add `--agent-driver`. That flag starts the older setup with a
-     coordinator agent, and then Hagency does not run the fleet itself.
+   b. **In the foreground.** Prepare the state directory, then start Hagency
+      with the Palpo connection and the console:
 
-3. In a second terminal, print a console link:
+      ```bash
+      hagency setup --state-dir /path/to/state
+      hagency serve \
+        --state-dir /path/to/state \
+        --listen 127.0.0.1:13300 \
+        --palpo-transport \
+        --console-assets /path/to/console-assets
+      ```
+
+      - `hagency setup` creates the state directory if it is new, finds Codex
+        and writes `fleet-runtime.json`. It reports whether Codex is signed in
+        (Step 4). It does not replace an existing `fleet-runtime.json` unless
+        you pass `--force`, and then it keeps the old file as a backup.
+      - `--listen` must be a loopback address with a port. `127.0.0.1:13300`
+        is the default. If you change it, pass the same `--listen` to
+        `hagency setup`.
+      - Do not add `--agent-driver`. That flag starts the older setup with a
+        coordinator agent, and then Hagency does not run the fleet itself.
+
+2. In a second terminal, print a console link:
 
    ```bash
    hagency console-access --state-dir /path/to/state
@@ -110,7 +127,7 @@ your own.
 
    If you changed `--listen`, pass the same `--listen` here.
 
-4. Open the link in a browser on the same machine. The console opens and
+3. Open the link in a browser on the same machine. The console opens and
    keeps you signed in until you click **End access** or close the browser.
    Restarting Hagency does not sign you out. The link keeps working until you
    print a new one, so keep it private.
@@ -140,27 +157,21 @@ with "Another Palpo fleet is already connected to this Hagency."
 Fleet agents run Codex with a Codex sign-in on the machine that runs Hagency.
 They do not use accounts added in the console.
 
-1. On the Hagency machine, sign Codex in to the fleet's Codex folder. Which
-   folder that is depends on `fleet-runtime.json`:
-   - **With a `local_codex` block:** the folder named by
-     `local_codex.codex_home`. For example:
+1. Sign Codex in, if it is not signed in yet. `hagency setup`, run by the
+   installer or by you in Step 2, reports whether Codex is signed in. If it
+   is not, setup prints the command to run on the Hagency machine, for
+   example:
 
-     ```bash
-     CODEX_HOME=/path/to/codex-home codex login
-     ```
+   ```bash
+   CODEX_HOME=/path/to/codex-home codex login
+   ```
 
-   - **Without a `local_codex` block:** the folder `runtime-home` in the state
-     directory. Codex uses it as both `HOME` and `CODEX_HOME`. Hagency creates
-     it (private to the service user) when the fleet service loads
-     `fleet-runtime.json`, after Step 3. Then sign in there:
-
-     ```bash
-     CODEX_HOME=/path/to/state/runtime-home codex login
-     ```
-
-   On a machine without a browser, run `codex login --device-auth` instead.
-   Codex keeps the sign-in in that folder. Hagency does not store your
-   credentials.
+   By default, fleet agents use this machine's own Codex sign-in folder
+   (`$CODEX_HOME`, or `~/.codex`). If setup ran with `--no-local-codex`, they
+   use the folder `runtime-home` in the state directory instead, and the
+   printed command names that folder. On a machine without a browser, add
+   `--device-auth` to `codex login`. Codex keeps the sign-in in that folder.
+   Hagency does not store your credentials.
 2. Check your resources, and create the first one if there is none:
    - **(a) Check My resources.** In the console, open **My resources**. Each
      row shows a resource's model, its monthly token ceiling, and whether it
@@ -187,7 +198,8 @@ They do not use accounts added in the console.
      effort are a pair Hagency has qualified for at least one role. For Codex
      that is `gpt-5.6-sol` with `low`, `medium` or `high` reasoning. Hagency
      stores any other pair but does not publish it. With a `local_codex`
-     block, `seatId` must also equal `local_codex.seat`, with `framework`
+     block, `seatId` must also equal `local_codex.seat` (`hagency setup`
+     writes `local_codex_seat`, as in the command above), with `framework`
      `codex` and `provider` `openai` or left out. Hagency accepts and
      publishes a resource that does not match, but refuses to run agents on
      it.
@@ -353,10 +365,10 @@ Agent DMs and approval rooms are end-to-end encrypted.
   read the owner's cross-signing key.
 - Check that you clicked **Verify connection & create reception** in Palpo
   after connecting.
-- Check that `fleet-runtime.json` is in the state directory. The Hagency log
-  line "fleet service stage" shows what the fleet is waiting for:
-  `awaiting_runtime_config` (the file is missing) or `awaiting_reception`
-  (Palpo has not verified the connection yet).
+- Check the Hagency log line "fleet service stage". It shows what the fleet
+  is waiting for: `awaiting_runtime_config` (`fleet-runtime.json` is missing:
+  run `hagency setup`) or `awaiting_reception` (Palpo has not verified the
+  connection yet).
 
 **The Approve button is greyed out.**
 No published resource can serve the request. Check **My resources** in
@@ -393,10 +405,6 @@ administrator to allow previews for the sites you need.
 
 ## Known limitations
 
-- **Installing a fleet takes a manual step.** The installer and its service
-  files set Hagency up for the older coordinator setup. To run a fleet,
-  whoever installs Hagency removes `--agent-driver` from the service and
-  writes `fleet-runtime.json` by hand.
 - **A restart while an agent waits for its owner strands that agent.** See
   [Troubleshooting](#troubleshooting).
 - **The console's empty-resources hint does not fit a fleet.** See

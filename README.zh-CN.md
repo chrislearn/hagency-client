@@ -89,13 +89,24 @@ Palpo homeserver  <── outbound HTTPS ──  hagency serve (127.0.0.1:13300)
 
 ## 构建与安装
 
+### 服务模式
+
+| 模式 | 适用于 | `serve` 参数 | 配置 |
+| --- | --- | --- | --- |
+| 车队（默认，推荐） | 新安装：导入的 Palpo 车队，不需要协调者 agent（ADR-187） | `--palpo-transport` | 由 `hagency setup` 写入的 `fleet-runtime.json`，以及控制台导入写入的文件 |
+| 协调者 | 运行协调者 agent 的已有安装 | `--agent-driver --palpo-transport` | `agent-driver.json` 及其 `matrix.*` 和 `approval.*` 文件 |
+
+`--agent-driver` 和 `--development-driver` 互斥。不带 `--palpo-transport` 时，控制台导入会被保存，等下次带该参数启动时生效。
+
+### 构建
+
 前置条件：
 
 | | |
 | --- | --- |
 | Rust | [rust-toolchain.toml](rust-toolchain.toml) 中固定的工具链 |
 | Node.js 22 | 仅在构建时用于导出控制台 |
-| Codex CLI | runner。运行时配置写明它的路径和 SHA-256。 |
+| Codex CLI | runner。`hagency setup` 会找到它，并把它的路径和 SHA-256 写入运行时配置。 |
 | 主机 | 带 systemd 的 Linux，或带 launchd 的 macOS |
 | Palpo | 管理员能执行 **Add Hagency** 的 homeserver |
 
@@ -121,63 +132,77 @@ Palpo homeserver  <── outbound HTTPS ──  hagency serve (127.0.0.1:13300)
 
    脚本拒绝已存在的目录，并以 0700 权限创建新目录。
 
-### 导入的车队
+### 把车队安装为服务
 
-这是新安装推荐的方式（见[服务模式](#服务模式)）。安装脚本没有导入车队的模式。可以用以下两种方式之一：
+车队模式是安装脚本的默认模式。用哪个用户运行它很重要，因为服务以该用户运行，并使用该用户的 Codex 登录：
 
-- **在前台运行。** 按[连接导入的车队](#连接导入的车队)直接运行 `hagency serve`。
-- **作为服务运行。**
-  1. 按[协调者安装（已有安装）](#协调者安装已有安装)运行安装脚本，不提供 `agent-driver.json`。它运行 `hagency init`，然后写入并启用单元。由于单元带 `--agent-driver` 运行，随后 `/ready` 检查失败。单元仍保留在原处。
-  2. 编辑单元（Linux 上是 `/etc/systemd/system/hagency-native.service`，macOS 上是 `~/Library/LaunchAgents/io.hagency.native.plist`），删除 `--agent-driver`。
-  3. 把 `fleet-runtime.json` 以 0600 权限复制到状态目录（见[配置](#配置)）。
-  4. 重启服务：Linux 上运行 `systemctl daemon-reload && systemctl restart hagency-native`；macOS 上先 `launchctl bootout` 再 `launchctl bootstrap` 该 plist。
-
-  然后从[连接导入的车队](#连接导入的车队)的第 4 步继续。导读在[已知缺口](docs/architecture-walkthrough.zh-CN.md#15-已实现尚未实现与已知缺口)中列出了这一点（“部署导入的车队”）。
-
-### 协调者安装（已有安装）
-
-安装脚本只部署协调者安装。已有的协调者安装按原配置继续工作。要把协调者安装设为服务，运行安装脚本：
+- **Linux。** 安装脚本把单元写入 `/etc/systemd/system` 并运行 `systemctl`，因此请用 `sudo` 运行它。它把单元的 `User=` 渲染为运行它的用户，此时就是 `root`。因此服务及其 `local_codex` 绑定使用 root 的 Codex 登录 `/root/.codex`。请以 root 身份登录 Codex，或传入 `--codex-home DIR`。
+- **macOS。** 以你自己的身份运行。它为你的用户安装一个 LaunchAgent，使用你的 Codex 登录。
 
 ```bash
 install/install-native.sh \
   --install-dir /abs/path/bin \
   --state-dir /abs/path/state \
-  --console-dir /abs/path/console-assets \
-  [--config-dir /abs/path/config] [--overwrite]
+  --console-dir /abs/path/console-assets
 ```
 
 - **步骤。** 安装脚本会：
   1. 运行 `hagency init`，它要求状态目录为空，并生成 `operator.token`；
-  2. 把配置文件以 0600 权限复制到状态目录；
-  3. 在 Linux 上渲染 [deploy/hagency-native.service](deploy/hagency-native.service)，在 macOS 上渲染 [deploy/io.hagency.native.plist](deploy/io.hagency.native.plist)，并启动它；
-  4. 只有 `/ready` 在 60 秒内返回 200 才算成功。
-- **输入。** `--install-dir` 中必须有 `hagency` 二进制。`--config-dir` 可以提供 `agent-driver.json`、`development-driver.json`、`palpo-transport.json`，以及私密的 `matrix.*`、`palpo.*` 和 `approval.*` 文件。其他文件名一律拒绝，包括 `fleet-runtime.json`。
-- **服务模式。** 单元模板运行 `serve --agent-driver --palpo-transport`。这是协调者模式。没有 `agent-driver.json` 时服务无法启动，`/ready` 检查失败，安装也随之失败。
-- **拒绝情形。** 已存在的单元会被拒绝，除非传入 `--overwrite`。
+  2. 把 `--config-dir` 中的文件以 0600 权限复制到状态目录；
+  3. 运行 `hagency setup`（见[首次运行](#首次运行)），它查找 Codex 并写入经过校验的 `fleet-runtime.json`。如果 `--config-dir` 已提供 `fleet-runtime.json`，则跳过这一步。setup 失败时，安装停止并显示 setup 的提示。此时状态目录已经初始化：再次运行安装脚本前请清空它或换一个新目录，或者用 `hagency setup --state-dir …` 完成剩余步骤；
+  4. 在 Linux 上渲染 [deploy/hagency-native.service](deploy/hagency-native.service)，在 macOS 上渲染 [deploy/io.hagency.native.plist](deploy/io.hagency.native.plist)，写入该模式的 `serve` 参数（车队为 `serve --palpo-transport`），并启动它；
+  5. 只有 `/ready` 在 60 秒内返回 200 才算成功。
+- **Codex 选项。** 安装脚本把以下选项传给 `hagency setup`：
+  - `--codex PATH`：Codex 二进制。默认使用 `PATH` 上的 `codex`。
+  - `--codex-home DIR`：存放 Codex 登录的目录。默认是 `$CODEX_HOME`，否则是 `~/.codex`。
+  - `--no-local-codex`：agent 使用 `<state>/runtime-home`，而不是本机的 Codex 登录。不需要 `~/.codex`。
+- **自备 `fleet-runtime.json`。** 把它放进一个目录，并传入 `--config-dir DIR`。安装脚本会复制它，不再运行 setup。该文件必须符合[配置](#配置)中的说明。
+- **拒绝情形。** 安装脚本拒绝非空的状态目录、缺失的二进制、没有 systemd 的 Linux，以及已存在的单元（除非传入 `--overwrite`）。
+
+此时服务已在运行，安装脚本也已显示 setup 的报告。接着从[连接导入的车队](#连接导入的车队)的第 2 步继续。
+
+**在前台运行。** 不用安装脚本时，先运行 `hagency setup --state-dir DIR`，再运行 `hagency serve --palpo-transport …`，见[连接导入的车队](#连接导入的车队)。
+
+### 协调者安装（已有安装）
+
+已有的协调者安装按原配置继续工作。要把协调者安装设为服务，传入 `--mode coordinator`，以及包含 `agent-driver.json` 的 `--config-dir`：
+
+```bash
+install/install-native.sh --mode coordinator \
+  --install-dir /abs/path/bin \
+  --state-dir /abs/path/state \
+  --console-dir /abs/path/console-assets \
+  --config-dir /abs/path/config [--overwrite]
+```
+
+- **配置。** `agent-driver.json` 是必需的；没有它，安装脚本拒绝开始。`--config-dir` 还可以提供 `development-driver.json`、`palpo-transport.json`，以及私密的 `matrix.*`、`palpo.*` 和 `approval.*` 文件。其他文件名一律拒绝。
+- **服务。** 单元运行 `serve --agent-driver --palpo-transport`，不运行 `hagency setup`。其余步骤和拒绝情形与车队相同。
 
 目前还没有发布版本。[release-native.yml](.github/workflows/release-native.yml) 只在手动触发时构建各目标平台的二进制和 `SHA256SUMS`。
 
 ## 首次运行
 
-### 服务模式
-
-| 模式 | `serve` 参数 | 配置 |
-| --- | --- | --- |
-| 导入的车队（ADR-187） | `--palpo-transport` | `fleet-runtime.json`，以及控制台导入写入的文件 |
-| 协调者安装 | `--agent-driver --palpo-transport` | `agent-driver.json` 及其 `matrix.*` 和 `approval.*` 文件 |
-
-`--agent-driver` 和 `--development-driver` 互斥。不带 `--palpo-transport` 时，控制台导入会被保存，等下次带该参数启动时生效。
-
 ### 连接导入的车队
 
-1. 创建状态目录：
+如果你用了安装脚本，它已完成第 1 步和第 3 步，并显示了 setup 的报告：请完成第 2 步，然后从第 4 步继续。
+
+1. 准备状态目录：
 
    ```bash
-   hagency init --state-dir /abs/path/state
+   hagency setup --state-dir /abs/path/state
    ```
 
-2. 把 `fleet-runtime.json` 以 0600 权限写入状态目录。参见[配置](#配置)。也可以稍后再写：车队服务会等待这个文件。
-3. 启动服务：
+   `hagency setup` 会：
+   - 在目录是新目录或空目录时，像 `hagency init` 一样初始化它。对于没有 `operator.token` 的非空目录，它会拒绝。
+   - 查找 Codex 二进制：`--codex PATH`，否则用 `PATH` 上的 `codex`。如果找到的是 npm 启动脚本，setup 会改用 npm 包附带的原生二进制。
+   - 查找 Codex 登录目录：`--codex-home DIR`，否则是 `$CODEX_HOME`，再否则是 `~/.codex`。该目录必须存在；不存在时，setup 会提示你先运行 `codex login`。传入 `--no-local-codex` 时，setup 不查找这个目录，因此不需要 `~/.codex`：agent 改为登录到 `<state>/runtime-home`，setup 报告的也是这个目录，文件中不写 `local_codex` 块。
+   - 创建 `<state>/agent-homes`，并以 0600 权限写入 `fleet-runtime.json`，取值为[配置](#配置)中列出的默认值。
+   - 用 `serve` 所用的同一个加载器校验该文件。校验失败的文件会被改名为 `fleet-runtime.json.rejected`，因此服务绝不会用它启动。
+   - 已有 `fleet-runtime.json` 时拒绝覆盖，除非传入 `--force`。传入 `--force` 时，旧文件保留为 `fleet-runtime.json.bak-<秒数>`。
+
+   它会输出所选的 Codex 二进制、写入的文件，以及 Codex 是否已登录。未登录时，它会输出要运行的命令 `CODEX_HOME=<目录> codex login`。最后列出接下来要运行的命令。如果 `serve` 不使用 `127.0.0.1:13300`，请传入 `--listen`。`--console-assets` 只用于填写输出中的 `serve` 命令。
+2. 如果 setup 提示 Codex 未登录，运行它输出的命令。机器上没有浏览器时，给 `codex login` 加上 `--device-auth`。有 `local_codex` 块时，Codex 运行时 `HOME` 为 `local_codex.home`，`CODEX_HOME` 为 `local_codex.codex_home`。没有该块时，两者都是 `<state>/runtime-home`。托管账户和 `hagency account login` 只用于协调者安装。
+3. 启动服务（安装脚本已启动的则跳过）：
 
    ```bash
    hagency serve --state-dir /abs/path/state --palpo-transport \
@@ -190,36 +215,29 @@ install/install-native.sh \
    hagency console-access --state-dir /abs/path/state
    ```
 
-   命令输出一个链接，在你生成新链接之前一直有效。打开链接后，它会换成一个 `HttpOnly` 会话 cookie；重启服务不会让你退出登录。
+   在这台机器的浏览器中打开输出的链接。在你生成新链接之前，该链接一直有效。打开链接后，它会换成一个 `HttpOnly` 会话 cookie；重启服务不会让你退出登录。
 5. Palpo 管理员在 Palpo 网页端执行 **Add Hagency**。
 6. 用拥有这个 Hagency 的账号登录 Palpo 网页端，打开 **My Hagency access**，下载 Hagency 配置。
-7. 运维者在控制台打开 **Project sides → Connect a Palpo project server**，选择该文件，并填写 homeserver 的 Matrix 地址。服务无需重启即可启动 Palpo 传输。一个服务只运行一个 Palpo 车队。
+7. 运维者在控制台打开 **项目方（Project sides）→ 连接 Palpo 项目服务器（Connect a Palpo project server）**，选择该文件，并填写 homeserver 的 Matrix 地址。服务无需重启即可启动 Palpo 传输。一个服务只运行一个 Palpo 车队。
 8. 拥有这个 Hagency 的 Palpo 账号在 Palpo 网页端点击 **Verify connection & create reception**。车队服务随后创建车队代表的设备和本地密钥。审批机器人为每个所有者各建一个设备，在车队服务第一次为该所有者准备已批准的 agent 时创建（前提是该所有者已有交叉签名密钥）。
-9. 在车队 agent 能找到的位置登录 Codex。`fleet-runtime.json` 中有 `local_codex` 时，Codex 运行时 `HOME` 为 `local_codex.home`，`CODEX_HOME` 为 `local_codex.codex_home`，因此用 `CODEX_HOME=<local_codex.codex_home> codex login` 登录。没有 `local_codex` 时，两者都设为 `<state>/runtime-home`。第 8 步之后，车队服务加载 `fleet-runtime.json` 时，如果该目录不存在，会以 0700 权限创建它。在那里登录：
+9. 用运维 API 创建第一个资源。控制台只能复制已有资源来创建新资源，所以第一个资源无法在控制台里创建。把状态目录换成你自己的；如果改过默认监听地址 `127.0.0.1:13300`，也一并替换：
 
    ```bash
-   CODEX_HOME=/abs/path/state/runtime-home codex login
+   curl -s -X POST http://127.0.0.1:13300/api/native/v1/resources \
+     -H "Authorization: Bearer $(cat /abs/path/state/operator.token)" \
+     -H 'Content-Type: application/json' \
+     -d '{"presetId":"local_codex","seatId":"local_codex_seat","framework":"codex",
+          "model":"gpt-5.6-sol","provider":"openai","reasoning":"medium",
+          "ceiling":{"tokens":20000000,"period":"monthly"},"published":true}'
    ```
 
-   托管账户和 `hagency account login` 只用于协调者安装。
-10. 用运维 API 创建第一个资源。控制台只能复制已有资源来创建新资源，所以第一个资源无法在控制台里创建。把状态目录换成你自己的；如果改过默认监听地址 `127.0.0.1:13300`，也一并替换：
+   不需要事先登记席位。响应是该资源的公开目录条目。
 
-    ```bash
-    curl -s -X POST http://127.0.0.1:13300/api/native/v1/resources \
-      -H "Authorization: Bearer $(cat /abs/path/state/operator.token)" \
-      -H 'Content-Type: application/json' \
-      -d '{"presetId":"local_codex","seatId":"local_codex_seat","framework":"codex",
-           "model":"gpt-5.6-sol","provider":"openai","reasoning":"medium",
-           "ceiling":{"tokens":20000000,"period":"monthly"},"published":true}'
-    ```
+   - **只发布有资格的组合。** 只有当资源的 `model` 和 `reasoning` 组成的组合在 [native/hagency-core/role-capacity.json](native/hagency-core/role-capacity.json) 中至少对一个角色有资格时，Palpo 才能看到它。对 Codex 来说，这些组合是 `gpt-5.6-sol` 搭配 `low`、`medium` 或 `high`。其他组合会被保存，但不会发布。
+   - **与登录匹配。** 有 `local_codex` 时，`seatId` 必须等于 `local_codex.seat`，`framework` 必须是 `codex`，`provider` 必须是 `openai` 或省略。`hagency setup` 写入的 preset 是 `local_codex`、席位是 `local_codex_seat`，与上面的示例一致。API 不检查是否匹配。不匹配的资源会被接受并发布，但它的 agent 会在运维者批准后、Hagency 创建它们时被拒绝。
 
-    不需要事先登记席位。响应是该资源的公开目录条目。
-
-    - **只发布有资格的组合。** 只有当资源的 `model` 和 `reasoning` 组成的组合在 [native/hagency-core/role-capacity.json](native/hagency-core/role-capacity.json) 中至少对一个角色有资格时，Palpo 才能看到它。对 Codex 来说，这些组合是 `gpt-5.6-sol` 搭配 `low`、`medium` 或 `high`。其他组合会被保存，但不会发布。
-    - **与登录匹配。** 有 `local_codex` 时，`seatId` 必须等于 `local_codex.seat`，`framework` 必须是 `codex`，`provider` 必须是 `openai` 或省略。API 不检查这一点。不匹配的资源会被接受并发布，但它的 agent 会在运维者批准后、Hagency 创建它们时被拒绝。
-
-    有资格的资源随后会出现在 Palpo 中，项目可以在上面定义 agent。要提供其他模型、推理档位或上限，在控制台复制这个资源。
-11. 在 **Engagements** 下批准申请。agent 创建完成后会加入项目房间。
+   有资格的资源随后会出现在 Palpo 中，项目可以在上面定义 agent。要提供其他模型、推理档位或上限，在控制台复制这个资源。
+10. 在 **接洽（Engagements）** 下批准申请。agent 创建完成后会加入项目房间。
 
 [使用指南](docs/user-guide/README.zh-CN.md)从 Palpo 一侧介绍第 5 到第 8 步。
 
@@ -240,14 +258,16 @@ install/install-native.sh \
 
 **车队服务进度。** 车队服务每次切换阶段都会记录日志 `fleet service stage`。阶段如下：
 
-1. `awaiting_runtime_config`：缺少 `fleet-runtime.json`。
+1. `awaiting_runtime_config`：缺少 `fleet-runtime.json`。请运行 `hagency setup`。
 2. `awaiting_reception`：Palpo 的 **Verify connection** 还没有绑定接待房间。
 3. `identities`：服务正在创建车队的账号和密钥。
 4. `running`：创建循环和审批泵正在运行。
 
-失败的阶段会退避重试。服务拒绝的配置显示为 `refused_config`。
+两个 `awaiting_*` 阶段每 5 秒重新检查一次。`identities` 阶段失败，以及服务拒绝配置（显示为 `refused_config`）时，按 1 秒到 60 秒的退避重试。
 
 **所有者密钥。** Hagency 第一次需要某个所有者的交叉签名主密钥时，会从 homeserver 读取该密钥，并固定（pin）在存储中。没有开启交叉签名的所有者还没有密钥，因此该所有者的 agent 会等待。已固定的密钥不会被 homeserver 之后报告的密钥替换。控制台和 CLI 目前还不提供重新固定的操作。因此，重置了交叉签名的所有者在固定的密钥被更改之前无法得到服务。即便重新固定，也修复不了已经注册的 agent：它们冻结的密钥列表仍保留旧密钥，因此在每个 agent 重新创建之前，它们发给该所有者的消息都会失败；该所有者也会得到一个新的审批设备（ADR-187 修订；见[已知缺口](docs/architecture-walkthrough.zh-CN.md#15-已实现尚未实现与已知缺口)）。
+
+**agent 等待所有者时重启。** 新 agent 等待其所有者加入私聊期间重启服务，会使该 agent 停滞。见使用指南的[已知限制](docs/user-guide/README.zh-CN.md#已知限制)。
 
 **关闭。** 收到 SIGTERM 时，服务先停止 runner、Palpo 传输和车队服务，然后关闭 Matrix 会话和数据库，最后停止 HTTP 服务。systemd 给它 20 秒。
 
@@ -258,7 +278,8 @@ install/install-native.sh \
 | 文件 | 用途 |
 | --- | --- |
 | `operator.token` | 运维 bearer 密钥，由 `hagency init` 生成 |
-| `fleet-runtime.json` | 导入车队的 Codex 运行时设置，见下文。需要手写。 |
+| `fleet-runtime.json` | 导入车队的 Codex 运行时设置，见下文。由 `hagency setup` 写入。 |
+| `agent-homes/` | agent 的主目录（即 `hagency setup` 写入的 `home.root`） |
 | `palpo-transport.json`、`palpo.machine_token`、`palpo-appservice.json` | 由 Palpo 导入写入 |
 | `representative.identity.json`、`matrix.representative_token`、`matrix.appservice_token`、`matrix.provisioning_key` | 车队代表和创建 agent 所用的凭据。车队服务只创建一次。 |
 | `approval-<owner>.*`、`approval-sdk-<owner>/` | 每个所有者一个审批机器人设备：它的记录、令牌、身份和密钥文件，以及 SDK 存储。`<owner>` 是由所有者 Matrix ID 派生的标识。在车队服务第一次为该所有者准备已批准的 agent 时创建（前提是该所有者已有交叉签名密钥）。 |
@@ -272,6 +293,16 @@ install/install-native.sh \
 
 配置文件必须仅所有者可读写（权限 0600）。`fleet-runtime.json` 和 `agent-driver.json` 拒绝未知字段。
 
+`hagency setup` 会写入并校验 `fleet-runtime.json`；下表是该文件的格式，供阅读它，或通过安装脚本的 `--config-dir` 自备文件时参考。setup 写入以下取值：
+
+- `executable` 和 `executable_sha256`：它找到的 Codex 二进制及其哈希；
+- `file_limit` 4194304（4 MiB）、`operation_ms` 300000、`response_ms` 2000、`approval_owner_wait_ms` 180000、`idle_ms` 1200000；
+- `send_file` 和 `receive_file` 为 `true`；
+- `home`：`root` 为 `<state>/agent-homes`，`task_client` 为正在运行的 `hagency` 二进制，`projects` 为 `[]`；
+- `local_codex`（除非传入 `--no-local-codex`）：preset 为 `local_codex`，席位为 `local_codex_seat`，`home` 为你的 `HOME`，`codex_home` 为 Codex 登录目录。
+
+要修改某个值，可以编辑该文件（保持 0600 权限）并重启服务，或换用其他选项再次运行 `hagency setup --force`。
+
 `fleet-runtime.json` 的字段：
 
 | 字段 | 必填 | 含义 |
@@ -284,7 +315,7 @@ install/install-native.sh \
 | `operation_ms` | 是 | 每次派发的操作预算，100 到 1,200,000 毫秒。不得小于 `approval_owner_wait_ms` + 5000。 |
 | `response_ms` | 是 | 每次派发的响应预算，10 到 2000 毫秒 |
 | `idle_ms` | 是 | 预热的运行时可以空闲多久，范围 100 到 1,200,000 毫秒 |
-| `approval_owner_wait_ms` | 否 | 卡片等待所有者多久后按拒绝处理。默认值为 1000 毫秒，所以请设置它。加上 5000 毫秒的回复预留后不得超过 600,000 毫秒。 |
+| `approval_owner_wait_ms` | 否 | 卡片等待所有者多久后按拒绝处理。缺少该字段时为 1000 毫秒；`hagency setup` 写入 180000。加上 5000 毫秒的回复预留后不得超过 600,000 毫秒。 |
 | `send_file`、`receive_file` | 否 | 启用文件工具。默认 `false`。 |
 | `coordination_tools` | 否 | 启用委派和对等工具。每次调用都需所有者批准。默认 `false`。 |
 | `matrix_request_interval_ms`、`matrix_sdk_timeout_ms` | 否 | Matrix 请求节流，以及 SDK 预算（10 到 60,000 毫秒） |
@@ -302,27 +333,29 @@ install/install-native.sh \
 
 `home` 和 `codex_home` 必须是不含符号链接的绝对路径，属于服务用户，且组和其他用户不可写。
 
-一个最小示例。每个 `/srv/hagency/...` 路径都是占位符，请换成你自己的路径：
+`hagency setup` 写入的内容如下，其中每个 `/srv/hagency/...` 路径代表它找到的实际路径：
 
 ```json
 {
   "profile": "palpo_fleet_runtime_v1",
   "executable": "/srv/hagency/bin/codex",
-  "executable_sha256": "<64 个小写十六进制字符：codex 二进制的 shasum -a 256>",
+  "executable_sha256": "<64 个小写十六进制字符：codex 二进制的 SHA-256>",
   "local_codex": {
     "profile": "provider_owned_codex_v1",
     "preset": "local_codex",
     "seat": "local_codex_seat",
-    "home": "/srv/hagency/codex-user",
-    "codex_home": "/srv/hagency/codex-user/.codex"
+    "home": "/srv/hagency/home",
+    "codex_home": "/srv/hagency/home/.codex"
   },
+  "send_file": true,
+  "receive_file": true,
   "file_limit": 4194304,
-  "operation_ms": 600000,
+  "operation_ms": 300000,
   "response_ms": 2000,
-  "approval_owner_wait_ms": 300000,
-  "idle_ms": 600000,
+  "approval_owner_wait_ms": 180000,
+  "idle_ms": 1200000,
   "home": {
-    "root": "/srv/hagency/agent-homes",
+    "root": "/srv/hagency/state/agent-homes",
     "task_client": "/srv/hagency/bin/hagency",
     "projects": []
   }
@@ -339,7 +372,7 @@ install/install-native.sh \
 
 Hagency **强制执行**的：
 
-- **仅限回环地址。** `hagency serve` 拒绝任何非回环的监听地址。远程访问请使用 SSH 隧道，或发送 `Host: 127.0.0.1:13300` 且不添加任何 `Forwarded` 或 `X-Forwarded-*` 头的反向代理。
+- **仅限回环地址。** `hagency serve` 拒绝任何非回环的监听地址。控制台在登录和每次写操作时都检查 `Host` 头，并检查 `Origin` 是否为 `http://<监听地址>`（[native/hagency/src/console.rs](native/hagency/src/console.rs)），因此不能放在反向代理之后。请在运行 Hagency 的机器上打开控制台。从其他机器访问不是受支持的部署方式。
 - **控制台请求。** 控制台要求完全匹配的 `Host` 头，并拒绝转发类请求头。写操作需要同源的 `Origin`。运维 API 同样要求完全匹配的 `Host`，并拒绝 `Forwarded`、`X-Forwarded-For`、`Origin` 和 `Sec-Fetch-Site`，然后以常数时间比较 bearer 令牌的 SHA-256。
 - **所有者审批。** 审批只来自所有者已验证的设备。审批在一个加密房间中进行，房间成员只有所有者和审批机器人。出现第三个成员或失去加密时，该房间会被停用。投递失败或等待超时都按拒绝处理。
 - **每个所有者一个审批设备。** 每个所有者的审批机器人设备只信任该所有者。不同所有者的审批相互隔离。

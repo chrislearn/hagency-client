@@ -45,7 +45,7 @@ Each step names the file and function to open; search for the function name. ADR
 | [mockup/](../mockup/) | The console's Next.js source. Node is a build-time tool; `hagency serve` serves the static export (section 13). |
 | [deploy/](../deploy/), [install/install-native.sh](../install/install-native.sh) | The systemd unit and launchd plist for `hagency serve`, and the installer that renders them |
 | [specs/](../specs/), [knowledge/](../knowledge/) | Task contracts bound to tests, and the ADRs and requirements behind them |
-| [docs/](.) | This walkthrough, the [user guide](user-guide/README.md), operator [guides/](guides/), the agent workspace templates that `hagency-store` compiles in, and [history/](history/README.md) (historical TypeScript-era architecture and guides) |
+| [docs/](.) | Product documentation: this walkthrough, the [user guide](user-guide/README.md), operator [guides/](guides/) and [history/](history/README.md) (historical TypeScript-era architecture and guides). Everything under `docs/` other than `user-guide/`, `guides/`, `history/` and this walkthrough is internal working notes, not product documentation; the only exception is the agent workspace templates (`workspace-*-template.md`) that `hagency-store` compiles in. |
 
 Code comments often cite `backend-v2.js`, `bridge-matrix.js` and `lib/*.js` with line numbers. They point to the TypeScript product that this service replaced. That code has been removed from the repository; read it in git history when a comment cites it.
 
@@ -59,7 +59,8 @@ Open [native/hagency/src/main.rs](../native/hagency/src/main.rs). The `Command` 
 | `guardian` (hidden, Unix) | `serve`, as a child process | Owns one runner's process tree (section 11). |
 | `mcp` | Codex, as an MCP server | The task helper that gives the agent its tools (section 12). |
 | `task …` | The agent, from a shell | The same task operations as a CLI. |
-| `intake-refuse-stale-session` | The operator | Rejects a known stale pre-session SDK batch by its digest ([bootstrap/intake_refusal.rs](../native/hagency/src/bootstrap/intake_refusal.rs)). |
+| `intake-refuse-stale-session` | The operator | Rejects one quarantined SDK batch, named by its digest, whose events are pre-session: each one's `origin_ts` is earlier than its session route's `ingress_since`, the moment that session began admitting Matrix input. It records a stale-session receipt per event and retries no model, SDK apply or domain admission ([bootstrap/intake_refusal.rs](../native/hagency/src/bootstrap/intake_refusal.rs); `refuse_stale_session_batch` in `hagency-matrix/src/intake.rs`, `stale_matrix_session_receipt` in `hagency-store/src/domain/verified_ingress.rs`). |
+| `setup` | The operator, or the installer in fleet mode | Prepares an imported fleet's state directory: initializes it if new, finds Codex and its sign-in folder, writes `fleet-runtime.json` and validates it with `serve`'s loader (`check_fleet_runtime` in [bootstrap.rs](../native/hagency/src/bootstrap.rs); [setup.rs](../native/hagency/src/setup.rs)). |
 | `init`, `account`, `registration`, `side-registration`, `provision` | The operator | Create the state directory and credentials offline. Only `account` and `registration register` can drive a running service instead, with `--listen`. |
 | `console-access`, `engagements`, `resources`, `alerts` | The operator | Loopback clients of the running service. |
 | `backup`, `restore`, `rotate` | The operator | Online SQLite backup, restore and credential rotation ([ops/](../native/hagency/src/ops/)). |
@@ -75,7 +76,7 @@ Open [native/hagency/src/main.rs](../native/hagency/src/main.rs). The `Command` 
 | `--palpo-transport` without `--agent-driver` | **Imported fleet** (ADR-187) | The fleet service, started by `palpo::Live::with_fleet_service` once a fleet is imported (section 7) |
 | `--agent-driver` (with or without `--palpo-transport`) | **Coordinator install** | `agent-driver.json`: the coordinator's driver, its approval pump and its factory (`fleet::Service::new`) |
 
-The units in [deploy/](../deploy/) currently pass `--agent-driver --palpo-transport --console-assets …`, so they start a coordinator install (section 15).
+The units in [deploy/](../deploy/) carry an `__AGENT_DRIVER__` placeholder (`<!--__AGENT_DRIVER_ARG__-->` in the plist). [install-native.sh](../install/install-native.sh) fills it by `--mode`: empty for `fleet`, the default, so the unit runs `serve --palpo-transport`; `--agent-driver` for `coordinator`, which the installer accepts only with an `agent-driver.json` in `--config-dir`. In fleet mode the installer runs `hagency setup` unless `--config-dir` supplied a `fleet-runtime.json`.
 
 `open_with_options` opens the custody store, then the domain store. In a coordinator install it also builds the approval-bot pump, the file and receive services and the factory service. Last, it builds the Palpo transport (`palpo::Live`). A fresh install with no imported fleet does not refuse to start; the transport waits for the console import.
 
@@ -100,14 +101,14 @@ All HTTP traffic shares one loopback port (`127.0.0.1:13300` by default). `App::
 | --- | --- | --- |
 | `operator.token` | Operator bearer secret | `hagency init` |
 | `palpo-transport.json`, `palpo.machine_token`, `palpo-appservice.json` | The imported fleet's transport and App Service registration | The Palpo import, `write` in [bootstrap/palpo_import.rs](../native/hagency/src/bootstrap/palpo_import.rs) |
-| `fleet-runtime.json` | Imported fleet: the local Codex executable and its hash, file tools, limits and agent homes (profile `palpo_fleet_runtime_v1`) | The operator, by hand (`load_fleet_runtime` in [bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs)) |
+| `fleet-runtime.json` | Imported fleet: the local Codex executable and its hash, file tools, limits and agent homes (profile `palpo_fleet_runtime_v1`) | `hagency setup` ([setup.rs](../native/hagency/src/setup.rs)), which also creates `agent-homes/` for `home.root`; or the operator, through the installer's `--config-dir`. Loaded by `load_fleet_runtime` in [bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs) |
 | `representative.identity.json`, `matrix.representative_token`, `matrix.appservice_token`, `matrix.provisioning_key`, `approval-<owner>.*`, `approval-sdk-<owner>/` | Imported fleet: the representative's device, the App Service token, the agents' provisioning key, and one approval device per owner | The fleet service ([bootstrap/fleet_identity.rs](../native/hagency/src/bootstrap/fleet_identity.rs)) |
 | `runtime-home/` | Imported fleet without a `local_codex` block: the agents' `HOME` and `CODEX_HOME` (section 7) | `serve`, created owner-private when it loads `fleet-runtime.json` (`load_fleet_runtime` in [bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs)) |
 | `fleet-workspace/` | Imported fleet: a private placeholder workspace for the fleet host; no dispatch is routed to it | `serve`, in the same load |
 | `factory-task-contexts/` | Imported fleet: the task contexts the warm task bridge hands to each dispatch | `serve`, in the same load |
 | `console-logins.json` | SHA-256 hashes of the console access link and of each login, so a restart does not sign the operator out | The console ([console/authority.rs](../native/hagency/src/console/authority.rs)) |
 | `agent-driver.json`, `matrix.*`, `approval.*` | Coordinator install: runner, workspaces, Matrix and approval settings, factory service | The operator ([bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs)) |
-| `agent-matrix-provision_<engagement>/` | Each provisioned agent's credential and SDK store | Provisioning ([hagency-matrix/src/token_provision.rs](../native/hagency-matrix/src/token_provision.rs); the name is spelled out at [hagency-matrix/src/provisioning.rs:622](../native/hagency-matrix/src/provisioning.rs#L622)) |
+| `agent-matrix-provision_<engagement>/` | Each provisioned agent's credential and SDK store | Provisioning ([hagency-matrix/src/token_provision.rs](../native/hagency-matrix/src/token_provision.rs); the directory is named in `TokenAccountProvision::configured` as `agent-matrix-` plus the effect id `provision_<engagement>`) |
 | `domain.sqlite3`, `custody.sqlite3` | Domain state; Palpo transport custody (section 5) | [native/hagency-store](../native/hagency-store/src/) |
 
 ## 4. The crates
@@ -262,7 +263,7 @@ Test examples: `native_palpo_import_route_saves_the_owner_download` and `native_
 
 ## 7. The fleet service (ADR-187)
 
-An imported fleet runs with no coordinator agent. [ADR-187](../knowledge/decisions/adr-187-palpo-fleet-without-coordinator.md) and its amendment set the rules. `FleetService::start` in [bootstrap/fleet_service.rs](../native/hagency/src/bootstrap/fleet_service.rs) runs one supervisor task. It walks four stages, logs each change, and retries with backoff without ever exiting:
+An imported fleet runs with no coordinator agent. [ADR-187](../knowledge/decisions/adr-187-palpo-fleet-without-coordinator.md) and its amendment set the rules. `FleetService::start` in [bootstrap/fleet_service.rs](../native/hagency/src/bootstrap/fleet_service.rs) runs one supervisor task. It walks four stages, logs each change, and never exits. The two `awaiting_*` stages poll at a fixed 5 s; the `identities` stage and a refused configuration back off from 1 s to 60 s (`BACKOFF_MIN`, `BACKOFF_MAX`):
 
 ```mermaid
 flowchart LR
@@ -297,14 +298,14 @@ A configuration that `build` refuses shows as `refused_config` and is retried.
 - starts the agent's own invite poller (`AgentOwner.invites`, section 10);
 - starts its driver, file and receive services.
 
-**Codex sign-in.** A fleet agent's Codex credential comes from `fleet-runtime.json` (`FleetRuntimeConfig` in [bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs)). With a `local_codex` block, the agent reuses an existing Codex sign-in on the host through that block's `codex_home`. Without one, `HOME` and `CODEX_HOME` point at `<state>/runtime-home`. The fleet runtime has no managed account: `hagency account` namespaces and `agent-driver.json`'s `managed_account` apply to a coordinator install only (the launch environment is set in [hagency-execution/src/host.rs](../native/hagency-execution/src/host.rs)).
+**Codex sign-in.** A fleet agent's Codex credential comes from `fleet-runtime.json` (`FleetRuntimeConfig` in [bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs)), which `hagency setup` writes: with a `local_codex` block (preset `local_codex`, seat `local_codex_seat`, the user's `HOME` and Codex folder) by default, without one under `--no-local-codex`. Setup reports whether that folder holds a sign-in (`auth.json`) and prints the `CODEX_HOME=… codex login` command when it does not. With a `local_codex` block, the agent reuses an existing Codex sign-in on the host through that block's `codex_home`. Without one, `HOME` and `CODEX_HOME` point at `<state>/runtime-home`. The fleet runtime has no managed account: `hagency account` namespaces and `agent-driver.json`'s `managed_account` apply to a coordinator install only (the launch environment is set in [hagency-execution/src/host.rs](../native/hagency-execution/src/host.rs)).
 
 **Request intake has one path.** On an imported fleet, reception requests are admitted only by the Palpo work lane (`admit_request` in `palpo_work.rs`, section 9).
 
 ## 8. Resources and the catalog
 
 Resources are created in two places:
-- **Operator API.** `POST /api/native/v1/resources` (`put_resource` in [resources.rs](../native/hagency/src/resources.rs)) writes a resource from its full definition. On an imported fleet this is the only way to create the first resource. The API does not check this binding. With a `local_codex` block, `LocalCodex::admit_provision` (at provisioning) and `LocalCodex::admit` (per dispatch) in `hagency-execution/src/local_codex.rs` refuse a resource whose `seat_id` differs from the block's `seat`, whose framework is not `codex`, whose provider is set and not `openai`, or that needs a managed account; without the block, any seat works.
+- **Operator API.** `POST /api/native/v1/resources` (`put_resource` in [resources.rs](../native/hagency/src/resources.rs)) writes a resource from its full definition. On an imported fleet this is the only way to create the first resource. The API does not check that a resource matches the `local_codex` sign-in. With a `local_codex` block, `LocalCodex::admit_provision` (at provisioning) and `LocalCodex::admit` (per dispatch) in `hagency-execution/src/local_codex.rs` refuse a resource whose `seat_id` differs from the block's `seat`, whose framework is not `codex`, whose provider is set and not `openai`, or that needs a managed account; without the block, any seat works.
 - **Console.** The resources route in `console/resources.rs` hands creation to `resource_configuration::create`, which copies an existing source resource (`source_resource_id`) with a new model, reasoning effort or ceiling. The console cannot create a resource from nothing. Its empty-state hint points at managed-account enrollment (`console/accounts.rs`), but a resource bound to a managed account is refused by a fleet host, which has none (`hagency-execution/src/host.rs`).
 
 `console/resource_configuration.rs` also changes an existing resource's model, reasoning effort and monthly ceiling, using `expectedRevision` for optimistic concurrency.
@@ -593,7 +594,7 @@ sequenceDiagram
   - `decide_verdict` re-checks all of it against the binding and the request's expiry.
 
   Plain text, `!` commands and console clicks cannot approve.
-- **Expiry.** When the owner does not answer within `approval_owner_wait_ms`, `deny_for_owner_wait_expiry` records the same deny an owner's Deny would, and the turn continues without the permission (ADR-046, owner-wait expiry amendment). The code default (`default_approval_wait` in `bootstrap/config.rs`) is 1000 ms, which denies almost at once; set `approval_owner_wait_ms` in `fleet-runtime.json` or `agent-driver.json`.
+- **Expiry.** When the owner does not answer within `approval_owner_wait_ms`, `deny_for_owner_wait_expiry` records the same deny an owner's Deny would, and the turn continues without the permission (ADR-046, owner-wait expiry amendment). The code default (`default_approval_wait` in `bootstrap/config.rs`) is 1000 ms, which denies almost at once; set `approval_owner_wait_ms` in `fleet-runtime.json` or `agent-driver.json`. `hagency setup` writes 180000.
 - **Applying.** `consume_owner_approval` moves the request to `applying` before the response is written to Codex. After a restart, an `applying` request becomes `uncertain`, and recovery inspects it instead of resending.
 
 The execution policy stores a `yolo` flag (`domain/exec_policy.rs`), but every native approval context is built with `yolo: false`, and the store refuses a yolo context.
@@ -648,7 +649,6 @@ The user guide's ["Known limitations"](user-guide/README.md#known-limitations) i
 | Codex runner, Palpo outbound transport, fleet service, provisioning, owner approvals, joined rooms, quota pause and top-up, file delivery | Implemented in native |
 | Claude runner | Runtime protocol code exists; launch is refused (`UnsupportedRunner`) |
 | A fleet's first resource | No console path. Create it with the operator API (`POST /api/native/v1/resources`, section 8). The console's empty-state hint points at managed-account enrollment, which a fleet refuses. |
-| Deploying an imported fleet | The fleet service runs only without `--agent-driver`, but the shipped units pass `--agent-driver`. `fleet-runtime.json` is written by hand, and `install-native.sh --config-dir` does not accept it. |
 | Restart while an agent waits for its owner to join the DM | Not resumed. Only the job that observed the wait resumes it; after a restart the provisioning step returns `OutcomeUnknown` (`token_provision/rooms.rs`), nothing re-drives it, and the console has no resume action. Workaround: the operator retires the engagement in the console (**Engagements → Retire**, which cancels the provision effect and schedules retirement), and the owner requests the agent again. |
 | Owner-anchor mismatch and re-pin | Store only: `owner_anchors.rs` records a mismatch and `DomainStore::repin_owner_anchor` re-pins; no console route shows or calls either. Consequence: `owner_anchor` never re-queries a pinned key, so a changed owner key shows up only as an enrollment refusal, and a re-pin does not repair agents already enrolled (ADR-187 amendment). |
 | Joined rooms and fleet stage in the console | Not shown. ADR-188 describes a "joined · not working" label and queued work for a retired room; neither is built. The fleet service's stage is only logged. |

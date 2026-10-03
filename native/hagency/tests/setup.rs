@@ -148,3 +148,35 @@ fn native_setup_follows_the_npm_launcher_to_the_native_binary() {
         native.join("codex").to_str().unwrap()
     );
 }
+
+#[test]
+fn native_setup_without_local_codex_needs_no_codex_folder() {
+    let root = tempfile::tempdir().unwrap();
+    let root = root.path().canonicalize().unwrap();
+    let (home, binary) = codex(&root);
+    std::fs::remove_dir_all(home.join(".codex")).unwrap();
+    let state = root.join("state");
+    let output = run(
+        &home,
+        &[
+            "--state-dir",
+            state.to_str().unwrap(),
+            "--codex",
+            binary.to_str().unwrap(),
+            "--no-local-codex",
+        ],
+    );
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains(state.join("runtime-home").to_str().unwrap()),
+        "{stdout}"
+    );
+    let written: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(state.join("fleet-runtime.json")).unwrap()).unwrap();
+    assert!(written.get("local_codex").is_none());
+}

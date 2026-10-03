@@ -50,6 +50,7 @@ enum Command {
         #[arg(long)]
         codex: Option<PathBuf>,
         /// The folder holding the Codex sign-in; $CODEX_HOME or ~/.codex when omitted.
+        /// Not used with --no-local-codex.
         #[arg(long)]
         codex_home: Option<PathBuf>,
         /// Run agents with <state>/runtime-home instead of this machine's Codex sign-in.
