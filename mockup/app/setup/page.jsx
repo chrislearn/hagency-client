@@ -14,7 +14,7 @@ import PageHead from '@/components/PageHead';
 import { useT } from '@/components/Prefs';
 import { useData } from '@/components/Data';
 import { errorText } from '@/lib/i18n';
-import { fetchSetup, checkSetup } from '@/lib/native-api';
+import { fetchSetup, checkSetup, offerResource } from '@/lib/native-api';
 import ImportPalpoControl from '../project-sides/import-palpo';
 
 function Step({ n, title, done, children }) {
@@ -36,6 +36,45 @@ function AgentCard({ agent }) {
     {agent.found && !agent.signedIn && <p>{t('st.notSignedIn', { name })} <code>{agent.kind === 'codex' ? 'codex login' : ''}</code></p>}
     {agent.problem && <p className="dim">{agent.problem}</p>}
   </div>;
+}
+
+function OfferStep({ setup, onDone }) {
+  const t = useT();
+  const choices = setup?.offer?.choices ?? [];
+  const [pick, setPick] = useState(0);
+  const [tokens, setTokens] = useState('20000000');
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState(null);
+  if (!setup?.runtimeConfigured) return <p>{t('st.resourceNeedsAgent')}</p>;
+  async function offer() {
+    const choice = choices[pick];
+    const ceiling = Number.parseInt(tokens, 10);
+    if (busy || !choice || !(ceiling > 0)) return;
+    setBusy(true); setNote(null);
+    try {
+      await offerResource(choice.model, choice.reasoning ?? null, ceiling);
+      setNote(t('st.offered'));
+      onDone();
+    } catch (error) {
+      setNote(error.message === 'setup_unqualified_model' ? t('st.unqualified') : errorText(t, error.message));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <>
+    <p>{setup.offer.resources > 0 ? t('st.resourcesExist', { n: setup.offer.resources }) : t('st.resourceHelp')}</p>
+    <label>{t('st.model')}{' '}
+      <select value={pick} onChange={(e) => setPick(Number(e.target.value))}>
+        {choices.map((c, i) => <option key={`${c.model}/${c.reasoning}`} value={i}>{c.model}{c.reasoning ? ` · ${c.reasoning}` : ''}</option>)}
+      </select>
+    </label>{' '}
+    <label>{t('st.ceiling')}{' '}
+      <input inputMode="numeric" value={tokens} onChange={(e) => setTokens(e.target.value.replace(/[^0-9]/g, ''))} />
+    </label>{' '}
+    <button type="button" className="btn" disabled={busy || choices.length === 0} onClick={offer}>{busy ? t('st.offering') : t('st.offer')}</button>
+    {note && <p role="status" className="note">{note}</p>}
+    <p className="dim">{t('st.moreResources')} <a href="/console/resources/">{t('nav.resources')}</a></p>
+  </>;
 }
 
 export default function SetupPage() {
@@ -81,9 +120,8 @@ export default function SetupPage() {
         ? <p>{t('st.palpoConnected', { state: setup.palpo.transport?.state ?? '—' })}</p>
         : <ImportPalpoControl />}
     </Step>
-    <Step n={3} title={t('st.resourceTitle')} done={false}>
-      <p>{t('st.resourceHelp')}</p>
-      <a className="btn" href="/console/resources/">{t('nav.resources')}</a>
+    <Step n={3} title={t('st.resourceTitle')} done={(setup?.offer?.resources ?? 0) > 0}>
+      <OfferStep setup={setup} onDone={load} />
     </Step>
   </>;
 }

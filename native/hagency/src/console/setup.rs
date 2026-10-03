@@ -17,6 +17,40 @@ pub(super) fn router() -> Router {
     Router::with_path("setup")
         .get(status)
         .push(Router::with_path("check").post(check))
+        .push(Router::with_path("resource").post(offer))
+}
+
+/// The model and reasoning pairs Hagency qualifies for Codex
+/// (`role-capacity.json`): only these are published to Palpo.
+fn codex_choices() -> Vec<serde_json::Value> {
+    let profile = hagency_core::qualification::ModelProfile {
+        framework: "codex".into(),
+        model: String::new(),
+        provider: Some("openai".into()),
+        reasoning: None,
+    };
+    hagency_core::qualification::configuration_choices(&profile)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|c| json!({"model": c.model, "reasoning": c.reasoning, "roles": c.roles}))
+        .collect()
+}
+
+/// The seat a fleet resource must name: the `local_codex` block's, else the
+/// default `setup` writes.
+fn runtime_seat(state: &std::path::Path) -> String {
+    std::fs::read(state.join("fleet-runtime.json"))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|v| v["local_codex"]["seat"].as_str().map(str::to_owned))
+        .unwrap_or_else(|| "local_codex_seat".into())
+}
+
+fn domain(depot: &Depot) -> Option<hagency_store::DomainStore> {
+    depot
+        .get_typed::<crate::App>()
+        .ok()
+        .and_then(|app| app.domain.clone())
 }
 
 fn live(depot: &Depot) -> Option<crate::bootstrap::palpo::Live> {
@@ -28,10 +62,19 @@ fn live(depot: &Depot) -> Option<crate::bootstrap::palpo::Live> {
 
 async fn report(
     live: &crate::bootstrap::palpo::Live,
+    domain: Option<&hagency_store::DomainStore>,
     agents: Vec<crate::setup::AgentStatus>,
     configured_now: Option<Result<(), String>>,
 ) -> serde_json::Value {
     let runtime = live.state_dir().join("fleet-runtime.json").is_file();
+    let resources = match domain {
+        Some(store) => store
+            .catalog(String::new(), 64)
+            .await
+            .map(|rows| rows.len())
+            .unwrap_or(0),
+        None => 0,
+    };
     let mut value = json!({
         "ok": true,
         "agents": agents,
@@ -39,6 +82,10 @@ async fn report(
         "palpo": {
             "imported": live.is_imported(),
             "transport": live.status().get(),
+        },
+        "offer": {
+            "choices": codex_choices(),
+            "resources": resources,
         },
     });
     if let Some(result) = configured_now {
@@ -61,7 +108,9 @@ async fn status(depot: &mut Depot, res: &mut Response) {
         failed(res, error);
         return;
     }
-    res.render(Json(report(&live, agents, None).await));
+    res.render(Json(
+        report(&live, domain(depot).as_ref(), agents, None).await,
+    ));
 }
 
 #[handler]
@@ -104,5 +153,85 @@ async fn check(depot: &mut Depot, res: &mut Response) {
         failed(res, error);
         return;
     }
-    res.render(Json(report(&live, vec![codex], configured_now).await));
+    res.render(Json(
+        report(&live, domain(depot).as_ref(), vec![codex], configured_now).await,
+    ));
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Offer {
+    model: String,
+    reasoning: Option<String>,
+    /// Monthly token ceiling; 20 million when omitted.
+    #[serde(default)]
+    tokens: Option<u64>,
+}
+
+/// ADR-189 step 3: create and publish a resource for the configured coding
+/// agent, through the same writer as the operator API, with the runtime's
+/// seat and only a qualified model and reasoning pair.
+#[handler]
+async fn offer(req: &mut Request, depot: &mut Depot, res: &mut Response) {
+    if !check_lifecycle(depot, res) {
+        return;
+    }
+    let Some(live) = live(depot) else {
+        refusal(res, StatusCode::SERVICE_UNAVAILABLE, "setup_unavailable");
+        return;
+    };
+    let Some(store) = domain(depot) else {
+        refusal(res, StatusCode::SERVICE_UNAVAILABLE, "domain_unavailable");
+        return;
+    };
+    if live.fleet_address().is_none() {
+        refusal(res, StatusCode::CONFLICT, "setup_not_fleet");
+        return;
+    }
+    if !live.state_dir().join("fleet-runtime.json").is_file() {
+        refusal(res, StatusCode::CONFLICT, "setup_runtime_missing");
+        return;
+    }
+    let raw = match super::body(req, 1024).await {
+        Ok(raw) => raw,
+        Err(error) => {
+            failed(res, error);
+            return;
+        }
+    };
+    let Ok(input) = serde_json::from_slice::<Offer>(&raw) else {
+        refusal(res, StatusCode::BAD_REQUEST, "invalid_domain_command");
+        return;
+    };
+    let qualified = codex_choices()
+        .iter()
+        .any(|c| c["model"] == json!(input.model) && c["reasoning"] == json!(input.reasoning));
+    let tokens = input.tokens.unwrap_or(20_000_000);
+    if !qualified || tokens == 0 {
+        refusal(res, StatusCode::BAD_REQUEST, "setup_unqualified_model");
+        return;
+    }
+    let resource = serde_json::from_value::<hagency_core::project::Resource>(json!({
+        "presetId": "local_codex",
+        "seatId": runtime_seat(live.state_dir()),
+        "framework": "codex",
+        "model": input.model,
+        "provider": "openai",
+        "reasoning": input.reasoning,
+        "ceiling": {"tokens": tokens, "period": "monthly"},
+        "published": true,
+    }));
+    let Ok(resource) = resource else {
+        refusal(res, StatusCode::BAD_REQUEST, "invalid_domain_command");
+        return;
+    };
+    let result = store.edit_resource(resource, Some(true)).await;
+    if let Err(error) = recheck(depot) {
+        failed(res, error);
+        return;
+    }
+    match result {
+        Ok(resource) => res.render(Json(json!({"ok": true, "resource": resource}))),
+        Err(_) => refusal(res, StatusCode::BAD_REQUEST, "setup_resource_refused"),
+    }
 }

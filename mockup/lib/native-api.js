@@ -1167,4 +1167,23 @@ async function setupCall(path, method) {
 }
 export function fetchSetup() { return setupCall('setup', 'GET'); }
 export function checkSetup() { return setupCall('setup/check', 'POST'); }
-
+export async function offerResource(model, reasoning, tokens) {
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), 20000);
+  try {
+    const response = await fetch(`${ROOT}/api/setup/resource`, {
+      method: 'POST', credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal: abort.signal,
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, reasoning, tokens }),
+    });
+    let value = null;
+    try { value = await response.json(); } catch { /* not JSON: handled below */ }
+    if (response.status === 401) throw new Error('console_access_required');
+    if (!response.ok || value?.ok !== true) throw new Error(typeof value?.code === 'string' ? value.code : 'native_unavailable');
+    return value;
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('outcome_unknown');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}

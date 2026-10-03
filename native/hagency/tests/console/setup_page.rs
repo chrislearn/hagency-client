@@ -44,3 +44,24 @@ async fn native_setup_check_is_refused_outside_a_fleet() {
     assert_eq!(value["code"], json!("setup_not_fleet"));
     assert!(!state.join("fleet-runtime.json").exists());
 }
+
+/// Scenario: offering the first resource is a fleet step; outside a fleet it
+/// is refused by name and no resource is created.
+#[tokio::test]
+async fn native_setup_offer_is_refused_outside_a_fleet() {
+    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
+    let state = f.root.path().join("state");
+    let service = Service::new(f.app.clone().with_palpo_import(state).router());
+    let cookie = lifecycle_session(&service).await;
+    let mut refused = post("/console/api/setup/resource", &cookie)
+        .json(&json!({"model": "gpt-5.6-sol", "reasoning": "medium"}))
+        .send(&service)
+        .await;
+    assert_eq!(refused.status_code, Some(StatusCode::CONFLICT));
+    let value = refused.take_json::<Value>().await.unwrap();
+    assert_eq!(value["code"], json!("setup_not_fleet"));
+    let mut status = get("/console/api/setup", &cookie).send(&service).await;
+    let value = status.take_json::<Value>().await.unwrap();
+    assert_eq!(value["offer"]["resources"], json!(0));
+    assert!(!value["offer"]["choices"].as_array().unwrap().is_empty());
+}
