@@ -47,8 +47,11 @@ Palpo 网页端的界面是英文的，因此 Palpo 的页面和按钮名称保�
 - 一台可通过 `https` 访问的 Palpo 服务器，例如
   `https://matrix.your-server.example`。
 - 该 Palpo 服务器上的一个管理员账号。
-- `hagency` 程序。发布构建已内置控制台：在项目的 GitHub release 页面下载
-  对应平台的 `hagency-nv<version>-<target>.tar.gz` 和 `SHA256SUMS`，解压归档，
+- `hagency` 程序。发布构建已内置控制台。当前版本 `nv0.1.0-rc.1` 是项目
+  [GitHub Releases 页面](https://github.com/hagency-org/hagency-rs/releases)上的
+  预发布版本（pre-release）；其中的 `.tar.gz` 资产和 `SHA256SUMS` 由发布工作流
+  构建，再手动附加到该版本上。下载对应平台的
+  `hagency-nv<version>-<target>.tar.gz` 和 `SHA256SUMS`，解压归档，
   并用 `SHA256SUMS` 校验二进制。在 macOS 上，二进制没有代码签名，请运行一次
   `xattr -d com.apple.quarantine hagency`。仓库 README 的
   [获取 hagency 二进制](../../README.zh-CN.md#2-获取-hagency-二进制)一节完整介绍如何获取它，
@@ -99,7 +102,7 @@ Hagency 从不替你登录，也从不读取或保存你的凭据。它只询问
    [启动 Hagency](../../README.zh-CN.md#3-启动-hagency)一节介绍这两个命令。
 2. Hagency 会输出一个控制台链接，并在浏览器中打开它。如果没有打开浏览器，
    请自己在这台机器上的浏览器中打开输出的链接。
-3. 控制台会打开，并保持登录，直到你点击 **结束访问**（End access）或关闭
+3. 控制台会打开，并保持登录，直到你点击 **结束访问（End access）** 或关闭
    浏览器。重启 Hagency 不会让你退出登录。在你生成新链接之前，这个链接一直
    有效，请妥善保管。
 
@@ -114,20 +117,19 @@ hagency console-access --state-dir "${XDG_DATA_HOME:-$HOME/.local/share}/hagency
 
 ## 第 3 步：在控制台中设置编程代理
 
-1. 在控制台菜单中打开 **设置**（Setup）。页面有三步：**编程代理**（Coding
-   agents）、**连接 Palpo**（Connect Palpo）和 **提供资源**（Offer a
-   resource）。每一步完成后都会显示一个勾。三步全部完成之前，控制台的
+1. 在控制台菜单中打开 **设置（Setup）**。页面有三步：**编程代理（Coding
+   agents）**、**连接 Palpo（Connect Palpo）** 和 **提供资源（Offer a
+   resource）**。每一步完成后都会显示一个勾。三步全部完成之前，控制台的
    其他每个页面都会显示一行提示“设置尚未完成”，并附有指向 **设置** 的
    链接。
 2. 在 **编程代理** 下，Hagency 显示 Codex 的路径、版本以及是否已登录。
-   - 如果 Codex 未安装，安装它，然后点击 **重新检查**（Check again）。
+   - 如果 Codex 未安装，安装它，然后点击 **重新检查（Check again）**。
    - 如果 Codex 未登录，在这台机器的终端里运行 `codex login`（第 1 步），然后
      点击 **重新检查**。
 3. Codex 已登录时，无需点击任何按钮。页面加载时，Hagency 会自行完成运行
    Codex 所需的配置。页面随后显示“Hagency 已配置好运行这个代理。”
 
-页面会显示 Codex 的登录方式：**ChatGPT 订阅**（ChatGPT plan）或 **API 密钥**
-（API key）。ChatGPT 订阅登录仅供个人使用。在把这个代理提供给他人之前，请考虑
+页面会显示 Codex 的登录方式：**ChatGPT 订阅（ChatGPT plan）** 或 **API 密钥（API key）**。ChatGPT 订阅登录仅供个人使用。在把这个代理提供给他人之前，请考虑
 用 API 密钥登录 Codex。页面会给出这条提示，但不会阻止你继续。
 
 ## 第 4 步：连接 Palpo
@@ -142,11 +144,11 @@ hagency console-access --state-dir "${XDG_DATA_HOME:-$HOME/.local/share}/hagency
 4. 打开 **My Hagency access**，点击 **Download Hagency configuration**。
    Palpo 会下载一个 JSON 文件。请妥善保管，它包含车队的凭据。
 5. 在控制台的 **设置** 页面中，转到 **连接 Palpo**。
-6. 在 **配置文件**（Configuration file）处选择该 JSON 文件。控制台会显示
+6. 在 **配置文件（Configuration file）** 处选择该 JSON 文件。控制台会显示
    “*你的服务器* 上的车队：”和车队 ID。
-7. 在 **Matrix 地址**（Matrix address）处填写服务器的 Matrix 地址，例如
+7. 在 **Matrix 地址（Matrix address）** 处填写服务器的 Matrix 地址，例如
    `https://matrix.your-server.example`。地址必须使用 `https`。
-8. 点击 **连接**（Connect）。控制台显示“已连接 *你的服务器*。”，无需重启。
+8. 点击 **连接（Connect）**。控制台显示“已连接 *你的服务器*。”，无需重启。
 9. 回到 Palpo 网页管理后台，点击
    **Verify connection & create reception**。Palpo 报告成功后，服务器上的
    项目就可以申请 agent 了。
@@ -154,8 +156,7 @@ hagency console-access --state-dir "${XDG_DATA_HOME:-$HOME/.local/share}/hagency
 添加 Hagency 需要管理员，因为这一步要为车队预留一段账号名。这一步完成后，
 日常使用不再需要管理员权限。
 
-同样的导入也在 **项目方**（Project sides）页面的 **连接 Palpo 项目服务器**
-（Connect a Palpo project server）面板中。
+同样的导入也在 **项目方（Project sides）** 页面的 **连接 Palpo 项目服务器（Connect a Palpo project server）** 面板中。
 
 车队不需要协调者 agent。Hagency 自己创建 agent 和审批机器人，你也不会
 看到“Hagency coordinator”私聊。
@@ -166,28 +167,27 @@ hagency console-access --state-dir "${XDG_DATA_HOME:-$HOME/.local/share}/hagency
 ## 第 5 步：提供资源
 
 1. 在 **设置** 页面中，转到 **提供资源**。这一步需要先完成第 3 步。
-2. 在 **模型**（Model）中选择模型和推理档位。列表中只有 Hagency 已认定资格的
+2. 在 **模型（Model）** 中选择模型和推理档位。列表中只有 Hagency 已认定资格的
    组合。对 Codex 来说，就是 `gpt-5.6-sol` 搭配 `low`、`medium` 或 `high`
    推理档位。
-3. 在 **每月 token 上限**（Monthly token ceiling）中保留 20,000,000，或填写
+3. 在 **每月 token 上限（Monthly token ceiling）** 中保留 20,000,000，或填写
    另一个正整数。
-4. 点击 **提供给 Palpo**（Offer to Palpo）。页面显示“已提供。项目所有者现在
+4. 点击 **提供给 Palpo（Offer to Palpo）**。页面显示“已提供。项目所有者现在
    可以基于这个资源申请代理。”
 
 要再提供一种模型或推理档位，重复以上步骤。
 
-在 **我的资源**（My resources）中管理资源。每一行显示资源的模型、每月 token
-上限，以及它是 **已包含**（Included，已发布给 Palpo）还是 **已撤下**
-（Withdrawn）。
+在 **我的资源（My resources）** 中管理资源。每一行显示资源的模型、每月 token
+上限，以及它是 **已包含（Included）**（已发布给 Palpo）还是 **已撤下（Withdrawn）**。
 
-- 要修改资源，在该行点击 **编辑资源配置**（Edit configuration）。选择模型和
-  推理档位，填写 **每月 token 上限**，然后点击 **保存配置**（Save
-  configuration）。资源上有已预留或运行中的 agent 时，不能修改该资源。
-- 要停止提供某个资源，点击 **从本地资源目录撤下**（Withdraw from native
-  catalog）。点击 **加入本地资源目录**（Include in native catalog）可以重新
+- 要修改资源，在该行点击 **编辑资源配置（Edit configuration）**。选择模型和
+  推理档位，填写 **每月 token 上限**，然后点击 **保存配置（Save
+  configuration）**。资源上有已预留或运行中的 agent 时，不能修改该资源。
+- 要停止提供某个资源，点击 **从本地资源目录撤下（Withdraw from native
+  catalog）**。点击 **加入本地资源目录（Include in native catalog）** 可以重新
   提供。
-- 车队不要使用 **托管账户**（Managed accounts）和 **登记资源**（Enroll
-  resource）。在那里创建的资源绑定到托管账户，车队的 agent 无法在其上运行。
+- 车队不要使用 **托管账户（Managed accounts）** 和 **登记资源（Enroll
+  resource）**。在那里创建的资源绑定到托管账户，车队的 agent 无法在其上运行。
   没有任何资源时，**我的资源** 会引导你前往 **设置**。
 
 Hagency 每 15 秒把已发布的资源发送给 Palpo。所有者申请 agent 时从中选择。
@@ -201,13 +201,12 @@ Hagency 每 15 秒把已发布的资源发送给 Palpo。所有者申请 agent �
    项目。然后为项目定义一个 agent：agent 名称、一个已发布的资源、角色、申请的
    token 数和每日速率（daily rate）。这些是 Palpo 的页面，不在 Hagency 里，
    具体布局可能随 Palpo 版本不同而变化。
-2. **运维者**：在控制台中打开 **接洽**（Engagements）。在 **请求**
-   （Requests）标签页的 **待裁定**（Pending verdicts）中可以看到这条申请，
+2. **运维者**：在控制台中打开 **接洽（Engagements）**。在 **请求（Requests）** 标签页的 **待裁定（Pending verdicts）** 中可以看到这条申请，
    以及候选资源和该资源的剩余 token。
-3. 在 **Token 数**（Tokens）中保留申请的数量，或填写另一个正整数。
-   **全部剩余**（All remaining）会填入该资源还能提供的全部额度。
-4. 点击 **批准**（Approve）。要拒绝申请，点击 **拒绝**（Reject），再点
-   **确认**（Confirm）。
+3. 在 **Token 数（Tokens）** 中保留申请的数量，或填写另一个正整数。
+   **全部剩余（All remaining）** 会填入该资源还能提供的全部额度。
+4. 点击 **批准（Approve）**。要拒绝申请，点击 **拒绝（Reject）**，再点
+   **确认（Confirm）**。
 
 批准后，Hagency 会创建 agent。agent 加入项目房间，并邀请所有者进入一个新的
 私聊。
@@ -260,8 +259,8 @@ Hagency 为每位所有者使用单独的审批机器人设备。一位所有者
 接下来会发生什么，取决于是谁发出的邀请：
 
 - **所有者邀请**：agent 会自动接受，通常在 10 秒内完成。
-- **其他人邀请**：邀请会出现在控制台的 **邀请**（Invitations）页面中，等待
-  运维者点击 **接受**（Accept）或 **拒绝**（Decline），因为在那个房间工作会
+- **其他人邀请**：邀请会出现在控制台的 **邀请（Invitations）** 页面中，等待
+  运维者点击 **接受（Accept）** 或 **拒绝（Decline）**，因为在那个房间工作会
   消耗所有者的 token。
 
 ### agent 在房间里的行为
@@ -293,15 +292,15 @@ Hagency 控制台追加 token）。不会丢弃任何工作。只有运维者能
 
 追加 token 的步骤：
 
-1. 在控制台中打开 **接洽**（Engagements）。
-2. 在该 agent 所在行点击 **追加 token**（Add tokens）。
-3. 填写数量，或点击 **全部剩余**（All remaining），然后点击 **追加**（Add）。
+1. 在控制台中打开 **接洽（Engagements）**。
+2. 在该 agent 所在行点击 **追加 token（Add tokens）**。
+3. 填写数量，或点击 **全部剩余（All remaining）**，然后点击 **追加（Add）**。
 
 agent 会继续工作，并发出“Resumed: N tokens available.”（已恢复：可用 N 个
 token）。
 
-要结束 agent 在某个项目中的工作，在该行点击 **结束接洽**（Retire），再点
-**确认**（Confirm）。
+要结束 agent 在某个项目中的工作，在该行点击 **结束接洽（Retire）**，再点
+**确认（Confirm）**。
 
 ## 加密与你的设备
 
@@ -317,8 +316,8 @@ agent 私聊和审批室都是端到端加密的。
 **agent 一直没有出现，或一直没有发来私聊。**
 - 确认所有者已接受私聊邀请。所有者加入之前，agent 会一直等待。
 - 如果 Hagency 在 agent 等待所有者加入私聊期间重启过，Hagency 永远不会完成该
-  agent 的创建，控制台也没有恢复它的操作。运维者打开 **接洽**（Engagements），
-  在该 agent 所在行点击 **结束接洽**（Retire），再点 **确认**（Confirm）。随后
+  agent 的创建，控制台也没有恢复它的操作。运维者打开 **接洽（Engagements）**，
+  在该 agent 所在行点击 **结束接洽（Retire）**，再点 **确认（Confirm）**。随后
   所有者在 Palpo 中重新定义该 agent，运维者批准新的申请。
 - 确认所有者已设置交叉签名。Hagency 要读到所有者的交叉签名密钥后才会继续。
 - 确认连接后已在 Palpo 中点击 **Verify connection & create reception**。
@@ -329,10 +328,20 @@ agent 私聊和审批室都是端到端加密的。
   Linux 上用 `journalctl --user -u hagency` 查看。
 
 **日志显示 `refused_config`，或设置页面提示“编程代理已变化”。**
-Codex 已更新，而 Hagency 的配置仍指向旧的 Codex 二进制。在控制台中打开
-**设置**（Setup）：它会自动更新配置（如果提示一直存在，点击 **重新检查**
-（Check again））。不用控制台时，运行
-`hagency setup --state-dir <state> --force`。车队服务在 60 秒内读取新配置。
+Codex 已更新，而 Hagency 的配置仍指向旧的 Codex 二进制。
+
+1. 在控制台中打开 **设置（Setup）**。它会自动更新配置（如果提示一直存在，点击
+   **重新检查（Check again）**），并把旧文件保留为备份。
+2. 按页面提示重启 Hagency。Hagency 只在启动时读取配置，因此在重启之前，
+   运行中的服务一直使用旧配置：
+   - macOS：`launchctl kickstart -k gui/$(id -u)/io.hagency`
+   - Linux：`systemctl --user restart hagency`
+   - 在终端中运行时：按 Ctrl-C 停止 `hagency start`，再重新运行它。
+
+设置页面使用默认的 Codex 目录（`$CODEX_HOME` 或 `~/.codex`）写入配置。如果你
+当初用 `hagency setup --codex-home` 或 `--no-local-codex` 完成设置，或者没有
+控制台，请改用相同的选项运行 `hagency setup --state-dir <state> --force`，
+然后重启 Hagency。
 
 **“批准”按钮是灰色的。**
 没有已发布的资源能满足这条申请。请按第 5 步检查 **我的资源**。

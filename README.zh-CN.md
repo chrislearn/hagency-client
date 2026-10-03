@@ -117,9 +117,9 @@ Hagency 从不替你登录。它只询问 Codex 是否已登录、以何种方�
 
 ### 2. 获取 hagency 二进制
 
-**发布构建。** [release-native.yml](.github/workflows/release-native.yml) 为每个平台构建一个内嵌控制台的二进制：macOS arm64（`aarch64-apple-darwin`）和 x86-64（`x86_64-apple-darwin`）、Linux x86-64（`x86_64-unknown-linux-gnu`）和 arm64（`aarch64-unknown-linux-gnu`），另附 `SHA256SUMS`。它只在手动触发时运行；推送标签目前还不会发布 release。
+**发布构建。** [release-native.yml](.github/workflows/release-native.yml) 为每个平台构建一个内嵌控制台的二进制：macOS arm64（`aarch64-apple-darwin`）和 x86-64（`x86_64-apple-darwin`）、Linux x86-64（`x86_64-unknown-linux-gnu`）和 arm64（`aarch64-unknown-linux-gnu`），另附 `SHA256SUMS`。它只在手动触发时运行，并且不会发布 release：推送标签不会发布任何内容。当前版本 `nv0.1.0-rc.1` 是项目 [GitHub Releases 页面](https://github.com/hagency-org/hagency-rs/releases)上的预发布版本（pre-release）；其中的 `.tar.gz` 资产和 `SHA256SUMS` 由该工作流构建，再手动附加到该版本上。
 
-1. 在项目的 GitHub release 页面下载对应平台的 `hagency-nv<version>-<target>.tar.gz`，以及 `SHA256SUMS`。
+1. 在 GitHub Releases 页面下载对应平台的 `hagency-nv<version>-<target>.tar.gz`，以及 `SHA256SUMS`。
 2. 解压归档。其中的 `hagency` 二进制已带可执行权限：
 
    ```bash
@@ -166,7 +166,7 @@ Hagency 从不替你登录。它只询问 Codex 是否已登录、以何种方�
 
 不设 `HAGENCY_CONSOLE_DIR` 时，二进制不带控制台。此时 `hagency start` 拒绝运行，除非传入 `--console-assets /abs/path/console`。同一个参数也可以用控制台目录代替内嵌的控制台，供开发控制台时使用。
 
-把二进制放在固定的位置，例如 `~/.local/bin/hagency`，并且该目录要在你的 `PATH` 上。macOS 默认的 `PATH` 不包含 `~/.local/bin`，请在 shell 配置文件中加入它，或用完整路径调用二进制。第 3 步的服务记录的是二进制解析后的路径，因此符号链接不会跟随更新后的二进制。替换二进制后，请重新运行 `hagency service install`。
+把二进制放在固定的位置，例如 `~/.local/bin/hagency`，并且该目录要在你的 `PATH` 上。macOS 默认的 `PATH` 不包含 `~/.local/bin`，请在 shell 配置文件中加入它，或用完整路径调用二进制。第 3 步的服务记录的是二进制解析后的路径，因此符号链接不会跟随更新后的二进制。替换二进制后，请重新运行 `hagency service install`：它会重启服务，从而运行新的二进制。
 
 ### 3. 启动 Hagency
 
@@ -198,7 +198,7 @@ Hagency 从不替你登录。它只询问 Codex 是否已登录、以何种方�
 - **Linux：** 一个 `systemd --user` 单元，即 `${XDG_CONFIG_HOME:-~/.config}/systemd/user/hagency.service`。不需要 `sudo`。用户级服务会在你退出登录时停止。要让它继续运行，运行一次 `loginctl enable-linger $USER`。
 - 服务以你的身份运行，因此使用你的 Codex 登录。它记录你当前的 `PATH`，因此找到的 `codex` 和你找到的是同一个。
 - 它接受 `--state-dir`、`--listen` 和 `--no-open`，与 `start` 相同。服务响应后，该命令输出登录链接并打开它。
-- 它记录二进制解析后的（规范）路径。再次运行它会替换服务，例如在你移动或替换了二进制之后。
+- 它记录二进制解析后的（规范）路径。再次运行它会替换服务，例如在你移动或替换了二进制之后。在两种系统上，再次运行都会重启服务：macOS 上先卸载代理（`launchctl bootout`）再重新加载；Linux 上先运行 `systemctl --user enable --now`，再运行 `restart`，从而运行新的二进制。
 - `hagency service uninstall` 停止并删除服务，保留状态目录。
 
 ### 4. 打开控制台
@@ -223,7 +223,7 @@ hagency console-access --state-dir "${XDG_DATA_HOME:-$HOME/.local/share}/hagency
 1. **编程代理（Coding agents）。** Hagency 在服务的 `PATH` 上查找 Codex，并显示它的路径、版本以及是否已登录。
    - **未安装：** 安装 Codex，然后点击 **重新检查（Check again）**。
    - **未登录：** 在这台机器的终端里运行 `codex login`，然后点击 **重新检查（Check again）**。
-   - **已登录：** 无需点击。页面加载时，Hagency 即用[配置](#配置)中的默认值写入并校验 `fleet-runtime.json`。车队服务在 5 秒内读取它，无需重启。
+   - **已登录：** 无需点击。页面加载时，Hagency 即用[配置](#配置)中的默认值写入并校验 `fleet-runtime.json`。第一次写入时，车队服务在 5 秒内读取它，无需重启。Codex 更新后页面重写该文件时，需要重启服务（见[Codex 更新之后](#运维)）。
    - 这一步会显示 Codex 的登录方式：ChatGPT 订阅或 API 密钥。如果是订阅登录，它会提示订阅登录仅供个人使用，建议在把代理提供给他人之前改用 API 密钥。它不会阻止你继续。
 2. **连接 Palpo（Connect Palpo）。**
    1. Palpo 管理员在 Palpo 网页端执行 **Add Hagency**。
@@ -272,7 +272,7 @@ hagency setup --state-dir /abs/path/state
 - 查找 Codex 登录目录：`--codex-home DIR`，否则是 `$CODEX_HOME`，再否则是 `~/.codex`。该目录必须存在；不存在时，setup 会提示你先运行 `codex login`。传入 `--no-local-codex` 时，setup 不查找这个目录，因此不需要 `~/.codex`：agent 改为登录到 `<state>/runtime-home`，setup 报告的也是这个目录，文件中不写 `local_codex` 块。
 - 创建 `<state>/agent-homes`，并以 0600 权限写入 `fleet-runtime.json`，取值为[配置](#配置)中列出的默认值。
 - 用 `serve` 所用的同一个加载器校验该文件。校验失败的文件会被改名为 `fleet-runtime.json.rejected`，因此服务绝不会用它启动。
-- 已有 `fleet-runtime.json` 时拒绝覆盖，除非传入 `--force`。传入 `--force` 时，旧文件保留为 `fleet-runtime.json.bak-<秒数>`。
+- 已有 `fleet-runtime.json` 时拒绝覆盖，除非传入 `--force`。传入 `--force` 时，旧文件保留为 `fleet-runtime.json.bak-<秒数>`。运行中的服务一直使用启动时读取的配置，因此要重启服务才能使用新文件。
 
 它会输出所选的 Codex 二进制、写入的文件，以及 Codex 是否已登录。未登录时，它会输出要运行的命令 `CODEX_HOME=<目录> codex login`。最后列出接下来要运行的命令。如果 `serve` 不使用 `127.0.0.1:13300`，请传入 `--listen`。`--console-assets` 只用于填写输出中的 `serve` 命令。
 
@@ -358,7 +358,10 @@ curl -s -X POST http://127.0.0.1:13300/api/native/v1/resources \
 
 ## 运维
 
-下面的命令针对 `hagency service install` 注册的用户级服务。使用 install-native.sh 时，服务名是 `hagency-native`（Linux）或 `io.hagency.native`（macOS）；在 Linux 上还要以 root 身份（`sudo`）运行这些命令，因为状态目录属于服务用户。
+下面的命令针对 `hagency service install` 注册的用户级服务。install-native.sh 安装的是另一个服务：
+
+- **Linux：** 一个系统级单元 `hagency-native`，位于 `/etc/systemd/system`。请使用系统范围，加 `sudo`、不加 `--user`：`sudo systemctl status|restart|stop|start hagency-native`、`sudo journalctl -u hagency-native`。下面的 `hagency` 命令也要以 root 身份运行，因为状态目录属于服务用户。
+- **macOS：** 一个标签为 `io.hagency.native` 的 LaunchAgent（`~/Library/LaunchAgents/io.hagency.native.plist`）。在 `launchctl` 命令中使用这个标签，例如 `launchctl kickstart -k gui/$(id -u)/io.hagency.native`。
 
 | 任务 | 命令 |
 | --- | --- |
@@ -368,7 +371,8 @@ curl -s -X POST http://127.0.0.1:13300/api/native/v1/resources \
 | 日志（macOS） | `~/Library/Logs/Hagency/hagency.log`。使用 install-native.sh 时：`<install-dir>/logs/hagency-native.stdout.log` 和 `…stderr.log`。 |
 | 设置日志级别 | `RUST_LOG`（默认 `info`） |
 | 重启 | `launchctl kickstart -k gui/$(id -u)/io.hagency`（macOS）· `systemctl --user restart hagency`（Linux）。崩溃的进程也会由服务重新拉起。 |
-| 停止 | `launchctl bootout gui/$(id -u)/io.hagency`（macOS）· `systemctl --user stop hagency`（Linux） |
+| 停止 | `launchctl bootout gui/$(id -u)/io.hagency`（macOS）· `systemctl --user stop hagency`（Linux）。停止只是暂时的：持续到你下次登录，或你再次启动服务为止。 |
+| 再次启动 | `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.hagency.plist`（macOS）· `systemctl --user start hagency`（Linux）。也可以重新运行 `hagency service install`。 |
 | 停止并删除 | `hagency service uninstall`，保留状态目录。 |
 | 新的控制台链接 | `hagency console-access --state-dir <state>` |
 | 查看 | `hagency engagements`、`hagency resources`、`hagency alerts`（带 `--state-dir`；加 `--json` 输出原始内容） |
@@ -385,7 +389,12 @@ curl -s -X POST http://127.0.0.1:13300/api/native/v1/resources \
 
 两个 `awaiting_*` 阶段每 5 秒重新检查一次。`identities` 阶段失败，以及服务拒绝配置（显示为 `refused_config`）时，按 1 秒到 60 秒的退避重试。
 
-**Codex 更新之后。** `fleet-runtime.json` 固定了 Codex 二进制的路径和 SHA-256。Codex 更新后，车队服务下次读取该文件时会拒绝它（`refused_config`，例如在重启之后）。在控制台中打开 **设置（Setup）**：它会检测到这一变化并重写配置，旧文件保留为 `fleet-runtime.json.bak-<seconds>`。不用控制台时，运行 `hagency setup --state-dir <state> --force`。车队服务在 60 秒内重试，无需重启即可读取新文件。
+**Codex 更新之后。** `fleet-runtime.json` 固定了 Codex 二进制的路径和 SHA-256。车队服务只在服务启动时读取并检查一次该文件；运行中的服务在重启之前一直使用已读取的配置。Codex 更新后：
+
+1. 在控制台中打开 **设置（Setup）**。它会提示编程代理已变化，重写配置，并把旧文件保留为 `fleet-runtime.json.bak-<秒数>`。
+2. 按页面提示重启服务：`launchctl kickstart -k gui/$(id -u)/io.hagency`（macOS）、`systemctl --user restart hagency`（Linux），或停止 `hagency start` 后重新运行。运行中的服务不会自行读取重写后的文件。
+
+控制台按 `hagency setup` 的默认值重写文件：`local_codex` 取自 `$CODEX_HOME` 或 `~/.codex`。如果你当初运行 `hagency setup` 时用了 `--codex-home` 或 `--no-local-codex`，请改用相同的选项再次运行 `hagency setup --state-dir <state> --force`，然后重启。不用控制台时，也用这条命令重写文件。如果重启后的服务仍然拒绝该文件，它会显示 `refused_config`，并按 1 秒到 60 秒的退避重试，因此改正后的文件无需再次重启即可被读取。
 
 **所有者密钥。** Hagency 第一次需要某个所有者的交叉签名主密钥时，会从 homeserver 读取该密钥，并固定（pin）在存储中。没有开启交叉签名的所有者还没有密钥，因此该所有者的 agent 会等待。已固定的密钥不会被 homeserver 之后报告的密钥替换。控制台和 CLI 目前还不提供重新固定的操作。因此，重置了交叉签名的所有者在固定的密钥被更改之前无法得到服务。即便重新固定，也修复不了已经注册的 agent：它们冻结的密钥列表仍保留旧密钥，因此在每个 agent 重新创建之前，它们发给该所有者的消息都会失败；该所有者也会得到一个新的审批设备（ADR-187 修订；见[已知缺口](docs/architecture-walkthrough.zh-CN.md#15-已实现尚未实现与已知缺口)）。
 

@@ -276,7 +276,7 @@ flowchart LR
     C --> D["running<br/>host + agents + owner pumps"]
 ```
 
-`build` 拒绝的配置会显示为 `refused_config`，随后重试。原因之一是 Codex 更新：`fleet-runtime.json` 固定了二进制的 SHA-256，设置页面会重写过时的文件（`runtimeStale`，第 13 节）。
+`build` 在进入 `running` 之前读取一次 `fleet-runtime.json`（[bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs) 中的 `load_fleet_runtime`，它用 `verify_executable` 检查固定的二进制）；运行中的服务在进程重启之前一直使用这份配置。`build` 拒绝的配置会显示为 `refused_config`，随后重试，每次重试都重新读取该文件。原因之一是 Codex 更新：`fleet-runtime.json` 固定了二进制的 SHA-256，设置页面会重写过时的文件（`runtimeStale`，第 13 节）。Codex 更新时已处于 `running` 的服务不会重新读取重写后的文件；运维者需要重启服务，页面也会这样提示（`restartNeeded`）。
 
 **身份**（[bootstrap/fleet_identity.rs](../native/hagency/src/bootstrap/fleet_identity.rs) 中的 `ensure`）：
 - 代表通过 App Service 登录获得一台设备。设备只创建一次，之后复用。如果 homeserver 不再接受已保存的 token，服务会拒绝而不是替换它，因为房间保管记录绑定在这个 token 上。
@@ -516,7 +516,7 @@ sequenceDiagram
 - 接洽处于 `active`，没有未解除的 `quota_holds` 记录，没有 agent 栅栏，也没有被隔离。
 - 工作区租约空闲。
 - 账号的就绪状态已知。
-- 活动派发数少于 `max_live`（工厂 agent 为 8）。
+- 活动派发数少于 `max_live`：带有热运行时（warm runtime）的所有者（工厂 agent 和车队 agent）为 8，否则为 1（[bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs) 中的 `max_live`）。
 
 租约会递增栅栏，并签发一个 `RunnerCapability`：派发 id、runner id、栅栏编号，以及一个只以哈希形式保存的密钥。
 
@@ -629,10 +629,10 @@ sequenceDiagram
 - `mockup/scripts/build-native-console.mjs` 静态导出原生页面，并附一个记录每个文件大小和 SHA-256 的 `manifest.json`。构建时 `HAGENCY_CONSOLE_DIR` 指向该导出目录时，[hagency/build.rs](../native/hagency/build.rs) 把其中每个文件内嵌进二进制。启动时，`serve` 若有 `--console-assets <dir>` 就加载它，否则加载内嵌文件（`Console::embedded_with_state`），两者都没有时不带控制台运行。两种来源都按清单校验，并在 `/console/` 下提供（[console/assets.rs](../native/hagency/src/console/assets.rs)）。客户端是 `mockup/lib/native-api.js`。
 - 设置页面（ADR-189，[mockup/app/setup/page.jsx](../mockup/app/setup/page.jsx)）使用 [console/setup.rs](../native/hagency/src/console/setup.rs) 中的三个路由：
   - `GET /console/api/setup` 总是返回 200，且不写入任何内容。它运行 `detect_codex`，报告 `applicable`、编程代理、`runtimeConfigured`、`runtimeStale`、Palpo 导入和传输状态，以及有资格的提供选项和资源数量。只有车队主机（其 Palpo 句柄带有车队地址）上 `applicable` 才为 true；协调者安装报告 false。不带 `--palpo-transport` 的 `serve` 也报告 `applicable: false`。`applicable` 为 false 时，页面说明运行配置在 `agent-driver.json` 中。`fleet-runtime.json` 存在、但其中固定的 `executable` 或 `executable_sha256` 与检测到的 Codex 不再一致时（例如 Codex 更新之后），`runtimeStale` 为 true（[setup.rs](../native/hagency/src/setup.rs) 中的 `runtime_matches`）；此时 `runtimeConfigured` 为 false，因为车队服务会拒绝该文件（`refused_config`）。
-  - `POST /console/api/setup/check` 重新检测。`fleet-runtime.json` 不存在或已过时、且找到已登录的 Codex 时，它用服务自己的监听地址调用 `setup::configure`；文件已过时时传入 `force`，旧文件保留为 `fleet-runtime.json.bak-<seconds>`。协调者安装会被拒绝（`setup_not_fleet`）。状态为 applicable、显示 Codex 已登录、但尚未配置运行时时（因此运行时过时时也是如此），页面会自行调用它，无需点击；用户安装 Codex 或登录之后，由 **重新检查（Check again）** 调用它。
+  - `POST /console/api/setup/check` 重新检测。`fleet-runtime.json` 不存在或已过时、且找到已登录的 Codex 时，它用服务自己的监听地址调用 `setup::configure`；文件已过时时传入 `force`，旧文件保留为 `fleet-runtime.json.bak-<seconds>`；无错误地重写了过时文件时，它的应答带有 `restartNeeded: true`，页面随即提示运维者重启 Hagency（`launchctl kickstart -k gui/$(id -u)/io.hagency`、`systemctl --user restart hagency`，或停止后重新运行 `hagency start`）。重写使用 `setup` 的默认值（`local_codex` 取自 `$CODEX_HOME` 或 `~/.codex`）；用过 `--codex-home` 或 `--no-local-codex` 的运维者应以相同选项重新运行 `hagency setup --force`。协调者安装会被拒绝（`setup_not_fleet`）。状态为 applicable、显示 Codex 已登录、但尚未配置运行时时（因此运行时过时时也是如此），页面会自行调用它，无需点击；用户安装 Codex 或登录之后，由 **重新检查（Check again）** 调用它。
   - `POST /console/api/setup/resource` 创建首份或更多资源（第 8 节）。
 
-  这两个写入路由与 Palpo 导入一样，需要具备生命周期权限的控制台会话（`check_lifecycle`）。车队服务每 5 秒检查一次 `awaiting_runtime_config`，下一次检查时就会读取新的 `fleet-runtime.json`。
+  这两个写入路由与 Palpo 导入一样，需要具备生命周期权限的控制台会话（`check_lifecycle`）。文件原本不存在时，车队服务每 5 秒检查一次 `awaiting_runtime_config`，下一次检查时就会读取新的 `fleet-runtime.json`。重写后的过时文件要在重启之后才生效。
 - 设置提示条（[mockup/components/SetupBanner.jsx](../mockup/components/SetupBanner.jsx)，挂载在 `mockup/app/layout.jsx` 中）在控制台登录后，每次切换页面时读取 `GET /console/api/setup`。`applicable` 为 true、且尚缺已配置的运行时、Palpo 导入或资源之一时，除设置页面外的每个页面都会显示一行指向设置页面的链接。
 - 登录：
   1. `hagency console-access` 出示 `operator.token`，得到一个在签发新链接之前一直有效的链接（控制台授权为它记录 `expires: None`；`console.rs` 在响应中设置、`console/client.rs` 校验的 `expires_in: 120` 并不生效）。

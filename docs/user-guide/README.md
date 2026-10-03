@@ -47,9 +47,12 @@ You need:
 - A Palpo server reachable over `https`, for example
   `https://matrix.your-server.example`.
 - An administrator account on that Palpo server.
-- The `hagency` program. A release build has the console built in: download
-  `hagency-nv<version>-<target>.tar.gz` for your platform and `SHA256SUMS`
-  from the project's GitHub release page, extract the archive and check the
+- The `hagency` program. A release build has the console built in. The
+  current release, `nv0.1.0-rc.1`, is a pre-release on the project's
+  [GitHub Releases page](https://github.com/hagency-org/hagency-rs/releases);
+  its `.tar.gz` assets and `SHA256SUMS` are built by the release workflow and
+  attached by hand. Download `hagency-nv<version>-<target>.tar.gz` for your
+  platform and `SHA256SUMS`, extract the archive and check the
   binary against `SHA256SUMS`. On macOS, the binary is not code-signed, so run
   `xattr -d com.apple.quarantine hagency` once. The repository README explains
   how to [get the binary](../../README.md#2-get-the-hagency-binary) in full,
@@ -361,10 +364,22 @@ Agent DMs and approval rooms are end-to-end encrypted.
 
 **The log shows `refused_config`, or Setup says "The coding agent changed".**
 Codex was updated, and Hagency's configuration still names the old Codex
-binary. Open **Setup** in the console: it updates the configuration by itself
-(click **Check again** if the note stays). Without the console, run
-`hagency setup --state-dir <state> --force`. The fleet service picks up the
-new configuration within 60 s.
+binary.
+
+1. Open **Setup** in the console. It updates the configuration by itself
+   (click **Check again** if the note stays) and keeps the old file as a
+   backup.
+2. Restart Hagency, as the page tells you. Hagency reads its configuration
+   only when it starts, so the running service keeps the old one until then:
+   - macOS: `launchctl kickstart -k gui/$(id -u)/io.hagency`
+   - Linux: `systemctl --user restart hagency`
+   - In a terminal: stop `hagency start` with Ctrl-C and run it again.
+
+Setup writes the configuration with the default Codex folder (`$CODEX_HOME`,
+or `~/.codex`). If you set Hagency up with `hagency setup --codex-home` or
+`--no-local-codex`, or you have no console, run
+`hagency setup --state-dir <state> --force` with the same options instead,
+then restart Hagency.
 
 **The Approve button is greyed out.**
 No published resource can serve the request. Check **My resources** in

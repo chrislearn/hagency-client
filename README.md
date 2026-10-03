@@ -115,9 +115,9 @@ Hagency never signs in for you. It only asks Codex whether it is signed in, and 
 
 ### 2. Get the hagency binary
 
-**A release build.** [release-native.yml](.github/workflows/release-native.yml) builds one binary per platform with the console embedded: macOS arm64 (`aarch64-apple-darwin`) and x86-64 (`x86_64-apple-darwin`), Linux x86-64 (`x86_64-unknown-linux-gnu`) and arm64 (`aarch64-unknown-linux-gnu`), plus `SHA256SUMS`. It runs on manual dispatch only; a tag does not publish a release yet.
+**A release build.** [release-native.yml](.github/workflows/release-native.yml) builds one binary per platform with the console embedded: macOS arm64 (`aarch64-apple-darwin`) and x86-64 (`x86_64-apple-darwin`), Linux x86-64 (`x86_64-unknown-linux-gnu`) and arm64 (`aarch64-unknown-linux-gnu`), plus `SHA256SUMS`. It runs on manual dispatch only and does not publish a release: a tag publishes nothing. The current release, `nv0.1.0-rc.1`, is a pre-release on the project's [GitHub Releases page](https://github.com/hagency-org/hagency-rs/releases); its `.tar.gz` assets and `SHA256SUMS` were built by the workflow and attached by hand.
 
-1. From the project's GitHub release page, download `hagency-nv<version>-<target>.tar.gz` for your platform, and `SHA256SUMS`.
+1. From the GitHub Releases page, download `hagency-nv<version>-<target>.tar.gz` for your platform, and `SHA256SUMS`.
 2. Extract the archive. It holds the `hagency` binary, already executable:
 
    ```bash
@@ -164,7 +164,7 @@ A binary downloaded from a workflow run's artifacts comes in a zip that drops th
 
 Without `HAGENCY_CONSOLE_DIR`, the binary has no console. `hagency start` then refuses to run unless you pass `--console-assets /abs/path/console`. The same flag serves a console folder instead of the embedded one, for console development.
 
-Put the binary where it will stay, for example `~/.local/bin/hagency`, in a directory on your `PATH`. `~/.local/bin` is not on the default `PATH` on macOS, so add it in your shell profile, or call the binary by its full path. The service in step 3 records the binary's resolved path, so a symlink does not follow a newer binary. Run `hagency service install` again after you replace the binary.
+Put the binary where it will stay, for example `~/.local/bin/hagency`, in a directory on your `PATH`. `~/.local/bin` is not on the default `PATH` on macOS, so add it in your shell profile, or call the binary by its full path. The service in step 3 records the binary's resolved path, so a symlink does not follow a newer binary. Run `hagency service install` again after you replace the binary: it restarts the service, so the new binary runs.
 
 ### 3. Start Hagency
 
@@ -196,7 +196,7 @@ Choose one:
 - **Linux:** a `systemd --user` unit, `${XDG_CONFIG_HOME:-~/.config}/systemd/user/hagency.service`. No `sudo` is needed. A user service stops when you log out. To keep it running, run `loginctl enable-linger $USER` once.
 - The service runs as you, so it uses your Codex sign-in. It records your current `PATH`, so it finds the same `codex` you do.
 - It takes `--state-dir`, `--listen` and `--no-open`, like `start`. When the service answers, the command prints the sign-in link and opens it.
-- It records the binary's resolved (canonical) path. Run it again to replace the service, for example after you move or replace the binary.
+- It records the binary's resolved (canonical) path. Run it again to replace the service, for example after you move or replace the binary. Re-running it restarts the service on both systems: on macOS it unloads the agent (`launchctl bootout`) and loads it again; on Linux it runs `systemctl --user enable --now` and then `restart`, so the new binary runs.
 - `hagency service uninstall` stops and removes the service. It keeps the state directory.
 
 ### 4. Open the console
@@ -221,7 +221,7 @@ Open **Setup** in the console menu. It has three steps. Each step shows a check 
 1. **Coding agents.** Hagency finds Codex on the service's `PATH` and shows its path, its version and whether it is signed in.
    - **Not installed:** install Codex, then click **Check again**.
    - **Not signed in:** run `codex login` in a terminal on this machine, then click **Check again**.
-   - **Signed in:** nothing to click. When the page loads, Hagency writes and validates `fleet-runtime.json` with the defaults under [Configuration](#configuration). The fleet service picks it up within 5 s, without a restart.
+   - **Signed in:** nothing to click. When the page loads, Hagency writes and validates `fleet-runtime.json` with the defaults under [Configuration](#configuration). The first time, the fleet service picks it up within 5 s, without a restart. When the page rewrites the file after a Codex update, restart the service (see [After a Codex update](#operating)).
    - The step shows how Codex is signed in: a ChatGPT plan or an API key. With a plan, it notes that plan sign-ins are meant for personal use, and suggests an API key before you offer the agent to other people. It does not block.
 2. **Connect Palpo.**
    1. In Palpo web, the Palpo admin runs **Add Hagency**.
@@ -270,7 +270,7 @@ hagency setup --state-dir /abs/path/state
 - finds the Codex sign-in folder: `--codex-home DIR`, or else `$CODEX_HOME`, or else `~/.codex`. The folder must exist; if it does not, setup asks you to run `codex login` first. With `--no-local-codex`, setup does not look for this folder, so no `~/.codex` is needed: agents sign in to `<state>/runtime-home` instead, setup reports that folder, and the file gets no `local_codex` block.
 - creates `<state>/agent-homes` and writes `fleet-runtime.json` with mode 0600 and the defaults listed under [Configuration](#configuration).
 - validates the file with the same loader `serve` uses. A file that fails is renamed to `fleet-runtime.json.rejected`, so the service never starts on it.
-- refuses to replace an existing `fleet-runtime.json` unless you pass `--force`. With `--force`, it keeps the old file as `fleet-runtime.json.bak-<seconds>`.
+- refuses to replace an existing `fleet-runtime.json` unless you pass `--force`. With `--force`, it keeps the old file as `fleet-runtime.json.bak-<seconds>`. A running service keeps the configuration it loaded at start, so restart it to use the new file.
 
 It prints the Codex binary it chose, the file it wrote, and whether Codex is signed in. If Codex is not signed in, it prints the command to run, `CODEX_HOME=<folder> codex login`. It ends with the next commands to run. Pass `--listen` if `serve` will use an address other than `127.0.0.1:13300`. `--console-assets` only fills in the printed `serve` command.
 
@@ -356,7 +356,10 @@ With install-native.sh on Linux, only root can read `operator.token`. Use a root
 
 ## Operating
 
-The commands below name the per-user service from `hagency service install`. With install-native.sh, the service is `hagency-native` (Linux) or `io.hagency.native` (macOS), and on Linux you run these as root (`sudo`), because the state directory belongs to the service user.
+The commands below name the per-user service from `hagency service install`. install-native.sh installs a different service:
+
+- **Linux:** a system unit, `hagency-native`, in `/etc/systemd/system`. Use system scope with `sudo` and no `--user`: `sudo systemctl status|restart|stop|start hagency-native`, `sudo journalctl -u hagency-native`. Run the `hagency` commands below as root too, because the state directory belongs to the service user.
+- **macOS:** a LaunchAgent labelled `io.hagency.native` (`~/Library/LaunchAgents/io.hagency.native.plist`). Use that label in the `launchctl` commands, for example `launchctl kickstart -k gui/$(id -u)/io.hagency.native`.
 
 | Task | Command |
 | --- | --- |
@@ -366,7 +369,8 @@ The commands below name the per-user service from `hagency service install`. Wit
 | Logs (macOS) | `~/Library/Logs/Hagency/hagency.log`. With install-native.sh: `<install-dir>/logs/hagency-native.stdout.log` and `…stderr.log`. |
 | Set the log level | `RUST_LOG` (default `info`) |
 | Restart | `launchctl kickstart -k gui/$(id -u)/io.hagency` (macOS) · `systemctl --user restart hagency` (Linux). The service also restarts a crashed process. |
-| Stop | `launchctl bootout gui/$(id -u)/io.hagency` (macOS) · `systemctl --user stop hagency` (Linux) |
+| Stop | `launchctl bootout gui/$(id -u)/io.hagency` (macOS) · `systemctl --user stop hagency` (Linux). The stop is temporary: it lasts until your next login, or until you start the service again. |
+| Start again | `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.hagency.plist` (macOS) · `systemctl --user start hagency` (Linux). Or re-run `hagency service install`. |
 | Stop and remove | `hagency service uninstall`. It keeps the state directory. |
 | New console link | `hagency console-access --state-dir <state>` |
 | Inspect | `hagency engagements`, `hagency resources`, `hagency alerts` (with `--state-dir`; add `--json` for raw output) |
@@ -383,7 +387,12 @@ The commands below name the per-user service from `hagency service install`. Wit
 
 The two `awaiting_*` stages are checked again every 5 s. A failed `identities` stage, and a configuration the service refuses (shown as `refused_config`), are retried with a backoff from 1 s to 60 s.
 
-**After a Codex update.** `fleet-runtime.json` pins the Codex binary's path and SHA-256. Once Codex is updated, the fleet service refuses the file the next time it loads it (`refused_config`, for example after a restart). Open **Setup** in the console: it detects the change and rewrites the configuration, keeping the old file as `fleet-runtime.json.bak-<seconds>`. Without the console, run `hagency setup --state-dir <state> --force`. The fleet service retries within 60 s and picks up the new file without a restart.
+**After a Codex update.** `fleet-runtime.json` pins the Codex binary's path and SHA-256. The fleet service loads and checks the file once, when the service starts; a running service keeps the configuration it loaded until it is restarted. Once Codex is updated:
+
+1. Open **Setup** in the console. It reports that the coding agent changed, rewrites the configuration and keeps the old file as `fleet-runtime.json.bak-<seconds>`.
+2. Restart the service, as the page tells you: `launchctl kickstart -k gui/$(id -u)/io.hagency` (macOS), `systemctl --user restart hagency` (Linux), or stop `hagency start` and run it again. The running service does not pick up the rewritten file by itself.
+
+The console rewrites the file with `hagency setup`'s defaults: `local_codex` from `$CODEX_HOME`, or `~/.codex`. If you first ran `hagency setup` with `--codex-home` or `--no-local-codex`, run `hagency setup --state-dir <state> --force` again with the same options instead, then restart. Without the console, that command is also the way to rewrite the file. If the restarted service still refuses the file, it reports `refused_config` and retries with a backoff from 1 s to 60 s, so a corrected file is picked up without another restart.
 
 **Owner keys.** The first time Hagency needs an owner's cross-signing master key, it reads the key from the homeserver and pins it in the store. An owner without cross-signing has no key yet, so that owner's agents wait. A pinned key is never replaced by what the homeserver reports later. The console and CLI do not offer a re-pin yet. An owner who resets cross-signing therefore cannot be served until the pin is changed. Even then, a re-pin does not repair agents already enrolled: their frozen key list keeps the old key, so their sends to the owner fail until each agent is provisioned again, and the owner gets a new approval device (ADR-187 amendment; see [known gaps](docs/architecture-walkthrough.md#15-implemented-not-built-yet-and-known-gaps)).
 
