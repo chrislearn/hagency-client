@@ -115,7 +115,28 @@ Hagency never signs in for you. It only asks Codex whether it is signed in, and 
 
 ### 2. Get the hagency binary
 
-**A release build.** [release-native.yml](.github/workflows/release-native.yml) builds one binary per platform with the console embedded: macOS arm64 and x86-64, Linux x86-64 and arm64, plus `SHA256SUMS`. It runs on manual dispatch only and publishes no GitHub release yet. Download the binary from the run's artifacts.
+**A release build.** [release-native.yml](.github/workflows/release-native.yml) builds one binary per platform with the console embedded: macOS arm64 (`aarch64-apple-darwin`) and x86-64 (`x86_64-apple-darwin`), Linux x86-64 (`x86_64-unknown-linux-gnu`) and arm64 (`aarch64-unknown-linux-gnu`), plus `SHA256SUMS`. It runs on manual dispatch only; a tag does not publish a release yet.
+
+1. From the project's GitHub release page, download `hagency-nv<version>-<target>.tar.gz` for your platform, and `SHA256SUMS`.
+2. Extract the archive. It holds the `hagency` binary, already executable:
+
+   ```bash
+   tar -xzf hagency-nv<version>-<target>.tar.gz
+   ```
+
+3. Verify the binary. `SHA256SUMS` lists the SHA-256 of each platform's `hagency` binary, not of the archive. Compare the line for your target with:
+
+   ```bash
+   shasum -a 256 hagency    # Linux: sha256sum hagency
+   ```
+
+4. On macOS, the binaries are not code-signed. Remove the download quarantine, or macOS refuses to run the binary:
+
+   ```bash
+   xattr -d com.apple.quarantine hagency
+   ```
+
+A binary downloaded from a workflow run's artifacts comes in a zip that drops the executable bit. Run `chmod +x hagency` after you unzip it.
 
 **From source.** You need the Rust toolchain pinned in [rust-toolchain.toml](rust-toolchain.toml), and Node.js 22 at build time only.
 
@@ -143,7 +164,7 @@ Hagency never signs in for you. It only asks Codex whether it is signed in, and 
 
 Without `HAGENCY_CONSOLE_DIR`, the binary has no console. `hagency start` then refuses to run unless you pass `--console-assets /abs/path/console`. The same flag serves a console folder instead of the embedded one, for console development.
 
-Put the binary where it will stay, for example `~/.local/bin/hagency`. The service in step 3 runs the binary from that path.
+Put the binary where it will stay, for example `~/.local/bin/hagency`, in a directory on your `PATH`. `~/.local/bin` is not on the default `PATH` on macOS, so add it in your shell profile, or call the binary by its full path. The service in step 3 records the binary's resolved path, so a symlink does not follow a newer binary. Run `hagency service install` again after you replace the binary.
 
 ### 3. Start Hagency
 
@@ -164,18 +185,18 @@ Choose one:
   Stop it with Ctrl-C.
 
 `hagency start`:
-- uses a default state directory: `~/Library/Application Support/Hagency` on macOS, `~/.local/share/hagency` on Linux (or `$XDG_DATA_HOME/hagency`). Pass `--state-dir DIR` for another one.
+- uses a default state directory: `~/Library/Application Support/Hagency` on macOS, `${XDG_DATA_HOME:-~/.local/share}/hagency` on Linux. Pass `--state-dir DIR` for another one.
 - initializes the directory when it is new or empty. It refuses a non-empty directory that is not a Hagency state directory.
 - listens on `127.0.0.1:13300`. `--listen` accepts loopback addresses only.
 - runs as an imported fleet (`serve --palpo-transport`) with the embedded console. It starts without `fleet-runtime.json` and without a Palpo import; you complete both in the console.
-- prints a console sign-in link and opens it in your browser. Pass `--no-open` to only print it.
+- prints a console sign-in link and opens it in your browser. Pass `--no-open` to only print it. It prints the link only to an interactive terminal; otherwise it prints the `hagency console-access` command to run.
 
 `hagency service install` registers a per-user service that runs `hagency start --no-open`, and starts it:
 - **macOS:** a LaunchAgent, `~/Library/LaunchAgents/io.hagency.plist`. It starts at login and restarts after a crash. Its log is `~/Library/Logs/Hagency/hagency.log`.
-- **Linux:** a `systemd --user` unit, `~/.config/systemd/user/hagency.service`. No `sudo` is needed. A user service stops when you log out. To keep it running, run `loginctl enable-linger $USER` once.
+- **Linux:** a `systemd --user` unit, `${XDG_CONFIG_HOME:-~/.config}/systemd/user/hagency.service`. No `sudo` is needed. A user service stops when you log out. To keep it running, run `loginctl enable-linger $USER` once.
 - The service runs as you, so it uses your Codex sign-in. It records your current `PATH`, so it finds the same `codex` you do.
 - It takes `--state-dir`, `--listen` and `--no-open`, like `start`. When the service answers, the command prints the sign-in link and opens it.
-- Run it again to replace the service, for example after you move the binary.
+- It records the binary's resolved (canonical) path. Run it again to replace the service, for example after you move or replace the binary.
 - `hagency service uninstall` stops and removes the service. It keeps the state directory.
 
 ### 4. Open the console
@@ -188,10 +209,10 @@ To print a new link:
 # macOS
 hagency console-access --state-dir "$HOME/Library/Application Support/Hagency"
 # Linux
-hagency console-access --state-dir ~/.local/share/hagency
+hagency console-access --state-dir "${XDG_DATA_HOME:-$HOME/.local/share}/hagency"
 ```
 
-Pass the same `--state-dir` and `--listen` you gave `start`, if you changed them. The link is printed only to a terminal. The service log shows only this command.
+Pass the same `--state-dir` and `--listen` you gave `start`, if you changed them. `hagency start` prints the link only to an interactive terminal, and the service log shows only this command. `console-access` always prints the link, so do not redirect its output to a file.
 
 ### 5. Finish setup in the console
 
@@ -233,7 +254,7 @@ Use these for automation, recovery and coordinator installs. The setup above nee
 | Fleet (default, recommended) | An imported Palpo fleet, with no coordinator agent (ADR-187) | `hagency start`, or `serve --palpo-transport` | `fleet-runtime.json`, written by the Setup page or `hagency setup`, plus the files the console import writes |
 | Coordinator | Existing installs that run a coordinator agent | `serve --agent-driver --palpo-transport` | `agent-driver.json` and its `matrix.*` and `approval.*` files |
 
-`--agent-driver` and `--development-driver` are mutually exclusive. Without `--palpo-transport`, a console import is saved and starts on the next start with the flag. `serve` serves the embedded console when the binary has one; `--console-assets` overrides it.
+`--agent-driver` and `--development-driver` are mutually exclusive. Without `--palpo-transport`, a console import is saved and starts on the next start with the flag, and the Setup page reports a coordinator install (`applicable: false`) and offers no steps. `serve` serves the embedded console when the binary has one; `--console-assets` overrides it.
 
 ### Prepare a state directory with `hagency setup`
 
@@ -344,8 +365,9 @@ The commands below name the per-user service from `hagency service install`. Wit
 | Service status (Linux) | `systemctl --user status hagency` · `journalctl --user -u hagency` |
 | Logs (macOS) | `~/Library/Logs/Hagency/hagency.log`. With install-native.sh: `<install-dir>/logs/hagency-native.stdout.log` and `…stderr.log`. |
 | Set the log level | `RUST_LOG` (default `info`) |
-| Restart | `launchctl kickstart -k gui/$(id -u)/io.hagency` (macOS) · `systemctl --user restart hagency` (Linux) |
-| Stop and remove | `hagency service uninstall`. It keeps the state directory. The service restarts a crashed process. |
+| Restart | `launchctl kickstart -k gui/$(id -u)/io.hagency` (macOS) · `systemctl --user restart hagency` (Linux). The service also restarts a crashed process. |
+| Stop | `launchctl bootout gui/$(id -u)/io.hagency` (macOS) · `systemctl --user stop hagency` (Linux) |
+| Stop and remove | `hagency service uninstall`. It keeps the state directory. |
 | New console link | `hagency console-access --state-dir <state>` |
 | Inspect | `hagency engagements`, `hagency resources`, `hagency alerts` (with `--state-dir`; add `--json` for raw output) |
 | Back up while running | `hagency backup --state-dir <state> --out <new dir>` |
@@ -360,6 +382,8 @@ The commands below name the per-user service from `hagency service install`. Wit
 4. `running`: the provisioning loop and the approval pumps run.
 
 The two `awaiting_*` stages are checked again every 5 s. A failed `identities` stage, and a configuration the service refuses (shown as `refused_config`), are retried with a backoff from 1 s to 60 s.
+
+**After a Codex update.** `fleet-runtime.json` pins the Codex binary's path and SHA-256. Once Codex is updated, the fleet service refuses the file the next time it loads it (`refused_config`, for example after a restart). Open **Setup** in the console: it detects the change and rewrites the configuration, keeping the old file as `fleet-runtime.json.bak-<seconds>`. Without the console, run `hagency setup --state-dir <state> --force`. The fleet service retries within 60 s and picks up the new file without a restart.
 
 **Owner keys.** The first time Hagency needs an owner's cross-signing master key, it reads the key from the homeserver and pins it in the store. An owner without cross-signing has no key yet, so that owner's agents wait. A pinned key is never replaced by what the homeserver reports later. The console and CLI do not offer a re-pin yet. An owner who resets cross-signing therefore cannot be served until the pin is changed. Even then, a re-pin does not repair agents already enrolled: their frozen key list keeps the old key, so their sends to the owner fail until each agent is provisioned again, and the owner gets a new approval device (ADR-187 amendment; see [known gaps](docs/architecture-walkthrough.md#15-implemented-not-built-yet-and-known-gaps)).
 

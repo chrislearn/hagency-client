@@ -47,10 +47,13 @@ You need:
 - A Palpo server reachable over `https`, for example
   `https://matrix.your-server.example`.
 - An administrator account on that Palpo server.
-- The `hagency` program. A release build has the console built in. The
-  repository README explains how to
-  [get the binary](../../README.md#2-get-the-hagency-binary), including how to
-  build it from source.
+- The `hagency` program. A release build has the console built in: download
+  `hagency-nv<version>-<target>.tar.gz` for your platform and `SHA256SUMS`
+  from the project's GitHub release page, extract the archive and check the
+  binary against `SHA256SUMS`. On macOS, the binary is not code-signed, so run
+  `xattr -d com.apple.quarantine hagency` once. The repository README explains
+  how to [get the binary](../../README.md#2-get-the-hagency-binary) in full,
+  including how to build it from source.
 - Codex installed on the machine that runs Hagency. You sign it in yourself
   in Step 1.
 - An owner account that has cross-signing set up in Rinx (for example, by
@@ -98,8 +101,8 @@ credentials. It only asks Codex whether it is signed in.
    Both keep Hagency's data in a default folder on this machine. The
    repository README describes both commands under
    [Start Hagency](../../README.md#3-start-hagency).
-2. Hagency prints a console link and opens it in your browser. On a machine
-   without a desktop, open the printed link in a browser on the same machine.
+2. Hagency prints a console link and opens it in your browser. If no browser
+   opens, open the printed link yourself in a browser on this machine.
 3. The console opens and keeps you signed in until you click **End access**
    or close the browser. Restarting Hagency does not sign you out. The link
    keeps working until you print a new one, so keep it private.
@@ -110,7 +113,7 @@ To print a new link later:
 # macOS
 hagency console-access --state-dir "$HOME/Library/Application Support/Hagency"
 # Linux
-hagency console-access --state-dir ~/.local/share/hagency
+hagency console-access --state-dir "${XDG_DATA_HOME:-$HOME/.local/share}/hagency"
 ```
 
 ## Step 3: Set up the coding agent in the console
@@ -355,6 +358,13 @@ Agent DMs and approval rooms are end-to-end encrypted.
   `awaiting_reception` (Palpo has not verified the connection yet). The
   service's log is `~/Library/Logs/Hagency/hagency.log` on macOS, and
   `journalctl --user -u hagency` shows it on Linux.
+
+**The log shows `refused_config`, or Setup says "The coding agent changed".**
+Codex was updated, and Hagency's configuration still names the old Codex
+binary. Open **Setup** in the console: it updates the configuration by itself
+(click **Check again** if the note stays). Without the console, run
+`hagency setup --state-dir <state> --force`. The fleet service picks up the
+new configuration within 60 s.
 
 **The Approve button is greyed out.**
 No published resource can serve the request. Check **My resources** in

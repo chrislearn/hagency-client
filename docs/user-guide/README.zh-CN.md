@@ -7,6 +7,7 @@ Rinx Matrix 客户端中与 agent 协作。第一次使用时请按顺序完成�
 章节介绍日常使用和常见问题。
 
 控制台可以切换中英文。下文先写中文界面上的名称，括号内是英文界面上的名称。
+Palpo 网页端的界面是英文的，因此 Palpo 的页面和按钮名称保持英文原文。
 
 ## 本指南使用的术语
 
@@ -46,8 +47,11 @@ Rinx Matrix 客户端中与 agent 协作。第一次使用时请按顺序完成�
 - 一台可通过 `https` 访问的 Palpo 服务器，例如
   `https://matrix.your-server.example`。
 - 该 Palpo 服务器上的一个管理员账号。
-- `hagency` 程序。发布构建已内置控制台。仓库 README 的
-  [获取 hagency 二进制](../../README.zh-CN.md#2-获取-hagency-二进制)一节介绍如何获取它，
+- `hagency` 程序。发布构建已内置控制台：在项目的 GitHub release 页面下载
+  对应平台的 `hagency-nv<version>-<target>.tar.gz` 和 `SHA256SUMS`，解压归档，
+  并用 `SHA256SUMS` 校验二进制。在 macOS 上，二进制没有代码签名，请运行一次
+  `xattr -d com.apple.quarantine hagency`。仓库 README 的
+  [获取 hagency 二进制](../../README.zh-CN.md#2-获取-hagency-二进制)一节完整介绍如何获取它，
   包括如何从源码构建。
 - 运行 Hagency 的机器上已安装的 Codex。你在第 1 步中自己登录它。
 - 一个已在 Rinx 中设置好交叉签名（cross-signing）的所有者账号，例如已设置
@@ -93,8 +97,8 @@ Hagency 从不替你登录，也从不读取或保存你的凭据。它只询问
 
    两种方式都把 Hagency 的数据保存在本机的一个默认目录中。仓库 README 的
    [启动 Hagency](../../README.zh-CN.md#3-启动-hagency)一节介绍这两个命令。
-2. Hagency 会输出一个控制台链接，并在浏览器中打开它。在没有桌面的机器上，请用
-   同一台机器上的浏览器打开输出的链接。
+2. Hagency 会输出一个控制台链接，并在浏览器中打开它。如果没有打开浏览器，
+   请自己在这台机器上的浏览器中打开输出的链接。
 3. 控制台会打开，并保持登录，直到你点击 **结束访问**（End access）或关闭
    浏览器。重启 Hagency 不会让你退出登录。在你生成新链接之前，这个链接一直
    有效，请妥善保管。
@@ -105,7 +109,7 @@ Hagency 从不替你登录，也从不读取或保存你的凭据。它只询问
 # macOS
 hagency console-access --state-dir "$HOME/Library/Application Support/Hagency"
 # Linux
-hagency console-access --state-dir ~/.local/share/hagency
+hagency console-access --state-dir "${XDG_DATA_HOME:-$HOME/.local/share}/hagency"
 ```
 
 ## 第 3 步：在控制台中设置编程代理
@@ -323,6 +327,12 @@ agent 私聊和审批室都是端到端加密的。
   **设置 → 编程代理**，见第 3 步）或 `awaiting_reception`（Palpo 尚未验证
   连接）。服务日志在 macOS 上是 `~/Library/Logs/Hagency/hagency.log`，在
   Linux 上用 `journalctl --user -u hagency` 查看。
+
+**日志显示 `refused_config`，或设置页面提示“编程代理已变化”。**
+Codex 已更新，而 Hagency 的配置仍指向旧的 Codex 二进制。在控制台中打开
+**设置**（Setup）：它会自动更新配置（如果提示一直存在，点击 **重新检查**
+（Check again））。不用控制台时，运行
+`hagency setup --state-dir <state> --force`。车队服务在 60 秒内读取新配置。
 
 **“批准”按钮是灰色的。**
 没有已发布的资源能满足这条申请。请按第 5 步检查 **我的资源**。

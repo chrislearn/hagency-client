@@ -97,7 +97,9 @@ Palpo homeserver  <── outbound HTTPS ──  hagency start (127.0.0.1:13300)
 | --- | --- |
 | 主机 | macOS，或带 systemd 的 Linux。控制台在运行 Hagency 的这台机器上使用。 |
 | 编程代理 | 已安装、且在 `PATH` 上的 Codex CLI |
-| Palpo | 管理员能执行 **添加 Hagency（Add Hagency）** 的 homeserver |
+| Palpo | 管理员能执行 **Add Hagency** 的 homeserver |
+
+Palpo 网页端的界面是英文的，因此本文中 Palpo 的页面和按钮名称保持英文原文。Hagency 控制台的名称写作“中文（English）”。
 
 终端里只需要做第 1 到第 3 步。其余步骤都在控制台中完成。
 
@@ -115,7 +117,28 @@ Hagency 从不替你登录。它只询问 Codex 是否已登录、以何种方�
 
 ### 2. 获取 hagency 二进制
 
-**发布构建。** [release-native.yml](.github/workflows/release-native.yml) 为每个平台构建一个内嵌控制台的二进制：macOS arm64 和 x86-64、Linux x86-64 和 arm64，另附 `SHA256SUMS`。它只在手动触发时运行，目前还不发布 GitHub release。请从该次运行的构建产物（artifacts）中下载二进制。
+**发布构建。** [release-native.yml](.github/workflows/release-native.yml) 为每个平台构建一个内嵌控制台的二进制：macOS arm64（`aarch64-apple-darwin`）和 x86-64（`x86_64-apple-darwin`）、Linux x86-64（`x86_64-unknown-linux-gnu`）和 arm64（`aarch64-unknown-linux-gnu`），另附 `SHA256SUMS`。它只在手动触发时运行；推送标签目前还不会发布 release。
+
+1. 在项目的 GitHub release 页面下载对应平台的 `hagency-nv<version>-<target>.tar.gz`，以及 `SHA256SUMS`。
+2. 解压归档。其中的 `hagency` 二进制已带可执行权限：
+
+   ```bash
+   tar -xzf hagency-nv<version>-<target>.tar.gz
+   ```
+
+3. 校验二进制。`SHA256SUMS` 列出的是每个平台 `hagency` 二进制的 SHA-256，而不是归档的。用下面的命令计算，并与你的平台对应的那一行比较：
+
+   ```bash
+   shasum -a 256 hagency    # Linux：sha256sum hagency
+   ```
+
+4. 在 macOS 上，这些二进制没有代码签名。请移除下载隔离属性，否则 macOS 会拒绝运行它：
+
+   ```bash
+   xattr -d com.apple.quarantine hagency
+   ```
+
+从工作流运行的构建产物（artifacts）下载的二进制装在 zip 中，解压后会丢失可执行权限。解压后运行 `chmod +x hagency`。
 
 **从源码构建。** 需要 [rust-toolchain.toml](rust-toolchain.toml) 中固定的 Rust 工具链，以及仅在构建时使用的 Node.js 22。
 
@@ -143,7 +166,7 @@ Hagency 从不替你登录。它只询问 Codex 是否已登录、以何种方�
 
 不设 `HAGENCY_CONSOLE_DIR` 时，二进制不带控制台。此时 `hagency start` 拒绝运行，除非传入 `--console-assets /abs/path/console`。同一个参数也可以用控制台目录代替内嵌的控制台，供开发控制台时使用。
 
-把二进制放在固定的位置，例如 `~/.local/bin/hagency`。第 3 步的服务从这个路径运行它。
+把二进制放在固定的位置，例如 `~/.local/bin/hagency`，并且该目录要在你的 `PATH` 上。macOS 默认的 `PATH` 不包含 `~/.local/bin`，请在 shell 配置文件中加入它，或用完整路径调用二进制。第 3 步的服务记录的是二进制解析后的路径，因此符号链接不会跟随更新后的二进制。替换二进制后，请重新运行 `hagency service install`。
 
 ### 3. 启动 Hagency
 
@@ -164,18 +187,18 @@ Hagency 从不替你登录。它只询问 Codex 是否已登录、以何种方�
   按 Ctrl-C 停止。
 
 `hagency start`：
-- 使用默认状态目录：macOS 上是 `~/Library/Application Support/Hagency`，Linux 上是 `~/.local/share/hagency`（或 `$XDG_DATA_HOME/hagency`）。要用其他目录，传入 `--state-dir DIR`。
+- 使用默认状态目录：macOS 上是 `~/Library/Application Support/Hagency`，Linux 上是 `${XDG_DATA_HOME:-~/.local/share}/hagency`。要用其他目录，传入 `--state-dir DIR`。
 - 目录是新目录或空目录时将其初始化。对于不是 Hagency 状态目录的非空目录，它会拒绝。
 - 监听 `127.0.0.1:13300`。`--listen` 只接受本机回环地址。
 - 以导入车队的方式运行（`serve --palpo-transport`），并提供内嵌的控制台。它在没有 `fleet-runtime.json`、也没有 Palpo 导入的情况下就能启动；这两项都在控制台中完成。
-- 输出控制台登录链接，并在浏览器中打开它。传入 `--no-open` 时只输出链接。
+- 输出控制台登录链接，并在浏览器中打开它。传入 `--no-open` 时只输出链接。它只把链接输出到交互式终端；否则输出需要运行的 `hagency console-access` 命令。
 
 `hagency service install` 注册一个运行 `hagency start --no-open` 的用户级服务，并启动它：
 - **macOS：** 一个 LaunchAgent，即 `~/Library/LaunchAgents/io.hagency.plist`。它在登录时启动，崩溃后自动重启。日志在 `~/Library/Logs/Hagency/hagency.log`。
-- **Linux：** 一个 `systemd --user` 单元，即 `~/.config/systemd/user/hagency.service`。不需要 `sudo`。用户级服务会在你退出登录时停止。要让它继续运行，运行一次 `loginctl enable-linger $USER`。
+- **Linux：** 一个 `systemd --user` 单元，即 `${XDG_CONFIG_HOME:-~/.config}/systemd/user/hagency.service`。不需要 `sudo`。用户级服务会在你退出登录时停止。要让它继续运行，运行一次 `loginctl enable-linger $USER`。
 - 服务以你的身份运行，因此使用你的 Codex 登录。它记录你当前的 `PATH`，因此找到的 `codex` 和你找到的是同一个。
 - 它接受 `--state-dir`、`--listen` 和 `--no-open`，与 `start` 相同。服务响应后，该命令输出登录链接并打开它。
-- 再次运行它会替换服务，例如在你移动了二进制之后。
+- 它记录二进制解析后的（规范）路径。再次运行它会替换服务，例如在你移动或替换了二进制之后。
 - `hagency service uninstall` 停止并删除服务，保留状态目录。
 
 ### 4. 打开控制台
@@ -188,10 +211,10 @@ Hagency 从不替你登录。它只询问 Codex 是否已登录、以何种方�
 # macOS
 hagency console-access --state-dir "$HOME/Library/Application Support/Hagency"
 # Linux
-hagency console-access --state-dir ~/.local/share/hagency
+hagency console-access --state-dir "${XDG_DATA_HOME:-$HOME/.local/share}/hagency"
 ```
 
-如果你给 `start` 改过 `--state-dir` 或 `--listen`，这里也要传入相同的值。链接只输出到终端。服务日志里只有这条命令。
+如果你给 `start` 改过 `--state-dir` 或 `--listen`，这里也要传入相同的值。`hagency start` 只把链接输出到交互式终端，服务日志里只有这条命令。`console-access` 总是输出链接，因此不要把它的输出重定向到文件。
 
 ### 5. 在控制台中完成设置
 
@@ -203,10 +226,10 @@ hagency console-access --state-dir ~/.local/share/hagency
    - **已登录：** 无需点击。页面加载时，Hagency 即用[配置](#配置)中的默认值写入并校验 `fleet-runtime.json`。车队服务在 5 秒内读取它，无需重启。
    - 这一步会显示 Codex 的登录方式：ChatGPT 订阅或 API 密钥。如果是订阅登录，它会提示订阅登录仅供个人使用，建议在把代理提供给他人之前改用 API 密钥。它不会阻止你继续。
 2. **连接 Palpo（Connect Palpo）。**
-   1. Palpo 管理员在 Palpo 网页端执行 **添加 Hagency（Add Hagency）**。
-   2. 用拥有这个 Hagency 的账号登录 Palpo 网页端，打开 **我的 Hagency 访问（My Hagency access）**，点击 **下载 Hagency 配置（Download Hagency configuration）**。
+   1. Palpo 管理员在 Palpo 网页端执行 **Add Hagency**。
+   2. 用拥有这个 Hagency 的账号登录 Palpo 网页端，打开 **My Hagency access**，点击 **Download Hagency configuration**。
    3. 在这一步中选择该文件，填写 homeserver 的 Matrix 地址，然后点击 **连接（Connect）**。Palpo 传输无需重启即可启动。一个 Hagency 只运行一个 Palpo 车队。
-   4. 在 Palpo 网页端点击 **验证连接并创建接待房间（Verify connection & create reception）**。车队服务随后创建车队代表的设备和密钥。审批机器人为每个所有者各建一个设备，在车队服务第一次为该所有者准备已批准的 agent 时创建（前提是该所有者已有交叉签名密钥）。
+   4. 在 Palpo 网页端点击 **Verify connection & create reception**。车队服务随后创建车队代表的设备和密钥。审批机器人为每个所有者各建一个设备，在车队服务第一次为该所有者准备已批准的 agent 时创建（前提是该所有者已有交叉签名密钥）。
 
    同样的导入也在 **项目方（Project sides）→ 连接 Palpo 项目服务器（Connect a Palpo project server）** 中。
 3. **提供资源（Offer a resource）。** 这一步需要先完成第 1 步。
@@ -233,7 +256,7 @@ hagency console-access --state-dir ~/.local/share/hagency
 | 车队（默认，推荐） | 导入的 Palpo 车队，不需要协调者 agent（ADR-187） | `hagency start`，或 `serve --palpo-transport` | 由设置页面或 `hagency setup` 写入的 `fleet-runtime.json`，以及控制台导入写入的文件 |
 | 协调者 | 运行协调者 agent 的已有安装 | `serve --agent-driver --palpo-transport` | `agent-driver.json` 及其 `matrix.*` 和 `approval.*` 文件 |
 
-`--agent-driver` 和 `--development-driver` 互斥。不带 `--palpo-transport` 时，控制台导入会被保存，等下次带该参数启动时生效。二进制内嵌了控制台时，`serve` 提供内嵌的控制台；`--console-assets` 可以替换它。
+`--agent-driver` 和 `--development-driver` 互斥。不带 `--palpo-transport` 时，控制台导入会被保存，等下次带该参数启动时生效；设置页面报告这是协调者安装（`applicable: false`），不提供任何步骤。二进制内嵌了控制台时，`serve` 提供内嵌的控制台；`--console-assets` 可以替换它。
 
 ### 用 `hagency setup` 准备状态目录
 
@@ -344,8 +367,9 @@ curl -s -X POST http://127.0.0.1:13300/api/native/v1/resources \
 | 服务状态（Linux） | `systemctl --user status hagency` · `journalctl --user -u hagency` |
 | 日志（macOS） | `~/Library/Logs/Hagency/hagency.log`。使用 install-native.sh 时：`<install-dir>/logs/hagency-native.stdout.log` 和 `…stderr.log`。 |
 | 设置日志级别 | `RUST_LOG`（默认 `info`） |
-| 重启 | `launchctl kickstart -k gui/$(id -u)/io.hagency`（macOS）· `systemctl --user restart hagency`（Linux） |
-| 停止并删除 | `hagency service uninstall`，保留状态目录。崩溃的进程会由服务重新拉起。 |
+| 重启 | `launchctl kickstart -k gui/$(id -u)/io.hagency`（macOS）· `systemctl --user restart hagency`（Linux）。崩溃的进程也会由服务重新拉起。 |
+| 停止 | `launchctl bootout gui/$(id -u)/io.hagency`（macOS）· `systemctl --user stop hagency`（Linux） |
+| 停止并删除 | `hagency service uninstall`，保留状态目录。 |
 | 新的控制台链接 | `hagency console-access --state-dir <state>` |
 | 查看 | `hagency engagements`、`hagency resources`、`hagency alerts`（带 `--state-dir`；加 `--json` 输出原始内容） |
 | 在线备份 | `hagency backup --state-dir <state> --out <new dir>` |
@@ -355,11 +379,13 @@ curl -s -X POST http://127.0.0.1:13300/api/native/v1/resources \
 **车队服务进度。** 车队服务每次切换阶段都会记录日志 `fleet service stage`。阶段如下：
 
 1. `awaiting_runtime_config`：缺少 `fleet-runtime.json`。请在控制台完成 **设置（Setup）→ 编程代理（Coding agents）**，或运行 `hagency setup`。
-2. `awaiting_reception`：Palpo 的 **验证连接（Verify connection）** 还没有绑定接待房间。
+2. `awaiting_reception`：Palpo 的 **Verify connection** 还没有绑定接待房间。
 3. `identities`：服务正在创建车队的账号和密钥。
 4. `running`：创建循环和审批泵正在运行。
 
 两个 `awaiting_*` 阶段每 5 秒重新检查一次。`identities` 阶段失败，以及服务拒绝配置（显示为 `refused_config`）时，按 1 秒到 60 秒的退避重试。
+
+**Codex 更新之后。** `fleet-runtime.json` 固定了 Codex 二进制的路径和 SHA-256。Codex 更新后，车队服务下次读取该文件时会拒绝它（`refused_config`，例如在重启之后）。在控制台中打开 **设置（Setup）**：它会检测到这一变化并重写配置，旧文件保留为 `fleet-runtime.json.bak-<seconds>`。不用控制台时，运行 `hagency setup --state-dir <state> --force`。车队服务在 60 秒内重试，无需重启即可读取新文件。
 
 **所有者密钥。** Hagency 第一次需要某个所有者的交叉签名主密钥时，会从 homeserver 读取该密钥，并固定（pin）在存储中。没有开启交叉签名的所有者还没有密钥，因此该所有者的 agent 会等待。已固定的密钥不会被 homeserver 之后报告的密钥替换。控制台和 CLI 目前还不提供重新固定的操作。因此，重置了交叉签名的所有者在固定的密钥被更改之前无法得到服务。即便重新固定，也修复不了已经注册的 agent：它们冻结的密钥列表仍保留旧密钥，因此在每个 agent 重新创建之前，它们发给该所有者的消息都会失败；该所有者也会得到一个新的审批设备（ADR-187 修订；见[已知缺口](docs/architecture-walkthrough.zh-CN.md#15-已实现尚未实现与已知缺口)）。
 

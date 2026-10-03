@@ -218,7 +218,7 @@ HTTP 服务器最后停止，有 5 秒宽限期。
 
 ## 6. 连接 Palpo 服务器
 
-管理员的“添加 Hagency（Add Hagency）”和所有者的“下载 Hagency 配置（Download Hagency configuration）”都在 Palpo 网页端完成。运维者在控制台上传这份 JSON 时，Hagency 的部分才开始。
+管理员的“Add Hagency”和所有者的“Download Hagency configuration”都在 Palpo 网页端完成（Palpo 网页端的界面是英文的，因此本文中 Palpo 的页面和按钮名称保持英文原文）。运维者在控制台上传这份 JSON 时，Hagency 的部分才开始。
 
 ```mermaid
 sequenceDiagram
@@ -260,7 +260,7 @@ sequenceDiagram
    - **matrix 通道**转发 App Service 事务。**work 通道**承载探测和 agent 申请等作业。
    - 轮询等待 25 秒，目录每 15 秒重新发布一次（`config.rs`）。
    - 没有任何入站监听。位于 NAT 之后的 homeserver 无需暴露 Hagency 即可工作。
-6. 在 Palpo 中点击“验证连接并创建接待房间（Verify connection & create reception）”，代表会发布一个 `com.hagency.connection.probe.v1` 事件。[bootstrap/palpo_work.rs](../native/hagency/src/bootstrap/palpo_work.rs) 中的 `work_once` 以代表身份重新读取该事件，[bootstrap/probe.rs](../native/hagency/src/bootstrap/probe.rs) 中的 `decide` 检查房间。只有房间仅限邀请且未加密、代表已加入、且尚未绑定其他接待房间时，才会绑定该房间。回执随下一次 `updates` 返回 Palpo。探测失败会一直重试，直到成功。
+6. 在 Palpo 中点击“Verify connection & create reception”，代表会发布一个 `com.hagency.connection.probe.v1` 事件。[bootstrap/palpo_work.rs](../native/hagency/src/bootstrap/palpo_work.rs) 中的 `work_once` 以代表身份重新读取该事件，[bootstrap/probe.rs](../native/hagency/src/bootstrap/probe.rs) 中的 `decide` 检查房间。只有房间仅限邀请且未加密、代表已加入、且尚未绑定其他接待房间时，才会绑定该房间。回执随下一次 `updates` 返回 Palpo。探测失败会一直重试，直到成功。
 7. 同一个循环（`palpo_work.rs` 中的 `run`）每 15 秒让审批机器人接受私有审批室的邀请（`approval_invites_once`）。
 
 测试示例：[hagency/tests/console/palpo_import.rs](../native/hagency/tests/console/palpo_import.rs) 中的 `native_palpo_import_route_saves_the_owner_download` 和 `native_palpo_import_route_refuses_a_foreign_file`。
@@ -276,7 +276,7 @@ flowchart LR
     C --> D["running<br/>host + agents + owner pumps"]
 ```
 
-`build` 拒绝的配置会显示为 `refused_config`，随后重试。
+`build` 拒绝的配置会显示为 `refused_config`，随后重试。原因之一是 Codex 更新：`fleet-runtime.json` 固定了二进制的 SHA-256，设置页面会重写过时的文件（`runtimeStale`，第 13 节）。
 
 **身份**（[bootstrap/fleet_identity.rs](../native/hagency/src/bootstrap/fleet_identity.rs) 中的 `ensure`）：
 - 代表通过 App Service 登录获得一台设备。设备只创建一次，之后复用。如果 homeserver 不再接受已保存的 token，服务会拒绝而不是替换它，因为房间保管记录绑定在这个 token 上。
@@ -302,7 +302,7 @@ flowchart LR
 - 启动 agent 自己的邀请轮询器（`AgentOwner.invites`，第 10 节）；
 - 启动它的驱动以及文件和接收服务。
 
-**Codex 登录。** 由用户自己登录 Codex；Hagency 从不执行登录。[setup.rs](../native/hagency/src/setup.rs) 中的 `detect_codex` 找到 `setup` 会使用的二进制，只运行 `codex --version` 和 `codex login status`（各有 10 秒超时）；状态输出决定 `signed_in` 和登录方式（`chatgpt` 或 `api_key`），由设置页面显示。车队 agent 的 Codex 凭据来自 `fleet-runtime.json`（[bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs) 中的 `FleetRuntimeConfig`），该文件由设置页面或 `hagency setup` 写入（设置页面总是使用默认的 Codex 目录）：默认带 `local_codex` 块（preset `local_codex`、席位 `local_codex_seat`、用户的 `HOME` 和 Codex 目录），传入 `--no-local-codex` 时不带。setup 会报告该目录中是否有登录（`auth.json`），没有时输出 `CODEX_HOME=… codex login` 命令。配置了 `local_codex` 块时，agent 通过该块的 `codex_home` 复用主机上已有的 Codex 登录。没有该块时，`HOME` 和 `CODEX_HOME` 指向 `<state>/runtime-home`。车队运行时没有托管账户：`hagency account` 的凭据命名空间和 `agent-driver.json` 的 `managed_account` 只适用于协调者安装（启动环境在 [hagency-execution/src/host.rs](../native/hagency-execution/src/host.rs) 中设置）。
+**Codex 登录。** 由用户自己登录 Codex；Hagency 从不执行登录。[setup.rs](../native/hagency/src/setup.rs) 中的 `detect_codex` 找到 `setup` 会使用的二进制，只运行 `codex --version` 和 `codex login status`（各有 10 秒超时）。对 `codex login status`，退出状态决定 `signed_in`，输出内容决定登录方式（`chatgpt` 或 `api_key`），由设置页面显示。车队 agent 的 Codex 凭据来自 `fleet-runtime.json`（[bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs) 中的 `FleetRuntimeConfig`），该文件由设置页面或 `hagency setup` 写入（设置页面总是使用默认的 Codex 目录）：默认带 `local_codex` 块（preset `local_codex`、席位 `local_codex_seat`、用户的 `HOME` 和 Codex 目录），传入 `--no-local-codex` 时不带。setup 会报告该目录中是否有登录（`auth.json`），没有时输出 `CODEX_HOME=… codex login` 命令。配置了 `local_codex` 块时，agent 通过该块的 `codex_home` 复用主机上已有的 Codex 登录。没有该块时，`HOME` 和 `CODEX_HOME` 指向 `<state>/runtime-home`。车队运行时没有托管账户：`hagency account` 的凭据命名空间和 `agent-driver.json` 的 `managed_account` 只适用于协调者安装（启动环境在 [hagency-execution/src/host.rs](../native/hagency-execution/src/host.rs) 中设置）。
 
 **申请只有一条接入路径。** 在导入的车队上，接待房间中的申请只由 Palpo work 通道接纳（`palpo_work.rs` 中的 `admit_request`，第 9 节）。
 
@@ -628,8 +628,8 @@ sequenceDiagram
 **控制台。** 控制台是 [mockup/](../mockup/) 中的 Next.js 应用。
 - `mockup/scripts/build-native-console.mjs` 静态导出原生页面，并附一个记录每个文件大小和 SHA-256 的 `manifest.json`。构建时 `HAGENCY_CONSOLE_DIR` 指向该导出目录时，[hagency/build.rs](../native/hagency/build.rs) 把其中每个文件内嵌进二进制。启动时，`serve` 若有 `--console-assets <dir>` 就加载它，否则加载内嵌文件（`Console::embedded_with_state`），两者都没有时不带控制台运行。两种来源都按清单校验，并在 `/console/` 下提供（[console/assets.rs](../native/hagency/src/console/assets.rs)）。客户端是 `mockup/lib/native-api.js`。
 - 设置页面（ADR-189，[mockup/app/setup/page.jsx](../mockup/app/setup/page.jsx)）使用 [console/setup.rs](../native/hagency/src/console/setup.rs) 中的三个路由：
-  - `GET /console/api/setup` 总是返回 200，且不写入任何内容。它运行 `detect_codex`，报告 `applicable`、编程代理、`runtimeConfigured`、Palpo 导入和传输状态，以及有资格的提供选项和资源数量。只有车队主机（其 Palpo 句柄带有车队地址）上 `applicable` 才为 true；协调者安装报告 false。没有 Palpo 句柄的主机只得到 `{"ok": true, "applicable": false, "agents": []}`，而不是 503。`applicable` 为 false 时，页面说明运行配置在 `agent-driver.json` 中。
-  - `POST /console/api/setup/check` 重新检测。不存在 `fleet-runtime.json`、且找到已登录的 Codex 时，它用服务自己的监听地址调用 `setup::configure`。协调者安装会被拒绝（`setup_not_fleet`）。状态显示 Codex 已登录、但尚未配置运行时时，页面会自行调用它，无需点击；用户安装 Codex 或登录之后，由 **重新检查（Check again）** 调用它。
+  - `GET /console/api/setup` 总是返回 200，且不写入任何内容。它运行 `detect_codex`，报告 `applicable`、编程代理、`runtimeConfigured`、`runtimeStale`、Palpo 导入和传输状态，以及有资格的提供选项和资源数量。只有车队主机（其 Palpo 句柄带有车队地址）上 `applicable` 才为 true；协调者安装报告 false。不带 `--palpo-transport` 的 `serve` 也报告 `applicable: false`。`applicable` 为 false 时，页面说明运行配置在 `agent-driver.json` 中。`fleet-runtime.json` 存在、但其中固定的 `executable` 或 `executable_sha256` 与检测到的 Codex 不再一致时（例如 Codex 更新之后），`runtimeStale` 为 true（[setup.rs](../native/hagency/src/setup.rs) 中的 `runtime_matches`）；此时 `runtimeConfigured` 为 false，因为车队服务会拒绝该文件（`refused_config`）。
+  - `POST /console/api/setup/check` 重新检测。`fleet-runtime.json` 不存在或已过时、且找到已登录的 Codex 时，它用服务自己的监听地址调用 `setup::configure`；文件已过时时传入 `force`，旧文件保留为 `fleet-runtime.json.bak-<seconds>`。协调者安装会被拒绝（`setup_not_fleet`）。状态为 applicable、显示 Codex 已登录、但尚未配置运行时时（因此运行时过时时也是如此），页面会自行调用它，无需点击；用户安装 Codex 或登录之后，由 **重新检查（Check again）** 调用它。
   - `POST /console/api/setup/resource` 创建首份或更多资源（第 8 节）。
 
   这两个写入路由与 Palpo 导入一样，需要具备生命周期权限的控制台会话（`check_lifecycle`）。车队服务每 5 秒检查一次 `awaiting_runtime_config`，下一次检查时就会读取新的 `fleet-runtime.json`。
@@ -662,7 +662,7 @@ sequenceDiagram
 | Claude runner | 已有运行时协议代码；启动会被拒绝（`UnsupportedRunner`） |
 | 设置页面上的编程代理 | 只有 Codex。Claude Code 和 Octos 各自需要一个检测器和一个运行时（ADR-189）。 |
 | Linux 上的用户级服务 | `hagency service install` 写入并启用一个 `systemd --user` unit；unit 文本有单元测试，但这条路径还没有在真实的 Linux 主机上运行过。除非开启 lingering，用户级服务会在退出登录时停止。 |
-| 发布 | [release-native.yml](../.github/workflows/release-native.yml) 为每个平台构建一个内嵌控制台的二进制，冒烟测试 `/console/setup/`，并计算 `SHA256SUMS`，但只在手动触发时运行。标签触发器被注释掉了，因此目前还不发布 GitHub release。 |
+| 发布 | [release-native.yml](../.github/workflows/release-native.yml) 为每个平台构建一个内嵌控制台的二进制，冒烟测试 `/console/setup/`，并对二进制计算 `SHA256SUMS`，但只在手动触发时运行。标签触发器被注释掉了，因此推送标签不会发布任何内容；发布资产（`hagency-nv<version>-<target>.tar.gz` 和 `SHA256SUMS`）在工作流之外附加到 GitHub release。二进制没有代码签名：在 macOS 上，用户需要移除隔离属性（`xattr -d com.apple.quarantine hagency`）。 |
 | agent 等待所有者加入私聊期间重启 | 不会恢复。只有观察到等待的那个作业才会继续它；重启后创建步骤返回 `OutcomeUnknown`（`token_provision/rooms.rs`），没有任何机制重新驱动它，控制台也没有恢复操作。变通办法：运维者在控制台结束该接洽（**接洽（Engagements）→ 结束接洽（Retire）**，它会取消创建作业并安排退役），然后所有者重新申请 agent。 |
 | 所有者锚点不一致与重新固定 | 仅在存储层：`owner_anchors.rs` 记录不一致，`DomainStore::repin_owner_anchor` 重新固定；没有控制台路由显示或调用它们。后果：`owner_anchor` 不会重新查询已固定的密钥，所以所有者密钥变化只会表现为注册被拒绝，而重新固定也无法修复已经注册的 agent（ADR-187 修订）。 |
 | 控制台中的加入房间与车队阶段 | 没有展示。ADR-188 描述了“已加入 · 不工作”标签，以及已退役房间中排队工作的展示，两者都未实现。车队服务的阶段只写在日志里。 |
