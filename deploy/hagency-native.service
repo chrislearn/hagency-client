@@ -46,7 +46,7 @@ TimeoutStopSec=20
 # --- Boundaries that are refusals, not defaults ---
 # The listen address is hard-coded loopback: bootstrap.rs fail-closes on any
 # non-loopback bind, so a knob here could only make the unit die-and-loop.
-# Remote access is an SSH tunnel or reverse proxy (see the runbook).
+# The console is used on this machine; it listens on loopback only.
 # The ExecStart binary path carries the versioned artifact name the SR-3
 # release mints, so unit and binary cannot disagree silently.
 

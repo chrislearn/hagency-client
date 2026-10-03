@@ -94,7 +94,13 @@ pub fn run(options: &Options) -> Result<Report, String> {
 
     let executable = codex_executable(options.codex.as_deref())?;
     let digest = sha256_file(&executable)?;
-    let codex_home = codex_home(options.codex_home.as_deref())?;
+    // The host's own Codex folder matters only to the local Codex binding;
+    // without it, Codex signs in to `<state>/runtime-home` instead.
+    let codex_home = if options.no_local_codex {
+        state.join("runtime-home")
+    } else {
+        codex_home(options.codex_home.as_deref())?
+    };
     let signed_in = codex_home.join("auth.json").is_file();
 
     let homes = state.join("agent-homes");
@@ -154,16 +160,8 @@ pub fn run(options: &Options) -> Result<Report, String> {
     Ok(Report {
         initialized: fresh,
         executable,
-        codex_home: if options.no_local_codex {
-            state.join("runtime-home")
-        } else {
-            codex_home
-        },
-        signed_in: if options.no_local_codex {
-            state.join("runtime-home").join("auth.json").is_file()
-        } else {
-            signed_in
-        },
+        codex_home,
+        signed_in,
         local_codex: !options.no_local_codex,
         runtime_file: path,
     })

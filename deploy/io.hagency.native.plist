@@ -16,8 +16,8 @@
   THE PLACEHOLDERS ARE NOT DEFAULTS. __INSTALL_DIR__ and __STATE_DIR__ are
   rendered at install time; the loopback listen is FIXED — a refusal, not a
   default: the service fail-closes on any non-loopback bind, so no knob here
-  could make it anything but loopback. Remote access is an SSH tunnel or
-  reverse proxy (see the runbook).
+  could make it anything but loopback. The console is used on this machine;
+  it listens on loopback only.
 -->
 <plist version="1.0">
 <dict>
