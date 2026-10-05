@@ -226,9 +226,9 @@ Open **Setup** in the console menu. It has three steps. Each step shows a check 
    - **Signed in:** nothing to click. When the page loads, Hagency writes and validates `fleet-runtime.json` with the defaults under [Configuration](#configuration). The first time, the fleet service picks it up within 5 s, without a restart. When the page rewrites the file after a Codex update, restart the service (see [After a Codex update](#operating)).
    - The step shows how Codex is signed in: a ChatGPT plan or an API key. With a plan, it notes that plan sign-ins are meant for personal use, and suggests an API key before you offer the agent to other people. It does not block.
 2. **Connect Hagency Server.**
-   1. Here or under **Project sides**, enter the server address and Hafleet name, then click **Sign in and connect**.
-   2. Sign in with Pasion. The client creates its Hafleet, saves the configuration, starts outbound transport and verifies the connection automatically.
-   3. The administrator enables self-service enrollment once; the default limit is three Hafleets per account. Login still works when enrollment is disabled.
+   1. Here or under **Project sides**, enter the server address and Fleet name, then click **Sign in and connect**.
+   2. Sign in with Pasion. The client creates its Fleet, saves the configuration, starts outbound transport and verifies the connection automatically.
+   3. The administrator enables self-service enrollment once; the default limit is three Fleets per account. Login still works when enrollment is disabled.
 
    Use the local access link opened by `hagency start` for the first binding. Subsequent logins use the bound Pasion account. **Import an existing configuration (optional)** remains available. See [login and enrollment](docs/server-login.md).
 3. **Offer a resource.** This step needs step 1.

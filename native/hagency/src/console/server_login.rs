@@ -1,4 +1,4 @@
-//! Pasion login and Hafleet enrollment. All OAuth and machine credentials stay
+//! Pasion login and Fleet enrollment. All OAuth and machine credentials stay
 //! in the Rust host. The browser receives navigation URLs and a local cookie.
 use super::{COOKIE, Error, console, current, same_origin};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -181,7 +181,7 @@ async fn response(mut response: reqwest::Response) -> Result<Value, &'static str
     if !status.is_success() {
         return Err(match value["code"].as_str() {
             Some("self_service_disabled") => "self_service_disabled",
-            Some("hafleet_limit") => "hafleet_limit",
+            Some("fleet_limit") => "fleet_limit",
             Some("sign_in_required") => "sign_in_required",
             _ => "server_request_failed",
         });
@@ -507,7 +507,7 @@ async fn enroll(
     let live = app.palpo_live().ok_or("transport_unavailable")?;
     let enrolled = response(
         client
-            .post(server.join("/_hagency/client/v1/hafleets").unwrap())
+            .post(server.join("/_hagency/client/v1/fleets").unwrap())
             .bearer_auth(token)
             .json(&json!({"installationId":binding.installation_id,"name":binding.name}))
             .send()
@@ -541,11 +541,11 @@ async fn enroll(
         .await
         .map_err(|_| "configuration_import_failed")?;
     if !imported.started {
-        return Ok(json!({"state":"saved","hafleetId":imported.imported.fleet_id,"started":false}));
+        return Ok(json!({"state":"saved","fleetId":imported.imported.fleet_id,"started":false}));
     }
     let id = imported.imported.fleet_id;
     let url = server
-        .join(&format!("/_hagency/client/v1/hafleets/{id}/connect"))
+        .join(&format!("/_hagency/client/v1/fleets/{id}/connect"))
         .unwrap();
     for _ in 0..3 {
         match client
@@ -557,8 +557,8 @@ async fn enroll(
         {
             Ok(reply) if reply.status().is_success() => {
                 let status = response(reply).await?;
-                if status["hafleet"]["readiness"]["ready"] == true {
-                    return Ok(json!({"state":"connected","hafleetId":id,"started":true}));
+                if status["fleet"]["readiness"]["ready"] == true {
+                    return Ok(json!({"state":"connected","fleetId":id,"started":true}));
                 }
             }
             _ => {}
@@ -575,7 +575,7 @@ async fn enroll(
         for _ in 0..60 {
             tokio::time::sleep(Duration::from_secs(3)).await;
             let current = console.0.server_login.status.lock().await.clone();
-            if current["state"] != "verifying" || current["hafleetId"] != background_id {
+            if current["state"] != "verifying" || current["fleetId"] != background_id {
                 return;
             }
             if let Ok(reply) = client
@@ -589,18 +589,18 @@ async fn enroll(
                     break;
                 }
                 if let Ok(result) = response(reply).await
-                    && result["hafleet"]["readiness"]["ready"] == true
+                    && result["fleet"]["readiness"]["ready"] == true
                 {
                     *console.0.server_login.status.lock().await =
-                        json!({"state":"connected","hafleetId":background_id,"started":true});
+                        json!({"state":"connected","fleetId":background_id,"started":true});
                     return;
                 }
             }
         }
         let mut state = console.0.server_login.status.lock().await;
-        if state["state"] == "verifying" && state["hafleetId"] == background_id {
+        if state["state"] == "verifying" && state["fleetId"] == background_id {
             *state = json!({"state":"failed","code":"verification_timeout"});
         }
     });
-    Ok(json!({"state":"verifying","hafleetId":id,"started":true}))
+    Ok(json!({"state":"verifying","fleetId":id,"started":true}))
 }

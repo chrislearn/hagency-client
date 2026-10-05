@@ -42,15 +42,15 @@ export default function ServerLoginControl() {
   }
   const status = info?.status;
   const issue = error || (status?.state === 'failed' ? status.code : null);
-  const known = ['local_access_required', 'owner_mismatch', 'self_service_disabled', 'hafleet_limit', 'invalid_server', 'configuration_import_failed', 'transport_unavailable'];
+  const known = ['local_access_required', 'owner_mismatch', 'self_service_disabled', 'fleet_limit', 'invalid_server', 'configuration_import_failed', 'transport_unavailable'];
   return <section className="panel" data-server-login>
     <h2>{t('sl.title')}</h2><p className="dim">{t('sl.help')}</p>
     <form onSubmit={login}>
       <div className="field"><label htmlFor="hagency-server">{t('sl.server')}</label>
         <input id="hagency-server" type="url" required value={server} disabled={busy || info?.configured}
           placeholder="https://hagency.example.org" onChange={event => setServer(event.target.value)} /></div>
-      <div className="field"><label htmlFor="hafleet-name">{t('sl.name')}</label>
-        <input id="hafleet-name" required maxLength={128} value={name} disabled={busy || info?.configured} onChange={event => setName(event.target.value)} /></div>
+      <div className="field"><label htmlFor="fleet-name">{t('sl.name')}</label>
+        <input id="fleet-name" required maxLength={128} value={name} disabled={busy || info?.configured} onChange={event => setName(event.target.value)} /></div>
       {issue && <p role="alert">{t(known.includes(issue) ? `sl.${issue}` : 'sl.failure')}</p>}
       {status && ['connected', 'verifying', 'saved'].includes(status.state) && <p role="status">{t(`sl.${status.state}`)}</p>}
       <button className="btn" type="submit" disabled={busy || !server.trim() || !name.trim()}>{t(busy ? 'sl.opening' : 'sl.login')}</button>

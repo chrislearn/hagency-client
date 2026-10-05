@@ -151,7 +151,7 @@ but does not stop you.
 
 ## Step 4: Connect Palpo
 
-**For Hagency Server with Pasion:** enter the server address and Hafleet name in this step or Project sides, click **Sign in and connect**, and sign in with Pasion. Enrollment and configuration are automatic when the administrator enables `[hafleet_access].allow_self_service`. The first binding requires a local access link; later logins must use the same server and account. See [login and enrollment](../server-login.md).
+**For Hagency Server with Pasion:** enter the server address and Fleet name in this step or Project sides, click **Sign in and connect**, and sign in with Pasion. Enrollment and configuration are automatic when the administrator enables `[fleet_access].allow_self_service`. The first binding requires a local access link; later logins must use the same server and account. See [login and enrollment](../server-login.md).
 
 The manual steps below are for older servers or administrator-provided configurations.
 

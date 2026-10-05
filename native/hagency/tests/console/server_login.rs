@@ -66,7 +66,7 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
             }
             json!({"userId":state.owner,"subject":state.owner,"clientId":"fixture-public-client"})
         }
-        "/_hagency/client/v1/hafleets" => {
+        "/_hagency/client/v1/fleets" => {
             let input: Value = req.parse_json().await.unwrap();
             assert!(input["ownerMxid"].is_null());
             assert!(!input["installationId"].as_str().unwrap().is_empty());
