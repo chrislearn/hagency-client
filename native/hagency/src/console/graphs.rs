@@ -625,10 +625,7 @@ impl GraphStore {
         let mut inner = self.inner.lock().map_err(|_| {
             graph_error("graph_persistence_failed", "task graph persistence failed")
         })?;
-        let graph = normalize_graph(
-            raw,
-            Some(default_graph_id()).filter(|_| raw.get("id").is_none()),
-        )?;
+        let graph = normalize_graph(raw, raw.get("id").is_none().then_some(default_graph_id()))?;
         if inner.graphs.contains_key(&graph.id) {
             return Err(graph_error(
                 "graph_exists",

@@ -7,26 +7,26 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-hagency-core = { path = "../hagency-core" }
-hagency-store = { path = "../hagency-store" }
-hagency-runtime = { path = "../hagency-runtime" }
-hagency-platform = { path = "../hagency-platform" }
-hagency-metering = { path = "../hagency-metering" }
-hagency-files = { path = "../hagency-files" }
-cap-std = "=4.0.3"
-cap-fs-ext = "=4.0.3"
+hagency-core.workspace = true
+hagency-store.workspace = true
+hagency-runtime.workspace = true
+hagency-platform.workspace = true
+hagency-metering.workspace = true
+hagency-files.workspace = true
+cap-std.workspace = true
+cap-fs-ext.workspace = true
 sha2.workspace = true
 tokio = { workspace = true, features = ["io-util", "net"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-tracing = "0.1.44"
+tracing.workspace = true
 
 [target.'cfg(unix)'.dependencies]
-rustix = { version = "=1.1.4", features = ["process"] }
+rustix = { workspace = true, features = ["process"] }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_System_Threading", "Win32_Storage_FileSystem"] }
+windows-sys = { workspace = true, features = ["Win32_System_Threading", "Win32_Storage_FileSystem"] }
 
 [features]
 # Read-only per-entry approval phase traces for cancellation diagnostics
@@ -36,10 +36,10 @@ test-diagnostics = ["hagency-runtime/test-diagnostics"]
 [dev-dependencies]
 # Self dev-dependency lights the default-off diagnostics feature for unit and
 # integration test builds only; a production build compiles none of it.
-hagency-execution = { path = ".", features = ["test-diagnostics"] }
+hagency-execution = { workspace = true, features = ["test-diagnostics"] }
 serde.workspace = true
 tempfile.workspace = true
-rusqlite = { version = "0.37.0", features = ["bundled"] }
+rusqlite = { workspace = true, features = ["bundled"], default-features = true }
 
 [[bin]]
 name = "hagency-execution-probe"

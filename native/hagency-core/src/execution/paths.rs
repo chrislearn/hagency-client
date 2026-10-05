@@ -27,7 +27,8 @@ impl PathFlavor {
                     && bytes[2] == b'\\'
                 {
                     (value[..3].to_owned(), &value[3..])
-                } else if let Some(unc) = value.strip_prefix("\\\\") {
+                } else {
+                    let unc = value.strip_prefix("\\\\")?;
                     let (server, rest) = unc.split_once('\\')?;
                     if server.is_empty() || [".", "?", ".."].contains(&server) {
                         return None;
@@ -38,8 +39,6 @@ impl PathFlavor {
                         return None;
                     }
                     (format!("\\\\{server}\\{share}\\"), tail)
-                } else {
-                    return None;
                 };
                 Some(normalize_tail(&root, tail, '\\', value.ends_with('\\')))
             }

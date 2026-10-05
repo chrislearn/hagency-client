@@ -11,11 +11,11 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "net"] }
-tracing = "0.1.44"
-hagency-platform = { path = "../hagency-platform" }
+tracing.workspace = true
+hagency-platform.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_System_Threading"] }
+windows-sys = { workspace = true, features = ["Win32_System_Threading"] }
 
 [features]
 # An offline pin for a stop the guardian could not prove (ADR-182). Enabled

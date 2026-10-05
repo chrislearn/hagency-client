@@ -12,50 +12,50 @@ default = []
 native-console-browser = []
 
 [dependencies]
-hagency-core = { path = "../hagency-core" }
-hagency-store = { path = "../hagency-store" }
-hagency-platform = { path = "../hagency-platform" }
-hagency-execution = { path = "../hagency-execution" }
-hagency-matrix = { path = "../hagency-matrix" }
-hagency-palpo = { path = "../hagency-palpo" }
-hagency-runtime = { path = "../hagency-runtime" }
-hagency-files = { path = "../hagency-files" }
-hagency-media = { path = "../hagency-media" }
-hagency-media-store = { path = "../hagency-media-store" }
-cap-std = "=4.0.3"
-cap-fs-ext = "=4.0.3"
+hagency-core.workspace = true
+hagency-store.workspace = true
+hagency-platform.workspace = true
+hagency-execution.workspace = true
+hagency-matrix.workspace = true
+hagency-palpo.workspace = true
+hagency-runtime.workspace = true
+hagency-files.workspace = true
+hagency-media.workspace = true
+hagency-media-store.workspace = true
+cap-std.workspace = true
+cap-fs-ext.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 tokio = { workspace = true, features = ["process"] }
-hyper = { version = "=1.11.1", default-features = false, features = ["client", "http1"] }
-hyper-util = { version = "=0.1.20", default-features = false, features = ["tokio"] }
-http-body-util = "=0.1.5"
-reqwest = { version = "=0.12.28", default-features = false, features = ["rustls-tls-webpki-roots", "json"] }
+hyper = { workspace = true, features = ["client", "http1"] }
+hyper-util = { workspace = true, features = ["tokio"] }
+http-body-util.workspace = true
+reqwest = { workspace = true, features = ["rustls-tls-webpki-roots", "json"] }
 thiserror.workspace = true
-salvo = { version = "=0.96.0", default-features = false, features = ["server", "server-handle", "http1", "test"] }
-clap = { version = "4.5.54", features = ["derive"] }
-getrandom = "0.3.4"
-base64 = "=0.22.1"
-subtle = "2.6.1"
-tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }
+salvo = { workspace = true, features = ["server", "server-handle", "http1", "test"] }
+clap = { workspace = true, features = ["derive"] }
+getrandom.workspace = true
+base64.workspace = true
+subtle.workspace = true
+tracing.workspace = true
+tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 
 [dev-dependencies]
 # The offline pins of ADR-182 need the execution crate's diagnostics fault
 # (an unproven stop no real fixture can force); test builds only.
-hagency-execution = { path = "../hagency-execution", features = ["test-diagnostics"] }
-matrix-sdk-base = { version = "=0.18.0", features = ["e2e-encryption"] }
-matrix-sdk-sqlite = { version = "=0.18.0", default-features = false, features = ["state-store", "bundled"] }
-matrix-sdk-store-encryption = "=0.18.0"
-matrix-sdk-crypto = "=0.18.0"
-ruma = { version = "=0.16.0", features = ["client-api-c", "events"] }
-hagency-metering = { path = "../hagency-metering" }
+hagency-execution = { workspace = true, features = ["test-diagnostics"] }
+matrix-sdk-base = { workspace = true, features = ["e2e-encryption"] }
+matrix-sdk-sqlite = { workspace = true, features = ["state-store", "bundled"] }
+matrix-sdk-store-encryption.workspace = true
+matrix-sdk-crypto.workspace = true
+ruma = { workspace = true, features = ["client-api-c", "events"] }
+hagency-metering.workspace = true
 tokio = { workspace = true, features = ["process"] }
-rmcp = { version = "=1.8.0", default-features = false, features = ["client", "transport-async-rw"] }
-rusqlite = { version = "=0.37.0", default-features = false, features = ["bundled"] }
+rmcp = { workspace = true, features = ["client", "transport-async-rw"] }
+rusqlite = { workspace = true, features = ["bundled"] }
 tempfile.workspace = true
-tokio-rustls = { version = "=0.26.4", default-features = false, features = ["ring", "tls12"] }
+tokio-rustls = { workspace = true, features = ["ring", "tls12"] }
 
 [[bin]]
 name = "hagency-owned-mcp-probe"

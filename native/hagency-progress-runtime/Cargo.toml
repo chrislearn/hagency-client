@@ -7,13 +7,13 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
-hagency-progress = { path = "../hagency-progress" }
-hagency-runtime = { path = "../hagency-runtime" }
+hagency-progress.workspace = true
+hagency-runtime.workspace = true
 tokio = { workspace = true, features = ["io-util"] }
 thiserror.workspace = true
 
 serde_json.workspace = true
-hagency-platform = { path = "../hagency-platform" }
+hagency-platform.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
