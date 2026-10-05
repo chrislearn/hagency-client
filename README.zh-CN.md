@@ -227,13 +227,12 @@ hagency console-access --state-dir "${XDG_DATA_HOME:-$HOME/.local/share}/hagency
    - **未登录：** 在这台机器的终端里运行 `codex login`，然后点击 **重新检查（Check again）**。
    - **已登录：** 无需点击。页面加载时，Hagency 即用[配置](#配置)中的默认值写入并校验 `fleet-runtime.json`。第一次写入时，车队服务在 5 秒内读取它，无需重启。Codex 更新后页面重写该文件时，需要重启服务（见[Codex 更新之后](#运维)）。
    - 这一步会显示 Codex 的登录方式：ChatGPT 订阅或 API 密钥。如果是订阅登录，它会提示订阅登录仅供个人使用，建议在把代理提供给他人之前改用 API 密钥。它不会阻止你继续。
-2. **连接 Palpo（Connect Palpo）。**
-   1. Palpo 管理员在 Palpo 网页端执行 **Add Hagency**。
-   2. 用拥有这个 Hagency 的账号登录 Palpo 网页端，打开 **My Hagency access**，点击 **Download Hagency configuration**。
-   3. 在这一步中选择该文件，填写 homeserver 的 Matrix 地址，然后点击 **连接（Connect）**。Palpo 传输无需重启即可启动。一个 Hagency 只运行一个 Palpo 车队。
-   4. 在 Palpo 网页端点击 **Verify connection & create reception**。车队服务随后创建车队代表的设备和密钥。审批机器人为每个所有者各建一个设备，在车队服务第一次为该所有者准备已批准的 agent 时创建（前提是该所有者已有交叉签名密钥）。
+2. **连接 Hagency Server。**
+   1. 在此步骤或 **项目方（Project sides）** 中填写服务器地址和 Hafleet 名称，点击 **登录并连接**。
+   2. 在 Pasion 页面登录。客户端自动创建自己的 Hafleet、保存配置、启动 outbound 连接并验证接入，无需下载再导入文件。
+   3. 管理员只需在服务器开放自助接入；默认每个账号最多 3 个 Hafleet。若未开放，登录仍有效，但不会创建 Hafleet。
 
-   同样的导入也在 **项目方（Project sides）→ 连接 Palpo 项目服务器（Connect a Palpo project server）** 中。
+   首次绑定使用 `hagency start` 打开的本地访问链接，后续通过已绑定的 Pasion 账号登录。已有配置可通过 **导入已有配置（可选）** 导入。详见[登录和接入](docs/server-login.zh-CN.md)。
 3. **提供资源（Offer a resource）。** 这一步需要先完成第 1 步。
    1. 选择 **模型（Model）**。列表中只有 Hagency 认定资格的模型和推理档位组合（[role-capacity.json](native/hagency-core/role-capacity.json)）。对 Codex 来说，就是 `gpt-5.6-sol` 搭配 `low`、`medium` 或 `high`。
    2. 填写 **每月 token 上限（Monthly token ceiling）**。默认值是 20,000,000。

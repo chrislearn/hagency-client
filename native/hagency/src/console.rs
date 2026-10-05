@@ -19,6 +19,7 @@ pub mod palpo_import;
 mod project_sides;
 mod resource_configuration;
 mod resources;
+mod server_login;
 mod setup;
 mod side_budget;
 mod side_lifecycle;
@@ -64,6 +65,7 @@ struct Inner {
     /// no state dir was provided (asset-only tests) — the routes then answer
     /// `console_unavailable`, TS's `dispatch_unavailable` class.
     graphs: Option<graphs::GraphStore>,
+    server_login: server_login::ServerLogin,
 }
 /// Clones retain the same finite authority and original immutable asset proofs.
 #[derive(Clone)]
@@ -91,6 +93,7 @@ impl Console {
     fn with_assets(assets: assets::Assets, state_dir: Option<&Path>) -> Result<Self, Error> {
         Ok(Self(Arc::new(Inner {
             assets,
+            server_login: server_login::ServerLogin::new(state_dir)?,
             authority: match state_dir {
                 Some(dir) => Authority::persistent(dir),
                 None => Authority::new(),
@@ -112,6 +115,7 @@ impl Console {
 pub(crate) fn router() -> Router {
     Router::with_path("console")
         .hoop(browser_boundary)
+        .push(server_login::router())
         .push(Router::with_path("session").post(exchange).delete(logout))
         .push(
             Router::with_path("api")
@@ -288,6 +292,17 @@ async fn authenticate(
 ) {
     match current(req, depot) {
         Ok(session) => {
+            if let Err(error) = console(depot)
+                .unwrap()
+                .0
+                .server_login
+                .validate(cookie(req).unwrap())
+                .await
+            {
+                failed(res, error);
+                ctrl.skip_rest();
+                return;
+            }
             depot.insert_typed(session);
         }
         Err(error) => {

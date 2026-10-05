@@ -31,11 +31,12 @@ tokio = { workspace = true, features = ["process"] }
 hyper = { version = "=1.11.1", default-features = false, features = ["client", "http1"] }
 hyper-util = { version = "=0.1.20", default-features = false, features = ["tokio"] }
 http-body-util = "=0.1.5"
-reqwest = { version = "=0.12.28", default-features = false, features = ["rustls-tls-webpki-roots"] }
+reqwest = { version = "=0.12.28", default-features = false, features = ["rustls-tls-webpki-roots", "json"] }
 thiserror.workspace = true
 salvo = { version = "=0.96.0", default-features = false, features = ["server", "server-handle", "http1", "test"] }
 clap = { version = "4.5.54", features = ["derive"] }
 getrandom = "0.3.4"
+base64 = "=0.22.1"
 subtle = "2.6.1"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt"] }

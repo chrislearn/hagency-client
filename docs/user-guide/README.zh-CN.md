@@ -142,6 +142,11 @@ hagency console-access --state-dir "${XDG_DATA_HOME:-$HOME/.local/share}/hagency
 
 ## 第 4 步：连接 Palpo
 
+**Hagency Server + Pasion 的推荐流程：** 在客户端此步骤或项目方页面输入服务器地址和 Hafleet 名称，点击“登录并连接”，通过 Pasion 登录后自动创建和配置 Hafleet。管理员需开放 `[hafleet_access].allow_self_service`。首次绑定仍需本地访问链接；后续登录必须是同一服务器和账号。详见[登录与接入](../server-login.zh-CN.md)。
+
+以下手工步骤适用于旧版服务器或管理员提供的配置。
+
+
 以下 Palpo 页面属于 Palpo，不属于 Hagency，因此具体布局可能随 Palpo 版本不同
 而变化。
 

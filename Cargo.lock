@@ -1051,6 +1051,7 @@ dependencies = [
 name = "hagency"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "cap-fs-ext",
  "cap-std",
  "clap",

@@ -181,7 +181,7 @@ impl Authority {
         let hex = |h: &[u8; 32]| h.iter().map(|b| format!("{b:02x}")).collect::<String>();
         let value = serde_json::json!({
             "ticket": state.ticket.as_ref().map(|t| hex(&t.hash)),
-            "sessions": state.sessions.iter().map(|s| hex(&s.hash)).collect::<Vec<_>>(),
+            "sessions": state.sessions.iter().filter(|s| s.expires.is_none()).map(|s| hex(&s.hash)).collect::<Vec<_>>(),
         });
         hagency_store::private::replace(path, value.to_string().as_bytes())
             .map_err(|_| Error::Unavailable)
@@ -256,6 +256,33 @@ impl Authority {
         state.sessions.push(Grant {
             hash: hash(&value)?,
             expires: None,
+            access: Some(Access {
+                publication: ResourcePublicationAccess::new(until, self.1.clone()),
+                configuration: ResourceConfigurationAccess::new(until, self.1.clone()),
+                account: AccountEnrollmentAccess::new(until, self.1.clone()),
+            }),
+        });
+        self.save(&state)?;
+        Ok(value)
+    }
+    /// Pasion-backed local sessions are finite and never persisted as an
+    /// indefinite operator login. They require a fresh server login on restart.
+    pub(super) fn server_session(&self, lifetime: Duration) -> Result<String, Error> {
+        let value = secret()?;
+        let until = Instant::now() + lifetime.min(Duration::from_secs(900));
+        let mut state = self.0.lock().map_err(|_| Error::Unavailable)?;
+        if state.retired {
+            return Err(Error::Unauthorized);
+        }
+        if state.sessions.len() >= 64 {
+            let old = state.sessions.remove(0);
+            if let Some(access) = old.access {
+                let _ = access.revoke();
+            }
+        }
+        state.sessions.push(Grant {
+            hash: hash(&value)?,
+            expires: Some(until),
             access: Some(Access {
                 publication: ResourcePublicationAccess::new(until, self.1.clone()),
                 configuration: ResourceConfigurationAccess::new(until, self.1.clone()),

@@ -52,16 +52,41 @@ fn home() -> Result<PathBuf, String> {
 /// Wait until the service answers, then print its console sign-in link and,
 /// when asked and this is an interactive terminal, open it in the browser.
 pub async fn announce(state: PathBuf, address: SocketAddr, open: bool) {
+    let bound = hagency_store::private::read_secret(&state.join("server-login.json"))
+        .ok()
+        .and_then(|raw| serde_json::from_slice::<serde_json::Value>(&raw).ok())
+        .is_some_and(|value| value["owner"].is_string());
     let deadline = Instant::now() + Duration::from_secs(60);
     loop {
         // The sign-in link grants console access: it goes to an interactive
         // terminal only, never into a service log.
         if !std::io::stdout().is_terminal() {
             if crate::console::client::reachable(address).await {
-                println!(
-                    "Hagency is ready. Open the console with: hagency console-access --state-dir {} --listen {address}",
-                    state.display()
-                );
+                if bound {
+                    println!(
+                        "Hagency is ready. Sign in at http://{address}/console/project-sides/"
+                    );
+                } else {
+                    println!(
+                        "Hagency is ready. Open the console with: hagency console-access --state-dir {} --listen {address}",
+                        state.display()
+                    );
+                }
+                return;
+            }
+            if Instant::now() >= deadline {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            continue;
+        }
+        if bound {
+            if crate::console::client::reachable(address).await {
+                let link = format!("http://{address}/console/project-sides/");
+                println!("Hagency console: {link}");
+                if open {
+                    open_browser(&link);
+                }
                 return;
             }
             if Instant::now() >= deadline {

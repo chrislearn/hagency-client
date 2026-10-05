@@ -1,15 +1,10 @@
 'use client';
 
-/*
- * Connect this Hagency to a project's Palpo server (TS parity: the "import
- * Palpo authorized configuration" step of `app/projects/new/page.jsx`, which
- * the native build does not ship). The operator downloads the configuration
- * in Palpo (My Hagency access → Download Hagency configuration) and picks it
- * here. The file is read in the browser only to show which fleet it is; the
- * server validates it with the CLI importer's rules, saves it, and starts the
- * Palpo connection. Palpo's "Verify connection" then binds the reception.
- */
+// Optional compatibility path for an administrator-provided configuration.
+
 import { useState } from 'react';
+import ServerLoginControl from '@/components/ServerLoginControl';
+import { useData } from '@/components/Data';
 import { useT } from '@/components/Prefs';
 import { errorText } from '@/lib/i18n';
 import { importPalpo } from '@/lib/native-api';
@@ -18,6 +13,7 @@ const FLEET = /^hf_[0-9a-f]{32}$/;
 
 export default function ImportPalpoControl() {
   const t = useT();
+  const data = useData();
   const [text, setText] = useState(null);
   const [preview, setPreview] = useState(null);
   const [homeserver, setHomeserver] = useState('');
@@ -60,7 +56,9 @@ export default function ImportPalpoControl() {
   }
 
   return (
-    <section className="panel" data-palpo-import>
+    <>
+    {data.phase !== 'access' && <ServerLoginControl />}
+    <details className="panel" data-palpo-import><summary>{t('sl.manual')}</summary>
       <h2 style={{ marginTop: 0 }}>{t('pi.title')}</h2>
       <ol className="dim" style={{ fontSize: 13, paddingLeft: 18 }}>
         <li>{t('pi.step1')}</li>
@@ -100,6 +98,7 @@ export default function ImportPalpoControl() {
           {busy ? t('pi.saving') : t('pi.save')}
         </button>
       </div>
-    </section>
+    </details>
+    </>
   );
 }

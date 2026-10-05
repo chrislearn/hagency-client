@@ -4979,3 +4979,7 @@ asserted. Preserve older unknown owners20841/18059/83315 too.
   `Service::reattach_known_agents`, runner route handlers) and re-run the
   checker locally before pushing; look at every section, not just
   `unknownGaps`.
+
+## 2026-10-05: Pasion-bound local access
+
+Automatic login/enrollment lives in `native/hagency/src/console/server_login.rs` and `mockup/components/ServerLoginControl.jsx`. The first binding needs local authority, later sign-ins pin origin/subject/MXID. Tokens stay in memory; finite sessions do not persist in console-logins.json. Native server API is documented in docs/server-login.md. Development artifacts live under ignored .run/. Source changes belong to hagency-client, not the separate hagency-rs checkout.

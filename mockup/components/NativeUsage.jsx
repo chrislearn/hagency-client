@@ -1,4 +1,5 @@
 'use client';
+import ServerLoginControl from '@/components/ServerLoginControl';
 import PageHead from '@/components/PageHead';
 import { fmtTokens } from '@/lib/mock-data';
 import NativeStatusStrip from '@/components/NativeStatusStrip';
@@ -14,11 +15,11 @@ export function NativeAccessNotice() {
   const data = useData(); const t = useT();
   if (data.phase !== 'access') return null;
   const status = data.logoutStatus;
-  return <section className="panel" data-native-state="access" data-logout-state={status ?? undefined}>
+  return <><ServerLoginControl /><section className="panel" data-native-state="access" data-logout-state={status ?? undefined}>
     <h2>{t(status ? `nr.logout.${status}` : 'nu.access')}</h2>
     {['busy', 'unknown'].includes(status) && <><p role="alert">{t('nr.logoutUnresolved')}</p><button className="btn" onClick={data.logout}>{t('nr.retryLogout')}</button></>}
     {status !== 'pending' && <><p>{t('nu.accessHelp')}</p><code>hagency console-access --state-dir &lt;state&gt; --listen &lt;address&gt;</code></>}
-  </section>;
+  </section></>;
 }
 function Counts({ value, label }) {
   const t = useT();
