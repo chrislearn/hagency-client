@@ -352,6 +352,15 @@ pub fn script_mod(vm: &mut ScriptVm) {
     };
     let accent_hover = mix(s.accent, away, 0.08);
     let accent_down = mix(s.accent, away, 0.16);
+    let dark = luminance(s.page) < 0.5;
+    // TextFlow paints its selection rectangles over glyphs. Keep the highlight
+    // translucent so selected text remains legible on both light and dark UI.
+    let text_selection_bg = vec4(
+        s.accent.x,
+        s.accent.y,
+        s.accent.z,
+        if dark { 0.34 } else { 0.26 },
+    );
     script_eval!(vm, {
         mod.widgets.RINX_PAGE = #(s.page)
         mod.widgets.RINX_SURFACE = #(s.surface)
@@ -364,6 +373,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
         mod.widgets.RINX_HOVER = #(s.hover)
         mod.widgets.RINX_PRESSED = #(s.pressed)
         mod.widgets.RINX_SELECTED = #(s.selected)
+        mod.widgets.RINX_TEXT_SELECTION_BG = #(text_selection_bg)
         mod.widgets.RINX_ACCENT_HOVER = #(accent_hover)
         mod.widgets.RINX_ACCENT_DOWN = #(accent_down)
     });

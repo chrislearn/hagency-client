@@ -17,7 +17,7 @@ script_mod! {
         width: Fill height: Fit
         padding: 0
         selectable: true
-        draw_selection +: { color: mod.widgets.RINX_SELECTED }
+        draw_selection +: { color: mod.widgets.RINX_TEXT_SELECTION_BG }
     }
 
     // A pill-shaped widget that displays a Matrix link,
@@ -116,7 +116,7 @@ script_mod! {
         font_size: (MESSAGE_FONT_SIZE),
         font_color: (MESSAGE_TEXT_COLOR),
         draw_text +: { color: (MESSAGE_TEXT_COLOR) }
-        draw_selection +: { color: mod.widgets.RINX_SELECTED }
+        draw_selection +: { color: mod.widgets.RINX_TEXT_SELECTION_BG }
         text_style_normal: mod.widgets.MESSAGE_TEXT_STYLE {
             font_size: (MESSAGE_FONT_SIZE)
             line_spacing: (MESSAGE_TEXT_LINE_SPACING)
