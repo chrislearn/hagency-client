@@ -82,6 +82,7 @@ Appservice 注册及命名空间属于部署侧配置。Matrix 标准描述配�
 | R18 | 同一用户 Agent 可跨 Project 服务，不同 Room 独立授权、额度和上下文 | server 与 client |
 | R19 | 首个执行环境支持 Codex，其他环境后续扩展 | client |
 | R20 | 现有加密能力基本实现则复用重构，确实困难的缺口可延后 | client 与 server |
+| R21 | client 中用户通过 Pasion 登录自己的 Matrix 账号，建立经 server 验证的用户会话和设备授权；连接不依赖 Fleet 或 Appservice 凭据导入 | client、server 与 Pasion |
 
 ### 建议默认值与完整边界
 
@@ -127,6 +128,70 @@ Appservice 注册及命名空间属于部署侧配置。Matrix 标准描述配�
 | 普通 Room 成员 | 按创建者策略请求 Agent | 修改 Agent 配额、工具许可或所有权 |
 
 Project 管理员可由 Space 的 Matrix 权限映射，首期建议提供显式角色登记，并用 Matrix 当前权限验证登记/更改资格。Matrix 账号的高 power level、Palpo 全局管理员、Hagency 平台管理员是不同角色，API 必须按操作分别检查。
+
+## 用户通过 Pasion 登录与客户端连接授权
+
+### 本轮源码核对结论
+
+用户补充要求已纳入 R21。这里的“自己的 Matrix 账号”是该集成 homeserver 中与 Pasion 主体建立可信映射的人类 Matrix 身份；用户在 Pasion 登录页面完成认证及授权，hagency-client 不收集 Matrix/Pasion 密码，也不另建一套 Hagency 密码账号。已有 Palpo-only 账号若没有可信 Pasion 映射，不能仅凭同名自动成为原 Agent owner；现有账号关联由既有身份系统处理，新客户端提示账号未关联，不新增身份认领或 Agent 转让功能。
+
+当前工作树已经存在登录实现，不能写成“完全没有登录”。本轮复核客户端 HEAD 为 `cc96323e5a1ee59d54b7be33126bf1ca827970fc`；实现与测试存在仅证明有代码，不代表真实 Pasion/Palpo 登录往返已通过。本轮为源码与文档审计，未运行真实授权流程。
+
+| 核对位置 | 已有实现 | 与目标的差距 |
+|---|---|---|
+| client `native/hagency/src/console/server_login.rs` 的 `begin` / `finish` | 请求 discovery，动态登记 native public OAuth client，使用授权码、PKCE S256、state 与回调 cookie；Rust host 换 token，调用服务端 identity | 登录后继续执行 `enroll`，把用户登录与 Fleet 安装混为一条流程；discovery 返回的 issuer 未被消费核对，授权与 token 地址直接拼接固定路径 |
+| 同文件 `enroll` | POST `/_hagency/client/v1/fleets`，下载配置，调用 `palpo_live.import`，轮询 Fleet connect/readiness | 客户端取得 Fleet registration 的 `as_token` / `hs_token` 与 machine token；这些凭据必须从新用户登录和客户端连接路径移除 |
+| 同文件 `RemoteSession` / `validate` | 用户 token 在进程内保存，本地 session 最长 900 秒，每 30 秒通过 identity 复核；绑定 owner、Pasion subject、OAuth client ID | 登记声明支持 refresh_token，但源码没有消费 refresh_token、刷新或重启恢复；复核约束用于本地 UI，并未证明旧 machine transport 会随用户会话撤销而停止 |
+| client `console/authority.rs::server_session`、`console.rs::logout` | 生成有限期本地 cookie；登出撤销本地 authority session | 登录授予现有 publication/configuration/account 本地能力，未形成新 owner/device scope；登出未在此路径撤销 Pasion token、服务端设备或执行租约 |
+| client `mockup/components/ServerLoginControl.jsx`、`app/project-sides/import-palpo.jsx` | 已有 Pasion 登录按钮及状态；同时保留管理员配置手工导入入口 | UI 与文案仍围绕 Fleet 名称、配置导入及 connect；`configured` 只表明保存过身份绑定，不代表当前已认证或已连接 |
+| server `crates/backend/src/admin/native_client.rs` | 要求 Pasion delegated auth，服务端 introspection 检查 active/sub/scope/client_id，再用 Matrix whoami 核对实际用户，排除 guest，并比较用户名映射 | 验证后仍创建用户 Fleet 并交付旧 custody；尚未变成新 Hagency 用户会话、受限设备凭证与 Agent owner 授权 |
+| server `crates/backend/src/pasion.rs::prepare` | 配置 Pasion issuer、内部 introspection 和 Palpo 既有 delegated auth；Pasion 作为身份服务接入 | 保留此集成基础，使用 Palpo/Pasion 既有能力；登录方案不要求修改 Palpo 默认源码或新增授权旁路 |
+| client `native/hagency/tests/console/server_login.rs` | fixture 检查 PKCE、回调 cookie、不同 owner 拒绝、过期与撤销；fixture 还模拟旧 Fleet 配置及凭据保存 | 是模拟 OAuth 服务，不能证明真实 Pasion 的 DCR、授权同意、回调端口匹配或服务端联合身份核验；新测试应断言没有 Fleet/AS 凭据下发 |
+
+### 认证、业务授权与执行权分开
+
+Pasion 认证证明用户是谁，并授权客户端获得约定的用户 token；Hagency 业务授权决定该用户可操作的 Agent、Project 和 Room；执行租约决定哪台已授权设备可以处理某个 Agent。这三步分别验证。Pasion 登录成功不授予 Project 创建权，不等于 Room 成员资格，也不等于 Agent 正在运行。
+
+服务端用户记录至少绑定可信 `issuer`、不可变 `subject`、homeserver identity 与核验后的完整 MXID。禁止从请求体、显示名或未验证 token 内容取 owner。当前用户名拼接加 whoami 的核对可作为检查之一；正式授权必须记录并持续核对主体映射，不能仅以 MXID 或用户名字符串相同接管已有用户。相同 issuer/sub 对应异常不同 MXID，或同一 MXID 对应新的 sub，均拒绝自动重绑定并停止受影响授权。OAuth client ID 标识客户端登记，Hagency device ID 标识安装设备，两者不充当永久用户身份；同一用户新增设备允许拥有新的 OAuth client ID，不改变任何 Agent owner。
+
+| 凭据 | 用途与保存位置 | 不能代替的权限 |
+|---|---|---|
+| Pasion 用户 access/refresh token | 登录和续期，由 client Rust host 的受保护凭据存储托管，短暂发送给 server 做校验 | 不能代表 Appservice，也不直接授予 Room 创建或执行权 |
+| Hagency 用户 session | server 验证用户后签发，用于用户 API；绑定主体、服务端及到期/撤销状态 | 不能请求他人 Agent 或给设备永久授权 |
+| Hagency device credential | 登录用户登记本机设备后取得；绑定 owner/device/generation，可撤销 | 不能绕过用户会话有效性、Room binding 或执行 lease |
+| 本地 console cookie | Rust host 对该用户本地配置 UI 的访问控制，浏览器只持此 cookie | 不能单独证明服务器身份、远程 Room 权限或运行资格 |
+| Appservice as_token / hs_token | 仅服务端部署及 Matrix 接入使用 | 绝不交付普通用户或本地 client |
+
+用户 OAuth 的 client/device scope 与 Agent 傀儡的 crypto device 是两个不同身份用途。加密支持不能把人类用户的 token 当作傀儡凭据，也不能通过登录下发服务级 AS token。首期可沿用 Pasion 已支持的 Matrix API/device scope 做身份交换，scope 必须按现有 Pasion 策略核验；是否进一步收窄由实际能力决定，不能假定已有 Hagency 专属 OAuth scope。Hagency 设备/Room 限权始终由 server 自己落实。
+
+### 新客户端的完整连接流程
+
+1. 用户在受本机安装控制保护的 client 中选择 Hagency 服务地址；校验 HTTPS（本机开发允许数字 loopback HTTP），获取 server name、homeserver identity、固定 Pasion issuer、认证端点和能力。保存明确选择的信任目标，不能因响应或重定向换到另一 issuer。新安装仅允许本地初始化动作选择目标；该本地动作不授予远程业务权限。
+2. 复用 native public OAuth client 登记机制；Pasion 已登记或 DCR 可用时按真实策略操作，登记被拒绝时明确报错，不退回机器配置导入。由 Rust host 保存 verifier、state、回调地址及有效期，使用系统浏览器进入固定 issuer 的 Pasion 授权页。授权码 + PKCE 与 loopback 回调遵循 [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252)；端口、省略端口的登记规则和实际回调须用真实 Pasion 验证。
+3. 用户使用自己的账号完成登录及 Pasion 所需同意；回调只接受本次请求匹配的 state、cookie、issuer、redirect 与未过期授权码，单次消费。用户取消、不匹配、授权码重放和 token 换取失败均不登记设备，不启动连接。若使用 OIDC id_token，另核对其签名、iss/aud/nonce/exp；当前回调 cookie 的随机值不是 OIDC nonce，不将二者混称。
+4. Rust host 用 code/verifier 换取 Pasion token，再调用新 `POST /api/hagency/v1/sessions/pasion`。server 通过固定 Pasion introspection 校验 token 活跃性、有效期、scope、client_id 与 sub，并通过受控 Palpo whoami 验证真实 Matrix 用户与主体映射，拒绝 guest、傀儡、停用用户及其他 homeserver。server 不长期保存用户 OAuth 原始 token，返回稳定 user ID、MXID 和有限期 Hagency session。
+5. client 在会话中生成/使用本机设备密钥，调用 `POST /devices` 登记用户设备；server 仅签发该 owner/device 的受限凭证。幂等登记不会新建 Fleet、Appservice 注册、Agent 或 Project，不返回机器共享 secret。用户确认后才能新增设备，不凭磁盘旧配置假定已授权。
+6. 用户读取自己的 Agent 与可发现的 Project/Room，并按创建策略发出请求；客户端配置本地 Codex、额度及工具策略。具备运行资格时登记设备领取该 Agent lease，并连接新 device-events 通道。服务端同时核验用户授权有效性、设备 generation、lease、owner 和 binding；没有有效登录授权就不能仅靠持久化设备 token 继续投递或回复。
+7. UI 分别显示身份已登录、设备已授权、传输在线、Agent binding 可运行、Codex 就绪等状态。登录成功但无创建权仍可显示拒绝原因；设备离线、AS 未就绪和 Codex 未配置不会伪装为登录失败，也不能显示 Agent 已可工作。
+
+### 续期、撤销、离线与切换账号
+
+首期包含长期运行所需的受控续期：优先复用实际 Pasion refresh token 能力，refresh token 只保存在 OS keychain 或同等级受保护存储；若平台暂无此能力，明确要求重新登录。续期保持原 issuer/sub/Matrix 用户不变，重新验证后更新 Hagency 用户授权有效期。轮换、撤销和 invalid_grant 不能继续使用旧 token；不能通过无限期设备 credential 掩盖 OAuth 会话失效。
+
+服务端须将用户授权有效期绑定到设备执行许可，lease 到期不得晚于该有效期。建议复核上限 30 秒，首期以可配置且有验收值的上限落实；client 可在到达窗口前用仍有效的 Pasion access token 调用 renew（不必每次轮换 OAuth token），server 每次向固定 Pasion 核验后仅续到下一复核窗口且不超过 token 到期时间；临近 OAuth 到期再执行 refresh。server 不保存原 token 也能维持有界授权，不能只校验一次再发长期自主设备权。过期/被撤销后停止新投递、领取及回复，拒绝续租。上游撤销无法被推送时，使用有界在线复核/续期实现此行为，不宣称零延迟撤销。Pasion 不可达时不签发新会话或延长授权；缓存的已有授权仅在规定的复核窗口内有效，窗口到期暂停。正在执行的模型/工具无法保证远程撤销后瞬时停止，按本文未知结果和保守额度结算规则处理。
+
+“退出登录”默认撤销本安装的 Hagency 用户会话、执行许可及有效 lease，清理本地 OAuth token/refresh token，并按 Pasion 既有能力撤销本应用的授权；不注销用户在其他 Matrix 应用中的所有会话。它保留 Agent 永久 owner、Room binding 与本地账本。离线退出先在本机立即停止调度、连接和回复；远端撤销记录在网络恢复后补交，server 侧最迟按既定授权窗口/lease 到期失效，不能声称断网时已经完成远程撤销。单独的“暂停运行”不必退出身份会话。其他设备的撤销走明确设备管理动作，不能把普通登出隐式扩大为全账号注销。
+
+客户端重启恢复的身份记录只是绑定证据，恢复凭据后必须重新核验才可远程工作。本地恢复票据仅可修复设置和重新发起登录，不能制造远程身份、读取其他用户数据或恢复撤销设备的运行权。新账号登录只能进入独立用户配置/数据空间；旧 Agent、上下文、crypto state 与账本不能改绑给新账号。本机首期可保持单个已绑定用户档案，切换通过退出后选择独立档案或全新本地配置完成，不实现 Agent 转让。
+
+### 具体改造顺序与验收门槛
+
+1. 固定 R21 身份契约、联合主体映射、token 类型、会话/设备授权有效期与错误码。复用 `pasion.rs` 的现有集成，不添加自己的密码认证或 Palpo 登录旁路。
+2. server 将 `native_client.rs` 中 Pasion introspection + whoami 核验提取到新会话 adapter，新增 `/sessions/pasion`、续期、登出与设备登记。禁止验证通过后进入 `fleet_create` / credentials；核验和新数据库 user/subject/device 写入有明确事务与幂等边界。
+3. client 拆开 `server_login.rs` 的 OAuth 登录、Hagency session 和 device transport。删除新路径中的 `enroll`、`palpo_live.import` 以及 Fleet connect/readiness。保留 PKCE、回调一次性与原主身份核对等安全机制，补齐 issuer 校验、refresh 与撤销。
+4. client 把 `ServerLoginControl` 改成账号与设备登录，移除手工 Fleet JSON 导入、Fleet 名称及“连接 Palpo 就等于接入成功”的旧引导。替换 `authority::server_session` 的旧资源能力语义，本地恢复与远程 owner 授权分别建模；更改退出逻辑，使运行设备立即进入停止投递/回复状态。
+5. 对设备轮询、ACK、回复和 lease 续租逐一检查会话/用户授权有效性；复核缓存不能由请求体或客户端状态延长。发布前扫描新 client 的数据目录、API 响应与日志，证明没有服务级 AS 或旧 machine token。
+6. 使用真实 Pasion + 集成 Palpo + server + 两位用户的 client 验证：首次授权、不同端口 loopback 回调、DCR 拒绝、取消/重放、身份映射冲突、无权限登录、刷新与撤销、重启恢复、断网窗口、登出阻止旧设备回复，以及合法用户无 Fleet 创建即可完成真实 Codex 任务。模拟测试只用于补足故障组合，不代替这条真实链路。
 
 ## 目标组件与数据流
 
@@ -413,7 +478,8 @@ server 在加密房间无法读取 mention 和工具请求正文时，可按绑�
 |---|---|
 | homeservers | 稳定 ID、server name、受控 origin、部署状态 |
 | appservice_registrations | 必装服务级注册；homeserver、注册 ID、namespace、generation、密钥引用；不属于用户或设备 |
-| users | 稳定用户 ID、完整 MXID、账号状态、认证来源；owner 从会话取得，停用保留归属记录 |
+| users | 稳定用户 ID、可信 issuer/不可变 subject、homeserver/完整 MXID 映射、账号状态；owner 从会话取得，停用保留归属记录 |
+| user_sessions | user、授权来源及 OAuth client ID、session generation、授权有效期/复核期限、撤销状态；不长期保存 Pasion 原 token |
 | client_devices | user ID、device ID、公钥/凭证摘要、generation、撤销状态、最后在线时间 |
 | projects | project ID、homeserver、唯一 Space room ID、状态、policy revision |
 | project_roles | user、project、业务角色、授予与撤销记录 |
@@ -446,7 +512,8 @@ server 的 PostgreSQL 业务库与 client 的本地存储分开初始化与备�
 
 | 接口 | 身份及行为 |
 |---|---|
-| `POST /sessions/matrix` | 向受控 Palpo origin 验证用户身份，换取短期 Hagency session |
+| `POST /sessions/pasion` | 验证 Pasion 授权及可信 Matrix 身份映射，换取短期 Hagency session；首期唯一用户登录交换入口 |
+| `POST /sessions/current/renew` | client 通过 Pasion 续期后提供有效用户凭据，再校验原主体并更新 Hagency 用户/设备授权有效期 |
 | `DELETE /sessions/current` | 注销会话，按所选范围撤销设备执行权 |
 | `POST /devices` | 该用户登记设备，凭证绑定用户、公钥与 generation |
 | `DELETE /devices/{id}` | 仅 owner 撤销；平台停用走单独管理接口 |
@@ -475,9 +542,9 @@ server 的 PostgreSQL 业务库与 client 的本地存储分开初始化与备�
 
 额度、用户过滤和工具策略的写 API 在 client 的本地受保护接口，不出现在 server 的管理员批准路由。若提供跨设备同步，仅作为创建者端到端加密配置存储，不让服务器重新解释并决定资源许可。
 
-用户认证不信任请求体 MXID。验证 Matrix token 时固定受控 homeserver、校验实际用户及 session，换取 Hagency 会话后不持续保存原 token；账号停用和会话失效需短期有效期及在线复核。浏览器 cookie 使用 CSRF/Origin 校验；设备 API 使用独立设备凭证。服务端无需复制旧全局 operator bearer 给每位用户。
+用户认证不信任请求体 MXID。首期必须通过 Pasion 用户授权，并联合核验可信 issuer/subject、受控 homeserver、真实 Matrix 用户及 session；不接受仅导入任意 Matrix token 或机器配置形成登录的替代流程。换取 Hagency 会话后 server 不持续保存原 token；账号停用和会话失效需短期有效期及在线复核。浏览器 cookie 使用 CSRF/Origin 校验；设备 API 使用独立设备凭证。服务端无需复制旧全局 operator bearer 给每位用户。
 
-创建、绑定、策略修改、退役及接管都带幂等键；异步操作返回 202 与 command ID。稳定错误码至少包括 `authentication_required`、`project_create_denied`、`room_create_denied`、`matrix_permission_missing`、`binding_revoked`、`state_unavailable`、`idempotency_conflict`、`stale_revision`、`lease_conflict`、`encryption_not_supported`。客户端本地另有 `quota_exhausted`、`requester_denied` 和 `tool_approval_required`。
+创建、绑定、策略修改、退役及接管都带幂等键；异步操作返回 202 与 command ID。稳定错误码至少包括 `authentication_required`、`pasion_required`、`identity_mapping_mismatch`、`authorization_expired`、`device_revoked`、`project_create_denied`、`room_create_denied`、`matrix_permission_missing`、`binding_revoked`、`state_unavailable`、`idempotency_conflict`、`stale_revision`、`lease_conflict`、`encryption_not_supported`。客户端本地另有 `quota_exhausted`、`requester_denied` 和 `tool_approval_required`。
 
 ## 当前实现与目标差异
 
@@ -519,6 +586,7 @@ server 的 PostgreSQL 业务库与 client 的本地存储分开初始化与备�
 | 领域身份 | 原生 Agent 生命周期主要按 Engagement 定位 | Agent 独立于资源申请与分配 | 大 |
 | 用户隔离 | 以本地 operator/console grant 为主要边界 | 多用户 owner/Project/Room/设备边界 | 大 |
 | Project | 主要关联一个项目聊天 Room 与审批 DM | 独立 Space 与多个 Room；同一用户 Agent 可跨 Project 绑定 | 大 |
+| 用户登录与连接 | 已有 Pasion PKCE + introspection/whoami，但登录后仍创建 Fleet 并下发旧凭据 | Pasion 用户授权 → Hagency session → 受限设备 → owner/binding/lease，续期和撤销贯穿执行 | 大 |
 | 创建许可 | owner power、请求来源验证、手工资源批准 | 默认创建权加禁止名单与 Room 策略 | 大 |
 | 模型资源 | 服务发布资源，批准 allocation 后执行 | 创建者本地账号与额度 | 大 |
 | 工作账号 | 已有 AS provisioning | 保留机制，改身份键与 ownership | 中 |
@@ -546,7 +614,7 @@ server 的 PostgreSQL 业务库与 client 的本地存储分开初始化与备�
 
 ### 第二阶段  服务级 Appservice 和多用户认证
 
-将 hagency-server Appservice 纳入集成 Palpo 的必装组件，安装器自动初始化服务级注册并核对，升级保留身份和密钥；复用 Palpo 受控管理员安装接口，验证 transaction 持久化、重放与命名空间。建立用户会话、设备注册/撤销和 owner scope。新用户不进行 Fleet 接入，也不获得 AS token。
+将 hagency-server Appservice 纳入集成 Palpo 的必装组件，安装器自动初始化服务级注册并核对，升级保留身份和密钥；复用 Palpo 受控管理员安装接口，验证 transaction 持久化、重放与命名空间。按 R21 完成客户端 Pasion 授权码/PKCE、服务端主体/Matrix 联合核验、用户会话续期与登出、设备注册/撤销和 owner scope。登录不得继续下发 Fleet custody 或 AS secrets。新用户不进行 Fleet 接入，也不获得 AS token。
 
 交付：集成安装与升级工具、用户登录 API、设备登记、事务接收及审计。门槛：全新集成 Palpo 安装自动完成 AS 注册和事件验证，重复初始化不增建注册；两个不同 owner 的接口、队列和回复隔离通过；普通用户无需注册服务或申请管理员接入批准。
 
@@ -606,7 +674,7 @@ server 的 PostgreSQL 业务库与 client 的本地存储分开初始化与备�
 2. 初始化 Hagency 新数据目录及全新 schema，生成并持久化服务级注册和密钥。
 3. 使用 Palpo 现有 Appservice 安装能力登记新服务专属命名空间，遇到冲突明确失败，不接管旧注册或扩张到其他命名空间。
 4. 在服务端启动/就绪检查中验证真实事件到达、持久化和 ACK，再报告 Agent 集成功能就绪；共进程部署须避免监听端口就绪前执行依赖自身 HTTP 的安装请求。
-5. 用户登录新 Hagency、登记自己的 client、按权限登记 Project/Room 并新建 Agent。
+5. 用户从 client 发起 Pasion 登录，授权自己的 Matrix 身份；server 核验后建立用户会话、登记本机设备，按权限登记 Project/Room 并新建 Agent。
 6. 在用户机器配置模型、额度和工具策略，完成真实请求、执行和傀儡回复。
 
 重复安装和新架构的正常升级保留该新系统的注册 ID、密钥、用户与 Agent 身份，不回头兼容旧架构。部署工具属于 Hagency 或集成编排，不修改 Palpo 源码、默认 UI 或默认权限规则。
@@ -620,6 +688,10 @@ server 的 PostgreSQL 业务库与 client 的本地存储分开初始化与备�
 新架构内部的发布版本可按其明确声明的 schema 兼容范围升级或回退；不把旧 Hagency 程序、旧数据转换或旧模式并行运行作为新架构回退方案。
 
 ## 验收场景与检查标准
+
+### Pasion 登录与连接授权
+
+验证真实 Pasion 授权、PKCE/loopback 回调、联合 Matrix 身份核验、续期和撤销的完整过程。登录不会创建 Fleet 或逐用户 Appservice，任何响应及客户端配置均无 as_token、hs_token 或旧 machine token。不同 subject、账号停用、其他 homeserver、回调重放或失效 token 不能取得原 owner 的会话。登录成功但无 Room 创建权应明确拒绝创建。登录授权过期、退出或设备撤销后，旧设备不得继续领取、ACK、提交回复或续租；执行中的未知结果按既定规则处理。重启恢复和本地恢复票据不能绕过重新核验。
 
 ### 权限与身份
 
@@ -705,6 +777,7 @@ server 的 PostgreSQL 业务库与 client 的本地存储分开初始化与备�
 | 同一 Agent 允许跨 Project | 最小关系、创建流程、数据模型、验收 | 单一 MXID，不同 Project 的 Room binding 独立授权与撤销 |
 | 首先支持 Codex | 阶段五及执行验收 | 真实 Codex 模型调用、工具拦截和本地计量闭环 |
 | 现有加密优先复用困难部分可延后 | 加密复用边界、阶段一及八 | 核对现有实现，按新结构验证；延期有具体缺口证据 |
+| 用户 Pasion 登录自己的 Matrix 账号 | R21 登录专节、第二阶段与真实登录验收 | Pasion 主体与 Matrix 身份联合核验；登录不再安装 Fleet；会话续期/撤销约束设备执行 |
 | REST 创建傀儡和 owner 关系 | 创建流程、API、数据模型 | owner 从认证取得且幂等 |
 | 请求由创建者 client 执行 | 事件流、第五阶段 | 两用户实际隔离执行 |
 | 资源无需管理员确认 | R05、职责、阶段一及六 | 新创建路径不引用 allocation approval |
@@ -721,6 +794,6 @@ server 的 PostgreSQL 业务库与 client 的本地存储分开初始化与备�
 | 全新部署与故障恢复 | 初始化与恢复章节 | 不读取旧数据，恢复保留终身 owner 且不重复执行 |
 | 现有证据与实施真实性 | 基线、源码、验收方法 | 旧文档与过时注释不代替运行事实 |
 
-本轮项目位置修正后，需求与验收约束保持有效；实现差异与改造入口已改为真实 client/server 仓库，具体函数复用仍须在正式实施中验证。本轮审核覆盖了原始需求及全新数据结构、Palpo 默认功能不变、创建者终身拥有、Room 权限、执行隔离、预算并发、工具确认、加密、重试和新系统恢复等边界。尚待实际实施确认的能力门槛为：Palpo 现有 restricted Room 的真实加入行为、现有受限傀儡 crypto device 凭证，以及各 runtime 对按调用工具拦截的支持。对应测试已列入阶段门槛；不能为满足能力门槛改动 Palpo 默认功能，也不得在实现前把它们写成已完成能力。
+本轮项目位置修正后，需求与验收约束保持有效；实现差异与改造入口已改为真实 client/server 仓库，具体函数复用仍须在正式实施中验证。本轮审核覆盖了原始需求及全新数据结构、Palpo 默认功能不变、创建者终身拥有、Room 权限、执行隔离、预算并发、工具确认、加密、重试和新系统恢复等边界。尚待实际实施确认的能力门槛为：真实 Pasion 的 native client 登记、PKCE 回调、token 续期/撤销和联合身份核验，以及 Palpo 现有 restricted Room 的真实加入行为、现有受限傀儡 crypto device 凭证，以及各 runtime 对按调用工具拦截的支持。对应测试已列入阶段门槛；不能为满足能力门槛改动 Palpo 默认功能，也不得在实现前把它们写成已完成能力。
 
 本轮产品范围已确认。首先完成第一阶段的契约、依赖及加密复用缺口清单，再实施跨 Project 绑定和 Codex 本地执行闭环。保持全新数据结构、Palpo 默认功能不变及永久 owner；加密已有能力优先复用，确实困难的部分可以延后并明确界面与验收边界。
