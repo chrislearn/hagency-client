@@ -571,11 +571,23 @@ async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
     if session.invalidated {
         return Err(Error::Unauthorized);
     }
+    // Every execution RPC still reaches the server's current lease/membership
+    // gates. A finite SDK proof need not be re-requested before AND after each
+    // poll: refresh it at most five seconds apart, or before its deadline.
+    if session.matrix_source.is_some()
+        && session.checked.elapsed() < Duration::from_secs(5)
+        && session.authorized_until > Instant::now() + Duration::from_secs(10)
+        && session.oauth_expires > Instant::now() + Duration::from_secs(10)
+    {
+        return Ok(());
+    }
     let server = origin(&session.binding.origin).map_err(|_| Error::Unauthorized)?;
     let client = http().map_err(|_| Error::Unavailable)?;
     let shared_token = if let Some(source) = &session.matrix_source {
         let snapshot = source.access_token().await.map_err(|error| {
-            if super::native::sdk_source_failure(error) == "matrix_authorization_unavailable" {
+            let code = super::native::sdk_source_failure(error);
+            eprintln!("hagency owner renewal failure: stage=sdk_source code={code}");
+            if code == "matrix_authorization_unavailable" {
                 Error::Unavailable
             } else {
                 Error::Unauthorized
@@ -615,36 +627,88 @@ async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
             return Err(Error::Unauthorized);
         }
     }
-    let renewed = response(
-        client
+    let renewal_response = client
+        .post(
+            server
+                .join("/api/hagency/v1/sessions/current/renew")
+                .unwrap(),
+        )
+        .bearer_auth(&session.token)
+        .json(&json!({"accessToken":shared_token.as_ref().unwrap_or(&session.oauth_token)}))
+        .send()
+        .await
+        .map_err(|_| {
+            eprintln!("hagency owner renewal failure: stage=server_session_transport");
+            Error::Unavailable
+        })?;
+    if !renewal_response.status().is_success() {
+        eprintln!(
+            "hagency owner renewal failure: stage=server_session status={}",
+            renewal_response.status().as_u16()
+        );
+    }
+    let renewed = response(renewal_response)
+        .await
+        .map_err(|_| Error::Unauthorized)?;
+    let mut until = deadline(&renewed).map_err(|_| Error::Unauthorized)?;
+    if until <= Instant::now() + Duration::from_secs(20)
+        && let Some(source) = &session.matrix_source
+    {
+        // A short returned proof signals actual token expiry, rather than the
+        // normal thirty-second server freshness window. Refresh only once.
+        let refreshed = source.refresh_access_token().await.map_err(|error| {
+            let code = super::native::sdk_source_failure(error);
+            eprintln!("hagency owner renewal failure: stage=sdk_refresh code={code}");
+            if code == "matrix_authorization_unavailable" {
+                Error::Unavailable
+            } else {
+                Error::Unauthorized
+            }
+        })?;
+        if refreshed.client_id != session.binding.client_id || refreshed.access_token.is_empty() {
+            return Err(Error::Unauthorized);
+        }
+        let response = client
             .post(
                 server
                     .join("/api/hagency/v1/sessions/current/renew")
                     .unwrap(),
             )
             .bearer_auth(&session.token)
-            .json(&json!({"accessToken":shared_token.as_ref().unwrap_or(&session.oauth_token)}))
+            .json(&json!({"accessToken":refreshed.access_token}))
             .send()
             .await
-            .map_err(|_| Error::Unavailable)?,
-    )
-    .await
-    .map_err(|_| Error::Unauthorized)?;
-    let until = deadline(&renewed).map_err(|_| Error::Unauthorized)?;
+            .map_err(|_| Error::Unavailable)?;
+        if !response.status().is_success() {
+            eprintln!(
+                "hagency owner renewal failure: stage=server_after_refresh status={}",
+                response.status().as_u16()
+            );
+        }
+        let refreshed = self::response(response)
+            .await
+            .map_err(|_| Error::Unauthorized)?;
+        until = deadline(&refreshed).map_err(|_| Error::Unauthorized)?;
+    }
     let identity = get(
         &client,
         server.join("/api/hagency/v1/identity").unwrap(),
         Some(&session.token),
     )
     .await
-    .map_err(|_| Error::Unauthorized)?;
+    .map_err(|_| {
+        eprintln!("hagency owner renewal failure: stage=server_identity");
+        Error::Unauthorized
+    })?;
     if !identity_matches(&identity, &session.binding) || identity["userId"] != session.user_id {
         return Err(Error::Unauthorized);
     }
     let identity_until = deadline(&identity).map_err(|_| Error::Unauthorized)?;
     if let Some(source) = &session.matrix_source {
         let after = source.access_token().await.map_err(|error| {
-            if super::native::sdk_source_failure(error) == "matrix_authorization_unavailable" {
+            let code = super::native::sdk_source_failure(error);
+            eprintln!("hagency owner renewal failure: stage=sdk_source code={code}");
+            if code == "matrix_authorization_unavailable" {
                 Error::Unavailable
             } else {
                 Error::Unauthorized
@@ -1276,8 +1340,49 @@ async fn register_device(
 
 /// A closed set of owner operations. No caller supplies a URL or bearer token.
 pub(super) enum OwnerOperation {
+    AgentCommandStatus {
+        operation: String,
+        command: String,
+    },
     Agents,
+    Devices,
+    ExecutionInstance {
+        agent: String,
+    },
+    SaveExecutionInstance {
+        agent: String,
+        device: String,
+        name: String,
+        expected: i64,
+    },
+    AgentOwnerDirect {
+        agent: String,
+    },
+    OwnerDirect {
+        agent: String,
+        room: String,
+    },
     Projects,
+    ScopeState {
+        project: String,
+        room: Option<String>,
+    },
+    ScopePause {
+        project: String,
+        room: Option<String>,
+        paused: bool,
+    },
+    ProjectPolicy {
+        project: String,
+        expected: i64,
+        policy: super::native::ProjectCreationPolicy,
+    },
+    RoomPolicy {
+        project: String,
+        room: String,
+        expected: i64,
+        policy: super::native::RoomCreationPolicy,
+    },
     AdoptProject {
         space: String,
     },
@@ -1308,8 +1413,6 @@ pub(super) enum OwnerOperation {
         binding: String,
     },
     Create {
-        project: String,
-        room: String,
         name: String,
         command: String,
     },
@@ -1361,6 +1464,22 @@ fn operation_id(value: &str) -> Result<(), OwnerError> {
         Ok(())
     }
 }
+fn policy_scope(project: &str, room: Option<&str>) -> Result<String, OwnerError> {
+    operation_id(project)?;
+    match room {
+        Some(room) => {
+            matrix_creations::room_id(room)?;
+            if room.contains('%') || !room.contains(':') {
+                return Err(OwnerError::new(400, "invalid_room_id"));
+            }
+            Ok(format!(
+                "projects/{project}/rooms/{}",
+                percent_encoding::utf8_percent_encode(room, percent_encoding::NON_ALPHANUMERIC)
+            ))
+        }
+        None => Ok(format!("projects/{project}")),
+    }
+}
 impl OwnerOperation {
     fn request(self) -> Result<(reqwest::Method, String, Option<Value>), OwnerError> {
         use reqwest::Method;
@@ -1380,8 +1499,56 @@ impl OwnerOperation {
             ));
         }
         let (method, suffix, body) = match self {
+            Self::AgentCommandStatus { operation, command } => {
+                if !matches!(operation.as_str(), "agent.create" | "agent.bind") {
+                    return Err(OwnerError::new(400, "invalid_arguments"));
+                }
+                operation_id(&command)?;
+                (Method::GET, format!("commands/{operation}/{command}"), None)
+            }
             Self::Agents => (Method::GET, "agents".into(), None),
             Self::Projects => (Method::GET, "projects".into(), None),
+            Self::ScopeState { project, room } => (
+                Method::GET,
+                format!("{}/service-state", policy_scope(&project, room.as_deref())?),
+                None,
+            ),
+            Self::ScopePause {
+                project,
+                room,
+                paused,
+            } => (
+                Method::POST,
+                format!(
+                    "{}/{}",
+                    policy_scope(&project, room.as_deref())?,
+                    if paused {
+                        "pause-service"
+                    } else {
+                        "clear-service-pause"
+                    }
+                ),
+                None,
+            ),
+            Self::ProjectPolicy {
+                project,
+                expected,
+                policy,
+            } => (
+                Method::PUT,
+                format!("{}/creation-policy", policy_scope(&project, None)?),
+                Some(json!({"expectedRevision":expected,"policy":policy})),
+            ),
+            Self::RoomPolicy {
+                project,
+                room,
+                expected,
+                policy,
+            } => (
+                Method::PUT,
+                format!("{}/creation-policy", policy_scope(&project, Some(&room))?),
+                Some(json!({"expectedRevision":expected,"policy":policy})),
+            ),
             Self::AdoptProject { space } => {
                 matrix_creations::room_id(&space)?;
                 (
@@ -1412,6 +1579,52 @@ impl OwnerOperation {
                     None,
                 )
             }
+            Self::Devices => (Method::GET, "devices".into(), None),
+            Self::ExecutionInstance { agent } => {
+                operation_id(&agent)?;
+                (
+                    Method::GET,
+                    format!("agents/{agent}/execution-instance"),
+                    None,
+                )
+            }
+            Self::SaveExecutionInstance {
+                agent,
+                device,
+                name,
+                expected,
+            } => {
+                operation_id(&agent)?;
+                operation_id(&device)?;
+                if expected < 0
+                    || name.trim().is_empty()
+                    || name.chars().count() > 64
+                    || name.chars().any(char::is_control)
+                {
+                    return Err(OwnerError {
+                        status: 400,
+                        code: "invalid_arguments".into(),
+                    });
+                }
+                (
+                    Method::PUT,
+                    format!("agents/{agent}/execution-instance"),
+                    Some(json!({"deviceId":device,"name":name,"expectedGeneration":expected})),
+                )
+            }
+            Self::AgentOwnerDirect { agent } => {
+                operation_id(&agent)?;
+                (Method::GET, format!("agents/{agent}/owner-direct"), None)
+            }
+            Self::OwnerDirect { agent, room } => {
+                operation_id(&agent)?;
+                matrix_creations::room_id(&room)?;
+                (
+                    Method::POST,
+                    format!("agents/{agent}/owner-direct"),
+                    Some(json!({"roomId":room})),
+                )
+            }
             Self::Bindings { agent } => {
                 operation_id(&agent)?;
                 (Method::GET, format!("agents/{agent}/bindings"), None)
@@ -1420,20 +1633,12 @@ impl OwnerOperation {
             | Self::PauseBinding { .. }
             | Self::ResumeBinding { .. }
             | Self::LeaveBinding { .. } => unreachable!("binding operation handled before match"),
-            Self::Create {
-                project,
-                room,
-                name,
-                command,
-            } => {
-                operation_id(&project)?;
+            Self::Create { name, command } => {
                 operation_id(&command)?;
                 (
                     Method::POST,
                     "agents".into(),
-                    Some(
-                        json!({"projectId":project,"roomId":room,"displayName":name,"idempotencyKey":command}),
-                    ),
+                    Some(json!({"displayName":name,"idempotencyKey":command})),
                 )
             }
             Self::Bind {
@@ -1606,5 +1811,54 @@ mod private_json_tests {
         assert!(login.sessions.try_lock().unwrap().is_empty());
         assert_eq!(login.revocations.try_lock().unwrap().len(), 2);
         assert!(read_private_json(&root.path().join("server-login.json"), 512).is_err());
+    }
+}
+
+#[cfg(test)]
+mod scope_policy_request_tests {
+    use super::*;
+    #[test]
+    fn scope_requests_are_fixed_origin_paths_without_claimed_administrator() {
+        let (method, path, body) = OwnerOperation::ScopePause {
+            project: "prj_1".into(),
+            room: Some("!r:test".into()),
+            paused: true,
+        }
+        .request()
+        .unwrap();
+        assert_eq!(method, reqwest::Method::POST);
+        assert_eq!(
+            path,
+            "/api/hagency/v1/projects/prj_1/rooms/%21r%3Atest/pause-service"
+        );
+        assert!(body.is_none());
+        assert!(
+            OwnerOperation::ScopeState {
+                project: "../other".into(),
+                room: None
+            }
+            .request()
+            .is_err()
+        );
+        assert!(
+            OwnerOperation::ScopeState {
+                project: "prj_1".into(),
+                room: Some("!r:test/admin".into())
+            }
+            .request()
+            .is_err()
+        );
+        let (_, _, body) = OwnerOperation::RoomPolicy {
+            project: "prj_1".into(),
+            room: "!r:test".into(),
+            expected: 9,
+            policy: super::super::native::RoomCreationPolicy::Disabled,
+        }
+        .request()
+        .unwrap();
+        assert_eq!(
+            body.unwrap(),
+            json!({"expectedRevision":9,"policy":{"mode":"disabled"}})
+        );
     }
 }

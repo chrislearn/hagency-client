@@ -8,6 +8,10 @@
 
 ## 阅读范围与证据基线
 
+最新 Agent 身份与设备执行权规则见[Agent 身份、执行实例与 Room 接入实施细则](2026-10-07-agent-identity-execution-instance.zh-CN.md)。Agent 创建不再接收 Project/Room；Project/Room 策略只控制接入绑定。每个 Agent 当前至多一个绑定指定设备的执行实例，默认主人私聊使用独立 owner_direct scope。Discovery protocolVersion=2；旧领域数据库明确拒绝，使用独立新 Hagency 库，保留 Palpo/Pasion 数据。
+
+Desktop Agent 创建、资源、接入权限和运行闭环的最新核对与修补见[Agent 完成核对](2026-10-07-desktop-agent-completion-audit.zh-CN.md)。该补充记录替代此前 Agent 全局配置依赖 Room、创建仅内存幂等、Desktop 缺管理员接入策略入口的阶段性状态，并保留真实模型与新增页面实机验证的边界。
+
 本方案的正式实现基线是 `/Volumes/Data/Works/chrislearn/hagency-client` 与 `/Volumes/Data/Works/chrislearn/hagency-server` 两个已存在的独立 Git 仓库。此前错误使用 `hagency-org/hagency-rs` 与外置 Palpo web-admin 作为主要基线，并在 `hagency-org` 新建同名目录；位置修正时已撤除误建目录并将报告移到真实客户端；`refactor-drafts/appservice-domain/` 仅保留历史草稿。随后正式实现已接入真实服务端 workspace 的 `crates/agent-service/`，当前状态见下表。
 
 位置修正时客户端 HEAD 为 `792fd144d07c9a77ee2181c7d260503c46a35036`，服务端 HEAD 为 `59521407358d33df41a9248723625b6de2e95f78`。客户端已有 README、开发脚本与 `server_login` 源码/测试等未提交修改，必须保留。修正位置时服务端根 workspace 有 backend、operations、hagency-contract、frontend 和 xtask；正式重构已删除旧 operations 与 hagency-contract 入口，新增 agent-service；backend 集成 Palpo 与 Pasion，Hagency 使用 PostgreSQL 存储。Palpo 依赖按服务端根 `Cargo.toml` 固定至 `c8568d9844a6be0a3172d98d7c9810e3a1f7521c`，不能把外置 Palpo 的其他提交当作此产品运行版本。
@@ -424,14 +428,14 @@ Room ban、Agent 被移除、创建者离开对应 Space/Room、Project 归档�
 
 ### 创建流程
 
-1. client 以用户会话提交 `projectId`、目标 `roomId`、显示名和幂等键；本地模型参数、Token 配额和工具策略保存在 client。
-2. server 推导 owner，验证 Project、Room、当前策略和请求边界，记录 command 与稳定 Agent ID。
+1. client 以用户会话仅提交显示名和幂等键；不选择 Project/Room。本地模型参数、Token 配额和工具策略保存在 client。
+2. server 推导永久 owner，验证平台身份和请求边界，记录 command 与稳定 Agent ID。
 3. server 使用固定 Agent ID 派生命名空间内的稳定傀儡 MXID，创建账号并设置显示信息。新命名空间建议使用服务专属前缀，用户不能指定任意 MXID。
-4. 根据服务已有权限执行邀请和加入，记录每一步外部操作结果。账号创建成功但入房失败时保存部分状态，不重复创建身份。
-5. 再次验证资格，激活 Room binding。返回身份已就绪、本地设备状态及模型就绪状态等独立字段。
-6. client 取得执行租约后，使用本地配置运行；用户完成模型登录前应显示“身份已创建，等待本地运行环境”。
+4. 身份创建完成后，主人 OAuth 会话建立私密联系人 Room 并邀请傀儡，Appservice 接受；独立 owner_direct binding 不需要 Project。未知结果按持久记录恢复，不重复创建身份或私聊。
+5. 主人在 Agent 设置创建绑定指定设备的执行实例；模型、工作区、全局额度独立配置。加入 Project Room 是后续单独操作，两处入口均调用同一正式 binding API，重新验证 Project/Room 资格与邀请权限。
+6. 指定设备取得执行租约后，使用本地配置运行；用户完成模型登录前应显示“身份已创建，等待本地运行环境”。其他设备不能靠 takeover 绕过实例分配。
 
-创建请求中的 `projectId` 表示首次 Room binding 的授权来源，不能写成 Agent 的固定 Project 归属。后续通过同一 Agent 的绑定 API 加入其他 Project 的 Room，保持原 MXID 和永久 owner。删除某一 binding 不删除其他 Project 的绑定。
+Project 只出现在后续 Room binding 请求中，不是 Agent 固定归属或创建条件。同一 Agent 可加入其他 Project 的 Room，保持原 MXID 和永久 owner。删除某一 binding 不删除其他 Project 的绑定。
 
 Agent 生命周期与 Room binding 生命周期分开：
 

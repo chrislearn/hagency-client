@@ -13,6 +13,8 @@ use std::{
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
+mod commands;
+mod direct;
 
 pub(super) fn router() -> Router {
     Router::with_path("owned-agents")
@@ -75,15 +77,13 @@ async fn api(req: &Request, depot: &Depot, op: OwnerOperation) -> Result<OwnerRe
         .owner_api(cookie(req).map_err(|_| error(401, "sign_in_required"))?, op)
         .await
 }
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Create {
-    project_id: String,
-    room_id: String,
     display_name: String,
     idempotency_key: String,
 }
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Bind {
     project_id: String,
@@ -128,6 +128,7 @@ fn runtime_error(e: super::owned_runtime::RuntimeError) -> OwnerError {
         Approval => error(409, "invalid_tool_approval"),
         Authorization => error(401, "owner_authorization_required"),
         AlreadyActive => error(409, "agent_runtime_already_active"),
+        ExecutionInstance => error(409, "agent_execution_instance_required"),
         LedgerRecovery => error(409, "ledger_recovery_required"),
         Profile => error(409, "runtime_profile_unavailable"),
         Provider => error(401, "provider_authorization_lost"),
@@ -151,6 +152,22 @@ struct ResetPolicy {
     requester: String,
     layer: String,
     expected_revision: i64,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct EditAgentPolicy {
+    expected_revision: i64,
+    policy: Policy,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ResetAgentPolicy {
+    expected_revision: i64,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EditAgentModel {
+    profile: ModelProfile,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -193,7 +210,8 @@ fn selection(req: &Request) -> Result<Selection, OwnerError> {
 struct ServerBinding {
     id: String,
     agent_id: String,
-    project_id: String,
+    project_id: Option<String>,
+    scope_kind: String,
     room_id: String,
     state: String,
     generation: i64,
@@ -201,6 +219,7 @@ struct ServerBinding {
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct ServerAgent {
+    owner_direct_room_id: Option<String>,
     id: String,
     owner_user_id: String,
     puppet_mxid: String,
@@ -216,9 +235,49 @@ struct ServerProject {
     active: bool,
     revision: i64,
 }
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ServerDevice {
+    id: String,
+    name: String,
+    generation: i64,
+    revoked: bool,
+}
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ExecutionInstance {
+    pub id: String,
+    pub agent_id: String,
+    pub device_id: String,
+    pub name: String,
+    pub generation: i64,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SaveExecutionInstance {
+    device_id: String,
+    name: String,
+    expected_generation: i64,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct OwnerDirect {
+    room_id: String,
+}
 fn public(value: &Value, kind: &str) -> Result<Value, OwnerError> {
     let invalid = || error(502, "invalid_server_response");
     match kind {
+        "devices" => {
+            let devices: Vec<ServerDevice> =
+                serde_json::from_value(value["devices"].clone()).map_err(|_| invalid())?;
+            Ok(json!({"devices":devices}))
+        }
+        "execution-instance" => {
+            let instance: Option<ExecutionInstance> =
+                serde_json::from_value(value.get("executionInstance").ok_or_else(invalid)?.clone())
+                    .map_err(|_| invalid())?;
+            Ok(json!({"executionInstance":instance}))
+        }
         "agents" => {
             let agents: Vec<ServerAgent> =
                 serde_json::from_value(value["agents"].clone()).map_err(|_| invalid())?;
@@ -237,14 +296,19 @@ fn public(value: &Value, kind: &str) -> Result<Value, OwnerError> {
         "creation" => {
             let agent: ServerAgent = serde_json::from_value(value["creation"]["agent"].clone())
                 .map_err(|_| invalid())?;
-            let binding: ServerBinding =
+            let binding: Option<ServerBinding> =
                 serde_json::from_value(value["creation"]["binding"].clone())
                     .map_err(|_| invalid())?;
-            let command_state = if binding.state == "active" {
-                "active"
-            } else {
+            let state = binding
+                .as_ref()
+                .map(|b| b.state.as_str())
+                .unwrap_or(&agent.state);
+            let command_state = if matches!(state, "joining" | "provisioning" | "creating") {
                 "pending"
-            };
+            } else {
+                state
+            }
+            .to_owned();
             // Provisioning exposes only audited static protocol error codes.
             let pending_reason = value["pendingReason"].as_str().filter(|code| {
                 matches!(
@@ -261,8 +325,12 @@ fn public(value: &Value, kind: &str) -> Result<Value, OwnerError> {
                         | "storage_unavailable"
                 )
             });
+            let mut creation = json!({"agent":agent});
+            if let Some(binding) = binding {
+                creation["binding"] = serde_json::to_value(binding).map_err(|_| invalid())?;
+            }
             Ok(
-                json!({"creation":{"agent":agent,"binding":binding},"commandState":command_state,"pendingReason":pending_reason}),
+                json!({"creation":creation,"commandState":command_state,"pendingReason":pending_reason}),
             )
         }
         "binding" => {
@@ -517,6 +585,46 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
         .filter(|s| !s.is_empty())
         .collect();
     let method = req.method().clone();
+    if parts.as_slice() == ["devices"] {
+        if method != Method::GET || req.uri().query().is_some() {
+            return Err(error(400, "invalid_arguments"));
+        }
+        let reply = api(req, depot, OwnerOperation::Devices).await?;
+        let host = console(depot).map_err(|_| error(503, "local_state_unavailable"))?;
+        let device = host
+            .authorized_device()
+            .await
+            .map_err(|_| error(401, "owner_authorization_required"))?;
+        if reply.owner != device.owner_mxid()
+            || reply.origin != device.origin()
+            || reply.subject != device.subject()
+            || reply.issuer != device.issuer()
+        {
+            return Err(error(401, "owner_authorization_required"));
+        }
+        let mut value = public(&reply.value, "devices")?;
+        value["currentDeviceId"] = device.device_id().into();
+        return Ok(value);
+    }
+    if parts.first() == Some(&"commands") {
+        if req.uri().query().is_some() {
+            return Err(error(400, "invalid_arguments"));
+        }
+        if parts.len() == 1 && method == Method::GET {
+            return commands::list(req, depot).await;
+        }
+        if parts.len() == 3 && parts[2] == "resume" && method == Method::POST {
+            if !body(req, 1)
+                .await
+                .map_err(|_| error(400, "invalid_arguments"))?
+                .is_empty()
+            {
+                return Err(error(400, "invalid_arguments"));
+            }
+            return commands::resume(req, depot, parts[1]).await;
+        }
+        return Err(error(405, "unsupported_operation"));
+    }
     if parts.is_empty() {
         if req.uri().query().is_some() {
             return Err(error(400, "invalid_arguments"));
@@ -530,32 +638,209 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
         }
         if method == Method::POST {
             let input: Create = parse(req).await?;
-            matrix(&input.room_id, '!')?;
             if input.display_name.trim().is_empty()
                 || input.display_name.chars().count() > 64
                 || input.display_name.chars().any(char::is_control)
             {
                 return Err(error(400, "invalid_arguments"));
             }
-            return public(
-                &api(
-                    req,
-                    depot,
-                    OwnerOperation::Create {
-                        project: input.project_id,
-                        room: input.room_id,
-                        name: input.display_name,
-                        command: input.idempotency_key,
-                    },
-                )
-                .await?
-                .value,
-                "creation",
-            );
+            key(&input.idempotency_key)?;
+            return commands::submit(
+                req,
+                depot,
+                "agent.create",
+                None,
+                serde_json::to_value(input).map_err(|_| error(400, "invalid_arguments"))?,
+            )
+            .await;
         }
     } else {
         key(parts[0])?;
         let agent = parts[0].to_owned();
+        if parts.len() == 3
+            && parts[1] == "owner-direct"
+            && parts[2] == "ensure"
+            && method == Method::POST
+        {
+            return direct::ensure(req, depot, &agent).await;
+        }
+        if parts.len() == 2 && parts[1] == "execution-instance" {
+            if req.uri().query().is_some() {
+                return Err(error(400, "invalid_arguments"));
+            }
+            let op = if method == Method::GET {
+                OwnerOperation::ExecutionInstance {
+                    agent: agent.clone(),
+                }
+            } else if method == Method::PUT {
+                let input: SaveExecutionInstance = parse(req).await?;
+                OwnerOperation::SaveExecutionInstance {
+                    agent: agent.clone(),
+                    device: input.device_id,
+                    name: input.name,
+                    expected: input.expected_generation,
+                }
+            } else {
+                return Err(error(405, "unsupported_operation"));
+            };
+            let reply = api(req, depot, op).await?;
+            recheck(depot).map_err(|_| error(401, "sign_in_required"))?;
+            let value = public(&reply.value, "execution-instance")?;
+            if !value["executionInstance"].is_null()
+                && value["executionInstance"]["agentId"] != agent
+            {
+                return Err(error(502, "invalid_server_response"));
+            }
+            if method == Method::PUT {
+                console(depot)
+                    .map_err(|_| error(503, "local_state_unavailable"))?
+                    .0
+                    .owned_runtime
+                    .stop_agent(&agent, &reply)
+                    .await;
+            }
+            return Ok(value);
+        }
+        if parts.len() == 2 && parts[1] == "owner-direct" && method == Method::GET {
+            if req.uri().query().is_some() {
+                return Err(error(400, "invalid_arguments"));
+            }
+            let reply = api(
+                req,
+                depot,
+                OwnerOperation::AgentOwnerDirect {
+                    agent: agent.clone(),
+                },
+            )
+            .await?;
+            let room: Option<String> = serde_json::from_value(
+                reply
+                    .value
+                    .get("ownerDirectRoomId")
+                    .ok_or_else(|| error(502, "invalid_server_response"))?
+                    .clone(),
+            )
+            .map_err(|_| error(502, "invalid_server_response"))?;
+            let binding: Option<ServerBinding> = serde_json::from_value(
+                reply
+                    .value
+                    .get("binding")
+                    .ok_or_else(|| error(502, "invalid_server_response"))?
+                    .clone(),
+            )
+            .map_err(|_| error(502, "invalid_server_response"))?;
+            if let Some(room) = &room {
+                matrix(room, '!').map_err(|_| error(502, "invalid_server_response"))?;
+            }
+            if binding.as_ref().is_some_and(|b| {
+                b.agent_id != agent
+                    || b.project_id.is_some()
+                    || b.scope_kind != "owner_direct"
+                    || Some(&b.room_id) != room.as_ref()
+            }) {
+                return Err(error(502, "invalid_server_response"));
+            }
+            return Ok(json!({"ownerDirectRoomId":room,"binding":binding}));
+        }
+        if parts.len() == 2 && parts[1] == "owner-direct" && method == Method::POST {
+            if req.uri().query().is_some() {
+                return Err(error(400, "invalid_arguments"));
+            }
+            let input: OwnerDirect = parse(req).await?;
+            matrix(&input.room_id, '!')?;
+            let reply = api(
+                req,
+                depot,
+                OwnerOperation::OwnerDirect {
+                    agent,
+                    room: input.room_id.clone(),
+                },
+            )
+            .await?;
+            if reply.value["ownerDirectRoomId"] != input.room_id {
+                return Err(error(502, "invalid_server_response"));
+            }
+            let mut value = public(&reply.value, "creation")?;
+            value["ownerDirectRoomId"] = input.room_id.into();
+            return Ok(value);
+        }
+        if parts.len() == 2 && ["agent-policy", "agent-model-profile"].contains(&parts[1]) {
+            if req.uri().query().is_some() {
+                return Err(error(400, "invalid_arguments"));
+            }
+            let mut model_change = None;
+            let change = if method == Method::PUT && parts[1] == "agent-model-profile" {
+                let mut input: EditAgentModel = parse(req).await?;
+                if !Path::new(&input.profile.workspace_root).is_absolute() {
+                    return Err(error(400, "invalid_local_policy"));
+                }
+                let workspace = std::fs::canonicalize(&input.profile.workspace_root)
+                    .map_err(|_| error(400, "invalid_local_policy"))?;
+                if !workspace.is_dir() {
+                    return Err(error(400, "invalid_local_policy"));
+                }
+                input.profile.workspace_root = workspace
+                    .to_str()
+                    .ok_or_else(|| error(400, "invalid_local_policy"))?
+                    .into();
+                model_change = Some(input.profile);
+                None
+            } else if method == Method::GET {
+                None
+            } else if method == Method::PUT && parts[1] == "agent-policy" {
+                let mut input: EditAgentPolicy = parse(req).await?;
+                validate_policy(&mut input.policy)?;
+                Some((input.expected_revision, input.policy))
+            } else if method == Method::DELETE && parts[1] == "agent-policy" {
+                let input: ResetAgentPolicy = parse(req).await?;
+                Some((
+                    input.expected_revision,
+                    Policy {
+                        budget: Budget {
+                            limit: Limit::Unlimited,
+                            period: Period::Lifetime,
+                        },
+                        requests: RequestPolicy::Allow,
+                        high_risk: ToolPolicy::Deny,
+                    },
+                ))
+            } else {
+                return Err(error(405, "unsupported_operation"));
+            };
+            let reply = api(req, depot, OwnerOperation::Agents).await?;
+            let agents: Vec<ServerAgent> = serde_json::from_value(reply.value["agents"].clone())
+                .map_err(|_| error(502, "invalid_server_response"))?;
+            // This endpoint returns only the authenticated principal's agents;
+            // ownerUserId is the server domain ID, not a Matrix ID.
+            if !agents.iter().any(|record| record.id == agent) {
+                return Err(error(403, "owner_scope_required"));
+            }
+            let root = console(depot)
+                .map_err(|_| error(503, "local_state_unavailable"))?
+                .0
+                .server_login
+                .state_directory()
+                .ok_or_else(|| error(503, "local_state_unavailable"))?;
+            recheck(depot).map_err(|_| error(401, "sign_in_required"))?;
+            return tokio::task::spawn_blocking(move || {
+                let path = ledger_path(&root, &reply.origin, &reply.issuer, &reply.subject, &reply.owner)
+                    .map_err(|_| error(503, "local_state_unavailable"))?;
+                let identity = profile_identity(&reply.origin, &reply.issuer, &reply.subject, &reply.owner)
+                    .map_err(|_| error(403, "owner_scope_required"))?;
+                let mut ledger = Ledger::open_scoped(&path, &reply.owner, &identity).map_err(local_error)?;
+                hagency_store::private::open(&path, false).map_err(|_| error(503, "local_state_unavailable"))?;
+                if let Some((revision, policy)) = change {
+                    ledger.set_agent_policy(&reply.owner, &agent, revision, &policy).map_err(local_error)?;
+                }
+                if let Some(profile)=model_change {
+                    ledger.set_agent_model_profile(&reply.owner,&agent,&profile).map_err(local_error)?;
+                }
+                let policy = ledger.agent_policy(&reply.owner, &agent).map_err(local_error)?;
+                let (spent, held) = ledger.agent_account(&reply.owner, &agent, policy.policy.budget.period, now()).map_err(local_error)?;
+                let model=ledger.agent_model_profile(&reply.owner,&agent).map_err(local_error)?;
+                Ok(json!({"agentId":agent,"policy":policy,"usage":{"spent":spent,"held":held},"modelProfile":model}))
+            }).await.map_err(|_| error(503, "local_state_unavailable"))?;
+        }
         if parts.len() >= 2 && parts[1] == "runtime" {
             if req.uri().query().is_some() {
                 return Err(error(400, "invalid_arguments"));
@@ -661,6 +946,7 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                     agent_id: agent,
                     binding_id: input.binding_id,
                     host_files: input.host_files,
+                    owner_direct: false,
                     profile: hagency_agent_local::codex::Profile {
                         executable: super::owner_provider::executable()
                             .map_err(|e| error(e.status, e.code))?,
@@ -669,6 +955,7 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                         cwd: PathBuf::from(profile.workspace_root),
                         model: profile.model,
                         effort: input.effort,
+                        shared_auth: provider.shared,
                     },
                     mode: hagency_agent_local::codex::BudgetMode::Estimated {
                         reservation: input.reservation,
@@ -757,21 +1044,16 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
             if method == Method::POST {
                 let input: Bind = parse(req).await?;
                 matrix(&input.room_id, '!')?;
-                return public(
-                    &api(
-                        req,
-                        depot,
-                        OwnerOperation::Bind {
-                            agent,
-                            project: input.project_id,
-                            room: input.room_id,
-                            command: input.idempotency_key,
-                        },
-                    )
-                    .await?
-                    .value,
-                    "creation",
-                );
+                key(&input.project_id)?;
+                key(&input.idempotency_key)?;
+                return commands::submit(
+                    req,
+                    depot,
+                    "agent.bind",
+                    Some(agent),
+                    serde_json::to_value(input).map_err(|_| error(400, "invalid_arguments"))?,
+                )
+                .await;
             }
         }
         if parts.len() == 2
@@ -1044,5 +1326,39 @@ mod profile_tests {
         let marker = a.parent().unwrap().join("profile-identity.json");
         hagency_store::private::replace(&marker, b"{}").unwrap();
         assert!(ledger_path(&root, origin, issuer, "subject-a", owner).is_err());
+    }
+}
+
+#[cfg(test)]
+mod execution_projection_tests {
+    use super::*;
+    #[test]
+    fn global_creation_has_no_room_and_device_projections_never_expose_tokens() {
+        let agent = json!({"id":"a","ownerUserId":"o","puppetMxid":"@a:test","displayName":"Agent","state":"creating","generation":1,"token":"secret"});
+        let result = public(
+            &json!({"creation":{"agent":agent},"commandState":"pending"}),
+            "creation",
+        )
+        .unwrap();
+        assert_eq!(result["commandState"], "pending");
+        assert!(result["creation"].get("binding").is_none());
+        assert!(!result.to_string().contains("secret"));
+        assert!(
+            serde_json::from_value::<Create>(
+                json!({"displayName":"A","idempotencyKey":"key","roomId":"!r:test"})
+            )
+            .is_err()
+        );
+        let devices=public(&json!({"devices":[{"id":"d","name":"Device","generation":1,"revoked":false,"token":"secret"}]}),"devices").unwrap();
+        assert!(!devices.to_string().contains("secret"));
+        let empty = public(&json!({"executionInstance":null}), "execution-instance").unwrap();
+        assert!(empty["executionInstance"].is_null());
+    }
+    #[test]
+    fn direct_binding_remains_a_real_non_project_scope() {
+        let result=public(&json!({"bindings":[{"id":"b","agentId":"a","projectId":null,"scopeKind":"owner_direct","roomId":"!direct:test","state":"active","generation":1,"token":"secret"}]}),"bindings").unwrap();
+        assert!(result["bindings"][0]["projectId"].is_null());
+        assert_eq!(result["bindings"][0]["scopeKind"], "owner_direct");
+        assert!(!result.to_string().contains("secret"));
     }
 }

@@ -418,6 +418,7 @@ impl DeviceOperation {
                 if known.original_epoch < 1
                     || known.original_epoch > lease.epoch
                     || known.binding_generation < 1
+                    || !(known.thread_root.starts_with('$') || known.thread_root == known.room_id)
                     || known.thread_root.is_empty()
                     || known.thread_root.len() > 1024
                     || known.thread_root.chars().any(char::is_control)
@@ -485,6 +486,7 @@ fn check_dispatch(
         || dispatch.event_id.is_empty()
         || dispatch.event_id.len() > 1024
         || dispatch.event_id.chars().any(char::is_control)
+        || !(dispatch.thread_root.starts_with('$') || dispatch.thread_root == dispatch.room_id)
         || dispatch.thread_root.is_empty()
         || dispatch.thread_root.len() > 1024
         || dispatch.thread_root.chars().any(char::is_control)
@@ -530,6 +532,7 @@ fn check_reply(
         || reply.payload_digest != payload_digest(dispatch_id, execution_id, body)?
         || reply.matrix_txn_id != format!("hagency_{:x}", Sha256::digest(dispatch_id.as_bytes()))
         || !["pending", "unknown", "sending", "sent", "cancelled"].contains(&reply.state.as_str())
+        || !(reply.thread_root.starts_with('$') || reply.thread_root == reply.room_id)
         || reply.thread_root.is_empty()
         || reply.thread_root.len() > 1024
         || reply.thread_root.chars().any(char::is_control)
@@ -594,6 +597,7 @@ fn parse_response(
                     || previous.is_some_and(|p| p >= h.dispatch_id.as_str())
                     || !h.event_id.starts_with('$')
                     || h.event_id.len() > 1024
+                    || !(h.thread_root.starts_with('$') || h.thread_root == h.room_id)
                     || h.thread_root.is_empty()
                     || h.thread_root.len() > 1024
                     || h.thread_root.chars().any(char::is_control)

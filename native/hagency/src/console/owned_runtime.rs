@@ -33,6 +33,8 @@ pub(super) struct StartConfig {
     pub credential_ref: String,
     pub takeover: Takeover,
     pub host_files: bool,
+    // Overwritten from authenticated server binding metadata, never a UI option.
+    pub owner_direct: bool,
 }
 #[derive(Debug, thiserror::Error)]
 pub(super) enum RuntimeError {
@@ -42,6 +44,8 @@ pub(super) enum RuntimeError {
     Authorization,
     #[error("Agent runtime already active")]
     AlreadyActive,
+    #[error("Agent execution instance is assigned to another device or is unset")]
+    ExecutionInstance,
     #[error("provider profile or local state unavailable")]
     Profile,
     #[error("shared provider account or environment unavailable")]
@@ -244,6 +248,36 @@ struct Binding {
     agent_id: String,
     room_id: String,
     state: String,
+    #[serde(default)]
+    scope_kind: String,
+}
+fn validate_event_context(
+    event: &inbox::Dispatch,
+    config: &StartConfig,
+    owner: &str,
+) -> Result<(), RuntimeError> {
+    if event.binding_id != config.binding_id
+        || event.agent_id != config.agent_id
+        || (event.thread_root == event.room_id && !config.owner_direct)
+        || (config.owner_direct && event.requester_mxid != owner)
+        || !(event.thread_root.starts_with('$') || event.thread_root == event.room_id)
+    {
+        return Err(RuntimeError::Transport);
+    }
+    Ok(())
+}
+fn verify_execution_instance(
+    value: &serde_json::Value,
+    agent: &str,
+    device: &str,
+) -> Result<(), RuntimeError> {
+    let instance: Option<super::owned_agents::ExecutionInstance> =
+        serde_json::from_value(value["executionInstance"].clone())
+            .map_err(|_| RuntimeError::Profile)?;
+    if !instance.is_some_and(|i| i.agent_id == agent && i.device_id == device && i.generation > 0) {
+        return Err(RuntimeError::ExecutionInstance);
+    }
+    Ok(())
 }
 impl OwnedRuntime {
     /// Holding this registry lock through publication lets switch revoke first,
@@ -262,7 +296,7 @@ impl OwnedRuntime {
         &self,
         console: Console,
         cookie: &str,
-        config: StartConfig,
+        mut config: StartConfig,
     ) -> Result<RuntimeStatus, RuntimeError> {
         match config.mode {
             BudgetMode::Strict => return Err(RuntimeError::StrictUnavailable),
@@ -280,8 +314,11 @@ impl OwnedRuntime {
         {
             return Err(RuntimeError::Profile);
         }
-        if super::owner_provider::credential_reference(&config.profile.codex_home)
-            .map_err(|_| RuntimeError::Profile)?
+        if super::owner_provider::selected_reference(
+            &config.profile.codex_home,
+            config.profile.shared_auth,
+        )
+        .map_err(|_| RuntimeError::Profile)?
             != config.credential_ref
         {
             return Err(RuntimeError::Profile);
@@ -291,6 +328,23 @@ impl OwnedRuntime {
             .await
             .map_err(|_| RuntimeError::Authorization)?;
         device.bearer().map_err(|_| RuntimeError::Authorization)?;
+        let assigned = console
+            .owner_api(
+                cookie,
+                OwnerOperation::ExecutionInstance {
+                    agent: config.agent_id.clone(),
+                },
+            )
+            .await
+            .map_err(|_| RuntimeError::Authorization)?;
+        if assigned.owner != device.owner_mxid()
+            || assigned.origin != device.origin()
+            || assigned.issuer != device.issuer()
+            || assigned.subject != device.subject()
+        {
+            return Err(RuntimeError::Authorization);
+        }
+        verify_execution_instance(&assigned.value, &config.agent_id, device.device_id())?;
         let reply = console
             .owner_api(
                 cookie,
@@ -315,6 +369,7 @@ impl OwnedRuntime {
                 b.agent_id == config.agent_id && b.id == config.binding_id && b.state == "active"
             })
             .ok_or(RuntimeError::Profile)?;
+        config.owner_direct = binding.scope_kind == "owner_direct";
         let root = console
             .0
             .server_login
@@ -330,13 +385,18 @@ impl OwnedRuntime {
         .map_err(|_| RuntimeError::Profile)?;
         // Paths are owner-specific, and must be initialized by the owner. A
         // caller cannot silently repurpose ~/.codex or another owner's login.
-        let directory = path
-            .parent()
-            .ok_or(RuntimeError::Profile)?
-            .canonicalize()
-            .map_err(|_| RuntimeError::Profile)?;
-        if config.profile.codex_home != directory.join("codex-home")
-            || config.profile.home != directory.join("provider-home")
+        let expected = super::owner_provider::paths(
+            &root,
+            device.origin(),
+            device.issuer(),
+            device.subject(),
+            device.owner_mxid(),
+        )
+        .map_err(|_| RuntimeError::Profile)?;
+        if config.profile.codex_home != expected.codex_home
+            || config.profile.home != expected.home
+            || config.profile.shared_auth != expected.shared
+            || config.credential_ref != expected.credential_ref
         {
             return Err(RuntimeError::Profile);
         }
@@ -364,7 +424,8 @@ impl OwnedRuntime {
                 if p.model == config.profile.model
                     && p.workspace_root == config.profile.cwd.to_string_lossy()
                     && p.credential_ref == config.credential_ref
-                    && p.credential_ref.starts_with("keychain:") => {}
+                    && (p.credential_ref.starts_with("keychain:")
+                        || p.credential_ref.starts_with("codex-managed:")) => {}
             _ => return Err(RuntimeError::Profile),
         }
         let key = identity(&device, &config.agent_id);
@@ -688,6 +749,31 @@ impl OwnedRuntime {
         }
         Ok(())
     }
+    pub(super) async fn stop_agent(&self, agent: &str, owner: &super::server_login::OwnerReply) {
+        let mut entries = self.entries.lock().await;
+        let keys: Vec<_> = entries
+            .iter()
+            .filter(|(_, entry)| {
+                entry.status.borrow().agent_id == agent
+                    && entry.device.origin == owner.origin
+                    && entry.device.issuer == owner.issuer
+                    && entry.device.subject == owner.subject
+                    && entry.device.owner == owner.owner
+            })
+            .map(|(key, _)| key.clone())
+            .collect();
+        let removed: Vec<_> = keys
+            .into_iter()
+            .filter_map(|key| entries.remove(&key))
+            .collect();
+        for entry in &removed {
+            entry.cancel.send_replace(true);
+        }
+        drop(entries);
+        for entry in removed {
+            let _ = entry.task.await;
+        }
+    }
     pub async fn stop_all(&self) {
         let entries = std::mem::take(&mut *self.entries.lock().await);
         for entry in entries.values() {
@@ -755,29 +841,42 @@ fn deadline(lease: &Lease) -> Result<Instant, RuntimeError> {
     }
     Ok(Instant::now() + Duration::from_millis(remaining as u64))
 }
+fn heartbeat_next(now: Instant, expiry: Instant) -> Instant {
+    now + Duration::from_secs(5).min(expiry.saturating_duration_since(now) / 2)
+}
 async fn heartbeat(
     console: Console,
     mut device: AuthorizedDevice,
     mut lease: Lease,
     stop: watch::Sender<bool>,
     mut receiver: watch::Receiver<bool>,
+    failed: Arc<std::sync::atomic::AtomicBool>,
 ) {
-    let mut next = Instant::now() + Duration::from_secs(5);
-    while let Ok(expiry) = deadline(&lease) {
+    use std::sync::atomic::Ordering;
+    let first_expiry = deadline(&lease).unwrap_or_else(|_| Instant::now());
+    let mut next = heartbeat_next(Instant::now(), first_expiry.min(device.valid_until()));
+    let reason = loop {
+        let Ok(expiry) = deadline(&lease) else {
+            break "lease_deadline_elapsed";
+        };
         if device.bearer().is_err() {
-            break;
+            break "device_snapshot_expired";
         }
         if Instant::now() >= next {
             let pin = DevicePin::from(&device);
-            let renewed = tokio::select! { biased; _=canceled(&mut receiver)=>return, _=tokio::time::sleep_until(expiry.into())=>break, result=console.execution_api_pinned(Op::Renew{lease:lease.reference(),ttl_ms:30_000},&pin)=>result };
+            let renewed = tokio::select! { biased; _=canceled(&mut receiver)=>return, _=tokio::time::sleep_until(expiry.into())=>break "lease_renewal_deadline", result=console.execution_api_pinned(Op::Renew{lease:lease.reference(),ttl_ms:30_000},&pin)=>result };
             let Ok(Response::Lease(value)) = renewed else {
-                break;
+                break "lease_renewal_rejected";
             };
             lease = value;
-            // Snapshot expiry can be refreshed; immutable device identity cannot.
-            let fresh = tokio::select! {biased; _=canceled(&mut receiver)=>return, _=tokio::time::sleep_until(expiry.into())=>break, result=console.authorized_device()=>result};
+            // The successful renewal replaces the lease deadline. Waiting for a
+            // fresh device against the previous deadline would cancel a valid renewal.
+            let Ok(fresh_expiry) = deadline(&lease) else {
+                break "renewed_lease_expired";
+            };
+            let fresh = tokio::select! {biased; _=canceled(&mut receiver)=>return, _=tokio::time::sleep_until(fresh_expiry.into())=>break "device_refresh_deadline", result=console.authorized_device()=>result};
             let Ok(fresh) = fresh else {
-                break;
+                break "device_authorization_required";
             };
             if fresh.origin() != device.origin()
                 || fresh.issuer() != device.issuer()
@@ -787,13 +886,15 @@ async fn heartbeat(
                 || fresh.device_id() != device.device_id()
                 || fresh.generation() != device.generation()
             {
-                break;
+                break "device_identity_changed";
             }
             device = fresh;
-            next = Instant::now() + Duration::from_secs(5);
+            next = heartbeat_next(Instant::now(), fresh_expiry.min(device.valid_until()));
         }
-        tokio::select! { biased; _=canceled(&mut receiver)=>return, _=tokio::time::sleep(Duration::from_millis(200))=>{} }
-    }
+        tokio::select! { biased; _=canceled(&mut receiver)=>return, _=tokio::time::sleep_until(next.min(expiry).into())=>{} }
+    };
+    eprintln!("hagency runtime heartbeat failure: stage={reason}");
+    failed.store(true, Ordering::Release);
     stop.send_replace(true);
 }
 fn failure_code(result: &Result<(), RuntimeError>) -> Option<&'static str> {
@@ -803,6 +904,7 @@ fn failure_code(result: &Result<(), RuntimeError>) -> Option<&'static str> {
         Err(RuntimeError::Profile) => Some("profile_or_local_state_unavailable"),
         Err(RuntimeError::Provider) => Some("provider_authorization_lost"),
         Err(RuntimeError::LedgerRecovery) => Some("ledger_recovery_required"),
+        Err(RuntimeError::ExecutionInstance) => Some("agent_execution_instance_required"),
         _ => Some("device_transport_unavailable"),
     }
 }
@@ -966,12 +1068,14 @@ async fn run_host(
     .await?;
     drop(ledger);
     let reference = lease.reference();
+    let heartbeat_failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let monitor = tokio::spawn(heartbeat(
         console.clone(),
         device,
         lease,
         stop.clone(),
         cancel.clone(),
+        heartbeat_failed.clone(),
     ));
     let _heartbeat_guard = AbortHeartbeat(monitor.abort_handle());
     let result=async {
@@ -1002,7 +1106,11 @@ async fn run_host(
     monitor.abort();
     let _ = monitor.await;
     let _ = transport.execute(Op::Release { lease: reference }).await;
-    result
+    if heartbeat_failed.load(std::sync::atomic::Ordering::Acquire) {
+        Err(RuntimeError::Authorization)
+    } else {
+        result
+    }
 }
 /// One supervisor owns the lease. Workers can never acquire, renew or release it.
 /// All cancellation paths join workers before the supervisor releases the lease.
@@ -1179,9 +1287,7 @@ async fn execution_loop_with_gate<T: Transport>(
         };
         for event in events {
             let event = convert(event)?;
-            if event.binding_id != config.binding_id {
-                return Err(RuntimeError::Transport);
-            }
+            validate_event_context(&event, config, owner)?;
             let scope = event.scope();
             // Poll transport has verified current owner/device/Agent and lease.
             local(ledger.register_binding(owner, &scope))?;
@@ -1499,7 +1605,7 @@ async fn run_turn<T: Transport>(
     let mut profile = config.profile.clone();
     #[cfg(unix)]
     let workspace = if config.host_files {
-        let directory = profile.codex_home.parent().ok_or(RuntimeError::Profile)?;
+        let directory = profile.home.parent().ok_or(RuntimeError::Profile)?;
         let workspace = hagency_agent_local::room_files::Workspace::open(directory, owner, &scope)
             .map_err(|_| RuntimeError::Profile)?;
         profile.cwd = workspace.canonical_directory().to_path_buf();
@@ -1592,6 +1698,7 @@ async fn run_turn<T: Transport>(
     let permission_cancel = cancel.clone();
     let result = tokio::select! {biased; _=canceled(cancel)=>Err(RuntimeError::Stopped), error=monitor_running(transport,lease,&prepared,permission_cancel)=>Err(error), r=async {
         provider.session.initialize().await?;
+        provider.session.verify_host_environment().await?;
         provider.session.require_local_account().await?;
         provider.session.open_context(ledger,&scope,&profile).await?;
         if !fresh_running(transport,lease,&prepared.dispatch,&prepared.execution_id,&mut pre_model_cancel).await {return Err(codex::Error::Protocol("running dispatch authorization lost"));}
@@ -1691,6 +1798,20 @@ async fn send_reply<T: Transport>(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn heartbeat_schedule_precedes_short_proof_deadline() {
+        let now = std::time::Instant::now();
+        assert_eq!(
+            super::heartbeat_next(now, now + std::time::Duration::from_secs(30)),
+            now + std::time::Duration::from_secs(5)
+        );
+        assert_eq!(
+            super::heartbeat_next(now, now + std::time::Duration::from_secs(4)),
+            now + std::time::Duration::from_secs(2)
+        );
+        assert_eq!(super::heartbeat_next(now, now), now);
+    }
     use super::super::device_execution::{ExecutionStart, ReplyReceipt};
     use super::*;
     use std::sync::Mutex as StdMutex;
@@ -1811,6 +1932,37 @@ mod tests {
         runtime.stop_all().await;
         assert!(runtime.entries.lock().await.is_empty());
     }
+    #[test]
+    fn stable_room_context_requires_trusted_owner_direct_binding_and_its_owner() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut configuration = config(temp.path());
+        let mut first = event();
+        first.thread_root = first.room_id.clone();
+        first.requester_mxid = OWNER.into();
+        assert!(validate_event_context(&first, &configuration, OWNER).is_err());
+        configuration.owner_direct = true;
+        validate_event_context(&first, &configuration, OWNER).unwrap();
+        let mut next = first.clone();
+        next.id = "dispatch-next".into();
+        next.event_id = "$next:test".into();
+        next.body = "next message".into();
+        validate_event_context(&next, &configuration, OWNER).unwrap();
+        assert_eq!(
+            first.scope().context_key(OWNER).unwrap(),
+            next.scope().context_key(OWNER).unwrap()
+        );
+        next.thread_root = "$explicit-thread:test".into();
+        validate_event_context(&next, &configuration, OWNER).unwrap();
+        assert_ne!(
+            first.scope().context_key(OWNER).unwrap(),
+            next.scope().context_key(OWNER).unwrap()
+        );
+        next.requester_mxid = "@foreign:test".into();
+        assert!(validate_event_context(&next, &configuration, OWNER).is_err());
+        next.requester_mxid = OWNER.into();
+        next.thread_root = "!another-room:test".into();
+        assert!(validate_event_context(&next, &configuration, OWNER).is_err());
+    }
     fn event() -> inbox::Dispatch {
         inbox::Dispatch {
             id: "dispatch-a".into(),
@@ -1849,11 +2001,13 @@ mod tests {
                 cwd: path.into(),
                 model: "test-model".into(),
                 effort: "low".into(),
+                shared_auth: false,
             },
             mode: BudgetMode::Estimated { reservation: 10 },
             credential_ref: "keychain:test".into(),
             takeover: Takeover::Never,
             host_files: false,
+            owner_direct: false,
         }
     }
     fn setup(path: &std::path::Path, root: &std::path::Path) -> Ledger {
@@ -2969,6 +3123,7 @@ for raw in sys.stdin:
             agent_id: "agent-a".into(),
             room_id: "!room-a:test".into(),
             state: "active".into(),
+            scope_kind: "project".into(),
         }];
         for changed in 0..7 {
             let mut wrong = pin.clone();
@@ -3047,6 +3202,7 @@ for raw in sys.stdin:
                     agent_id: "agent-a".into(),
                     room_id: "!room-a:test".into(),
                     state: "active".into(),
+                    scope_kind: "project".into(),
                 }];
                 let mut entry = entry.lock().await;
                 if let Ok(pending) = entry.take_approval(
@@ -3539,6 +3695,34 @@ for raw in sys.stdin:
         assert!(matches!(
             history_coverage(&fake, &mut l, OWNER, "agent-a", &mut cancel).await,
             Err(RuntimeError::LedgerRecovery)
+        ));
+    }
+}
+
+#[cfg(all(test, unix))]
+mod http_tests;
+
+#[cfg(test)]
+mod instance_tests {
+    use super::*;
+    #[test]
+    fn assignment_is_required_and_cannot_be_bypassed_by_takeover() {
+        let correct = serde_json::json!({"executionInstance":{"id":"instance","agentId":"a","deviceId":"d","name":"Execution instance","generation":1}});
+        assert!(verify_execution_instance(&correct, "a", "d").is_ok());
+        for mode in [Takeover::Never, Takeover::OwnerRequested] {
+            let _ = mode;
+            assert!(matches!(
+                verify_execution_instance(&correct, "a", "other"),
+                Err(RuntimeError::ExecutionInstance)
+            ));
+        }
+        assert!(matches!(
+            verify_execution_instance(&correct, "other", "d"),
+            Err(RuntimeError::ExecutionInstance)
+        ));
+        assert!(matches!(
+            verify_execution_instance(&serde_json::json!({"executionInstance":null}), "a", "d"),
+            Err(RuntimeError::ExecutionInstance)
         ));
     }
 }

@@ -47,6 +47,15 @@ pub trait MatrixTokenSource: Send + Sync {
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = Result<MatrixAccessToken, NativeError>> + Send + '_>,
     >;
+    /// Ask the SDK refresh owner for a fresh grant before a short authorization
+    /// window expires. No refresh credential crosses this interface.
+    fn refresh_access_token(
+        &self,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<MatrixAccessToken, NativeError>> + Send + '_>,
+    > {
+        self.access_token()
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -64,6 +73,9 @@ pub enum BindingAction {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ProviderAction {
+    UseLocal,
+    Disconnect,
+    Models,
     Status,
     Login,
     Cancel,
@@ -71,6 +83,11 @@ pub enum ProviderAction {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum LocalAction {
+    AgentModel,
+    SaveAgentModel,
+    AgentPolicy,
+    SaveAgentPolicy,
+    ResetAgentPolicy,
     Policy,
     Model,
     SavePolicy,
@@ -83,7 +100,90 @@ pub enum LocalAction {
     Decision { approval_id: String },
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectCreationPolicy {
+    pub default_allow: bool,
+    pub allow: std::collections::BTreeSet<String>,
+    pub deny: std::collections::BTreeSet<String>,
+}
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
+pub enum RoomCreationPolicy {
+    InheritProject {
+        deny: std::collections::BTreeSet<String>,
+    },
+    AllowList {
+        allow: std::collections::BTreeSet<String>,
+        deny: std::collections::BTreeSet<String>,
+    },
+    Disabled,
+}
+impl<'de> Deserialize<'de> for RoomCreationPolicy {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(tag = "mode", rename_all = "snake_case", deny_unknown_fields)]
+        enum Strict {
+            InheritProject {
+                deny: std::collections::BTreeSet<String>,
+            },
+            AllowList {
+                allow: std::collections::BTreeSet<String>,
+                deny: std::collections::BTreeSet<String>,
+            },
+            Disabled {},
+        }
+        Ok(match Strict::deserialize(d)? {
+            Strict::InheritProject { deny } => Self::InheritProject { deny },
+            Strict::AllowList { allow, deny } => Self::AllowList { allow, deny },
+            Strict::Disabled {} => Self::Disabled,
+        })
+    }
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Command {
+    AgentCommands,
+    ResumeAgentCommand {
+        id: String,
+    },
+    ScopeServiceState {
+        project_id: String,
+        room_id: Option<String>,
+    },
+    SetProjectCreationPolicy {
+        project_id: String,
+        expected_revision: i64,
+        policy: ProjectCreationPolicy,
+    },
+    SetRoomCreationPolicy {
+        project_id: String,
+        room_id: String,
+        expected_revision: i64,
+        policy: RoomCreationPolicy,
+    },
+    SetScopeServicePause {
+        project_id: String,
+        room_id: Option<String>,
+        paused: bool,
+    },
+    Devices,
+    AgentExecutionInstance {
+        agent_id: String,
+    },
+    SaveAgentExecutionInstance {
+        agent_id: String,
+        input: Value,
+    },
+    AgentOwnerDirectStatus {
+        agent_id: String,
+    },
+    EnsureAgentOwnerDirect {
+        agent_id: String,
+    },
+    AgentOwnerDirect {
+        agent_id: String,
+        room_id: String,
+    },
+
     LoginStatus,
     BeginLogin,
     Logout,
@@ -143,6 +243,9 @@ pub enum Command {
         binding_id: Option<String>,
         requester: Option<String>,
     },
+    PrepareAgentWorkspace {
+        agent_id: String,
+    },
     Provider {
         action: ProviderAction,
     },
@@ -189,6 +292,13 @@ fn segment(id: &str) -> Result<String, NativeError> {
     }
     Ok(percent_encoding::utf8_percent_encode(id, percent_encoding::NON_ALPHANUMERIC).to_string())
 }
+fn project_scope(project: &str, room: Option<&str>) -> Result<String, NativeError> {
+    key(project)?;
+    match room {
+        Some(room) => Ok(format!("{project}/rooms/{}", segment(room)?)),
+        None => Ok(project.into()),
+    }
+}
 fn request(command: Command) -> Result<(&'static str, String, Option<Value>), NativeError> {
     let root = "/console/api";
     let mut body = None;
@@ -197,6 +307,104 @@ fn request(command: Command) -> Result<(&'static str, String, Option<Value>), Na
         Command::Logout => ("POST", "/console/server-login/logout".into()),
         Command::BeginLogin => return Err(failure(400, "login_requires_native_context")),
         Command::Projects => ("GET", format!("{root}/owner-projects")),
+        Command::AgentCommands => ("GET", format!("{root}/owned-agents/commands")),
+        Command::ResumeAgentCommand { id } => {
+            key(&id)?;
+            ("POST", format!("{root}/owned-agents/commands/{id}/resume"))
+        }
+        Command::ScopeServiceState {
+            project_id,
+            room_id,
+        } => {
+            let scope = project_scope(&project_id, room_id.as_deref())?;
+            (
+                "GET",
+                format!("{root}/owner-projects/{scope}/service-state"),
+            )
+        }
+        Command::SetProjectCreationPolicy {
+            project_id,
+            expected_revision,
+            policy,
+        } => {
+            key(&project_id)?;
+            if expected_revision < 0 {
+                return Err(failure(400, "invalid_arguments"));
+            }
+            body = Some(json!({"expectedRevision":expected_revision,"policy":policy}));
+            (
+                "PUT",
+                format!("{root}/owner-projects/{project_id}/creation-policy"),
+            )
+        }
+        Command::SetRoomCreationPolicy {
+            project_id,
+            room_id,
+            expected_revision,
+            policy,
+        } => {
+            let scope = project_scope(&project_id, Some(&room_id))?;
+            if expected_revision < 0 {
+                return Err(failure(400, "invalid_arguments"));
+            }
+            body = Some(json!({"expectedRevision":expected_revision,"policy":policy}));
+            (
+                "PUT",
+                format!("{root}/owner-projects/{scope}/creation-policy"),
+            )
+        }
+        Command::SetScopeServicePause {
+            project_id,
+            room_id,
+            paused,
+        } => {
+            let scope = project_scope(&project_id, room_id.as_deref())?;
+            let suffix = if paused {
+                "pause-service"
+            } else {
+                "clear-service-pause"
+            };
+            ("POST", format!("{root}/owner-projects/{scope}/{suffix}"))
+        }
+        Command::Devices => ("GET", format!("{root}/owned-agents/devices")),
+        Command::AgentExecutionInstance { agent_id } => {
+            key(&agent_id)?;
+            (
+                "GET",
+                format!("{root}/owned-agents/{agent_id}/execution-instance"),
+            )
+        }
+        Command::SaveAgentExecutionInstance { agent_id, input } => {
+            key(&agent_id)?;
+            body = Some(input);
+            (
+                "PUT",
+                format!("{root}/owned-agents/{agent_id}/execution-instance"),
+            )
+        }
+        Command::AgentOwnerDirectStatus { agent_id } => {
+            key(&agent_id)?;
+            (
+                "GET",
+                format!("{root}/owned-agents/{agent_id}/owner-direct"),
+            )
+        }
+        Command::EnsureAgentOwnerDirect { agent_id } => {
+            key(&agent_id)?;
+            (
+                "POST",
+                format!("{root}/owned-agents/{agent_id}/owner-direct/ensure"),
+            )
+        }
+        Command::AgentOwnerDirect { agent_id, room_id } => {
+            key(&agent_id)?;
+            segment(&room_id)?;
+            body = Some(json!({"roomId":room_id}));
+            (
+                "POST",
+                format!("{root}/owned-agents/{agent_id}/owner-direct"),
+            )
+        }
         Command::ProjectRooms { project_id } => {
             key(&project_id)?;
             ("GET", format!("{root}/owner-projects/{project_id}/rooms"))
@@ -293,8 +501,18 @@ fn request(command: Command) -> Result<(&'static str, String, Option<Value>), Na
                 format!("{root}/owned-agents/{agent_id}/bindings/{binding_id}{s}"),
             )
         }
+        Command::PrepareAgentWorkspace { agent_id } => {
+            key(&agent_id)?;
+            (
+                "POST",
+                format!("{root}/owner-provider/workspaces/{agent_id}"),
+            )
+        }
         Command::Provider { action } => {
             let (m, s) = match action {
+                ProviderAction::UseLocal => ("POST", "/use-local"),
+                ProviderAction::Disconnect => ("POST", "/disconnect"),
+                ProviderAction::Models => ("GET", "/models"),
                 ProviderAction::Status => ("GET", ""),
                 ProviderAction::Login => ("POST", "/login"),
                 ProviderAction::Cancel => ("POST", "/cancel"),
@@ -310,8 +528,25 @@ fn request(command: Command) -> Result<(&'static str, String, Option<Value>), Na
             requester,
         } => {
             key(&agent_id)?;
+            if matches!(
+                action,
+                LocalAction::AgentModel
+                    | LocalAction::SaveAgentModel
+                    | LocalAction::AgentPolicy
+                    | LocalAction::SaveAgentPolicy
+                    | LocalAction::ResetAgentPolicy
+            ) && (binding_id.is_some() || requester.is_some())
+            {
+                return Err(failure(400, "invalid_arguments"));
+            }
+
             body = input;
             let (m, s) = match action {
+                LocalAction::AgentModel => ("GET", "agent-model-profile".into()),
+                LocalAction::SaveAgentModel => ("PUT", "agent-model-profile".into()),
+                LocalAction::AgentPolicy => ("GET", "agent-policy".into()),
+                LocalAction::SaveAgentPolicy => ("PUT", "agent-policy".into()),
+                LocalAction::ResetAgentPolicy => ("DELETE", "agent-policy".into()),
                 LocalAction::Policy => ("GET", "local-policy".into()),
                 LocalAction::Model => ("GET", "model-profile".into()),
                 LocalAction::SavePolicy => ("PUT", "local-policy".into()),
@@ -812,6 +1047,52 @@ mod tests {
     use super::*;
     #[test]
     fn native_commands_cannot_select_an_arbitrary_path_or_foreign_binding_route() {
+        assert!(
+            request(Command::PrepareAgentWorkspace {
+                agent_id: "../other".into()
+            })
+            .is_err()
+        );
+        let (method, path, body) = request(Command::PrepareAgentWorkspace {
+            agent_id: "agt_owned".into(),
+        })
+        .unwrap();
+        assert_eq!(method, "POST");
+        assert_eq!(path, "/console/api/owner-provider/workspaces/agt_owned");
+        assert!(body.is_none());
+        let (method, path, body) = request(Command::Provider {
+            action: ProviderAction::Models,
+        })
+        .unwrap();
+        assert_eq!(method, "GET");
+        assert_eq!(path, "/console/api/owner-provider/models");
+        assert!(body.is_none());
+        assert!(
+            request(Command::ResumeAgentCommand {
+                id: "../other".into()
+            })
+            .is_err()
+        );
+        assert!(
+            request(Command::Local {
+                agent_id: "a".into(),
+                action: LocalAction::AgentPolicy,
+                input: None,
+                binding_id: Some("b".into()),
+                requester: None
+            })
+            .is_err()
+        );
+        let (_, path, _) = request(Command::Local {
+            agent_id: "a".into(),
+            action: LocalAction::AgentPolicy,
+            input: None,
+            binding_id: None,
+            requester: None,
+        })
+        .unwrap();
+        assert_eq!(path, "/console/api/owned-agents/a/agent-policy");
+
         for id in [
             "",
             "../other",
@@ -886,5 +1167,130 @@ mod tests {
             "owner_authorization_required"
         );
         restored.shutdown().await;
+    }
+}
+
+#[cfg(test)]
+mod owner_scope_command_tests {
+    use super::*;
+    #[test]
+    fn native_scope_admin_commands_are_closed_and_do_not_claim_admin_identity() {
+        let policy = ProjectCreationPolicy {
+            default_allow: true,
+            allow: Default::default(),
+            deny: Default::default(),
+        };
+        let (method, path, body) = request(Command::SetProjectCreationPolicy {
+            project_id: "p".into(),
+            expected_revision: 4,
+            policy,
+        })
+        .unwrap();
+        assert_eq!(
+            (method, path.as_str()),
+            ("PUT", "/console/api/owner-projects/p/creation-policy")
+        );
+        assert_eq!(body.unwrap()["expectedRevision"], 4);
+        let (method, path, body) = request(Command::SetScopeServicePause {
+            project_id: "p".into(),
+            room_id: Some("!r:test".into()),
+            paused: true,
+        })
+        .unwrap();
+        assert_eq!(method, "POST");
+        assert!(path.ends_with("/pause-service"));
+        assert!(path.contains("%21r%3Atest"));
+        assert!(body.is_none());
+        assert!(
+            request(Command::ScopeServiceState {
+                project_id: "../p".into(),
+                room_id: None
+            })
+            .is_err()
+        );
+        assert!(
+            request(Command::SetRoomCreationPolicy {
+                project_id: "p".into(),
+                room_id: "!r:test".into(),
+                expected_revision: -1,
+                policy: RoomCreationPolicy::Disabled
+            })
+            .is_err()
+        );
+    }
+    #[test]
+    fn policy_dtos_reject_unknown_fields_and_disabled_payload() {
+        assert!(
+            serde_json::from_value::<RoomCreationPolicy>(json!({"mode":"disabled","allow":[]}))
+                .is_err()
+        );
+        assert!(
+            serde_json::from_value::<ProjectCreationPolicy>(
+                json!({"defaultAllow":true,"allow":[],"deny":[],"owner":"override"})
+            )
+            .is_err()
+        );
+        assert_eq!(
+            serde_json::to_value(RoomCreationPolicy::Disabled).unwrap(),
+            json!({"mode":"disabled"})
+        );
+    }
+    #[test]
+    fn agent_resource_commands_need_no_synthetic_room_and_reject_room_scope() {
+        let (_, path, _) = request(Command::Local {
+            agent_id: "a".into(),
+            action: LocalAction::AgentPolicy,
+            input: None,
+            binding_id: None,
+            requester: None,
+        })
+        .unwrap();
+        assert_eq!(path, "/console/api/owned-agents/a/agent-policy");
+        assert!(
+            request(Command::Local {
+                agent_id: "a".into(),
+                action: LocalAction::SaveAgentModel,
+                input: Some(json!({})),
+                binding_id: Some("b".into()),
+                requester: None
+            })
+            .is_err()
+        );
+        assert!(request(Command::ResumeAgentCommand { id: "../x".into() }).is_err());
+        assert_eq!(
+            request(Command::AgentCommands).unwrap().1,
+            "/console/api/owned-agents/commands"
+        );
+    }
+    #[test]
+    fn device_and_instance_commands_expose_no_bearer_or_arbitrary_path() {
+        assert_eq!(
+            request(Command::Devices).unwrap().1,
+            "/console/api/owned-agents/devices"
+        );
+        let input = json!({"deviceId":"d","name":"Execution instance","expectedGeneration":0});
+        let (method, path, body) = request(Command::SaveAgentExecutionInstance {
+            agent_id: "a".into(),
+            input: input.clone(),
+        })
+        .unwrap();
+        assert_eq!(
+            (method, path.as_str()),
+            ("PUT", "/console/api/owned-agents/a/execution-instance")
+        );
+        assert_eq!(body, Some(input));
+        assert!(
+            request(Command::AgentExecutionInstance {
+                agent_id: "../x".into()
+            })
+            .is_err()
+        );
+        assert!(
+            request(Command::AgentOwnerDirect {
+                agent_id: "a".into(),
+                room_id: "!r:test/escape".into()
+            })
+            .is_err()
+        );
     }
 }

@@ -49,6 +49,7 @@ impl Dispatch {
             key(value)?;
         }
         if !self.event_id.starts_with('$')
+            || !(self.thread_root.starts_with('$') || self.thread_root == self.room_id)
             || self.binding_generation <= 0
             || self.body.is_empty()
             || self.body.len() > 65536

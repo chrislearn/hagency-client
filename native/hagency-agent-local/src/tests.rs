@@ -1,5 +1,70 @@
 use super::*;
 const OWNER: &str = "@alice:example.org";
+#[test]
+fn agent_policy_before_binding_shares_runtime_budget_and_preserves_charges() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("local.db");
+    let mut l = Ledger::open(&path, OWNER).unwrap();
+    assert!(matches!(
+        l.set_agent_policy("@other:example.org", "a1", 0, &config(50, Period::Lifetime)),
+        Err(Error::Unauthorized)
+    ));
+    l.set_agent_policy(OWNER, "a1", 0, &config(50, Period::Lifetime))
+        .unwrap();
+    let model = ModelProfile {
+        model: "test-model".into(),
+        credential_ref: "keychain:codex:owner".into(),
+        workspace_root: tmp.path().to_str().unwrap().into(),
+    };
+    l.set_agent_model_profile(OWNER, "a1", &model).unwrap();
+    assert!(
+        l.set_agent_model_profile("@other:example.org", "a1", &model)
+            .is_err()
+    );
+    assert!(matches!(
+        l.set_agent_policy(OWNER, "a1", 0, &config(999, Period::Lifetime)),
+        Err(Error::Conflict)
+    ));
+    assert_eq!(
+        l.agent_account(OWNER, "a1", Period::Lifetime, 10).unwrap(),
+        (0, 0)
+    );
+    l.register_binding(OWNER, &scope()).unwrap();
+    assert_eq!(l.model_profile(&scope()).unwrap(), Some(model.clone()));
+    l.set_policy(
+        OWNER,
+        &scope(),
+        Layer::Room,
+        0,
+        &config(500, Period::Lifetime),
+    )
+    .unwrap();
+    assert_eq!(
+        l.policy_snapshot(&scope()).unwrap()[0].policy.budget.limit,
+        Limit::Tokens(50)
+    );
+    l.reserve(&scope(), "call", "dispatch", 40, 10).unwrap();
+    assert_eq!(
+        l.agent_account(OWNER, "a1", Period::Lifetime, 10).unwrap(),
+        (0, 40)
+    );
+    assert!(matches!(
+        l.reserve(&scope(), "second", "dispatch2", 20, 10),
+        Err(Error::Budget)
+    ));
+    l.settle(&scope(), "call", &usage(25)).unwrap();
+    l.set_agent_policy(OWNER, "a1", 1, &config(100, Period::Lifetime))
+        .unwrap();
+    drop(l);
+    let l = Ledger::open(path, OWNER).unwrap();
+    assert_eq!(l.agent_model_profile(OWNER, "a1").unwrap(), Some(model));
+    assert_eq!(l.agent_policy(OWNER, "a1").unwrap().revision, 2);
+    assert_eq!(
+        l.account(&scope(), Layer::Agent, Period::Lifetime, 10)
+            .unwrap(),
+        (25, 0)
+    );
+}
 fn scope() -> Scope {
     Scope {
         agent: "a1".into(),

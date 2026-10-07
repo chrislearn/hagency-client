@@ -56,6 +56,7 @@ pub struct Profile {
     pub cwd: PathBuf,
     pub model: String,
     pub effort: String,
+    pub shared_auth: bool,
 }
 impl Profile {
     pub fn validate(&self) -> Result<()> {
@@ -76,13 +77,13 @@ impl Profile {
                 "login directories must be outside workspace",
             ));
         }
-        if self.codex_home.join("config.toml").exists() {
+        if !self.shared_auth && self.codex_home.join("config.toml").exists() {
             return Err(Error::Profile(
                 "dedicated Codex home must not inherit config.toml",
             ));
         }
         for name in ["AGENTS.md", "AGENTS.override.md", "skills"] {
-            if std::fs::symlink_metadata(self.codex_home.join(name)).is_ok() {
+            if !self.shared_auth && std::fs::symlink_metadata(self.codex_home.join(name)).is_ok() {
                 return Err(Error::Profile(
                     "dedicated Codex home instructions are unsupported",
                 ));
@@ -90,7 +91,10 @@ impl Profile {
         }
         // Login data is provider-owned; do not read/copy/serialize auth.json.
         for parent in self.cwd.ancestors() {
-            if parent.join(".codex/config.toml").exists() {
+            if parent.join(".codex/config.toml").exists()
+                && !(self.shared_auth
+                    && parent.join(".codex").canonicalize().ok().as_ref() == Some(&self.codex_home))
+            {
                 return Err(Error::Profile(
                     "workspace Codex config inheritance is unsupported",
                 ));
@@ -101,7 +105,7 @@ impl Profile {
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
-            if std::fs::metadata(&self.codex_home)?.mode() & 0o077 != 0 {
+            if !self.shared_auth && std::fs::metadata(&self.codex_home)?.mode() & 0o077 != 0 {
                 return Err(Error::Profile("Codex login directory must be owner-only"));
             }
         }
@@ -111,10 +115,25 @@ impl Profile {
     /// never inherited through environment variables or app-server requests.
     pub async fn spawn(&self) -> Result<Process> {
         self.validate()?;
+        let overrides = if self.shared_auth {
+            sealed_shared_overrides(&self.executable, &self.home, &self.codex_home).await?
+        } else {
+            vec![]
+        };
+        self.spawn_inner(&overrides).await
+    }
+    async fn spawn_inner(&self, overrides: &[String]) -> Result<Process> {
         let mut command = tokio::process::Command::new(&self.executable);
         command
             .args(["app-server", "--listen", "stdio://"])
-            .args(["-c", "cli_auth_credentials_store=\"keyring\""])
+            .args([
+                "-c",
+                if self.shared_auth {
+                    "cli_auth_credentials_store=\"auto\""
+                } else {
+                    "cli_auth_credentials_store=\"keyring\""
+                },
+            ])
             .args([
                 "-c",
                 "project_doc_max_bytes=0",
@@ -166,6 +185,14 @@ impl Profile {
         ] {
             command.arg("--disable").arg(feature);
         }
+        if self.shared_auth {
+            for value in shared_base_overrides(&self.home)? {
+                command.arg("-c").arg(value);
+            }
+        }
+        for value in overrides {
+            command.arg("-c").arg(value);
+        }
         if let Some(path) = std::env::var_os("PATH") {
             command.env("PATH", path);
         }
@@ -176,10 +203,207 @@ impl Profile {
             .ok_or(Error::Profile("missing stdout"))?;
         let stdin = child.stdin.take().ok_or(Error::Profile("missing stdin"))?;
         Ok(Process {
-            session: Session::new(stdout, stdin),
+            session: {
+                let mut session = Session::new(stdout, stdin);
+                session.shared_home = self.shared_auth.then(|| self.home.clone());
+                session
+            },
             child,
         })
     }
+}
+const SEALED_INSTRUCTIONS: &str = "You are a Hagency Room assistant. Follow only this scoped conversation. Native tools, network, MCP, hooks, plugins and personal instructions are disabled.\n";
+pub fn shared_base_overrides(home: &std::path::Path) -> Result<Vec<String>> {
+    let instructions = home.join("hagency-sealed-instructions.md");
+    match std::fs::symlink_metadata(&instructions) {
+        Ok(metadata) => {
+            if !metadata.is_file() || metadata.file_type().is_symlink() {
+                return Err(Error::Profile("sealed instruction file differs"));
+            }
+            let body = std::fs::read(&instructions)?;
+            if body.is_empty() {
+                std::fs::write(&instructions, SEALED_INSTRUCTIONS)?;
+            } else if body != SEALED_INSTRUCTIONS.as_bytes() {
+                return Err(Error::Profile("sealed instruction file differs"));
+            }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let mut options = std::fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            use std::io::Write;
+            options
+                .open(&instructions)?
+                .write_all(SEALED_INSTRUCTIONS.as_bytes())?;
+        }
+        Err(e) => return Err(e.into()),
+    }
+    Ok(vec![
+        "model_provider=\"openai\"".into(),
+        "chatgpt_base_url=\"https://chatgpt.com/backend-api\"".into(),
+        "instructions=\"\"".into(),
+        "notify=[]".into(),
+        format!(
+            "model_instructions_file={}",
+            serde_json::to_string(&instructions.to_string_lossy())?
+        ),
+        "features.remote_plugin=false".into(),
+        "features.remote_control=false".into(),
+        "features.memories=false".into(),
+    ])
+}
+/// No account/read or inference occurs in this inspection child. CLI empty
+/// table overrides MERGE, so explicitly disable every discovered MCP entry.
+/// The final child is re-verified before any credentials are used for inference.
+pub async fn sealed_shared_overrides(
+    executable: &std::path::Path,
+    home: &std::path::Path,
+    codex_home: &std::path::Path,
+) -> Result<Vec<String>> {
+    let inspection = home.join("hagency-provider-inspection");
+    if !inspection.exists() {
+        std::fs::create_dir(&inspection)?;
+    }
+    if std::fs::symlink_metadata(&inspection)?
+        .file_type()
+        .is_symlink()
+        || !inspection.is_dir()
+    {
+        return Err(Error::Profile("inspection workspace invalid"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&inspection, std::fs::Permissions::from_mode(0o700))?;
+    }
+    let profile = Profile {
+        executable: executable.into(),
+        home: home.into(),
+        codex_home: codex_home.into(),
+        cwd: inspection.canonicalize()?,
+        model: "probe".into(),
+        effort: "medium".into(),
+        shared_auth: true,
+    };
+    profile.validate()?;
+    let mut probe = profile.spawn_inner(&[]).await?;
+    let result = async {
+        probe.session.initialize().await?;
+        let response = probe
+            .session
+            .rpc("config/read", value!({"includeLayers":false}))
+            .await?;
+        let c = &response["config"];
+        validate_shared_provider(c)?;
+        let mut overrides = vec![];
+        if let Some(servers) = c.get("mcp_servers").filter(|v| !v.is_null()) {
+            let servers = servers
+                .as_object()
+                .filter(|m| m.len() <= 128)
+                .ok_or(Error::Profile("MCP catalog invalid"))?;
+            for name in servers.keys() {
+                if name.is_empty()
+                    || name.len() > 128
+                    || !name
+                        .bytes()
+                        .all(|c| c.is_ascii_alphanumeric() || c == b'_' || c == b'-')
+                {
+                    return Err(Error::Profile("MCP name invalid"));
+                }
+                // CLI dotted override keys do not implement TOML quoting.
+                // Restrict segments rather than disabling a different quoted name.
+                overrides.push(format!("mcp_servers.{name}.enabled=false"));
+            }
+        }
+        Ok(overrides)
+    }
+    .await;
+    let _ = probe.stop().await;
+    result
+}
+pub fn verify_shared_configuration(c: &Value, home: &std::path::Path) -> Result<()> {
+    validate_shared_provider(c)?;
+    let expected = home.join("hagency-sealed-instructions.md");
+    let metadata = std::fs::symlink_metadata(&expected)?;
+    if !metadata.is_file()
+        || metadata.file_type().is_symlink()
+        || metadata.len() != SEALED_INSTRUCTIONS.len() as u64
+        || std::fs::read(&expected)? != SEALED_INSTRUCTIONS.as_bytes()
+        || c["model_instructions_file"].as_str() != expected.to_str()
+        || c["instructions"] != ""
+        || c["notify"].as_array().is_none_or(|v| !v.is_empty())
+        || c.get("model_catalog_json").is_some_and(|v| !v.is_null())
+    {
+        return Err(Error::Profile("shared ambient configuration differs"));
+    }
+    if c.get("mcp_servers").is_some_and(|v| {
+        !v.is_null()
+            && v.as_object()
+                .is_none_or(|m| m.values().any(|s| s["enabled"] != false))
+    }) {
+        return Err(Error::Profile("shared MCP is enabled"));
+    }
+    for key in [
+        "shell_tool",
+        "unified_exec",
+        "code_mode_host",
+        "code_mode",
+        "hooks",
+        "plugins",
+        "multi_agent",
+        "skill_search",
+        "skill_mcp_dependency_install",
+        "shell_snapshot",
+        "view_image",
+        "image_generation",
+        "apps",
+        "multi_agent_v2",
+        "tool_search",
+        "tool_suggest",
+        "web_search",
+        "web_search_cached",
+        "web_search_request",
+        "standalone_web_search",
+        "memory_tool",
+        "remote_plugin",
+        "remote_control",
+        "memories",
+    ] {
+        if c["features"][key] != false {
+            return Err(Error::Profile("shared native tool is enabled"));
+        }
+    }
+    if c["web_search"] != "disabled"
+        || c["project_doc_max_bytes"] != 0
+        || c["skills"]["include_instructions"] != false
+        || c["skills"]["bundled"]["enabled"] != false
+        || c["developer_instructions"] != ""
+        || c["include_apps_instructions"] != false
+        || c["include_environment_context"] != false
+    {
+        return Err(Error::Profile("shared instructions enabled"));
+    }
+    Ok(())
+}
+fn validate_shared_provider(c: &Value) -> Result<()> {
+    if c["model_provider"] != "openai" || c["chatgpt_base_url"] != "https://chatgpt.com/backend-api"
+    {
+        return Err(Error::Profile("shared provider origin differs"));
+    }
+    // Installed Codex reserves immutable built-in IDs. Never turn a daily
+    // custom table into an authenticated provider; select only its built-in.
+    if c["model_providers"]
+        .get("openai")
+        .is_some_and(|v| !v.is_null())
+    {
+        return Err(Error::Profile("custom built-in provider unsupported"));
+    }
+
+    Ok(())
 }
 pub struct Process {
     pub session: Session<tokio::process::ChildStdout, tokio::process::ChildStdin>,
@@ -344,6 +568,7 @@ pub struct Session<R, W> {
     initialized: bool,
     bound_scope: Option<Scope>,
     callbacks_enabled: bool,
+    shared_home: Option<std::path::PathBuf>,
     #[cfg(unix)]
     host_files: Option<host_files::HostFiles>,
 }
@@ -363,6 +588,7 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
             initialized: false,
             bound_scope: None,
             callbacks_enabled: false,
+            shared_home: None,
             #[cfg(unix)]
             host_files: None,
         }
@@ -481,6 +707,9 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
             .rpc("config/read", value!({"includeLayers":false}))
             .await?;
         let c = &response["config"];
+        if let Some(home) = &self.shared_home {
+            verify_shared_configuration(c, home)?;
+        }
         for feature in [
             "shell_tool",
             "unified_exec",
@@ -508,9 +737,11 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
                 return Err(Error::Profile("provider native feature gate differs"));
             }
         }
-        if c.get("mcp_servers")
-            .is_some_and(|v| !v.is_null() && v.as_object().is_none_or(|m| !m.is_empty()))
-        {
+        if c.get("mcp_servers").is_some_and(|v| {
+            !v.is_null()
+                && v.as_object()
+                    .is_none_or(|m| m.values().any(|server| server["enabled"] != false))
+        }) {
             return Err(Error::Profile("inherited MCP servers are unsupported"));
         }
         if c["web_search"] != "disabled" {
@@ -522,8 +753,12 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
             || c["include_apps_instructions"] != false
             || c["include_environment_context"] != false
             || c["developer_instructions"].as_str() != Some("")
-            || c.get("model_instructions_file")
-                .is_some_and(|v| !v.is_null())
+            || c.get("model_instructions_file").is_some_and(|v| {
+                !v.is_null()
+                    && self.shared_home.as_ref().is_none_or(|home| {
+                        v.as_str() != home.join("hagency-sealed-instructions.md").to_str()
+                    })
+            })
             || c.get("instructions")
                 .is_some_and(|v| !v.is_null() && v != "")
         {
@@ -985,6 +1220,145 @@ fn now() -> i64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn shared_profile_allows_only_selected_home_config_in_actual_home_ancestry() {
+        let temp = tempfile::tempdir().unwrap();
+        let user = temp.path().canonicalize().unwrap().join("user");
+        let codex = user.join(".codex");
+        let home = user.join("Library/provider");
+        let cwd = home.join("inspection");
+        std::fs::create_dir_all(&codex).unwrap();
+        std::fs::create_dir_all(&cwd).unwrap();
+        std::fs::write(codex.join("config.toml"), "# daily config metadata").unwrap();
+        let executable = temp.path().canonicalize().unwrap().join("executable");
+        std::fs::write(&executable, "").unwrap();
+        let profile = Profile {
+            executable,
+            home,
+            codex_home: codex,
+            cwd,
+            model: "probe".into(),
+            effort: "medium".into(),
+            shared_auth: true,
+        };
+        profile.validate().unwrap();
+        let mut dedicated = profile.clone();
+        dedicated.shared_auth = false;
+        assert!(dedicated.validate().is_err());
+        std::fs::create_dir(profile.cwd.join(".codex")).unwrap();
+        std::fs::write(
+            profile.cwd.join(".codex/config.toml"),
+            "# workspace override",
+        )
+        .unwrap();
+        assert!(matches!(
+            profile.validate(),
+            Err(Error::Profile(
+                "workspace Codex config inheritance is unsupported"
+            ))
+        ));
+    }
+
+    #[test]
+    fn shared_configuration_pins_instructions_provider_and_all_native_channels() {
+        let temp = tempfile::tempdir().unwrap();
+        shared_base_overrides(temp.path()).unwrap();
+        let mut c = serde_json::json!({"model_provider":"openai","chatgpt_base_url":"https://chatgpt.com/backend-api","model_providers":{},"mcp_servers":{"test":{"enabled":false}},"features":{},"notify":[],"instructions":"","model_instructions_file":temp.path().join("hagency-sealed-instructions.md"),"web_search":"disabled","project_doc_max_bytes":0,"skills":{"include_instructions":false,"bundled":{"enabled":false}},"developer_instructions":"","include_apps_instructions":false,"include_environment_context":false});
+        for feature in [
+            "shell_tool",
+            "unified_exec",
+            "code_mode_host",
+            "code_mode",
+            "hooks",
+            "plugins",
+            "multi_agent",
+            "skill_search",
+            "skill_mcp_dependency_install",
+            "shell_snapshot",
+            "view_image",
+            "image_generation",
+            "apps",
+            "multi_agent_v2",
+            "tool_search",
+            "tool_suggest",
+            "web_search",
+            "web_search_cached",
+            "web_search_request",
+            "standalone_web_search",
+            "memory_tool",
+            "remote_plugin",
+            "remote_control",
+            "memories",
+        ] {
+            c["features"][feature] = false.into();
+        }
+        verify_shared_configuration(&c, temp.path()).unwrap();
+        for (pointer, value) in [
+            ("/notify", serde_json::json!(["/bin/sh"])),
+            (
+                "/model_catalog_json",
+                serde_json::json!("/arbitrary/catalog"),
+            ),
+            (
+                "/model_instructions_file",
+                serde_json::json!("/other/hagency-sealed-instructions.md"),
+            ),
+            ("/features/remote_control", serde_json::json!(true)),
+            ("/mcp_servers/test/enabled", serde_json::json!(true)),
+            ("/instructions", serde_json::json!("ambient")),
+            (
+                "/chatgpt_base_url",
+                serde_json::json!("https://untrusted.example"),
+            ),
+        ] {
+            let mut altered = c.clone();
+            if let Some(slot) = altered.pointer_mut(pointer) {
+                *slot = value;
+            } else {
+                altered["model_catalog_json"] = value;
+            }
+            assert!(
+                verify_shared_configuration(&altered, temp.path()).is_err(),
+                "{pointer}"
+            );
+        }
+        c["model_providers"]["openai"] =
+            serde_json::json!({"base_url":"https://untrusted.example"});
+        assert!(verify_shared_configuration(&c, temp.path()).is_err());
+    }
+
+    #[tokio::test]
+    #[ignore = "installed Codex isolated hostile config; config/read and thread/start only, no inference"]
+    async fn installed_shared_configuration_disables_mcp_and_notification_commands() {
+        let temp = tempfile::tempdir().unwrap();
+        let home = temp.path().join("private");
+        let codex_home = temp.path().join("codex");
+        let workspace = temp.path().join("workspace");
+        std::fs::create_dir(&workspace).unwrap();
+        std::fs::create_dir(&home).unwrap();
+        std::fs::create_dir(&codex_home).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&home, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let marker = temp.path().join("executed");
+        let argument = format!("touch {}", marker.display());
+        let config = format!(
+            "notify = [\"/bin/sh\", \"-c\", {}]\n[mcp_servers.hostile]\ncommand = \"/bin/sh\"\nargs = [\"-c\", {}]\nenabled = true\n",
+            serde_json::to_string(&argument).unwrap(),
+            serde_json::to_string(&argument).unwrap()
+        );
+        std::fs::write(codex_home.join("config.toml"), config).unwrap();
+        let profile = Profile { executable: "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex".into(), home:home.canonicalize().unwrap(), codex_home:codex_home.canonicalize().unwrap(), cwd:workspace.canonicalize().unwrap(),model:"probe".into(),effort:"medium".into(),shared_auth:true };
+        let mut process = profile.spawn().await.unwrap();
+        process.session.initialize().await.unwrap();
+        process.session.verify_host_environment().await.unwrap();
+        process.session.rpc("thread/start",serde_json::json!({"cwd":profile.cwd,"approvalPolicy":"never","sandbox":"read-only","config":{"sandbox_workspace_write.network_access":false}})).await.unwrap();
+        process.stop().await.unwrap();
+        assert!(!marker.exists(), "inherited MCP or notification executed");
+    }
+
     use super::*;
     use crate::{Budget, Layer, Limit, Period, Policy, RequestPolicy};
     use std::sync::{
@@ -1029,6 +1403,7 @@ mod tests {
             cwd: root,
             model: "codex-test-model".into(),
             effort: "low".into(),
+            shared_auth: false,
         };
         (temp, ledger, profile)
     }

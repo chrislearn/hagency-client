@@ -86,7 +86,7 @@ pub fn validate_metadata(origin: &str, value: &Value) -> Result<ServerMetadata, 
     if value["product"] != "hagency-server" {
         return Err(AdmissionError::UnsupportedServer);
     }
-    if value["protocolVersion"].as_u64() != Some(1) {
+    if value["protocolVersion"].as_u64() != Some(2) {
         return Err(AdmissionError::UnsupportedProtocol);
     }
     let version = value["version"]
@@ -122,9 +122,15 @@ pub fn validate_metadata(origin: &str, value: &Value) -> Result<ServerMetadata, 
                 .ok_or(AdmissionError::InvalidMetadata)
         })
         .collect::<Result<Vec<_>, _>>()?;
-    if ["pasion-oauth", "owner-agent-appservice-v1"]
-        .iter()
-        .any(|required| !capabilities.iter().any(|c| c == required))
+    if [
+        "pasion-oauth",
+        "owner-agent-appservice-v1",
+        "global-agent-identity-v2",
+        "execution-instance-v1",
+        "owner-direct-v1",
+    ]
+    .iter()
+    .any(|required| !capabilities.iter().any(|c| c == required))
     {
         return Err(AdmissionError::MissingCapabilities);
     }
@@ -138,7 +144,7 @@ pub fn validate_metadata(origin: &str, value: &Value) -> Result<ServerMetadata, 
     Ok(ServerMetadata {
         product: "hagency-server".into(),
         version: version.into(),
-        protocol_version: 1,
+        protocol_version: 2,
         capabilities,
         homeserver: server.to_string(),
         issuer,
@@ -187,13 +193,13 @@ mod tests {
     use super::*;
     use serde_json::json;
     fn metadata() -> Value {
-        json!({"product":"hagency-server","version":"0.1.0","protocolVersion":1,"capabilities":["pasion-oauth","owner-agent-appservice-v1"],"homeserver":"https://hagency.test/","issuer":"https://hagency.test/_pasion/"})
+        json!({"product":"hagency-server","version":"0.1.0","protocolVersion":2,"capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-instance-v1","owner-direct-v1"],"homeserver":"https://hagency.test/","issuer":"https://hagency.test/_pasion/"})
     }
     #[test]
     fn ordinary_matrix_and_service_identity_alone_cannot_gain_admission() {
         for value in [
             json!({"versions":["v1.12"]}),
-            json!({"protocolVersion":1,"serviceMxid":"@hagency_appservice:test","homeserver":"https://hagency.test/","issuer":"https://hagency.test/_pasion/"}),
+            json!({"protocolVersion":2,"serviceMxid":"@hagency_appservice:test","homeserver":"https://hagency.test/","issuer":"https://hagency.test/_pasion/"}),
         ] {
             assert_eq!(
                 validate_metadata("https://hagency.test/", &value),
@@ -210,7 +216,7 @@ mod tests {
     #[test]
     fn admission_requires_supported_protocol_capabilities_and_same_origin_issuer() {
         let mut value = metadata();
-        value["protocolVersion"] = json!(2);
+        value["protocolVersion"] = json!(1);
         assert_eq!(
             validate_metadata("https://hagency.test/", &value),
             Err(AdmissionError::UnsupportedProtocol)
@@ -265,7 +271,7 @@ mod tests {
             .await
             .expect("standard HTTPS certificate/hostname and Hagency metadata validation");
         assert_eq!(metadata.product, "hagency-server");
-        assert_eq!(metadata.protocol_version, 1);
+        assert_eq!(metadata.protocol_version, 2);
     }
     #[tokio::test]
     async fn public_http_admission_never_follows_redirects_or_reads_credentials_for_matrix() {

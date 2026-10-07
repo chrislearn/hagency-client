@@ -5,11 +5,11 @@ use super::{
     server_login::OwnerOperation,
 };
 use salvo::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
@@ -82,6 +82,35 @@ pub(crate) struct ProviderPaths {
     pub home: PathBuf,
     pub codex_home: PathBuf,
     pub credential_ref: String,
+    pub shared: bool,
+}
+fn trusted_local_home() -> Result<PathBuf, ProviderError> {
+    let home = std::env::var_os("CODEX_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".codex")))
+        .ok_or(failure(503, "local_codex_home_unavailable"))?;
+    let home = home
+        .canonicalize()
+        .map_err(|_| failure(503, "local_codex_home_unavailable"))?;
+    if !home.is_dir() {
+        return Err(failure(503, "local_codex_home_unavailable"));
+    }
+    Ok(home)
+}
+pub(crate) fn selected_reference(home: &Path, shared: bool) -> Result<String, ProviderError> {
+    if !shared {
+        return credential_reference(home);
+    }
+    if home != trusted_local_home()? {
+        return Err(failure(409, "provider_profile_mismatch"));
+    }
+    Ok(format!(
+        "codex-managed:shared-home:{:x}",
+        Sha256::digest(home.to_string_lossy().as_bytes())
+    ))
+}
+fn choice_path(paths: &ProviderPaths) -> PathBuf {
+    paths.home.parent().unwrap().join("provider-choice.json")
 }
 pub(crate) fn paths(
     root: &Path,
@@ -98,13 +127,57 @@ pub(crate) fn paths(
         .canonicalize()
         .map_err(|_| failure(503, "provider_directory_unavailable"))?;
     let home = private_directory(&directory.join("provider-home"))?;
-    let codex_home = private_directory(&directory.join("codex-home"))?;
-    let credential_ref = credential_reference(&codex_home)?;
+    let choice = directory.join("provider-choice.json");
+    let shared = match std::fs::symlink_metadata(&choice) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        Err(_) => return Err(failure(503, "provider_choice_unavailable")),
+        Ok(_) => {
+            let file = hagency_store::private::open(&choice, false)
+                .map_err(|_| failure(503, "provider_choice_unavailable"))?;
+            use std::io::Read;
+            let mut raw = Vec::new();
+            file.take(8193)
+                .read_to_end(&mut raw)
+                .map_err(|_| failure(503, "provider_choice_unavailable"))?;
+            if raw.len() > 8192 {
+                return Err(failure(503, "provider_choice_unavailable"));
+            }
+            let v: Value = serde_json::from_slice(&raw)
+                .map_err(|_| failure(503, "provider_choice_unavailable"))?;
+            if v != json!({"version":1,"home":trusted_local_home()?.to_string_lossy()}) {
+                return Err(failure(409, "provider_profile_mismatch"));
+            }
+            true
+        }
+    };
+    let codex_home = if shared {
+        trusted_local_home()?
+    } else {
+        private_directory(&directory.join("codex-home"))?
+    };
+    let credential_ref = selected_reference(&codex_home, shared)?;
     Ok(ProviderPaths {
         home,
         codex_home,
         credential_ref,
+        shared,
     })
+}
+fn prepare_workspace(paths: &ProviderPaths, agent: &str) -> Result<PathBuf, ProviderError> {
+    if agent.is_empty()
+        || agent.len() > 128
+        || !agent
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-'))
+    {
+        return Err(failure(400, "invalid_arguments"));
+    }
+    let owner_dir = paths
+        .home
+        .parent()
+        .ok_or(failure(503, "provider_directory_unavailable"))?;
+    let workspaces = private_directory(&owner_dir.join("workspaces"))?;
+    private_directory(&workspaces.join(agent))
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -116,6 +189,87 @@ pub(super) struct ProviderStatus {
     pub auth_url: Option<String>,
     pub strict_token_cap: bool,
     pub native_tools: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub models: Option<Vec<ProviderModel>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    pub shared: bool,
+    pub credential_source: &'static str,
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ProviderModel {
+    pub id: String,
+    pub model: String,
+    pub display_name: String,
+    pub description: String,
+    pub is_default: bool,
+    pub default_reasoning_effort: String,
+    pub supported_reasoning_efforts: Vec<ProviderEffort>,
+}
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ProviderEffort {
+    pub reasoning_effort: String,
+    pub description: String,
+}
+fn model_page(value: &Value) -> Result<Vec<ProviderModel>, ProviderError> {
+    let data = value["data"]
+        .as_array()
+        .filter(|a| a.len() <= 100)
+        .ok_or(failure(502, "codex_protocol_mismatch"))?;
+    let mut models = Vec::new();
+    for item in data {
+        let hidden = item["hidden"]
+            .as_bool()
+            .ok_or(failure(502, "codex_protocol_mismatch"))?;
+        if hidden {
+            continue;
+        }
+        let m: ProviderModel = serde_json::from_value(item.clone())
+            .map_err(|_| failure(502, "codex_protocol_mismatch"))?;
+        if [&m.id, &m.model]
+            .iter()
+            .any(|s| s.is_empty() || s.len() > 128 || s.chars().any(char::is_control))
+            || m.display_name.is_empty()
+            || m.display_name.len() > 256
+            || m.description.len() > 8192
+            || m.supported_reasoning_efforts.len() > 16
+            || m.supported_reasoning_efforts.is_empty()
+            || m.supported_reasoning_efforts.iter().any(|e| {
+                e.reasoning_effort.is_empty()
+                    || e.reasoning_effort.len() > 32
+                    || e.description.len() > 4096
+            })
+            || !m
+                .supported_reasoning_efforts
+                .iter()
+                .any(|e| e.reasoning_effort == m.default_reasoning_effort)
+        {
+            return Err(failure(502, "codex_protocol_mismatch"));
+        }
+        models.push(m);
+    }
+    Ok(models)
+}
+fn rpc_rejection(value: &Value) -> ProviderError {
+    let message = value["message"].as_str().unwrap_or("").to_ascii_lowercase();
+    let code = if message.contains("keyring")
+        || message.contains("keychain")
+        || message.contains("credential store")
+    {
+        "provider_keyring_unavailable"
+    } else if message.contains("bind") && (message.contains("address") || message.contains("port"))
+    {
+        "provider_login_callback_unavailable"
+    } else if value["code"].as_i64() == Some(-32602) || value["code"].as_i64() == Some(-32601) {
+        "codex_protocol_mismatch"
+    } else {
+        "codex_provider_request_rejected"
+    };
+    failure(502, code)
 }
 struct Process {
     child: Child,
@@ -129,7 +283,18 @@ struct Process {
 }
 impl Process {
     async fn spawn(paths: &ProviderPaths, executable: &Path) -> Result<Self, ProviderError> {
-        credential_reference(&paths.codex_home)?;
+        selected_reference(&paths.codex_home, paths.shared)?;
+        let shared_overrides = if paths.shared {
+            hagency_agent_local::codex::sealed_shared_overrides(
+                executable,
+                &paths.home,
+                &paths.codex_home,
+            )
+            .await
+            .map_err(|_| failure(409, "local_codex_configuration_unsupported"))?
+        } else {
+            vec![]
+        };
         let mut command = tokio::process::Command::new(executable);
         command
             .args([
@@ -137,7 +302,11 @@ impl Process {
                 "--listen",
                 "stdio://",
                 "-c",
-                "cli_auth_credentials_store=\"keyring\"",
+                if paths.shared {
+                    "cli_auth_credentials_store=\"auto\""
+                } else {
+                    "cli_auth_credentials_store=\"keyring\""
+                },
             ])
             .args([
                 "-c",
@@ -163,6 +332,16 @@ impl Process {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .kill_on_drop(true);
+        if paths.shared {
+            for value in hagency_agent_local::codex::shared_base_overrides(&paths.home)
+                .map_err(|_| failure(409, "local_codex_configuration_unsupported"))?
+            {
+                command.arg("-c").arg(value);
+            }
+        }
+        for value in &shared_overrides {
+            command.arg("-c").arg(value);
+        }
         if let Some(path) = std::env::var_os("PATH") {
             command.env("PATH", path);
         }
@@ -177,6 +356,17 @@ impl Process {
             "skill_search",
             "skill_mcp_dependency_install",
             "shell_snapshot",
+            "view_image",
+            "image_generation",
+            "apps",
+            "multi_agent_v2",
+            "tool_search",
+            "tool_suggest",
+            "web_search",
+            "web_search_cached",
+            "web_search_request",
+            "standalone_web_search",
+            "memory_tool",
         ] {
             command.arg("--disable").arg(feature);
         }
@@ -205,6 +395,11 @@ impl Process {
         };
         p.rpc("initialize",json!({"clientInfo":{"name":"hagency-client","title":"Hagency Client","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":false}})).await?;
         p.write(json!({"method":"initialized"})).await?;
+        if paths.shared {
+            let c = p.rpc("config/read", json!({"includeLayers":false})).await?;
+            hagency_agent_local::codex::verify_shared_configuration(&c["config"], &paths.home)
+                .map_err(|_| failure(409, "local_codex_configuration_unsupported"))?;
+        }
         Ok(p)
     }
     async fn write(&mut self, value: Value) -> Result<(), ProviderError> {
@@ -253,7 +448,7 @@ impl Process {
             for _ in 0..128{
                 let frame=self.frame().await?;
                 if frame["id"]==id && frame.get("method").is_none(){
-                    if frame.get("error").is_some(){return Err(failure(502,"codex_provider_request_rejected"));}
+                    if let Some(error)=frame.get("error"){return Err(rpc_rejection(error));}
                     return frame.get("result").cloned().ok_or(failure(502,"codex_protocol_mismatch"));
                 }
                 if frame.get("id").is_some(){self.write(json!({"id":frame["id"],"error":{"code":-32601,"message":"Provider onboarding does not execute tools"}})).await?;}
@@ -271,7 +466,7 @@ impl Process {
         Ok(())
     }
     async fn status(&mut self, paths: &ProviderPaths) -> Result<ProviderStatus, ProviderError> {
-        credential_reference(&paths.codex_home)?;
+        selected_reference(&paths.codex_home, paths.shared)?;
         if self.until.is_some_and(|until| until <= Instant::now()) {
             self.cancel().await?;
         }
@@ -289,7 +484,7 @@ impl Process {
             self.until = None;
         }
         // A managed policy forcing file storage must not silently defeat keyring-only onboarding.
-        credential_reference(&paths.codex_home)?;
+        selected_reference(&paths.codex_home, paths.shared)?;
         Ok(ProviderStatus {
             state: if authenticated {
                 "authenticated"
@@ -300,14 +495,68 @@ impl Process {
             },
             authenticated,
             credential_ref: self.reference.clone(),
-            credential_store: "codex_os_keyring",
+            credential_store: if paths.shared {
+                "codex_managed_local"
+            } else {
+                "codex_os_keyring"
+            },
             auth_url: self.auth_url.clone(),
             strict_token_cap: false,
             native_tools: false,
+            models: None,
+            default_model: None,
+            workspace: None,
+            shared: paths.shared,
+            credential_source: if paths.shared {
+                "local_codex"
+            } else {
+                "dedicated"
+            },
         })
+    }
+    async fn models(&mut self, paths: &ProviderPaths) -> Result<ProviderStatus, ProviderError> {
+        let mut status = self.status(paths).await?;
+        let mut cursor: Option<String> = None;
+        let mut seen = BTreeSet::new();
+        let mut ids = BTreeSet::new();
+        let mut models = Vec::new();
+        for _ in 0..8 {
+            let value = self
+                .rpc(
+                    "model/list",
+                    json!({"cursor":cursor,"limit":100,"includeHidden":false}),
+                )
+                .await?;
+            for model in model_page(&value)? {
+                if !ids.insert(model.model.clone()) || models.len() >= 256 {
+                    return Err(failure(502, "codex_model_catalog_unavailable"));
+                }
+                models.push(model);
+            }
+            match value.get("nextCursor") {
+                Some(Value::Null) => {
+                    status.default_model = models
+                        .iter()
+                        .find(|m| m.is_default)
+                        .map(|m| m.model.clone());
+                    status.models = Some(models);
+                    return Ok(status);
+                }
+                Some(Value::String(next))
+                    if !next.is_empty() && next.len() <= 1024 && seen.insert(next.clone()) =>
+                {
+                    cursor = Some(next.clone())
+                }
+                _ => return Err(failure(502, "codex_model_catalog_unavailable")),
+            }
+        }
+        Err(failure(502, "codex_model_catalog_unavailable"))
     }
     async fn start(&mut self, paths: &ProviderPaths) -> Result<ProviderStatus, ProviderError> {
         let status = self.status(paths).await?;
+        if paths.shared {
+            return Err(failure(409, "shared_codex_login_is_managed_locally"));
+        }
         if status.authenticated || self.login_id.is_some() {
             return Ok(status);
         }
@@ -353,12 +602,16 @@ struct Entry {
 pub(super) struct OwnerProvider {
     entries: Arc<Mutex<BTreeMap<String, Arc<Entry>>>>,
 }
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(super) enum Operation {
     Status,
     Login,
     Cancel,
     Logout,
+    Models,
+    UseLocal,
+    Disconnect,
+    PrepareWorkspace { agent: String },
 }
 impl OwnerProvider {
     pub async fn call(
@@ -397,6 +650,132 @@ impl OwnerProvider {
             &reply.subject,
             &reply.owner,
         )?;
+        if matches!(operation, Operation::UseLocal | Operation::Disconnect) {
+            console
+                .0
+                .owned_runtime
+                .stop_profile(&device)
+                .await
+                .map_err(|_| failure(401, "owner_authorization_required"))?;
+            if let Some(entry) = self.entries.lock().await.remove(&paths.credential_ref) {
+                let mut p = entry.process.lock().await;
+                let _ = p.cancel().await;
+                let _ = p.child.kill().await;
+            }
+            device
+                .bearer()
+                .map_err(|_| failure(401, "owner_authorization_required"))?;
+            if matches!(operation, Operation::UseLocal) {
+                let home = trusted_local_home()?;
+                // Validate sealed child and current managed account before associating it.
+                let candidate = ProviderPaths {
+                    home: paths.home.clone(),
+                    codex_home: home.clone(),
+                    credential_ref: selected_reference(&home, true)?,
+                    shared: true,
+                };
+                let mut p = Process::spawn(&candidate, &executable()?).await?;
+                let checked = p.status(&candidate).await;
+                let _ = p.child.kill().await;
+                let checked = checked?;
+                if !checked.authenticated {
+                    return Err(failure(409, "local_codex_account_not_signed_in"));
+                }
+                device
+                    .bearer()
+                    .map_err(|_| failure(401, "owner_authorization_required"))?;
+                let verified = console
+                    .owner_api(cookie, OwnerOperation::Agents)
+                    .await
+                    .map_err(|_| failure(401, "owner_authorization_required"))?;
+                if verified.owner != reply.owner
+                    || verified.origin != reply.origin
+                    || verified.issuer != reply.issuer
+                    || verified.subject != reply.subject
+                {
+                    return Err(failure(401, "owner_authorization_required"));
+                }
+                device
+                    .bearer()
+                    .map_err(|_| failure(401, "owner_authorization_required"))?;
+                hagency_store::private::replace(
+                    &choice_path(&paths),
+                    &serde_json::to_vec(&json!({"version":1,"home":home.to_string_lossy()}))
+                        .map_err(|_| failure(503, "provider_choice_unavailable"))?,
+                )
+                .map_err(|_| failure(503, "provider_choice_unavailable"))?;
+                return Ok(checked);
+            }
+            match std::fs::remove_file(choice_path(&paths)) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => return Err(failure(503, "provider_choice_unavailable")),
+            }
+            let paths = self::paths(
+                &root,
+                &reply.origin,
+                &reply.issuer,
+                &reply.subject,
+                &reply.owner,
+            )?;
+            return Ok(ProviderStatus {
+                state: "disconnected",
+                authenticated: false,
+                credential_ref: paths.credential_ref,
+                credential_store: "codex_os_keyring",
+                auth_url: None,
+                strict_token_cap: false,
+                native_tools: false,
+                models: None,
+                default_model: None,
+                workspace: None,
+                shared: false,
+                credential_source: "dedicated",
+            });
+        }
+        if let Operation::PrepareWorkspace { agent } = &operation {
+            if !reply.value["agents"].as_array().is_some_and(|agents| {
+                agents.iter().any(|a| {
+                    a["id"] == *agent
+                        && !matches!(a["state"].as_str(), Some("retiring" | "retired"))
+                })
+            }) {
+                return Err(failure(403, "owner_scope_required"));
+            }
+            let workspace = prepare_workspace(&paths, agent)?;
+            device
+                .bearer()
+                .map_err(|_| failure(401, "owner_authorization_required"))?;
+            let fresh = console
+                .owner_api(cookie, OwnerOperation::Agents)
+                .await
+                .map_err(|_| failure(401, "owner_authorization_required"))?;
+            if fresh.origin != reply.origin
+                || fresh.issuer != reply.issuer
+                || fresh.subject != reply.subject
+                || fresh.owner != reply.owner
+            {
+                return Err(failure(401, "owner_authorization_required"));
+            }
+            return Ok(ProviderStatus {
+                state: "workspace_prepared",
+                authenticated: false,
+                credential_ref: paths.credential_ref,
+                credential_store: "codex_os_keyring",
+                auth_url: None,
+                strict_token_cap: false,
+                native_tools: false,
+                models: None,
+                default_model: None,
+                workspace: Some(workspace.to_string_lossy().into_owned()),
+                shared: paths.shared,
+                credential_source: if paths.shared {
+                    "local_codex"
+                } else {
+                    "dedicated"
+                },
+            });
+        }
         if matches!(operation, Operation::Logout) {
             console
                 .0
@@ -433,12 +812,18 @@ impl OwnerProvider {
             .map_err(|_| failure(401, "owner_authorization_required"))?;
         let result = match operation {
             Operation::Status => process.status(&entry.paths).await,
+            Operation::Models => process.models(&entry.paths).await,
+            Operation::UseLocal | Operation::Disconnect => unreachable!("handled above"),
+            Operation::PrepareWorkspace { .. } => unreachable!("handled before provider process"),
             Operation::Login => process.start(&entry.paths).await,
             Operation::Cancel => {
                 process.cancel().await?;
                 process.status(&entry.paths).await
             }
             Operation::Logout => {
+                if entry.paths.shared {
+                    return Err(failure(409, "shared_codex_logout_is_managed_locally"));
+                }
                 process.cancel().await?;
                 process.rpc("account/logout", json!({})).await?;
                 process.status(&entry.paths).await
@@ -499,6 +884,7 @@ impl OwnerProvider {
 pub(super) fn router() -> Router {
     Router::with_path("owner-provider")
         .goal(dispatch)
+        .push(Router::with_path("workspaces/{agent}").goal(dispatch))
         .push(Router::with_path("{action}").goal(dispatch))
 }
 #[handler]
@@ -510,7 +896,15 @@ async fn dispatch(req: &mut Request, depot: &Depot, res: &mut Response) {
         }
         let action = req.param::<String>("action").unwrap_or_default();
         let operation = match (req.method(), action.as_str()) {
+            (&salvo::http::Method::POST, "") if req.param::<String>("agent").is_some() => {
+                Operation::PrepareWorkspace {
+                    agent: req.param::<String>("agent").unwrap(),
+                }
+            }
             (&salvo::http::Method::GET, "") => Operation::Status,
+            (&salvo::http::Method::GET, "models") => Operation::Models,
+            (&salvo::http::Method::POST, "use-local") => Operation::UseLocal,
+            (&salvo::http::Method::POST, "disconnect") => Operation::Disconnect,
             (&salvo::http::Method::POST, "login") => Operation::Login,
             (&salvo::http::Method::POST, "cancel") => Operation::Cancel,
             (&salvo::http::Method::POST, "logout") => Operation::Logout,
@@ -540,6 +934,12 @@ async fn dispatch(req: &mut Request, depot: &Depot, res: &mut Response) {
     match result {
         Ok(value) => res.render(Json(value)),
         Err(error) => {
+            // Static protocol diagnostics only: never log provider payload,
+            // account identity, configuration, auth URLs or credentials.
+            eprintln!(
+                "hagency owner-provider failure: status={} code={}",
+                error.status, error.code
+            );
             res.status_code(
                 StatusCode::from_u16(error.status).unwrap_or(StatusCode::SERVICE_UNAVAILABLE),
             );
@@ -550,6 +950,145 @@ async fn dispatch(req: &mut Request, depot: &Depot, res: &mut Response) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn model_catalog_projects_only_bounded_public_fields_and_errors_redact_credentials() {
+        let page = json!({"data":[{"id":"m1","model":"real-model","displayName":"Real Model","description":"Catalog entry","isDefault":true,"hidden":false,"defaultReasoningEffort":"medium","supportedReasoningEfforts":[{"reasoningEffort":"medium","description":"Balanced"}],"token":"must-not-escape"}],"nextCursor":null});
+        let models = model_page(&page).unwrap();
+        let value = serde_json::to_value(models).unwrap();
+        assert_eq!(value[0]["model"], "real-model");
+        assert!(!value.to_string().contains("must-not-escape"));
+        let mut invalid = page.clone();
+        invalid["data"][0]["defaultReasoningEffort"] = "unsupported".into();
+        assert!(model_page(&invalid).is_err());
+        let mut hidden = page;
+        hidden["data"][0]["hidden"] = true.into();
+        assert!(model_page(&hidden).unwrap().is_empty());
+        for (message, code) in [
+            (
+                "Failed to bind address: port occupied; secret=redact",
+                "provider_login_callback_unavailable",
+            ),
+            (
+                "Keychain refused credential store: redact",
+                "provider_keyring_unavailable",
+            ),
+        ] {
+            assert_eq!(
+                rpc_rejection(&json!({"code":-32000,"message":message})).code,
+                code
+            );
+        }
+        assert_eq!(
+            rpc_rejection(&json!({"code":-32602,"message":"invalid input bearer=redact"})).code,
+            "codex_protocol_mismatch"
+        );
+    }
+    #[test]
+    fn prepared_workspaces_are_private_canonical_agent_and_full_owner_scoped() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap().join("state");
+        let a = paths(
+            &root,
+            "https://server.example/",
+            "https://server.example/_pasion/",
+            "sub-a",
+            "@owner:example",
+        )
+        .unwrap();
+        let b = paths(
+            &root,
+            "https://server.example/",
+            "https://server.example/_pasion/",
+            "sub-b",
+            "@owner:example",
+        )
+        .unwrap();
+        let workspace = prepare_workspace(&a, "agt_one").unwrap();
+        assert_eq!(workspace, workspace.canonicalize().unwrap());
+        assert_eq!(workspace, prepare_workspace(&a, "agt_one").unwrap());
+        assert_ne!(workspace, prepare_workspace(&a, "agt_two").unwrap());
+        assert_ne!(workspace, prepare_workspace(&b, "agt_one").unwrap());
+        assert!(!a.codex_home.starts_with(&workspace));
+        assert!(!a.home.starts_with(&workspace));
+        assert!(prepare_workspace(&a, "../escape").is_err());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::{MetadataExt, symlink};
+            assert_eq!(std::fs::metadata(&workspace).unwrap().mode() & 0o777, 0o700);
+            symlink(
+                &workspace,
+                a.home.parent().unwrap().join("workspaces/agt_link"),
+            )
+            .unwrap();
+            assert!(prepare_workspace(&a, "agt_link").is_err());
+        }
+    }
+    #[tokio::test]
+    #[ignore = "uses installed Codex only in a new empty private home; model catalog, no login or inference"]
+    async fn installed_provider_model_catalog_without_login_or_inference() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap().join("state");
+        let paths = paths(
+            &root,
+            "https://server.example/",
+            "https://server.example/_pasion/",
+            "fresh-subject",
+            "@owner:example",
+        )
+        .unwrap();
+        let mut process = Process::spawn(&paths, &executable().unwrap())
+            .await
+            .unwrap();
+        let status = process.models(&paths).await.unwrap();
+        assert!(
+            !status.authenticated,
+            "new private home must not inherit daily Codex account"
+        );
+        let models = status.models.unwrap();
+        assert!(!models.is_empty());
+        assert!(
+            models
+                .iter()
+                .all(|m| !m.model.is_empty() && !m.supported_reasoning_efforts.is_empty())
+        );
+        process.child.kill().await.unwrap();
+    }
+    #[tokio::test]
+    #[ignore = "explicit reuse of installed managed account; account/read and model/list only, no inference"]
+    async fn installed_shared_managed_account_and_models_without_inference() {
+        let temp = tempfile::Builder::new()
+            .prefix(".hagency-shared-ancestry-probe-")
+            .tempdir_in(std::env::var_os("HOME").unwrap())
+            .unwrap();
+        let root = temp.path().canonicalize().unwrap().join("state");
+        let mut p = paths(
+            &root,
+            "https://server.example/",
+            "https://server.example/_pasion/",
+            "shared-probe",
+            "@owner:example",
+        )
+        .unwrap();
+        p.codex_home = trusted_local_home().unwrap();
+        p.shared = true;
+        p.credential_ref = selected_reference(&p.codex_home, true).unwrap();
+        hagency_agent_local::codex::sealed_shared_overrides(
+            &executable().unwrap(),
+            &p.home,
+            &p.codex_home,
+        )
+        .await
+        .unwrap();
+        let mut process = Process::spawn(&p, &executable().unwrap()).await.unwrap();
+        let status = process.models(&p).await.unwrap();
+        assert!(
+            status.authenticated,
+            "explicitly selected cached account must be signed in"
+        );
+        assert!(status.shared);
+        assert!(!status.models.unwrap().is_empty());
+        process.child.kill().await.unwrap();
+    }
     use super::*;
     #[test]
     fn dedicated_provider_paths_are_private_canonical_and_owner_scoped() {

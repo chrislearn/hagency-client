@@ -1,6 +1,6 @@
 # Hagency Desktop Project 工作区与本地 Agent 整合
 
-状态：本轮源码实施、构建与代码复审完成；原生窗口交互验收受 Mac 锁屏阻塞，不能视为已验收。
+状态：此前已完成真实 HTTPS/Pasion 登录与基本管理页验收；当前按最新反馈重整栏目目录和 Room 信息列，最终记录见功能导航复核文档。历史测试记录保持原时点含义。
 
 ## 产品边界
 
@@ -8,11 +8,13 @@
 
 Desktop 是 Matrix 聊天客户端，也是本地 Agent 创建者的管理入口。Project 是 Hagency 的业务对象，绑定一个 Matrix Space；Space 本身不自动成为 Project。聊天是 Project 已登记的 Room，当前账号必须实际加入 Room 才显示可进入的聊天。Project 成员与 Room 成员分别管理。
 
-左侧采用单栏导航：Projects、Agents、新建 Project；中间为可展开的 Project → 聊天二层目录；底部为当前 Matrix 账号菜单。没有 Project 的已加入聊天单独收纳，避免普通聊天丢失。搜索匹配项目名和聊天名，未读状态复用现有 Matrix 同步结果。
+左侧常驻全局导航为 Projects、Agents、Chats、Contacts、Mini Apps 和 More，底部为当前账号菜单；创建入口收入对应栏目右侧 ⋯。Projects 内显示独立的 Project → Room 目录，Chats 内显示聊天搜索、私聊、其他聊天和邀请。点 Project 展开并查看详情，点其 Room 打开原聊天，保持 Projects 目录；选中 Room 后最右侧显示独立成员/资料信息列。其他栏目隐藏目录。目录与全局导航分列，不能再把 Project 或 Search chats 放在 More 下面。
+
+主导航每项配对应图标；标题右侧折叠按钮可将全局栏缩至64px，保留图标与账号头像，栏目目录保持独立。展开恢复文字和创建按钮；折叠偏好沿用当前账号的AppPreferences保存。Project目录条目右侧 ⋯ 提供概览、讨论组、成员、邀请成员与打开Space。邀请只作用于绑定Space，按当前账号/服务器/epoch和Space权限复核；不会隐式加入讨论Room。最终实机验收记录与截图见功能导航复核文档。
 
 右侧显示当前聊天或原生管理页面。Project 列表、Project 详情、新建 Project 分开呈现。新建默认创建 Space，也可选择当前账号有权管理的已加入 Space。Room 创建与绑定从选中的 Project 详情进入，不将 Room 和 Project 混进一个创建类型列表。
 
-Agents 入口只展示当前用户拥有的 Agent。新建 Agent 选择已登记的 Project 与 Room；主人永久是创建者，无转让功能，不兼容 Fleet 旧结构。既有 Agent 可以绑定更多允许的 Room。本地配置包括 Agent、Room、requester 的 token 配额、请求处理策略、危险工具拒绝或逐次确认、精确工具和目录许可。Codex 是首个运行 provider，运行必须显式启动，可以停止；配额与工具策略没有服务器管理员审批。
+Agents 入口只展示当前用户拥有的 Agent。新建 Agent 只填写名称，创建服务器范围的 Appservice 傀儡身份；主人永久是创建者，无转让功能，不兼容 Fleet 旧结构。创建后设置绑定指定设备的执行实例，再从 Agent 设置或 Project Room 的邀请入口加入允许的 Room。默认联系人是独立主人私聊，不需要虚构 Project。本地配置包括 Agent、Room、requester 的 token 配额、请求处理策略、危险工具拒绝或逐次确认、精确工具和目录许可。Codex 是首个运行 provider，运行必须显式启动，可以停止；配额与工具策略没有服务器管理员审批。最新契约见[身份与执行实例实施细则](2026-10-07-agent-identity-execution-instance.zh-CN.md)。
 
 ## 原生复用架构
 
@@ -79,7 +81,7 @@ Desktop 的 Matrix SDK git revision 使用 rusqlite 0.40，而本地 Agent 引�
 ### 已知边界与剩余验收
 
 1. 二次授权已由 SDK 标准 OAuth 登录和 NativeOwner 共享 token source 替代；下节记录本轮实际验证。现仅允许通过服务识别的 Hagency server，认证元数据不可用时不得静默降级成密码或普通 Matrix 登录。Hagency 管理与聊天共用 SDK OAuth，会话恢复同样检查 Hagency 标识和 Pasion issuer。
-2. Project/Room Matrix 创建有持久化命令恢复；Agent 创建和绑定的幂等键在本次操作期间保留，尚没有跨应用重启的 Agent 命令恢复页面。遇到未知结果应先刷新真实 Agent/绑定列表，不能盲目新建。
+2. Project/Room Matrix 创建有持久化命令恢复；本轮 Agent 创建和绑定也已补齐 owner 身份隔离的持久原命令与 Desktop 恢复页面。先查询 server 原命令，明确404后仅以原key/原payload重试；未知结果不能盲目换key新建。详见[Agent完成核对](2026-10-07-desktop-agent-completion-audit.zh-CN.md)。
 3. 原生页面提供 Codex 登录、凭据定位、模型与工作目录、运行启停、配额、请求策略和逐次工具确认；实际付费执行未测试。精确风险确认沿用 client 引擎边界。
 4. 普通加密聊天沿用 Matrix SDK；本轮没有增加加密 Agent 执行能力，也没有改变 Space/Room 成员关系。
 5. 协议测试采用真实 SDK 与本地 HTTP fixture；Desktop 全局 UI/同步生命周期下的网络中断恢复仍需实际窗口验收，不能将 fixture 等同于真实服务器、浏览器与窗口的完整验收。
@@ -122,7 +124,7 @@ OAuth 的 Matrix API scope、唯一 device scope 与 token 刷新行为依据 [M
 - 父代理实际确认 `/readyz` 与 Matrix `auth_metadata` 均返回 200，issuer 为 `http://127.0.0.1:8089/_pasion/` 且包含 PKCE S256。
 - 真实窗口显示 OAuth 登录入口，但点击没有动作。原因是 `show_methods` 接受 OAuth，而 `start_sso` 仍只接受旧 SSO。现统一使用支持 OAuth 或 SSO 的入口判定；新增 OAuth-only 与注册能力两个回归通过。登录标题和单次授权说明纳入中英文目录，既有 i18n 三项回归通过。
 - 更新后的调试 bundle 在读取 `/Volumes/Data` 中的测试配置时等待 macOS 可移动宗卷访问许可。系统日志确认原调试签名与重编后的签名不匹配，导致系统再次要求文件访问确认。这是操作系统的文件权限，与 Pasion/OAuth 的第二次登录无关。桌面工具安全限制禁止操作系统通知窗口，用户已手动允许，原生应用正常完成启动并显示中文登录页；未修改 TCC 数据库或放宽系统保护。
-- 真实单次登录、Projects/Agents 管理以及 SDK 恢复验收仍在继续，未将上述元数据与 UI 入口检查写成完整登录闭环通过。
+- 该阶段的真实登录当时尚未完成；后续已完成 HTTPS/Pasion 单次登录，具体结果见下节。
 
 ## Hagency 服务器准入与本地 HTTPS：2026-10-07
 
@@ -158,10 +160,29 @@ OAuth 的 Matrix API scope、唯一 device scope 与 token 刷新行为依据 [M
 
 本轮验证：server PostgreSQL 路由 42 项、严格 Clippy、OpenAPI 契约校验通过；client 准入 4 项、授权 20 项、实际系统信任 HTTPS 1 项、严格 Clippy 与中英文提示检查通过；Desktop 登录/OAuth 14 项、i18n 3 项、Clippy（保留既有 19 条 warning）、最终 binary 构建通过。父代理复核了准入前不发送凭据、规范化地址/issuer、重定向拒绝、响应限制、普通 Matrix 拒绝、系统 CA 信任以及代理 Host 处理。
 
-最新原生测试构建已启动。开发 bundle 临时签名变化使 macOS 再次要求读取可移动宗卷资源；不能把操作系统提示算作 Pasion 的二次登录。真实浏览器回跳和登录后管理页面验收仍待实际窗口完成，不能将 HTTPS probe 或 fixture 当作完整 UI 闭环。
+### 真实单次登录与管理布局复核
+
+用户在原生窗口填写 https://hagency.local 后，实际浏览器进入该服务器的 Pasion。测试账号 chris 登录并完成一次 Hagency Desktop 同意授权，loopback 回调显示完成，原生窗口进入 Projects 并显示 Verified。Hagency owner 管理授权自动建立，没有再打开第二条 Pasion 登录。SDK OAuth 会话已经落盘，会话文件 0600、账号目录 0700；复核仅读取 schema 与权限，不输出 token。桌面工具不能向 Makepad 输入框输入文字，用户手动输入成功，因此未将自动化输入限制认定为应用输入缺陷。
+
+首次登录后的真实窗口暴露了两个布局缺陷，已修正并复审：
+
+- 窄侧栏按自己的宽度选择了 Mobile variant。现在跟随 HomeScreen 的实际布局，并在主布局变化时重选。真实单 Home 绘制回归覆盖 Automatic 桌面/移动、ForceWide、ForceNarrow、回到 Automatic；每阶段断言 Projects/Agents 的存在和 RoomsList 与全局共享同一 Widget UID，避免新增 SDK 元数据消费者。新增 1 项与既有响应式 2 项均通过。
+- PortalList 会绘制范围之外的填充行，原实现每一行重复显示空状态；现仅空列表的第 0 行显示提示，其余填充行留白。PortalList 的 set_visible 无效，现由外层 View 控制列表显隐，详情/创建表单不再被旧列表挡住；返回按钮只在详情或表单出现。管理 UI 8 项通过，包含真实脚本注册、第二个 Project/Agent 卡片的分组点击及准确选择、列表显隐和返回状态。
+
+父代理再次检查上述源代码及状态转换。最终 binary 构建通过（22.98 秒），旧进程由应用菜单正常退出，新构建已启动。该构建后续已进入实际窗口，底部显示 @chris:hagency.local，修正后的 Project 列表显示用户创建的 testproject，空状态不再重复。完整创建、账号切换与网络恢复仍需要分别验收。没有将绘制回归写成真实创建闭环通过。
 
 ### 启动与测试资料
 
 原生开发应用：`chrislearn/hagency-desktop/target/debug/.rinx-dev/Hagency Desktop.app`。运行：`cargo run --offline --bin rinx`。测试 profile 通过绝对路径 `HAGENCY_DESKTOP_DATA_DIR` 隔离于用户默认目录，本次放在 Desktop 的 `.run/desktop-project-workspace-20261007/profile`。
 
-原重构启动日志为该目录的 `desktop-final.log`；本次统一登录初次启动日志为 `desktop-unified-login.log`；解锁后修正 OAuth 入口并重新构建的实际窗口启动日志为 `desktop-window-login.log`。本轮源码指纹清单共 118 个文件，另存于 `2026-10-07-desktop-code-review.sha256`，只覆盖本轮源代码与构建适配，不含账号数据、token、日志或构建产物。
+原重构启动日志为该目录的 `desktop-final.log`；本次统一登录初次启动日志为 `desktop-unified-login.log`；解锁后修正 OAuth 入口并重新构建的实际窗口启动日志为 `desktop-window-login.log`。新 HTTPS 测试窗口日志为 `.run/hagency-local-https-20261007/desktop-https-login.log`，截图为该目录的 `hagency-only-sign-in.png`；隔离测试数据位于 `/Users/chris/Library/Application Support/Hagency/Development/https-local-20261007`。本轮源码指纹清单共 130 个文件，另存于 `2026-10-07-desktop-code-review.sha256`，只覆盖本轮源代码与构建适配，不含账号数据、token、日志或构建产物。
+
+## 功能入口补全：2026-10-07
+
+用户复核发现旧导航功能未完整迁移。已将唯一左栏上移到 HomeScreen、补回私聊/联系人/Mini Apps/动态/文章/文件/探索/浏览器入口、恢复 Room 操作菜单，并补上 Project Space 与独立 Room 成员名单。完整的保留/移除矩阵、入口设计、成员权限与回归记录见 [功能保留与导航复核](2026-10-07-desktop-feature-navigation-review.zh-CN.md)。本节和该补充文件替代前文仅有 Projects/Agents 两个入口的布局说明。
+
+用户允许外置磁盘读取后，实机仍发现侧栏占半宽、菜单需要滚动和账号第二行裁剪；因此前一构建没有通过布局验收。已修外层 280px 固定容器、菜单高度、账号子元素，并细分主题卡片。最终 Home 39 项、原生管理 10 项、i18n 3 项通过；Clippy 保留既有 19 条 warning。最终构建与实机结果见功能复核补充文档。
+
+### 左栏栏目操作菜单修正
+
+左侧仅Projects、Agents、Chats、Contacts、Mini Apps五个主栏目；Projects/Agents/Chats右侧 ⋯ 提供创建动作，New Project/New chat不再独立占导航行。More为七工具浮层菜单，不挤压聊天树。详见功能复核补充文档本日追加。

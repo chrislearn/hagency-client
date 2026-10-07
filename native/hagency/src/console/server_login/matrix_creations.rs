@@ -72,7 +72,19 @@ struct Resume {
 }
 // This enum is deliberately private: browser input never becomes arbitrary paths,
 // state types, request bodies, authorization headers, or a remote proxy.
-enum MatrixOperation {
+pub(in crate::console) enum MatrixOperation {
+    DirectCreate {
+        agent: String,
+        owner: String,
+        puppet: String,
+        name: String,
+    },
+    DirectAlias {
+        agent: String,
+        owner: String,
+    },
+    DirectIndexGet(String),
+    DirectIndexPut(String, Value),
     Create(Input, String, String),
     Discovery,
     JoinedRooms,
@@ -83,6 +95,74 @@ enum MatrixOperation {
 impl MatrixOperation {
     fn request(self) -> Result<(Method, String, Option<Value>), OwnerError> {
         Ok(match self {
+            Self::DirectCreate {
+                agent,
+                owner,
+                puppet,
+                name,
+            } => {
+                super::operation_id(&agent)?;
+                let server = owner
+                    .split_once(':')
+                    .filter(|(local, server)| local.starts_with('@') && !server.is_empty())
+                    .ok_or_else(|| error(400, "invalid_arguments"))?
+                    .1;
+                if !puppet.starts_with('@')
+                    || puppet.split_once(':').map(|(_, s)| s) != Some(server)
+                {
+                    return Err(error(400, "invalid_arguments"));
+                }
+                (
+                    Method::POST,
+                    "/_matrix/client/v3/createRoom".into(),
+                    Some(
+                        json!({"name":name,"visibility":"private","preset":"private_chat","is_direct":true,"room_alias_name":format!("hagency-agent-{agent}"),"invite":[puppet],"initial_state":[{"type":"m.room.history_visibility","state_key":"","content":{"history_visibility":"joined"}},{"type":"m.room.guest_access","state_key":"","content":{"guest_access":"forbidden"}},{"type":"m.room.join_rules","state_key":"","content":{"join_rule":"invite"}},{"type":"im.hagency.agent.owner_direct","state_key":"","content":{"version":1,"agentId":agent,"ownerMxid":owner}}]}),
+                    ),
+                )
+            }
+            Self::DirectAlias { agent, owner } => {
+                super::operation_id(&agent)?;
+                let server = owner
+                    .split_once(':')
+                    .filter(|(local, server)| local.starts_with('@') && !server.is_empty())
+                    .ok_or_else(|| error(400, "invalid_arguments"))?
+                    .1;
+                let alias = format!("#hagency-agent-{agent}:{server}");
+                let mut url = Url::parse("https://matrix.invalid/").unwrap();
+                url.path_segments_mut().unwrap().push(&alias);
+                (
+                    Method::GET,
+                    format!("/_matrix/client/v3/directory/room/{}", &url.path()[1..]),
+                    None,
+                )
+            }
+            Self::DirectIndexGet(owner) => {
+                let mut url = Url::parse("https://matrix.invalid/").unwrap();
+                url.path_segments_mut().unwrap().push(&owner);
+                (
+                    Method::GET,
+                    format!(
+                        "/_matrix/client/v3/user/{}/account_data/m.direct",
+                        &url.path()[1..]
+                    ),
+                    None,
+                )
+            }
+            Self::DirectIndexPut(owner, index) => {
+                if !index.is_object() {
+                    return Err(error(400, "invalid_arguments"));
+                }
+                let mut url = Url::parse("https://matrix.invalid/").unwrap();
+                url.path_segments_mut().unwrap().push(&owner);
+                (
+                    Method::PUT,
+                    format!(
+                        "/_matrix/client/v3/user/{}/account_data/m.direct",
+                        &url.path()[1..]
+                    ),
+                    Some(index),
+                )
+            }
             Self::Create(input, owner, service) => {
                 let marker = json!({"commandId":input.command_id,"owner":owner,"kind":input.kind,"projectId":input.project_id,"spaceId":input.space_id});
                 let mut body = json!({"name":input.name,"visibility":"private","preset":"private_chat","invite":[service],"initial_state":[{"type":"m.room.join_rules","state_key":"","content":{"join_rule":"invite"}},{"type":MARKER,"state_key":"","content":marker}]});
@@ -200,7 +280,7 @@ impl ServerLogin {
                 .ok_or_else(|| error(401, "sign_in_required"))?,
         ))
     }
-    async fn matrix_api(
+    pub(in crate::console) async fn matrix_api(
         &self,
         cookie: &str,
         op: MatrixOperation,

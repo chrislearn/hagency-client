@@ -153,6 +153,8 @@ mod tests {
         token: std::sync::Mutex<String>,
         current: Arc<AtomicBool>,
         error_code: &'static str,
+        calls: std::sync::atomic::AtomicUsize,
+        refreshes: std::sync::atomic::AtomicUsize,
     }
     impl MatrixTokenSource for Source {
         fn access_token(
@@ -165,6 +167,7 @@ mod tests {
             >,
         > {
             Box::pin(async move {
+                self.calls.fetch_add(1, Ordering::Relaxed);
                 if !self.current.load(Ordering::Acquire) {
                     return Err(NativeError {
                         status: 401,
@@ -176,6 +179,24 @@ mod tests {
                     client_id: "sdk-client".into(),
                 })
             })
+        }
+        fn refresh_access_token(
+            &self,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = Result<MatrixAccessToken, NativeError>>
+                    + Send
+                    + '_,
+            >,
+        > {
+            self.refreshes.fetch_add(1, Ordering::Relaxed);
+            {
+                let mut token = self.token.lock().unwrap();
+                if token.as_str() == "sdk-short" {
+                    *token = "sdk-refreshed".into();
+                }
+            }
+            self.access_token()
         }
     }
     async fn fixture(
@@ -251,6 +272,7 @@ mod tests {
                             .unwrap_or_default();
                         body = json!({"testBearer":bearer});
                     }
+                    let short_proof = body["accessToken"] == "sdk-short";
                     records.lock().unwrap().push((path.clone(), body));
                     if path == "/api/hagency/v1/identity"
                         && let Some(flag) = &late_epoch
@@ -264,7 +286,7 @@ mod tests {
                         + 30_000;
                     let value = match path.as_str() {
                         "/api/hagency/v1/discovery" => {
-                            json!({"product":"hagency-server","version":"0.1.0","protocolVersion":1,"capabilities":["pasion-oauth","owner-agent-appservice-v1"],"homeserver":issuer.strip_suffix("_pasion/").unwrap(),"issuer":issuer})
+                            json!({"product":"hagency-server","version":"0.1.0","protocolVersion":2,"capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-instance-v1","owner-direct-v1"],"homeserver":issuer.strip_suffix("_pasion/").unwrap(),"issuer":issuer})
                         }
                         "/api/hagency/v1/sessions/pasion" => {
                             json!({"token":"a".repeat(64),"userId":"uid","mxid":mxid,"validUntilMs":until})
@@ -275,7 +297,9 @@ mod tests {
                         "/api/hagency/v1/devices" => {
                             json!({"deviceId":"device","token":"b".repeat(64),"generation":1,"validUntilMs":until})
                         }
-                        "/api/hagency/v1/sessions/current/renew" => json!({"validUntilMs":until}),
+                        "/api/hagency/v1/sessions/current/renew" => {
+                            json!({"validUntilMs":if short_proof{until-25_000}else{until}})
+                        }
                         "/api/hagency/v1/sessions/current" => json!({}),
                         "/api/hagency/v1/projects" => json!({"projects":[]}),
                         "/_matrix/client/v3/joined_rooms" => json!({"joined_rooms":[]}),
@@ -293,6 +317,130 @@ mod tests {
         (origin, requests, task)
     }
     #[tokio::test]
+    async fn shared_runtime_proof_is_bounded_and_expiry_always_forces_fresh_authorization() {
+        let (origin, requests, task) = fixture("@owner:test", None).await;
+        let root = tempfile::tempdir().unwrap();
+        let source = Arc::new(Source {
+            token: std::sync::Mutex::new("sdk-first".into()),
+            current: Arc::new(AtomicBool::new(true)),
+            error_code: "matrix_account_changed",
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            refreshes: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let native = NativeOwner::open_with_matrix(
+            &root.path().join("state"),
+            &origin,
+            "@owner:test",
+            source.clone(),
+        )
+        .await
+        .unwrap();
+        let login = &native.test_console().0.server_login;
+        source.calls.store(0, Ordering::Relaxed);
+        for _ in 0..25 {
+            login.authorized_device().await.unwrap();
+        }
+        assert_eq!(
+            source.calls.load(Ordering::Relaxed),
+            0,
+            "finite fresh proof prevents poll amplification"
+        );
+        for session in login.sessions.lock().await.values_mut() {
+            session.checked = Instant::now() - Duration::from_secs(6);
+        }
+        login.authorized_device().await.unwrap();
+        assert_eq!(source.calls.load(Ordering::Relaxed), 2);
+        for session in login.sessions.lock().await.values_mut() {
+            session.checked = Instant::now();
+            session.authorized_until = Instant::now() + Duration::from_secs(1);
+            session.oauth_expires = session.authorized_until;
+        }
+        login.authorized_device().await.unwrap();
+        assert_eq!(
+            source.refreshes.load(Ordering::Relaxed),
+            0,
+            "fresh thirty-second server proof must not rotate long-lived OAuth grant"
+        );
+        assert_eq!(
+            source.calls.load(Ordering::Relaxed),
+            4,
+            "near-expiry proof cannot use cache"
+        );
+        assert_eq!(
+            requests
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(p, _)| p.ends_with("/renew"))
+                .count(),
+            2
+        );
+        source.current.store(false, Ordering::Release);
+        for session in login.sessions.lock().await.values_mut() {
+            session.checked = Instant::now() - Duration::from_secs(6);
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_secs(1), login.authorized_device())
+                .await
+                .unwrap()
+                .is_err()
+        );
+        assert!(
+            tokio::time::timeout(Duration::from_secs(1), login.authorized_device())
+                .await
+                .unwrap()
+                .is_err(),
+            "invalidated proof stays closed and lock drains"
+        );
+        native.shutdown().await;
+        task.abort();
+    }
+    #[tokio::test]
+    async fn actual_short_server_proof_refreshes_sdk_once_before_returning_a_live_device() {
+        let (origin, requests, task) = fixture("@owner:test", None).await;
+        let root = tempfile::tempdir().unwrap();
+        let source = Arc::new(Source {
+            token: std::sync::Mutex::new("sdk-first".into()),
+            current: Arc::new(AtomicBool::new(true)),
+            error_code: "matrix_account_changed",
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            refreshes: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let native = NativeOwner::open_with_matrix(
+            &root.path().join("state"),
+            &origin,
+            "@owner:test",
+            source.clone(),
+        )
+        .await
+        .unwrap();
+        *source.token.lock().unwrap() = "sdk-short".into();
+        for session in native
+            .test_console()
+            .0
+            .server_login
+            .sessions
+            .lock()
+            .await
+            .values_mut()
+        {
+            session.checked = Instant::now() - Duration::from_secs(6);
+        }
+        let device = native.test_console().authorized_device().await.unwrap();
+        assert!(device.bearer().is_ok());
+        assert_eq!(source.refreshes.load(Ordering::Relaxed), 1);
+        assert!(
+            requests
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(p, b)| p.ends_with("/renew") && b["accessToken"] == "sdk-refreshed")
+        );
+        assert!(device.valid_until > Instant::now() + Duration::from_secs(20));
+        native.shutdown().await;
+        task.abort();
+    }
+    #[tokio::test]
     async fn sdk_authorization_uses_rotated_snapshot_and_never_refreshes_or_revokes_oauth() {
         let (origin, requests, task) = fixture("@owner:test", None).await;
         let root = tempfile::tempdir().unwrap();
@@ -300,6 +448,8 @@ mod tests {
             token: std::sync::Mutex::new("sdk-first".into()),
             current: Arc::new(AtomicBool::new(true)),
             error_code: "matrix_account_changed",
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            refreshes: std::sync::atomic::AtomicUsize::new(0),
         });
         let native = NativeOwner::open_with_matrix(
             &root.path().join("state"),
@@ -314,6 +464,17 @@ mod tests {
             "sdk_owns_matrix_login"
         );
         *source.token.lock().unwrap() = "sdk-rotated".into();
+        for session in native
+            .test_console()
+            .0
+            .server_login
+            .sessions
+            .lock()
+            .await
+            .values_mut()
+        {
+            session.checked = Instant::now() - Duration::from_secs(6);
+        }
         assert_eq!(native.identity().await.unwrap().subject, "sub");
         native.execute(Command::LoginStatus).await.unwrap();
         native
@@ -367,6 +528,8 @@ mod tests {
             token: std::sync::Mutex::new("shared-secret".into()),
             current: Arc::new(AtomicBool::new(true)),
             error_code: "matrix_account_changed",
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            refreshes: std::sync::atomic::AtomicUsize::new(0),
         });
         let error = NativeOwner::open_with_matrix(
             &root.path().join("state"),
@@ -401,6 +564,8 @@ mod tests {
             token: std::sync::Mutex::new("shared-epoch-secret".into()),
             current,
             error_code: "matrix_account_changed",
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            refreshes: std::sync::atomic::AtomicUsize::new(0),
         });
         let error = NativeOwner::open_with_matrix(
             &root.path().join("state"),
@@ -438,6 +603,8 @@ mod tests {
             token: std::sync::Mutex::new("sdk-temporary".into()),
             current: Arc::new(AtomicBool::new(true)),
             error_code: "matrix_authorization_unavailable",
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            refreshes: std::sync::atomic::AtomicUsize::new(0),
         });
         let native = NativeOwner::open_with_matrix(
             &root.path().join("state"),
@@ -487,6 +654,8 @@ mod tests {
             token: std::sync::Mutex::new("sdk-late".into()),
             current: Arc::new(AtomicBool::new(true)),
             error_code: "matrix_account_changed",
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            refreshes: std::sync::atomic::AtomicUsize::new(0),
         });
         let authorize = tokio::spawn(async move {
             runner

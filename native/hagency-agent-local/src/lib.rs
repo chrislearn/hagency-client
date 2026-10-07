@@ -326,18 +326,33 @@ impl Ledger {
     ) -> Result<i64> {
         self.owner(owner)?;
         verify(&self.db, scope)?;
+        let index = match layer {
+            Layer::Agent => 0,
+            Layer::Room => 1,
+            Layer::Requester => 2,
+        };
+        self.write_policy(&scope.layers()?[index], expected_revision, policy)
+    }
+    /// The host must verify this agent against its authenticated owner API first.
+    /// Uses the same key as runtime accounting, without inventing a Room binding.
+    pub fn set_agent_policy(
+        &mut self,
+        owner: &str,
+        agent: &str,
+        expected_revision: i64,
+        policy: &Policy,
+    ) -> Result<i64> {
+        self.owner(owner)?;
+        key(agent)?;
+        self.write_policy(&json(&("agent", agent))?, expected_revision, policy)
+    }
+    fn write_policy(&mut self, k: &str, expected_revision: i64, policy: &Policy) -> Result<i64> {
         if let Limit::Tokens(n) = policy.budget.limit {
             bounded(n)?;
         }
         if expected_revision < 0 || expected_revision == i64::MAX {
             return Err(Error::Invalid("revision"));
         }
-        let index = match layer {
-            Layer::Agent => 0,
-            Layer::Room => 1,
-            Layer::Requester => 2,
-        };
-        let k = scope.layers()?[index].clone();
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -353,6 +368,41 @@ impl Ledger {
         tx.execute("INSERT INTO policies VALUES (?,?,?) ON CONFLICT(scope) DO UPDATE SET revision=excluded.revision,config=excluded.config",(&k,current+1,json(policy)?))?;
         tx.commit()?;
         Ok(current + 1)
+    }
+    pub fn agent_policy(&self, owner: &str, agent: &str) -> Result<PolicyVersion> {
+        self.owner(owner)?;
+        key(agent)?;
+        let k = json(&("agent", agent))?;
+        let revision = self
+            .db
+            .query_row("SELECT revision FROM policies WHERE scope=?", [&k], |r| {
+                r.get(0)
+            })
+            .optional()?
+            .unwrap_or(0);
+        Ok(PolicyVersion {
+            revision,
+            policy: policy(&self.db, &k, 0)?,
+        })
+    }
+    pub fn agent_account(
+        &self,
+        owner: &str,
+        agent: &str,
+        period: Period,
+        now: i64,
+    ) -> Result<(u64, u64)> {
+        self.owner(owner)?;
+        key(agent)?;
+        Ok(self
+            .db
+            .query_row(
+                "SELECT spent,held FROM accounts WHERE scope=? AND window=?",
+                (json(&("agent", agent))?, period.window(now)?),
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?
+            .unwrap_or((0, 0)))
     }
     pub fn policy_snapshot(&self, scope: &Scope) -> Result<[PolicyVersion; 3]> {
         verify(&self.db, scope)?;
@@ -637,6 +687,19 @@ impl Ledger {
     ) -> Result<()> {
         self.owner(owner)?;
         verify(&self.db, scope)?;
+        self.write_model_profile(&scope.agent, profile)
+    }
+    pub fn set_agent_model_profile(
+        &mut self,
+        owner: &str,
+        agent: &str,
+        profile: &ModelProfile,
+    ) -> Result<()> {
+        self.owner(owner)?;
+        key(agent)?;
+        self.write_model_profile(agent, profile)
+    }
+    fn write_model_profile(&mut self, agent: &str, profile: &ModelProfile) -> Result<()> {
         for value in [
             &profile.model,
             &profile.credential_ref,
@@ -644,21 +707,38 @@ impl Ledger {
         ] {
             key(value)?;
         }
-        if !profile.credential_ref.starts_with("keychain:")
+        if !(profile.credential_ref.starts_with("keychain:")
+            || profile
+                .credential_ref
+                .strip_prefix("codex-managed:shared-home:")
+                .is_some_and(|hash| {
+                    hash.len() == 64
+                        && hash
+                            .bytes()
+                            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                }))
             || !Path::new(&profile.workspace_root).is_absolute()
         {
             return Err(Error::Invalid("local credential reference or workspace"));
         }
-        self.db.execute("INSERT INTO model_profiles VALUES (?,?,?,?) ON CONFLICT(agent) DO UPDATE SET model=excluded.model,credential_ref=excluded.credential_ref,workspace_root=excluded.workspace_root",(&scope.agent,&profile.model,&profile.credential_ref,&profile.workspace_root))?;
+        self.db.execute("INSERT INTO model_profiles VALUES (?,?,?,?) ON CONFLICT(agent) DO UPDATE SET model=excluded.model,credential_ref=excluded.credential_ref,workspace_root=excluded.workspace_root",(agent,&profile.model,&profile.credential_ref,&profile.workspace_root))?;
         Ok(())
     }
     pub fn model_profile(&self, scope: &Scope) -> Result<Option<ModelProfile>> {
         verify(&self.db, scope)?;
+        self.read_model_profile(&scope.agent)
+    }
+    pub fn agent_model_profile(&self, owner: &str, agent: &str) -> Result<Option<ModelProfile>> {
+        self.owner(owner)?;
+        key(agent)?;
+        self.read_model_profile(agent)
+    }
+    fn read_model_profile(&self, agent: &str) -> Result<Option<ModelProfile>> {
         Ok(self
             .db
             .query_row(
                 "SELECT model,credential_ref,workspace_root FROM model_profiles WHERE agent=?",
-                [&scope.agent],
+                [agent],
                 |r| {
                     Ok(ModelProfile {
                         model: r.get(0)?,

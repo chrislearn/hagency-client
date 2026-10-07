@@ -1,5 +1,7 @@
 # 重构与登录修正的最终代码复审（2026-10-07）
 
+最新全局 Agent 身份、指定设备执行实例、主人私聊和 Room 邀请的复审与真实验收见[身份与执行实例实施细则](2026-10-07-agent-identity-execution-instance.zh-CN.md)。该轮审查覆盖服务端 schema/domain/gateway/transport、Native 闭合 API/持久恢复/SDK 身份、Desktop 页面与 Room 信息入口及两类 Web 表单。最新源码指纹清单为 167 项、0 不一致；包含新增未跟踪文件。旧阶段测试和清单仅作为对应时点证据。
+
 范围是 chrislearn 下 hagency-client、hagency-server 的全部未提交修改，包括新增文件、生产入口、旧代码删除、测试替代、构建发布及文档。hagency-org 不是此次实现的目标；没有修改 Palpo。
 
 ## 方法和覆盖
@@ -38,7 +40,7 @@
 
 新增复审覆盖 OwnerRail/OwnerAccountMenu、ProjectsControl/OwnerProjectControl、owner-projects request helpers、Agent 页面拆分、原生资产白名单/CLI fixture/发布打包、Chrome与CI门槛，以及server Project/Room metadata和客户端OAuth Space候选。设计与完整验证见实施文档“工作区导航、账号菜单与 Project 创建重整”。
 
-额外修复了 Matrix 命令404后的误清除（保留原id/input，只同ID重试）、组件卸载后迟到mutation响应导航旧Project（mounted/generation fencing）、恢复读取卸载后清记录（alive条件）。Chrome回归实际模拟表单卸载和迟到response，原记录仍保留且无错误导航。Agent创建跨刷新幂等恢复仍是记录的产品边界，没有把Matrix命令保证泛化到所有创建。
+额外修复了 Matrix 命令404后的误清除（保留原id/input，只同ID重试）、组件卸载后迟到mutation响应导航旧Project（mounted/generation fencing）、恢复读取卸载后清记录（alive条件）。Chrome回归实际模拟表单卸载和迟到response，原记录仍保留且无错误导航。后续 Desktop Agent 完成核对已为原生 owner 服务补上 Agent 创建/绑定持久化命令及恢复页面，替代该项原先仅内存幂等的边界；独立证据见[Agent完成核对](2026-10-07-desktop-agent-completion-audit.zh-CN.md)，不泛化为未经验证的其他浏览器页面。
 
 本轮最终四套浏览器门槛通过，真实已登录UI核对通过；client lib134 passed/0 failed/1 ignored、strict all-targets Clippy、真实binary静态资产专项1 passed、CLI13/13、32项checker通过。最终规格库存1188条、0 missing/0 deferred、2 superseded/82 retired，日志 `.run/manual-owner-projects-final-spec-20261007.log`。server PG41/41、metadata/member隔离/名称变更、OpenAPI和Clippy通过；Space候选2unit+1真实OAuth HTTP通过。两端已使用本轮构建更新，ready与ASroundtrip通过。未运行模型或另建手测项目。完整原始日志与构建指纹记于实施文档。
 

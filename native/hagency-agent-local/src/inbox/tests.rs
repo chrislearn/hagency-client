@@ -1033,3 +1033,67 @@ fn only_settled_failed_cost_can_compact_unknown_and_unsent_results_stay_retained
     assert_eq!(l.inbox_record(OWNER, &e.id).unwrap().dispatch.body, e.body);
     assert_eq!(l.inbox_capacity(OWNER).unwrap().active_records, 3);
 }
+
+#[test]
+fn direct_room_context_reuses_persisted_session_but_explicit_threads_and_rooms_stay_separate() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("local.db");
+    let mut ledger = setup(&path);
+    let mut first = event();
+    first.requester_mxid = OWNER.into();
+    first.thread_root = first.room_id.clone();
+    ledger
+        .receive_dispatch(OWNER, &first, Limits::default(), 10)
+        .unwrap();
+    ledger
+        .set_context_session(&first.scope(), "codex-existing-room-session")
+        .unwrap();
+    drop(ledger);
+    let mut ledger = Ledger::open(&path, OWNER).unwrap();
+    let mut next = first.clone();
+    next.id = "dispatch-next".into();
+    next.event_id = "$event-next:test".into();
+    next.body = "remember the previous message".into();
+    ledger
+        .receive_dispatch(OWNER, &next, Limits::default(), 11)
+        .unwrap();
+    assert_eq!(
+        ledger.context_session(&next.scope()).unwrap().as_deref(),
+        Some("codex-existing-room-session")
+    );
+    let mut threaded = next.clone();
+    threaded.id = "dispatch-threaded".into();
+    threaded.event_id = "$threaded-message:test".into();
+    threaded.thread_root = "$explicit-thread:test".into();
+    ledger
+        .receive_dispatch(OWNER, &threaded, Limits::default(), 12)
+        .unwrap();
+    assert_eq!(ledger.context_session(&threaded.scope()).unwrap(), None);
+    let mut another_room = next.clone();
+    another_room.id = "dispatch-other-room".into();
+    another_room.event_id = "$other-room-message:test".into();
+    another_room.binding_id = "binding-other".into();
+    another_room.room_id = "!other:test".into();
+    another_room.thread_root = another_room.room_id.clone();
+    ledger
+        .register_binding(OWNER, &another_room.scope())
+        .unwrap();
+    ledger
+        .receive_dispatch(OWNER, &another_room, Limits::default(), 13)
+        .unwrap();
+    assert_eq!(ledger.context_session(&another_room.scope()).unwrap(), None);
+    // Existing completed/history roots remain their original event roots.
+    assert_eq!(event().scope().thread, "$root:test");
+    assert_ne!(
+        event().scope().context_key(OWNER).unwrap(),
+        first.scope().context_key(OWNER).unwrap()
+    );
+    let mut foreign = first;
+    foreign.id = "foreign-context".into();
+    foreign.thread_root = "!unrelated:test".into();
+    assert!(
+        ledger
+            .receive_dispatch(OWNER, &foreign, Limits::default(), 14)
+            .is_err()
+    );
+}

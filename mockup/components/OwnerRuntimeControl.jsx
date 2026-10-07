@@ -8,7 +8,7 @@ async function request(path, method = 'GET', body, signal) {
   if (!response.ok) throw new Error(value.code || 'provider_request_failed');
   return value;
 }
-export default function OwnerRuntimeControl({ agentId, bindingId, bindingState, profile, text, onProviderReference }) {
+export default function OwnerRuntimeControl({ agentId, bindingId, bindingState, assignedHere, profile, text, onProviderReference }) {
   const [provider, setProvider] = useState(null);
   const [runtime, setRuntime] = useState(null);
   const [error, setError] = useState(null);
@@ -82,9 +82,10 @@ export default function OwnerRuntimeControl({ agentId, bindingId, bindingState, 
     <p className="dim">{text('开启后仅可列目录、读取和新建当前 Room 私有工作区的文件；不能覆盖已有文件、访问其他 Room 文件或使用任意网络。每次调用仍受当前发言者策略约束；需创建者确认的提案会停在下方等待审批。', 'When enabled, tools can only list, read, and create files in this room’s private workspace. They cannot overwrite files, access other rooms, or use arbitrary networking. Each call follows the requester’s current policy; proposals requiring owner confirmation wait below.')}</p>
     <label>{text('每次调用预留 token 估算', 'Estimated token reservation per call')}<input inputMode="numeric" value={reservation} disabled={busy || active} onChange={event => setReservation(event.target.value)} /></label>
     <label>{text('推理强度', 'Reasoning effort')}<select value={effort} disabled={busy || active} onChange={event => setEffort(event.target.value)}>{['low', 'medium', 'high', 'xhigh'].map(value => <option key={value} value={value}>{value}</option>)}</select></label>
-    <label><input type="checkbox" checked={takeover} disabled={busy || active} onChange={event => setTakeover(event.target.checked)} />{text('如已有我的另一设备租约，明确接管（会停止旧设备的执行权）', 'Explicitly take over my other device’s lease if present (revokes its execution authority)')}</label>
+    <label><input type="checkbox" checked={takeover} disabled={busy || active || !assignedHere} onChange={event => setTakeover(event.target.checked)} />{text('恢复本设备的旧租约（不能代替执行实例设备分配）', 'Recover this device’s previous lease (does not replace instance assignment)')}</label>
     <p className="dim">{text('先保存下方模型、工作区和额度策略，再显式启动所选 Room。登录或保存配置都不会自动开始推理。', 'Save the model, workspace, and budget policies below, then explicitly start the selected room. Signing in or saving does not start inference.')}</p>
-    <div className="btn-row"><button className="btn" disabled={busy || active || !configured || !bindingId || bindingState !== 'active' || !optIn || !validReservation} onClick={() => mutate(`${runtimePath}/start`, 'POST', { bindingId, mode: 'estimated', reservation: Number(reservation), estimatedOptIn: true, effort, takeover, hostFiles })}>{text('启动所选 Room 的 Codex', 'Start Codex for the selected room')}</button><button className="btn" disabled={busy || !active} onClick={() => mutate(`${runtimePath}/stop`, 'POST', {bindingId})}>{text('停止所选 Room', 'Stop selected room')}</button></div>
+    {!assignedHere && <p role="status">{text('先把此 Agent 的执行实例分配到本机，才能在此运行。', 'Assign this agent’s execution instance to this device before starting.')}</p>}
+    <div className="btn-row"><button className="btn" disabled={busy || active || !assignedHere || !configured || !bindingId || bindingState !== 'active' || !optIn || !validReservation} onClick={() => mutate(`${runtimePath}/start`, 'POST', { bindingId, mode: 'estimated', reservation: Number(reservation), estimatedOptIn: true, effort, takeover, hostFiles })}>{text('启动所选 Room 的 Codex', 'Start Codex for the selected room')}</button><button className="btn" disabled={busy || !active} onClick={() => mutate(`${runtimePath}/stop`, 'POST', {bindingId})}>{text('停止所选 Room', 'Stop selected room')}</button></div>
     <section data-tool-approvals>
       <h4>{text('等待我的请求 / 工具审批', 'Requests / tool calls awaiting my approval')}</h4>
       <p className="dim">{text('这是 agent 创建者的本机决定，无需服务器管理员确认。批准只适用于以下完整参数的一次调用；执行前仍会重新核对 Room 权利、当前策略和有效期。', 'This is the agent owner’s local decision and needs no server administrator approval. Approval applies to one call with these exact arguments; room authority, current policy, and expiry are checked again before execution.')}</p>

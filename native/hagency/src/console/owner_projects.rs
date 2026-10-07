@@ -59,6 +59,23 @@ struct AdoptProject {
 struct AdoptRoom {
     room_id: String,
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PolicyUpdate<T> {
+    expected_revision: i64,
+    policy: T,
+}
+async fn empty(req: &mut Request) -> Result<(), OwnerError> {
+    if body(req, 1)
+        .await
+        .map_err(|_| error(400, "invalid_arguments"))?
+        .is_empty()
+    {
+        Ok(())
+    } else {
+        Err(error(400, "invalid_arguments"))
+    }
+}
 async fn parse<T: serde::de::DeserializeOwned>(req: &mut Request) -> Result<T, OwnerError> {
     serde_json::from_slice(
         &body(req, 16384)
@@ -103,6 +120,68 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
     }
     let operation = match (req.method().clone(), parts.as_slice()) {
         (Method::GET, []) => OwnerOperation::Projects,
+        (Method::GET, [project, "service-state"]) => {
+            key(project)?;
+            OwnerOperation::ScopeState {
+                project: project.to_string(),
+                room: None,
+            }
+        }
+        (Method::GET, [project, "rooms", encoded, "service-state"]) => {
+            key(project)?;
+            OwnerOperation::ScopeState {
+                project: project.to_string(),
+                room: Some(room(encoded)?),
+            }
+        }
+        (Method::POST, [project, action @ ("pause-service" | "clear-service-pause")]) => {
+            key(project)?;
+            empty(req).await?;
+            OwnerOperation::ScopePause {
+                project: project.to_string(),
+                room: None,
+                paused: *action == "pause-service",
+            }
+        }
+        (
+            Method::POST,
+            [
+                project,
+                "rooms",
+                encoded,
+                action @ ("pause-service" | "clear-service-pause"),
+            ],
+        ) => {
+            key(project)?;
+            let room = room(encoded)?;
+            empty(req).await?;
+            OwnerOperation::ScopePause {
+                project: project.to_string(),
+                room: Some(room),
+                paused: *action == "pause-service",
+            }
+        }
+        (Method::PUT, [project, "creation-policy"]) => {
+            key(project)?;
+            let input: PolicyUpdate<super::native::ProjectCreationPolicy> = parse(req).await?;
+            OwnerOperation::ProjectPolicy {
+                project: project.to_string(),
+                expected: input.expected_revision,
+                policy: input.policy,
+            }
+        }
+        (Method::PUT, [project, "rooms", encoded, "creation-policy"]) => {
+            key(project)?;
+            let room = room(encoded)?;
+            let input: PolicyUpdate<super::native::RoomCreationPolicy> = parse(req).await?;
+            OwnerOperation::RoomPolicy {
+                project: project.to_string(),
+                room,
+                expected: input.expected_revision,
+                policy: input.policy,
+            }
+        }
+
         (Method::POST, []) => {
             let input: AdoptProject = parse(req).await?;
             let space = room(&input.space_id)?;
@@ -180,6 +259,22 @@ fn candidate_cursor(query: Option<&str>) -> Result<Option<String>, OwnerError> {
 #[cfg(test)]
 mod candidate_query_tests {
     use super::*;
+    #[test]
+    fn scope_policy_payload_cannot_claim_owner_or_administration() {
+        let valid = serde_json::json!({"expectedRevision":3,"policy":{"mode":"inherit_project","deny":["@blocked:test"]}});
+        let parsed: PolicyUpdate<super::super::native::RoomCreationPolicy> =
+            serde_json::from_value(valid.clone()).unwrap();
+        assert_eq!(parsed.expected_revision, 3);
+        let mut claimed = valid;
+        claimed["adminMxid"] = serde_json::json!("@admin:test");
+        assert!(
+            serde_json::from_value::<PolicyUpdate<super::super::native::RoomCreationPolicy>>(
+                claimed
+            )
+            .is_err()
+        );
+        assert!(serde_json::from_value::<PolicyUpdate<super::super::native::ProjectCreationPolicy>>(serde_json::json!({"expectedRevision":1,"policy":{"defaultAllow":true,"allow":[],"deny":[],"resourcesApproved":true}})).is_err());
+    }
     #[test]
     fn candidate_cursor_is_one_room_id_not_an_arbitrary_proxy_query() {
         assert!(candidate_cursor(None).unwrap().is_none());
