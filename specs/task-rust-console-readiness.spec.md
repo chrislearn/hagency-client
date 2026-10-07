@@ -60,7 +60,7 @@ page's own PageHead sites — the one page-file exception to Forbidden. -->
 ## Acceptance Criteria
 
 Scenario: The strip renders not-ready on a 503 component
-  Test: native_console_status_strip_503_renders_not_ready
+  Retired-Test: native_console_status_strip_503_renders_not_ready
   Level: integration
   Test Double: the console fixture with a closed domain writer driving /ready to 503; browser-lane
   Given the native-console-browser feature whose selector appears in cargo test --list under --all-features exactly as native_console_browser is bound by the usage console spec and a console page rendered while /ready answers 503 with a failing component
@@ -68,7 +68,7 @@ Scenario: The strip renders not-ready on a 503 component
   Then it shows not ready with the failing component's name and state word and never the word ready
 
 Scenario: The strip renders unknown when /ready is unreachable
-  Test: native_console_status_strip_unreachable_renders_unknown
+  Retired-Test: native_console_status_strip_unreachable_renders_unknown
   Level: integration
   Test Double: the console fixture with the readiness route unreachable; browser-lane
   Given the native-console-browser feature whose selector appears in cargo test --list under --all-features exactly as native_console_browser is bound by the usage console spec and a console page whose readiness fetch fails at the network level
@@ -76,7 +76,7 @@ Scenario: The strip renders unknown when /ready is unreachable
   Then it shows unknown with no component list and never ready
 
 Scenario: The built assets carry the workspace version after a rebuild
-  Test: native_console_status_strip_version_matches_workspace
+  Retired-Test: native_console_status_strip_version_matches_workspace
   Level: integration
   Test Double: the real asset bundle located through HAGENCY_NATIVE_CONSOLE_ASSETS; never the synthetic console fixture
   Given console assets built by build-native-console.mjs with the staged constants appended to lib/native-api.js
@@ -89,3 +89,5 @@ Scenario: The built assets carry the workspace version after a rebuild
 Restart and stop controls (the service wrapper's slice), any Rust change, the
 retained console's pages, and the readiness payload itself (frozen by
 ADR-096's amendments).
+
+Owner browser cutover: retired readiness/version-strip assertions required the removed usage widget/global build marker. The current owner bundle contains no such widget/marker. Binary version still has actual release verification; SDK readiness HTTP tests remain active. New product browser evidence is the actual OwnerRail binary qualification and explicit owner UI Chrome contract in `native-owner-client.spec.md`.

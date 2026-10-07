@@ -118,7 +118,7 @@ async fn native_mcp_protocol() {
     );
 }
 fn command() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_hagency"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_hagency-sdk-mcp-test-peer"));
     cmd.arg("mcp")
         .env_clear()
         .env("HAGENCY_RUNNER_API_ADDR", "127.0.0.1:9")

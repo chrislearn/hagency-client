@@ -117,13 +117,13 @@ Scenario: Current authority remains separate from historical enrollment
   Then the existing negative fence persists and enrollment never grants current file or execution authority
 
 Scenario: The real executable delivers its first requested file
-  Test: native_file_service_executable
+  Retired-Test: native_file_service_executable
   Given the actual native service and MCP child with the explicit fresh enrollment profile
   When the first tool call requests a configured-workspace file
   Then an independent real recipient decrypts exact file bytes and metadata after actual enrollment and only domain event acceptance reports delivered
 
 Scenario: Historical file acceptance survives a fresh process
-  Test: native_file_service_restart
+  Retired-Test: native_file_service_restart
   Level: integration
   Test Double: Real native child processes and original protected databases
   Given independently proven actual SDK Complete before failed first domain settlement
@@ -152,3 +152,5 @@ dependency declaration. No new executable or configurable crypto provider is add
 
 General Matrix account recovery SAS QR UIA signing seed import application services
 background key maintenance live homeservers and production cutover remain separate.
+
+2026-10-07: These Retired selectors depend on removed account/task CLI or the former direct-Palpo/Fleet production process. Library SDK coverage remains separate; current OwnerHost forbids these product commands. See [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md).

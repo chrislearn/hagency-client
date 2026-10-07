@@ -1,6 +1,6 @@
 # Hagency 服务端 Appservice 与本地客户端重构实施细则
 
-日期：2026 年 10 月 7 日。状态：需求与实施方案；已纠正项目位置和实现基线。新增领域代码仅为未集成草稿，正式重构未完成。跨 Project、Codex 优先与加密复用要求已确认。
+日期：2026 年 10 月 7 日。状态：需求、实施方案与实施核对；正式 workspace 的新用户领域、登录、投递接口、本地策略、Codex host、精确审批和管理界面已落地；同机三数据库恢复演练已通过；追加审查发现的空账本接管额度缺口已修复并通过专项及新镜像验收；真实模型任务及发布环境整机恢复尚未验收。跨 Project、Codex 优先与加密复用要求已确认。
 
 本次重构将 Hagency 从以资源提供者为中心的 Fleet 服务，改为以用户为中心的 Agent 身份管理服务：新架构取消 Fleet 业务概念，hagency-server 自带 Appservice，并作为集成 Palpo 部署的必装组件，管理用户创建 Agent 的资格、傀儡账号及 Room 绑定；hagency-client 在创建者设备上运行 Agent，管理模型凭证、资源配额、请求过滤和工具调用策略。Project 对应 Matrix Space，讨论组对应独立 Room。
 
@@ -8,13 +8,13 @@
 
 ## 阅读范围与证据基线
 
-本方案的正式实现基线是 `/Volumes/Data/Works/chrislearn/hagency-client` 与 `/Volumes/Data/Works/chrislearn/hagency-server` 两个已存在的独立 Git 仓库。此前错误使用 `hagency-org/hagency-rs` 与外置 Palpo web-admin 作为主要基线，并在 `hagency-org` 新建同名目录；本次已撤除误建目录，将报告移到真实客户端，将新增服务端领域草稿保存在真实服务端 `refactor-drafts/appservice-domain/`。草稿不接入生产 workspace，不代表真实服务端已经实现目标。
+本方案的正式实现基线是 `/Volumes/Data/Works/chrislearn/hagency-client` 与 `/Volumes/Data/Works/chrislearn/hagency-server` 两个已存在的独立 Git 仓库。此前错误使用 `hagency-org/hagency-rs` 与外置 Palpo web-admin 作为主要基线，并在 `hagency-org` 新建同名目录；位置修正时已撤除误建目录并将报告移到真实客户端；`refactor-drafts/appservice-domain/` 仅保留历史草稿。随后正式实现已接入真实服务端 workspace 的 `crates/agent-service/`，当前状态见下表。
 
-位置修正时客户端 HEAD 为 `792fd144d07c9a77ee2181c7d260503c46a35036`，服务端 HEAD 为 `59521407358d33df41a9248723625b6de2e95f78`。客户端已有 README、开发脚本与 `server_login` 源码/测试等未提交修改，必须保留。服务端根 workspace 已有 backend、operations、hagency-contract、frontend 和 xtask；backend 集成 Palpo 与 Pasion，Hagency 使用 PostgreSQL 存储。Palpo 依赖按服务端根 `Cargo.toml` 固定至 `c8568d9844a6be0a3172d98d7c9810e3a1f7521c`，不能把外置 Palpo 的其他提交当作此产品运行版本。
+位置修正时客户端 HEAD 为 `792fd144d07c9a77ee2181c7d260503c46a35036`，服务端 HEAD 为 `59521407358d33df41a9248723625b6de2e95f78`。客户端已有 README、开发脚本与 `server_login` 源码/测试等未提交修改，必须保留。修正位置时服务端根 workspace 有 backend、operations、hagency-contract、frontend 和 xtask；正式重构已删除旧 operations 与 hagency-contract 入口，新增 agent-service；backend 集成 Palpo 与 Pasion，Hagency 使用 PostgreSQL 存储。Palpo 依赖按服务端根 `Cargo.toml` 固定至 `c8568d9844a6be0a3172d98d7c9810e3a1f7521c`，不能把外置 Palpo 的其他提交当作此产品运行版本。
 
 新架构仍使用全新数据结构，不兼容、不导入、不迁移旧 Hagency 数据，也不提供旧模式运行入口。这里的“不兼容”约束针对 Hagency 业务数据，不授权重建 Palpo 或 Pasion 数据库，也不意味着要抛弃现有服务端工程、认证接入或部署工具。
 
-文中“必须”表示本次需求或实现不可缺少的约束；“建议默认”表示为补齐原需求而提出的产品选择；“后续阶段”表示明确延后的能力，不得在首期界面宣称已经可用。已确认本地客户端项目为 `hagency-client`，服务端项目为 `hagency-server`，两者位于 `chrislearn` 下的同级独立仓库。当前两个产品已有实现，但尚未完成本报告规定的新领域重构。
+文中“必须”表示本次需求或实现不可缺少的约束；“建议默认”表示为补齐原需求而提出的产品选择；“后续阶段”表示明确延后的能力，不得在首期界面宣称已经可用。已确认本地客户端项目为 `hagency-client`，服务端项目为 `hagency-server`，两者位于 `chrislearn` 下的同级独立仓库。两个产品的新领域重构已落地，实际进度与尚未通过的验收门槛见下节。
 
 | 项目 | 目录 | 实施范围 |
 |---|---|---|
@@ -23,13 +23,105 @@
 
 两个项目独立构建、发布、运行和保存数据。服务端不是客户端 workspace 内的子项目，客户端不嵌入服务端运行环境；共享协议以明确版本契约维护，避免共享旧运行器或数据库形成隐式耦合。本报告继续保存在 `hagency-client/docs/design/`。
 
+### 正式实施进度与不能混淆的验证层次
+
+以下为位置修正后的实际代码状态，优先于文中最初的差异基线。此前 `refactor-drafts/appservice-domain/` 仍是历史草稿；正式实现现在位于服务端 `crates/agent-service/`，使用 PostgreSQL 新 schema `hagency_agent_v1`，并已由真实 backend 引用。客户端新增 `native/hagency-agent-local/`；两个新增领域均不导入旧 Fleet 数据。
+
+| 实施项 | 已落地的行为 | 当前证据及剩余门槛 |
+|---|---|---|
+| 用户与设备身份 | Pasion introspection 与 Matrix whoami 联合验证；固定 issuer/subject/MXID 映射、有限用户会话、设备 generation、撤销和续期 | 独立 PostgreSQL 与客户端协议测试通过；真实嵌入式 Pasion 的 native DCR、PKCE、授权同意、后台续期、refresh rotation、退出 revoke 已通过；真实浏览器已验证管理员及普通用户登录、两类 consent、cookie 刷新恢复与退出；发布环境仍需验收 |
+| 永久 owner 与 Project/Room | Agent owner/傀儡身份的数据库不可变约束；Project 对应 Space；当前成员及 power levels 授权；跨 Project 独立绑定和暂停 | 真实 PostgreSQL 测试覆盖越权、设备快照撤销、等待锁期间到期、跨 Project 和不可绕过管理员暂停；真实私密 Space/Room、父子关联、傀儡创建加入及 owner 绑定已通过；同一 Agent 绑定 restricted 子 Room 已通过标准邀请/加入且不改变 join rule；真实退役退出已通过，模拟退役完成后晚到的真实 Matrix join 被控制器清理；生产长时故障恢复仍须验收 |
+| 必装 Appservice | backend 使用 Palpo 既有接口安装并核对稳定注册；服务端私有 AS/HS 密钥原子持久化；事务先持久收件再 ACK | 重启身份及配置冲突测试通过；隔离的真实嵌入式 Palpo/Pasion 已验证服务账号、私密 Room、稳定 Matrix send 和事件进入持久 inbox；启动门禁已通过真实服务探测 Room→Matrix event→持久 inbox，/readyz 提供启动证明；已完成路由的明文事务压缩为永久 ID/digest 去重凭证，pending 才计入活跃队列容量；探测事件独立短期凭证避免与压缩竞争。启动证明不代表持续健康，永久元数据仍须监控容量 |
+| 用户投递与回复 | 单 Agent 设备租约与 epoch；收件 ACK、执行 start、完成分离；回复持久 outbox 和稳定 Matrix transaction ID；可信 gateway 事实由服务器取得 | 新设备 REST 路由和后台路由/发送 worker 已集成；真实 Palpo/Pasion 测试已覆盖设备租约、提及投递、ACK/start 分离、重复 start 不重执行及稳定 Matrix outbox 发送。跨 epoch 恢复已通过 PostgreSQL 与客户端 host 故障测试；服务器接收不等于 Matrix 送达，只有 sent/event ID 才结束本地回复。已暂停/退役或单个无效请求不得阻塞其他合法用户 |
+| 客户端登录及管理界面 | Rust 持有令牌；退出即时撤销本机授权；新增 owned-agents 页面，管理自己的 Agent、绑定、本地额度、请求者和工具策略 | mock 契约、真实新 OwnerHost 的 Pasion 登录→建 Space/Room→登记→创建 Agent→名单→退出闭环通过，4 项创建恢复测试、Clippy 与 138 项 native UI 导出通过；界面明确保存配置不代表执行器在线，不把 keychain 引用等同于已解析有效凭证 |
+| 本地额度及审批 | owner 专属新 SQLite；Agent/Room/requester 三层配额；并发预留、实际结算、未知用量保留、策略 revision 和精确单次工具授权 | 本地库并发、故障恢复、授权测试通过；持久收件、host 调度及假协议故障恢复测试已集成；模型请求 AskOwner 精确绑定原文/执行/策略 revision，批准后远端成员或策略变化仍拒绝；审批记录核验 owner、origin、subject、设备/generation、digest、nonce、到期和一次消费。Codex 使用 owner 专属 CODEX_HOME 的系统 keyring，空 owner 的真实 account/read 已通过。用户实际登录自身 Codex 与推理任务仍需产品验收 |
+| 执行设备的账本连续性 | Agent 全部 started 历史固定分页、永久身份与摘要；Acquire 原子快照校验；本地完整费用/三层余额凭证；缺失时拒绝新推理 | 39 项服务端 PG、47 项本地领域及 23 项 host 最终通过，包含快照竞态、缺账本不接管、unknown hold、正常拒绝零调用凭证与已知回复恢复。恢复模式不 poll/ACK 新事件、不调用模型；Estimated/接管不能绕过。新 Docker 实际历史快照/回复/重启验收通过 |
+| Codex 首个 adapter | 核对本机 `codex-cli 0.160.1` 协议；完成无模型调用的 initialize、动态工具 thread/start 与跨进程 thread/resume 握手，及 fake peer 的用量和工具审批协议验证 | 实际协议没有可证明的单次硬 Token 上限。Strict 模式必须拒绝该能力，不能自动降级为估算模式；估算预留须由 owner 明确选择，实际超额阻止后续请求 |
+| Codex 工具边界 | 不继承用户现有 MCP/hooks/插件配置；生产原生 shell/file/MCP 工具关闭；新 Host 动态文件通道限定当前 binding 的私有 list/read/create，owner 精确审批接口、模型请求 AskOwner 与 UI 已接入 | read-only/untrusted 不是跨 Room 私密文件读取隔离的证明。实际 Codex 已验证动态工具注册与持久 thread 冷恢复，真实 FD 文件操作、重复调用去重、参数变化拒绝、批准后远端撤权和跨 Room 拒绝已通过 host 测试；未进行付费模型驱动的完整工具任务。安装版本的受控 named permission profile 已通过无推理跨 Room OS 命令隔离探针，尚不证明全部原生模型工具逐调用截获；动态 Host 文件通道另用持有目录 FD、逐层 NOFOLLOW、hardlink 拒绝及原子 create 证明。替换已有文件、Shell、MCP 与网络工具均未开放 |
+| E2EE | 既有 client SDK 的 crypto/store/enrollment/outgoing 源码保留，可复用的基础已存在 | 新 owner/device 接入尚缺受限傀儡 crypto 凭证及完整收发验证。当前新领域明确拒绝加密 Room，禁止将其降级为明文。该缺口依据用户允许困难加密能力延期的授权延期，具体证据与三个后续工程面见 [E2EE 能力缺口核对](../../../hagency-server/docs/CRYPTO_CAPABILITY_GAPS.zh-CN.md) |
+| 旧模式切除 | 新登录和创建路径不再要求 Fleet 安装或资源审批 | server 旧 Admin/operations/contract、Fleet/资源审批入口及旧配置已切除，all-targets Clippy 与新前端 WASM 通过；client 已改为独立 OwnerHost、新 CLI 与 owner-only 界面，不初始化旧 SQLite/graph/Fleet。新客户端实际 Init/Serve/Open、私密 IPC 一次性票据、只打包 root/login/agents-owned、旧数据拒启动、12 条旧路由 404 及 SIGTERM 清理已通过；旧可复用 SDK 库不作为生产入口 |
+
+已补齐 REST 与管理界面的 Room 创建策略、Project/Room 服务暂停和解除。暂停记录覆盖没有任何 binding 的 scope，阻止新 Agent 或新绑定绕过；解除管理员暂停只恢复 eligibility，已有绑定仍由 owner 明确恢复。创建/绑定先提交持久命令并返回 202 pending，唯一数据库选举的 Matrix membership controller 负责收敛；owner 可以查询原 command/key 结果，不需要新建命令键重试。最新管理/领域、Appservice 压缩及队列公平性 PostgreSQL 测试套件 39 项通过，真实 native DCR/PKCE、普通私密 Room 往返及退役晚到加入清理通过。新服务端网页已实测 Pasion 登录、个人及管理员 consent、普通用户注册、cookie 会话刷新恢复与退出。
+
+客户端仅在可信 Matrix sent/event ID 后将本地收件转为 replied 并清除重复保存的请求/回复正文。原 immutable digest、执行 ID、回复 digest 和 scope 元数据保留；原事件重放不重新推理，改变内容冲突。unknown、reply_ready、费用保留与工具 receipt 不清理；容量统计包含永久去重凭证，不能宣称无限历史或磁盘安全擦除。同机隔离环境的三个完整数据库离线 dump/restore 已通过：保留永久 owner、AS 凭据、原回复/事件身份和 unknown 执行；重新登录、新设备显式接管后通过新请求往返。见[实际恢复演练](../../../hagency-server/docs/BACKUP_RESTORE_VALIDATION.zh-CN.md)及[恢复手册](../../../hagency-server/docs/RECOVERY.zh-CN.md)。追加独立文件系统恢复已通过：原目录移走后恢复实例无法读取旧路径，新目录及三库保留 AS/Matrix/Pasion 密钥与配置 pepper，实际上传的 Matrix 媒体在恢复后下载一致。该证据仍不涵盖异机、外部对象存储、Pasion 媒体 API 或生产整机恢复。
+
+所有模型 turn（包括 requests Allow）在配置/上下文准备完成后、预留与 turn/start 之前再次核验远端 scope，避免启动耗时期间权限变化被遗漏。工具执行还需服务端即时核验当前设备、租约、binding generation、运行中的 dispatch/execution 及实际 Room/Space 成员；`/execution/events/authorize-tool` 只证明远端授权，不能代替本地额度、请求者或精确审批。真实 REST 测试已验证运行中的合法执行获准，错误 execution ID 被拒绝。Appservice 明文压缩只在路由全部完成后发生；unknown 执行、未知回复及本地费用/工具副作用证据不得随之删除。
+
+真实 Matrix 额外边界验证已通过：kick 傀儡后关键工具授权拒绝并持久暂停；立即重新加入不自动恢复；owner 显式恢复产生新 generation，旧任务仍不能 start/调用工具，另一合法 Room binding 保持 active，新请求真实回复成功。实际提高 `m.room.message` 发言门槛后运行中任务被封存 unknown，恢复原 power level 不恢复旧工具执行或创建回复。
+
+最近一次集成复核记录如下（2026-10-07；本机代码为两个正确仓库的当前未提交工作区）：
+
+| 检查 | 结果与证明范围 |
+|---|---|
+| server 独立 PostgreSQL | 39 项通过，含不可变 owner、scope 暂停、跨 epoch、即时工具授权、AS 明文压缩/探测凭证和失败队列公平性、成员持久隔离、实际 HTTP 403 不重试、原入站 TTL、binding 过滤及真实认证路由启动门禁；未 ready 的创建/绑定均 503 且零领域写入/Matrix 调用，单有发送不等于 ready，真实 AS 持久收件后才放行；测试库删除 |
+| client 本地领域 | 最终 47 项通过，含实际 SQLite/目录 FD 操作、审批、去重、未知成本保留、sent 容量回收、完整费用凭证及 binding 在 limit 前过滤 |
+| client host | 最终 23 项 runtime、此前 4 项 OwnerHost 通过；原回复冷恢复、取消封存、精确模型请求确认、并发一次审批消费、多 Room 共用租约/独立停止、关闭竞态、长纯文本推理失权取消/进程停止/未知费用保留、历史分页摘要/接管前后核验与恢复模式禁止新调用及旧入口拒绝 |
+| native 登录授权 | Pasion/device 协议测试 1 项通过，包含 PKCE、续期、撤销和设备操作边界；另有此前真实嵌入 Pasion 的 native 登录验证 |
+| 最新本机控制台包 | 最终 138 资源包 Chromium 契约通过；实际 `hagency` 二进制 OwnerRail 测试 1 项通过，真实 OwnerHost 创建流程 1 项通过；模型请求与完整工具参数可精确批准/拒绝 |
+| 实际 Codex 0.160.1 | 无推理 initialize、account/read、动态工具注册、跨进程恢复、有效配置及跨 Room OS 探针通过；不等同于付费模型驱动的完整任务 |
+| HTTP 契约 | OpenAPI 3.1 用户与设备 46 个操作、Appservice 4 个操作；路由与 Rust DTO 核验及 8 个负例通过 |
+| 备份恢复 | 同机三数据库及独立私有文件系统恢复通过；旧目录不可达，AS/Matrix/Pasion 密钥及配置 pepper 不变，真实 Matrix 媒体下载一致；不代表生产整机恢复 |
+| client 完整 workspace | 修复后默认 feature 的 all-targets/locked/offline/no-fail-fast 完整命令 exit 0；仅保留 CI 两个既定真实账号/机器资格 skip，既有 SDK ignored 不计通过；feature 浏览器另有真实 OwnerRail/Chrome 与严格 Clippy 验收 |
+| Docker 发布 | 新镜像实际构建与隔离三库/Pasion/必装 AS/普通成员 Agent/真实回复/重启全流程通过，最终输入指纹一致；测试资源清理，无付费模型推理；见 [Docker 记录](../../../hagency-server/docs/validation/docker-owner-v1.zh-CN.md) |
+| 静态检查 | server 最新新增领域与 backend all-targets 严格 Clippy 通过；client 创建模块严格 Clippy 通过，真实 OwnerHost 创建闭环、最终 138 资源包的真实二进制 OwnerRail 及 console 严格 Clippy 已通过；Palpo 源码工作区保持干净 |
+
+发布门槛追加审查发现：完整 CLI 历史套件 10 项中 9 项仍调用已删除的命令/页面，production-callers 与发布 smoke 也仍绑定旧产品入口；已有新 OwnerHost 专项测试通过不能代替这些发布入口修正。已以新实际 binary 的初始化、服务启动/停止/重启、私密 IPC 和旧数据拒绝行为替换对应产品验收，同时保留有效的独立 SDK 覆盖；新产品 spec 4 项 caller 全部 wired，生产 checker 与规格规则 32 项测试通过，浏览器已通过；完整 all-targets/all-features 规格 inventory 校验 1172 项当前绑定，无 missing，2 份纯 Fleet 规格和 82 条历史产品场景明确退休，不计入通过项。
+
+新增真实 CLI 重放测试发现 owner IPC 误用了 SDK 的可复用票据；现已改为 60 秒单次票据及 15 分钟进程内本地会话，不持久恢复，6 项 authority 测试及严格 Clippy 通过；修复后真实 binary CLI 10/10、两套服务前台启动/TERM/重启测试各 3/3 通过；最终入口与 SDK 选集 30 项全部通过，其中新 Owner 产品 22 项、独立 SDK 8 项（bootstrap 配置 4、setup 3、Palpo cancel 1）；按文件为 CLI 12、bootstrap 7、setup SDK 3、Palpo 边界 2、两套服务各 3；真实 Console assets 诊断与 OwnerRail 各 1 项、Chrome 契约通过，当前 all-targets 严格 Clippy 通过。本地会话不替代 Pasion/Matrix 或提供方授权。
+
+安装器已委托当前用户级 service install；新发布验收 10 项、停止 host 后全目录恢复 3 项通过，N+1 独立产物不覆盖当前二进制，保留 unknown 成本及配额占用，不支持旧 schema 导入。完整 workspace 首轮实际运行发现更多已撤销的生产 CLI/bootstrap/Fleet 假设；对应退休、替代行为及独立 SDK 边界见[覆盖记录](2026-10-07-retired-product-test-coverage.zh-CN.md)，新 OwnerHost 静态配置诊断已验证不泄漏凭据；独立 SDK MCP/协调/Matrix/用量/冷运行选集 45 项及 factory 21 项通过，不计作新产品真实模型验收。旧浏览器模块另有 17 项依赖已撤销的资源/enrollment/tasks/usage 页面或旧状态 widget，已明确退休，对应 14 条规格绑定不再冒充可兑现的新产品门槛；其余 SDK 路由测试保留，新 OwnerRail/Chrome 及 feature 严格 Clippy 再次通过。修复后的完整 workspace 默认 feature 回归已通过：`cargo test --workspace --all-targets --locked --offline --no-fail-fast -- --skip native_codex_real_app_server --skip native_two_agent_qualification_records_its_evidence` exit 0，日志汇总 1892 passed、0 failed、165 ignored、18 filtered；保留独立 SDK 测试及既有 ignored 项，两项真实账号/机器资格门槛仍独立验收。旧 UI 最后切除仅影响未启用的 feature 测试，之后新 OwnerRail、Chrome、feature Clippy 和 all-features 库存已再次通过。新 Docker 镜像已真实构建并完成隔离发布 smoke：fresh 三库、AS 启动往返及 HEALTHCHECK、普通成员 Pasion DCR/PKCE、Space/Room 与 Agent 202 接入、指定 binding 的幂等 start 与真实傀儡回复、私有配置/非 root、旧 Fleet 404、重启密钥/身份/新设备 generation 及再次回复均通过。最终镜像与输入指纹验后一致，测试容器/卷/网络已清理，原开发 PostgreSQL 未操作；见[完整 Docker 证据](../../../hagency-server/docs/validation/docker-owner-v1.zh-CN.md)。这仍不代表用户真实模型推理或生产整机恢复。
+
+验证层次必须分别记录：普通编译、fake/mock 契约、隔离 PostgreSQL、真实 Pasion/Palpo/Codex 集成，以及发布验收。数据库测试只在临时新数据库执行，结束删除测试库；不授权清空已有 Palpo/Pasion 数据。无付费推理的 Codex 握手只证明协议可连接，不证明 Agent 已执行用户请求。整体任务仍以文末全部验收项为完成条件。
+
+追加设备恢复审查：上述已通过的恢复测试证明本机完整账本能够保留 unknown 占用，但没有证明另一设备的空账本不能接管并从零余额运行。修复前的 `run_host` 在取得 lease 后只恢复本机执行记录，远端旧执行可能完全不在新账本中；这违反本报告“接管前恢复或封存旧账本”的要求，现已修复。修复采用同一 owner/device 认证的 Agent 全部已启动执行元数据分页（不含正文或费用），检查本地不可变执行身份及费用凭证覆盖，接管原子检查历史快照并在取得 lease 后再次核对。无历史才允许空账本；缺失或不能证明完整时返回 `ledger_recovery_required`，禁止新模型调用，用户勾选接管不能豁免。已知原文回复的恢复与新模型资格分别处理；服务器仍只协调执行身份，不管理费用。历史执行 ID 本身不足以证明费用完整，旧 prepared/running 快照必须保守拒绝或具备完整未知费用封存凭证。此前 workspace/Docker 结果属于修复前基线；新契约与修复后发布输入已另行验证。
+
+该修复的服务端现已通过最终 39 项隔离 PostgreSQL、all-targets 严格 Clippy 及 46+4 OpenAPI/8 个负例：历史 129 条两页、owner 隔离、不可删除/改写的永久 started 见证、真实 HTTP 必填快照拒绝及旧设备并发 start/Acquire 原子竞态均通过。没有增加费用表或资源审批。客户端运行入口、费用凭证、仅已知回复恢复和界面已接入；最终本地 47 项、runtime 23 项、设备协议 1 项、最新真实 OwnerRail 1 项、严格 Clippy 及恢复界面三类错误状态的浏览器测试通过。最终新镜像实际 Docker smoke 通过，执行历史分页/流式摘要、错误快照 409 且原 lease 续期成功、幂等 start 的唯一历史及重启后原摘要不变均验证；测试资源已清理、输入指纹验后一致。完整客户端回归与规格库存核对另见最终追加结果。
+
+最终追加结果：修复后全部源码冻结，完整客户端 workspace 的同一默认 feature 命令再次实际 exit 0，206 个结果组汇总 **1903 passed、0 failed、165 ignored、18 filtered**，日志 `/tmp/hagency-owner-workspace-ledger-final.log`；之前 1892 是修复前基线。all-targets/all-features 测试库存的 **1172 条当前绑定、0 missing、2 份 superseded 规格、82 条退休场景、0 平台 deferred** 均核对，新增 11 条费用连续性门槛已独立绑定。日志 `/tmp/hagency-owner-spec-bindings-ledger-final.log`。最终 Docker 镜像 `sha256:ef05f8c5e3d473cf96c93f3ec647a1e4bb33330c59993be79e154e3a05d8fe3b`，158 个构建输入指纹 `603069ed7b2ea2e6ae403fb02721f57fc605f7533de5d800106ca6c1fe823acb`，完整实际 smoke exit 0；详见[修复后 Docker 记录](../../../hagency-server/docs/validation/docker-owner-v1.zh-CN.md)。文档链接、代码围栏、SQL 指纹和两个仓库 diff 检查通过，Palpo 源码工作区仍干净。仍未验证用户独立登录后的真实 Codex 推理及生产整机恢复；E2EE 依已确认授权延期。当前不将剩余门槛算作通过，代码尚未提交。
+
+## 2026-10-07 追加：登录入口与多账号切换
+
+用户已确认同一个客户端需要切换不同 Matrix 账号或服务器，各账号数据独立。本轮落实 R22/R23：未获当前浏览器授权时先进入 Matrix/Pasion 登录页面；设备名自动采用 `Hagency Client`；浏览器最多保存八个规范化服务器 origin，服务端本地配置最多保存 64 个账号身份元数据。历史列表不保存密码、会话或 OAuth 凭证，历史服务器只选择 origin，用户名在 Pasion 中输入；认证完成后按真实身份选择隔离账号数据。
+
+账号身份按 `(server origin, issuer, subject, MXID)` 联合确定。Agent 配置、Room/requester 配额账本、Codex 凭证目录及设备运行状态分别隔离；相同 MXID 在不同服务器或不同 subject 下也不能共享账本。SQLite 增加不可改写的 `profile_identity`，阻止复制别的账号账本后冒用；不导入旧 Fleet 数据，也不自动采用早期未绑定完整身份的原型账本。Agent 永久 owner 不变，没有转让或认领功能。
+
+切换与退出先撤销旧浏览器 cookie、待用 IPC ticket、设备执行和工具授权，再停止原账号任务与待完成的提供方登录进程。新的临时本地 cookie 只用于打开登录和账号选择页面，不提供 Matrix 或 Agent 操作权限；目标账号通过 Pasion 重新验证后才恢复控制。同一客户端 A→B→A 时，旧 A 页面的退出请求不能停止新 A 的任务。登录回跳改为 `/console/`，公共 HTML 允许 OAuth 导航，所有敏感 API 保留来源与有效会话检查。
+
+最终界面包为 `.run/manual-owner-console-accounts-v2-20261007`；登录和 Owner Console 两套真实 Chrome 浏览器检查均通过。新浏览器检查已加入 Rust CI。实际 HTTP 多账号切换、身份固定、并发旧 cookie 拒绝和重新登录回归均已通过。
+
+本轮全工作区默认 feature 回归实际 exit 0，206 个结果组，**1917 passed、0 failed、165 ignored、18 filtered**；日志 `.run/manual-owner-account-regression-20261007.log`。该工作区测试编译后，对原账号退出的 bearer 检查追加了最后两处保护；最终源码另行通过全部 129 项客户端单元测试、账号切换 HTTP、OAuth 回跳实际 CLI、实际 OwnerRail 静态包服务测试及全工作区 all-targets 严格 Clippy。一次与并行构建同跑的客户端单元测试出现旧 SDK 的五秒 operation 时限超时；该单项复跑通过，最终串行完整单元测试 129 passed、0 failed，不隐藏这次失败。最终源码日志为 `.run/manual-owner-account-final-lib-serial-20261007.log`、`.run/manual-owner-account-final-http-20261007.log`、`.run/manual-owner-account-final-rail-20261007.log` 和 `.run/manual-owner-account-final-clippy-20261007.log`。
+
+all-targets/all-features 规格库存为 **1181 条当前绑定、0 missing、0 deferred、2 份 superseded、82 条退休场景**，日志 `.run/manual-owner-account-spec-20261007.log`；生产 caller 4/4 wired，无 gap。格式、diff、三份设计文档本地链接及 13 表 SQL 指纹核验通过。最终 binary 已构建并以原测试状态目录重启，`127.0.0.1:13300/ready` 与 server Matrix versions 均返回 200；实际中文登录页已核对账号选择和自动设备名。重启后的浏览器需要重新登录。上述检查不调用付费模型，不代替真实模型任务与生产整机恢复验收。
+
+### 登录界面修正：参考 Rinx
+
+用户对原侧栏设置表单式登录入口不满意。本轮核对 `chrislearn/rinx/src/login/login_screen.rs` 后，调整为独立居中的登录页：品牌标记与标题、语言切换、历史账号、服务器选择或更改、单一主登录按钮；移除登录阶段的工作区侧栏与大段实现说明。Pasion 登录、原账号任务停止及账号隔离协议保持不变，没有添加客户端代收 Matrix 密码或不受服务器支持的社交登录入口。
+
+本轮静态包为 `.run/manual-owner-console-rinx-20261007`（140 项资源，6118507 bytes），已通过登录与 Owner Console 的真实 Chrome 浏览器检查，包括 390px 窄屏不溢出、居中布局、历史服务器清理、切换账号后重新授权、授权过期关闭与无自动推理。已更新本机运行中的客户端并核对实际中文界面；浏览器需要刷新才能载入新 HTML，已有页面只改变 URL fragment 不会更新静态资源。截图 `.run/manual-owner-login-rinx-20261007.jpg`。最终实际 binary 的 OwnerRail 静态包服务回归通过（1 passed、0 failed），日志 `.run/manual-owner-login-rinx-native-20261007.log`。
+
+### 登录入口更正：服务器历史不预选用户名
+
+用户明确指出，Pasion 页面不预填账号名，客户端在进入 Pasion 前展示“用户名 · 服务器”会误导。当前 UI 改为只展示去重的服务器 origin 历史，服务器地址可以直接修改；同服务器的多个账号只占一个历史项。用户名在 Pasion 中填写，不发送登录提示或预选用户名。
+
+继续登录时，若存在旧账号绑定，先通过现有 `switch {profileId:null}` 接口撤销旧授权并停止任务，再启动所选服务器的 Pasion 登录；前一步失败时不发起新登录。因此不只是隐藏账号名，也解除旧账号的身份限定。Pasion 实际核验的 `(origin, issuer, subject, MXID)` 决定打开哪套独立账号数据，原 Agent 永久 owner 和预算账本规则保持有效。已登录用户可明确选择“登录其他账号”。此前历史账号下拉框的描述与截图是上一轮 UI 记录，不再表示当前界面。
+
+当前静态包 `.run/manual-owner-console-server-only-v2-20261007`，139 项资源、6124288 bytes。浏览器验收检查服务器去重、无用户名渲染、同服务器/跨服务器登录前解除旧绑定、旧账号撤销失败阻止登录，及既有授权、历史存储和窄屏行为。登录与 Owner Console 两套浏览器测试实际 exit 0，最终实际 binary 的静态包服务测试 1 passed、0 failed；日志 `.run/manual-owner-server-only-v2-login-20261007.log`、`.run/manual-owner-server-only-v2-console-20261007.log`、`.run/manual-owner-server-only-v2-native-20261007.log`。客户端已重启且 ready 200，实际中文页面只出现服务器 origin，不显示用户名；截图 `.run/manual-owner-server-only-20261007.jpg`。
+
+### 本机会话失效与单一服务器输入
+
+本机会话只在当前进程内有效，重启或到期后旧 cookie 失效。已在本机授权过的账号可以直接在登录页重新通过 Pasion 登录，无需重新打开带 IPC 票据的窗口。匿名开始登录仅允许已记录的服务器；回调必须验证 issuer、clientId、subject、MXID，并匹配已授权完整身份，才能切换账号、停止旧任务并创建新的有限会话和设备授权。首次使用的新服务器或新账号仍需本机 IPC 授权，HTTP 状态接口不能直接授予本机权限。`localAccessReady` 仅用于界面诊断；已知服务器在失效状态仍可点击继续登录，未知服务器显示需要本机授权的提示。
+
+服务器控件合并为一个带历史候选项的 URL 输入（input+datalist），不再先选择下拉框又显示相同地址的输入框；历史候选只包含 origin。用户开始编辑后，三秒状态轮询不得重新填回旧地址。Pasion 登录与账号数据隔离规则保持不变。
+
+上一轮包 `.run/manual-owner-console-combobox-v2-20261007` 的检查是历史记录，其失效后一律禁用的交互已被上述重新登录方案替代。最终包为 `.run/manual-owner-console-reauth-20261007`，139 项资源、6124302 bytes；已知服务器在失效状态仍可登录，未知服务器不能借匿名 HTTP 获得本机控制权。两套真实 Chrome 浏览器回归通过，实际重启后不兑换新 IPC 票据即可进入 Pasion。完整复审范围、发现、修补和最终验证见 [最终代码复审](2026-10-07-final-code-review.zh-CN.md)。
+
 ## 核心问题的直接结论
 
 ### 现有 Fleet 接入本质
 
 Fleet 是一个外部 Hagency 服务的身份、凭证、命名空间、传输队列和资源目录的接入单位。它不是用户创建的某一个 Agent，也不是 Matrix Space。
 
-真实服务端的 `crates/backend/src/admin/fleet.rs`、`native_client.rs` 和 `outbound.rs` 承担 Fleet 注册、用户接入和传输；`crates/operations` 承担审批工作流与投递。它沿用按 Fleet 隔离的身份、Appservice、凭据和资源服务模型。本地客户端导入接入凭据后使用出站传输接收事件并回传状态，避免要求本机公开回调地址。Palpo 旧 web-admin 仅作为这套行为的历史来源，不是当前 Hagency 产品的业务落点。
+重构前服务端的 `crates/backend/src/admin/fleet.rs`、`native_client.rs` 和 `outbound.rs` 承担 Fleet 注册、用户接入和传输；旧 `crates/operations` 承担审批工作流与投递。这些旧生产入口已在正式重构中切除；本节说明历史模型。它沿用按 Fleet 隔离的身份、Appservice、凭据和资源服务模型。本地客户端导入接入凭据后使用出站传输接收事件并回传状态，避免要求本机公开回调地址。Palpo 旧 web-admin 仅作为这套行为的历史来源，不是当前 Hagency 产品的业务落点。
 
 有两种不同的“接入请求”，必须在界面和代码中区分：
 
@@ -83,6 +175,12 @@ Appservice 注册及命名空间属于部署侧配置。Matrix 标准描述配�
 | R19 | 首个执行环境支持 Codex，其他环境后续扩展 | client |
 | R20 | 现有加密能力基本实现则复用重构，确实困难的缺口可延后 | client 与 server |
 | R21 | client 中用户通过 Pasion 登录自己的 Matrix 账号，建立经 server 验证的用户会话和设备授权；连接不依赖 Fleet 或 Appservice 凭据导入 | client、server 与 Pasion |
+| R22 | 客户端入口验证当前浏览器的 Matrix 授权；未登录或会话过期先显示登录页；近期服务器地址可选，设备名称使用默认值 | client UI |
+| R23 | 同一客户端支持切换不同 Matrix 账号和服务器，各账号数据独立；切换先停止原账号任务，再重新授权目标账号 | client UI、身份配置与本地执行 |
+
+R22/R23 的实现必须核验当前浏览器的有效授权，不得仅凭全局设备状态判定用户已登录。登录成功回到新的 `/console/` 页面；未登录、退出或会话过期不能继续显示 Agent 控制页面。公共文档允许 OAuth 回跳，但 API 仍检查来源、当前会话及 owner。设备默认名称为 `Hagency Client`，不要求用户输入。服务器历史最多八项，只保存规范化 origin，不保存密码、token、OAuth 查询或路径；无法使用浏览器存储时仍能登录。
+
+用户已明确需要多账号和服务器切换：已知账号通过身份配置选择，新账号通过 Pasion 重新认证。每个身份配置按服务器 origin、可信 issuer、OAuth subject 和 Matrix MXID 联合标识。切换使所有旧浏览器会话、待兑换链接、设备执行凭据和工具审批失效，停止原账号的运行器和提供方进程，再为目标账号建立新的会话。配额、执行账本、恢复记录、Codex 工作目录和凭据引用分账号保存；选择历史账号不能修改 Agent 的永久主人，也不能把原账号的账本复制给新账号。重启不恢复可用登录授权，选中历史账号仍需 Pasion 登录。受保护界面只在核验当前浏览器授权后显示，登录不自动启动模型。
 
 ### 建议默认值与完整边界
 
@@ -135,7 +233,7 @@ Project 管理员可由 Space 的 Matrix 权限映射，首期建议提供显式
 
 用户补充要求已纳入 R21。这里的“自己的 Matrix 账号”是该集成 homeserver 中与 Pasion 主体建立可信映射的人类 Matrix 身份；用户在 Pasion 登录页面完成认证及授权，hagency-client 不收集 Matrix/Pasion 密码，也不另建一套 Hagency 密码账号。已有 Palpo-only 账号若没有可信 Pasion 映射，不能仅凭同名自动成为原 Agent owner；现有账号关联由既有身份系统处理，新客户端提示账号未关联，不新增身份认领或 Agent 转让功能。
 
-当前工作树已经存在登录实现，不能写成“完全没有登录”。本轮复核客户端 HEAD 为 `cc96323e5a1ee59d54b7be33126bf1ca827970fc`；实现与测试存在仅证明有代码，不代表真实 Pasion/Palpo 登录往返已通过。本轮为源码与文档审计，未运行真实授权流程。
+当前工作树已经存在登录实现，不能写成“完全没有登录”。本轮复核客户端 HEAD 为 `cc96323e5a1ee59d54b7be33126bf1ca827970fc`；实现与测试存在仅证明有代码，不代表真实 Pasion/Palpo 登录往返已通过。本节描述最初源码审计基线；正式实施阶段已运行真实 Pasion 授权流程，最新证据见开头实施进度。
 
 | 核对位置 | 已有实现 | 与目标的差距 |
 |---|---|---|
@@ -178,7 +276,7 @@ Pasion 认证证明用户是谁，并授权客户端获得约定的用户 token�
 
 首期包含长期运行所需的受控续期：优先复用实际 Pasion refresh token 能力，refresh token 只保存在 OS keychain 或同等级受保护存储；若平台暂无此能力，明确要求重新登录。续期保持原 issuer/sub/Matrix 用户不变，重新验证后更新 Hagency 用户授权有效期。轮换、撤销和 invalid_grant 不能继续使用旧 token；不能通过无限期设备 credential 掩盖 OAuth 会话失效。
 
-服务端须将用户授权有效期绑定到设备执行许可，lease 到期不得晚于该有效期。建议复核上限 30 秒，首期以可配置且有验收值的上限落实；client 可在到达窗口前用仍有效的 Pasion access token 调用 renew（不必每次轮换 OAuth token），server 每次向固定 Pasion 核验后仅续到下一复核窗口且不超过 token 到期时间；临近 OAuth 到期再执行 refresh。server 不保存原 token 也能维持有界授权，不能只校验一次再发长期自主设备权。过期/被撤销后停止新投递、领取及回复，拒绝续租。上游撤销无法被推送时，使用有界在线复核/续期实现此行为，不宣称零延迟撤销。Pasion 不可达时不签发新会话或延长授权；缓存的已有授权仅在规定的复核窗口内有效，窗口到期暂停。正在执行的模型/工具无法保证远程撤销后瞬时停止，按本文未知结果和保守额度结算规则处理。
+服务端须将用户授权有效期绑定到设备执行许可，lease 到期不得晚于该有效期。建议复核上限 30 秒，首期以可配置且有验收值的上限落实；client 可在到达窗口前用仍有效的 Pasion access token 调用 renew（不必每次轮换 OAuth token），server 每次向固定 Pasion 核验后仅续到下一复核窗口且不超过 token 到期时间；临近 OAuth 到期再执行 refresh。server 不保存原 token 也能维持有界授权，不能只校验一次再发长期自主设备权。过期/被撤销后停止新投递、领取及回复，拒绝续租。上游撤销无法被推送时，使用有界在线复核/续期实现此行为，不宣称零延迟撤销。Pasion 不可达时不签发新会话或延长授权；缓存的已有授权仅在规定的复核窗口内有效，窗口到期暂停。运行中的纯文本模型 turn 每 5 秒再次核验对应 dispatch 的远端授权，单次核验 RPC 额外上限 5 秒；失权或超时取消该 Room 的模型 future，保留 unknown 用量预留并停止提供方子进程，其他合法 Room worker 不随之停止。工具仍在实际调用前另行核验。无法保证远端模型服务瞬时停止或撤销计费，按本文未知结果和保守额度结算规则处理。
 
 “退出登录”默认撤销本安装的 Hagency 用户会话、执行许可及有效 lease，清理本地 OAuth token/refresh token，并按 Pasion 既有能力撤销本应用的授权；不注销用户在其他 Matrix 应用中的所有会话。它保留 Agent 永久 owner、Room binding 与本地账本。离线退出先在本机立即停止调度、连接和回复；远端撤销记录在网络恢复后补交，server 侧最迟按既定授权窗口/lease 到期失效，不能声称断网时已经完成远程撤销。单独的“暂停运行”不必退出身份会话。其他设备的撤销走明确设备管理动作，不能把普通登出隐式扩大为全账号注销。
 
@@ -318,9 +416,9 @@ Project 初次启用 Agent 功能时，为服务管理账号在需服务的 Room
 
 `deny_create` 只影响新建和新绑定；`suspend_service` 影响已有绑定。界面分别呈现“禁止创建”和“暂停已有服务”，管理员不能通过隐式修改额度来暂停用户。
 
-Room ban、Agent 被移除、创建者离开对应 Space/Room、Project 归档及平台账号停用触发绑定暂停。server 立即停止新投递和拒绝旧租约回复；client 取消未开始的任务、尽力停止已运行任务并记录实际费用。已经发生的外部工具动作不能被回滚或伪称从未发生。
+Room ban、Agent 被移除、创建者离开对应 Space/Room、Project 归档及平台账号停用触发绑定暂停。关键 API 读取新鲜状态后，在独立事务中持久暂停及递增 generation，避免后续返回拒绝时回滚失效记录；后台也扫描 active binding。server 停止新投递并拒绝旧 generation 的执行/回复；client 取消未开始的任务、尽力停止已运行任务并记录实际费用。已经发生的外部工具动作不能被回滚或伪称从未发生。
 
-恢复必须重新验证资格并发放新租约。不得仅清除 UI 错误即让旧任务恢复。显式禁止创建的变更是否同时暂停已有服务，应由单独操作表达。
+恢复必须重新验证资格、递增受影响 binding 的 generation，并使用当前有效的设备租约。旧 dispatch 绑定的 generation 永久失效，不因重新加入或恢复而复活；同一 Agent 其他 Project 的合法绑定不随之失效。不得仅清除 UI 错误即让旧任务恢复。显式禁止创建的变更是否同时暂停已有服务，应由单独操作表达。
 
 ## Agent 创建和生命周期
 
@@ -394,17 +492,19 @@ Appservice 接收傀儡所在 Room 的事件流，不是一个只接收对某傀
 
 client 提交 dispatch ID、绑定 ID、租约和内容；server 从绑定推导傀儡身份与 Room。禁止 client 自选发送者、另一个用户的 Agent 或任意目标 Room。主动公告若需要，应使用独立的受限 API 和房间策略，不能伪造任务回复。
 
-发送前检查绑定、owner 当前资格、傀儡实际成员状态、租约以及 Matrix 当前发言权限。稳定 transaction ID 用于发送重试；结果未知时查询或复核已有事件，不重新生成回复 ID。
+发送前检查绑定、owner 当前资格、傀儡实际成员状态、租约以及 Matrix 当前发言权限。即使检查后权限发生竞态变化，实际 Matrix HTTP 403 也持久阻断该旧回复；曾有网络不确定性的记录仍保持 unknown 证据，不被伪称未发送。发言权按当前 `m.room.message`/`events_default` 和傀儡用户 power level 核验；已观测撤权的旧 outbox 标记不可再投递，恢复发言权也不自动发送。稳定 transaction ID 用于发送重试；网络结果未知保留原结果，不重新生成回复 ID。
 
 ### 群消息语义
 
 明确提及优先使用真实 MXID 与结构化 mention。线程后续仅继承已建立的 Agent 与任务关联，不能回退到房间“最后一个 Agent”。默认禁止 Agent 自身及其他服务身份触发模型；开启 Agent 间协作需创建者明确配置、限制链路深度和费用。
 
-编辑消息不能重新执行已产生副作用的工具；首期把编辑作为上下文更新。撤回未开始请求可取消排队，已执行内容不宣称撤销副作用。附件必须检查来源、大小与类型，不能直接把 URL 转成任意网络访问。跨 Room 引用、私密线程内容和搜索结果都按其来源权限过滤。
+编辑消息不能重新执行已产生副作用的工具；当前路由忽略编辑，不将其作为新的模型触发或偷偷改写历史。撤回取消和附件读取尚无生产通道，不能宣称可撤销已执行副作用。附件必须检查来源、大小与类型，不能直接把 URL 转成任意网络访问。跨 Room 引用、私密线程内容和搜索结果都按其来源权限过滤。
 
-离线队列设置容量、字节数和过期时间，过期请求不自动执行。client 恢复后重新检查发言者成员资格、策略、余额及 binding；历史重放用于恢复上下文时不自动触发新工具动作。保留顺序按 Room/线程处理，不能把 homeserver 时间戳当全局严格顺序。
+离线队列设置容量、字节数和过期时间，过期请求不自动执行。部署参数 `queue.event_ttl_ms` 默认 24 小时，允许 1 秒至 30 天，按可信服务端入站时间判断，不能由客户端延长或借 Matrix 事件时间伪造；AS 延迟路由沿用原入站时间，不重新获得完整期限。已开始任务的已知原结果允许在当前权限核验后结算及发送；过期不能开始新的模型/工具动作，也不释放 unknown 成本保留。client 恢复后重新检查发言者成员资格、策略、余额及 binding；历史重放用于恢复上下文时不自动触发新工具动作。保留顺序按 Room/线程处理，不能把 homeserver 时间戳当全局严格顺序。
 
 ### 上下文与本地会话隔离
+
+领取请求必须传入明确的 `bindingId`，服务器在应用 batch limit 前过滤，其他 Room 队列不抢占所选 Room 的名额。客户端也复核返回事件的 binding，拒绝错误范围且不 ACK。多 Room 执行器已改为一个 Agent supervisor 持有唯一设备租约、心跳和进程锁，其下每个明确启动的 Room 有独立 worker、配置快照、额度、上下文、状态与取消。停止或封锁一个 Room 不停止其他合法 Room；owner/device 授权或提供方账号失效终止全部。最后一个 worker 停止后才归还租约。关闭竞态中已接受但未启动的命令进入可见终态，不遗留 starting。未开始的 Room 不执行。17 项 runtime 测试通过，其中包含两个 Room 同 epoch 并行领取、独立停止/失效和队列关闭竞态。
 
 同一 Agent 在不同 Room 的历史、检索索引、模型会话、任务、工具确认及结果缓存默认分开，以 Agent ID、Room binding ID 和线程 ID 标识。收到 Room B 的请求时不能自动携带 Room A 的聊天、摘要或私密确认内容；同一 Room 的不同线程也不能默认复用上一个模型执行会话。
 
@@ -436,7 +536,7 @@ client 提交 dispatch ID、绑定 ID、租约和内容；server 从绑定推导
 
 建议预算支持生命周期额度与按 UTC 日/月窗口重置，UI 按用户时区显示，并明确窗口边界。所有金额及 Token 数使用安全整数/有界整数，拒绝负值、溢出和无效小数。
 
-多设备首期只保证一个执行设备。客户端账本持久化并可加密导出，在切换设备时由同一创建者确认恢复。无法确定旧调用费用时封存保守预留；服务器只协调执行权，不掌握用户模型结算。设备恢复仅在同一用户下进行，不涉及旧 Hagency 数据导入或 Agent 所有权改变。用户自行运行额外模型进程的消费不属于 Hagency 能保证的预算边界。
+多设备首期只保证一个执行设备。客户端账本持久化，通过停止 host 后备份完整私有目录并由同一创建者恢复；当前备份不宣称独立加密导出包。无法确定旧调用费用时封存保守预留；服务器只协调执行权，不掌握用户模型结算。设备恢复仅在同一用户下进行，不涉及旧 Hagency 数据导入或 Agent 所有权改变。用户自行运行额外模型进程的消费不属于 Hagency 能保证的预算边界。
 
 ### 高风险工具与创建者确认
 
@@ -474,6 +574,8 @@ server 在加密房间无法读取 mention 和工具请求正文时，可按绑�
 
 ### 服务端新增或拆分的数据
 
+下表是最初的逻辑实体规划，物理表并不逐一同名实现。已交付字段、约束、状态及凭据位置以[实际数据字典](2026-10-07-agent-data-protocol.zh-CN.md)为准；不将候选公钥字段或 project_roles 独立表误报为已实施。
+
 | 实体 | 关键字段与约束 |
 |---|---|
 | homeservers | 稳定 ID、server name、受控 origin、部署状态 |
@@ -508,7 +610,7 @@ server 的 PostgreSQL 业务库与 client 的本地存储分开初始化与备�
 
 ## REST API 与设备协议
 
-以下路径为新版本建议，不是当前已有接口。统一前缀 `/api/hagency/v1`，与旧 Fleet v1/v2 分开；采用 OpenAPI 与共享 wire 类型固定字段、错误和版本。
+本节第一张表保留最初的接口建议，不是已交付契约；正式实现路径以下面的实际接口对照为准。统一前缀 `/api/hagency/v1`，与旧 Fleet v1/v2 分开；采用 OpenAPI 与共享 wire 类型固定字段、错误和版本。
 
 | 接口 | 身份及行为 |
 |---|---|
@@ -539,6 +641,31 @@ server 的 PostgreSQL 业务库与 client 的本地存储分开初始化与备�
 | `POST /device-events/ack` | ACK 已持久化的投递，验证 scope 与领取票据 |
 | `POST /dispatches/{id}/replies` | 仅有效执行设备回复到既定 Room |
 | `POST /devices/{id}/status` | 汇总本地模型/队列状态，不能生成服务端授权 |
+
+### 正式实现的接口对照
+
+以下省略统一前缀 `/api/hagency/v1`；接口字段以真实 server `crates/agent-service/src/api.rs`、`api_transport.rs` 和 DTO 定义为准，客户端使用固定操作枚举调用。没有为旧建议提供兼容别名。
+
+| 范围 | 正式路径与行为 |
+|---|---|
+| 个人授权 | `GET /discovery` 提供固定 issuer/native 登录发现；`POST /sessions/pasion` 联合核验用户，`POST /devices` 独立注册设备；`POST /sessions/current/renew`、`DELETE /sessions/current` 及 `DELETE /devices/{id}` 续期/撤销 |
+| Project/Room | `GET /projects`、`POST /projects/adopt`、`POST /projects/{id}/rooms/adopt` 登记真实 Matrix Space/Room；`GET /projects/{id}/rooms` 返回当前同时属于 Space 和 Room 的已登记房间；`GET /projects/{id}/rooms/{roomId}/agents` 只要求当前属于该 Room，返回实际已加入的 Agent 名单。客户端通过用户自己的 Matrix OAuth 创建私密 Space/Room、建立关联并 adopt；不宣称服务器提供上述建议的创建包装接口 |
+| 创建策略 | `PUT /projects/{id}/creation-policy`、`PUT /projects/{id}/rooms/{encodedRoomId}/creation-policy`，带 expectedRevision；不是建议中的 agent-policy 别名 |
+| 服务暂停 | Project 或 Room 的 `GET .../service-state`、`POST .../pause-service` 与 `POST .../clear-service-pause`；解除后已有 binding 仍需 owner resume |
+| Agent | `GET/POST /agents`、`GET/DELETE /agents/{id}`、`POST /agents/{id}/pause` 或 `/resume`、`GET/POST /agents/{id}/bindings` |
+| Binding | `GET/DELETE /bindings/{id}`、`POST /bindings/{id}/pause` 或 `/resume`；独立 Room 生命周期 |
+| 持久命令 | `GET /commands/{operation}/{idempotencyKey}`，operation 为 `agent.create` 或 `agent.bind`；创建与绑定 pending 返回 202，活跃返回 200，重试使用原 key |
+| 设备执行 | 全部 POST：`/execution/leases/acquire|renew|release`、`/execution/events/poll|ack|start|authorize-tool|finish`；poll 为有限周期请求，非建议中的 GET device-events |
+| 回复恢复 | `POST /execution/replies` 与 `/execution/replies/reconcile-known`；保留原执行及稳定发送身份，只重授权已知结果 |
+| 本机运行及审批 | client 的 `/console/api/owned-agents/{agentId}/runtime`、`/start`、`/stop`；`/runtime/approvals` 与 `/runtime/approvals/{proposalId}/decision`。Rust 持有授权，决策 POST 校验本机 cookie/CSRF 与精确 digest |
+
+正式接口交付为 [Hagency OpenAPI 3.1](../../../hagency-server/crates/agent-service/openapi/hagency-v1.openapi.json)（46 个操作）与 [Appservice OpenAPI](../../../hagency-server/crates/agent-service/openapi/appservice-v1.openapi.json)（4 个操作），[契约说明](../../../hagency-server/crates/agent-service/openapi/README.zh-CN.md)列明身份、字段和状态边界。路由、Rust DTO 与示例静态核验及 8 个负例通过，不能代替真实 HTTP 验收。
+
+客户端创建命令在发出 Matrix createRoom 前持久化；结果不明确时不自动重建，须核验原 Room 的创建者、命令 marker、私密加入规则及原 owner 后恢复。已存在的不同父子关联拒绝覆盖；Matrix state API 没有条件写入，不能保证并发管理员修改的原子保护。日志最多 256 命令、1 MiB；自动恢复候选超过 64 房间时要求输入已知 Room ID。4 项原生 HTTP/恢复测试与 Chromium 界面契约通过，真实新 OwnerHost 闭环已通过：Pasion DCR/PKCE/consent、Space 创建与 adopt、Room 创建及双向关联/adopt、Room 发现、Agent 创建并等待实际加入后核验名单、退出撤权。未调用模型。
+
+动态文件能力的模型上下文使用独立 capability key，旧 chat 上下文不会被自动升级为工具权限。Codex 的 `historyMode=legacy` 只选择其当前支持的 JSONL 持久格式以便首次推理之前也能冷恢复；与旧 Hagency 数据兼容无关，不导入任何 Fleet 或旧客户端状态。
+
+当前公平路由/回复 worker 各自保留循环游标，Matrix 临时失败保持原事务/回复并继续其他合法 Room；游标为进程本地，重启可安全重扫。每批有界顺序处理及 Matrix 超时，不能把无饥饿测试称为任意故障下的低延迟保证。批准后至文件操作开始前重新核验远端和本地权利；同步文件发布开始后不能声称有内核级逐指令撤销或能撤回已完成 IO。
 
 额度、用户过滤和工具策略的写 API 在 client 的本地受保护接口，不出现在 server 的管理员批准路由。若提供跨设备同步，仅作为创建者端到端加密配置存储，不让服务器重新解释并决定资源许可。
 
@@ -572,7 +699,7 @@ server 的 PostgreSQL 业务库与 client 的本地存储分开初始化与备�
 
 客户端相关路径已在真实仓库核对。此前对旧路径进行的测试或静态审计不能自动算作真实仓库的验收；正式实施应在上述真实版本重新执行相关验证。迁移的独立领域草稿此前通过 10 个单元测试，仅证明其有限领域约束，不证明已集成 HTTP、认证、Appservice、PostgreSQL 或 Codex 任务执行。
 
-源码入口：[服务端 Fleet](../../../hagency-server/crates/backend/src/admin/fleet.rs)、[服务端用户接入](../../../hagency-server/crates/backend/src/admin/native_client.rs)、[服务端工作流](../../../hagency-server/crates/operations/src/workflow.rs)、[服务端存储](../../../hagency-server/crates/operations/src/store.rs)、[客户端申请接收](../../native/hagency/src/bootstrap/palpo_work.rs)、[客户端权限验证](../../native/hagency-core/src/authority.rs)、[客户端执行路由](../../native/hagency-store/src/domain/matrix_routes.rs)、[客户端账号创建](../../native/hagency-matrix/src/provisioning.rs)。
+历史服务端入口 `crates/backend/src/admin/fleet.rs`、`native_client.rs` 及 `crates/operations/src/workflow.rs`、`store.rs` 已删除；现行入口为[用户 API](../../../hagency-server/crates/agent-service/src/api.rs)和[新领域](../../../hagency-server/crates/agent-service/src/domain.rs)。保留的 SDK 源码入口：[客户端申请接收](../../native/hagency/src/bootstrap/palpo_work.rs)、[客户端权限验证](../../native/hagency-core/src/authority.rs)、[客户端执行路由](../../native/hagency-store/src/domain/matrix_routes.rs)、[客户端账号创建](../../native/hagency-matrix/src/provisioning.rs)。
 
 ### 差异及改造程度
 
@@ -609,6 +736,8 @@ server 的 PostgreSQL 业务库与 client 的本地存储分开初始化与备�
 新增需求规格与 ADR，固定 Agent 独立身份、终身 owner、Project/Space/Room 映射、权限真值表、消息可见性和客户端预算语义。新 schema 从零设计；对照旧实现识别可复用模块及需移除的 Engagement 前提，不复制旧表来维持兼容。
 
 在 `chrislearn` 下现有 `hagency-server` 与 `hagency-client` 独立 Rust 工程中重构，沿用真实 workspace、产品入口和构建工具，固定版本化协议及必要的共享 wire 类型。服务端在 backend/operations/contract/frontend 的实际边界落地；存储方案以既有 PostgreSQL 部署为基线重新设计全新 schema，不能把误建草稿的 SQLite 自动当成生产决策。不得将两者放进客户端的同一 workspace。server 不构造 runtime factory 或打开模型账号；client 不读取服务级 Appservice secrets。用依赖边界检查落实这一点。
+
+已交付独立 [ADR 架构决策](2026-10-07-agent-architecture-adr.zh-CN.md)及[实际数据字典与状态协议](2026-10-07-agent-data-protocol.zh-CN.md)，逐表列明当前 16 张服务端 SQL 表、5 张 AS 内部表和 13 张本地表（多账号隔离新增永久 `profile_identity`）。候选实体表不冒充实际 schema；设备当前使用 bearer/generation，尚没有 crypto 公钥字段。
 
 交付：OpenAPI、设备协议、全新数据字典、状态机、初始化与测试列表。门槛：无 Fleet、旧 schema 兼容、数据导入或 owner 变更接口，普通创建流程不存在 resource approval 或 allocation 前提；Project 管理员和 Agent creator 已分开。
 
@@ -685,6 +814,8 @@ server 的 PostgreSQL 业务库与 client 的本地存储分开初始化与备�
 
 恢复未知结果时先封存执行租约，核对模型调用、工具副作用及 Matrix 回复，再允许继续执行；不因恢复重复触发外部动作。无法证明数据属于同一创建者或部署时拒绝恢复，不提供手工改 owner 后继续运行的流程。
 
+设备切换必须核对整个 Agent 的历史，包含未选中的 Room、已离开的 binding 及已完成执行，不能仅核查本次启动的 Room。远端历史以固定上限分页，首个快照用于后续分页和 lease acquisition 的原子校验；旧设备在检查期间新增 start 导致快照变化时重试核验，不能忽略差异。费用凭证在本地一致读取快照中核对，包含每层原预留/结算窗口，不能复制 inbox 后清空 accounts。正常请求拒绝可以由可信 host 原子记录“未开始任何模型调用”的零费用凭证；缺失凭证的旧 prepared/running/unknown 不能自动补成零费用。
+
 新架构内部的发布版本可按其明确声明的 schema 兼容范围升级或回退；不把旧 Hagency 程序、旧数据转换或旧模式并行运行作为新架构回退方案。
 
 ## 验收场景与检查标准
@@ -737,6 +868,8 @@ server 的 PostgreSQL 业务库与 client 的本地存储分开初始化与备�
 
 验证拒绝 A 后，A 的提及、线程续聊、编辑、转发和伪造昵称均不能触发；B 仍可正常请求。高风险工具分别验证拒绝、创建者确认、规则放行，确认参数变更必须重新决策。Room 管理员和旧 operator 不得替创建者确认。
 
+设备与账本恢复另测：空账本且远端无历史允许；空账本有历史拒绝新推理；完整同一 owner 账本继续保留 settled 余额及 unknown 预留；只有执行 ID 或过早备份、缺少费用凭证/三层余额拒绝；本地未发送 start 的 prepared 额外记录不应被当作远端遗漏；正常拒绝的明确零调用凭证重启后不锁死；缺账本时仍能精确恢复有凭证的已知原文回复，但不得用恢复模式处理新事件。跨分页快照变化、检查后旧设备新增 start、其他 owner 读取历史以及旧 lease 再启动都必须拒绝。历史 API 不返回消息正文、模型凭证或费用。具体客户端选择器见[账本连续性规格](../../specs/owned-ledger-continuity.spec.md)，实现与实际通过结果分别记录。
+
 ### 可靠性与隔离
 
 重放 Appservice transaction、丢失 ACK、client 离线恢复、server 重启、重复回复、旧设备接管后继续提交、队列满和请求过期都应覆盖。每条回复具有可核对的 owner、Agent、Room、dispatch 与 Matrix event ID。多 Agent 提及允许各执行一次；普通 Agent 互相发言不会形成无界调用循环。
@@ -763,6 +896,8 @@ server 的 PostgreSQL 业务库与 client 的本地存储分开初始化与备�
 
 服务端需配置队列保留、审计保留和 Room 元数据保留策略，具体期限作为部署参数。账号和设备停用后停止新增收集，按配置清理可删除的业务数据；Agent ID、傀儡 MXID 与原 owner 的最小永久归属记录保留，不能随着日志或队列保留期被删除后复用。Room 历史由 Matrix 自身生命周期决定。日志默认脱敏消息正文、token、模型 secret 和本地路径。
 
+已启动执行的最小不可变身份及摘要也是设备恢复凭证，不得随着普通队列 TTL、正文压缩或日志保留期删除，否则新空账本可能伪装成无历史。正文和可删除的运行日志可以按各自规则清理；永久执行元数据与客户端费用凭证需要容量监控，分页不代表总磁盘占用有界。
+
 ## 需求覆盖与遗漏审核
 
 | 原始要求或关键补充 | 已落实位置 | 实施完成的判据 |
@@ -778,6 +913,8 @@ server 的 PostgreSQL 业务库与 client 的本地存储分开初始化与备�
 | 首先支持 Codex | 阶段五及执行验收 | 真实 Codex 模型调用、工具拦截和本地计量闭环 |
 | 现有加密优先复用困难部分可延后 | 加密复用边界、阶段一及八 | 核对现有实现，按新结构验证；延期有具体缺口证据 |
 | 用户 Pasion 登录自己的 Matrix 账号 | R21 登录专节、第二阶段与真实登录验收 | Pasion 主体与 Matrix 身份联合核验；登录不再安装 Fleet；会话续期/撤销约束设备执行 |
+| 客户端入口登录、历史服务器及默认设备名 | R22、OwnerAccessGate 与登录页面 | 当前 cookie 无授权时不显示 Agent 控制；历史只存八个 origin；无需输入设备名称 |
+| 同客户端切换账号/服务器，数据独立 | R23、ADR-009 及完整 profile 身份协议 | 旧 cookie/device/tool 权限全部失效；同 MXID 不同 subject/服务器也隔离；选历史配置仍需 Pasion 登录 |
 | REST 创建傀儡和 owner 关系 | 创建流程、API、数据模型 | owner 从认证取得且幂等 |
 | 请求由创建者 client 执行 | 事件流、第五阶段 | 两用户实际隔离执行 |
 | 资源无需管理员确认 | R05、职责、阶段一及六 | 新创建路径不引用 allocation approval |
@@ -794,6 +931,25 @@ server 的 PostgreSQL 业务库与 client 的本地存储分开初始化与备�
 | 全新部署与故障恢复 | 初始化与恢复章节 | 不读取旧数据，恢复保留终身 owner 且不重复执行 |
 | 现有证据与实施真实性 | 基线、源码、验收方法 | 旧文档与过时注释不代替运行事实 |
 
-本轮项目位置修正后，需求与验收约束保持有效；实现差异与改造入口已改为真实 client/server 仓库，具体函数复用仍须在正式实施中验证。本轮审核覆盖了原始需求及全新数据结构、Palpo 默认功能不变、创建者终身拥有、Room 权限、执行隔离、预算并发、工具确认、加密、重试和新系统恢复等边界。尚待实际实施确认的能力门槛为：真实 Pasion 的 native client 登记、PKCE 回调、token 续期/撤销和联合身份核验，以及 Palpo 现有 restricted Room 的真实加入行为、现有受限傀儡 crypto device 凭证，以及各 runtime 对按调用工具拦截的支持。对应测试已列入阶段门槛；不能为满足能力门槛改动 Palpo 默认功能，也不得在实现前把它们写成已完成能力。
+本轮项目位置修正后，需求与验收约束保持有效；实现差异与改造入口已改为真实 client/server 仓库，函数复用及新生产入口已按上方实际证据核验，文中历史差异表仅保留最初审计基线。本轮审核覆盖了原始需求及全新数据结构、Palpo 默认功能不变、创建者终身拥有、Room 权限、执行隔离、预算并发、工具确认、加密、重试和新系统恢复等边界。真实 Pasion 的 native 登记、PKCE、续期/撤销及联合身份核验已通过，普通私密 Room 的傀儡加入与消息往返已通过。真实 restricted Space 子 Room 已通过既有 Matrix 邀请/加入接口绑定同一个永久 Agent，原 join rule 保持不变；这不代表所有 Space 成员自动成为 Room 成员。受限傀儡 crypto device 凭证、通用原生工具隔离和付费模型驱动的按调用拦截仍未验收。对应测试已列入阶段门槛；不能为满足能力门槛改动 Palpo 默认功能，也不得在实现前把它们写成已完成能力。
 
-本轮产品范围已确认。首先完成第一阶段的契约、依赖及加密复用缺口清单，再实施跨 Project 绑定和 Codex 本地执行闭环。保持全新数据结构、Palpo 默认功能不变及永久 owner；加密已有能力优先复用，确实困难的部分可以延后并明确界面与验收边界。
+本轮产品范围已确认。正式 workspace 已实施新领域和跨 Project 绑定，已接入 Codex 客户端执行闭环、旧入口切除、精确人工确认与恢复测试，已通过当前无推理集成检查，真实提供方登录及模型驱动任务、整机发布恢复仍需验收。保持全新数据结构、Palpo 默认功能不变及永久 owner；加密已有能力优先复用，确实困难的部分可以延后并明确界面与验收边界。
+
+## 2026-10-07：工作区导航、账号菜单与 Project 创建重整
+
+用户指出已登录侧栏仍指向登录页，并且 Project、Space、Room 表单混在 Agents 页面。此轮按实际工作对象重新划分：
+
+- Agents 页面负责我的 Agent、Room 绑定、本地资源、配额和执行。没有 Project 时链接到创建 Project，不在这里堆放项目管理表单。
+- Projects 导航进入项目列表。项目以 Matrix Space 的实时名称/topic 展示，Space ID 为辅助信息。进入项目后展示关联 Space 和讨论组；“添加讨论组”才展开新建或登记已有 Room 的操作。
+- “创建 Project”是独立页面。默认新建 Space，只填 Project 名称；另一种方式为绑定已有 Space，候选从当前用户 OAuth 读取已加入的 Space，已绑定项不可重复选取。绑定沿用 Space 名称，保留其成员和房间设置；最终创建权仍由服务器实时验证。
+- 登录后侧栏底部显示已核验的当前 MXID 和服务器。点击展开“重新登录当前账号”“切换账号”“退出登录”，不再把一个 login 链接当账号管理。重新登录固定当前账号，切换先撤销旧授权和停止任务，再进入可登录新账号的入口。账号菜单必须同时匹配当前 profile、服务器和当前浏览器的 owner API 身份。
+
+Project 是 Hagency 工作单元，与一个 Space 一一绑定；目前名称/topic直接反映 Space 元数据，没有独立改名或成员继承功能。Room 仍独立管理成员，加入 Space 不自动加入所有 Room。后台只增加实时 metadata 和封闭的候选读取，不改 SQL 或 Palpo 默认功能，不改变永久 owner。
+
+候选读取分页最多 32 个 Space、扫描 128 个已加入 Room；局部读取失败有明确提示，失败 Room 不可选，超过容量明确报错。原有 Project/Room 成员与管理权限检查保留，不使用 AS 权限扫描全服务器作为用户候选。
+
+创建中的不确定请求保存原 commandId 与完整 input，并按完整账号 profile/Project 隔离。超时或刷新不会自动重复 createRoom；查到 404 也不能证明原 POST 已结束，因此保留原命令并只允许同 ID 重试。切换账号、离开页面或更换 Project 后，迟到响应不能导航或清理旧账号记录。此保证针对 Matrix Project/Room 创建；Agent 创建的幂等键仍主要在内存，未知结果后应先刷新 Agent 名单确认，未宣称已提供跨刷新 Agent 命令恢复。
+
+最终 UI 包 `.run/manual-owner-console-projects-final-20261007`，144 项资源、6161238 bytes。四套真实 Chrome 回归（登录、账号菜单、Projects、Owner Console）通过；Projects 回归包括默认 Space、已有 Space、讨论组作用域、未知结果恢复、404同原请求重试、表单卸载后迟到响应不导航，以及390px布局。客户端 lib 134 passed、0 failed、1 ignored，严格 all-targets Clippy、真实 binary 静态包服务专项1 passed；候选API2项单元和真实OwnerHost OAuth分页HTTP1项通过。服务端PG41项、OpenAPI46+4/8自检和严格Clippy通过。实际已登录的本机账号也核对了项目名、账号菜单、默认创建页和现有 Space 候选，未创建额外测试项目或调用模型。
+
+两端已更新：13300使用上述新包与binary，8089使用新镜像，AS startup roundtrip已确认。构建源码指纹 `5af05c070d729aa2a9db4413902da0a020f78516790fbed3b9910df93f8cd13f`。客户端日志 `.run/manual-owner-projects-final-{projects,account-menu,login,console,lib,rail,clippy}-20261007.log`；服务端metadata与候选专项日志分别为 `/tmp/hagency-project-metadata-{pg,openapi,clippy}.log`、`/tmp/hagency-project-space-candidates-{tests,http,clippy}.log`，Docker构建私有日志 `.run/server-project-metadata-docker-build-wxy9f_it.log`。这些是本轮验证，不取代延期的加密、真实付费模型及生产整机恢复验收。

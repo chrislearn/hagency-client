@@ -76,7 +76,7 @@ Scenario: Media journal creation retains its original atomic admission and lock
   And missing original journals remain refused without repair
 
 Scenario: A real missing-journal refusal remains separate from server startup
-  Test: native_file_service_media_startup_observation
+  Retired-Test: native_file_service_media_startup_observation
   Level: integration
   Test Double: actual native service child and local TLS peer with an existing empty private media directory
   Given an existing media directory without its original journal
@@ -89,3 +89,5 @@ Scenario: A real missing-journal refusal remains separate from server startup
 Hosted workflow dispatch, observed Windows SID claims before native execution,
 SQLite shutdown repair, general filesystem support, additional production tracing,
 new Windows token privileges and migration activation.
+
+2026-10-07: These Retired selectors depend on removed account/task CLI or the former direct-Palpo/Fleet production process. Library SDK coverage remains separate; current OwnerHost forbids these product commands. See [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md).

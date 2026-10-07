@@ -1,14 +1,9 @@
+#![allow(dead_code)]
 use super::peer::{self, Fake, Request};
 use hagency_core::{authority::Registration, project::Resource};
 use hagency_store::{DomainRepository, Repository, private};
 use serde_json::{Value, json};
-use std::{
-    fs,
-    net::SocketAddr,
-    path::PathBuf,
-    process::{Child, Command, Stdio},
-    time::Duration,
-};
+use std::{fs, net::SocketAddr, path::PathBuf, time::Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub fn registration() -> Registration {
@@ -30,51 +25,6 @@ pub fn resource_body(published: bool) -> Value {
         "framework":"codex","model":"gpt-5.6-sol","reasoning":"medium",
         "ceiling":{"tokens":1000,"period":"monthly"},"published":published})
 }
-pub struct Running(Child);
-impl Running {
-    pub async fn refused(&mut self) {
-        let until = tokio::time::Instant::now() + Duration::from_secs(15);
-        loop {
-            if let Some(status) = self.0.try_wait().unwrap() {
-                assert!(!status.success());
-                return;
-            }
-            assert!(
-                tokio::time::Instant::now() < until,
-                "original invalid-config child did not exit"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    }
-    #[cfg(unix)]
-    pub async fn graceful(&mut self) {
-        assert!(
-            Command::new("/bin/kill")
-                .args(["-TERM", &self.0.id().to_string()])
-                .status()
-                .unwrap()
-                .success()
-        );
-        let until = tokio::time::Instant::now() + Duration::from_secs(10);
-        loop {
-            if let Some(status) = self.0.try_wait().unwrap() {
-                assert!(status.success());
-                return;
-            }
-            assert!(
-                tokio::time::Instant::now() < until,
-                "original service did not shut down"
-            );
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-    }
-}
-impl Drop for Running {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
 pub struct Fixture {
     pub root: tempfile::TempDir,
     pub state: PathBuf,
@@ -85,12 +35,7 @@ impl Fixture {
     pub async fn new(registered: bool, published: bool) -> Self {
         let root = tempfile::tempdir().unwrap();
         let state = root.path().join("state");
-        let init = Command::new(env!("CARGO_BIN_EXE_hagency"))
-            .args(["init", "--state-dir"])
-            .arg(&state)
-            .output()
-            .unwrap();
-        assert!(init.status.success(), "actual native init refused");
+        hagency::setup::init_state(&state).unwrap(); // Historical SDK fixture only.
         let mut db = DomainRepository::open(&state).unwrap();
         if registered {
             db.register(&registration()).unwrap();
@@ -122,27 +67,6 @@ impl Fixture {
             address,
             fake,
         }
-    }
-    pub fn launch(&self, enabled: bool) -> Running {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_hagency"));
-        command.env_clear();
-        if let Some(system) = std::env::var_os("SystemRoot") {
-            command.env("SystemRoot", system);
-        }
-        command
-            .args(["serve", "--state-dir"])
-            .arg(&self.state)
-            .args(["--listen", &self.address.to_string()]);
-        if enabled {
-            command.arg("--palpo-transport");
-        }
-        command
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::from(
-                private::open(&self.root.path().join("native.stderr"), true).unwrap(),
-            ));
-        Running(command.spawn().unwrap())
     }
     pub async fn request(&self, method: &str, path: &str, value: Option<Value>) -> Value {
         let until = tokio::time::Instant::now() + Duration::from_secs(15);

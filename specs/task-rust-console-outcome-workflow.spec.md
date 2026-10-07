@@ -58,8 +58,12 @@ Scenario: Stopped-work discovery remains private and bounded
   And read-only sessions, malformed queries and foreign inspection are refused
 
 Scenario: Lifecycle operators can review and resolve through the native browser
-  Test: native_console_agent_lifecycle_browser
+  Retired-Test: native_console_agent_lifecycle_browser
   Given the actual static console and local native service fixture
   When a lifecycle operator reviews stopped work and chooses an action
   Then the native API commits the chosen outcome and the browser renders its receipt
   And read-only sessions expose no recovery controls
+
+## Owner-only browser qualification (2026-10-07)
+
+The retired browser selectors above exercised removed Fleet/operator pages, resources/accounts/project-sides/task workflows or binary startup with old domain SQLite. They are removed product tests, not retained SDK qualification. Independent SDK HTTP/library selectors in this mixed spec remain active. Current browser qualification is the actual OwnerHost `native_console_rail_pages_are_shipped_and_served` plus `mockup/scripts/check-owner-console.mjs` in the enabled CI browser lane; it covers owner navigation, local ticket exchange, provider/runtime DTOs, explicit Estimated and restricted-files opt-in, exact request/tool approvals and absence of automatic inference. It does not claim old Fleet pages, encrypted delivery or paid model completion.

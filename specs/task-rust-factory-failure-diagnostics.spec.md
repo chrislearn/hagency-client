@@ -45,7 +45,7 @@ Scenario: A failed factory worker remains distinguishable from its healthy peer
   And observing diagnostics changes neither status nor fleet custody
 
 Scenario: Actual executable diagnostics remain operator authenticated
-  Test: native_configured_local_codex_fleet
+  Retired-Test: native_configured_local_codex_fleet
   Given two agents created by the real configured native executable
   When the operator reads capabilities after their completed tasks
   Then each registered engagement has a bounded status
@@ -58,9 +58,11 @@ Scenario: Diagnostic labels cannot carry private Matrix content
   Then only the fixed category is returned
 
 Scenario: A handoff refusal preserves its original category before an operation exists
-  Test: native_configured_fleet_handoff_diagnostics
+  Retired-Test: native_configured_fleet_handoff_diagnostics
   Given two actual initialized factory owners using disposable local provider directories
   When those original directories lose their admitted permissions before task handoff
   Then the protected status retains lost_authority for each original engagement
   And neither task starts or receives fabricated protocol or cleanup observations
   And the original worker refusal remains sticky without a replacement launch
+
+2026-10-07: Retired-Test/Retired-Filter records the removed Fleet production entry point. Other SDK Test/Filter selectors remain active. See [current Owner product](native-owner-client.spec.md) and [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md). This does not claim Fleet, resource publication, delegation or encrypted tasks are supported in the new product.

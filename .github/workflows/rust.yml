@@ -50,7 +50,7 @@ jobs:
               # Platform-sensitive code, the console, dependencies, the toolchain
               # and CI/deploy definitions. Here-strings, not pipes: under
               # pipefail an early grep -q exit can SIGPIPE the producer.
-              if grep -qE '^(native/hagency-(platform|runtime|execution|files|media-store|matrix)/|native/hagency/src/(console|runner|bootstrap)|mockup/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|\.github/workflows/|deploy/|install/)' <<<"$files"; then
+              if grep -qE '^(native/hagency-(agent-local|platform|runtime|execution|files|media-store|matrix)/|native/hagency/src/(console|owner_host|service|main|runner|bootstrap)|mockup/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|\.github/workflows/|deploy/|install/)' <<<"$files"; then
                 run=true
               fi
             fi
@@ -92,7 +92,14 @@ jobs:
           export HAGENCY_CONSOLE_SCREENSHOTS="$RUNNER_TEMP/console-screenshots"
           mkdir -p "$HAGENCY_CONSOLE_SCREENSHOTS"
           cargo clippy --locked -p hagency --all-targets --features native-console-browser -- -D warnings
-          cargo test --locked -p hagency --features native-console-browser --test console -- --nocapture
+          # OwnerHost replaces the historical Fleet browser product qualification.
+          # Legacy SDK route tests remain in the full workspace suite.
+          cargo test --locked -p hagency --features native-console-browser --test console native_console_rail_pages_are_shipped_and_served -- --nocapture
+          export CHROME="$HAGENCY_BROWSER_CHROME"
+          node mockup/scripts/check-owner-console.mjs
+          node mockup/scripts/check-owner-login.mjs
+          node mockup/scripts/check-owner-account-menu.mjs
+          node mockup/scripts/check-owner-projects.mjs
       - name: Keep console failure screenshots
         if: failure()
         uses: actions/upload-artifact@v4
@@ -128,8 +135,8 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: node native/scripts/check-rust-spec-bindings.mjs
-      - run: node --test native/scripts/check-production-callers.test.mjs
-      - run: node native/scripts/check-production-callers.mjs
+      - run: node --test native/scripts/check-production-callers.test.mjs native/scripts/check-spec-bindings.test.mjs
+      - run: node native/scripts/check-production-callers.mjs --spec native-owner-client.spec.md
       - id: native-tests
         # ADR-144's operator-run qualification test fails (never skips inside
         # a test) while its evidence record is a placeholder — by design.
@@ -190,7 +197,7 @@ jobs:
           python3 -B native/scripts/test-qualify-linux-cgroup.py
           cargo build --locked -p hagency-platform --bins
           sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,RUNNER_OS,RUNNER_ARCH /usr/bin/python3 -B native/scripts/qualify-linux-cgroup.py --probe "$PWD/target/debug/hagency-cgroup-probe" --uid "$(id -u)" --gid "$(id -g)"
-      - run: cargo build --release --locked -p hagency
+      - run: cargo build --release --locked -p hagency --bin hagency
       - uses: actions/upload-artifact@v4
         with:
           name: hagency-foundation-${{ matrix.os }}

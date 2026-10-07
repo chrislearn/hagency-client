@@ -50,7 +50,7 @@ unavailable. Neither original explains its underlying operation or backend cause
 ## Acceptance Criteria
 
 Scenario: Actual startup phases belong to the original retained process output
-  Test: native_file_service_original_observation
+  Retired-Test: native_file_service_original_observation
   Level: integration
   Test Double: actual disposable service child and scripted local TLS peer with original stderr handle
   Given a real service child reaches its original initial authenticated request
@@ -60,7 +60,7 @@ Scenario: Actual startup phases belong to the original retained process output
   And original child errors and panic cleanup remain unchanged
 
 Scenario: Actual media refusal is separate from successful server startup
-  Test: native_file_service_media_startup_observation
+  Retired-Test: native_file_service_media_startup_observation
   Level: integration
   Test Double: actual disposable service and local TLS peer with an existing empty private media directory
   Given an existing private media directory has no original journal
@@ -76,7 +76,7 @@ Scenario: Media creation preserves original atomic freshness and custody
   And no trace changes the original result or journal creation policy
 
 Scenario: Original executable file workflow remains independently required
-  Test: native_file_service_executable
+  Retired-Test: native_file_service_executable
   Level: integration
   Test Double: actual native service and model protocol child with local Matrix peer
   Given the original group and direct native file tasks
@@ -87,3 +87,5 @@ Scenario: Original executable file workflow remains independently required
 
 Production deadline or filesystem fixes, inferred historical CPU/IO/SQLite causes,
 Windows directory-sync policy, service deployment, hosted reruns and migration cutover.
+
+2026-10-07: These Retired selectors depend on removed account/task CLI or the former direct-Palpo/Fleet production process. Library SDK coverage remains separate; current OwnerHost forbids these product commands. See [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md).

@@ -41,9 +41,11 @@ Scenario: Host SDK budget is bounded and independent of task execution
   And HTTP and model operation budgets remain independent
 
 Scenario: Paced enrollment completes only within its original selected budget
-  Test: native_configured_paced_startup
+  Retired-Test: native_configured_paced_startup
   Given a real configured service and fresh synthetic approval account at1s pacing
   When the original SDK budget is default20s or explicit60s
   Then the short original attempt refuses without task execution
   And the separate longer attempt completes original enrollment and closes
   And neither attempt retries enrollment writes or creates an agent task
+
+2026-10-07: Retired-Test/Retired-Filter records the removed Fleet production entry point. Other SDK Test/Filter selectors remain active. See [current Owner product](native-owner-client.spec.md) and [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md). This does not claim Fleet, resource publication, delegation or encrypted tasks are supported in the new product.

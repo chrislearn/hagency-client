@@ -51,7 +51,7 @@ Scenario: Original executable integrity and configuration refusals remain enforc
   Then each original refusal remains a failure to start with zero attempts and no model requests
 
 Scenario: Valid native startup still executes through the actual protocol
-  Test: native_bootstrap_executable
+  Retired-Test: native_bootstrap_executable
   Level: integration
   Test Double: actual native executable and disposable local Matrix peer
   Given a valid original configured executable and authenticated Matrix refresh
@@ -59,7 +59,7 @@ Scenario: Valid native startup still executes through the actual protocol
   Then the original model protocol completes exactly one attempt
 
 Scenario: The original child observation reaches its serving boundary
-  Test: native_file_service_original_observation
+  Retired-Test: native_file_service_original_observation
   Level: integration
   Test Double: actual native child and local TLS peer with the original stderr handle
   Given the original configured file protocol executable
@@ -87,3 +87,9 @@ Scenario: A valid CTR equality vector keeps its integrity refusal
 
 Production crypto or filesystem changes, additional telemetry, hosted workflow
 dispatch, receive integration, and any migration or deployment qualification.
+
+## Owner bootstrap product replacement (2026-10-07)
+
+The `Retired-Test` selectors above depended on removed client-side Fleet/provisioning/encrypted approval-bot production switches. They are no longer executable product requirements. New `native-owner-client.spec.md` binds actual bootstrap secret/config refusal, anonymous provider/model/tool denial, fresh Pasion authorization after restart and independent Room runtimes. It does not claim encrypted private approval, factory or delegated-task behavior. Direct SDK configuration tests remain bound by `native-bootstrap-sdk.spec.md`, and all other SDK Test/Filter bindings remain active.
+
+2026-10-07: These Retired selectors depend on removed account/task CLI or the former direct-Palpo/Fleet production process. Library SDK coverage remains separate; current OwnerHost forbids these product commands. See [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md).

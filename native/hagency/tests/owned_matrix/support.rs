@@ -268,7 +268,10 @@ impl Workflow {
             BTreeMap::from([("work".into(), self.work.clone())]),
         )
         .unwrap()
-        .with_task_helper(env!("CARGO_BIN_EXE_hagency").into(), address)
+        .with_task_helper(
+            env!("CARGO_BIN_EXE_hagency-sdk-mcp-test-peer").into(),
+            address,
+        )
         .unwrap()
     }
     pub async fn close(self) {

@@ -1,7 +1,5 @@
-//! SR-3 (ADR-134) and SR-4 (ADR-135) selectors. UNGATED file; every selector
-//! is present on every hosted leg. The version legs are SQLite-free and run
-//! everywhere; the dry-run legs that provision state run the real
-//! init/serve/SIGTERM contract and require the store.
+//! Current OwnerHost release gates. Real same-schema N/N+1 artifacts and stopped
+//! snapshot recovery; no legacy data conversion, model calls, or unknown-cost replay.
 use std::{
     fs,
     io::{Read, Write},
@@ -10,16 +8,13 @@ use std::{
     process::{Child, Command, Stdio},
     sync::Mutex,
     thread,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 
-use hagency_core::tasks::{DispatchInput, SessionBinding};
-use hagency_store::EffectOutcome;
-use serde_json::json;
+use hagency_agent_local::Ledger;
 use sha2::{Digest, Sha256};
-
-#[path = "../../hagency-store/tests/common/mod.rs"]
-mod domain;
+#[path = "owner_cli/mod.rs"]
+mod owner;
 
 /// The start gate's explicit budget, named like the stop budget: the same
 /// 20-second figure as the unit's TimeoutStopSec, but this one bounds the
@@ -37,52 +32,9 @@ const ROOT_BUILD_INPUTS: &[&str] = &[
 fn binary() -> PathBuf {
     env!("CARGO_BIN_EXE_hagency").into()
 }
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64
-}
-/// Plant the pending custody row through the store's own API — an admitted
-/// and approved request, a registered session, a canonical task and an
-/// enqueued (queued, never-started) dispatch — never a bare INSERT that
-/// references parent rows that do not exist. A queued dispatch is a pending
-/// row by the runbook's own vocabulary, and nothing in `serve` resolves it.
-fn seed_pending_dispatch(state: &Path) {
-    let mut db = hagency_store::DomainRepository::open(state).unwrap();
-    db.register(&domain::registration()).unwrap();
-    let pool = domain::resource("pool", "seat", 1000);
-    db.put_resource(&pool).unwrap();
-    let proof = domain::proof(&domain::request("dryrun", "Worker", &pool, 100));
-    let engagement = db.admit(&proof, 1000).unwrap();
-    db.approve("approve", &proof, 1000).unwrap();
-    let effect = db.claim_effect().unwrap().unwrap();
-    db.observe_effect(
-        &effect.id,
-        effect.fence,
-        &EffectOutcome::Applied {
-            receipt: "fixture account".into(),
-        },
-    )
-    .unwrap();
-    db.register_session(&SessionBinding {
-        id: "session".into(),
-        engagement_id: engagement.id,
-        room_id: "!room:example.test".into(),
-        thread_root: None,
-    })
-    .unwrap();
-    db.create_canonical_task("task", "session", "Pending across restart", now_ms())
-        .unwrap();
-    db.enqueue_dispatch(&DispatchInput {
-        id: "dispatch".into(),
-        session_id: "session".into(),
-        task_id: Some("task".into()),
-        resources: vec![],
-        payload: json!({"instruction":"pending across the stop-start pair"}),
-    })
-    .unwrap();
-}
+#[path = "release_state/mod.rs"]
+mod release_state;
+use release_state::*;
 fn workspace_version() -> String {
     // The workspace [workspace.package] version is the ONE version source;
     // package.json or any other manifest is never consulted.
@@ -244,6 +196,16 @@ fn spawn_artifact(artifact: &Path, state: &Path) -> Running {
             "--listen",
             &addr,
         ])
+        .arg("--console-assets")
+        .arg({
+            let root = state.parent().unwrap();
+            let bundle = root.join("console-assets");
+            if bundle.exists() {
+                bundle
+            } else {
+                owner::assets(root)
+            }
+        })
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -459,7 +421,6 @@ fn next_artifact() -> PathBuf {
     let parent_target = root.join("target");
     let staged_next = root.join("target/.hagency-upgrade-next");
     let stamp = root.join("target/.upgrade-next-fingerprint");
-    let saved_n = root.join("target/.hagency-vN");
     let fingerprint = source_fingerprint();
     let cached = fs::read_to_string(&stamp)
         .map(|s| s == fingerprint)
@@ -467,11 +428,6 @@ fn next_artifact() -> PathBuf {
     if staged_next.is_file() && cached {
         return staged_next;
     }
-    // The child build writes into the parent target dir and would replace
-    // CARGO_BIN_EXE_hagency (the N binary the N leg and the existing version
-    // and restart tests read); preserve N before the build, and restore it
-    // after, so the parent target keeps reporting the workspace version.
-    fs::copy(binary(), &saved_n).unwrap();
     if src.exists() {
         fs::remove_dir_all(&src).unwrap();
     }
@@ -482,63 +438,44 @@ fn next_artifact() -> PathBuf {
     copy_root_build_inputs(&root, &src);
     copy_tree(&root.join("native"), &src.join("native"));
     patch_workspace_version(&src.join("Cargo.toml"), &next_version());
+    // Distinct binary name prevents any overwrite of the N artifact used by
+    // concurrently running workspace tests; only isolated copied manifests change.
+    let manifest = src.join("native/hagency/Cargo.toml");
+    let text = fs::read_to_string(&manifest).unwrap().replace(
+        "default-run = \"hagency\"",
+        "default-run = \"hagency-release-next\"\nautobins = false",
+    );
+    fs::write(
+        &manifest,
+        format!("{text}\n[[bin]]\nname = \"hagency-release-next\"\npath = \"src/main.rs\"\n"),
+    )
+    .unwrap();
     let status = Command::new(env!("CARGO"))
         .arg("build")
         .arg("--offline")
         .arg("-p")
         .arg("hagency")
         .arg("--bin")
-        .arg("hagency")
+        .arg("hagency-release-next")
         .env("CARGO_TARGET_DIR", &parent_target)
         .current_dir(&src)
         .status()
         .expect("N+1 build spawns");
-    // The child build just produced the N+1 binary at the shared path; stage
-    // it only on success, but restore the exact current N even on failure.
-    // A stale same-version backup cannot substitute a different source tree.
-    let staged = if status.success() {
-        fs::copy(parent_target.join("debug/hagency"), &staged_next).map(|_| ())
-    } else {
-        Ok(())
-    };
-    let restored = fs::copy(&saved_n, parent_target.join("debug/hagency"));
-    restored.unwrap();
     assert!(
         status.success(),
-        "the N+1 build must succeed (offline, parent cache)"
+        "the N+1 build must succeed (offline, isolated output, shared dependency cache)"
     );
-    staged.unwrap();
+    fs::copy(
+        parent_target.join("debug/hagency-release-next"),
+        &staged_next,
+    )
+    .unwrap();
     fs::write(stamp, fingerprint).unwrap();
     assert!(
         staged_next.is_file(),
         "the N+1 artifact must exist after build"
     );
     staged_next
-}
-fn user_version(state: &Path) -> i64 {
-    rusqlite::Connection::open(state.join("domain.sqlite3"))
-        .unwrap()
-        .pragma_query_value(None, "user_version", |r| r.get(0))
-        .unwrap()
-}
-fn assert_pending_survives(state: &Path) {
-    let db = rusqlite::Connection::open(state.join("domain.sqlite3")).unwrap();
-    let row: (String, i64) = db
-        .query_row(
-            "SELECT state,fence FROM runner_dispatches WHERE id='dispatch'",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .unwrap();
-    assert_eq!(row, ("queued".into(), 0));
-    let resolved: i64 = db
-        .query_row(
-            "SELECT COUNT(*) FROM runner_outputs WHERE dispatch_id='dispatch'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert_eq!(resolved, 0, "no row may be resolved by the procedure");
 }
 /// Render the unit from the deploy template (a read-only input), naming the
 /// versioned artifact in ExecStart so unit and binary cannot disagree — the
@@ -637,117 +574,36 @@ fn node_reference_findings(name: &str, text: &str) -> Vec<String> {
 
 #[test]
 fn native_package_entrypoints_reference_no_node() {
-    // O3 (M8 item 6, ADR-134): the packaged native entrypoints must not
-    // invoke Node. The old gate was a manual reading of the plist and the
-    // unit; this is the bound test. Per the corrected contract the scan
-    // surface is EXACTLY: the two packaged unit templates by path, and the
-    // installer's RENDERED output of both. There are no generated hook
-    // templates under the native packaging paths. The rendering is the
-    // installer's own: the test extracts its actual sed invocations from
-    // install/install-native.sh and executes them verbatim with a
-    // representative config — it does not trust the templates nor
-    // re-implement the substitution. The retained supervisor plist is out
-    // of scope by design (it is the JS product's).
-    let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let repo = workspace_root();
     let installer = fs::read_to_string(repo.join("install/install-native.sh")).unwrap();
-    // One entry per sed the installer carries: (template rel path, the
-    // renderer command verbatim from its source lines).
-    let mut renderers: Vec<(String, String, String)> = Vec::new();
-    let lines: Vec<&str> = installer.lines().collect();
-    for (index, line) in lines.iter().enumerate() {
-        if !line.contains("sed -e") {
-            continue;
-        }
-        // The continuation line names the template and the redirect target.
-        let tail = lines
-            .get(index + 1)
-            .expect("sed invocation continues onto the template path");
-        let template = if tail.contains("hagency-native.service") {
-            "deploy/hagency-native.service"
-        } else if tail.contains("io.hagency.native.plist") {
-            "deploy/io.hagency.native.plist"
-        } else {
-            panic!("installer renders an unexpected template: {tail}");
-        };
-        // The render step, verbatim: the sed program with its own
-        // substitution table AND its redirect, applied to the template.
-        // `$(dirname "$0")` resolves against the process working directory,
-        // so the command runs from install/ exactly as the installer does.
-        // The redirect target is the installer's own variable ($UNIT /
-        // $PLIST); the test points it at a temp path per the Test Double.
-        let target_var = if template.ends_with(".service") {
-            "UNIT"
-        } else {
-            "PLIST"
-        };
-        let command = format!("{} {}", line.trim().trim_end_matches('\\'), tail.trim());
-        renderers.push((template.to_string(), target_var.to_string(), command));
+    assert!(installer.contains("service install"));
+    for retired in [
+        "--palpo-transport",
+        "--mode",
+        " setup ",
+        "fleet-runtime.json",
+        "operator.token",
+    ] {
+        assert!(
+            !installer.contains(retired),
+            "retired installer option: {retired}"
+        );
     }
-    assert_eq!(
-        renderers.len(),
-        2,
-        "the installer must carry exactly the two native unit renderers"
-    );
-    let mut files: Vec<(String, String)> = Vec::new();
-    for template in [
+    let files: Vec<_> = [
         "deploy/io.hagency.native.plist",
         "deploy/hagency-native.service",
-    ] {
-        files.push((
-            template.to_string(),
-            fs::read_to_string(repo.join(template)).unwrap(),
-        ));
-    }
-    for (template, target_var, command) in &renderers {
-        // Representative config: the values an operator's machine supplies,
-        // and the render step's own redirect target pointed at a temp path.
-        let tmp = tempfile::tempdir().unwrap();
-        let target = tmp.path().join(if target_var == "UNIT" {
-            "hagency-native.service"
-        } else {
-            "io.hagency.native.plist"
-        });
-        let output = Command::new("sh")
-            .arg("-c")
-            .arg(command)
-            .current_dir(repo.join("install"))
-            .env("INSTALL_DIR", "/opt/hagency-native")
-            .env("STATE_DIR", "/var/lib/hagency-native")
-            .env("CONSOLE_DIR", "/opt/hagency-native/console")
-            .env(target_var, &target)
-            .stdin(Stdio::null())
-            .output()
-            .expect("the installer's sed renderer executes");
-        assert!(
-            output.status.success(),
-            "renderer for {template} failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let rendered = fs::read_to_string(&target)
-            .unwrap_or_else(|_| panic!("renderer for {template} wrote no temp output"));
-        assert!(
-            !rendered.contains("__INSTALL_DIR__")
-                && !rendered.contains("__STATE_DIR__")
-                && !rendered.contains("__USER__")
-                && !rendered.contains("__CONSOLE_DIR__")
-                && !rendered.contains("__AGENT_DRIVER__")
-                && !rendered.contains("__AGENT_DRIVER_ARG__"),
-            "renderer for {template} left placeholders unresolved"
-        );
-        // The render half must not be vacuous: non-empty, and it carries
-        // the invocation line the unit's shape requires (ExecStart for the
-        // systemd unit, ProgramArguments for the launchd plist). An empty
-        // or stripped render would otherwise scan clean by omission.
-        let required = if template.ends_with(".service") {
-            "ExecStart="
-        } else {
-            "ProgramArguments"
-        };
-        assert!(
-            !rendered.trim().is_empty() && rendered.contains(required),
-            "renderer for {template} produced an empty or vacuous unit (missing `{required}`)"
-        );
-        files.push((format!("rendered by installer: {template}"), rendered));
+        "install/install-native.sh",
+    ]
+    .into_iter()
+    .map(|name| {
+        (
+            name.to_string(),
+            fs::read_to_string(repo.join(name)).unwrap(),
+        )
+    })
+    .collect();
+    for (name, text) in &files {
+        assert!(!text.contains("--palpo-transport"), "{name}");
     }
     let mut findings = Vec::new();
     for (name, text) in &files {
@@ -809,38 +665,19 @@ fn native_cutover_dryrun_ready_gate_and_stop_contract() {
 }
 
 #[test]
-fn native_cutover_dryrun_pending_preserved_across_restart() {
-    // Runbook steps 6 and 7: the stop-start pair preserves every pending or
-    // outcome-unknown row; nothing is resolved, dropped or marked done.
+fn native_cutover_dryrun_owned_state_preserved_across_restart() {
     let root = tempfile::tempdir().unwrap();
     let state = init_state(root.path());
-    seed_pending_dispatch(&state);
+    seed_owned_state(&state);
+    let marker = owner::marker(&state);
     let mut first = spawn_service(&state);
     wait_ready(&first);
-    term_then_observe_exit(&mut first, Duration::from_secs(20));
-    let second = spawn_service(&state);
+    assert!(term_then_observe_exit(&mut first, Duration::from_secs(20)));
+    let mut second = spawn_service(&state);
     wait_ready(&second);
-    {
-        let db = rusqlite::Connection::open(state.join("domain.sqlite3")).unwrap();
-        // The seeded pending row survives the stop-start pair exactly as it
-        // was planted: still queued, fence 0, never resolved or dropped.
-        let row: (String, i64) = db
-            .query_row(
-                "SELECT state,fence FROM runner_dispatches WHERE id='dispatch'",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .unwrap();
-        assert_eq!(row, ("queued".into(), 0));
-        let resolved: i64 = db
-            .query_row(
-                "SELECT COUNT(*) FROM runner_outputs WHERE dispatch_id='dispatch'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(resolved, 0, "no row may be resolved by the stop-start pair");
-    }
+    assert_owned_survives(&state);
+    assert_eq!(owner::marker(&state), marker);
+    assert!(term_then_observe_exit(&mut second, Duration::from_secs(20)));
 }
 
 // ---- O5: the upgrade procedure and its rollback (ADR-134/135) ----
@@ -872,18 +709,6 @@ fn stage_next(root: &Path) -> PathBuf {
 /// A post-upgrade write recorded under N+1 whose state-restore rollback must
 /// discard it: a second queued dispatch in the already-registered session and
 /// task, no re-registration.
-fn seed_second_pending_dispatch(state: &Path) {
-    let mut db = hagency_store::DomainRepository::open(state).unwrap();
-    db.enqueue_dispatch(&DispatchInput {
-        id: "dispatch2".into(),
-        session_id: "session".into(),
-        task_id: Some("task".into()),
-        resources: vec![],
-        payload: json!({"instruction":"post-upgrade write the rollback discards"}),
-    })
-    .unwrap();
-}
-
 #[test]
 fn native_upgrade_procedure_continues_state() {
     let root = tempfile::tempdir().unwrap();
@@ -892,13 +717,17 @@ fn native_upgrade_procedure_continues_state() {
     // Step 0: version identity before any service start.
     assert_eq!(artifact_version(&n_artifact), workspace_version());
     assert_eq!(artifact_version(&next), next_version());
-    // Step 1: fresh state (init refuses a non-empty dir, writes operator.token).
+    assert_eq!(
+        reported_version(),
+        workspace_version(),
+        "N+1 build cannot replace the active N artifact"
+    );
+    // Fresh owner marker; legacy directories are refused instead of imported.
     let state = init_state(root.path());
-    assert!(state.join("operator.token").is_file());
-    let head_before = user_version(&state);
-    // A written row: the admitted engagement and a queued dispatch, via the
-    // store's own API (the runbook's pending row).
-    seed_pending_dispatch(&state);
+    assert!(!state.join("operator.token").exists());
+    let marker_before = owner::marker(&state);
+    // Current owner-ledger unknown charge and its three budget holds.
+    seed_owned_state(&state);
     // Step 2: the unit names the versioned N artifact.
     let unit_n = render_unit(&n_artifact, &state);
     assert!(
@@ -923,8 +752,8 @@ fn native_upgrade_procedure_continues_state() {
     wait_ready(&upgraded);
     // Step 7: preservation — the store head, the written row, the readiness
     // word, and the reported version (changed N -> N+1).
-    assert_eq!(user_version(&state), head_before);
-    assert_pending_survives(&state);
+    assert_eq!(owner::marker(&state), marker_before);
+    assert_owned_survives(&state);
     assert_eq!(http_status(&upgraded.addr, "/ready"), Some(200));
     assert_eq!(artifact_version(&next), next_version());
     assert!(term_then_observe_exit(
@@ -939,8 +768,8 @@ fn native_upgrade_rollback_restores_previous() {
     let n_artifact = stage_n(root.path());
     let next = stage_next(root.path());
     let state = init_state(root.path());
-    let head_before = user_version(&state);
-    seed_pending_dispatch(&state); // row X, before the rollback point
+    let marker_before = owner::marker(&state);
+    seed_owned_state(&state); // unknown provider charge before the snapshot
     let backup = root.path().join("backup-state");
     copy_tree(&state, &backup);
     // Install N, start, gate; then upgrade to N+1 and gate.
@@ -959,7 +788,12 @@ fn native_upgrade_rollback_restores_previous() {
         Duration::from_secs(20)
     ));
     // A post-upgrade write under N+1, which a state-restore rollback discards.
-    seed_second_pending_dispatch(&state);
+    {
+        let mut ledger = Ledger::open(owned_path(&state), OWNER).unwrap();
+        ledger
+            .set_context_session(&scope(), "post-upgrade-context")
+            .unwrap();
+    }
     // Rollback: stop (already stopped), restore the state copy, re-point the
     // unit at N, restart — the runbook's R1 step.
     fs::remove_dir_all(&state).unwrap();
@@ -970,23 +804,85 @@ fn native_upgrade_rollback_restores_previous() {
     wait_ready(&restored);
     // Version N runs again on the same state; no re-init, no data loss.
     assert_eq!(artifact_version(&n_artifact), workspace_version());
-    assert_eq!(user_version(&state), head_before);
-    assert_pending_survives(&state); // row X readable
-    assert!(state.join("operator.token").is_file()); // never re-initialized
-    let second: i64 = rusqlite::Connection::open(state.join("domain.sqlite3"))
-        .unwrap()
-        .query_row(
-            "SELECT COUNT(*) FROM runner_dispatches WHERE id='dispatch2'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
+    assert_eq!(owner::marker(&state), marker_before);
+    assert_owned_survives(&state); // row X readable
+    assert!(!state.join("operator.token").exists()); // never created
+    let ledger = Ledger::open(owned_path(&state), OWNER).unwrap();
     assert_eq!(
-        second, 0,
-        "the post-upgrade write must be discarded by the restore"
+        ledger.context_session(&scope()).unwrap(),
+        None,
+        "restoring the stopped snapshot discards later context metadata, never clears an unknown charge"
     );
     assert!(term_then_observe_exit(
         &mut restored,
         Duration::from_secs(20)
     ));
+}
+
+#[test]
+fn native_installer_delegates_current_service_and_refuses_legacy_state() {
+    let root = tempfile::tempdir().unwrap();
+    let install = root.path().join("install path");
+    fs::create_dir(&install).unwrap();
+    fs::copy(binary(), install.join("hagency")).unwrap();
+    let installer = workspace_root().join("install/install-native.sh");
+    let state = root.path().join("legacy state");
+    hagency_store::private::directory(&state).unwrap();
+    fs::write(state.join("domain.sqlite3"), b"legacy never imported").unwrap();
+    let out = Command::new("sh")
+        .arg(&installer)
+        .arg("--install-dir")
+        .arg(&install)
+        .arg("--state-dir")
+        .arg(&state)
+        .arg("--no-open")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert_eq!(
+        fs::read(state.join("domain.sqlite3")).unwrap(),
+        b"legacy never imported"
+    );
+    assert!(!state.join("hagency-client-owned-v1.json").exists());
+    assert!(!state.join("operator.token").exists());
+    // Test the actual wrapper's argv and error propagation without installing
+    // a real user's service. Binary-side service generation has separate tests.
+    let capture = root.path().join("argv");
+    fs::write(
+        install.join("hagency"),
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$HAGENCY_TEST_CAPTURE\"\nexit 23\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(install.join("hagency"), fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let out = Command::new("sh")
+        .arg(&installer)
+        .arg("--install-dir")
+        .arg(&install)
+        .arg("--state-dir")
+        .arg(&state)
+        .args(["--listen", "127.0.0.1:14001", "--no-open"])
+        .env("HAGENCY_TEST_CAPTURE", &capture)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(23));
+    assert_eq!(
+        fs::read_to_string(&capture).unwrap(),
+        format!(
+            "service\ninstall\n--state-dir\n{}\n--listen\n127.0.0.1:14001\n--no-open\n",
+            state.display()
+        )
+    );
+    let before = fs::read(&capture).unwrap();
+    let out = Command::new("sh")
+        .arg(installer)
+        .args(["--mode", "fleet"])
+        .env("HAGENCY_TEST_CAPTURE", &capture)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(fs::read(capture).unwrap(), before);
 }

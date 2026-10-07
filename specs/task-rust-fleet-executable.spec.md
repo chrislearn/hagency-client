@@ -1,4 +1,5 @@
 spec: task
+superseded-by: native-owner-client.spec.md
 name: "Qualify the configured native executable with two original factory agents"
 inherits: project
 satisfies: [REQ-RUST-MIGRATION-EXECUTION, REQ-THREAD-SCOPED-SESSIONS, REQ-MATRIX-DM-PRIVACY, REQ-THREE-LAYER-COMPLETION]
@@ -52,10 +53,12 @@ not a replacement for real model, sandbox, owner approval, media or live soaking
 ## Scenarios
 
 Scenario: One configured executable provisions and serves two genuine agents
-  Test: native_configured_fleet_executable_two_agents
+  Retired-Test: native_configured_fleet_executable_two_agents
   Given a fresh private service and offline authenticated reception/owner actors
   When two approved agents receive encrypted owner messages concurrently
   Then distinct original runtimes both hold actual Started work before completion
   And real native MCP completion produces each canonical Done and exact encrypted reply
   And a second input per agent completes without repeated provisioning or enrollment
   And shutdown drains the original service without retained live leases or unknowns
+
+2026-10-07: Retired-Test/Retired-Filter records the removed Fleet production entry point. Other SDK Test/Filter selectors remain active. See [current Owner product](native-owner-client.spec.md) and [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md). This does not claim Fleet, resource publication, delegation or encrypted tasks are supported in the new product.

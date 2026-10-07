@@ -7,6 +7,8 @@ tags: [active, rust, release, upgrade, recovery]
 
 ## Intent
 
+Current scope: two builds of the same OwnerHost schema with only the version constant changed. This proves a same-format artifact switch and stopped private-state snapshot restoration. It does not authorize importing old Fleet/SQLite data, imply arbitrary version rollback, restore remote server credentials, or replay unresolved provider calls. The fixture uses current owner-local Ledger APIs; real binaries load the OwnerHost marker/console, while ledger custody is checked through the shared current SDK. No model is called.
+
 Bind the definition-of-done line "fresh installation, upgrade, recovery and
 the selected state-continuity strategy have tested procedures" for the
 native half: ADR-134's versioned-artifact procedure (install N → install
@@ -20,16 +22,13 @@ workflow — is recorded in this spec and in ADR-134's note.
 
 ### Must
 - Produce versions N and N+1 in-test WITHOUT the release workflow: two local builds of the same tree with different workspace versions (`hagency --version` derived from the workspace version constant), each built to its own path and named as ADR-134's versioned artifacts are (the binary name carries the version, so both coexist in the install dir exactly as the procedure assumes).
-- Install version N by the documented procedure, write live state through it (admit at least one engagement/agent and one store row whose head is recorded), then install version N+1 and restart the unit.
-- Assert the upgrade continues state: the store head advances (or is already at head with zero replay), the previously written rows are readable, and the readiness word returns.
-- Assert the rollback: applying the procedure's rollback step (point the unit back at version N's artifact, restart) runs version N again on the same state, with no data loss and no re-initialization.
+- Install version N by the documented procedure, write live state through it (seed the current owner ledger with permanent owner scope, policy and an unresolved provider charge whose budget remains held), then install version N+1 and restart the unit.
+- Assert the upgrade continues state: the current owner marker and ledger remain readable, unresolved provider charges stay unknown and held, and fresh reservation cannot replay them, and the readiness word returns.
+- Assert stopped snapshot recovery: restore the complete pre-upgrade owner directory to an empty destination and run N again. Unknown charge holds persist; post-snapshot context metadata is deliberately discarded. This is not arbitrary schema downgrade or a live snapshot.
 - Copy and content-address all workspace-root compile-time inputs consumed by
-  the native code: the original role-capacity JSON and four shared agent-home
-  templates. Read them from the source tree; do not substitute template bytes.
-- When an uncached N+1 build replaces the shared build path, capture and restore
-  the exact current N artifact, not a stale same-version backup from an earlier
-  source tree. Restore N even when that child build or staging fails; failure
-  still fails the test and cannot qualify an artifact.
+  the native code: the four shared agent-home templates. Read them from the source tree; do not substitute template bytes.
+- Build the copied N+1 source as a distinct `hagency-release-next` binary target with a shared dependency cache. Never overwrite or temporarily replace the currently tested `target/debug/hagency`; verify N still reports its original version after N+1 is staged. Only the copied manifest changes.
+
 
 ### Must Not
 - Do not invoke the release workflow, a registry, a tag or any network artifact source — the two local builds are the whole fixture.
@@ -42,13 +41,14 @@ workflow — is recorded in this spec and in ADR-134's note.
 ### Allowed Changes
 - native/scripts/ (the two-version build and install harness)
 - native/hagency/tests/
+- install/install-native.sh and current per-user deploy templates
 - specs/task-rust-native-upgrade.spec.md
 - knowledge/decisions/adr-134-native-versioned-release.md
 - docs/progress.md
 
 ### Forbidden
 - Live services, credentials, deployed state, the production host.
-- deploy/** (read-only inputs); .github/workflows/**; native/hagency-store/src/migrations/**.
+- .github/workflows/**; native/hagency-store/src/migrations/**; deployed service state.
 
 ## Acceptance Criteria
 
@@ -56,9 +56,9 @@ Scenario: The documented upgrade procedure continues live state
   Test: native_upgrade_procedure_continues_state
   Level: integration
   Test Double: two local builds of the same tree at workspace versions N and N+1, installed by the documented procedure over one state dir
-  Given version N installed with live state — at least one admitted engagement and one recorded store row at a recorded head
+  Given version N installed with live state — a current owner marker and owner ledger with an unknown provider charge and held quota
   When version N+1 is installed by the documented procedure and the unit restarted
-  Then the store head advances with no data loss — the previously written rows are readable
+  Then the same-format owner state remains readable, with unknown charges and their held quota preserved
   And the readiness word returns
 
 Scenario: The procedure's rollback step restores the previous version on the same state
@@ -67,7 +67,7 @@ Scenario: The procedure's rollback step restores the previous version on the sam
   Test Double: the same two-version fixture after the upgrade scenario
   Given version N+1 running on the upgraded state
   When the procedure's rollback step is applied and the unit restarted
-  Then version N runs again on the same state — no re-initialization and no data loss
+  Then version N runs again on the stopped same-format snapshot — no re-initialization or replay of unresolved calls
   And the recorded rows from before the upgrade are still readable
 
 Scenario: Shared template changes participate in the real artifact's build inputs

@@ -61,7 +61,7 @@ Scenario: Waiting preserves cancellation and the original deadline
   And invalid intervals or another endpoint are refused
 
 Scenario: The native configured factory propagates its selected cadence
-  Test: native_configured_local_codex_fleet
+  Retired-Test: native_configured_local_codex_fleet
   Given the host selects request pacing
   When two real synthetic factory agents execute file and approval tasks
   Then the existing native ownership and delivery assertions still pass
@@ -72,3 +72,5 @@ Scenario: Driver configuration admits only an explicit bounded cadence
   When the native host constructs its Matrix limits
   Then the absent option preserves legacy behavior and invalid values refuse
   And cloned valid limits retain the same pacing owner
+
+2026-10-07: Retired-Test/Retired-Filter records the removed Fleet production entry point. Other SDK Test/Filter selectors remain active. See [current Owner product](native-owner-client.spec.md) and [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md). This does not claim Fleet, resource publication, delegation or encrypted tasks are supported in the new product.

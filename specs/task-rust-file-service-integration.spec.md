@@ -97,7 +97,7 @@ Scenario: Actual native bootstrap and first MCP file call deliver to the origina
   Level: integration
   Test Double: real native executable MCP fixed offline runtime peer local TLS and encrypted recipient SDK
   Targets: native/hagency/src/file_service.rs
-  Test: native_file_service_executable
+  Retired-Test: native_file_service_executable
   Given legitimate queued canonical work and the one fixed private development profile with files enabled
   When real serve authenticates Collector claims work registers the retained workspace and launches the pinned peer
   Then its first native MCP send_file reaches the same App writer and Collector after registration
@@ -143,7 +143,7 @@ Scenario: Stage and SDK recovery preserve incomplete facts across actual process
   Level: integration
   Test Double: actual protected journals SDK receipt local TLS and a fresh native service process
   Targets: native/hagency/src/file_service.rs
-  Test: native_file_service_restart
+  Retired-Test: native_file_service_restart
   Given original committed source metadata and private SDK Complete with first domain Delivered deliberately not committed
   When every original process owner is gone and real startup opens the same protected state
   Then bounded historical resume commits the original Delivered without old claim Send or another POST or PUT
@@ -154,7 +154,7 @@ Scenario: Cancellation and lost network evidence keep original uncertainty
   Level: integration
   Test Double: actual paused binary POST encrypted PUT and real negative room observations
   Targets: native/hagency/src/file_service.rs
-  Test: native_file_service_uncertainty
+  Retired-Test: native_file_service_uncertainty
   Given a current pipeline before and after each possible external write boundary
   When cancellation retirement deadline expiry or a truncated acknowledgement occurs
   Then known pre-effect refusal stays distinct from possible-write uncertainty
@@ -194,7 +194,7 @@ Scenario: Original executable failures retain bounded child evidence
   Level: integration
   Test Double: actual native children with valid and refused private configuration
   Targets: native/hagency/tests/file_service/fixture.rs
-  Test: native_file_service_original_observation
+  Retired-Test: native_file_service_original_observation
   Given the original executable fixture and its own child process
   When an HTTP wait or assertion fails before cleanup or the child actually exits
   Then fixed variant phase request-count and child-state evidence survives before original panic cleanup
@@ -229,3 +229,5 @@ Matrix test helper is changed.
 - receive_file cache paths image previews plaintext rooms arbitrary file destinations or a production file tool.
 - Continuous scheduling live runtime or service deployment and full runtime sandbox qualification.
 - New domain schema raw capability restoration pruning and automatic uncertain external retries.
+
+2026-10-07: These Retired selectors depend on removed account/task CLI or the former direct-Palpo/Fleet production process. Library SDK coverage remains separate; current OwnerHost forbids these product commands. See [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md).

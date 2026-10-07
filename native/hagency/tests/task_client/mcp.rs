@@ -177,7 +177,7 @@ async fn native_mcp_task_lifecycle() {
 #[tokio::test]
 async fn native_mcp_sdk() {
     let f = Fixture::new(false).await;
-    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hagency"));
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hagency-sdk-mcp-test-peer"));
     command
         .arg("mcp")
         .env_clear()
@@ -251,7 +251,7 @@ fn file_helper(
     cap: &RunnerCapability,
     receive: bool,
 ) -> tokio::process::Child {
-    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hagency"));
+    let mut command = tokio::process::Command::new(env!("CARGO_BIN_EXE_hagency-sdk-mcp-test-peer"));
     command
         .arg("mcp")
         .env_clear()

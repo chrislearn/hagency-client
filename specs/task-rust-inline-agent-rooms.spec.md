@@ -100,7 +100,7 @@ Scenario: Room configuration cannot replace original observed rooms
   Then no create/invite/join/key write repeats and no replacement room becomes ready
 
 Scenario: Native bootstrap accepts only the explicit protected rooms profile
-  Test: native_bootstrap_token_rooms_profile
+  Retired-Test: native_bootstrap_token_rooms_profile
   Level: integration
   Test Double: actual executable bootstrap/private files and malformed closed configuration
   Given the rooms/enrollment marker with public anchors and separate protected representative token
@@ -118,3 +118,7 @@ Scenario: Torn partial foreign and extra room custody cannot rearm a POST
   Given an actual original completed room job and protected fixed records
   When a record or wrapping key is torn, a stage is swapped or missing, or an extra file appears
   Then original read-only inspection refuses before HTTP, retains its known DM and becomes permanently spent
+
+## Owner bootstrap product replacement (2026-10-07)
+
+The `Retired-Test` selectors above depended on removed client-side Fleet/provisioning/encrypted approval-bot production switches. They are no longer executable product requirements. New `native-owner-client.spec.md` binds actual bootstrap secret/config refusal, anonymous provider/model/tool denial, fresh Pasion authorization after restart and independent Room runtimes. It does not claim encrypted private approval, factory or delegated-task behavior. Direct SDK configuration tests remain bound by `native-bootstrap-sdk.spec.md`, and all other SDK Test/Filter bindings remain active.

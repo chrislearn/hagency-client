@@ -59,13 +59,13 @@ Scenario: Operator projection remains bounded and private
   Then it exposes only closed labels and optional counts without payloads or authority changes
 
 Scenario: Original helper receipt states are explicit and bounded
-  Test: native_file_service_helper_observation_bounds
+  Retired-Test: native_file_service_helper_observation_bounds
   Given absent malformed oversized unsupported and known helper receipts
   When the original fixture snapshot reads their bounded projections
   Then each state is distinct and private content never enters the diagnostic output
 
 Scenario: Original executable observation keeps its own failure and custody
-  Test: native_file_service_original_observation
+  Retired-Test: native_file_service_original_observation
   Given an actual service child with its original fixture observation
   When a refusal or missing HTTP observation is inspected
   Then the same process and helper absence remain separate from its original verdict
@@ -74,3 +74,5 @@ Scenario: Original executable observation keeps its own failure and custody
 
 Changing the native execution timing policy fixing the suspected silent helper
 interval replaying original hosted jobs live providers and production cutover.
+
+2026-10-07: These Retired selectors depend on removed account/task CLI or the former direct-Palpo/Fleet production process. Library SDK coverage remains separate; current OwnerHost forbids these product commands. See [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md).

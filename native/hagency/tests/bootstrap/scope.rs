@@ -1,7 +1,6 @@
 use super::*;
 use hagency_store::private;
 use std::io::{Seek, Write};
-use std::process::Stdio;
 
 #[tokio::test]
 async fn native_bootstrap_config() {
@@ -78,11 +77,8 @@ async fn native_bootstrap_config() {
         if kind == "missing" {
             std::fs::remove_file(&path).unwrap();
         }
-        let result = f.command(true).output().unwrap();
-        assert!(
-            !result.status.success(),
-            "invalid profile unexpectedly started"
-        );
+        let result = hagency::bootstrap::Bootstrap::open(&f.state_dir, f.address, 16, true);
+        assert!(result.is_err(), "invalid SDK profile unexpectedly opened");
         assert_eq!(f.attempts(), 0);
         assert!(!f.work.join("owned-mcp.requests").exists());
     }
@@ -112,16 +108,11 @@ async fn native_bootstrap_config_receive_inbox_absent_workspace() {
     file.write_all(&serde_json::to_vec(&config).unwrap())
         .unwrap();
     drop(file);
-    let result = f.command(true).stderr(Stdio::piped()).output().unwrap();
-    assert!(
-        !result.status.success(),
-        "absent workspace unexpectedly started"
-    );
-    let stderr = String::from_utf8_lossy(&result.stderr);
-    assert!(
-        stderr.contains("Error: Config"),
-        "expected Failure::Config, got stderr: {stderr}"
-    );
+    let error = hagency::bootstrap::Bootstrap::open(&f.state_dir, f.address, 16, true)
+        .err()
+        .expect("absent workspace SDK profile must fail");
+    assert!(matches!(error, hagency::bootstrap::Failure::Config { .. }));
+    let stderr = format!("{error:?}");
     // Task #28 (a): the config refusal must name the field AND the fix, not
     // merely collapse into the bare word `config`.
     assert!(

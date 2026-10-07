@@ -1,996 +1,474 @@
-use std::{
-    fs,
-    io::{Read, Write},
-    net::{SocketAddr, TcpListener, TcpStream},
-    path::Path,
-    process::{Child, Command, Stdio},
-    time::{Duration, Instant},
-};
-
-struct Running(Child);
-impl Drop for Running {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-fn launch(state: &Path, address: SocketAddr) -> Running {
-    launch_with(state, address, None)
-}
-/// The console-access issuances live on the console's authority, so a test
-/// that exercises one needs a served console: without `--console-assets`
-/// the app carries no Console and every issuance answers Unavailable.
-fn launch_with(state: &Path, address: SocketAddr, console: Option<&Path>) -> Running {
-    let mut command = Command::new(env!("CARGO_BIN_EXE_hagency"));
-    command
-        .args(["serve", "--state-dir"])
-        .arg(state)
-        .args(["--listen", &address.to_string()]);
-    if let Some(console) = console {
-        command.arg("--console-assets").arg(console);
-    }
-    let child = command
-        .env("PATH", "")
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .unwrap();
-    let mut running = Running(child);
-    let deadline = Instant::now() + Duration::from_secs(10);
-    loop {
-        if let Some(status) = running.0.try_wait().unwrap() {
-            let mut error = String::new();
-            if let Some(mut stderr) = running.0.stderr.take() {
-                stderr.read_to_string(&mut error).unwrap();
-            }
-            panic!("native service exited before health ({status}): {error}");
-        }
-        if let Ok(mut stream) = TcpStream::connect_timeout(&address, Duration::from_millis(100)) {
-            stream
-                .set_read_timeout(Some(Duration::from_secs(1)))
-                .unwrap();
-            // Readiness handshake: a reset, a timeout or a write failure on a
-            // just-accepted connection is a "not ready yet" signal — the
-            // server is live but has not written the response yet. Continue
-            // the poll; only a completed non-200 response or the loop's bound
-            // expiring is a failure.
-            let handshake = write!(
-                stream,
-                "GET /health HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n"
-            )
-            .and_then(|()| {
-                let mut response = String::new();
-                stream.read_to_string(&mut response).map(|_| response)
-            });
-            match handshake {
-                Ok(response) if response.starts_with("HTTP/1.1 200") => return running,
-                Ok(_) => {}  // completed non-200: not ready yet, keep polling
-                Err(_) => {} // reset/timeout: not ready yet, keep polling
-            }
-        }
-        assert!(
-            Instant::now() < deadline,
-            "native service startup timed out"
-        );
-        std::thread::sleep(Duration::from_millis(20));
-    }
-}
-fn submit(address: SocketAddr, token: &str) -> String {
-    let mut stream = TcpStream::connect(address).unwrap();
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .unwrap();
-    let body = r#"{"binding":"fixture","generation":1,"id":"restart_request","lane":"work","kind":"request","payload":{"name":"小白"}}"#;
-    write!(stream, "POST /api/native/v1/custody HTTP/1.1\r\nHost: {address}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
-    let mut response = String::new();
-    stream.read_to_string(&mut response).unwrap();
-    assert!(
-        response.starts_with("HTTP/1.1 202"),
-        "custody was not accepted"
-    );
-    let body = response.split("\r\n\r\n").nth(1).unwrap();
-    serde_json::from_str::<serde_json::Value>(body).expect("native JSON response");
-    body.to_owned()
-}
-fn resource_call(address: SocketAddr, token: &str, create: bool) -> serde_json::Value {
-    let mut stream = TcpStream::connect(address).unwrap();
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .unwrap();
-    let body = if create {
-        r#"{"presetId":"restart_pool","seatId":"fixture_seat","framework":"codex","model":"gpt-5.6-sol","reasoning":"medium","ceiling":{"tokens":100}}"#
-    } else {
-        ""
-    };
-    let method = if create { "POST" } else { "GET" };
-    write!(stream,"{method} /api/native/v1/resources HTTP/1.1\r\nHost: {address}\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
-    let mut response = String::new();
-    stream.read_to_string(&mut response).unwrap();
-    assert!(
-        response.starts_with("HTTP/1.1 200"),
-        "native domain resource request failed"
-    );
-    serde_json::from_str(response.split("\r\n\r\n").nth(1).unwrap()).unwrap()
-}
+//! Release entry point coverage. Historical Fleet/domain behavior remains in
+//! SDK tests; this executable exclusively constructs the new OwnerHost.
+#[path = "owner_cli/mod.rs"]
+mod owner;
+use owner::*;
+use std::fs;
 #[test]
-fn native_binary_survives_crash_without_node() {
-    let directory = tempfile::tempdir().unwrap();
-    let state = directory.path().join("中文 state");
-    let init = Command::new(env!("CARGO_BIN_EXE_hagency"))
+fn native_owner_oauth_return_documents_allow_external_navigation_but_not_api_reads() {
+    use std::io::{Read, Write};
+    let root = tempfile::tempdir().unwrap();
+    let state = root.path().join("state");
+    let init = command()
         .args(["init", "--state-dir"])
         .arg(&state)
-        .env("PATH", "")
         .output()
         .unwrap();
-    assert!(
-        init.status.success(),
-        "init failed: {}",
-        String::from_utf8_lossy(&init.stderr)
-    );
-    // Fresh Unicode initialization remains an actual binary/database check,
-    // independent of the guardian's bounded terminal-observation fixture.
-    assert!(state.join("operator.token").is_file());
-    assert!(state.join("domain.sqlite3").is_file());
-    let token = fs::read_to_string(state.join("operator.token")).unwrap();
-    assert!(!String::from_utf8_lossy(&init.stdout).contains(&token));
-    let before = fs::read(state.join("operator.token")).unwrap();
-    assert!(
-        !Command::new(env!("CARGO_BIN_EXE_hagency"))
+    assert!(init.status.success());
+    let bundle = assets(root.path());
+    let run = launch(&state, &bundle, false);
+    let navigate = |path: &str, site: &str| {
+        let mut socket = std::net::TcpStream::connect(run.address).unwrap();
+        socket
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .unwrap();
+        write!(socket, "GET {path} HTTP/1.1\r\nHost: {}\r\nSec-Fetch-Site: {site}\r\nSec-Fetch-Mode: navigate\r\nSec-Fetch-Dest: document\r\nConnection: close\r\n\r\n", run.address).unwrap();
+        let mut response = String::new();
+        socket.read_to_string(&mut response).unwrap();
+        response
+    };
+    for site in ["same-site", "cross-site"] {
+        for path in ["/console/", "/console/login/", "/console/agents-owned/"] {
+            let response = navigate(path, site);
+            assert_eq!(status(&response), 200, "{site} {path}: {response}");
+            assert!(response.contains("owner CLI fixture"));
+        }
+        let response = navigate("/console/server-login", site);
+        assert_eq!(status(&response), 400);
+        assert!(response.contains("invalid_console_request"));
+        let api = navigate("/console/api/owned-agents", site);
+        assert_eq!(status(&api), 401);
+        assert!(api.contains("console_access_required"));
+        assert_eq!(status(&navigate("/console/project-sides/", site)), 403);
+        assert_eq!(status(&navigate("/console/?unexpected=1", site)), 400);
+    }
+}
+#[test]
+fn native_owner_init_is_private_idempotent_and_has_no_legacy_store() {
+    let root = tempfile::tempdir().unwrap();
+    let state = root.path().join("中文 owner state");
+    for _ in 0..2 {
+        let out = command()
             .args(["init", "--state-dir"])
             .arg(&state)
             .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+    }
+    assert!(
+        String::from_utf8(marker(&state))
             .unwrap()
-            .status
-            .success()
+            .contains("hagency-owned-agent-client")
     );
-    assert_eq!(fs::read(state.join("operator.token")).unwrap(), before);
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    let running = launch(&state, address);
-    let receipt = submit(address, &token);
-    let resource = resource_call(address, &token, true);
-    drop(running); // Unclean process loss, not an in-memory reopen.
-    let _restarted = launch(&state, address);
-    assert_eq!(submit(address, &token), receipt);
-    assert_eq!(
-        resource_call(address, &token, false),
-        serde_json::json!([resource])
-    );
-}
-
-/// Brief 22: the inspection subcommands are clients of the operator routes —
-/// the `--json` output is the route's body verbatim, and the table's columns
-/// are the route's own keys. The alerts envelope carries the read clock
-/// (`at_ms`), so its two fetches differ in that field alone; the rows are
-/// compared parsed, the other two commands byte-for-byte.
-fn operator_get(address: SocketAddr, token: &str, path: &str) -> String {
-    let mut stream = TcpStream::connect(address).unwrap();
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .unwrap();
-    write!(
-        stream,
-        "GET {path} HTTP/1.1\r\nHost: {address}\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n"
-    )
-    .unwrap();
-    let mut response = String::new();
-    stream.read_to_string(&mut response).unwrap();
-    assert!(
-        response.starts_with("HTTP/1.1 200"),
-        "operator read failed: {path}"
-    );
-    response.split("\r\n\r\n").nth(1).unwrap().to_owned()
-}
-
-fn inspect(state: &Path, address: SocketAddr, verb: &str, extra: &[&str]) -> std::process::Output {
-    Command::new(env!("CARGO_BIN_EXE_hagency"))
-        .arg(verb)
-        .arg("--state-dir")
-        .arg(state)
-        .arg("--listen")
-        .arg(address.to_string())
-        .args(extra)
-        .env("PATH", "")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .unwrap()
-}
-
-#[test]
-fn native_cli_inspection_matches_operator_routes() {
-    let directory = tempfile::tempdir().unwrap();
-    let state = directory.path().join("inspect state");
-    let init = Command::new(env!("CARGO_BIN_EXE_hagency"))
-        .args(["init", "--state-dir"])
-        .arg(&state)
-        .env("PATH", "")
-        .output()
-        .unwrap();
-    assert!(
-        init.status.success(),
-        "init failed: {}",
-        String::from_utf8_lossy(&init.stderr)
-    );
-    let token = fs::read_to_string(state.join("operator.token")).unwrap();
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    let running = launch(&state, address);
-    // One catalog row so the table and the passthrough are non-empty.
-    let _resource = resource_call(address, &token, true);
-
-    // Resources: the passthrough equals the route body byte-for-byte.
-    let route = operator_get(address, &token, "/api/native/v1/resources?limit=100");
-    let output = inspect(&state, address, "resources", &["--json"]);
-    assert!(
-        output.status.success(),
-        "resources --json failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(
-        String::from_utf8_lossy(&output.stdout).trim(),
-        route.trim(),
-        "the passthrough must equal the route body"
-    );
-    // E2 of the CLI review: the table is compared CELL BY CELL against the
-    // route's own values, and the header is EXACT per column (order and
-    // membership — `contains("id")` would accept `resource_id`).
-    let output = inspect(&state, address, "resources", &[]);
-    assert!(output.status.success());
-    let table = String::from_utf8_lossy(&output.stdout);
-    let rows: Vec<serde_json::Value> = serde_json::from_str(route.trim()).unwrap();
-    let header: Vec<&str> = table.lines().next().unwrap().split_whitespace().collect();
-    assert_eq!(
-        header,
-        vec!["id", "framework", "model", "tier", "ceiling"],
-        "the header row is exactly the route's keys, in order"
-    );
-    assert_eq!(
-        table.lines().count(),
-        rows.len() + 1,
-        "one header plus one line per route row"
-    );
-    // The expected cell, computed the way the renderer computes it: null
-    // renders "-", a string renders itself, anything else its JSON text.
-    let expected = |row: &serde_json::Value, key: &str| -> String {
-        match &row[key] {
-            serde_json::Value::Null => "-".into(),
-            serde_json::Value::String(text) => text.clone(),
-            other => other.to_string(),
-        }
-    };
-    for (index, row) in rows.iter().enumerate() {
-        let line = table.lines().nth(index + 1).unwrap();
-        for column in ["id", "framework", "model", "tier", "ceiling"] {
-            let cell = expected(row, column);
-            assert!(
-                line.contains(&cell),
-                "row {index} column {column} must carry the route's value {cell}: {line}"
-            );
-        }
+    for name in ["operator.token", "domain.sqlite3", "console-logins.json"] {
+        assert!(!state.join(name).exists());
     }
-
-    // Engagements: empty state, still byte-for-byte.
-    let route = operator_get(address, &token, "/api/native/v1/engagements?limit=100");
-    let output = inspect(&state, address, "engagements", &["--json"]);
-    assert!(output.status.success());
-    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), route.trim());
-    let output = inspect(&state, address, "engagements", &[]);
-    assert!(output.status.success());
-    let table = String::from_utf8_lossy(&output.stdout);
-    // E2: the exact header, not a prefix — `starts_with("id")` would accept
-    // any leading word containing it and any column set after.
-    let header: Vec<&str> = table.lines().next().unwrap().split_whitespace().collect();
-    assert_eq!(
-        header,
-        vec![
-            "id",
-            "agentName",
-            "projectId",
-            "role",
-            "requestedTokens",
-            "state"
-        ],
-        "the engagements header is exactly the route's keys, in order"
-    );
-    let engagements: Vec<serde_json::Value> = serde_json::from_str(route.trim()).unwrap();
-    assert_eq!(
-        table.lines().count(),
-        engagements.len() + 1,
-        "one header plus one line per route row (empty here)"
-    );
-
-    // Alerts: `at_ms` is the read clock, so the rows compare parsed.
-    let route = operator_get(address, &token, "/api/native/v1/alerts?limit=100");
-    let output = inspect(&state, address, "alerts", &["--json"]);
-    assert!(output.status.success());
-    let passed: serde_json::Value =
-        serde_json::from_str(String::from_utf8_lossy(&output.stdout).trim()).unwrap();
-    let served: serde_json::Value = serde_json::from_str(route.trim()).unwrap();
-    assert_eq!(passed["alerts"], served["alerts"]);
-    assert!(passed["at_ms"].is_u64() && served["at_ms"].is_u64());
-    let output = inspect(&state, address, "alerts", &[]);
-    assert!(output.status.success());
-    let table = String::from_utf8_lossy(&output.stdout);
-    assert!(table.contains("at_ms"), "the envelope's clock key renders");
-    drop(running);
-}
-
-#[test]
-fn native_cli_inspection_exit_codes_name_refusals() {
-    let directory = tempfile::tempdir().unwrap();
-    let state = directory.path().join("refusal state");
-    let init = Command::new(env!("CARGO_BIN_EXE_hagency"))
-        .args(["init", "--state-dir"])
-        .arg(&state)
-        .env("PATH", "")
-        .output()
-        .unwrap();
-    assert!(init.status.success());
-    let token = fs::read_to_string(state.join("operator.token")).unwrap();
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    let running = launch(&state, address);
-
-    // Unreachable (3): a port nothing answers.
-    let free = TcpListener::bind("127.0.0.1:0").unwrap();
-    let dead = free.local_addr().unwrap();
-    drop(free);
-    let output = inspect(&state, dead, "resources", &["--limit", "5"]);
-    assert_eq!(output.status.code(), Some(3), "unreachable exits 3");
-    assert!(String::from_utf8_lossy(&output.stderr).contains("unreachable"));
-
-    // Refused (4): a state directory whose operator credential is not the
-    // running service's — the local read or the route's 401, either path.
-    let wrong = tempfile::tempdir().unwrap();
-    fs::write(wrong.path().join("operator.token"), "a".repeat(64)).unwrap();
-    let output = inspect(wrong.path(), address, "resources", &[]);
-    assert_eq!(output.status.code(), Some(4), "refused exits 4");
-    assert!(
-        String::from_utf8_lossy(&output.stderr).contains("refused"),
-        "the refusal is named"
-    );
-
-    // Invalid (5): limits the CLI FORWARDS and the route refuses — E3 of
-    // the CLI review: with the local short-circuit gone, 0 and 101 both
-    // reach the route, whose own 400 maps to the invalid class. The
-    // outcome is the documented one: the CLI never clamps, the route
-    // refuses.
-    for forwarded in ["0", "101"] {
-        let output = inspect(&state, address, "engagements", &["--limit", forwarded]);
-        assert_eq!(
-            output.status.code(),
-            Some(5),
-            "forwarded limit {forwarded} refused by the route exits 5"
-        );
-        assert!(String::from_utf8_lossy(&output.stderr).contains("invalid"));
-        // §4.3 of the review: no refusal path ever echoes the token.
-        assert!(
-            !String::from_utf8_lossy(&output.stderr).contains(&token),
-            "stderr must never carry the operator token"
-        );
-    }
-
-    // Missing route (7): a server that answers 404 — E4 of the CLI
-    // review: "route not present" is its own class, never a malformed
-    // request (the alerts route is the one contributed by another slice,
-    // so a branch without it must report this, not exit 5).
-    let absent = TcpListener::bind("127.0.0.1:0").unwrap();
-    let absent_address = absent.local_addr().unwrap();
-    let responder = std::thread::spawn(move || {
-        if let Ok((mut stream, _)) = absent.accept() {
-            use std::io::{Read as _, Write as _};
-            let mut scratch = [0u8; 1024];
-            let _ = stream.read(&mut scratch);
-            let _ = stream.write_all(
-                b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-            );
-        }
-    });
-    let output = inspect(&state, absent_address, "alerts", &[]);
-    assert_eq!(output.status.code(), Some(7), "a 404 exits 7");
-    assert!(
-        String::from_utf8_lossy(&output.stderr).contains("route not present"),
-        "the missing route is named"
-    );
-    let _ = responder.join();
-
-    // Unavailable (6): a server that answers 503.
-    let busy = TcpListener::bind("127.0.0.1:0").unwrap();
-    let busy_address = busy.local_addr().unwrap();
-    let responder = std::thread::spawn(move || {
-        if let Ok((mut stream, _)) = busy.accept() {
-            use std::io::{Read as _, Write as _};
-            let mut scratch = [0u8; 1024];
-            let _ = stream.read(&mut scratch);
-            let _ = stream.write_all(
-                b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-            );
-        }
-    });
-    let output = inspect(&state, busy_address, "alerts", &[]);
-    assert_eq!(output.status.code(), Some(6), "unavailable exits 6");
-    assert!(
-        String::from_utf8_lossy(&output.stderr).contains("unavailable"),
-        "the unavailability is named"
-    );
-    let _ = responder.join();
-    drop(running);
-}
-
-#[tokio::test]
-async fn native_guardian_cli_entry() {
-    use hagency_platform::{Launch, StopCause, SupervisedProcess};
-    use tokio::io::AsyncReadExt;
-    let root = tempfile::tempdir().unwrap();
-    let directory = root.path().join("监管 CLI 工作目录");
-    fs::create_dir(&directory).unwrap();
-    let executable = std::path::PathBuf::from(env!("CARGO_BIN_EXE_hagency"));
-    let mut environment = std::collections::BTreeMap::new();
-    environment.insert("PATH".into(), "".into());
-    if let Some(value) = std::env::var_os("SystemRoot") {
-        environment.insert("SystemRoot".into(), value);
-    }
-    let (mut process, pipes) = SupervisedProcess::spawn_piped(
-        &executable,
-        &Launch {
-            executable: executable.clone(),
-            // Exercise native CLI dispatch/exit, without coupling the guardian
-            // deadline to schema initialization and filesystem throughput.
-            arguments: vec!["--version".into()],
-            directory,
-            environment,
-            require_crash_containment: cfg!(windows),
-        },
-    )
-    .unwrap();
     #[cfg(unix)]
-    let (stdout, stderr) = {
-        let (stdin, stdout, stderr) = pipes.into_parts();
-        drop(stdin);
-        (
-            tokio::net::unix::pipe::Receiver::from_owned_fd(stdout).unwrap(),
-            tokio::net::unix::pipe::Receiver::from_owned_fd(stderr).unwrap(),
-        )
-    };
-    #[cfg(windows)]
-    let (stdout, stderr) = {
-        let (stdin, stdout, stderr) = pipes.into_async_parts().unwrap();
-        drop(stdin);
-        (stdout, stderr)
-    };
-    let report = process
-        .wait(Duration::from_secs(5))
-        .unwrap()
-        .expect("native guardian did not report leader exit");
-    assert_eq!(report.cause, StopCause::LeaderExited);
-    assert!(report.scope.leader_exited);
-    assert_eq!(
-        report.scope.whole_tree_stopped,
-        cfg!(any(windows, target_os = "linux", target_os = "macos"))
-    );
-    // StopReport has no exit code: exact version bytes plus stderr EOF prove
-    // that the actual CLI ran, rather than accepting any leader termination.
-    let mut output = Vec::new();
-    tokio::time::timeout(
-        Duration::from_secs(2),
-        stdout.take(256).read_to_end(&mut output),
-    )
-    .await
-    .unwrap()
-    .unwrap();
-    assert_eq!(
-        output,
-        format!("hagency {}\n", env!("CARGO_PKG_VERSION")).as_bytes()
-    );
-    let mut error = Vec::new();
-    tokio::time::timeout(
-        Duration::from_secs(2),
-        stderr.take(256).read_to_end(&mut error),
-    )
-    .await
-    .unwrap()
-    .unwrap();
-    assert!(error.is_empty(), "unexpected CLI stderr: {error:?}");
-    assert_eq!(
-        process.wait(Duration::from_millis(1)).unwrap(),
-        Some(report)
-    );
-}
-
-#[test]
-fn native_account_cli() {
-    let root = tempfile::tempdir().unwrap();
-    let state = root.path().join("state");
-    let invoke = |args: &[&str]| {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_hagency"));
-        command
-            .args(args)
-            .arg("--state-dir")
-            .arg(&state)
-            .env("PATH", "")
-            .env("HOME", "/untrusted-fixture-home")
-            .env("CODEX_HOME", "/untrusted-fixture-codex")
-            .env("OPENAI_API_KEY", "offline-fixture-key");
-        command.output().unwrap()
-    };
-    assert!(invoke(&["init"]).status.success());
-    let prepared = invoke(&["account", "prepare"]);
-    assert!(
-        prepared.status.success(),
-        "{}",
-        String::from_utf8_lossy(&prepared.stderr)
-    );
-    let choices: serde_json::Value = serde_json::from_slice(&prepared.stdout).unwrap();
-    let id = choices[0]["id"].as_str().unwrap();
-    assert_eq!(choices[0]["authentication"], "unknown");
-    assert!(choices[0]["quota"].is_null());
-    assert!(fs::read_dir(state.join(id)).unwrap().next().is_none());
-    let inspect = invoke(&["account", "inspect"]);
-    assert!(inspect.status.success());
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&inspect.stdout).unwrap(),
-        choices
-    );
-    let owned = hagency_store::Repository::open(&state).unwrap();
-    let busy = invoke(&["account", "prepare"]);
-    assert!(!busy.status.success());
-    drop(owned);
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&invoke(&["account", "inspect"]).stdout)
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .len(),
-        1
-    );
-    let retired = invoke(&["account", "retire", "--id", id]);
-    assert!(
-        retired.status.success(),
-        "{}",
-        String::from_utf8_lossy(&retired.stderr)
-    );
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&retired.stdout).unwrap()[0]["state"],
-        "retired"
-    );
-    assert!(state.join(id).is_dir());
-    let output = String::from_utf8(prepared.stdout).unwrap();
-    for private in [
-        "seat_native_",
-        "fixture-key",
-        "CODEX_HOME",
-        state.to_str().unwrap(),
-    ] {
-        assert!(!output.contains(private));
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            fs::metadata(&state).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        assert_eq!(
+            fs::metadata(state.join("hagency-client-owned-v1.json"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
     }
 }
-
-/// A minimal valid console build: the console-access issuer lives on the
-/// console's authority, so `serve` answers it only when a console is served
-/// — without `--console-assets` the app carries no Console and the CLI's
-/// lifecycle issuance reads Error: Unavailable. Same shape as the console
-/// fixture's own asset builder (manifest + digest, private root).
-fn console_assets(dir: &Path) -> std::path::PathBuf {
-    use sha2::Digest as _;
-    let root = dir.join("console-assets");
-    hagency_store::private::directory(&root).unwrap();
-    std::fs::create_dir(root.join("usage")).unwrap();
-    let bytes = b"<!doctype html><html><body>cli console fixture</body></html>";
-    hagency_store::private::write_new(&root.join("usage/index.html"), bytes).unwrap();
-    let digest: String = sha2::Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    let manifest = serde_json::json!({
-        "version": 1,
-        "assets": [{
-            "path": "usage/index.html",
-            "size": bytes.len(),
-            "sha256": digest,
-            "mime": "text/html; charset=utf-8"
-        }]
-    });
-    hagency_store::private::write_new(&root.join("manifest.json"), manifest.to_string().as_bytes())
-        .unwrap();
-    // macOS temp paths traverse the /var alias; production refuses that
-    // alias, so hand serve the canonical host path (the fixture's rule).
-    root.canonicalize().unwrap()
-}
-
-/// Board #93: the scoped-access surface is gone. `console-access` used to
-/// take four mutually exclusive management flags (one scope each); the
-/// operator ruled scoped links over-design, so every retired flag is now an
-/// unknown argument — refused by clap before any ticket issues, which is what
-/// stops a scoped link being minted at all.
 #[test]
-fn native_console_access_has_no_scoped_flags() {
-    let root = tempfile::tempdir().unwrap();
-    let state = root.path().join("state");
-    for retired in [
-        "--manage-account-enrollment",
-        "--manage-resource-publication",
-        "--manage-resource-configuration",
-        "--manage-agent-lifecycle",
+fn native_owner_rejects_retired_commands_and_options() {
+    for name in [
+        "account",
+        "registration",
+        "console-access",
+        "guardian",
+        "agents",
+        "tasks",
+        "alerts",
+        "custody",
     ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_hagency"))
-            .args(["console-access", retired, "--state-dir"])
+        let out = command().arg(name).output().unwrap();
+        assert!(!out.status.success());
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("unrecognized subcommand"),
+            "{name}: {out:?}"
+        );
+    }
+    for flag in [
+        "--agent-driver",
+        "--palpo-transport",
+        "--fleet",
+        "--operator-token",
+        "--agent-config",
+    ] {
+        let out = command().args(["serve", flag]).output().unwrap();
+        assert!(!out.status.success());
+        assert!(String::from_utf8_lossy(&out.stderr).contains(flag));
+    }
+    let help = command().arg("--help").output().unwrap();
+    assert!(help.status.success());
+    let help = String::from_utf8(help.stdout).unwrap();
+    for entry in ["init", "serve", "start", "open", "service"] {
+        assert!(help.contains(entry));
+    }
+}
+#[test]
+fn native_owner_rejects_legacy_data_without_import() {
+    for name in [
+        "domain.sqlite3",
+        "operator.token",
+        "fleet.json",
+        "bootstrap.json",
+    ] {
+        let root = tempfile::tempdir().unwrap();
+        let state = root.path().join("state");
+        hagency_store::private::directory(&state).unwrap();
+        fs::write(state.join(name), b"legacy never import").unwrap();
+        let out = command()
+            .args(["init", "--state-dir"])
             .arg(&state)
-            .env("PATH", "")
-            .env("HOME", "/untrusted-fixture-home")
             .output()
             .unwrap();
-        assert!(
-            !output.status.success(),
-            "the retired {retired} must be refused, not accepted"
-        );
-        assert!(output.stdout.is_empty(), "{retired} must issue no link");
-        let stderr = String::from_utf8_lossy(&output.stderr).to_lowercase();
-        assert!(
-            stderr.contains("unexpected argument") || stderr.contains("found argument"),
-            "the refusal must name the unknown flag: {stderr}"
-        );
+        assert!(!out.status.success());
+        assert_eq!(fs::read(state.join(name)).unwrap(), b"legacy never import");
+        assert!(!state.join("hagency-client-owned-v1.json").exists());
     }
 }
-
-/// Board #93: one link opens the whole console. `console-access` takes no
-/// scope flag and prints ONE link — the bare command's long-standing landing
-/// (the usage page) carrying the bounded 64-hex ticket a session is exchanged
-/// from. TS parity: the retained `createApiAuthMiddleware` authenticated one
-/// credential for every `/api` route, so there was never a scope to pick.
 #[test]
-fn native_cli_console_access_issues_one_full_access_link() {
-    let directory = tempfile::tempdir().unwrap();
-    let state = directory.path().join("lifecycle access state");
-    let init = Command::new(env!("CARGO_BIN_EXE_hagency"))
+fn native_binary_survives_crash_without_node() {
+    let root = tempfile::tempdir().unwrap();
+    let bundle = assets(root.path());
+    let state = root.path().join("state");
+    let mut first = launch(&state, &bundle, false);
+    let original = marker(&state);
+    first.child.kill().unwrap();
+    first.child.wait().unwrap();
+    drop(first);
+    let second = launch(&state, &bundle, false);
+    assert_eq!(marker(&state), original);
+    assert_eq!(
+        status(&request(second.address, "GET", "/ready", "", None)),
+        200
+    );
+    assert!(!state.join("domain.sqlite3").exists());
+}
+#[test]
+fn native_owner_start_serves_only_owner_routes() {
+    let root = tempfile::tempdir().unwrap();
+    let bundle = assets(root.path());
+    let run = launch(&root.path().join("state"), &bundle, true);
+    for path in ["/console/", "/console/login/", "/console/agents-owned/"] {
+        assert_eq!(
+            status(&request(run.address, "GET", path, "", None)),
+            200,
+            "{path}"
+        );
+    }
+    for path in [
+        "/api/native/v1/custody",
+        "/api/native/v1/accounts",
+        "/console/setup/",
+        "/console/resources/",
+        "/console/api/resources",
+        "/console/api/accounts",
+        "/console/api/tasks",
+    ] {
+        assert_eq!(
+            status(&request(run.address, "GET", path, "", None)),
+            404,
+            "{path}"
+        );
+    }
+    assert_eq!(
+        status(&request(
+            run.address,
+            "GET",
+            "/console/api/owned-agents",
+            "",
+            None
+        )),
+        401
+    );
+}
+#[test]
+#[cfg(unix)]
+fn native_owner_open_uses_private_ipc_single_use_ticket_without_pasion_rights() {
+    let root = tempfile::tempdir().unwrap();
+    let bundle = assets(root.path());
+    let state = root.path().join("state");
+    let run = launch(&state, &bundle, false);
+    let out = command()
+        .args(["open", "--no-open", "--state-dir"])
+        .arg(&state)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let url = String::from_utf8(out.stdout).unwrap();
+    assert!(url.starts_with(&format!("http://{}/console/login#access=", run.address)));
+    let ticket = url.trim().split("#access=").nth(1).unwrap();
+    assert_eq!(ticket.len(), 64);
+    let body = serde_json::json!({"ticket":ticket}).to_string();
+    let first = request(run.address, "POST", "/console/session", &body, None);
+    assert_eq!(status(&first), 200);
+    let cookie = first
+        .lines()
+        .find_map(|line| {
+            line.split_once(':')
+                .filter(|(name, _)| name.eq_ignore_ascii_case("set-cookie"))
+                .map(|(_, value)| value.trim().split(';').next().unwrap())
+        })
+        .unwrap();
+    assert_eq!(
+        status(&request(
+            run.address,
+            "POST",
+            "/console/session",
+            &body,
+            None
+        )),
+        401
+    );
+    assert_eq!(
+        status(&request(
+            run.address,
+            "GET",
+            "/console/api/owned-agents",
+            "",
+            Some(cookie)
+        )),
+        401,
+        "Local access does not imply Pasion owner authorization"
+    );
+    assert_eq!(
+        status(&request(
+            run.address,
+            "POST",
+            "/api/native/v1/console-access",
+            "",
+            None
+        )),
+        404
+    );
+    use std::os::unix::fs::PermissionsExt;
+    assert_eq!(
+        fs::metadata(state.join("owner-console.sock"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+}
+#[test]
+fn native_owner_requires_console_and_valid_loopback_listener() {
+    let root = tempfile::tempdir().unwrap();
+    let bundle = assets(root.path());
+    for address in ["0.0.0.0:13300", "127.0.0.1:0"] {
+        let out = command()
+            .args(["serve", "--state-dir"])
+            .arg(root.path().join(address.replace(':', "_")))
+            .args(["--listen", address, "--console-assets"])
+            .arg(&bundle)
+            .output()
+            .unwrap();
+        assert!(!out.status.success());
+    }
+    let rejected_state = root.path().join("invalid-service-state");
+    let out = command()
+        .args([
+            "service",
+            "install",
+            "--listen",
+            "127.0.0.1:0",
+            "--state-dir",
+        ])
+        .arg(&rejected_state)
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(
+        !rejected_state.exists(),
+        "invalid service listeners must not initialize state or install a supervisor"
+    );
+    let out = command()
+        .args(["serve", "--state-dir"])
+        .arg(root.path().join("missing-assets"))
+        .args(["--console-assets", "/nonexistent/hagency-owner-assets"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("Console"));
+}
+#[test]
+fn native_owner_running_state_cannot_be_opened_twice() {
+    let root = tempfile::tempdir().unwrap();
+    let bundle = assets(root.path());
+    let state = root.path().join("state");
+    let _run = launch(&state, &bundle, false);
+    let out = command()
         .args(["init", "--state-dir"])
         .arg(&state)
-        .env("PATH", "")
         .output()
         .unwrap();
-    assert!(init.status.success());
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    let running = launch_with(&state, address, Some(&console_assets(directory.path())));
-
-    // One link: no flag, and it lands on the usage page — the landing the
-    // bare command always printed before scopes existed.
-    let alone = Command::new(env!("CARGO_BIN_EXE_hagency"))
-        .args([
-            "console-access",
-            "--state-dir",
-            state.to_str().unwrap(),
-            "--listen",
-            &address.to_string(),
-        ])
-        .env("PATH", "")
-        .output()
-        .unwrap();
-    assert!(
-        alone.status.success(),
-        "the one access link failed: {}",
-        String::from_utf8_lossy(&alone.stderr)
-    );
-    let url = String::from_utf8_lossy(&alone.stdout).trim().to_owned();
-    assert!(
-        url.starts_with(&format!("http://{address}/console/usage/#access=")),
-        "one link opens the console on the usage page: {url}"
-    );
-    let fragment = url.rsplit('#').next().unwrap();
-    assert!(
-        fragment.len() == 7 + 64
-            && fragment
-                .strip_prefix("access=")
-                .is_some_and(|t| t.len() == 64 && t.bytes().all(|b| b.is_ascii_hexdigit())),
-        "the ticket is the bounded 64-hex credential: {fragment}"
-    );
-
-    drop(running);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("AlreadyRunning"));
 }
-
-/// The native service and MCP helper construct no file log sink: every
-/// diagnostic arrives on stderr. Both refusals below happen before any store
-/// open (missing operator.token for serve; missing context env for the helper),
-/// so the assertion needs no SQLite and runs on every OS.
 #[test]
 fn native_logs_to_stderr_with_no_file_sink() {
-    let directory = tempfile::tempdir().unwrap();
-    let state = directory.path().join("fresh state");
-
-    // Serve refuses startup at the missing credential, before any store open.
-    let serve = Command::new(env!("CARGO_BIN_EXE_hagency"))
-        .args(["serve", "--state-dir"])
-        .arg(&state)
-        .env("PATH", "")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
+    let root = tempfile::tempdir().unwrap();
+    let bundle = assets(root.path());
+    let state = root.path().join("state");
+    let _run = launch(&state, &bundle, false);
+    assert!(!state.join("logs").exists());
+    assert!(!state.join("hagency.log").exists());
+}
+#[test]
+#[cfg(unix)]
+fn native_owner_service_install_uninstall_uses_only_per_user_supervisor() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let bundle = assets(root.path());
+    let run = launch(&root.path().join("live-state"), &bundle, true);
+    let home = root.path().join("home");
+    fs::create_dir(&home).unwrap();
+    let bin = root.path().join("bin");
+    fs::create_dir(&bin).unwrap();
+    let log = root.path().join("supervisor-arguments");
+    for name in ["launchctl", "systemctl", "id"] {
+        let file = bin.join(name);
+        fs::write(
+            &file,
+            if name == "id" {
+                "#!/bin/sh\nprintf '1000\\n'\n"
+            } else {
+                "#!/bin/sh\nprintf '%s\\n' \"$@\" >> \"$HAGENCY_TEST_SUPERVISOR_LOG\"\n"
+            },
+        )
         .unwrap();
-    assert!(!serve.status.success(), "missing token must refuse startup");
-    assert!(
-        serve.stdout.is_empty(),
-        "native service must not write diagnostics to stdout"
-    );
-    assert!(
-        !serve.stderr.is_empty(),
-        "the startup refusal is reported on stderr"
-    );
-
-    // The MCP helper refuses at context load (no HAGENCY_* env): same posture.
-    let mut helper = Command::new(env!("CARGO_BIN_EXE_hagency"));
-    helper
-        .arg("mcp")
-        .env_clear()
-        .env("PATH", "")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    #[cfg(windows)]
-    helper.env("SystemRoot", std::env::var_os("SystemRoot").unwrap());
-    let mcp = helper.output().unwrap();
-    assert!(
-        !mcp.status.success(),
-        "missing context must refuse the helper"
-    );
-    assert!(
-        mcp.stdout.is_empty(),
-        "the helper must not write diagnostics to stdout"
-    );
-    assert!(
-        !mcp.stderr.is_empty(),
-        "the helper's refusal is reported on stderr"
-    );
-
-    // No file sink: nothing under the temp root carries a log-shaped name.
-    fn collect_log_names(root: &Path, found: &mut Vec<String>) {
-        if let Ok(entries) = fs::read_dir(root) {
-            for entry in entries.flatten() {
-                let name = entry.file_name().to_string_lossy().into_owned();
-                if name.ends_with(".log") || name.contains("jsonl") || name == "logs" {
-                    found.push(entry.path().display().to_string());
-                }
-                collect_log_names(&entry.path(), found);
-            }
-        }
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o700)).unwrap();
     }
-    let mut found = Vec::new();
-    collect_log_names(directory.path(), &mut found);
-    assert!(found.is_empty(), "a file log sink appeared: {found:?}");
-}
-
-/// Task #28 (c): account and registration verbs drive the RUNNING service's
-/// operator API over loopback, so the CLI works while the service runs (the
-/// offline writers need the store lock the service already holds). The same
-/// command shape the offline `native_account_cli` test uses, plus `--listen`.
-#[test]
-fn native_account_and_registration_cli_through_running_service() {
-    let root = tempfile::tempdir().unwrap();
-    let state = root.path().join("state");
-    let init = Command::new(env!("CARGO_BIN_EXE_hagency"))
-        .args(["init", "--state-dir"])
-        .arg(&state)
-        .env("PATH", "")
+    let state = root.path().join("installed-state");
+    let mut install = command();
+    install
+        .env("HOME", &home)
+        .env("XDG_CONFIG_HOME", home.join("config"))
+        .env("PATH", &bin)
+        .env("HAGENCY_TEST_SUPERVISOR_LOG", &log)
+        .args([
+            "service",
+            "install",
+            "--no-open",
+            "--listen",
+            &run.address.to_string(),
+            "--state-dir",
+        ])
+        .arg(&state);
+    let out = install.output().unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let file = if cfg!(target_os = "macos") {
+        home.join("Library/LaunchAgents/io.hagency.plist")
+    } else {
+        home.join("config/systemd/user/hagency.service")
+    };
+    let spec = fs::read_to_string(&file).unwrap();
+    assert!(spec.contains("start"));
+    assert!(spec.contains("--no-open"));
+    assert!(spec.contains(state.to_str().unwrap()));
+    for retired in [
+        "--palpo-transport",
+        "--agent-driver",
+        "operator.token",
+        "fleet",
+    ] {
+        assert!(!spec.contains(retired));
+    }
+    let calls = fs::read_to_string(&log).unwrap();
+    if cfg!(target_os = "macos") {
+        assert!(calls.contains("bootstrap"));
+        assert!(calls.contains("gui/1000"));
+    } else {
+        assert!(calls.contains("--user"));
+        assert!(calls.contains("enable"));
+        assert!(calls.contains("restart"));
+    }
+    let out = command()
+        .env("HOME", &home)
+        .env("XDG_CONFIG_HOME", home.join("config"))
+        .env("PATH", &bin)
+        .env("HAGENCY_TEST_SUPERVISOR_LOG", &log)
+        .args(["service", "uninstall"])
         .output()
         .unwrap();
-    assert!(init.status.success());
-    let token = fs::read_to_string(state.join("operator.token")).unwrap();
-
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    let running = launch(&state, address);
-
-    let invoke = |args: &[&str]| {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_hagency"));
-        command
-            .args(args)
-            .arg("--state-dir")
-            .arg(&state)
-            .arg("--listen")
-            .arg(address.to_string())
-            .env("PATH", "")
-            .env("HOME", "/untrusted-fixture-home")
-            .env("CODEX_HOME", "/untrusted-fixture-codex")
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        command.output().unwrap()
-    };
-
-    // Account prepare through the running service: succeeds despite the
-    // service holding the store (the offline writer would report Locked).
-    let prepared = invoke(&["account", "prepare"]);
+    assert!(out.status.success(), "{out:?}");
+    assert!(!file.exists());
+    assert!(state.join("hagency-client-owned-v1.json").is_file());
+}
+#[test]
+#[cfg(not(unix))]
+fn native_owner_open_uses_private_ipc_single_use_ticket_without_pasion_rights() {
+    let out = command().args(["open", "--no-open"]).output().unwrap();
     assert!(
-        prepared.status.success(),
-        "prepare through the running service failed: {}",
-        String::from_utf8_lossy(&prepared.stderr)
+        !out.status.success(),
+        "owner-private OS IPC is unavailable on this platform"
     );
-    let choices: Vec<serde_json::Value> = serde_json::from_slice(&prepared.stdout).unwrap();
-    assert_eq!(choices.len(), 1, "one prepared account");
-    let id = choices[0]["id"].as_str().unwrap().to_owned();
-
-    // Inspect through the running service returns the same single row.
-    let inspect = invoke(&["account", "inspect"]);
-    assert!(
-        inspect.status.success(),
-        "inspect through the running service failed: {}",
-        String::from_utf8_lossy(&inspect.stderr)
-    );
-    let inspected: Vec<serde_json::Value> = serde_json::from_slice(&inspect.stdout).unwrap();
-    assert_eq!(inspected.len(), 1);
-    assert_eq!(inspected[0]["id"], choices[0]["id"]);
-
-    // Retire through the running service.
-    let retired = invoke(&["account", "retire", "--id", &id]);
-    assert!(
-        retired.status.success(),
-        "retire through the running service failed: {}",
-        String::from_utf8_lossy(&retired.stderr)
-    );
-
-    // Registration through the running service: a valid six-field document.
-    let registration = serde_json::json!({
-        "fleetId": "hf_0123456789abcdef0123456789abcdef",
-        "generation": 1,
-        "serverName": "example.test",
-        "receptionRoomId": "!reception:example.test",
-        "representativeMxid": "@hf_0123456789abcdef0123456789abcdef_representative:example.test",
-        "approvalBotMxid": "@hf_0123456789abcdef0123456789abcdef_approval:example.test"
-    });
-    let reg_file = root.path().join("registration.json");
-    fs::write(&reg_file, registration.to_string()).unwrap();
-    let registered = invoke(&[
-        "registration",
-        "register",
-        "--file",
-        reg_file.to_str().unwrap(),
-    ]);
-    assert!(
-        registered.status.success(),
-        "registration through the running service failed: {}",
-        String::from_utf8_lossy(&registered.stderr)
-    );
-
-    // The service is still up — the whole point is that it never had to stop.
-    assert!(operator_get(address, &token, "/api/native/v1/resources?limit=100").starts_with('['));
-    drop(running);
+}
+#[test]
+#[cfg(not(unix))]
+fn native_owner_service_install_uninstall_uses_only_per_user_supervisor() {
+    let out = command()
+        .args(["service", "install", "--listen", "127.0.0.1:0"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("nonzero loopback"));
 }
 
-/// Task #13: the `side-registration` CLI — the offline issuer an operator
-/// runs instead of hand-writing YAML and hand-placing `matrix.
-/// appservice_token`. Asserts the TS-visible outcome: the printed body's
-/// facts (path, fingerprints, `staged`), that NO token byte reaches
-/// stdout, and that the service's token file landed at the exact path the
-/// appservice profile reads (`bootstrap/config.rs:646`).
 #[test]
-fn native_cli_side_registration_issues_without_hand_placing() {
+fn native_owner_setup_command_cannot_import_daily_provider_credentials() {
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("home");
+    std::fs::create_dir_all(home.join(".codex")).unwrap();
+    std::fs::write(home.join(".codex/auth.json"), b"synthetic never import").unwrap();
+    let state = root.path().join("state");
+    let out = owner::command()
+        .env("HOME", &home)
+        .args(["setup", "--state-dir"])
+        .arg(&state)
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("unrecognized subcommand"));
+    assert!(!state.exists());
+    assert_eq!(
+        std::fs::read(home.join(".codex/auth.json")).unwrap(),
+        b"synthetic never import"
+    );
+}
+#[test]
+fn native_owner_start_invalid_console_creates_no_credentials() {
     let root = tempfile::tempdir().unwrap();
     let state = root.path().join("state");
-    let invoke = |args: &[&str]| {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_hagency"));
-        command
-            .args(args)
-            .env("PATH", "")
-            .env("HOME", "/untrusted-fixture-home")
-            .env("CODEX_HOME", "/untrusted-fixture-codex")
-            .env("OPENAI_API_KEY", "offline-fixture-key");
-        command.output().unwrap()
-    };
-    let bare = |args: &[String]| {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_hagency"));
-        command
-            .args(args)
-            .env("PATH", "")
-            .env("HOME", "/untrusted-fixture-home")
-            .env("CODEX_HOME", "/untrusted-fixture-codex")
-            .env("OPENAI_API_KEY", "offline-fixture-key");
-        command.output().unwrap()
-    };
-    assert!(
-        invoke(&["init", "--state-dir", state.to_str().unwrap()])
-            .status
-            .success()
-    );
-    let document = root.path().join("fleet.json");
-    fs::write(
-        &document,
-        r#"{"fleetId":"hf_0123456789abcdef0123456789abcdef","generation":1,"serverName":"example.test","receptionRoomId":"!reception:example.test","representativeMxid":"@hf_0123456789abcdef0123456789abcdef_representative:example.test","approvalBotMxid":"@approval:example.test"}"#,
-    )
-    .unwrap();
-    let registered = bare(&[
-        "registration".into(),
-        "--state-dir".into(),
-        state.to_string_lossy().into_owned(),
-        "register".into(),
-        "--file".into(),
-        document.to_string_lossy().into_owned(),
-    ]);
-    assert!(
-        registered.status.success(),
-        "{}",
-        String::from_utf8_lossy(&registered.stderr)
-    );
-
-    let issue_args = |url: &str| {
-        vec![
-            "side-registration".to_owned(),
-            "--state-dir".to_owned(),
-            state.to_string_lossy().into_owned(),
-            "--side".to_owned(),
-            "example.test".to_owned(),
-            "--url".to_owned(),
-            url.to_owned(),
-        ]
-    };
-    let issued = bare(&issue_args("http://127.0.0.1:13443///"));
-    assert!(
-        issued.status.success(),
-        "{}",
-        String::from_utf8_lossy(&issued.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&issued.stdout).into_owned();
-    let body: serde_json::Value = serde_json::from_str(stdout.trim()).unwrap();
-    assert_eq!(body["ok"], serde_json::json!(true));
-    assert_eq!(body["staged"], serde_json::json!(false));
-    assert_eq!(body["mode"], serde_json::json!("0600"));
-    assert_eq!(
-        body["registrationId"],
-        serde_json::json!("hagency-example.test")
-    );
-    assert_eq!(
-        body["representative"],
-        serde_json::json!("@hagency:example.test")
-    );
-    assert_eq!(body["namespace"], serde_json::json!("@ac_.*"));
-    assert_eq!(body["url"], serde_json::json!("http://127.0.0.1:13443"));
-
-    // The artefacts: the YAML for the operator's install, and the token at
-    // the exact path the appservice profile reads at startup.
-    let yaml_path = state.join("registrations/example.test.yaml");
-    let yaml = fs::read_to_string(&yaml_path).unwrap();
-    let as_token = yaml
-        .lines()
-        .find_map(|l| l.strip_prefix("as_token: "))
-        .unwrap()
-        .to_owned();
-    assert_eq!(as_token.len(), 64);
-    let token_file =
-        String::from_utf8(fs::read(state.join("matrix.appservice_token")).unwrap()).unwrap();
-    assert_eq!(token_file, as_token);
-    // The CLI never prints a token: only the fingerprints.
-    assert!(!stdout.contains(&as_token));
-    let hs_token = yaml
-        .lines()
-        .find_map(|l| l.strip_prefix("hs_token: "))
-        .unwrap()
-        .to_owned();
-    assert!(!stdout.contains(&hs_token));
-
-    // The reissue stages: the live credential the service reads is left
-    // alone until a verify promotes the staged one (TS's staging rule).
-    let staged = bare(&issue_args("http://127.0.0.1:14443"));
-    assert!(
-        staged.status.success(),
-        "{}",
-        String::from_utf8_lossy(&staged.stderr)
-    );
-    let staged_body: serde_json::Value =
-        serde_json::from_str(String::from_utf8_lossy(&staged.stdout).trim()).unwrap();
-    assert_eq!(staged_body["staged"], serde_json::json!(true));
-    let still_live =
-        String::from_utf8(fs::read(state.join("matrix.appservice_token")).unwrap()).unwrap();
-    assert_eq!(still_live, as_token);
-
-    // An unknown side names its refusal in the exit status, like the other
-    // offline commands.
-    let mut unknown = issue_args("http://127.0.0.1:13443");
-    unknown[4] = "nowhere.test".into();
-    assert!(!bare(&unknown).status.success());
+    let out = owner::command()
+        .args(["start", "--no-open", "--state-dir"])
+        .arg(&state)
+        .args(["--console-assets", "/nonexistent/owner-console-build"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let error = String::from_utf8_lossy(&out.stderr);
+    assert!(error.contains("--console-assets"));
+    assert!(error.contains("validated private owner console"));
+    for name in [
+        "domain.sqlite3",
+        "operator.token",
+        "server-login.json",
+        "owned-agent-owners",
+    ] {
+        assert!(!state.join(name).exists());
+    }
 }

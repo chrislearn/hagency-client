@@ -17,26 +17,11 @@ const work = await mkdtemp(join(dirname(output), 'native-console-build-'));
 const staged = join(work, 'mockup');
 await mkdir(join(staged, 'app'), { recursive: true, mode: 0o700 });
 for (const name of ['components', 'lib', 'package.json', 'jsconfig.json', 'next.config.mjs']) await cp(join(source, name), join(staged, name), { recursive: true });
-/* Each route's WHOLE directory, not its page.jsx alone: pages import
- * siblings (engagements/NativeVerdict.jsx, project-sides/register-side.jsx,
- * project-sides/registration-control.jsx, invites/page.jsx) and a
- * page.jsx-only stage broke the canonical build with Module not found.
- *
- * This is the set of pages the NATIVE console serves, and it is not the whole
- * app tree: `config`, `capability`, `projects` and `workforce` are retained-only
- * pages whose render reads a data provenance the native provider never
- * publishes, so staging them fails the static export outright ("Cannot read
- * properties of undefined"), and the native rail links none of them (it
- * renders them as disabled rows). Dynamic segments are excluded too:
- * agents/[name] would emit one document per mock agent. `onboard` is a bare
- * redirect(), which a static export cannot honour. The served-binary test
- * (tests/console/rail.rs) parses Rail.jsx and GETs every native href, so a
- * rail page can never go missing from this list again (board #88). */
-const ROUTES = ['usage', 'resources', 'alerts', 'engagements', 'accounts', 'agents', 'project-sides', 'approvals', 'tasks', 'project-board', 'task-graphs', 'invites', 'setup'];
+// The shipped owner console has no mock-data provider or Fleet entry points.
+const ROUTES = ['agents-owned', 'projects', 'login'];
 for (const route of ROUTES) await cp(join(source, 'app', route), join(staged, 'app', route), { recursive: true });
-await rm(join(staged, 'app', 'agents', '[name]'), { recursive: true, force: true });
-/* app/page.jsx IS 我的资源 — the front door the rail's root row marks current. */
-for (const name of ['page.jsx', 'layout.jsx', 'globals.css']) await cp(join(source, 'app', name), join(staged, 'app', name));
+for (const name of ['page.jsx', 'layout.jsx']) await cp(join(source, 'native-owner', name), join(staged, 'app', name));
+await cp(join(source, 'app', 'globals.css'), join(staged, 'app', 'globals.css'));
 /*
  * ADR-145 build-time constants, staged inside the mkdtemp tree before
  * `next build` — no repo path is generated and nothing enters

@@ -74,7 +74,7 @@ its original Started workspace before a child or MCP request can begin.
 Scenario: Real service startup authenticates Matrix before claiming and launching one assigned attempt
   Level: integration
   Test Double: actual native serve MCP and owned offline peer with real local TLS Matrix responses and protected SQLite
-  Test: native_bootstrap_executable
+  Retired-Test: native_bootstrap_executable
   Given private initialized state and a legitimate queued verified-Matrix dispatch with no issued runner capability
   When the actual service starts with one development profile
   Then the real Collector refresh completes before a compatible claim and workspace registration precedes child startup
@@ -84,7 +84,7 @@ Scenario: Real service startup authenticates Matrix before claiming and launchin
 Scenario: Current authentication failure and fenced generations keep development execution unavailable
   Level: integration
   Test Double: actual executable current-token identity and full room TLS responses
-  Test: native_bootstrap_refresh_refusal
+  Retired-Test: native_bootstrap_refresh_refusal
   Given a configured profile with wrong identity unsafe room evidence or an already fenced exact generation
   When shared startup performs the real Collector refresh
   Then no capability is claimed and no child starts
@@ -141,7 +141,7 @@ Scenario: Lost original claim or Started result cannot become a replacement exec
 Scenario: Bootstrap registers the receive-inbox plan's workspace before the first claim
   Level: integration
   Test Double: actual native serve and received-file MCP peer with a receive-inbox plan naming a workspace no production path pre-creates
-  Test: native_receive_executable
+  Retired-Test: native_receive_executable
   Production caller: hagency::bootstrap::open_with_options
   Given a receive-inbox plan naming a workspace absent from production state
   When the service starts, registers that workspace, then claims
@@ -181,3 +181,9 @@ MCP send_file receive_file media staging upload encrypted file-event publication
 delivery schema project onboarding raw capability recovery live model traffic
 effective sandbox qualification hostile same-UID isolation and production cutover.
 The proposed selectors above are obligations rather than executed pass evidence.
+
+## Owner bootstrap product replacement (2026-10-07)
+
+The `Retired-Test` selectors above depended on removed client-side Fleet/provisioning/encrypted approval-bot production switches. They are no longer executable product requirements. New `native-owner-client.spec.md` binds actual bootstrap secret/config refusal, anonymous provider/model/tool denial, fresh Pasion authorization after restart and independent Room runtimes. It does not claim encrypted private approval, factory or delegated-task behavior. Direct SDK configuration tests remain bound by `native-bootstrap-sdk.spec.md`, and all other SDK Test/Filter bindings remain active.
+
+2026-10-07: These Retired selectors depend on removed account/task CLI or the former direct-Palpo/Fleet production process. Library SDK coverage remains separate; current OwnerHost forbids these product commands. See [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md).

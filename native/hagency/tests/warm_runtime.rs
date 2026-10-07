@@ -131,7 +131,7 @@ impl Fixture {
                 source: project.canonicalize().unwrap(),
                 mode: ProjectMode::Copy,
             }],
-            PathBuf::from(env!("CARGO_BIN_EXE_hagency"))
+            PathBuf::from(env!("CARGO_BIN_EXE_hagency-sdk-mcp-test-peer"))
                 .canonicalize()
                 .unwrap(),
         )
@@ -209,7 +209,7 @@ impl Fixture {
         )
         .unwrap()
         .with_task_helper(
-            PathBuf::from(env!("CARGO_BIN_EXE_hagency"))
+            PathBuf::from(env!("CARGO_BIN_EXE_hagency-sdk-mcp-test-peer"))
                 .canonicalize()
                 .unwrap(),
             self.address,

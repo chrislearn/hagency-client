@@ -25,6 +25,8 @@ const LOGINS_MAX_BYTES: u64 = 64 * 1024;
 /// finite `expires`, so one login carries this horizon; logout and process
 /// retirement are the real bounds.
 const ACCESS_HORIZON: Duration = Duration::from_secs(365 * 24 * 60 * 60);
+const OWNER_TICKET_LIFETIME: Duration = Duration::from_secs(60);
+const OWNER_SESSION_LIFETIME: Duration = Duration::from_secs(900);
 pub(super) const COOKIE: &str = "hagency_console";
 
 /// One login's full authority: the TS middleware admitted every `/api`
@@ -180,7 +182,7 @@ impl Authority {
         };
         let hex = |h: &[u8; 32]| h.iter().map(|b| format!("{b:02x}")).collect::<String>();
         let value = serde_json::json!({
-            "ticket": state.ticket.as_ref().map(|t| hex(&t.hash)),
+            "ticket": state.ticket.as_ref().filter(|t| t.expires.is_none()).map(|t| hex(&t.hash)),
             "sessions": state.sessions.iter().filter(|s| s.expires.is_none()).map(|s| hex(&s.hash)).collect::<Vec<_>>(),
         });
         hagency_store::private::replace(path, value.to_string().as_bytes())
@@ -191,6 +193,25 @@ impl Authority {
     /// scope-selected. A fresh invocation replaces any unexchanged link.
     pub(super) fn issue(&self) -> Result<String, Error> {
         self.issue_with(Instant::now)
+    }
+    /// OwnerHost IPC issues a short, single-use entry ticket. It never restores
+    /// a persisted SDK login or grants Matrix/provider authorization.
+    pub(super) fn issue_owner_ticket(&self) -> Result<String, Error> {
+        self.issue_owner_ticket_with(Instant::now)
+    }
+    fn issue_owner_ticket_with(&self, clock: impl FnOnce() -> Instant) -> Result<String, Error> {
+        let mut state = self.0.lock().map_err(|_| Error::Unavailable)?;
+        if state.retired {
+            return Err(Error::Unavailable);
+        }
+        let value = secret()?;
+        state.ticket = Some(Grant {
+            hash: hash(&value)?,
+            expires: Some(clock() + OWNER_TICKET_LIFETIME),
+            access: None,
+        });
+        self.save(&state)?;
+        Ok(value)
     }
     #[cfg(test)]
     fn issue_at(&self, now: Instant) -> Result<String, Error> {
@@ -219,10 +240,8 @@ impl Authority {
     fn exchange_at(&self, ticket: &str, now: Instant) -> Result<String, Error> {
         self.exchange_with(ticket, || now)
     }
-    /// The ticket is a plain credential, not a one-time token: exchanging
-    /// it again yields another logged-in session (a reload of the access
-    /// link never meets a burn). Every session carries the FULL access —
-    /// one login, every console action, the TS middleware's shape.
+    /// Finite OwnerHost tickets are consumed atomically and create finite
+    /// local sessions. Independent SDK credentials retain their SDK semantics.
     fn exchange_with(
         &self,
         ticket: &str,
@@ -241,8 +260,14 @@ impl Authority {
         {
             return Err(Error::Unauthorized);
         }
+        let finite = state.ticket.as_ref().is_some_and(|t| t.expires.is_some());
         let value = secret()?;
-        let until = now + ACCESS_HORIZON;
+        let until = now
+            + if finite {
+                OWNER_SESSION_LIFETIME
+            } else {
+                ACCESS_HORIZON
+            };
         // A bound, not a rate limit: the browser keeps only its newest
         // cookie, so superseded grants are garbage. Dropping the OLDEST
         // keeps memory finite without ever refusing an exchange — a reload
@@ -255,13 +280,16 @@ impl Authority {
         }
         state.sessions.push(Grant {
             hash: hash(&value)?,
-            expires: None,
+            expires: finite.then_some(until),
             access: Some(Access {
                 publication: ResourcePublicationAccess::new(until, self.1.clone()),
                 configuration: ResourceConfigurationAccess::new(until, self.1.clone()),
                 account: AccountEnrollmentAccess::new(until, self.1.clone()),
             }),
         });
+        if finite {
+            state.ticket = None;
+        }
         self.save(&state)?;
         Ok(value)
     }
@@ -343,6 +371,25 @@ impl Authority {
             state.retired = true;
             state.ticket = None;
             state.sessions.clear();
+        }
+    }
+    /// Account switching invalidates every old browser and entry ticket while
+    /// leaving the local host able to issue fresh, finite authority.
+    pub(super) fn revoke_all(&self) -> Result<(), Error> {
+        let mut state = self.0.lock().map_err(|_| Error::Unavailable)?;
+        let mut failed = false;
+        for grant in &state.sessions {
+            if let Some(access) = &grant.access {
+                failed |= access.revoke().is_err();
+            }
+        }
+        state.ticket = None;
+        state.sessions.clear();
+        self.save(&state)?;
+        if failed {
+            Err(Error::Unavailable)
+        } else {
+            Ok(())
         }
     }
     fn logged_in(&self, session: &Session) -> Result<bool, Error> {
@@ -469,6 +516,74 @@ impl Authority {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn account_switch_revokes_all_browser_grants_and_pending_ticket_without_retiring_host() {
+        let authority = Authority::new();
+        let ticket = authority.issue_owner_ticket().unwrap();
+        let first = authority.exchange(&ticket).unwrap();
+        let ticket = authority.issue_owner_ticket().unwrap();
+        let second = authority.exchange(&ticket).unwrap();
+        let pending = authority.issue_owner_ticket().unwrap();
+        authority.revoke_all().unwrap();
+        for cookie in [&first, &second] {
+            assert!(matches!(
+                authority.authenticate(cookie),
+                Err(Error::Unauthorized)
+            ));
+        }
+        assert!(matches!(
+            authority.exchange(&pending),
+            Err(Error::Unauthorized)
+        ));
+        let fresh = authority.issue_owner_ticket().unwrap();
+        let fresh = authority.exchange(&fresh).unwrap();
+        assert!(authority.authenticate(&fresh).is_ok());
+    }
+
+    #[test]
+    fn owner_ticket_is_single_use_and_both_grants_expire() {
+        let authority = Authority::new();
+        let now = Instant::now();
+        let expired = authority.issue_owner_ticket_with(|| now).unwrap();
+        assert!(matches!(
+            authority.exchange_at(&expired, now + OWNER_TICKET_LIFETIME),
+            Err(Error::Unauthorized)
+        ));
+        let ticket = authority.issue_owner_ticket_with(|| now).unwrap();
+        let cookie = authority.exchange_at(&ticket, now).unwrap();
+        assert!(matches!(
+            authority.exchange_at(&ticket, now),
+            Err(Error::Unauthorized)
+        ));
+        let session = Session(hash(&cookie).unwrap());
+        authority.check_at(&session, now).unwrap();
+        assert!(matches!(
+            authority.check_at(&session, now + OWNER_SESSION_LIFETIME),
+            Err(Error::Unauthorized)
+        ));
+        authority.retire();
+        assert!(authority.issue_owner_ticket().is_err());
+    }
+
+    #[test]
+    fn owner_grants_do_not_become_persistent_sdk_credentials() {
+        let dir = tempfile::tempdir().unwrap();
+        let authority = Authority::persistent(dir.path());
+        let ticket = authority.issue_owner_ticket().unwrap();
+        let cookie = authority.exchange(&ticket).unwrap();
+        let unexchanged = authority.issue_owner_ticket().unwrap();
+        drop(authority);
+        let restored = Authority::persistent(dir.path());
+        assert!(matches!(
+            restored.exchange(&unexchanged),
+            Err(Error::Unauthorized)
+        ));
+        assert!(matches!(
+            restored.authenticate(&cookie),
+            Err(Error::Unauthorized)
+        ));
+    }
 
     /// The personal console survives a restart: the link and the login are
     /// reloaded from the state directory; only a new link or logout ends them.

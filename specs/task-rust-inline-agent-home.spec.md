@@ -80,7 +80,7 @@ Scenario: Partial homes unsafe sources and changed scope refuse before registrat
   Then no account/room/SDK network write occurs and unknown custody cannot rearm
 
 Scenario: Native configuration exposes only the explicit closed home profile
-  Test: native_bootstrap_token_home_profile
+  Retired-Test: native_bootstrap_token_home_profile
   Given the home marker and fixed non-secret paths with separate protected Matrix credentials
   When actual executable configuration prepares
   Then only the valid fixed plan attaches and defaults/account/rooms-only remain unchanged
@@ -96,3 +96,7 @@ Scenario: Revocation during the physical copy prevents subsequent account effect
   Given the original possible home exists and its bounded physical copy is unfinished
   When the real writer revokes that original engagement before the copy returns
   Then the physical result remains retained but no account/room/SDK write or Active/session route is published, including on replay
+
+## Owner bootstrap product replacement (2026-10-07)
+
+The `Retired-Test` selectors above depended on removed client-side Fleet/provisioning/encrypted approval-bot production switches. They are no longer executable product requirements. New `native-owner-client.spec.md` binds actual bootstrap secret/config refusal, anonymous provider/model/tool denial, fresh Pasion authorization after restart and independent Room runtimes. It does not claim encrypted private approval, factory or delegated-task behavior. Direct SDK configuration tests remain bound by `native-bootstrap-sdk.spec.md`, and all other SDK Test/Filter bindings remain active.

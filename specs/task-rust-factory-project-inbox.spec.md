@@ -91,7 +91,7 @@ Scenario: Another collector's current row cannot replace this owner's observatio
   And an unavailable room remains refused without any generation revival
 
 Scenario: Exact project mentions execute only on the addressed factory agent
-  Test: native_configured_fleet_project_mentions
+  Retired-Test: native_configured_fleet_project_mentions
   Given two actual configured factory agents with a shared authenticated project
   When the owner posts unaddressed text and then separate exact mentions
   Then unaddressed and other-agent input creates no task on this agent
@@ -131,14 +131,16 @@ Scenario: The conversation read is a task tool bound to the runner's own dispatc
   And another task id, a malformed offset or an extra key is refused
 
 Scenario: A later agent's join does not end the earlier agent
-  Test: native_configured_fleet_earlier_agent_survives_later_join
+  Retired-Test: native_configured_fleet_earlier_agent_survives_later_join
   Given the earlier agent's poll held between resolving its project inbox plan and selecting it
   When the later agent's join advances the shared project's generation under that poll
   Then the superseded plan ends the poll without work and the earlier agent stays running
   And it resolves the new generation and serves its own exact project mention
 
 Scenario: Existing private file and approval isolation stays intact
-  Test: native_configured_local_codex_fleet
+  Retired-Test: native_configured_local_codex_fleet
   Given two actual original factory agents and private owner DMs
   When repeated encrypted tasks use file and approval tools
   Then original scopes, media, completion and cleanup remain isolated
+
+2026-10-07: Retired-Test/Retired-Filter records the removed Fleet production entry point. Other SDK Test/Filter selectors remain active. See [current Owner product](native-owner-client.spec.md) and [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md). This does not claim Fleet, resource publication, delegation or encrypted tasks are supported in the new product.

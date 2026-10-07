@@ -54,19 +54,19 @@ the card and required test-side SDK enrollment; neither proves this round trip.
 ## Scenarios
 
 Scenario: Fresh native startup carries a real encrypted owner decision to its callback
-  Test: native_private_approval_roundtrip_encrypted_owner
+  Retired-Test: native_private_approval_roundtrip_encrypted_owner
   Given the actual service with a fresh configured approval SDK and a pinned callback probe
   When its independent owner decrypts the card and returns an encrypted exact structured verdict
   Then original HTTPS enrollment creates the bot keys, the original store admits the verdict, and the probe receives the matching approval callback without a second attempt
 
 Scenario: A plaintext verdict cannot decide the native request
-  Test: native_private_approval_roundtrip_plaintext_refused
+  Retired-Test: native_private_approval_roundtrip_plaintext_refused
   Given the same actual service and an owner card
   When a plaintext structured verdict is polled before the encrypted owner verdict
   Then it is durably rejected while the request remains pending, and only the subsequent authenticated encrypted verdict produces the callback
 
 Scenario: Wrong external anchor prevents any dispatch
-  Test: native_private_approval_startup_wrong_anchor
+  Retired-Test: native_private_approval_startup_wrong_anchor
   Given fresh native approval configuration with a different valid external public master
   When actual startup observes the room and queries the independent owner identity
   Then enrollment refuses without dispatch or a private card
@@ -82,3 +82,7 @@ Scenario: Failed close cannot consume the original approval owner
 These offline executable checks are not real Codex sandbox qualification, full
 fleet/multi-agent scheduling, Robrix click qualification, sustained Palpo soaking,
 whole-port parity or production cutover. All remain owed by the full goal.
+
+## Owner bootstrap product replacement (2026-10-07)
+
+The `Retired-Test` selectors above depended on removed client-side Fleet/provisioning/encrypted approval-bot production switches. They are no longer executable product requirements. New `native-owner-client.spec.md` binds actual bootstrap secret/config refusal, anonymous provider/model/tool denial, fresh Pasion authorization after restart and independent Room runtimes. It does not claim encrypted private approval, factory or delegated-task behavior. Direct SDK configuration tests remain bound by `native-bootstrap-sdk.spec.md`, and all other SDK Test/Filter bindings remain active.

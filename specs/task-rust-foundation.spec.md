@@ -161,7 +161,7 @@ Scenario: A supervisor-less service fixture stops cleanly inside the budget
   And on the other hosted OSes the named test asserts the not-a-Linux-service refusal never skipping
 
 Scenario: Pending state survives a service restart
-  Test: native_service_unit_restart_preserves_pending_state
+  Test: native_service_unit_restart_preserves_owner_state
   Level: integration
   Test Double: fixture harness seeding an outcome-unknown row then restarting the serve binary
   Given a seeded pending or outcome-unknown custody row and a running service on Linux
@@ -192,7 +192,7 @@ Scenario: The launchd stop path drains and exits inside the budget
   And on the other hosted OSes the named test asserts the not-a-macOS-agent refusal never skipping
 
 Scenario: The launchd restart preserves pending state
-  Test: native_launchd_restart_preserves_pending_state
+  Test: native_launchd_restart_preserves_owner_state
   Level: integration
   Test Double: fixture harness seeding an outcome-unknown row then re-running the wrapper
   Given a seeded pending or outcome-unknown custody row and a first run through the wrapper on macOS
@@ -239,7 +239,7 @@ Scenario: The runbook dry-run gates on ready and proves the stop contract
   And the process exits zero or parks on an unknown close inside the budget without a false success
 
 Scenario: The runbook dry-run preserves pending rows across the stop-start pair
-  Test: native_cutover_dryrun_pending_preserved_across_restart
+  Test: native_cutover_dryrun_owned_state_preserved_across_restart
   Level: integration
   Test Double: fixture harness seeding an outcome-unknown row then performing the runbook's stop and start pair
   Given the runbook's steps 6 and 7 on a temp state directory with a seeded pending or outcome-unknown row
@@ -255,3 +255,7 @@ contracts. Both catalogs remain mandatory in their corresponding CI jobs.
 Production cutover, compatibility aliases, real Agent execution and automatic
 approval. Later task contracts port these behaviors without relaxing the project
 invariants. An isolated foundation is not a parity release.
+
+## Owner executable service cutover (2026-10-07)
+
+The service selectors now run the actual OwnerHost foreground binary with a private owner bundle, graceful TERM and restart without Pasion rights. They retain only the new owner-format marker; historical custody/domain SQLite pending work is not imported or asserted by these executable selectors. Historical domain persistence remains covered by SDK store tests. Current service installation is exercised by `native_owner_service_install_uninstall_uses_only_per_user_supervisor` and `native-owner-client.spec.md`, rather than the retired Fleet service templates.

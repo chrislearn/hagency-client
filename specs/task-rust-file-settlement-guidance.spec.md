@@ -33,7 +33,7 @@ semantics and explain the permitted next action at the actual tool response.
 ## Scenarios
 
 Scenario: An in-flight original write remains unknown until its real acknowledgement
-  Test: native_file_service_nonterminal_polling
+  Retired-Test: native_file_service_nonterminal_polling
   Given a real native helper and an upload or encrypted event held by a local TLS peer
   When get_file_delivery reads the original delivery before acknowledgement
   Then its structured status remains outcome_unknown and its guidance permits bounded inspection only
@@ -41,7 +41,9 @@ Scenario: An in-flight original write remains unknown until its real acknowledge
   And terminal delivery has no continued-polling guidance
 
 Scenario: An incomplete acknowledgement never becomes a successful delivery
-  Test: native_file_service_uncertainty
+  Retired-Test: native_file_service_uncertainty
   Given an actual native upload or event whose response is truncated
   When the original helper inspects the unresolved receipt
   Then it remains outcome_unknown with no automatic resend or canonical success
+
+2026-10-07: These Retired selectors depend on removed account/task CLI or the former direct-Palpo/Fleet production process. Library SDK coverage remains separate; current OwnerHost forbids these product commands. See [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md).

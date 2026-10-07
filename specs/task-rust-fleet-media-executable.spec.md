@@ -1,4 +1,5 @@
 spec: task
+superseded-by: native-owner-client.spec.md
 name: "Qualify successful media through two original configured factory agents"
 inherits: project
 satisfies: [REQ-RUST-MIGRATION-EXECUTION, REQ-MATRIX-DM-PRIVACY, REQ-THREAD-SCOPED-SESSIONS, REQ-THREE-LAYER-COMPLETION]
@@ -52,7 +53,7 @@ replacement for real server/client files, actual model/approval or sustained soa
 ## Scenarios
 
 Scenario: Two original configured agents deliver isolated encrypted files repeatedly
-  Test: native_configured_fleet_media_two_agents
+  Retired-Test: native_configured_fleet_media_two_agents
   Given both genuine factories serve one project through the actual executable
   When each native helper sends task-bound binary bytes from the same relative path
   Then independent recipient SDKs verify distinct exact uploaded bytes and metadata
@@ -60,3 +61,5 @@ Scenario: Two original configured agents deliver isolated encrypted files repeat
   And each original task has one canonical delivered file before its final reply
   And subsequent rounds use original factory custody without re-enrollment
   And readiness and shutdown retain no live leases or unknown operations
+
+2026-10-07: Retired-Test/Retired-Filter records the removed Fleet production entry point. Other SDK Test/Filter selectors remain active. See [current Owner product](native-owner-client.spec.md) and [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md). This does not claim Fleet, resource publication, delegation or encrypted tasks are supported in the new product.

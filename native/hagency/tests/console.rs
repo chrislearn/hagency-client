@@ -10,9 +10,6 @@ mod alerts;
 mod approval_bindings;
 #[path = "console/approvals.rs"]
 mod approvals;
-#[path = "console/browser.rs"]
-#[cfg(feature = "native-console-browser")]
-mod browser;
 #[path = "console/configuration.rs"]
 mod configuration;
 #[path = "console/engagements.rs"]
@@ -33,15 +30,14 @@ mod fleet_views;
 mod graphs;
 #[path = "console/invites.rs"]
 mod invites;
-#[path = "console/live_actions.rs"]
-#[cfg(feature = "native-console-browser")]
-mod live_actions;
 #[path = "console/matrix_diag.rs"]
 mod matrix_diag;
 #[path = "console/offer_book.rs"]
 mod offer_book;
 #[path = "console/origin.rs"]
 mod origin;
+#[path = "owner_cli/mod.rs"]
+mod owner_cli;
 #[path = "console/palpo_import.rs"]
 mod palpo_import;
 #[path = "console/project_sides.rs"]
@@ -65,9 +61,6 @@ mod side_budget;
 mod side_lifecycle;
 #[path = "console/side_registration.rs"]
 mod side_registration;
-#[path = "console/status_strip.rs"]
-#[cfg(feature = "native-console-browser")]
-mod status_strip;
 #[path = "console/stream.rs"]
 mod stream;
 #[path = "console/tasks.rs"]
@@ -592,8 +585,7 @@ async fn native_console_assets_refusal_names_field_and_fix() {
         "{}",
         String::from_utf8_lossy(&init.stderr)
     );
-    let bundle = root.path().join("assets");
-    assets(&bundle);
+    let bundle = owner_cli::assets(root.path());
 
     // (a) The refusal: an alias path exits non-zero and names field AND fix.
     // The child is polled to a deadline — `output()` would block forever if
@@ -605,7 +597,7 @@ async fn native_console_assets_refusal_names_field_and_fix() {
         let mut child = std::process::Command::new(binary)
             .args(["serve", "--state-dir"])
             .arg(&state)
-            .args(["--listen", "127.0.0.1:0", "--console-assets"])
+            .args(["--listen", "127.0.0.1:17783", "--console-assets"])
             .arg(&alias)
             .env("PATH", "")
             .stdout(std::process::Stdio::null())
@@ -630,7 +622,7 @@ async fn native_console_assets_refusal_names_field_and_fix() {
             pipe.read_to_string(&mut stderr).unwrap();
         }
         assert!(
-            stderr.contains("Error: Config"),
+            stderr.contains("Error: Console"),
             "the assets refusal must ride the named config class, got: {stderr}"
         );
         assert!(
@@ -647,7 +639,12 @@ async fn native_console_assets_refusal_names_field_and_fix() {
     // refusal is the alias, not the bundle.
     let actual = bundle.canonicalize().unwrap();
     assert!(
-        hagency::console::Console::load(&actual).is_ok(),
+        hagency::owner_host::OwnerHost::open(
+            &state,
+            "127.0.0.1:17783".parse().unwrap(),
+            Some(&actual)
+        )
+        .is_ok(),
         "the real host path must admit"
     );
 }

@@ -100,7 +100,7 @@ Scenario: An interrupted or slow preparation stays inspectable and unknown
   And the row is never dropped and remains readable after the outcome settles either way
 
 Scenario: The accounts page renders under the native browser boundary
-  Test: native_console_accounts_browser
+  Retired-Test: native_console_accounts_browser
   Level: integration
   Test Double: real Chromium over a fresh native fixture, receiving no operator token
   Given the native console fixture and the built accounts page
@@ -112,3 +112,7 @@ Scenario: The accounts page renders under the native browser boundary
 
 The readiness enum and D-ADR114 (MA-S3b), login or auth inspection, the
 command-binding follow-up for reserve and retire, and every other console page.
+
+## Owner-only browser qualification (2026-10-07)
+
+The retired browser selectors above exercised removed Fleet/operator pages, resources/accounts/project-sides/task workflows or binary startup with old domain SQLite. They are removed product tests, not retained SDK qualification. Independent SDK HTTP/library selectors in this mixed spec remain active. Current browser qualification is the actual OwnerHost `native_console_rail_pages_are_shipped_and_served` plus `mockup/scripts/check-owner-console.mjs` in the enabled CI browser lane; it covers owner navigation, local ticket exchange, provider/runtime DTOs, explicit Estimated and restricted-files opt-in, exact request/tool approvals and absence of automatic inference. It does not claim old Fleet pages, encrypted delivery or paid model completion.

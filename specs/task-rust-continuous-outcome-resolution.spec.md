@@ -50,8 +50,12 @@ Scenario: Only the original resolved owner may release its local binding
   And a committed decision is observed without rewriting the failed outcome
 
 Scenario: The original continuous process runs a reviewed continuation
-  Test: native_continuous_driver_operator_resolution
+  Retired-Test: native_continuous_driver_operator_resolution
   Given a real offline subprocess failed with an original stopped-owner receipt
   When the operator resolves it with a distinct continuation
   Then the same service starts the new dispatch through its ordinary claim path
   And it never reruns the failed dispatch or requires a service restart
+
+## Owner bootstrap product replacement (2026-10-07)
+
+The `Retired-Test` selectors above depended on removed client-side Fleet/provisioning/encrypted approval-bot production switches. They are no longer executable product requirements. New `native-owner-client.spec.md` binds actual bootstrap secret/config refusal, anonymous provider/model/tool denial, fresh Pasion authorization after restart and independent Room runtimes. It does not claim encrypted private approval, factory or delegated-task behavior. Direct SDK configuration tests remain bound by `native-bootstrap-sdk.spec.md`, and all other SDK Test/Filter bindings remain active.

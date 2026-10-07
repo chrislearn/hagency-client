@@ -545,3 +545,15 @@ test('r6 two-traits ambiguity: a method from two traits for one type is unresolv
   assert.equal(result.unresolved.length, 1);
   assert.match(result.unresolved[0].reason, /Serve.*Serve2|Serve2.*Serve/);
 });
+
+test('explicit product spec selection does not hide historical diagnostics or accept unknown specs', () => {
+  const { root, read, files } = makeFixture({
+    rust: { [MAIN]: 'fn main() { owner::run(); }', 'native/hagency/src/owner.rs': 'pub fn run() {}', 'native/hagency/src/old.rs': 'pub fn run() {}' },
+    specs: 'Production caller: hagency::old::run\n', adr: '',
+  });
+  writeFileSync(path.join(root, 'specs', 'owner.spec.md'), 'Production caller: hagency::owner::run\n');
+  assert.equal(checkProductionCallers({ root, read, files }).ok, false);
+  const selected = checkProductionCallers({ root, read, files, specs: ['owner.spec.md'] });
+  assert.equal(selected.ok, true); assert.equal(selected.result.count, 1); assert.equal(selected.result.wired, 1);
+  assert.throws(() => checkProductionCallers({ root, read, files, specs: ['missing.spec.md'] }), /Unknown production spec selection/);
+});

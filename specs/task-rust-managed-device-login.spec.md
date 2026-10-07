@@ -46,7 +46,7 @@ necessary to select the provider's fixed headless option.
 ## Acceptance Criteria
 
 Scenario: Plain operator login remains unchanged
-  Test: native_account_login_route_records_ready
+  Retired-Test: native_account_login_route_records_ready
   Level: integration
   Test Double: actual native executable with an isolated offline provider fixture
   Given a fresh retained account and hostile ambient environment
@@ -54,7 +54,7 @@ Scenario: Plain operator login remains unchanged
   Then the provider receives exactly login in the retained namespace and observed readiness settles only after successful exit
 
 Scenario: Headless login preserves exact invocation and settlement
-  Test: native_account_device_login_route_preserves_settlement
+  Retired-Test: native_account_device_login_route_preserves_settlement
   Level: integration
   Test Double: actual native executable with isolated success refusal and unknown provider processes
   Given a fresh retained account for each provider exit class
@@ -74,3 +74,5 @@ consent and is separate qualification evidence.
 
 API-key enrollment, automatic credential refresh, provider identity or quota
 claims, full migration parity, and declaring the two-agent qualification passed.
+
+2026-10-07: These Retired selectors depend on removed account/task CLI or the former direct-Palpo/Fleet production process. Library SDK coverage remains separate; current OwnerHost forbids these product commands. See [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md).

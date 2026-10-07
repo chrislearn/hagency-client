@@ -115,7 +115,7 @@ Scenario: Editor observations expose only bounded native facts
   Then safe typed responses preserve exact current fields and never expose private account or preset data
 
 Scenario: Retained wizard creates and edits in both languages
-  Test: native_console_resource_configuration_browser
+  Retired-Test: native_console_resource_configuration_browser
   Level: integration
   Test Double: actual Chromium native Salvo and retained static wizard
   Given English and Chinese configuration sessions
@@ -123,7 +123,7 @@ Scenario: Retained wizard creates and edits in both languages
   Then drafts revisions current state and explicit outcomes remain truthful without automatic mutation retry
 
 Scenario: Configuration works through the native executable
-  Test: native_console_resource_configuration_executable
+  Retired-Test: native_console_resource_configuration_executable
   Level: integration
   Test Double: actual native executable with private state and empty runtime PATH
   Given retained wizard assets and explicit operator-issued configuration access
@@ -141,3 +141,7 @@ An all-feature inventory lists tests only; it is never execution evidence.
 
 First-resource enrollment credential management account rebinding friendly-name
 persistence rate-cap enforcement runtime settings live providers and full M7.
+
+## Owner-only browser qualification (2026-10-07)
+
+The retired browser selectors above exercised removed Fleet/operator pages, resources/accounts/project-sides/task workflows or binary startup with old domain SQLite. They are removed product tests, not retained SDK qualification. Independent SDK HTTP/library selectors in this mixed spec remain active. Current browser qualification is the actual OwnerHost `native_console_rail_pages_are_shipped_and_served` plus `mockup/scripts/check-owner-console.mjs` in the enabled CI browser lane; it covers owner navigation, local ticket exchange, provider/runtime DTOs, explicit Estimated and restricted-files opt-in, exact request/tool approvals and absence of automatic inference. It does not claim old Fleet pages, encrypted delivery or paid model completion.

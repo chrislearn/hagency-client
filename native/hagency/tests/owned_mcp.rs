@@ -194,7 +194,7 @@ impl Fixture {
 #[tokio::test]
 async fn native_owned_mcp_configuration_admission() {
     let f = Fixture::new().await;
-    let helper = PathBuf::from(env!("CARGO_BIN_EXE_hagency"));
+    let helper = PathBuf::from(env!("CARGO_BIN_EXE_hagency-sdk-mcp-test-peer"));
     for address in [
         "192.0.2.1:1234",
         "0.0.0.0:1234",
@@ -244,7 +244,10 @@ async fn roundtrip(done: bool, retained: bool) {
             },
             false,
         )
-        .with_task_helper(env!("CARGO_BIN_EXE_hagency").into(), f.address)
+        .with_task_helper(
+            env!("CARGO_BIN_EXE_hagency-sdk-mcp-test-peer").into(),
+            f.address,
+        )
         .unwrap();
     if retained {
         let root = f.root.path().join("task-contexts");
@@ -624,7 +627,7 @@ async fn native_claude_owned_task_mcp() {
         let executable = if missing {
             f.work.join("missing-helper")
         } else {
-            env!("CARGO_BIN_EXE_hagency").into()
+            env!("CARGO_BIN_EXE_hagency-sdk-mcp-test-peer").into()
         };
         let mut helper = TaskMcp::new(executable, "task".into()).unwrap();
         if send {
@@ -697,7 +700,10 @@ async fn native_owned_mcp_real_finish() {
     let f = Fixture::new().await;
     let host = f
         .host("finish", false)
-        .with_task_helper(env!("CARGO_BIN_EXE_hagency").into(), f.address)
+        .with_task_helper(
+            env!("CARGO_BIN_EXE_hagency-sdk-mcp-test-peer").into(),
+            f.address,
+        )
         .unwrap();
     let mut operation = Operation::start(f.domain.clone(), f.cap.clone(), host, limits()).unwrap();
     let report = operation.wait().await.unwrap();

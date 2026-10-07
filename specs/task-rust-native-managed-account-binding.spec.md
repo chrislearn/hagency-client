@@ -145,7 +145,7 @@ Scenario: Managed owned authority stays current after waiting
   Then original association checks fence stale work at actual admission boundaries
 
 Scenario: Offline account commands preserve native ownership
-  Test: native_account_cli
+  Test: native_owner_rejects_retired_commands_and_options
   Level: integration
   Test Double: actual isolated files SQLite native processes and original handles
   Given actual native executable initialization and private temporary state
@@ -153,7 +153,7 @@ Scenario: Offline account commands preserve native ownership
   Then exact safe facts persist across restart and busy never starts a second writer
 
 Scenario: Bootstrap uses the actual managed driver association
-  Test: native_account_bootstrap
+  Retired-Test: native_account_bootstrap
   Level: integration
   Test Double: actual isolated files SQLite native processes and original handles
   Given the actual native executable and isolated native runtime fixture
@@ -177,7 +177,7 @@ Browser enrollment effective provider auth qualification login API-key enrollmen
 external-home adoption credential rotation full M7 and production migration.
 
 Scenario: Inspection subcommands render the operator routes verbatim
-  Test: native_cli_inspection_matches_operator_routes
+  Test: native_owner_rejects_retired_commands_and_options
   Level: integration
   Test Double: actual native executable served routes and private temporary state
   Given a running native service with one seeded resource and the alerts engagements and resources operator routes
@@ -185,9 +185,17 @@ Scenario: Inspection subcommands render the operator routes verbatim
   Then the passthrough equals the route body byte for byte except the alerts read clock and every table column is a route key with no derived figure
 
 Scenario: Inspection refusals exit distinctly and are named
-  Test: native_cli_inspection_exit_codes_name_refusals
+  Test: native_owner_rejects_retired_commands_and_options
   Level: integration
   Test Double: actual native executable a dead port a foreign credential directory fixed 404 and 503 responders and limits forwarded to the route
   Given the inspection subcommands facing unreachable refused invalid unavailable and missing-route conditions with limits zero and one hundred one forwarded to the route itself
   When each executes
   Then exit codes are three four five six and seven respectively the forwarded limits are refused by the route never clamped the operator token never appears on stderr and never a silent zero
+
+## Owner-client entry point cutover (2026-10-07)
+
+The historical account/operator/guardian CLI is retired. Its positive CLI scenarios are superseded by actual binary rejection coverage above. The remaining SDK selectors continue to exercise their library contracts; they do not describe the production OwnerHost. See `native-owner-client.spec.md` for current executable release qualification.
+
+## Owner bootstrap product replacement (2026-10-07)
+
+The `Retired-Test` selectors above depended on removed client-side Fleet/provisioning/encrypted approval-bot production switches. They are no longer executable product requirements. New `native-owner-client.spec.md` binds actual bootstrap secret/config refusal, anonymous provider/model/tool denial, fresh Pasion authorization after restart and independent Room runtimes. It does not claim encrypted private approval, factory or delegated-task behavior. Direct SDK configuration tests remain bound by `native-bootstrap-sdk.spec.md`, and all other SDK Test/Filter bindings remain active.

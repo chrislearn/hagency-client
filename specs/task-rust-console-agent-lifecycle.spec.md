@@ -114,7 +114,7 @@ Scenario: Preset-apply refuses until its durable transition exists
   And no browser-memory pending marker is created
 
 Scenario: The roster page renders lifecycle controls only from served permissions
-  Test: native_console_agent_lifecycle_browser
+  Retired-Test: native_console_agent_lifecycle_browser
   Level: integration
   Test Double: real Chromium over a fresh native fixture with the built roster page, receiving no operator token; browser-lane
   Given the native-console-browser feature whose selector appears in cargo test --list under --all-features exactly as native_console_browser is bound by the usage console spec
@@ -174,3 +174,7 @@ CL-S1's roster read itself (landed), durable start/re-arm, resource rebinding or
 reprovisioning, the stop-widening to `retire`'s session cascade, the host
 settlement path (the host's own), the agent-lifecycle CLI read, and every other
 console page.
+
+## Owner-only browser qualification (2026-10-07)
+
+The retired browser selectors above exercised removed Fleet/operator pages, resources/accounts/project-sides/task workflows or binary startup with old domain SQLite. They are removed product tests, not retained SDK qualification. Independent SDK HTTP/library selectors in this mixed spec remain active. Current browser qualification is the actual OwnerHost `native_console_rail_pages_are_shipped_and_served` plus `mockup/scripts/check-owner-console.mjs` in the enabled CI browser lane; it covers owner navigation, local ticket exchange, provider/runtime DTOs, explicit Estimated and restricted-files opt-in, exact request/tool approvals and absence of automatic inference. It does not claim old Fleet pages, encrypted delivery or paid model completion.

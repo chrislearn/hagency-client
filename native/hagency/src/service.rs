@@ -1,9 +1,9 @@
-//! ADR-189: `hagency start` helpers and per-user service registration.
+//! Owner-client start helpers and per-user service registration.
 //!
 //! The service runs as the user who installs it (a macOS LaunchAgent or a
 //! `systemd --user` unit), so it sees that user's coding-agent sign-in and
-//! `PATH`. It runs `hagency start --no-open`; the install command prints and
-//! opens the console sign-in link once the service answers.
+//! `PATH`. It runs `hagency start --no-open`; agents never auto-start.
+//! The console navigation URL does not grant authorization.
 use std::{
     io::IsTerminal,
     net::SocketAddr,
@@ -29,16 +29,16 @@ pub enum Command {
 
 const LABEL: &str = "io.hagency";
 
-/// `~/Library/Application Support/Hagency` (macOS) or
+/// `~/Library/Application Support/HagencyOwnedClient` (macOS) or
 /// `$XDG_DATA_HOME/hagency`, else `~/.local/share/hagency` (Linux).
 pub fn default_state_dir() -> Result<PathBuf, String> {
     let home = home()?;
     if cfg!(target_os = "macos") {
-        return Ok(home.join("Library/Application Support/Hagency"));
+        return Ok(home.join("Library/Application Support/HagencyOwnedClient"));
     }
     Ok(match std::env::var_os("XDG_DATA_HOME") {
         Some(dir) if !dir.is_empty() => PathBuf::from(dir).join("hagency"),
-        _ => home.join(".local/share/hagency"),
+        _ => home.join(".local/share/hagency-owned-client"),
     })
 }
 
@@ -52,71 +52,34 @@ fn home() -> Result<PathBuf, String> {
 /// Wait until the service answers, then print its console sign-in link and,
 /// when asked and this is an interactive terminal, open it in the browser.
 pub async fn announce(state: PathBuf, address: SocketAddr, open: bool) {
-    let bound = hagency_store::private::read_secret(&state.join("server-login.json"))
-        .ok()
-        .and_then(|raw| serde_json::from_slice::<serde_json::Value>(&raw).ok())
-        .is_some_and(|value| value["owner"].is_string());
     let deadline = Instant::now() + Duration::from_secs(60);
-    loop {
-        // The sign-in link grants console access: it goes to an interactive
-        // terminal only, never into a service log.
-        if !std::io::stdout().is_terminal() {
-            if crate::console::client::reachable(address).await {
-                if bound {
-                    println!(
-                        "Hagency is ready. Sign in at http://{address}/console/project-sides/"
-                    );
-                } else {
-                    println!(
-                        "Hagency is ready. Open the console with: hagency console-access --state-dir {} --listen {address}",
-                        state.display()
-                    );
-                }
-                return;
-            }
-            if Instant::now() >= deadline {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(500)).await;
-            continue;
-        }
-        if bound {
-            if crate::console::client::reachable(address).await {
-                let link = format!("http://{address}/console/project-sides/");
-                println!("Hagency console: {link}");
+    while Instant::now() < deadline {
+        if crate::console::client::reachable(address).await {
+            // Navigation URL grants no authority. Login must use Pasion and the
+            // user's Matrix account; no operator token/ticket is ever read.
+            if std::io::stdout().is_terminal()
+                && let Ok(link) = crate::owner_host::request_access(&state).await
+            {
+                println!("Hagency owner console: {link}");
                 if open {
                     open_browser(&link);
                 }
                 return;
             }
-            if Instant::now() >= deadline {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(500)).await;
-            continue;
+            println!(
+                "Hagency owner client is ready. Open it with: hagency open --state-dir {}",
+                state.display()
+            );
+            return;
         }
-        match crate::console::client::access(&state, address).await {
-            Ok(link) => {
-                println!("Hagency console: {link}");
-                if open {
-                    open_browser(&link);
-                }
-                return;
-            }
-            Err(_) if Instant::now() < deadline => {
-                tokio::time::sleep(Duration::from_millis(500)).await;
-            }
-            Err(_) => {
-                eprintln!(
-                    "Hagency did not answer within 60 s; run `hagency console-access --state-dir {} --listen {address}` once it is up",
-                    state.display()
-                );
-                return;
-            }
-        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
     }
+    eprintln!("Hagency owner console did not answer within 60 seconds");
 }
 
+pub fn open_owner_link(link: &str) {
+    open_browser(link);
+}
 fn open_browser(link: &str) {
     let opener = if cfg!(target_os = "macos") {
         "open"
@@ -141,9 +104,17 @@ pub fn run(command: Command) -> Result<String, String> {
                 Some(dir) => dir,
                 None => default_state_dir()?,
             };
-            if !listen.ip().is_loopback() {
-                return Err("--listen must be a loopback address".into());
+            let state = if state.is_absolute() {
+                state
+            } else {
+                std::env::current_dir()
+                    .map_err(|e| e.to_string())?
+                    .join(state)
+            };
+            if !listen.ip().is_loopback() || listen.port() == 0 {
+                return Err("--listen must be a nonzero loopback address".into());
             }
+            crate::owner_host::initialize(&state).map_err(|e| e.to_string())?;
             let exe = std::env::current_exe()
                 .and_then(|p| p.canonicalize())
                 .map_err(|e| format!("this binary's path: {e}"))?;
@@ -356,7 +327,7 @@ mod tests {
     fn launchd_plist_runs_start_without_opening_and_escapes_paths() {
         let plist = launchd_plist(
             Path::new("/opt/h & co/hagency"),
-            Path::new("/Users/a/Library/Application Support/Hagency"),
+            Path::new("/Users/a/Library/Application Support/HagencyOwnedClient"),
             "127.0.0.1:13300".parse().unwrap(),
             "/usr/bin:/bin",
             Path::new("/Users/a/Library/Logs/Hagency/hagency.log"),
@@ -364,7 +335,11 @@ mod tests {
         assert!(plist.contains("<string>/opt/h &amp; co/hagency</string>"));
         assert!(plist.contains("<string>start</string>"));
         assert!(plist.contains("<string>--no-open</string>"));
-        assert!(plist.contains("<string>/Users/a/Library/Application Support/Hagency</string>"));
+        assert!(
+            plist.contains(
+                "<string>/Users/a/Library/Application Support/HagencyOwnedClient</string>"
+            )
+        );
         assert!(plist.contains("<key>PATH</key>"));
         assert!(!plist.contains("--agent-driver"));
     }

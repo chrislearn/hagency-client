@@ -102,10 +102,12 @@ Scenario: Handed-over messages are authorised by the delegation, not by the assi
   Then the message is still selected and reaches the assignee with its original content
 
 Scenario: Two composed agents carry a delegation from approval to the assignee's reply
-  Test: native_configured_fleet_delegated_task_delivery
+  Retired-Test: native_configured_fleet_delegated_task_delivery
   Production caller: hagency::bootstrap::notice::deliver
   Given two inline factory agents in one project with the coordination tools on and an owner who approves once
   When the mentioned agent delegates a task to the other and completes its own
   Then the assignee posts exactly one m.notice, under its own identity, threaded on the delegator's question and with no mentions
   And the intent activates, one dispatch is minted on the assignee's delegated session only, and its payload names the assignee, the delegator and the task and carries the owner's original message
   And the delegated task reaches Done with its reply delivered in that thread and both agents stay healthy
+
+2026-10-07: Retired-Test/Retired-Filter records the removed Fleet production entry point. Other SDK Test/Filter selectors remain active. See [current Owner product](native-owner-client.spec.md) and [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md). This does not claim Fleet, resource publication, delegation or encrypted tasks are supported in the new product.

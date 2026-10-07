@@ -75,7 +75,7 @@ Scenario: Network failure is bounded and never rewritten as success
   And private credentials and raw failure bodies are absent from diagnostics
 
 Scenario: CLI credentials stay in the inherited environment
-  Test: native_task_client_cli
+  Retired-Test: native_task_client_cli
   Level: integration
   Test Double: native binary with isolated environment and loopback fixture
   Given bounded environment context and a selected command
@@ -87,3 +87,5 @@ Scenario: CLI credentials stay in the inherited environment
 
 Host runner environment provisioning, full MCP and hook parity, task creation or
 allocation, persistent-home legacy task selection, remote endpoints and live rollout.
+
+2026-10-07: These Retired selectors depend on removed account/task CLI or the former direct-Palpo/Fleet production process. Library SDK coverage remains separate; current OwnerHost forbids these product commands. See [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md).

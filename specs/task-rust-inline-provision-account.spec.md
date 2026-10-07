@@ -127,9 +127,13 @@ Scenario: Retained uncertain Host jobs consume finite non-evicting capacity
   Then capacity refuses before claim/network, while the original jobs still replay their retained uncertainty
 
 Scenario: Native bootstrap loads only an explicit protected account-step profile
-  Test: native_bootstrap_token_provisioning_profile
+  Retired-Test: native_bootstrap_token_provisioning_profile
   Level: integration
   Test Double: actual private configuration/key/token files and native bootstrap preparation
   Given an explicit registration_token_account_step_v1 profile
   When bootstrap reads its separate protected credentials
   Then the fixed Host capability is attached without exporting credentials or changing default driver behavior
+
+## Owner bootstrap product replacement (2026-10-07)
+
+The `Retired-Test` selectors above depended on removed client-side Fleet/provisioning/encrypted approval-bot production switches. They are no longer executable product requirements. New `native-owner-client.spec.md` binds actual bootstrap secret/config refusal, anonymous provider/model/tool denial, fresh Pasion authorization after restart and independent Room runtimes. It does not claim encrypted private approval, factory or delegated-task behavior. Direct SDK configuration tests remain bound by `native-bootstrap-sdk.spec.md`, and all other SDK Test/Filter bindings remain active.

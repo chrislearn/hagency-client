@@ -83,7 +83,7 @@ runtime's idle re-qualification records and never stops.
 ## Scenarios
 
 Scenario: A Matrix refresh failure is retried and the worker stays up
-  Test: native_refresh_failure_is_retried_not_fatal
+  Retired-Test: native_refresh_failure_is_retried_not_fatal
   Production caller: hagency::bootstrap::driver::run_continuous
   Given a continuous worker whose homeserver stops answering its refresh
   When the refresh fails
@@ -91,14 +91,14 @@ Scenario: A Matrix refresh failure is retried and the worker stays up
   And when the homeserver answers again the next attempt runs, the status clears and readiness is 200
 
 Scenario: A refresh retry follows the retained product's backoff
-  Test: native_refresh_retry_backoff
+  Retired-Test: native_refresh_retry_backoff
   Production caller: hagency::bootstrap::driver::run_continuous
   Given a worker whose refresh keeps failing
   When it retries
   Then the pauses double from 1 s to a 60 s cap and the first success resets them
 
 Scenario: An authentication rejection parks the worker with the reason
-  Test: native_refresh_identity_rejection_parks
+  Retired-Test: native_refresh_identity_rejection_parks
   Production caller: hagency::bootstrap::driver::run_continuous
   Given a worker whose whoami names another account
   When the refresh fails
@@ -169,7 +169,7 @@ Scenario: The idle re-qualification records and never stops
   Then the child is not stopped, the failure is recorded, and once the check passes again the next dispatch is admitted to the same child
 
 Scenario: A component refusal does not exit the process
-  Test: native_component_refusal_does_not_exit_the_process
+  Retired-Test: native_component_refusal_does_not_exit_the_process
   Production caller: hagency::bootstrap::Bootstrap::serve
   Given a service whose approval SDK refuses at startup
   When the service starts
@@ -180,3 +180,7 @@ Scenario: A component refusal does not exit the process
 Configurable ceiling period and daily rate cap (the next small slice); the
 activity notice (its own slice); the owner-facing fence card in the DM; the
 approval leg's environmentId proof (G4); authority decoupling (G3).
+
+## Owner bootstrap product replacement (2026-10-07)
+
+The `Retired-Test` selectors above depended on removed client-side Fleet/provisioning/encrypted approval-bot production switches. They are no longer executable product requirements. New `native-owner-client.spec.md` binds actual bootstrap secret/config refusal, anonymous provider/model/tool denial, fresh Pasion authorization after restart and independent Room runtimes. It does not claim encrypted private approval, factory or delegated-task behavior. Direct SDK configuration tests remain bound by `native-bootstrap-sdk.spec.md`, and all other SDK Test/Filter bindings remain active.

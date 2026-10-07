@@ -75,7 +75,7 @@ dropped; shutdown always completes.
 ## Scenarios
 
 Scenario: A failed turn takes the session out, not the agent
-  Test: native_worker_outlives_a_failed_attempt
+  Retired-Test: native_worker_outlives_a_failed_attempt
   Production caller: hagency::bootstrap::driver::run_continuous
   Given a continuous driver whose first turn fails on a refused notification
   When the attempt ends
@@ -85,7 +85,7 @@ Scenario: A failed turn takes the session out, not the agent
   And the status shows the last failure beside the live state
 
 Scenario: A refused handoff is that attempt's failure, and the worker goes on
-  Test: native_worker_outlives_a_refused_handoff
+  Retired-Test: native_worker_outlives_a_refused_handoff
   Production caller: hagency::bootstrap::driver::run_continuous
   Given two agents whose provider directory permissions are revoked before their handoff
   When both handoffs are refused and the permissions are restored
@@ -93,7 +93,7 @@ Scenario: A refused handoff is that attempt's failure, and the worker goes on
   And each dispatch completes on its second attempt, its replies delivered
 
 Scenario: An unproven cleanup fences the agent, durably, and the owner is dropped
-  Test: native_unproven_cleanup_fences_the_agent
+  Retired-Test: native_unproven_cleanup_fences_the_agent
   Production caller: hagency::bootstrap::driver::run_continuous
   Given an attempt whose stop verdict is Unknown (the diagnostics pin, the one shape no offline tree can produce)
   When the attempt ends
@@ -139,3 +139,9 @@ Matrix fence (the next slice); authority decoupling (G3); the approval leg
 (G4); automatic re-observation of an unproven tree; the owner-facing fence
 card in the agent's DM (the fleet/approval slice — the console route is this
 slice's).
+
+2026-10-07: Retired-Test/Retired-Filter records the removed Fleet production entry point. Other SDK Test/Filter selectors remain active. See [current Owner product](native-owner-client.spec.md) and [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md). This does not claim Fleet, resource publication, delegation or encrypted tasks are supported in the new product.
+
+## Owner bootstrap product replacement (2026-10-07)
+
+The `Retired-Test` selectors above depended on removed client-side Fleet/provisioning/encrypted approval-bot production switches. They are no longer executable product requirements. New `native-owner-client.spec.md` binds actual bootstrap secret/config refusal, anonymous provider/model/tool denial, fresh Pasion authorization after restart and independent Room runtimes. It does not claim encrypted private approval, factory or delegated-task behavior. Direct SDK configuration tests remain bound by `native-bootstrap-sdk.spec.md`, and all other SDK Test/Filter bindings remain active.

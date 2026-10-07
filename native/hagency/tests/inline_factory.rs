@@ -1,4 +1,5 @@
-//! Genuine target factory activation on offline TLS + actual native pipes/API.
+//! Historical SDK factory coverage on offline TLS + actual native pipes/API.
+//! SDK-only state/transport fixtures never initialize or expose the installed OwnerHost CLI.
 //! The preexisting external bootstrap fixture is not the newly provisioned agent.
 #[path = "fixtures/matrix_crypto_peer.rs"]
 mod crypto;

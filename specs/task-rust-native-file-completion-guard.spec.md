@@ -56,13 +56,13 @@ Scenario: Domain writer refuses completion until a delivery is delivered or fail
   Then the writer refuses with State until the delivery is delivered, and a cancelled possible write never settles it
 
 Scenario: Possible upload or event write keeps the native attempt unknown
-  Test: native_file_service_uncertainty
+  Retired-Test: native_file_service_uncertainty
   Given an unclean upload or event response with no complete server ACK
   When the peer's turn completes and the driver settles the attempt
   Then the state is outcome_unknown with a negative settlement on every platform
 
 Scenario: Refused domain settlement keeps the native attempt unknown
-  Test: native_file_service_restart
+  Retired-Test: native_file_service_restart
   Given an injected refusal of the delivered settlement
   When the driver settles the attempt
   Then the state is outcome_unknown or unavailable with a negative settlement
@@ -72,3 +72,5 @@ Scenario: Refused domain settlement keeps the native attempt unknown
 Windows file-service startup observation, Windows approval fixtures and the
 macOS process-tree census remain separate gates. Local Linux reproduction in a
 container does not replace the hosted Ubuntu and Windows runs.
+
+2026-10-07: These Retired selectors depend on removed account/task CLI or the former direct-Palpo/Fleet production process. Library SDK coverage remains separate; current OwnerHost forbids these product commands. See [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md).

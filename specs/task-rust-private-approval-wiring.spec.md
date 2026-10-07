@@ -64,7 +64,7 @@ Scenario: A service-composed run delivers a request end to end
   And no runner capability workspace access or driver runtime reaches the pump
 
 Scenario: The pump refuses without a fresh approval enrollment
-  Test: native_private_approval_delivery_wiring_refuses_without_enrollment
+  Retired-Test: native_private_approval_delivery_wiring_refuses_without_enrollment
   Level: integration
   Test Double: the same fixture with the enrollment anchors absent
   Given the service composition without with_fresh_account_enrollment
@@ -77,3 +77,7 @@ Scenario: The pump refuses without a fresh approval enrollment
 The fail-closed denial policy (D-PC-FC, PC-C1), the public status notice and `PublicFrozen` (PC-C1), the operator observation surface (PC-C2), the oracle vectors (PC-C4), and any change to the existing approval-delivery or approval-store specs' selectors.
 
 The wiring observation: `native_private_approval_delivery_is_wired` is **owed by** the fixture slice `specs/task-rust-private-approval-delivery-fixture.spec.md` (PC-C0b) — parked, not bound twice: the name is removed from this spec's `Test:` lines because the test is red on the hosted lanes and will be removed from the PC-C0 lineage until the fixture slice builds it. PC-C0b makes the delivery leg observable through a test-only callback-capable probe pinned by the test's own executable path plus a scripted second-identity enrollment against the shared fake peer. This spec keeps its other selector (`native_private_approval_delivery_wiring_refuses_without_enrollment`) and every constraint unchanged.
+
+## Owner bootstrap product replacement (2026-10-07)
+
+The `Retired-Test` selectors above depended on removed client-side Fleet/provisioning/encrypted approval-bot production switches. They are no longer executable product requirements. New `native-owner-client.spec.md` binds actual bootstrap secret/config refusal, anonymous provider/model/tool denial, fresh Pasion authorization after restart and independent Room runtimes. It does not claim encrypted private approval, factory or delegated-task behavior. Direct SDK configuration tests remain bound by `native-bootstrap-sdk.spec.md`, and all other SDK Test/Filter bindings remain active.

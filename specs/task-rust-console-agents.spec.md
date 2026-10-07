@@ -84,7 +84,7 @@ Scenario: A foreign origin cannot read the agent roster
   Then the route refuses with console_origin_required and serves no agent item
 
 Scenario: The agent roster page renders under the native browser boundary
-  Test: native_console_agent_roster_browser
+  Retired-Test: native_console_agent_roster_browser
   Given the native console fixture and the built agent page with the native-console-browser feature whose selectors appear in cargo test --list under --all-features exactly as native_console_browser is bound by the usage console spec
   When real Chromium opens /console/agents without any operator token
   Then the roster reaches data-native-state ready with no external request and no credential value on screen
@@ -101,3 +101,7 @@ Scenario: The roster shows an agent whose engagement was minted by the productio
 The agent lifecycle (start/stop/preset behind a finite scope), a CLI read via an
 `/api/native/v1/agents` operator route, the rail row (a retained-file edit), and
 every other console page.
+
+## Owner-only browser qualification (2026-10-07)
+
+The retired browser selectors above exercised removed Fleet/operator pages, resources/accounts/project-sides/task workflows or binary startup with old domain SQLite. They are removed product tests, not retained SDK qualification. Independent SDK HTTP/library selectors in this mixed spec remain active. Current browser qualification is the actual OwnerHost `native_console_rail_pages_are_shipped_and_served` plus `mockup/scripts/check-owner-console.mjs` in the enabled CI browser lane; it covers owner navigation, local ticket exchange, provider/runtime DTOs, explicit Estimated and restricted-files opt-in, exact request/tool approvals and absence of automatic inference. It does not claim old Fleet pages, encrypted delivery or paid model completion.

@@ -38,7 +38,7 @@ the explicitly selected provider-owned local Codex installation and login.
 ## Scenarios
 
 Scenario: Configured local Codex fleet preserves two original agents
-  Test: native_configured_local_codex_fleet
+  Retired-Test: native_configured_local_codex_fleet
   Given a provider-owned local profile and separate authenticated Matrix agents
   When the actual configured service provisions two agents and runs two rounds
   Then each original warm owner uses the retained provider paths
@@ -58,3 +58,5 @@ Scenario: Active approval duration never extends warm initialization
   When warm initialization succeeds and an active dispatch is admitted
   Then the original startup budget and physical owner remain separate
   And a dispatch whose budget cannot fit the owner wait is refused
+
+2026-10-07: Retired-Test/Retired-Filter records the removed Fleet production entry point. Other SDK Test/Filter selectors remain active. See [current Owner product](native-owner-client.spec.md) and [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md). This does not claim Fleet, resource publication, delegation or encrypted tasks are supported in the new product.

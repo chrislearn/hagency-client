@@ -12,6 +12,8 @@ default = []
 native-console-browser = []
 
 [dependencies]
+percent-encoding = "=2.3.2"
+hagency-agent-local = { path = "../hagency-agent-local" }
 hagency-core.workspace = true
 hagency-store.workspace = true
 hagency-platform.workspace = true
@@ -31,7 +33,7 @@ tokio = { workspace = true, features = ["process"] }
 hyper = { workspace = true, features = ["client", "http1"] }
 hyper-util = { workspace = true, features = ["tokio"] }
 http-body-util.workspace = true
-reqwest = { workspace = true, features = ["rustls-tls-webpki-roots", "json"] }
+reqwest = { workspace = true, features = ["rustls-tls-webpki-roots", "rustls-tls-native-roots", "json"] }
 thiserror.workspace = true
 salvo = { workspace = true, features = ["server", "server-handle", "http1", "test"] }
 clap = { workspace = true, features = ["derive"] }
@@ -76,6 +78,10 @@ path = "tests/fixtures/approval_mcp_peer.rs"
 [[bin]]
 name = "hagency-login-probe"
 path = "tests/fixtures/login_probe.rs"
+
+[[bin]]
+name = "hagency-sdk-mcp-test-peer"
+path = "tests/fixtures/sdk_mcp_test_peer.rs"
 
 [lints]
 workspace = true

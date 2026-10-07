@@ -256,7 +256,7 @@ impl Fixture {
 /// a partial frame, a lifecycle-invalid frame, then EOF. `Client::new` cannot
 /// do this, because `serve()` consumes the child's stdin.
 pub fn raw_helper(address: SocketAddr, cap: &RunnerCapability, task: &str) -> Child {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_hagency"));
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_hagency-sdk-mcp-test-peer"));
     cmd.arg("mcp")
         .env_clear()
         .env("HAGENCY_RUNNER_API_ADDR", address.to_string())
@@ -307,7 +307,7 @@ impl Client {
         }
     }
     pub async fn new(address: SocketAddr, cap: &RunnerCapability, task: &str) -> Self {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_hagency"));
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_hagency-sdk-mcp-test-peer"));
         cmd.arg("mcp")
             .env_clear()
             .env("HAGENCY_RUNNER_API_ADDR", address.to_string())

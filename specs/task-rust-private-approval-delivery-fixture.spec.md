@@ -54,7 +54,7 @@ peer. Nothing about the production launch shape changes.
 ## Acceptance Criteria
 
 Scenario: A service-composed run delivers a request end to end
-  Test: native_private_approval_delivery_is_wired
+  Retired-Test: native_private_approval_delivery_is_wired
   Level: integration
   Test Double: the test-only callback-capable runtime probe pinned by its own executable path, and a scripted second-identity enrollment of the approval collector against the shared fake peer; no live homeserver
   Given the composition with the fixture probe selected by the test's own pinned path and the collector enrolled against the shared fake peer
@@ -87,3 +87,7 @@ bends.
 PC-C0's wiring itself (landed), its other selector, the fail-closed denial
 policy (PC-C1), the observation surface (PC-C2), the MCP pair (PC-C3), the
 oracle vectors (PC-C4), and the re-issue decision (PC-C5).
+
+## Owner bootstrap product replacement (2026-10-07)
+
+The `Retired-Test` selectors above depended on removed client-side Fleet/provisioning/encrypted approval-bot production switches. They are no longer executable product requirements. New `native-owner-client.spec.md` binds actual bootstrap secret/config refusal, anonymous provider/model/tool denial, fresh Pasion authorization after restart and independent Room runtimes. It does not claim encrypted private approval, factory or delegated-task behavior. Direct SDK configuration tests remain bound by `native-bootstrap-sdk.spec.md`, and all other SDK Test/Filter bindings remain active.

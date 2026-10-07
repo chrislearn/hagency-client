@@ -129,7 +129,7 @@ Scenario: Native usage remains truthful and bounded
   Then evidence optional counts periods and failures remain explicit without private fields
 
 Scenario: Retained browser works against native service
-  Test: native_console_browser
+  Retired-Test: native_console_browser
   Level: integration
   Test Double: actual Chromium and Salvo with fresh writers and built retained components
   Given the native static usage build and a runtime engagement absent from that build
@@ -137,7 +137,7 @@ Scenario: Retained browser works against native service
   Then preferences truthful evidence query selection visible refresh state and privacy survive in the actual browser
 
 Scenario: Native executable serves without deployed Node
-  Test: native_console_executable
+  Retired-Test: native_console_executable
   Level: integration
   Test Double: actual native binary with private fresh state and no Node on PATH
   Given validated retained browser assets
@@ -168,3 +168,7 @@ Scenario: The native origin hoops match the executed retained proxy rules
   Given the regenerated console-origin vectors produced by executing the retained proxy and backend rules
   When the native console origin, canonicalisation and one-origin CORS predicates replay each request row
   Then allow, refuse and canonical verdicts agree with the retained result for every row, and the three named divergences where native is stricter are asserted rather than left implicit
+
+## Owner-only browser qualification (2026-10-07)
+
+The retired browser selectors above exercised removed Fleet/operator pages, resources/accounts/project-sides/task workflows or binary startup with old domain SQLite. They are removed product tests, not retained SDK qualification. Independent SDK HTTP/library selectors in this mixed spec remain active. Current browser qualification is the actual OwnerHost `native_console_rail_pages_are_shipped_and_served` plus `mockup/scripts/check-owner-console.mjs` in the enabled CI browser lane; it covers owner navigation, local ticket exchange, provider/runtime DTOs, explicit Estimated and restricted-files opt-in, exact request/tool approvals and absence of automatic inference. It does not claim old Fleet pages, encrypted delivery or paid model completion.

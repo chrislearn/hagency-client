@@ -160,10 +160,43 @@ fn manifest(bytes: &[u8]) -> Result<Manifest, Error> {
     }
     Ok(input)
 }
+fn validate_owner_documents(values: &BTreeMap<String, Asset>) -> Result<(), Error> {
+    const DOCUMENTS: [&str; 5] = [
+        "/console/",
+        "/console/login/",
+        "/console/agents-owned/",
+        "/console/projects/",
+        "/console/projects/new/",
+    ];
+    if DOCUMENTS
+        .iter()
+        .any(|document| !values.contains_key(*document))
+        || values.iter().any(|(path, asset)| {
+            asset.mime.starts_with("text/html") && !DOCUMENTS.contains(&path.as_str())
+        })
+    {
+        return Err(Error::Assets);
+    }
+    Ok(())
+}
 impl Assets {
+    /// Native management has no document assets and never mounts an asset server.
+    pub(super) fn native() -> Self {
+        Self {
+            values: BTreeMap::new(),
+            _manifest: None,
+        }
+    }
+
     /// ADR-189: the console compiled into the binary, checked against its own
     /// manifest with the same rules as a console folder.
     pub(super) fn embedded() -> Result<Self, Error> {
+        Self::embedded_mode(false)
+    }
+    pub(super) fn embedded_owner() -> Result<Self, Error> {
+        Self::embedded_mode(true)
+    }
+    fn embedded_mode(owner: bool) -> Result<Self, Error> {
         use sha2::{Digest, Sha256};
         let files: BTreeMap<&str, &[u8]> = embedded::FILES.iter().copied().collect();
         let input = manifest(files.get("manifest.json").ok_or(Error::Assets)?)?;
@@ -195,7 +228,9 @@ impl Assets {
                 return Err(Error::Assets);
             }
         }
-        if !values.contains_key("/console/usage/") {
+        if owner {
+            validate_owner_documents(&values)?;
+        } else if !values.contains_key("/console/usage/") {
             return Err(Error::Assets);
         }
         Ok(Self {
@@ -204,6 +239,12 @@ impl Assets {
         })
     }
     pub(super) fn load(path: &Path) -> Result<Self, Error> {
+        Self::load_mode(path, false)
+    }
+    pub(super) fn load_owner(path: &Path) -> Result<Self, Error> {
+        Self::load_mode(path, true)
+    }
+    fn load_mode(path: &Path, owner: bool) -> Result<Self, Error> {
         let dir = root(path)?;
         let manifest_file = snapshot(&dir, "manifest.json", 128 * 1024)?;
         let input = manifest(manifest_file.bytes())?;
@@ -233,7 +274,9 @@ impl Assets {
                 return Err(Error::Assets);
             }
         }
-        if !values.contains_key("/console/usage/") {
+        if owner {
+            validate_owner_documents(&values)?;
+        } else if !values.contains_key("/console/usage/") {
             return Err(Error::Assets);
         }
         Ok(Self {

@@ -91,9 +91,9 @@ Scenario: Driver handoff backpressure precedes task and workspace acquisition
   Then no dispatch attempt exists while capacity is full, cancellation or receiver closure creates none, and released capacity allows only the original next claim
 
 Scenario: The production pump still completes authenticated original callbacks
-  Test: native_private_approval_roundtrip_encrypted_owner
-  Test: native_private_approval_roundtrip_plaintext_refused
-  Test: native_private_approval_startup_wrong_anchor
+  Retired-Test: native_private_approval_roundtrip_encrypted_owner
+  Retired-Test: native_private_approval_roundtrip_plaintext_refused
+  Retired-Test: native_private_approval_startup_wrong_anchor
   Given actual executable startup and independent owner crypto
   When service scheduling and notice multiplexing carry the existing native request
   Then only the exact encrypted authenticated verdict produces its original callback
@@ -105,3 +105,7 @@ Scenario: The genuine factory keeps original approval membership and runtime cus
   Given actual inline home account SDK runtime and activation owners
   When factory membership uses the same serialized approval collector
   Then success and current-owner refusal preserve all original physical and dispatch custody checks
+
+## Owner bootstrap product replacement (2026-10-07)
+
+The `Retired-Test` selectors above depended on removed client-side Fleet/provisioning/encrypted approval-bot production switches. They are no longer executable product requirements. New `native-owner-client.spec.md` binds actual bootstrap secret/config refusal, anonymous provider/model/tool denial, fresh Pasion authorization after restart and independent Room runtimes. It does not claim encrypted private approval, factory or delegated-task behavior. Direct SDK configuration tests remain bound by `native-bootstrap-sdk.spec.md`, and all other SDK Test/Filter bindings remain active.

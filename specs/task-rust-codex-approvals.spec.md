@@ -115,7 +115,7 @@ Scenario: The expiry denial is recorded at most once
   Then the replay is idempotent, an already decided row and a premature cutoff are refused, and the stale tap is refused
 
 Scenario: A whole composed service declines an approval its owner never answers
-  Test: native_fleet_approval_owner_wait_expiry
+  Retired-Test: native_fleet_approval_owner_wait_expiry
   Given the real service composition with the approval bot's own credentials and a card delivered to the owner's encrypted DM
   When the owner sends nothing before the owner wait ends
   Then the runner receives the family's own decline inside the response reserve
@@ -141,3 +141,7 @@ also on cancellation, so effective application remains a separate inspection gat
 This slice deliberately does not unblock canonical dispatch from protocol evidence.
 Taskless paths multi-environment runners session policy changes and arbitrary
 filesystem patterns remain unsupported.
+
+## Owner bootstrap product replacement (2026-10-07)
+
+The `Retired-Test` selectors above depended on removed client-side Fleet/provisioning/encrypted approval-bot production switches. They are no longer executable product requirements. New `native-owner-client.spec.md` binds actual bootstrap secret/config refusal, anonymous provider/model/tool denial, fresh Pasion authorization after restart and independent Room runtimes. It does not claim encrypted private approval, factory or delegated-task behavior. Direct SDK configuration tests remain bound by `native-bootstrap-sdk.spec.md`, and all other SDK Test/Filter bindings remain active.

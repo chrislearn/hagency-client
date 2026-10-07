@@ -59,7 +59,9 @@ Scenario: Missing stale unavailable and unsafe observations cannot restore autho
   Then no stale positive or recovered generation is minted and unsafe membership is fenced
 
 Scenario: One configured executable operates two original agents in one project
-  Test: native_configured_fleet_executable_two_agents
+  Retired-Test: native_configured_fleet_executable_two_agents
   Given the original failing same-project two-agent fixture for both account kinds
   When actual membership changes during physical provisioning and recurring intake
   Then both original runtimes complete independently through the native helper and encrypted replies
+
+2026-10-07: Retired-Test/Retired-Filter records the removed Fleet production entry point. Other SDK Test/Filter selectors remain active. See [current Owner product](native-owner-client.spec.md) and [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md). This does not claim Fleet, resource publication, delegation or encrypted tasks are supported in the new product.

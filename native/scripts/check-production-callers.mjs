@@ -570,7 +570,7 @@ export function taintChain(reach, def) {
   return chain;
 }
 
-export function checkProductionCallers({ root = repoRoot, read, files: givenFiles } = {}) {
+export function checkProductionCallers({ root = repoRoot, read, files: givenFiles, specs: selectedSpecs } = {}) {
   const readFn = read || ((rel) => readFileSync(path.join(root, rel), 'utf8'));
   const files = givenFiles || listRustFilesAt(root);
   const graph = buildGraph(files, readFn);
@@ -585,7 +585,9 @@ export function checkProductionCallers({ root = repoRoot, read, files: givenFile
 
   const specsDir = path.join(root, 'specs');
   const lines = [];
-  for (const name of readdirSync(specsDir).filter((n) => n.endsWith('.spec.md'))) {
+  const availableSpecs = readdirSync(specsDir).filter((n) => n.endsWith('.spec.md'));
+  if (selectedSpecs?.some(name => !availableSpecs.includes(name))) throw new Error('Unknown production spec selection');
+  for (const name of selectedSpecs || availableSpecs) {
     const content = readFileSync(path.join(specsDir, name), 'utf8');
     lines.push(...parseSpecLines(content, name));
   }
@@ -677,7 +679,9 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   if (explainIdx !== -1) {
     console.log(JSON.stringify(explain(process.argv[explainIdx + 1]), null, 2));
   } else {
-    const { result, ok } = checkProductionCallers();
+    const specIdx = process.argv.indexOf('--spec');
+    const specs = specIdx === -1 ? undefined : [process.argv[specIdx + 1]];
+    const { result, ok } = checkProductionCallers({ specs });
     console.log(JSON.stringify(result, null, 2));
     if (!result.count || !ok) process.exitCode = 1;
   }

@@ -1,4 +1,4 @@
-//! Pasion login and Fleet enrollment. All OAuth and machine credentials stay
+//! Pasion login and user-owned device authorization. All OAuth credentials stay
 //! in the Rust host. The browser receives navigation URLs and a local cookie.
 use super::{COOKIE, Error, console, current, same_origin};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -9,9 +9,17 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
     path::{Path, PathBuf},
-    time::{Duration, Instant},
+    sync::atomic::{AtomicBool, Ordering},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::Mutex;
+
+pub(super) mod matrix_creations;
+mod profiles;
+mod shared_matrix;
+pub(super) fn matrix_creation_router() -> Router {
+    matrix_creations::router()
+}
 
 const CALLBACK: &str = "/console/server-login/callback";
 const NONCE_COOKIE: &str = "hagency_server_login";
@@ -31,28 +39,146 @@ struct Pending {
     nonce: String,
     redirect: String,
     binding: Binding,
+    known_identity_only: bool,
     expires: Instant,
 }
 struct RemoteSession {
+    matrix_source: Option<std::sync::Arc<dyn super::native::MatrixTokenSource>>,
     token: String,
+    oauth_token: String,
+    user_id: String,
+    device: Option<AuthorizedDevice>,
+    refresh_token: Option<String>,
+    oauth_expires: Instant,
+    authorized_until: Instant,
+    invalidated: bool,
     binding: Binding,
     checked: Instant,
     expires: Instant,
 }
+/// A host-only credential; never serialized into a browser response.
+#[derive(Clone)]
+pub struct AuthorizedDevice {
+    origin: String,
+    device_id: String,
+    generation: u64,
+    token: String,
+    owner_mxid: String,
+    issuer: String,
+    subject: String,
+    user_id: String,
+    valid_until: Instant,
+    revoked: std::sync::Arc<AtomicBool>,
+    stopped: std::sync::Arc<AtomicBool>,
+}
+#[cfg(test)]
+pub(super) fn fixture_device(
+    origin: &str,
+    subject: &str,
+    mxid: &str,
+) -> (AuthorizedDevice, std::sync::Arc<AtomicBool>) {
+    let revoked = std::sync::Arc::new(AtomicBool::new(false));
+    (
+        AuthorizedDevice {
+            origin: origin.into(),
+            issuer: format!("{}_pasion/", origin),
+            subject: subject.into(),
+            owner_mxid: mxid.into(),
+            user_id: subject.into(),
+            device_id: "fixture_device".into(),
+            generation: 1,
+            token: "e".repeat(64),
+            valid_until: Instant::now() + Duration::from_secs(30),
+            revoked: revoked.clone(),
+            stopped: std::sync::Arc::new(AtomicBool::new(false)),
+        },
+        revoked,
+    )
+}
+impl AuthorizedDevice {
+    pub fn origin(&self) -> &str {
+        &self.origin
+    }
+    pub fn issuer(&self) -> &str {
+        &self.issuer
+    }
+    pub fn subject(&self) -> &str {
+        &self.subject
+    }
+    pub fn device_id(&self) -> &str {
+        &self.device_id
+    }
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+    /// Check immediately before sending; callers must not persist snapshots.
+    pub fn bearer(&self) -> Result<&str, Error> {
+        if self.stopped.load(Ordering::Acquire)
+            || self.revoked.load(Ordering::Acquire)
+            || self.valid_until <= Instant::now()
+        {
+            Err(Error::Unauthorized)
+        } else {
+            Ok(&self.token)
+        }
+    }
+    pub fn user_id(&self) -> &str {
+        &self.user_id
+    }
+    pub fn owner_mxid(&self) -> &str {
+        &self.owner_mxid
+    }
+    pub fn valid_until(&self) -> Instant {
+        self.valid_until
+    }
+}
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Revocation {
+    origin: String,
+    client_id: String,
+    session_token: String,
+    oauth_token: String,
+    hint: String,
+    session_done: bool,
+    oauth_done: bool,
+}
 pub(super) struct ServerLogin {
+    pub(super) native_expected: std::sync::Mutex<Option<(String, String)>>,
     path: Option<PathBuf>,
+    profiles_path: Option<PathBuf>,
+    profiles: Mutex<profiles::Profiles>,
+    transition: Mutex<()>,
+    worker_started: AtomicBool,
+    stopped: std::sync::Arc<AtomicBool>,
+    revocations_path: Option<PathBuf>,
+    revocations: Mutex<Vec<Revocation>>,
     binding: Mutex<Option<Binding>>,
     pending: Mutex<Option<Pending>>,
     status: Mutex<Value>,
     sessions: Mutex<std::collections::HashMap<String, RemoteSession>>,
+}
+fn read_private_json(path: &Path, limit: u64) -> Result<Vec<u8>, Error> {
+    use std::io::Read;
+    let file = hagency_store::private::open(path, false).map_err(|_| Error::Unavailable)?;
+    if file.metadata().map_err(|_| Error::Unavailable)?.len() > limit {
+        return Err(Error::Unavailable);
+    }
+    let mut raw = Vec::new();
+    file.take(limit + 1)
+        .read_to_end(&mut raw)
+        .map_err(|_| Error::Unavailable)?;
+    if raw.len() as u64 > limit {
+        return Err(Error::Unavailable);
+    }
+    Ok(raw)
 }
 impl ServerLogin {
     pub(super) fn new(state: Option<&Path>) -> Result<Self, Error> {
         let path = state.map(|dir| dir.join("server-login.json"));
         let binding = match &path {
             Some(path) if path.exists() => {
-                let raw =
-                    hagency_store::private::read_secret(path).map_err(|_| Error::Unavailable)?;
+                let raw = read_private_json(path, 16384)?;
                 if raw.len() > 16384 {
                     return Err(Error::Unavailable);
                 }
@@ -86,84 +212,466 @@ impl ServerLogin {
             }
             _ => None,
         };
+        let profiles_path = state.map(|dir| dir.join("server-login-profiles.json"));
+        let profiles = profiles::Profiles::load(profiles_path.as_deref(), binding.as_ref())?;
+        let revocations_path = state.map(|dir| dir.join("server-login-revocations.json"));
+        let revocations: Vec<Revocation> = match &revocations_path {
+            Some(path) if path.exists() => {
+                let raw = read_private_json(path, 1024 * 1024)?;
+                if raw.len() > 1024 * 1024 {
+                    return Err(Error::Unavailable);
+                }
+                let values: Vec<Revocation> =
+                    serde_json::from_slice(&raw).map_err(|_| Error::Unavailable)?;
+                if values.len() > 64
+                    || values.iter().any(|v| {
+                        origin(&v.origin).is_err()
+                            || v.client_id.is_empty()
+                            || v.client_id.len() > 128
+                            || (v.session_token.is_empty() && !v.session_done)
+                            || (!v.session_token.is_empty() && v.session_token.len() != 64)
+                            || (!v.oauth_done && v.oauth_token.is_empty())
+                            || v.oauth_token.len() > 4096
+                            || !["access_token", "refresh_token"].contains(&v.hint.as_str())
+                    })
+                {
+                    return Err(Error::Unavailable);
+                }
+                values
+            }
+            _ => vec![],
+        };
+        let revocation_pending = !revocations.is_empty();
         Ok(Self {
+            native_expected: std::sync::Mutex::new(None),
             path,
+            profiles_path,
+            profiles: Mutex::new(profiles),
+            transition: Mutex::new(()),
+            revocations_path,
+            revocations: Mutex::new(revocations),
+            worker_started: AtomicBool::new(false),
+            stopped: std::sync::Arc::new(AtomicBool::new(false)),
             binding: Mutex::new(binding),
             pending: Mutex::new(None),
-            status: Mutex::new(json!({"state":"idle"})),
+            status: Mutex::new(if revocation_pending {
+                json!({"state":"signed_out","deviceAuthorized":false,"transportOnline":false,"remoteRevocationPending":true})
+            } else {
+                json!({"state":"idle"})
+            }),
             sessions: Mutex::new(std::collections::HashMap::new()),
         })
     }
-    /// Only Pasion sessions use this gate. Local recovery sessions remain local.
-    /// Revalidate against the pinned server every 30 seconds; fail closed when
-    /// its authentication service is unavailable or the token is revoked.
+    /// Start one bounded renewal task. Weak ownership ensures dropping the
+    /// console ends the worker; UI activity is not required for authorization.
+    pub(super) fn start_worker(console: &super::Console) {
+        if console
+            .0
+            .server_login
+            .worker_started
+            .swap(true, Ordering::AcqRel)
+        {
+            return;
+        }
+        let weak = std::sync::Arc::downgrade(&console.0);
+        tokio::spawn(async move {
+            let mut last_revocations = Instant::now() - Duration::from_secs(10);
+            let mut interval = tokio::time::interval(Duration::from_secs(1));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                interval.tick().await;
+                let Some(inner) = weak.upgrade() else { break };
+                let login = &inner.server_login;
+                if login.stopped.load(Ordering::Acquire) {
+                    break;
+                }
+                let mut sessions = login.sessions.lock().await;
+                for session in sessions.values_mut().filter(|s| !s.invalidated) {
+                    if (session.checked.elapsed() >= Duration::from_secs(20)
+                        || session.authorized_until <= Instant::now()
+                        || (session.refresh_token.is_some()
+                            && session.oauth_expires <= Instant::now() + Duration::from_secs(10))
+                        || session.oauth_expires <= Instant::now())
+                        && let Err(error) = renew(session).await
+                    {
+                        let code = if session.matrix_source.is_some()
+                            && matches!(error, Error::Unavailable)
+                        {
+                            "matrix_authorization_unavailable"
+                        } else {
+                            "sign_in_required"
+                        };
+                        login.queue_revocation(session).await;
+                        *login.status.lock().await = json!({"state":"failed","code":code,"deviceAuthorized":false,"transportOnline":false});
+                    }
+                }
+                drop(sessions);
+                if last_revocations.elapsed() >= Duration::from_secs(10) {
+                    login.flush_revocations().await;
+                    last_revocations = Instant::now();
+                }
+            }
+        });
+    }
+    /// A remote cookie cannot turn into a local recovery login when revoked.
     pub(super) async fn validate(&self, cookie: &str) -> Result<(), Error> {
-        let key = URL_SAFE_NO_PAD.encode(Sha256::digest(cookie.as_bytes()));
+        let key = session_key(cookie);
         let mut sessions = self.sessions.lock().await;
         let Some(session) = sessions.get_mut(&key) else {
             return Ok(());
         };
-        if session.expires <= Instant::now() {
+        if session.invalidated || session.expires <= Instant::now() {
             return Err(Error::Unauthorized);
         }
-        if session.checked.elapsed() < Duration::from_secs(30) {
-            return Ok(());
-        }
-        let server = origin(&session.binding.origin).map_err(|_| Error::Unauthorized)?;
-        let client = http().map_err(|_| Error::Unavailable)?;
-        let identity = get(
-            &client,
-            server.join("/_hagency/client/v1/identity").unwrap(),
-            Some(&session.token),
-        )
-        .await
-        .map_err(|_| Error::Unauthorized)?;
-        if identity["userId"] != session.binding.owner.as_deref().unwrap_or("")
-            || identity["subject"] != session.binding.subject.as_deref().unwrap_or("")
-            || identity["clientId"] != session.binding.client_id
+        if (session.checked.elapsed() >= Duration::from_secs(20)
+            || session.authorized_until <= Instant::now())
+            && let Err(error) = renew(session).await
         {
+            self.queue_revocation(session).await;
+            *self.status.lock().await = json!({"state":"failed","code":"sign_in_required","deviceAuthorized":false,"transportOnline":false});
+            return Err(error);
+        }
+        Ok(())
+    }
+    /// Only the trusted Rust runtime can obtain a current device credential.
+    /// An expired browser cookie neither grants nor extends this permission.
+    pub(super) fn retire(&self) {
+        self.stopped.store(true, Ordering::Release);
+    }
+    pub(super) async fn authorized_device(&self) -> Result<AuthorizedDevice, Error> {
+        if self.stopped.load(Ordering::Acquire) {
             return Err(Error::Unauthorized);
         }
-        session.checked = Instant::now();
+        let mut sessions = self.sessions.lock().await;
+        let session = sessions
+            .values_mut()
+            .find(|s| {
+                !s.invalidated && (s.matrix_source.is_some() || s.authorized_until > Instant::now())
+            })
+            .ok_or(Error::Unauthorized)?;
+        if session.matrix_source.is_some() && renew(session).await.is_err() {
+            self.queue_revocation(session).await;
+            return Err(Error::Unauthorized);
+        }
+        if self.stopped.load(Ordering::Acquire) {
+            return Err(Error::Unauthorized);
+        }
+        let mut device = session.device.clone().ok_or(Error::Unauthorized)?;
+        device.valid_until = session.authorized_until;
+        device.stopped = self.stopped.clone();
+        Ok(device)
+    }
+    async fn queue_revocation(&self, session: &mut RemoteSession) {
+        if session.invalidated {
+            return;
+        }
+        let shared = session.matrix_source.is_some();
+        let (oauth_token, hint) = if shared {
+            session.oauth_token.clear();
+            session.refresh_token = None;
+            (String::new(), "access_token")
+        } else {
+            match session.refresh_token.take() {
+                Some(token) => (token, "refresh_token"),
+                None => (std::mem::take(&mut session.oauth_token), "access_token"),
+            }
+        };
+        let pending = Revocation {
+            origin: session.binding.origin.clone(),
+            client_id: session.binding.client_id.clone(),
+            session_token: std::mem::take(&mut session.token),
+            oauth_token,
+            hint: hint.to_owned(),
+            session_done: false,
+            oauth_done: shared,
+        };
+        invalidate(session);
+        let mut revocations = self.revocations.lock().await;
+        revocations.push(pending);
+        let _ = self.save_revocations(&revocations);
+    }
+    pub(super) async fn revoke_native_all(&self) {
+        for session in self.sessions.lock().await.values_mut() {
+            self.queue_revocation(session).await;
+        }
+        self.pending.lock().await.take();
+    }
+    pub(super) async fn flush_native_revocations(&self) {
+        self.flush_revocations().await;
+    }
+    pub(super) async fn sign_out(&self, cookie: &str) {
+        let mut sessions = self.sessions.lock().await;
+        if let Some(session) = sessions.get_mut(&session_key(cookie)) {
+            // Persist only a pending revoke record, never a usable runtime
+            // credential, before network operations. Stop snapshots immediately.
+            self.queue_revocation(session).await;
+            *self.status.lock().await = json!({"state":"signed_out","deviceAuthorized":false,"transportOnline":false,"remoteRevocationPending":true});
+        }
+        drop(sessions);
+        self.flush_revocations().await;
+    }
+    fn save_revocations(&self, values: &[Revocation]) -> Result<(), Error> {
+        let path = self.revocations_path.as_ref().ok_or(Error::Unavailable)?;
+        let raw = serde_json::to_vec(values).map_err(|_| Error::Unavailable)?;
+        hagency_store::private::replace(path, &raw).map_err(|_| Error::Unavailable)
+    }
+    async fn revoke_failed_login(
+        &self,
+        binding: &Binding,
+        session_token: &str,
+        token: &str,
+        refresh_token: Option<&str>,
+    ) -> Result<(), &'static str> {
+        let mut revocations = self.revocations.lock().await;
+        revocations.push(Revocation {
+            origin: binding.origin.clone(),
+            client_id: binding.client_id.clone(),
+            session_token: session_token.into(),
+            oauth_token: refresh_token.unwrap_or(token).into(),
+            hint: if refresh_token.is_some() {
+                "refresh_token"
+            } else {
+                "access_token"
+            }
+            .into(),
+            session_done: session_token.is_empty(),
+            oauth_done: false,
+        });
+        self.save_revocations(&revocations)
+            .map_err(|_| "local_state_unavailable")?;
+        drop(revocations);
+        self.flush_revocations().await;
         Ok(())
+    }
+    async fn flush_revocations(&self) {
+        let mut pending = self.revocations.lock().await;
+        if pending.is_empty() {
+            return;
+        }
+        let Ok(client) = http() else { return };
+        for record in pending.iter_mut() {
+            let Ok(server) = origin(&record.origin) else {
+                continue;
+            };
+            if !record.session_done
+                && let Ok(reply) = client
+                    .delete(server.join("/api/hagency/v1/sessions/current").unwrap())
+                    .bearer_auth(&record.session_token)
+                    .send()
+                    .await
+            {
+                // Expired/previously revoked sessions are already inactive.
+                record.session_done = reply.status().is_success()
+                    || reply.status() == reqwest::StatusCode::UNAUTHORIZED;
+            }
+            if !record.oauth_done
+                && let Ok(reply) = client
+                    .post(server.join("/_pasion/oauth2/revoke").unwrap())
+                    .form(&[
+                        ("client_id", record.client_id.as_str()),
+                        ("token", record.oauth_token.as_str()),
+                        ("token_type_hint", record.hint.as_str()),
+                    ])
+                    .send()
+                    .await
+            {
+                record.oauth_done = reply.status().is_success();
+            }
+        }
+        pending.retain(|p| !(p.session_done && p.oauth_done));
+        let _ = self.save_revocations(&pending);
+        if pending.is_empty() {
+            let mut status = self.status.lock().await;
+            if status["state"] == "signed_out" {
+                status["remoteRevocationPending"] = json!(false);
+            }
+        }
     }
     async fn save(&self, binding: Binding) -> Result<(), &'static str> {
         let path = self.path.as_ref().ok_or("local_state_unavailable")?;
         let raw = serde_json::to_vec(&binding).map_err(|_| "local_state_unavailable")?;
+        self.save_profile(&binding).await?;
         hagency_store::private::replace(path, &raw).map_err(|_| "local_state_unavailable")?;
         *self.binding.lock().await = Some(binding);
         Ok(())
     }
+}
+fn session_key(cookie: &str) -> String {
+    URL_SAFE_NO_PAD.encode(Sha256::digest(cookie.as_bytes()))
+}
+fn invalidate(session: &mut RemoteSession) {
+    session.invalidated = true;
+    session.authorized_until = Instant::now();
+    if let Some(device) = session.device.take() {
+        device.revoked.store(true, Ordering::Release);
+    }
+    session.oauth_token.clear();
+    session.refresh_token = None;
+    session.token.clear();
+}
+fn deadline(value: &Value) -> Result<Instant, &'static str> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| "invalid_local_clock")?
+        .as_millis() as u64;
+    let until = value["validUntilMs"]
+        .as_u64()
+        .ok_or("invalid_server_response")?;
+    let remaining = until
+        .checked_sub(now)
+        .filter(|ms| *ms > 0 && *ms <= 31_000)
+        .ok_or("sign_in_required")?;
+    Ok(Instant::now() + Duration::from_millis(remaining))
+}
+fn oauth_credentials(tokens: &Value) -> Result<(String, Option<String>, Duration), &'static str> {
+    if tokens["token_type"]
+        .as_str()
+        .is_some_and(|t| !t.eq_ignore_ascii_case("bearer"))
+    {
+        return Err("invalid_server_response");
+    }
+    let token = tokens["access_token"]
+        .as_str()
+        .filter(|t| !t.is_empty() && t.len() <= 4096)
+        .ok_or("invalid_server_response")?
+        .to_owned();
+    let refresh = match tokens.get("refresh_token") {
+        Some(value) => Some(
+            value
+                .as_str()
+                .filter(|t| !t.is_empty() && t.len() <= 4096)
+                .ok_or("invalid_server_response")?
+                .to_owned(),
+        ),
+        None => None,
+    };
+    let lifetime = tokens["expires_in"]
+        .as_u64()
+        .filter(|v| *v > 0 && *v <= 31_536_000)
+        .ok_or("invalid_server_response")?;
+    Ok((token, refresh, Duration::from_secs(lifetime)))
+}
+fn may_stop_session(active: Option<&Binding>, session: &RemoteSession) -> bool {
+    !session.invalidated && active.is_some_and(|binding| same_profile(binding, &session.binding))
+}
+fn same_profile(left: &Binding, right: &Binding) -> bool {
+    left.origin == right.origin
+        && left.owner.is_some()
+        && left.owner == right.owner
+        && left.subject.is_some()
+        && left.subject == right.subject
+}
+fn identity_matches(identity: &Value, binding: &Binding) -> bool {
+    identity["mxid"] == binding.owner.as_deref().unwrap_or("")
+        && identity["subject"] == binding.subject.as_deref().unwrap_or("")
+        && identity["clientId"] == binding.client_id
+        && identity["issuer"] == format!("{}_pasion/", binding.origin)
+}
+async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
+    if session.invalidated {
+        return Err(Error::Unauthorized);
+    }
+    let server = origin(&session.binding.origin).map_err(|_| Error::Unauthorized)?;
+    let client = http().map_err(|_| Error::Unavailable)?;
+    let shared_token = if let Some(source) = &session.matrix_source {
+        let snapshot = source.access_token().await.map_err(|error| {
+            if super::native::sdk_source_failure(error) == "matrix_authorization_unavailable" {
+                Error::Unavailable
+            } else {
+                Error::Unauthorized
+            }
+        })?;
+        if snapshot.client_id != session.binding.client_id || snapshot.access_token.is_empty() {
+            return Err(Error::Unauthorized);
+        }
+        Some(snapshot.access_token)
+    } else {
+        None
+    };
+    if shared_token.is_none() && session.oauth_expires <= Instant::now() + Duration::from_secs(10) {
+        if let Some(refresh) = &session.refresh_token {
+            let tokens = response(
+                client
+                    .post(server.join("/_pasion/oauth2/token").unwrap())
+                    .form(&[
+                        ("grant_type", "refresh_token"),
+                        ("client_id", session.binding.client_id.as_str()),
+                        ("refresh_token", refresh),
+                    ])
+                    .send()
+                    .await
+                    .map_err(|_| Error::Unavailable)?,
+            )
+            .await
+            .map_err(|_| Error::Unauthorized)?;
+            let (token, next_refresh, lifetime) =
+                oauth_credentials(&tokens).map_err(|_| Error::Unauthorized)?;
+            session.oauth_token = token;
+            if next_refresh.is_some() {
+                session.refresh_token = next_refresh;
+            }
+            session.oauth_expires = Instant::now() + lifetime;
+        } else if session.oauth_expires <= Instant::now() {
+            return Err(Error::Unauthorized);
+        }
+    }
+    let renewed = response(
+        client
+            .post(
+                server
+                    .join("/api/hagency/v1/sessions/current/renew")
+                    .unwrap(),
+            )
+            .bearer_auth(&session.token)
+            .json(&json!({"accessToken":shared_token.as_ref().unwrap_or(&session.oauth_token)}))
+            .send()
+            .await
+            .map_err(|_| Error::Unavailable)?,
+    )
+    .await
+    .map_err(|_| Error::Unauthorized)?;
+    let until = deadline(&renewed).map_err(|_| Error::Unauthorized)?;
+    let identity = get(
+        &client,
+        server.join("/api/hagency/v1/identity").unwrap(),
+        Some(&session.token),
+    )
+    .await
+    .map_err(|_| Error::Unauthorized)?;
+    if !identity_matches(&identity, &session.binding) || identity["userId"] != session.user_id {
+        return Err(Error::Unauthorized);
+    }
+    let identity_until = deadline(&identity).map_err(|_| Error::Unauthorized)?;
+    if let Some(source) = &session.matrix_source {
+        let after = source.access_token().await.map_err(|error| {
+            if super::native::sdk_source_failure(error) == "matrix_authorization_unavailable" {
+                Error::Unavailable
+            } else {
+                Error::Unauthorized
+            }
+        })?;
+        if after.client_id != session.binding.client_id {
+            return Err(Error::Unauthorized);
+        }
+        session.oauth_expires = until.min(identity_until);
+    }
+    session.authorized_until = until.min(identity_until).min(session.oauth_expires);
+    session.checked = Instant::now();
+    Ok(())
 }
 fn random() -> Result<String, &'static str> {
     let mut bytes = [0; 32];
     getrandom::fill(&mut bytes).map_err(|_| "random_unavailable")?;
     Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
-fn origin(value: &str) -> Result<Url, &'static str> {
-    let url = Url::parse(value).map_err(|_| "invalid_server")?;
-    let loopback = url.host_str().is_some_and(|h| {
-        h.trim_matches(['[', ']'])
-            .parse::<std::net::IpAddr>()
-            .is_ok_and(|ip| ip.is_loopback())
-    });
-    if value.len() > 2048
-        || !url.username().is_empty()
-        || url.password().is_some()
-        || url.query().is_some()
-        || url.fragment().is_some()
-        || url.path() != "/"
-        || !(url.scheme() == "https" || url.scheme() == "http" && loopback)
-    {
-        return Err("invalid_server");
-    }
-    Ok(url)
+pub(super) fn origin(value: &str) -> Result<Url, &'static str> {
+    crate::server_admission::normalize_origin(value).map_err(|e| e.code())
 }
 fn http() -> Result<Client, &'static str> {
     Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(Duration::from_secs(5))
+        .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(15))
         .build()
         .map_err(|_| "server_unavailable")
@@ -180,8 +688,6 @@ async fn response(mut response: reqwest::Response) -> Result<Value, &'static str
     let value: Value = serde_json::from_slice(&raw).map_err(|_| "invalid_server_response")?;
     if !status.is_success() {
         return Err(match value["code"].as_str() {
-            Some("self_service_disabled") => "self_service_disabled",
-            Some("fleet_limit") => "fleet_limit",
             Some("sign_in_required") => "sign_in_required",
             _ => "server_request_failed",
         });
@@ -227,8 +733,10 @@ fn local_redirect(req: &Request) -> Result<String, &'static str> {
 pub(super) fn router() -> Router {
     Router::with_path("server-login")
         .get(login_status)
+        .push(Router::with_path("switch").post(profiles::switch))
         .push(Router::with_path("start").post(start))
         .push(Router::with_path("callback").get(callback))
+        .push(Router::with_path("sign-out").post(sign_out))
 }
 #[handler]
 async fn login_status(req: &mut Request, depot: &Depot, res: &mut Response) {
@@ -240,8 +748,95 @@ async fn login_status(req: &mut Request, depot: &Depot, res: &mut Response) {
         super::failed(res, Error::Unavailable);
         return;
     };
+    ServerLogin::start_worker(console);
+    let local_access_ready = current(req, depot).is_ok()
+        && match cookie(req, COOKIE) {
+            Some(value) => console.0.server_login.validate(&value).await.is_ok(),
+            None => false,
+        };
+    let profiles = console.0.server_login.profiles_status().await;
     let binding = console.0.server_login.binding.lock().await;
-    res.render(Json(json!({"configured":binding.as_ref().is_some_and(|b|b.owner.is_some()),"server":binding.as_ref().map(|b|&b.origin),"name":binding.as_ref().map(|b|&b.name),"status":*console.0.server_login.status.lock().await})));
+    res.render(Json(json!({"localAccessReady":local_access_ready,"profiles":profiles["profiles"],"activeProfileId":profiles["activeProfileId"],"configured":binding.as_ref().is_some_and(|b|b.owner.is_some()),"server":binding.as_ref().map(|b|&b.origin),"name":binding.as_ref().map(|b|&b.name),"status":*console.0.server_login.status.lock().await})));
+}
+#[handler]
+async fn sign_out(req: &mut Request, depot: &Depot, res: &mut Response) {
+    if !same_origin(req, depot, true)
+        || req.uri().query().is_some()
+        || !super::body(req, 1).await.is_ok_and(|b| b.is_empty())
+    {
+        super::failed(res, Error::Unauthorized);
+        return;
+    }
+    let Ok(console) = console(depot) else {
+        super::failed(res, Error::Unavailable);
+        return;
+    };
+    let _transition = console.0.server_login.transition.lock().await;
+    let Some(value) = cookie(req, COOKIE) else {
+        super::failed(res, Error::Unauthorized);
+        return;
+    };
+    let active = console.0.server_login.binding.lock().await.clone();
+    let permitted = console
+        .0
+        .server_login
+        .sessions
+        .lock()
+        .await
+        .get(&session_key(&value))
+        .is_some_and(|session| may_stop_session(active.as_ref(), session));
+    if !permitted {
+        super::failed(res, Error::Unauthorized);
+        return;
+    }
+    let bridge_allowed = console.0.authority.authenticate(&value).is_ok()
+        && console.0.server_login.validate(&value).await.is_ok();
+    if let Err(error) = console.0.authority.revoke_all() {
+        super::failed(res, error);
+        return;
+    }
+    *console.0.server_login.pending.lock().await = None;
+    {
+        let mut sessions = console.0.server_login.sessions.lock().await;
+        for session in sessions.values_mut() {
+            console.0.server_login.queue_revocation(session).await;
+        }
+    }
+    *console.0.server_login.status.lock().await = json!({"state":"signed_out","deviceAuthorized":false,"transportOnline":false,"remoteRevocationPending":true});
+    console.stop_owned_runtimes().await;
+    console.stop_owner_provider().await;
+    {
+        let records = console.0.server_login.revocations.lock().await;
+        if let Err(error) = console.0.server_login.save_revocations(&records) {
+            super::failed(res, error);
+            return;
+        }
+    }
+    console.0.server_login.flush_revocations().await;
+    let new_cookie = if bridge_allowed {
+        console
+            .0
+            .authority
+            .issue_owner_ticket()
+            .and_then(|ticket| console.0.authority.exchange(&ticket))
+    } else {
+        Ok(String::new())
+    };
+    let Ok(new_cookie) = new_cookie else {
+        super::failed(res, Error::Unavailable);
+        return;
+    };
+    res.add_header(
+        "set-cookie",
+        if new_cookie.is_empty() {
+            format!("{COOKIE}=; HttpOnly; SameSite=Strict; Path=/console; Max-Age=0")
+        } else {
+            format!("{COOKIE}={new_cookie}; HttpOnly; SameSite=Strict; Path=/console")
+        },
+        true,
+    )
+    .unwrap();
+    res.render(Json(json!({"ok":true})));
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -258,7 +853,11 @@ async fn start(req: &mut Request, depot: &Depot, res: &mut Response) {
             res.render(Json(json!({"url":url})));
         }
         Err(code) => {
-            res.status_code(StatusCode::BAD_REQUEST);
+            res.status_code(if code.ends_with("unavailable") {
+                StatusCode::SERVICE_UNAVAILABLE
+            } else {
+                StatusCode::BAD_REQUEST
+            });
             res.render(Json(json!({"code":code})));
         }
     }
@@ -269,15 +868,30 @@ async fn begin(req: &mut Request, depot: &Depot) -> Result<(String, String), &'s
     }
     let console = console(depot).map_err(|_| "local_state_unavailable")?;
     let login = &console.0.server_login;
+    let _transition = login.transition.lock().await;
     let binding = login.binding.lock().await.clone();
-    // A server account can re-open its own previously bound client. The first
-    // binding and any server change still require trusted local operator access.
-    if binding.as_ref().is_none_or(|b| b.owner.is_none()) && current(req, depot).is_err() {
-        return Err("local_access_required");
-    }
+    let local_access = current(req, depot).is_ok()
+        && match cookie(req, COOKIE) {
+            Some(value) => login.validate(&value).await.is_ok(),
+            None => false,
+        };
     let raw = super::body(req, 8192).await.map_err(|_| "invalid_login")?;
     let input: Start = serde_json::from_slice(&raw).map_err(|_| "invalid_login")?;
     let server = origin(&input.server)?;
+    let binding = if local_access {
+        binding
+    } else {
+        // Expired browser authority may authenticate an already admitted identity,
+        // but may neither select a new owner nor modify the active binding yet.
+        let mut known = login
+            .known_server(server.as_str())
+            .await
+            .ok_or("local_access_required")?;
+        known.owner = None;
+        known.subject = None;
+        Some(known)
+    };
+
     if input.name.trim().is_empty() || input.name.chars().count() > 128 {
         return Err("invalid_name");
     }
@@ -287,13 +901,13 @@ async fn begin(req: &mut Request, depot: &Depot) -> Result<(String, String), &'s
     {
         return Err("owner_mismatch");
     }
+    if login.revocations.lock().await.len() >= 63 {
+        return Err("local_session_limit");
+    }
     let client = http()?;
-    get(
-        &client,
-        server.join("/_hagency/client/v1/discovery").unwrap(),
-        None,
-    )
-    .await?;
+    crate::server_admission::discover(server.as_str())
+        .await
+        .map_err(|e| e.code())?;
     let mut binding = match binding.filter(|b| b.origin == server.as_str()) {
         Some(binding) => binding,
         None => {
@@ -321,7 +935,9 @@ async fn begin(req: &mut Request, depot: &Depot) -> Result<(String, String), &'s
     if binding.owner.is_none() {
         binding.name = input.name.trim().to_owned();
     }
-    login.save(binding.clone()).await?;
+    if local_access {
+        login.save(binding.clone()).await?;
+    }
     let state = random()?;
     let verifier = random()?;
     let nonce = random()?;
@@ -330,6 +946,7 @@ async fn begin(req: &mut Request, depot: &Depot) -> Result<(String, String), &'s
     let mut authorize = server.join("/_pasion/authorize").unwrap();
     let device = format!("Hagency{}", &binding.installation_id[..16]);
     authorize.query_pairs_mut().extend_pairs([
+        ("prompt", "login"),
         ("response_type", "code"),
         ("client_id", binding.client_id.as_str()),
         ("redirect_uri", redirect.as_str()),
@@ -347,6 +964,7 @@ async fn begin(req: &mut Request, depot: &Depot) -> Result<(String, String), &'s
         nonce: nonce.clone(),
         redirect,
         binding,
+        known_identity_only: !local_access,
         expires: Instant::now() + Duration::from_secs(300),
     });
     *login.status.lock().await = json!({"state":"signing_in"});
@@ -390,12 +1008,12 @@ async fn callback(req: &mut Request, depot: &Depot, res: &mut Response) {
     )
     .unwrap();
     res.status_code(StatusCode::SEE_OTHER);
-    res.add_header("location", "/console/project-sides/", true)
-        .unwrap();
+    res.add_header("location", "/console/", true).unwrap();
 }
 async fn finish(req: &mut Request, depot: &Depot) -> Result<(String, Value), &'static str> {
     let console = console(depot).map_err(|_| "local_state_unavailable")?;
     let login = &console.0.server_login;
+    let _transition = login.transition.lock().await;
     let state = req.query::<String>("state").ok_or("invalid_oauth_state")?;
     let mut lock = login.pending.lock().await;
     let pending = lock.as_ref().ok_or("invalid_oauth_state")?;
@@ -407,6 +1025,12 @@ async fn finish(req: &mut Request, depot: &Depot) -> Result<(String, Value), &'s
     }
     let mut pending = lock.take().unwrap();
     drop(lock);
+    if req
+        .query::<String>("iss")
+        .is_some_and(|issuer| issuer != format!("{}_pasion/", pending.binding.origin))
+    {
+        return Err("owner_mismatch");
+    }
     let code = req
         .query::<String>("code")
         .filter(|c| c.len() <= 4096)
@@ -428,86 +1052,192 @@ async fn finish(req: &mut Request, depot: &Depot) -> Result<(String, Value), &'s
             .map_err(|_| "server_unavailable")?,
     )
     .await?;
-    let token = tokens["access_token"]
-        .as_str()
-        .filter(|t| !t.is_empty() && t.len() <= 4096)
-        .ok_or("invalid_server_response")?;
-    let identity = get(
-        &client,
-        server.join("/_hagency/client/v1/identity").unwrap(),
-        Some(token),
-    )
-    .await?;
-    let user = identity["userId"]
-        .as_str()
-        .ok_or("invalid_server_response")?;
-    let subject = identity["subject"]
-        .as_str()
-        .ok_or("invalid_server_response")?;
-    if identity["clientId"] != pending.binding.client_id
-        || pending
-            .binding
-            .owner
-            .as_ref()
-            .is_some_and(|owner| owner != user)
-        || pending
-            .binding
-            .subject
-            .as_ref()
-            .is_some_and(|owner| owner != subject)
-    {
-        return Err("owner_mismatch");
+    let (token, refresh_token, oauth_lifetime) = oauth_credentials(&tokens)?;
+    let mut issued_session = String::new();
+    let completed = async {
+        let grant = response(
+            client
+                .post(server.join("/api/hagency/v1/sessions/pasion").unwrap())
+                .json(&json!({"accessToken":token}))
+                .send()
+                .await
+                .map_err(|_| "server_unavailable")?,
+        )
+        .await?;
+        let session_token = grant["token"]
+            .as_str()
+            .filter(|t| t.len() == 64)
+            .ok_or("invalid_server_response")?;
+        issued_session = session_token.to_owned();
+        let verified = async {
+            let identity = get(
+                &client,
+                server.join("/api/hagency/v1/identity").unwrap(),
+                Some(session_token),
+            )
+            .await?;
+            let authorized_until = deadline(&grant)?.min(deadline(&identity)?);
+            identity["userId"]
+                .as_str()
+                .filter(|v| !v.is_empty() && v.len() <= 128)
+                .ok_or("invalid_server_response")?;
+            let user = identity["mxid"]
+                .as_str()
+                .filter(|v| {
+                    v.len() <= 255
+                        && v.starts_with('@')
+                        && v[1..]
+                            .split_once(':')
+                            .is_some_and(|(local, host)| !local.is_empty() && !host.is_empty())
+                        && !v.chars().any(|c| c.is_whitespace() || c.is_control())
+                })
+                .ok_or("invalid_server_response")?;
+            let subject = identity["subject"]
+                .as_str()
+                .filter(|v| !v.is_empty() && v.len() <= 255)
+                .ok_or("invalid_server_response")?;
+            if identity["issuer"] != server.join("/_pasion/").unwrap().as_str()
+                || grant["mxid"] != identity["mxid"]
+                || grant["userId"] != identity["userId"]
+                || identity["clientId"] != pending.binding.client_id
+                || pending
+                    .binding
+                    .owner
+                    .as_ref()
+                    .is_some_and(|owner| owner != user)
+                || pending
+                    .binding
+                    .subject
+                    .as_ref()
+                    .is_some_and(|owner| owner != subject)
+            {
+                return Err("owner_mismatch");
+            }
+            if pending.known_identity_only
+                && !login.known_identity(server.as_str(), subject, user).await
+            {
+                return Err("owner_mismatch");
+            }
+            if let Some((expected_origin, expected_owner)) = login
+                .native_expected
+                .lock()
+                .map_err(|_| "local_state_unavailable")?
+                .as_ref()
+                && (pending.binding.origin != *expected_origin || user != expected_owner.as_str())
+            {
+                return Err("matrix_account_mismatch");
+            }
+            Ok((
+                identity.clone(),
+                authorized_until,
+                user.to_owned(),
+                subject.to_owned(),
+            ))
+        }
+        .await;
+        let (identity, authorized_until, user, subject) = verified?;
+        if pending.known_identity_only {
+            console
+                .0
+                .authority
+                .revoke_all()
+                .map_err(|_| "local_state_unavailable")?;
+            console.stop_owned_runtimes().await;
+            console.stop_owner_provider().await;
+        }
+        pending.binding.owner = Some(user.to_owned());
+        pending.binding.subject = Some(subject.to_owned());
+        login.save(pending.binding.clone()).await?;
+        let expiry = if refresh_token.is_some() {
+            900
+        } else {
+            oauth_lifetime.as_secs().min(900)
+        };
+        if expiry == 0 {
+            return Err("sign_in_required");
+        }
+        let session = console
+            .0
+            .authority
+            .server_session(Duration::from_secs(expiry))
+            .map_err(|_| "local_state_unavailable")?;
+        let mut sessions = login.sessions.lock().await;
+        // Replacing this installation's login stops prior capabilities even when
+        // their UI cookie has already expired and can be removed from memory.
+        for previous in sessions.values_mut() {
+            login.queue_revocation(previous).await;
+        }
+        sessions.retain(|_, s| s.expires > Instant::now());
+        if sessions.len() >= 64 {
+            return Err("local_session_limit");
+        }
+        sessions.insert(
+            URL_SAFE_NO_PAD.encode(Sha256::digest(session.as_bytes())),
+            RemoteSession {
+                matrix_source: None,
+                token: session_token.to_owned(),
+                oauth_token: token.clone(),
+                user_id: identity["userId"].as_str().unwrap().into(),
+                device: None,
+                refresh_token: refresh_token.clone(),
+                oauth_expires: Instant::now() + oauth_lifetime,
+                authorized_until: authorized_until.min(Instant::now() + oauth_lifetime),
+                invalidated: false,
+                binding: pending.binding.clone(),
+                checked: Instant::now(),
+                expires: Instant::now() + Duration::from_secs(expiry),
+            },
+        );
+        drop(sessions);
+        let result = register_device(
+            &client,
+            &server,
+            session_token,
+            &pending.binding,
+            identity["userId"].as_str().unwrap(),
+        )
+        .await;
+        let (status, device_token) = match result {
+            Ok((status, token)) => (status, Some(token)),
+            Err(code) => (
+                json!({"state":"signed_in","deviceAuthorized":false,"code":code}),
+                None,
+            ),
+        };
+        if let Some(remote) = login
+            .sessions
+            .lock()
+            .await
+            .get_mut(&URL_SAFE_NO_PAD.encode(Sha256::digest(session.as_bytes())))
+        {
+            remote.device = device_token;
+        }
+        ServerLogin::start_worker(console);
+        Ok((session, status))
     }
-    pending.binding.owner = Some(user.to_owned());
-    pending.binding.subject = Some(subject.to_owned());
-    login.save(pending.binding.clone()).await?;
-    let expiry = tokens["expires_in"].as_u64().unwrap_or(900).min(900);
-    if expiry == 0 {
-        return Err("sign_in_required");
+    .await;
+    if completed.is_err() {
+        login
+            .revoke_failed_login(
+                &pending.binding,
+                &issued_session,
+                &token,
+                refresh_token.as_deref(),
+            )
+            .await?;
     }
-    let session = console
-        .0
-        .authority
-        .server_session(Duration::from_secs(expiry))
-        .map_err(|_| "local_state_unavailable")?;
-    let mut sessions = login.sessions.lock().await;
-    sessions.retain(|_, s| s.expires > Instant::now());
-    if sessions.len() >= 64 {
-        return Err("local_session_limit");
-    }
-    sessions.insert(
-        URL_SAFE_NO_PAD.encode(Sha256::digest(session.as_bytes())),
-        RemoteSession {
-            token: token.to_owned(),
-            binding: pending.binding.clone(),
-            checked: Instant::now(),
-            expires: Instant::now() + Duration::from_secs(expiry),
-        },
-    );
-    drop(sessions);
-    // A successful identity login remains usable locally even if enrollment is
-    // refused by policy or temporarily unavailable; never fake connectedness.
-    let result = enroll(&client, &server, token, &pending.binding, depot).await;
-    let status = match result {
-        Ok(value) => value,
-        Err(code) => json!({"state":"failed","code":code}),
-    };
-    Ok((session, status))
+    completed
 }
-async fn enroll(
+async fn register_device(
     client: &Client,
     server: &Url,
     token: &str,
     binding: &Binding,
-    depot: &Depot,
-) -> Result<Value, &'static str> {
-    let app = depot
-        .get_typed::<crate::App>()
-        .map_err(|_| "local_state_unavailable")?;
-    let live = app.palpo_live().ok_or("transport_unavailable")?;
-    let enrolled = response(
+    user_id: &str,
+) -> Result<(Value, AuthorizedDevice), &'static str> {
+    let value = response(
         client
-            .post(server.join("/_hagency/client/v1/fleets").unwrap())
+            .post(server.join("/api/hagency/v1/devices").unwrap())
             .bearer_auth(token)
             .json(&json!({"installationId":binding.installation_id,"name":binding.name}))
             .send()
@@ -515,92 +1245,366 @@ async fn enroll(
             .map_err(|_| "server_unavailable")?,
     )
     .await?;
-    if enrolled["identity"]["userId"] != binding.owner.as_deref().unwrap()
-        || enrolled["identity"]["subject"] != binding.subject.as_deref().unwrap()
-        || enrolled["homeserver"] != server.as_str().trim_end_matches('/')
-            && enrolled["homeserver"] != server.as_str()
-    {
-        return Err("invalid_server_response");
-    }
-    let config =
-        serde_json::to_string(&enrolled["configuration"]).map_err(|_| "invalid_server_response")?;
-    // Validate returned custody before writing it: the machine endpoint must
-    // belong to the selected server, not an arbitrary URL from the response.
-    let endpoint = enrolled["configuration"]["transport"]["url"]
+    let device = value["deviceId"]
         .as_str()
         .ok_or("invalid_server_response")?;
-    if Url::parse(endpoint)
-        .map_err(|_| "invalid_server_response")?
-        .origin()
-        != server.origin()
+    let token = value["token"]
+        .as_str()
+        .filter(|t| t.len() == 64)
+        .ok_or("invalid_server_response")?
+        .to_owned();
+    Ok((
+        json!({"state":"device_authorized","deviceId":device,"generation":value["generation"],"deviceAuthorized":true,"transportOnline":false}),
+        AuthorizedDevice {
+            origin: binding.origin.clone(),
+            device_id: device.to_owned(),
+            generation: value["generation"]
+                .as_u64()
+                .filter(|v| *v > 0)
+                .ok_or("invalid_server_response")?,
+            token,
+            owner_mxid: binding.owner.clone().ok_or("invalid_server_response")?,
+            issuer: format!("{}_pasion/", binding.origin),
+            subject: binding.subject.clone().ok_or("invalid_server_response")?,
+            user_id: user_id.into(),
+            valid_until: deadline(&value)?,
+            revoked: std::sync::Arc::new(AtomicBool::new(false)),
+            stopped: std::sync::Arc::new(AtomicBool::new(false)),
+        },
+    ))
+}
+
+/// A closed set of owner operations. No caller supplies a URL or bearer token.
+pub(super) enum OwnerOperation {
+    Agents,
+    Projects,
+    AdoptProject {
+        space: String,
+    },
+    ProjectRooms {
+        project: String,
+    },
+    AdoptRoom {
+        project: String,
+        room: String,
+    },
+    RoomRoster {
+        project: String,
+        room: String,
+    },
+    Bindings {
+        agent: String,
+    },
+    Binding {
+        binding: String,
+    },
+    PauseBinding {
+        binding: String,
+    },
+    ResumeBinding {
+        binding: String,
+    },
+    LeaveBinding {
+        binding: String,
+    },
+    Create {
+        project: String,
+        room: String,
+        name: String,
+        command: String,
+    },
+    Bind {
+        agent: String,
+        project: String,
+        room: String,
+        command: String,
+    },
+    Pause {
+        agent: String,
+    },
+    Resume {
+        agent: String,
+    },
+    Retire {
+        agent: String,
+    },
+}
+pub(super) struct OwnerReply {
+    pub owner: String,
+    pub origin: String,
+    pub issuer: String,
+    pub subject: String,
+    pub value: Value,
+}
+#[derive(Debug)]
+pub(super) struct OwnerError {
+    pub status: u16,
+    pub code: String,
+}
+impl OwnerError {
+    fn new(status: u16, code: &str) -> Self {
+        Self {
+            status,
+            code: code.into(),
+        }
+    }
+}
+fn operation_id(value: &str) -> Result<(), OwnerError> {
+    if value.is_empty()
+        || value.len() > 128
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
     {
-        return Err("invalid_server_response");
+        Err(OwnerError::new(400, "invalid_arguments"))
+    } else {
+        Ok(())
     }
-    let imported = live
-        .import(&config, server.as_str())
-        .await
-        .map_err(|_| "configuration_import_failed")?;
-    if !imported.started {
-        return Ok(json!({"state":"saved","fleetId":imported.imported.fleet_id,"started":false}));
+}
+impl OwnerOperation {
+    fn request(self) -> Result<(reqwest::Method, String, Option<Value>), OwnerError> {
+        use reqwest::Method;
+        let binding_request = match &self {
+            Self::Binding { binding } => Some((Method::GET, binding, "")),
+            Self::PauseBinding { binding } => Some((Method::POST, binding, "/pause")),
+            Self::ResumeBinding { binding } => Some((Method::POST, binding, "/resume")),
+            Self::LeaveBinding { binding } => Some((Method::DELETE, binding, "")),
+            _ => None,
+        };
+        if let Some((method, binding, suffix)) = binding_request {
+            operation_id(binding)?;
+            return Ok((
+                method,
+                format!("/api/hagency/v1/bindings/{binding}{suffix}"),
+                None,
+            ));
+        }
+        let (method, suffix, body) = match self {
+            Self::Agents => (Method::GET, "agents".into(), None),
+            Self::Projects => (Method::GET, "projects".into(), None),
+            Self::AdoptProject { space } => {
+                matrix_creations::room_id(&space)?;
+                (
+                    Method::POST,
+                    "projects/adopt".into(),
+                    Some(json!({"spaceId":space})),
+                )
+            }
+            Self::ProjectRooms { project } => {
+                operation_id(&project)?;
+                (Method::GET, format!("projects/{project}/rooms"), None)
+            }
+            Self::AdoptRoom { project, room } => {
+                operation_id(&project)?;
+                matrix_creations::room_id(&room)?;
+                (
+                    Method::POST,
+                    format!("projects/{project}/rooms/adopt"),
+                    Some(json!({"roomId":room})),
+                )
+            }
+            Self::RoomRoster { project, room } => {
+                operation_id(&project)?;
+                let room = matrix_creations::segment(&room)?;
+                (
+                    Method::GET,
+                    format!("projects/{project}/rooms/{room}/agents"),
+                    None,
+                )
+            }
+            Self::Bindings { agent } => {
+                operation_id(&agent)?;
+                (Method::GET, format!("agents/{agent}/bindings"), None)
+            }
+            Self::Binding { .. }
+            | Self::PauseBinding { .. }
+            | Self::ResumeBinding { .. }
+            | Self::LeaveBinding { .. } => unreachable!("binding operation handled before match"),
+            Self::Create {
+                project,
+                room,
+                name,
+                command,
+            } => {
+                operation_id(&project)?;
+                operation_id(&command)?;
+                (
+                    Method::POST,
+                    "agents".into(),
+                    Some(
+                        json!({"projectId":project,"roomId":room,"displayName":name,"idempotencyKey":command}),
+                    ),
+                )
+            }
+            Self::Bind {
+                agent,
+                project,
+                room,
+                command,
+            } => {
+                operation_id(&agent)?;
+                operation_id(&project)?;
+                operation_id(&command)?;
+                (
+                    Method::POST,
+                    format!("agents/{agent}/bindings"),
+                    Some(json!({"projectId":project,"roomId":room,"idempotencyKey":command})),
+                )
+            }
+            Self::Pause { agent } => {
+                operation_id(&agent)?;
+                (Method::POST, format!("agents/{agent}/pause"), None)
+            }
+            Self::Resume { agent } => {
+                operation_id(&agent)?;
+                (Method::POST, format!("agents/{agent}/resume"), None)
+            }
+            Self::Retire { agent } => {
+                operation_id(&agent)?;
+                (Method::DELETE, format!("agents/{agent}"), None)
+            }
+        };
+        Ok((method, format!("/api/hagency/v1/{suffix}"), body))
     }
-    let id = imported.imported.fleet_id;
-    let url = server
-        .join(&format!("/_hagency/client/v1/fleets/{id}/connect"))
-        .unwrap();
-    for _ in 0..3 {
-        match client
-            .post(url.clone())
-            .bearer_auth(token)
-            .json(&json!({}))
+}
+impl ServerLogin {
+    pub(super) fn state_directory(&self) -> Option<PathBuf> {
+        self.path.as_ref()?.parent().map(Path::to_path_buf)
+    }
+    pub(super) async fn owner_api(
+        &self,
+        cookie: &str,
+        operation: OwnerOperation,
+    ) -> Result<OwnerReply, OwnerError> {
+        let (method, path, body) = operation.request()?;
+        if self.stopped.load(Ordering::Acquire) {
+            return Err(OwnerError::new(401, "sign_in_required"));
+        }
+        let mut sessions = self.sessions.lock().await;
+        let session = sessions
+            .get_mut(&session_key(cookie))
+            .ok_or_else(|| OwnerError::new(401, "sign_in_required"))?;
+        if session.invalidated || session.expires <= Instant::now() {
+            return Err(OwnerError::new(401, "sign_in_required"));
+        }
+        if (session.checked.elapsed() >= Duration::from_secs(20)
+            || session.authorized_until <= Instant::now())
+            && renew(session).await.is_err()
+        {
+            self.queue_revocation(session).await;
+            *self.status.lock().await = json!({"state":"failed","code":"sign_in_required","deviceAuthorized":false,"transportOnline":false});
+            return Err(OwnerError::new(401, "sign_in_required"));
+        }
+        let server = origin(&session.binding.origin)
+            .map_err(|_| OwnerError::new(401, "sign_in_required"))?;
+        let client = http().map_err(|_| OwnerError::new(503, "server_unavailable"))?;
+        let mut request = client
+            .request(method, server.join(&path).unwrap())
+            .bearer_auth(&session.token);
+        if let Some(body) = body {
+            request = request.json(&body);
+        }
+        let mut reply = request
             .send()
             .await
+            .map_err(|_| OwnerError::new(503, "server_unavailable"))?;
+        let status = reply.status().as_u16();
+        let mut raw = Vec::new();
+        while let Some(chunk) = reply
+            .chunk()
+            .await
+            .map_err(|_| OwnerError::new(503, "server_unavailable"))?
         {
-            Ok(reply) if reply.status().is_success() => {
-                let status = response(reply).await?;
-                if status["fleet"]["readiness"]["ready"] == true {
-                    return Ok(json!({"state":"connected","fleetId":id,"started":true}));
-                }
+            if raw.len() + chunk.len() > 128 * 1024 {
+                return Err(OwnerError::new(502, "invalid_server_response"));
             }
-            _ => {}
+            raw.extend_from_slice(&chunk);
         }
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        let value: Value = serde_json::from_slice(&raw)
+            .map_err(|_| OwnerError::new(502, "invalid_server_response"))?;
+        if !(200..300).contains(&status) {
+            let code = value["code"]
+                .as_str()
+                .filter(|c| {
+                    !c.is_empty()
+                        && c.len() <= 80
+                        && c.bytes()
+                            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+                })
+                .unwrap_or("server_request_failed");
+            return Err(OwnerError::new(status, code));
+        }
+        Ok(OwnerReply {
+            owner: session
+                .binding
+                .owner
+                .clone()
+                .ok_or_else(|| OwnerError::new(401, "sign_in_required"))?,
+            origin: session.binding.origin.clone(),
+            issuer: format!("{}_pasion/", session.binding.origin),
+            subject: session
+                .binding
+                .subject
+                .clone()
+                .ok_or_else(|| OwnerError::new(401, "sign_in_required"))?,
+            value,
+        })
     }
-    let console = console(depot)
-        .map_err(|_| "local_state_unavailable")?
-        .clone();
-    let client = client.clone();
-    let token = token.to_owned();
-    let background_id = id.clone();
-    tokio::spawn(async move {
-        for _ in 0..60 {
-            tokio::time::sleep(Duration::from_secs(3)).await;
-            let current = console.0.server_login.status.lock().await.clone();
-            if current["state"] != "verifying" || current["fleetId"] != background_id {
-                return;
-            }
-            if let Ok(reply) = client
-                .post(url.clone())
-                .bearer_auth(&token)
-                .json(&json!({}))
-                .send()
-                .await
-            {
-                if reply.status() == StatusCode::UNAUTHORIZED {
-                    break;
-                }
-                if let Ok(result) = response(reply).await
-                    && result["fleet"]["readiness"]["ready"] == true
-                {
-                    *console.0.server_login.status.lock().await =
-                        json!({"state":"connected","fleetId":background_id,"started":true});
-                    return;
-                }
-            }
-        }
-        let mut state = console.0.server_login.status.lock().await;
-        if state["state"] == "verifying" && state["fleetId"] == background_id {
-            *state = json!({"state":"failed","code":"verification_timeout"});
-        }
-    });
-    Ok(json!({"state":"verifying","fleetId":id,"started":true}))
+}
+
+impl super::Console {
+    pub(super) async fn owner_api(
+        &self,
+        cookie: &str,
+        operation: OwnerOperation,
+    ) -> Result<OwnerReply, OwnerError> {
+        self.0.server_login.owner_api(cookie, operation).await
+    }
+}
+
+#[cfg(test)]
+mod private_json_tests {
+    use super::*;
+    #[test]
+    fn restart_reads_bounded_json_larger_than_a_single_token_without_restoring_authority() {
+        let root = tempfile::tempdir().unwrap();
+        let binding = Binding {
+            origin: "http://127.0.0.1:13377/".into(),
+            client_id: "c".repeat(128),
+            installation_id: "i".repeat(64),
+            name: "n".repeat(128),
+            owner: Some(format!("@{}:example.test", "o".repeat(180))),
+            subject: Some("s".repeat(200)),
+        };
+        let body = serde_json::to_vec(&binding).unwrap();
+        assert!(body.len() > 512);
+        hagency_store::private::replace(&root.path().join("server-login.json"), &body).unwrap();
+        let mut records = vec![Revocation {
+            origin: binding.origin.clone(),
+            client_id: binding.client_id.clone(),
+            session_token: "d".repeat(64),
+            oauth_token: "t".repeat(1000),
+            hint: "refresh_token".into(),
+            session_done: false,
+            oauth_done: false,
+        }];
+        records.push(Revocation {
+            origin: binding.origin.clone(),
+            client_id: binding.client_id.clone(),
+            session_token: String::new(),
+            oauth_token: "minted-before-grant".into(),
+            hint: "access_token".into(),
+            session_done: true,
+            oauth_done: false,
+        });
+        hagency_store::private::replace(
+            &root.path().join("server-login-revocations.json"),
+            &serde_json::to_vec(&records).unwrap(),
+        )
+        .unwrap();
+        let login = ServerLogin::new(Some(root.path())).unwrap();
+        assert!(login.sessions.try_lock().unwrap().is_empty());
+        assert_eq!(login.revocations.try_lock().unwrap().len(), 2);
+        assert!(read_private_json(&root.path().join("server-login.json"), 512).is_err());
+    }
 }

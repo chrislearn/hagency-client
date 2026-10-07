@@ -118,7 +118,7 @@ Scenario: Resource observations preserve native meanings
   Then safe DTOs preserve current native facts and absent values without private fields and the budget draw object carries drawn measured consumed the binding draw named as the over-commit refusal names it and remaining before the ceiling with every unknown figure null never zero while the console wire omits the always-zero reserved key and the draw's committed equals the pool's committed across the shared seat with the seat figure deliberately larger and a clock fault refuses as console unavailable never busy
 
 Scenario: Retained resource controls work in both languages
-  Test: native_console_resources_browser
+  Retired-Test: native_console_resources_browser
   Level: integration
   Test Double: actual Chromium and native Salvo with new runtime resource creation
   Given the retained static resource page and finite native management access with a measured and an unmeasured resource
@@ -126,7 +126,7 @@ Scenario: Retained resource controls work in both languages
   Then current state preferences and explicit action outcomes remain truthful in both languages and the headroom cells render figures for the measured resource and the explicit unknown word never zero for the unmeasured one
 
 Scenario: Resource management runs without deployed Node
-  Test: native_console_resources_executable
+  Retired-Test: native_console_resources_executable
   Level: integration
   Test Double: actual native executable and private temporary state with empty runtime PATH
   Given the retained native resource assets
@@ -138,3 +138,7 @@ Scenario: Resource management runs without deployed Node
 Resource creation full profile editing friendly-name persistence rate caps execution
 policy host discovery Agent detail routing seat declaration edits role publication
 writes remote Palpo delivery production packaging and complete M7 parity.
+
+## Owner-only browser qualification (2026-10-07)
+
+The retired browser selectors above exercised removed Fleet/operator pages, resources/accounts/project-sides/task workflows or binary startup with old domain SQLite. They are removed product tests, not retained SDK qualification. Independent SDK HTTP/library selectors in this mixed spec remain active. Current browser qualification is the actual OwnerHost `native_console_rail_pages_are_shipped_and_served` plus `mockup/scripts/check-owner-console.mjs` in the enabled CI browser lane; it covers owner navigation, local ticket exchange, provider/runtime DTOs, explicit Estimated and restricted-files opt-in, exact request/tool approvals and absence of automatic inference. It does not claim old Fleet pages, encrypted delivery or paid model completion.

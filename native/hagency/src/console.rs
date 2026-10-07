@@ -9,12 +9,18 @@ mod approvals;
 mod assets;
 mod authority;
 pub mod client;
+pub mod device_execution;
 mod engagements;
 mod exec_policy;
 mod graphs;
 mod invites;
 mod matrix_diag;
+pub(crate) mod native;
 mod offer_book;
+mod owned_agents;
+mod owned_runtime;
+mod owner_projects;
+mod owner_provider;
 pub mod palpo_import;
 mod project_sides;
 mod resource_configuration;
@@ -56,6 +62,8 @@ pub enum Error {
     #[error("native console is unavailable")]
     Unavailable,
 }
+pub use server_login::AuthorizedDevice;
+
 struct Inner {
     assets: assets::Assets,
     authority: Authority,
@@ -66,6 +74,8 @@ struct Inner {
     /// `console_unavailable`, TS's `dispatch_unavailable` class.
     graphs: Option<graphs::GraphStore>,
     server_login: server_login::ServerLogin,
+    owned_runtime: owned_runtime::OwnedRuntime,
+    owner_provider: owner_provider::OwnerProvider,
 }
 /// Clones retain the same finite authority and original immutable asset proofs.
 #[derive(Clone)]
@@ -91,9 +101,11 @@ impl Console {
         assets::embedded_available()
     }
     fn with_assets(assets: assets::Assets, state_dir: Option<&Path>) -> Result<Self, Error> {
-        Ok(Self(Arc::new(Inner {
+        let console = Self(Arc::new(Inner {
             assets,
             server_login: server_login::ServerLogin::new(state_dir)?,
+            owned_runtime: owned_runtime::OwnedRuntime::default(),
+            owner_provider: owner_provider::OwnerProvider::default(),
             authority: match state_dir {
                 Some(dir) => Authority::persistent(dir),
                 None => Authority::new(),
@@ -103,13 +115,59 @@ impl Console {
                 Some(dir) => Some(graphs::GraphStore::open(dir)?),
                 None => None,
             },
-        })))
+        }));
+        if tokio::runtime::Handle::try_current().is_ok() {
+            server_login::ServerLogin::start_worker(&console);
+        }
+        Ok(console)
+    }
+    /// Owner host startup never opens legacy graphs or persisted console grants.
+    pub fn load_owner_with_state(path: &Path, state: &Path) -> Result<Self, Error> {
+        Self::with_owner_assets(assets::Assets::load_owner(path)?, state)
+    }
+    pub fn embedded_owner_with_state(state: &Path) -> Result<Self, Error> {
+        Self::with_owner_assets(assets::Assets::embedded_owner()?, state)
+    }
+    pub(crate) fn native_with_state(state: &Path) -> Result<Self, Error> {
+        Self::with_owner_assets(assets::Assets::native(), state)
+    }
+    fn with_owner_assets(assets: assets::Assets, state: &Path) -> Result<Self, Error> {
+        let console = Self(Arc::new(Inner {
+            assets,
+            authority: Authority::new(),
+            requests: Arc::new(Semaphore::new(8)),
+            graphs: None,
+            server_login: server_login::ServerLogin::new(Some(state))?,
+            owned_runtime: owned_runtime::OwnedRuntime::default(),
+            owner_provider: owner_provider::OwnerProvider::default(),
+        }));
+        if tokio::runtime::Handle::try_current().is_ok() {
+            server_login::ServerLogin::start_worker(&console);
+        }
+        Ok(console)
+    }
+    /// Local process entry point only; no HTTP issuer is mounted by OwnerHost.
+    pub fn owner_access_ticket(&self) -> Result<String, Error> {
+        self.0.authority.issue_owner_ticket()
+    }
+    pub(crate) async fn stop_owner_provider(&self) {
+        self.0.owner_provider.stop_all().await;
     }
     pub(super) fn graphs(&self) -> Option<&graphs::GraphStore> {
         self.0.graphs.as_ref()
     }
+    /// Current owner-scoped device capability for the Rust host runtime.
+    pub async fn authorized_device(&self) -> Result<server_login::AuthorizedDevice, Error> {
+        self.0.server_login.authorized_device().await
+    }
     pub fn retire(&self) {
+        self.0.server_login.retire();
+        self.0.owned_runtime.request_stop_all();
+        self.0.owner_provider.request_stop_all();
         self.0.authority.retire();
+    }
+    pub(super) async fn stop_owned_runtimes(&self) {
+        self.0.owned_runtime.stop_all().await;
     }
 }
 pub(crate) fn router() -> Router {
@@ -123,6 +181,8 @@ pub(crate) fn router() -> Router {
                 .push(usage::router())
                 .push(alerts::router())
                 .push(agents::router())
+                .push(owned_agents::router())
+                .push(owner_provider::router())
                 .push(agent_extras::router())
                 .push(exec_policy::router())
                 .push(stream::router())
@@ -156,10 +216,28 @@ pub(crate) fn router() -> Router {
         // onto GET, so a bare `.get(asset)` answered 405 — register it.
         .push(Router::with_path("{**asset}").get(asset).head(asset))
 }
+pub(crate) fn owner_router() -> Router {
+    Router::with_path("console")
+        .hoop(browser_boundary)
+        .push(server_login::router())
+        .push(Router::with_path("session").post(exchange).delete(logout))
+        .push(
+            Router::with_path("api")
+                .hoop(authenticate)
+                .push(owned_agents::router())
+                .push(owner_provider::router())
+                .push(owner_projects::router())
+                .push(server_login::matrix_creation_router()),
+        )
+        .push(Router::with_path("{**asset}").get(asset).head(asset))
+}
 pub(crate) fn operator_router() -> Router {
     Router::new().push(Router::with_path("console/access").post(issue))
 }
 fn console(depot: &Depot) -> Result<&Console, Error> {
+    if let Ok(host) = depot.get_typed::<crate::owner_host::OwnerHost>() {
+        return Ok(&host.console);
+    }
     depot
         .get_typed::<App>()
         .ok()
@@ -184,23 +262,32 @@ fn failed(res: &mut Response, error: Error) {
     };
     refusal(res, status, code);
 }
+fn host_authority(depot: &Depot) -> Option<&str> {
+    if let Ok(host) = depot.get_typed::<crate::owner_host::OwnerHost>() {
+        return Some(host.authority.as_str());
+    }
+    depot
+        .get_typed::<App>()
+        .ok()
+        .map(|app| app.authority.as_str())
+}
 fn common_authority(req: &Request, depot: &Depot) -> bool {
-    let Ok(app) = depot.get_typed::<App>() else {
+    let Some(authority) = host_authority(depot) else {
         return false;
     };
     let headers = req.headers();
     headers.get_all("host").iter().count() == 1
-        && headers.get("host").and_then(|v| v.to_str().ok()) == Some(app.authority.as_str())
+        && headers.get("host").and_then(|v| v.to_str().ok()) == Some(authority)
         && !headers
             .keys()
             .any(|k| k == "forwarded" || k.as_str().starts_with("x-forwarded-"))
         && !headers.contains_key("authorization")
 }
 fn same_origin(req: &Request, depot: &Depot, mutation: bool) -> bool {
-    let Ok(app) = depot.get_typed::<App>() else {
+    let Some(authority) = host_authority(depot) else {
         return false;
     };
-    let origin = format!("http://{}", app.authority);
+    let origin = format!("http://{authority}");
     let h = req.headers();
     h.get_all("sec-fetch-site").iter().count() == 1
         && h.get("sec-fetch-site").and_then(|v| v.to_str().ok()) == Some("same-origin")
@@ -378,9 +465,8 @@ async fn exchange(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     .await;
     match result {
         Ok(value) => {
-            // No Max-Age: the login cookie lives for the browser session, so
-            // a reload never loses it (TS parity — the retained middleware
-            // never expired a credential on a timer; logout is the bound).
+            // Browser-session cookie; Authority independently enforces the
+            // OwnerHost's finite lifetime and process/logout revocation.
             res.headers_mut().insert(
                 "set-cookie",
                 format!("{COOKIE}={value}; HttpOnly; SameSite=Strict; Path=/console")
@@ -399,7 +485,11 @@ async fn logout(req: &mut Request, depot: &mut Depot, res: &mut Response) {
             return Err(Error::Invalid);
         }
         let session = current(req, depot)?;
-        console(depot)?.0.authority.revoke(&session)
+        console(depot)?.0.authority.revoke(&session)?;
+        console(depot)?.0.server_login.sign_out(cookie(req)?).await;
+        console(depot)?.stop_owned_runtimes().await;
+        console(depot)?.0.owner_provider.stop_all().await;
+        Ok(())
     }
     .await;
     match result {
@@ -430,7 +520,19 @@ async fn asset(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     // The engagements document takes NO query: it is a paginated triage list
     // whose selection happens in-page, not a per-entity view like usage.
     let engagements_document = matches!(path, "/console/engagements" | "/console/engagements/");
-    let document = editor_document
+    // OAuth returns through another origin. These public owner documents carry
+    // no session data; their API requests still require same-origin authority.
+    let owner_document = matches!(
+        path,
+        "/console"
+            | "/console/"
+            | "/console/login"
+            | "/console/login/"
+            | "/console/agents-owned"
+            | "/console/agents-owned/"
+    );
+    let document = owner_document
+        || editor_document
         || resource_document
         || alerts_document
         || engagements_document
@@ -450,7 +552,7 @@ async fn asset(req: &mut Request, depot: &mut Depot, res: &mut Response) {
                 resource_configuration::selection_query(req).is_err()
             } else if resource_document {
                 resources::selection_query(req).is_err()
-            } else if alerts_document || engagements_document {
+            } else if owner_document || alerts_document || engagements_document {
                 // No selection parameter: the whole query string must be empty.
                 req.uri().query().is_some()
             } else {

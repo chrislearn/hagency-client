@@ -16,6 +16,29 @@ use std::{
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+/// Retain an independent executable snapshot for this SDK fixture. SDK home
+/// proofs intentionally fence inode/mtime changes; concurrent workspace builds
+/// may replace shared target outputs, but must not alter this running fixture.
+fn sdk_tool(root: &std::path::Path, source: &std::path::Path) -> PathBuf {
+    let directory = root.join("sdk-test-tools");
+    hagency_store::private::directory(&directory).unwrap();
+    let tool = directory.join(source.file_name().unwrap());
+    if !tool.exists() {
+        let bytes = fs::read(source).unwrap();
+        hagency_store::private::write_new(&tool, &bytes).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&tool, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+    }
+    // Reuse the same path/bytes when reopening historical SDK home bindings.
+    let held = fs::File::open(&tool).unwrap();
+    hagency_store::private::check_handle(&held).unwrap();
+    assert!(held.metadata().unwrap().is_file());
+    tool.canonicalize().unwrap()
+}
+
 pub const OWNER: &str = "@owner:example.test";
 pub const PROJECT: &str = "!factory_project:example.test";
 pub const DM: &str = "!factory_owner_dm:example.test";
@@ -245,12 +268,14 @@ impl Fixture {
         } else {
             approvals.clone()
         };
-        let helper = PathBuf::from(env!("CARGO_BIN_EXE_hagency"))
-            .canonicalize()
-            .unwrap();
-        let binary = PathBuf::from(env!("CARGO_BIN_EXE_hagency-owned-mcp-probe"))
-            .canonicalize()
-            .unwrap();
+        let helper = sdk_tool(
+            base.root.path(),
+            std::path::Path::new(env!("CARGO_BIN_EXE_hagency-sdk-mcp-test-peer")),
+        );
+        let binary = sdk_tool(
+            base.root.path(),
+            std::path::Path::new(env!("CARGO_BIN_EXE_hagency-owned-mcp-probe")),
+        );
         let home = ManagedHomePlan::new(
             base.root.path().join("homes").canonicalize().unwrap(),
             vec![HomeProject {
@@ -1058,4 +1083,17 @@ async fn join_owner(endpoint: String) {
         .await
         .unwrap();
     assert_eq!(response.status(), 200);
+}
+
+#[test]
+fn sdk_fixture_executable_snapshot_survives_shared_output_replacement() {
+    let root = tempfile::tempdir().unwrap();
+    let source = root.path().join("standalone-sdk-fixture");
+    fs::write(&source, b"original SDK transport snapshot").unwrap();
+    let tool = sdk_tool(root.path(), &source);
+    assert_ne!(tool, source);
+    fs::write(&source, b"concurrent cargo output replacement").unwrap();
+    assert_eq!(sdk_tool(root.path(), &source), tool);
+    assert_eq!(fs::read(tool).unwrap(), b"original SDK transport snapshot");
+    assert!(!root.path().join("hagency-client-owned-v1.json").exists());
 }

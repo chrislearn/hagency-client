@@ -1,22 +1,5 @@
-//! Board #88: every page the rail links must be SHIPPED and SERVED.
-//!
-//! The rail is the only navigable surface an operator has. A row that renders
-//! an `<a href>` is a page they can click, so if the build script does not
-//! emit it — or `assets.rs` does not admit it — the click 404s, while every
-//! unit test of the page itself still passes. That is exactly the live defect
-//! #88 records: pages sat in the Next app, were never packaged, and the front
-//! door did not exist at all.
-//!
-//! This test closes both halves against real artifacts, never a hand list:
-//!   1. the hrefs are read OUT OF `Rail.jsx`, so a new rail row is covered
-//!      the day it is added and cannot be forgotten here;
-//!   2. each page is asserted PRESENT IN THE BUILT BUNDLE's manifest (the
-//!      build script's half), and
-//!   3. the REAL binary is spawned on that bundle and each page plus the
-//!      front door is GET, expecting 200 (the service's half).
-//!
-//! Feature-gated with the browser lane: the bundle is a build artifact named
-//! by `HAGENCY_NATIVE_CONSOLE_ASSETS`, which only `build:native` produces.
+//! The owner console's links must be packaged and served by the real binary.
+//! Qualification uses HAGENCY_NATIVE_CONSOLE_ASSETS from build:native.
 
 use serde_json::Value;
 use std::{
@@ -47,46 +30,34 @@ fn address() -> SocketAddr {
         .unwrap()
 }
 
-/// The native rail's page paths, DERIVED from `Rail.jsx`.
-///
-/// `NativeRail` renders an `<a>` for the keys in its inline array and a
-/// disabled `<span aria-disabled>` for every other row, so that array IS the
-/// set of pages the rail can navigate to. Reading it here is what makes the
-/// test fail the day a page joins the rail without being shipped.
+/// Derive the actual owner navigation instead of retaining legacy Fleet routes.
 fn rail_pages() -> Vec<String> {
     let source = std::fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mockup/components/Rail.jsx"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mockup/components/OwnerRail.jsx"),
     )
-    .expect("mockup/components/Rail.jsx must exist to derive the rail's pages");
-    let line = source
-        .lines()
-        .find(|line| line.contains("].includes(row.key)"))
-        .expect("Rail.jsx must keep the native `[...].includes(row.key)` link guard");
-    let marker = "].includes(row.key)";
-    let end = line.find(marker).expect("link guard marker");
-    let start = line[..end].rfind('[').expect("link guard array start");
-    let keys: Vec<String> = line[start + 1..end]
-        .split(',')
-        .map(|token| token.trim().trim_matches(['\'', '"']).to_owned())
-        .filter(|key| !key.is_empty())
-        .collect();
-    assert_eq!(
-        keys.len(),
-        13,
-        "the native rail's link set changed size; re-derive and confirm the pages ship: {keys:?}"
-    );
-    keys.into_iter()
-        .map(|key| match key.as_str() {
-            // Mirrors NATIVE_PATHS (Rail.jsx): the workforce row is served by
-            // the agents roster, the camel-cased keys by their hyphenated
-            // pages, every other row by its own path.
-            "workforce" => "/console/agents/".to_owned(),
-            "taskGraphs" => "/console/task-graphs/".to_owned(),
-            "projectSides" => "/console/project-sides/".to_owned(),
-            "projectBoard" => "/console/project-board/".to_owned(),
-            other => format!("/console/{other}/"),
+    .expect("OwnerRail.jsx must exist");
+    let pages: Vec<String> = source
+        .split("href=\"")
+        .skip(1)
+        .map(|tail| {
+            let href = tail.split('"').next().expect("static owner href");
+            assert!(
+                href.starts_with('/') && !href.starts_with("//"),
+                "owner navigation must stay local"
+            );
+            format!("/console{href}")
         })
-        .collect()
+        .collect();
+    assert!(!pages.is_empty(), "owner navigation must expose real pages");
+    assert_eq!(
+        pages
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        pages.len(),
+        "duplicate owner navigation"
+    );
+    pages
 }
 
 /// The bundle path that backs a served page URL.
@@ -153,6 +124,19 @@ async fn native_console_rail_pages_are_shipped_and_served() {
         packaged.contains(&"index.html"),
         "the front door is not packaged; packed documents: {packaged:?}"
     );
+    for legacy in [
+        "resources/index.html",
+        "agents/index.html",
+        "project-sides/index.html",
+        "usage/index.html",
+        "approvals/index.html",
+        "task-graphs/index.html",
+    ] {
+        assert!(
+            !packaged.contains(&legacy),
+            "owner bundle must not expose legacy document {legacy}"
+        );
+    }
     for page in rail_pages() {
         let document = document(&page);
         assert!(

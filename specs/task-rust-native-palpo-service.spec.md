@@ -59,19 +59,19 @@ configuration, publication uncertainty and joined worker custody.
 ## Acceptance Criteria
 
 Scenario: The executable publishes the current resource catalog independently
-  Test: native_palpo_service_executable_catalog
+  Retired-Test: native_palpo_service_executable_catalog
   Given a real native executable with explicit --palpo-transport independently of --development-driver and private configuration with an existing exact canonical registration
   When its original service runs against a local HTTPS peer and resources or role publication change through authenticated native HTTP
   Then the next accepted catalog has the coherent current offers including withdrawal without starting the development runner or claiming consumer completion
 
 Scenario: Lost acknowledgment preserves the original publication
-  Test: native_palpo_service_original_publication
+  Retired-Test: native_palpo_service_original_publication
   Given the real service has frozen a publication whose HTTPS acknowledgment is lost
   When the resource changes before that original pending update is accepted
   Then its original retry preserves exact bytes sequence and digest before a later catalog can appear
 
 Scenario: Invalid configuration fails before outbound requests while disabled stays passive
-  Test: native_palpo_service_configuration_refusal
+  Retired-Test: native_palpo_service_configuration_refusal
   Given disabled missing malformed insecure private-file or mismatched-registration configuration
   When the actual executable loads its selected fixed profile
   Then disabled startup stays passive and enabled refusal sends no poll or update without changing registration
@@ -88,3 +88,5 @@ Registration onboarding migration and rotation Matrix event or work consumers
 allocation readiness native execution production cutover browser flows and live
 provider qualification. Windows cross-compilation is compile evidence only;
 graceful executable signal evidence must name the platform actually exercised.
+
+Owner-client cutover: these retired selectors required removed setup/Fleet publication CLI behavior. Current owner bootstrap refuses ambient credential imports and old Palpo/AS publisher config; `native-owner-client.spec.md` binds those actual binary checks. Direct setup and Palpo publication SDK tests remain independent library validation, never production startup claims.

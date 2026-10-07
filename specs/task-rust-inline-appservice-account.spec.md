@@ -101,7 +101,11 @@ Scenario: Side-master revocation blocks downstream room and SDK effects
   Then original partial observations survive but no subsequent room/key POST or Active/route is published
 
 Scenario: Native executable accepts only the explicit closed AS home profile
-  Test: native_bootstrap_appservice_home_profile
+  Retired-Test: native_bootstrap_appservice_home_profile
   Given non-secret side/home/peer configuration with separate private credentials
   When actual executable configuration prepares
   Then valid fixed configuration attaches and wrong/missing/extra/ordinary-marker inputs refuse before HTTP/model work
+
+## Owner bootstrap product replacement (2026-10-07)
+
+The `Retired-Test` selectors above depended on removed client-side Fleet/provisioning/encrypted approval-bot production switches. They are no longer executable product requirements. New `native-owner-client.spec.md` binds actual bootstrap secret/config refusal, anonymous provider/model/tool denial, fresh Pasion authorization after restart and independent Room runtimes. It does not claim encrypted private approval, factory or delegated-task behavior. Direct SDK configuration tests remain bound by `native-bootstrap-sdk.spec.md`, and all other SDK Test/Filter bindings remain active.

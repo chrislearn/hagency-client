@@ -86,7 +86,7 @@ Scenario: An attempt's phases are recorded in order with their clock
   And an attempt the store revoked mid-turn records the same phases without a settled one
 
 Scenario: A failure is persisted uncollapsed beside the existing word
-  Test: native_configured_fleet_handoff_diagnostics
+  Retired-Test: native_configured_fleet_handoff_diagnostics
   Production caller: hagency::bootstrap::driver::run
   Given two agents whose provider directory permissions are revoked before their handoff
   When each handoff is refused
@@ -113,7 +113,7 @@ Scenario: The runtime names the leader's exit and keeps its stderr tail
   And a runner exiting 0 reads code:0 with an empty tail
 
 Scenario: The driver keeps the terminal reason and the clock with the attempt
-  Test: native_continuous_driver_operator_resolution
+  Retired-Test: native_continuous_driver_operator_resolution
   Production caller: hagency::bootstrap::driver::run
   Given a continuous driver whose first turn fails on a refused notification
   When the attempt fails
@@ -136,3 +136,9 @@ Scenario: The executing crates say what they do
 Containment (a failed attempt ending the agent), bounded or re-observable
 cleanup, the retained-owner rule, authority decoupling, the approval leg and
 the Matrix fence: gaps G1–G5 of the review, each its own slice after this one.
+
+2026-10-07: Retired-Test/Retired-Filter records the removed Fleet production entry point. Other SDK Test/Filter selectors remain active. See [current Owner product](native-owner-client.spec.md) and [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md). This does not claim Fleet, resource publication, delegation or encrypted tasks are supported in the new product.
+
+## Owner bootstrap product replacement (2026-10-07)
+
+The `Retired-Test` selectors above depended on removed client-side Fleet/provisioning/encrypted approval-bot production switches. They are no longer executable product requirements. New `native-owner-client.spec.md` binds actual bootstrap secret/config refusal, anonymous provider/model/tool denial, fresh Pasion authorization after restart and independent Room runtimes. It does not claim encrypted private approval, factory or delegated-task behavior. Direct SDK configuration tests remain bound by `native-bootstrap-sdk.spec.md`, and all other SDK Test/Filter bindings remain active.

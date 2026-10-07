@@ -102,7 +102,7 @@ Scenario: Native readiness agrees with the retained verdict
   Then they agree for every vector, so the vocabulary is pinned against retained rather than only against itself
 
 Scenario: The CLI login route drives the production path
-  Test: native_account_login_route_records_ready
+  Retired-Test: native_account_login_route_records_ready
   Level: integration
   Test Double: actual isolated files and SQLite, the fake login binary (hagency-login-probe)
   Given a prepared managed account and the fake provider login binary
@@ -111,7 +111,7 @@ Scenario: The CLI login route drives the production path
   Production caller: hagency::bootstrap::accounts::run
 
 Scenario: A refused login through the production route never reads ready
-  Test: native_account_login_route_refused_never_ready
+  Retired-Test: native_account_login_route_refused_never_ready
   Level: integration
   Test Double: actual isolated files and SQLite, the fake login binary refusing
   Given a prepared managed account whose provider login the binary refuses
@@ -120,7 +120,7 @@ Scenario: A refused login through the production route never reads ready
   Production caller: hagency::bootstrap::accounts::run
 
 Scenario: An unclassifiable login through the production route never reads ready
-  Test: native_account_login_route_unclassified_never_ready
+  Retired-Test: native_account_login_route_unclassified_never_ready
   Level: integration
   Test Double: actual isolated files and SQLite, the fake login binary exiting an unclassified status
   Given a prepared managed account whose provider login the binary neither succeeds nor refuses
@@ -151,3 +151,5 @@ MA-S2's gate implementation, MA-S3b's DTO field, MA-S4 (subscription
 materialisation), the login command's console surface (there is none and
 none is planned — the login is the operator's own host act), and any
 credential reading of any kind.
+
+2026-10-07: These Retired selectors depend on removed account/task CLI or the former direct-Palpo/Fleet production process. Library SDK coverage remains separate; current OwnerHost forbids these product commands. See [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md).

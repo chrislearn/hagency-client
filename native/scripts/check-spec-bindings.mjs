@@ -16,9 +16,22 @@ export function checkSpecBindings(inventory, { runtime = 'rust', directory = pat
   const missing = [];
   let count = 0;
   const deferred = [];
+  const superseded = [];
+  const retired = [];
   for (const file of readdirSync(directory).filter((name) => name.endsWith('.spec.md'))) {
     const content = readFileSync(path.join(directory, file), 'utf8');
     const frontmatter = content.split('\n---')[0];
+    const target = frontmatter.match(/^superseded-by:\s*(\S+)\s*$/m)?.[1];
+    if (target) {
+      if (!/^[a-zA-Z0-9_-]+\.spec\.md$/.test(target) || target === file) throw new Error(`Invalid superseded-by target in ${file}`);
+      let replacement;
+      try { replacement = readFileSync(path.join(directory, target), 'utf8'); } catch { throw new Error(`Missing superseded-by target in ${file}`); }
+      if (/^superseded-by:/m.test(replacement.split('\n---')[0])) throw new Error(`Superseded-by chains are forbidden in ${file}`);
+      if (!/^\s*(?:Test|Filter):\s*\S/m.test(replacement)) throw new Error(`Empty superseded-by replacement in ${file}`);
+      superseded.push({ file, target });
+      continue;
+    }
+
     const native = /^tags:\s*\[[^\]\n]*\brust\b[^\]\n]*\]/m.test(frontmatter);
     if ((native ? 'rust' : 'node') !== runtime) { deferred.push(file); continue; }
     const tags = frontmatter.match(/^tags:\s*\[([^\]\n]*)\]/m)?.[1].split(',').map((tag) => tag.trim()) ?? [];
@@ -26,11 +39,14 @@ export function checkSpecBindings(inventory, { runtime = 'rust', directory = pat
     if (scoped.length && !scoped.some((tag) => PLATFORM_TAGS[tag] === platform)) { deferred.push(file); continue; }
     const lines = content.split('\n');
     for (const [index, line] of lines.entries()) {
+      const retiredSelector = line.match(/^\s*Retired-Test:\s*(\S.*?)\s*$/)?.[1];
+      if (retiredSelector) retired.push({ file, line: index + 1, selector: retiredSelector });
+
       const selector = line.match(/^\s*(?:Test|Filter):\s*(\S.*?)\s*$/)?.[1];
       if (!selector) continue;
       count += 1;
       if (!names.some((name) => name.includes(selector))) missing.push({ file, line: index + 1, selector });
     }
   }
-  return { count, missing, runtime, deferred };
+  return { count, missing, runtime, deferred, superseded, retired };
 }

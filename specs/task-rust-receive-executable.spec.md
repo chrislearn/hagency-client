@@ -53,7 +53,7 @@ Rule: receive-original — Actual native receive preserves the original source a
 Scenario: Actual native MCP writes the selected encrypted attachment file output
   Level: integration
   Test Double: actual native service and MCP with independently encrypted SDK input and a scripted local TLS homeserver and runtime protocol peer
-  Test: native_receive_executable
+  Retired-Test: native_receive_executable
   Given fresh service state and an independently signed encrypted DM or addressed group attachment
   When native intake selects the original inbox and the launched runtime invokes actual MCP discovery and receive
   Then one authenticated media GET produces file output at a generated path whose actual workspace bytes size and hash match the sender
@@ -62,7 +62,7 @@ Scenario: Actual native MCP writes the selected encrypted attachment file output
 Scenario: Exact Ready replay revalidates original bytes and refuses later mutation
   Level: integration
   Test Double: actual native service and MCP with a scripted runtime reading and modifying its original received file
-  Test: native_receive_replay_bounds
+  Retired-Test: native_receive_replay_bounds
   Given a successful original receive in the still-running original runtime
   When native MCP repeats the exact event and then the retained destination changes
   Then the intact original replays without another GET and changed bytes refuse without overwrite
@@ -70,7 +70,7 @@ Scenario: Exact Ready replay revalidates original bytes and refuses later mutati
 Scenario: Incomplete transport failure cannot produce a received path
   Level: integration
   Test Double: actual native service and MCP with deliberately truncated authenticated local TLS media response
-  Test: native_receive_uncertainty
+  Retired-Test: native_receive_uncertainty
   Given an actual admitted receive whose authenticated media response is incomplete
   When the original transport deadline or framing check refuses the response
   Then native MCP exposes no successful path and no local Ready record or replacement GET appears
@@ -78,7 +78,7 @@ Scenario: Incomplete transport failure cannot produce a received path
 Scenario: Restart does not restore an original received path owner
   Level: integration
   Test Double: two actual native service processes in sequence and real MCP using inherited original context
-  Test: native_receive_restart
+  Retired-Test: native_receive_restart
   Given actual received cache facts and the original process is gone
   When a fresh native service opens the same state and inherited original context asks for the file
   Then no historical fact restores a Started binding path response download or file write
@@ -88,3 +88,5 @@ Scenario: Restart does not restore an original received path owner
 Installed Codex sandbox qualification live Matrix compatibility cache cleanup and
 production activation remain separate. These executable tests do not replace
 platform-specific positive filesystem evidence or every ADR105 lifecycle fault.
+
+2026-10-07: These Retired selectors depend on removed account/task CLI or the former direct-Palpo/Fleet production process. Library SDK coverage remains separate; current OwnerHost forbids these product commands. See [replacement coverage](../docs/design/2026-10-07-retired-product-test-coverage.zh-CN.md).
