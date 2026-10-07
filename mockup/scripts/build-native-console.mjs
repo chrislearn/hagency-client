@@ -66,15 +66,26 @@ Object.assign(env, { NEXT_TELEMETRY_DISABLED: '1', NEXT_PUBLIC_HAGENCY_NATIVE_CO
 if (cacheAt >= 0) {
   const cache = resolve(args[cacheAt + 1]);
   const families = { Roboto: [], 'Noto Sans SC': [] };
-  for (const file of await readdir(join(cache, 'static', 'chunks'))) {
-    if (!file.endsWith('.css')) continue;
-    const cssPath = join(cache, 'static', 'chunks', file);
-    const css = await readFile(cssPath, 'utf8');
-    for (const match of css.matchAll(/@font-face\{[^}]+\}/g)) {
-      const family = /font-family:([^;]+);/.exec(match[0])?.[1]?.replaceAll('"', '').replaceAll("'", '').trim();
-      if (!families[family] || !match[0].includes('src:url(')) continue;
-      const block = match[0].replace(/src:url\(([^)]+)\)/, (_, path) => `src: url(${resolve(dirname(cssPath), path)})`).replaceAll(';', ';\n');
-      families[family].push(block);
+  for (const folder of ['chunks', 'css']) {
+    const dir = join(cache, 'static', folder);
+    let entries;
+    try { entries = await readdir(dir); }
+    catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+    for (const file of entries) {
+      if (!file.endsWith('.css')) continue;
+      const cssPath = join(dir, file);
+      const css = await readFile(cssPath, 'utf8');
+      for (const match of css.matchAll(/@font-face\{[^}]+\}/g)) {
+        const family = /font-family:([^;]+);/.exec(match[0])?.[1]?.replaceAll('"', '').replaceAll("'", '').trim();
+        if (!families[family] || !match[0].includes('src:url(')) continue;
+        const block = match[0].replace(/src:url\(([^)]+)\)/, (_, path) => {
+          const publicAt = path.indexOf('/_next/static/');
+          const local = publicAt >= 0 ? join(cache, 'static', path.slice(publicAt + '/_next/static/'.length))
+            : resolve(dirname(cssPath), path);
+          return `src: url(${local})`;
+        }).replaceAll(';', ';\n');
+        families[family].push(block);
+      }
     }
   }
   if (Object.values(families).some((rows) => rows.length === 0)) throw new Error('Font cache lacks the retained layout fonts');

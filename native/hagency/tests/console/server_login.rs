@@ -29,6 +29,13 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
         "/_pasion/oauth2/registration" => {
             let value: Value = req.parse_json().await.unwrap();
             assert_eq!(value["token_endpoint_auth_method"], "none");
+            // Pasion's Matrix DCR policy requires HTTPS application metadata,
+            // even when a native client's callback uses HTTP loopback.
+            assert_eq!(
+                value["client_uri"],
+                "https://github.com/chrislearn/hagency-client"
+            );
+            assert_eq!(value["application_type"], "native");
             let redirect =
                 reqwest::Url::parse(value["redirect_uris"][0].as_str().unwrap()).unwrap();
             assert_eq!(redirect.port(), None);

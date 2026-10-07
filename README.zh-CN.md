@@ -526,6 +526,11 @@ Hagency **假设**的：
 
 ## 开发
 
+本地联调 Hagency Server：首次运行 `just init-dev`，然后运行 `just dev`。
+另开终端运行 `just console`，打开打印出的私人链接，在服务器登录卡片中填写
+`http://127.0.0.1:8088`。两端启动步骤和状态目录见
+[本地开发指南](docs/local-development.zh-CN.md)。
+
 运行与 CI 相同的检查：
 
 ```bash

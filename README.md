@@ -524,6 +524,11 @@ What it **assumes**:
 
 ## Development
 
+For a local client connected to Hagency Server, run `just init-dev` once, then
+`just dev`. In another terminal, run `just console` and open its private link.
+Use `http://127.0.0.1:8088` on the Server login card. See the
+[local development guide](docs/local-development.md) for both services and state locations.
+
 Run the same gates as CI:
 
 ```bash

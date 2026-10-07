@@ -302,7 +302,7 @@ async fn begin(req: &mut Request, depot: &Depot) -> Result<(String, String), &'s
             registered
                 .set_port(None)
                 .map_err(|_| "invalid_local_origin")?;
-            let registration=response(client.post(server.join("/_pasion/oauth2/registration").unwrap()).json(&json!({"client_name":"Hagency Client","application_type":"native","token_endpoint_auth_method":"none","grant_types":["authorization_code","refresh_token"],"response_types":["code"],"redirect_uris":[registered]})).send().await.map_err(|_|"server_unavailable")?).await?;
+            let registration=response(client.post(server.join("/_pasion/oauth2/registration").unwrap()).json(&json!({"client_name":"Hagency Client","client_uri":"https://github.com/chrislearn/hagency-client","application_type":"native","token_endpoint_auth_method":"none","grant_types":["authorization_code","refresh_token"],"response_types":["code"],"redirect_uris":[registered]})).send().await.map_err(|_|"server_unavailable")?).await?;
             let client_id = registration["client_id"]
                 .as_str()
                 .filter(|v| v.len() <= 128)
