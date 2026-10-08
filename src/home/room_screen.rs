@@ -230,45 +230,46 @@ script_mod! {
         }
     }
 
-    // A summary at the bottom of a message that is the root of a thread.
+    // Preserve the reply card; stack its metadata to leave more horizontal
+    // room for the two-line latest-reply preview.
     mod.widgets.ThreadRootSummary = RoundedView {
         visible: false
-        width: Fill,
+        width: Fill
         height: Fit
-        flow: Right,
+        flow: Right
         align: Align{x: 0.0, y: 0.5}
-        spacing: 5.0
-        margin: Inset{ top: 5.0 }
-        padding: 12,
+        spacing: 8
+        margin: Inset{top: 5}
+        padding: 12
         cursor: MouseCursor.Hand
-
         show_bg: true
         draw_bg +: {
-            color: (mod.widgets.COLOR_THREAD_SUMMARY_BG)
-            border_radius: 4.0
+            color: mod.widgets.COLOR_THREAD_SUMMARY_BG
+            border_radius: 4
             border_size: 1.5
-            border_color: (mod.widgets.COLOR_THREAD_SUMMARY_BORDER)
+            border_color: mod.widgets.COLOR_THREAD_SUMMARY_BORDER
         }
-
-        thread_summary_count := Label {
-            width: Fit,
-            draw_text +: {
-                text_style: USERNAME_TEXT_STYLE { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) }
-                color: (mod.widgets.COLOR_THREAD_SUMMARY_REPLY_COUNT)
+        View {
+            width: Fit height: Fit
+            flow: Down spacing: 2
+            align: Align{x: 0.5}
+            Icon {
+                width: 25 height: 25
+                draw_icon +: {
+                    svg: crate_resource("self://resources/icons/double_chat.svg")
+                    color: mod.widgets.COLOR_THREAD_SUMMARY_REPLY_COUNT
+                }
+                icon_walk: Walk{width: 25 height: 25}
             }
-            text: ""
-        }
-
-        Icon {
-            width: Fit, height: Fit,
-            align: Align{x: 0.5, y: 0.5}
-            draw_icon +: {
-                svg: crate_resource("self://resources/icons/double_chat.svg")
-                color: (mod.widgets.COLOR_THREAD_SUMMARY_REPLY_COUNT)
+            thread_summary_count := Label {
+                width: Fit padding: 0
+                draw_text +: {
+                    text_style: USERNAME_TEXT_STYLE {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}
+                    color: mod.widgets.COLOR_THREAD_SUMMARY_REPLY_COUNT
+                }
+                text: ""
             }
-            icon_walk: Walk{ width: 25, height: 25, margin: Inset{top: 3, right: 7} }
         }
-
         thread_summary_latest := MessageHtml {
             max_lines: 2
             text_overflow: Ellipsis
@@ -379,8 +380,8 @@ script_mod! {
                 margin: Inset{top: 4.5, right: 10}
                 flow: Down,
                 avatar := Avatar {
-                    width: 48,
-                    height: 48,
+                    width: 40,
+                    height: 40,
                 }
                 timestamp := Timestamp {
                     margin: Inset{ top: 5.9 }
@@ -399,7 +400,7 @@ script_mod! {
                     flow: Right,
                     width: Fill,
                     height: Fit,
-                    align: Align{y: 0.5} spacing: 5 padding: Inset{top: 16 bottom: 7}
+                    align: Align{y: 0.5} spacing: 5 padding: Inset{top: 12 bottom: 7}
                     username := Label {
                         width: Fit{max: FitBound.Rel{base: Base.Line, factor: 0.8}},
                         flow: Flow.Right { wrap: false },
@@ -6705,7 +6706,7 @@ fn populate_thread_root_summary(
     };
 
     let replies_count_text = match replies_count {
-        1 => Cow::Borrowed("1 reply"),
+        1 => Cow::Borrowed(crate::i18n::tr("1 reply")),
         n => Cow::Owned(crate::i18n::format("{n} replies", &[("n", (n).to_string())]))
     };
     item.label(cx, ids!(thread_summary_count))

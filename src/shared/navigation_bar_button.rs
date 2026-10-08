@@ -87,6 +87,7 @@ script_mod! {
                     sdf.stroke(self.border_color, self.border_size)
                 }
                 if self.focus > 0.0 {
+                    sdf.box(1.0, 1.0, self.rect_size.x - 2.0, self.rect_size.y - 2.0, max(1.0, self.border_radius - 1.0))
                     sdf.stroke(vec4(self.focus_color.xyz, self.focus_color.w * self.focus), 1.5)
                 }
                 return sdf.result;
@@ -145,6 +146,9 @@ pub struct NavigationBarButton {
     /// The text shown in a built-in tooltip when this button is hovered.
     /// If empty, no tooltip action is emitted (the parent may provide its own).
     #[live] tooltip_text: String,
+    /// Pointer focus remains keyboard-operable without drawing a focus ring
+    /// around only the text half of a navigation row.
+    #[rust] pointer_focus: bool,
 }
 
 impl Widget for NavigationBarButton {
@@ -200,10 +204,19 @@ impl Widget for NavigationBarButton {
         };
 
         match event.hits(cx, area) {
-            Hit::KeyFocus(_) => {self.animator_play(cx, ids!(focus.on));}
-            Hit::KeyFocusLost(_) => {self.animator_play(cx, ids!(focus.off));}
-            Hit::KeyDown(key) if !key.is_repeat && matches!(key.key_code, KeyCode::ReturnKey | KeyCode::Space) => {
-                cx.widget_action(widget_uid, NavigationBarButtonAction::Clicked);
+            Hit::KeyFocus(_) => {
+                self.animator_toggle(cx, !self.pointer_focus, Animate::No, ids!(focus.on), ids!(focus.off));
+            }
+            Hit::KeyFocusLost(_) => {
+                self.pointer_focus = false;
+                self.animator_play(cx, ids!(focus.off));
+            }
+            Hit::KeyDown(key) => {
+                self.pointer_focus = false;
+                self.animator_play(cx, ids!(focus.on));
+                if !key.is_repeat && matches!(key.key_code, KeyCode::ReturnKey | KeyCode::Space) {
+                    cx.widget_action(widget_uid, NavigationBarButtonAction::Clicked);
+                }
             }
 
             Hit::FingerHoverIn(_) => {
@@ -215,7 +228,11 @@ impl Widget for NavigationBarButton {
                 emit_hover_out(self, cx);
             }
             Hit::FingerDown(fe) => {
-                if fe.is_primary_hit() {cx.set_key_focus(area);}
+                if fe.is_primary_hit() {
+                    self.pointer_focus = true;
+                    self.animator_play(cx, ids!(focus.off));
+                    cx.set_key_focus(area);
+                }
                 self.animator_play(cx, ids!(hover.down));
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                     cx.widget_action(widget_uid, NavigationBarButtonAction::SecondaryClicked);
