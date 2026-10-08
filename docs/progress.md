@@ -13334,3 +13334,42 @@ Live, working-tree binary: kill -9 mid-round, restart ready in two seconds, both
 - Added bilingual login UI and docs; manual import remains optional. Server adapter validates Pasion identity and owns constrained App Service registration, with explicit self-service policy and quota.
 - Validated PKCE/callback, wrong-owner refusal, config persistence, token revocation, legacy authority/import regression, Rust checks/Clippy and static console build.
 - Real Rust client/server HTTP integration also passes: controlled Pasion/Matrix peers, owner enrollment, outbound polling, Matrix App Service delivery, exact connection probe and reception verification; no coding agent is invoked.
+
+### 2026-10-08 — unify Desktop / Client SQLite and Matrix dependencies
+
+- Operator requested the dependency upgrade to remove the local rusqlite patch.
+  Edited the actual sibling source repositories, not a managed project copy.
+- Client: Matrix SDK 0.18.0 → 0.19.1, Ruma 0.16.0 → 0.17.0,
+  ruma-common 0.19.0 → 0.20.0, rusqlite 0.37.0 → 0.40.2 (`cache` explicit).
+  Adapted Ruma response parsing and existing persistent OlmMachine fixtures.
+- Desktop: replaced SDK/Ruma Git sources with the same registry versions;
+  removed the rusqlite root patch and vendor directory. Preserved the original
+  untracked vendor tree outside the project in a temporary backup. TSP uses
+  the SDK extra-content signature field instead of the custom Ruma struct.
+  Diagnosed OAuth fixture failures: the last request header lacks trailing
+  CRLF, so substring matching could miss the wrong-account token; complete
+  header parsing fixes the fixture. Callback-close probes now disable proxies.
+  SDK SessionMismatch and original returned-device validation are retained;
+  inspection disproved the earlier suspected SDK identity-validation regression.
+- Client targeted library suites: crypto-proof 1/1, Matrix 279/279, store 103/103.
+  Desktop default library suite, serial: 369 passed, 1 ignored. Login subset:
+  15/15. Final default Desktop binary built with --locked. Lockfile inspection
+  confirms exactly one registry rusqlite 0.40.2 / libsqlite3-sys 0.38.2 per repo.
+- Initial --all-targets checks found unrelated example compilation gaps:
+  Client codex_handshake is missing shared_auth; Desktop article comparison
+  examples reference absent makepad_html_renderer. Library/binary/test checks
+  are separate from those failures. Initial optional TSP full suite had UI
+  script failures (legacy `link` declarations), plus OAuth fixture/header
+  mismatch and a proxy-sensitive callback cancellation assertion (both fixed). Final TSP
+  serial verification is recorded below when complete. No live login/model
+  calls or deployed-state migration were performed.
+- task-writer and specs/project.spec.md are absent here; no canonical task-state
+  update or agent-spec lifecycle pass is claimed.
+- Final verification on the retained source: Client --locked workspace
+  library/binary/test check passes. Client crypto-proof + Matrix + store library
+  suites pass 383 tests total. Desktop default serial library suite passes
+  369 tests with 1 ignored; final TSP login subset passes 15/15. The optional
+  full TSP suite audit remains FAILED: 343 passed, 26 UI/script failures,
+  1 ignored (legacy `link` references in existing TSP widgets); it is not a
+  passing qualification claim. OAuth mismatch and callback-cancellation tests
+  both pass after fixture corrections, with the original SDK validation.

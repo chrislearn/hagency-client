@@ -1,5 +1,7 @@
 # Desktop Agent 创建、资源与运行闭环核对
 
+> 2026-10-08 后续需求更新：未配置预算默认不限额，不再阻止请求；既有 Unset 也按不限额读取。本文中“Room 未设额度阻止调用”仅记录修改前的实测情况，不代表现行规则。有限额度、0 额度、显式拒绝、权限和未知费用检查仍生效。当前设计及新验收见 [可用性复核](2026-10-08-desktop-usability-review.zh-CN.md)。
+
 本轮最新身份/设备/联系人重构见[Agent 身份与执行实例实施细则](2026-10-07-agent-identity-execution-instance.zh-CN.md)。其流程替代本页初次核对时的 Project/Room 首次创建绑定；以下测试记录保留为对应阶段证据，不冒充本轮新协议验收。
 
 核对对象是 `/Volumes/Data/Works/chrislearn` 下的 hagency-desktop、hagency-client 和 hagency-server。本文补充原实施报告，区分已经实现的产品功能、测试覆盖与仍然存在的能力限制。没有修改 Palpo 默认功能，没有引入 Fleet、旧结构迁移或 Agent 转让。

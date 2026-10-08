@@ -1662,6 +1662,14 @@ impl ServerLogin {
         cookie: &str,
         operation: OwnerOperation,
     ) -> Result<OwnerReply, OwnerError> {
+        self.owner_api_inner(Some(cookie), None, operation).await
+    }
+    async fn owner_api_inner(
+        &self,
+        cookie: Option<&str>,
+        pin: Option<&super::device_execution::DeviceIdentity>,
+        operation: OwnerOperation,
+    ) -> Result<OwnerReply, OwnerError> {
         let needs_device = matches!(
             &operation,
             OwnerOperation::Create { .. } | OwnerOperation::AssignExecutionDevice { .. }
@@ -1671,9 +1679,17 @@ impl ServerLogin {
             return Err(OwnerError::new(401, "sign_in_required"));
         }
         let mut sessions = self.sessions.lock().await;
-        let session = sessions
-            .get_mut(&session_key(cookie))
-            .ok_or_else(|| OwnerError::new(401, "sign_in_required"))?;
+        let session = if let Some(cookie) = cookie {
+            sessions.get_mut(&session_key(cookie))
+        } else {
+            sessions.values_mut().find(|session| {
+                !session.invalidated
+                    && session.device.as_ref().is_some_and(|device| {
+                        pin == Some(&super::device_execution::DeviceIdentity::from(device))
+                    })
+            })
+        }
+        .ok_or_else(|| OwnerError::new(401, "sign_in_required"))?;
         if session.invalidated || session.expires <= Instant::now() {
             return Err(OwnerError::new(401, "sign_in_required"));
         }
@@ -1684,6 +1700,14 @@ impl ServerLogin {
             self.queue_revocation(session).await;
             *self.status.lock().await = json!({"state":"failed","code":"sign_in_required","deviceAuthorized":false,"transportOnline":false});
             return Err(OwnerError::new(401, "sign_in_required"));
+        }
+        if pin.is_some_and(|pin| {
+            session
+                .device
+                .as_ref()
+                .is_none_or(|device| pin != &super::device_execution::DeviceIdentity::from(device))
+        }) {
+            return Err(OwnerError::new(401, "device_authorization_required"));
         }
         let server = origin(&session.binding.origin)
             .map_err(|_| OwnerError::new(401, "sign_in_required"))?;
@@ -1755,6 +1779,28 @@ impl ServerLogin {
 }
 
 impl super::Console {
+    /// Background service discovery uses the current authenticated session pinned
+    /// to the exact owner/device generation; no browser cookie is retained.
+    pub(super) async fn owner_api_pinned(
+        &self,
+        pin: &super::device_execution::DeviceIdentity,
+        operation: OwnerOperation,
+    ) -> Result<OwnerReply, OwnerError> {
+        let current = self
+            .authorized_device()
+            .await
+            .map_err(|_| OwnerError::new(401, "device_authorization_required"))?;
+        current
+            .bearer()
+            .map_err(|_| OwnerError::new(401, "device_authorization_required"))?;
+        if pin != &super::device_execution::DeviceIdentity::from(&current) {
+            return Err(OwnerError::new(401, "device_authorization_required"));
+        }
+        self.0
+            .server_login
+            .owner_api_inner(None, Some(pin), operation)
+            .await
+    }
     pub(super) async fn owner_api(
         &self,
         cookie: &str,

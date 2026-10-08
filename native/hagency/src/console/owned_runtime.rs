@@ -1,4 +1,5 @@
 //! Explicit owner-started, chat-only Codex host. No legacy execution fallback.
+mod service;
 use super::{
     AuthorizedDevice, Console,
     device_execution::{
@@ -35,6 +36,228 @@ pub(super) struct StartConfig {
     pub host_files: bool,
     // Overwritten from authenticated server binding metadata, never a UI option.
     pub owner_direct: bool,
+    pub recovery_device_id: Option<String>,
+    pub recovery_consent_id: Option<String>,
+}
+/// Explicit startup consent only. Never contains credentials, approvals, paths,
+/// execution IDs or a lease; recovery re-enters all current startup gates.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct RuntimeIntent {
+    pub agent_id: String,
+    pub binding_id: String,
+    pub device_id: String,
+    pub consent_id: String,
+    pub reservation: u64,
+    pub effort: String,
+    pub host_files: bool,
+}
+impl RuntimeIntent {
+    pub(super) fn start_input(&self) -> serde_json::Value {
+        serde_json::json!({"bindingId":self.binding_id,"mode":"estimated","estimatedOptIn":true,
+            "reservation":self.reservation,"effort":self.effort,"hostFiles":self.host_files,
+            "takeover":false,"recoveryDeviceId":self.device_id,"recoveryConsentId":self.consent_id})
+    }
+}
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct RuntimeIntents {
+    version: u8,
+    profile_identity: String,
+    intents: Vec<RuntimeIntent>,
+}
+fn intent_location(
+    console: &Console,
+    device: &AuthorizedDevice,
+) -> Result<(PathBuf, String), RuntimeError> {
+    let root = console
+        .0
+        .server_login
+        .state_directory()
+        .ok_or(RuntimeError::Profile)?;
+    let path = ledger_path(
+        &root,
+        device.origin(),
+        device.issuer(),
+        device.subject(),
+        device.owner_mxid(),
+    )
+    .map_err(|_| RuntimeError::Profile)?;
+    let identity = profile_identity(
+        device.origin(),
+        device.issuer(),
+        device.subject(),
+        device.owner_mxid(),
+    )
+    .map_err(|_| RuntimeError::Authorization)?;
+    Ok((path.with_file_name("runtime-intents.json"), identity))
+}
+fn read_intents(path: &std::path::Path, identity: &str) -> Result<RuntimeIntents, RuntimeError> {
+    use std::io::Read;
+    let file = match hagency_store::private::open(path, false) {
+        Ok(file) => file,
+        Err(_) if !path.exists() => {
+            return Ok(RuntimeIntents {
+                version: 1,
+                profile_identity: identity.into(),
+                intents: Vec::new(),
+            });
+        }
+        Err(_) => return Err(RuntimeError::Profile),
+    };
+    let mut bytes = Vec::new();
+    file.take(262145)
+        .read_to_end(&mut bytes)
+        .map_err(|_| RuntimeError::Profile)?;
+    if bytes.len() > 262144 {
+        return Err(RuntimeError::Profile);
+    }
+    let values: RuntimeIntents =
+        serde_json::from_slice(&bytes).map_err(|_| RuntimeError::Profile)?;
+    let mut scopes = BTreeSet::new();
+    if values.version != 1
+        || values.profile_identity != identity
+        || values.intents.len() > 1024
+        || values.intents.iter().any(|v| {
+            v.reservation == 0
+                || v.agent_id.is_empty()
+                || v.binding_id.is_empty()
+                || v.device_id.is_empty()
+                || (v.consent_id.len() != 64
+                    || !v.consent_id.bytes().all(|b| b.is_ascii_hexdigit()))
+                || ![
+                    "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
+                ]
+                .contains(&v.effort.as_str())
+                || !scopes.insert((&v.agent_id, &v.binding_id))
+        })
+    {
+        return Err(RuntimeError::Profile);
+    }
+    Ok(values)
+}
+fn intents_for_device(values: RuntimeIntents, device: &str) -> Vec<RuntimeIntent> {
+    let agent_services: BTreeSet<_> = values
+        .intents
+        .iter()
+        .filter(|v| v.device_id == device && v.binding_id == service::ALL_ROOMS)
+        .map(|v| v.agent_id.clone())
+        .collect();
+    values
+        .intents
+        .into_iter()
+        .filter(|v| {
+            v.device_id == device
+                && (v.binding_id == service::ALL_ROOMS || !agent_services.contains(&v.agent_id))
+        })
+        .collect()
+}
+fn change_intent(
+    path: &std::path::Path,
+    identity: &str,
+    agent: &str,
+    binding: &str,
+    intent: Option<RuntimeIntent>,
+) -> Result<(), RuntimeError> {
+    change_intent_checked(path, identity, agent, binding, intent, None)
+}
+fn change_intent_checked(
+    path: &std::path::Path,
+    identity: &str,
+    agent: &str,
+    binding: &str,
+    intent: Option<RuntimeIntent>,
+    expected_consent: Option<&str>,
+) -> Result<(), RuntimeError> {
+    let lock_path = path.with_file_name("runtime-intents.lock");
+    let lock = hagency_store::private::open(&lock_path, true)
+        .or_else(|_| hagency_store::private::open(&lock_path, false))
+        .map_err(|_| RuntimeError::Profile)?;
+    lock.try_lock().map_err(|_| RuntimeError::Profile)?;
+    let mut values = read_intents(path, identity)?;
+    // This comparison and publication share the journal lock with Stop, even
+    // when a different manager read its recovery snapshot before the deletion.
+    if let Some(consent) = expected_consent {
+        let replacement = intent.as_ref().ok_or(RuntimeError::Stopped)?;
+        if replacement.consent_id != consent || !values.intents.iter().any(|v| v == replacement) {
+            return Err(RuntimeError::Stopped);
+        }
+    }
+    values
+        .intents
+        .retain(|v| v.agent_id != agent || v.binding_id != binding);
+    if let Some(intent) = intent {
+        values.intents.push(intent);
+    }
+    let bytes = serde_json::to_vec(&values).map_err(|_| RuntimeError::Profile)?;
+    if bytes.len() > 262144 || values.intents.len() > 1024 {
+        return Err(RuntimeError::Profile);
+    }
+    hagency_store::private::replace(path, &bytes).map_err(|_| RuntimeError::Profile)
+}
+fn verify_recovery_intent(
+    console: &Console,
+    device: &AuthorizedDevice,
+    config: &StartConfig,
+) -> Result<(), RuntimeError> {
+    match (&config.recovery_device_id, &config.recovery_consent_id) {
+        (None, None) => Ok(()),
+        (Some(expected_device), Some(consent)) if expected_device == device.device_id() => {
+            let (path, identity) = intent_location(console, device)?;
+            let BudgetMode::Estimated { reservation } = config.mode else {
+                return Err(RuntimeError::StrictUnavailable);
+            };
+            let valid = read_intents(&path, &identity)?.intents.iter().any(|v| {
+                v.agent_id == config.agent_id
+                    && v.binding_id == config.binding_id
+                    && v.device_id == *expected_device
+                    && v.consent_id == *consent
+                    && v.reservation == reservation
+                    && v.effort == config.profile.effort
+                    && v.host_files == config.host_files
+            });
+            if valid {
+                Ok(())
+            } else {
+                Err(RuntimeError::Stopped)
+            }
+        }
+        _ => Err(RuntimeError::Authorization),
+    }
+}
+fn new_consent_id() -> Result<String, RuntimeError> {
+    let mut bytes = [0u8; 32];
+    getrandom::fill(&mut bytes).map_err(|_| RuntimeError::Profile)?;
+    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
+}
+fn save_intent(
+    console: &Console,
+    device: &AuthorizedDevice,
+    config: &StartConfig,
+) -> Result<(), RuntimeError> {
+    let BudgetMode::Estimated { reservation } = config.mode else {
+        return Err(RuntimeError::StrictUnavailable);
+    };
+    let (path, identity) = intent_location(console, device)?;
+    change_intent_checked(
+        &path,
+        &identity,
+        &config.agent_id,
+        &config.binding_id,
+        Some(RuntimeIntent {
+            agent_id: config.agent_id.clone(),
+            binding_id: config.binding_id.clone(),
+            device_id: device.device_id().into(),
+            consent_id: match &config.recovery_consent_id {
+                Some(id) => id.clone(),
+                None => new_consent_id()?,
+            },
+            reservation,
+            effort: config.profile.effort.clone(),
+            host_files: config.host_files,
+        }),
+        config.recovery_consent_id.as_deref(),
+    )
 }
 #[derive(Debug, thiserror::Error)]
 pub(super) enum RuntimeError {
@@ -44,6 +267,8 @@ pub(super) enum RuntimeError {
     Authorization,
     #[error("Agent runtime already active")]
     AlreadyActive,
+    #[error("the previous Agent lease has not expired")]
+    LeaseBusy,
     #[error("Agent execution device is assigned to another device or is unset")]
     ExecutionDevice,
     #[error("provider profile or local state unavailable")]
@@ -213,6 +438,7 @@ fn lock_agent(path: &std::path::Path, agent: &str) -> Result<AgentLock, RuntimeE
 #[derive(Default, Clone)]
 pub(super) struct OwnedRuntime {
     entries: Arc<Mutex<BTreeMap<String, Entry>>>,
+    services: Arc<Mutex<BTreeMap<String, service::ServiceEntry>>>,
 }
 fn identity(device: &AuthorizedDevice, agent: &str) -> String {
     serde_json::to_string(&(
@@ -282,6 +508,21 @@ fn verify_execution_device(
     Ok(())
 }
 impl OwnedRuntime {
+    pub(super) async fn recovery_intents(
+        &self,
+        console: &Console,
+    ) -> Result<Vec<RuntimeIntent>, RuntimeError> {
+        let device = console
+            .authorized_device()
+            .await
+            .map_err(|_| RuntimeError::Authorization)?;
+        device.bearer().map_err(|_| RuntimeError::Authorization)?;
+        let (path, identity) = intent_location(console, &device)?;
+        Ok(intents_for_device(
+            read_intents(&path, &identity)?,
+            device.device_id(),
+        ))
+    }
     /// Holding this registry lock through publication lets switch revoke first,
     /// then drain: an in-flight old request cannot publish after the drain.
     async fn entries_for(
@@ -297,7 +538,7 @@ impl OwnedRuntime {
     pub async fn start(
         &self,
         console: Console,
-        cookie: &str,
+        _cookie: &str,
         mut config: StartConfig,
     ) -> Result<RuntimeStatus, RuntimeError> {
         match config.mode {
@@ -330,15 +571,22 @@ impl OwnedRuntime {
             .await
             .map_err(|_| RuntimeError::Authorization)?;
         device.bearer().map_err(|_| RuntimeError::Authorization)?;
+        if config
+            .recovery_device_id
+            .as_deref()
+            .is_some_and(|id| id != device.device_id())
+        {
+            return Err(RuntimeError::ExecutionDevice);
+        }
         let assigned = console
-            .owner_api(
-                cookie,
+            .owner_api_pinned(
+                &DevicePin::from(&device),
                 OwnerOperation::Agent {
                     agent: config.agent_id.clone(),
                 },
             )
             .await
-            .map_err(|_| RuntimeError::Authorization)?;
+            .map_err(service::owner_error)?;
         if assigned.owner != device.owner_mxid()
             || assigned.origin != device.origin()
             || assigned.issuer != device.issuer()
@@ -351,14 +599,14 @@ impl OwnedRuntime {
             return Err(RuntimeError::Authorization);
         }
         let reply = console
-            .owner_api(
-                cookie,
+            .owner_api_pinned(
+                &DevicePin::from(&device),
                 OwnerOperation::Bindings {
                     agent: config.agent_id.clone(),
                 },
             )
             .await
-            .map_err(|_| RuntimeError::Authorization)?;
+            .map_err(service::owner_error)?;
         if reply.owner != device.owner_mxid()
             || reply.origin != device.origin()
             || reply.issuer != device.issuer()
@@ -435,6 +683,7 @@ impl OwnedRuntime {
         }
         let key = identity(&device, &config.agent_id);
         let mut entries = self.entries_for(&device).await?;
+        verify_recovery_intent(&console, &device, &config)?;
         if let Some(entry) = entries
             .get_mut(&key)
             .filter(|entry| !entry.task.is_finished() && !*entry.cancel.borrow())
@@ -445,6 +694,7 @@ impl OwnedRuntime {
             if entry.binding_active(&config.binding_id) {
                 return Err(RuntimeError::AlreadyActive);
             }
+            save_intent(&console, &device, &config)?;
             let id = config.binding_id.clone();
             let (work, handle, status) = binding_work(config);
             entry
@@ -455,6 +705,7 @@ impl OwnedRuntime {
             return Ok(status);
         }
         let process_lock = lock_agent(&path, &config.agent_id)?;
+        save_intent(&console, &device, &config)?;
         let agent = config.agent_id.clone();
         let binding = config.binding_id.clone();
         let (initial, handle, status) = binding_work(config);
@@ -663,6 +914,9 @@ impl OwnedRuntime {
                 .values()
                 .map(|b| {
                     let mut child = b.status.borrow().clone();
+                    if status.phase == "waiting_for_lease" && child.phase != "stopped" {
+                        child.phase = "waiting_for_lease";
+                    }
                     if status.phase == "stopped" {
                         child.phase = "stopped";
                         child.last_error = child.last_error.or(status.last_error);
@@ -686,6 +940,9 @@ impl OwnedRuntime {
         device.bearer().map_err(|_| RuntimeError::Authorization)?;
         let mut receiver = {
             let mut entries = self.entries.lock().await;
+            device.bearer().map_err(|_| RuntimeError::Authorization)?;
+            let (path, profile_id) = intent_location(console, &device)?;
+            change_intent(&path, &profile_id, agent, binding, None)?;
             let Some(entry) = entries.get_mut(&identity(&device, agent)) else {
                 return Ok(());
             };
@@ -714,6 +971,11 @@ impl OwnedRuntime {
     }
     /// Console shutdown/logout must invoke this even when authorization is gone.
     pub(super) fn request_stop_all(&self) {
+        if let Ok(services) = self.services.try_lock() {
+            for entry in services.values() {
+                entry.cancel_now();
+            }
+        }
         if let Ok(entries) = self.entries.try_lock() {
             for entry in entries.values() {
                 entry.cancel.send_replace(true);
@@ -728,6 +990,7 @@ impl OwnedRuntime {
         // lock is busy without a Tokio caller, the heartbeat still fails closed.
     }
     pub(super) async fn stop_profile(&self, device: &AuthorizedDevice) -> Result<(), RuntimeError> {
+        self.drain_services(Some(&DevicePin::from(device))).await;
         let pin = DevicePin::from(device);
         let mut entries = self.entries_for(device).await?;
         let keys: Vec<_> = entries
@@ -755,6 +1018,7 @@ impl OwnedRuntime {
         Ok(())
     }
     pub async fn stop_all(&self) {
+        self.drain_services(None).await;
         let entries = std::mem::take(&mut *self.entries.lock().await);
         for entry in entries.values() {
             entry.cancel.send_replace(true);
@@ -793,11 +1057,16 @@ impl Transport for PinnedConsole {
         Some(self.clone())
     }
     async fn execute(&self, op: Op) -> Result<Response, RuntimeError> {
+        let acquiring = matches!(&op, Op::Acquire { .. });
         self.console
             .execution_api_pinned(op, &self.pin)
             .await
             .map_err(|e| {
-                if e.code == "execution_history_changed" || e.code == "ledger_recovery_required" {
+                if acquiring && e.status == 409 && e.code == "agent_leased_to_another_device" {
+                    RuntimeError::LeaseBusy
+                } else if e.code == "execution_history_changed"
+                    || e.code == "ledger_recovery_required"
+                {
                     RuntimeError::LedgerRecovery
                 } else if matches!(e.status, 401 | 403 | 409) {
                     RuntimeError::Authorization
@@ -881,6 +1150,7 @@ fn failure_code(result: &Result<(), RuntimeError>) -> Option<&'static str> {
     match result {
         Ok(()) | Err(RuntimeError::Stopped) => None,
         Err(RuntimeError::Authorization) => Some("authorization_or_lease_lost"),
+        Err(RuntimeError::LeaseBusy) => Some("agent_lease_busy"),
         Err(RuntimeError::Profile) => Some("profile_or_local_state_unavailable"),
         Err(RuntimeError::Provider) => Some("provider_authorization_lost"),
         Err(RuntimeError::LedgerRecovery) => Some("ledger_recovery_required"),
@@ -993,6 +1263,69 @@ async fn acquire_checked<T: Transport>(
     };
     Ok((lease, snapshot, covered))
 }
+#[derive(Clone, Copy)]
+struct RecoveryLeaseWait {
+    total: Duration,
+    interval: Duration,
+}
+impl Default for RecoveryLeaseWait {
+    fn default() -> Self {
+        Self {
+            total: Duration::from_secs(35),
+            interval: Duration::from_secs(1),
+        }
+    }
+}
+#[allow(clippy::too_many_arguments)]
+async fn acquire_for_start<T: Transport>(
+    transport: &T,
+    ledger: &mut Ledger,
+    owner: &str,
+    config: &StartConfig,
+    cancel: &mut watch::Receiver<bool>,
+    status: &watch::Sender<RuntimeStatus>,
+    binding_status: &watch::Sender<RuntimeStatus>,
+    wait: RecoveryLeaseWait,
+) -> Result<(Lease, HistorySnapshot, bool), RuntimeError> {
+    if config.recovery_consent_id.is_none()
+        || config.recovery_device_id.is_none()
+        || !matches!(config.takeover, Takeover::Never)
+    {
+        return acquire_checked(transport, ledger, owner, config, cancel).await;
+    }
+    let deadline = tokio::time::Instant::now() + wait.total;
+    let mut saw_busy = false;
+    loop {
+        let mut attempt_cancel = cancel.clone();
+        let attempt = tokio::select! {biased;
+            _=canceled(&mut attempt_cancel)=>return Err(RuntimeError::Stopped),
+            _=tokio::time::sleep_until(deadline)=>return Err(if saw_busy {RuntimeError::LeaseBusy} else {RuntimeError::Transport}),
+            result=acquire_checked(transport,ledger,owner,config,cancel)=>result,
+        };
+        match attempt {
+            Err(RuntimeError::LeaseBusy)
+                if config.recovery_consent_id.is_some()
+                    && config.recovery_device_id.is_some()
+                    && matches!(config.takeover, Takeover::Never) =>
+            {
+                saw_busy = true;
+                let mut waiting = RuntimeStatus::new(&config.agent_id, "waiting_for_lease", None)
+                    .with_host_files(config.host_files);
+                waiting.binding_id = Some(config.binding_id.clone());
+                status.send_replace(waiting.clone());
+                binding_status.send_replace(waiting);
+                tokio::select! {biased;
+                    _=canceled(cancel)=>return Err(RuntimeError::Stopped),
+                    _=tokio::time::sleep_until(deadline)=>return Err(RuntimeError::LeaseBusy),
+                    _=tokio::time::sleep(wait.interval)=>{},
+                }
+                // Every retry repeats fresh history, complete local accounting
+                // coverage and the server's atomic Acquire snapshot check.
+            }
+            other => return other,
+        }
+    }
+}
 async fn post_acquire_coverage<T: Transport>(
     transport: &T,
     ledger: &mut Ledger,
@@ -1038,15 +1371,29 @@ async fn run_host(
     let _ = provider.stop().await;
     checked?;
     let mut ledger = local(Ledger::open_scoped(&path, &owner, &profile_id))?;
-    let (lease, history_snapshot, pre_covered) = acquire_checked(
+    let (lease, history_snapshot, pre_covered) = acquire_for_start(
         &transport,
         &mut ledger,
         &owner,
         &initial.config,
         &mut cancel,
+        &status,
+        &initial.status,
+        RecoveryLeaseWait::default(),
     )
     .await?;
     drop(ledger);
+    // A bounded recovery wait may outlive the initial device snapshot. Acquire
+    // used a fresh bearer; heartbeat must begin from that current capability,
+    // while preserving the original immutable identity/generation fence.
+    let device = console
+        .authorized_device()
+        .await
+        .map_err(|_| RuntimeError::Authorization)?;
+    device.bearer().map_err(|_| RuntimeError::Authorization)?;
+    if DevicePin::from(&device) != transport.pin {
+        return Err(RuntimeError::Authorization);
+    }
     let reference = lease.reference();
     let heartbeat_failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let monitor = tokio::spawn(heartbeat(
@@ -1522,6 +1869,37 @@ async fn monitor_running<T: Transport>(
         }
     }
 }
+/// Best effort only: this notification cannot trigger or retry provider work.
+async fn processing_notice<T: Transport>(
+    transport: &T,
+    lease: &LeaseRef,
+    prepared: &inbox::Prepared,
+    started: tokio::sync::oneshot::Receiver<()>,
+) {
+    if started.await.is_err() {
+        return;
+    }
+    for attempt in 0..2 {
+        let result = tokio::time::timeout(
+            Duration::from_secs(3),
+            transport.execute(Op::Processing {
+                lease: lease.clone(),
+                dispatch_id: prepared.dispatch.id.clone(),
+                execution_id: prepared.execution_id.clone(),
+            }),
+        )
+        .await;
+        match result {
+            Ok(Ok(Response::Processing(_))) | Ok(Err(RuntimeError::Authorization)) => return,
+            _ if attempt == 0 => tokio::time::sleep(Duration::from_millis(200)).await,
+            _ => tracing::debug!(
+                stage = "processing_notice",
+                code = "processing_notice_unavailable",
+                "Agent processing reaction was not confirmed"
+            ),
+        }
+    }
+}
 #[allow(clippy::too_many_arguments)]
 async fn review_request<T: Transport>(
     transport: &T,
@@ -1659,7 +2037,13 @@ async fn run_turn<T: Transport>(
         return if *cancel.borrow() {
             Err(RuntimeError::Stopped)
         } else {
-            Ok(Some(Finish::Rejected))
+            local(ledger.persist_no_provider_reply(
+                owner,
+                &prepared.dispatch.id,
+                &prepared.execution_id,
+                "⏸️ 本次请求未获 Agent 主人的处理授权，未调用模型。",
+            ))?;
+            Ok(None)
         };
     }
     let mut executing = RuntimeStatus::new(
@@ -1676,35 +2060,127 @@ async fn run_turn<T: Transport>(
     status.send_replace(executing);
     let mut pre_model_cancel = cancel.clone();
     let permission_cancel = cancel.clone();
+    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
     let result = tokio::select! {biased; _=canceled(cancel)=>Err(RuntimeError::Stopped), error=monitor_running(transport,lease,&prepared,permission_cancel)=>Err(error), r=async {
+        let model = async {
         provider.session.initialize().await?;
         provider.session.verify_host_environment().await?;
         provider.session.require_local_account().await?;
         provider.session.open_context(ledger,&scope,&profile).await?;
         if !fresh_running(transport,lease,&prepared.dispatch,&prepared.execution_id,&mut pre_model_cancel).await {return Err(codex::Error::Protocol("running dispatch authorization lost"));}
-        provider.session.run(ledger,owner,&scope,&prepared.execution_id,&prepared.dispatch.id,&prepared.dispatch.body,config.mode.clone(),&queue).await
+        provider.session.run_with_started(ledger,owner,&scope,&prepared.execution_id,&prepared.dispatch.id,&prepared.dispatch.body,config.mode.clone(),&queue,Some(started_tx)).await
+        };
+        let (result, ()) = tokio::join!(model, processing_notice(transport,lease,&prepared,started_rx));
+        result
     }=>match r {
-        Ok(completed)=>Ok(Some(completed)),
-        Err(codex::Error::Ledger(hagency_agent_local::Error::Denied|hagency_agent_local::Error::Budget|hagency_agent_local::Error::Unknown))=>Ok(None),
+        Ok(completed)=>Ok(Ok(completed)),
+        Err(codex::Error::Ledger(hagency_agent_local::Error::Denied))=>Ok(Err("⏸️ 本次请求未获 Agent 主人的处理授权，未调用模型。")),
+        Err(codex::Error::Ledger(hagency_agent_local::Error::Budget))=>Ok(Err("⏸️ 暂停处理：Token 可用额度不足，无法为本次请求预留额度。请联系 Agent 主人调整配额。本次未调用模型。")),
+        Err(codex::Error::Ledger(hagency_agent_local::Error::Unknown))=>Ok(Err("⏸️ 暂停处理：历史请求的费用尚待确认，预留额度仍保留。请联系 Agent 主人核对账本后继续。本次未调用模型。")),
         Err(codex::Error::Profile("dedicated owner provider login required"))=>Err(RuntimeError::Provider),
         Err(codex::Error::Failed)=>{let _=provider.stop().await;return Ok(Some(Finish::Failed));},
         Err(_)=>Err(RuntimeError::Profile),
     }};
     // Dropping a running turn first seals its reservation; then kill the child.
     let _ = provider.stop().await;
-    let Some(completed) = result? else {
-        return Ok(Some(Finish::Rejected));
+    let completed = match result? {
+        Ok(completed) => completed,
+        Err(reason) => {
+            let body = with_owner_budget(
+                reason.to_owned(),
+                ledger,
+                owner,
+                &scope,
+                config.owner_direct,
+            )?;
+            local(ledger.persist_no_provider_reply(
+                owner,
+                &prepared.dispatch.id,
+                &prepared.execution_id,
+                &body,
+            ))?;
+            return Ok(None);
+        }
     };
     if completed.text.is_empty() || completed.text.len() > 65_536 {
         return Err(RuntimeError::Profile);
     }
+    let body = completion_body(&completed);
+    let body = with_owner_budget(body, ledger, owner, &scope, config.owner_direct)?;
     local(ledger.persist_execution_reply(
         owner,
         &prepared.dispatch.id,
         &prepared.execution_id,
-        &completed.text,
+        &body,
     ))?;
     Ok(None)
+}
+
+fn completion_body(completed: &codex::Completed) -> String {
+    // Cached input/reasoning output are subsets, not additional charge.
+    let summary = format!(
+        "✅ 本轮处理已结束 · 已运行 {} 秒\n本次用量 {} Token（输入 {} / 输出 {}；缓存输入 {}，推理输出 {}）· 工具请求 {} 次，已返回 {} 次",
+        completed.elapsed_seconds,
+        completed.usage.input + completed.usage.output,
+        completed.usage.input,
+        completed.usage.output,
+        completed.usage.cached_input,
+        completed.usage.reasoning_output,
+        completed.tool_requests,
+        completed.tool_returns,
+    );
+    // Leave room for the private owner-budget line without losing this summary.
+    append_summary_limit(&completed.text, &summary, 64_512)
+}
+fn append_summary(text: &str, summary: &str) -> String {
+    append_summary_limit(text, summary, 65_536)
+}
+fn append_summary_limit(text: &str, summary: &str, limit: usize) -> String {
+    // Keep the complete accounting summary even for a maximum-size answer.
+    // Truncation is explicit and respects UTF-8 boundaries and wire byte limits.
+    let marker = "\n…（回复过长，已截断）";
+    let suffix = format!("\n\n{summary}");
+    let maximum = limit - suffix.len();
+    if text.len() <= maximum {
+        return format!("{text}{suffix}");
+    }
+    let mut end = maximum - marker.len();
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}{marker}{suffix}", &text[..end])
+}
+fn with_owner_budget(
+    body: String,
+    ledger: &Ledger,
+    owner: &str,
+    scope: &Scope,
+    owner_direct: bool,
+) -> Result<String, RuntimeError> {
+    // Only server-verified owner-direct bindings may expose the global budget.
+    if !owner_direct {
+        return Ok(body);
+    }
+    let policy = local(ledger.agent_policy(owner, &scope.agent))?.policy;
+    let (spent, held) =
+        local(ledger.agent_account(owner, &scope.agent, policy.budget.period, now()))?;
+    let limit = match policy.budget.limit {
+        hagency_agent_local::Limit::Tokens(n) => n.to_string(),
+        hagency_agent_local::Limit::Unlimited | hagency_agent_local::Limit::Unset => {
+            "不限额".into()
+        }
+    };
+    let period = match policy.budget.period {
+        hagency_agent_local::Period::Lifetime => "累计",
+        hagency_agent_local::Period::UtcDay => "UTC 当日",
+        hagency_agent_local::Period::UtcMonth => "UTC 当月",
+    };
+    Ok(append_summary(
+        &body,
+        &format!(
+            "Agent 配额（{period}）：已使用 {spent} / {limit} Token；待确认或运行中的预留 {held} Token。"
+        ),
+    ))
 }
 async fn send_reply<T: Transport>(
     console: &T,
@@ -1780,6 +2256,124 @@ async fn send_reply<T: Transport>(
 mod tests {
 
     #[test]
+    fn completion_summary_reports_this_turn_without_double_counting_subsets() {
+        let completed = super::codex::Completed {
+            text: "answer".into(),
+            usage: hagency_agent_local::Usage {
+                input: 30,
+                output: 20,
+                cached_input: 10,
+                reasoning_output: 5,
+                accounting_version: "fixture".into(),
+            },
+            status: super::codex::TurnStatus::Completed,
+            elapsed_seconds: 13,
+            tool_requests: 2,
+            tool_returns: 1,
+        };
+        let body = super::completion_body(&completed);
+        assert!(body.starts_with("answer\n\n✅"));
+        assert!(body.contains("本次用量 50 Token"));
+        assert!(body.contains("已运行 13 秒"));
+        assert!(body.contains("工具请求 2 次，已返回 1 次"));
+        assert!(!body.contains("配额"));
+        assert!(!body.contains("65 Token"));
+    }
+    #[test]
+    fn large_unicode_answer_keeps_summary_with_explicit_truncation() {
+        let body = super::append_summary(&"中文答案".repeat(6000), "本次用量 50 Token");
+        assert!(body.len() <= 65_536);
+        assert!(body.contains("回复过长，已截断"));
+        assert!(body.ends_with("本次用量 50 Token"));
+    }
+    #[test]
+    fn shared_room_summary_never_reads_or_discloses_owner_budget() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ledger = Ledger::open(tmp.path().join("ledger.db"), "@alice:test").unwrap();
+        let scope = Scope {
+            agent: "not-registered".into(),
+            binding: "b".into(),
+            room: "!r:test".into(),
+            requester: "@bob:test".into(),
+            thread: "t".into(),
+        };
+        assert_eq!(
+            super::with_owner_budget("answer".into(), &ledger, "@alice:test", &scope, false)
+                .unwrap(),
+            "answer"
+        );
+    }
+    #[test]
+    fn private_owner_summary_preserves_turn_usage_and_shows_spent_separately_from_holds() {
+        use hagency_agent_local::{
+            Budget, Layer, Limit, Period, Policy, RequestPolicy, ToolPolicy, Usage,
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let mut ledger = Ledger::open(tmp.path().join("ledger.db"), OWNER).unwrap();
+        let scope = Scope {
+            agent: "agent-a".into(),
+            binding: "b".into(),
+            room: "!r:test".into(),
+            requester: OWNER.into(),
+            thread: "t".into(),
+        };
+        ledger.register_binding(OWNER, &scope).unwrap();
+        for layer in [Layer::Agent, Layer::Room, Layer::Requester] {
+            ledger
+                .set_policy(
+                    OWNER,
+                    &scope,
+                    layer,
+                    0,
+                    &Policy {
+                        budget: Budget {
+                            limit: Limit::Tokens(100),
+                            period: Period::Lifetime,
+                        },
+                        requests: RequestPolicy::Allow,
+                        high_risk: ToolPolicy::Deny,
+                    },
+                )
+                .unwrap();
+        }
+        ledger
+            .reserve(&scope, "call-a", "dispatch-a", 30, now())
+            .unwrap();
+        let usage = Usage {
+            input: 15,
+            output: 5,
+            cached_input: 3,
+            reasoning_output: 1,
+            accounting_version: "fixture-v1".into(),
+        };
+        ledger.settle(&scope, "call-a", &usage).unwrap();
+        ledger
+            .reserve(&scope, "call-b", "dispatch-b", 10, now())
+            .unwrap();
+        ledger.mark_unknown(&scope, "call-b").unwrap();
+        let completed = codex::Completed {
+            text: "长答案".repeat(7000),
+            usage,
+            status: codex::TurnStatus::Completed,
+            elapsed_seconds: 8,
+            tool_requests: 0,
+            tool_returns: 0,
+        };
+        let body =
+            with_owner_budget(completion_body(&completed), &ledger, OWNER, &scope, true).unwrap();
+        assert!(body.len() <= 65_536);
+        assert!(body.contains("本次用量 20 Token"));
+        assert!(body.contains("已使用 20 / 100 Token"));
+        assert!(body.contains("预留 10 Token"));
+        assert_eq!(
+            ledger
+                .agent_account(OWNER, "agent-a", Period::Lifetime, now())
+                .unwrap(),
+            (20, 10)
+        );
+    }
+
+    #[test]
     fn heartbeat_schedule_precedes_short_proof_deadline() {
         let now = std::time::Instant::now();
         assert_eq!(
@@ -1796,6 +2390,121 @@ mod tests {
     use super::*;
     use std::sync::Mutex as StdMutex;
     const OWNER: &str = "@alice:test";
+    fn intended(agent: &str, binding: &str, device: &str) -> RuntimeIntent {
+        RuntimeIntent {
+            agent_id: agent.into(),
+            binding_id: binding.into(),
+            device_id: device.into(),
+            consent_id: new_consent_id().unwrap(),
+            reservation: 42,
+            effort: "low".into(),
+            host_files: false,
+        }
+    }
+    #[tokio::test]
+    async fn runtime_restart_retains_explicit_binding_consent_but_never_a_live_task_or_takeover() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("runtime-intents.json");
+        let intent = intended("a", "b", "device-a");
+        change_intent(&path, "owner-a", "a", "b", Some(intent.clone())).unwrap();
+        let old = OwnedRuntime::default();
+        old.stop_all().await; // normal shutdown preserves durable intent
+        drop(old);
+        let fresh = OwnedRuntime::default();
+        assert!(fresh.entries.lock().await.is_empty());
+        let recovered = read_intents(&path, "owner-a").unwrap().intents;
+        assert_eq!(recovered, vec![intent]);
+        assert!(
+            intents_for_device(read_intents(&path, "owner-a").unwrap(), "another-device")
+                .is_empty()
+        );
+        let input = recovered[0].start_input();
+        assert_eq!(input["takeover"], false);
+        assert_eq!(input["reservation"], 42);
+        assert_eq!(input["recoveryDeviceId"], "device-a");
+        assert!(input.get("profile").is_none());
+        assert!(input.get("token").is_none());
+    }
+    #[test]
+    fn runtime_stop_removes_only_exact_binding_and_keeps_other_intents_across_reopen() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("runtime-intents.json");
+        for (a, b) in [("a", "b1"), ("a", "b2"), ("other", "b3")] {
+            change_intent(&path, "owner-a", a, b, Some(intended(a, b, "device-a"))).unwrap();
+        }
+        change_intent(&path, "owner-a", "a", "b1", None).unwrap();
+        let loaded = read_intents(&path, "owner-a").unwrap();
+        assert_eq!(loaded.intents.len(), 2);
+        assert!(loaded.intents.iter().all(|i| i.binding_id != "b1"));
+        assert!(read_intents(&path, "different-account").is_err());
+        assert!(change_intent(&path, "different-account", "other", "b3", None).is_err());
+        assert_eq!(read_intents(&path, "owner-a").unwrap().intents.len(), 2);
+    }
+    #[test]
+    fn runtime_stale_recovery_cannot_republish_after_other_manager_stop_or_new_start() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("runtime-intents.json");
+        let original = intended("a", "b", "device");
+        change_intent(&path, "owner-a", "a", "b", Some(original.clone())).unwrap();
+        let snapshot = read_intents(&path, "owner-a").unwrap().intents.remove(0);
+        change_intent(&path, "owner-a", "a", "b", None).unwrap();
+        assert!(matches!(
+            change_intent_checked(
+                &path,
+                "owner-a",
+                "a",
+                "b",
+                Some(snapshot.clone()),
+                Some(&snapshot.consent_id)
+            ),
+            Err(RuntimeError::Stopped)
+        ));
+        assert!(read_intents(&path, "owner-a").unwrap().intents.is_empty());
+        let newer = intended("a", "b", "device");
+        change_intent(&path, "owner-a", "a", "b", Some(newer.clone())).unwrap();
+        assert!(matches!(
+            change_intent_checked(
+                &path,
+                "owner-a",
+                "a",
+                "b",
+                Some(snapshot.clone()),
+                Some(&snapshot.consent_id)
+            ),
+            Err(RuntimeError::Stopped)
+        ));
+        assert_eq!(
+            read_intents(&path, "owner-a").unwrap().intents,
+            vec![newer.clone()]
+        );
+        assert!(
+            change_intent_checked(
+                &path,
+                "owner-a",
+                "a",
+                "b",
+                Some(newer.clone()),
+                Some(&newer.consent_id)
+            )
+            .is_ok()
+        );
+    }
+    #[test]
+    fn runtime_concurrent_intent_writer_and_malformed_consent_fail_closed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("runtime-intents.json");
+        let held = hagency_store::private::open(&path.with_file_name("runtime-intents.lock"), true)
+            .unwrap();
+        held.try_lock().unwrap();
+        assert!(change_intent(&path, "owner-a", "a", "b", Some(intended("a", "b", "d"))).is_err());
+        assert!(!path.exists());
+        drop(held);
+        change_intent(&path, "owner-a", "a", "b", Some(intended("a", "b", "d"))).unwrap();
+        let mut values = read_intents(&path, "owner-a").unwrap();
+        values.intents[0].reservation = 0;
+        hagency_store::private::replace(&path, &serde_json::to_vec(&values).unwrap()).unwrap();
+        assert!(read_intents(&path, "owner-a").is_err());
+    }
     #[test]
     fn two_process_like_hosts_cannot_share_one_agent_context() {
         let tmp = tempfile::tempdir().unwrap();
@@ -1988,6 +2697,8 @@ mod tests {
             takeover: Takeover::Never,
             host_files: false,
             owner_direct: false,
+            recovery_device_id: None,
+            recovery_consent_id: None,
         }
     }
     fn setup(path: &std::path::Path, root: &std::path::Path) -> Ledger {
@@ -2000,6 +2711,7 @@ mod tests {
                 &hagency_agent_local::ModelProfile {
                     model: "test-model".into(),
                     workspace_root: root.to_string_lossy().into(),
+                    reasoning_effort: String::new(),
                     credential_ref: "keychain:test".into(),
                 },
             )
@@ -2100,6 +2812,24 @@ mod tests {
                         dispatch: wire(&dispatch),
                         newly_started: matches!(self.mode, Mode::CancelModel | Mode::RevokedModel),
                     }))
+                }
+                Op::Processing {
+                    lease,
+                    dispatch_id,
+                    execution_id,
+                } => {
+                    assert!(matches!(self.mode, Mode::CancelModel | Mode::RevokedModel));
+                    assert_eq!(lease.agent_id, "agent-a");
+                    assert_eq!(lease.epoch, 1);
+                    assert_eq!(dispatch_id, "dispatch-a");
+                    let record = ledger.inbox_record(OWNER, &dispatch_id).unwrap();
+                    assert_eq!(record.state, State::Running);
+                    assert_eq!(record.execution_id.as_deref(), Some(execution_id.as_str()));
+                    assert_eq!(record.dispatch.scope(), event().scope());
+                    assert_eq!(ledger.outstanding_calls(OWNER).unwrap().len(), 1);
+                    // A cosmetic notification failure must not mutate replies,
+                    // release reservations, or weaken the cancellation fixture.
+                    Err(RuntimeError::Transport)
                 }
                 Op::AuthorizeTool {
                     dispatch_id,
@@ -3301,6 +4031,63 @@ for raw in sys.stdin:
             }
         }
     }
+    struct ProcessingFake {
+        calls: std::sync::atomic::AtomicUsize,
+        refuse: bool,
+    }
+    impl Transport for ProcessingFake {
+        async fn execute(&self, op: Op) -> Result<Response, RuntimeError> {
+            let Op::Processing {
+                lease,
+                dispatch_id,
+                execution_id,
+            } = op
+            else {
+                panic!("notification must not start models or mutate replies");
+            };
+            assert_eq!(lease.epoch, 1);
+            assert_eq!(dispatch_id, "dispatch-a");
+            assert_eq!(execution_id, "execution-a");
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err(if self.refuse {
+                RuntimeError::Authorization
+            } else {
+                RuntimeError::Transport
+            })
+        }
+    }
+    #[tokio::test]
+    async fn processing_notice_is_bounded_and_never_retries_rejected_authority() {
+        let prepared = inbox::Prepared {
+            dispatch: event(),
+            execution_id: "execution-a".into(),
+        };
+        let lease = LeaseRef {
+            agent_id: "agent-a".into(),
+            epoch: 1,
+        };
+        for (refuse, expected) in [(true, 1), (false, 2)] {
+            let fake = ProcessingFake {
+                calls: std::sync::atomic::AtomicUsize::new(0),
+                refuse,
+            };
+            let (send, receive) = tokio::sync::oneshot::channel();
+            send.send(()).unwrap();
+            processing_notice(&fake, &lease, &prepared, receive).await;
+            assert_eq!(
+                fake.calls.load(std::sync::atomic::Ordering::SeqCst),
+                expected
+            );
+        }
+        let fake = ProcessingFake {
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            refuse: false,
+        };
+        let (send, receive) = tokio::sync::oneshot::channel();
+        drop(send);
+        processing_notice(&fake, &lease, &prepared, receive).await;
+        assert_eq!(fake.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
     struct HistoryFake {
         pages: StdMutex<std::collections::VecDeque<Result<Response, RuntimeError>>>,
     }
@@ -3625,6 +4412,181 @@ for raw in sys.stdin:
         assert_eq!(snapshot.count, 2);
         assert!(fake.pages.lock().unwrap().is_empty());
     }
+    struct RestartLeaseFake {
+        history_calls: std::sync::atomic::AtomicUsize,
+        acquire_calls: std::sync::atomic::AtomicUsize,
+        busy_attempts: usize,
+        authorization_denied: bool,
+    }
+    impl Transport for RestartLeaseFake {
+        async fn execute(&self, op: Op) -> Result<Response, RuntimeError> {
+            use std::sync::atomic::Ordering;
+            match op {
+                Op::History { .. } => {
+                    self.history_calls.fetch_add(1, Ordering::SeqCst);
+                    history_page("a", vec![], 0, None)
+                }
+                Op::Acquire {
+                    takeover,
+                    history_snapshot,
+                    ..
+                } => {
+                    assert!(matches!(takeover, Takeover::Never));
+                    assert_eq!(history_snapshot.count, 0);
+                    let attempt = self.acquire_calls.fetch_add(1, Ordering::SeqCst);
+                    if self.authorization_denied {
+                        Err(RuntimeError::Authorization)
+                    } else if attempt < self.busy_attempts {
+                        Err(RuntimeError::LeaseBusy)
+                    } else {
+                        Ok(Response::Lease(Lease {
+                            agent_id: "agent-a".into(),
+                            owner_user_id: "owner-a".into(),
+                            device_id: "device-a".into(),
+                            device_generation: 2,
+                            epoch: 2,
+                            expires_at_ms: wall_ms() + 30000,
+                        }))
+                    }
+                }
+                _ => panic!("restart wait must not poll, ACK, start, release, or execute work"),
+            }
+        }
+    }
+    fn restart_fake(busy: usize, deny: bool) -> RestartLeaseFake {
+        RestartLeaseFake {
+            history_calls: std::sync::atomic::AtomicUsize::new(0),
+            acquire_calls: std::sync::atomic::AtomicUsize::new(0),
+            busy_attempts: busy,
+            authorization_denied: deny,
+        }
+    }
+    fn recovery_config(path: &std::path::Path) -> StartConfig {
+        let mut cfg = config(path);
+        cfg.recovery_device_id = Some("device-a".into());
+        cfg.recovery_consent_id = Some(new_consent_id().unwrap());
+        cfg
+    }
+    #[tokio::test]
+    async fn restart_lease_busy_waits_for_natural_expiry_and_rechecks_history_without_takeover() {
+        let t = tempfile::tempdir().unwrap();
+        let mut l = setup(&t.path().join("ledger.db"), t.path());
+        let fake = restart_fake(2, false);
+        let (_stop, mut cancel) = watch::channel(false);
+        let (status, observed) = watch::channel(RuntimeStatus::new("agent-a", "starting", None));
+        let cfg = recovery_config(t.path());
+        let (lease, _, covered) = acquire_for_start(
+            &fake,
+            &mut l,
+            OWNER,
+            &cfg,
+            &mut cancel,
+            &status,
+            &status,
+            RecoveryLeaseWait {
+                total: Duration::from_millis(200),
+                interval: Duration::from_millis(2),
+            },
+        )
+        .await
+        .unwrap();
+        assert!(covered);
+        assert_eq!(lease.epoch, 2);
+        assert_eq!(observed.borrow().phase, "waiting_for_lease");
+        assert_eq!(
+            fake.acquire_calls.load(std::sync::atomic::Ordering::SeqCst),
+            3
+        );
+        assert_eq!(
+            fake.history_calls.load(std::sync::atomic::Ordering::SeqCst),
+            3
+        );
+    }
+    #[tokio::test]
+    async fn restart_lease_busy_deadline_is_finite_and_stop_interrupts_wait() {
+        for stopped in [false, true] {
+            let t = tempfile::tempdir().unwrap();
+            let mut l = setup(&t.path().join("ledger.db"), t.path());
+            let fake = restart_fake(usize::MAX, false);
+            let (stop, mut cancel) = watch::channel(false);
+            let (status, mut observed) =
+                watch::channel(RuntimeStatus::new("agent-a", "starting", None));
+            let cfg = recovery_config(t.path());
+            let stop_request = stop.clone();
+            let cancel_task = tokio::spawn(async move {
+                if stopped {
+                    observed.changed().await.unwrap();
+                    assert_eq!(observed.borrow().phase, "waiting_for_lease");
+                    stop_request.send_replace(true);
+                }
+            });
+            let result = acquire_for_start(
+                &fake,
+                &mut l,
+                OWNER,
+                &cfg,
+                &mut cancel,
+                &status,
+                &status,
+                RecoveryLeaseWait {
+                    total: Duration::from_millis(30),
+                    interval: Duration::from_millis(5),
+                },
+            )
+            .await;
+            cancel_task.await.unwrap();
+            assert!(if stopped {
+                matches!(result, Err(RuntimeError::Stopped))
+            } else {
+                matches!(result, Err(RuntimeError::LeaseBusy))
+            });
+            let attempts = fake.acquire_calls.load(std::sync::atomic::Ordering::SeqCst);
+            assert!((1..=8).contains(&attempts));
+            if stopped {
+                assert_eq!(attempts, 1);
+            }
+        }
+    }
+    #[tokio::test]
+    async fn restart_wait_never_retries_authorization_denial_or_manual_start_conflict() {
+        for deny in [false, true] {
+            let t = tempfile::tempdir().unwrap();
+            let mut l = setup(&t.path().join("ledger.db"), t.path());
+            let fake = restart_fake(usize::MAX, deny);
+            let (_stop, mut cancel) = watch::channel(false);
+            let (status, observed) =
+                watch::channel(RuntimeStatus::new("agent-a", "starting", None));
+            let cfg = if deny {
+                recovery_config(t.path())
+            } else {
+                config(t.path())
+            };
+            let result = acquire_for_start(
+                &fake,
+                &mut l,
+                OWNER,
+                &cfg,
+                &mut cancel,
+                &status,
+                &status,
+                RecoveryLeaseWait {
+                    total: Duration::from_millis(100),
+                    interval: Duration::from_millis(5),
+                },
+            )
+            .await;
+            assert!(if deny {
+                matches!(result, Err(RuntimeError::Authorization))
+            } else {
+                matches!(result, Err(RuntimeError::LeaseBusy))
+            });
+            assert_eq!(
+                fake.acquire_calls.load(std::sync::atomic::Ordering::SeqCst),
+                1
+            );
+            assert_eq!(observed.borrow().phase, "starting");
+        }
+    }
     #[tokio::test]
     async fn fresh_history_acquire_sends_snapshot_and_post_check_keeps_models_allowed() {
         let t = tempfile::tempdir().unwrap();
@@ -3702,6 +4664,27 @@ mod device_assignment_tests {
         ));
         assert!(matches!(
             verify_execution_device(&serde_json::json!({"agent":null}), "a", "d"),
+            Err(RuntimeError::ExecutionDevice)
+        ));
+        let mut invalid = correct.clone();
+        invalid["agent"]["generation"] = serde_json::json!(0);
+        assert!(matches!(
+            verify_execution_device(&invalid, "a", "d"),
+            Err(RuntimeError::ExecutionDevice)
+        ));
+        invalid = correct.clone();
+        invalid["agent"]["executionDeviceId"] = serde_json::Value::Null;
+        assert!(matches!(
+            verify_execution_device(&invalid, "a", "d"),
+            Err(RuntimeError::ExecutionDevice)
+        ));
+        invalid = correct.clone();
+        invalid["agent"]
+            .as_object_mut()
+            .unwrap()
+            .remove("executionDeviceId");
+        assert!(matches!(
+            verify_execution_device(&invalid, "a", "d"),
             Err(RuntimeError::ExecutionDevice)
         ));
     }

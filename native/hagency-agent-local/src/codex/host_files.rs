@@ -516,6 +516,8 @@ mod tests {
         assert_eq!(completed.text, "created");
         assert_eq!(completed.usage.input, 3);
         assert_eq!(completed.usage.output, 2);
+        assert_eq!(completed.tool_requests, 1);
+        assert_eq!(completed.tool_returns, 1);
         assert_eq!(
             ledger
                 .account(&scope, Layer::Room, Period::Lifetime, now())

@@ -13,7 +13,7 @@ CREATE TABLE calls (id TEXT PRIMARY KEY, binding TEXT NOT NULL REFERENCES bindin
 CREATE TABLE approvals (digest TEXT PRIMARY KEY, binding TEXT NOT NULL, proposal TEXT NOT NULL, expires INTEGER NOT NULL, consumed INTEGER NOT NULL DEFAULT 0) STRICT;
 CREATE TABLE contexts (scope TEXT PRIMARY KEY, model_session TEXT NOT NULL) STRICT;
 
-CREATE TABLE model_profiles (agent TEXT PRIMARY KEY, model TEXT NOT NULL, credential_ref TEXT NOT NULL, workspace_root TEXT NOT NULL) STRICT;
+CREATE TABLE model_profiles (agent TEXT PRIMARY KEY, model TEXT NOT NULL, credential_ref TEXT NOT NULL, workspace_root TEXT NOT NULL, reasoning_effort TEXT NOT NULL DEFAULT '') STRICT;
 CREATE TABLE dispatches (id TEXT PRIMARY KEY, scope TEXT NOT NULL, policies TEXT NOT NULL) STRICT;
 CREATE TABLE codex_usage (scope TEXT PRIMARY KEY, counters TEXT NOT NULL) STRICT;
 

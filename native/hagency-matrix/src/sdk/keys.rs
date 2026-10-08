@@ -3,7 +3,7 @@ use crate::Error;
 use matrix_sdk_crypto::{Device, OlmMachine, UserIdentity};
 use ruma::{
     OwnedUserId,
-    api::{IncomingResponse, client::keys::get_keys},
+    api::{IncomingResponseExt, client::keys::get_keys},
 };
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -64,7 +64,7 @@ pub(super) async fn accept_counted(
 ) -> Result<Accepted, Error> {
     validate_keys_shape(users, response)?;
     let query = get_keys::v3::Response::try_from_http_response(http::Response::new(
-        response.to_string().into_bytes(),
+        response.to_string().as_bytes(),
     ))
     .map_err(|_| Error::Wire)?;
     let own = machine.identity_keys();
@@ -300,7 +300,7 @@ pub(super) async fn anchored_initial(
         }
     }
     let query = get_keys::v3::Response::try_from_http_response(http::Response::new(
-        response.to_string().into_bytes(),
+        response.to_string().as_bytes(),
     ))
     .map_err(|_| Error::Wire)?;
     machine

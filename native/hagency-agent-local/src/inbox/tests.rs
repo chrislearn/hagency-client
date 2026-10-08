@@ -1097,3 +1097,277 @@ fn direct_room_context_reuses_persisted_session_but_explicit_threads_and_rooms_s
             .is_err()
     );
 }
+
+#[test]
+fn no_provider_notice_is_atomic_recoverable_and_has_an_immutable_reply() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("local.db");
+    let mut l = setup(&path);
+    received(&mut l);
+    let p = l.prepare_execution(OWNER, &event().id).unwrap();
+    assert!(
+        matches!(
+            l.persist_no_provider_reply(OWNER, &event().id, &p.execution_id, "Budget unavailable"),
+            Err(Error::Conflict)
+        ),
+        "prepared is not a confirmed running execution"
+    );
+    l.confirm_execution_start(OWNER, &response(&p, true))
+        .unwrap();
+    assert!(matches!(
+        l.persist_no_provider_reply(
+            OWNER,
+            &event().id,
+            "foreign-execution",
+            "Budget unavailable"
+        ),
+        Err(Error::Unauthorized)
+    ));
+    assert!(matches!(
+        l.persist_no_provider_reply(
+            "@other:test",
+            &event().id,
+            &p.execution_id,
+            "Budget unavailable"
+        ),
+        Err(Error::Unauthorized)
+    ));
+    l.persist_no_provider_reply(OWNER, &event().id, &p.execution_id, "Budget unavailable")
+        .unwrap();
+    assert_eq!(
+        l.inbox_record(OWNER, &event().id).unwrap().state,
+        State::ReplyReady
+    );
+    assert!(
+        l.covers_execution_history(OWNER, "agent-a", &[history(&p)])
+            .unwrap()
+    );
+    l.persist_no_provider_reply(OWNER, &event().id, &p.execution_id, "Budget unavailable")
+        .unwrap();
+    assert!(matches!(
+        l.persist_no_provider_reply(OWNER, &event().id, &p.execution_id, "changed notice"),
+        Err(Error::Conflict)
+    ));
+    drop(l);
+    let mut l = Ledger::open(&path, OWNER).unwrap();
+    assert_eq!(l.recover_agent_executions(OWNER, "agent-a").unwrap(), 0);
+    assert_eq!(
+        l.inbox_record(OWNER, &event().id).unwrap().reply.as_deref(),
+        Some("Budget unavailable")
+    );
+    assert!(
+        l.covers_execution_history(OWNER, "agent-a", &[history(&p)])
+            .unwrap()
+    );
+    l.confirm_matrix_delivery(OWNER, &event().id, &p.execution_id)
+        .unwrap();
+    assert_eq!(
+        l.inbox_record(OWNER, &event().id).unwrap().state,
+        State::Replied
+    );
+    assert!(
+        l.covers_execution_history(OWNER, "agent-a", &[history(&p)])
+            .unwrap()
+    );
+    l.persist_no_provider_reply(OWNER, &event().id, &p.execution_id, "Budget unavailable")
+        .unwrap();
+    assert!(matches!(
+        l.persist_no_provider_reply(OWNER, &event().id, &p.execution_id, "different"),
+        Err(Error::Conflict)
+    ));
+}
+#[test]
+fn no_provider_notice_never_overwrites_pending_unknown_or_settled_model_charges() {
+    for state in ["pending", "unknown", "settled"] {
+        let temp = tempfile::tempdir().unwrap();
+        let mut l = setup(&temp.path().join("local.db"));
+        received(&mut l);
+        let p = l.prepare_execution(OWNER, &event().id).unwrap();
+        l.confirm_execution_start(OWNER, &response(&p, true))
+            .unwrap();
+        charge_policy(&mut l);
+        l.reserve(&event().scope(), &p.execution_id, &event().id, 50, 10)
+            .unwrap();
+        if state == "unknown" {
+            l.mark_unknown(&event().scope(), &p.execution_id).unwrap();
+        }
+        if state == "settled" {
+            l.settle(
+                &event().scope(),
+                &p.execution_id,
+                &crate::Usage {
+                    input: 3,
+                    output: 2,
+                    cached_input: 0,
+                    reasoning_output: 0,
+                    accounting_version: "fixture".into(),
+                },
+            )
+            .unwrap();
+        }
+        let before:String=l.db.query_row("SELECT json_array(scope,reserved,snapshots,state,usage,digest) FROM calls WHERE id=?",[&p.execution_id],|r|r.get(0)).unwrap();
+        assert!(matches!(
+            l.persist_no_provider_reply(OWNER, &event().id, &p.execution_id, "pretend no cost"),
+            Err(Error::Conflict)
+        ));
+        let after:String=l.db.query_row("SELECT json_array(scope,reserved,snapshots,state,usage,digest) FROM calls WHERE id=?",[&p.execution_id],|r|r.get(0)).unwrap();
+        assert_eq!(before, after);
+        assert_eq!(
+            l.inbox_record(OWNER, &event().id).unwrap().state,
+            State::Running
+        );
+        assert_eq!(
+            l.account(
+                &event().scope(),
+                crate::Layer::Agent,
+                crate::Period::Lifetime,
+                10
+            )
+            .unwrap(),
+            if state == "settled" { (5, 0) } else { (0, 50) }
+        );
+    }
+}
+#[test]
+fn no_provider_notice_capacity_failure_cannot_leave_a_false_zero_call_proof() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut l = setup(&temp.path().join("local.db"));
+    received(&mut l);
+    let p = l.prepare_execution(OWNER, &event().id).unwrap();
+    l.confirm_execution_start(OWNER, &response(&p, true))
+        .unwrap();
+    l.db.execute("UPDATE inbox_limits SET max_bytes=1", [])
+        .unwrap();
+    assert!(
+        l.persist_no_provider_reply(OWNER, &event().id, &p.execution_id, "Budget unavailable")
+            .is_err()
+    );
+    let count: u64 =
+        l.db.query_row(
+            "SELECT count(*) FROM calls WHERE id=?",
+            [&p.execution_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 0);
+    assert_eq!(
+        l.inbox_record(OWNER, &event().id).unwrap().state,
+        State::Running
+    );
+    assert!(
+        !l.covers_execution_history(OWNER, "agent-a", &[history(&p)])
+            .unwrap()
+    );
+}
+
+#[test]
+fn no_provider_notice_preserves_other_unknown_charges_and_restart_budget_gate() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("local.db");
+    let mut l = setup(&path);
+    received(&mut l);
+    let first = l.prepare_execution(OWNER, &event().id).unwrap();
+    l.confirm_execution_start(OWNER, &response(&first, true))
+        .unwrap();
+    charge_policy(&mut l);
+    l.reserve(&event().scope(), &first.execution_id, &event().id, 50, 10)
+        .unwrap();
+    l.mark_unknown(&event().scope(), &first.execution_id)
+        .unwrap();
+    let mut notice = event();
+    notice.id = "notice-dispatch".into();
+    notice.event_id = "$notice:test".into();
+    l.receive_dispatch(OWNER, &notice, Limits::default(), 11)
+        .unwrap();
+    l.acknowledge_dispatch(OWNER, &notice.id).unwrap();
+    let p = l.prepare_execution(OWNER, &notice.id).unwrap();
+    l.confirm_execution_start(OWNER, &response(&p, true))
+        .unwrap();
+    assert!(matches!(
+        l.reserve(&notice.scope(), &p.execution_id, &notice.id, 10, 11),
+        Err(Error::Unknown)
+    ));
+    l.persist_no_provider_reply(
+        OWNER,
+        &notice.id,
+        &p.execution_id,
+        "Earlier usage is unknown; this request did not call the model.",
+    )
+    .unwrap();
+    for layer in [
+        crate::Layer::Agent,
+        crate::Layer::Room,
+        crate::Layer::Requester,
+    ] {
+        assert_eq!(
+            l.account(&event().scope(), layer, crate::Period::Lifetime, 11)
+                .unwrap(),
+            (0, 50)
+        );
+    }
+    drop(l);
+    let mut l = Ledger::open(&path, OWNER).unwrap();
+    l.recover_agent_executions(OWNER, "agent-a").unwrap();
+    assert!(
+        l.covers_execution_history(OWNER, "agent-a", &[history(&first), history(&p)])
+            .unwrap()
+    );
+    assert_eq!(
+        l.inbox_record(OWNER, &notice.id).unwrap().state,
+        State::ReplyReady
+    );
+    assert!(matches!(
+        l.reserve(&event().scope(), "another-call", "another-dispatch", 1, 12),
+        Err(Error::Unknown)
+    ));
+    // A no-provider notice cannot make resetting the earlier reservation safe.
+    l.db.execute("UPDATE accounts SET held=0", []).unwrap();
+    assert!(
+        !l.covers_execution_history(OWNER, "agent-a", &[history(&first), history(&p)])
+            .unwrap()
+    );
+}
+#[test]
+fn no_provider_notice_cannot_relabel_a_settled_model_reply_even_when_body_matches() {
+    let temp = tempfile::tempdir().unwrap();
+    let mut l = setup(&temp.path().join("local.db"));
+    received(&mut l);
+    let p = l.prepare_execution(OWNER, &event().id).unwrap();
+    l.confirm_execution_start(OWNER, &response(&p, true))
+        .unwrap();
+    charge_policy(&mut l);
+    l.reserve(&event().scope(), &p.execution_id, &event().id, 10, 10)
+        .unwrap();
+    l.settle(
+        &event().scope(),
+        &p.execution_id,
+        &crate::Usage {
+            input: 1,
+            output: 1,
+            cached_input: 0,
+            reasoning_output: 0,
+            accounting_version: "fixture".into(),
+        },
+    )
+    .unwrap();
+    l.persist_execution_reply(OWNER, &event().id, &p.execution_id, "answer")
+        .unwrap();
+    assert!(matches!(
+        l.persist_no_provider_reply(OWNER, &event().id, &p.execution_id, "answer"),
+        Err(Error::Conflict)
+    ));
+    assert_eq!(
+        l.account(
+            &event().scope(),
+            crate::Layer::Agent,
+            crate::Period::Lifetime,
+            10
+        )
+        .unwrap(),
+        (2, 0)
+    );
+    assert!(
+        l.covers_execution_history(OWNER, "agent-a", &[history(&p)])
+            .unwrap()
+    );
+}

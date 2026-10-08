@@ -2,7 +2,9 @@
 //! Fresh Rust device state only. No NAPI store import or live server is attempted.
 #[cfg(test)]
 mod tests {
-    use matrix_sdk_crypto::{DecryptionSettings, EncryptionSettings, OlmMachine, TrustRequirement};
+    use matrix_sdk_crypto::{
+        DecryptionSettings, EncryptionSettings, OlmMachineBuilder, TrustRequirement,
+    };
     use matrix_sdk_sqlite::SqliteCryptoStore;
     use ruma::{device_id, events::room::message::RoomMessageEventContent, room_id, user_id};
     use serde_json::{Value, json};
@@ -19,7 +21,9 @@ mod tests {
         let user = user_id!("@fixture:example.test");
         let device = device_id!("RUST_FIXTURE");
         let room = room_id!("!fixture:example.test");
-        let machine = OlmMachine::with_store(user, device, store, None)
+        let machine = OlmMachineBuilder::new(user, device)
+            .with_crypto_store(store)
+            .build()
             .await
             .unwrap();
         let identity = machine.identity_keys();
@@ -98,11 +102,15 @@ mod tests {
             .await
             .unwrap();
         assert!(
-            OlmMachine::with_store(user, device_id!("WRONG_DEVICE"), store.clone(), None)
+            OlmMachineBuilder::new(user, device_id!("WRONG_DEVICE"))
+                .with_crypto_store(store.clone())
+                .build()
                 .await
                 .is_err()
         );
-        let reopened = OlmMachine::with_store(user, device, store, None)
+        let reopened = OlmMachineBuilder::new(user, device)
+            .with_crypto_store(store)
+            .build()
             .await
             .unwrap();
         assert_eq!(reopened.identity_keys(), identity);

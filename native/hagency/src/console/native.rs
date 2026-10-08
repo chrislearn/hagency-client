@@ -96,6 +96,9 @@ pub enum LocalAction {
     Runtime,
     RuntimeStart,
     RuntimeStop,
+    StartAgentService,
+    StopAgentService,
+    AgentServiceStatus,
     Approvals,
     Decision { approval_id: String },
 }
@@ -541,6 +544,9 @@ fn request(command: Command) -> Result<(&'static str, String, Option<Value>), Na
                     | LocalAction::AgentPolicy
                     | LocalAction::SaveAgentPolicy
                     | LocalAction::ResetAgentPolicy
+                    | LocalAction::StartAgentService
+                    | LocalAction::StopAgentService
+                    | LocalAction::AgentServiceStatus
             ) && (binding_id.is_some() || requester.is_some())
             {
                 return Err(failure(400, "invalid_arguments"));
@@ -561,6 +567,9 @@ fn request(command: Command) -> Result<(&'static str, String, Option<Value>), Na
                 LocalAction::Runtime => ("GET", "runtime".into()),
                 LocalAction::RuntimeStart => ("POST", "runtime/start".into()),
                 LocalAction::RuntimeStop => ("POST", "runtime/stop".into()),
+                LocalAction::StartAgentService => ("POST", "runtime/service/start".into()),
+                LocalAction::StopAgentService => ("POST", "runtime/service/stop".into()),
+                LocalAction::AgentServiceStatus => ("GET", "runtime/service".into()),
                 LocalAction::Approvals => ("GET", "runtime/approvals".into()),
                 LocalAction::Decision { approval_id } => {
                     key(&approval_id)?;
@@ -808,6 +817,55 @@ impl NativeOwner {
         if let Some(task) = self.0.callback_task.lock().unwrap().take() {
             task.abort();
         }
+    }
+    /// Recover only explicitly enabled bindings from this exact owner's current
+    /// assigned device. Each request re-enters the normal start controller; no
+    /// lease, tool permission or unknown model execution is replayed here.
+    pub async fn restore_runtime_intents(&self) -> Result<Value, NativeError> {
+        let intents = {
+            let _guard = self.0.calls.lock().await;
+            self.sync_matrix().await?;
+            self.0
+                .host
+                .console
+                .0
+                .owned_runtime
+                .recovery_intents(&self.0.host.console)
+                .await
+                .map_err(|_| failure(409, "runtime_recovery_state_unavailable"))?
+        };
+        let mut results = Vec::new();
+        for intent in intents {
+            let input = intent.start_input();
+            let result = self
+                .execute(Command::Local {
+                    agent_id: intent.agent_id.clone(),
+                    action: if intent.binding_id == "*" {
+                        LocalAction::StartAgentService
+                    } else {
+                        LocalAction::RuntimeStart
+                    },
+                    input: Some(if intent.binding_id == "*" {
+                        let mut input = input;
+                        input.as_object_mut().unwrap().remove("bindingId");
+                        input
+                    } else {
+                        input
+                    }),
+                    binding_id: if intent.binding_id == "*" {
+                        None
+                    } else {
+                        Some(intent.binding_id.clone())
+                    },
+                    requester: None,
+                })
+                .await;
+            results.push(match result {
+                Ok(value) => json!({"agentId":intent.agent_id,"bindingId":intent.binding_id,"restored":true,"runtime":value["runtime"]}),
+                Err(error) => json!({"agentId":intent.agent_id,"bindingId":intent.binding_id,"restored":false,"error":error.code}),
+            });
+        }
+        Ok(json!({"recoveries":results}))
     }
     pub async fn execute(&self, command: Command) -> Result<Value, NativeError> {
         let _guard = self.0.calls.lock().await;

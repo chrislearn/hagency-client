@@ -224,6 +224,32 @@ pub struct ExecutionHistory {
     pub executions: Vec<hagency_agent_local::inbox::HistoryExecution>,
     pub next_cursor: Option<String>,
 }
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProcessingReceipt {
+    pub id: String,
+    pub dispatch_id: String,
+    pub execution_id: String,
+    pub state: String,
+    pub matrix_event_id: Option<String>,
+}
+impl ProcessingReceipt {
+    fn validate(&self, dispatch_id: &str, execution_id: &str) -> Result<(), DeviceError> {
+        id(&self.id).map_err(|_| error(502, "invalid_execution_response"))?;
+        if self.dispatch_id != dispatch_id
+            || self.execution_id != execution_id
+            || !["pending", "sending", "sent", "unknown", "cancelled"]
+                .contains(&self.state.as_str())
+            || (self.state == "sent") != self.matrix_event_id.is_some()
+            || self.matrix_event_id.as_ref().is_some_and(|event| {
+                !event.starts_with('$') || event.len() > 1024 || event.chars().any(char::is_control)
+            })
+        {
+            return Err(error(502, "execution_scope_mismatch"));
+        }
+        Ok(())
+    }
+}
 pub enum DeviceOperation {
     History {
         agent_id: String,
@@ -257,6 +283,11 @@ pub enum DeviceOperation {
         dispatch_id: String,
         execution_id: String,
     },
+    Processing {
+        lease: LeaseRef,
+        dispatch_id: String,
+        execution_id: String,
+    },
     AuthorizeTool {
         lease: LeaseRef,
         dispatch_id: String,
@@ -286,6 +317,7 @@ pub enum DeviceResponse {
     Events(Vec<Dispatch>),
     Acknowledged,
     Started(ExecutionStart),
+    Processing(ProcessingReceipt),
     ToolAuthorized(Dispatch),
     Finished,
     ReplyQueued(ReplyReceipt),
@@ -299,6 +331,7 @@ impl DeviceOperation {
             | Self::Poll { lease, .. }
             | Self::Ack { lease, .. }
             | Self::Start { lease, .. }
+            | Self::Processing { lease, .. }
             | Self::AuthorizeTool { lease, .. }
             | Self::Finish { lease, .. }
             | Self::Reply { lease, .. }
@@ -379,6 +412,18 @@ impl DeviceOperation {
                 id(execution_id)?;
                 (
                     "events/start",
+                    json!({"lease":lease,"dispatchId":dispatch_id,"executionId":execution_id}),
+                )
+            }
+            Self::Processing {
+                lease,
+                dispatch_id,
+                execution_id,
+            } => {
+                id(dispatch_id)?;
+                id(execution_id)?;
+                (
+                    "events/processing",
                     json!({"lease":lease,"dispatchId":dispatch_id,"executionId":execution_id}),
                 )
             }
@@ -676,6 +721,15 @@ fn parse_response(
             }
             Ok(DeviceResponse::Started(start))
         }
+        DeviceOperation::Processing {
+            dispatch_id,
+            execution_id,
+            ..
+        } => {
+            let receipt: ProcessingReceipt = decode(&value, "processing")?;
+            receipt.validate(dispatch_id, execution_id)?;
+            Ok(DeviceResponse::Processing(receipt))
+        }
         DeviceOperation::AuthorizeTool {
             lease,
             dispatch_id,
@@ -835,5 +889,39 @@ impl Console {
             return Err(error(status, code));
         }
         parse_response(&operation, value, &device)
+    }
+}
+
+#[cfg(test)]
+mod processing_tests {
+    use super::*;
+    #[test]
+    fn processing_route_is_closed_and_receipt_pins_execution() {
+        let op = DeviceOperation::Processing {
+            lease: LeaseRef {
+                agent_id: "agent-a".into(),
+                epoch: 1,
+            },
+            dispatch_id: "dispatch-a".into(),
+            execution_id: "execution-a".into(),
+        };
+        let (route, bytes) = op.request().unwrap();
+        assert_eq!(route, "events/processing");
+        assert_eq!(
+            serde_json::from_slice::<Value>(&bytes).unwrap(),
+            json!({"lease":{"agentId":"agent-a","epoch":1},"dispatchId":"dispatch-a","executionId":"execution-a"})
+        );
+        let mut receipt: ProcessingReceipt=serde_json::from_value(json!({"id":"processing-a","dispatchId":"dispatch-a","executionId":"execution-a","state":"pending","matrixEventId":null})).unwrap();
+        receipt.validate("dispatch-a", "execution-a").unwrap();
+        assert!(receipt.validate("dispatch-other", "execution-a").is_err());
+        assert!(receipt.validate("dispatch-a", "execution-other").is_err());
+        receipt.state = "sent".into();
+        assert!(receipt.validate("dispatch-a", "execution-a").is_err());
+        receipt.matrix_event_id = Some("$eyes:test".into());
+        receipt.validate("dispatch-a", "execution-a").unwrap();
+        receipt.matrix_event_id = Some("!room:test".into());
+        assert!(receipt.validate("dispatch-a", "execution-a").is_err());
+        receipt.state = "arbitrary".into();
+        assert!(receipt.validate("dispatch-a", "execution-a").is_err());
     }
 }

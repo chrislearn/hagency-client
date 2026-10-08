@@ -301,7 +301,7 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
             }
             let binding=state.direct_mapping.as_ref().map(|room|json!({"id":"bnd_direct","agentId":"agt_fixture","projectId":null,"scopeKind":"owner_direct","roomId":room,"state":"active","generation":1}));
             if req.method() == Method::POST {
-                json!({"ownerDirectRoomId":state.direct_mapping,"creation":{"agent":{"id":"agt_fixture","ownerUserId":"stable-user-id","puppetMxid":"@_hagency_agt_fixture:example.test","displayName":"My Codex","state":"active","generation":1,"ownerDirectRoomId":state.direct_mapping},"binding":binding},"commandState":"active"})
+                json!({"ownerDirectRoomId":state.direct_mapping,"creation":{"agent":{"id":"agt_fixture","ownerUserId":"stable-user-id","puppetMxid":"@_hagency_agt_fixture:example.test","displayName":"My Codex","state":"active","generation":1,"executionDeviceId":state.execution_device,"ownerDirectRoomId":state.direct_mapping},"binding":binding},"commandState":"active"})
             } else {
                 json!({"ownerDirectRoomId":state.direct_mapping,"binding":binding})
             }
@@ -501,7 +501,7 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
                 res.render(Json(json!({"code":"command_not_found"})));
                 return;
             }
-            let mut result = json!({"creation":{"agent":{"id":"agt_fixture","ownerUserId":"stable-user-id","puppetMxid":"@_hagency_agt_fixture:example.test","displayName":"My Codex","state":state.agent_state,"generation":1},"binding":{"id":"bnd_fixture","agentId":"agt_fixture","projectId":"prj_fixture","scopeKind":"project","roomId":"!room:example.test","state":state.binding_state,"generation":1}}});
+            let mut result = json!({"creation":{"agent":{"id":"agt_fixture","ownerUserId":"stable-user-id","puppetMxid":"@_hagency_agt_fixture:example.test","displayName":"My Codex","state":state.agent_state,"generation":1,"executionDeviceId":state.execution_device},"binding":{"id":"bnd_fixture","agentId":"agt_fixture","projectId":"prj_fixture","scopeKind":"project","roomId":"!room:example.test","state":state.binding_state,"generation":1}}});
             if operation == "agent.create" {
                 result["creation"]
                     .as_object_mut()
@@ -516,6 +516,7 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
         | "/api/hagency/v1/agents/agt_fixture/pause"
         | "/api/hagency/v1/agents/agt_fixture/resume"
         | "/api/hagency/v1/agents/agt_fixture"
+        | "/api/hagency/v1/agents/agt_other"
         | "/api/hagency/v1/agents/agt_other/bindings"
         | "/api/hagency/v1/bindings/bnd_fixture"
         | "/api/hagency/v1/bindings/bnd_fixture/pause"
@@ -682,7 +683,7 @@ async fn native_server_login_pkce_device_authorization_and_revocation() {
             agent_state: "creating".into(),
             management_calls: 0,
             commands: Default::default(),
-            execution_device: None,
+            execution_device: Some("dev_fixture".into()),
             agent_generation: 1,
             direct_room: None,
             direct_mapping: None,
@@ -847,7 +848,7 @@ async fn native_server_login_background_refresh_logout_and_issuer_pin() {
             agent_state: "creating".into(),
             management_calls: 0,
             commands: Default::default(),
-            execution_device: None,
+            execution_device: Some("dev_fixture".into()),
             agent_generation: 1,
             direct_room: None,
             direct_mapping: None,
@@ -972,7 +973,7 @@ async fn native_server_login_offline_logout_retries_after_restart_without_restor
             agent_state: "creating".into(),
             management_calls: 0,
             commands: Default::default(),
-            execution_device: None,
+            execution_device: Some("dev_fixture".into()),
             agent_generation: 1,
             direct_room: None,
             direct_mapping: None,
@@ -1084,7 +1085,7 @@ async fn native_owned_agents_user_scope_local_policy_privacy_and_lifecycle() {
             agent_state: "creating".into(),
             management_calls: 0,
             commands: Default::default(),
-            execution_device: None,
+            execution_device: Some("dev_fixture".into()),
             agent_generation: 1,
             direct_room: None,
             direct_mapping: None,
@@ -1363,6 +1364,13 @@ async fn native_owned_agents_user_scope_local_policy_privacy_and_lifecycle() {
         let mut state = fake.state.lock().unwrap();
         state.execution_device = Some("dev_other".into());
     }
+    let denied_policy=put("/console/api/owned-agents/agt_fixture/agent-policy",&cookie)
+        .json(&json!({"expectedRevision":0,"policy":{"budget":{"limit":"Unlimited","period":"Lifetime"},"requests":"Allow","high_risk":"Deny"}})).send(&service).await;
+    assert_eq!(
+        denied_policy.status_code,
+        Some(StatusCode::CONFLICT),
+        "foreign device cannot pretend local policy is active"
+    );
     let device_path = "/console/api/owned-agents/agt_fixture/execution-device";
     let assignment = json!({"expectedGeneration":1});
     let mut assigned = put(device_path, &cookie)
@@ -1505,7 +1513,10 @@ async fn native_owned_agents_user_scope_local_policy_privacy_and_lifecycle() {
     let mut initial = get(path, &cookie).send(&service).await;
     assert_eq!(initial.status_code, Some(StatusCode::OK));
     let initial = initial.take_json::<Value>().await.unwrap();
-    assert_eq!(initial["policies"][1]["policy"]["budget"]["limit"], "Unset");
+    assert_eq!(
+        initial["policies"][1]["policy"]["budget"]["limit"],
+        "Unlimited"
+    );
     assert_eq!(initial["transportOnline"], false);
     assert_eq!(
         initial["policies"][0]["policy"]["budget"]["limit"]["Tokens"],
@@ -1552,6 +1563,23 @@ async fn native_owned_agents_user_scope_local_policy_privacy_and_lifecycle() {
         reset["policies"][2]["policy"]["budget"]["limit"],
         "Unlimited"
     );
+    // Resetting a Room removes its optional limit without granting high-risk tools.
+    let mut reset_room = delete(
+        "/console/api/owned-agents/agt_fixture/local-policy",
+        &cookie,
+    )
+    .json(&json!({"bindingId":"bnd_fixture","requester":"@requester:example.test","layer":"room","expectedRevision":0}))
+    .send(&service)
+    .await;
+    assert_eq!(reset_room.status_code, Some(StatusCode::OK));
+    let reset_room = reset_room.take_json::<Value>().await.unwrap();
+    assert_eq!(reset_room["policies"][1]["revision"], 1);
+    assert_eq!(
+        reset_room["policies"][1]["policy"]["budget"]["limit"],
+        "Unlimited"
+    );
+    assert_eq!(reset_room["policies"][1]["policy"]["requests"], "Allow");
+    assert_eq!(reset_room["policies"][1]["policy"]["high_risk"], "Deny");
     let workspace = f.root.path().join("workspace");
     std::fs::create_dir(&workspace).unwrap();
     let workspace = workspace.canonicalize().unwrap();
@@ -2314,7 +2342,7 @@ async fn native_account_profiles_switch_revoke_old_tabs_and_pin_pasion_identity(
                 agent_state: "creating".into(),
                 management_calls: 0,
                 commands: Default::default(),
-                execution_device: None,
+                execution_device: Some("dev_fixture".into()),
                 agent_generation: 1,
                 direct_room: None,
                 direct_mapping: None,
@@ -2585,7 +2613,7 @@ async fn native_owner_space_candidates_use_own_oauth_and_paginate_partial_failur
             agent_state: "creating".into(),
             management_calls: 0,
             commands: Default::default(),
-            execution_device: None,
+            execution_device: Some("dev_fixture".into()),
             agent_generation: 1,
             direct_room: None,
             direct_mapping: None,
@@ -2771,7 +2799,7 @@ async fn native_in_process_facade_pins_matrix_account_without_exposing_credentia
             agent_state: "creating".into(),
             management_calls: 0,
             commands: Default::default(),
-            execution_device: None,
+            execution_device: Some("dev_fixture".into()),
             agent_generation: 1,
             direct_room: None,
             direct_mapping: None,

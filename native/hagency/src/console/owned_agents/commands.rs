@@ -224,8 +224,54 @@ pub(super) async fn submit(
     let record = prepare(&dir, operation, agent, input)?;
     execute(req, depot, &dir, record).await
 }
+// A list refresh only confirms the original command; it never resubmits it.
+// Keep unresolved intents when status is missing or the server is unavailable.
+fn confirm_completed(dir: &Path, record: &Record, value: Value) -> Result<(), OwnerError> {
+    let state = value["commandState"].as_str().ok_or_else(unavailable)?;
+    if matches!(state, "pending" | "unknown") {
+        return Ok(());
+    }
+    let _guard = FILES.lock().map_err(|_| unavailable())?;
+    let mut current = read(&dir.join(format!("{}.json", record.id)))?;
+    // A concurrent resume may have already resolved this intent. Do not replace
+    // its newer result with the snapshot from this read.
+    if pending(&current) {
+        current.state = state.into();
+        current.creation = Some(value);
+        write(dir, &current)?;
+    }
+    Ok(())
+}
 pub(super) async fn list(req: &Request, depot: &Depot) -> Result<Value, OwnerError> {
     let dir = location(req, depot).await?;
+    let unresolved = {
+        let _guard = FILES.lock().map_err(|_| unavailable())?;
+        records(&dir)?
+            .into_iter()
+            .filter(pending)
+            .collect::<Vec<_>>()
+    };
+    for record in unresolved {
+        if let Ok(reply) = api(
+            req,
+            depot,
+            OwnerOperation::AgentCommandStatus {
+                operation: record.operation.clone(),
+                command: record.input["idempotencyKey"]
+                    .as_str()
+                    .ok_or_else(unavailable)?
+                    .into(),
+            },
+        )
+        .await
+        {
+            recheck(depot).map_err(|_| error(401, "sign_in_required"))?;
+            if let Ok(value) = public(&reply.value, "creation") {
+                confirm_completed(&dir, &record, value)?;
+            }
+        }
+    }
+    recheck(depot).map_err(|_| error(401, "sign_in_required"))?;
     let _guard = FILES.lock().map_err(|_| unavailable())?;
     Ok(json!({"commands":records(&dir)?.into_iter().filter(pending).collect::<Vec<_>>() }))
 }
@@ -242,6 +288,35 @@ pub(super) async fn resume(req: &Request, depot: &Depot, id: &str) -> Result<Val
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn status_confirmation_preserves_pending_and_never_overwrites_resumed_result() {
+        let temp = tempfile::tempdir().unwrap();
+        let original = prepare(
+            temp.path(),
+            "agent.create",
+            None,
+            json!({"displayName":"Agent","idempotencyKey":"original"}),
+        )
+        .unwrap();
+        confirm_completed(temp.path(), &original, json!({"commandState":"pending"})).unwrap();
+        assert!(pending(
+            &read(&temp.path().join(format!("{}.json", original.id))).unwrap()
+        ));
+        confirm_completed(
+            temp.path(),
+            &original,
+            json!({"commandState":"active","creation":{"agent":{"id":"agent-a"}}}),
+        )
+        .unwrap();
+        let path = temp.path().join(format!("{}.json", original.id));
+        let mut resolved = read(&path).unwrap();
+        assert!(!pending(&resolved));
+        assert_eq!(resolved.input, original.input);
+        resolved.state = "retired".into();
+        write(temp.path(), &resolved).unwrap();
+        confirm_completed(temp.path(), &original, json!({"commandState":"active"})).unwrap();
+        assert_eq!(read(&path).unwrap().state, "retired");
+    }
     #[test]
     fn restart_preserves_intent_and_rejects_new_key_or_changed_payload() {
         let temp = tempfile::tempdir().unwrap();

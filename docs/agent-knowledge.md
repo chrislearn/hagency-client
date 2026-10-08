@@ -4983,3 +4983,18 @@ asserted. Preserve older unknown owners20841/18059/83315 too.
 ## 2026-10-05: Pasion-bound local access
 
 Automatic login/enrollment lives in `native/hagency/src/console/server_login.rs` and `mockup/components/ServerLoginControl.jsx`. The first binding needs local authority, later sign-ins pin origin/subject/MXID. Tokens stay in memory; finite sessions do not persist in console-logins.json. Native server API is documented in docs/server-login.md. Development artifacts live under ignored .run/. Source changes belong to hagency-client, not the separate hagency-rs checkout.
+
+- **SQLite / Matrix dependency alignment, 2026-10-08:** Client now uses
+  Matrix SDK crates 0.19.1, Ruma 0.17.0 / ruma-common 0.20.0 and rusqlite
+  0.40.2 from crates.io. Explicit rusqlite `cache` retains the cached-statement
+  API with default features disabled. Desktop uses the same registry SDK/Ruma
+  versions and no longer patches/vendores rusqlite 0.37. Both lockfiles have
+  one rusqlite 0.40.2 and one libsqlite3-sys 0.38.2. Ruma HTTP parsing now uses
+  IncomingResponseExt with borrowed response bytes; Olm test fixtures use
+  OlmMachineBuilder with the original persistent crypto store. Desktop OAuth
+  retains SDK SessionMismatch and the existing returned-device validation.
+  Loopback OAuth fixtures parse complete Authorization header lines (the last
+  header has no trailing CRLF) and callback-close probes disable proxies. Its TSP
+  signature stays in the SDK extra-content map, avoiding the old Ruma fork.
+  These checks do not establish live server or old deployed SDK-store migration
+  qualification. The provisioned task-writer is absent in this source checkout.

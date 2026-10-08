@@ -9,7 +9,7 @@ use matrix_sdk_store_encryption::StoreCipher;
 use ruma::{
     OwnedUserId, TransactionId,
     api::{
-        IncomingResponse,
+        IncomingResponseExt,
         client::keys::{claim_keys, upload_keys, upload_signatures, upload_signing_keys},
     },
 };
@@ -598,9 +598,10 @@ impl Sdk {
                 {
                     return Err(Error::Wire);
                 }
-                let response =
-                    upload_keys::v3::Response::try_from_http_response(http::Response::new(bytes))
-                        .map_err(|_| Error::Wire)?;
+                let response = upload_keys::v3::Response::try_from_http_response(
+                    http::Response::new(bytes.as_slice()),
+                )
+                .map_err(|_| Error::Wire)?;
                 machine
                     .mark_request_as_sent(write.id.as_str().into(), &response)
                     .await
@@ -611,7 +612,7 @@ impl Sdk {
                     return Err(Error::Wire);
                 }
                 let response = upload_signing_keys::v3::Response::try_from_http_response(
-                    http::Response::new(bytes),
+                    http::Response::new(bytes.as_slice()),
                 )
                 .map_err(|_| Error::Wire)?;
                 machine
@@ -626,7 +627,7 @@ impl Sdk {
             }
             Kind::Signature => {
                 let response = upload_signatures::v3::Response::try_from_http_response(
-                    http::Response::new(bytes),
+                    http::Response::new(bytes.as_slice()),
                 )
                 .map_err(|_| Error::Wire)?;
                 machine
@@ -636,9 +637,10 @@ impl Sdk {
             }
             Kind::Claim => {
                 claim_members(&write.body, value)?;
-                let response =
-                    claim_keys::v3::Response::try_from_http_response(http::Response::new(bytes))
-                        .map_err(|_| Error::Wire)?;
+                let response = claim_keys::v3::Response::try_from_http_response(
+                    http::Response::new(bytes.as_slice()),
+                )
+                .map_err(|_| Error::Wire)?;
                 machine
                     .mark_request_as_sent(write.id.as_str().into(), &response)
                     .await
@@ -834,8 +836,9 @@ impl Sdk {
         let body = encode(&claim_body(&claim, &expected)?, FIELD)?;
         claim_members(&body, &response)?;
         let bytes = encode(&response, FIELD)?.into_bytes();
-        let parsed = claim_keys::v3::Response::try_from_http_response(http::Response::new(bytes))
-            .map_err(|_| Error::Wire)?;
+        let parsed =
+            claim_keys::v3::Response::try_from_http_response(http::Response::new(bytes.as_slice()))
+                .map_err(|_| Error::Wire)?;
         machine
             .mark_request_as_sent(id.as_str().into(), &parsed)
             .await

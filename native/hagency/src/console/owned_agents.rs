@@ -99,6 +99,11 @@ struct Selection {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct StartRuntime {
+    #[serde(default)]
+    recovery_device_id: Option<String>,
+    #[serde(default)]
+    recovery_consent_id: Option<String>,
+    #[serde(default)]
     binding_id: String,
     mode: String,
     #[serde(default)]
@@ -109,8 +114,8 @@ struct StartRuntime {
     takeover: bool,
     #[serde(default)]
     host_files: bool,
-    #[serde(default = "default_effort")]
-    effort: String,
+    #[serde(default)]
+    effort: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -128,6 +133,7 @@ fn runtime_error(e: super::owned_runtime::RuntimeError) -> OwnerError {
         Approval => error(409, "invalid_tool_approval"),
         Authorization => error(401, "owner_authorization_required"),
         AlreadyActive => error(409, "agent_runtime_already_active"),
+        LeaseBusy => error(409, "agent_lease_busy"),
         ExecutionDevice => error(409, "agent_execution_device_required"),
         LedgerRecovery => error(409, "ledger_recovery_required"),
         Profile => error(409, "runtime_profile_unavailable"),
@@ -215,10 +221,18 @@ struct ServerBinding {
     room_id: String,
     state: String,
     generation: i64,
+    #[serde(default)]
+    owner_service_paused: bool,
+}
+fn required_nullable_device<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<String>, D::Error> {
+    Option::<String>::deserialize(d)
 }
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct ServerAgent {
+    #[serde(deserialize_with = "required_nullable_device")]
     pub execution_device_id: Option<String>,
     owner_direct_room_id: Option<String>,
     pub id: String,
@@ -329,6 +343,41 @@ fn public(value: &Value, kind: &str) -> Result<Value, OwnerError> {
         }
         _ => Err(invalid()),
     }
+}
+async fn require_execution_device(
+    req: &Request,
+    depot: &Depot,
+    agent: &str,
+) -> Result<(), OwnerError> {
+    let reply = api(
+        req,
+        depot,
+        OwnerOperation::Agent {
+            agent: agent.into(),
+        },
+    )
+    .await?;
+    let device = console(depot)
+        .map_err(|_| error(503, "local_state_unavailable"))?
+        .authorized_device()
+        .await
+        .map_err(|_| error(401, "owner_authorization_required"))?;
+    if reply.owner != device.owner_mxid()
+        || reply.origin != device.origin()
+        || reply.issuer != device.issuer()
+        || reply.subject != device.subject()
+    {
+        return Err(error(401, "owner_authorization_required"));
+    }
+    let record: ServerAgent = serde_json::from_value(reply.value["agent"].clone())
+        .map_err(|_| error(502, "invalid_server_response"))?;
+    if record.id != agent || record.owner_user_id != device.user_id() {
+        return Err(error(403, "owner_scope_required"));
+    }
+    if record.execution_device_id.as_deref() != Some(device.device_id()) || record.generation <= 0 {
+        return Err(error(409, "agent_execution_device_required"));
+    }
+    recheck(depot).map_err(|_| error(401, "sign_in_required"))
 }
 async fn verified(
     req: &Request,
@@ -755,24 +804,31 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
             return Ok(value);
         }
         if parts.len() == 2 && ["agent-policy", "agent-model-profile"].contains(&parts[1]) {
+            if method != Method::GET {
+                require_execution_device(req, depot, &agent).await?;
+            }
             if req.uri().query().is_some() {
                 return Err(error(400, "invalid_arguments"));
             }
             let mut model_change = None;
             let change = if method == Method::PUT && parts[1] == "agent-model-profile" {
                 let mut input: EditAgentModel = parse(req).await?;
-                if !Path::new(&input.profile.workspace_root).is_absolute() {
+                if !input.profile.workspace_root.is_empty()
+                    && !Path::new(&input.profile.workspace_root).is_absolute()
+                {
                     return Err(error(400, "invalid_local_policy"));
                 }
-                let workspace = std::fs::canonicalize(&input.profile.workspace_root)
-                    .map_err(|_| error(400, "invalid_local_policy"))?;
-                if !workspace.is_dir() {
-                    return Err(error(400, "invalid_local_policy"));
+                if !input.profile.workspace_root.is_empty() {
+                    let workspace = std::fs::canonicalize(&input.profile.workspace_root)
+                        .map_err(|_| error(400, "invalid_local_policy"))?;
+                    if !workspace.is_dir() {
+                        return Err(error(400, "invalid_local_policy"));
+                    }
+                    input.profile.workspace_root = workspace
+                        .to_str()
+                        .ok_or_else(|| error(400, "invalid_local_policy"))?
+                        .into();
                 }
-                input.profile.workspace_root = workspace
-                    .to_str()
-                    .ok_or_else(|| error(400, "invalid_local_policy"))?
-                    .into();
                 model_change = Some(input.profile);
                 None
             } else if method == Method::GET {
@@ -811,6 +867,22 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                 .server_login
                 .state_directory()
                 .ok_or_else(|| error(503, "local_state_unavailable"))?;
+            if let Some(profile) = model_change.as_mut()
+                && profile.workspace_root.is_empty()
+            {
+                let paths = super::owner_provider::paths(
+                    &root,
+                    &reply.origin,
+                    &reply.issuer,
+                    &reply.subject,
+                    &reply.owner,
+                )
+                .map_err(|e| error(e.status, e.code))?;
+                profile.workspace_root = super::owner_provider::prepare_workspace(&paths, &agent)
+                    .map_err(|e| error(e.status, e.code))?
+                    .to_string_lossy()
+                    .into_owned();
+            }
             recheck(depot).map_err(|_| error(401, "sign_in_required"))?;
             return tokio::task::spawn_blocking(move || {
                 let path = ledger_path(&root, &reply.origin, &reply.issuer, &reply.subject, &reply.owner)
@@ -836,6 +908,152 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                 return Err(error(400, "invalid_arguments"));
             }
             let host = console(depot).map_err(|_| error(503, "local_state_unavailable"))?;
+            if parts.len() == 3 && parts[2] == "service" && method == Method::GET {
+                return host
+                    .0
+                    .owned_runtime
+                    .agent_service_status(host, &agent)
+                    .await
+                    .map_err(runtime_error);
+            }
+            if parts.len() == 4
+                && parts[2] == "service"
+                && parts[3] == "stop"
+                && method == Method::POST
+            {
+                if !body(req, 1)
+                    .await
+                    .map_err(|_| error(400, "invalid_arguments"))?
+                    .is_empty()
+                {
+                    return Err(error(400, "invalid_arguments"));
+                }
+                let warning = host
+                    .0
+                    .owned_runtime
+                    .stop_agent_service(host, &agent)
+                    .await
+                    .map_err(runtime_error)?;
+                return Ok(json!({"stopped":true,"warning":warning}));
+            }
+            if parts.len() == 4
+                && parts[2] == "service"
+                && parts[3] == "start"
+                && method == Method::POST
+            {
+                let mut input: StartRuntime = parse(req).await?;
+                if input.mode != "estimated"
+                    || !input.estimated_opt_in
+                    || !input.binding_id.is_empty()
+                    || input.host_files
+                {
+                    return Err(error(400, "explicit_estimated_quota_opt_in_required"));
+                }
+                let reply = api(
+                    req,
+                    depot,
+                    OwnerOperation::Agent {
+                        agent: agent.clone(),
+                    },
+                )
+                .await?;
+                let root = host
+                    .0
+                    .server_login
+                    .state_directory()
+                    .ok_or_else(|| error(503, "local_state_unavailable"))?;
+                let path = ledger_path(
+                    &root,
+                    &reply.origin,
+                    &reply.issuer,
+                    &reply.subject,
+                    &reply.owner,
+                )
+                .map_err(|_| error(503, "local_state_unavailable"))?;
+                let profile_id =
+                    profile_identity(&reply.origin, &reply.issuer, &reply.subject, &reply.owner)
+                        .map_err(|_| error(403, "owner_scope_required"))?;
+                let ledger =
+                    Ledger::open_scoped(&path, &reply.owner, &profile_id).map_err(local_error)?;
+                let profile = ledger
+                    .agent_model_profile(&reply.owner, &agent)
+                    .map_err(local_error)?
+                    .ok_or_else(|| error(409, "runtime_profile_unavailable"))?;
+                let provider = super::owner_provider::paths(
+                    &root,
+                    &reply.origin,
+                    &reply.issuer,
+                    &reply.subject,
+                    &reply.owner,
+                )
+                .map_err(|e| error(e.status, e.code))?;
+                if profile.credential_ref != provider.credential_ref {
+                    return Err(error(409, "provider_profile_mismatch"));
+                }
+                let saved_options = host
+                    .0
+                    .owned_runtime
+                    .saved_service_options(host, &agent)
+                    .await
+                    .map_err(runtime_error)?;
+                let effort = input
+                    .effort
+                    .clone()
+                    .or_else(|| saved_options.as_ref().map(|value| value.effort.clone()))
+                    .unwrap_or_else(default_effort);
+                if input.reservation == 0 {
+                    input.reservation = if let Some(options) = saved_options {
+                        options.reservation
+                    } else {
+                        host.0
+                            .owned_runtime
+                            .recovery_intents(host)
+                            .await
+                            .map_err(runtime_error)?
+                            .into_iter()
+                            .find(|intent| intent.agent_id == agent)
+                            .map(|intent| intent.reservation)
+                            .unwrap_or(10000)
+                    };
+                }
+                let config = super::owned_runtime::StartConfig {
+                    agent_id: agent,
+                    binding_id: "*".into(),
+                    host_files: false,
+                    owner_direct: false,
+                    recovery_device_id: input.recovery_device_id,
+                    recovery_consent_id: input.recovery_consent_id,
+                    profile: hagency_agent_local::codex::Profile {
+                        executable: super::owner_provider::executable()
+                            .map_err(|e| error(e.status, e.code))?,
+                        home: provider.home,
+                        codex_home: provider.codex_home,
+                        cwd: PathBuf::from(profile.workspace_root),
+                        model: profile.model,
+                        effort: if profile.reasoning_effort.is_empty() {
+                            effort
+                        } else {
+                            profile.reasoning_effort
+                        },
+                        shared_auth: provider.shared,
+                    },
+                    mode: hagency_agent_local::codex::BudgetMode::Estimated {
+                        reservation: input.reservation,
+                    },
+                    credential_ref: profile.credential_ref,
+                    takeover: if input.takeover {
+                        super::device_execution::Takeover::OwnerRequested
+                    } else {
+                        super::device_execution::Takeover::Never
+                    },
+                };
+                return host
+                    .0
+                    .owned_runtime
+                    .start_agent_service(host.clone(), config)
+                    .await
+                    .map_err(runtime_error);
+            }
             if parts.len() == 2 && method == Method::GET {
                 let state = host
                     .0
@@ -897,14 +1115,17 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
             }
             if parts.len() == 3 && parts[2] == "start" && method == Method::POST {
                 let input: StartRuntime = parse(req).await?;
+                let effort = input.effort.clone().unwrap_or_else(default_effort);
                 if input.mode == "strict" {
                     return Err(error(409, "codex_strict_quota_unavailable"));
                 }
                 if input.mode != "estimated"
                     || !input.estimated_opt_in
                     || input.reservation == 0
-                    || !["none", "minimal", "low", "medium", "high", "xhigh"]
-                        .contains(&input.effort.as_str())
+                    || ![
+                        "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
+                    ]
+                    .contains(&effort.as_str())
                 {
                     return Err(error(400, "explicit_estimated_quota_opt_in_required"));
                 }
@@ -937,6 +1158,8 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                     binding_id: input.binding_id,
                     host_files: input.host_files,
                     owner_direct: false,
+                    recovery_device_id: input.recovery_device_id,
+                    recovery_consent_id: input.recovery_consent_id,
                     profile: hagency_agent_local::codex::Profile {
                         executable: super::owner_provider::executable()
                             .map_err(|e| error(e.status, e.code))?,
@@ -944,7 +1167,11 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                         codex_home: provider.codex_home,
                         cwd: PathBuf::from(profile.workspace_root),
                         model: profile.model,
-                        effort: input.effort,
+                        effort: if profile.reasoning_effort.is_empty() {
+                            effort
+                        } else {
+                            profile.reasoning_effort
+                        },
                         shared_auth: provider.shared,
                     },
                     mode: hagency_agent_local::codex::BudgetMode::Estimated {
@@ -1066,6 +1293,9 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
             return public(&api(req, depot, op).await?.value, "agent");
         }
         if parts.len() == 2 && ["local-policy", "model-profile"].contains(&parts[1]) {
+            if method != Method::GET {
+                require_execution_device(req, depot, &agent).await?;
+            }
             let route = parts[1].to_owned();
             enum Change {
                 Read,
@@ -1127,14 +1357,9 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                     }
                     Change::Reset(input) => {
                         let l = layer(&input.layer)?;
-                        let limit = if matches!(l, Layer::Room) {
-                            Limit::Unset
-                        } else {
-                            Limit::Unlimited
-                        };
                         let policy = Policy {
                             budget: Budget {
-                                limit,
+                                limit: Limit::Unlimited,
                                 period: Period::Lifetime,
                             },
                             requests: RequestPolicy::Allow,
@@ -1324,7 +1549,7 @@ mod execution_projection_tests {
     use super::*;
     #[test]
     fn global_creation_has_no_room_and_device_projections_never_expose_tokens() {
-        let agent = json!({"id":"a","ownerUserId":"o","puppetMxid":"@a:test","displayName":"Agent","state":"creating","generation":1,"token":"secret"});
+        let agent = json!({"id":"a","ownerUserId":"o","puppetMxid":"@a:test","displayName":"Agent","state":"creating","generation":1,"executionDeviceId":"d","token":"secret"});
         let result = public(
             &json!({"creation":{"agent":agent},"commandState":"pending"}),
             "creation",

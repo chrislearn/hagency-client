@@ -3,7 +3,7 @@ use crate::{
     Error,
     approval_batch::{self as state, Command, Phase, Tombstone, View},
 };
-use ruma::{OwnedUserId, api::IncomingResponse};
+use ruma::{OwnedUserId, api::IncomingResponseExt};
 use serde_json::json;
 use std::collections::BTreeSet;
 use tokio::sync::oneshot;
@@ -211,7 +211,7 @@ impl Sdk {
                 drop(guard);
                 let response =
                     ruma::api::client::sync::sync_events::v3::Response::try_from_http_response(
-                        http::Response::new(serde_json::to_vec(&b.raw).map_err(|_| Error::Wire)?),
+                        http::Response::new(&serde_json::to_vec(&b.raw).map_err(|_| Error::Wire)?),
                     )
                     .map_err(|_| Error::Wire)?;
                 let processed = self

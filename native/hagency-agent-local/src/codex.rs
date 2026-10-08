@@ -4,9 +4,9 @@ use crate::{Ledger, Reservation, Scope, ToolPolicy, ToolProposal, Usage, json, k
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json as value};
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     path::PathBuf,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
@@ -538,6 +538,40 @@ pub struct Completed {
     pub text: String,
     pub usage: Usage,
     pub status: TurnStatus,
+    /// From turn/start through the scoped terminal event, including tool waits.
+    pub elapsed_seconds: u64,
+    /// Unique tool requests and terminal responses observed in this turn.
+    /// A response may report denial/failure; it does not imply a successful effect.
+    pub tool_requests: usize,
+    pub tool_returns: usize,
+}
+#[derive(Default)]
+struct TurnTools {
+    requested: BTreeSet<String>,
+    returned: BTreeSet<String>,
+}
+impl TurnTools {
+    fn item(&mut self, item: &Value, completed: bool) {
+        // Dynamic tools are counted at their actual host RPC boundary below;
+        // their item events must not count the same request a second time.
+        if matches!(
+            item["type"].as_str(),
+            Some(
+                "commandExecution"
+                    | "fileChange"
+                    | "webSearch"
+                    | "mcpToolCall"
+                    | "collabAgentToolCall"
+            )
+        ) && let Some(id) = item["id"].as_str()
+        {
+            let key = format!("item:{id}");
+            self.requested.insert(key.clone());
+            if completed {
+                self.returned.insert(key);
+            }
+        }
+    }
 }
 /// Cancellation of the host future must not leave an uncertain active charge
 /// looking like a safely pending job that other dispatches can keep consuming.
@@ -864,6 +898,26 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
         mode: BudgetMode,
         queue: &ApprovalQueue,
     ) -> Result<Completed> {
+        self.run_with_started(
+            ledger, owner, scope, call, dispatch, input, mode, queue, None,
+        )
+        .await
+    }
+    /// Notify the host only after a reserved provider turn has a valid identity.
+    /// A dropped receiver never changes provider execution or accounting.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn run_with_started(
+        &mut self,
+        ledger: &mut Ledger,
+        owner: &str,
+        scope: &Scope,
+        call: &str,
+        dispatch: &str,
+        input: &str,
+        mode: BudgetMode,
+        queue: &ApprovalQueue,
+        started: Option<tokio::sync::oneshot::Sender<()>>,
+    ) -> Result<Completed> {
         ledger.owner(owner)?;
         if self.bound_scope.as_ref() != Some(scope) {
             return Err(Error::Protocol("run scope differs from opened context"));
@@ -917,6 +971,7 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
             &cwd,
             &before,
             queue,
+            started,
         );
         let result = tokio::time::timeout(Duration::from_secs(1200), work)
             .await
@@ -962,12 +1017,19 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
         cwd: &str,
         before: &Counters,
         queue: &ApprovalQueue,
+        started_notice: Option<tokio::sync::oneshot::Sender<()>>,
     ) -> Result<(Completed, Counters)> {
+        let started = Instant::now();
+        let mut tools = TurnTools::default();
         let reply=self.rpc("turn/start",value!({"threadId":thread,"input":[{"type":"text","text":input,"text_elements":[]}],"cwd":cwd,"model":self.model,"effort":self.effort,"approvalPolicy":"untrusted","approvalsReviewer":"user","sandboxPolicy":{"type":"readOnly","networkAccess":false},"environments":[]})).await?;
         let turn = reply["turn"]["id"]
             .as_str()
+            .filter(|id| !id.is_empty() && id.len() <= 1024 && !id.chars().any(char::is_control))
             .ok_or(Error::Protocol("turn identity missing"))?
             .to_owned();
+        if let Some(notice) = started_notice {
+            let _ = notice.send(());
+        }
         let mut total = None;
         let mut text = String::new();
         for _ in 0..4096 {
@@ -993,10 +1055,17 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
             if frame.get("id").is_some() {
                 #[cfg(unix)]
                 if method == "item/tool/call" {
+                    exact_scope(params, thread, &turn)?;
+                    let call = params["callId"]
+                        .as_str()
+                        .ok_or(Error::Protocol("host call identity missing"))?;
+                    let key = format!("host:{call}");
+                    tools.requested.insert(key.clone());
                     self.host_file_call(
                         ledger, owner, scope, dispatch, execution, &frame, thread, &turn, queue,
                     )
                     .await?;
+                    tools.returned.insert(key);
                     continue;
                 }
                 self.approval(
@@ -1020,6 +1089,7 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
                         return Err(Error::Protocol("item capacity"));
                     }
                     self.items.insert(id.into(), item.clone());
+                    tools.item(item, method == "item/completed");
                     if method == "item/completed" && item["type"] == "agentMessage" {
                         let message = item["text"]
                             .as_str()
@@ -1047,6 +1117,9 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
                             text,
                             usage,
                             status,
+                            elapsed_seconds: started.elapsed().as_secs(),
+                            tool_requests: tools.requested.len(),
+                            tool_returns: tools.returned.len(),
                         },
                         counters,
                     ));
@@ -1411,6 +1484,22 @@ mod tests {
         tokio::io::ReadHalf<tokio::io::DuplexStream>,
         tokio::io::WriteHalf<tokio::io::DuplexStream>,
     >;
+    #[test]
+    fn tool_summary_deduplicates_terminal_items_and_excludes_messages() {
+        let mut tools = TurnTools::default();
+        let tool = value!({"id":"tool-a","type":"commandExecution"});
+        tools.item(&tool, false);
+        tools.item(&tool, true);
+        tools.item(&tool, true);
+        tools.item(&value!({"id":"text","type":"agentMessage"}), true);
+        tools.item(&value!({"id":"dynamic","type":"dynamicToolCall"}), true);
+        assert_eq!(tools.requested.len(), 1);
+        assert_eq!(tools.returned.len(), 1);
+        // A terminal event alone still proves that one request returned.
+        tools.item(&value!({"id":"tool-b","type":"mcpToolCall"}), true);
+        assert_eq!(tools.requested.len(), 2);
+        assert_eq!(tools.returned.len(), 2);
+    }
     async fn emit(writer: &mut tokio::io::WriteHalf<tokio::io::DuplexStream>, v: Value) {
         writer.write_all(format!("{v}\n").as_bytes()).await.unwrap();
     }
@@ -1489,7 +1578,7 @@ mod tests {
                     Some("turn/start") => {
                         assert_eq!(frame["params"]["approvalPolicy"], "untrusted");
                         assert_eq!(frame["params"]["sandboxPolicy"]["networkAccess"], false);
-                        emit(&mut w,value!({"id":frame["id"],"result":{"turn":{"id":"turn-a","status":"inProgress"}}})).await;
+                        emit(&mut w,value!({"id":frame["id"],"result":{"turn":{"id":if kind=="missing_turn" { "" } else { "turn-a" },"status":"inProgress"}}})).await;
                         if with_approval {
                             let (method, params) = match kind {
                                 "file" => {
@@ -1577,6 +1666,155 @@ mod tests {
         let (done, ()) = tokio::join!(result, host);
         assert_eq!(done.unwrap().usage.input, 10);
         assert_eq!(effects.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            ledger
+                .account(&scope(), Layer::Room, Period::Lifetime, now())
+                .unwrap(),
+            (10, 0)
+        );
+        drop(session);
+        task.await.unwrap();
+    }
+    #[tokio::test]
+    async fn processing_notice_requires_reserved_accepted_provider_turn() {
+        for (reservation, accepted) in [(20, true), (2000, false)] {
+            let (_temp, mut ledger, profile) = setup(false);
+            let (mut session, _, task) = fake(
+                profile.cwd.to_str().unwrap().into(),
+                false,
+                true,
+                10,
+                "command",
+            );
+            let (queue, _) = approval_queue(1).unwrap();
+            session.initialize().await.unwrap();
+            session
+                .open_context(&mut ledger, &scope(), &profile)
+                .await
+                .unwrap();
+            let (send, receive) = tokio::sync::oneshot::channel();
+            let result = session
+                .run_with_started(
+                    &mut ledger,
+                    "@alice:test",
+                    &scope(),
+                    "call",
+                    "dispatch",
+                    "hello",
+                    BudgetMode::Estimated { reservation },
+                    &queue,
+                    Some(send),
+                )
+                .await;
+            assert_eq!(result.is_ok(), accepted);
+            assert_eq!(receive.await.is_ok(), accepted);
+            if accepted {
+                // Replaying this call cannot start provider work or emit another notice.
+                let (send, receive) = tokio::sync::oneshot::channel();
+                assert!(
+                    session
+                        .run_with_started(
+                            &mut ledger,
+                            "@alice:test",
+                            &scope(),
+                            "call",
+                            "dispatch",
+                            "hello",
+                            BudgetMode::Estimated { reservation },
+                            &queue,
+                            Some(send)
+                        )
+                        .await
+                        .is_err()
+                );
+                assert!(receive.await.is_err());
+            } else {
+                assert!(ledger.outstanding_calls("@alice:test").unwrap().is_empty());
+            }
+            drop(session);
+            task.await.unwrap();
+        }
+    }
+    #[tokio::test]
+    async fn malformed_provider_turn_does_not_emit_processing_notice_and_keeps_hold() {
+        let (_temp, mut ledger, profile) = setup(false);
+        let (mut session, _, task) = fake(
+            profile.cwd.to_str().unwrap().into(),
+            false,
+            true,
+            10,
+            "missing_turn",
+        );
+        let (queue, _) = approval_queue(1).unwrap();
+        session.initialize().await.unwrap();
+        session
+            .open_context(&mut ledger, &scope(), &profile)
+            .await
+            .unwrap();
+        let (send, receive) = tokio::sync::oneshot::channel();
+        assert!(
+            session
+                .run_with_started(
+                    &mut ledger,
+                    "@alice:test",
+                    &scope(),
+                    "call",
+                    "dispatch",
+                    "hello",
+                    BudgetMode::Estimated { reservation: 20 },
+                    &queue,
+                    Some(send)
+                )
+                .await
+                .is_err()
+        );
+        assert!(receive.await.is_err());
+        assert_eq!(
+            ledger
+                .account(&scope(), Layer::Room, Period::Lifetime, now())
+                .unwrap(),
+            (0, 20)
+        );
+        drop(session);
+        task.await.unwrap();
+    }
+    #[tokio::test]
+    async fn dropped_processing_notice_receiver_does_not_cancel_or_replay_model() {
+        let (_temp, mut ledger, profile) = setup(false);
+        let (mut session, _, task) = fake(
+            profile.cwd.to_str().unwrap().into(),
+            false,
+            true,
+            10,
+            "command",
+        );
+        let (queue, _) = approval_queue(1).unwrap();
+        session.initialize().await.unwrap();
+        session
+            .open_context(&mut ledger, &scope(), &profile)
+            .await
+            .unwrap();
+        let (send, receive) = tokio::sync::oneshot::channel();
+        drop(receive);
+        assert_eq!(
+            session
+                .run_with_started(
+                    &mut ledger,
+                    "@alice:test",
+                    &scope(),
+                    "call",
+                    "dispatch",
+                    "hello",
+                    BudgetMode::Estimated { reservation: 20 },
+                    &queue,
+                    Some(send)
+                )
+                .await
+                .unwrap()
+                .usage
+                .input,
+            10
+        );
         assert_eq!(
             ledger
                 .account(&scope(), Layer::Room, Period::Lifetime, now())

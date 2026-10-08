@@ -65,21 +65,21 @@ function PolicyEditor({ version, layer, usage, onSave, onReset, busy, text }) {
     setTools(version.policy.high_risk?.AllowWithRules?.tools.join('\n') || '');
     setDirectories(version.policy.high_risk?.AllowWithRules?.directories.join('\n') || '');
   }, [version]);
-  const limit = typeof draft.budget.limit === 'string' ? draft.budget.limit : 'Tokens';
+  const limit = typeof draft.budget.limit === 'string' ? (draft.budget.limit === 'Unset' ? 'Unlimited' : draft.budget.limit) : 'Tokens';
   const risk = typeof draft.high_risk === 'string' ? draft.high_risk : 'AllowWithRules';
   const save = event => {
     event.preventDefault();
-    const policy = { ...draft, high_risk: risk === 'AllowWithRules' ? { AllowWithRules: { tools: tools.split('\n').map(v => v.trim()).filter(Boolean), directories: directories.split('\n').map(v => v.trim()).filter(Boolean) } } : risk };
+    const policy = { ...draft, budget: { ...draft.budget, limit: limit === 'Unlimited' ? 'Unlimited' : draft.budget.limit }, high_risk: risk === 'AllowWithRules' ? { AllowWithRules: { tools: tools.split('\n').map(v => v.trim()).filter(Boolean), directories: directories.split('\n').map(v => v.trim()).filter(Boolean) } } : risk };
     onSave(policy, version.revision);
   };
   const budget = update => setDraft(current => ({ ...current, budget: { ...current.budget, ...update } }));
   return <form onSubmit={save} className="panel">
     <h3>{text(...({ agent: ['Agent 总配额', 'Agent total budget'], room: ['此 Room 配额', 'This room budget'], requester: ['此 Room 中该用户的配额', 'This requester in this room'] }[layer]))}</h3>
+    <p className="dim">{text('未设置限制时允许请求。已设置的 Agent、Room 和成员限制同时生效；拒绝请求与工具权限单独控制。', 'Requests are allowed without a limit. Agent, room, and member limits all apply; request denial and tool permissions are separate.')}</p>
     <p className="dim">{text('已消耗', 'Spent')}: {usage.spent} · {text('预留', 'Reserved')}: {usage.held} · {text('版本', 'Revision')}: {version.revision}</p>
     <label>{text('Token 上限', 'Token limit')}<select value={limit} disabled={busy} onChange={e => budget({ limit: e.target.value === 'Tokens' ? { Tokens: 0 } : e.target.value })}>
-      <option value="Unset">{text('未配置（拒绝执行）', 'Unset (execution blocked)')}</option>
       <option value="Tokens">{text('限定数量', 'Token count')}</option>
-      <option value="Unlimited">{text('不限量', 'Unlimited')}</option>
+      <option value="Unlimited">{text('不限额（默认）', 'No limit (default)')}</option>
     </select></label>
     {limit === 'Tokens' && <label>{text('Token 数量', 'Tokens')}<input type="number" required min={0} max={Number.MAX_SAFE_INTEGER} step={1} disabled={busy} value={draft.budget.limit.Tokens} onChange={e => budget({ limit: { Tokens: Number(e.target.value) } })} /></label>}
     <label>{text('计费周期', 'Accounting period')}<select disabled={busy} value={draft.budget.period} onChange={e => budget({ period: e.target.value })}>

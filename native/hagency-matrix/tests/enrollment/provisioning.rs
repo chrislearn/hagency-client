@@ -157,7 +157,9 @@ pub(super) async fn decrypt_in_room(
     peer: &mut crypto::Peer,
     room_id: &str,
 ) {
-    use matrix_sdk_crypto::{CollectStrategy, EncryptionSettings, OlmMachine, store::CryptoStore};
+    use matrix_sdk_crypto::{
+        CollectStrategy, EncryptionSettings, OlmMachineBuilder, store::CryptoStore,
+    };
     use matrix_sdk_sqlite::{SqliteCryptoStore, SqliteStoreConfig};
     account.close_enrollment_sdk().await.unwrap();
     let config = &enrolled.inner.config;
@@ -174,7 +176,9 @@ pub(super) async fn decrypt_in_room(
     );
     let user: ruma::OwnedUserId = account.sender_mxid().try_into().unwrap();
     let device: ruma::OwnedDeviceId = account.device_id().into();
-    let machine = OlmMachine::with_store(&user, &device, store.clone(), None)
+    let machine = OlmMachineBuilder::new(&user, &device)
+        .with_crypto_store(store.clone())
+        .build()
         .await
         .unwrap();
     let curve = peer.query["device_keys"][OWNER][crypto::HUMAN_DEVICE]["keys"]

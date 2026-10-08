@@ -11,6 +11,15 @@ use serde::{Deserialize, Serialize};
 const PROOF_BYTES: usize = 208;
 const ACTIVE_RECORDS: &str = "state!='replied' AND NOT (state IN ('rejected','failed') AND json_extract(envelope,'$.body')='')";
 const RETAINED_BYTES: &str = "SELECT coalesce(sum(length(CAST(envelope AS BLOB))+coalesce(length(CAST(reply AS BLOB)),0)+208),0) FROM local_inbox";
+fn no_provider_usage() -> crate::Usage {
+    crate::Usage {
+        input: 0,
+        output: 0,
+        cached_input: 0,
+        reasoning_output: 0,
+        accounting_version: "no-provider-call-v1".into(),
+    }
+}
 fn retained_bytes(db: &rusqlite::Connection) -> Result<u64> {
     Ok(db.query_row(RETAINED_BYTES, [], |r| r.get(0))?)
 }
@@ -568,6 +577,96 @@ impl Ledger {
         tx.commit()?;
         Ok(())
     }
+    /// An owner-policy notice may be delivered only when this exact execution
+    /// has never reserved a provider call. The zero-call proof and immutable
+    /// reply commit together; existing model charges are never rewritten.
+    pub fn persist_no_provider_reply(
+        &mut self,
+        owner: &str,
+        id: &str,
+        execution: &str,
+        body: &str,
+    ) -> Result<()> {
+        self.owner(owner)?;
+        if body.is_empty() || body.len() > 65536 {
+            return Err(Error::Invalid("reply size"));
+        }
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let (encoded, state, actual, old): (String, String, Option<String>, Option<String>) = tx
+            .query_row(
+                "SELECT envelope,state,execution_id,reply_digest FROM local_inbox WHERE id=?",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )?;
+        if actual.as_deref() != Some(execution) {
+            return Err(Error::Unauthorized);
+        }
+        let dispatch: Dispatch = serde_json::from_str(&encoded)?;
+        if dispatch.id != id {
+            return Err(Error::Conflict);
+        }
+        let scope = json(&dispatch.scope())?;
+        let proof_digest = hash(&("no-provider-call", id, execution, &dispatch.scope()))?;
+        let usage = json(&no_provider_usage())?;
+        let digest = hash(&body)?;
+        type Proof = (String, String, u64, String, String, Option<String>, String);
+        let existing: Option<Proof> = tx
+            .query_row(
+                "SELECT binding,scope,reserved,snapshots,state,usage,digest FROM calls WHERE id=?",
+                [execution],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                        r.get(6)?,
+                    ))
+                },
+            )
+            .optional()?;
+        if matches!(state.as_str(), "reply_ready" | "replied") {
+            let expected = (
+                dispatch.binding_id,
+                scope,
+                0,
+                "[]".into(),
+                "settled".into(),
+                Some(usage),
+                proof_digest,
+            );
+            return if old.as_deref() == Some(&digest) && existing.as_ref() == Some(&expected) {
+                Ok(())
+            } else {
+                Err(Error::Conflict)
+            };
+        }
+        if state != "running" || existing.is_some() {
+            return Err(Error::Conflict);
+        }
+        let maximum: u64 = tx.query_row(
+            "SELECT max_bytes FROM inbox_limits WHERE singleton=1",
+            [],
+            |r| r.get(0),
+        )?;
+        if retained_bytes(&tx)?.saturating_add(body.len() as u64) > maximum {
+            return Err(Error::Invalid("inbox reply capacity exhausted"));
+        }
+        tx.execute(
+            "INSERT INTO calls VALUES (?,?,?,?,0,'[]','settled',?)",
+            (execution, &dispatch.binding_id, scope, proof_digest, usage),
+        )?;
+        tx.execute(
+            "UPDATE local_inbox SET state='reply_ready',reply=?,reply_digest=? WHERE id=?",
+            (body, digest, id),
+        )?;
+        tx.commit()?;
+        Ok(())
+    }
     /// Only a trusted host's scoped `sent` receipt with a Matrix event ID
     /// permits this terminal transition. Outbox acceptance remains reply_ready.
     pub fn confirm_matrix_delivery(
@@ -639,13 +738,7 @@ impl Ledger {
                     r.get(0)
                 })?;
             let dispatch: Dispatch = serde_json::from_str(&encoded)?;
-            let usage = crate::Usage {
-                input: 0,
-                output: 0,
-                cached_input: 0,
-                reasoning_output: 0,
-                accounting_version: "no-provider-call-v1".into(),
-            };
+            let usage = no_provider_usage();
             tx.execute(
                 "INSERT INTO calls VALUES (?,?,?,?,0,'[]','settled',?) ON CONFLICT(id) DO NOTHING",
                 (
@@ -752,7 +845,7 @@ impl Ledger {
                 return Ok(false);
             }
             let snapshots: Vec<crate::Snapshot> = serde_json::from_str(&snapshots)?;
-            if state == "rejected"
+            if matches!(state.as_str(), "rejected" | "reply_ready" | "replied")
                 && charge == "settled"
                 && reserved == 0
                 && snapshots.is_empty()

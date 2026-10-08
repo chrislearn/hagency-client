@@ -32,9 +32,16 @@ fn event(id: &str, epoch: i64) -> Value {
 #[derive(Default)]
 struct WireState {
     epoch: i64,
+    restore_scope: bool,
+    binding_states: BTreeMap<String, String>,
+    no_messages: bool,
+    device_generation: i64,
+    restart_busy_remaining: usize,
     events: Vec<Value>,
     paths: Vec<String>,
     replies: usize,
+    processing: usize,
+    processing_input: Option<Value>,
     first_reply: Option<Value>,
 }
 impl WireState {
@@ -52,11 +59,24 @@ impl WireState {
     fn respond(&mut self, path: &str, input: &Value, origin: &str, unknown: bool) -> (u16, Value) {
         self.paths.push(path.into());
         let until = wall_ms() + 20_000;
-        let lease = |epoch| json!({"lease":{"agentId":"agent-a","ownerUserId":"uid","deviceId":"device-a","deviceGeneration":1,"epoch":epoch,"expiresAtMs":until}});
+        let generation = self.device_generation.max(1);
+        let lease = |epoch| json!({"lease":{"agentId":"agent-a","ownerUserId":"uid","deviceId":"device-a","deviceGeneration":generation,"epoch":epoch,"expiresAtMs":until}});
         match path {
             "/api/hagency/v1/discovery" => (
                 200,
                 json!({"product":"hagency-server","version":"0.1.0","protocolVersion":3,"capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-device-v1","owner-direct-v1"],"homeserver":origin,"issuer":format!("{origin}_pasion/")}),
+            ),
+            "/api/hagency/v1/agents/agent-a" if self.restore_scope => (
+                200,
+                json!({"agent":{"id":"agent-a","ownerUserId":"uid","puppetMxid":"@agent:test","displayName":"Fixture","state":"active","generation":1,"executionDeviceId":"device-a","ownerDirectRoomId":"!room-a:test"}}),
+            ),
+            "/api/hagency/v1/agents/agent-a/bindings" if self.restore_scope => (
+                200,
+                if self.binding_states.is_empty() {
+                    json!({"bindings":[{"id":"binding-a","agentId":"agent-a","projectId":null,"scopeKind":"owner_direct","roomId":"!room-a:test","state":"active","generation":1}]})
+                } else {
+                    json!({"bindings":self.binding_states.iter().map(|(id,state)|json!({"id":id,"agentId":"agent-a","projectId":null,"scopeKind":if id=="binding-a"{"owner_direct"}else{"project"},"roomId":format!("!room-{}:test",id.trim_start_matches("binding-")),"state":state,"generation":1})).collect::<Vec<_>>()})
+                },
             ),
             "/api/hagency/v1/sessions/pasion" => (
                 200,
@@ -66,10 +86,13 @@ impl WireState {
                 200,
                 json!({"userId":"uid","mxid":OWNER,"subject":"sub","clientId":"sdk-client","issuer":format!("{origin}_pasion/"),"validUntilMs":wall_ms()+30_000}),
             ),
-            "/api/hagency/v1/devices" => (
-                200,
-                json!({"token":"b".repeat(64),"deviceId":"device-a","generation":1,"validUntilMs":wall_ms()+30_000}),
-            ),
+            "/api/hagency/v1/devices" => {
+                self.device_generation += 1;
+                (
+                    200,
+                    json!({"token":"b".repeat(64),"deviceId":"device-a","generation":self.device_generation,"validUntilMs":wall_ms()+30_000}),
+                )
+            }
             "/api/hagency/v1/sessions/current/renew" => {
                 (200, json!({"validUntilMs":wall_ms()+30_000}))
             }
@@ -77,19 +100,29 @@ impl WireState {
             "/api/hagency/v1/execution/leases/release" => (200, json!({"released":true})),
             "/api/hagency/v1/execution/history" => (200, self.history()),
             "/api/hagency/v1/execution/leases/acquire" => {
+                assert_eq!(input["takeover"], false);
+                if self.restart_busy_remaining > 0 {
+                    self.restart_busy_remaining -= 1;
+                    return (409, json!({"code":"agent_leased_to_another_device"}));
+                }
                 assert_eq!(
                     input["historySnapshot"],
                     self.history()["history"]["snapshot"]
                 );
                 self.epoch += 1;
-                if self.events.is_empty() {
+                if self.events.is_empty() && !self.no_messages {
                     self.events.push(event("dispatch-a", self.epoch));
                 }
                 (200, lease(self.epoch))
             }
             "/api/hagency/v1/execution/leases/renew" => (200, lease(self.epoch)),
             "/api/hagency/v1/execution/events/poll" => {
-                assert_eq!(input["bindingId"], "binding-a");
+                assert!(
+                    input["bindingId"] == "binding-a"
+                        || self
+                            .binding_states
+                            .contains_key(input["bindingId"].as_str().unwrap())
+                );
                 (
                     200,
                     json!({"events":self.events.iter().filter(|d|d["state"]=="offered").take(1).cloned().collect::<Vec<_>>()}),
@@ -105,6 +138,26 @@ impl WireState {
                 d["executionId"] = input["executionId"].clone();
                 d["state"] = "running".into();
                 (200, json!({"execution":{"dispatch":d,"newlyStarted":true}}))
+            }
+            "/api/hagency/v1/execution/events/processing" => {
+                let dispatch = self
+                    .events
+                    .iter()
+                    .find(|d| d["id"] == input["dispatchId"])
+                    .unwrap();
+                assert_eq!(dispatch["state"], "running");
+                assert_eq!(dispatch["executionId"], input["executionId"]);
+                assert_eq!(input["lease"]["epoch"], self.epoch);
+                self.processing += 1;
+                if self.processing == 1 {
+                    self.processing_input = Some(input.clone());
+                    return (503, json!({"code":"fixture_processing_response_lost"}));
+                }
+                assert_eq!(self.processing_input.as_ref().unwrap(), input);
+                (
+                    200,
+                    json!({"processing":{"id":"processing-a","dispatchId":input["dispatchId"],"executionId":input["executionId"],"state":"pending","matrixEventId":null}}),
+                )
             }
             "/api/hagency/v1/execution/events/authorize-tool" => (
                 200,
@@ -162,6 +215,7 @@ impl WireState {
 }
 async fn server(
     unknown: bool,
+    processing_failure: u8,
 ) -> (
     String,
     Arc<StdMutex<WireState>>,
@@ -224,7 +278,16 @@ async fn server(
                             .contains(&format!("authorization: bearer {}", "b".repeat(64)))
                     );
                 }
-                let (code, value) = state.lock().unwrap().respond(path, &body, &origin, unknown);
+                let (mut code, mut value) =
+                    state.lock().unwrap().respond(path, &body, &origin, unknown);
+                if path.ends_with("/events/processing") {
+                    if processing_failure == 1 {
+                        code = 404;
+                        value = json!({"code":"fixture_processing_unavailable"});
+                    } else if processing_failure == 2 {
+                        tokio::time::sleep(Duration::from_secs(4)).await;
+                    }
+                }
                 let body = value.to_string();
                 let _=stream.write_all(format!("HTTP/1.1 {code} Fixture\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).as_bytes()).await;
             });
@@ -265,7 +328,7 @@ for raw in sys.stdin:
   with open(marker,'a') as out:out.write('turn\n')
   reply({'turn':{'id':'turn-a','status':'inProgress'}})
   time.sleep(6)
-  if not unknown:emit('thread/tokenUsage/updated',{'threadId':'thread-a','turnId':'turn-a','tokenUsage':{'total':{'inputTokens':5,'outputTokens':0,'cachedInputTokens':0,'reasoningOutputTokens':0,'totalTokens':5}}})
+  if not unknown:emit('thread/tokenUsage/updated',{'threadId':'thread-a','turnId':'turn-a','tokenUsage':{'total':{'inputTokens':3,'outputTokens':2,'cachedInputTokens':0,'reasoningOutputTokens':0,'totalTokens':5}}})
   emit('item/completed',{'threadId':'thread-a','turnId':'turn-a','item':{'id':'message-a','type':'agentMessage','text':'isolated fixture answer'}})
   emit('turn/completed',{'threadId':'thread-a','turn':{'id':'turn-a','status':'completed'}})
  else: raise Exception(m)
@@ -327,7 +390,7 @@ async fn host_round(
                             .count()
                             >= baseline_polls + 2
                 } else if unknown {
-                    s.events.len() == 2 && s.events[1]["state"] == "finished"
+                    s.events.len() == 2 && s.events[1]["state"] == "replied"
                 } else {
                     s.events.first().is_some_and(|d| d["state"] == "replied")
                         && Ledger::open_scoped(&local_path, OWNER, &device_profile)
@@ -364,11 +427,14 @@ async fn host_round(
         state.lock().unwrap().paths
     );
 }
-async fn fixture(unknown: bool) {
+async fn fixture(unknown: bool, budget: u64) {
+    fixture_with_processing_failure(unknown, budget, 0).await;
+}
+async fn fixture_with_processing_failure(unknown: bool, budget: u64, processing_failure: u8) {
     use hagency_agent_local::{
         Budget, Layer, Limit, ModelProfile, Period, Policy, RequestPolicy, ToolPolicy,
     };
-    let (origin, state, server) = server(unknown).await;
+    let (origin, state, server) = server(unknown, processing_failure).await;
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path().canonicalize().unwrap();
     let native =
@@ -402,6 +468,7 @@ async fn fixture(unknown: bool) {
     }
     let script = root.join("fake-provider");
     let marker = root.join("turns");
+    std::fs::write(&marker, "").unwrap();
     provider(&script, &marker, &path, unknown);
     let scope = inbox::Dispatch {
         id: "dispatch-a".into(),
@@ -430,6 +497,7 @@ async fn fixture(unknown: bool) {
                 model: "test-model".into(),
                 credential_ref: "keychain:fixture".into(),
                 workspace_root: workspace.to_string_lossy().into(),
+                reasoning_effort: String::new(),
             },
         )
         .unwrap();
@@ -441,7 +509,7 @@ async fn fixture(unknown: bool) {
             0,
             &Policy {
                 budget: Budget {
-                    limit: Limit::Tokens(100),
+                    limit: Limit::Tokens(budget),
                     period: Period::Lifetime,
                 },
                 requests: RequestPolicy::Allow,
@@ -467,6 +535,8 @@ async fn fixture(unknown: bool) {
         takeover: Takeover::Never,
         host_files: false,
         owner_direct: false,
+        recovery_device_id: None,
+        recovery_consent_id: None,
     };
     host_round(
         console.clone(),
@@ -478,7 +548,11 @@ async fn fixture(unknown: bool) {
     )
     .await;
     let ledger = Ledger::open_scoped(&path, OWNER, &profile_id).unwrap();
-    assert_eq!(std::fs::read_to_string(&marker).unwrap().lines().count(), 1);
+    let expected_turns = usize::from(budget > 0);
+    assert_eq!(
+        std::fs::read_to_string(&marker).unwrap().lines().count(),
+        expected_turns
+    );
     let account = ledger
         .account(&scope, Layer::Room, Period::Lifetime, now())
         .unwrap();
@@ -487,29 +561,76 @@ async fn fixture(unknown: bool) {
         assert_eq!(ledger.outstanding_calls(OWNER).unwrap().len(), 1);
         assert_eq!(
             ledger.inbox_record(OWNER, "dispatch-b").unwrap().state,
-            State::Rejected
+            State::Replied
         );
+        let reply = state.lock().unwrap().first_reply.as_ref().unwrap()["reply"]["body"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(reply.contains("历史请求的费用尚待确认"));
+        assert!(!reply.contains("本次用量"));
     } else {
-        assert_eq!(account, (5, 0));
+        assert_eq!(account, (if budget > 0 { 5 } else { 0 }, 0));
+        let reply = state.lock().unwrap().first_reply.as_ref().unwrap()["reply"]["body"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        if budget > 0 {
+            assert!(reply.starts_with("isolated fixture answer\n\n✅"));
+            assert!(reply.contains("本次用量 5 Token（输入 3 / 输出 2"));
+        } else {
+            assert!(reply.contains("可用额度不足"));
+            assert!(reply.contains("本次未调用模型"));
+            assert!(!reply.contains("本轮处理已结束"));
+        }
+        assert!(!reply.contains("Agent 配额"));
         assert_eq!(
             ledger.inbox_record(OWNER, "dispatch-a").unwrap().state,
             State::Replied
         );
         drop(ledger);
         host_round(console, config(), path, state.clone(), false, true).await;
-        assert_eq!(std::fs::read_to_string(&marker).unwrap().lines().count(), 1);
+        assert_eq!(
+            std::fs::read_to_string(&marker).unwrap().lines().count(),
+            expected_turns
+        );
     }
     {
         let s = state.lock().unwrap();
         assert!(s.paths.iter().any(|p| p.ends_with("/events/ack")));
         assert!(s.paths.iter().any(|p| p.ends_with("/events/start")));
-        assert!(s.paths.iter().any(|p| p.ends_with("/leases/renew")));
+        assert_eq!(s.processing, if budget > 0 { 2 } else { 0 });
+        if budget > 0 {
+            let processing = s
+                .paths
+                .iter()
+                .position(|p| p.ends_with("/events/processing"))
+                .unwrap();
+            let finish = s
+                .paths
+                .iter()
+                .position(|p| {
+                    p.ends_with(if unknown {
+                        "/events/finish"
+                    } else {
+                        "/replies"
+                    })
+                })
+                .unwrap();
+            assert!(
+                processing < finish,
+                "even a fast model turn must enqueue eyes before terminal delivery"
+            );
+        }
+        if budget > 0 {
+            assert!(s.paths.iter().any(|p| p.ends_with("/leases/renew")));
+        }
         assert!(
             s.paths
                 .iter()
                 .filter(|p| p.ends_with("/events/authorize-tool"))
                 .count()
-                >= 2
+                >= if budget > 0 { 2 } else { 1 }
         );
         assert!(s.paths.iter().any(|p| p.ends_with("/leases/release")));
         if !unknown {
@@ -522,9 +643,577 @@ async fn fixture(unknown: bool) {
 }
 #[tokio::test]
 async fn typed_http_runtime_replies_retries_and_restart_never_repeat_provider_turn() {
-    fixture(false).await;
+    fixture(false, 100).await;
 }
 #[tokio::test]
 async fn typed_http_runtime_missing_usage_keeps_hold_and_blocks_next_provider_turn() {
-    fixture(true).await;
+    fixture(true, 100).await;
+}
+#[tokio::test]
+async fn typed_http_runtime_budget_notice_is_durable_without_provider_turn_or_restart_replay() {
+    fixture(false, 0).await;
+}
+
+#[tokio::test]
+async fn typed_http_processing_404_or_timeout_preserves_completed_reply_and_charge() {
+    fixture_with_processing_failure(false, 100, 1).await;
+    fixture_with_processing_failure(false, 100, 2).await;
+}
+
+#[tokio::test]
+async fn typed_http_runtime_intent_recovery_rechecks_scope_and_explicit_stop_survives_fresh_manager()
+ {
+    let (origin, state, server) = server(false, 0).await;
+    let temp = tempfile::tempdir().unwrap();
+    let native = NativeOwner::open_with_matrix(
+        &temp.path().canonicalize().unwrap().join("state"),
+        &origin,
+        OWNER,
+        Arc::new(Source),
+    )
+    .await
+    .unwrap();
+    let console = native.test_console();
+    let device = console.authorized_device().await.unwrap();
+    let (path, identity) = intent_location(console, &device).unwrap();
+    let mut intent = RuntimeIntent {
+        agent_id: "agent-a".into(),
+        binding_id: "binding-a".into(),
+        device_id: "different-device".into(),
+        consent_id: new_consent_id().unwrap(),
+        reservation: 50,
+        effort: "low".into(),
+        host_files: false,
+    };
+    change_intent(
+        &path,
+        &identity,
+        "agent-a",
+        "binding-a",
+        Some(intent.clone()),
+    )
+    .unwrap();
+    assert!(
+        native.restore_runtime_intents().await.unwrap()["recoveries"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    intent.device_id = device.device_id().into();
+    change_intent(&path, &identity, "agent-a", "binding-a", Some(intent)).unwrap();
+    // This fixture grants a device but no current Agent/binding scope. Restoring
+    // consent must therefore fail before acquiring a lease or running a model.
+    let recovered = native.restore_runtime_intents().await.unwrap();
+    assert_eq!(recovered["recoveries"][0]["restored"], false);
+    assert_eq!(read_intents(&path, &identity).unwrap().intents.len(), 1);
+    assert!(
+        state
+            .lock()
+            .unwrap()
+            .paths
+            .iter()
+            .all(|p| !p.ends_with("/leases/acquire") && !p.ends_with("/events/start"))
+    );
+    let fresh = OwnedRuntime::default();
+    assert_eq!(fresh.recovery_intents(console).await.unwrap().len(), 1);
+    let saved = read_intents(&path, &identity).unwrap().intents.remove(0);
+    let config = StartConfig {
+        agent_id: saved.agent_id.clone(),
+        binding_id: saved.binding_id.clone(),
+        profile: Profile {
+            executable: PathBuf::from("never-spawn"),
+            home: PathBuf::new(),
+            codex_home: PathBuf::new(),
+            cwd: PathBuf::new(),
+            model: "m".into(),
+            effort: saved.effort.clone(),
+            shared_auth: false,
+        },
+        mode: BudgetMode::Estimated {
+            reservation: saved.reservation,
+        },
+        credential_ref: "none".into(),
+        takeover: Takeover::Never,
+        host_files: saved.host_files,
+        owner_direct: false,
+        recovery_device_id: Some(saved.device_id.clone()),
+        recovery_consent_id: Some(saved.consent_id.clone()),
+    };
+    assert!(verify_recovery_intent(console, &device, &config).is_ok());
+    fresh.stop(console, "agent-a", "binding-a").await.unwrap();
+    assert!(matches!(
+        verify_recovery_intent(console, &device, &config),
+        Err(RuntimeError::Stopped)
+    ));
+    assert!(
+        OwnedRuntime::default()
+            .recovery_intents(console)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    native.shutdown().await;
+    server.abort();
+    let _ = server.await;
+}
+
+// Run the explicit binary override in an isolated child test process. Never
+// mutate the parent test suite's environment or touch an installed Codex login.
+#[test]
+fn typed_http_runtime_intent_positive_restore_uses_isolated_fake_provider() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().canonicalize().unwrap();
+    let script = root.join("fake-provider");
+    let marker = root.join("model-turns");
+    std::fs::write(&marker, "").unwrap();
+    provider(&script, &marker, &root.join("never-opened.db"), false);
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "console::owned_runtime::http_tests::typed_http_runtime_intent_positive_restore_child",
+            "--ignored",
+            "--nocapture",
+        ])
+        .env("HAGENCY_CODEX_BINARY", &script)
+        .env("HAGENCY_RESTORE_TEST_MARKER", &marker)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(std::fs::read_to_string(marker).unwrap(), "");
+}
+#[tokio::test]
+#[ignore = "isolated child of typed_http_runtime_intent_positive_restore_uses_isolated_fake_provider"]
+async fn typed_http_runtime_intent_positive_restore_child() {
+    use hagency_agent_local::ModelProfile;
+    assert!(std::env::var_os("HAGENCY_RESTORE_TEST_MARKER").is_some());
+    let (origin, state, server) = server(false, 0).await;
+    {
+        let mut wire = state.lock().unwrap();
+        wire.restore_scope = true;
+        wire.no_messages = true;
+    }
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().canonicalize().unwrap().join("state");
+    let native = NativeOwner::open_with_matrix(&root, &origin, OWNER, Arc::new(Source))
+        .await
+        .unwrap();
+    let device = native.test_console().authorized_device().await.unwrap();
+    let paths = super::super::owner_provider::paths(
+        &root,
+        device.origin(),
+        device.issuer(),
+        device.subject(),
+        device.owner_mxid(),
+    )
+    .unwrap();
+    let path = ledger_path(
+        &root,
+        device.origin(),
+        device.issuer(),
+        device.subject(),
+        device.owner_mxid(),
+    )
+    .unwrap();
+    let identity = profile_identity(
+        device.origin(),
+        device.issuer(),
+        device.subject(),
+        device.owner_mxid(),
+    )
+    .unwrap();
+    let workspace = path.parent().unwrap().join("workspace");
+    hagency_store::private::directory(&workspace).unwrap();
+    let mut ledger = Ledger::open_scoped(&path, OWNER, &identity).unwrap();
+    ledger
+        .register_binding(
+            OWNER,
+            &Scope {
+                agent: "agent-a".into(),
+                binding: "binding-a".into(),
+                room: "!room-a:test".into(),
+                requester: OWNER.into(),
+                thread: "profile".into(),
+            },
+        )
+        .unwrap();
+    ledger
+        .set_agent_model_profile(
+            OWNER,
+            "agent-a",
+            &ModelProfile {
+                model: "fixture-model".into(),
+                credential_ref: paths.credential_ref,
+                workspace_root: workspace.to_string_lossy().into(),
+                reasoning_effort: String::new(),
+            },
+        )
+        .unwrap();
+    drop(ledger);
+    let input = json!({"bindingId":"binding-a","mode":"estimated","estimatedOptIn":true,"reservation":50,"effort":"low","hostFiles":false,"takeover":false});
+    native
+        .execute(super::super::native::Command::Local {
+            agent_id: "agent-a".into(),
+            action: super::super::native::LocalAction::RuntimeStart,
+            input: Some(input),
+            binding_id: Some("binding-a".into()),
+            requester: None,
+        })
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while state.lock().unwrap().epoch < 1 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    native.shutdown().await;
+    drop(native);
+    // The next grant keeps the installation/device ID but increments generation.
+    // Until natural expiry, the old generation's lease is a precise 409 conflict.
+    state.lock().unwrap().restart_busy_remaining = 2;
+    let restarted = NativeOwner::open_with_matrix(&root, &origin, OWNER, Arc::new(Source))
+        .await
+        .unwrap();
+    let recovery = restarted.restore_runtime_intents().await.unwrap();
+    assert_eq!(recovery["recoveries"][0]["restored"], true, "{recovery}");
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while state.lock().unwrap().epoch < 2 {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(state.lock().unwrap().events.is_empty());
+    assert_eq!(state.lock().unwrap().restart_busy_remaining, 0);
+    assert_eq!(state.lock().unwrap().device_generation, 2);
+    assert!(
+        state
+            .lock()
+            .unwrap()
+            .paths
+            .iter()
+            .all(|p| !p.ends_with("/events/start"))
+    );
+    // Legacy per-Room configuration is copied to preferences before global Stop
+    // clears consent. The owner private Room wins over a differing project value.
+    let device = restarted.test_console().authorized_device().await.unwrap();
+    let (intent_path, profile_id) = intent_location(restarted.test_console(), &device).unwrap();
+    let mut intents = read_intents(&intent_path, &profile_id).unwrap().intents;
+    let mut direct = intents.remove(0);
+    direct.reservation = 15000;
+    let mut project = direct.clone();
+    project.binding_id = "binding-other".into();
+    project.reservation = 7000;
+    change_intent(
+        &intent_path,
+        &profile_id,
+        "agent-a",
+        "binding-a",
+        Some(direct),
+    )
+    .unwrap();
+    change_intent(
+        &intent_path,
+        &profile_id,
+        "agent-a",
+        "binding-other",
+        Some(project),
+    )
+    .unwrap();
+    restarted
+        .test_console()
+        .0
+        .owned_runtime
+        .stop_agent_service(restarted.test_console(), "agent-a")
+        .await
+        .unwrap();
+    restarted.shutdown().await;
+    drop(restarted);
+    let stopped = NativeOwner::open_with_matrix(&root, &origin, OWNER, Arc::new(Source))
+        .await
+        .unwrap();
+    assert!(
+        stopped.restore_runtime_intents().await.unwrap()["recoveries"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let saved = stopped
+        .test_console()
+        .0
+        .owned_runtime
+        .saved_service_options(stopped.test_console(), "agent-a")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(saved.reservation, 15000);
+    // Agent-wide intent starts all active Rooms under one lease, discovers a
+    // newly joined Room, preserves pause, and Stop defeats restart recovery.
+    use super::super::native::{Command, LocalAction};
+    state.lock().unwrap().binding_states = BTreeMap::from([
+        ("binding-a".into(), "active".into()),
+        ("binding-b".into(), "active".into()),
+        ("binding-c".into(), "suspended".into()),
+    ]);
+    let epoch_before = state.lock().unwrap().epoch;
+    // An initial lease conflict must recover through bounded watcher retry,
+    // without an owner Stop/Start or an additional model execution.
+    state.lock().unwrap().restart_busy_remaining = 1;
+    stopped
+        .execute(Command::Local {
+            agent_id: "agent-a".into(),
+            action: LocalAction::StartAgentService,
+            input: Some(
+                json!({"mode":"estimated","estimatedOptIn":true,"reservation":15000,"effort":"low"}),
+            ),
+            binding_id: None,
+            requester: None,
+        })
+        .await
+        .unwrap();
+    async fn wait_binding(native: &NativeOwner, binding: &str, online: bool) {
+        tokio::time::timeout(Duration::from_secs(15), async {
+            loop {
+                let status = native
+                    .execute(Command::Local {
+                        agent_id: "agent-a".into(),
+                        action: LocalAction::AgentServiceStatus,
+                        input: None,
+                        binding_id: None,
+                        requester: None,
+                    })
+                    .await
+                    .unwrap();
+                let found = status["runtime"]["bindings"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .find(|child| child["bindingId"] == binding);
+                if online && found.is_some_and(|child| child["phase"] == "online_chat_only")
+                    || !online && found.is_none_or(|child| child["phase"] == "stopped")
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(30)).await;
+            }
+        })
+        .await
+        .unwrap();
+    }
+    wait_binding(&stopped, "binding-a", true).await;
+    wait_binding(&stopped, "binding-b", true).await;
+    assert_eq!(
+        state.lock().unwrap().epoch,
+        epoch_before + 1,
+        "Rooms must share one Agent lease"
+    );
+    let status = stopped
+        .execute(Command::Local {
+            agent_id: "agent-a".into(),
+            action: LocalAction::AgentServiceStatus,
+            input: None,
+            binding_id: None,
+            requester: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(status["service"]["enabled"], true);
+    assert!(
+        status["runtime"]["bindings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|child| child["bindingId"] != "binding-c" && child["hostFileTools"] == false)
+    );
+    state
+        .lock()
+        .unwrap()
+        .binding_states
+        .insert("binding-d".into(), "active".into());
+    wait_binding(&stopped, "binding-d", true).await;
+    state
+        .lock()
+        .unwrap()
+        .binding_states
+        .insert("binding-b".into(), "suspended".into());
+    wait_binding(&stopped, "binding-b", false).await;
+    state
+        .lock()
+        .unwrap()
+        .binding_states
+        .insert("binding-b".into(), "active".into());
+    wait_binding(&stopped, "binding-b", true).await;
+    // Restart recovers one owner/device-pinned Agent intent, rather than
+    // independently replaying every Room snapshot that discovery published.
+    stopped.shutdown().await;
+    drop(stopped);
+    let stopped = NativeOwner::open_with_matrix(&root, &origin, OWNER, Arc::new(Source))
+        .await
+        .unwrap();
+    let recovery = stopped.restore_runtime_intents().await.unwrap();
+    assert_eq!(recovery["recoveries"].as_array().unwrap().len(), 1);
+    assert_eq!(recovery["recoveries"][0]["bindingId"], "*");
+    assert_eq!(recovery["recoveries"][0]["restored"], true, "{recovery}");
+    wait_binding(&stopped, "binding-a", true).await;
+    wait_binding(&stopped, "binding-b", true).await;
+    wait_binding(&stopped, "binding-d", true).await;
+    wait_binding(&stopped, "binding-c", false).await;
+    stopped
+        .execute(Command::Local {
+            agent_id: "agent-a".into(),
+            action: LocalAction::StopAgentService,
+            input: None,
+            binding_id: None,
+            requester: None,
+        })
+        .await
+        .unwrap();
+    let status = stopped
+        .execute(Command::Local {
+            agent_id: "agent-a".into(),
+            action: LocalAction::AgentServiceStatus,
+            input: None,
+            binding_id: None,
+            requester: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(status["service"]["enabled"], false);
+    assert!(status["runtime"].is_null());
+    let epoch_after_stop = state.lock().unwrap().epoch;
+    state
+        .lock()
+        .unwrap()
+        .binding_states
+        .insert("binding-e".into(), "active".into());
+    tokio::time::sleep(Duration::from_millis(2200)).await;
+    assert_eq!(state.lock().unwrap().epoch, epoch_after_stop);
+    assert!(
+        stopped.restore_runtime_intents().await.unwrap()["recoveries"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(status["service"]["reservation"], 15000);
+    assert_eq!(status["service"]["effort"], "low");
+    // Preferences survive a fresh host, but never represent execution consent.
+    stopped.shutdown().await;
+    drop(stopped);
+    let stopped = NativeOwner::open_with_matrix(&root, &origin, OWNER, Arc::new(Source))
+        .await
+        .unwrap();
+    assert!(
+        stopped.restore_runtime_intents().await.unwrap()["recoveries"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let status = stopped
+        .execute(Command::Local {
+            agent_id: "agent-a".into(),
+            action: LocalAction::StartAgentService,
+            input: Some(json!({"mode":"estimated","estimatedOptIn":true})),
+            binding_id: None,
+            requester: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(status["service"]["reservation"], 15000);
+    assert_eq!(status["service"]["effort"], "low");
+    wait_binding(&stopped, "binding-a", true).await;
+    let preferences_path = intent_path.with_file_name("agent-service-options.json");
+    let saved_preferences = std::fs::read(&preferences_path).unwrap();
+    hagency_store::private::replace(&preferences_path, b"{corrupt-preferences").unwrap();
+    let result = stopped
+        .execute(Command::Local {
+            agent_id: "agent-a".into(),
+            action: LocalAction::StopAgentService,
+            input: None,
+            binding_id: None,
+            requester: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(result["stopped"], true);
+    assert_eq!(result["warning"], "service_preferences_not_preserved");
+    let status = stopped
+        .execute(Command::Local {
+            agent_id: "agent-a".into(),
+            action: LocalAction::AgentServiceStatus,
+            input: None,
+            binding_id: None,
+            requester: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(status["service"]["enabled"], false);
+    assert_eq!(
+        status["service"]["warning"],
+        "service_preferences_unavailable"
+    );
+    assert!(status["runtime"].is_null());
+    assert!(
+        stopped.restore_runtime_intents().await.unwrap()["recoveries"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    // A preference write failure must have the same cancellation semantics.
+    hagency_store::private::replace(&preferences_path, &saved_preferences).unwrap();
+    stopped
+        .execute(Command::Local {
+            agent_id: "agent-a".into(),
+            action: LocalAction::StartAgentService,
+            input: Some(json!({"mode":"estimated","estimatedOptIn":true})),
+            binding_id: None,
+            requester: None,
+        })
+        .await
+        .unwrap();
+    wait_binding(&stopped, "binding-a", true).await;
+    std::fs::remove_file(&preferences_path).unwrap();
+    let options_lock = hagency_store::private::open(
+        &intent_path.with_file_name("agent-service-options.lock"),
+        false,
+    )
+    .unwrap();
+    options_lock.try_lock().unwrap();
+    let result = stopped
+        .execute(Command::Local {
+            agent_id: "agent-a".into(),
+            action: LocalAction::StopAgentService,
+            input: None,
+            binding_id: None,
+            requester: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(result["stopped"], true);
+    assert_eq!(result["warning"], "service_preferences_not_preserved");
+    assert!(
+        stopped
+            .test_console()
+            .0
+            .owned_runtime
+            .status(stopped.test_console(), "agent-a")
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        stopped.restore_runtime_intents().await.unwrap()["recoveries"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    drop(options_lock);
+    stopped.shutdown().await;
+    server.abort();
+    let _ = server.await;
 }

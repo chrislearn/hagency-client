@@ -216,11 +216,13 @@ mod tests {
     #[test]
     fn admission_requires_supported_protocol_capabilities_and_same_origin_issuer() {
         let mut value = metadata();
-        value["protocolVersion"] = json!(1);
-        assert_eq!(
-            validate_metadata("https://hagency.test/", &value),
-            Err(AdmissionError::UnsupportedProtocol)
-        );
+        for version in [1, 2] {
+            value["protocolVersion"] = json!(version);
+            assert_eq!(
+                validate_metadata("https://hagency.test/", &value),
+                Err(AdmissionError::UnsupportedProtocol)
+            );
+        }
         value = metadata();
         value["capabilities"] = json!(["pasion-oauth"]);
         assert_eq!(

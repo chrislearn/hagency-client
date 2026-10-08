@@ -59,12 +59,12 @@ pub(super) async fn open_crypto(config: &crate::HostConfig) -> (OlmMachine, Cryp
         store.load_account().await.unwrap().is_some(),
         "only the actual original SDK account is opened"
     );
-    let machine = OlmMachine::with_store(
+    let machine = matrix_sdk_crypto::OlmMachineBuilder::new(
         user_id!("@worker:example.test"),
         device_id!("DEVICE_1"),
-        store.clone(),
-        None,
     )
+    .with_crypto_store(store.clone())
+    .build()
     .await
     .unwrap();
     (machine, CryptoInspection { store })

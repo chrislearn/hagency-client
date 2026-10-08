@@ -163,7 +163,10 @@ pub(crate) fn paths(
         shared,
     })
 }
-fn prepare_workspace(paths: &ProviderPaths, agent: &str) -> Result<PathBuf, ProviderError> {
+pub(super) fn prepare_workspace(
+    paths: &ProviderPaths,
+    agent: &str,
+) -> Result<PathBuf, ProviderError> {
     if agent.is_empty()
         || agent.len() > 128
         || !agent

@@ -37,18 +37,18 @@ idna = { version = "=1.1.0" }
 libc = { version = "0.2.186" }
 linkify = { version = "=0.10.0" }
 markdown = { version = "=1.0.0" }
-matrix-sdk-base = { version = "=0.18.0" }
-matrix-sdk-common = { version = "=0.18.0" }
-matrix-sdk-crypto = { version = "=0.18.0" }
-matrix-sdk-sqlite = { version = "=0.18.0", default-features = false }
-matrix-sdk-store-encryption = { version = "=0.18.0" }
+matrix-sdk-base = { version = "=0.19.1" }
+matrix-sdk-common = { version = "=0.19.1" }
+matrix-sdk-crypto = { version = "=0.19.1" }
+matrix-sdk-sqlite = { version = "=0.19.1", default-features = false }
+matrix-sdk-store-encryption = { version = "=0.19.1" }
 mdurl = { version = "=0.3.1" }
 regex = { version = "=1.13.1" }
 reqwest = { version = "=0.12.28", default-features = false }
 rmcp = { version = "=1.8.0", default-features = false }
-ruma = { version = "=0.16.0" }
-ruma-common = { version = "=0.19.0" }
-rusqlite = { version = "=0.37.0", default-features = false }
+ruma = { version = "=0.17.0" }
+ruma-common = { version = "=0.20.0" }
+rusqlite = { version = "=0.40.2", default-features = false, features = ["cache"] }
 rustix = { version = "=1.1.4" }
 ryu-js = { version = "=1.0.3" }
 salvo = { version = "=1.0.1", default-features = false }

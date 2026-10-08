@@ -20,7 +20,7 @@ pub enum Error {
     Unauthorized,
     #[error("foreign or legacy database")]
     ForeignDatabase,
-    #[error("budget is unset or exhausted")]
+    #[error("budget is exhausted")]
     Budget,
     #[error("request denied or requires owner confirmation")]
     Denied,
@@ -105,6 +105,7 @@ impl Period {
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Limit {
+    /// Retained wire encoding for an absent limit; equivalent to `Unlimited`.
     Unset,
     Unlimited,
     Tokens(u64),
@@ -177,6 +178,8 @@ pub struct ModelProfile {
     pub model: String,
     pub credential_ref: String,
     pub workspace_root: String,
+    #[serde(default)]
+    pub reasoning_effort: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PolicyVersion {
@@ -242,6 +245,15 @@ impl Ledger {
         let stored: String = db.query_row("SELECT owner FROM identity", [], |r| r.get(0))?;
         if stored != owner {
             return Err(Error::Unauthorized);
+        }
+        let has_effort: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('model_profiles') WHERE name='reasoning_effort')",
+            [], |r| r.get(0),
+        )?;
+        if !has_effort {
+            db.execute_batch(
+                "ALTER TABLE model_profiles ADD COLUMN reasoning_effort TEXT NOT NULL DEFAULT ''",
+            )?;
         }
         db.execute_batch("COMMIT")?;
         db.pragma_update(None, "foreign_keys", true)?;
@@ -577,7 +589,6 @@ impl Ledger {
                     .ok_or(Error::Budget)?,
             )?;
             match policy.budget.limit {
-                Limit::Unset => return Err(Error::Budget),
                 Limit::Tokens(n) if sum > n => return Err(Error::Budget),
                 _ => {}
             }
@@ -700,6 +711,14 @@ impl Ledger {
         self.write_model_profile(agent, profile)
     }
     fn write_model_profile(&mut self, agent: &str, profile: &ModelProfile) -> Result<()> {
+        if !profile.reasoning_effort.is_empty()
+            && ![
+                "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
+            ]
+            .contains(&profile.reasoning_effort.as_str())
+        {
+            return Err(Error::Invalid("reasoning effort"));
+        }
         for value in [
             &profile.model,
             &profile.credential_ref,
@@ -721,7 +740,7 @@ impl Ledger {
         {
             return Err(Error::Invalid("local credential reference or workspace"));
         }
-        self.db.execute("INSERT INTO model_profiles VALUES (?,?,?,?) ON CONFLICT(agent) DO UPDATE SET model=excluded.model,credential_ref=excluded.credential_ref,workspace_root=excluded.workspace_root",(agent,&profile.model,&profile.credential_ref,&profile.workspace_root))?;
+        self.db.execute("INSERT INTO model_profiles (agent,model,credential_ref,workspace_root,reasoning_effort) VALUES (?,?,?,?,?) ON CONFLICT(agent) DO UPDATE SET model=excluded.model,credential_ref=excluded.credential_ref,workspace_root=excluded.workspace_root,reasoning_effort=excluded.reasoning_effort",(agent,&profile.model,&profile.credential_ref,&profile.workspace_root,&profile.reasoning_effort))?;
         Ok(())
     }
     pub fn model_profile(&self, scope: &Scope) -> Result<Option<ModelProfile>> {
@@ -737,13 +756,14 @@ impl Ledger {
         Ok(self
             .db
             .query_row(
-                "SELECT model,credential_ref,workspace_root FROM model_profiles WHERE agent=?",
+                "SELECT model,credential_ref,workspace_root,reasoning_effort FROM model_profiles WHERE agent=?",
                 [agent],
                 |r| {
                     Ok(ModelProfile {
                         model: r.get(0)?,
                         credential_ref: r.get(1)?,
                         workspace_root: r.get(2)?,
+                        reasoning_effort: r.get(3)?,
                     })
                 },
             )
@@ -1076,7 +1096,6 @@ fn validate_tool(db: &Connection, proposal: &ToolProposal, now: i64) -> Result<P
 }
 fn intersect(a: &Limit, b: &Limit) -> Limit {
     match (a, b) {
-        (Limit::Unset, _) | (_, Limit::Unset) => Limit::Unset,
         (Limit::Tokens(a), Limit::Tokens(b)) => Limit::Tokens((*a).min(*b)),
         (Limit::Tokens(n), _) | (_, Limit::Tokens(n)) => Limit::Tokens(*n),
         _ => Limit::Unlimited,
@@ -1117,7 +1136,7 @@ fn verify(db: &Connection, scope: &Scope) -> Result<()> {
         Ok(())
     }
 }
-fn policy(db: &Connection, k: &str, index: usize) -> Result<Policy> {
+fn policy(db: &Connection, k: &str, _index: usize) -> Result<Policy> {
     let record: Option<String> = db
         .query_row("SELECT config FROM policies WHERE scope=?", [k], |r| {
             r.get(0)
@@ -1127,11 +1146,7 @@ fn policy(db: &Connection, k: &str, index: usize) -> Result<Policy> {
         Some(s) => serde_json::from_str(&s)?,
         None => Policy {
             budget: Budget {
-                limit: if index == 1 {
-                    Limit::Unset
-                } else {
-                    Limit::Unlimited
-                },
+                limit: Limit::Unlimited,
                 period: Period::Lifetime,
             },
             requests: RequestPolicy::Allow,

@@ -15,6 +15,7 @@ fn agent_policy_before_binding_shares_runtime_budget_and_preserves_charges() {
         model: "test-model".into(),
         credential_ref: "keychain:codex:owner".into(),
         workspace_root: tmp.path().to_str().unwrap().into(),
+        reasoning_effort: String::new(),
     };
     l.set_agent_model_profile(OWNER, "a1", &model).unwrap();
     assert!(
@@ -316,18 +317,15 @@ fn foreign_schema_owner_and_scope_mismatch_are_rejected() {
     assert!(l.db.execute("DELETE FROM bindings", []).is_err());
 }
 #[test]
-fn zero_unset_overflow_and_provider_breach_fail_closed() {
+fn zero_overflow_and_provider_breach_fail_closed() {
     let tmp = tempfile::tempdir().unwrap();
     let mut l = setup(&tmp.path().join("local.db"));
     let s = scope();
     let mut p = config(0, Period::UtcDay);
     l.set_policy(OWNER, &s, Layer::Room, 1, &p).unwrap();
     assert!(matches!(l.reserve(&s, "c", "d", 1, 10), Err(Error::Budget)));
-    p.budget.limit = Limit::Unset;
-    l.set_policy(OWNER, &s, Layer::Room, 2, &p).unwrap();
-    assert!(matches!(l.reserve(&s, "c", "d", 1, 10), Err(Error::Budget)));
     p.budget.limit = Limit::Unlimited;
-    l.set_policy(OWNER, &s, Layer::Room, 3, &p).unwrap();
+    l.set_policy(OWNER, &s, Layer::Room, 2, &p).unwrap();
     assert!(l.reserve(&s, "over", "d", u64::MAX, 10).is_err());
     l.reserve(&s, "c", "d", 10, 10).unwrap();
     l.settle(&s, "c", &usage(11)).unwrap();
@@ -383,11 +381,18 @@ fn local_model_profile_contains_only_a_keychain_reference() {
         model: "codex".into(),
         credential_ref: "raw-secret".into(),
         workspace_root: "/tmp/task".into(),
+        reasoning_effort: String::new(),
     };
     assert!(l.set_model_profile(OWNER, &s, &profile).is_err());
     profile.credential_ref = "keychain:hagency/codex/alice".into();
+    profile.reasoning_effort = "high".into();
     l.set_model_profile(OWNER, &s, &profile).unwrap();
-    assert_eq!(l.model_profile(&s).unwrap(), Some(profile));
+    assert_eq!(l.model_profile(&s).unwrap(), Some(profile.clone()));
+    drop(l);
+    let mut reopened = Ledger::open(tmp.path().join("local.db"), OWNER).unwrap();
+    assert_eq!(reopened.model_profile(&s).unwrap(), Some(profile.clone()));
+    profile.reasoning_effort = "unsupported-effort".into();
+    assert!(reopened.set_model_profile(OWNER, &s, &profile).is_err());
 }
 #[test]
 fn concurrent_tool_consumers_cannot_reuse_one_confirmation() {
@@ -615,5 +620,181 @@ fn simultaneous_fresh_profile_openers_share_one_initialized_schema() {
             Ledger::open_scoped(&path, OWNER, &"b".repeat(64)),
             Err(Error::Unauthorized)
         ));
+    }
+}
+
+#[test]
+fn missing_limits_allow_requests_and_still_account_for_usage() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("optional-limits.db");
+    let mut ledger = Ledger::open(&path, OWNER).unwrap();
+    let s = scope();
+    ledger.register_binding(OWNER, &s).unwrap();
+    for version in ledger.policy_snapshot(&s).unwrap() {
+        assert_eq!(version.revision, 0);
+        assert_eq!(version.policy.budget.limit, Limit::Unlimited);
+        assert_eq!(version.policy.requests, RequestPolicy::Allow);
+        assert_eq!(version.policy.high_risk, ToolPolicy::Deny);
+    }
+    assert_eq!(
+        ledger.request_disposition(&s, "d").unwrap(),
+        RequestPolicy::Allow
+    );
+    ledger.reserve(&s, "c", "d", 40, 10).unwrap();
+    for layer in [Layer::Agent, Layer::Room, Layer::Requester] {
+        assert_eq!(
+            ledger.account(&s, layer, Period::Lifetime, 10).unwrap(),
+            (0, 40)
+        );
+    }
+    ledger.settle(&s, "c", &usage(25)).unwrap();
+    drop(ledger);
+    let ledger = Ledger::open(path, OWNER).unwrap();
+    for layer in [Layer::Agent, Layer::Room, Layer::Requester] {
+        assert_eq!(
+            ledger.account(&s, layer, Period::Lifetime, 10).unwrap(),
+            (25, 0)
+        );
+    }
+}
+
+#[test]
+fn every_configured_layer_limits_spent_and_concurrent_holds() {
+    for layer in [Layer::Agent, Layer::Room, Layer::Requester] {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut ledger = Ledger::open(tmp.path().join("limits.db"), OWNER).unwrap();
+        let s = scope();
+        ledger.register_binding(OWNER, &s).unwrap();
+        ledger
+            .set_policy(OWNER, &s, layer.clone(), 0, &config(20, Period::Lifetime))
+            .unwrap();
+        assert!(matches!(
+            ledger.reserve(&s, "too-big", "d0", 21, 10),
+            Err(Error::Budget)
+        ));
+        ledger.reserve(&s, "pending", "d1", 20, 10).unwrap();
+        assert!(matches!(
+            ledger.reserve(&s, "held", "d2", 1, 10),
+            Err(Error::Budget)
+        ));
+        ledger.settle(&s, "pending", &usage(10)).unwrap();
+        assert!(matches!(
+            ledger.reserve(&s, "spent", "d3", 11, 10),
+            Err(Error::Budget)
+        ));
+        ledger.reserve(&s, "remaining", "d4", 10, 10).unwrap();
+        assert_eq!(
+            ledger.account(&s, layer, Period::Lifetime, 10).unwrap(),
+            (10, 10)
+        );
+    }
+}
+
+#[test]
+fn explicit_denial_remains_effective_without_any_token_limit() {
+    for layer in [Layer::Agent, Layer::Room, Layer::Requester] {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut ledger = Ledger::open(tmp.path().join("denial.db"), OWNER).unwrap();
+        let s = scope();
+        ledger.register_binding(OWNER, &s).unwrap();
+        let mut policy = ledger.policy_snapshot(&s).unwrap()[0].policy.clone();
+        policy.requests = RequestPolicy::Deny;
+        ledger.set_policy(OWNER, &s, layer, 0, &policy).unwrap();
+        assert_eq!(
+            ledger.request_disposition(&s, "d").unwrap(),
+            RequestPolicy::Deny
+        );
+        assert!(matches!(
+            ledger.reserve(&s, "c", "d", 1, 10),
+            Err(Error::Denied)
+        ));
+        for checked in [Layer::Agent, Layer::Room, Layer::Requester] {
+            assert_eq!(
+                ledger.account(&s, checked, Period::Lifetime, 10).unwrap(),
+                (0, 0)
+            );
+        }
+    }
+}
+
+#[test]
+fn retained_unset_is_unrestricted_but_does_not_widen_captured_dispatch_limits() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("unset.db");
+    let mut ledger = Ledger::open(&path, OWNER).unwrap();
+    let s = scope();
+    ledger.register_binding(OWNER, &s).unwrap();
+    let mut policy = config(100, Period::Lifetime);
+    policy.budget.limit = Limit::Unset;
+    ledger
+        .set_policy(OWNER, &s, Layer::Room, 0, &policy)
+        .unwrap();
+    drop(ledger);
+    let mut ledger = Ledger::open(&path, OWNER).unwrap();
+    assert_eq!(
+        ledger.policy_snapshot(&s).unwrap()[1].policy.budget.limit,
+        Limit::Unset
+    );
+    ledger
+        .reserve(&s, "unrestricted", "old-unset", 10, 10)
+        .unwrap();
+    ledger.settle(&s, "unrestricted", &usage(5)).unwrap();
+    policy.budget.limit = Limit::Tokens(20);
+    ledger
+        .set_policy(OWNER, &s, Layer::Room, 1, &policy)
+        .unwrap();
+    // A newly tightened limit also applies to a dispatch captured without a limit.
+    assert!(matches!(
+        ledger.reserve(&s, "tightened", "old-unset", 16, 10),
+        Err(Error::Budget)
+    ));
+    ledger
+        .reserve(&s, "limited", "old-limited", 10, 10)
+        .unwrap();
+    ledger.settle(&s, "limited", &usage(5)).unwrap();
+    policy.budget.limit = Limit::Unset;
+    ledger
+        .set_policy(OWNER, &s, Layer::Room, 2, &policy)
+        .unwrap();
+    // Removing the current limit does not upgrade a previously captured limit.
+    assert!(matches!(
+        ledger.reserve(&s, "widened", "old-limited", 11, 10),
+        Err(Error::Budget)
+    ));
+    ledger
+        .reserve(&s, "fresh", "new-unrestricted", 100, 10)
+        .unwrap();
+}
+
+#[test]
+fn unlimited_defaults_retain_unknown_charges_after_restart() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("unknown-unlimited.db");
+    let mut ledger = Ledger::open(&path, OWNER).unwrap();
+    let s = scope();
+    ledger.register_binding(OWNER, &s).unwrap();
+    ledger.reserve(&s, "c", "d", 40, 10).unwrap();
+    drop(ledger);
+    let mut ledger = Ledger::open(path, OWNER).unwrap();
+    assert_eq!(ledger.recover_interrupted(OWNER).unwrap(), 1);
+    assert!(matches!(
+        ledger.reserve(&s, "next", "next-dispatch", 1, 86410),
+        Err(Error::Unknown)
+    ));
+    for layer in [Layer::Agent, Layer::Room, Layer::Requester] {
+        assert_eq!(
+            ledger.account(&s, layer, Period::Lifetime, 86410).unwrap(),
+            (0, 40)
+        );
+    }
+    ledger.settle(&s, "c", &usage(25)).unwrap();
+    ledger
+        .reserve(&s, "next", "next-dispatch", 1, 86410)
+        .unwrap();
+    for layer in [Layer::Agent, Layer::Room, Layer::Requester] {
+        assert_eq!(
+            ledger.account(&s, layer, Period::Lifetime, 86410).unwrap(),
+            (25, 1)
+        );
     }
 }

@@ -1480,11 +1480,11 @@ impl Sdk {
         self.persist().await?;
         phase!(IntakeApplyingPersisted);
         phase!(IntakeResponseDecode);
-        use ruma::api::IncomingResponse;
+        use ruma::api::IncomingResponseExt;
         let raw = &self.journal.intake.as_ref().unwrap().raw;
         let response = ruma::api::client::sync::sync_events::v3::Response::try_from_http_response(
             http::Response::builder()
-                .body(serde_json::to_vec(raw).map_err(|_| Error::Wire)?)
+                .body(serde_json::to_vec(raw).map_err(|_| Error::Wire)?.as_slice())
                 .map_err(|_| Error::Wire)?,
         )
         .map_err(|_| Error::Wire)?;
@@ -1794,10 +1794,14 @@ impl Sdk {
             return Ok(());
         }
         self.sync_receipt_room().await?;
-        use ruma::api::IncomingResponse;
+        use ruma::api::IncomingResponseExt;
         let response = ruma::api::client::sync::sync_events::v3::Response::try_from_http_response(
             http::Response::builder()
-                .body(serde_json::to_vec(&value).map_err(|_| Error::Wire)?)
+                .body(
+                    serde_json::to_vec(&value)
+                        .map_err(|_| Error::Wire)?
+                        .as_slice(),
+                )
                 .map_err(|_| Error::Wire)?,
         )
         .map_err(|_| Error::Wire)?;
