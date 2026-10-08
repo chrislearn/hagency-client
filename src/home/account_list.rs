@@ -5,31 +5,44 @@ use crate::{
     sliding_sync::{account_changing, current_user_id},
 };
 
+fn picker_accounts(saved: Vec<SavedAccount>, active: Option<&matrix_sdk::ruma::UserId>, hide_current: bool) -> Vec<SavedAccount> {
+    saved.into_iter().filter(|account| !hide_current || active != Some(account.user_id.as_ref())).collect()
+}
+
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
+    let AccountPickerRow = RobrixIconButton {
+        width: Fill height: 40 margin: 0 padding: Inset{left: 12 right: 12 top: 8 bottom: 8}
+        align: Align{x: 0 y: 0.5}
+        draw_bg +: {color: mod.widgets.RINX_SURFACE color_hover: mod.widgets.RINX_HOVER color_down: mod.widgets.RINX_PRESSED border_size: 0 border_radius: 4}
+        draw_icon.color: mod.widgets.RINX_ACCENT
+        draw_text +: {color: mod.widgets.RINX_INK color_hover: mod.widgets.RINX_INK color_down: mod.widgets.RINX_INK text_style: mod.widgets.RBX_TEXT_BODY}
+    }
     mod.widgets.AccountList = set_type_default() do #(AccountList::register_widget(vm)) {
         ..mod.widgets.View
         width: Fill, height: Fit, flow: Down, spacing: 4
         show_add: true
+        hide_current: false
         account_container := View {
             width: Fill, height: Fit, flow: Down
             accounts := PortalList {
                 width: Fill, height: 40, flow: Down
                 Account := View {
                     width: Fill, height: 40
-                    select := RobrixNeutralIconButton {
+                    select := AccountPickerRow {
                         width: Fill, height: 40
                         icon_walk: Walk{width: 0, height: 0}
-                        draw_text.text_style: (mod.widgets.RBX_TEXT_META)
+                        spacing: 0
                         text: ""
                     }
                 }
             }
         }
-        add := RobrixNeutralIconButton {
+        add := AccountPickerRow {
             width: Fill, height: 40
-            icon_walk: Walk{width: 0, height: 0}
+            icon_walk: Walk{width: 18, height: 18}
+            spacing: 12 draw_icon.svg: ICON_ADD_USER
             text: #(crate::i18n::tr("Add Account")) i18n_text: "Add Account"
         }
     }
@@ -41,6 +54,8 @@ pub struct AccountList {
     view: View,
     #[live(true)]
     show_add: bool,
+    #[live(false)]
+    hide_current: bool,
     #[rust]
     rows: Vec<SavedAccount>,
 }
@@ -68,7 +83,8 @@ impl Widget for AccountList {
         }
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let saved = crate::accounts::saved();
+        let active = current_user_id();
+        let saved = picker_accounts(crate::accounts::saved(), active.as_deref(), self.hide_current);
         if self.rows != saved {
             self.view.redraw(cx);
         }
@@ -89,7 +105,6 @@ impl Widget for AccountList {
         self.view
             .button(cx, ids!(add))
             .set_enabled(cx, !account_changing());
-        let active = current_user_id();
         while let Some(item) = self.view.draw_walk(cx, scope, walk).step() {
             if let Some(mut list) = item.borrow_mut::<PortalList>() {
                 list.set_item_range(cx, 0, self.rows.len());
@@ -112,5 +127,34 @@ impl Widget for AccountList {
             }
         }
         DrawStep::done()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn menu_hides_only_current_account_and_login_picker_retains_all_identities() {
+        let alice=matrix_sdk::ruma::user_id!("@alice:server");
+        let bob=matrix_sdk::ruma::user_id!("@bob:server");
+        let saved=vec![SavedAccount{user_id:alice.to_owned(),homeserver:"https://server/".into()},SavedAccount{user_id:bob.to_owned(),homeserver:"https://server/".into()}];
+        assert_eq!(picker_accounts(saved.clone(),Some(alice),true),vec![saved[1].clone()]);
+        assert_eq!(picker_accounts(saved.clone(),Some(alice),false),saved);
+        assert_eq!(picker_accounts(saved.clone(),None,true),saved);
+    }
+    #[test]
+    fn registered_account_row_keeps_add_action_and_menu_scoped_filter() {
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);vm.bx.captured_errors=Some(Vec::new());
+            let value=script_eval!(vm,{mod.widgets.AccountList {hide_current: true}});
+            let menu=AccountList::script_from_value(vm,value);
+            assert!(menu.hide_current && menu.show_add);
+            let value=script_eval!(vm,{mod.widgets.AccountList {}});
+            let login=AccountList::script_from_value(vm,value);
+            assert!(!login.hide_current && login.show_add);
+            vm.with_cx_mut(|cx| assert!(!menu.view.button(cx,ids!(add)).is_empty()));
+            assert!(vm.take_errors().is_empty());
+        });
     }
 }

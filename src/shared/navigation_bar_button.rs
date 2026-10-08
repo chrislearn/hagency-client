@@ -53,6 +53,8 @@ script_mod! {
         draw_bg +: {
             hover: instance(0.0)
             active: instance(0.0)
+            focus: instance(0.0)
+            focus_color: instance(mod.widgets.RINX_ACCENT)
 
             color_hover: instance((COLOR_NAVIGATION_TAB_BG_HOVER))
             color_active: instance((COLOR_NAVIGATION_TAB_BG_ACTIVE))
@@ -84,11 +86,20 @@ script_mod! {
                 if self.border_size > 0.0 {
                     sdf.stroke(self.border_color, self.border_size)
                 }
+                if self.focus > 0.0 {
+                    sdf.stroke(vec4(self.focus_color.xyz, self.focus_color.w * self.focus), 1.5)
+                }
                 return sdf.result;
             }
         }
 
         animator: Animator {
+            focus: {
+                default: @off
+                off: AnimatorState {from: {all: Snap} apply: {draw_bg: {focus: 0.0}}}
+                on: AnimatorState {from: {all: Snap} apply: {draw_bg: {focus: 1.0}}}
+            }
+
             hover: {
                 default: @off
                 off: AnimatorState{
@@ -189,6 +200,12 @@ impl Widget for NavigationBarButton {
         };
 
         match event.hits(cx, area) {
+            Hit::KeyFocus(_) => {self.animator_play(cx, ids!(focus.on));}
+            Hit::KeyFocusLost(_) => {self.animator_play(cx, ids!(focus.off));}
+            Hit::KeyDown(key) if !key.is_repeat && matches!(key.key_code, KeyCode::ReturnKey | KeyCode::Space) => {
+                cx.widget_action(widget_uid, NavigationBarButtonAction::Clicked);
+            }
+
             Hit::FingerHoverIn(_) => {
                 self.animator_play(cx, ids!(hover.on));
                 emit_hover_in(self, cx);
@@ -198,6 +215,7 @@ impl Widget for NavigationBarButton {
                 emit_hover_out(self, cx);
             }
             Hit::FingerDown(fe) => {
+                if fe.is_primary_hit() {cx.set_key_focus(area);}
                 self.animator_play(cx, ids!(hover.down));
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                     cx.widget_action(widget_uid, NavigationBarButtonAction::SecondaryClicked);

@@ -13,6 +13,25 @@ use matrix_sdk_ui::timeline::{self, AnyOtherStateEventContentChange, EncryptedMe
 
 use crate::utils;
 
+#[cfg(test)]
+mod usage_preview_tests {
+    use super::*;
+    #[test]
+    fn thread_and_room_previews_hide_only_verified_success_suffix() {
+        let body="<Answer>\n\n✅ 本轮处理已结束 · 已运行 3 秒\n本次用量 50 Token（输入 30 / 输出 20；缓存输入 10，推理输出 5）· 工具请求 2 次，已返回 1 次";
+        let message=MessageType::text_plain(body);
+        let sender=matrix_sdk::ruma::user_id!("@_hagency_agt_01abc:test");
+        let preview=text_preview_of_message(&message,sender,"Agent").format_with("Agent",true);
+        assert!(preview.contains("&lt;Answer&gt;"));assert!(!preview.contains("Token"));
+        let human=text_preview_of_message(&message,matrix_sdk::ruma::user_id!("@alice:test"),"Alice").format_with("Alice",true);
+        assert!(human.contains("Token"));
+        let raw=Raw::<AnySyncTimelineEvent>::from_json(serde_json::value::to_raw_value(&serde_json::json!({"event_id":"$reply:test","sender":sender,"type":"m.room.message","origin_server_ts":123,"content":{"msgtype":"m.text","body":body}})).unwrap());
+        assert!(!text_preview_of_raw_timeline_event(&raw,"Agent").unwrap().format_with("Agent",true).contains("Token"));
+        // Presentation does not change the SDK message used for copy/forward.
+        assert_eq!(message.body(),body);
+    }
+}
+
 /// What should be displayed before the text preview of an event.
 pub enum BeforeText {
     /// Nothing should be displayed before the text preview.
@@ -75,7 +94,7 @@ pub fn text_preview_of_timeline_item(
     match content {
         TimelineItemContent::MsgLike(msg_like_content) => {
             match &msg_like_content.kind {
-                MsgLikeKind::Message(msg) => text_preview_of_message(msg.msgtype(), sender_username),
+                MsgLikeKind::Message(msg) => text_preview_of_message(msg.msgtype(), sender_user_id, sender_username),
                 MsgLikeKind::Sticker(sticker) => TextPreview::from((
                     format!("[Sticker]: <i>{}</i>", htmlize::escape_text(&sticker.content().body)),
                     BeforeText::UsernameWithColon,
@@ -200,6 +219,7 @@ pub fn plaintext_body_of_timeline_item(
 /// Returns a text preview of the given message as an Html-formatted string.
 fn text_preview_of_message(
     msg: &MessageType,
+    sender_user_id: &UserId,
     sender_username: &str,
 ) -> TextPreview {
     let text = match msg {
@@ -253,6 +273,8 @@ fn text_preview_of_message(
             notice.body,
         ),
         MessageType::Text(text) => {
+            let usage=crate::shared::agent_usage::parse_usage(sender_user_id.localpart(),&text.body,text.formatted.is_some());
+            let visible_body=usage.as_ref().map_or(text.body.as_str(),|u|u.answer);
             text.formatted
                 .as_ref()
                 .and_then(|fb|
@@ -263,7 +285,7 @@ fn text_preview_of_message(
                         utils::linkify(filtered_and_trimmed, true).to_string()
                     })
                 )
-                .unwrap_or_else(|| match utils::linkify(&text.body, false) {
+                .unwrap_or_else(|| match utils::linkify(visible_body, false) {
                     Cow::Borrowed(plaintext) => htmlize::escape_text(plaintext).to_string(),
                     Cow::Owned(linkified) => linkified,
                 })
@@ -317,6 +339,7 @@ pub fn text_preview_of_raw_timeline_event(
             )
         ) => Some(text_preview_of_message(
             &ev.content.msgtype,
+            &ev.sender,
             sender_username,
         )),
         AnySyncTimelineEvent::MessageLike(

@@ -112,8 +112,29 @@ impl VerifiedBundle {
             return Err("Installed manifest differs from the verified catalog".into());
         }
         let keys = hub::PublisherKeys::new().with(&self.publisher, &self.publisher_key);
-        octosense_app_contract::admit_digest(&local, &octosense_app_contract::digest_dir(root)?, &keys)
+        octosense_app_contract::admit_digest(
+            &local,
+            &octosense_app_contract::digest_dir(root)?,
+            &keys,
+        )
     }
+}
+
+/// Retired Palpo administration is not a MiniApps service. Matrix and
+/// generic network capabilities are independent and remain supported.
+pub fn is_retired_palpo(manifest: &AppManifest) -> bool {
+    manifest.id == "im.palpo.operations"
+        || manifest
+            .capabilities
+            .iter()
+            .any(|cap| cap.starts_with("palpo."))
+}
+
+pub fn admit_application(manifest: &AppManifest) -> Result<(), String> {
+    if is_retired_palpo(manifest) {
+        return Err("Palpo administration mini-apps are no longer supported".into());
+    }
+    Ok(())
 }
 
 /// Only capability families the Rinx runtime actually implements are offered.
@@ -124,6 +145,7 @@ pub fn compatible(
     entry: Option<&Entry>,
 ) -> Result<(), String> {
     AppManifest::parse(&serde_json::to_string(manifest).map_err(err)?)?;
+    admit_application(manifest)?;
     if manifest.id.starts_with("os.") || manifest.id == ARTICLE_ID {
         return Err("This app ships with its host and cannot be installed from the Hub".into());
     }
@@ -143,7 +165,6 @@ pub fn compatible(
         if !matches!(cap.as_str(), "storage" | "net" | "images" | "clipboard")
             && !cap.starts_with("matrix.")
             && !cap.starts_with("octos.")
-            && !octosense_app_contract::palpo::SERVICES.contains(&cap.as_str())
         {
             return Err(format!("Rinx does not yet provide the {cap} service"));
         }
@@ -259,6 +280,11 @@ impl Client {
             .store
             .listings()
             .into_iter()
+            .filter(|listing| {
+                self.store
+                    .entry(&listing.app_id)
+                    .is_some_and(|entry| !is_retired_palpo(&entry.manifest))
+            })
             .map(|listing| {
                 let entry = self.store.entry(&listing.app_id).unwrap();
                 let installed_version = self.store.installed_version(&listing.app_id);
@@ -320,6 +346,9 @@ impl Client {
                 else {
                     continue;
                 };
+                if is_retired_palpo(&manifest) {
+                    continue;
+                }
                 apps.push(App {
                     id,
                     name: manifest.name,
@@ -338,9 +367,16 @@ impl Client {
                 });
             }
         }
+        let recent = self
+            .history
+            .recent
+            .iter()
+            .filter(|id| apps.iter().any(|app| &app.id == *id))
+            .cloned()
+            .collect();
         Snapshot {
             apps,
-            recent: self.history.recent.clone(),
+            recent,
             warning: self.warning.clone(),
             verified: self.store.catalog().is_some(),
         }

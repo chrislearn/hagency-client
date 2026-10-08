@@ -14,14 +14,14 @@ script_mod! {
 
     mod.widgets.MiniAppsWindow = Window {
         window.inner_size: vec2(1000, 800)
-        window.title: "Rinx · Mini apps"
+        window.title: "Hagency · Mini apps"
         pass.clear_color: #FFFFFF00
         caption_bar +: {
             draw_bg.color: mod.widgets.RINX_PAGE
             caption_label +: {
                 label +: {
                     draw_text +: { color: mod.widgets.RINX_INK }
-                    text: "Rinx · Mini apps"
+                    text: "Hagency · Mini apps"
                 }
             }
         }

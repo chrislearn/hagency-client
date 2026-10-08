@@ -13,29 +13,14 @@ script_mod! {
         height: Fit,
         spacing: 10,
         padding: 10,
-        align: Align{x: 0, y: 0.5}
+        margin: 0,
+        align: Align{x: 0.5, y: 0.5}
 
-        // Disable focus visual styling entirely so that clicking a button
-        // and hovering away doesn't leave it stuck on the theme's focus color.
-        // This works by keeping the `focus` uniform at 0.0 in both on/off states,
-        // so the shader's `mix(color, color_focus, focus)` always evaluates to just `color`.
         animator +: {
             focus: {
                 default: @off
-                off: AnimatorState {
-                    from: {all: Forward {duration: 0.0}}
-                    apply: {
-                        draw_bg: {focus: 0.0}
-                        draw_text: {focus: 0.0}
-                    }
-                }
-                on: AnimatorState {
-                    from: {all: Forward {duration: 0.0}}
-                    apply: {
-                        draw_bg: {focus: 0.0}
-                        draw_text: {focus: 0.0}
-                    }
-                }
+                off: AnimatorState {from: {all: Snap} apply: {draw_bg: {focus: 0.0} draw_text: {focus: 0.0}}}
+                on: AnimatorState {from: {all: Snap} apply: {draw_bg: {focus: 1.0} draw_text: {focus: 1.0}}}
             }
         }
 
@@ -46,6 +31,7 @@ script_mod! {
             color: (COLOR_ACTIVE_PRIMARY)
             color_hover: (COLOR_ACTIVE_PRIMARY_DARKER)
             color_down: mod.widgets.RINX_ACCENT_DOWN
+            color_focus: mod.widgets.RINX_SELECTED
             color_disabled: (COLOR_BG_DISABLED)
 
             border_color: #0000
@@ -55,6 +41,9 @@ script_mod! {
             border_color_disabled: #0000
 
             // Disable gradient (color_2) by default
+            color_2_hover: vec4(-1.0, -1.0, -1.0, -1.0)
+            color_2_down: vec4(-1.0, -1.0, -1.0, -1.0)
+            color_2_focus: vec4(-1.0, -1.0, -1.0, -1.0)
             color_2: vec4(-1.0, -1.0, -1.0, -1.0)
             border_color_2: vec4(-1.0, -1.0, -1.0, -1.0)
         }
@@ -66,6 +55,7 @@ script_mod! {
             color: (COLOR_PRIMARY)
             color_hover: (COLOR_PRIMARY)
             color_down: (COLOR_PRIMARY)
+            color_focus: mod.widgets.RINX_INK
             color_disabled: (COLOR_FG_DISABLED)
             text_style: mod.widgets.REGULAR_TEXT {font_size: (10 * mod.widgets.RINX_TEXT_SCALE)},
         }
@@ -133,5 +123,13 @@ script_mod! {
         draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold {font_size: (18 * mod.widgets.RINX_TEXT_SCALE)}}
         draw_bg +: {color: #0000 color_hover: mod.widgets.RINX_HOVER color_down: mod.widgets.RINX_PRESSED border_size: 0}
         icon_walk: Walk{width: 0 height: 0}
+    }
+
+    mod.widgets.RinxRoomInfoToggleButton = mod.widgets.NavigationBarButton {
+        width: 36 height: 36 padding: 0 spacing: 0
+        align: Align{x: 0.5 y: 0.5}
+        tooltip_text: #(crate::i18n::tr("Show room information"))
+        icon := Icon {icon_walk: Walk{width: 20 height: 20} draw_icon +: {svg: ICON_PANEL_RIGHT color: mod.widgets.RINX_INK}}
+        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED border_size: 0}
     }
 }

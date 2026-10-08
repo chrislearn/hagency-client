@@ -23,6 +23,9 @@ use crate::{
     utils::RoomNameId,
 };
 
+use super::project_tree::{ProjectTreeWidgetExt, ProjectTreeMode};
+use super::rooms_sidebar::DesktopWorkspace;
+
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
@@ -155,9 +158,22 @@ script_mod! {
                     color: (COLOR_SECONDARY)
                 }
 
-                // On the left, show the navigation tab bar vertically.
-                CachedWidget {
-                    navigation_tab_bar := mod.widgets.NavigationTabBar {}
+                persistent_sidebar_frame := View {
+                    width: 200 height: Fill
+                    persistent_sidebar := mod.widgets.RoomsSideBar {width: Fill height: Fill}
+                }
+
+                workspace_context := SolidView {
+                    width: 240 height: Fill flow: Down spacing: 8
+                    padding: Inset{left: 10 right: 10 top: 16 bottom: 12}
+                    draw_bg.color: mod.widgets.RINX_SURFACE
+                    context_title := Label {width: Fill height: Fit padding: 0 text: #(crate::i18n::tr("Projects")) draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold {font_size: 14}}}
+                    context_search := View {width: Fill height: 36 visible: false
+                        room_filter_input_bar := RoomFilterInputBar {height: 36 input.empty_text: #(crate::i18n::tr("Search chats")) input.i18n_empty_text: "Search chats"}
+                    }
+                    project_chats := View {width: Fill height: Fill
+                        CachedWidget {project_tree := ProjectTree {}}
+                    }
                 }
 
                 // To the right of that, we use the PageFlip widget to show either
@@ -178,29 +194,6 @@ script_mod! {
                     home_page := View {
                         width: Fill, height: Fill
                         flow: Down
-
-                        View {
-                            width: Fill,
-                            height: 39,
-                            flow: Right
-                            padding: Inset{top: 2, bottom: 2}
-                            // The negative left/right margins compensate for the gray border,
-                            // such that the inner white input part is aligned with other elements.
-                            margin: Inset{left: -1.5, right: -1.5}
-                            spacing: 2
-                            align: Align{y: 0.5}
-
-                            CachedWidget {
-                                room_filter_input_bar := RoomFilterInputBar {}
-                            }
-
-                            // Hide this until it's implemented.
-                            // search_messages_button := SearchMessagesButton {
-                            //     // make this button match/align with the RoomFilterInputBar
-                            //     height: 32.5,
-                            //     margin: Inset{right: 2}
-                            // }
-                        }
 
                         mod.widgets.MainDesktopUI {}
                     }
@@ -323,8 +316,12 @@ script_mod! {
                                 room_screen := mod.widgets.RoomScreen {
                                     room_screen_wrapper +: {
                                         draw_bg.color: mod.widgets.RINX_PAGE
-                                        timeline_and_input_bar +: {
-                                            room_input_bar := mod.widgets.MobileRoomInputBar {}
+                                        room_columns +: {
+                                            chat_center +: {
+                                                timeline_and_input_bar +: {
+                                                    room_input_bar := mod.widgets.MobileRoomInputBar {}
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -451,6 +448,7 @@ pub struct HomeScreen {
     /// other widgets can easily access it.
     #[rust] previous_selection: SelectedTab,
     #[rust] explore_return_tab: SelectedTab,
+    #[rust] pending_new_chat: bool,
     #[rust] is_spaces_bar_shown: bool,
 
     /// A history of previously-selected screens for mobile stack navigation.
@@ -506,6 +504,11 @@ impl Widget for HomeScreen {
             }
 
             let app_state = scope.data.get_mut::<AppState>().unwrap();
+            if actions.iter().any(|a| a.downcast_ref::<super::rooms_sidebar::DesktopRailAction>().is_some()) {
+                app_state.app_prefs.desktop_sidebar_collapsed = !app_state.app_prefs.desktop_sidebar_collapsed;
+                app_state.app_prefs.on_desktop_sidebar_collapsed_changed(cx);
+                self.view.redraw(cx);
+            }
             if !effective_is_desktop(cx) {
                 let stack = self.view.stack_navigation(cx, ids!(view_stack));
                 if !stack.is_transitioning() && self.mobile_chat_info.is_none() {
@@ -525,6 +528,33 @@ impl Widget for HomeScreen {
                 }
             }
             for action in actions {
+                if let Some(action) = action.downcast_ref::<crate::hagency::ui::HagencyAction>() {
+                    *cx.global::<DesktopWorkspace>() = match action {
+                        crate::hagency::ui::HagencyAction::OpenAgents | crate::hagency::ui::HagencyAction::NewAgent {..} | crate::hagency::ui::HagencyAction::AgentRun {..} => DesktopWorkspace::Other,
+                        crate::hagency::ui::HagencyAction::Close => DesktopWorkspace::Chats,
+                        _ => DesktopWorkspace::Projects,
+                    };
+                }
+                if let Some(navigation) = action.downcast_ref::<crate::hagency::ui::ProjectRoomNavigation>()
+                    && navigation.current() {
+                    *cx.global::<DesktopWorkspace>() = DesktopWorkspace::Projects;
+                }
+                if matches!(action.downcast_ref(), Some(crate::home::main_desktop_ui::MainDesktopUiAction::ShowChats)) {
+                    *cx.global::<DesktopWorkspace>() = DesktopWorkspace::Chats;
+                }
+                // A hosted miniapp overlays this workspace. Its close action
+                // must not discard the Project tree or Chat search context.
+                if matches!(action.downcast_ref(), Some(crate::logout::logout_confirm_modal::LogoutAction::ClearAppState {..})) {
+                    *cx.global::<DesktopWorkspace>() = DesktopWorkspace::Projects;
+                    self.view.text_input(cx, ids!(room_filter_input_bar.input)).set_text(cx, "");
+                }
+                if effective_is_desktop(cx) && (
+                    action.downcast_ref::<crate::hagency::ui::HagencyAction>().is_some()
+                    || matches!(action.downcast_ref::<crate::home::main_desktop_ui::MainDesktopUiAction>(), Some(crate::home::main_desktop_ui::MainDesktopUiAction::ShowChats))
+                    || matches!(action.downcast_ref::<RoomsListAction>(), Some(RoomsListAction::Selected(_)))
+                ) {
+                    self.switch_to_tab(cx, app_state, SelectedTab::Home);
+                }
                 if let Some(super::room_history::RoomHistoryAction::Jump {room, event}) = action.downcast_ref() {
                     if !effective_is_desktop(cx) {
                         if self.mobile_chat_info.is_some() {
@@ -543,9 +573,20 @@ impl Widget for HomeScreen {
                         }
                     }
                 }
+                if matches!(action.downcast_ref(), Some(NavigationBarAction::GoToTab(_) | NavigationBarAction::GoToHome | NavigationBarAction::GoToAddRoom | NavigationBarAction::GoToSpace { .. } | NavigationBarAction::OpenSettings | NavigationBarAction::OpenOwnProfile)) || matches!(action.downcast_ref(), Some(crate::logout::logout_confirm_modal::LogoutAction::ClearAppState { .. })) {
+                    self.pending_new_chat = false;
+                }
                 match action.downcast_ref() {
                     Some(NavigationBarAction::GoToTab(tab)) => {
                         self.switch_to_tab(cx, app_state, tab.clone());
+                    }
+                    Some(NavigationBarAction::NewChat) => {
+                        if app_state.selected_tab == SelectedTab::Contacts {
+                            cx.action(super::mobile::MobileNavigationAction::NewChatRequested);
+                        } else {
+                            self.pending_new_chat = true;
+                            self.switch_to_tab(cx, app_state, SelectedTab::Contacts);
+                        }
                     }
                     Some(NavigationBarAction::GoToHome) => {
                         self.switch_to_tab(cx, app_state, SelectedTab::Home);
@@ -599,6 +640,10 @@ impl Widget for HomeScreen {
                             .show_or_hide(cx, self.is_spaces_bar_shown);
                     }
                     // We're the ones who emitted this action, so we don't need to handle it again.
+                    Some(NavigationBarAction::TabSelected(SelectedTab::Contacts)) if self.pending_new_chat => {
+                        self.pending_new_chat = false;
+                        cx.action(super::mobile::MobileNavigationAction::NewChatRequested);
+                    }
                     Some(NavigationBarAction::TabSelected(_))
                     | None => { }
                 }
@@ -721,6 +766,25 @@ impl Widget for HomeScreen {
         // the PageFlip widget will have been reset to its default,
         // so we must re-set it to the correct page based on `app_state.selected_tab`.
         self.update_active_page_from_selection(cx, app_state);
+        let available = cx.peek_walk_turtle(walk).size.x;
+        let compact = available < 960.0;
+        if let Some(mut rail) = self.view.view(cx, ids!(persistent_sidebar_frame)).borrow_mut() {
+            rail.walk.width = Size::Fixed(if app_state.app_prefs.desktop_sidebar_collapsed {64.0} else if compact {160.0} else {200.0});
+        }
+        if let Some(mut context) = self.view.view(cx, ids!(workspace_context)).borrow_mut() {
+            context.walk.width = Size::Fixed(if compact {180.0} else {240.0});
+        }
+        let workspace = *cx.global::<DesktopWorkspace>();
+        let show_context = effective_is_desktop(cx) && available >= 760.0 && app_state.selected_tab == SelectedTab::Home && workspace != DesktopWorkspace::Other;
+        self.view.view(cx, ids!(workspace_context)).set_visible(cx, show_context);
+        let tree = self.view.project_tree(cx, ids!(project_tree));
+        tree.set_active(cx, show_context);
+        if show_context {
+            let chats = workspace == DesktopWorkspace::Chats;
+            tree.set_mode(cx, if chats {ProjectTreeMode::Chats} else {ProjectTreeMode::Projects});
+            self.view.label(cx, ids!(context_title)).set_text(cx, crate::i18n::tr(if chats {"Chats"} else {"Projects"}));
+            self.view.view(cx, ids!(context_search)).set_visible(cx, chats);
+        }
         let show_tabs = matches!(app_state.selected_tab, SelectedTab::Home | SelectedTab::Contacts | SelectedTab::Discover | SelectedTab::Me | SelectedTab::Space {..})
             && !(app_state.selected_tab == SelectedTab::Contacts && self.mobile_detail_open);
         self.view.view(cx, ids!(mobile_navigation)).set_visible(cx, show_tabs);

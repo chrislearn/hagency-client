@@ -242,7 +242,7 @@ async fn login(
                 match tokio::fs::read(path).await {
                     Ok(bytes) => {
                         let stored: persistence::FullSessionPersisted = serde_json::from_slice(&bytes)?;
-                        if &stored.user_session.meta.user_id != user { bail!("Saved session belongs to another account"); }
+                        if &stored.user_session.meta().user_id != user { bail!("Saved session belongs to another account"); }
                         if destination.trim_end_matches('/') != stored.client_session.homeserver.trim_end_matches('/') {
                             bail!("This identity is already saved on another server address. Choose it from Saved Accounts.");
                         }
@@ -271,14 +271,14 @@ async fn login(
             let identifier = crate::login::homeserver::password_identifier(&cli.user_id)?;
             let auth = client.matrix_auth();
             let mut builder = auth.login_identifier(identifier, &cli.password);
-            if let Some(stored) = existing.as_ref() { builder = builder.device_id(stored.user_session.meta.device_id.as_str()); }
+            if let Some(stored) = existing.as_ref() { builder = builder.device_id(stored.user_session.meta().device_id.as_str()); }
             builder.initial_device_display_name("Rinx")
                 .request_refresh_token()
                 .send()
                 .await?;
             if client.matrix_auth().logged_in() {
                 if let Some(stored) = existing.as_ref() {
-                    if client.user_id() != Some(&stored.user_session.meta.user_id) { bail!("Server returned a different account identity"); }
+                    if client.user_id() != Some(&stored.user_session.meta().user_id) { bail!("Server returned a different account identity"); }
                 }
                 log!("Logged in successfully.");
                 let status = format!("Logged in as {}.\n → Loading rooms...", cli.user_id);
@@ -293,6 +293,8 @@ async fn login(
                 bail!(err_msg);
             }
         }
+
+        LoginRequest::LoginByOAuthSuccess(client, client_session, epoch) => finish_oauth_login(client,client_session,epoch).await,
 
         LoginRequest::LoginBySSOSuccess(client, client_session) => {
             let user = client.user_id().ok_or_else(|| anyhow!("SSO did not return a Matrix identity"))?.to_owned();
@@ -319,6 +321,35 @@ async fn login(
     }
 }
 
+
+/// Complete only a newly authorized OAuth candidate, never a restored grant.
+pub(crate) async fn finish_oauth_login(client:Client,client_session:ClientSessionPersisted,epoch:u64)->Result<(Client,Option<String>)> {
+    let saved = async {
+            if epoch != crate::account_session::epoch() { bail!("Matrix account changed during sign-in"); }
+            if client.oauth().full_session().is_none() { bail!("OAuth did not install an SDK session"); }
+            let user = client.user_id().ok_or_else(|| anyhow!("OAuth has no Matrix identity"))?;
+            let path = persistence::session_file_path(user);
+            if path.exists() {
+                let old: persistence::FullSessionPersisted = serde_json::from_slice(&tokio::fs::read(path).await?)?;
+                if epoch!=crate::account_session::epoch(){bail!("Matrix account changed during sign-in");}
+                if old.client_session.homeserver.trim_end_matches('/') != client.homeserver().as_str().trim_end_matches('/') {
+                    bail!("This Matrix identity is saved with another homeserver origin");
+                }
+                if old.user_session.meta().device_id != *client.device_id().ok_or_else(|| anyhow!("OAuth has no device"))? {
+                    crate::accounts::retain_database(app_data_dir(), user, old.client_session).await?;
+                    if epoch!=crate::account_session::epoch(){bail!("Matrix account changed during sign-in");}
+                }
+            }
+            persistence::save_oauth_session(&client, client_session,epoch)?;
+        Ok::<(),anyhow::Error>(())
+    }.await;
+    if let Err(error)=saved {
+        let _=tokio::time::timeout(Duration::from_secs(8),crate::login::homeserver::logout_sdk(&client)).await;
+        return Err(error);
+    }
+    OAUTH_REAUTH.lock().unwrap().take();
+    Ok((client,None))
+}
 
 /// Which direction to paginate in.
 ///
@@ -510,6 +541,7 @@ pub enum MatrixRequest {
     /// Request from the login screen to log in with the given credentials.
     Login(LoginRequest),
     ChangeAccount(Option<OwnedUserId>),
+    Reauthenticate,
     ClearWorkerSession(tokio::sync::oneshot::Sender<()>),
     /// Request to logout.
     Logout {
@@ -895,7 +927,7 @@ pub enum MatrixRequest {
 
 /// Submits a request to the worker thread to be executed asynchronously.
 pub fn submit_async_request(req: MatrixRequest) {
-    if account_changing() && !matches!(req, MatrixRequest::ChangeAccount(_) | MatrixRequest::ClearWorkerSession(_) | MatrixRequest::CancelSsoLogin) { return; }
+    if account_changing() && !matches!(req, MatrixRequest::ChangeAccount(_) | MatrixRequest::Reauthenticate | MatrixRequest::ClearWorkerSession(_) | MatrixRequest::CancelSsoLogin) { return; }
     if let Some(sender) = REQUEST_SENDER.lock().unwrap().as_ref() {
         sender.send((crate::account_session::epoch(), req))
             .expect("BUG: matrix worker task receiver has died!");
@@ -924,6 +956,7 @@ where
 pub enum LoginRequest{
     LoginByPassword(LoginByPassword),
     LoginBySSOSuccess(Client, ClientSessionPersisted),
+    LoginByOAuthSuccess(Client, ClientSessionPersisted, u64),
     LoginByCli,
 
 }
@@ -958,7 +991,8 @@ async fn matrix_worker_task(
     while let Some((epoch, request)) = request_receiver.recv().await {
         if epoch != crate::account_session::epoch() { continue; }
         match request {
-            MatrixRequest::ChangeAccount(target) => { let _ = account_sender.send(target); }
+            MatrixRequest::Reauthenticate => { let _ = account_sender.send(None); }
+            MatrixRequest::ChangeAccount(target) => { OAUTH_REAUTH.lock().unwrap().take(); let _ = account_sender.send(target); }
             MatrixRequest::ClearWorkerSession(done) => {
                 subscribers_own_user_read_receipts.clear();
                 subscribers_pinned_events.clear();
@@ -1276,14 +1310,14 @@ async fn matrix_worker_task(
                     // not just a joined room.
                     if let Some(room) = client.get_room(&room_id) {
                         log!("Sending request to invite user {user_id} to room {room_id}...");
-                        let invite_result = room.invite_user_by_id(&user_id).await;
+                        let invite_result = crate::utils::invite_room_member(&room, &user_id).await;
                         // Inviting an agent-chat agent also invites its bridge bot(s), which is
                         // what actually relays the room to the agent. Best-effort: a missing
                         // bot account just fails its own invite.
                         #[cfg(feature = "agent_chat")]
                         if invite_result.is_ok() {
                             for bot_user_id in crate::agent_chat::agents::companion_bridge_bots(&user_id) {
-                                if let Err(error) = room.invite_user_by_id(&bot_user_id).await {
+                                if let Err(error) = crate::utils::invite_room_member(&room, &bot_user_id).await {
                                     warning!("Failed to invite companion agent-chat bridge bot {bot_user_id} to room {room_id}: {error}");
                                 }
                             }
@@ -2191,6 +2225,7 @@ async fn matrix_worker_task(
             MatrixRequest::SpawnSSOServer { homeserver_url, provider_id, register } => {
                 if sso_task.as_ref().is_some_and(|task| !task.is_finished()) { continue; }
                 let sender = login_sender.clone();
+                let epoch = crate::account_session::epoch();
                 sso_task = Some(crate::account_session::spawn(async move {
                     match run_sso_login(homeserver_url, provider_id, register).await {
                         Ok((client, session)) => {
@@ -2198,7 +2233,11 @@ async fn matrix_worker_task(
                             Cx::post_action(LoginAction::Status {
                                 title: "Finishing sign-in".into(), status: "Loading your account…".into(),
                             });
-                            if sender.send(LoginRequest::LoginBySSOSuccess(client, session)).await.is_err() {
+                            let request = if client.oauth().full_session().is_some() { LoginRequest::LoginByOAuthSuccess(client, session, epoch) } else { LoginRequest::LoginBySSOSuccess(client, session) };
+                            if let Err(failure)=sender.send(request).await {
+                                if let LoginRequest::LoginByOAuthSuccess(client,..)=failure.0 {
+                                    let _=tokio::time::timeout(Duration::from_secs(8),crate::login::homeserver::logout_sdk(&client)).await;
+                                }
                                 Cx::post_action(LoginAction::LoginFailure("Could not finish sign-in. Restart Rinx and try again.".into()));
                             }
                         }
@@ -2339,13 +2378,14 @@ async fn matrix_worker_task(
                 // Spawn a new async task that will send the actual message.
                 let _send_message_task = crate::account_session::spawn(async move {
                     log!("Sending message to {timeline_kind}: {message:?}...");
+                    #[cfg(feature = "tsp")]
+                    let mut routing = routing;
                     let message = {
                         #[cfg(not(feature = "tsp"))] {
                             message
                         }
 
                         #[cfg(feature = "tsp")] {
-                            let mut message = message;
                             if sign_with_tsp {
                                 log!("Signing message with TSP...");
                                 match serde_json::to_vec(&message) {
@@ -2355,7 +2395,12 @@ async fn matrix_worker_task(
                                             Ok(signed_msg) => {
                                                 log!("Successfully signed message with TSP, length {}", signed_msg.len());
                                                 use matrix_sdk::ruma::serde::Base64;
-                                                message.tsp_signature = Some(Base64::new(signed_msg));
+                                                // Keep the extension in the SDK extra-content map so upstream
+                                                // Ruma types can be used without a custom fork.
+                                                routing.get_or_insert_default().insert(
+                                                    "org.robius.tsp_signature".into(),
+                                                    serde_json::Value::String(Base64::<ruma::serde::base64::Standard>::new(signed_msg).encode()),
+                                                );
                                             }
                                             Err(e) => {
                                                 error!("Failed to sign message with TSP: {e:?}");
@@ -3230,6 +3275,8 @@ static SYNC_SERVICE_LIFECYCLE_LOCK: LazyLock<tokio::sync::Mutex<()>> =
 
 /// Set to `true` when the access token has been rejected by the homeserver,
 /// signaling the main task to tear down the current session and wait for re-login.
+static OAUTH_REAUTH: std::sync::Mutex<Option<(String, OwnedUserId)>> = std::sync::Mutex::new(None);
+
 static TOKEN_EXPIRED: AtomicBool = AtomicBool::new(false);
 
 /// Whether the sync service currently reports the homeserver as unreachable.
@@ -3357,8 +3404,6 @@ pub fn take_timeline_endpoints(kind: &TimelineKind) -> Option<TimelineEndpoints>
     })
 }
 
-const DEFAULT_HOMESERVER: &str = "matrix.org";
-
 fn username_to_full_user_id(
     username: &str,
     homeserver: Option<&str>,
@@ -3367,7 +3412,7 @@ fn username_to_full_user_id(
         .try_into()
         .ok()
         .or_else(|| {
-            let homeserver_url = homeserver.unwrap_or(DEFAULT_HOMESERVER);
+            let homeserver_url = homeserver?;
             let user_id_str = if username.starts_with("@") {
                 format!("{}:{}", username, homeserver_url)
             } else {
@@ -3594,6 +3639,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                         request = login_receiver.recv() => request,
                         target = account_receiver.recv() => {
                             if let Some(target) = target {
+                                crate::hagency::backend::Service::stop_current().await;
                                 crate::account_session::close().await;
                                 if let Err(error) = change_account_ui().await {
                                     Cx::post_action(LoginAction::LoginFailure(error.to_string()));
@@ -3829,6 +3875,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             // globals/UI. Switching never sends Matrix logout or removes keys.
             client.send_queue().set_enabled(false).await;
             if let Some(service) = get_sync_service() { service.stop().await; }
+            crate::hagency::backend::Service::stop_current().await;
             crate::account_session::close().await;
             let (done, ready) = tokio::sync::oneshot::channel();
             submit_async_request(MatrixRequest::ClearWorkerSession(done));
@@ -3854,6 +3901,7 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
             if was_token_expired && !was_logout {
                 client.send_queue().set_enabled(false).await;
                 if let Some(service) = get_sync_service() { service.stop().await; }
+                crate::hagency::backend::Service::stop_current().await;
                 crate::account_session::close().await;
                 let (done, ready) = tokio::sync::oneshot::channel();
                 submit_async_request(MatrixRequest::ClearWorkerSession(done));
@@ -3865,6 +3913,11 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
                 }
                 crate::account_session::open();
                 Cx::post_action(LoginAction::LoginFailure("This account's session expired. Sign in again or choose another saved account.".into()));
+            }
+            if was_token_expired && client.oauth().full_session().is_some() {
+                if let Some(user) = client.user_id() {
+                    *OAUTH_REAUTH.lock().unwrap() = Some((client.homeserver().to_string(), user.to_owned()));
+                }
             }
             if was_token_expired {
                 log!("Token expired; cleaning up session state and waiting for re-login.");
@@ -4726,10 +4779,8 @@ fn handle_session_changes(client: Client) -> JoinHandle<()> {
                     break;
                 }
                 Ok(SessionChange::TokensRefreshed) => {
-                    if let Err(error) = persistence::save_refreshed_session(&client).await {
-                        warning!("Could not persist refreshed session: {error}");
-                        enqueue_popup_notification("Could not save your refreshed session. You may need to sign in again after restarting Rinx.", PopupKind::Warning, None);
-                    }
+                    // Both SDK authentication APIs save synchronously through
+                    // session callbacks before broadcasting this notification.
                 }
                 Err(broadcast::error::RecvError::Lagged(n)) => {
                     warning!("Session change receiver lagged, missed {n} messages.");
@@ -5979,12 +6030,27 @@ async fn run_registration(
     let (client, session) = build_client(&Cli {
         homeserver: Some(homeserver_url), ..Default::default()
     }, app_data_dir()).await?;
-    crate::login::homeserver::register_account(&client, username, password, token).await?;
-    Ok((client, session))
+    crate::login::homeserver::require_hagency(&client).await?;
+    let _ = (username, password, token);
+    let _ = session;
+    bail!("Create your account through Pasion on your Hagency server.")
 }
 
 /// Use only provider IDs advertised by the selected homeserver.
 async fn run_sso_login(homeserver_url: String, provider_id: Option<String>, register: bool) -> Result<(Client, ClientSessionPersisted)> {
+    let reauth = OAUTH_REAUTH.lock().unwrap().clone().filter(|(origin,_)| origin.trim_end_matches('/')==homeserver_url.trim_end_matches('/'));
+    if let Some((_, owner)) = reauth {
+        let stored: persistence::FullSessionPersisted = serde_json::from_slice(&tokio::fs::read(persistence::session_file_path(&owner)).await?)?;
+        if matches!(stored.user_session, persistence::PersistedUserSession::OAuth { .. }) {
+            let (client,_) = persistence::restore_session_for_login(owner.clone()).await?;
+            crate::login::homeserver::oauth_browser_login(&client, |url| async move {
+                Uri::new(&url).open().map_err(|_| anyhow!("Unable to open your browser"))
+            }).await?;
+            if client.user_id()!=Some(&owner) { bail!("Pasion returned another Matrix account"); }
+            return Ok((client,stored.client_session));
+        }
+    }
+
     Cx::post_action(LoginAction::Status {
         title: "Connecting to your server".into(),
         status: "Checking browser sign-in support…".into(),
@@ -5993,8 +6059,15 @@ async fn run_sso_login(homeserver_url: String, provider_id: Option<String>, regi
         homeserver: Some(homeserver_url), ..Default::default()
     }, app_data_dir()).await?;
     let methods = crate::login::homeserver::login_methods(&client).await?;
+    if methods.oauth {
+        if register { bail!("Sign in through Pasion first; account creation is handled by your server."); }
+        crate::login::homeserver::oauth_browser_login(&client, |url| async move {
+            Uri::new(&url).open().map_err(|_| anyhow!("Unable to open your browser"))
+        }).await?;
+        return Ok((client, session));
+    }
     if !methods.sso {
-        bail!("This server does not advertise Matrix SSO. Use password sign-in if offered. OAuth-only and QR sign-in are not supported yet.");
+        bail!("This server does not offer browser sign-in. Use password sign-in if offered.");
     }
     if register && !methods.browser_registration {
         bail!("This server does not advertise browser account creation. Try password registration if available.");
@@ -6273,6 +6346,7 @@ impl UserPowerLevels {
 /// Keeps `REQUEST_SENDER` alive, and also the `matrix_worker_task
 /// which needs to keep running to receive the next login request.
 pub async fn clear_app_state(config: &LogoutConfig) -> Result<()> {
+    crate::hagency::backend::Service::stop_current().await;
     crate::account_session::close().await;
     let (done, ready) = tokio::sync::oneshot::channel();
     submit_async_request(MatrixRequest::ClearWorkerSession(done));
@@ -6304,6 +6378,15 @@ static ACCOUNT_CHANGING: AtomicBool = AtomicBool::new(false);
 pub fn account_changing() -> bool { ACCOUNT_CHANGING.load(Ordering::Acquire) }
 
 pub fn request_account_change(target: Option<OwnedUserId>) -> bool {
+    request_account_change_inner(target, false)
+}
+pub(crate) fn reauthentication_origin() -> Option<String> {OAUTH_REAUTH.lock().unwrap().as_ref().map(|(origin,_)|origin.clone())}
+/// Reauthorize the current OAuth identity while retaining its device/store.
+pub fn request_reauthenticate() -> bool {
+    let oauth=get_client().is_some_and(|c| c.oauth().full_session().is_some());
+    request_account_change_inner(None, oauth)
+}
+fn request_account_change_inner(target: Option<OwnedUserId>, reauthenticate: bool) -> bool {
     if is_logout_in_progress() || target.as_ref().is_some_and(|id| current_user_id().as_ref() == Some(id)) { return false; }
     // The experimental TSP wallet service still has process-wide identity state.
     // Refuse a switch until that independent service gains an account boundary.
@@ -6315,7 +6398,12 @@ pub fn request_account_change(target: Option<OwnedUserId>) -> bool {
     if ACCOUNT_CHANGING.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() { return false; }
     #[cfg(target_os = "ios")]
     cancel_active_sso_auth_session();
-    submit_async_request(MatrixRequest::ChangeAccount(target));
+    if reauthenticate {
+        let Some(client)=get_client().filter(|c| c.oauth().full_session().is_some()) else { ACCOUNT_CHANGING.store(false, Ordering::Release);return false; };
+        let Some(user)=client.user_id() else { ACCOUNT_CHANGING.store(false, Ordering::Release);return false; };
+        *OAUTH_REAUTH.lock().unwrap()=Some((client.homeserver().to_string(),user.to_owned()));
+        submit_async_request(MatrixRequest::Reauthenticate);
+    } else {submit_async_request(MatrixRequest::ChangeAccount(target));}
     true
 }
 

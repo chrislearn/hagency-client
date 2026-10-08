@@ -136,3 +136,21 @@ fn materialize_never_overwrites_an_existing_directory() {
     assert!(app.materialize(&target).is_err());
     assert_eq!(fs::read_to_string(target.join("keep")).unwrap(), "existing");
 }
+
+#[test]
+fn shipped_catalog_preserves_native_editor_and_omits_palpo() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let catalog = pack(&root).unwrap();
+    assert!(catalog.apps.iter().any(|app| app.manifest.id == ARTICLE_ID));
+    assert!(catalog.apps.iter().all(|app| {
+        app.manifest.id != "im.palpo.operations"
+            && app
+                .manifest
+                .capabilities
+                .iter()
+                .all(|cap| !cap.starts_with("palpo."))
+    }));
+    let f = Fixture::new();
+    f.manifest("im.palpo.operations");
+    assert!(pack(&f.0).unwrap_err().contains("Palpo"));
+}

@@ -102,10 +102,7 @@ script_mod! {
         cursor: MouseCursor.Default,
         align: Align{x: 0, y: 0}
 
-        show_bg: true
-        draw_bg +: {
-            color: (mod.widgets.RBX_SCRIM)
-        }
+        show_bg: false
 
         main_content := RoundedView {
             flow: Down
@@ -180,6 +177,7 @@ script_mod! {
                         text_style: theme.font_bold { font_size: (10.5 * mod.widgets.RINX_TEXT_SCALE) }
                     }
                     text: #(crate::i18n::tr("Active"))
+                    i18n_text: "Active"
                 }
             }
 
@@ -188,7 +186,7 @@ script_mod! {
                 draw_bg.color: (mod.widgets.RBX_DIVIDER)
             }
 
-            account_list := mod.widgets.AccountList {}
+            account_list := mod.widgets.AccountList {hide_current: true}
 
             // --- Actions ---
             settings_item := mod.widgets.AccountMenuItem {
@@ -340,7 +338,7 @@ impl AccountMenu {
             + DIVIDER_H
             + ACTION_COUNT * ACTION_H
             + ROW_COUNT * ROW_SPACING
-            + crate::accounts::saved().len().min(4) as f64 * 40.0 + 46.0;
+            + crate::accounts::saved().iter().filter(|account| current_user_id().as_ref() != Some(&account.user_id)).count().min(4) as f64 * 40.0 + 44.0;
         dvec2(ACCOUNT_MENU_WIDTH, height)
     }
 

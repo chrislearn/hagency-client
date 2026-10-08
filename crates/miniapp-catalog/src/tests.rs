@@ -327,3 +327,27 @@ fn production_catalog_verifies_with_the_shared_anchor() {
         snapshot.apps.len()
     );
 }
+
+#[test]
+fn retired_palpo_is_hidden_and_cannot_be_installed_but_matrix_apps_remain() {
+    let f = Fixture::new();
+    let retired = f.entry("1", &["palpo.projects.list"]);
+    assert!(compatible(&retired.manifest, "macos", Some(&retired)).is_err());
+    f.publish(1, vec![retired.clone()]);
+    let mut c = f.client();
+    assert!(c.refresh().apps.is_empty());
+    let approval = Consent {
+        id: retired.manifest.id.clone(),
+        entry: serde_json::to_string(&retired).unwrap(),
+    };
+    assert!(c.install(&approval).is_err());
+    let ordinary = f.entry("2", &["matrix.profile", "net", "storage"]);
+    assert!(compatible(&ordinary.manifest, "macos", Some(&ordinary)).is_ok());
+    f.publish(2, vec![ordinary]);
+    let snapshot = c.refresh();
+    assert_eq!(snapshot.apps.len(), 1);
+    c.install(&consent(&snapshot)).unwrap();
+    let mut manifest = f.entry("3", &["storage"]).manifest;
+    manifest.id = "im.palpo.operations".into();
+    assert!(admit_application(&manifest).is_err());
+}

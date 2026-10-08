@@ -49,20 +49,21 @@ script_mod! {
     use mod.widgets.*
     let Text = Label {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
     let Action = RobrixNeutralIconButton {height: 40 icon_walk: Walk{width: 0 height: 0} spacing: 0}
-    let Input = TextInput {width: Fill height: 40}
+    let Input = RobrixTextInput {width: Fill height: 40}
     mod.widgets.AgentAccessPanel = #(AgentAccessPanel::register_widget(vm)) {
         ..mod.widgets.SolidView
         width: Fill height: Fill flow: Down padding: Inset{top: 32 left: 16 right: 16 bottom: 12} spacing: 8 draw_bg.color: mod.widgets.RINX_PAGE
         View {width: Fill height: 40 spacing: 8 align: Align{y: 0.5}
             close := Action {text: #(crate::i18n::tr("Back")) i18n_text: "Back"}
-            Text {text: #(crate::i18n::tr("Agent Access")) i18n_text: "Agent Access"}
+            Text {text: #(crate::i18n::tr("External bots and AppServices")) i18n_text: "External bots and AppServices"}
         }
         status := Text {}
         ScrollYView {width: Fill height: Fill flow: Down spacing: 10
+            Text {text: #(crate::i18n::tr("Manage external integrations here. Configure your Hagency Agents from Agents in the sidebar.")) i18n_text: "Manage external integrations here. Configure your Hagency Agents from Agents in the sidebar."}
             Text {text: #(crate::i18n::tr("Registered agents")) i18n_text: "Registered agents"}
-            agents := DropDown {width: Fill labels: ["Select an agent"]}
+            agents := RobrixSettingsDropDown {width: Fill height: 40 labels: ["Select an agent"]}
             agent_id := Input {empty_text: "@agent:example.org"}
-            framework := DropDown {width: Fill labels: ["Agent" "Octos AppService" "Octos Direct" "Hermes" "OpenClaw"]}
+            framework := RobrixSettingsDropDown {width: Fill height: 40 labels: ["Agent" "Octos AppService" "Octos Direct" "Hermes" "OpenClaw"]}
             Text {text: #(crate::i18n::tr("New chats with registered agents are unencrypted. Existing chats keep their encryption.")) i18n_text: "New chats with registered agents are unencrypted. Existing chats keep their encryption."}
             register := Action {width: Fill text: #(crate::i18n::tr("Look up and register / re-check")) i18n_text: "Look up and register / re-check"}
             View {width: Fill height: 40 spacing: 8
@@ -78,7 +79,7 @@ script_mod! {
                 save := Action {width: Fill text: #(crate::i18n::tr("Save")) i18n_text: "Save"}
                 health := Action {width: Fill text: #(crate::i18n::tr("Check service")) i18n_text: "Check service"}
             }
-            rooms := DropDown {width: Fill labels: ["Select a room"]}
+            rooms := RobrixSettingsDropDown {width: Fill height: 40 labels: ["Select a room"]}
             binding_id := Input {empty_text: #(crate::i18n::tr("Bot Matrix ID to bind")) i18n_empty_text: "Bot Matrix ID to bind"}
             remark := Input {empty_text: #(crate::i18n::tr("Binding remark")) i18n_empty_text: "Binding remark"}
             bindings := Text {}

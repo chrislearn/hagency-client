@@ -18,6 +18,9 @@ pub struct AppPreferences {
     /// * If `true`, each opened room gets its own dock tab (the classic Robrix layout).
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub tabbed_chats: bool,
+    /// Keep the desktop's global navigation as an icon rail.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    pub desktop_sidebar_collapsed: bool,
     /// * If `true` (default), plain Enter sends the message (Shift+Enter inserts a newline).
     /// * If `false`, Cmd+Enter (Apple platforms) / Ctrl+Enter (other platforms) sends the
     ///   message and plain Enter inserts a newline. This is only relevant for physical keyboards;
@@ -54,6 +57,7 @@ impl Default for AppPreferences {
         Self {
             view_mode: ViewModeOverride::default(),
             tabbed_chats: false,
+            desktop_sidebar_collapsed: false,
             send_on_enter: true,
             thumbnail_max_height: ThumbnailMaxHeight::default(),
             ui_zoom: UiZoom::default(),
@@ -67,6 +71,10 @@ impl Default for AppPreferences {
 }
 
 impl AppPreferences {
+    pub fn on_desktop_sidebar_collapsed_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.desktop_sidebar_collapsed = self.desktop_sidebar_collapsed;
+        cx.action(AppPreferencesAction::DesktopSidebarCollapsedChanged(self.desktop_sidebar_collapsed));
+    }
     /// Broadcasts the current `view_mode` to listening widgets.
     ///
     /// Call this whenever the `view_mode` preference has just changed.
@@ -194,6 +202,7 @@ impl AppPreferences {
     pub fn broadcast_all(&self, cx: &mut Cx) {
         self.on_view_mode_changed(cx);
         self.on_tabbed_chats_changed(cx);
+        self.on_desktop_sidebar_collapsed_changed(cx);
         self.on_send_on_enter_changed(cx);
         self.on_thumbnail_max_height_changed(cx);
         self.on_ui_zoom_changed(cx);
@@ -429,6 +438,7 @@ impl Default for UiZoom {
 pub enum AppPreferencesAction {
     ViewModeChanged(ViewModeOverride),
     TabbedChatsChanged(bool),
+    DesktopSidebarCollapsedChanged(bool),
     SendOnEnterChanged(bool),
     UiZoomChanged(UiZoom),
 }

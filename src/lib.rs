@@ -56,6 +56,8 @@ pub mod login;
 pub mod logout;
 /// Core UI content: the main home screen (rooms list), room screen.
 pub mod home;
+/// Native Project workspace and owner-controlled Agent management.
+pub mod hagency;
 /// User profile info and a user profile sliding pane.
 pub mod profile;
 /// A modal/dialog popup for interactive verification of users/devices.
@@ -120,8 +122,8 @@ pub mod location;
 pub mod image_utils;
 
 pub const APP_QUALIFIER: &str = "org";
-pub const APP_ORGANIZATION: &str = "octosense";
-pub const APP_NAME: &str = "rinx";
+pub const APP_ORGANIZATION: &str = "hagency";
+pub const APP_NAME: &str = "desktop";
 
 pub fn project_dir() -> &'static ProjectDirs {
     static RINX_PROJECT_DIRS: OnceLock<ProjectDirs> = OnceLock::new();
@@ -135,10 +137,12 @@ pub fn project_dir() -> &'static ProjectDirs {
 pub fn app_data_dir() -> &'static Path {
     static DATA_DIR: OnceLock<std::path::PathBuf> = OnceLock::new();
     DATA_DIR.get_or_init(|| {
-        match std::env::var_os("RINX_DATA_DIR").or_else(|| std::env::var_os("ROBRIX_DATA_DIR")) {
+        match std::env::var_os("HAGENCY_DESKTOP_DATA_DIR")
+            .or_else(|| std::env::var_os("RINX_DATA_DIR"))
+            .or_else(|| std::env::var_os("ROBRIX_DATA_DIR")) {
             Some(value) => {
                 let path = std::path::PathBuf::from(value);
-                assert!(path.is_absolute(), "RINX_DATA_DIR (or legacy ROBRIX_DATA_DIR) must be an absolute path");
+                assert!(path.is_absolute(), "The desktop data directory must be an absolute path");
                 path
             }
             None => project_dir().data_dir().to_owned(),
@@ -149,7 +153,9 @@ pub fn app_data_dir() -> &'static Path {
 pub fn cache_dir() -> &'static Path {
     static CACHE_DIR: OnceLock<std::path::PathBuf> = OnceLock::new();
     CACHE_DIR.get_or_init(|| {
-        if std::env::var_os("RINX_DATA_DIR").is_some() || std::env::var_os("ROBRIX_DATA_DIR").is_some() {
+        if std::env::var_os("HAGENCY_DESKTOP_DATA_DIR").is_some()
+            || std::env::var_os("RINX_DATA_DIR").is_some()
+            || std::env::var_os("ROBRIX_DATA_DIR").is_some() {
             app_data_dir().join("cache")
         } else {
             project_dir().cache_dir().to_owned()

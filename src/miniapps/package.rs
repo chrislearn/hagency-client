@@ -81,6 +81,7 @@ impl Package {
         let manifest = AppManifest::parse(
             &std::fs::read_to_string(root.join("manifest.json")).map_err(|e| e.to_string())?,
         )?;
+        rinx_miniapp_catalog::admit_application(&manifest)?;
         if let Some(app) = builtin {
             app.verify(root)?;
         } else if crate::system_apps::is_reserved(&manifest.id) {
@@ -274,6 +275,29 @@ pub fn arguments(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn developer_import_preserves_matrix_octos_and_rejects_retired_palpo() {
+        let example = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("examples/miniapps/matrix-octos-script");
+        let ordinary = Package::load(&example).unwrap();
+        assert!(ordinary.manifest.capabilities.iter().any(|cap| cap.starts_with("matrix.")));
+        let root = std::env::temp_dir().join(format!("rinx-palpo-import-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let _cleanup = Snapshot(root.clone());
+        std::fs::write(root.join("main.splash"), "Label {text: \"Legacy\"}").unwrap();
+        for (id, capabilities) in [
+            ("im.palpo.operations", serde_json::json!(["storage"])),
+            ("third.party", serde_json::json!(["palpo.projects.list"])),
+        ] {
+            std::fs::write(root.join("manifest.json"), serde_json::json!({
+                "schema": 1, "id": id, "name": "Legacy", "version": "1.0.0",
+                "integrity": {"bundle_blake3": ""}, "capabilities": capabilities
+            }).to_string()).unwrap();
+            let error = Package::load(&root).err().expect("retired Palpo import must fail");
+            assert!(error.contains("Palpo"), "{error}");
+        }
+    }
 
     #[test]
     fn signed_hub_bundle_launches_from_a_verified_snapshot_only() {

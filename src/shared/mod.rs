@@ -3,6 +3,7 @@ use makepad_widgets::ScriptVm;
 pub mod attachment_download;
 pub mod cached_widget;
 pub mod avatar;
+pub mod agent_usage;
 pub mod collapsible_header;
 pub mod context_menu;
 pub mod expand_arrow;
@@ -43,9 +44,9 @@ pub fn script_mod(vm: &mut ScriptVm) {
     styles::script_mod(vm);
     design_tokens::script_mod(vm);
     helpers::script_mod(vm);
+    navigation_bar_button::script_mod(vm);
     icon_button::script_mod(vm);
     context_menu::script_mod(vm);
-    navigation_bar_button::script_mod(vm);
     expand_arrow::script_mod(vm);
     unread_badge::script_mod(vm);
     collapsible_header::script_mod(vm);
@@ -56,6 +57,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     mobile_details::script_mod(vm);
     text_or_image::script_mod(vm);
     html_or_plaintext::script_mod(vm);
+    agent_usage::script_mod(vm);
     bouncing_dots::script_mod(vm);
     jump_to_bottom_button::script_mod(vm);
     popup_list::script_mod(vm);

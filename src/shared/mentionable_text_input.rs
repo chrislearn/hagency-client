@@ -410,7 +410,11 @@ impl MentionableTextInputRef {
                 .unwrap_or_default();
         }
         inner.room_id = Some(room_id);
-        let members_arrived = inner.room_members.is_none() && room_members.is_some();
+        let members_changed = match (&inner.room_members, &room_members) {
+            (Some(previous), Some(current)) => !Arc::ptr_eq(previous, current),
+            (None, None) => false,
+            _ => true,
+        };
         inner.room_members = room_members;
         #[cfg(feature = "agent_chat")]
         {
@@ -428,8 +432,9 @@ impl MentionableTextInputRef {
                 inner.close_popup(cx);
             }
         }
-        // Repopulate a "loading members" popup once the members arrive.
-        if members_arrived && inner.active_trigger.is_some_and(|t| t.kind == TriggerKind::User) {
+        // Refresh an open @ menu on both first load and subsequent membership
+        // changes. Starting a new match also invalidates older ranking results.
+        if members_changed && inner.active_trigger.is_some_and(|t| t.kind == TriggerKind::User) {
             inner.refresh_popup(cx);
         }
     }

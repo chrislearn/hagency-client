@@ -19,6 +19,7 @@ static ACCOUNTS: Mutex<Vec<SavedAccount>> = Mutex::new(Vec::new());
 pub enum AccountAction {
     Select(OwnedUserId),
     Add,
+    Reauthenticate,
 }
 
 pub fn saved() -> Vec<SavedAccount> {
@@ -53,7 +54,7 @@ pub(crate) fn scan(root: &Path) -> anyhow::Result<Vec<SavedAccount>> {
         let Ok(session) = serde_json::from_slice::<FullSessionPersisted>(&bytes) else {
             continue;
         };
-        let user = session.user_session.meta.user_id;
+        let user = session.user_session.meta().user_id.clone();
         let legacy = root.join(user.as_str().replace(':', "_").replace('@', ""));
         let canonical = account_dir(root, &user);
         // A manually misplaced session must never grant authority to its path.
@@ -104,7 +105,8 @@ pub(crate) async fn remove_session(root: &Path, user: &UserId) -> anyhow::Result
             retain_database(root, user, session.client_session).await?;
         }
     }
-    match tokio::fs::remove_file(path).await {
+    let _guard = crate::persistence::SESSION_IO.lock().map_err(|_| std::io::Error::other("Session storage unavailable"))?;
+    match std::fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error.into()),

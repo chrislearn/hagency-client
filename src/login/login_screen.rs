@@ -60,8 +60,6 @@ script_mod! {
                     align: Align{x: 0.5, y: 0.5}
                     spacing: 15.0
 
-                    saved_accounts := mod.widgets.AccountList { show_add: false }
-
                     logo_image := Image {
                         fit: ImageFit.Smallest,
                         width: 80
@@ -76,13 +74,17 @@ script_mod! {
                             color: (COLOR_TEXT)
                             text_style: TITLE_TEXT {font_size: (16.0 * mod.widgets.RINX_TEXT_SCALE)}
                         }
-                        text: #(crate::i18n::tr("Sign in to Rinx")) i18n_text: "Sign in to Rinx"
+                        text: #(crate::i18n::tr("Sign in to Hagency")) i18n_text: "Sign in to Hagency"
                     }
 
                     View {
                         width: Fit height: Fit flow: Right spacing: 12
                         login_language_en := ButtonFlat {text: "English"}
                         login_language_zh := ButtonFlat {text: "简体中文"}
+                    }
+
+                    saved_accounts := mod.widgets.AccountList {
+                        width: Fill{max: 320}, show_add: false
                     }
 
                     server_step := View {
@@ -102,12 +104,19 @@ script_mod! {
                             Label {
                                 width: Fill, height: Fit
                                 draw_text +: {color: COLOR_TEXT, text_style: REGULAR_TEXT {font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}}
-                                text: #(crate::i18n::tr("Choose your homeserver")) i18n_text: "Choose your homeserver"
+                                text: #(crate::i18n::tr("Choose your Hagency server")) i18n_text: "Choose your Hagency server"
+                            }
+                            recent_servers_row := View {
+                                visible: false, width: Fill, height: Fit
+                                recent_servers := RobrixSettingsDropDown {
+                                    width: Fill, height: 38
+                                    labels: ["Recent servers"]
+                                }
                             }
                             homeserver_input := RobrixTextInput {
                                 width: Fill, height: Fit
                                 padding: 10
-                                empty_text: "matrix.org"
+                                empty_text: #(crate::i18n::tr("Hagency server address"))
                                 autocapitalize: None
                                 autocorrect: Disabled
                                 content_type: Url
@@ -117,7 +126,7 @@ script_mod! {
                                 width: Fill, height: Fit
                                 flow: Flow.Right{wrap: true}
                                 draw_text +: {color: mod.widgets.RINX_MUTED, text_style: REGULAR_TEXT {font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}
-                                text: #(crate::i18n::tr("Enter a Matrix server name or homeserver URL. Leave blank for matrix.org.")) i18n_text: "Enter a Matrix server name or homeserver URL. Leave blank for matrix.org."
+                                text: #(crate::i18n::tr("Enter your Hagency server address. Other Matrix servers are not supported.")) i18n_text: "Enter your Hagency server address. Other Matrix servers are not supported."
                             }
                         }
                         continue_server_button := RobrixIconButton {
@@ -307,7 +316,7 @@ script_mod! {
     }
 }
 
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct LoginScreen {
     #[source] source: ScriptObjectRef,
     #[deref] view: View,
@@ -320,9 +329,40 @@ pub struct LoginScreen {
     #[rust] methods: Option<LoginMethods>,
     #[rust] password_form_open: bool,
     #[rust] registration_form_open: bool,
+    #[rust] recent_servers: Vec<String>,
+    #[rust] recent_servers_dirty: bool,
+    #[rust] recent_server_selected: String,
+    #[rust] recent_server_prompt: String,
 
 }
 
+
+impl ScriptHook for LoginScreen {
+    fn on_after_apply(&mut self, _vm: &mut ScriptVm, _apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
+        // Rebaking the theme can reset DropDown labels without changing saved accounts.
+        self.recent_servers_dirty = true;
+    }
+}
+
+impl LoginScreen {
+    fn sync_recent_servers(&mut self, cx: &mut Cx, servers: Vec<String>) {
+        self.sync_recent_servers_with_prompt(cx, servers, crate::i18n::tr("Recent servers").to_owned());
+    }
+    fn sync_recent_servers_with_prompt(&mut self, cx: &mut Cx, servers: Vec<String>, prompt: String) {
+        if self.recent_servers_dirty || self.recent_servers != servers || self.recent_server_prompt != prompt {
+            self.recent_servers = servers;
+            self.recent_server_prompt = prompt.clone();
+            let dropdown = self.view.drop_down(cx, ids!(recent_servers));
+            let mut labels = vec![prompt];
+            labels.extend(self.recent_servers.clone());
+            let selected = self.recent_servers.iter().position(|s| s == &self.recent_server_selected).map_or(0, |i| i + 1);
+            dropdown.set_labels(cx, labels);
+            dropdown.set_selected_item(cx, selected);
+            self.recent_servers_dirty = false;
+        }
+        self.view.view(cx, ids!(recent_servers_row)).set_visible(cx, !self.recent_servers.is_empty());
+    }
+}
 
 impl Widget for LoginScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
@@ -331,6 +371,14 @@ impl Widget for LoginScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let mut servers = Vec::new();
+        for account in crate::accounts::saved() {
+            let server = account.homeserver.trim_end_matches('/').to_owned();
+            if !servers.contains(&server) {
+                servers.push(server);
+            }
+        }
+        self.sync_recent_servers(cx, servers);
         while let Some(item) = self.view.draw_walk(cx, scope, walk).step() {
             if let Some(mut list) = item.borrow_mut::<PortalList>() {
                 let providers = self.methods.as_ref().map(|m| m.providers.as_slice()).unwrap_or_default();
@@ -396,7 +444,7 @@ impl LoginScreen {
     }
 
     fn show_methods(&mut self, cx: &mut Cx, methods: LoginMethods) {
-        let has_sso = methods.sso;
+        let has_sso = methods.sso || methods.oauth;
         let has_password = methods.password;
         let has_providers = !methods.providers.is_empty();
         let display_server = methods.homeserver.strip_prefix("https://").unwrap_or(&methods.homeserver);
@@ -425,6 +473,8 @@ impl LoginScreen {
             crate::i18n::tr("Create an account on this server.")
         } else if self.password_form_open {
             crate::i18n::tr("This server supports password sign-in.")
+        } else if methods.oauth {
+            crate::i18n::tr("Sign in once through Pasion to access your chats, Projects and Agents.")
         } else if methods.sso && !methods.providers.is_empty() {
             crate::i18n::tr("Choose a sign-in provider. Your server handles authentication in the browser.")
         } else if methods.sso {
@@ -441,7 +491,7 @@ impl LoginScreen {
     }
 
     fn start_sso(&mut self, cx: &mut Cx, provider_id: Option<String>, register: bool) {
-        let Some(methods) = self.methods.as_ref().filter(|m| m.sso && (!register || m.browser_registration)) else { return };
+        let Some(methods) = self.methods.as_ref().filter(|m| browser_login_allowed(m.sso, m.oauth, m.browser_registration, register)) else { return };
         self.login_pending = true;
         self.sso_pending = true;
         let destination = methods.homeserver.clone();
@@ -463,11 +513,20 @@ impl MatchEvent for LoginScreen {
             }
         }
         if language_changed {
+            self.recent_servers_dirty = true;
             self.refresh_method_copy(cx);
         }
         let user_input = self.view.text_input(cx, ids!(user_id_input));
         let password_input = self.view.text_input(cx, ids!(password_input));
         let server_input = self.view.text_input(cx, ids!(homeserver_input));
+        if let Some(index) = self.view.drop_down(cx, ids!(recent_servers)).changed(actions) {
+            if let Some(server) = index.checked_sub(1).and_then(|i| self.recent_servers.get(i)).cloned() {
+                self.recent_server_selected = server.clone();
+                self.reset_server(cx);
+                server_input.set_text(cx, &server);
+                server_input.set_key_focus(cx);
+            }
+        }
         let modal = self.view.modal(cx, ids!(login_status_modal));
         let server = server_input.text().trim().to_owned();
 
@@ -604,6 +663,10 @@ impl MatchEvent for LoginScreen {
                     self.reset_server(cx);
                     self.view.text_input(cx, ids!(user_id_input)).set_text(cx, "");
                     modal.close(cx);
+                    if let Some(origin)=crate::sliding_sync::reauthentication_origin() {
+                        self.view.text_input(cx,ids!(homeserver_input)).set_text(cx,&origin);
+                        self.check_server(cx,origin);
+                    }
                 }
                 Some(LoginAction::LoginSuccess) => {
                     self.login_pending = false;
@@ -651,4 +714,63 @@ pub enum LoginAction {
     ServerDiscovered { generation: u64, result: Result<LoginMethods, String> },
     #[default]
     None,
+}
+
+/// The visible browser sign-in option and its activation use the same protocols.
+fn browser_login_allowed(sso: bool, oauth: bool, browser_registration: bool, register: bool) -> bool {
+    (sso || oauth) && (!register || browser_registration)
+}
+
+#[cfg(test)]
+mod browser_login_tests {
+    use super::browser_login_allowed;
+
+    #[test]
+    fn recent_servers_survive_reapply_and_reopen_without_changing_address() {
+        use super::*;
+        let mut cx=Cx::new(Box::new(|_,_| {}));
+        let (mut screen,value)=cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);
+            vm.bx.captured_errors=Some(Vec::new());
+            let value=script_eval!(vm,{mod.widgets.LoginScreen {}});
+            let screen=LoginScreen::script_from_value(vm,value);
+            assert!(vm.take_errors().is_empty());(screen,value)
+        });
+        let servers=vec!["https://hagency.local".to_owned()];
+        screen.sync_recent_servers(&mut cx,servers.clone());
+        screen.recent_server_selected=servers[0].clone();
+        screen.view.text_input(&mut cx,ids!(homeserver_input)).set_text(&mut cx,"https://hagency.local");
+        for apply in [Apply::Rebake,Apply::ScriptReapply,Apply::Rebake] {
+            cx.with_vm(|vm|screen.script_apply(vm,&apply,&mut Scope::empty(),value));
+            assert!(screen.recent_servers_dirty);
+            let prompt=crate::i18n::text_for(crate::i18n::Language::Chinese,"Recent servers").to_owned();
+            screen.sync_recent_servers_with_prompt(&mut cx,servers.clone(),prompt.clone());
+            let dropdown=screen.view.drop_down(&mut cx,ids!(recent_servers));
+            assert_eq!(dropdown.selected_label(),"https://hagency.local");
+            assert!(!screen.recent_servers_dirty);
+            dropdown.set_selected_item(&mut cx,0);assert_eq!(dropdown.selected_label(),prompt);
+            dropdown.set_selected_item(&mut cx,1);
+            screen.view.set_visible(&mut cx,false);screen.view.set_visible(&mut cx,true);
+            screen.sync_recent_servers(&mut cx,servers.clone());
+            assert_eq!(screen.view.text_input(&mut cx,ids!(homeserver_input)).text(),"https://hagency.local");
+            {let pass=DrawPass::new(&mut cx);pass.set_size(&mut cx,dvec2(980.0,760.0));let mut list=DrawList2d::new(&mut cx);let overlay=Overlay{draw_list:DrawList::new(&mut cx)};let e=DrawEvent::default();let mut draw=CxDraw::new(&mut cx,&e);let mut cx2d=Cx2d::new(&mut draw);cx2d.begin_pass(&pass,None);list.begin_always(&mut cx2d);overlay.begin(&mut cx2d);cx2d.begin_root_turtle(dvec2(980.0,760.0),Layout::flow_overlay());screen.view.draw_walk_all(&mut cx2d,&mut Scope::empty(),Walk::fixed(980.0,760.0));overlay.end(&mut cx2d);cx2d.end_pass_sized_turtle();list.end(&mut cx2d);cx2d.end_pass(&pass);}
+            assert!(screen.view.drop_down(&mut cx,ids!(recent_servers)).area().rect(&cx).size.y>0.0);
+        }
+    }
+
+    #[test]
+    fn oauth_only_browser_sign_in_can_start() {
+        assert!(browser_login_allowed(false, true, false, false));
+        assert!(browser_login_allowed(true, false, false, false));
+        assert!(!browser_login_allowed(false, false, false, false));
+    }
+
+    #[test]
+    fn browser_registration_requires_both_a_protocol_and_registration_capability() {
+        for (sso, oauth) in [(true, false), (false, true), (true, true)] {
+            assert!(!browser_login_allowed(sso, oauth, false, true));
+            assert!(browser_login_allowed(sso, oauth, true, true));
+        }
+        assert!(!browser_login_allowed(false, false, true, true));
+    }
 }

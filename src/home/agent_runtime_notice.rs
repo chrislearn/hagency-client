@@ -1,0 +1,142 @@
+//! Read-only owner-DM processing status. Sending a message never starts a runtime.
+use makepad_widgets::*;
+use serde_json::Value;
+use crate::hagency::{backend::Service,model::{Command,LocalAction},ui::HagencyAction};
+
+#[derive(Debug)]
+struct NoticeResult { identity:String, room:String, request:u64, target:Option<(String,String)>, text:String, failed:bool }
+fn exact_direct_binding<'a>(bindings:&'a Value,agent:&str,room:&str)->Option<&'a Value> {
+    bindings["bindings"].as_array()?.iter().find(|b|b["agentId"]==agent && b["roomId"]==room && b["scopeKind"]=="owner_direct" && b["projectId"].is_null() && b["state"]=="active" && b["id"].as_str().is_some_and(|id|!id.is_empty()))
+}
+fn room_runtime(value:&Value,agent:&str,binding:&str)->Result<Value,String> {
+    let r=&value["runtime"];
+    if r.is_null() {return Ok(serde_json::json!({"runtime":null}));}
+    if r["agentId"]!=agent {return Err("runtime_status_unavailable".into());}
+    if r["phase"]=="waiting_for_lease" {return Ok(value.clone());}
+    if let Some(b)=r["bindings"].as_array().and_then(|bs|bs.iter().find(|b|b["bindingId"]==binding)) {
+        let mut status=b.clone(); status["agentId"]=Value::String(agent.into());
+        return Ok(serde_json::json!({"runtime":status}));
+    }
+    if r["bindingId"]==binding {return Ok(value.clone());}
+    Ok(serde_json::json!({"runtime":null}))
+}
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
+    mod.widgets.AgentRuntimeNotice = #(AgentRuntimeNotice::register_widget(vm)) {
+        ..mod.widgets.View
+        width: Fill height: Fit flow: Right spacing: 8 padding: Inset{left: 16 right: 12 top: 6 bottom: 6}
+        visible: false show_bg: true draw_bg.color: mod.widgets.RINX_HOVER
+        status := Label {width: Fill height: Fit draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
+        open := RobrixNeutralIconButton {text: #(crate::i18n::tr("Open Agent Run")) i18n_text: "Open Agent Run" height: 28 icon_walk: Walk{width: 0 height: 0} spacing: 0}
+    }
+}
+#[derive(Script,ScriptHook,Widget)]
+pub struct AgentRuntimeNotice {
+    #[deref] view:View,
+    #[rust] identity:String,
+    #[rust] room:String,
+    #[rust] request:u64,
+    #[rust] loading:bool,
+    #[rust] timer:Timer,
+    #[rust] target:Option<(String,String)>,
+    #[rust] active:bool,
+}
+impl AgentRuntimeNotice {
+    fn refresh(&mut self,cx:&mut Cx) {
+        if self.loading || !self.active || self.room.is_empty() {return;}
+        let Ok(service)=Service::for_current() else {self.view.set_visible(cx,false);return;};
+        if service.identity()!=self.identity {self.view.set_visible(cx,false);return;}
+        self.loading=true;
+        if self.target.is_some() {self.view.label(cx,ids!(status)).set_text(cx,crate::i18n::tr("Checking local processing…"));self.view.button(cx,ids!(open)).set_enabled(cx,false);self.view.redraw(cx);}
+        self.request=self.request.wrapping_add(1);let request=self.request;
+        let identity=self.identity.clone(); let room=self.room.clone();
+        crate::sliding_sync::spawn_async_task(async move {
+            let result=tokio::time::timeout(std::time::Duration::from_secs(30),async {
+                let roster=service.execute(Command::Agents).await?;
+                if roster["ownerMxid"].as_str()!=crate::sliding_sync::current_user_id().as_ref().map(|id|id.as_str()) {return Err("matrix_account_changed".into());}
+                let Some(agent)=roster["agents"].as_array().and_then(|a|a.iter().find(|a|a["ownerDirectRoomId"]==room)) else {return Ok(None);};
+                let agent_id=agent["id"].as_str().ok_or("invalid_agent")?.to_owned();
+                let bindings=service.execute(Command::Bindings {agent_id:agent_id.clone()}).await?;
+                let binding=exact_direct_binding(&bindings,&agent_id,&room).ok_or("owner_direct_unavailable")?;
+                let binding_id=binding["id"].as_str().ok_or("invalid_binding")?.to_owned();
+                let current=roster["currentDeviceId"].as_str().filter(|id|!id.is_empty());
+                let here=current.is_some_and(|id|agent["executionDeviceId"]==id && roster["devices"].as_array().is_some_and(|ds|ds.iter().any(|d|d["id"]==id && d["revoked"]==false)));
+                let text=if here {
+                    let result=service.execute(Command::Local {agent_id:agent_id.clone(),action:LocalAction::Runtime,input:None,binding_id:None,requester:None}).await.and_then(|v|room_runtime(&v,&agent_id,&binding_id));
+                    crate::hagency::ui::runtime_list_label(Some(&result),&agent_id).to_owned()
+                } else if current.is_none() {"Local processing could not be verified. Refresh to retry.".into()}
+                else if agent["executionDeviceId"].as_str().is_none_or(|id|id.is_empty()) {"No available execution device. Open Agent settings to assign this device.".into()}
+                else {"Processing is assigned to another device; this device does not run it.".into()};
+                Ok::<_,String>(Some((agent_id,binding_id,text)))
+            }).await;
+            let (target,text,failed)=match result {
+                Ok(Ok(Some((agent,binding,text))))=>(Some((agent,binding)),text,false),
+                Ok(Ok(None))=>(None,String::new(),false),
+                _=>(None,"Local processing could not be verified. Refresh to retry.".into(),true),
+            };
+            Cx::post_action(NoticeResult {identity,room,request,target,text,failed});
+        });
+    }
+}
+impl Widget for AgentRuntimeNotice {
+    fn handle_event(&mut self,cx:&mut Cx,event:&Event,scope:&mut Scope) {
+        if !Service::for_current().is_ok_and(|s|s.identity()==self.identity) {self.view.set_visible(cx,false);self.target=None;return;}
+        if self.timer.is_event(event).is_some() {self.timer=Timer::default();if self.active {self.refresh(cx);}}
+        if let Event::Actions(actions)=event {
+            for action in actions {
+                if let Some(done)=action.downcast_ref::<NoticeResult>()
+                    && done.identity==self.identity && done.room==self.room && done.request==self.request {
+                    self.loading=false;if !done.failed {self.target=done.target.clone();}
+                    self.view.label(cx,ids!(status)).set_text(cx,crate::i18n::tr(&done.text));
+                    self.view.set_visible(cx,self.target.is_some());self.view.button(cx,ids!(open)).set_enabled(cx,self.target.is_some() && !done.failed);
+                    self.timer=cx.start_timeout(10.0);self.view.redraw(cx);
+                }
+            }
+            if self.view.button(cx,ids!(open)).clicked(actions) && let Some((agent,binding))=&self.target {
+                cx.action(HagencyAction::AgentRun {agent_id:agent.clone(),binding_id:binding.clone()});
+            }
+        }
+        self.view.handle_event(cx,event,scope);
+    }
+    fn draw_walk(&mut self,cx:&mut Cx2d,scope:&mut Scope,walk:Walk)->DrawStep {self.view.draw_walk(cx,scope,walk)}
+}
+impl AgentRuntimeNoticeRef {
+    pub fn set_active(&self,cx:&mut Cx,active:bool) {
+        if let Some(mut this)=self.borrow_mut() {
+            this.active=active;
+            if !active {cx.stop_timer(this.timer);this.timer=Timer::default();}
+        }
+    }
+    pub fn set_room(&self,cx:&mut Cx,room:&str) {
+        let Some(mut this)=self.borrow_mut() else {return;};
+        this.active=true;
+        let identity=Service::for_current().map(|s|s.identity()).unwrap_or_default();
+        if identity!=this.identity || room!=this.room {
+            cx.stop_timer(this.timer);this.timer=Timer::default();
+            this.identity=identity;this.room=room.into();this.request=this.request.wrapping_add(1);this.loading=false;this.target=None;
+            this.view.set_visible(cx,false);
+            if !this.identity.is_empty() {this.refresh(cx);}
+        } else if this.timer.is_empty() && !this.loading && !this.identity.is_empty() {this.refresh(cx);}
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;use serde_json::json;
+    #[test] fn direct_notice_requires_exact_owner_direct_scope_and_active_binding() {
+        let good=json!({"bindings":[{"id":"b","agentId":"a","roomId":"!r:s","scopeKind":"owner_direct","projectId":null,"state":"active"}]});
+        assert!(exact_direct_binding(&good,"a","!r:s").is_some());
+        for (key,value) in [("scopeKind",json!("project")),("state",json!("paused")),("agentId",json!("other")),("roomId",json!("!other:s")),("projectId",json!("p"))] {
+            let mut bad=good.clone();bad["bindings"][0][key]=value;assert!(exact_direct_binding(&bad,"a","!r:s").is_none());
+        }
+    }
+    #[test] fn direct_status_never_uses_other_room_runtime_or_foreign_agent() {
+        let v=json!({"runtime":{"agentId":"a","phase":"online","bindings":[{"bindingId":"other","phase":"online"}]}});
+        assert!(room_runtime(&v,"a","b").unwrap()["runtime"].is_null());
+        assert!(room_runtime(&v,"foreign","b").is_err());
+        let waiting=json!({"runtime":{"agentId":"a","phase":"waiting_for_lease"}});
+        assert_eq!(room_runtime(&waiting,"a","b").unwrap()["runtime"]["phase"],"waiting_for_lease");
+        let v=json!({"runtime":{"agentId":"a","phase":"online","bindings":[{"bindingId":"b","phase":"stopped"}]}});
+        assert_eq!(room_runtime(&v,"a","b").unwrap()["runtime"]["phase"],"stopped");
+    }
+}

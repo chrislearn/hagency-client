@@ -17,6 +17,26 @@ use crate::{
 /// The scheme for GEO links, used for location messages in Matrix.
 pub const GEO_URI_SCHEME: &str = "geo:";
 
+/// Unencrypted rooms and Spaces have no E2EE history to share. The pinned SDK
+/// attempts history sharing before every invite when that feature is enabled.
+/// Keep that behavior for encrypted rooms, without making plaintext invitations
+/// depend on the existence of a room-key backup.
+pub(crate) async fn invite_room_member(
+    room: &matrix_sdk::Room,
+    user: &matrix_sdk::ruma::UserId,
+) -> matrix_sdk::Result<()> {
+    use matrix_sdk::ruma::api::client::membership::invite_user::v3::{
+        InvitationRecipient, InviteUserId, Request,
+    };
+    if !matches!(room.latest_encryption_state().await?, matrix_sdk::EncryptionState::NotEncrypted) {
+        return room.invite_user_by_id(user).await;
+    }
+    let recipient = InvitationRecipient::UserId(InviteUserId::new(user.to_owned()));
+    room.client().send(Request::new(room.room_id().to_owned(), recipient)).await?;
+    room.mark_members_missing();
+    Ok(())
+}
+
 /// Opens the given URL or shows an error popup.
 pub fn open_url(url: &str) {
     if let Some(id) = crate::miniapps::palpo::route(url) {

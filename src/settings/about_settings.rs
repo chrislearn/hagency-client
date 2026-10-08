@@ -1,14 +1,14 @@
-//! An "About Rinx" section within the SettingsScreen.
+//! An "About Hagency" section within the SettingsScreen.
 //!
 //! Shows the app version and a set of external links (e.g., privacy policy).
 
 use makepad_widgets::*;
 use crate::{app::PositiveConfirmationModalAction, shared::{confirmation_modal::ConfirmationModalContent, popup_list::{enqueue_popup_notification, PopupKind}}, sliding_sync::{MatrixRequest, submit_async_request}, utils::open_url};
 
-const HOMEPAGE_URL: &str = "https://github.com/upstreamlabs/Rinx";
-const PRIVACY_POLICY_URL: &str = "https://github.com/upstreamlabs/Rinx/blob/main/docs/privacy.md";
-const SOURCE_URL: &str = "https://github.com/upstreamlabs/Rinx";
-const NEW_ISSUE_URL: &str = "https://github.com/upstreamlabs/Rinx/issues/new";
+const HOMEPAGE_URL: &str = "https://github.com/chrislearn/hagency-desktop";
+const PRIVACY_POLICY_URL: &str = "https://github.com/chrislearn/hagency-desktop/blob/main/docs/privacy.md";
+const SOURCE_URL: &str = "https://github.com/chrislearn/hagency-desktop";
+const NEW_ISSUE_URL: &str = "https://github.com/chrislearn/hagency-desktop/issues/new";
 
 const ROBRIX_VERSION: &str = env!("CARGO_PKG_VERSION");
 const RINX_GIT_COMMIT_HASH: &str = env!("RINX_GIT_COMMIT_HASH");
@@ -18,7 +18,7 @@ const MATRIX_SDK_GIT_REV: &str = env!("MATRIX_SDK_GIT_REV");
 const TESTFLIGHT_BUILD_NUMBER: &str = env!("TESTFLIGHT_BUILD_NUMBER");
 const MATRIX_SDK_URL: &str = env!("MATRIX_SDK_URL");
 
-const ROBRIX_PREFIX: &str = "Rinx: ";
+const ROBRIX_PREFIX: &str = "Hagency Desktop: ";
 const TESTFLIGHT_PREFIX: &str = "TestFlight build: ";
 const SDK_PREFIX: &str = "Matrix Rust SDK: ";
 
@@ -56,7 +56,7 @@ script_mod! {
         flow: Down
 
         TitleLabel {
-            text: #(crate::i18n::tr("About Rinx")) i18n_text: "About Rinx"
+            text: #(crate::i18n::tr("About Hagency")) i18n_text: "About Hagency"
         }
 
         SubsectionLabel {
@@ -130,7 +130,7 @@ script_mod! {
                 margin: Inset{left: 5, top: 5, bottom: 5}
                 draw_icon.svg: (ICON_EXTERNAL_LINK)
                 icon_walk: Walk{width: 16, height: 16}
-                text: #(crate::i18n::tr("Rinx Homepage")) i18n_text: "Rinx Homepage"
+                text: #(crate::i18n::tr("Hagency Homepage")) i18n_text: "Hagency Homepage"
             }
 
             source_button := RobrixIconButton {
@@ -216,7 +216,7 @@ impl Widget for AboutSettings {
         // Long-press / hover tooltips per copy button, same pattern as
         // the user-id copy button in account_settings.rs.
         let robrix_btn = self.view.button(cx, ids!(copy_robrix_version_button));
-        Self::handle_copy_tooltip(cx, event, &robrix_btn, "Copy Rinx version");
+        Self::handle_copy_tooltip(cx, event, &robrix_btn, "Copy Hagency version");
         if !TESTFLIGHT_BUILD_NUMBER.is_empty() {
             let testflight_btn = self.view.button(cx, ids!(copy_testflight_button));
             Self::handle_copy_tooltip(cx, event, &testflight_btn, "Copy TestFlight build");
@@ -235,7 +235,7 @@ impl Widget for AboutSettings {
 impl AboutSettings {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         if self.view.button(cx, ids!(copy_robrix_version_button)).clicked(actions) {
-            Self::copy_with_toast(cx, &robrix_plaintext(), "Copied Rinx version.");
+            Self::copy_with_toast(cx, &robrix_plaintext(), "Copied Hagency version.");
         }
         if !TESTFLIGHT_BUILD_NUMBER.is_empty()
             && self.view.button(cx, ids!(copy_testflight_button)).clicked(actions)

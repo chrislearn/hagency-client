@@ -2,6 +2,7 @@
 //! of events (messages，state changes, etc.), along with an input bar at the bottom.
 
 use crate::theme::Snapshot as ThemeSnapshot;
+use super::agent_runtime_notice::AgentRuntimeNoticeWidgetExt;
 use crate::miniapps::action_room::ActionRoomBoardWidgetExt;
 use std::{
     borrow::Cow,
@@ -12,6 +13,7 @@ use std::{
 use crate::mini_app::{MiniAppCardWidgetRefExt, SharedMiniApp};
 use crate::forwarding::{ForwardAction, ForwardBundle, ForwardCardWidgetRefExt, ForwardMessage};
 use crate::home::mobile_chat_info::MobileChatInfoWidgetExt;
+use crate::shared::navigation_bar_button::NavigationBarButtonWidgetExt;
 
 use hashbrown::{HashMap, HashSet};
 use imbl::Vector;
@@ -388,7 +390,7 @@ script_mod! {
             }
 
             content := View {
-                width: Fill{max: mod.widgets.RINX_READING_WIDTH},
+                width: Fill,
                 height: Fit
                 flow: Down,
                 padding: 0.0
@@ -397,11 +399,12 @@ script_mod! {
                     flow: Right,
                     width: Fill,
                     height: Fit,
+                    align: Align{y: 0.5} spacing: 5 padding: Inset{top: 16 bottom: 7}
                     username := Label {
-                        width: Fill,
+                        width: Fit{max: FitBound.Rel{base: Base.Line, factor: 0.8}},
                         flow: Flow.Right { wrap: false },
                         padding: 0,
-                        margin: Inset{bottom: 9.0, top: 20.0, right: 10.0,}
+                        margin: 0,
                         max_lines: 1
                         text_overflow: Ellipsis
                         draw_text +: {
@@ -411,17 +414,19 @@ script_mod! {
                         text: #(crate::i18n::tr("<Username not available>"))
                     }
                     agent_badge := mod.widgets.AgentBadge {}
+                    agent_usage_toggle := mod.widgets.AgentUsage {width: Fit show_details: false}
                 }
 
-                message := HtmlOrPlaintext { selectable: true }
-                mini_app_card := mod.widgets.MiniAppCard {}
-                forward_card := mod.widgets.ForwardCard {}
-                agent_approval_card := mod.widgets.AgentApprovalCard {}
-                octos_action_card := mod.widgets.OctosActionCard {}
-                agent_reply := mod.widgets.AgentReply {}
-                link_preview_view := mod.widgets.LinkPreview {}
-                download_section := mod.widgets.MessageDownloadSection {}
-                View {
+                message := HtmlOrPlaintext { width: Fill{max: mod.widgets.RINX_READING_WIDTH} selectable: true }
+                mini_app_card := mod.widgets.MiniAppCard {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
+                forward_card := mod.widgets.ForwardCard {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
+                agent_approval_card := mod.widgets.AgentApprovalCard {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
+                octos_action_card := mod.widgets.OctosActionCard {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
+                agent_reply := mod.widgets.AgentReply {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
+                agent_usage := mod.widgets.AgentUsage {width: Fill{max: mod.widgets.RINX_READING_WIDTH} show_toggle: false}
+                link_preview_view := mod.widgets.LinkPreview {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
+                download_section := mod.widgets.MessageDownloadSection {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
+                delivery_status := View {
                     width: Fill,
                     height: Fit
                     flow: Right,
@@ -429,7 +434,7 @@ script_mod! {
                     avatar_row := mod.widgets.AvatarRow {}
                     send_status_indicator := mod.widgets.SendStatusIndicator {}
                 }
-                thread_root_summary := mod.widgets.ThreadRootSummary {}
+                thread_root_summary := mod.widgets.ThreadRootSummary {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
             }
         }
     }
@@ -446,12 +451,13 @@ script_mod! {
     let MobileMessageContent = View {
         width: 250 height: Fit flow: Down spacing: 4
         username_view := View {
-            width: Fill height: Fit flow: Right
+            width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 4
             username := Label {
-                width: Fill max_lines: 1 text_overflow: Ellipsis padding: 0
+                width: Fit{max: FitBound.Rel{base: Base.Line, factor: 0.8}} max_lines: 1 text_overflow: Ellipsis padding: 0
                 draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}}
             }
             agent_badge := mod.widgets.AgentBadge {}
+            agent_usage_toggle := mod.widgets.AgentUsage {width: Fit show_details: false}
         }
         bubble := RoundedView {
             width: Fill height: Fit flow: Down padding: 10
@@ -466,6 +472,7 @@ script_mod! {
                 agent_approval_card := mod.widgets.AgentApprovalCard {}
                 octos_action_card := mod.widgets.OctosActionCard {}
                 agent_reply := mod.widgets.AgentReply {}
+                agent_usage := mod.widgets.AgentUsage {show_toggle: false}
             link_preview_view := mod.widgets.LinkPreview {font_size: mod.widgets.MOBILE_MESSAGE_FONT_SIZE}
             download_section := mod.widgets.MessageDownloadSection {}
         }
@@ -586,20 +593,27 @@ script_mod! {
                 tsp_sign_indicator := TspSignIndicator { }
             }
             content := View {
-                width: Fill{max: 770},
+                width: Fill,
                 height: Fit,
                 flow: Down,
                 padding: Inset{ left: 10.0 }
 
-                message := HtmlOrPlaintext { selectable: true }
-                mini_app_card := mod.widgets.MiniAppCard {}
-                forward_card := mod.widgets.ForwardCard {}
-                agent_approval_card := mod.widgets.AgentApprovalCard {}
-                octos_action_card := mod.widgets.OctosActionCard {}
-                agent_reply := mod.widgets.AgentReply {}
-                link_preview_view := mod.widgets.LinkPreview {}
-                download_section := mod.widgets.MessageDownloadSection {}
-                View {
+                username_view := View {
+                    visible: false width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 5
+                    username := Label {width: Fit{max: FitBound.Rel{base: Base.Line, factor: 0.8}} max_lines: 1 text_overflow: Ellipsis draw_text +: {text_style: USERNAME_TEXT_STYLE {} color: (USERNAME_TEXT_COLOR)}}
+                    agent_usage_toggle := mod.widgets.AgentUsage {width: Fit show_details: false}
+                }
+
+                message := HtmlOrPlaintext { width: Fill{max: mod.widgets.RINX_READING_WIDTH} selectable: true }
+                mini_app_card := mod.widgets.MiniAppCard {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
+                forward_card := mod.widgets.ForwardCard {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
+                agent_approval_card := mod.widgets.AgentApprovalCard {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
+                octos_action_card := mod.widgets.OctosActionCard {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
+                agent_reply := mod.widgets.AgentReply {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
+                agent_usage := mod.widgets.AgentUsage {width: Fill{max: mod.widgets.RINX_READING_WIDTH} show_toggle: false}
+                link_preview_view := mod.widgets.LinkPreview {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
+                download_section := mod.widgets.MessageDownloadSection {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
+                delivery_status := View {
                     width: Fill,
                     height: Fit
                     flow: Right,
@@ -607,7 +621,7 @@ script_mod! {
                     avatar_row := mod.widgets.AvatarRow {}
                     send_status_indicator := mod.widgets.SendStatusIndicator {}
                 }
-                thread_root_summary := mod.widgets.ThreadRootSummary {}
+                thread_root_summary := mod.widgets.ThreadRootSummary {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
             }
         }
     }
@@ -624,7 +638,7 @@ script_mod! {
         body +: {
             content +: {
                 message := View {
-                    width: Fill, height: Fit,
+                    width: Fill{max: mod.widgets.RINX_READING_WIDTH}, height: Fit,
                     flow: Down,
                     caption_view := View {
                         visible: false,
@@ -638,8 +652,8 @@ script_mod! {
                         } }
                     }
                 }
-                download_section := mod.widgets.MessageDownloadSection {}
-                View {
+                download_section := mod.widgets.MessageDownloadSection {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
+                delivery_status := View {
                     width: Fill,
                     height: Fit,
                     flow: Right,
@@ -647,7 +661,7 @@ script_mod! {
                     avatar_row := mod.widgets.AvatarRow {}
                     send_status_indicator := mod.widgets.SendStatusIndicator {}
                 }
-                thread_root_summary := mod.widgets.ThreadRootSummary {}
+                thread_root_summary := mod.widgets.ThreadRootSummary {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
             }
 
         }
@@ -660,7 +674,7 @@ script_mod! {
         body +: {
             content +: {
                 message := View {
-                    width: Fill, height: Fit,
+                    width: Fill{max: mod.widgets.RINX_READING_WIDTH}, height: Fit,
                     flow: Down,
                     caption_view := View {
                         visible: false,
@@ -674,8 +688,8 @@ script_mod! {
                         } }
                     }
                 }
-                download_section := mod.widgets.MessageDownloadSection {}
-                View {
+                download_section := mod.widgets.MessageDownloadSection {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
+                delivery_status := View {
                     width: Fill,
                     height: Fit,
                     flow: Right,
@@ -683,7 +697,7 @@ script_mod! {
                     avatar_row := mod.widgets.AvatarRow {}
                     send_status_indicator := mod.widgets.SendStatusIndicator {}
                 }
-                thread_root_summary := mod.widgets.ThreadRootSummary {}
+                thread_root_summary := mod.widgets.ThreadRootSummary {width: Fill{max: mod.widgets.RINX_READING_WIDTH}}
             }
         }
     }
@@ -925,6 +939,11 @@ script_mod! {
                 flow: Right
                 padding: Inset{left: 20, right: 8}
                 align: Align{y: 0.5}
+                desktop_thread_back := NavigationBarButton {
+                    visible: false width: 32 height: 32 padding: 8
+                    tooltip_text: #(crate::i18n::tr("Back to Room"))
+                    icon := Icon {icon_walk: Walk{width: 16 height: 16} draw_icon +: {svg: ICON_ARROW_BACK color: mod.widgets.RINX_INK}}
+                }
                 desktop_chat_title := Label {
                     width: Fill, height: Fit
                     flow: Flow.Right{wrap: false}
@@ -934,21 +953,18 @@ script_mod! {
                     }
                     text: ""
                 }
-                // Opens the chat info panel (members, history, notifications), as in WeChat.
-                desktop_chat_info_button := RinxChatInfoButton {}
+                desktop_chat_info_button := RinxRoomInfoToggleButton {}
             }
             LineH { draw_bg.color: #x00000014 }
         }
 
+        agent_runtime_notice := mod.widgets.AgentRuntimeNotice {}
+
         actions_board := mod.widgets.ActionRoomBoard {}
 
-        room_screen_wrapper := SolidView {
-            width: Fill, height: Fill,
-            flow: Overlay,
-
-            show_bg: true
-            draw_bg.color: (COLOR_PRIMARY_DARKER)
-
+        room_screen_wrapper := View {width: Fill height: Fill flow: Overlay
+            room_columns := View {width: Fill height: Fill flow: Right
+                chat_center := SolidView {width: Fill height: Fill flow: Overlay draw_bg.color: (COLOR_PRIMARY_DARKER)
             restore_status_view := RestoreStatusView {}
 
             // This used to be a KeyboardView wrapper, but now the on-screen keyboard shift
@@ -974,24 +990,6 @@ script_mod! {
 
             // The top space should be displayed as an overlay at the top of the timeline.
             top_space := mod.widgets.TopSpace { }
-
-            // The desktop chat info panel, sliding over the right side of the timeline.
-            // Toggled by `desktop_chat_info_button`; dismissed by Escape or a click outside it.
-            desktop_chat_info_panel := View {
-                visible: false
-                width: Fill, height: Fill
-                flow: Right
-                align: Align{x: 1.0}
-                desktop_chat_info_card := SolidView {
-                    width: 340, height: Fill
-                    flow: Right
-                    show_bg: true
-                    draw_bg.color: #x00000014
-                    // A 1px left border, drawn by the card's background peeking through.
-                    View { width: 1, height: Fill }
-                    desktop_chat_info := MobileChatInfo {}
-                }
-            }
 
             // The user profile sliding pane should be displayed on top of other "static" subviews
             // (on top of all other views that are always visible).
@@ -1025,6 +1023,17 @@ script_mod! {
                 }
             }
             */
+                }
+                desktop_chat_info_panel := SolidView {visible: false width: 280 height: Fill flow: Right draw_bg.color: mod.widgets.RINX_BORDER
+                    View {width: 1 height: Fill}
+                    desktop_chat_info_card := View {width: Fill height: Fill desktop_chat_info := MobileChatInfo {}}
+                }
+            }
+            compact_chat_info_panel := View {visible: false width: Fill height: Fill flow: Right align: Align{x: 1.0}
+                compact_chat_info_card := SolidView {width: 280 height: Fill draw_bg.color: mod.widgets.RINX_SURFACE
+                    compact_chat_info := MobileChatInfo {}
+                }
+            }
         }
     }
 }
@@ -1181,6 +1190,8 @@ pub struct RoomScreen {
 
     /// The name and ID of the currently-shown room, if any.
     #[rust] room_name_id: Option<RoomNameId>,
+    #[rust] chat_info_requested: bool,
+    #[rust] chat_info_inline: bool,
     /// The timeline currently displayed by this RoomScreen, if any.
     #[rust] timeline_kind: Option<TimelineKind>,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
@@ -1261,6 +1272,13 @@ impl Widget for RoomScreen {
         if self.tl_state.is_none() && self.room_name_id.is_none() {
             return;
         }
+        let notice=self.view.agent_runtime_notice(cx,ids!(agent_runtime_notice));
+        if let Some(app)=_scope.data.get::<crate::app::AppState>() {
+            let selected=app.selected_room.as_ref().is_some_and(|r|Some(r.room_id())==self.room_name_id.as_ref().map(|r|r.room_id()))
+                && matches!(app.selected_tab,crate::home::navigation_tab_bar::SelectedTab::Home | crate::home::navigation_tab_bar::SelectedTab::Space {..});
+            notice.set_active(cx,selected);
+        }
+        notice.handle_event(cx,event,&mut Scope::empty());
         let board = self.view.action_room_board(cx, ids!(actions_board));
         if let Event::Actions(actions) = event {
             for action in actions {
@@ -1273,7 +1291,14 @@ impl Widget for RoomScreen {
         }
         board.handle_event(cx, event, &mut Scope::empty());
         if let Event::Actions(actions) = event
-            && self.view.button(cx, ids!(desktop_chat_info_button)).clicked(actions) {
+            && self.view.navigation_bar_button(cx, ids!(desktop_thread_back)).clicked(actions)
+            && matches!(self.timeline_kind, Some(TimelineKind::Thread {..}))
+            && let Some(room_name_id) = self.room_name_id.clone() {
+            cx.widget_action(self.widget_uid(), RoomsListAction::Selected(SelectedRoom::JoinedRoom {room_name_id}));
+            return;
+        }
+        if let Event::Actions(actions) = event
+            && self.view.navigation_bar_button(cx, ids!(desktop_chat_info_button)).clicked(actions) {
             board.show_history(cx);
         }
         self.view.view(cx, ids!(room_screen_wrapper)).set_visible(cx, !board.active());
@@ -1668,7 +1693,7 @@ impl Widget for RoomScreen {
         let is_over_chat_info_panel = !is_pane_shown && self.is_over_desktop_chat_info(cx, event);
         let mut actions_generated_within_this_room_screen = cx.capture_actions(|cx| {
             if is_over_chat_info_panel {
-                self.view.view(cx, ids!(desktop_chat_info_panel)).handle_event(cx, event, &mut Scope::empty());
+                self.view.view(cx, self.info_panel_id()).handle_event(cx, event, &mut Scope::empty());
             } else if is_pane_shown && utils::is_interactive_hit_event(event) {
                 if loading_pane.is_currently_shown(cx) {
                     loading_pane.handle_event(cx, event, &mut Scope::empty());
@@ -1775,7 +1800,10 @@ impl Widget for RoomScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.agent_runtime_notice(cx,ids!(agent_runtime_notice)).set_room(cx,self.room_name_id.as_ref().map(|r|r.room_id().as_str()).unwrap_or(""));
         self.update_desktop_chat_header(cx);
+        let available = cx.peek_walk_turtle(walk).size.x;
+        self.layout_desktop_chat_info(cx, available);
         // If the room isn't loaded yet, we show the restore status label only.
         if !self.is_loaded {
             let Some(room_name) = &self.room_name_id else {
@@ -2183,6 +2211,28 @@ impl RoomScreen {
                     done_loading = true;
                 }
                 TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
+                    // Membership events arrive after the initial information panel fetch.
+                    // Refresh only for newly observed changes, retaining invitation state.
+                    let membership_changed = new_items.iter().any(|item| {
+                        item.as_event().is_some_and(|event| {
+                            matches!(event.content(), TimelineItemContent::MembershipChange(_) | TimelineItemContent::ProfileChange(_))
+                                && !tl.items.iter().any(|old| old.as_event().is_some_and(|prior| prior.event_id() == event.event_id()))
+                        })
+                    });
+                    if membership_changed {
+                        // The composer keeps its own member snapshot. Refresh it
+                        // along with the information sidebar when people join,
+                        // leave or change their profile in this open Room.
+                        submit_async_request(MatrixRequest::GetRoomMembers {
+                            timeline_kind: tl.kind.clone(),
+                            memberships: matrix_sdk::RoomMemberships::JOIN,
+                            local_only: true,
+                        });
+                        cx.action(crate::home::mobile_chat_info::ChatMembershipChanged {
+                            room_id: tl.kind.room_id().to_owned(),
+                            epoch: crate::account_session::epoch(),
+                        });
+                    }
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
                             log!("process_timeline_updates(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.kind.room_id());
@@ -3834,59 +3884,77 @@ impl RoomScreen {
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
     /// Opens, closes or dismisses the desktop chat info panel.
     fn handle_desktop_chat_info(&mut self, cx: &mut Cx, event: &Event) {
-        if !self.view.view(cx, ids!(desktop_chat_header)).visible() { return }
-        let panel = self.view.view(cx, ids!(desktop_chat_info_panel));
+        if !self.view.view(cx, ids!(desktop_chat_header)).visible() { return; }
         if let Event::Actions(actions) = event
-            && self.view.button(cx, ids!(desktop_chat_info_button)).clicked(actions)
-        {
-            let show = !panel.visible();
-            if show && let Some(room_name_id) = self.room_name_id.clone() {
-                self.view.mobile_chat_info(cx, ids!(desktop_chat_info)).show(cx, room_name_id);
-            }
-            self.set_desktop_chat_info_visible(cx, show);
+            && self.view.navigation_bar_button(cx, ids!(desktop_chat_info_button)).clicked(actions) {
+            self.set_desktop_chat_info_visible(cx, !self.chat_info_requested);
             return;
         }
-        if !panel.visible() { return }
+        if self.chat_info_inline || !self.chat_info_requested { return; }
         let dismiss = match event {
-            Event::KeyDown(KeyEvent { key_code: KeyCode::Escape, .. }) => true,
-            // A click anywhere else in this room screen (outside the panel and its button)
-            // closes the panel, like WeChat. Clicks within a member's profile pane don't count.
+            Event::KeyDown(KeyEvent {key_code: KeyCode::Escape, ..}) => true,
             Event::MouseDown(e) if !self.view.user_profile_sliding_pane(cx, ids!(user_profile_sliding_pane)).is_currently_shown(cx) => {
-                let card = self.view.view(cx, ids!(desktop_chat_info_card)).area().rect(cx);
-                let button = self.view.button(cx, ids!(desktop_chat_info_button)).area().rect(cx);
-                self.view.area().rect(cx).contains(e.abs)
-                    && !card.contains(e.abs)
-                    && !button.contains(e.abs)
+                let card = self.view.view(cx, ids!(compact_chat_info_card)).area().rect(cx);
+                let button = self.view.navigation_bar_button(cx, ids!(desktop_chat_info_button)).area().rect(cx);
+                self.view.area().rect(cx).contains(e.abs) && !card.contains(e.abs) && !button.contains(e.abs)
             }
             _ => false,
         };
-        if dismiss {
-            self.set_desktop_chat_info_visible(cx, false);
-        }
+        if dismiss { self.set_desktop_chat_info_visible(cx, false); }
     }
-
-    /// Whether `event` is pointer input located over the open desktop chat info panel.
+    fn info_panel_id(&self) -> &'static [LiveId] {
+        if self.chat_info_inline {ids!(desktop_chat_info_panel)} else {ids!(compact_chat_info_panel)}
+    }
     fn is_over_desktop_chat_info(&self, cx: &mut Cx, event: &Event) -> bool {
-        let abs = match event {
-            Event::Scroll(e) => e.abs,
-            Event::MouseDown(e) => e.abs,
-            Event::MouseMove(e) => e.abs,
-            Event::MouseUp(e) => e.abs,
-            _ => return false,
-        };
-        self.view.view(cx, ids!(desktop_chat_info_panel)).visible()
-            && self.view.view(cx, ids!(desktop_chat_info_card)).area().rect(cx).contains(abs)
+        let abs = match event { Event::Scroll(e) => e.abs, Event::MouseDown(e) => e.abs,
+            Event::MouseMove(e) => e.abs, Event::MouseUp(e) => e.abs, _ => return false };
+        let id = if self.chat_info_inline {ids!(desktop_chat_info_card)} else {ids!(compact_chat_info_card)};
+        self.view.view(cx, self.info_panel_id()).visible() && self.view.view(cx, id).area().rect(cx).contains(abs)
     }
-
     fn set_desktop_chat_info_visible(&mut self, cx: &mut Cx, visible: bool) {
-        self.view.view(cx, ids!(desktop_chat_info_panel)).set_visible(cx, visible);
+        self.chat_info_requested = visible;
+        let available = self.view.area().rect(cx).size.x;
+        self.layout_desktop_chat_info(cx, available);
         self.view.redraw(cx);
+    }
+    fn layout_desktop_chat_info(&mut self, cx: &mut Cx, available: f64) {
+        let desktop = self.view.view(cx, ids!(desktop_chat_header)).visible();
+        let inline = available >= 600.0;
+        // Resizing down preserves the timeline and input; a narrow information
+        // pane is opened only by an explicit click, never by room selection.
+        if self.chat_info_inline && !inline { self.chat_info_requested = false; }
+        self.chat_info_inline = inline;
+        let show = desktop && self.chat_info_requested;
+        let toggle = self.view.navigation_bar_button(cx, ids!(desktop_chat_info_button));
+        toggle.set_selected(cx, show);
+        if let Some(mut button) = toggle.borrow_mut() {
+            button.set_tooltip_text(crate::i18n::tr(if show {"Hide room information"} else {"Show room information"}));
+        }
+        let mut icon = self.view.icon(cx, ids!(desktop_chat_info_button.icon));
+        if show {
+            script_apply_eval!(cx, icon, {
+                draw_icon +: {svg: mod.widgets.ICON_PANEL_RIGHT_OPEN color: mod.widgets.RINX_ACCENT}
+            });
+        } else {
+            script_apply_eval!(cx, icon, {
+                draw_icon +: {svg: mod.widgets.ICON_PANEL_RIGHT color: mod.widgets.RINX_INK}
+            });
+        }
+        self.view.view(cx, ids!(desktop_chat_info_panel)).set_visible(cx, show && inline);
+        self.view.view(cx, ids!(compact_chat_info_panel)).set_visible(cx, show && !inline);
+        let card = self.view.view(cx, ids!(compact_chat_info_card));
+        if let Some(mut card) = card.borrow_mut() { card.walk.width = Size::Fixed(available.clamp(0.0, 280.0)); }
+        if show && let Some(room) = self.room_name_id.clone() {
+            let info = if inline {ids!(desktop_chat_info)} else {ids!(compact_chat_info)};
+            self.view.mobile_chat_info(cx, info).ensure_room(cx, room);
+        }
     }
 
     /// Fills in the desktop single-pane title bar, if this instance has one enabled.
     fn update_desktop_chat_header(&mut self, cx: &mut Cx) {
         let header = self.view.view(cx, ids!(desktop_chat_header));
         if !header.visible() { return }
+        self.view.navigation_bar_button(cx, ids!(desktop_thread_back)).set_visible(cx, self.room_name_id.is_some() && matches!(self.timeline_kind, Some(TimelineKind::Thread {..})));
         let Some(room_name_id) = self.room_name_id.as_ref() else { return };
         let title = match self.timeline_kind {
             Some(TimelineKind::Thread { .. }) => format!("{room_name_id} · {}", crate::i18n::tr("Thread")),
@@ -3928,7 +3996,10 @@ impl RoomScreen {
         }
 
         self.hide_timeline();
-        self.set_desktop_chat_info_visible(cx, false);
+        self.chat_info_requested = true;
+        self.chat_info_inline = true;
+        self.view.mobile_chat_info(cx, ids!(desktop_chat_info)).clear();
+        self.view.mobile_chat_info(cx, ids!(compact_chat_info)).clear();
         // Reset the the state of the inner loading pane.
         self.loading_pane(cx, ids!(loading_pane)).hide(cx);
         // Reset the user profile sliding pane so a previous room's open profile
@@ -5671,6 +5742,7 @@ fn populate_message_view(
         })
         .unwrap_or_default();
     let is_reply_expanded = expanded_reply_previews.contains(&message_details.timeline_event_id);
+    let usage_identity = format!("{}|{}|{:?}", crate::sliding_sync::current_user_id().map(|id|id.to_string()).unwrap_or_default(), timeline_kind.room_id(), message_details.timeline_event_id);
     item.as_message().set_data(
         cx,
         message_details,
@@ -5683,6 +5755,30 @@ fn populate_message_view(
         is_room_encrypted,
     );
 
+    let usage = match &msg_like_content.kind {
+        MsgLikeKind::Message(msg) => match msg.msgtype() {
+            MessageType::Text(text) => crate::shared::agent_usage::parse_usage(event_tl_item.sender().localpart(), &text.body, text.formatted.is_some()),
+            _ => None,
+        },
+        _ => None,
+    };
+    {
+        use crate::shared::agent_usage::AgentUsageWidgetRefExt;
+        item.agent_usage(cx,ids!(content.agent_usage)).populate(cx,usage_identity.clone(),usage.as_ref());
+        // Both placements share the same event key; only the name row has a button.
+        item.agent_usage(cx,ids!(content.username_view.agent_usage_toggle)).populate(cx,usage_identity,usage.as_ref());
+        if !mobile && use_compact_view {
+            item.view(cx,ids!(content.username_view)).set_visible(cx,usage.is_some());
+            if usage.is_some() {
+                let username=get_profile_display_name(event_tl_item).unwrap_or_else(||event_tl_item.sender().localpart().to_owned());
+                item.label(cx,ids!(content.username)).set_text(cx,&username);
+            }
+        }
+        if let Some(usage)=&usage && !used_cached_item {
+            let content=item.html_or_plaintext(cx,ids!(content.message));
+            populate_text_message_content(cx,&content,usage.answer,None,has_room_mention.then(||timeline_kind.room_id()),None,None,None);
+        }
+    }
     #[cfg(feature = "agent_chat")]
     {
         use crate::agent_chat::reply::AgentReplyWidgetRefExt;
@@ -5698,7 +5794,7 @@ fn populate_message_view(
         if let (Some((body, formatted)), Some(mut presentation), Some(event_id)) =
             (text, AgentMessagePresentation::for_sender(event_tl_item.sender()), event_tl_item.event_id())
         {
-            let (body, formatted) = presentation.present(body, formatted);
+            let (body, formatted) = presentation.present(usage.as_ref().map_or(body.as_str(),|u|u.answer), formatted);
             let identity = format!("{}|{}|{}", crate::sliding_sync::current_user_id().map(|id| id.to_string()).unwrap_or_default(), timeline_kind.room_id(), event_id);
             let fresh = crate::agent_chat::reply::event_is_fresh(event_tl_item);
             reply.populate(cx, identity, &body, formatted.as_deref(), crate::agent_chat::reply::event_is_live(event_tl_item), fresh);
@@ -6632,7 +6728,8 @@ pub fn populate_preview_of_timeline_item(
         match m.msgtype() {
             MessageType::Text(TextMessageEventContent { body, formatted, .. })
             | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
-                let _ = populate_text_message_content(cx, widget_out, body, formatted.as_ref(), None, None, None, None);
+                let usage=crate::shared::agent_usage::parse_usage(sender_user_id.localpart(),body,formatted.is_some());
+                let _ = populate_text_message_content(cx, widget_out, usage.as_ref().map_or(body.as_str(),|u|u.answer), formatted.as_ref(), None, None, None, None);
                 return;
             }
             _ => { } // fall through to the general case for all timeline items below.
@@ -7652,4 +7749,162 @@ mod input_bar_focus {
             false
         }
     }
+}
+
+#[cfg(test)]
+mod desktop_information_columns_tests {
+    use super::*;
+    use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+    #[test]
+    fn delivery_rows_reach_the_timeline_edge_while_text_keeps_its_reading_width() {
+        let mut right_edges = Vec::new();
+        for condensed in [false, true] {
+            let mut cx = Cx::new(Box::new(|_,_|{}));
+            let mut message = cx.with_vm(|vm| {
+                makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);
+                vm.bx.captured_errors = Some(Vec::new());
+                let value = if condensed {script_eval!(vm, {mod.widgets.CondensedMessage {}})} else {script_eval!(vm, {mod.widgets.Message {}})};
+                let message = Message::script_from_value(vm, value);
+                assert!(vm.take_errors().is_empty());message
+            });
+            message.view.html_or_plaintext(&mut cx, ids!(message)).show_plaintext(&mut cx, "A short message");
+            cx.redraw_all();let pass = DrawPass::new(&mut cx);pass.set_size(&mut cx, dvec2(1400.0,900.0));
+            let mut list = DrawList2d::new(&mut cx);let event = DrawEvent::default();
+            {
+                let mut draw = CxDraw::new(&mut cx,&event);let mut cx2d = Cx2d::new(&mut draw);
+                cx2d.begin_pass(&pass,None);list.begin_always(&mut cx2d);
+                cx2d.begin_root_turtle(dvec2(1400.0,900.0),Layout::flow_overlay());
+                message.view.draw_walk_all(&mut cx2d,&mut Scope::empty(),Walk {width:Size::Fixed(1400.0),height:Size::Fit {min:None,max:None},..Walk::default()});
+                cx2d.end_pass_sized_turtle();list.end(&mut cx2d);cx2d.end_pass(&pass);
+            }
+            let footer = message.view.view(&mut cx,ids!(delivery_status)).area().rect(&cx);
+            let text = message.view.widget(&mut cx,ids!(message)).area().rect(&cx);
+            assert!(footer.size.x > 1200.0,"delivery row must use timeline width: {footer:?}");
+            assert!(text.size.x > 0.0 && text.size.x <= 800.0,"text must keep a readable width: {text:?}");
+            right_edges.push(footer.pos.x + footer.size.x);
+            cx.with_vm(|vm|assert!(vm.take_errors().is_empty()));
+        }
+        assert!((right_edges[0]-right_edges[1]).abs()<1.0,"normal and condensed receipts share one right edge");
+    }
+    fn screen() -> (Cx, RoomScreen) {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let screen = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            vm.bx.captured_errors = Some(Vec::new());
+            let value = script_eval!(vm, {mod.widgets.RoomScreen {desktop_chat_header.visible: true}});
+            let screen = RoomScreen::script_from_value(vm, value);
+            assert!(vm.take_errors().is_empty());
+            screen
+        });
+        (cx, screen)
+    }
+    fn draw(cx: &mut Cx, screen: &mut RoomScreen, width: f64) {
+        cx.redraw_all();
+        screen.layout_desktop_chat_info(cx, width);
+        let pass = DrawPass::new(cx); pass.set_size(cx, dvec2(1280.0, 900.0));
+        let mut list = DrawList2d::new(cx);
+        let overlay = Overlay {draw_list: DrawList::new(cx)};
+        let event = DrawEvent::default();
+        let mut draw = CxDraw::new(cx, &event); let mut cx2d = Cx2d::new(&mut draw);
+        cx2d.begin_pass(&pass, None); list.begin_always(&mut cx2d); overlay.begin(&mut cx2d);
+        cx2d.begin_root_turtle(dvec2(1280.0, 900.0), Layout::flow_overlay());
+        screen.view.draw_walk_all(&mut cx2d, &mut Scope::with_data(&mut crate::app::AppState::default()),
+            Walk {width: Size::Fixed(width), height: Size::Fixed(760.0), ..Walk::default()});
+        overlay.end(&mut cx2d); cx2d.end_pass_sized_turtle(); list.end(&mut cx2d); cx2d.end_pass(&pass);
+    }
+    #[test]
+    fn thread_header_back_button_is_only_visible_for_a_thread() {
+        let (mut cx,mut screen)=screen();
+        let room=matrix_sdk::ruma::room_id!("!parent:server").to_owned();
+        screen.room_name_id=Some(RoomNameId::empty(room.clone()));
+        screen.timeline_kind=Some(TimelineKind::Thread {room_id:room.clone(),thread_root_event_id:matrix_sdk::ruma::event_id!("$root:server").to_owned()});
+        screen.update_desktop_chat_header(&mut cx);
+        assert!(screen.view.navigation_bar_button(&mut cx,ids!(desktop_thread_back)).visible());
+        screen.timeline_kind=Some(TimelineKind::MainRoom {room_id:room});
+        screen.update_desktop_chat_header(&mut cx);
+        assert!(!screen.view.navigation_bar_button(&mut cx,ids!(desktop_thread_back)).visible());
+        screen.room_name_id=None;screen.update_desktop_chat_header(&mut cx);
+        assert!(!screen.view.navigation_bar_button(&mut cx,ids!(desktop_thread_back)).visible());
+    }
+    #[test]
+    fn real_desktop_room_draw_keeps_timeline_and_input_beside_information() {
+        let (mut cx, mut screen) = screen();
+        screen.chat_info_requested = true;
+        let room_a = matrix_sdk::ruma::room_id!("!a:server").to_owned();
+        let room_b = matrix_sdk::ruma::room_id!("!b:server").to_owned();
+        screen.room_name_id = Some(RoomNameId::empty(room_a.clone()));
+        draw(&mut cx, &mut screen, 840.0);
+        assert_eq!(screen.view.mobile_chat_info(&mut cx, ids!(desktop_chat_info)).displayed_room_id(), Some(room_a));
+        assert!(screen.view.mobile_chat_info(&mut cx, ids!(compact_chat_info)).displayed_room_id().is_none(), "hidden pane must not issue a second members request");
+        let center = screen.view.view(&mut cx, ids!(chat_center)).area().rect(&cx);
+        let info = screen.view.view(&mut cx, ids!(desktop_chat_info_panel)).area().rect(&cx);
+        let input = screen.view.room_input_bar(&mut cx, ids!(room_input_bar)).area().rect(&cx);
+        assert!(center.size.x >= 320.0, "{center:?}");
+        assert_eq!(info.size.x, 280.0);
+        assert!(center.pos.x + center.size.x <= info.pos.x + 0.1, "{center:?} {info:?}");
+        assert!(input.size.x > 0.0 && input.size.y > 0.0, "{input:?}");
+        assert!(input.pos.x >= center.pos.x && input.pos.x + input.size.x <= info.pos.x + 0.1);
+        draw(&mut cx, &mut screen, 600.0);
+        assert_eq!(screen.view.view(&mut cx, ids!(chat_center)).area().rect(&cx).size.x, 320.0);
+        draw(&mut cx, &mut screen, 500.0);
+        assert!(!screen.view.view(&mut cx, ids!(desktop_chat_info_panel)).visible());
+        assert!(!screen.view.view(&mut cx, ids!(compact_chat_info_panel)).visible());
+        let center = screen.view.view(&mut cx, ids!(chat_center)).area().rect(&cx);
+        assert_eq!(center.size.x, 500.0);
+        screen.room_name_id = Some(RoomNameId::empty(room_b.clone()));
+        screen.chat_info_requested = true;
+        draw(&mut cx, &mut screen, 500.0);
+        assert_eq!(screen.view.mobile_chat_info(&mut cx, ids!(compact_chat_info)).displayed_room_id(), Some(room_b));
+        assert!(screen.view.view(&mut cx, ids!(compact_chat_info_panel)).visible());
+        assert_eq!(screen.view.view(&mut cx, ids!(chat_center)).area().rect(&cx).size.x, 500.0);
+        screen.chat_info_requested = false;
+        draw(&mut cx, &mut screen, 840.0);
+        assert_eq!(screen.view.view(&mut cx, ids!(chat_center)).area().rect(&cx).size.x, 840.0);
+    }
+    #[test]
+    fn sidebar_toggle_opens_and_closes_only_the_current_room_information_pane() {
+        let (mut cx,mut screen)=screen();
+        screen.room_name_id=Some(RoomNameId::empty(matrix_sdk::ruma::room_id!("!current:server").to_owned()));
+        draw(&mut cx,&mut screen,500.0);
+        assert!(!screen.chat_info_requested);
+        assert!(screen.view.widget(&mut cx,ids!(invite_my_agent_button)).is_empty(), "Agent invitations belong in Members, not the chat header");
+        let button=screen.view.navigation_bar_button(&mut cx,ids!(desktop_chat_info_button));
+        assert!(button.borrow().is_some());
+        let actions=cx.capture_actions(|cx|cx.widget_action(button.widget_uid(),crate::shared::navigation_bar_button::NavigationBarButtonAction::Clicked));
+        screen.handle_desktop_chat_info(&mut cx,&Event::Actions(actions));
+        assert!(screen.chat_info_requested);
+        assert!(screen.view.view(&mut cx,ids!(compact_chat_info_panel)).visible());
+        assert!(!screen.view.view(&mut cx,ids!(desktop_chat_info_panel)).visible());
+        let actions=cx.capture_actions(|cx|cx.widget_action(button.widget_uid(),crate::shared::navigation_bar_button::NavigationBarButtonAction::Clicked));
+        screen.handle_desktop_chat_info(&mut cx,&Event::Actions(actions));
+        assert!(!screen.chat_info_requested);
+        assert!(!screen.view.view(&mut cx,ids!(compact_chat_info_panel)).visible());
+    }
+    #[test]
+    fn first_narrow_room_selection_does_not_open_compact() {
+        let (mut cx, mut screen) = screen();
+        screen.room_name_id = Some(RoomNameId::empty(matrix_sdk::ruma::room_id!("!first:server").to_owned()));
+        // These are the fresh-room flags set by set_displayed_room before
+        // the first measured draw; no old 840px frame precedes this case.
+        screen.chat_info_requested = true;
+        screen.chat_info_inline = true;
+        draw(&mut cx, &mut screen, 500.0);
+        assert!(!screen.chat_info_requested);
+        assert!(!screen.view.view(&mut cx, ids!(compact_chat_info_panel)).visible());
+        assert_eq!(screen.view.view(&mut cx, ids!(chat_center)).area().rect(&cx).size.x, 500.0);
+        screen.set_desktop_chat_info_visible(&mut cx, true);
+        draw(&mut cx, &mut screen, 500.0);
+        assert!(screen.view.view(&mut cx, ids!(compact_chat_info_panel)).visible());
+        screen.chat_info_requested = true;
+        screen.chat_info_inline = true;
+        screen.room_name_id = Some(RoomNameId::empty(matrix_sdk::ruma::room_id!("!next:server").to_owned()));
+        draw(&mut cx, &mut screen, 500.0);
+        assert!(!screen.view.view(&mut cx, ids!(compact_chat_info_panel)).visible());
+        screen.chat_info_requested = true;
+        screen.chat_info_inline = true;
+        draw(&mut cx, &mut screen, 840.0);
+        assert!(screen.view.view(&mut cx, ids!(desktop_chat_info_panel)).visible());
+    }
+
 }

@@ -63,6 +63,9 @@ where
 
 pub(crate) async fn close() {
     {
+        // Serialize the epoch boundary against an OAuth session commit/refresh.
+        // Persistence never takes TASKS while holding this lock.
+        let _session_io = crate::persistence::SESSION_IO.lock().unwrap();
         let mut scope = TASKS.lock().unwrap();
         scope.open = false;
         EPOCH.fetch_add(1, Ordering::AcqRel);

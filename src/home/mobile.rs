@@ -117,8 +117,8 @@ script_mod! {
                         empty_text: #(crate::i18n::tr("Search")) i18n_empty_text: "Search" autocapitalize: None
                         draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_regular {font_size: (11.5 * mod.widgets.RINX_TEXT_SCALE)}}
                         draw_bg +: {
-                            color: mod.widgets.RINX_SURFACE color_hover: mod.widgets.RINX_SURFACE color_focus: mod.widgets.RINX_SURFACE
-                            color_empty: mod.widgets.RINX_SURFACE border_size: 0 border_radius: 5
+                            color: mod.widgets.RINX_FIELD color_hover: mod.widgets.RINX_FIELD color_focus: mod.widgets.RINX_FIELD
+                            color_empty: mod.widgets.RINX_FIELD border_color: mod.widgets.RINX_BORDER border_color_focus: mod.widgets.RINX_ACCENT border_size: 1 border_radius: 6
                         }
                     }
                 }
@@ -265,6 +265,7 @@ struct GroupsLoaded {
 #[derive(Debug)]
 pub enum MobileNavigationAction {
     DetailVisibility(bool),
+    NewChatRequested,
 }
 
 #[derive(Script, ScriptHook, Widget)]
@@ -287,6 +288,23 @@ pub struct MobileHub {
 }
 
 impl MobileHub {
+    fn begin_new_chat(&mut self, cx: &mut Cx) {
+        if self.kind != 0 { return; }
+        self.groups_open = false;
+        self.selected_profile = None;
+        if !self.adding_friend {
+            self.request = Self::next_request();
+            self.adding_friend = true;
+            self.query.clear();
+            self.contacts.clear();
+            self.status = crate::i18n::tr("Search by Matrix ID or name, then press Enter.").into();
+            self.view.text_input(cx, ids!(search)).set_text(cx, "");
+        }
+        self.view.text_input(cx, ids!(search)).set_key_focus(cx);
+        cx.action(MobileNavigationAction::DetailVisibility(true));
+        self.view.redraw(cx);
+    }
+
     fn clear_account_state(&mut self, cx: &mut Cx) {
         self.owner = None;
         self.contacts.clear();
@@ -455,6 +473,9 @@ impl Widget for MobileHub {
                         else if !self.adding_friend { self.refresh_contacts(cx, false); }
                     }
                 }
+                if matches!(action.downcast_ref(), Some(MobileNavigationAction::NewChatRequested)) {
+                    self.begin_new_chat(cx);
+                }
                 if let Some(LogoutAction::ClearAppState {..}) = action.downcast_ref() {
                     self.clear_account_state(cx);
                 }
@@ -468,16 +489,7 @@ impl Widget for MobileHub {
             if self.view.button(cx, ids!(title_bar.controls.right)).clicked(actions)
                 || self.view.navigation_bar_button(cx, ids!(new_friends)).clicked(actions)
             {
-                if !self.adding_friend {
-                    self.adding_friend = true;
-                    self.query.clear();
-                    self.contacts.clear();
-                    self.status = crate::i18n::tr("Search by Matrix ID or name, then press Enter.").into();
-                    search.set_text(cx, "");
-                    cx.action(MobileNavigationAction::DetailVisibility(true));
-                    self.view.redraw(cx);
-                }
-                search.set_key_focus(cx);
+                self.begin_new_chat(cx);
                 if !self.query.trim().is_empty() { self.refresh_contacts(cx, true); }
             }
             let list = self.view.portal_list(cx, ids!(list));
@@ -570,7 +582,7 @@ impl Widget for MobileHub {
         self.view.label(cx, ids!(title_bar.title)).set_text(cx, title);
         self.view.button(cx, ids!(title_bar.controls.left)).set_visible(cx, profile_open || self.adding_friend || self.groups_open);
         self.view.view(cx, ids!(shortcuts)).set_visible(cx, !self.adding_friend);
-        self.view.button(cx, ids!(title_bar.controls.right)).set_visible(cx, self.kind == 0 && !profile_open && !self.groups_open);
+        self.view.button(cx, ids!(title_bar.controls.right)).set_visible(cx, self.kind == 0 && !profile_open && !self.groups_open && !self.adding_friend);
         if let (Some(widget), Some(profile)) = (active.as_ref(), self.selected_profile.as_ref()) {
             Self::populate_profile(cx, widget, profile);
             widget.label(cx, ids!(contact_card.user_id)).set_text(cx, &crate::i18n::format("Matrix ID: {0}", &[("0", (profile.user_id).to_string())]));
@@ -626,5 +638,29 @@ impl Widget for MobileHub {
             }
         }
         DrawStep::done()
+    }
+}
+
+#[cfg(test)]
+mod new_chat_tests {
+    use super::*;
+    #[test]
+    fn new_chat_opens_existing_contact_search_without_sending() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut hub = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm); crate::app::register_widgets(vm);
+            let value = script_eval!(vm, {mod.widgets.MobileHub {kind: 0}});
+            MobileHub::script_from_value(vm, value)
+        });
+        hub.groups_open = true;
+        hub.query = "old query".into();
+        let request = hub.request;
+        let actions = cx.capture_actions(|cx| cx.action(MobileNavigationAction::NewChatRequested));
+        hub.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::empty());
+        assert!(hub.adding_friend);
+        assert!(!hub.groups_open);
+        assert!(hub.query.is_empty());
+        assert_eq!(hub.view.text_input(&mut cx, ids!(search)).text(), "");
+        assert_ne!(hub.request, request, "Opening search invalidates old requests without sending a search or message");
     }
 }

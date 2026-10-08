@@ -14,14 +14,14 @@ script_mod! {
 
     mod.widgets.WebBrowserWindow = Window {
         window.inner_size: vec2(1040, 800)
-        window.title: "Rinx · Web"
+        window.title: "Hagency · Web"
         pass.clear_color: #FFFFFF00
         caption_bar +: {
             draw_bg.color: mod.widgets.RINX_PAGE
             caption_label +: {
                 label +: {
                     draw_text +: { color: mod.widgets.RINX_INK }
-                    text: "Rinx · Web"
+                    text: "Hagency · Web"
                 }
             }
         }

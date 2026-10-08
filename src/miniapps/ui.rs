@@ -1185,18 +1185,7 @@ mod tests {
         assert_eq!(panel.reviewed_room, room);
         assert!(panel.review_notice.contains(&format!("Allowed room: {room}")));
         panel.view.text_input(&cx, ids!(import_form.room)).set_text(&mut cx, "");
-        let palpo = Package::load_builtin(super::super::palpo::APP_ID, &snapshots).expect("bundled Palpo");
-        panel.review_package(&mut cx, palpo).expect("Palpo consent");
-        assert!(!panel.view.view(&cx, ids!(import_form.room_access)).visible());
-        assert!(!panel.view.label(&cx, ids!(import_form.assistant_status)).visible());
-        assert!(!panel.view.view(&cx, ids!(import_form.core)).visible());
-        // Reopening a reviewed package must preserve the same scoped controls.
-        panel.show_import(&mut cx);
-        assert!(!panel.view.view(&cx, ids!(import_form.room_access)).visible());
-        panel.package = None;
-        panel.show_import(&mut cx);
-        assert!(panel.view.view(&cx, ids!(import_form.room_access)).visible());
-        assert!(panel.view.label(&cx, ids!(import_form.assistant_status)).visible());
+        assert!(Package::load_builtin(super::super::palpo::APP_ID, &snapshots).is_err());
         let _ = std::fs::remove_dir_all(snapshots);
         panel.show_catalog(&mut cx);
         assert!(panel.navigate_back(&mut cx), "Only the outer catalog closes");

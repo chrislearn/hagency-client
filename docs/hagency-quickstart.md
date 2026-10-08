@@ -1,143 +1,144 @@
 [English](hagency-quickstart.md) | [简体中文](hagency-quickstart.zh-CN.md)
 
-# Hagency in Rinx: quick start
+# Native Hagency quick start
 
-Use Rinx to approve a Hagency connection, request a project and agent, and chat
-with that agent. Hagency runs Codex on the operator's machine; Rinx is the
-Matrix client. These steps describe this checkout's Palpo mini app and the
-matching Hagency server-engagement workflow.
+This guide describes the current Projects/Agents pages. The Palpo mini-app,
+Fleet/engagement/resource requests and coordinator approvals are retired.
 
-## Prepare the accounts and local runtime
+## Sign in once
 
-| Role | What this account does |
+Enter a Hagency server address on the login page, then finish Pasion sign-in and
+consent in your browser. The server must identify itself as a supported Hagency
+service; a normal Matrix server is rejected. The Matrix SDK owns this login's
+refresh and persistence. Native management uses the same current account proof,
+without asking for a copied token or a second Matrix login.
+
+Saved accounts are available on the login page and under **Settings → Account**.
+Switching accounts stops the current owner's local Agent runtime and clears its
+active permissions. The previous account's separate data remains; Agent ownership
+never transfers with a switch.
+
+## Create a Project and discussion Rooms
+
+Open **Projects**, then **New Project** (or Projects **⋯ → New project**).
+Choose **Create a new Space** or **Connect an existing Space**. Existing candidates
+are joined Spaces for this account. Partial lookup failures and pagination must
+be resolved before choosing an unavailable candidate.
+
+A Project is the Hagency record bound to a Space, not every Matrix Space. Its
+name/topic come from the Space. Select the Project's details:
+
+| Section | Purpose |
 | --- | --- |
-| Resource owner / Hagency operator | Runs Hagency, confirms the connection, creates resources and delegates coordination. |
-| Palpo administrator | Approves the server engagement. |
-| Coordinator | Reviews project, agent and additional-token requests for the engagement. |
-| Project / agent owner | Requests the project and agent, chats with it and approves protected operations. |
+| Overview | Space identity, description and Open Space. |
+| Rooms | Create a Room or connect an already Space-linked Room; open its chat and members. |
+| Members | Read actual Space members; invite when Matrix grants permission. |
+| Access | Read access/service state; permitted administrators can edit it. |
 
-One person may hold several roles. Use existing accounts on the same Matrix
-server, with full IDs such as `@owner:example.org`. The coordinator is a Matrix
-user, not a bot you need to create through Hagency. Use separate Rinx profiles
-when testing different accounts on one machine; see [Data and compatibility](../README.md#data-and-compatibility).
+Space membership is not copied automatically into every Room. Each discussion
+Room has its own membership and invitation rules. A Project tree entry's **⋯**
+also opens Overview, Discussion Rooms, Project members, Invite members and Open
+Space. If a creation result is unconfirmed, use **Resume original request**;
+do not create a second Space/Room to guess what happened.
 
-On the machine that will run the agent, the operator installs and signs in to
-Codex, starts Hagency, and opens its local console:
+Project/Room access policy controls who may connect an Agent to that scope. Deny
+entries take priority. It does not approve token allocations. **Service pause**
+is separate and can stop current service; clearing it does not automatically
+resume the owner's paused bindings. Ordinary members cannot write these settings.
 
-```sh
-codex login
-hagency start
-```
+## Create a global Agent
 
-Use **Setup → Coding agents** to check the detected Codex installation and
-runtime configuration. The machine and service must remain running for agents
-to work. Installation, service mode and first-source setup are covered in the
-[Hagency user guide](https://github.com/hagency-org/hagency-rs/blob/main/docs/user-guide/README.md).
+Open **Agents → New Agent**, enter its display name and create it. This allocates
+a permanent owner-bound puppet identity and assigns the current authorized device.
+It does not allocate a Project or discussion Room. Wait for provisioning to finish.
+The owner-private-chat setup preserves its original creation request on retry.
+Use **Set up / retry private chat** if needed, then **Open private chat** when ready.
 
-In Rinx, sign in to Palpo and set up cross-signing / verify your session before
-using encrypted approval rooms. Open **Mini apps → Palpo**; on mobile, **Mini
-apps** is under **Discover**. Review its permissions and click **Run** on first
-use. The app uses the current Matrix account; enter no password or Codex key in
-the mini app.
+Only the assigned device may execute this Agent. **Handle on this device** changes
+that assignment to the current owner's device with an explicit confirmation and
+revision check. It does not transfer ownership, copy budgets, reset spent tokens
+or authorize repeating unknown work. Historical ledger recovery may still be
+required before this device can run a new model request.
 
-## 1. Establish the server engagement
+Add discussion bindings with **Add Room binding**, or open a discussion Room's
+chat information, **Members → Invite my Agent**, and select an existing Agent.
+The backend still checks actual Project/Room admission, membership and puppet
+invitation. This picker does not create a second Agent identity.
 
-1. **Operator, in Hagency:** click **New server engagement** under **Setup →
-   Connect Palpo** or **Server engagements**. Enter the HTTPS Matrix server
-   address, resource-owner and coordinator IDs, connection name and delegation
-   duration. Only fill in **Separate Palpo address** if the administrator
-   supplies a separate operations address. Click **Request connection**.
-2. **Resource owner, in Rinx:** open **Palpo → Inbox**, review the connection
-   you initiated and approve it. Hagency's **Open request in Rinx** link opens
-   that same request.
-3. **Administrator, in Rinx:** approve the server setup in your own Palpo Inbox.
-4. Hagency receives the approved configuration automatically. **A new connection
-   requested this way does not need JSON download/import.**
-5. **Resource owner, in Rinx:** open the approved request and click **Verify
-   connection** once. Wait while the disabled button shows verification in
-   progress, then check for **Connection verified** in both applications.
+## Configure the four Agent detail tabs
 
-To add resources to an existing verified engagement, continue below. You do not
-need to revoke and reconnect it. **Cancel** in a delegation form discards the
-unsaved edit; revocation is a separate change and does not delete existing
-agents, history or reservations.
-
-## 2. Create a resource in Hagency
-
-1. Open **My resources → New resource configuration**.
-2. Select the verified **Server engagement** and a local **Source
-   configuration**. The source supplies the framework, provider and account;
-   the search box filters model/framework/reasoning, not agent or project names.
-3. Select the model and reasoning level, then enter the monthly token budget.
-4. Enter **Eligible Matrix project managers** as full same-server IDs separated
-   by spaces or newlines, for example `@project-owner:example.org`.
-5. Click **Create resource** and wait for it to appear in the eligible user's
-   Rinx **Palpo → Resources** catalog.
-
-Each resource has one budget assigned to its engagement. One engagement can
-have several resources; there is no second resource-pool allocation afterward.
-An unknown shared-account quota is not a measured zero or a provider guarantee.
-
-On a fresh Hagency state directory, the wizard currently needs the operator to
-create the first local source through the documented
-[operator API](https://github.com/hagency-org/hagency-rs/blob/main/README.md#create-a-resource-with-the-operator-api).
-Setup prepares the Codex runtime but does not seed that source. Once it exists,
-create engagement resources through the same wizard above.
-
-## 3. Request a project and agent in Rinx
-
-1. **Project owner:** in **Palpo → Resources**, click **Request project here**
-   on a resource. Enter a name and purpose.
-2. Let Palpo create a new room, or use **Choose an existing room**. Existing
-   rooms must be private (invite-only), unencrypted, created by your account,
-   and not Spaces. Palpo verifies the selection and invites the engagement's
-   representative.
-3. Submit. **Coordinator:** approve or reject the project in **Palpo → Inbox**.
-   **Owner:** wait for project setup to complete in **Projects**.
-4. **Owner:** click **Request agent** on the project. Select the resource and
-   role, then enter the agent name, initial tokens and daily rate. Submit.
-5. **Coordinator:** review and approve or reject the requested allocation in
-   your Palpo Inbox. Hagency checks authorization and capacity when it receives
-   the decision.
-6. **Owner:** follow **Agents → Open latest result**. **Approved** is the
-   decision; **Execution · pending / provisioning** means runtime setup is
-   still in progress. Wait for **Execution · ready** before testing chat.
-
-Project approval grants resource access; it does not reserve an agent's tokens.
-The project room is for shared discussion and agent @mentions. The local agent
-workspace, encrypted owner DM and encrypted approval room are separate.
-
-## 4. Chat and approve operations
-
-- Accept the agent's DM invitation and send a short message. **Owner DMs need
-  no @mention, including the first message.** Keep the DM between you and the
-  agent.
-- In the shared project room, @mention the agent and keep follow-ups in that
-  thread. Agents do not work in encrypted group rooms shared with other people.
-- Answer protected-operation cards in the owner's approval room using the
-  buttons. A text reply is not an approval. These decisions are separate from
-  project and token approvals in the Palpo Inbox.
-- Use **Palpo → Agents → Request more tokens** when needed; the coordinator
-  reviews the request. Rename, pause, resume and remove controls appear only
-  when the current account is authorized. Read their latest runtime result.
-
-## Check problems without duplicating requests
-
-| What you see | What to check |
+| Tab | Configure or inspect |
 | --- | --- |
-| Empty Inbox | Current Matrix account and Inbox filter. Owner confirmation comes before admin approval; projects and agents go to the coordinator. |
-| Empty Resources | Verified connection, published resource, eligible-manager ID and active delegation. |
-| Project not ready | Open its setup explanation. Use **Retry project setup** only when the server offers it. |
-| Approved but `provisioning` | Setup is still running. Accept the DM invitation when it appears and follow the execution status. |
-| `provisioning_unknown` / setup needs attention | Ask the Hagency operator to inspect the original attempt, logs and Matrix state. Account/room creation may already have happened and tokens may remain reserved; do not create duplicates. |
-| `unavailable` | The agent exists but its runtime or Matrix connection needs attention on the Hagency host. |
-| DM silent while `ready` | Confirm you are its owner and the DM has no other people; ask the operator to inspect key exchange and message intake. |
-| Approval card cannot decrypt | Verify the current Rinx session or use another verified session. |
+| Agent | Identity/device, owner private chat, Room bindings, pause/resume, leave and permanent retirement. |
+| Model & resources | Provider account, model, reasoning options and saved Agent workspace on this device. |
+| Limits | Agent total, selected Room total, and selected requester in that Room. |
+| Service | Selected Room runtime, explicit estimated reservation, scoped files and pending approvals. |
 
-## Settings and themes
+Choose **Use my signed-in local Codex account** to reuse the current machine's
+Codex login. No second login is needed when that account is already valid.
+Disconnecting its association keeps your everyday Codex signed in. Separate
+Codex sign-in is also available; cancel/open-URL/sign-out controls apply to that
+separate account. Save a model and reasoning effort from the real catalog. A private workspace is
+created automatically; a custom workspace is optional under Advanced settings.
 
-Desktop and mobile share **Settings → Account / Preferences / Privacy / About**.
-On mobile, enter through **Me → Settings**. Appearance is under **Preferences →
-App appearance**; workflow suggestions are under **Preferences → Hagency**.
-Approval cards and the Palpo app do not depend on enabling workflow suggestions.
-See [Settings and appearance](../README.md#settings-and-appearance).
+The model/workspace belong to this Agent across its Rooms. Conversations, budgets
+and approvals stay Room-scoped. The server administrator does not approve these
+local resource choices.
+
+Agent details select the owner’s private chat by default. Service shows the current chat directly; switching to another Room and managing its binding are under **Advanced Room settings**. Opening Service from a Project Room retains that exact Room.
+
+In **Limits**, choose the entire Agent, one Room, or one member in a Room.
+Missing limits allow requests by default; configured token limits apply together.
+Each limit supports cumulative, UTC day, or UTC month periods. Zero tokens blocks
+usage in that scope. Existing Unset values also mean no token limit.
+Request handling can Allow, Deny or Ask owner. Tool policy can deny high risk, ask
+per exact tool, or restrict exact tools/directories. Saving preserves spent usage
+and unresolved holds. A budget hold is not measured usage of zero.
+
+## Start and chat
+
+In **Service**, select an active private chat or Room binding. Wait for
+the saved Codex profile and account check to finish. Explicitly choose estimated
+accounting, a positive per-request reservation and save a supported reasoning effort in Model & resources.
+Scoped host files are opt-in and currently limited to list/read/create; native
+shell and MCP execution are not exposed by this host.
+
+**Start responding** starts only that selected scope. **Stop responding** stops it; another
+running Room can stay active. Your owner private chat does not need mentions;
+ordinary top-level DM turns share their Room conversation. Explicit threads remain
+separate. In a discussion Room, use Matrix's real Agent @mention; follow-ups belong
+to the thread. A started model turn can receive the puppet's 👀 processing reaction.
+
+Pending request/tool approvals appear in the Service tab. Approval is for the exact
+request or tool shown, not an unrestricted server resource grant. Agent encrypted
+Room execution is deferred; ordinary Matrix encrypted chat remains available.
+
+### Restart recovery
+
+Restart recovery restores saved runtime intentions. Its rule is to restore only Room scopes you explicitly started and have not explicitly stopped, using the saved reservation, effort and host-files choice after fresh identity, device, lease, resource and ledger checks. **Stop responding excludes that scope from restart recovery**; a normal app shutdown is not the same instruction. An active Agent or saved model alone is not an instruction to run every Room. Missing resources, unknown costs, revoked membership or another assigned device must block recovery; no model replay or automatic takeover.
+
+Agent Unlimited does not bypass finite Room/member limits or explicit request denial. A sent paused-policy reply is not successful model inference. See the [runtime recovery record](../../hagency-client/docs/design/2026-10-08-agent-runtime-recovery.zh-CN.md) for ordinary/quick restart, explicit Stop exclusion, and remaining untested branches.
+
+## Failure and recovery states
+
+| State | Action |
+| --- | --- |
+| Loading/unavailable | Refresh or retry after checking the connection; late results from a previous account/view cannot replace the current one. |
+| Agent creating or private chat pending | Wait; retry the same saved request instead of creating another identity/Room. |
+| Other execution device | Use that device, or explicitly assign this device and satisfy ledger recovery checks. |
+| Missing model/workspace/account | Connect the account and save a model in Model & resources; the private workspace is automatic. |
+| Budget exhausted/denied/approval pending | Configure the matching layer or review the exact pending request. |
+| Unknown cost/side effects or ledger recovery required | Preserve the hold and restore the same owner's complete state. Do not reset balances or replay the model. |
+| Puppet removed or service paused | Restore real Room permissions, then explicitly resume the binding when permitted. Rejoining does not revive old dispatches. |
+| Encrypted Agent Room | Use an unencrypted authorized scope; Agent crypto is deferred. |
+
+## Other retained pages
+
+**Chats** includes search, attachments, Room information, members and invitations.
+**Contacts** opens ordinary conversations. **Mini apps** keeps non-Palpo built-ins,
+App Hub, local import, permission review and scoped execution. **More** opens
+Discover, Explore rooms, Moments, File Transfer, Article editor, Browser and Settings.
+
+Settings has Account, Preferences, Privacy and About. Generic external Agent
+Access/BotFather controls are separate tools, not part of native Hagency Agent
+setup. Some management text is still English when the interface language is Chinese.

@@ -38,6 +38,7 @@ use crate::settings::theme_studio::{ThemeStudioAction, ThemeStudioWidgetRefExt};
 use crate::article_app::{ArticleAction, ArticlePanelWidgetRefExt};
 use crate::mini_app::{MiniAppAction, MiniAppPanelWidgetRefExt};
 use crate::forwarding::{ForwardAction, ForwardPanelWidgetRefExt};
+use crate::home::sidebar_action_menu::{SidebarMenuAction, SidebarActionMenuWidgetRefExt};
 use crate::home::room_history::{RoomHistoryAction, RoomHistoryPanelWidgetRefExt};
 use crate::home::space_management::{SpaceManagementAction, SpaceManagementPanelWidgetRefExt};
 
@@ -82,6 +83,7 @@ mod embedded_content {
                 // but behind verification modals.
                 new_message_context_menu := NewMessageContextMenu { }
                 room_context_menu := RoomContextMenu { }
+                sidebar_action_menu := SidebarActionMenu {}
 
                 // The account menu popup, anchored at the desktop rail's
                 // bottom-left button. Same self-positioning overlay pattern.
@@ -191,14 +193,14 @@ script_mod! {
 
             main_window := Window {
                 window.inner_size: vec2(1280, 800)
-                window.title: "Rinx"
+                window.title: "Hagency"
                 pass.clear_color: #FFFFFF00
                 caption_bar +: {
                     draw_bg.color: mod.widgets.RINX_PAGE
                     caption_label +: {
                         label +: {
                             draw_text +: { color: mod.widgets.RINX_INK }
-                            text: "Rinx"
+                            text: "Hagency"
                         }
                     }
                 }
@@ -348,10 +350,10 @@ impl MatchEvent for App {
                     self.persist_runtime_state(cx, "account switch");
                     let target = match action {
                         crate::accounts::AccountAction::Select(user) => Some(user.clone()),
-                        crate::accounts::AccountAction::Add => None,
+                        crate::accounts::AccountAction::Add | crate::accounts::AccountAction::Reauthenticate => None,
                     };
                     let already_active = target.as_ref().is_some_and(|user| current_user_id().as_ref() == Some(user));
-                    if !already_active && crate::sliding_sync::request_account_change(target) {
+                    if !already_active && (if matches!(action,crate::accounts::AccountAction::Reauthenticate) { crate::sliding_sync::request_reauthenticate() } else { crate::sliding_sync::request_account_change(target) }) {
                         self.app_state.logged_in = false;
                         self.update_login_visibility(cx);
                         cx.action(LoginAction::Status { title: crate::i18n::tr("Switching Account").into(), status: crate::i18n::tr("Finishing the previous session…").into() });
@@ -434,6 +436,11 @@ impl MatchEvent for App {
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
                 log!("Received LoginAction::LoginSuccess, hiding login view.");
                 self.app_state.logged_in = true;
+                // Restore only previously enabled local Room runtimes after the
+                // SDK has established this account, even when opening Chats.
+                if let Err(code) = crate::hagency::backend::Service::for_current() {
+                    error!("Could not initialize Hagency runtime recovery: {code}");
+                }
                 self.update_login_visibility(cx);
                 self.ui.redraw(cx);
                 if let Some(account) = current_user_id() {
@@ -658,6 +665,37 @@ impl MatchEvent for App {
                     margin: #(margin)
                 });
                 self.ui.redraw(cx);
+                continue;
+            }
+
+            if let Some(SidebarMenuAction::Open {kind, pos}) = action.downcast_ref() {
+                self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
+                let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
+                self.ui.sidebar_action_menu(cx, ids!(sidebar_action_menu)).show(cx, *kind, *pos, rect);
+                self.ui.redraw(cx);
+                continue;
+            }
+
+            if let Some(SidebarMenuAction::OpenProject {target, pos}) = action.downcast_ref() {
+                self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
+                let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
+                self.ui.sidebar_action_menu(cx, ids!(sidebar_action_menu)).show_project(cx, target.clone(), *pos, rect);
+                self.ui.redraw(cx);
+                continue;
+            }
+
+            if let Some(SidebarMenuAction::InviteProject {target}) = action.downcast_ref() {
+                // Recheck at the receiving boundary: a permission response can
+                // be queued before an account transition, then delivered late.
+                if target.is_current() {
+                    let destination = crate::sliding_sync::get_client()
+                        .and_then(|client| client.get_room(&target.space_id))
+                        .and_then(|room| room.name())
+                        .map(|name| RoomNameId::new(matrix_sdk::RoomDisplayName::Named(name), target.space_id.clone()))
+                        .unwrap_or_else(|| RoomNameId::empty(target.space_id.clone()));
+                    self.ui.invite_modal(cx, ids!(invite_modal.content)).show(cx, destination);
+                    self.ui.modal(cx, ids!(invite_modal)).open(cx);
+                }
                 continue;
             }
 
@@ -924,6 +962,9 @@ impl MatchEvent for App {
             // Handle DirectMessageRoomActions
             match action.downcast_ref() {
                 Some(DirectMessageRoomAction::FoundExisting { room_name_id, .. }) => {
+                    if crate::home::home_screen::effective_is_desktop(cx) {
+                        cx.action(MainDesktopUiAction::ShowChats);
+                    }
                     self.navigate_to_room(cx, None, &BasicRoomDetails::RoomId(room_name_id.clone()));
                 }
                 Some(DirectMessageRoomAction::DidNotExist { user_profile }) => {
@@ -971,6 +1012,9 @@ impl MatchEvent for App {
                     );
                 }
                 Some(DirectMessageRoomAction::NewlyCreated { room_name_id, .. }) => {
+                    if crate::home::home_screen::effective_is_desktop(cx) {
+                        cx.action(MainDesktopUiAction::ShowChats);
+                    }
                     self.navigate_to_room(cx, None, &BasicRoomDetails::RoomId(room_name_id.clone()));
                 }
                 _ => {}
@@ -1032,6 +1076,7 @@ impl App {
             let modal = self.ui.modal(cx, ids!(agent_ops_modal));
             self.ui.agent_ops_panel(cx, ids!(agent_ops_modal.content)).action(cx, modal, &AgentOpsAction::Close);
         }
+        crate::shared::agent_usage::clear_session(cx);
         self.close_mini_apps(cx);
         let modal = self.ui.modal(cx, ids!(article_app_modal));
         self.ui.article_panel(cx, ids!(article_app_modal.content)).action(cx, modal, &ArticleAction::Close);
@@ -1119,9 +1164,10 @@ pub fn register_widgets(vm: &mut ScriptVm) {
     crate::agent_chat_dummy::script_mod(vm);
 
     crate::assistant::sheet::script_mod(vm);
-    crate::agent_access::script_mod(vm);
     crate::home::account_list::script_mod(vm);
     crate::settings::script_mod(vm);
+    // External integration forms share the settings input/dropdown styles.
+    crate::agent_access::script_mod(vm);
     // RoomInputBar depends on these Home widgets; preload them before room::script_mod.
     crate::home::location_preview::script_mod(vm);
     crate::home::tombstone_footer::script_mod(vm);
@@ -1132,6 +1178,7 @@ pub fn register_widgets(vm: &mut ScriptVm) {
     crate::block_user_modal::script_mod(vm);
     crate::verification_modal::script_mod(vm);
     crate::profile::script_mod(vm);
+    crate::hagency::ui::script_mod(vm);
     crate::home::script_mod(vm);
     crate::moments::script_mod(vm);
     crate::login::script_mod(vm);
@@ -1452,9 +1499,9 @@ impl App {
         cx.update_macos_menu(MacosMenu::Main {
             items: vec![
                 MacosMenu::Sub {
-                    name: "Rinx".into(),
+                    name: "Hagency".into(),
                     items: vec![MacosMenu::Item {
-                        name: "Quit Rinx".into(),
+                        name: "Quit Hagency".into(),
                         command: live_id!(quit),
                         key: KeyCode::KeyQ,
                         shift: false,
@@ -1624,6 +1671,15 @@ impl App {
 
         self.persist_runtime_state(cx, "shutdown");
 
+        // Drain the owned Agent subprocesses before the GUI/runtime disappears.
+        // Account transitions use the same barrier before opening another owner.
+        if crate::sliding_sync::block_on_async_with_timeout(
+            Some(Duration::from_secs(15)),
+            crate::hagency::backend::Service::stop_current(),
+        ).is_err() {
+            error!("Hagency owner shutdown timed out; pending execution remains recorded in its ledger.");
+        }
+
         // Standalone exit: release the assistant and stop only a runtime
         // Rinx owns (a remote server or OctoSense's kernel keeps running).
         crate::octos_service::shutdown();
@@ -1733,9 +1789,13 @@ impl App {
         });
 
         let destination_room_id = destination_room.room_id();
-        let room_state = cx.get_global::<RoomsListRef>().get_room_state(destination_room_id);
+        // A successful create/join can precede the room-list UI update. Consult
+        // the SDK too, so an already joined Room does not prompt to join again.
+        let sdk_room = crate::sliding_sync::get_client().and_then(|client| client.get_room(destination_room_id));
+        let room_state = cx.get_global::<RoomsListRef>().get_room_state(destination_room_id)
+            .or_else(|| sdk_room.as_ref().map(|room| room.state()));
         let new_selected_room = match room_state {
-            Some(RoomState::Joined) if crate::sliding_sync::get_client().and_then(|client|client.get_room(destination_room_id)).is_some_and(|room|room.is_space()) => SelectedRoom::Space {
+            Some(RoomState::Joined) if sdk_room.as_ref().is_some_and(|room| room.is_space()) => SelectedRoom::Space {
                 space_name_id: destination_room.room_name_id().clone(),
             },
             Some(RoomState::Joined) => SelectedRoom::JoinedRoom {

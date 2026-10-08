@@ -3,6 +3,8 @@
 **/target/
 ## cargo-packager generated directory
 /dist
+## Private development profiles, logs and runtime credentials.
+/.run/
 
 .vscode
 .DS_Store

@@ -26,7 +26,7 @@ binary_dir=$(cd "$(dirname "$binary")" && pwd -P)
 binary="$binary_dir/rinx"
 packaging_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 bundle_dir="$binary_dir/.rinx-dev"
-bundle="$bundle_dir/Rinx.app"
+bundle="$bundle_dir/Hagency Desktop.app"
 mkdir -p "$bundle_dir"
 staging=$(mktemp -d "$bundle_dir/.stage.XXXXXX")
 launch_dir=$(mktemp -d "${TMPDIR:-/tmp}/rinx-launch.XXXXXX")
@@ -80,20 +80,20 @@ if [[ $inputs != "$previous_inputs" || ! -f $bundle/Contents/MacOS/rinx ]]; then
         fi
     done < <(/bin/ps -axo comm=)
     # Copy before signing: a symlink or hard link would mutate Cargo's executable.
-    mkdir -p "$staging/Rinx.app/Contents/MacOS"
-    cp "$binary" "$staging/Rinx.app/Contents/MacOS/rinx"
+    mkdir -p "$staging/Hagency Desktop.app/Contents/MacOS"
+    cp "$binary" "$staging/Hagency Desktop.app/Contents/MacOS/rinx"
     if [[ -f $binary_dir/octos ]]; then
-        cp "$binary_dir/octos" "$staging/Rinx.app/Contents/MacOS/octos"
-        /usr/bin/codesign --force --sign - "$staging/Rinx.app/Contents/MacOS/octos"
+        cp "$binary_dir/octos" "$staging/Hagency Desktop.app/Contents/MacOS/octos"
+        /usr/bin/codesign --force --sign - "$staging/Hagency Desktop.app/Contents/MacOS/octos"
     fi
-    cp "$packaging_dir/macos/Info.plist" "$staging/Rinx.app/Contents/Info.plist"
-    plist="$staging/Rinx.app/Contents/Info.plist"
-    /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier org.octosense.rinx.development' "$plist"
-    /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName Rinx Development' "$plist"
-    /usr/libexec/PlistBuddy -c 'Set :CFBundleName Rinx Development' "$plist"
+    cp "$packaging_dir/macos/Info.plist" "$staging/Hagency Desktop.app/Contents/Info.plist"
+    plist="$staging/Hagency Desktop.app/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier org.hagency.desktop.development' "$plist"
+    /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName Hagency Desktop Development' "$plist"
+    /usr/libexec/PlistBuddy -c 'Set :CFBundleName Hagency Desktop Development' "$plist"
     # Development builds must not register URL handlers over an installed Rinx.
     /usr/libexec/PlistBuddy -c 'Delete :CFBundleURLTypes' "$plist"
-    if ! /usr/bin/codesign --force --sign - "$staging/Rinx.app" >"$staging/signing.log" 2>&1; then
+    if ! /usr/bin/codesign --force --sign - "$staging/Hagency Desktop.app" >"$staging/signing.log" 2>&1; then
         cat "$staging/signing.log" >&2
         echo 'rinx: could not sign the development app bundle, so running without it.' >&2
         cleanup
@@ -102,7 +102,7 @@ if [[ $inputs != "$previous_inputs" || ! -f $bundle/Contents/MacOS/rinx ]]; then
     if [[ -e $bundle || -L $bundle ]]; then
         mv "$bundle" "$staging/previous.app"
     fi
-    mv "$staging/Rinx.app" "$bundle"
+    mv "$staging/Hagency Desktop.app" "$bundle"
     printf '%s\n' "$inputs" > "$bundle_dir/inputs"
 fi
 

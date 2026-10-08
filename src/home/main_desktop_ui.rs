@@ -1,4 +1,5 @@
 use makepad_widgets::*;
+use crate::hagency::ui::{HagencyAction, HagencyPanelWidgetRefExt};
 use ruma::OwnedRoomId;
 use tokio::sync::Notify;
 use std::{collections::{HashMap, HashSet}, sync::Arc};
@@ -7,6 +8,10 @@ use crate::settings::app_preferences::{AppPreferencesAction, AppPreferencesGloba
 use crate::{app::{AppState, AppStateAction, SavedDockState, SelectedRoom}, home::{navigation_tab_bar::{NavigationBarAction, SelectedTab}, rooms_list::RoomsListRef, space_lobby::SpaceLobbyScreenWidgetRefExt}, utils::RoomNameId};
 use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt, rooms_list::{AcceptedInviteKind, RoomsListAction}, spaces_bar::SpacesBarAction};
 
+struct RestoredRoomContext {
+    room: OwnedRoomId,
+    epoch: u64,
+}
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
@@ -26,39 +31,17 @@ script_mod! {
             }
 
 
-            root := DockSplitter {
-                axis: SplitterAxis.Horizontal
-                align: SplitterAlign.FromA(300.0)
-                a: @rooms_sidebar_tabs
-                b: @main_tabs
-            }
-
-            // This is a "fixed" tab with no header that cannot be closed.
-            rooms_sidebar_tabs := DockTabs{
-                tabs: [@rooms_sidebar_tab]
-                selected: 0
-                hide_tab_bar: true
-            }
-
-            main_tabs := DockTabs{
-                tabs: [@home_tab]
-                selected: 0
-            }
-
-            rooms_sidebar_tab := DockTab {
-                kind: @rooms_sidebar // this template is defined below.
-                template: @PermanentTab
-            }
+            root := DockTabs {tabs: [@home_tab] selected: 0}
 
             home_tab := DockTab{
-                name: "Home"
-                kind: @welcome_screen
+                name: "Projects"
+                kind: @hagency_panel
                 template: @PermanentTab
             }
 
             // Below are the templates of widgets that can be created within dock tabs.
-            rooms_sidebar := mod.widgets.RoomsSideBar {}
             welcome_screen := mod.widgets.WelcomeScreen {}
+            hagency_panel := mod.widgets.HagencyPanel {}
             room_screen := mod.widgets.RoomScreen {
                 desktop_chat_header +: { visible: true }
             }
@@ -112,6 +95,8 @@ pub struct MainDesktopUI {
     /// and at most one room stays open, so selecting a room replaces the open chat.
     #[rust]
     tabbed_chats: bool,
+    #[rust]
+    restored_context: Option<RestoredRoomContext>,
 }
 
 impl ScriptHook for MainDesktopUI {
@@ -149,11 +134,32 @@ impl Widget for MainDesktopUI {
             cx.action(MainDesktopUiAction::LoadDockFromAppState);
             self.drawn_previously = true;
         }
+        if let Some(pending) = self.restored_context.as_ref() && cx.has_global::<RoomsListRef>() {
+            let direct = cx.get_global::<RoomsListRef>().is_direct_room(&pending.room);
+            self.apply_restored_context(cx, direct, crate::account_session::epoch());
+        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
 
 impl MainDesktopUI {
+    fn apply_restored_context(&mut self, cx: &mut Cx, direct: Option<bool>, epoch: u64) {
+        let Some(pending) = self.restored_context.as_ref() else { return; };
+        if pending.epoch != epoch || self.most_recently_selected_room.as_ref().is_none_or(|r| r.room_id() != &pending.room) {
+            self.restored_context = None;
+            return;
+        }
+        if let Some(direct) = direct {
+            self.restored_context = None;
+            if direct {
+                // Only the sidebar context changes. ShowChats would reload a
+                // dock and could replace the exact Room we just restored.
+                *cx.global::<super::rooms_sidebar::DesktopWorkspace>() = super::rooms_sidebar::DesktopWorkspace::Chats;
+                cx.redraw_all();
+            }
+        }
+    }
+
     /// Moves or adds the given room the the end of the `room_order`, the most recent spot.
     fn mark_room_as_recent(&mut self, room: &SelectedRoom) {
         self.room_order.retain(|sr| sr != room);
@@ -175,6 +181,10 @@ impl MainDesktopUI {
             cx.action(AppStateAction::FocusNone);
             self.most_recently_selected_room = None;
         }
+        // Dock::select_tab invalidates the tab bar's draw list. In single-pane
+        // mode that bar is hidden, so invalidate the content parent as well;
+        // otherwise its old welcome/Room pixels can remain after navigation.
+        self.redraw(cx);
     }
 
     /// Focuses on a room if it is already open, otherwise creates a new tab for the room.
@@ -531,6 +541,11 @@ impl MainDesktopUI {
         }
         self.apply_tab_bar_visibility(cx);
         self.init_all_visible_tabs(cx);
+        self.restored_context = selected_room.as_ref().map(|r| RestoredRoomContext {room:r.room_id().clone(),epoch:crate::account_session::epoch()});
+        if let Some(pending) = self.restored_context.as_ref() && cx.has_global::<RoomsListRef>() {
+            let direct = cx.get_global::<RoomsListRef>().is_direct_room(&pending.room);
+            self.apply_restored_context(cx, direct, crate::account_session::epoch());
+        }
         app_state.selected_room = selected_room;
         self.redraw(cx);
     }
@@ -613,7 +628,51 @@ impl WidgetMatchEvent for MainDesktopUI {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         let mut should_save_dock_action: bool = false;
         for action in actions {
+            // Explicit navigation wins over a delayed restored Room classification.
+            if action.downcast_ref::<HagencyAction>().is_some()
+                || matches!(action.downcast_ref::<MainDesktopUiAction>(), Some(MainDesktopUiAction::ShowChats)) {
+                self.restored_context = None;
+            }
+            if let Some(navigation) = action.downcast_ref::<crate::hagency::ui::ProjectRoomNavigation>()
+                && navigation.current() {self.restored_context = None;}
             let widget_action = action.as_widget_action();
+            if matches!(action.downcast_ref::<MainDesktopUiAction>(), Some(MainDesktopUiAction::ShowChats))
+                || matches!(action.downcast_ref::<HagencyAction>(), Some(HagencyAction::Close)) {
+                if self.selected_space.is_some() {
+                    let state = scope.data.get_mut::<AppState>().unwrap();
+                    self.switch_dock_to_space(cx, state, None);
+                }
+                if let Some(room) = self.room_order.last().cloned() {
+                    self.focus_or_create_tab(cx, room);
+                } else {
+                    let dock = self.view.dock(cx, ids!(dock));
+                    let tab = id!(chats_welcome_tab);
+                    if dock.item(tab).is_empty() {
+                        if let Some((bar, _)) = dock.find_tab_bar_of_tab(id!(home_tab)) {
+                            dock.create_and_select_tab(cx, bar, tab, id!(welcome_screen), crate::i18n::tr("Chats").to_owned(), id!(CloseableTab), None);
+                        }
+                    } else {dock.select_tab(cx, tab);}
+                    cx.action(AppStateAction::FocusNone);
+                    self.most_recently_selected_room = None;
+                }
+                self.redraw(cx);
+            }
+            if let Some(action) = action.downcast_ref::<HagencyAction>() {
+                // Management lives in the permanent home pane; the Project tree
+                // and the active account stay visible beside it.
+                if !matches!(action, HagencyAction::Close) {
+                    let app_state = scope.data.get_mut::<AppState>().unwrap();
+                    if self.selected_space.is_some() {
+                        self.switch_dock_to_space(cx, app_state, None);
+                    }
+                    cx.action(NavigationBarAction::GoToHome);
+                    self.select_room(cx, None);
+                    let panel = self.view.dock(cx, ids!(dock)).item(id!(home_tab));
+                    panel.as_hagency_panel().action(cx, action);
+                }
+                self.redraw(cx);
+                continue;
+            }
             if let Some(super::room_history::RoomHistoryAction::Jump {room, event}) = action.downcast_ref() {
                 let selected = SelectedRoom::JoinedRoom {room_name_id: room.clone()};
                 let tab = selected.tab_id();
@@ -640,6 +699,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                 self.most_recently_selected_room = None;
                 self.selected_space = None;
                 self.drawn_previously = false;
+                self.restored_context = None;
                 dock.select_tab(cx, id!(home_tab));
                 self.redraw(cx);
                 continue;
@@ -744,6 +804,7 @@ impl WidgetMatchEvent for MainDesktopUI {
                             self.switch_dock_to_space(cx, app_state, None);
                         }
                         cx.action(NavigationBarAction::GoToHome);
+                        cx.action(MainDesktopUiAction::ShowChats);
                     }
                     // Note that this cannot be performed within draw_walk() as the draw flow prevents from
                     // performing actions that would trigger a redraw, and the Dock internally performs (and expects)
@@ -798,6 +859,10 @@ impl WidgetMatchEvent for MainDesktopUI {
                 Some(MainDesktopUiAction::LoadDockFromAppState) => {
                     let app_state = scope.data.get_mut::<AppState>().unwrap();
                     self.load_dock_state_from(cx, app_state);
+                    if self.most_recently_selected_room.is_none() {
+                        self.view.dock(cx, ids!(dock)).item(id!(home_tab))
+                            .as_hagency_panel().action(cx, &HagencyAction::OpenProjects);
+                    }
                 }
                 Some(MainDesktopUiAction::SaveDockIntoAppState) => {
                     let app_state = scope.data.get_mut::<AppState>().unwrap();
@@ -818,6 +883,8 @@ impl WidgetMatchEvent for MainDesktopUI {
 pub enum MainDesktopUiAction {
     /// Save the state of the dock into the AppState.
     SaveDockIntoAppState,
+    /// Select the most recent chat, or the chat welcome pane when none exist.
+    ShowChats,
     /// Load the room panel state from the AppState to the dock.
     LoadDockFromAppState,
     /// Close all tabs; see [`MainDesktopUI::close_all_tabs()`]
@@ -851,24 +918,30 @@ mod dock_state_repair {
             saved,
             home_tab,
             DockItem::Tab {
-                name: "Home".to_string(),
+                name: "Projects".to_string(),
                 template: id!(PermanentTab),
-                kind: id!(welcome_screen),
+                kind: id!(hagency_panel),
             },
         )?;
-        repaired |= ensure_fixed_tab_item(
-            saved,
-            rooms_sidebar_tab,
-            DockItem::Tab {
-                name: "Rooms".to_string(),
-                template: id!(PermanentTab),
-                kind: id!(rooms_sidebar),
-            },
-        )?;
-        if !any_tabs_contains(&saved.dock_items, home_tab) {
-            repaired |= ensure_tab_ref_in_tabs_container(saved, main_tabs_dsl, home_tab)?;
+        // The navigation sidebar now belongs to HomeScreen, outside the Dock.
+        // Remove only its old fixed tab, retaining all chat and user tab content.
+        for item in saved.dock_items.values_mut() {
+            if let DockItem::Tabs {tabs, selected, ..} = item {
+                let before = tabs.len();
+                tabs.retain(|id| *id != rooms_sidebar_tab);
+                repaired |= tabs.len() != before;
+                *selected = (*selected).min(tabs.len().saturating_sub(1));
+            }
         }
-        repaired |= ensure_tab_ref_in_tabs_container(saved, rooms_sidebar_tabs, rooms_sidebar_tab)?;
+        repaired |= saved.dock_items.remove(&rooms_sidebar_tab).is_some();
+        if matches!(saved.dock_items.get(&rooms_sidebar_tabs), Some(DockItem::Tabs {tabs, ..}) if tabs.is_empty()) {
+            collapse_tabs_container(saved, rooms_sidebar_tabs, main_tabs_dsl, rooms_sidebar_tabs)?;
+            repaired = true;
+        }
+        if !any_tabs_contains(&saved.dock_items, home_tab) {
+            let target = if matches!(saved.dock_items.get(&root), Some(DockItem::Tabs {..})) {root} else {main_tabs_dsl};
+            repaired |= ensure_tab_ref_in_tabs_container(saved, target, home_tab)?;
+        }
 
         // Rebuild missing bookkeeping from the more redundant fields. Older corrupt
         // snapshots often have a valid room_order but an incomplete open_rooms map.
@@ -910,20 +983,10 @@ mod dock_state_repair {
         let Some(main_tabs_id) = find_tabs_containing(&saved.dock_items, &tree_order, home_tab) else {
             return Err("no reachable main-tabs container (holding home_tab) was found");
         };
-        if main_tabs_id == root {
-            promote_root_tabs_to_default_split(
-                saved,
-                main_tabs_dsl,
-                rooms_sidebar_tabs,
-                rooms_sidebar_tab,
-            )?;
-            repaired = true;
-            (tree_order, _) = walk_dock_tree(&saved.dock_items)?;
-        } else if main_tabs_id != main_tabs_dsl {
-            // Normalize the home-holding tab container to id!(main_tabs). If id!(main_tabs)
-            // is already a reachable different container, swap the two IDs instead of
-            // deleting the reachable container's content.
+        let mut main_tabs_id = main_tabs_id;
+        if main_tabs_id != root && main_tabs_id != main_tabs_dsl {
             normalize_main_tabs_id(saved, main_tabs_id, main_tabs_dsl, &reachable)?;
+            main_tabs_id = main_tabs_dsl;
             repaired = true;
             (tree_order, _) = walk_dock_tree(&saved.dock_items)?;
         }
@@ -936,17 +999,16 @@ mod dock_state_repair {
 
         // Rescue open room tabs that are no longer referenced by any reachable Tabs
         // container. Recreated missing DockItem::Tab entries from above are handled here.
-        repaired |= append_unreferenced_open_rooms_to_main_tabs(saved, main_tabs_dsl, &mut referenced_tabs);
+        repaired |= append_unreferenced_open_rooms_to_main_tabs(saved, main_tabs_id, &mut referenced_tabs);
         (tree_order, reachable) = walk_dock_tree(&saved.dock_items)?;
 
         // Collapse reachable empty Tabs out of the tree. Dedupe can strip the only
         // tab from a container; if we leave it in place, Makepad renders it as an
-        // empty pane. main_tabs and the fixed sidebar tabs container are preserved.
+        // empty pane. Keep the home-holding container; its ID may become root.
         loop {
             let empty_id = tree_order.iter()
                 .find(|id| **id != root
-                    && **id != main_tabs_dsl
-                    && **id != rooms_sidebar_tabs
+                    && **id != main_tabs_id
                     && matches!(
                         saved.dock_items.get(*id),
                         Some(DockItem::Tabs { tabs, .. }) if tabs.is_empty()
@@ -954,9 +1016,11 @@ mod dock_state_repair {
                 )
                 .copied();
             let Some(empty_id) = empty_id else { break };
-            collapse_tabs_container(saved, empty_id, main_tabs_dsl, rooms_sidebar_tabs)?;
+            collapse_tabs_container(saved, empty_id, main_tabs_id, rooms_sidebar_tabs)?;
             repaired = true;
             (tree_order, reachable) = walk_dock_tree(&saved.dock_items)?;
+            main_tabs_id = find_tabs_containing(&saved.dock_items, &tree_order, home_tab)
+                .ok_or("main tabs missing after empty pane collapse")?;
         }
 
         // Drop anything still unreachable, such as orphaned Tabs/Splitter items.
@@ -967,11 +1031,8 @@ mod dock_state_repair {
             (tree_order, _) = walk_dock_tree(&saved.dock_items)?;
         }
 
-        if find_tabs_containing(&saved.dock_items, &tree_order, home_tab) != Some(main_tabs_dsl) {
+        if find_tabs_containing(&saved.dock_items, &tree_order, home_tab) != Some(main_tabs_id) {
             return Err("home_tab is not in the reachable main-tabs container");
-        }
-        if find_tabs_containing(&saved.dock_items, &tree_order, rooms_sidebar_tab).is_none() {
-            return Err("rooms sidebar tab is not reachable");
         }
 
         // Collect the post-cleanup set of tab IDs reachable from the tree, used to
@@ -987,7 +1048,7 @@ mod dock_state_repair {
         // Adjust the indices for the selected room.
         if let Some(sel_id) = saved.selected_room.as_ref().map(|sr| sr.tab_id())
             && let Some(DockItem::Tabs { tabs, selected, .. }) =
-                saved.dock_items.get_mut(&main_tabs_dsl)
+                saved.dock_items.get_mut(&main_tabs_id)
             && let Some(idx) = tabs.iter().position(|t| *t == sel_id)
             && *selected != idx
         {
@@ -1071,43 +1132,6 @@ mod dock_state_repair {
             }
             None => Ok(false),
         }
-    }
-
-    fn promote_root_tabs_to_default_split(
-        saved: &mut SavedDockState,
-        main_tabs_id: LiveId,
-        rooms_sidebar_tabs_id: LiveId,
-        rooms_sidebar_tab_id: LiveId,
-    ) -> Result<(), &'static str> {
-        let root = id!(root);
-        let Some(root_tabs) = saved.dock_items.remove(&root) else {
-            return Err("root dock item is missing");
-        };
-        if !matches!(root_tabs, DockItem::Tabs { .. }) {
-            saved.dock_items.insert(root, root_tabs);
-            return Err("root dock item is not a tabs container");
-        }
-
-        saved.dock_items.insert(main_tabs_id, root_tabs);
-        saved.dock_items.insert(
-            rooms_sidebar_tabs_id,
-            DockItem::Tabs {
-                tabs: vec![rooms_sidebar_tab_id],
-                selected: 0,
-                closable: true,
-                hide_tab_bar: true,
-            },
-        );
-        saved.dock_items.insert(
-            root,
-            DockItem::Splitter {
-                axis: SplitterAxis::Horizontal,
-                align: SplitterAlign::FromA(300.0),
-                a: rooms_sidebar_tabs_id,
-                b: main_tabs_id,
-            },
-        );
-        Ok(())
     }
 
     fn walk_dock_tree(
@@ -1311,8 +1335,8 @@ mod dock_state_repair {
     fn collapse_tabs_container(
         saved: &mut SavedDockState,
         tabs_id: LiveId,
-        main_tabs_id: LiveId,
-        rooms_sidebar_tabs_id: LiveId,
+        _main_tabs_id: LiveId,
+        _rooms_sidebar_tabs_id: LiveId,
     ) -> Result<(), &'static str> {
         let root = id!(root);
         let Some((parent_split, sibling)) = saved.dock_items.iter().find_map(|(sid, item)| {
@@ -1331,9 +1355,6 @@ mod dock_state_repair {
         };
 
         if parent_split == root {
-            if sibling == main_tabs_id || sibling == rooms_sidebar_tabs_id {
-                return Err("empty pane collapse would remove a required dock container id");
-            }
             let Some(sibling_content) = saved.dock_items.remove(&sibling) else {
                 return Err("empty pane sibling is missing");
             };
@@ -1364,6 +1385,106 @@ mod dock_state_repair {
             }
         }
         replaced
+    }
+
+}
+
+#[cfg(test)]
+mod persistent_navigation_tests {
+    use super::*;
+    fn room(name: &str) -> SelectedRoom {
+        SelectedRoom::JoinedRoom {room_name_id: RoomNameId::new(matrix_sdk::RoomDisplayName::Named(name.into()), format!("!{name}:example.org").try_into().unwrap())}
+    }
+    fn tabs(ids: Vec<LiveId>) -> DockItem {DockItem::Tabs {tabs: ids, selected: 0, closable: true, hide_tab_bar: false}}
+    fn tab(kind: LiveId) -> DockItem {DockItem::Tab {name: "Fixture".into(), template: id!(CloseableTab), kind}}
+    #[test]
+    fn restored_direct_room_selects_chat_context_without_replacing_room_or_project_dock() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut ui = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm); crate::app::register_widgets(vm);
+            let value = script_eval!(vm, {mod.widgets.MainDesktopUI {}});
+            MainDesktopUI::script_from_value(vm, value)
+        });
+        let selected = room("restored"); let epoch = crate::account_session::epoch();
+        ui.most_recently_selected_room = Some(selected.clone());
+        ui.selected_space = Some("!project:example.org".try_into().unwrap());
+        *cx.global::<super::super::rooms_sidebar::DesktopWorkspace>() = super::super::rooms_sidebar::DesktopWorkspace::Projects;
+        ui.restored_context = Some(RestoredRoomContext {room:selected.room_id().clone(),epoch});
+        ui.apply_restored_context(&mut cx, None, epoch);
+        assert!(ui.restored_context.is_some(), "wait for exact Room metadata instead of guessing from its name");
+        ui.apply_restored_context(&mut cx, Some(true), epoch);
+        assert_eq!(*cx.global::<super::super::rooms_sidebar::DesktopWorkspace>(), super::super::rooms_sidebar::DesktopWorkspace::Chats);
+        assert_eq!(ui.most_recently_selected_room, Some(selected.clone()));
+        assert!(ui.selected_space.is_some(), "classification must not reload or replace a saved dock");
+        *cx.global::<super::super::rooms_sidebar::DesktopWorkspace>() = super::super::rooms_sidebar::DesktopWorkspace::Projects;
+        ui.restored_context = Some(RestoredRoomContext {room:selected.room_id().clone(),epoch});
+        ui.apply_restored_context(&mut cx, Some(false), epoch);
+        assert_eq!(*cx.global::<super::super::rooms_sidebar::DesktopWorkspace>(), super::super::rooms_sidebar::DesktopWorkspace::Projects);
+        ui.restored_context = Some(RestoredRoomContext {room:selected.room_id().clone(),epoch});
+        ui.apply_restored_context(&mut cx, Some(true), epoch.wrapping_add(1));
+        assert!(ui.restored_context.is_none());
+        assert_eq!(*cx.global::<super::super::rooms_sidebar::DesktopWorkspace>(), super::super::rooms_sidebar::DesktopWorkspace::Projects, "same Room ID from another account epoch cannot steal navigation");
+        ui.restored_context = Some(RestoredRoomContext {room:selected.room_id().clone(),epoch});
+        let actions = cx.capture_actions(|cx| cx.action(HagencyAction::OpenProjects));
+        ui.handle_actions(&mut cx, &actions, &mut Scope::with_data(&mut AppState::default()));
+        assert!(ui.restored_context.is_none(), "explicit Projects navigation cancels delayed restoration");
+        ui.apply_restored_context(&mut cx, Some(true), epoch);
+        assert_eq!(*cx.global::<super::super::rooms_sidebar::DesktopWorkspace>(), super::super::rooms_sidebar::DesktopWorkspace::Projects);
+    }
+    #[test]
+    fn removing_embedded_sidebar_preserves_chat_tabs_and_split_panes() {
+        let a = room("first"); let b = room("second");
+        let mut saved = SavedDockState::default();
+        saved.dock_items.extend([
+            (id!(root), DockItem::Splitter {axis: SplitterAxis::Horizontal, align: SplitterAlign::FromA(300.0), a: id!(rooms_sidebar_tabs), b: id!(chat_split)}),
+            (id!(rooms_sidebar_tabs), tabs(vec![id!(rooms_sidebar_tab)])),
+            (id!(rooms_sidebar_tab), tab(id!(rooms_sidebar))),
+            (id!(chat_split), DockItem::Splitter {axis: SplitterAxis::Horizontal, align: SplitterAlign::Weighted(0.5), a: id!(main_tabs), b: id!(other_tabs)}),
+            (id!(main_tabs), tabs(vec![id!(home_tab), a.tab_id()])),
+            (id!(other_tabs), tabs(vec![b.tab_id()])),
+            (id!(home_tab), tab(id!(hagency_panel))),
+            (a.tab_id(), tab(a.dock_kind())), (b.tab_id(), tab(b.dock_kind())),
+        ]);
+        saved.open_rooms.extend([(a.tab_id(), a.clone()), (b.tab_id(), b.clone())]);
+        saved.room_order = vec![a.clone(), b.clone()]; saved.selected_room = Some(b.clone());
+        assert!(dock_state_repair::validate_and_repair_dock_state(&mut saved).unwrap());
+        assert!(!saved.dock_items.contains_key(&id!(rooms_sidebar_tab)));
+        assert!(!saved.dock_items.contains_key(&id!(rooms_sidebar_tabs)));
+        assert!(matches!(saved.dock_items[&id!(root)], DockItem::Splitter {..}));
+        assert_eq!(saved.open_rooms.len(), 2); assert_eq!(saved.room_order, vec![a, b.clone()]);
+        assert_eq!(saved.selected_room, Some(b));
+        assert!(!dock_state_repair::validate_and_repair_dock_state(&mut saved).unwrap());
+    }
+    #[test]
+    fn new_root_tabs_need_no_sidebar_promotion_and_recover_missing_room_refs() {
+        let a = room("first"); let mut saved = SavedDockState::default();
+        saved.dock_items.extend([(id!(root), tabs(vec![id!(home_tab)])), (id!(home_tab), tab(id!(hagency_panel)))]);
+        saved.open_rooms.insert(a.tab_id(), a.clone()); saved.room_order.push(a.clone());
+        saved.selected_room = Some(a.clone());
+        assert!(dock_state_repair::validate_and_repair_dock_state(&mut saved).unwrap());
+        assert!(matches!(&saved.dock_items[&id!(root)], DockItem::Tabs {tabs, ..} if tabs.contains(&a.tab_id())));
+        assert_eq!(saved.selected_room, Some(a));
+        assert!(!saved.dock_items.contains_key(&id!(rooms_sidebar_tab)));
+    }
+    #[test]
+    fn chats_action_opens_welcome_instead_of_projects_when_no_chat_exists() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut ui = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm); crate::app::register_widgets(vm);
+            vm.bx.captured_errors = Some(Vec::new());
+            let value = script_eval!(vm, {mod.widgets.MainDesktopUI {}});
+            let ui = MainDesktopUI::script_from_value(vm, value);
+            assert!(vm.take_errors().is_empty()); ui
+        });
+        let mut state = AppState::default();
+        for close in [true, false] {
+            let actions = cx.capture_actions(|cx| if close {cx.action(HagencyAction::Close)} else {cx.action(MainDesktopUiAction::ShowChats)});
+            ui.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::with_data(&mut state));
+            let dock = ui.view.dock(&mut cx, ids!(dock));
+            assert!(!dock.item(id!(chats_welcome_tab)).is_empty());
+            assert!(!dock.item(id!(home_tab)).is_empty());
+            assert!(ui.most_recently_selected_room.is_none());
+        }
     }
 
 }

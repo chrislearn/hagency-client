@@ -1,122 +1,124 @@
 [English](hagency-quickstart.md) | [简体中文](hagency-quickstart.zh-CN.md)
 
-# 在 Rinx 使用 Hagency：快速开始
+# 原生 Hagency 快速开始
 
-通过 Rinx 批准 Hagency 连接、申请项目与 agent，并与 agent 聊天。Hagency 在
-运维者的机器上运行 Codex；Rinx 是 Matrix 客户端。本指南对应当前源码中的
-Palpo 小程序与 Hagency 服务器关联流程。
+本文对应当前 Projects/Agents 原生页面。Palpo 小程序、Fleet／服务器关联／
+资源申请以及协调者审批流程已退休。
 
-## 准备账号与本机运行环境
+## 一次登录
 
-| 角色 | 负责什么 |
+在登录页输入 Hagency 服务器地址，在浏览器完成 Pasion 登录和授权。服务器
+必须声明受支持的 Hagency 协议；普通 Matrix 服务器会被拒绝。Matrix SDK 负责
+会话刷新和保存，原生管理复用当前账号授权，不要求复制 token 或再次登录 Matrix。
+
+登录页及 **Settings → Account** 可选择已保存账号。切换会停止当前主人的本地
+Agent 运行并清理活动权限；原账号的独立数据保留，不转让 Agent 所有权。
+
+## 创建 Project 与讨论 Room
+
+打开 **Projects → New Project**，也可以从侧栏 Projects 的 **⋯ → New project**
+进入。默认新建 Space，也可以连接当前账号已经加入的 Space。候选分页或局部
+查询失败需要明确处理，不把不可用候选当作可选项。
+
+Project 是 Hagency 中绑定 Space 的记录，不会把每个普通 Matrix Space 都自动
+当作 Project。名称和主题来自 Space。详情提供四个区块：
+
+| 区块 | 用途 |
 | --- | --- |
-| 资源所有者／Hagency 运维者 | 运行 Hagency、确认连接、创建资源、委托协调者。 |
-| Palpo 管理员 | 批准服务器关联。 |
-| 协调者 | 审查关联中的项目、agent 和追加 token 申请。 |
-| 项目／agent 所有者 | 申请项目和 agent、聊天、批准受保护操作。 |
+| Overview | Space 身份、说明、Open Space。 |
+| Rooms | 新建 Room，或接入已关联该 Space 的 Room；打开聊天和成员。 |
+| Members | 查看真实 Space 成员；有 Matrix 邀请权限时邀请成员。 |
+| Access | 查看接入权限与服务状态；有管理权限时才能编辑。 |
 
-一个人可以担任多个角色。使用同一 Matrix 服务器上已有的账号，完整 ID 例如
-`@owner:example.org`。协调者是 Matrix 用户，不需要通过 Hagency 创建一个机器人。
-同机测试多个账号时使用独立的 Rinx 配置目录，见[数据与兼容性](../README.md#data-and-compatibility)。
+Space 成员不会自动复制到所有 Room。每个讨论 Room 有独立成员与邀请规则。
+目录中 Project 条目的 **⋯** 还可直达概览、讨论 Room、成员、邀请成员和 Space。
+创建结果未确认时，使用 **Resume original request**，不要猜测结果后重复新建。
 
-运维者在运行 agent 的机器上安装并登录 Codex，启动 Hagency，打开本地控制台：
+Project/Room 接入策略决定哪些成员可以把 Agent 接入此范围，禁止名单优先。
+它不审批 token 配额。**Service pause** 是独立设置，可暂停已有服务；解除管理员
+暂停不会自动恢复主人已暂停的绑定。普通成员不能修改这些管理设置。
 
-```sh
-codex login
-hagency start
-```
+## 创建服务器级 Agent
 
-通过 **设置 → 编程代理** 检查检测到的 Codex 及运行配置。agent 工作期间，机器
-和服务需保持运行。安装、服务模式和首次来源配置详见
-[Hagency 使用指南](https://github.com/hagency-org/hagency-rs/blob/main/docs/user-guide/README.zh-CN.md)。
+打开 **Agents → New Agent**，填写显示名称并创建。Agent 永久归创建者所有，
+默认执行设备就是当前已授权设备，不要求先选择 Project 或讨论 Room。等待身份
+配置完成；主人私聊会按原请求设置。必要时使用 **Set up / retry private chat**，
+就绪后 **Open private chat**。
 
-在 Rinx 登录 Palpo，设置交叉签名并验证会话，以便使用加密审批室。打开
-**小程序 → Palpo**（移动布局中在 **发现** 下）。首次使用时检查权限并点击
-**运行（Run）**。小程序使用当前 Matrix 账号，无需在其中填写密码或 Codex 密钥。
+只有指定执行设备可以运行这个 Agent。**Handle on this device** 经显式确认及
+版本检查后改为当前主人的设备，不转让身份、不复制预算、不清零已消耗 token，
+也不授权重跑未知执行。新设备开始新请求前仍可能需要恢复同一主人的完整账本。
 
-## 1. 建立服务器关联
+讨论 Room 接入是另一步：使用 **Add Room binding**，或在讨论 Room 聊天信息的
+**Members → Invite my Agent** 中选择已存在 Agent。后台仍校验 Project/Room
+接入权、真实成员状态与傀儡邀请权限；成员选择器不会另建一个 Agent。
 
-1. **运维者，在 Hagency 中**：在 **设置 → 连接 Palpo** 或 **服务器关联** 页面
-   点 **新建服务器关联**。填写 HTTPS Matrix 地址、资源所有者和协调者的 Matrix
-   ID、名称和授权期限。只有管理员提供单独的管理服务地址时，才填写
-   **独立的 Palpo 地址**。点击 **发起关联**。
-2. **资源所有者，在 Rinx 中**：打开 **Palpo → Inbox**，确认是自己发起的连接后
-   批准。Hagency 的 **在 Rinx 打开请求** 也会进入同一条请求。
-3. **管理员，在 Rinx 中**：在自己的 Palpo Inbox 批准服务器配置。
-4. Hagency 自动接收已批准的配置。**通过这个入口发起的新连接无需下载／导入 JSON。**
-5. **资源所有者，在 Rinx 中**：打开已批准的请求，点击一次 **验证连接（Verify
-   connection）**。验证期间按钮禁用，等待两个应用都显示 **连接已验证**。
+## 四个 Agent 详情标签
 
-已有正常关联时，直接在下方流程添加资源即可，无需撤销再重连。委托表单中的
-**取消** 只是丢弃未保存的编辑；撤销是另一项变更，不会删除已有 agent、历史或
-预留额度。
-
-## 2. 在 Hagency 创建资源
-
-1. 打开 **我的资源 → 新建资源配置**。
-2. 选择已验证的 **服务器关联** 和本地 **来源配置**。来源提供框架、提供方和
-   账号；搜索框按模型／框架／推理档位过滤，不是填写 agent 或项目名。
-3. 选择模型、推理档位，填写每月 token 预算。
-4. 填写 **可申请项目的 Matrix 用户**，使用同一服务器上的完整 ID，以空格或
-   换行分隔，例如 `@project-owner:example.org`。
-5. 点击 **创建资源**，等待它出现在有资格用户的 Rinx **Palpo → 资源** 目录中。
-
-每个资源在关联下只有一份预算。一个关联可以有多个资源，之后无需再分配第二层
-资源池。共享账户额度未知不代表实测为零，也不代表服务商保证的容量。
-
-全新 Hagency 状态目录中，向导目前需要运维者先通过文档中的
-[运维 API](https://github.com/hagency-org/hagency-rs/blob/main/README.zh-CN.md#用运维-api-创建资源)
-创建第一个本地来源。设置页面会配置 Codex 运行环境，但不会创建这个来源。已有
-来源后，关联资源统一通过上述向导创建。
-
-## 3. 在 Rinx 申请项目和 agent
-
-1. **项目所有者**：在 **Palpo → 资源** 中，点某个资源的 **在此申请项目（Request
-   project here）**，填写项目名称和用途。
-2. 让 Palpo 创建新房间，或点 **选择已有房间（Choose an existing room）**。
-   已有房间必须是你创建的、私密的（仅邀请加入）、未加密且不是 Space。
-   Palpo 会验证所选房间并邀请关联的代表账号。
-3. 提交。**协调者** 在 **Palpo → Inbox** 批准或拒绝项目；**所有者** 在
-   **项目** 中等待配置完成。
-4. **所有者** 在项目上点 **申请 agent（Request agent）**，选择资源和角色，
-   填写 agent 名称、初始 token 数和每日速率，然后提交。
-5. **协调者** 在自己的 Palpo Inbox 审查并批准或拒绝申请额度。Hagency 收到决策
-   后检查当前授权和容量。
-6. **所有者** 查看 **Agents → 打开最新结果（Open latest result）**。
-   **已批准（approved）** 是审批结果；**执行（Execution）· pending / provisioning**
-   表示仍在配置运行环境。测试聊天前等待 **Execution · ready**。
-
-项目审批通过代表获得资源使用资格，并未预留 agent 的 token。项目房间用于共享
-讨论和 @ 提及 agent；本地工作目录、加密所有者私聊和加密审批室是各自独立的。
-
-## 4. 聊天与操作审批
-
-- 接受 agent 的私聊邀请，发一条简短消息。**所有者私聊无需 @，第一条也不需要。**
-  私聊里只保留你和 agent。
-- 在共享项目房间中 @ 提及 agent，后续消息放在同一讨论串。agent 不在与其他人
-  共享的加密群聊中工作。
-- 在所有者审批室用卡片按钮批准受保护操作。文字回复不算批准。这与 Palpo Inbox
-  中的项目和 token 审批是不同决策。
-- 需要时使用 **Palpo → Agents → 申请更多 token（Request more tokens）**，由
-  协调者审批。重命名、暂停、恢复和移除只在当前账号有权限时显示；操作后查看
-  最新运行结果。
-
-## 排查问题，保留原请求
-
-| 看到什么 | 检查什么 |
+| 标签 | 配置与查看内容 |
 | --- | --- |
-| Inbox 为空 | 当前 Matrix 账号及筛选。先由所有者确认，再由管理员批准；项目和 agent 由协调者审批。 |
-| 资源为空 | 连接已验证、资源已发布、可申请人 ID 正确、委托有效。 |
-| 项目没有就绪 | 查看配置说明。只有服务器提供入口时，使用 **重试项目配置**。 |
-| 已批准但 `provisioning` | 配置仍在进行。私聊邀请出现后接受，并继续查看执行状态。 |
-| `provisioning_unknown`／配置需要处理 | 请 Hagency 运维者检查原始尝试、日志及 Matrix 状态。账号／房间可能已创建，token 可能仍预留，不要重复申请。 |
-| `unavailable` | agent 已存在，但运行环境或 Matrix 连接需要在 Hagency 主机处理。 |
-| `ready` 但私聊无回复 | 确认你是所有者、没有其他成员；请运维者检查密钥交换和消息接收。 |
-| 审批卡片无法解密 | 验证当前 Rinx 会话，或使用其他已验证会话。 |
+| Agent | 身份、执行设备、主人私聊、Room 绑定、暂停／恢复、离开与永久退役。 |
+| 模型与资源 | 本机 Codex 账号、模型、推理选项及保存的 Agent 工作目录。 |
+| 限制 | Agent 总额、选中 Room 总额、该 Room 内选中请求者。 |
+| 服务运行 | 选中 Room 运行、估算预留、受限文件工具及待审批请求。 |
 
-## 设置和主题
+选择 **Use my signed-in local Codex account** 可复用本机已登录 Codex，无需
+重复登录。Disconnect 只解除当前 Matrix 账号与本机 Codex 的关联，不退出日常
+Codex。也可使用独立 Codex 登录；取消、打开登录链接、退出独立账号对应这一模式。
+从真实模型目录选择模型，选择已有工作目录或准备 Agent 的私有目录，然后保存。
 
-桌面与移动布局共用 **设置 → 账号／偏好设置／隐私／关于**。移动布局从
-**我 → 设置** 进入。主题在 **偏好设置 → 应用外观**；工作流命令建议在
-**偏好设置 → Hagency**。审批卡片和 Palpo 小程序无需开启工作流命令建议。
-详见[设置与主题](../README.zh-CN.md#设置与主题)。
+模型／工作目录属于该 Agent，在它的多个 Room 之间共用；对话、Room 配额和审批
+各自隔离。服务器管理员不审批本地资源选择。
+
+在“限制”中选择整个 Agent、某个 Room 或 Room 中的某个成员。默认不限制 Token；
+已设置的各层额度同时生效，支持累计、每天（UTC）、每月（UTC）。0 额度停止该范围
+使用；已有 Unset 也表示不限制。请求可 Allow、Deny 或 Ask owner；
+工具策略可拒绝高风险、逐个精确工具询问或限制精确工具／目录。保存保留已消耗
+量和未知预留；有 hold 不表示实测消耗为零。
+
+## 启动与聊天
+
+在 **服务运行** 选择活动主人私聊或讨论 Room，等待已保存的 Codex
+配置及账号校验完成。明确勾选估算记账，填写正数单次预留量，在“模型与资源”中保存模型支持的
+推理档位。受限 host files 默认关闭，目前仅 list／read／create，不提供 native
+shell 或 MCP 执行。
+
+从 Agent 详情进入时默认选择主人私聊，不需要再次选择 Room。服务页直接显示当前聊天；切换其他房间、查看该房间的 Agent 和管理加入状态在折叠的“高级房间设置”中。从项目 Room 进入则保留对应 Room，不会切回私聊。
+
+**开始处理消息** 只启动当前范围，**停止处理消息** 只停止它；另一个运行中 Room
+可以继续工作。主人私聊无需 @，普通顶层私聊消息共用 Room 对话上下文，显式
+讨论串仍隔离。讨论 Room 使用 Matrix 真正的 Agent @ 提及，后续在该讨论串中
+继续。实际模型 turn 开始后，傀儡可在对应用户消息上添加 👀 处理反应。
+
+待审批请求／工具显示在 服务运行标签。批准针对所显示的精确请求或工具，不是服务器
+无限资源授权。Agent 加密 Room 执行暂缓；普通 Matrix 加密聊天功能仍保留。
+
+### 重启恢复（待最终验收）
+
+重启会恢复已保存的运行意图。规则是只恢复曾明确 Start、且没有显式 Stop 的 Room，重新核验当前主人、设备、租约、资源和完整账本后使用保存的预留量、effort 与 host files 选择。**停止处理消息将该范围排除在重启恢复之外**；正常关闭程序不是同一个指令。Agent active 或保存模型不能自动启动全部 Room。资源缺失、未知费用、失去成员权限或指定其他设备均应阻断，不自动重推理或 takeover。
+
+Agent 不限额不会绕过 Room／成员的有限额度或显式请求拒绝。已送出的策略暂停回复不算正常推理成功。[运行恢复记录](../../hagency-client/docs/design/2026-10-08-agent-runtime-recovery.zh-CN.md) 记录普通/快速重启、显式 Stop 排除及尚未覆盖的实机分支。
+
+## 失败与恢复
+
+| 状态 | 处理方式 |
+| --- | --- |
+| Loading／暂不可用 | 检查连接后刷新；旧账号／旧页面的晚响应不能覆盖当前页面。 |
+| Agent creating／主人私聊 pending | 等待或重试原请求，不另建身份／Room。 |
+| 指向另一执行设备 | 使用那台设备，或显式切到本机并满足账本恢复检查。 |
+| 模型／目录／账号缺失 | 在“模型与资源”中连接账号并保存模型；私有工作目录自动生成。 |
+| 配额未设／拒绝／等待审批 | 修改正确层级或审阅精确待审批请求。 |
+| 消耗／副作用未知，或 ledger recovery required | 保留 hold，恢复同一主人的完整状态，不清余额、不重跑模型。 |
+| 傀儡被移除／服务暂停 | 恢复真实权限后，在允许时显式恢复绑定；重新加入不会复活旧 dispatch。 |
+| Agent Room 已加密 | 使用合法未加密范围；Agent crypto 仍延期。 |
+
+## 其他保留页面
+
+**Chats** 保留搜索、附件、Room 信息、成员与邀请；**Contacts** 可发起普通聊天。
+**Mini apps** 保留非 Palpo 内置应用、App Hub、本地导入、权限审阅和受限运行。
+**More** 中有 Discover、Explore rooms、Moments、File Transfer、Article editor、
+Browser、Settings。
+
+设置分为 Account、Preferences、Privacy、About。通用外部 Agent Access／
+BotFather 控件与原生 Hagency Agent 设置不同，不是运行所必需。当前部分管理文字
+仍为英文，因此本文使用源码中的英文控件名以便定位。

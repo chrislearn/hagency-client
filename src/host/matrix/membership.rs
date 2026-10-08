@@ -22,7 +22,7 @@ pub(super) async fn invite(room_id: OwnedRoomId, user_id: OwnedUserId) -> Result
     )?;
     super::policy::audit_server_operation(
         client.homeserver().as_str(),
-        room.invite_user_by_id(&user_id),
+        crate::utils::invite_room_member(&room, &user_id),
     )
     .await
     .map_err(|e| format!("couldn't invite {user_id}: {e}"))?;

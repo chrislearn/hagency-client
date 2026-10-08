@@ -2131,6 +2131,54 @@ impl Widget for RoomsList {
 }
 
 impl RoomsListRef {
+    /// The Project tree consumes the same SDK update queue even while the
+    /// flat list is hidden. Neither a Space child edge nor a Project grant
+    /// substitutes for current joined Matrix membership.
+    pub(crate) fn project_tree_rooms(&self, cx: &mut Cx) -> Vec<super::project_tree::TreeRoom> {
+        let Some(mut inner) = self.borrow_mut() else { return Vec::new(); };
+        inner.handle_rooms_list_updates(cx);
+        let Some(client) = crate::sliding_sync::get_client() else { return Vec::new(); };
+        let mut ordered = inner.all_known_rooms_order.iter()
+            .filter(|id| inner.all_joined_rooms.contains_key(*id)).collect::<Vec<_>>();
+        if let Some(sort_fn) = inner.sort_fn.as_deref() {
+            ordered.sort_by(|a, b| sort_fn(&inner.all_joined_rooms[*a], &inner.all_joined_rooms[*b]));
+        }
+        let mut rooms:Vec<_> = ordered.into_iter().filter_map(|id| {
+            let info = inner.all_joined_rooms.get(id)?;
+            let room = client.get_room(id)?;
+            if room.state() != matrix_sdk::RoomState::Joined || room.is_space()
+                || info.is_tombstoned || crate::moments::is_moments(&room)
+                || super::chat_actions::is_hidden(id) { return None; }
+            Some(super::project_tree::TreeRoom {
+                name: info.room_name_id.clone(),
+                unread: info.num_unread_messages.max(info.num_unread_mentions),
+                marked: info.is_marked_unread,
+                invited: false,
+                is_direct: info.is_direct,
+                is_favorite: info.tags.contains_key(&TagName::Favorite),
+            })
+        }).collect();
+        rooms.extend(inner.invited_rooms.borrow().values().filter_map(|info| {
+            let room=client.get_room(info.room_name_id.room_id())?;
+            if room.state()!=matrix_sdk::RoomState::Invited || crate::moments::is_moments(&room) || super::chat_actions::is_hidden(room.room_id()) {return None;}
+            Some(super::project_tree::TreeRoom{name:info.room_name_id.clone(),unread:0,marked:false,invited:true,is_direct:info.is_direct,is_favorite:false})
+        }));
+        rooms
+    }
+
+    /// Use the same joined-room metadata for both flat-list and Project-tree menus.
+    pub(crate) fn room_context_details(&self, room_id: &OwnedRoomId) -> Option<RoomContextMenuDetails> {
+        let inner = self.borrow()?;
+        let room = inner.all_joined_rooms.get(room_id)?;
+        Some(RoomContextMenuDetails {
+            notification_mode: room.notification_mode,
+            room_name_id: room.room_name_id.clone(),
+            is_favorite: room.tags.contains_key(&TagName::Favorite),
+            is_low_priority: room.tags.contains_key(&TagName::LowPriority),
+            has_unreads: room.is_marked_unread || room.num_unread_mentions > 0 || room.num_unread_messages > 0,
+        })
+    }
+
     pub fn latest_timestamp(&self, room: &OwnedRoomId) -> u64 {
         self.borrow().and_then(|s| s.all_joined_rooms.get(room).and_then(|r| r.latest.as_ref()).map(|e| e.timestamp.0.into())).unwrap_or(0)
     }

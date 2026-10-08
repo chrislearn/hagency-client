@@ -484,7 +484,7 @@ script_mod! {
 
         // Empty in builds without the `agent_chat` feature.
         approvals := RobrixNeutralIconButton {visible: #(cfg!(feature = "agent_chat")) text: #(crate::i18n::tr("Approval rooms")) i18n_text: "Approval rooms"}
-        agent_access := RobrixNeutralIconButton {text: #(crate::i18n::tr("Agent Access")) i18n_text: "Agent Access"}
+        agent_access := RobrixNeutralIconButton {text: #(crate::i18n::tr("External bots and AppServices")) i18n_text: "External bots and AppServices"}
         agent_chat_preferences := mod.widgets.AgentChatPreferences {}
     }
 }

@@ -639,7 +639,7 @@ impl Service {
         ensure!(user != self.owner, crate::i18n::tr("The author cannot be removed."));
         self.guard()?;
         if invite {
-            sdk.invite_user_by_id(user).await?;
+            crate::utils::invite_room_member(&sdk, user).await?;
         } else {
             sdk.kick_user(user, Some("Removed from Moments audience"))
                 .await?;
