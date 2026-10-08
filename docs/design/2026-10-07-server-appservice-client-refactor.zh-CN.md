@@ -8,7 +8,7 @@
 
 ## 阅读范围与证据基线
 
-最新 Agent 身份与设备执行权规则见[Agent 身份、执行实例与 Room 接入实施细则](2026-10-07-agent-identity-execution-instance.zh-CN.md)。Agent 创建不再接收 Project/Room；Project/Room 策略只控制接入绑定。每个 Agent 当前至多一个绑定指定设备的执行实例，默认主人私聊使用独立 owner_direct scope。Discovery protocolVersion=2；旧领域数据库明确拒绝，使用独立新 Hagency 库，保留 Palpo/Pasion 数据。
+最新 Agent 身份与设备执行权规则见[Agent 执行设备与跨设备设置细则](2026-10-08-agent-execution-device.zh-CN.md)。Agent 创建不接收 Project/Room 或设备选择，默认绑定当前授权设备；Project/Room 策略只控制接入绑定。独立执行实例合入 Agent 执行设备字段，默认主人私聊使用独立 owner_direct scope。新契约 Discovery protocolVersion=3，旧结构明确拒绝；保留 Palpo/Pasion 的默认功能和数据。下面已有版本2测试记录作为此前阶段证据保留。
 
 Desktop Agent 创建、资源、接入权限和运行闭环的最新核对与修补见[Agent 完成核对](2026-10-07-desktop-agent-completion-audit.zh-CN.md)。该补充记录替代此前 Agent 全局配置依赖 Room、创建仅内存幂等、Desktop 缺管理员接入策略入口的阶段性状态，并保留真实模型与新增页面实机验证的边界。
 

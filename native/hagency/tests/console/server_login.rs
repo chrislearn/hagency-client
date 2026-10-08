@@ -25,7 +25,8 @@ struct OAuthState {
     agent_state: String,
     management_calls: usize,
     commands: std::collections::BTreeSet<String>,
-    instance: Option<Value>,
+    execution_device: Option<String>,
+    agent_generation: i64,
     direct_room: Option<String>,
     direct_mapping: Option<String>,
     direct_index: Value,
@@ -47,7 +48,7 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
     let path = req.uri().path().to_owned();
     let result = match path.as_str() {
         "/api/hagency/v1/discovery" => {
-            json!({"product":"hagency-server","version":"0.1.0","capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-instance-v1","owner-direct-v1"],"protocolVersion":2,"issuer":format!("{}/_pasion/",f.origin),"homeserver":format!("{}/",f.origin)})
+            json!({"product":"hagency-server","version":"0.1.0","capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-device-v1","owner-direct-v1"],"protocolVersion":3,"issuer":format!("{}/_pasion/",f.origin),"homeserver":format!("{}/",f.origin)})
         }
         "/_pasion/oauth2/registration" => {
             let value: Value = req.parse_json().await.unwrap();
@@ -305,38 +306,30 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
                 json!({"ownerDirectRoomId":state.direct_mapping,"binding":binding})
             }
         }
-        "/api/hagency/v1/agents/agt_fixture/execution-instance" => {
+        "/api/hagency/v1/agents/agt_fixture/execution-device" => {
+            assert_eq!(req.method(), Method::PUT);
             assert_eq!(
                 req.headers()
                     .get("authorization")
                     .unwrap()
                     .to_str()
                     .unwrap(),
-                format!("Bearer {}", "d".repeat(64))
+                format!("Bearer {}", "e".repeat(64))
             );
-            let input = if req.method() == Method::PUT {
-                Some(req.parse_json::<Value>().await.unwrap())
-            } else {
-                None
-            };
+            let input: Value = req.parse_json().await.unwrap();
+            assert_eq!(input.as_object().unwrap().len(), 1);
             let mut state = f.state.lock().unwrap();
-            if let Some(input) = input {
-                let generation = state
-                    .instance
-                    .as_ref()
-                    .map(|i| i["generation"].as_i64().unwrap())
-                    .unwrap_or(0);
-                if input["expectedGeneration"] != generation {
-                    res.status_code(StatusCode::CONFLICT);
-                    res.render(Json(json!({"code":"revision_conflict"})));
-                    return;
-                }
-                assert_eq!(input["deviceId"], "dev_fixture");
-                state.instance = Some(
-                    json!({"id":"inst_fixture","agentId":"agt_fixture","deviceId":"dev_fixture","name":input["name"],"generation":generation+1,"token":"unexpected-sensitive-field"}),
-                );
+            let generation = state.agent_generation.max(1);
+            if input["expectedGeneration"] != generation {
+                res.status_code(StatusCode::CONFLICT);
+                res.render(Json(json!({"code":"revision_conflict"})));
+                return;
             }
-            json!({"executionInstance":state.instance})
+            if state.execution_device.as_deref() != Some("dev_fixture") {
+                state.agent_generation = generation + 1;
+                state.execution_device = Some("dev_fixture".into());
+            }
+            json!({"agent":{"id":"agt_fixture","ownerUserId":"stable-user-id","puppetMxid":"@_hagency_agt_fixture:example.test","displayName":"My Codex","state":"active","executionDeviceId":state.execution_device,"generation":state.agent_generation.max(1)}})
         }
         "/api/hagency/v1/sessions/current" | "/_pasion/oauth2/revoke" => {
             if f.state.lock().unwrap().revoke_unavailable {
@@ -533,8 +526,16 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
                     .unwrap()
                     .to_str()
                     .unwrap(),
-                format!("Bearer {}", "d".repeat(64)),
-                "management requires user session, never device bearer"
+                format!(
+                    "Bearer {}",
+                    if path == "/api/hagency/v1/agents" && req.method() == Method::POST {
+                        "e"
+                    } else {
+                        "d"
+                    }
+                    .repeat(64)
+                ),
+                "creation requires device bearer, other management uses owner session"
             );
             if path.contains("agt_other") {
                 res.status_code(StatusCode::FORBIDDEN);
@@ -551,6 +552,8 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
                 } else {
                     assert!(input.get("projectId").is_none());
                     assert!(input.get("roomId").is_none());
+                    assert!(input.get("deviceId").is_none());
+                    f.state.lock().unwrap().execution_device = Some("dev_fixture".into());
                 }
                 assert!(input["ownerMxid"].is_null());
                 assert!(input["modelKey"].is_null());
@@ -586,7 +589,7 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
                     state.binding_state = "leaving".into();
                 }
             }
-            let agent = json!({"id":"agt_fixture","ownerUserId":"stable-user-id","puppetMxid":"@_hagency_agt_fixture:example.test","displayName":"My Codex","state":state.agent_state,"generation":1,"token":"unexpected-sensitive-field"});
+            let agent = json!({"id":"agt_fixture","ownerUserId":"stable-user-id","puppetMxid":"@_hagency_agt_fixture:example.test","displayName":"My Codex","state":state.agent_state,"generation":state.agent_generation.max(1),"executionDeviceId":state.execution_device,"token":"unexpected-sensitive-field"});
             let binding = json!({"id":"bnd_fixture","agentId":"agt_fixture","projectId":"prj_fixture","scopeKind":"project","roomId":"!room:example.test","state":state.binding_state,"generation":1,"token":"unexpected-sensitive-field"});
             if path.contains("/bindings/") {
                 json!({"binding":binding})
@@ -679,7 +682,8 @@ async fn native_server_login_pkce_device_authorization_and_revocation() {
             agent_state: "creating".into(),
             management_calls: 0,
             commands: Default::default(),
-            instance: None,
+            execution_device: None,
+            agent_generation: 1,
             direct_room: None,
             direct_mapping: None,
             direct_index: json!({"@unrelated:example.test":["!keep:example.test"]}),
@@ -843,7 +847,8 @@ async fn native_server_login_background_refresh_logout_and_issuer_pin() {
             agent_state: "creating".into(),
             management_calls: 0,
             commands: Default::default(),
-            instance: None,
+            execution_device: None,
+            agent_generation: 1,
             direct_room: None,
             direct_mapping: None,
             direct_index: json!({"@unrelated:example.test":["!keep:example.test"]}),
@@ -967,7 +972,8 @@ async fn native_server_login_offline_logout_retries_after_restart_without_restor
             agent_state: "creating".into(),
             management_calls: 0,
             commands: Default::default(),
-            instance: None,
+            execution_device: None,
+            agent_generation: 1,
             direct_room: None,
             direct_mapping: None,
             direct_index: json!({"@unrelated:example.test":["!keep:example.test"]}),
@@ -1078,7 +1084,8 @@ async fn native_owned_agents_user_scope_local_policy_privacy_and_lifecycle() {
             agent_state: "creating".into(),
             management_calls: 0,
             commands: Default::default(),
-            instance: None,
+            execution_device: None,
+            agent_generation: 1,
             direct_room: None,
             direct_mapping: None,
             direct_index: json!({"@unrelated:example.test":["!keep:example.test"]}),
@@ -1346,26 +1353,61 @@ async fn native_owned_agents_user_scope_local_policy_privacy_and_lifecycle() {
     let data = devices.take_json::<Value>().await.unwrap();
     assert_eq!(data["currentDeviceId"], "dev_fixture");
     assert!(!data.to_string().contains("sensitive"));
-    let instance_path = "/console/api/owned-agents/agt_fixture/execution-instance";
-    let mut initial = get(instance_path, &cookie).send(&service).await;
-    assert!(initial.take_json::<Value>().await.unwrap()["executionInstance"].is_null());
-    let assignment =
-        json!({"deviceId":"dev_fixture","name":"Execution instance","expectedGeneration":0});
-    let mut assigned = put(instance_path, &cookie)
+    let agent_path = "/console/api/owned-agents/agt_fixture";
+    let mut initial = get(agent_path, &cookie).send(&service).await;
+    assert_eq!(
+        initial.take_json::<Value>().await.unwrap()["agent"]["executionDeviceId"],
+        "dev_fixture"
+    );
+    {
+        let mut state = fake.state.lock().unwrap();
+        state.execution_device = Some("dev_other".into());
+    }
+    let device_path = "/console/api/owned-agents/agt_fixture/execution-device";
+    let assignment = json!({"expectedGeneration":1});
+    let mut assigned = put(device_path, &cookie)
         .json(&assignment)
         .send(&service)
         .await;
     assert_eq!(assigned.status_code, Some(StatusCode::OK));
     let assigned = assigned.take_json::<Value>().await.unwrap();
-    assert_eq!(assigned["executionInstance"]["generation"], 1);
+    assert_eq!(assigned["agent"]["generation"], 2);
+    assert_eq!(assigned["agent"]["executionDeviceId"], "dev_fixture");
     assert!(!assigned.to_string().contains("sensitive"));
     assert_eq!(
-        put(instance_path, &cookie)
+        put(device_path, &cookie)
             .json(&assignment)
             .send(&service)
             .await
             .status_code,
         Some(StatusCode::CONFLICT)
+    );
+    let mut repeated = put(device_path, &cookie)
+        .json(&json!({"expectedGeneration":2}))
+        .send(&service)
+        .await;
+    assert_eq!(
+        repeated.take_json::<Value>().await.unwrap()["agent"]["generation"],
+        2,
+        "same device assignment is idempotent"
+    );
+    assert_eq!(
+        put(device_path, &cookie)
+            .json(&json!({"expectedGeneration":2,"deviceId":"foreign"}))
+            .send(&service)
+            .await
+            .status_code,
+        Some(StatusCode::BAD_REQUEST)
+    );
+    assert_eq!(
+        get(
+            "/console/api/owned-agents/agt_fixture/execution-instance",
+            &cookie
+        )
+        .send(&service)
+        .await
+        .status_code,
+        Some(StatusCode::METHOD_NOT_ALLOWED)
     );
     let before = fake.state.lock().unwrap().management_calls;
     assert_eq!(post("/console/api/owned-agents",&cookie).json(&json!({"displayName":"My Codex","idempotencyKey":"command_2","ownerMxid":"@other:example.test"})).send(&service).await.status_code,Some(StatusCode::BAD_REQUEST));
@@ -2175,13 +2217,13 @@ async fn real_owner_host_creates_space_room_adopts_discovers_and_creates_agent()
     let devices = devices.take_json::<Value>().await.unwrap();
     let current_device = devices["currentDeviceId"].as_str().unwrap();
     assert!(!devices.to_string().contains("token"));
-    let mut instance=put(&format!("/console/api/owned-agents/{agent_id}/execution-instance"), &cookie)
-        .json(&json!({"deviceId":current_device,"name":"Isolated native execution instance","expectedGeneration":0}))
-        .send(&service).await;
-    assert_eq!(instance.status_code, Some(StatusCode::OK));
-    let instance = instance.take_json::<Value>().await.unwrap();
-    assert_eq!(instance["executionInstance"]["deviceId"], current_device);
-    assert_eq!(instance["executionInstance"]["agentId"], agent_id);
+    let mut details = get(&format!("/console/api/owned-agents/{agent_id}"), &cookie)
+        .send(&service)
+        .await;
+    assert_eq!(details.status_code, Some(StatusCode::OK));
+    let details = details.take_json::<Value>().await.unwrap();
+    assert_eq!(details["agent"]["executionDeviceId"], current_device);
+    assert_eq!(details["agent"]["id"], agent_id);
     let bound = post(
         &format!("/console/api/owned-agents/{agent_id}/bindings"),
         &cookie,
@@ -2272,7 +2314,8 @@ async fn native_account_profiles_switch_revoke_old_tabs_and_pin_pasion_identity(
                 agent_state: "creating".into(),
                 management_calls: 0,
                 commands: Default::default(),
-                instance: None,
+                execution_device: None,
+                agent_generation: 1,
                 direct_room: None,
                 direct_mapping: None,
                 direct_index: json!({"@unrelated:example.test":["!keep:example.test"]}),
@@ -2542,7 +2585,8 @@ async fn native_owner_space_candidates_use_own_oauth_and_paginate_partial_failur
             agent_state: "creating".into(),
             management_calls: 0,
             commands: Default::default(),
-            instance: None,
+            execution_device: None,
+            agent_generation: 1,
             direct_room: None,
             direct_mapping: None,
             direct_index: json!({"@unrelated:example.test":["!keep:example.test"]}),
@@ -2727,7 +2771,8 @@ async fn native_in_process_facade_pins_matrix_account_without_exposing_credentia
             agent_state: "creating".into(),
             management_calls: 0,
             commands: Default::default(),
-            instance: None,
+            execution_device: None,
+            agent_generation: 1,
             direct_room: None,
             direct_mapping: None,
             direct_index: json!({"@unrelated:example.test":["!keep:example.test"]}),

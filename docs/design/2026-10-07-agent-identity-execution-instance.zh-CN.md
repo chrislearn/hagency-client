@@ -1,5 +1,7 @@
 # Agent 身份、执行实例与 Room 接入实施细则
 
+后续设备模型以[Agent 执行设备与跨设备设置细则](2026-10-08-agent-execution-device.zh-CN.md)为准：独立执行实例已合入 Agent 的执行设备字段，新建默认本机，设置支持改由本机处理；旧实例 ID、名称、表和 API 不再作为当前设计。内页顶部返回列表按钮也按用户后续要求恢复。下面保留此前阶段的设计和验收记录。
+
 本轮对用户最新需求作出的实现调整。正式仓库均位于 `/Volumes/Data/Works/chrislearn`，本文保存在 hagency-client。本文关于 Agent 创建、设备执行权和默认联系人的规则替代早期报告中“创建 Agent 必须指定 Project/Room”的流程。
 
 ## 领域与权限

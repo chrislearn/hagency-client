@@ -56,7 +56,7 @@ impl WireState {
         match path {
             "/api/hagency/v1/discovery" => (
                 200,
-                json!({"product":"hagency-server","version":"0.1.0","protocolVersion":2,"capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-instance-v1","owner-direct-v1"],"homeserver":origin,"issuer":format!("{origin}_pasion/")}),
+                json!({"product":"hagency-server","version":"0.1.0","protocolVersion":3,"capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-device-v1","owner-direct-v1"],"homeserver":origin,"issuer":format!("{origin}_pasion/")}),
             ),
             "/api/hagency/v1/sessions/pasion" => (
                 200,

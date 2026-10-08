@@ -286,7 +286,7 @@ mod tests {
                         + 30_000;
                     let value = match path.as_str() {
                         "/api/hagency/v1/discovery" => {
-                            json!({"product":"hagency-server","version":"0.1.0","protocolVersion":2,"capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-instance-v1","owner-direct-v1"],"homeserver":issuer.strip_suffix("_pasion/").unwrap(),"issuer":issuer})
+                            json!({"product":"hagency-server","version":"0.1.0","protocolVersion":3,"capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-device-v1","owner-direct-v1"],"homeserver":issuer.strip_suffix("_pasion/").unwrap(),"issuer":issuer})
                         }
                         "/api/hagency/v1/sessions/pasion" => {
                             json!({"token":"a".repeat(64),"userId":"uid","mxid":mxid,"validUntilMs":until})

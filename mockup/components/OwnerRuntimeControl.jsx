@@ -49,7 +49,7 @@ export default function OwnerRuntimeControl({ agentId, bindingId, bindingState, 
     return () => { stopped = true; clearTimeout(timer); controller.abort(); };
   }, [provider?.state, active, refresh]);
   async function mutate(path, method, body) {
-    if (busy) return;
+    if (busy || !assignedHere) return;
     setBusy(true); setError(null);
     try { await request(path, method, body); await refresh(); }
     catch (failure) { setError(failure.message); }
@@ -71,20 +71,20 @@ export default function OwnerRuntimeControl({ agentId, bindingId, bindingState, 
     <div className="btn-row">
       <button className="btn" disabled={busy || provider?.authenticated || provider?.state === 'signing_in'} onClick={() => mutate('owner-provider/login', 'POST')}>{text('登录我的 ChatGPT / Codex 账号', 'Sign in to my ChatGPT / Codex account')}</button>
       {provider?.authUrl && <a className="btn" href={provider.authUrl} target="_blank" rel="noopener noreferrer">{text('打开官方登录页面', 'Open official sign-in page')}</a>}
-      {provider?.state === 'signing_in' && <button className="btn" disabled={busy} onClick={() => mutate('owner-provider/cancel', 'POST')}>{text('取消登录', 'Cancel login')}</button>}
-      <button className="btn" disabled={busy || !provider?.authenticated} onClick={() => { if (window.confirm(text('退出 Codex 会停止本机运行器并删除此 owner 的提供方登录。继续？', 'Signing out stops local runtimes and removes this owner’s provider login. Continue?'))) mutate('owner-provider/logout', 'POST'); }}>{text('退出 Codex', 'Sign out of Codex')}</button>
-      <button className="btn" disabled={busy} onClick={() => { setError(null); refresh().catch(failure => setError(failure.message)); }}>{text('刷新登录与状态', 'Refresh login and status')}</button>
+      {provider?.state === 'signing_in' && <button className="btn" disabled={busy || !assignedHere} onClick={() => mutate('owner-provider/cancel', 'POST')}>{text('取消登录', 'Cancel login')}</button>}
+      <button className="btn" disabled={busy || !assignedHere || !provider?.authenticated} onClick={() => { if (window.confirm(text('退出 Codex 会停止本机运行器并删除此 owner 的提供方登录。继续？', 'Signing out stops local runtimes and removes this owner’s provider login. Continue?'))) mutate('owner-provider/logout', 'POST'); }}>{text('退出 Codex', 'Sign out of Codex')}</button>
+      <button className="btn" disabled={busy || !assignedHere} onClick={() => { setError(null); refresh().catch(failure => setError(failure.message)); }}>{text('刷新登录与状态', 'Refresh login and status')}</button>
     </div>
-    {provider?.authenticated && <p>{text('已核实的凭据引用', 'Verified credential reference')}: <code>{provider.credentialRef}</code> <button className="btn" disabled={busy} onClick={() => onProviderReference(provider.credentialRef)}>{text('用于下方配置', 'Use in configuration below')}</button></p>}
+    {provider?.authenticated && <p>{text('已核实的凭据引用', 'Verified credential reference')}: <code>{provider.credentialRef}</code> <button className="btn" disabled={busy || !assignedHere} onClick={() => onProviderReference(provider.credentialRef)}>{text('用于下方配置', 'Use in configuration below')}</button></p>}
     <p className="dim">{text('原生 shell、MCP 和现有文件修改仍关闭。硬 token 上限（Strict）不可用。Estimated 是预留估算和事后记账，不能保证模型调用不会超出预算。', 'Native shell, MCP, and editing existing files remain disabled. Strict token limits are unavailable. Estimated mode reserves an estimate and accounts for actual usage afterward; it cannot guarantee a call stays within budget.')}</p>
     <label><input data-estimated-opt-in type="checkbox" checked={optIn} disabled={busy || active} onChange={event => setOptIn(event.target.checked)} />{text('我明确同意使用 Estimated 模式及其超额风险', 'I explicitly accept Estimated mode and its overrun risk')}</label>
     <label><input data-host-files type="checkbox" checked={hostFiles} disabled={busy || active} onChange={event => setHostFiles(event.target.checked)} />{text('开启所选 Room 的受限文件工具（默认关闭）', 'Enable restricted file tools for the selected room (off by default)')}</label>
     <p className="dim">{text('开启后仅可列目录、读取和新建当前 Room 私有工作区的文件；不能覆盖已有文件、访问其他 Room 文件或使用任意网络。每次调用仍受当前发言者策略约束；需创建者确认的提案会停在下方等待审批。', 'When enabled, tools can only list, read, and create files in this room’s private workspace. They cannot overwrite files, access other rooms, or use arbitrary networking. Each call follows the requester’s current policy; proposals requiring owner confirmation wait below.')}</p>
     <label>{text('每次调用预留 token 估算', 'Estimated token reservation per call')}<input inputMode="numeric" value={reservation} disabled={busy || active} onChange={event => setReservation(event.target.value)} /></label>
     <label>{text('推理强度', 'Reasoning effort')}<select value={effort} disabled={busy || active} onChange={event => setEffort(event.target.value)}>{['low', 'medium', 'high', 'xhigh'].map(value => <option key={value} value={value}>{value}</option>)}</select></label>
-    <label><input type="checkbox" checked={takeover} disabled={busy || active || !assignedHere} onChange={event => setTakeover(event.target.checked)} />{text('恢复本设备的旧租约（不能代替执行实例设备分配）', 'Recover this device’s previous lease (does not replace instance assignment)')}</label>
+    <label><input type="checkbox" checked={takeover} disabled={busy || active || !assignedHere} onChange={event => setTakeover(event.target.checked)} />{text('恢复本设备的旧租约（不能绕过执行设备归属）', 'Recover this device’s previous lease (does not override the execution device)')}</label>
     <p className="dim">{text('先保存下方模型、工作区和额度策略，再显式启动所选 Room。登录或保存配置都不会自动开始推理。', 'Save the model, workspace, and budget policies below, then explicitly start the selected room. Signing in or saving does not start inference.')}</p>
-    {!assignedHere && <p role="status">{text('先把此 Agent 的执行实例分配到本机，才能在此运行。', 'Assign this agent’s execution instance to this device before starting.')}</p>}
+    {!assignedHere && <p role="status">{text('先把此 Agent 的执行设备改为本机，才能在此运行。', 'Assign this agent to this execution device before starting.')}</p>}
     <div className="btn-row"><button className="btn" disabled={busy || active || !assignedHere || !configured || !bindingId || bindingState !== 'active' || !optIn || !validReservation} onClick={() => mutate(`${runtimePath}/start`, 'POST', { bindingId, mode: 'estimated', reservation: Number(reservation), estimatedOptIn: true, effort, takeover, hostFiles })}>{text('启动所选 Room 的 Codex', 'Start Codex for the selected room')}</button><button className="btn" disabled={busy || !active} onClick={() => mutate(`${runtimePath}/stop`, 'POST', {bindingId})}>{text('停止所选 Room', 'Stop selected room')}</button></div>
     <section data-tool-approvals>
       <h4>{text('等待我的请求 / 工具审批', 'Requests / tool calls awaiting my approval')}</h4>

@@ -44,8 +44,8 @@ pub(super) enum RuntimeError {
     Authorization,
     #[error("Agent runtime already active")]
     AlreadyActive,
-    #[error("Agent execution instance is assigned to another device or is unset")]
-    ExecutionInstance,
+    #[error("Agent execution device is assigned to another device or is unset")]
+    ExecutionDevice,
     #[error("provider profile or local state unavailable")]
     Profile,
     #[error("shared provider account or environment unavailable")]
@@ -266,16 +266,18 @@ fn validate_event_context(
     }
     Ok(())
 }
-fn verify_execution_instance(
+fn verify_execution_device(
     value: &serde_json::Value,
     agent: &str,
     device: &str,
 ) -> Result<(), RuntimeError> {
-    let instance: Option<super::owned_agents::ExecutionInstance> =
-        serde_json::from_value(value["executionInstance"].clone())
-            .map_err(|_| RuntimeError::Profile)?;
-    if !instance.is_some_and(|i| i.agent_id == agent && i.device_id == device && i.generation > 0) {
-        return Err(RuntimeError::ExecutionInstance);
+    let record: super::owned_agents::ServerAgent = serde_json::from_value(value["agent"].clone())
+        .map_err(|_| RuntimeError::ExecutionDevice)?;
+    if record.id != agent
+        || record.execution_device_id.as_deref() != Some(device)
+        || record.generation <= 0
+    {
+        return Err(RuntimeError::ExecutionDevice);
     }
     Ok(())
 }
@@ -331,7 +333,7 @@ impl OwnedRuntime {
         let assigned = console
             .owner_api(
                 cookie,
-                OwnerOperation::ExecutionInstance {
+                OwnerOperation::Agent {
                     agent: config.agent_id.clone(),
                 },
             )
@@ -344,7 +346,10 @@ impl OwnedRuntime {
         {
             return Err(RuntimeError::Authorization);
         }
-        verify_execution_instance(&assigned.value, &config.agent_id, device.device_id())?;
+        verify_execution_device(&assigned.value, &config.agent_id, device.device_id())?;
+        if assigned.value["agent"]["ownerUserId"] != device.user_id() {
+            return Err(RuntimeError::Authorization);
+        }
         let reply = console
             .owner_api(
                 cookie,
@@ -749,31 +754,6 @@ impl OwnedRuntime {
         }
         Ok(())
     }
-    pub(super) async fn stop_agent(&self, agent: &str, owner: &super::server_login::OwnerReply) {
-        let mut entries = self.entries.lock().await;
-        let keys: Vec<_> = entries
-            .iter()
-            .filter(|(_, entry)| {
-                entry.status.borrow().agent_id == agent
-                    && entry.device.origin == owner.origin
-                    && entry.device.issuer == owner.issuer
-                    && entry.device.subject == owner.subject
-                    && entry.device.owner == owner.owner
-            })
-            .map(|(key, _)| key.clone())
-            .collect();
-        let removed: Vec<_> = keys
-            .into_iter()
-            .filter_map(|key| entries.remove(&key))
-            .collect();
-        for entry in &removed {
-            entry.cancel.send_replace(true);
-        }
-        drop(entries);
-        for entry in removed {
-            let _ = entry.task.await;
-        }
-    }
     pub async fn stop_all(&self) {
         let entries = std::mem::take(&mut *self.entries.lock().await);
         for entry in entries.values() {
@@ -904,7 +884,7 @@ fn failure_code(result: &Result<(), RuntimeError>) -> Option<&'static str> {
         Err(RuntimeError::Profile) => Some("profile_or_local_state_unavailable"),
         Err(RuntimeError::Provider) => Some("provider_authorization_lost"),
         Err(RuntimeError::LedgerRecovery) => Some("ledger_recovery_required"),
-        Err(RuntimeError::ExecutionInstance) => Some("agent_execution_instance_required"),
+        Err(RuntimeError::ExecutionDevice) => Some("agent_execution_device_required"),
         _ => Some("device_transport_unavailable"),
     }
 }
@@ -3703,26 +3683,26 @@ for raw in sys.stdin:
 mod http_tests;
 
 #[cfg(test)]
-mod instance_tests {
+mod device_assignment_tests {
     use super::*;
     #[test]
     fn assignment_is_required_and_cannot_be_bypassed_by_takeover() {
-        let correct = serde_json::json!({"executionInstance":{"id":"instance","agentId":"a","deviceId":"d","name":"Execution instance","generation":1}});
-        assert!(verify_execution_instance(&correct, "a", "d").is_ok());
+        let correct = serde_json::json!({"agent":{"id":"a","ownerUserId":"owner","puppetMxid":"@a:test","displayName":"A","state":"active","executionDeviceId":"d","generation":1}});
+        assert!(verify_execution_device(&correct, "a", "d").is_ok());
         for mode in [Takeover::Never, Takeover::OwnerRequested] {
             let _ = mode;
             assert!(matches!(
-                verify_execution_instance(&correct, "a", "other"),
-                Err(RuntimeError::ExecutionInstance)
+                verify_execution_device(&correct, "a", "other"),
+                Err(RuntimeError::ExecutionDevice)
             ));
         }
         assert!(matches!(
-            verify_execution_instance(&correct, "other", "d"),
-            Err(RuntimeError::ExecutionInstance)
+            verify_execution_device(&correct, "other", "d"),
+            Err(RuntimeError::ExecutionDevice)
         ));
         assert!(matches!(
-            verify_execution_instance(&serde_json::json!({"executionInstance":null}), "a", "d"),
-            Err(RuntimeError::ExecutionInstance)
+            verify_execution_device(&serde_json::json!({"agent":null}), "a", "d"),
+            Err(RuntimeError::ExecutionDevice)
         ));
     }
 }

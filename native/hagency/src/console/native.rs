@@ -166,12 +166,12 @@ pub enum Command {
         paused: bool,
     },
     Devices,
-    AgentExecutionInstance {
+    AgentDetails {
         agent_id: String,
     },
-    SaveAgentExecutionInstance {
+    AssignAgentToCurrentDevice {
         agent_id: String,
-        input: Value,
+        expected_generation: i64,
     },
     AgentOwnerDirectStatus {
         agent_id: String,
@@ -367,19 +367,25 @@ fn request(command: Command) -> Result<(&'static str, String, Option<Value>), Na
             ("POST", format!("{root}/owner-projects/{scope}/{suffix}"))
         }
         Command::Devices => ("GET", format!("{root}/owned-agents/devices")),
-        Command::AgentExecutionInstance { agent_id } => {
+        Command::AgentDetails { agent_id } => {
             key(&agent_id)?;
-            (
-                "GET",
-                format!("{root}/owned-agents/{agent_id}/execution-instance"),
-            )
+            ("GET", format!("{root}/owned-agents/{agent_id}"))
         }
-        Command::SaveAgentExecutionInstance { agent_id, input } => {
+        Command::AssignAgentToCurrentDevice {
+            agent_id,
+            expected_generation,
+        } => {
             key(&agent_id)?;
-            body = Some(input);
+            if expected_generation < 0 {
+                return Err(NativeError {
+                    status: 400,
+                    code: "invalid_arguments".into(),
+                });
+            }
+            body = Some(json!({"expectedGeneration":expected_generation}));
             (
                 "PUT",
-                format!("{root}/owned-agents/{agent_id}/execution-instance"),
+                format!("{root}/owned-agents/{agent_id}/execution-device"),
             )
         }
         Command::AgentOwnerDirectStatus { agent_id } => {
@@ -1263,27 +1269,41 @@ mod owner_scope_command_tests {
         );
     }
     #[test]
-    fn device_and_instance_commands_expose_no_bearer_or_arbitrary_path() {
+    fn device_and_assignment_commands_expose_no_bearer_or_arbitrary_path() {
         assert_eq!(
             request(Command::Devices).unwrap().1,
             "/console/api/owned-agents/devices"
         );
-        let input = json!({"deviceId":"d","name":"Execution instance","expectedGeneration":0});
-        let (method, path, body) = request(Command::SaveAgentExecutionInstance {
+        let (method, path, body) = request(Command::AssignAgentToCurrentDevice {
             agent_id: "a".into(),
-            input: input.clone(),
+            expected_generation: 3,
         })
         .unwrap();
         assert_eq!(
             (method, path.as_str()),
-            ("PUT", "/console/api/owned-agents/a/execution-instance")
+            ("PUT", "/console/api/owned-agents/a/execution-device")
         );
-        assert_eq!(body, Some(input));
+        assert_eq!(body, Some(json!({"expectedGeneration":3})));
         assert!(
-            request(Command::AgentExecutionInstance {
+            request(Command::AssignAgentToCurrentDevice {
+                agent_id: "a".into(),
+                expected_generation: -1
+            })
+            .is_err()
+        );
+        assert!(
+            request(Command::AgentDetails {
                 agent_id: "../x".into()
             })
             .is_err()
+        );
+        assert_eq!(
+            request(Command::AgentDetails {
+                agent_id: "a".into()
+            })
+            .unwrap()
+            .1,
+            "/console/api/owned-agents/a"
         );
         assert!(
             request(Command::AgentOwnerDirect {

@@ -46,7 +46,7 @@ function CommandForm({ projects, onSubmit, busy, binding, text }) {
     {roomError&&<p role="alert">{roomError}</p>}
     {projectId&&!rooms.length&&<p role="status">{text('此 Project 暂无我可见的已登记 Room。Space 成员不自动获得 Room 成员资格。','No registered rooms are visible to me in this project. Space membership does not grant room membership.')}</p>}</>}
     {!binding && <label>{text('Agent 名称', 'Agent name')}<input required maxLength={64} disabled={busy} value={displayName} onChange={e => setName(e.target.value)} /></label>}
-    <p className="dim">{binding ? text('只能加入已登记且你有 Agent 接入权限的 Room。', 'Choose a registered room where you may invite your agent.') : text('创建服务器范围的傀儡账号，永久归你所有。之后再配置执行实例和加入 Room。', 'Create a server-wide puppet account that you permanently own. Configure its execution instance and rooms afterward.')}</p>
+    <p className="dim">{binding ? text('只能加入已登记且你有 Agent 接入权限的 Room。', 'Choose a registered room where you may invite your agent.') : text('创建服务器范围的傀儡账号，永久归你所有。默认由本机执行，之后配置模型、额度和加入 Room。', 'Create a server-wide puppet account that you permanently own. It is assigned to this device; configure its model, budgets, and rooms afterward.')}</p>
     {binding && !projects.length && <Link className="btn" href="/projects/new/">{text('创建 Project', 'Create project')}</Link>}
     <button type="submit" className="btn" disabled={busy || (binding ? !projectId || !roomId : !displayName.trim())}>{text(binding ? '绑定 Room' : '创建 Agent', binding ? 'Bind room' : 'Create agent')}</button>
   </form>;
@@ -107,40 +107,40 @@ function ModelEditor({ profile, credentialRef, onSave, busy, text }) {
     <button className="btn" type="submit" disabled={busy}>{text('保存 Codex 配置', 'Save Codex configuration')}</button>
   </form>;
 }
-function ExecutionInstanceControl({ agentId, busy, text, onAssignment }) {
+function ExecutionDeviceControl({ agentId, busy, text, onAssignment, onChanged }) {
   const [devices, setDevices] = useState([]);
   const [currentDeviceId, setCurrentDevice] = useState('');
-  const [instance, setInstance] = useState(null);
-  const [deviceId, setDevice] = useState('');
-  const [name, setName] = useState('');
+  const [agent, setAgent] = useState(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
+  const inFlight = useRef(false);
   const refresh = useCallback(async signal => {
-    const [known, assigned] = await Promise.all([api('/devices', 'GET', undefined, signal), api(`/${agentId}/execution-instance`, 'GET', undefined, signal)]);
-    setDevices(known.devices.filter(device => !device.revoked)); setCurrentDevice(known.currentDeviceId);
-    setInstance(assigned.executionInstance); setDevice(assigned.executionInstance?.deviceId || known.currentDeviceId);
-    setName(assigned.executionInstance?.name || text('Codex 执行实例', 'Codex execution instance'));
-    onAssignment(assigned.executionInstance?.deviceId === known.currentDeviceId);
+    const [known, assigned] = await Promise.all([api('/devices', 'GET', undefined, signal), api(`/${agentId}`, 'GET', undefined, signal)]);
+    if (signal?.aborted) return;
+    if (assigned.agent?.id !== agentId || typeof known.currentDeviceId !== 'string') throw new Error('invalid_server_response');
+    setDevices(known.devices); setCurrentDevice(known.currentDeviceId); setAgent(assigned.agent);
+    onAssignment(assigned.agent.executionDeviceId === known.currentDeviceId);
   }, [agentId, onAssignment]);
   useEffect(() => {
-    const controller = new AbortController();
+    const controller = new AbortController(); onAssignment(false);
     refresh(controller.signal).catch(failure => { if (failure.name !== 'AbortError') setError(failure.message); });
     return () => controller.abort();
   }, [refresh]);
-  return <form className="panel" onSubmit={async event => {
-    event.preventDefault(); if (busy || pending) return;
-    setPending(true); setError(null); onAssignment(false);
-    try { await api(`/${agentId}/execution-instance`, 'PUT', { deviceId, name: name.trim(), expectedGeneration: instance?.generation || 0 }); await refresh(); }
-    catch (failure) { setError(failure.message); }
-    finally { setPending(false); }
-  }}>
-    <h3>{text('执行实例', 'Execution instance')}</h3>
-    <p>{text('一个 Agent 绑定一个执行实例，由指定设备处理全部 Room 的请求。更换设备会停止原设备的执行权；模型、工作目录和账本需要在目标设备配置。', 'Each agent has one execution instance. Its assigned device handles all rooms. Reassignment revokes the previous device; configure the model, workspace, and ledger on the target device.')}</p>
+  const assigned = devices.find(device => device.id === agent?.executionDeviceId);
+  const assignedHere = agent?.executionDeviceId === currentDeviceId && !!currentDeviceId;
+  return <section className="panel" data-execution-device>
+    <h3>{text('执行设备', 'Execution device')}</h3>
+    <p>{text('新建 Agent 默认由本机执行。每个 Agent 只有一个执行设备，只有这台设备的模型、工作区和账本会用于处理请求。切换到本机会停止原设备的执行权；不会转让 Agent。', 'New agents run on this device by default. Each agent has one execution device; only its model, workspace, and ledger handle requests. Moving execution here revokes the previous device’s execution rights without transferring ownership.')}</p>
+    <p>{text('当前设备', 'Assigned device')}: {assigned ? `${assigned.name}${assigned.revoked ? text('（已撤销）', ' (revoked)') : ''}` : agent?.executionDeviceId || text('未分配', 'Unassigned')}{assignedHere ? text('（本机）', ' (this device)') : ''}</p>
     {error && <p role="alert">{error}</p>}
-    <label>{text('设备', 'Device')}<select required value={deviceId} disabled={busy || pending} onChange={event => setDevice(event.target.value)}><option value="">{text('选择设备', 'Choose a device')}</option>{devices.map(device => <option key={device.id} value={device.id}>{device.name}{device.id === currentDeviceId ? text('（本机）', ' (this device)') : ''}</option>)}</select></label>
-    <label>{text('实例名称', 'Instance name')}<input required maxLength={64} value={name} disabled={busy || pending} onChange={event => setName(event.target.value)} /></label>
-    <button type="submit" className="btn" disabled={busy || pending || !deviceId || !name.trim()}>{text('保存执行实例', 'Save execution instance')}</button>
-  </form>;
+    {!assignedHere && <button className="btn" type="button" disabled={busy || pending || !agent || !currentDeviceId} onClick={async () => {
+      if (busy || inFlight.current || !agent || !window.confirm(text('将此 Agent 的执行设备改为本机？原设备会停止执行。请先恢复完整账本，避免遗漏既有费用。', 'Move this agent’s execution to this device? The previous device will stop. Restore the complete ledger first so earlier costs are retained.'))) return;
+      inFlight.current = true; setPending(true); setError(null);
+      try { await api(`/${agentId}/execution-device`, 'PUT', { expectedGeneration: agent.generation }); await refresh(); await onChanged(); }
+      catch (failure) { setError(failure.message); }
+      finally { inFlight.current = false; setPending(false); }
+    }}>{text('改为在本机执行', 'Run on this device instead')}</button>}
+  </section>;
 }
 export default function OwnedAgentControl() {
   const { locale } = usePrefs();
@@ -205,13 +205,13 @@ export default function OwnedAgentControl() {
         catch (failure) { setError(`${text('Agent 已创建，联系人建立待重试', 'Agent created; retry contact setup')}: ${failure.message}`); }
       })} />
       <section className="panel"><h2>{text('我的 Agents', 'My agents')}</h2>
-        <select aria-label={text('选择 Agent', 'Select agent')} value={agentId} disabled={busy} onChange={e => selectAgent(e.target.value)}><option value="">{text('选择 Agent', 'Choose an agent')}</option>{roster.agents.map(agent => <option key={agent.id} value={agent.id}>{agent.displayName} · {agent.state}</option>)}</select>
+        <select aria-label={text('选择 Agent', 'Select agent')} value={agentId} disabled={busy} onChange={e => selectAgent(e.target.value)}><option value="">{text('选择 Agent', 'Choose an agent')}</option>{roster.agents.map(agent => <option key={agent.id} value={agent.id}>{agent.displayName} · {agent.state} · {agent.executionDeviceId === roster.currentDeviceId ? text('本机', 'This device') : roster.devices?.find(device => device.id === agent.executionDeviceId)?.name || text('其他设备', 'Other device')}</option>)}</select>
         {selected && <><p><code>{selected.puppetMxid}</code> · {selected.state}</p><div className="btn-row"><button className="btn" disabled={busy || selected.state === 'retiring' || selected.state === 'retired'} onClick={() => change(`/${agentId}/pause`, 'POST', undefined, load)}>{text('暂停', 'Pause')}</button><button className="btn" disabled={busy || selected.state !== 'suspended'} onClick={() => change(`/${agentId}/resume`, 'POST', undefined, load)}>{text('恢复', 'Resume')}</button><button className="btn" disabled={busy || selected.state === 'retiring' || selected.state === 'retired'} onClick={() => { if (window.confirm(text('退役将停止此 Agent 的所有 Room 服务，身份不会释放给其他用户。继续？', 'Retiring stops every room binding and never releases the identity to another owner. Continue?'))) change(`/${agentId}`, 'DELETE', undefined, load); }}>{text('退役', 'Retire')}</button></div></>}
       </section>
       {selected && <><section className="panel"><h3>{text('主人私聊', 'Owner direct chat')}</h3><p>{ownerDirect?.roomId || text('联系人尚未建立', 'Contact setup pending')} · {ownerDirect?.state}</p><button className="btn" disabled={busy || ['retiring', 'retired'].includes(selected.state)} onClick={() => change(`/${agentId}/owner-direct/ensure`, 'POST', undefined, value => { setOwnerDirect(value.ownerDirect); return api(`/${agentId}/bindings`).then(value => setBindings(value.bindings)); })}>{text('建立 / 刷新联系人', 'Set up / refresh contact')}</button></section>
-        <ExecutionInstanceControl key={agentId} agentId={agentId} busy={busy} text={text} onAssignment={setAssignedHere} />
+        <ExecutionDeviceControl key={agentId} agentId={agentId} busy={busy} text={text} onAssignment={setAssignedHere} onChanged={load} />
         {agentConfig && <><ModelEditor key={`model:${agentId}`} profile={agentConfig.modelProfile} credentialRef={credentialRef} busy={busy || !assignedHere} text={text} onSave={profile => change(`/${agentId}/agent-model-profile`, 'PUT', { profile }, setAgentConfig)} />
-          <PolicyEditor key={`budget:${agentId}`} layer="agent" version={agentConfig.policy} usage={agentConfig.usage} busy={busy} text={text} onSave={(policy, expectedRevision) => change(`/${agentId}/agent-policy`, 'PUT', { expectedRevision, policy }, setAgentConfig)} onReset={expectedRevision => change(`/${agentId}/agent-policy`, 'DELETE', { expectedRevision }, setAgentConfig)} /></>}
+          <PolicyEditor key={`budget:${agentId}`} layer="agent" version={agentConfig.policy} usage={agentConfig.usage} busy={busy || !assignedHere} text={text} onSave={(policy, expectedRevision) => change(`/${agentId}/agent-policy`, 'PUT', { expectedRevision, policy }, setAgentConfig)} onReset={expectedRevision => change(`/${agentId}/agent-policy`, 'DELETE', { expectedRevision }, setAgentConfig)} /></>}
         <CommandForm key={agentId} projects={roster.projects} binding busy={busy} text={text} onSubmit={input => change(`/${agentId}/bindings`, 'POST', input, async () => { const value = await api(`/${agentId}/bindings`); setBindings(value.bindings); })} />
         <section className="panel"><label>{text('配置 Room', 'Configure room')}<select value={bindingId} disabled={busy} onChange={e => selectBinding(e.target.value)}><option value="">{text('选择绑定', 'Choose a binding')}</option>{bindings.map(binding => <option key={binding.id} value={binding.id}>{binding.roomId} · {binding.state}</option>)}</select></label>
         {bindings.find(binding => binding.id === bindingId) && <div className="btn-row">
@@ -223,7 +223,7 @@ export default function OwnedAgentControl() {
         <label>{text('Room 中的用户 MXID（用于该用户策略）', 'Requester MXID in this room (for requester policy)')}<input disabled={busy} value={requester} onChange={e => setRequester(e.target.value)} placeholder="@user:example.org" /></label>
         <p className="dim">{text('三个层级的限额和许可共同生效；任一层拒绝即拒绝。变更立即限制后续调用，不清空已发生用量。', 'All three budget and permission layers apply together. A denial at any layer denies the request. Changes constrain future calls and preserve existing usage.')}</p></section>
         {config && <><OwnerRuntimeControl key={`${agentId}:${bindingId}`} agentId={agentId} bindingId={bindingId} bindingState={bindings.find(binding => binding.id === bindingId)?.state} assignedHere={assignedHere} profile={agentConfig?.modelProfile} text={text} onProviderReference={setCredentialRef} />
-          {['room', 'requester'].map((layer, index) => <PolicyEditor key={`${bindingId}:${requester}:${layer}`} layer={layer} version={config.policies[index + 1]} usage={config.usage[index + 1]} busy={busy} text={text} onSave={(policy, expectedRevision) => change(`/${agentId}/local-policy`, 'PUT', { ...selection, layer, expectedRevision, policy }, setConfig)} onReset={expectedRevision => change(`/${agentId}/local-policy`, 'DELETE', { ...selection, layer, expectedRevision }, setConfig)} />)}
+          {['room', 'requester'].map((layer, index) => <PolicyEditor key={`${bindingId}:${requester}:${layer}`} layer={layer} version={config.policies[index + 1]} usage={config.usage[index + 1]} busy={busy || !assignedHere} text={text} onSave={(policy, expectedRevision) => change(`/${agentId}/local-policy`, 'PUT', { ...selection, layer, expectedRevision, policy }, setConfig)} onReset={expectedRevision => change(`/${agentId}/local-policy`, 'DELETE', { ...selection, layer, expectedRevision }, setConfig)} />)}
         </>}
       </>}
     </>}

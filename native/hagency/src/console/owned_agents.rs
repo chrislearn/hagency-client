@@ -128,7 +128,7 @@ fn runtime_error(e: super::owned_runtime::RuntimeError) -> OwnerError {
         Approval => error(409, "invalid_tool_approval"),
         Authorization => error(401, "owner_authorization_required"),
         AlreadyActive => error(409, "agent_runtime_already_active"),
-        ExecutionInstance => error(409, "agent_execution_instance_required"),
+        ExecutionDevice => error(409, "agent_execution_device_required"),
         LedgerRecovery => error(409, "ledger_recovery_required"),
         Profile => error(409, "runtime_profile_unavailable"),
         Provider => error(401, "provider_authorization_lost"),
@@ -218,14 +218,15 @@ struct ServerBinding {
 }
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ServerAgent {
+pub(super) struct ServerAgent {
+    pub execution_device_id: Option<String>,
     owner_direct_room_id: Option<String>,
-    id: String,
-    owner_user_id: String,
+    pub id: String,
+    pub owner_user_id: String,
     puppet_mxid: String,
     display_name: String,
-    state: String,
-    generation: i64,
+    pub state: String,
+    pub generation: i64,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -243,20 +244,9 @@ struct ServerDevice {
     generation: i64,
     revoked: bool,
 }
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) struct ExecutionInstance {
-    pub id: String,
-    pub agent_id: String,
-    pub device_id: String,
-    pub name: String,
-    pub generation: i64,
-}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct SaveExecutionInstance {
-    device_id: String,
-    name: String,
+struct AssignExecutionDevice {
     expected_generation: i64,
 }
 #[derive(Deserialize)]
@@ -271,12 +261,6 @@ fn public(value: &Value, kind: &str) -> Result<Value, OwnerError> {
             let devices: Vec<ServerDevice> =
                 serde_json::from_value(value["devices"].clone()).map_err(|_| invalid())?;
             Ok(json!({"devices":devices}))
-        }
-        "execution-instance" => {
-            let instance: Option<ExecutionInstance> =
-                serde_json::from_value(value.get("executionInstance").ok_or_else(invalid)?.clone())
-                    .map_err(|_| invalid())?;
-            Ok(json!({"executionInstance":instance}))
         }
         "agents" => {
             let agents: Vec<ServerAgent> =
@@ -632,8 +616,24 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
         if method == Method::GET {
             let agents = api(req, depot, OwnerOperation::Agents).await?;
             let projects = api(req, depot, OwnerOperation::Projects).await?;
+            let devices = api(req, depot, OwnerOperation::Devices).await?;
+            let device = console(depot)
+                .map_err(|_| error(503, "local_state_unavailable"))?
+                .authorized_device()
+                .await
+                .map_err(|_| error(401, "owner_authorization_required"))?;
+            for reply in [&agents, &projects, &devices] {
+                if reply.owner != device.owner_mxid()
+                    || reply.origin != device.origin()
+                    || reply.issuer != device.issuer()
+                    || reply.subject != device.subject()
+                {
+                    return Err(error(401, "owner_authorization_required"));
+                }
+            }
+            recheck(depot).map_err(|_| error(401, "sign_in_required"))?;
             return Ok(
-                json!({"ownerMxid":agents.owner,"agents":public(&agents.value,"agents")?["agents"],"projects":public(&projects.value,"projects")?["projects"],"transportOnline":false}),
+                json!({"ownerMxid":agents.owner,"agents":public(&agents.value,"agents")?["agents"],"projects":public(&projects.value,"projects")?["projects"],"devices":public(&devices.value,"devices")?["devices"],"currentDeviceId":device.device_id(),"transportOnline":false}),
             );
         }
         if method == Method::POST {
@@ -664,20 +664,20 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
         {
             return direct::ensure(req, depot, &agent).await;
         }
-        if parts.len() == 2 && parts[1] == "execution-instance" {
+        if (parts.len() == 1 && method == Method::GET)
+            || (parts.len() == 2 && parts[1] == "execution-device")
+        {
             if req.uri().query().is_some() {
                 return Err(error(400, "invalid_arguments"));
             }
-            let op = if method == Method::GET {
-                OwnerOperation::ExecutionInstance {
+            let op = if parts.len() == 1 {
+                OwnerOperation::Agent {
                     agent: agent.clone(),
                 }
             } else if method == Method::PUT {
-                let input: SaveExecutionInstance = parse(req).await?;
-                OwnerOperation::SaveExecutionInstance {
+                let input: AssignExecutionDevice = parse(req).await?;
+                OwnerOperation::AssignExecutionDevice {
                     agent: agent.clone(),
-                    device: input.device_id,
-                    name: input.name,
                     expected: input.expected_generation,
                 }
             } else {
@@ -685,19 +685,9 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
             };
             let reply = api(req, depot, op).await?;
             recheck(depot).map_err(|_| error(401, "sign_in_required"))?;
-            let value = public(&reply.value, "execution-instance")?;
-            if !value["executionInstance"].is_null()
-                && value["executionInstance"]["agentId"] != agent
-            {
+            let value = public(&reply.value, "agent")?;
+            if value["agent"]["id"] != agent {
                 return Err(error(502, "invalid_server_response"));
-            }
-            if method == Method::PUT {
-                console(depot)
-                    .map_err(|_| error(503, "local_state_unavailable"))?
-                    .0
-                    .owned_runtime
-                    .stop_agent(&agent, &reply)
-                    .await;
             }
             return Ok(value);
         }
@@ -1351,8 +1341,18 @@ mod execution_projection_tests {
         );
         let devices=public(&json!({"devices":[{"id":"d","name":"Device","generation":1,"revoked":false,"token":"secret"}]}),"devices").unwrap();
         assert!(!devices.to_string().contains("secret"));
-        let empty = public(&json!({"executionInstance":null}), "execution-instance").unwrap();
-        assert!(empty["executionInstance"].is_null());
+        assert!(
+            serde_json::from_value::<AssignExecutionDevice>(
+                json!({"expectedGeneration":1,"deviceId":"foreign"})
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_value::<AssignExecutionDevice>(
+                json!({"expectedGeneration":1,"name":"old instance"})
+            )
+            .is_err()
+        );
     }
     #[test]
     fn direct_binding_remains_a_real_non_project_scope() {

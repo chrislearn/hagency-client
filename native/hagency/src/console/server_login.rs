@@ -1346,13 +1346,11 @@ pub(super) enum OwnerOperation {
     },
     Agents,
     Devices,
-    ExecutionInstance {
+    Agent {
         agent: String,
     },
-    SaveExecutionInstance {
+    AssignExecutionDevice {
         agent: String,
-        device: String,
-        name: String,
         expected: i64,
     },
     AgentOwnerDirect {
@@ -1580,36 +1578,19 @@ impl OwnerOperation {
                 )
             }
             Self::Devices => (Method::GET, "devices".into(), None),
-            Self::ExecutionInstance { agent } => {
+            Self::Agent { agent } => {
                 operation_id(&agent)?;
-                (
-                    Method::GET,
-                    format!("agents/{agent}/execution-instance"),
-                    None,
-                )
+                (Method::GET, format!("agents/{agent}"), None)
             }
-            Self::SaveExecutionInstance {
-                agent,
-                device,
-                name,
-                expected,
-            } => {
+            Self::AssignExecutionDevice { agent, expected } => {
                 operation_id(&agent)?;
-                operation_id(&device)?;
-                if expected < 0
-                    || name.trim().is_empty()
-                    || name.chars().count() > 64
-                    || name.chars().any(char::is_control)
-                {
-                    return Err(OwnerError {
-                        status: 400,
-                        code: "invalid_arguments".into(),
-                    });
+                if expected < 0 {
+                    return Err(OwnerError::new(400, "invalid_arguments"));
                 }
                 (
                     Method::PUT,
-                    format!("agents/{agent}/execution-instance"),
-                    Some(json!({"deviceId":device,"name":name,"expectedGeneration":expected})),
+                    format!("agents/{agent}/execution-device"),
+                    Some(json!({"expectedGeneration":expected})),
                 )
             }
             Self::AgentOwnerDirect { agent } => {
@@ -1681,6 +1662,10 @@ impl ServerLogin {
         cookie: &str,
         operation: OwnerOperation,
     ) -> Result<OwnerReply, OwnerError> {
+        let needs_device = matches!(
+            &operation,
+            OwnerOperation::Create { .. } | OwnerOperation::AssignExecutionDevice { .. }
+        );
         let (method, path, body) = operation.request()?;
         if self.stopped.load(Ordering::Acquire) {
             return Err(OwnerError::new(401, "sign_in_required"));
@@ -1703,9 +1688,21 @@ impl ServerLogin {
         let server = origin(&session.binding.origin)
             .map_err(|_| OwnerError::new(401, "sign_in_required"))?;
         let client = http().map_err(|_| OwnerError::new(503, "server_unavailable"))?;
+        let mut device = session.device.clone();
+        let bearer = if needs_device {
+            let device = device
+                .as_mut()
+                .ok_or_else(|| OwnerError::new(401, "device_authorization_required"))?;
+            device.valid_until = session.authorized_until;
+            device
+                .bearer()
+                .map_err(|_| OwnerError::new(401, "device_authorization_required"))?
+        } else {
+            &session.token
+        };
         let mut request = client
             .request(method, server.join(&path).unwrap())
-            .bearer_auth(&session.token);
+            .bearer_auth(bearer);
         if let Some(body) = body {
             request = request.json(&body);
         }

@@ -86,7 +86,7 @@ pub fn validate_metadata(origin: &str, value: &Value) -> Result<ServerMetadata, 
     if value["product"] != "hagency-server" {
         return Err(AdmissionError::UnsupportedServer);
     }
-    if value["protocolVersion"].as_u64() != Some(2) {
+    if value["protocolVersion"].as_u64() != Some(3) {
         return Err(AdmissionError::UnsupportedProtocol);
     }
     let version = value["version"]
@@ -126,7 +126,7 @@ pub fn validate_metadata(origin: &str, value: &Value) -> Result<ServerMetadata, 
         "pasion-oauth",
         "owner-agent-appservice-v1",
         "global-agent-identity-v2",
-        "execution-instance-v1",
+        "execution-device-v1",
         "owner-direct-v1",
     ]
     .iter()
@@ -193,13 +193,13 @@ mod tests {
     use super::*;
     use serde_json::json;
     fn metadata() -> Value {
-        json!({"product":"hagency-server","version":"0.1.0","protocolVersion":2,"capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-instance-v1","owner-direct-v1"],"homeserver":"https://hagency.test/","issuer":"https://hagency.test/_pasion/"})
+        json!({"product":"hagency-server","version":"0.1.0","protocolVersion":3,"capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-device-v1","owner-direct-v1"],"homeserver":"https://hagency.test/","issuer":"https://hagency.test/_pasion/"})
     }
     #[test]
     fn ordinary_matrix_and_service_identity_alone_cannot_gain_admission() {
         for value in [
             json!({"versions":["v1.12"]}),
-            json!({"protocolVersion":2,"serviceMxid":"@hagency_appservice:test","homeserver":"https://hagency.test/","issuer":"https://hagency.test/_pasion/"}),
+            json!({"protocolVersion":3,"serviceMxid":"@hagency_appservice:test","homeserver":"https://hagency.test/","issuer":"https://hagency.test/_pasion/"}),
         ] {
             assert_eq!(
                 validate_metadata("https://hagency.test/", &value),
