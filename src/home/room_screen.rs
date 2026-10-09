@@ -375,13 +375,13 @@ script_mod! {
 
             profile := View {
                 align: Align{x: 0.5, y: 0.0} // centered horizontally, top aligned
-                width: 65.0,
+                width: 49.0,
                 height: Fit,
                 margin: Inset{top: 4.5, right: 10}
                 flow: Down,
                 avatar := Avatar {
-                    width: 40,
-                    height: 40,
+                    width: 32,
+                    height: 32,
                 }
                 timestamp := Timestamp {
                     margin: Inset{ top: 5.9 }
@@ -400,7 +400,7 @@ script_mod! {
                     flow: Right,
                     width: Fill,
                     height: Fit,
-                    align: Align{y: 0.5} spacing: 5 padding: Inset{top: 12 bottom: 7}
+                    align: Align{y: 0.5} spacing: 5 padding: Inset{top: 8 bottom: 7}
                     username := Label {
                         width: Fit{max: FitBound.Rel{base: Base.Line, factor: 0.8}},
                         flow: Flow.Right { wrap: false },
@@ -574,7 +574,7 @@ script_mod! {
         padding: Inset{ top: 2.0, bottom: 2.0 }
         replied_to_message +: {
             preview_content +: {
-                margin: Inset{ left: 74, bottom: 5.0 }
+                margin: Inset{ left: 58, bottom: 5.0 }
             }
         }
         body := View {
@@ -584,7 +584,7 @@ script_mod! {
             padding: Inset{ top: 0, bottom: 2.5, left: (1.5 * mod.widgets.RINX_GUTTER), right: (1.5 * mod.widgets.RINX_GUTTER) },
             profile := View {
                 align: Align{x: 0.5, y: 0.0} // centered horizontally, top aligned
-                width: 65.0,
+                width: 49.0,
                 height: Fit,
                 flow: Down,
                 timestamp := Timestamp {
@@ -941,6 +941,7 @@ script_mod! {
                 padding: Inset{left: 20, right: 8}
                 align: Align{y: 0.5}
                 desktop_thread_back := NavigationBarButton {
+                    tooltip_below: true
                     visible: false width: 32 height: 32 padding: 8
                     tooltip_text: #(crate::i18n::tr("Back to Room"))
                     icon := Icon {icon_walk: Walk{width: 16 height: 16} draw_icon +: {svg: ICON_ARROW_BACK color: mod.widgets.RINX_INK}}
@@ -953,6 +954,18 @@ script_mod! {
                         text_style: theme.font_bold {font_size: (13 * mod.widgets.RINX_TEXT_SCALE)}
                     }
                     text: ""
+                }
+                desktop_history_search := NavigationBarButton {
+                    tooltip_below: true
+                    width: 36 height: 36 padding: 8
+                    tooltip_text: #(crate::i18n::tr("Search Chat History"))
+                    Icon {icon_walk: Walk{width: 20 height: 20} draw_icon +: {svg: ICON_SEARCH color: mod.widgets.RINX_INK}}
+                }
+                desktop_history_media := NavigationBarButton {
+                    tooltip_below: true
+                    width: 36 height: 36 padding: 8
+                    tooltip_text: #(crate::i18n::tr("Shared Attachments"))
+                    Icon {icon_walk: Walk{width: 20 height: 20} draw_icon +: {svg: ICON_ADD_ATTACHMENT color: mod.widgets.RINX_INK}}
                 }
                 desktop_chat_info_button := RinxRoomInfoToggleButton {}
             }
@@ -1027,12 +1040,12 @@ script_mod! {
                 }
                 desktop_chat_info_panel := SolidView {visible: false width: 280 height: Fill flow: Right draw_bg.color: mod.widgets.RINX_BORDER
                     View {width: 1 height: Fill}
-                    desktop_chat_info_card := View {width: Fill height: Fill desktop_chat_info := MobileChatInfo {}}
+                    desktop_chat_info_card := View {width: Fill height: Fill desktop_chat_info := MobileChatInfo {summary.summary_details.visible: false}}
                 }
             }
             compact_chat_info_panel := View {visible: false width: Fill height: Fill flow: Right align: Align{x: 1.0}
                 compact_chat_info_card := SolidView {width: 280 height: Fill draw_bg.color: mod.widgets.RINX_SURFACE
-                    compact_chat_info := MobileChatInfo {}
+                    compact_chat_info := MobileChatInfo {summary.summary_details.visible: false}
                 }
             }
         }
@@ -3886,6 +3899,19 @@ impl RoomScreen {
     /// Opens, closes or dismisses the desktop chat info panel.
     fn handle_desktop_chat_info(&mut self, cx: &mut Cx, event: &Event) {
         if !self.view.view(cx, ids!(desktop_chat_header)).visible() { return; }
+        if let Event::Actions(actions) = event {
+            let search = self.view.navigation_bar_button(cx, ids!(desktop_history_search)).clicked(actions);
+            let media = self.view.navigation_bar_button(cx, ids!(desktop_history_media)).clicked(actions);
+            if search || media {
+                if let Some(room) = self.room_name_id.clone() {
+                    cx.action(super::room_history::RoomHistoryAction::Open {
+                        room,
+                        filter: if search {super::room_history::HistoryFilter::Messages} else {super::room_history::HistoryFilter::Media},
+                    });
+                }
+                return;
+            }
+        }
         if let Event::Actions(actions) = event
             && self.view.navigation_bar_button(cx, ids!(desktop_chat_info_button)).clicked(actions) {
             self.set_desktop_chat_info_visible(cx, !self.chat_info_requested);
@@ -7872,6 +7898,20 @@ mod desktop_information_columns_tests {
         assert!(screen.view.widget(&mut cx,ids!(invite_my_agent_button)).is_empty(), "Agent invitations belong in Members, not the chat header");
         let button=screen.view.navigation_bar_button(&mut cx,ids!(desktop_chat_info_button));
         assert!(button.borrow().is_some());
+        let search=screen.view.navigation_bar_button(&mut cx,ids!(desktop_history_search)).area().rect(&cx);
+        let media=screen.view.navigation_bar_button(&mut cx,ids!(desktop_history_media)).area().rect(&cx);
+        let toggle=button.area().rect(&cx);
+        assert!(search.size.x>0.0 && search.pos.x+search.size.x<=media.pos.x);
+        assert!(media.size.x>0.0 && media.pos.x+media.size.x<=toggle.pos.x);
+        assert!(!screen.view.view(&mut cx,ids!(desktop_chat_info.summary_details)).visible());
+        assert!(!screen.view.view(&mut cx,ids!(compact_chat_info.summary_details)).visible());
+        for (id,filter) in [(ids!(desktop_history_search),super::super::room_history::HistoryFilter::Messages),(ids!(desktop_history_media),super::super::room_history::HistoryFilter::Media)] {
+            let history=screen.view.navigation_bar_button(&mut cx,id);
+            let actions=cx.capture_actions(|cx|cx.widget_action(history.widget_uid(),crate::shared::navigation_bar_button::NavigationBarButtonAction::Clicked));
+            let output=cx.capture_actions(|cx|screen.handle_desktop_chat_info(cx,&Event::Actions(actions)));
+            assert!(output.iter().any(|action| matches!(action.downcast_ref::<super::super::room_history::RoomHistoryAction>(),Some(super::super::room_history::RoomHistoryAction::Open {room,filter:actual}) if room.room_id()==screen.room_name_id.as_ref().unwrap().room_id() && *actual==filter)));
+            assert!(!screen.chat_info_requested,"history controls work while sidebar is closed");
+        }
         let actions=cx.capture_actions(|cx|cx.widget_action(button.widget_uid(),crate::shared::navigation_bar_button::NavigationBarButtonAction::Clicked));
         screen.handle_desktop_chat_info(&mut cx,&Event::Actions(actions));
         assert!(screen.chat_info_requested);

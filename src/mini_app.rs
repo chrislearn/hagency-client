@@ -255,7 +255,7 @@ script_mod! {
             }
             View {
                 width: Fill height: 44 flow: Right spacing: 8 padding: Inset{left: 8 right: 8}
-                mini_web_back := RobrixNeutralIconButton {text: #(crate::i18n::tr("Back")) i18n_text: "Back" height: 40}
+                mini_web_back := RinxBackButton {}
                 mini_reload := RobrixNeutralIconButton {text: #(crate::i18n::tr("Reload")) i18n_text: "Reload" height: 40}
                 mini_external := RobrixNeutralIconButton {text: #(crate::i18n::tr("Open in browser")) i18n_text: "Open in browser" height: 40}
             }

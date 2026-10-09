@@ -127,8 +127,6 @@ script_mod! {
                         title.text: #(crate::i18n::tr("New Friends")) title.i18n_text: "New Friends"
                         icon +: {draw_icon +: {svg: ICON_ADD_USER color: mod.widgets.RINX_WARNING_FG}}
                     }
-                    mod.widgets.MobileDivider {}
-                    groups := mod.widgets.MobileRow {title.text: #(crate::i18n::tr("Group Chats")) title.i18n_text: "Group Chats" icon.draw_icon.color: mod.widgets.MOBILE_GREEN}
                 }
                 status := Label {
                     width: Fill height: Fit padding: 16
@@ -520,11 +518,6 @@ impl Widget for MobileHub {
                 if let Some(profile) = self.selected_profile.clone() {
                     submit_async_request(MatrixRequest::OpenOrCreateDirectMessage {user_profile: profile, allow_create: false});
                 }
-            }
-            if self.view.navigation_bar_button(cx, ids!(groups)).clicked(actions) {
-                self.groups_open = true;
-                self.refresh_groups(cx);
-                cx.action(MobileNavigationAction::DetailVisibility(true));
             }
             let group_list = self.view.portal_list(cx, ids!(group_list));
             for (index, widget) in group_list.items_with_actions(actions) {

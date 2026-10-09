@@ -25,10 +25,14 @@ script_mod! {
     use mod.widgets.*
     mod.widgets.AgentRuntimeNotice = #(AgentRuntimeNotice::register_widget(vm)) {
         ..mod.widgets.View
-        width: Fill height: Fit flow: Right spacing: 8 padding: Inset{left: 16 right: 12 top: 6 bottom: 6}
+        width: Fill height: Fit flow: Right spacing: 12 align: Align{y: 0.5} padding: Inset{left: 16 right: 12 top: 8 bottom: 8}
         visible: false show_bg: true draw_bg.color: mod.widgets.RINX_HOVER
         status := Label {width: Fill height: Fit draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
-        open := RobrixNeutralIconButton {text: #(crate::i18n::tr("Open Agent Run")) i18n_text: "Open Agent Run" height: 28 icon_walk: Walk{width: 0 height: 0} spacing: 0}
+        open := RobrixNeutralIconButton {
+            text: #(crate::i18n::tr("Open Service")) i18n_text: "Open Service"
+            height: 32 padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+            icon_walk: Walk{width: 0 height: 0} spacing: 0
+        }
     }
 }
 #[derive(Script,ScriptHook,Widget)]
@@ -64,7 +68,7 @@ impl AgentRuntimeNotice {
                 let here=current.is_some_and(|id|agent["executionDeviceId"]==id && roster["devices"].as_array().is_some_and(|ds|ds.iter().any(|d|d["id"]==id && d["revoked"]==false)));
                 let text=if here {
                     let result=service.execute(Command::Local {agent_id:agent_id.clone(),action:LocalAction::Runtime,input:None,binding_id:None,requester:None}).await.and_then(|v|room_runtime(&v,&agent_id,&binding_id));
-                    crate::hagency::ui::runtime_list_label(Some(&result),&agent_id).to_owned()
+                    crate::hagency::ui::runtime_service_description(Some(&result),&agent_id)
                 } else if current.is_none() {"Local processing could not be verified. Refresh to retry.".into()}
                 else if agent["executionDeviceId"].as_str().is_none_or(|id|id.is_empty()) {"No available execution device. Open Agent settings to assign this device.".into()}
                 else {"Processing is assigned to another device; this device does not run it.".into()};

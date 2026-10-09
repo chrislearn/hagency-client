@@ -1,7 +1,7 @@
 //! Mobile room information backed by the current Matrix room and push rules.
 
 use makepad_widgets::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use matrix_sdk::{
     notification_settings::RoomNotificationMode,
     ruma::{OwnedUserId, OwnedRoomId},
@@ -31,14 +31,16 @@ script_mod! {
         width: Fill height: Fill flow: Down
         draw_bg.color: mod.widgets.MOBILE_BG
         summary := View {width: Fill height: Fit flow: Down padding: 16 spacing: 8
-            summary_name := Label {width: Fill height: Fit max_lines: 2 text_overflow: Ellipsis
-                draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold{font_size: (15 * mod.widgets.RINX_TEXT_SCALE)}}}
-            View {width: Fill height: 32 flow: Right spacing: 8 align: Align{y: 0.5}
-                summary_count := Label {width: Fill height: Fit draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
-                history_search := NavigationBarButton {width: 32 height: 32 padding: 7 tooltip_text: #(crate::i18n::tr("Search Chat History"))
-                    Icon {icon_walk: Walk{width: 16 height: 16} draw_icon +: {svg: ICON_SEARCH color: mod.widgets.RINX_MUTED}}}
-                history_media := NavigationBarButton {width: 32 height: 32 padding: 7 tooltip_text: #(crate::i18n::tr("Shared Attachments"))
-                    Icon {icon_walk: Walk{width: 16 height: 16} draw_icon +: {svg: ICON_ADD_ATTACHMENT color: mod.widgets.RINX_MUTED}}}
+            summary_details := View {width: Fill height: Fit flow: Down spacing: 8
+                summary_name := Label {width: Fill height: Fit max_lines: 2 text_overflow: Ellipsis
+                    draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold{font_size: (15 * mod.widgets.RINX_TEXT_SCALE)}}}
+                View {width: Fill height: 32 flow: Right spacing: 8 align: Align{y: 0.5}
+                    summary_count := Label {width: Fill height: Fit draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
+                    history_search := NavigationBarButton {width: 32 height: 32 padding: 7 tooltip_text: #(crate::i18n::tr("Search Chat History"))
+                        Icon {icon_walk: Walk{width: 16 height: 16} draw_icon +: {svg: ICON_SEARCH color: mod.widgets.RINX_MUTED}}}
+                    history_media := NavigationBarButton {width: 32 height: 32 padding: 7 tooltip_text: #(crate::i18n::tr("Shared Attachments"))
+                        Icon {icon_walk: Walk{width: 16 height: 16} draw_icon +: {svg: ICON_ADD_ATTACHMENT color: mod.widgets.RINX_MUTED}}}
+                }
             }
             View {width: Fill height: 36 flow: Right spacing: 8
                 overview_tab := RobrixNeutralIconButton {width: Fill height: 36 text: #(crate::i18n::tr("Overview")) icon_walk: Walk{width: 0 height: 0}}
@@ -51,14 +53,21 @@ script_mod! {
             draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}
         }
         retry := RobrixNeutralIconButton {visible: false text: #(crate::i18n::tr("Retry")) i18n_text: "Retry" height: 44 margin: 12}
-        services_panel := View {visible: false width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 bottom: 12} spacing: 8
+        services_panel := View {visible: false width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 bottom: 12} spacing: 10
+            services_back := RinxBackButton {}
+            Label {width: Fill height: Fit text: #(crate::i18n::tr("Room Agent services")) i18n_text: "Room Agent services"
+                draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold{font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}}}
+            Label {width: Fill height: Fit flow: Flow.Right{wrap: true}
+                text: #(crate::i18n::tr("Only your Agents connected to this Room are shown. Service settings apply to the selected Agent across its connected Rooms."))
+                i18n_text: "Only your Agents connected to this Room are shown. Service settings apply to the selected Agent across its connected Rooms."
+                draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}}
             services_status := Label {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: mod.widgets.RINX_MUTED}
             room_services := RobrixSettingsDropDown {width: Fill height: 40 margin: 0 labels: ["Choose an Agent"]
                 popup_menu_position: PopupMenuPosition.BelowInput
                 popup_menu: RobrixSettingsPopupMenu {width: 256 menu_item: RobrixSettingsPopupMenuItem {height: 36}}}
             View {width: Fill height: 36 flow: Right spacing: 8
-                configure_service := RobrixNeutralIconButton {text: #(crate::i18n::tr("Service settings")) height: 36 width: Fill icon_walk: Walk{width: 0 height: 0}}
-                refresh_services := RobrixNeutralIconButton {text: #(crate::i18n::tr("Refresh")) height: 36 icon_walk: Walk{width: 0 height: 0}}
+                configure_service := RobrixNeutralIconButton {text: #(crate::i18n::tr("Open Service")) i18n_text: "Open Service" height: 36 padding: Inset{left: 10 right: 10 top: 0 bottom: 0} width: Fill icon_walk: Walk{width: 0 height: 0}}
+                refresh_services := RobrixNeutralIconButton {text: #(crate::i18n::tr("Refresh")) height: 36 padding: Inset{left: 10 right: 10 top: 0 bottom: 0} icon_walk: Walk{width: 0 height: 0}}
             }
         }
         member_controls := View {visible: false width: Fill height: Fit flow: Down padding: Inset{left: 12 right: 12 bottom: 12} spacing: 8
@@ -68,74 +77,99 @@ script_mod! {
                 invite_my_agent := RobrixNeutralIconButton {text: #(crate::i18n::tr("Add agent")) i18n_text: "Add agent" width: Fill height: 32 padding: 6 spacing: 5
                     icon_walk: Walk{width: 14 height: 14} draw_icon.svg: ICON_ROBOT}
             }
-            agent_picker := View {visible: false width: Fill height: Fit flow: Down spacing: 8
-                agent_status := Label {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: mod.widgets.RINX_MUTED}
+            members_empty := Label {visible: false width: Fill height: Fit text: #(crate::i18n::tr("No members available.")) draw_text.color: mod.widgets.RINX_MUTED}
+        }
+        ownership_status := Label {visible: false width: Fill height: Fit margin: Inset{left: 16 right: 16 bottom: 8}
+            flow: Flow.Right{wrap: true}
+            text: #(crate::i18n::tr("Some Agent ownership could not be verified. Unmatched members are shown separately."))
+            i18n_text: "Some Agent ownership could not be verified. Unmatched members are shown separately."
+            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}}
+        information_list := View {width: Fill height: Fill
+            list := PortalList {
+                width: Fill height: Fill flow: Down
+                Header := mod.widgets.MobileSection {
+                    padding: Inset{left: 16 right: 16 top: 4 bottom: 12} spacing: 6 margin: 0
+                    Label {width: Fill text: #(crate::i18n::tr("Room details")) draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold{font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}}}
+                    topic := Label {width: Fill height: Fit flow: Flow.Right{wrap: true}
+                        draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
+                    View {width: Fill height: 28 flow: Right spacing: 6 align: Align{y: 0.5}
+                        room_id := Label {width: Fill height: Fit max_lines: 1 text_overflow: Ellipsis
+                            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}}}
+                        copy_room_id := NavigationBarButton {width: 28 height: 28 padding: 6 tooltip_text: #(crate::i18n::tr("Copy Room ID"))
+                            Icon {icon_walk: Walk{width: 14 height: 14} draw_icon +: {svg: ICON_COPY color: mod.widgets.RINX_MUTED}}}
+                    }
+                }
+                Member := mod.widgets.MobileSection {
+                    // Clicking a member opens their profile (DM, block, ...).
+                    row := NavigationBarButton {
+                        width: Fill height: 56 flow: Right spacing: 8 padding: Inset{left: 16 right: 16}
+                        align: Align{y: 0.5}
+                        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_HOVER border_radius: 0}
+                        avatar := mod.widgets.MobileAvatar {width: 32 height: 32}
+                        View {
+                            width: Fill height: Fit flow: Down spacing: 2 padding: 0
+                            name := Label {
+                                width: Fill height: Fit padding: 0 max_lines: 1 text_overflow: Ellipsis
+                                draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}
+                            }
+                            user_id := Label {
+                                width: Fill height: Fit padding: 0 max_lines: 1 text_overflow: Ellipsis
+                                draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}}
+                            }
+                        }
+                    }
+                }
+                Back := mod.widgets.MobileSection {
+                    padding: Inset{left: 16 right: 16 top: 8 bottom: 8}
+                    row := RinxBackButton {}
+                }
+                Action := mod.widgets.MobileSection {
+                    row := NavigationBarButton {
+                        width: Fill height: 56 flow: Right spacing: 10
+                        padding: Inset{left: 20 right: 20} align: Align{y: 0.5}
+                        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_HOVER border_radius: 0}
+                        title := Label {
+                            width: Fill max_lines: 1 text_overflow: Ellipsis
+                            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: (12.5 * mod.widgets.RINX_TEXT_SCALE)}}
+                        }
+                        value := Label {
+                            max_lines: 1
+                            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}
+                        }
+                        Icon {
+                            icon_walk: Walk{width: 8 height: 13}
+                            draw_icon +: {color: mod.widgets.RINX_DISABLED svg: ICON_CHEVRON_RIGHT}
+                        }
+                    }
+                    mod.widgets.MobileDivider {margin: Inset{left: 20}}
+                }
+                Filler := View {height: 100 width: Fill}
+            }
+        }
+        agent_picker_modal := Modal {
+            content := SmallModal {
+                title := ModalTitle {text: #(crate::i18n::tr("Add agent")) i18n_text: "Add agent"}
+                agent_room := ModalBody {margin: Inset{bottom: 12}}
                 my_agents := RobrixSettingsDropDown {width: Fill height: 40 margin: 0 labels: ["Choose my Agent"]
                     draw_bg.border_radius: 4
                     popup_menu_position: PopupMenuPosition.BelowInput
                     draw_text.text_style: theme.font_regular{font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}
-                    popup_menu: RobrixSettingsPopupMenu {width: 256 menu_item: RobrixSettingsPopupMenuItem {height: 36}}}
-                invite_selected_agent := RobrixNeutralIconButton {text: "Add selected Agent to this Room" height: 40 icon_walk: Walk{width: 0 height: 0}}
-                hide_agent_picker := RobrixNeutralIconButton {text: #(crate::i18n::tr("Hide Agent picker")) height: 32 icon_walk: Walk{width: 0 height: 0}}
-                resume_agent_requests := RobrixNeutralIconButton {visible: false text: "Resume original request in Agents" height: 40 icon_walk: Walk{width: 0 height: 0}}
-            }
-            members_empty := Label {visible: false width: Fill height: Fit text: #(crate::i18n::tr("No members available.")) draw_text.color: mod.widgets.RINX_MUTED}
-        }
-        list := PortalList {
-            width: Fill height: Fill flow: Down
-            Header := mod.widgets.MobileSection {
-                padding: Inset{left: 16 right: 16 top: 4 bottom: 12} spacing: 6 margin: 0
-                Label {width: Fill text: #(crate::i18n::tr("Room details")) draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold{font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}}}
-                topic := Label {width: Fill height: Fit flow: Flow.Right{wrap: true}
-                    draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
-                View {width: Fill height: 28 flow: Right spacing: 6 align: Align{y: 0.5}
-                    room_id := Label {width: Fill height: Fit max_lines: 1 text_overflow: Ellipsis
-                        draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}}}
-                    copy_room_id := NavigationBarButton {width: 28 height: 28 padding: 6 tooltip_text: #(crate::i18n::tr("Copy Room ID"))
-                        Icon {icon_walk: Walk{width: 14 height: 14} draw_icon +: {svg: ICON_COPY color: mod.widgets.RINX_MUTED}}}
-                }
-            }
-            Member := mod.widgets.MobileSection {
-                // Clicking a member opens their profile (DM, block, ...).
-                row := NavigationBarButton {
-                    width: Fill height: 62 flow: Right spacing: 12 padding: Inset{left: 20 right: 20}
-                    align: Align{y: 0.5}
-                    draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_HOVER border_radius: 0}
-                    avatar := mod.widgets.MobileAvatar {width: 40 height: 40}
-                    View {
-                        width: Fill height: Fit flow: Down spacing: 3
-                        name := Label {
-                            width: Fill max_lines: 1 text_overflow: Ellipsis
-                            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}}
-                        }
-                        user_id := Label {
-                            width: Fill max_lines: 1 text_overflow: Ellipsis
-                            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}}
-                        }
+                    popup_menu: RobrixSettingsPopupMenu {width: 310 menu_item: RobrixSettingsPopupMenuItem {height: 36}}}
+                buttons_view := ModalButtonsRow {
+                    close_agent_picker := RobrixNeutralIconButton {
+                        width: Fit{min: FitBound.Abs(120.0)} align: Align{x: 0.5 y: 0.5} padding: 12
+                        text: #(crate::i18n::tr("Cancel")) i18n_text: "Cancel"
+                        draw_icon.svg: ICON_FORBIDDEN icon_walk: Walk{width: 16 height: 16 margin: Inset{left: -2 right: -1}}
+                    }
+                    invite_selected_agent := RobrixPositiveIconButton {
+                        width: Fit{min: FitBound.Abs(120.0)} align: Align{x: 0.5 y: 0.5} padding: 12
+                        text: #(crate::i18n::tr("Add agent")) i18n_text: "Add agent"
+                        draw_icon.svg: ICON_ROBOT icon_walk: Walk{width: 16 height: 16 margin: Inset{left: -2 right: -1}}
                     }
                 }
+                agent_status := ModalBody {}
+                resume_agent_requests := RobrixNeutralIconButton {visible: false text: "Resume original request in Agents" height: 40 margin: Inset{top: 12} icon_walk: Walk{width: 0 height: 0}}
             }
-            Action := mod.widgets.MobileSection {
-                row := NavigationBarButton {
-                    width: Fill height: 56 flow: Right spacing: 10
-                    padding: Inset{left: 20 right: 20} align: Align{y: 0.5}
-                    draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_HOVER border_radius: 0}
-                    title := Label {
-                        width: Fill max_lines: 1 text_overflow: Ellipsis
-                        draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: (12.5 * mod.widgets.RINX_TEXT_SCALE)}}
-                    }
-                    value := Label {
-                        max_lines: 1
-                        draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}
-                    }
-                    Icon {
-                        icon_walk: Walk{width: 8 height: 13}
-                        draw_icon +: {color: mod.widgets.RINX_DISABLED svg: ICON_CHEVRON_RIGHT}
-                    }
-                }
-                mod.widgets.MobileDivider {margin: Inset{left: 20}}
-            }
-            Filler := View {height: 100 width: Fill}
         }
     }
 }
@@ -143,9 +177,9 @@ script_mod! {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum InfoTab { #[default] Overview, Members }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum InfoRow { Overview, Member(usize), Notifications, Mode(usize), Back, AgentAccess, AgentServices, Approvals, Filler }
+enum InfoRow { Overview, Member(usize), Notifications, Mode(usize), Back, AgentServices, Approvals, Filler }
 fn info_rows(tab: InfoTab, members: usize, choosing: bool, approvals: bool) -> usize {
-    match tab {InfoTab::Members => members, InfoTab::Overview if choosing => 6, InfoTab::Overview => 4 + usize::from(approvals)}
+    match tab {InfoTab::Members => members, InfoTab::Overview if choosing => 6, InfoTab::Overview => 3 + usize::from(approvals)}
 }
 fn info_row(tab: InfoTab, members: usize, choosing: bool, approvals: bool, index: usize) -> InfoRow {
     if index >= info_rows(tab, members, choosing, approvals) {return InfoRow::Filler;}
@@ -153,7 +187,7 @@ fn info_row(tab: InfoTab, members: usize, choosing: bool, approvals: bool, index
         InfoTab::Members => InfoRow::Member(index),
         InfoTab::Overview if index == 0 => InfoRow::Overview,
         InfoTab::Overview if choosing => if index <= 4 {InfoRow::Mode(index - 1)} else {InfoRow::Back},
-        InfoTab::Overview => match index {1 => InfoRow::Notifications, 2 => InfoRow::AgentServices, 3 => InfoRow::AgentAccess, _ => InfoRow::Approvals},
+        InfoTab::Overview => match index {1 => InfoRow::Notifications, 2 => InfoRow::AgentServices, _ => InfoRow::Approvals},
     }
 }
 #[derive(Clone, Debug)]
@@ -168,6 +202,60 @@ struct ChatInfoData {
     topic: String,
     members: Vec<UserProfile>,
     mode: Option<RoomNotificationMode>,
+}
+
+
+#[derive(Debug)]
+struct MemberOwnershipLoaded {
+    owner: OwnedUserId, origin: String, epoch: u64, room_id: OwnedRoomId, request: u64,
+    result: Result<(HashMap<OwnedUserId, OwnedUserId>, bool), String>,
+}
+fn add_member_owners(owners: &mut HashMap<OwnedUserId, OwnedUserId>, conflicts: &mut HashSet<OwnedUserId>, rows: &serde_json::Value, fallback_owner: Option<&OwnedUserId>) {
+    for row in rows.as_array().into_iter().flatten() {
+        let Some(agent) = row["puppetMxid"].as_str().and_then(|id| OwnedUserId::try_from(id).ok()) else {continue;};
+        let owner = row["ownerMxid"].as_str().and_then(|id| OwnedUserId::try_from(id).ok()).or_else(|| fallback_owner.cloned());
+        let Some(owner) = owner else {continue;};
+        if agent == owner || agent.localpart() == "_hagency_service" || conflicts.contains(&agent) {continue;}
+        if owners.get(&agent).is_some_and(|old| old != &owner) {
+            owners.remove(&agent);conflicts.insert(agent);
+        } else {owners.insert(agent,owner);}
+    }
+}
+fn group_members(members: &mut Vec<UserProfile>, owners: &HashMap<OwnedUserId, OwnedUserId>) -> HashSet<OwnedUserId> {
+    members.sort_by_key(|p| (p.displayable_name().to_lowercase(), p.user_id.clone()));
+    let present: HashSet<_> = members.iter().map(|p|p.user_id.clone()).collect();
+    let grouped: HashSet<_> = members.iter().filter(|p|p.user_id.localpart() != "_hagency_service" && owners.get(&p.user_id).is_some_and(|owner| present.contains(owner) && !owners.contains_key(owner) && owner.localpart() != "_hagency_service" && *owner != p.user_id)).map(|p|p.user_id.clone()).collect();
+    let mut ordered = Vec::with_capacity(members.len());
+    for member in members.iter().filter(|p|!grouped.contains(&p.user_id)) {
+        ordered.push(member.clone());
+        ordered.extend(members.iter().filter(|p|grouped.contains(&p.user_id) && owners.get(&p.user_id) == Some(&member.user_id)).cloned());
+    }
+    *members = ordered;
+    grouped
+}
+async fn fetch_member_owners(room: &str, owner: &OwnedUserId) -> Result<(HashMap<OwnedUserId, OwnedUserId>, bool), String> {
+    use crate::hagency::{backend::Service,model::Command};
+    let service = Service::for_current()?;
+    let roster = service.execute(Command::Agents).await?;
+    if roster["ownerMxid"].as_str() != Some(owner.as_str()) {return Err("matrix_account_changed".into());}
+    let rows=roster["agents"].as_array().ok_or("room_discovery_unavailable")?;
+    if rows.len()>128 {return Err("room_discovery_incomplete".into());}
+    let mut owners = HashMap::new();let mut conflicts = HashSet::new();
+    add_member_owners(&mut owners, &mut conflicts, &roster["agents"], Some(owner));
+    let incomplete = match service.agents_for_registered_room(room).await {
+        Ok(context) => {
+            let project = context["projectId"].as_str().filter(|id|!id.is_empty()).ok_or("room_discovery_unavailable")?;
+            match service.execute(Command::RoomRoster {project_id:project.into(),room_id:room.into()}).await {
+                Ok(roster) if roster["agents"].as_array().is_some_and(|rows|rows.len()<=128) => {add_member_owners(&mut owners,&mut conflicts,&roster["agents"],None);false},
+                Ok(_) => true,
+                Err(_) => true,
+            }
+        },
+        // Private/non-project Rooms can still group this owner's known Agents.
+        Err(error) if error == "room_project_registration_required" => false,
+        Err(_) => true,
+    };
+    Ok((owners,incomplete || !conflicts.is_empty()))
 }
 
 #[derive(Debug)]
@@ -227,6 +315,9 @@ pub struct MobileChatInfo {
     request: u64,
     #[rust]
     data: Option<ChatInfoData>,
+    #[rust] member_owners: HashMap<OwnedUserId, OwnedUserId>,
+    #[rust] indented_members: HashSet<OwnedUserId>,
+    #[rust] ownership_unavailable: bool,
     #[rust]
     status: String,
     #[rust]
@@ -282,7 +373,14 @@ impl MobileChatInfo {
     fn load_services(&mut self, cx: &mut Cx) {
         if self.services_busy || !self.pin_is_current() {return;}
         let (Some(owner), Some(room)) = (self.owner.clone(), self.room.clone()) else {return;};
-        let Ok(service) = crate::hagency::backend::Service::for_current() else {return;};
+        let Ok(service) = crate::hagency::backend::Service::for_current() else {
+            self.services.clear();
+            self.view.drop_down(cx, ids!(room_services)).set_labels(cx, vec![crate::i18n::tr("Choose an Agent").into()]);
+            self.view.drop_down(cx, ids!(room_services)).set_selected_item(cx, 0);
+            self.view.label(cx, ids!(services_status)).set_text(cx, crate::i18n::tr("Could not load Agent services. Refresh to retry."));
+            self.view.redraw(cx);
+            return;
+        };
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let request = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.services_request = request;
@@ -300,8 +398,10 @@ impl MobileChatInfo {
         self.view.redraw(cx);
     }
     fn select_tab(&mut self, cx: &mut Cx, tab: InfoTab) {
+        self.close_agent_picker(cx);
         self.tab = tab;
         self.choosing_notifications = false;
+        self.services_open = false;
         self.view.portal_list(cx, ids!(list)).set_first_id_and_scroll(0, 0.0);
         self.view.redraw(cx);
     }
@@ -329,6 +429,13 @@ impl MobileChatInfo {
         let origin = self.origin.clone();
         let epoch = self.epoch;
         let room_id = room.room_id().clone();
+        self.member_owners.clear();self.indented_members.clear();self.ownership_unavailable=false;
+        if let Some(data)=self.data.as_mut() {group_members(&mut data.members,&self.member_owners);}
+        let ownership_owner=owner.clone();let ownership_origin=origin.clone();let ownership_room=room_id.clone();
+        spawn_async_task(async move {
+            let result=tokio::time::timeout(std::time::Duration::from_secs(30),fetch_member_owners(ownership_room.as_str(),&ownership_owner)).await.unwrap_or_else(|_|Err("room_discovery_unavailable".into()));
+            Cx::post_action(MemberOwnershipLoaded {owner:ownership_owner,origin:ownership_origin,epoch,room_id:ownership_room,request,result});
+        });
         self.status = crate::i18n::tr("Loading chat information…").into();
         self.view
             .portal_list(cx, ids!(list))
@@ -396,10 +503,22 @@ impl MobileChatInfo {
                 Err(_) => true,
             }
     }
+    fn ownership_response_matches(&self, loaded: &MemberOwnershipLoaded) -> bool {
+        self.owner.as_ref()==Some(&loaded.owner) && self.origin==loaded.origin && self.epoch==loaded.epoch && self.request==loaded.request
+            && self.room.as_ref().is_some_and(|room|room.room_id()==&loaded.room_id)
+    }
     fn agent_response_matches(&self, loaded: &RoomAgentsLoaded) -> bool {
         self.owner.as_ref() == Some(&loaded.owner) && self.origin == loaded.origin && self.epoch == loaded.epoch && self.agent_request == loaded.request
             && self.room.as_ref().is_some_and(|room| room.room_id() == &loaded.room_id)
             && loaded.result.as_ref().map_or(true, |value| if loaded.binding {value["creation"]["binding"]["roomId"] == loaded.room_id.as_str()} else {value["roomId"] == loaded.room_id.as_str()})
+    }
+    fn close_agent_picker(&mut self, cx: &mut Cx) {
+        let modal = self.view.modal(cx, ids!(agent_picker_modal));
+        if self.agent_picker_open || modal.is_open() {
+            self.agent_picker_open = false;
+            modal.close(cx);
+            self.view.redraw(cx);
+        }
     }
     fn request_agents(&mut self, cx: &mut Cx, binding: bool) {
         if self.room.as_ref().is_some_and(|room|
@@ -429,8 +548,10 @@ impl MobileChatInfo {
         self.agent_busy=true;
         self.tab=InfoTab::Members;
         self.agent_picker_open=true;
+        self.view.label(cx, ids!(agent_room)).set_text(cx, &room.to_string());
+        self.view.modal(cx, ids!(agent_picker_modal)).open(cx);
         self.view.label(cx,ids!(agent_status)).set_text(cx,if binding {"Adding Agent to this Room…"} else {"Checking this Room and your Agents…"});
-        if !binding {self.agents.clear(); self.agent_project.clear(); self.view.drop_down(cx,ids!(my_agents)).set_labels(cx,vec!["Choose my Agent".into()]);}
+        if !binding {self.view.button(cx, ids!(resume_agent_requests)).set_visible(cx, false);self.agents.clear(); self.agent_project.clear(); self.view.drop_down(cx,ids!(my_agents)).set_labels(cx,vec!["Choose my Agent".into()]);}
         spawn_async_task(async move {
             let result=if let Some(command)=command {service.execute(command).await} else {service.agents_for_registered_room(room_id.as_str()).await};
             Cx::post_action(RoomAgentsLoaded {owner,origin,epoch,room_id,request,binding,result});
@@ -444,6 +565,7 @@ impl MobileChatInfo {
         self.room = None;
         self.request = 0;
         self.data = None;
+        self.member_owners.clear();self.indented_members.clear();self.ownership_unavailable=false;
         self.status.clear();
         self.failed = false;
         self.choosing_notifications = false;
@@ -471,7 +593,15 @@ impl Widget for MobileChatInfo {
             crate::avatar_cache::process_avatar_updates(cx);
             self.view.redraw(cx);
         }
-        self.view.handle_event(cx, event, scope);
+        if !self.agent_picker_open {
+            self.view.modal(cx, ids!(agent_picker_modal)).close(cx);
+        }
+        // Let the overlay consume input before the underlying members panel.
+        if self.agent_picker_open && !matches!(event, Event::Actions(_) | Event::Signal) {
+            self.view.modal(cx, ids!(agent_picker_modal)).handle_event(cx, event, scope);
+        } else {
+            self.view.handle_event(cx, event, scope);
+        }
         if let Event::Actions(actions) = event {
             for action in actions {
                 if let Some(loaded) = action.downcast_ref::<RoomServicesLoaded>()
@@ -531,11 +661,23 @@ impl Widget for MobileChatInfo {
                         self.view.redraw(cx);
                     }
                 }
+                if let Some(loaded) = action.downcast_ref::<MemberOwnershipLoaded>() {
+                    if self.pin_is_current() && self.ownership_response_matches(loaded) {
+                        match &loaded.result {
+                            Ok((owners,incomplete)) => {self.member_owners=owners.clone();self.ownership_unavailable=*incomplete;},
+                            Err(_) => {self.member_owners.clear();self.ownership_unavailable=true;},
+                        }
+                        if let Some(data)=self.data.as_mut() {self.indented_members=group_members(&mut data.members,&self.member_owners);}
+                        self.view.redraw(cx);
+                    }
+                }
                 if let Some(loaded) = action.downcast_ref::<ChatInfoLoaded>() {
                     if self.accepts(loaded) {
                         match &loaded.result {
                             Ok(data) => {
-                                self.data = Some(data.clone());
+                                let mut data=data.clone();
+                                self.indented_members=group_members(&mut data.members,&self.member_owners);
+                                self.data = Some(data);
                                 self.failed = false;
                                 self.status.clear();
                             }
@@ -559,6 +701,7 @@ impl Widget for MobileChatInfo {
                     }
                 }
             }
+            if self.view.button(cx, ids!(services_back)).clicked(actions) {self.services_open=false;self.view.redraw(cx);return;}
             if self.view.button(cx, ids!(overview_tab)).clicked(actions) {self.select_tab(cx, InfoTab::Overview);return;}
             if self.view.button(cx, ids!(members_tab)).clicked(actions) {self.select_tab(cx, InfoTab::Members);return;}
             if self.tab == InfoTab::Overview && self.services_open && self.view.button(cx, ids!(refresh_services)).clicked(actions) {self.load_services(cx);return;}
@@ -584,10 +727,14 @@ impl Widget for MobileChatInfo {
                 if self.pin_is_current() && let Some(data)=self.data.as_ref() {cx.action(InviteModalAction::Open(data.room.clone()));}
                 return;
             }
-            if self.view.button(cx, ids!(hide_agent_picker)).clicked(actions) {self.agent_picker_open=false;self.view.redraw(cx);return;}
+            if self.view.button(cx, ids!(close_agent_picker)).clicked(actions)
+                || self.view.modal(cx, ids!(agent_picker_modal)).dismissed(actions) {
+                self.close_agent_picker(cx);
+                return;
+            }
             if self.tab == InfoTab::Members && self.view.button(cx,ids!(invite_my_agent)).clicked(actions) {self.request_agents(cx,false);return;}
             if self.tab == InfoTab::Members && self.view.button(cx,ids!(invite_selected_agent)).clicked(actions) {self.request_agents(cx,true);return;}
-            if self.view.button(cx,ids!(resume_agent_requests)).clicked(actions) {cx.action(crate::hagency::ui::HagencyAction::OpenAgents);return;}
+            if self.view.button(cx,ids!(resume_agent_requests)).clicked(actions) {self.close_agent_picker(cx);cx.action(crate::hagency::ui::HagencyAction::OpenAgents);return;}
             if self.view.button(cx, ids!(retry)).clicked(actions) {
                 if let Some(room) = self.room.clone() {
                     self.load(cx, room);
@@ -605,7 +752,7 @@ impl Widget for MobileChatInfo {
                     continue;
                 }
                 if list.was_scrolling()
-                    || !widget.navigation_bar_button(cx, ids!(row)).clicked(actions)
+                    || !(widget.navigation_bar_button(cx, ids!(row)).clicked(actions) || widget.button(cx, ids!(row)).clicked(actions))
                 {
                     continue;
                 }
@@ -623,7 +770,6 @@ impl Widget for MobileChatInfo {
                         if let Some((mode, _))=modes().get(mode) {submit_async_request(MatrixRequest::SetRoomNotificationMode {room_id:data.room.room_id().clone(),mode:*mode});}
                     }
                     InfoRow::Back => self.choosing_notifications = false,
-                    InfoRow::AgentAccess => cx.action(crate::agent_access::AgentAccessAction::Open),
                     InfoRow::AgentServices => {self.services_open = !self.services_open;if self.services_open {self.load_services(cx);}},
                     InfoRow::Approvals => {
                         #[cfg(feature="agent_chat")]
@@ -648,13 +794,17 @@ impl Widget for MobileChatInfo {
             cx.get_global_ref::<RoomsListRef>().is_some_and(|rooms|
                 rooms.is_direct_room(room.room_id()) == Some(true)));
         let members = self.tab == InfoTab::Members;
+        self.view.label(cx,ids!(ownership_status)).set_visible(cx,members && self.ownership_unavailable);
         self.view.view(cx, ids!(services_panel)).set_visible(cx, !members && self.services_open);
+        self.view.view(cx, ids!(information_list)).set_visible(cx, members || !self.services_open);
         let service_selected = self.view.drop_down(cx, ids!(room_services)).selected_item().checked_sub(1).is_some_and(|i| i < self.services.len());
         self.view.button(cx, ids!(configure_service)).set_enabled(cx, service_selected && !self.services_busy && self.pin_is_current());
         self.view.button(cx, ids!(refresh_services)).set_enabled(cx, !self.services_busy);
         self.view.view(cx, ids!(member_controls)).set_visible(cx, members);
         self.view.button(cx,ids!(invite_my_agent)).set_visible(cx,members && !direct);
-        self.view.view(cx,ids!(agent_picker)).set_visible(cx,members && self.agent_picker_open && !direct);
+        if !members || direct || !self.agent_picker_open {
+            self.close_agent_picker(cx);
+        }
         self.view.button(cx, ids!(invite_people)).set_enabled(cx, self.data.is_some() && self.owner.is_some());
         self.view.label(cx, ids!(members_empty)).set_visible(cx, members && self.data.as_ref().is_some_and(|d|d.members.is_empty()));
         let summary_room = self.data.as_ref().map(|data|&data.room).or(self.room.as_ref());
@@ -699,6 +849,13 @@ impl Widget for MobileChatInfo {
                             let Some(profile)=data.members.get_mut(member) else {continue;};
                         let widget = list.item(cx, index, id!(Member));
                         self.rendered_members.insert(widget.widget_uid(), profile.clone());
+                        if let Some(mut row)=widget.navigation_bar_button(cx,ids!(row)).borrow_mut() {
+                            let agent=self.indented_members.contains(&profile.user_id);
+                            row.view.layout.padding.left=if agent {36.0} else {16.0};
+                            row.view.walk.height=Size::Fixed(if agent {48.0} else {56.0});
+                            row.view.layout.align.y=if agent {0.25} else {0.5};
+                        }
+
                         let service = self.owner.as_ref().is_some_and(|owner| is_hagency_service(&profile.user_id, owner));
                         widget.label(cx, ids!(name)).set_text(cx, if service {crate::i18n::tr("Hagency service")} else {profile.displayable_name()});
                         let detail = crate::agent_access::framework_label(&profile.user_id)
@@ -724,20 +881,20 @@ impl Widget for MobileChatInfo {
                         }
                         widget
                         }
+                        InfoRow::Back => list.item(cx, index, id!(Back)),
                         InfoRow::Filler => list.item(cx, index, id!(Filler)),
                         _ => {
                             let widget = list.item(cx, index, id!(Action));
                             let (title, value) = match row {
                                 InfoRow::Mode(mode) => modes().get(mode).map(|(mode, title)|(*title, if *mode == data.mode {"✓"} else {""})).unwrap_or(("", "")),
-                                InfoRow::Back => (crate::i18n::tr("Back to Chat Info"), ""),
+                                InfoRow::Back => (crate::i18n::tr("Back"), ""),
                                 InfoRow::Notifications => (crate::i18n::tr("Notifications"), match data.mode {
                                     Some(RoomNotificationMode::Mute) => crate::i18n::tr("Muted"),
                                     Some(RoomNotificationMode::AllMessages) => crate::i18n::tr("All"),
                                     Some(RoomNotificationMode::MentionsAndKeywordsOnly) => crate::i18n::tr("Mentions"),
                                     None => crate::i18n::tr("Default"),
                                 }),
-                                InfoRow::AgentAccess => (crate::i18n::tr("Agent Access"), ""),
-                                InfoRow::AgentServices => (crate::i18n::tr("Agent services"), ""),
+                                InfoRow::AgentServices => (crate::i18n::tr("Room Agent services"), ""),
                                 InfoRow::Approvals => (crate::i18n::tr("Approval rooms"), ""),
                                 _ => ("", ""),
                             };
@@ -788,6 +945,87 @@ impl MobileChatInfoRef {
 #[cfg(test)]
 mod information_target_tests {
     use super::*;
+    fn member(id: &str, name: &str) -> UserProfile {
+        UserProfile {user_id:OwnedUserId::try_from(id).unwrap(),username:Some(name.into()),avatar_state:AvatarState::Known(None)}
+    }
+    #[test]
+    fn agents_follow_only_their_present_human_owner_without_losing_members() {
+        let mut members=vec![member("@alice:s","Alice"),member("@bob:s","Bob"),member("@a:s","Z agent"),member("@b:s","A agent"),member("@orphan:s","Orphan"),member("@external:s","External"),member("@_hagency_service:s","Hagency service")];
+        let mut owners=HashMap::new();let mut conflicts=HashSet::new();
+        add_member_owners(&mut owners,&mut conflicts,&serde_json::json!([
+            {"puppetMxid":"@a:s","ownerMxid":"@alice:s"},
+            {"puppetMxid":"@b:s","ownerMxid":"@bob:s"},
+            {"puppetMxid":"@orphan:s","ownerMxid":"@missing:s"},
+            {"puppetMxid":"@_hagency_service:s","ownerMxid":"@alice:s"}
+        ]),None);
+        let indented=group_members(&mut members,&owners);
+        let ids:Vec<_>=members.iter().map(|p|p.user_id.as_str()).collect();
+        assert_eq!(ids,vec!["@alice:s","@a:s","@bob:s","@b:s","@external:s","@_hagency_service:s","@orphan:s"]);
+        assert_eq!(indented.len(),2);
+        assert!(indented.contains(&OwnedUserId::try_from("@a:s").unwrap()));
+        assert!(!indented.contains(&OwnedUserId::try_from("@orphan:s").unwrap()));
+        assert_eq!(group_members(&mut members,&owners),indented,"refresh preserves grouping");
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        let mut info=cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);
+            let value=script_eval!(vm,{mod.widgets.MobileChatInfo {}});
+            MobileChatInfo::script_from_value(vm,value)
+        });
+        info.data=Some(ChatInfoData {room:RoomNameId::empty(OwnedRoomId::try_from("!r:s").unwrap()),topic:String::new(),members,mode:None});
+        info.indented_members=indented;
+        info.select_tab(&mut cx,InfoTab::Members);draw_information(&mut info,&mut cx);
+        let list=info.view.portal_list(&mut cx,ids!(list));
+        let parent=list.item(&mut cx,0,id!(Member)).avatar(&mut cx,ids!(avatar)).area().rect(&cx);
+        let child=list.item(&mut cx,1,id!(Member)).avatar(&mut cx,ids!(avatar)).area().rect(&cx);
+        assert_eq!(parent.size,dvec2(32.0,32.0));assert_eq!(child.size,parent.size);
+        assert_eq!(child.pos.x-parent.pos.x,20.0);
+        assert_eq!(child.pos.y-parent.pos.y,48.0,"Agent sits closer to its owner");
+        let next_owner=list.item(&mut cx,2,id!(Member)).avatar(&mut cx,ids!(avatar)).area().rect(&cx);
+        assert_eq!(next_owner.pos.y-child.pos.y,56.0,"keep the gap before the next owner");
+        for index in [0,1] {
+            let widget=list.item(&mut cx,index,id!(Member));
+            let name=widget.label(&mut cx,ids!(name)).area().rect(&cx);
+            let user_id=widget.label(&mut cx,ids!(user_id)).area().rect(&cx);
+            let avatar=widget.avatar(&mut cx,ids!(avatar)).area().rect(&cx);
+            assert!((name.pos.x-(avatar.pos.x+avatar.size.x)-8.0).abs()<0.1,"avatar and text use a compact 8px gap");
+            let gap=user_id.pos.y-(name.pos.y+name.size.y);
+            assert!((gap-2.0).abs()<0.1,"name and Matrix ID stay together: {gap}");
+        }
+        cx.with_vm(|vm|assert!(vm.take_errors().is_empty()));
+
+    }
+    #[test]
+    fn conflicting_ownership_and_cycles_never_create_false_grouping() {
+        let mut owners=HashMap::new();let mut conflicts=HashSet::new();
+        add_member_owners(&mut owners,&mut conflicts,&serde_json::json!([
+            {"puppetMxid":"@agent:s","ownerMxid":"@alice:s"},
+            {"puppetMxid":"@agent:s","ownerMxid":"@bob:s"},
+            {"puppetMxid":"@agent:s","ownerMxid":"@alice:s"},
+            {"puppetMxid":"@a:s","ownerMxid":"@b:s"},
+            {"puppetMxid":"@b:s","ownerMxid":"@a:s"},
+            {"puppetMxid":"invalid","ownerMxid":"@alice:s"}
+        ]),None);
+        assert!(!owners.contains_key(&OwnedUserId::try_from("@agent:s").unwrap()));
+        let mut members=vec![member("@a:s","Same"),member("@b:s","Same"),member("@agent:s","Same")];
+        assert!(group_members(&mut members,&owners).is_empty());assert_eq!(members.len(),3);
+    }
+    #[test]
+    fn owner_grouping_rejects_stale_room_account_and_request_results() {
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        let mut info=cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);
+            let value=script_eval!(vm,{mod.widgets.MobileChatInfo {}});
+            MobileChatInfo::script_from_value(vm,value)
+        });
+        info.owner=Some(OwnedUserId::try_from("@alice:s").unwrap());info.origin="https://s".into();info.epoch=4;info.request=8;
+        info.room=Some(RoomNameId::empty(OwnedRoomId::try_from("!r:s").unwrap()));
+        let mut result=MemberOwnershipLoaded{owner:info.owner.clone().unwrap(),origin:info.origin.clone(),epoch:4,request:8,room_id:OwnedRoomId::try_from("!r:s").unwrap(),result:Ok((HashMap::new(),false))};
+        assert!(info.ownership_response_matches(&result));
+        result.request=7;assert!(!info.ownership_response_matches(&result));result.request=8;
+        result.epoch=3;assert!(!info.ownership_response_matches(&result));result.epoch=4;
+        result.room_id=OwnedRoomId::try_from("!other:s").unwrap();assert!(!info.ownership_response_matches(&result));result.room_id=OwnedRoomId::try_from("!r:s").unwrap();
+        result.owner=OwnedUserId::try_from("@bob:s").unwrap();assert!(!info.ownership_response_matches(&result));
+    }
     #[test]
     fn explicit_room_pause_and_membership_loss_have_different_service_messages() {
         assert!(room_service_status(&serde_json::json!({"bindingState":"suspended","ownerServicePaused":true})).contains("pause notice"));
@@ -838,9 +1076,8 @@ mod information_target_tests {
                 } else {
                     assert_eq!(info_row(InfoTab::Overview, members, false, true, 1), InfoRow::Notifications);
                     assert_eq!(info_row(InfoTab::Overview, members, false, true, 2), InfoRow::AgentServices);
-                    assert_eq!(info_row(InfoTab::Overview, members, false, true, 3), InfoRow::AgentAccess);
-                    assert_eq!(info_row(InfoTab::Overview, members, false, true, 4), InfoRow::Approvals);
-                    assert_eq!(info_row(InfoTab::Overview, members, false, false, 4), InfoRow::Filler);
+                    assert_eq!(info_row(InfoTab::Overview, members, false, true, 3), InfoRow::Approvals);
+                    assert_eq!(info_row(InfoTab::Overview, members, false, false, 3), InfoRow::Filler);
                 }
             }
         }
@@ -872,17 +1109,26 @@ mod information_target_tests {
         });
         let room=RoomNameId::new(matrix_sdk::RoomDisplayName::Named("Room A".into()),matrix_sdk::ruma::room_id!("!a:server").to_owned());
         info.room=Some(room.clone());info.data=Some(ChatInfoData{room,topic:"A topic".into(),members:vec![],mode:None});
-        info.agent_picker_open=true;info.agent_command=Some(("exact-original-input".into(),"original-key".into()));
+        info.agent_command=Some(("exact-original-input".into(),"original-key".into()));
         draw_information(&mut info,&mut cx);
         assert_eq!(info.view.label(&mut cx,ids!(summary_name)).text(),"Room A");
-        assert!(!info.view.view(&mut cx,ids!(agent_picker)).visible());
+        assert!(!info.view.modal(&mut cx,ids!(agent_picker_modal)).is_open());
         assert!(!info.view.view(&mut cx,ids!(member_controls)).visible());
         assert!(!info.view.navigation_bar_button(&mut cx,ids!(history_search)).is_empty());
         let summary=info.view.view(&mut cx,ids!(summary)).area().rect(&cx);
         info.select_tab(&mut cx,InfoTab::Members);draw_information(&mut info,&mut cx);
         let controls=info.view.view(&mut cx,ids!(member_controls)).area().rect(&cx);
         assert!(controls.pos.y>=summary.pos.y+summary.size.y-1.0,"picker follows fixed summary");
-        assert!(info.view.view(&mut cx,ids!(agent_picker)).visible());
+        let members_list = info.view.portal_list(&mut cx, ids!(list)).area().rect(&cx);
+        info.agent_picker_open = true;
+        info.view.modal(&mut cx, ids!(agent_picker_modal)).open(&mut cx);
+        draw_information(&mut info, &mut cx);
+        assert!(info.view.modal(&mut cx, ids!(agent_picker_modal)).is_open());
+        assert_eq!(info.view.portal_list(&mut cx, ids!(list)).area().rect(&cx), members_list,
+            "opening the overlay must not move or shrink the members list");
+        let dialog = info.view.view(&mut cx, ids!(agent_picker_modal.content)).area().rect(&cx);
+        assert!(dialog.size.x > 200.0 && dialog.size.x <= 400.0);
+        assert!(dialog.pos.y > controls.pos.y, "dialog is centered in the window");
         let invite=info.view.button(&mut cx,ids!(invite_people)).area().rect(&cx);
         let agent=info.view.button(&mut cx,ids!(invite_my_agent)).area().rect(&cx);
         assert!((invite.pos.y-agent.pos.y).abs()<1.0,"member actions share a compact row");
@@ -891,10 +1137,18 @@ mod information_target_tests {
         assert!(info.view.portal_list(&mut cx,ids!(list)).area().rect(&cx).size.y>200.0,"invitation controls must leave space for members");
         info.choosing_notifications=true;info.select_tab(&mut cx,InfoTab::Overview);draw_information(&mut info,&mut cx);
         assert!(!info.choosing_notifications);
-        assert!(!info.view.view(&mut cx,ids!(agent_picker)).visible());
+        assert!(!info.view.modal(&mut cx,ids!(agent_picker_modal)).is_open());
         assert_eq!(info.agent_command,Some(("exact-original-input".into(),"original-key".into())),"tab navigation doesn't duplicate or discard invitation key");
         assert_eq!(info.view.view(&mut cx,ids!(summary)).area().rect(&cx),summary);
         cx.with_vm(|vm|assert!(vm.take_errors().is_empty()));
+        info.services_open=true;draw_information(&mut info,&mut cx);
+        assert!(info.view.view(&mut cx,ids!(services_panel)).visible());
+        assert!(!info.view.view(&mut cx,ids!(information_list)).visible());
+        assert_eq!(info.view.button(&mut cx,ids!(services_back)).text(),crate::i18n::tr("Back"));
+        info.select_tab(&mut cx,InfoTab::Members);draw_information(&mut info,&mut cx);
+        assert!(!info.services_open);
+        assert!(!info.view.view(&mut cx,ids!(services_panel)).visible());
+        assert!(info.view.view(&mut cx,ids!(information_list)).visible());
         info.clear();assert_eq!(info.tab,InfoTab::Overview);assert!(info.agent_command.is_none());
     }
     #[test]

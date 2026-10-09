@@ -86,8 +86,9 @@ pub(crate) fn runtime_list_label(runtime:Option<&Result<Value,String>>,agent:&st
     let Some(runtime)=runtime else {return "Checking local processing…";};
     let Ok(value)=runtime else {return "Local processing could not be verified. Refresh to retry.";};
     if value["service"]["enabled"] == false && value["runtime"].is_null() {return "Not running on this device. Open Service to configure and start.";}
-    if value["service"]["enabled"] == true && value["runtime"].is_null() {return "Service enabled. Waiting for an available Room.";}
-    if value["service"]["enabled"] == true && value["service"]["watcherRunning"] == false {return "Service needs attention. Refresh status or stop and start again.";}
+    if value["service"]["enabled"] == true && (value["service"]["watcherRunning"] == false || !string(&value["service"],"lastError").is_empty()) {return "Service needs attention. Refresh status or stop and start again.";}
+    if !array(&value["service"],"problems").is_empty() {return "Some Rooms could not start. The service will retry automatically.";}
+    if value["service"]["enabled"] == true && value["runtime"].is_null() {return if value["service"]["phase"] == "starting" {"Starting service. Discovering connected Rooms…"} else {"Service enabled. Waiting for an available Room."};}
     let r=&value["runtime"];
     if r.is_null() {return "Not running on this device. Open Service to configure and start.";}
     if string(r,"agentId")!=agent {return "Local processing could not be verified. Refresh to retry.";}
@@ -98,8 +99,45 @@ pub(crate) fn runtime_list_label(runtime:Option<&Result<Value,String>>,agent:&st
     else if phases.iter().any(|p|matches!(*p,"online"|"online_chat_only")) {if value["service"]["enabled"] == false {"Running in previously selected Rooms. Stop and start to enable automatic Room discovery."} else {"Running in all connected Rooms on this device. New Rooms are included automatically; configured budgets and policy permissions still apply."}}
     else if phases.iter().any(|p|matches!(*p,"awaiting_approval"|"waiting_owner")) {"Waiting for your approval before continuing."}
     else if phases.iter().any(|p|matches!(*p,"ledger_recovery_required"|"reconciliation_only")) {"Restore this owner's complete ledger before new requests. Only known original replies may be recovered."}
+    else if !string(r,"lastError").is_empty() || bindings.iter().any(|b|!string(b,"lastError").is_empty()) {"The runtime stopped with an error. Check the details below."}
+    else if phases.contains(&"checking_provider") {"Checking this device's Codex connection…"}
+    else if phases.contains(&"starting") {"Starting service. Discovering connected Rooms…"}
     else if phases.iter().all(|p|matches!(*p,"stopped"|"")) {"Not running on this device. Open Service to configure and start."}
     else {"The runtime has not confirmed it is ready. Refresh its status."}
+}
+fn runtime_diagnostic(code: &str) -> String {
+    // Only engine-defined codes are rendered; arbitrary backend text is discarded.
+    let message = match code {
+        "agent_lease_busy" => "The previous runtime lease is still active. Wait briefly and retry.",
+        "authorization_or_lease_lost" => "Runtime authorization or its lease was lost. Stop the service, check your account and device assignment, then start again.",
+        "device_transport_unavailable" => "The runtime could not reach the server. Check the connection; the service will retry automatically.",
+        "agent_process_closing" => "The previous runtime is still stopping. The service will retry automatically.",
+        "agent_execution_device_required" => "Assign this Agent to this device before starting it here.",
+        "ledger_recovery_required" => "Restore this owner's complete ledger before new requests. Only known original replies may be recovered.",
+        "room_worker_stopped" | "runtime_start_failed" => "A Room worker stopped before becoming ready. The service will retry automatically.",
+        _ => return visible_error(code),
+    };
+    format!("{} ({code})", crate::i18n::tr(message))
+}
+pub(crate) fn runtime_service_description(runtime: Option<&Result<Value,String>>, agent: &str) -> String {
+    let mut text=crate::i18n::tr(runtime_list_label(runtime,agent)).to_owned();
+    let Some(runtime)=runtime else {return text;};
+    let value=match runtime {Ok(value)=>value,Err(code)=>{text.push_str(&format!("\n{}",runtime_diagnostic(code)));return text;}};
+    let mut diagnostics=Vec::new();
+    let mut add=|code:&str| {if !code.is_empty() {let message=runtime_diagnostic(code);if !diagnostics.contains(&message) {diagnostics.push(message);}}};
+    add(string(&value["service"],"lastError"));
+    // A mismatched runtime must never supply another Agent's diagnostics.
+    if string(&value["runtime"],"agentId")==agent {
+        add(string(&value["runtime"],"lastError"));
+        for binding in array(&value["runtime"],"bindings") {add(string(&binding,"lastError"));}
+    }
+    for problem in array(&value["service"],"problems") {
+        let mut message=runtime_diagnostic(string(&problem,"error"));
+        if let Some(seconds)=problem["retryInSeconds"].as_u64() {message.push_str(&format!(" · {} {seconds}s",crate::i18n::tr("Retry in")));}
+        if !diagnostics.contains(&message) {diagnostics.push(message);}
+    }
+    for message in diagnostics {text.push_str(&format!("\n{message}"));}
+    text
 }
 fn service_enabled(value:&Value)->bool {
     value["service"]["enabled"] == true || {
@@ -407,12 +445,9 @@ script_mod! {
         ..mod.widgets.SolidView
         width: Fill height: Fill flow: Down padding: Inset{top: 16 left: 20 right: 0 bottom: 0} spacing: 8 draw_bg.color: mod.widgets.RINX_FIELD
         View {width: Fill height: 40 margin: Inset{right: 20} spacing: 10 align: Align{y: 0.5}
-            back := RobrixNeutralIconButton {
-                visible: false height: 40 padding: Inset{left: 12 right: 12 top: 0 bottom: 0} text: #(crate::i18n::tr("Back to list")) i18n_text: "Back to list" spacing: 6
-                icon_walk: Walk{width: 16 height: 16}
-                draw_icon.svg: ICON_ARROW_BACK
-            }
+            back := RinxBackButton {visible: false}
             heading := Text {text: #(crate::i18n::tr("Projects")) i18n_text: "Projects" draw_text.text_style: theme.font_bold{font_size: (16 * mod.widgets.RINX_TEXT_SCALE)}}
+            loading_status := LoadingSpinner {visible: false width: 18 height: 18 draw_bg +: {color: mod.widgets.RINX_MUTED stroke_width: 2.0}}
             new_item := Primary {text: #(crate::i18n::tr("New Project")) i18n_text: "New Project"}
             refresh := Action {text: #(crate::i18n::tr("Refresh")) i18n_text: "Refresh"}
         }
@@ -803,6 +838,8 @@ pub struct HagencyPanel {
     #[rust]
     runtime_room_active: bool,
     #[rust] agent_service_state: Value,
+    #[rust] runtime_pending_action: Option<bool>,
+    #[rust] runtime_action_error: String,
     #[rust] service_row_targets: ServiceRowTargets,
     #[rust] agent_card_targets: AgentCardTargets,
     #[rust] list_service_pending_agent: String,
@@ -983,11 +1020,13 @@ impl HagencyPanel {
         else {script_apply_eval!(cx,toggle,{draw_icon.svg: mod.widgets.ICON_CHEVRON_RIGHT});}
     }
     fn status(&self, cx: &mut Cx, message: &str) {
+        let loading = message == "Loading…";
+        self.view.widget(cx, ids!(loading_status)).set_visible(cx, loading);
         let mut label=self.view.label(cx,ids!(status));
         let text=crate::i18n::tr(message).to_owned();
         let source=message.to_owned();
         script_apply_eval!(cx,label,{text:#(text) i18n_text:#(source)});
-        self.view.view(cx, ids!(status_holder)).set_visible(cx, !message.is_empty());
+        self.view.view(cx, ids!(status_holder)).set_visible(cx, !message.is_empty() && !loading);
         self.view
             .label(cx, ids!(status))
             .set_visible(cx, !message.is_empty());
@@ -1058,7 +1097,7 @@ impl HagencyPanel {
         self.view.drop_down(cx, ids!(bindings)).set_selected_item(cx, index);
         self.view.drop_down(cx, ids!(policy_binding)).set_selected_item(cx, index);
         self.policy = Value::Null;
-        self.runtime_room_active=false;self.agent_service_state=Value::Null;self.service_row_targets.clear();
+        self.runtime_room_active=false;self.agent_service_state=Value::Null;self.service_row_targets.clear();self.runtime_pending_action=None;self.runtime_action_error.clear();
         self.view.text_input(cx,ids!(reservation)).set_text(cx,"");
         self.approvals.clear();
         self.labels(cx,ids!(approvals),"Select a pending approval",&self.approvals,"proposalId");
@@ -1197,7 +1236,7 @@ impl HagencyPanel {
         self.service_advanced=false;
         self.room_advanced=false;
         self.render_room_advanced(cx);
-        self.runtime_room_active=false;self.agent_service_state=Value::Null;self.service_row_targets.clear();
+        self.runtime_room_active=false;self.agent_service_state=Value::Null;self.service_row_targets.clear();self.runtime_pending_action=None;self.runtime_action_error.clear();
         self.render_service_advanced(cx);
         self.render_model_advanced(cx);
         let mut heading=self.view.label(cx,ids!(heading));script_apply_eval!(cx,heading,{i18n_text:""});
@@ -1382,7 +1421,7 @@ impl HagencyPanel {
         self.view.view(cx,ids!(runtime_start_options)).set_visible(cx,!self.runtime_room_active);
         let runtime_known=self.agent_service_state.is_object();
         let mut service_toggle=self.view.button(cx,ids!(service_toggle));
-        service_toggle.set_text(cx,crate::i18n::tr(if !runtime_known {"Checking…"} else if self.runtime_room_active {"Stop responding"} else {"Start responding"}));
+        service_toggle.set_text(cx,crate::i18n::tr(if self.runtime_pending_action==Some(true) {"Starting…"} else if self.runtime_pending_action==Some(false) {"Stopping…"} else if !runtime_known {"Checking…"} else if self.runtime_room_active {"Stop responding"} else {"Start responding"}));
         if self.runtime_room_active {script_apply_eval!(cx,service_toggle,{draw_icon +: {svg: mod.widgets.ICON_SERVICE_STOP}});} else {script_apply_eval!(cx,service_toggle,{draw_icon +: {svg: mod.widgets.ICON_SERVICE_PLAY}});}
         self.view.label(cx,ids!(runtime_restart_note)).set_visible(cx,self.runtime_room_active);
         let approval_selected=self.selected(cx,ids!(approvals),&self.approvals).is_some();
@@ -1739,7 +1778,15 @@ impl HagencyPanel {
         self.arm_read_wait(cx, &command);
         let request = self.request;
         let identity = self.identity.clone();
+        if let Command::Local {action:LocalAction::StartAgentService | LocalAction::StopAgentService,..}=&command {
+            if matches!(target,Target::Runtime) {
+                self.runtime_pending_action=Some(matches!(&command,Command::Local {action:LocalAction::StartAgentService,..}));
+                self.runtime_action_error.clear();
+                self.view.label(cx,ids!(runtime_status)).set_text(cx,crate::i18n::tr(if self.runtime_pending_action==Some(true) {"Starting service. Discovering connected Rooms…"} else {"Stopping…"}));
+            }
+        }
         self.set_busy(cx, true);
+        self.sync_navigation(cx);
         let quiet = matches!(target,Target::ListService | Target::ServiceRoomChanged) || (matches!(target,Target::Runtime) && self.agent_service_state.is_object());
         self.status(
             cx,
@@ -2273,7 +2320,9 @@ impl HagencyPanel {
                 self.render_model_advanced(cx);
             }
             Target::Runtime => {
-                cx.stop_timer(self.runtime_list_timer);self.runtime_list_timer=cx.start_timeout(10.0);
+                cx.stop_timer(self.runtime_list_timer);
+                let label=runtime_list_label(Some(&Ok(value.clone())),self.agent(cx).as_deref().unwrap_or(""));
+                self.runtime_list_timer=cx.start_timeout(if label.starts_with("Starting") || label.starts_with("Checking") {2.0} else {10.0});
                 self.agent_service_state=value.clone();
                 if self.input(cx,ids!(reservation)).is_empty() {
                     let reservation=value["service"]["reservation"].as_u64().filter(|n|*n>0).unwrap_or(10000);
@@ -2284,10 +2333,9 @@ impl HagencyPanel {
                 script_apply_eval!(cx,list,{height: #(height)});
                 self.runtime_room_active=service_enabled(value);
                 let current=Ok(value.clone());
-                let summary=if value["service"]["enabled"] == true && value["service"]["watcherRunning"] != false {
-                    if !array(&value["service"],"problems").is_empty() {"Service enabled. Some Rooms are waiting to retry."} else if value["runtime"].is_null() {"Service enabled. Waiting for an available Room."} else {"Running on this device. Configured limits and permissions apply."}
-                } else {runtime_list_label(Some(&current),self.agent(cx).as_deref().unwrap_or(""))};
-                self.view.label(cx, ids!(runtime_status)).set_text(cx,crate::i18n::tr(summary));
+                let mut summary=runtime_service_description(Some(&current),self.agent(cx).as_deref().unwrap_or(""));
+                if !self.runtime_action_error.is_empty() {summary.push_str(&format!("\n{}",self.runtime_action_error));}
+                self.view.label(cx, ids!(runtime_status)).set_text(cx,&summary);
                 if value.to_string().contains("ledger_recovery_required") {
                     self.status(cx,"Restore the complete current-schema ledger of this exact Matrix owner, including spent costs and unresolved holds. No new model requests are allowed; known original replies may reconcile. Stop, restore, then start again.");
                 }
@@ -2360,6 +2408,11 @@ impl HagencyPanel {
     }
 }
 impl HagencyPanel {
+    fn runtime_feedback(&mut self, cx:&mut Cx, message:&str) {
+        self.runtime_action_error=crate::i18n::tr(message).to_owned();
+        self.view.label(cx,ids!(runtime_status)).set_text(cx,&self.runtime_action_error);
+        self.status(cx,message);
+    }
     fn local(&mut self, cx: &mut Cx, target: Target, action: LocalAction, input: Option<Value>) {
         if !self.local_agent(cx) {self.status(cx, "This Agent is not handled on this device. Assign it here before configuring local resources.");return;}
         if matches!(
@@ -2616,7 +2669,11 @@ impl Widget for HagencyPanel {
             {
                 self.cancel_read_wait(cx);
                 if matches!(done.target,Target::ListService) {self.list_service_pending_agent.clear();}
+                if matches!(done.target,Target::Runtime) && self.runtime_pending_action.take().is_some() {
+                    self.runtime_action_error=done.result.as_ref().err().map(|error|runtime_diagnostic(error)).unwrap_or_default();
+                }
                 self.set_busy(cx, false);
+                self.sync_navigation(cx);
                 if matches!(done.target, Target::Agents) { self.agents_loading = false; }
                 match &done.result {
                     Ok(value) => {
@@ -2649,6 +2706,12 @@ impl Widget for HagencyPanel {
                             visible_error(error)
                         };
                         self.status(cx, &message);
+                        if matches!(done.target,Target::Runtime) {
+                            let current=Ok(self.agent_service_state.clone());
+                            let mut summary=runtime_service_description(Some(&current),self.agent(cx).as_deref().unwrap_or(""));
+                            summary.push_str(&format!("\n{}",if self.runtime_action_error.is_empty() {message.as_str()} else {self.runtime_action_error.as_str()}));
+                            self.view.label(cx,ids!(runtime_status)).set_text(cx,&summary);
+                        }
                         if matches!(done.target,Target::OwnerDirect | Target::OwnerDirectCreated) {
                             self.cancel_direct_retry(cx);
                             self.direct_state["state"]="pending".into();
@@ -3494,27 +3557,28 @@ impl Widget for HagencyPanel {
                 return;
             }
             if !self.local_agent(cx) {
-                self.status(cx,"Assign this Agent to this device before starting it here."); return;
+                self.runtime_feedback(cx,"Assign this Agent to this device before starting it here."); return;
             }
             if !self.view.check_box(cx, ids!(estimated)).active(cx) {
-                self.status(cx,"Strict caps are unavailable. Estimated accounting requires an explicit choice.");
+                self.runtime_feedback(cx,"Strict caps are unavailable. Estimated accounting requires an explicit choice.");
                 return;
             }
             let Ok(reservation) = self.input(cx, ids!(reservation)).parse::<u64>() else {
-                self.status(cx, "Enter a positive token reservation.");
+                self.runtime_feedback(cx, "Enter a positive token reservation.");
                 return;
             };
             if reservation == 0 {
+                self.runtime_feedback(cx,"Enter a positive token reservation.");
                 return;
             }
             let selected_model=self.selected(cx,ids!(model),&self.provider_models);
             if selected_model.as_ref().is_none_or(|m|string(m,"model") != string(&self.policy["modelProfile"],"model")) || string(&self.policy["modelProfile"],"model").is_empty() {
-                self.status(cx,"Save the selected Codex model before starting this Room.");return;
+                self.runtime_feedback(cx,"Save the selected Codex model before starting this Room.");return;
             }
             let effort=self.runtime_efforts.get(self.view.drop_down(cx,ids!(effort)).selected_item()).cloned();
-            let Some(effort)=effort else {self.status(cx,"Load Codex resources and select a supported reasoning effort before starting.");return;};
+            let Some(effort)=effort else {self.runtime_feedback(cx,"Load Codex resources and select a supported reasoning effort before starting.");return;};
             let saved_effort=string(&self.policy["modelProfile"],"reasoning_effort");
-            if !saved_effort.is_empty() && saved_effort!=effort {self.status(cx,"Save the selected reasoning effort in Codex settings before starting.");return;}
+            if !saved_effort.is_empty() && saved_effort!=effort {self.runtime_feedback(cx,"Save the selected reasoning effort in Codex settings before starting.");return;}
             let input = json!({"mode":"estimated","estimatedOptIn":true,"reservation":reservation,"takeover":self.view.check_box(cx,ids!(takeover)).active(cx),"effort":effort});
             self.local(cx, Target::Runtime, LocalAction::StartAgentService, Some(input));
             return;
@@ -3653,12 +3717,12 @@ impl Widget for HagencyPanel {
                     description
                 } else {
                     let identity_state=crate::i18n::tr(if string(value,"state")=="active" {"Server identity active"} else {"Server identity pending"});
-                    let local=crate::i18n::tr(match agent_device_state(value,&self.current_device_id,&self.execution_devices,self.devices_loaded) {
-                        AgentDeviceState::Here=>runtime_list_label(self.runtime_list.get(string(value,"id")),string(value,"id")),
-                        AgentDeviceState::Other=>"Processing is assigned to another device; this device does not run it.",
-                        AgentDeviceState::Checking=>"Checking execution device…",
-                        _=>"No available execution device. Open Agent settings to assign this device.",
-                    });
+                    let local=match agent_device_state(value,&self.current_device_id,&self.execution_devices,self.devices_loaded) {
+                        AgentDeviceState::Here=>runtime_service_description(self.runtime_list.get(string(value,"id")),string(value,"id")),
+                        AgentDeviceState::Other=>crate::i18n::tr("Processing is assigned to another device; this device does not run it.").to_owned(),
+                        AgentDeviceState::Checking=>crate::i18n::tr("Checking execution device…").to_owned(),
+                        _=>crate::i18n::tr("No available execution device. Open Agent settings to assign this device.").to_owned(),
+                    };
                     format!("{identity_state} · {}\n{local}", string(value,"puppetMxid"))
                 };
                 row.view(cx, ids!(device_badge)).set_visible(cx, self.page == Page::Agents);
@@ -3668,7 +3732,7 @@ impl Widget for HagencyPanel {
                     render_device_badge(cx, &badge, state, &self.device_badge(value));
                     let runtime=row.view(cx,ids!(runtime_badge));runtime.set_visible(cx,state==AgentDeviceState::Here);
                     let label=runtime_list_label(self.runtime_list.get(string(value,"id")),string(value,"id"));
-                    let badge=if label.starts_with("Not running") {"Not running"} else if label.starts_with("Running") || label.starts_with("Processing") {"Running"} else if label.starts_with("Service enabled") {"Enabled"} else if label.starts_with("Checking") {"Checking…"} else if label=="Waiting for the previous runtime lease to be released…" {"Waiting for lease"} else {"Needs attention"};
+                    let badge=if label.starts_with("Not running") {"Not running"} else if label.starts_with("Running") || label.starts_with("Processing") {"Running"} else if label.starts_with("Service enabled") {"Enabled"} else if label.starts_with("Starting") {"Starting…"} else if label.starts_with("Checking") {"Checking…"} else if label=="Waiting for the previous runtime lease to be released…" {"Waiting for lease"} else {"Needs attention"};
                     runtime.label(cx,ids!(device_label)).set_text(cx,crate::i18n::tr(badge));
                 }
                 self.agent_card_targets.insert(row.widget_uid(),string(value,"id").into());
@@ -3941,6 +4005,44 @@ mod tests {
         assert!(runtime_list_label(Some(&Ok(json!({"runtime":{"agentId":"a","phase":"online"}}))),"a").contains("budgets and policy"));
         assert!(runtime_list_label(Some(&Ok(json!({"runtime":{"agentId":"a","phase":"stopped"}}))),"a").starts_with("Not running"));
         assert!(runtime_list_label(Some(&Ok(json!({"runtime":{"agentId":"a","phase":"reconciliation_only"}}))),"a").contains("Only known original replies"));
+    }
+    #[test]
+    fn service_readiness_and_failures_are_consistent_in_list_and_details() {
+        let starting=json!({"service":{"enabled":true,"watcherRunning":true,"phase":"starting"},"runtime":null});
+        assert!(runtime_service_description(Some(&Ok(starting)),"a").starts_with("Starting"));
+        let checking=json!({"service":{"enabled":true,"watcherRunning":true},"runtime":{"agentId":"a","phase":"checking_provider","bindings":[{"phase":"checking_provider"}]}});
+        assert!(runtime_service_description(Some(&Ok(checking)),"a").starts_with("Checking this device"));
+        let failed=json!({"service":{"enabled":true,"watcherRunning":false,"lastError":"authorization_or_lease_lost"},"runtime":null});
+        let description=runtime_service_description(Some(&Ok(failed)),"a");
+        assert!(description.contains("needs attention"));
+        assert!(description.contains("authorization_or_lease_lost"));
+        let retry=json!({"service":{"enabled":true,"watcherRunning":true,"problems":[{"error":"agent_lease_busy","retryInSeconds":8}]},"runtime":{"agentId":"a","phase":"stopped","lastError":"provider_authorization_lost"}});
+        let description=runtime_service_description(Some(&Ok(retry)),"a");
+        assert!(description.contains("could not start"));
+        assert!(description.contains("agent_lease_busy"));
+        assert!(description.contains("provider_authorization_lost"));
+        assert!(description.contains("8s"));
+        assert!(!runtime_diagnostic("secret /private/provider-stderr token=123").contains("secret"));
+    }
+    #[test]
+    fn service_detail_does_not_claim_readiness_and_preserves_action_failure() {
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        let mut panel=cx.with_vm(|vm|{makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);let value=script_eval!(vm,{mod.widgets.HagencyPanel {}});HagencyPanel::script_from_value(vm,value)});
+        panel.agents=vec![json!({"id":"a"})];
+        panel.labels(&mut cx,ids!(agents),"Select",&panel.agents,"id");
+        panel.view.drop_down(&mut cx,ids!(agents)).set_selected_item(&mut cx,1);
+        local_device_fixture(&mut panel,"a");
+        let checking=json!({"service":{"enabled":true,"watcherRunning":true},"runtime":{"agentId":"a","phase":"checking_provider"}});
+        panel.apply(&mut cx,Target::Runtime,&checking);
+        assert_eq!(panel.view.label(&mut cx,ids!(runtime_status)).text(),runtime_service_description(Some(&Ok(checking.clone())),"a"));
+        panel.runtime_pending_action=Some(true);panel.busy=true;panel.sync_navigation(&mut cx);
+        assert_eq!(panel.view.button(&mut cx,ids!(service_toggle)).text(),"Starting…");
+        assert!(!panel.view.button(&mut cx,ids!(service_toggle)).borrow().unwrap().enabled());
+        panel.runtime_pending_action=Some(false);panel.sync_navigation(&mut cx);
+        assert_eq!(panel.view.button(&mut cx,ids!(service_toggle)).text(),"Stopping…");
+        panel.runtime_pending_action=None;panel.runtime_action_error=runtime_diagnostic("agent_lease_busy");
+        panel.apply(&mut cx,Target::Runtime,&checking);
+        assert!(panel.view.label(&mut cx,ids!(runtime_status)).text().contains("agent_lease_busy"),"polling must retain the failed action diagnostic");
     }
     #[test]
     fn agent_service_can_run_without_a_selected_room_and_stop_drains_legacy_children() {
@@ -4551,11 +4653,12 @@ mod tests {
             panel.draw_walk_all(&mut cx2d, &mut Scope::empty(), Walk {width: Size::Fixed(980.0), height: Size::Fixed(860.0), ..Walk::default()});
             overlay.end(&mut cx2d); cx2d.end_pass_sized_turtle(); list.end(&mut cx2d); cx2d.end_pass(&pass);
             drop(cx2d); drop(draw);
-            assert_eq!(panel.view.view(&mut cx, ids!(status_holder)).visible(), !message.is_empty());
+            assert!(!panel.view.view(&mut cx, ids!(status_holder)).visible());
+            assert_eq!(panel.view.widget(&mut cx, ids!(loading_status)).visible(), message == "Loading…");
             positions.push(panel.view.view(&mut cx, ids!(projects_page)).area().rect(&cx).pos.y);
         }
         assert_eq!(positions[0], positions[2]);
-        assert!(positions[1] > positions[0]);
+        assert_eq!(positions[1], positions[0], "loading in the title row must not move the tabs");
     }
     #[test]
     fn provider_diagnostics_are_explicit_but_never_render_untrusted_details() {

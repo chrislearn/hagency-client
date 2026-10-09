@@ -116,6 +116,12 @@ script_mod! {
         }
     }
 
+    mod.widgets.RinxBackButton = mod.widgets.RobrixNeutralIconButton {
+        text: #(crate::i18n::tr("Back")) i18n_text: "Back"
+        height: 40 padding: Inset{left: 12 right: 12 top: 0 bottom: 0} spacing: 6
+        icon_walk: Walk{width: 16 height: 16} draw_icon.svg: ICON_ARROW_BACK
+    }
+
     mod.widgets.RinxChatInfoButton = mod.widgets.RobrixNeutralIconButton {
         width: 44 height: 44 padding: 0 spacing: 0
         align: Align{x: 0.5 y: 0.5}
@@ -126,6 +132,7 @@ script_mod! {
     }
 
     mod.widgets.RinxRoomInfoToggleButton = mod.widgets.NavigationBarButton {
+        tooltip_below: true
         width: 36 height: 36 padding: 0 spacing: 0
         align: Align{x: 0.5 y: 0.5}
         tooltip_text: #(crate::i18n::tr("Show room information"))

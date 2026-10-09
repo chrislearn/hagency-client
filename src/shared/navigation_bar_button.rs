@@ -48,6 +48,7 @@ script_mod! {
         // a built-in tooltip on hover. Leave empty if the parent provides
         // its own tooltip handling (e.g. ProfileIcon).
         tooltip_text: ""
+        tooltip_below: false
 
         show_bg: true
         draw_bg +: {
@@ -146,6 +147,9 @@ pub struct NavigationBarButton {
     /// The text shown in a built-in tooltip when this button is hovered.
     /// If empty, no tooltip action is emitted (the parent may provide its own).
     #[live] tooltip_text: String,
+    /// Header buttons show their tooltip below, where horizontal edge clamping
+    /// can preserve its full width instead of squeezing it beside the button.
+    #[live] tooltip_below: bool,
     /// Pointer focus remains keyboard-operable without drawing a focus ring
     /// around only the text half of a navigation row.
     #[rust] pointer_focus: bool,
@@ -185,7 +189,9 @@ impl Widget for NavigationBarButton {
                     widget_rect,
                     text: this.tooltip_text.clone(),
                     options: CalloutTooltipOptions {
-                        position: if is_desktop {
+                        position: if this.tooltip_below {
+                            TooltipPosition::Bottom
+                        } else if is_desktop {
                             TooltipPosition::Right
                         } else {
                             TooltipPosition::Top

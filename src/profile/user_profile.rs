@@ -69,6 +69,13 @@ script_mod! {
 
     mod.widgets.ICON_DOUBLE_CHAT = crate_resource("self://resources/icons/double_chat.svg")
 
+    let ProfileAction = RobrixNeutralIconButton {
+        width: Fill height: 36 spacing: 6 margin: 0
+        align: Align{x: 0 y: 0.5}
+        padding: Inset{left: 8 right: 8 top: 0 bottom: 0}
+        icon_walk: Walk{width: 16 height: 16}
+    }
+
     let UserProfileView = ScrollXYView {
         width: Fill,
         height: Fill,
@@ -182,29 +189,26 @@ script_mod! {
                 text: #(crate::i18n::tr("Actions")) i18n_text: "Actions"
             }
 
-            direct_message_button := RobrixIconButton {
-                margin: 0,
-                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
-                draw_icon.svg: (mod.widgets.ICON_DOUBLE_CHAT)
-                icon_walk: Walk{width: 22, height: 16, margin: Inset{left: -5, right: -3, top: 1, bottom: -1} }
-                text: #(crate::i18n::tr("Direct Message")) i18n_text: "Direct Message"
+            View {width: Fill height: 36 flow: Right spacing: 8
+                direct_message_button := RobrixIconButton {
+                    width: Fill height: 36 spacing: 6 margin: 0
+                    align: Align{x: 0 y: 0.5}
+                    padding: Inset{left: 8 right: 8 top: 0 bottom: 0}
+                    draw_icon.svg: mod.widgets.ICON_DOUBLE_CHAT
+                    icon_walk: Walk{width: 16 height: 16}
+                    text: #(crate::i18n::tr("Messages")) i18n_text: "Messages"
+                }
+                profile_moments := ProfileAction {text: #(crate::i18n::tr("Moments")) i18n_text: "Moments" draw_icon.svg: ICON_GLOBE}
             }
-
-            profile_moments := RobrixNeutralIconButton {text: #(crate::i18n::tr("Moments")) i18n_text: "Moments" draw_icon.svg: ICON_GLOBE icon_walk: Walk{width: 20 height: 20}}
-            copy_link_to_user_button := RobrixNeutralIconButton {
-                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
-                margin: 0,
-                draw_icon.svg: (ICON_COPY)
-                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -1, right: -1} }
-                text: #(crate::i18n::tr("Copy Link to User")) i18n_text: "Copy Link to User"
-            }
-
-            jump_to_read_receipt_button := RobrixNeutralIconButton {
-                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
-                margin: 0,
-                draw_icon.svg: (ICON_JUMP)
-                icon_walk: Walk{width: 14, height: 16, margin: Inset{left: -1, right: 1.5}}
-                text: #(crate::i18n::tr("Jump to Read Receipt")) i18n_text: "Jump to Read Receipt"
+            View {width: Fill height: 36 flow: Right spacing: 8
+                copy_link_to_user_button := ProfileAction {
+                    draw_icon.svg: ICON_COPY
+                    text: #(crate::i18n::tr("Copy Link")) i18n_text: "Copy Link"
+                }
+                jump_to_read_receipt_button := ProfileAction {
+                    draw_icon.svg: ICON_JUMP
+                    text: #(crate::i18n::tr("Read Receipt")) i18n_text: "Read Receipt"
+                }
             }
 
             block_user_button := RobrixNegativeIconButton {
@@ -637,7 +641,7 @@ impl Widget for UserProfileSlidingPane {
             .unwrap_or_else(|| current_user_id().is_some_and(|uid| uid == info.user_id));
 
         self.button(cx, ids!(direct_message_button)).set_visible(cx, true);
-        self.button(cx, ids!(direct_message_button)).set_text(cx, if is_pane_showing_current_account {crate::i18n::tr("File Transfer")} else {crate::i18n::tr("Direct Message")});
+        self.button(cx, ids!(direct_message_button)).set_text(cx, if is_pane_showing_current_account {crate::i18n::tr("File Transfer")} else {crate::i18n::tr("Messages")});
 
         let block_user_button = self.button(cx, ids!(block_user_button));
         block_user_button.set_visible(cx, !is_pane_showing_current_account);

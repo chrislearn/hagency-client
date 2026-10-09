@@ -52,7 +52,7 @@ script_mod! {
         ..mod.widgets.SolidView
         width: Fill height: Fill flow: Down spacing: 10 padding: Inset{top: 32 left: 16 right: 16 bottom: 12} draw_bg.color: mod.widgets.RINX_PAGE
         View {width: Fill height: 40 spacing: 8
-            close := RobrixNeutralIconButton {text: #(crate::i18n::tr("Back")) i18n_text: "Back"}
+            close := RinxBackButton {}
             refresh := RobrixNeutralIconButton {text: #(crate::i18n::tr("Refresh approval rooms")) i18n_text: "Refresh approval rooms"}
         }
         status := Label {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: mod.widgets.RINX_INK}

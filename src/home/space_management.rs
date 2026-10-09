@@ -355,7 +355,7 @@ script_mod! {
         width: Fill height: Fill flow: Down padding: Inset{top: 32 left: 16 right: 16 bottom: 12} spacing: 8
         draw_bg.color: mod.widgets.RINX_PAGE
         View {width: Fill height: 40 spacing: 8 align: Align{y: 0.5}
-            close := Action {text: #(crate::i18n::tr("Back")) i18n_text: "Back"}
+            close := RinxBackButton {}
             refresh := Action {text: #(crate::i18n::tr("Refresh")) i18n_text: "Refresh"}
             Text {text: #(crate::i18n::tr("Rooms and spaces")) i18n_text: "Rooms and spaces"}
         }

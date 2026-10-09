@@ -194,7 +194,7 @@ script_mod! {
         width: Fill height: Fill flow: Down padding: Inset{top: 32 left: 16 right: 16 bottom: 12} spacing: 8
         draw_bg.color: mod.widgets.RINX_PAGE
         View {width: Fill height: 40 align: Align{y: 0.5}
-            close := Button {width: 65 text: #(crate::i18n::tr("Back")) i18n_text: "Back"}
+            close := RinxBackButton {}
             Text {text: #(crate::i18n::tr("Agent Operations")) i18n_text: "Agent Operations"}
         }
         status := Text {}
