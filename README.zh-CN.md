@@ -85,3 +85,5 @@ cargo test --locked --lib
 内置应用目录是 `system-apps.json`，文章编辑器位于 `apps/article-editor/`。
 见[应用开发指南](apps/README.zh-CN.md)。完整构建、致谢与许可证信息见
 [英文文档](README.md)。
+
+另见 [开发、隔离测试目录与原生验收](docs/local-development.zh-CN.md)。

@@ -109,7 +109,8 @@ Agent 不限额不会绕过 Room／成员的有限额度或显式请求拒绝。
 | 模型／目录／账号缺失 | 在“模型与资源”中连接账号并保存模型；私有工作目录自动生成。 |
 | 配额未设／拒绝／等待审批 | 修改正确层级或审阅精确待审批请求。 |
 | 消耗／副作用未知，或 ledger recovery required | 保留 hold，恢复同一主人的完整状态，不清余额、不重跑模型。 |
-| 傀儡被移除／服务暂停 | 恢复真实权限后，在允许时显式恢复绑定；重新加入不会复活旧 dispatch。 |
+| 主人资格丢失／傀儡被移除 | 恢复真实权限、等待确认退群，再显式重新绑定/采纳；旧 dispatch 继续隔离。 |
+| 普通服务暂停 | 解除对应暂停后，在允许时显式 resume。 |
 | Agent Room 已加密 | 使用合法未加密范围；Agent crypto 仍延期。 |
 
 ## 其他保留页面
@@ -122,3 +123,8 @@ Browser、Settings。
 设置分为 Account、Preferences、Privacy、About。通用外部 Agent Access／
 BotFather 控件与原生 Hagency Agent 设置不同，不是运行所必需。当前部分管理文字
 仍为英文，因此本文使用源码中的英文控件名以便定位。
+
+
+成员资格丢失或 Agent 被移除后，当前 server 会撤销绑定并确认退群；恢复真实权限后
+需显式重新绑定/采纳。普通服务暂停才使用 resume，不自动重放旧 dispatch。
+构建与本地连接排障见[开发指南](local-development.zh-CN.md)。

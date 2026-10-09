@@ -109,3 +109,5 @@ Octoscript for the native client foundations.
 Distributed under [Apache-2.0](LICENSE). Inherited Robrix code retains its
 [MIT copyright and permission notice](LICENSE-MIT). See [NOTICE](NOTICE) and
 [third-party notices](licenses/THIRD-PARTY-NOTICES.html).
+
+See [development, isolated profiles and native acceptance](docs/local-development.md).

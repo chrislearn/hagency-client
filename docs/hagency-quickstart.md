@@ -129,7 +129,8 @@ Agent Unlimited does not bypass finite Room/member limits or explicit request de
 | Missing model/workspace/account | Connect the account and save a model in Model & resources; the private workspace is automatic. |
 | Budget exhausted/denied/approval pending | Configure the matching layer or review the exact pending request. |
 | Unknown cost/side effects or ledger recovery required | Preserve the hold and restore the same owner's complete state. Do not reset balances or replay the model. |
-| Puppet removed or service paused | Restore real Room permissions, then explicitly resume the binding when permitted. Rejoining does not revive old dispatches. |
+| Puppet/owner membership lost | Restore real permissions, wait for confirmed departure, then explicitly rebind/re-adopt. Old dispatches stay fenced. |
+| Ordinary service pause | Clear the applicable pause and explicitly resume when permitted. |
 | Encrypted Agent Room | Use an unencrypted authorized scope; Agent crypto is deferred. |
 
 ## Other retained pages
@@ -142,3 +143,5 @@ Discover, Explore rooms, Moments, File Transfer, Article editor, Browser and Set
 Settings has Account, Preferences, Privacy and About. Generic external Agent
 Access/BotFather controls are separate tools, not part of native Hagency Agent
 setup. Some management text is still English when the interface language is Chinese.
+
+See [development and local diagnostics](local-development.md) for building and connection checks.
