@@ -55,7 +55,6 @@ script_mod! {
             hover: instance(0.0)
             active: instance(0.0)
             focus: instance(0.0)
-            focus_color: instance(mod.widgets.RINX_ACCENT)
 
             color_hover: instance((COLOR_NAVIGATION_TAB_BG_HOVER))
             color_active: instance((COLOR_NAVIGATION_TAB_BG_ACTIVE))
@@ -70,7 +69,7 @@ script_mod! {
             // which combined with the dropping alpha makes the blend briefly
             // DARKER mid-fade, visible as a flicker on hover-out.
             get_color: fn() -> vec4 {
-                let hover_color = vec4(self.color_hover.xyz, self.color_hover.w * self.hover)
+                let hover_color = vec4(self.color_hover.xyz, self.color_hover.w * max(self.hover, self.focus))
                 return mix(hover_color, self.color_active, self.active)
             }
 
@@ -86,10 +85,6 @@ script_mod! {
                 sdf.fill_keep(self.get_color())
                 if self.border_size > 0.0 {
                     sdf.stroke(self.border_color, self.border_size)
-                }
-                if self.focus > 0.0 {
-                    sdf.box(1.0, 1.0, self.rect_size.x - 2.0, self.rect_size.y - 2.0, max(1.0, self.border_radius - 1.0))
-                    sdf.stroke(vec4(self.focus_color.xyz, self.focus_color.w * self.focus), 1.5)
                 }
                 return sdf.result;
             }
@@ -150,8 +145,8 @@ pub struct NavigationBarButton {
     /// Header buttons show their tooltip below, where horizontal edge clamping
     /// can preserve its full width instead of squeezing it beside the button.
     #[live] tooltip_below: bool,
-    /// Pointer focus remains keyboard-operable without drawing a focus ring
-    /// around only the text half of a navigation row.
+    /// Pointer focus remains keyboard-operable without retaining a keyboard
+    /// highlight around only the text half of a navigation row.
     #[rust] pointer_focus: bool,
 }
 

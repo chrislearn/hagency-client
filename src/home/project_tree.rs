@@ -20,6 +20,9 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
+    mod.widgets.ICON_PROJECT_FOLDER_CLOSED = crate_resource("self://resources/icons/project_folder_closed.svg")
+    mod.widgets.ICON_PROJECT_FOLDER_OPEN = crate_resource("self://resources/icons/project_folder_open.svg")
+
     mod.widgets.ProjectTree = #(ProjectTree::register_widget(vm)) {
         width: Fill height: Fill flow: Down
         status := Label {
@@ -34,32 +37,23 @@ script_mod! {
                 width: Fill height: 37 flow: Down
                 row_surface := RoundedView {width: Fill height: 36 flow: Right align: Align{y: 0.5}
                 draw_bg +: {color: #0000 border_radius: 5 border_size: 0}
+                disclosure := NavigationBarButton {
+                    width: 28 height: 36 flow: Overlay align: Align{x: 0.5 y: 0.5}
+                    draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: #0000 border_radius: 5}
+                    closed := View {
+                        width: 20 height: 20
+                        Icon {icon_walk: Walk{width: 20 height: 20} draw_icon +: {svg: mod.widgets.ICON_PROJECT_FOLDER_CLOSED color: mod.widgets.RINX_ACCENT}}
+                    }
+                    opened := View {
+                        width: 20 height: 20
+                        Icon {icon_walk: Walk{width: 20 height: 20} draw_icon +: {svg: mod.widgets.ICON_PROJECT_FOLDER_OPEN color: mod.widgets.RINX_ACCENT}}
+                    }
+                }
                 row := NavigationBarButton {
                     width: Fill height: 36 flow: Right spacing: 8
                     align: Align{y: 0.5} padding: Inset{left: 4 right: 6}
                     draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: #0000 border_radius: 5}
                     indent := View {width: 0 height: 1}
-                    disclosure := View {
-                        width: 12 height: 14 flow: Overlay align: Align{x: 0.5 y: 0.5}
-                        closed := View {
-                            width: 8 height: 12
-                            Icon {icon_walk: Walk{width: 8 height: 12} draw_icon +: {svg: ICON_CHEVRON_RIGHT color: mod.widgets.RINX_MUTED}}
-                        }
-                        opened := View {
-                            width: 12 height: 8
-                            Icon {icon_walk: Walk{width: 12 height: 8} draw_icon +: {svg: ICON_CHEVRON_DOWN color: mod.widgets.RINX_MUTED}}
-                        }
-                    }
-                    icon := View {
-                        width: 22 height: 22
-                        folder := View {
-                            width: 22 height: 22
-                            Icon {
-                                icon_walk: Walk{width: 22 height: 22}
-                                draw_icon +: {svg: ICON_SQUARES color: mod.widgets.RINX_ACCENT}
-                            }
-                        }
-                    }
                     name := Label {
                         width: Fill max_lines: 1 text_overflow: Ellipsis
                         draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: (12.5 * mod.widgets.RINX_TEXT_SCALE)}}
@@ -297,6 +291,114 @@ pub struct ProjectTree {
     error: Option<String>,
 }
 impl ProjectTree {
+    fn handle_row_actions(&mut self, cx: &mut Cx, captured: &Actions) {
+        let mut clicked = HashSet::new();
+        for (index, item) in self
+            .view
+            .portal_list(cx, ids!(list))
+            .items_with_actions(captured)
+        {
+            let uid = item.navigation_bar_button(cx, ids!(row)).widget_uid();
+            let secondary = item.button(cx, ids!(more)).clicked(captured)
+                || item
+                    .navigation_bar_button(cx, ids!(row))
+                    .secondary_clicked(captured);
+            if secondary {
+                let row = self.rows.get(index).cloned();
+                match row {
+                    Some(Row::Project(project_id)) => {
+                        if let Some(snapshot) = self.snapshot.as_ref().filter(|snapshot| snapshot_current(snapshot))
+                            && let Some(project) = snapshot.projects.iter().find(|project| project.id == project_id) {
+                            let rect = item.button(cx, ids!(more)).area().rect(cx);
+                            cx.action(super::sidebar_action_menu::SidebarMenuAction::OpenProject {
+                                target: super::sidebar_action_menu::ProjectMenuTarget {project_id,
+                                    space_id: project.space.clone(), service_identity: snapshot.service_identity.clone(),
+                                    owner_mxid: snapshot.owner.to_string(), homeserver: snapshot.homeserver.clone(), epoch: crate::account_session::epoch()},
+                                pos: dvec2(rect.pos.x, rect.pos.y + rect.size.y),
+                            });
+                        }
+                    }
+                    Some(Row::Room(id)) => {
+                        if get_client()
+                            .and_then(|client| client.get_room(&id))
+                            .is_some_and(|room| room.state() == matrix_sdk::RoomState::Joined)
+                            && let Some(details) = cx
+                                .global::<RoomsListRef>()
+                                .clone()
+                                .room_context_details(&id)
+                        {
+                            let rect = item.area().rect(cx);
+                            cx.widget_action(
+                                self.widget_uid(),
+                                RoomsListAction::OpenRoomContextMenu {
+                                    details,
+                                    pos: dvec2(rect.pos.x + rect.size.x, rect.pos.y + rect.size.y),
+                                },
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+            if item.navigation_bar_button(cx, ids!(disclosure)).clicked(captured) {
+                if clicked.insert(index) && let Some(Row::Project(id)) = self.rows.get(index).cloned() {
+                    if !self.expanded.remove(&id) {
+                        self.expanded.insert(id);
+                    }
+                    self.rebuild(cx);
+                }
+                continue;
+            }
+            if !clicked.insert(index)
+                || !captured.iter().any(|action| {
+                    action.as_widget_action().is_some_and(|a| {
+                        a.widget_uid == uid
+                            && matches!(a.cast(), NavigationBarButtonAction::Clicked)
+                    })
+                })
+            {
+                continue;
+            }
+            match self.rows.get(index).cloned() {
+                Some(Row::Project(id)) => {
+                    cx.action(crate::hagency::ui::HagencyAction::ProjectDetails {project_id: id});
+                }
+                Some(Row::Invite(id)) => {
+                    if let Some(room) = self
+                        .rooms
+                        .iter()
+                        .find(|room| room.invited && room.name.room_id() == &id)
+                        && get_client()
+                            .and_then(|c| c.get_room(&id))
+                            .is_some_and(|r| r.state() == matrix_sdk::RoomState::Invited)
+                    {
+                        cx.widget_action(
+                            self.widget_uid(),
+                            RoomsListAction::Selected(SelectedRoom::InvitedRoom {
+                                room_name_id: room.name.clone(),
+                            }),
+                        );
+                    }
+                }
+                Some(Row::Room(id)) => {
+                    if let Some(room) = self.rooms.iter().find(|room| room.name.room_id() == &id)
+                        && get_client().and_then(|c| c.get_room(&id)).is_some_and(|r| {
+                            r.state() == matrix_sdk::RoomState::Joined && !r.is_space()
+                        })
+                    {
+                        cx.widget_action(
+                            self.widget_uid(),
+                            RoomsListAction::Selected(SelectedRoom::JoinedRoom {
+                                room_name_id: room.name.clone(),
+                            }),
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
     fn clear(&mut self, cx: &mut Cx) {
         self.snapshot = None;
         self.pending = false;
@@ -322,6 +424,16 @@ impl ProjectTree {
         self.query.clear();
         self.rebuild(cx);
     }
+    // An already-visible tree can have activated before the SDK established
+    // the account. Observe readiness again without waiting for the periodic poll.
+    fn refresh_ready_account(&mut self, cx: &mut Cx) {
+        if !self.active { return; }
+        if let Ok(service) = crate::hagency::backend::Service::for_current()
+            && self.identity.as_deref() != Some(service.identity().as_str()) {
+            self.refresh(cx);
+        }
+    }
+
     fn refresh(&mut self, cx: &mut Cx) {
         if !self.active {
             return;
@@ -455,109 +567,12 @@ fn snapshot_current(snapshot: &ProjectTreeSnapshot) -> bool {
 impl Widget for ProjectTree {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let captured = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
-        let mut clicked = HashSet::new();
-        for (index, item) in self
-            .view
-            .portal_list(cx, ids!(list))
-            .items_with_actions(&captured)
-        {
-            let uid = item.navigation_bar_button(cx, ids!(row)).widget_uid();
-            let secondary = item.button(cx, ids!(more)).clicked(&captured)
-                || item
-                    .navigation_bar_button(cx, ids!(row))
-                    .secondary_clicked(&captured);
-            if secondary {
-                let row = self.rows.get(index).cloned();
-                match row {
-                    Some(Row::Project(project_id)) => {
-                        if let Some(snapshot) = self.snapshot.as_ref().filter(|snapshot| snapshot_current(snapshot))
-                            && let Some(project) = snapshot.projects.iter().find(|project| project.id == project_id) {
-                            let rect = item.button(cx, ids!(more)).area().rect(cx);
-                            cx.action(super::sidebar_action_menu::SidebarMenuAction::OpenProject {
-                                target: super::sidebar_action_menu::ProjectMenuTarget {project_id,
-                                    space_id: project.space.clone(), service_identity: snapshot.service_identity.clone(),
-                                    owner_mxid: snapshot.owner.to_string(), homeserver: snapshot.homeserver.clone(), epoch: crate::account_session::epoch()},
-                                pos: dvec2(rect.pos.x, rect.pos.y + rect.size.y),
-                            });
-                        }
-                    }
-                    Some(Row::Room(id)) => {
-                        if get_client()
-                            .and_then(|client| client.get_room(&id))
-                            .is_some_and(|room| room.state() == matrix_sdk::RoomState::Joined)
-                            && let Some(details) = cx
-                                .global::<RoomsListRef>()
-                                .clone()
-                                .room_context_details(&id)
-                        {
-                            let rect = item.area().rect(cx);
-                            cx.widget_action(
-                                self.widget_uid(),
-                                RoomsListAction::OpenRoomContextMenu {
-                                    details,
-                                    pos: dvec2(rect.pos.x + rect.size.x, rect.pos.y + rect.size.y),
-                                },
-                            );
-                        }
-                    }
-                    _ => {}
-                }
-                continue;
-            }
-            if !clicked.insert(index)
-                || !captured.iter().any(|action| {
-                    action.as_widget_action().is_some_and(|a| {
-                        a.widget_uid == uid
-                            && matches!(a.cast(), NavigationBarButtonAction::Clicked)
-                    })
-                })
-            {
-                continue;
-            }
-            match self.rows.get(index).cloned() {
-                Some(Row::Project(id)) => {
-                    if !self.expanded.remove(&id) {
-                        self.expanded.insert(id.clone());
-                    }
-                    self.rebuild(cx);
-                    cx.action(crate::hagency::ui::HagencyAction::ProjectDetails {project_id: id});
-                }
-                Some(Row::Invite(id)) => {
-                    if let Some(room) = self
-                        .rooms
-                        .iter()
-                        .find(|room| room.invited && room.name.room_id() == &id)
-                        && get_client()
-                            .and_then(|c| c.get_room(&id))
-                            .is_some_and(|r| r.state() == matrix_sdk::RoomState::Invited)
-                    {
-                        cx.widget_action(
-                            self.widget_uid(),
-                            RoomsListAction::Selected(SelectedRoom::InvitedRoom {
-                                room_name_id: room.name.clone(),
-                            }),
-                        );
-                    }
-                }
-                Some(Row::Room(id)) => {
-                    if let Some(room) = self.rooms.iter().find(|room| room.name.room_id() == &id)
-                        && get_client().and_then(|c| c.get_room(&id)).is_some_and(|r| {
-                            r.state() == matrix_sdk::RoomState::Joined && !r.is_space()
-                        })
-                    {
-                        cx.widget_action(
-                            self.widget_uid(),
-                            RoomsListAction::Selected(SelectedRoom::JoinedRoom {
-                                room_name_id: room.name.clone(),
-                            }),
-                        );
-                    }
-                }
-                _ => {}
-            }
-        }
+        self.handle_row_actions(cx, &captured);
         if let Event::Actions(actions) = event {
             for action in actions {
+                if matches!(action.downcast_ref::<crate::login::login_screen::LoginAction>(), Some(crate::login::login_screen::LoginAction::LoginSuccess)) {
+                    self.refresh(cx);
+                }
                 if let Some(navigation) = action.downcast_ref::<crate::hagency::ui::ProjectRoomNavigation>()
                     && navigation.current() {
                     self.expand_navigation(cx, &navigation.identity, &navigation.project_id);
@@ -620,6 +635,7 @@ impl Widget for ProjectTree {
         }
         if self.active && (self.timer.is_event(event).is_some() || matches!(event, Event::Signal)) {
             self.rebuild(cx);
+            self.refresh_ready_account(cx);
             if self.timer.is_event(event).is_some() {
                 self.refresh(cx);
             }
@@ -700,10 +716,7 @@ impl Widget for ProjectTree {
                     .set_visible(cx, project.is_some() && !open);
                 item.view(cx, ids!(opened))
                     .set_visible(cx, project.is_some() && open);
-                item.view(cx, ids!(folder))
-                    .set_visible(cx, project.is_some());
-                item.view(cx, ids!(icon)).set_visible(cx, project.is_some());
-                item.view(cx, ids!(disclosure))
+                item.navigation_bar_button(cx, ids!(disclosure))
                     .set_visible(cx, project.is_some());
                 let (unread, marked) = if let Some(p) = project {
                     self.rooms
@@ -738,6 +751,7 @@ impl ProjectTreeRef {
     pub fn set_active(&self, cx: &mut Cx, active: bool) {
         if let Some(mut inner) = self.borrow_mut() {
             if inner.active == active {
+                inner.refresh_ready_account(cx);
                 return;
             }
             inner.active = active;
@@ -825,6 +839,34 @@ mod tests {
         assert!(tree.expanded.is_empty());
     }
     #[test]
+    fn login_success_retries_an_already_active_tree_before_periodic_poll() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut tree = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            let value = script_eval!(vm, {mod.widgets.ProjectTree {}});
+            ProjectTree::script_from_value(vm, value)
+        });
+        // The home tree already activated while account setup was incomplete.
+        tree.active = true;
+        tree.pending = true;
+        tree.identity = Some("previous-account".into());
+        tree.error = None;
+        let actions = vec![Box::new(crate::login::login_screen::LoginAction::LoginSuccess) as Action];
+        tree.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::empty());
+        assert!(!tree.pending, "the previous request cannot block login refresh");
+        assert!(tree.identity.is_none());
+        assert_eq!(tree.error.as_deref(), Some("owner_authorization_required"), "without a ready client, refresh must expose the real readiness failure");
+    }
+
+    #[test]
+    fn initial_projects_display_without_joined_rooms_or_creation_event() {
+        let projects = vec![project("Existing A", &[]), project("Existing B", &["NotSyncedYet"])];
+        assert_eq!(workspace_rows(ProjectTreeMode::Projects, &projects, &[], &HashSet::new(), ""),
+            vec![Row::Project("Existing A".into()), Row::Project("Existing B".into())]);
+    }
+
+    #[test]
     fn registered_tree_row_keeps_menu_and_primary_navigation_as_distinct_actions() {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         let tree = cx.with_vm(|vm| {
@@ -850,6 +892,43 @@ mod tests {
         assert_eq!(list.items_with_actions(&actions).len(), 1);
         assert!(more.clicked(&actions));
         assert!(!navigation.clicked(&actions));
+    }
+    #[test]
+    fn project_disclosure_and_details_clicks_have_independent_effects() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut tree = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            let value = script_eval!(vm, {mod.widgets.ProjectTree {}});
+            ProjectTree::script_from_value(vm, value)
+        });
+        let list = tree.view.portal_list(&mut cx, ids!(list));
+        let row = list.item(&mut cx, 0, id!(Row));
+        let disclosure = row.navigation_bar_button(&mut cx, ids!(disclosure));
+        let navigation = row.navigation_bar_button(&mut cx, ids!(row));
+        assert!(disclosure.borrow().is_some());
+        assert_ne!(disclosure.widget_uid(), navigation.widget_uid());
+        assert!(navigation.view(&mut cx, ids!(disclosure)).is_empty(), "disclosure must be a sibling, outside the primary button hit area");
+        for (uid, expected_open, expected_details) in [
+            (disclosure.widget_uid(), true, false),
+            (navigation.widget_uid(), true, true),
+            (disclosure.widget_uid(), false, false),
+            (navigation.widget_uid(), false, true),
+        ] {
+            tree.rows = vec![Row::Project("Work".into())];
+            let actions = cx.capture_actions(|cx| {
+                cx.group_widget_actions(list.widget_uid(), row.widget_uid(), |cx| {
+                    cx.widget_action(uid, NavigationBarButtonAction::Clicked);
+                });
+            });
+            assert_eq!(list.items_with_actions(&actions).len(), 1);
+            let output = cx.capture_actions(|cx| tree.handle_row_actions(cx, &actions));
+            assert_eq!(tree.expanded.contains("Work"), expected_open);
+            assert_eq!(output.iter().any(|action| matches!(
+                action.downcast_ref::<crate::hagency::ui::HagencyAction>(),
+                Some(crate::hagency::ui::HagencyAction::ProjectDetails {project_id}) if project_id == "Work"
+            )), expected_details);
+        }
     }
     #[test]
     fn workspace_modes_keep_project_navigation_separate_from_all_chats() {

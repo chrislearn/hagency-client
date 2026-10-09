@@ -1426,6 +1426,7 @@
   "View details": "查看详情",
   "Model and workspace apply to this Agent. Each Room keeps its own conversation and budget.": "模型和工作目录适用于此 Agent。各房间的会话和额度保持独立。",
   "Disconnecting here keeps your local Codex signed in.": "在此断开关联不会退出本机 Codex。",
+  "Other server…": "其他服务器…",
   "Recent servers": "最近使用的服务器",
   "About Hagency": "关于 Hagency",
   "Hagency Homepage": "Hagency 项目主页",

@@ -109,18 +109,29 @@ script_mod! {
                             recent_servers_row := View {
                                 visible: false, width: Fill, height: Fit
                                 recent_servers := RobrixSettingsDropDown {
-                                    width: Fill, height: 38
-                                    labels: ["Recent servers"]
+                                    width: Fill, height: 38, margin: 0
+                                    popup_menu_position: PopupMenuPosition.BelowInput
+                                    popup_menu: RobrixSettingsPopupMenu {
+                                        width: 292
+                                        draw_bg +: {color: mod.widgets.RINX_SURFACE}
+                                        menu_item: RobrixSettingsPopupMenuItem {
+                                            draw_bg +: {color: mod.widgets.RINX_SURFACE}
+                                        }
+                                    }
+                                    labels: ["Other server…"]
                                 }
                             }
-                            homeserver_input := RobrixTextInput {
+                            manual_server_row := View {
                                 width: Fill, height: Fit
-                                padding: 10
-                                empty_text: #(crate::i18n::tr("Hagency server address"))
-                                autocapitalize: None
-                                autocorrect: Disabled
-                                content_type: Url
-                                input_mode: Url
+                                homeserver_input := RobrixTextInput {
+                                    width: Fill, height: Fit
+                                    padding: 10
+                                    empty_text: #(crate::i18n::tr("Hagency server address"))
+                                    autocapitalize: None
+                                    autocorrect: Disabled
+                                    content_type: Url
+                                    input_mode: Url
+                                }
                             }
                             Label {
                                 width: Fill, height: Fit
@@ -346,7 +357,7 @@ impl ScriptHook for LoginScreen {
 
 impl LoginScreen {
     fn sync_recent_servers(&mut self, cx: &mut Cx, servers: Vec<String>) {
-        self.sync_recent_servers_with_prompt(cx, servers, crate::i18n::tr("Recent servers").to_owned());
+        self.sync_recent_servers_with_prompt(cx, servers, crate::i18n::tr("Other server…").to_owned());
     }
     fn sync_recent_servers_with_prompt(&mut self, cx: &mut Cx, servers: Vec<String>, prompt: String) {
         if self.recent_servers_dirty || self.recent_servers != servers || self.recent_server_prompt != prompt {
@@ -361,6 +372,8 @@ impl LoginScreen {
             self.recent_servers_dirty = false;
         }
         self.view.view(cx, ids!(recent_servers_row)).set_visible(cx, !self.recent_servers.is_empty());
+        let using_recent = self.recent_servers.contains(&self.recent_server_selected);
+        self.view.view(cx, ids!(manual_server_row)).set_visible(cx, !using_recent);
     }
 }
 
@@ -524,11 +537,21 @@ impl MatchEvent for LoginScreen {
                 self.recent_server_selected = server.clone();
                 self.reset_server(cx);
                 server_input.set_text(cx, &server);
+                self.view.view(cx, ids!(manual_server_row)).set_visible(cx, false);
+            } else {
+                self.recent_server_selected.clear();
+                self.reset_server(cx);
+                self.view.view(cx, ids!(manual_server_row)).set_visible(cx, true);
+                server_input.set_text(cx, "");
                 server_input.set_key_focus(cx);
             }
         }
         let modal = self.view.modal(cx, ids!(login_status_modal));
-        let server = server_input.text().trim().to_owned();
+        let server = if self.recent_servers.contains(&self.recent_server_selected) {
+            self.recent_server_selected.clone()
+        } else {
+            server_input.text().trim().to_owned()
+        };
 
         let show = self.view.button(cx, ids!(show_password_button));
         let hide = self.view.button(cx, ids!(hide_password_button));
@@ -650,6 +673,8 @@ impl MatchEvent for LoginScreen {
                     user_input.set_text(cx, user_id);
                     password_input.set_text(cx, "");
                     server_input.set_text(cx, homeserver.as_deref().unwrap_or_default());
+                    self.recent_server_selected.clear();
+                    self.recent_servers_dirty = true;
                     self.reset_server(cx);
                     self.show_status(cx, crate::i18n::tr("Signing in"), crate::i18n::tr("Connecting to your account…"), crate::i18n::tr("Please wait…"), false);
                 }
@@ -664,6 +689,8 @@ impl MatchEvent for LoginScreen {
                     self.view.text_input(cx, ids!(user_id_input)).set_text(cx, "");
                     modal.close(cx);
                     if let Some(origin)=crate::sliding_sync::reauthentication_origin() {
+                        self.recent_server_selected.clear();
+                        self.recent_servers_dirty = true;
                         self.view.text_input(cx,ids!(homeserver_input)).set_text(cx,&origin);
                         self.check_server(cx,origin);
                     }
@@ -748,14 +775,32 @@ mod browser_login_tests {
             let dropdown=screen.view.drop_down(&mut cx,ids!(recent_servers));
             assert_eq!(dropdown.selected_label(),"https://hagency.local");
             assert!(!screen.recent_servers_dirty);
+            assert!(!screen.view.view(&mut cx, ids!(manual_server_row)).visible());
             dropdown.set_selected_item(&mut cx,0);assert_eq!(dropdown.selected_label(),prompt);
             dropdown.set_selected_item(&mut cx,1);
             screen.view.set_visible(&mut cx,false);screen.view.set_visible(&mut cx,true);
             screen.sync_recent_servers(&mut cx,servers.clone());
             assert_eq!(screen.view.text_input(&mut cx,ids!(homeserver_input)).text(),"https://hagency.local");
             {let pass=DrawPass::new(&mut cx);pass.set_size(&mut cx,dvec2(980.0,760.0));let mut list=DrawList2d::new(&mut cx);let overlay=Overlay{draw_list:DrawList::new(&mut cx)};let e=DrawEvent::default();let mut draw=CxDraw::new(&mut cx,&e);let mut cx2d=Cx2d::new(&mut draw);cx2d.begin_pass(&pass,None);list.begin_always(&mut cx2d);overlay.begin(&mut cx2d);cx2d.begin_root_turtle(dvec2(980.0,760.0),Layout::flow_overlay());screen.view.draw_walk_all(&mut cx2d,&mut Scope::empty(),Walk::fixed(980.0,760.0));overlay.end(&mut cx2d);cx2d.end_pass_sized_turtle();list.end(&mut cx2d);cx2d.end_pass(&pass);}
-            assert!(screen.view.drop_down(&mut cx,ids!(recent_servers)).area().rect(&cx).size.y>0.0);
+            let dropdown_rect = screen.view.drop_down(&mut cx,ids!(recent_servers)).area().rect(&cx);
+            assert_eq!(dropdown_rect.size, dvec2(292.0, 38.0));
         }
+        let dropdown = screen.view.drop_down(&mut cx, ids!(recent_servers));
+        let actions = cx.capture_actions(|cx| {
+            cx.widget_action(dropdown.widget_uid(), DropDownAction::Select(0));
+        });
+        screen.handle_actions(&mut cx, &actions);
+        screen.sync_recent_servers(&mut cx, servers.clone());
+        assert!(screen.view.view(&mut cx, ids!(manual_server_row)).visible());
+        assert!(screen.recent_server_selected.is_empty());
+        assert!(screen.view.text_input(&mut cx, ids!(homeserver_input)).text().is_empty());
+        let actions = cx.capture_actions(|cx| {
+            cx.widget_action(dropdown.widget_uid(), DropDownAction::Select(1));
+        });
+        screen.handle_actions(&mut cx, &actions);
+        screen.sync_recent_servers(&mut cx, servers);
+        assert!(!screen.view.view(&mut cx, ids!(manual_server_row)).visible());
+        assert_eq!(screen.recent_server_selected, "https://hagency.local");
     }
 
     #[test]
