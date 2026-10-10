@@ -50,7 +50,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-hagency-client
@@ -138,7 +138,7 @@ jobs:
               sums.append(f'{hashlib.sha256(dest.read_bytes()).hexdigest()}  {dest.name}\n')
           (out / f"SHA256SUMS-{os.environ['PLATFORM']}-{os.environ['ARCH']}.txt").write_text(''.join(sums))
           PY
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: installers-${{ matrix.platform }}-${{ matrix.arch }}
           path: release-assets/*
@@ -154,7 +154,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: installers-*
           path: release-assets

@@ -47,7 +47,7 @@ jobs:
     steps:
       # ref: main because the template is release tooling, not versioned content.
       # Pinning it to the tag would mean re-tagging to fix a broken template.
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           ref: main
 
@@ -221,7 +221,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: aur-package
           ## upload-artifact drops dotfiles by default, which would lose .SRCINFO.
@@ -246,7 +246,7 @@ jobs:
     # grants push to every package the account maintains, so this is worth doing.
     environment: aur
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: aur-package
           path: work
