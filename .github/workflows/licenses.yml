@@ -57,6 +57,7 @@ jobs:
           ref: main
           token: ${{ secrets.LICENSES_PUSH_TOKEN }}
 
+      - uses: ./.github/actions/setup-hagency-client
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2

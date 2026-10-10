@@ -87,3 +87,5 @@ cargo test --locked --lib
 [英文文档](README.md)。
 
 另见 [开发、隔离测试目录与原生验收](docs/local-development.zh-CN.md)。
+
+[GitHub CI 与发布](docs/github-ci.md)

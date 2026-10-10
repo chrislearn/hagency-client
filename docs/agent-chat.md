@@ -35,6 +35,23 @@ cargo build --release --features agent_chat
 | **Long replies and streaming.** Expand/collapse long agent replies; receive MSC4357 live edits with Unicode-safe incremental reveal. | feature only | `src/agent_chat/reply.rs` |
 | **Scoped Agent Operations.** Encrypted bootstrap, pinned signed sessions, scoped projections, inspection and capability-bound commands. | `agent_ops_dev`; normal build awaits released producer contract | `src/agent_chat/ops/` |
 
+## Current personal-Agent approvals
+
+Personal Agents use the native Hagency Service panel, separately from these
+Matrix compatibility cards. The panel checks the selected Agent, Room binding,
+Room ID and expiry before showing or submitting a request. While Service is
+open it refreshes every three seconds, preserves the selected live request, and
+shows an application notification for new requests in that Room. Notifications
+contain counts only. This is not an OS/background notification service.
+
+Details include the tool, Room, requester, working directory, risk, countdown,
+request preview and complete exact arguments. A failed refresh disables decisions.
+Submitting a decision disables repeat submission of that proposal in this panel
+session, including after an uncertain response. Acknowledgement means only that
+the decision was submitted; check the Room reply and runtime status for the actual
+execution outcome. It does not provide durable approval history or a tool execution
+receipt. Native shell/MCP and the hidden host-files controls remain unreleased.
+
 ## Security model
 
 Robrix is a presentation surface only. It never decides authorization:

@@ -19,6 +19,7 @@ set -euo pipefail
 
 DMG_PATH="${1:?Usage: $0 <path-to.dmg> <background-image>}"
 BG_IMAGE="${2:?Usage: $0 <path-to.dmg> <background-image>}"
+APP_NAME="${3:-Rinx.app}"
 
 if [[ ! -f "$DMG_PATH" ]]; then
     echo "Error: DMG file not found: $DMG_PATH"
@@ -126,7 +127,7 @@ tell application "Finder"
         set icon size of theViewOptions to 128
         set background picture of theViewOptions to file ".background:background.png"
 
-        set position of item "Rinx.app" of container window to {200, 250}
+        set position of item "$APP_NAME" of container window to {200, 250}
         set position of item "Applications" of container window to {760, 250}
 
         close

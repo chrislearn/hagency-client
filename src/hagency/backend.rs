@@ -20,6 +20,7 @@ pub(super) fn management_read(command: &Command) -> bool {
         | Command::LoginStatus | Command::AgentCommands | Command::Creations | Command::Creation {..}
         | Command::Binding {action: BindingAction::Status, ..}
         | Command::Provider {action: ProviderAction::Status | ProviderAction::Models}
+        | Command::RuntimeProvider {action: ProviderAction::Status | ProviderAction::Models, ..}
         | Command::Local {action: LocalAction::AgentModel | LocalAction::AgentPolicy
             | LocalAction::Policy | LocalAction::Model | LocalAction::Runtime
             | LocalAction::AgentServiceStatus | LocalAction::Approvals, input: None, ..}

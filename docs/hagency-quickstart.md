@@ -106,10 +106,17 @@ shell and MCP execution are not exposed by this host.
 **Start responding** starts only that selected scope. **Stop responding** stops it; another
 running Room can stay active. Your owner private chat does not need mentions;
 ordinary top-level DM turns share their Room conversation. Explicit threads remain
-separate. In a discussion Room, use Matrix's real Agent @mention; follow-ups belong
-to the thread. A started model turn can receive the puppet's 👀 processing reaction.
+separate. In a collaboration Room, every message requires a real Matrix Agent @mention by default, including thread follow-ups.
+Under Agent details → Advanced Room settings, select a Room and enable automatic thread follow-ups in **Room reply behavior**.
+After an @mention activates a thread, any member can follow up there without another mention. New threads still require @.
+The setting applies only to that Agent in that Room. A started model turn can receive the puppet's 👀 processing reaction.
 
-Pending request/tool approvals appear in the Service tab. Approval is for the exact
+Pending request/tool approvals appear in the Service tab for the selected Room.
+While Service is open, approvals refresh automatically with an in-app notice for
+new requests, exact action details and an expiry countdown. Failed refreshes disable
+decisions. A submitted decision is not proof of successful execution; check the
+Room reply and runtime status. An uncertain submission must not be resent.
+Approval is for the exact
 request or tool shown, not an unrestricted server resource grant. Agent encrypted
 Room execution is deferred; ordinary Matrix encrypted chat remains available.
 

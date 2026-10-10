@@ -11,6 +11,9 @@
 
 #[cfg(feature = "standalone")]
 fn main() {
+    if let Some(result)=hagency::native_owner::run_guardian_if_requested() {
+        if result.is_err(){std::process::exit(1);}return;
+    }
     rinx::app::app_main()
 }
 

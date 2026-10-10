@@ -1,4 +1,4 @@
-name: Rinx CI
+name: Hagency Desktop CI
 
 on:
   push:
@@ -25,6 +25,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup-hagency-client
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.98.0

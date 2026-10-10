@@ -177,7 +177,7 @@ dark-light = "2"
 [features]
 # Isolated local accounts exist only in instrument builds.
 palpo-instrument = []
-default = ["standalone"]
+default = ["standalone", "agent_chat"]
 ## The standalone app's entry point (window, menus, `app_main!`). A host that
 ## links Rinx as a module disables it.
 standalone = ["octos-local", "octos-remote"]
@@ -200,8 +200,8 @@ tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding", "dep
 ## (<https://github.com/hagency-org/hagency>): native owner-approval cards for
 ## `com.agentchat.approval.*` events, agent puppet presentation, companion
 ## bridge-bot invites, and the workflow slash-commands offered in rooms that
-## contain a `*_coordinator` agent. Off by default; even when compiled in, it
-## must also be turned on at runtime via Settings → Preferences.
+## contain a `*_coordinator` agent. Included by default. Approval cards do not require the workflow preference;
+## only workflow slash-command suggestions use Settings → Preferences.
 agent_chat = ["dep:base64", "dep:ed25519-dalek", "dep:sha2"]
 ## Opt in to testing the pinned, unreleased Hagency Agent Operations contract.
 ## Production agent_chat builds retain the release gate.

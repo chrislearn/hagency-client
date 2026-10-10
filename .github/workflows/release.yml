@@ -1,696 +1,198 @@
-# Rinx Release CI Workflow
-
-name: Rinx Release CI
+name: Hagency Desktop installers
 
 on:
   push:
-    tags:
-      - 'v*.*.*'    # Release Version Tags
-      - 'v*.*.*-*'  # Pre-release Version Tags
+    tags: ['v*']
   workflow_dispatch:
-    inputs:
-      build_ubuntu_24_x86_64:
-        description: 'Build Ubuntu 24.04 x86_64'
-        required: false
-        type: boolean
-        default: false
-      build_ubuntu_24_aarch64:
-        description: 'Build Ubuntu 24.04 aarch64'
-        required: false
-        type: boolean
-        default: false
-      build_ubuntu_22_x86_64:
-        description: 'Build Ubuntu 22.04 x86_64'
-        required: false
-        type: boolean
-        default: false
-      build_ubuntu_22_aarch64:
-        description: 'Build Ubuntu 22.04 aarch64'
-        required: false
-        type: boolean
-        default: false
-      build_macos_14_aarch64:
-        description: 'Build macOS 14 (Apple Silicon)'
-        required: false
-        type: boolean
-        default: false
-      build_macos_15_x86_64:
-        description: 'Build macOS 15 (Intel)'
-        required: false
-        type: boolean
-        default: false
-      build_windows_2022_x86_64:
-        description: 'Build Windows 2022 x86_64'
-        required: false
-        type: boolean
-        default: false
-      build_android_aarch64:
-        description: 'Build Android APK (aarch64 only)'
-        required: false
-        type: boolean
-        default: false
-      build_ios:
-        description: 'Build iOS app'
-        required: false
-        type: boolean
-        default: false
-      upload_testflight:
-        description: "Upload to TestFlight (true/false)"
-        type: boolean
-        default: false
-      release_tag:
-        description: 'Release tag (required if creating release)'
-        required: false
-        type: string
-        default: ''
-      create_release:
-        description: 'Create a GitHub Release'
-        required: true
-        type: boolean
-        default: false
-      pre_release:
-        description: 'Mark as a pre-release'
-        required: true
-        type: boolean
-        default: false
 
 permissions:
-  contents: write
-env:
-  CARGO_INCREMENTAL: 0
-  RUST_BACKTRACE: short
+  contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
 
 jobs:
-  check_tag_version:
-    name: Check Release Tag and Cargo.toml Version Consistency
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push'
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Check tag and Cargo.toml version
-        run: |
-          TAG_REF="${GITHUB_REF##*/}"
-          echo "Current tag: $TAG_REF"
-
-          CARGO_MANIFEST_VERSION=$(cargo metadata --no-deps --format-version 1 --frozen | jq -r '.packages[] | select(.name=="rinx") | .version' | head -n1)
-          if [[ -z "$CARGO_MANIFEST_VERSION" || "$CARGO_MANIFEST_VERSION" == "null" ]]; then
-            echo "Error: Failed to resolve rinx version from Cargo metadata."
-            exit 1
-          fi
-          echo "Cargo.toml Rinx version: $CARGO_MANIFEST_VERSION"
-
-          if [[ "$TAG_REF" != "v$CARGO_MANIFEST_VERSION" ]]; then
-            echo "Error: Tag '$TAG_REF' does not match Cargo.toml version '$CARGO_MANIFEST_VERSION'."
-            echo "Please create a tag that matches the Cargo.toml version."
-            exit 1
-          else
-            echo "Tag and Cargo.toml version are consistent."
-          fi
-
-  determine_matrices:
-    name: Determine Build Matrices
-    runs-on: ubuntu-latest
-    outputs:
-      linux_matrix: ${{ steps.set.outputs.linux_matrix }}
-      macos_matrix: ${{ steps.set.outputs.macos_matrix }}
-      windows_matrix: ${{ steps.set.outputs.windows_matrix }}
-      run_linux: ${{ steps.set.outputs.run_linux }}
-      run_macos: ${{ steps.set.outputs.run_macos }}
-      run_windows: ${{ steps.set.outputs.run_windows }}
-    steps:
-      - name: Build matrix from inputs
-        id: set
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const isPush = context.eventName === 'push';
-            const inputs = context.payload.inputs || {};
-            const enabled = (value) => String(value).trim().toLowerCase() === 'true';
-
-            const linux = [];
-            const macos = [];
-            const windows = [];
-
-            const addLinux = (os, arch) => linux.push({ os, arch });
-            const addMacos = (os, arch) => macos.push({ os, arch });
-            const addWindows = () => windows.push({ os: 'windows-2022', arch: 'x86_64' });
-
-            if (isPush) {
-              addLinux('ubuntu-24.04', 'x86_64');
-              addLinux('ubuntu-24.04-arm', 'aarch64');
-              addLinux('ubuntu-22.04', 'x86_64');
-              addLinux('ubuntu-22.04-arm', 'aarch64');
-              addMacos('macos-14', 'aarch64');
-              addMacos('macos-15-intel', 'x86_64');
-              addWindows();
-            } else {
-              if (enabled(inputs.build_ubuntu_24_x86_64)) addLinux('ubuntu-24.04', 'x86_64');
-              if (enabled(inputs.build_ubuntu_24_aarch64)) addLinux('ubuntu-24.04-arm', 'aarch64');
-              if (enabled(inputs.build_ubuntu_22_x86_64)) addLinux('ubuntu-22.04', 'x86_64');
-              if (enabled(inputs.build_ubuntu_22_aarch64)) addLinux('ubuntu-22.04-arm', 'aarch64');
-              if (enabled(inputs.build_macos_14_aarch64)) addMacos('macos-14', 'aarch64');
-              if (enabled(inputs.build_macos_15_x86_64)) addMacos('macos-15-intel', 'x86_64');
-              if (enabled(inputs.build_windows_2022_x86_64)) addWindows();
-            }
-
-            core.setOutput('linux_matrix', JSON.stringify({ include: linux }));
-            core.setOutput('macos_matrix', JSON.stringify({ include: macos }));
-            core.setOutput('windows_matrix', JSON.stringify({ include: windows }));
-            core.setOutput('run_linux', linux.length > 0 ? 'true' : 'false');
-            core.setOutput('run_macos', macos.length > 0 ? 'true' : 'false');
-            core.setOutput('run_windows', windows.length > 0 ? 'true' : 'false');
-
-  create_release:
-    name: Create Release
-    needs: [check_tag_version, determine_matrices]
-    if: >-
-      ${{ always() && (
-        (github.event_name == 'push' && needs.check_tag_version.result == 'success') ||
-        (github.event_name == 'workflow_dispatch' &&
-          github.event.inputs.create_release == 'true' &&
-          (
-            needs.determine_matrices.outputs.run_linux == 'true' ||
-            needs.determine_matrices.outputs.run_macos == 'true' ||
-            needs.determine_matrices.outputs.run_windows == 'true' ||
-            github.event.inputs.build_android_aarch64 == 'true' ||
-            github.event.inputs.build_ios == 'true'
-          )
-        )
-      ) }}
-    runs-on: ubuntu-22.04
-    outputs:
-      release_id: ${{ steps.create_release.outputs.id }}
-      tag: ${{ steps.resolve.outputs.tag }}
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Resolve release metadata
-        id: resolve
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            resolved_tag="${{ github.ref_name }}"
-          else
-            resolved_tag="${{ github.event.inputs.release_tag }}"
-            if [[ -z "$resolved_tag" ]]; then
-              resolved_version="$(awk '
-                /^\[package\]$/ { in_package=1; next }
-                /^\[/ { in_package=0 }
-                in_package && $1 == "version" {
-                  gsub(/"/, "", $3);
-                  print $3;
-                  exit;
-                }
-              ' Cargo.toml)"
-              if [[ -z "$resolved_version" ]]; then
-                echo "Error: Unable to resolve package.version from Cargo.toml."
-                exit 1
-              fi
-              resolved_tag="v${resolved_version}"
-              echo "release_tag not provided; fallback to ${resolved_tag}"
-            fi
-          fi
-
-          echo "tag=${resolved_tag}" >> "$GITHUB_OUTPUT"
-          echo "name=Rinx ${resolved_tag}" >> "$GITHUB_OUTPUT"
-
-      # Safety: this workflow only ever creates a NEW release. If one already
-      # exists for the tag, bail so we never adopt, overwrite, or unpublish it.
-      - name: Refuse to reuse an existing release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.RINX_RELEASE }}
-        run: |
-          TAG="${{ steps.resolve.outputs.tag }}"
-          existing=$(gh api "repos/${{ github.repository }}/releases" --paginate \
-            --jq ".[] | select(.tag_name == \"$TAG\") | \"id=\(.id) draft=\(.draft)\"")
-          if [[ -n "$existing" ]]; then
-            echo "::error::A release already exists for tag '$TAG' ($existing)."
-            echo "::error::This workflow only creates new releases; it will not touch an existing one."
-            echo "::error::For testing, dispatch a throwaway release_tag. For a real re-release, delete the old one first, deliberately."
-            exit 1
-          fi
-          echo "No existing release for '$TAG'; safe to create a fresh one."
-
-      ## Fills in the release description from docs/RELEASE_NOTES_<tag>.md, so the
-      ## download links can't drift from the assets we actually upload. @PKGVER@ is
-      ## the Arch package's version, which drops the pre-release hyphen.
-      - name: Render release notes
-        id: notes
-        shell: bash
-        run: |
-          set -euo pipefail
-          TAG="${{ steps.resolve.outputs.tag }}"
-          version="${TAG#v}"
-          notes="docs/RELEASE_NOTES_${TAG}.md"
-          body="${RUNNER_TEMP}/release-body.md"
-          if [[ -f "$notes" ]]; then
-            ## Only needed to substitute into the notes, and it hard-fails on a non-`v` tag,
-            ## so don't compute it when there are no notes to render.
-            pkgver="$(packaging/aur/render-pkgbuild.sh --print-pkgver --tag "$TAG")"
-            sed -e "s|@VERSION@|${version}|g" -e "s|@PKGVER@|${pkgver}|g" "$notes" > "$body"
-            echo "Rendered $notes ($(wc -l < "$body") lines)"
-          else
-            echo "::warning::No release notes found at $notes; publishing with an empty description."
-            : > "$body"
-          fi
-          echo "body_path=$body" >> "$GITHUB_OUTPUT"
-
-      - name: Create Release
-        id: create_release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ steps.resolve.outputs.tag }}
-          name: ${{ steps.resolve.outputs.name }}
-          body_path: ${{ steps.notes.outputs.body_path }}
-          ## Always a draft, so we can confirm every artifact landed before
-          ## anyone can download a half-built release. Publish it by hand.
-          draft: true
-          prerelease: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.pre_release == 'true') || (github.event_name == 'push' && contains(github.ref, '-')) }}
-          token: ${{ secrets.RINX_RELEASE }}
-
-      - name: Verify release access
-        shell: bash
-        run: |
-          gh api "repos/${{ github.repository }}/releases/${{ steps.create_release.outputs.id }}" --jq '.id'
-        env:
-          GH_TOKEN: ${{ secrets.RINX_RELEASE }}
-
-  for_linux:
-    name: Release Rinx for Linux (${{ matrix.os }}, ${{ matrix.arch }})
-    needs: [check_tag_version, determine_matrices, create_release]
-    if: ${{ always() && ((github.event_name == 'push' && needs.check_tag_version.result == 'success') || (github.event_name == 'workflow_dispatch' && needs.determine_matrices.outputs.run_linux == 'true')) }}
+  package:
+    name: Installer (${{ matrix.platform }}-${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
     strategy:
       fail-fast: false
-      matrix: ${{ fromJson(needs.determine_matrices.outputs.linux_matrix) }}
-    runs-on: ${{ matrix.os }}
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            platform: linux
+            arch: amd64
+            formats: deb,appimage
+          - runner: ubuntu-22.04-arm
+            platform: linux
+            arch: arm64
+            formats: deb,appimage
+          - runner: macos-14
+            platform: macos
+            arch: arm64
+            formats: dmg
+          - runner: macos-15-intel
+            platform: macos
+            arch: amd64
+            formats: dmg
+          - runner: windows-2022
+            platform: windows
+            arch: amd64
+            formats: nsis
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v5
-
-      - name: Install Linux necessary dependencies
-        if: matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm' || matrix.os == 'ubuntu-24.04' || matrix.os == 'ubuntu-24.04-arm'
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-hagency-client
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.0
+      - name: Check version and stamp macOS bundle
+        env:
+          TAG: ${{ github.ref_name }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          python3 - <<'PY'
+          import os, re, plistlib
+          from pathlib import Path
+          version = re.search(r'^version\s*=\s*"([^"]+)"', Path('Cargo.toml').read_text(), re.M)[1]
+          if os.environ['IS_TAG'] == 'true':
+              assert os.environ['TAG'] == 'v' + version, 'Tag must match Desktop version'
+          p = Path('packaging/macos/Info.plist')
+          data = plistlib.loads(p.read_bytes())
+          data.update(CFBundleIdentifier='org.hagency.desktop', CFBundleName='Hagency Desktop',
+                      CFBundleDisplayName='Hagency Desktop', CFBundleShortVersionString=version,
+                      CFBundleVersion=os.environ['GITHUB_RUN_NUMBER'])
+          p.write_bytes(plistlib.dumps(data))
+          PY
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          # libegl1: Makepad dlopen's libEGL, so it has to be present here for the
-          # packaging tool to work out which package provides it. Runners have no GPU stack.
-          sudo apt-get install -y \
-            libssl-dev \
-            libsqlite3-dev \
-            pkg-config \
-            llvm \
-            clang \
-            libclang-dev \
-            binfmt-support \
-            libxcursor-dev \
-            libx11-dev \
-            libasound2-dev \
-            libpulse-dev \
-            libwayland-dev libxkbcommon-dev libdrm-dev \
-            libegl1
-
-      - name: Install Rust Stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Package .deb (desktop)
-        uses: project-robius/makepad-packaging-action@v1.8.0
-        env:
-          CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
-          CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
+          sudo apt-get install -y libssl-dev libsqlite3-dev pkg-config cmake clang libclang-dev \
+            libxcursor-dev libx11-dev libasound2-dev libpulse-dev libwayland-dev \
+            libxkbcommon-dev libdrm-dev libegl1 libfuse2 patchelf
+      - name: macOS dependencies
+        if: runner.os == 'macOS'
+        run: brew install cmake
+      - name: Windows installer tools
+        if: runner.os == 'Windows'
+        run: choco install nsis --no-progress -y
+      - uses: Swatinem/rust-cache@v2
         with:
-          github_token: ${{ secrets.RINX_RELEASE }}
-          packager_formats: deb
-          releaseId: ${{ needs.create_release.outputs.release_id }}
-          ## Include the distro in asset names: the 22.04 and 24.04 legs produce
-          ## debs with different Depends, and identical names would overwrite
-          ## each other in the release.
-          asset_name_template: __APP__-__VERSION__-${{ matrix.os }}-__ARCH__.__EXT__
-          ## Boot the packaged app in a clean container with only its declared
-          ## Depends, to catch runtime deps that static analysis can't see
-          ## (dlopen'd libs like libEGL, spawned tools like xdg-open).
-          verify_deb: true
-          ## TODO: flip to true once this has passed on all four Linux legs.
-          ## Until then it reports problems without blocking releases.
-          verify_strict: false
-          ## Nothing in Rinx consumes updater metadata, and .deb has no updater
-          ## format mapping anyway, so latest.json would ship empty and misleading.
-          uploadUpdaterJson: false
-
-      ## Each packaging pass uploads every artifact left in dist/, and it prefers
-      ## .deb/.AppImage over anything else in the same group, which would silently drop
-      ## the pacman payload. Clearing dist/ between passes keeps each upload to its own
-      ## format. Only the built packages are removed, never dist/resources.
-      - name: Clear packaged .deb before the next pass
-        if: matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm'
-        run: rm -f dist/*.deb
-
-      ## cargo-packager fetches its AppImage tools with a single un-retried GET, and a
-      ## truncated response fails the whole release, which bites us in the ass all the time...
-      ## It skips any tool already in its cache, so we fetch them here with curl + retries.
-      ## Note the plugin's local name has no arch suffix even though its URL does.
-      - name: Pre-seed cargo-packager's AppImage tools
-        if: matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm'
+          key: installer-${{ matrix.platform }}-${{ matrix.arch }}
+      - name: Install pinned packaging tools
         run: |
-          set -euo pipefail
-          arch="$(uname -m)"
-          tools="${XDG_CACHE_HOME:-$HOME/.cache}/.cargo-packager/AppImage"
-          mkdir -p "$tools"
-          fetch() {
-            ## Download to .part first so an interrupted run can't leave a truncated
-            ## file that cargo-packager would then happily accept.
-            curl -fL --retry 8 --retry-all-errors --retry-delay 3 \
-                 --connect-timeout 20 --max-time 900 -o "$2.part" "$1"
-            mv "$2.part" "$2"
-            chmod 0764 "$2"
-          }
-          fetch "https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-$arch" \
-                "$tools/AppRun-$arch"
-          fetch "https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy/linuxdeploy-$arch.AppImage" \
-                "$tools/linuxdeploy-$arch.AppImage"
-          fetch "https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-$arch.AppImage" \
-                "$tools/linuxdeploy-plugin-appimage.AppImage"
-          ls -l "$tools"
-
-      ## AppImages aren't tied to a distro, so we build one per arch on 22.04,
-      ## our oldest glibc, which gets them running on the widest range of systems.
-      - name: Package AppImage (desktop)
-        if: matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm'
-        uses: project-robius/makepad-packaging-action@v1.8.0
-        env:
-          CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
-          CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
-        with:
-          github_token: ${{ secrets.RINX_RELEASE }}
-          packager_formats: appimage
-          releaseId: ${{ needs.create_release.outputs.release_id }}
-          ## No distro in the name, unlike the .deb above, since an AppImage
-          ## isn't built against a specific one.
-          asset_name_template: __APP__-__VERSION__-__ARCH__.__EXT__
-          uploadUpdaterJson: false
-
-      - name: Clear packaged .AppImage before the next pass
-        if: matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm'
-        run: rm -f dist/*.AppImage
-
-      ## This tarball isn't installable on its own, it's the payload an Arch PKGBUILD
-      ## unpacks. We turn it into a real package below, and the AUR package fetches it
-      ## by cargo-packager's own file name, so `__FILENAME__` keeps that stable.
-      ## Renaming it breaks the AUR package.
-      - name: Package pacman payload (desktop)
-        if: matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm'
-        uses: project-robius/makepad-packaging-action@v1.8.0
-        env:
-          CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
-          CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
-        with:
-          github_token: ${{ secrets.RINX_RELEASE }}
-          packager_formats: pacman
-          releaseId: ${{ needs.create_release.outputs.release_id }}
-          asset_name_template: __FILENAME__
-          uploadUpdaterJson: false
-
-      ## `makepkg` only exists on Arch, so we build the actual installable package in
-      ## a container. Official Arch is x86_64-only, so the aarch64 leg uses an Arch
-      ## Linux ARM image, which is the distro that package is for anyway.
-      ##
-      ## No AUR push belongs in here. This job runs while the release is still a
-      ## draft, so its asset URLs 404 for everyone but the token holder. The AUR
-      ## PKGBUILD is pushed by .github/workflows/aur-publish.yml on
-      ## `release: published`, once a human has published this draft.
-      - name: Build and upload Arch Linux package
-        if: (matrix.os == 'ubuntu-22.04' || matrix.os == 'ubuntu-22.04-arm') && needs.create_release.outputs.tag != ''
-        env:
-          GH_TOKEN: ${{ secrets.RINX_RELEASE }}
-          TAG: ${{ needs.create_release.outputs.tag }}
-          ARCH: ${{ matrix.arch }}
-        run: |
-          set -euo pipefail
-
-          srcver="$(awk -F'"' '/^version[[:space:]]*=/ {print $2; exit}' Cargo.toml)"
-          payload="dist/rinx_${srcver}_${ARCH}.tar.gz"
-          if [[ ! -f "$payload" ]]; then
-            echo "::error::Expected pacman payload at $payload, but it isn't there."
-            ls -la dist/ || true
-            exit 1
-          fi
-
-          ## mktemp gives us 0700, but the container re-owns this to its own uid, which
-          ## would leave the runner unable to read the package back out.
-          build_dir="$(mktemp -d)"
-          chmod 0755 "$build_dir"
-          cp "$payload" "$build_dir"/
-
-          ## Same template the AUR package is rendered from, so the two can't drift.
-          ## --mode local means bare filenames and SKIP sums, since nothing is fetched.
-          packaging/aur/render-pkgbuild.sh --mode local \
-            --srcver "$srcver" --arch "$ARCH" --out "$build_dir"
-
-          ## Both runners are native, so neither leg needs qemu.
-          if [[ "$ARCH" == "aarch64" ]]; then
-            image='menci/archlinuxarm:base-devel'
-          else
-            image='archlinux:base-devel'
-          fi
-
-          ## makepkg refuses to run as root, hence the unprivileged build user.
-          ## --nodeps because it otherwise resolves the runtime deps against the
-          ## container, which has the toolchain only, and we're compiling nothing here.
-          docker run --rm -v "$build_dir:/build" -w /build "$image" bash -euo pipefail -c '
-            ## These images ship without the pacman lsign key. No keyring name, so this
-            ## covers the archlinux and archlinuxarm keyrings alike.
-            pacman-key --init && pacman-key --populate
-            pacman -Syu --noconfirm --needed namcap || echo "::warning::namcap unavailable, skipping lint"
-            ## Arch Linux ARM has defaulted to a different PKGEXT before, and we want
-            ## one asset naming scheme across both arches.
-            printf "\nPKGEXT=.pkg.tar.zst\n" >> /etc/makepkg.conf
-            useradd --create-home builder
-            chown -R builder /build
-            ## sudo drops the environment, so PACKAGER has to be passed through here,
-            ## otherwise the package records "Unknown Packager".
-            sudo -u builder env PACKAGER="Project Robius <it@gosim.org>" \
-              makepkg --force --noconfirm --nodeps
-            ## Reports missing or surplus dependencies. Advisory only, so a lint
-            ## warning never blocks a release.
-            command -v namcap >/dev/null && namcap ./*.pkg.tar.zst || true
-          '
-
-          pkg="$(ls "$build_dir"/*.pkg.tar.zst)"
-          echo "Built $(basename "$pkg")"
-          gh release upload "$TAG" "$pkg" --clobber --repo "${{ github.repository }}"
-
-  for_macos:
-    name: Release Rinx for macOS (${{ matrix.os }}, ${{ matrix.arch }})
-    needs: [check_tag_version, determine_matrices, create_release]
-    if: ${{ always() && ((github.event_name == 'push' && needs.check_tag_version.result == 'success') || (github.event_name == 'workflow_dispatch' && needs.determine_matrices.outputs.run_macos == 'true')) }}
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJson(needs.determine_matrices.outputs.macos_matrix) }}
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Install Rust Stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install packaging tools
-        run: |
-          cargo install cargo-packager --locked
-          cargo install robius-packaging-commands --locked
-
-      - name: Import Apple certificate
+          cargo install cargo-packager --version 0.10.1 --locked
+          cargo install robius-packaging-commands --version 0.4.1 --locked
+      - name: Test Desktop before packaging
+        run: cargo test --locked --features agent_chat --lib
+      - name: Import Apple certificate for configured signed releases
+        if: runner.os == 'macOS' && vars.MACOS_SIGNED_RELEASE == 'true'
         uses: ./.github/actions/import-apple-cert
         with:
           certificate: ${{ secrets.APPLE_CERTIFICATE }}
           password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-
-      # The script signs, notarizes, and staples the DMG itself, so there's
-      # no separate notarize step. Mirrors running it locally.
-      - name: Build, sign, notarize, and staple the DMG
+      - name: Signed and notarized macOS package
+        if: runner.os == 'macOS' && vars.MACOS_SIGNED_RELEASE == 'true'
         env:
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          chmod +x ./packaging/build-macos-dmg.sh ./packaging/fix-dmg-applications-icon.sh
-          ./packaging/build-macos-dmg.sh
-
-      - name: Upload DMG to Release
-        if: ${{ needs.create_release.outputs.release_id != '' }}
+        run: bash packaging/build-macos-dmg.sh
+      - name: Package installers
+        if: runner.os != 'macOS' || vars.MACOS_SIGNED_RELEASE != 'true'
         env:
-          GH_TOKEN: ${{ secrets.RINX_RELEASE }}
-        run: |
-          DMG_FILE=$(find ./dist -name '*.dmg' -print -quit)
-          gh release upload "${{ needs.create_release.outputs.tag }}" "$DMG_FILE" \
-            --repo ${{ github.repository }}
-
-  for_windows:
-    name: Release Rinx for Windows (${{ matrix.os }}, ${{ matrix.arch }})
-    needs: [check_tag_version, determine_matrices, create_release]
-    if: ${{ always() && ((github.event_name == 'push' && needs.check_tag_version.result == 'success') || (github.event_name == 'workflow_dispatch' && needs.determine_matrices.outputs.run_windows == 'true')) }}
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJson(needs.determine_matrices.outputs.windows_matrix) }}
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Install Rust Stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Package (windows)
-        uses: project-robius/makepad-packaging-action@v1.8.0
+          FORMATS: ${{ matrix.formats }}
+          # linuxdeploy AppImages must run without /dev/fuse on hosted runners.
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: cargo packager --release --formats "$FORMATS"
+      - name: Collect installers and checksums
         env:
-          CARGO_PACKAGER_SIGNING_KEY: ${{ secrets.CARGO_PACKAGER_SIGNING_KEY }}
-          CARGO_PACKAGER_SIGNING_PASSWORD: ${{ secrets.CARGO_PACKAGER_SIGNING_PASSWORD }}
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, os, shutil
+          from pathlib import Path
+          extensions = {'linux': ['.deb', '.AppImage'], 'macos': ['.dmg'], 'windows': ['.exe']}[os.environ['PLATFORM']]
+          out = Path('release-assets'); out.mkdir()
+          sums = []
+          for ext in extensions:
+              files = list(Path('dist').glob('*' + ext))
+              assert len(files) == 1, f'Expected one {ext} installer, got {files}'
+              src = files[0]
+              dest = out / f"hagency-desktop-{os.environ['PLATFORM']}-{os.environ['ARCH']}{ext}"
+              shutil.copy2(src, dest)
+              sums.append(f'{hashlib.sha256(dest.read_bytes()).hexdigest()}  {dest.name}\n')
+          (out / f"SHA256SUMS-{os.environ['PLATFORM']}-{os.environ['ARCH']}.txt").write_text(''.join(sums))
+          PY
+      - uses: actions/upload-artifact@v4
         with:
-          github_token: ${{ secrets.RINX_RELEASE }}
-          packager_formats: nsis
-          releaseId: ${{ needs.create_release.outputs.release_id }}
-          ## Same as the action's default naming, minus the `-release` mode suffix.
-          asset_name_template: __APP__-__VERSION__-__PLATFORM__-__ARCH__.__EXT__
-          uploadUpdaterJson: false
+          name: installers-${{ matrix.platform }}-${{ matrix.arch }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
 
-  for_android:
-    name: Release Rinx for Android (aarch64)
-    needs: [check_tag_version, create_release]
-    if: ${{ always() && ((github.event_name == 'push' && needs.check_tag_version.result == 'success') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_android_aarch64 == 'true')) }}
-    runs-on: ubuntu-22.04
+  release:
+    name: Assemble draft release
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v5
-
-      - name: Install Rust Stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Setup pinned cargo-makepad
-        uses: ./.github/actions/setup-cargo-makepad
-
-      - name: Package the standalone assistant runtime
-        env:
-          AWS_LC_SYS_CMAKE_BUILDER: 1
-        run: |
-          cargo makepad android install-toolchain --full-ndk
-          rustup target add aarch64-linux-android
-          python3 tools/package-octos.py android
-          echo "MAKEPAD_ANDROID_EXTRA_LIBS=liboctos.so=$PWD/dist/runtime/octos-aarch64-linux-android" >> "$GITHUB_ENV"
-
-      - name: Package (android)
-        uses: project-robius/makepad-packaging-action@v1.8.0
-        env:
-          AWS_LC_SYS_CMAKE_BUILDER: 1
-          MAKEPAD_ANDROID_FULL_NDK: true
-          ## Fat LTO takes ~7 MB off the apk and ~35 MB off the installed size.
-          ## Android release only, so desktop build times are unaffected.
-          MAKEPAD_MOBILE_CARGO_EXTRA_ARGS: >-
-            --config profile.release.lto=true
-            --config profile.release.codegen-units=1
-            --config profile.dev.opt-level=0
-            --config profile.dev.debug=false
-            --config profile.dev.lto=false
-            --config profile.dev.strip=true
-            --config profile.dev.debug-assertions=false
+      - uses: actions/download-artifact@v4
         with:
-          github_token: ${{ secrets.RINX_RELEASE }}
-          args: --target aarch64-linux-android
-          app_name: Rinx
-          releaseId: ${{ needs.create_release.outputs.release_id }}
-          ## Same as the action's default naming, minus the `-release` mode suffix.
-          asset_name_template: __APP__-__VERSION__-__PLATFORM__-__ARCH__.__EXT__
-          uploadUpdaterJson: false
-
-  for_ios:
-    name: Release Rinx for iOS
-    needs: [check_tag_version, create_release]
-    if: ${{ always() && ((github.event_name == 'push' && needs.check_tag_version.result == 'success') || (github.event_name == 'workflow_dispatch' && github.event.inputs.build_ios == 'true')) }}
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v5
-
-      # Apple requires uploads built with the iOS 26 SDK (Xcode 26+). macos-15
-      # ships several Xcode 26.x but defaults to 16.4, so pick the newest 26.
-      - name: Select Xcode 26 (iOS 26 SDK)
+          pattern: installers-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify complete release and write build notes
+        env:
+          MACOS_SIGNED: ${{ vars.MACOS_SIGNED_RELEASE }}
+          SOURCE_SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | grep -viE 'beta' | sort -V | tail -1)
-          if [[ -z "$XCODE" ]]; then
-            echo "::error::No GA Xcode 26.x found on this runner (need the iOS 26 SDK for TestFlight uploads)."
-            ls -d /Applications/Xcode_*.app || true
-            exit 1
+          set -euo pipefail
+          cd release-assets
+          cat SHA256SUMS-*.txt > SHA256SUMS.txt
+          test "$(wc -l < SHA256SUMS.txt)" -eq 7
+          sha256sum --check SHA256SUMS.txt
+          # shellcheck disable=SC2016
+          printf 'Hagency Desktop installers built from `%s`.\n\n' "$SOURCE_SHA" > ../release-notes.md
+          # shellcheck disable=SC2016
+          printf 'Linux: amd64/arm64 DEB and AppImage. macOS: Intel/Apple Silicon DMG. Windows: amd64 NSIS installer.\n\nVerify downloads against `SHA256SUMS.txt`.\n\n' >> ../release-notes.md
+          if [[ "$MACOS_SIGNED" == true ]]; then
+            printf 'macOS packages are Developer ID signed and notarized.\n' >> ../release-notes.md
+          else
+            printf 'macOS packages are unsigned development builds; Gatekeeper may block installation.\n' >> ../release-notes.md
           fi
-          sudo xcode-select -s "$XCODE"
-          echo "DEVELOPER_DIR=$XCODE/Contents/Developer" >> "$GITHUB_ENV"
-          xcodebuild -version
-          echo "iphoneos SDK: $(xcrun --sdk iphoneos --show-sdk-version)"
-
-      - name: Install Rust Stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Rust nightly
-        run: rustup toolchain install nightly
-
-      - name: Setup cargo-makepad
-        uses: ./.github/actions/setup-cargo-makepad
-
-      - name: Install iOS toolchain
-        run: cargo makepad apple ios install-toolchain
-
-      - name: Install bindgen-cli for aws-lc-sys cross-compilation
-        run: cargo install --force --locked bindgen-cli
-
-      - name: Import Apple certificate
-        uses: ./.github/actions/import-apple-cert
-        with:
-          certificate: ${{ secrets.APPLE_CERTIFICATE }}
-          password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-
-      - name: Install provisioning profile
+          printf 'Windows packages are currently unsigned.\n' >> ../release-notes.md
+      - name: Create or update draft
         env:
-          APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
         run: |
-          PROFILE_FILE="$RUNNER_TEMP/rinx-profile.mobileprovision"
-          echo "$APPLE_PROVISIONING_PROFILE" | base64 --decode > "$PROFILE_FILE"
-          security cms -D -i "$PROFILE_FILE" > /tmp/profile.plist
-          UUID=$(/usr/libexec/PlistBuddy -c "Print UUID" /tmp/profile.plist)
-          DEST="$HOME/Library/MobileDevice/Provisioning Profiles"
-          mkdir -p "$DEST"
-          cp "$PROFILE_FILE" "$DEST/${UUID}.mobileprovision"
-          echo "IOS_PROVISIONING_PROFILE_UUID=$UUID" >> "$GITHUB_ENV"
-          rm -f "$PROFILE_FILE"
-
-      - name: Write App Store Connect API key
-        env:
-          APP_STORE_CONNECT_API_KEY_CONTENT: ${{ secrets.APP_STORE_CONNECT_API_KEY_CONTENT }}
-          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-        run: |
-          DEST="$HOME/.appstoreconnect/private_keys"
-          mkdir -p "$DEST"
-          printf '%s' "$APP_STORE_CONNECT_API_KEY_CONTENT" > "$DEST/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
-          chmod 600 "$DEST/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
-
-      - name: Build, sign, package, and upload to TestFlight
-        env:
-          AWS_LC_SYS_CMAKE_BUILDER: 1
-          IOS_SIGNING_IDENTITY: Apple Distribution
-          ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-          ## Tagging a release always sends the build to TestFlight. A manual run only
-          ## does when asked, so test builds don't burn a TestFlight build number.
-          IOS_UPLOAD_TESTFLIGHT: ${{ github.event_name == 'push' || github.event.inputs.upload_testflight == 'true' }}
-        run: |
-          chmod +x ./packaging/build-ios-testflight.sh
-          ./packaging/build-ios-testflight.sh
-
-      - name: Upload IPA to Release
-        if: ${{ needs.create_release.outputs.release_id != '' }}
-        env:
-          GH_TOKEN: ${{ secrets.RINX_RELEASE }}
-        run: |
-          IPA_FILE=$(find target/apple/makepad-apple-app/aarch64-apple-ios/release -name '*.ipa' -print -quit)
-          if [[ -z "$IPA_FILE" ]]; then
-            echo "Error: no .ipa found to upload"
-            exit 1
+          set -euo pipefail
+          if gh release view "$TAG" --json isDraft > release.json 2>/dev/null; then
+            jq -e '.isDraft == true' release.json
+            gh release edit "$TAG" --notes-file release-notes.md
+            gh release upload "$TAG" release-assets/* --clobber
+          else
+            args=(--draft --verify-tag --title "Hagency Desktop $TAG" --notes-file release-notes.md)
+            if [[ "$TAG" == *-* ]]; then args+=(--prerelease); fi
+            gh release create "$TAG" release-assets/* "${args[@]}"
           fi
-          gh release upload "${{ needs.create_release.outputs.tag }}" "$IPA_FILE" \
-            --repo ${{ github.repository }}

@@ -16,9 +16,13 @@
 # │ Windows 2022    │ Android         │ cargo-makepad   │
 # └─────────────────┴─────────────────┴─────────────────┘
 
-name: Rinx Build CI
+name: Hagency Desktop Build CI
 
 on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 env:
@@ -32,11 +36,17 @@ jobs:
   # These jobs build Rinx for desktop platforms using standard cargo build
   # ═══════════════════════════════════════════════════════════════════════════════════════
   build_ubuntu:
-    name: Build Ubuntu
-    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, ubuntu-22.04-arm]
+    name: Build Ubuntu (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
 
+      - uses: ./.github/actions/setup-hagency-client
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -60,7 +70,7 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          key: ubuntu-build-${{ hashFiles('Cargo.lock') }}
+          key: ${{ matrix.runner }}-build-${{ hashFiles('Cargo.lock') }}
 
       - name: Build
         env:
@@ -69,6 +79,7 @@ jobs:
           cargo build --profile fast
 
   build_macos:
+    timeout-minutes: 120
     name: Build macOS (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -84,6 +95,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: ./.github/actions/setup-hagency-client
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -99,6 +111,7 @@ jobs:
           cargo build --profile fast
 
   build_windows:
+    timeout-minutes: 120
     name: Build Windows
     runs-on: windows-2022
     defaults:
@@ -107,6 +120,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: ./.github/actions/setup-hagency-client
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -127,11 +141,13 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════════════════
 
   build_ios_on_macos:
+    if: github.event_name == 'workflow_dispatch'
     name: Build iOS (macOS Host)
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v5
 
+      - uses: ./.github/actions/setup-hagency-client
       - name: Install Rust stable and nightly
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -177,11 +193,13 @@ jobs:
           --config profile.dev.debug-assertions=false
 
   build_android_on_macos:
+    if: github.event_name == 'workflow_dispatch'
     name: Build Android (macOS Host)
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v5
 
+      - uses: ./.github/actions/setup-hagency-client
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -212,11 +230,13 @@ jobs:
           --config profile.dev.debug-assertions=false
 
   build_android_on_linux:
+    if: github.event_name == 'workflow_dispatch'
     name: Build Android (Linux Host)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
 
+      - uses: ./.github/actions/setup-hagency-client
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -247,6 +267,7 @@ jobs:
           --config profile.dev.debug-assertions=false
 
   build_android_on_windows:
+    if: github.event_name == 'workflow_dispatch'
     name: Build Android (Windows Host)
     runs-on: windows-2022
     defaults:
@@ -255,6 +276,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - uses: ./.github/actions/setup-hagency-client
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -322,3 +344,6 @@ jobs:
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read

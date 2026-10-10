@@ -2,7 +2,8 @@
 //! separate controls; no web console, transfer or administrator resource gate.
 use makepad_widgets::*;
 use serde_json::{Value, json};
-use super::{backend::Service, model::*};
+use super::{backend::Service, model::*, approvals::Notices};
+use std::{collections::HashSet, time::Instant};
 use crate::sliding_sync::spawn_async_task;
 
 #[derive(Clone, Debug)]
@@ -44,6 +45,7 @@ enum Target {
     Agents,
     Bindings,
     BindingChanged,
+    ReplyPolicyChanged,
     RoomRoster,
     ScopeState,
     AgentJournal,
@@ -62,7 +64,7 @@ enum Target {
     Runtime,
     ListService,
     ServiceRoomChanged,
-    Approvals,
+    ApprovalDecision,
     Members,
     Changed,
     ProjectAdopted,
@@ -77,6 +79,9 @@ struct Completed {
     target: Target,
     result: Result<Value, String>,
 }
+#[derive(Debug)]
+struct ApprovalsCompleted { identity:String, request:u64, agent:String, binding:String, room:String, result:Result<Value,String> }
+
 type ServiceRowTargets = std::collections::HashMap<WidgetUid,(String,String)>;
 type AgentCardTargets = std::collections::HashMap<WidgetUid,String>;
 type RuntimeStates = std::collections::HashMap<String,Result<Value,String>>;
@@ -100,7 +105,7 @@ pub(crate) fn runtime_list_label(runtime:Option<&Result<Value,String>>,agent:&st
     else if phases.iter().any(|p|matches!(*p,"awaiting_approval"|"waiting_owner")) {"Waiting for your approval before continuing."}
     else if phases.iter().any(|p|matches!(*p,"ledger_recovery_required"|"reconciliation_only")) {"Restore this owner's complete ledger before new requests. Only known original replies may be recovered."}
     else if !string(r,"lastError").is_empty() || bindings.iter().any(|b|!string(b,"lastError").is_empty()) {"The runtime stopped with an error. Check the details below."}
-    else if phases.contains(&"checking_provider") {"Checking this device's Codex connection…"}
+    else if phases.contains(&"checking_provider") {"Checking this device's local runtime connection…"}
     else if phases.contains(&"starting") {"Starting service. Discovering connected Rooms…"}
     else if phases.iter().all(|p|matches!(*p,"stopped"|"")) {"Not running on this device. Open Service to configure and start."}
     else {"The runtime has not confirmed it is ready. Refresh its status."}
@@ -212,7 +217,7 @@ pub(crate) fn runtime_summary(runtime:&Value,agent:&str,binding:Option<&str>)->S
     let text=match string(value,"phase") {
         "online"|"online_chat_only"=>"Responding in this Room. Configured limits and request permissions still apply.",
         "waiting_for_lease"=>"Waiting for the previous runtime lease to be released…",
-        "checking_provider"=>"Checking this device's Codex connection…",
+        "checking_provider"=>"Checking this device's local runtime connection…",
         "executing"|"executing_chat_only"|"executing_host_files"=>"Processing a request in this Room…",
         "awaiting_approval"|"waiting_owner"=>"Waiting for your approval before continuing.",
         "ledger_recovery_required"|"reconciliation_only"=>"Restore this owner's complete ledger before new requests. Only known original replies may be recovered.",
@@ -227,11 +232,18 @@ pub(crate) fn runtime_summary(runtime:&Value,agent:&str,binding:Option<&str>)->S
 // Never render a provider's raw JSON, stderr, filesystem paths, or credentials.
 fn provider_error_message(error: &str) -> Option<&'static str> {
     Some(match error {
+        "claude_binary_unavailable" => "Claude Code is not installed or could not be started. Check the local installation.",
+        "octos_binary_unavailable" => "Octos is not installed or could not be started. Check the local installation.",
+        "claude_account_unavailable" | "local_provider_not_signed_in" => "Check your local Claude sign-in, then connect the account again.",
+        "local_provider_home_unavailable" => "The local runtime's account directory is unavailable. Check its local setup.",
+        "octos_profiles_unavailable" => "No usable Octos profiles were found. Configure a local Octos profile, then refresh.",
+        "provider_authorization_lost" => "The local runtime's account or configuration is unavailable. Check Model & resources and reconnect.",
+        "local_provider_login_managed_locally" => "Sign in through the local runtime, then connect it here.",
         "codex_binary_unavailable" => "Codex is not installed or could not be started. Check the local Codex installation.",
         "local_codex_home_unavailable" | "provider_directory_unavailable" | "provider_directory_not_canonical" => "Codex's local account or workspace directory is unavailable. Check its local permissions and retry.",
         "local_codex_configuration_unsupported" | "provider_file_credentials_or_config_rejected" => "This Codex configuration cannot be safely used by Hagency. Your existing account has not been changed. Check the configuration or use a separate Codex account.",
-        "provider_profile_mismatch" | "provider_choice_unavailable" => "The saved Codex account selection is unavailable or does not match this profile. Reconnect the intended account and retry.",
-        "local_codex_account_not_signed_in" | "provider_authorization_lost" => "Codex is not signed in. Sign in through your local Codex, then check the account again.",
+        "provider_profile_mismatch" | "provider_choice_unavailable" => "The saved Local account selection is unavailable or does not match this profile. Reconnect the intended account and retry.",
+        "local_codex_account_not_signed_in" => "Codex is not signed in. Sign in through your local Codex, then check the account again.",
         "provider_keyring_unavailable" => "Codex cannot access the system credential store. Unlock it or check its permissions, then retry.",
         "codex_model_catalog_unavailable" => "Codex could not load its model list. Check the account and connection, then refresh the models.",
         "codex_provider_timeout" | "codex_provider_unavailable" => "Codex did not respond. Check that it can run locally, then retry.",
@@ -239,7 +251,7 @@ fn provider_error_message(error: &str) -> Option<&'static str> {
         "codex_provider_request_rejected" => "Codex rejected this request. Check the local account and configuration before retrying.",
         "provider_login_callback_unavailable" | "provider_authorization_url_rejected" | "provider_login_method_rejected" => "The separate Codex sign-in could not be started safely. Retry or connect your signed-in local Codex account.",
         "shared_codex_login_is_managed_locally" | "shared_codex_logout_is_managed_locally" => "This account is managed by your local Codex. Use Disconnect here to keep your everyday Codex signed in.",
-        "profile_or_local_state_unavailable" => "The saved model or workspace is unavailable. Check this Agent's Codex resources and save them before starting.",
+        "profile_or_local_state_unavailable" => "The saved model or workspace is unavailable. Check this Agent's local resources and save them before starting.",
         _ => return None,
     })
 }
@@ -555,7 +567,7 @@ script_mod! {
                 View {visible: false width: 0 height: 0 agents := Select {labels: [#(crate::i18n::tr("Select my Agent"))]}}
                 agent_create := Section {visible: false width: Fill height: Fit flow: Down spacing: 8
                     agent_creation_heading := Text {visible: false text: #(crate::i18n::tr("Create Agent")) i18n_text: "Create Agent" draw_text.text_style: theme.font_bold{font_size: (16 * mod.widgets.RINX_TEXT_SCALE)}}
-                    Text {text: #(crate::i18n::tr("Create an Agent on this device. Connect Codex and add Rooms afterward.")) i18n_text: "Create an Agent on this device. Connect Codex and add Rooms afterward." draw_text.color: mod.widgets.RINX_MUTED}
+                    Text {text: #(crate::i18n::tr("Create an Agent on this device. Connect a local runtime and add Rooms afterward.")) i18n_text: "Create an Agent on this device. Connect a local runtime and add Rooms afterward." draw_text.color: mod.widgets.RINX_MUTED}
                     agent_binding_target := View {visible: false width: Fill height: Fit flow: Down spacing: 8
                         agent_project := Select {labels: [#(crate::i18n::tr("Select a Project"))]}
                         agent_room := Select {labels: [#(crate::i18n::tr("Select a visible registered Room"))]}
@@ -644,12 +656,14 @@ script_mod! {
                     model_section := Section {visible: false width: Fill height: Fit flow: Down spacing: 8
                         Text {text: #(crate::i18n::tr("Model & resources")) i18n_text: "Model & resources" draw_text.text_style: theme.font_bold{font_size: (16 * mod.widgets.RINX_TEXT_SCALE)}}
                         Text {text: #(crate::i18n::tr("Model settings apply to this Agent across its Rooms.")) i18n_text: "Model settings apply to this Agent across its Rooms." draw_text.color: mod.widgets.RINX_MUTED}
-                        Text {text: #(crate::i18n::tr("Provider: Codex")) i18n_text: "Provider: Codex" draw_text.color: mod.widgets.RINX_MUTED}
+                        Text {text: #(crate::i18n::tr("Local agent runtime")) i18n_text: "Local agent runtime"}
+                        runtime_kind := Select {labels: ["Codex" "Claude Code" "Octos"]}
+                        runtime_provider_note := Text {draw_text.color: mod.widgets.RINX_MUTED}
                         provider_status := Text {}
                         provider_controls := View {width: Fill height: Fit flow: Down spacing: 8
-                            use_local_provider := Action {text: #(crate::i18n::tr("Use my signed-in local Codex account")) i18n_text: "Use my signed-in local Codex account"}
+                            use_local_provider := Action {text: #(crate::i18n::tr("Connect my local account")) i18n_text: "Connect my local account"}
                             provider_login_actions := View {width: Fill height: 40 spacing: 8
-                                provider_check := Action {text: #(crate::i18n::tr("Check Codex account")) i18n_text: "Check Codex account"}
+                                provider_check := Action {text: #(crate::i18n::tr("Check local account")) i18n_text: "Check local account"}
                                 provider_login := Action {text: #(crate::i18n::tr("Sign in to Codex")) i18n_text: "Sign in to Codex"}
                             }
                             provider_pending_actions := View {visible: false width: Fill height: 40 spacing: 8
@@ -657,8 +671,8 @@ script_mod! {
                             }
                             provider_open := Action {visible: false text: #(crate::i18n::tr("Open provider sign-in URL")) i18n_text: "Open provider sign-in URL"}
                         }
-                        Text {text: #(crate::i18n::tr("Model available from your local Codex")) i18n_text: "Model available from your local Codex"}
-                        model := Select {labels: [#(crate::i18n::tr("Load available Codex models"))]}
+                        Text {text: #(crate::i18n::tr("Local model or Octos profile")) i18n_text: "Local model or Octos profile"}
+                        model := Select {labels: [#(crate::i18n::tr("Load available models or profiles"))]}
                         model_note := Text {}
                         Text {text: #(crate::i18n::tr("Reasoning effort")) i18n_text: "Reasoning effort"}
                         effort := Select {labels: [#(crate::i18n::tr("Checking model choices…"))]}
@@ -666,20 +680,20 @@ script_mod! {
                         refresh_models := Action {text: #(crate::i18n::tr("Refresh available models")) i18n_text: "Refresh available models"}
                         advanced_toggle := Action {text: #(crate::i18n::tr("Advanced settings")) i18n_text: "Advanced settings" spacing: 6 icon_walk: Walk{width: 12 height: 12} draw_icon.svg: ICON_CHEVRON_RIGHT}
                         advanced_settings := View {visible: false width: Fill height: Fit flow: Down spacing: 8
-                        Text {text: #(crate::i18n::tr("Codex account")) i18n_text: "Codex account"}
+                        Text {text: #(crate::i18n::tr("Local account")) i18n_text: "Local account"}
                         View {width: Fill height: 40 spacing: 8
-                            provider_advanced_check := Action {text: #(crate::i18n::tr("Check Codex account")) i18n_text: "Check Codex account"}
-                            disconnect_provider := Action {visible: false text: #(crate::i18n::tr("Disconnect local Codex from this account")) i18n_text: "Disconnect local Codex from this account"}
+                            provider_advanced_check := Action {text: #(crate::i18n::tr("Check local account")) i18n_text: "Check local account"}
+                            disconnect_provider := Action {visible: false text: #(crate::i18n::tr("Disconnect local account")) i18n_text: "Disconnect local account"}
                             provider_logout := Action {visible: false text: #(crate::i18n::tr("Sign out of separate Codex account")) i18n_text: "Sign out of separate Codex account"}
                         }
-                        Text {text: #(crate::i18n::tr("Disconnecting here keeps your local Codex signed in.")) i18n_text: "Disconnecting here keeps your local Codex signed in." draw_text.color: mod.widgets.RINX_MUTED}
+                        Text {text: #(crate::i18n::tr("Disconnecting here keeps your local runtime signed in.")) i18n_text: "Disconnecting here keeps your local runtime signed in." draw_text.color: mod.widgets.RINX_MUTED}
                         Text {text: #(crate::i18n::tr("Agent workspace on this device")) i18n_text: "Agent workspace on this device"}
                         workspace := Input {empty_text: #(crate::i18n::tr("Automatic: private workspace for this Agent")) i18n_empty_text: "Automatic: private workspace for this Agent"}
                         Text {text: #(crate::i18n::tr("Leave empty to use this Agent's private workspace. Custom directories must already exist.")) i18n_text: "Leave empty to use this Agent's private workspace. Custom directories must already exist." draw_text.color: mod.widgets.RINX_MUTED}
                         prepare_workspace := Action {text: #(crate::i18n::tr("Prepare this Agent's private workspace")) i18n_text: "Prepare this Agent's private workspace"}
                         }
                         credential := Text {visible: false}
-                        save_model := Primary {text: #(crate::i18n::tr("Save local Codex profile")) i18n_text: "Save local Codex profile"}
+                        save_model := Primary {text: #(crate::i18n::tr("Save local model profile")) i18n_text: "Save local model profile"}
                         Text {text: #(crate::i18n::tr("Restart the Agent service to apply saved model settings.")) i18n_text: "Restart the Agent service to apply saved model settings." draw_text.color: mod.widgets.RINX_MUTED}
                     }
                     runtime_section := View {visible: false width: Fill height: Fit flow: Down spacing: 12
@@ -727,6 +741,8 @@ script_mod! {
                         Text {text: #(crate::i18n::tr("Only requests or tools configured to ask you appear here.")) i18n_text: "Only requests or tools configured to ask you appear here." draw_text.color: mod.widgets.RINX_MUTED}
                         approvals_check := Action {text: #(crate::i18n::tr("Refresh pending requests/tools")) i18n_text: "Refresh pending requests/tools"}
                         approvals := Select {labels: [#(crate::i18n::tr("Select a pending approval"))]}
+                        approval_count := Text {draw_text.color: mod.widgets.RINX_MUTED}
+                        approval_feedback := Text {}
                         approval_details := Text {}
                         View {width: Fill height: 40 spacing: 8
                             approve := Action {text: #(crate::i18n::tr("Approve exact request once")) i18n_text: "Approve exact request once"}
@@ -741,6 +757,11 @@ script_mod! {
                         Text {text: #(crate::i18n::tr("Private chat is selected by default. Choose another Room to manage its service separately.")) i18n_text: "Private chat is selected by default. Choose another Room to manage its service separately." draw_text.color: mod.widgets.RINX_MUTED}
                         bindings := Select {labels: [#(crate::i18n::tr("Select a Room binding"))]}
                         binding_details := Text {}
+                        reply_policy := View {width: Fill height: Fit flow: Down spacing: 8
+                            Text {text: #(crate::i18n::tr("Room reply behavior")) i18n_text: "Room reply behavior"}
+                            reply_policy_status := Text {draw_text.color: mod.widgets.RINX_MUTED}
+                            reply_policy_toggle := Action {text: #(crate::i18n::tr("Enable automatic thread follow-ups")) i18n_text: "Enable automatic thread follow-ups"}
+                        }
                         open_binding_chat := Action {text: #(crate::i18n::tr("Open selected Room chat")) i18n_text: "Open selected Room chat"}
                         room_roster_check := Action {text: #(crate::i18n::tr("Agents in this Room")) i18n_text: "Agents in this Room"}
                         room_roster := Text {}
@@ -867,10 +888,73 @@ pub struct HagencyPanel {
     #[rust] wanted_run: Option<(String,String)>,
     #[rust] direct_timer: Timer,
     #[rust] direct_retry: Option<(String,String,u8)>,
+    #[rust] approval_timer: Timer,
+    #[rust] approval_poll: Option<u64>,
+    #[rust] approval_started: Option<Instant>,
+    #[rust] approval_notices: Notices,
+    #[rust] approval_checked: bool,
+    #[rust] approval_blocked: HashSet<String>,
     #[rust] read_timer: Timer,
     #[rust] read_wait: Option<ReadWait>,
 }
 impl HagencyPanel {
+    fn approval_scope(&self,cx:&mut Cx)->Option<(String,String,String)> {
+        let agent=self.agent(cx)?;
+        let b=self.selected(cx,ids!(bindings),&self.bindings)?;
+        let binding=string(&b,"id").to_owned();let room=string(&b,"roomId").to_owned();
+        if binding.is_empty() || room.is_empty() {return None;} Some((agent,binding,room))
+    }
+    fn clear_approval_state(&mut self,cx:&mut Cx) {
+        self.approval_poll=None;self.approval_started=None;self.approval_checked=false;self.approval_notices=Default::default();
+        cx.stop_timer(self.approval_timer);
+        self.view.label(cx,ids!(approval_count)).set_text(cx,"");
+        self.view.label(cx,ids!(approval_feedback)).set_text(cx,"");
+    }
+    fn approval_view_open(&self,cx:&mut Cx)->bool {
+        self.active && self.page==Page::Agents && self.view.view(cx,ids!(agent_detail)).visible()
+            && self.view.view(cx,ids!(runtime_section)).visible()
+    }
+    fn refresh_approvals(&mut self,cx:&mut Cx) {
+        if self.approval_poll.is_some() || self.busy || !self.approval_view_open(cx) || !self.local_agent(cx) {return;}
+        let Some((agent,binding,room))=self.approval_scope(cx) else {return;};
+        let Ok(service)=Service::for_current() else {return;};
+        if service.identity()!=self.identity {return;}
+        let request=nonce();self.approval_poll=Some(request);self.approval_started=Some(Instant::now());let identity=self.identity.clone();
+        cx.stop_timer(self.approval_timer);self.approval_timer=cx.start_timeout(3.0);
+        spawn_async_task(async move {
+            // A UI waiting deadline must not cancel owner/device bootstrap work.
+            let result=service.execute(Command::Local {
+                agent_id:agent.clone(),action:LocalAction::Approvals,input:None,binding_id:Some(binding.clone()),requester:None,
+            }).await;
+            Cx::post_action(ApprovalsCompleted {identity,request,agent,binding,room,result});
+        });
+    }
+    fn accepts_approval_poll(&self,cx:&mut Cx,done:&ApprovalsCompleted)->bool {
+        self.approval_view_open(cx) && self.approval_poll==Some(done.request) && done.identity==self.identity
+            && self.approval_scope(cx)==Some((done.agent.clone(),done.binding.clone(),done.room.clone()))
+    }
+    fn apply_approvals(&mut self,cx:&mut Cx,value:&Value) {
+        let selected=self.selected(cx,ids!(approvals),&self.approvals).map(|v|string(&v,"proposalId").to_owned());
+        let scope=self.approval_scope(cx);
+        self.approvals=array(value,"approvals").into_iter().filter(|row|scope.as_ref().is_some_and(|(a,b,r)|super::approvals::matches(row,a,b,r,super::approvals::now()))).collect();
+        self.approval_checked=true;
+        let new=self.approval_notices.new_count(&self.approvals);
+        if new>0 {
+            crate::shared::popup_list::enqueue_popup_notification(
+                crate::i18n::format("{count} new approvals in this Room. Review them in Service.",&[("count",new.to_string())]),
+                crate::shared::popup_list::PopupKind::Warning,Some(8.0));
+        }
+        self.view.drop_down(cx,ids!(approvals)).set_labels(cx,std::iter::once(crate::i18n::tr("Select a pending approval").to_owned()).chain(self.approvals.iter().map(|v|format!("{} · {}",string(&v["proposal"],"tool"),string(&v["proposal"]["scope"],"requester")))).collect());
+        let index=selected.and_then(|id|self.approvals.iter().position(|v|string(v,"proposalId")==id)).map(|i|i+1).unwrap_or(0);
+        self.view.drop_down(cx,ids!(approvals)).set_selected_item(cx,index);
+        self.view.label(cx,ids!(approval_count)).set_text(cx,&crate::i18n::format("{count} pending approvals in this Room",&[("count",self.approvals.len().to_string())]));
+        self.render_approval_details(cx);
+        self.sync_navigation(cx);
+    }
+    fn render_approval_details(&self,cx:&mut Cx) {
+        let text=self.selected(cx,ids!(approvals),&self.approvals).map(|p|super::approvals::details(&p,super::approvals::now())).unwrap_or_else(||crate::i18n::tr(if self.approvals.is_empty() {"No pending approvals."} else {"Select a request to review its exact action."}).into());
+        self.view.label(cx,ids!(approval_details)).set_text(cx,&text);
+    }
     fn reset_detail_scroll(&mut self,cx:&mut Cx) {
         self.detail_scroll_key.clear();self.view.view(cx,ids!(details_scroll)).set_scroll_pos(cx,dvec2(0.0,0.0));
     }
@@ -922,7 +1006,7 @@ impl HagencyPanel {
         self.runtime_efforts.clear();
         self.policy = Value::Null;
         self.view.drop_down(cx, ids!(effort)).set_labels(cx, vec!["Checking model choices…".into()]);
-        self.view.label(cx, ids!(runtime_status)).set_text(cx, crate::i18n::tr("Checking the saved model and connected Codex account…"));
+        self.view.label(cx, ids!(runtime_status)).set_text(cx, crate::i18n::tr("Checking the saved model and connected local account…"));
         self.local(cx, Target::Policy, LocalAction::AgentModel, None);
     }
     fn cancel_read_wait(&mut self, cx: &mut Cx) {
@@ -974,10 +1058,10 @@ impl HagencyPanel {
     fn render_models(&mut self, cx:&mut Cx) {
         let configured = string(&self.policy["modelProfile"],"model");
         let previous = self.selected(cx,ids!(model),&self.provider_models).map(|m|string(&m,"model").to_owned());
-        let selected = self.provider_models.iter().position(|m| string(m,"model") == configured)
+        let selected = self.provider_models.iter().position(|m| string(m,"model") == configured && (string(m,"credentialRef").is_empty() || string(m,"credentialRef") == string(&self.policy["modelProfile"],"credential_ref")))
             .or_else(|| previous.as_deref().and_then(|id|self.provider_models.iter().position(|m|string(m,"model")==id)))
             .or_else(||self.provider_models.iter().position(|m|m["isDefault"] == true));
-        let labels=std::iter::once("Select a Codex model".to_owned()).chain(self.provider_models.iter().map(|m|format!("{}{}",string(m,"displayName"),if m["isDefault"] == true {" (default)"} else {""}))).collect();
+        let labels=std::iter::once("Select a model or profile".to_owned()).chain(self.provider_models.iter().map(|m|format!("{}{}",string(m,"displayName"),if m["isDefault"] == true {" (default)"} else {""}))).collect();
         self.view.drop_down(cx,ids!(model)).set_labels(cx,labels);
         self.view.drop_down(cx,ids!(model)).set_selected_item(cx,selected.map_or(0,|i|i+1));
         self.render_efforts(cx);
@@ -991,7 +1075,7 @@ impl HagencyPanel {
         self.view.drop_down(cx,ids!(effort)).set_labels(cx,if self.runtime_efforts.is_empty(){vec![crate::i18n::tr("Load this model's reasoning choices").into()]}else{self.runtime_efforts.iter().map(|effort|format!("{}{}",effort,if effort==default {crate::i18n::tr(" (default)")} else {""})).collect()});
         self.view.drop_down(cx,ids!(effort)).set_selected_item(cx,selected);
         self.render_effort_note(cx);
-        self.view.label(cx,ids!(model_note)).set_text(cx,model.as_ref().map(|m|string(m,"description")).unwrap_or_else(||crate::i18n::tr("Connect Codex and refresh its model catalog. Availability is confirmed when an actual request runs.")));
+        self.view.label(cx,ids!(model_note)).set_text(cx,model.as_ref().map(|m|string(m,"description")).unwrap_or_else(||crate::i18n::tr("Connect a local runtime and refresh its models or profiles. Availability is confirmed when an actual request runs.")));
     }
     fn render_effort_note(&self, cx:&mut Cx) {
         let effort=self.runtime_efforts.get(self.view.drop_down(cx,ids!(effort)).selected_item());
@@ -1099,6 +1183,7 @@ impl HagencyPanel {
         self.policy = Value::Null;
         self.runtime_room_active=false;self.agent_service_state=Value::Null;self.service_row_targets.clear();self.runtime_pending_action=None;self.runtime_action_error.clear();
         self.view.text_input(cx,ids!(reservation)).set_text(cx,"");
+        self.clear_approval_state(cx);
         self.approvals.clear();
         self.labels(cx,ids!(approvals),"Select a pending approval",&self.approvals,"proposalId");
         self.view.label(cx,ids!(approval_details)).set_text(cx,crate::i18n::tr(""));
@@ -1278,6 +1363,7 @@ impl HagencyPanel {
         self.render_owner_direct(cx);
         self.view.view(cx, ids!(execution_badge)).label(cx, ids!(device_label)).set_text(cx, crate::i18n::tr("Checking execution device…"));
         self.view.check_box(cx, ids!(assignment_confirm)).set_active(cx, false, Animate::No);
+        self.clear_approval_state(cx);
         self.approvals.clear();
         self.labels(
             cx,
@@ -1424,7 +1510,9 @@ impl HagencyPanel {
         service_toggle.set_text(cx,crate::i18n::tr(if self.runtime_pending_action==Some(true) {"Starting…"} else if self.runtime_pending_action==Some(false) {"Stopping…"} else if !runtime_known {"Checking…"} else if self.runtime_room_active {"Stop responding"} else {"Start responding"}));
         if self.runtime_room_active {script_apply_eval!(cx,service_toggle,{draw_icon +: {svg: mod.widgets.ICON_SERVICE_STOP}});} else {script_apply_eval!(cx,service_toggle,{draw_icon +: {svg: mod.widgets.ICON_SERVICE_PLAY}});}
         self.view.label(cx,ids!(runtime_restart_note)).set_visible(cx,self.runtime_room_active);
-        let approval_selected=self.selected(cx,ids!(approvals),&self.approvals).is_some();
+        let approval_selected=self.approval_checked && self.selected(cx,ids!(approvals),&self.approvals).is_some_and(|p| {
+            !self.approval_blocked.contains(string(&p,"proposalId")) && self.approval_scope(cx).is_some_and(|(a,b,r)|super::approvals::matches(&p,&a,&b,&r,super::approvals::now()))
+        });
         for id in [ids!(approve),ids!(reject)] {let enabled=assigned_here && approval_selected && !self.busy;self.view.button(cx,id).set_enabled(cx,enabled);self.view.widget(cx,id).set_disabled(cx,!enabled);}
         let badge = self.view.widget(cx, ids!(execution_badge));
         render_device_badge(cx, &badge, agent_device_state(&self.execution_agent_record, &self.current_device_id, &self.execution_devices, self.devices_loaded), &self.device_badge(&self.execution_agent_record));
@@ -1437,14 +1525,21 @@ impl HagencyPanel {
         self.view.check_box(cx, ids!(assignment_confirm)).set_visible(cx, assignable && !assigned_here);
         self.view.button(cx, ids!(assign_current_device)).set_visible(cx, assignable && !assigned_here);
         for id in [ids!(model_tab), ids!(policy_tab), ids!(runtime_tab)] {self.view.button(cx, id).set_enabled(cx, assigned_here && !self.busy);}
+        let runtime=self.provider_runtime(cx);
+        self.view.drop_down(cx,ids!(runtime_kind)).set_disabled(cx,self.busy || self.runtime_room_active);
+        self.view.label(cx,ids!(runtime_provider_note)).set_text(cx,crate::i18n::tr(match runtime {
+            "claude"=>"Claude uses its local sign-in. Sign in through Claude Code before connecting.",
+            "octos"=>"Octos runs the selected local profile. Provider credentials stay in Octos; reasoning uses the profile's settings.",
+            _=>"Codex uses its local sign-in or a separate account.",
+        }));
         let profile=&self.policy["modelProfile"];
         let current_model=self.selected(cx,ids!(model),&self.provider_models);
         let model_ready=profile["model"].as_str().is_some_and(|m|!m.is_empty())
             && current_model.as_ref().is_some_and(|m|m["model"] == profile["model"])
-            && !self.credential_ref.is_empty() && string(profile,"credential_ref") == self.credential_ref
+            && !self.credential_ref.is_empty() && string(profile,"credential_ref") == self.selected_credential(cx)
             && (string(profile,"reasoning_effort").is_empty() || self.runtime_efforts.iter().any(|e|e==string(profile,"reasoning_effort")))
             && !self.input(cx,ids!(workspace)).is_empty() && string(profile,"workspace_root") == self.input(cx,ids!(workspace));
-        let reason=if self.runtime_resources_loading {"Checking the saved model and connected Codex account…"} else if self.view.view(cx,ids!(runtime_section)).visible() && !self.runtime_resources_checked {"Model resources could not be verified. Refresh this Service page to retry."} else if !assigned_here {"Assign this Agent to this device in Agent and device."} else if !self.provider_authenticated {"Connect your account in Model & resources."} else if !model_ready || self.runtime_efforts.is_empty() {"Save a model in Model & resources. A private workspace is created automatically."} else {"Ready to start after you explicitly choose estimated accounting and a positive reservation."};
+        let reason=if self.runtime_resources_loading {"Checking the saved model and connected local account…"} else if self.view.view(cx,ids!(runtime_section)).visible() && !self.runtime_resources_checked {"Model resources could not be verified. Refresh this Service page to retry."} else if !assigned_here {"Assign this Agent to this device in Agent and device."} else if !self.provider_authenticated {"Connect your account in Model & resources."} else if !model_ready || self.runtime_efforts.is_empty() {"Save a model in Model & resources. A private workspace is created automatically."} else {"Ready to start after you explicitly choose estimated accounting and a positive reservation."};
         self.view.label(cx,ids!(start_requirements)).set_text(cx,crate::i18n::tr(reason));
         let start_ready=self.provider_authenticated && model_ready && !self.runtime_efforts.is_empty() && !self.runtime_resources_loading && self.runtime_resources_checked;
         self.view.button(cx,ids!(service_toggle)).set_enabled(cx, assigned_here && runtime_known && !self.busy && (self.runtime_room_active || start_ready));
@@ -1460,6 +1555,15 @@ impl HagencyPanel {
         let state = selected_binding.as_ref().map(|b| string(b, "state"));
         self.view.button(cx,ids!(open_binding_chat)).set_enabled(cx,selected_binding.as_ref().is_some_and(|b|string(b,"state")=="active" && !string(b,"roomId").is_empty()) && !self.busy);
         let project_binding = selected_binding.as_ref().is_some_and(|b| b["projectId"].as_str().is_some_and(|id| !id.is_empty()) && string(b,"scopeKind") != "owner_direct");
+        self.view.view(cx, ids!(reply_policy)).set_visible(cx, project_binding);
+        let auto_reply = selected_binding.as_ref().is_some_and(|b| b["threadAutoReply"] == true);
+        self.view.label(cx, ids!(reply_policy_status)).set_text(cx, crate::i18n::tr(if auto_reply {
+            "Mention the Agent to start a thread. Everyone in that thread can then follow up without mentioning it."
+        } else {
+            "Every message requires an @ mention, including follow-ups in a thread."
+        }));
+        self.view.button(cx, ids!(reply_policy_toggle)).set_text(cx, crate::i18n::tr(if auto_reply { "Require @ for every message" } else { "Enable automatic thread follow-ups" }));
+        self.view.button(cx, ids!(reply_policy_toggle)).set_enabled(cx, project_binding && matches!(state, Some("active" | "suspended")) && !self.busy);
         self.view.button(cx, ids!(room_roster_check)).set_visible(cx, project_binding);
         self.view.button(cx, ids!(room_roster_check)).set_enabled(cx, project_binding && !self.busy);
         if selected_binding.as_ref().is_some_and(|b| string(b,"scopeKind") == "owner_direct") {
@@ -1755,9 +1859,19 @@ impl HagencyPanel {
             .set_visible(cx, page == Page::Agents);
         self.view.redraw(cx);
     }
+    fn provider_runtime(&self, cx:&mut Cx)->&'static str {
+        match self.view.drop_down(cx,ids!(runtime_kind)).selected_item(){1=>"claude",2=>"octos",_=>"codex"}
+    }
+    fn selected_credential(&self, cx:&mut Cx)->String {
+        self.selected(cx,ids!(model),&self.provider_models).and_then(|m|m["credentialRef"].as_str().map(str::to_owned)).unwrap_or_else(||self.credential_ref.clone())
+    }
     fn run(&mut self, cx: &mut Cx, target: Target, command: Command) {
+        let command=match command {
+            Command::Provider {action} if self.provider_runtime(cx)!="codex"=>Command::RuntimeProvider {runtime:self.provider_runtime(cx).into(),action},
+            other=>other,
+        };
         let list_control = matches!(target,Target::ListService) && matches!(&command,Command::Local {agent_id,action:LocalAction::StartAgentService | LocalAction::StopAgentService,binding_id:None,requester:None,..} if self.agents.iter().any(|a|string(a,"id")==agent_id && agent_device_state(a,&self.current_device_id,&self.execution_devices,self.devices_loaded)==AgentDeviceState::Here));
-        if matches!(&command, Command::Local {..} | Command::Provider {..} | Command::PrepareAgentWorkspace {..}) && !self.local_agent(cx) && !list_control {
+        if matches!(&command, Command::Local {..} | Command::Provider {..} | Command::RuntimeProvider {..} | Command::PrepareAgentWorkspace {..}) && !self.local_agent(cx) && !list_control {
             self.status(cx, "This Agent is not handled on this device. Assign it here before configuring local resources.");return;
         }
         if self.busy || !self.active {
@@ -1811,7 +1925,9 @@ impl HagencyPanel {
     fn render_policy(&self, cx: &mut Cx) {
         if self.policy["modelLoaded"] == true {
             let profile = &self.policy["modelProfile"];
-            let selected=self.provider_models.iter().position(|m|string(m,"model") == string(profile,"model"));
+            let selected=self.provider_models.iter().position(|m|string(m,"model") == string(profile,"model") && (string(m,"credentialRef").is_empty() || string(m,"credentialRef") == string(profile,"credential_ref")));
+            let runtime=if string(profile,"credential_ref").starts_with("claude-managed:"){1}else if string(profile,"credential_ref").starts_with("octos-managed:"){2}else{0};
+            self.view.drop_down(cx,ids!(runtime_kind)).set_selected_item(cx,runtime);
             self.view.drop_down(cx,ids!(model)).set_selected_item(cx,selected.map_or(0,|i|i+1));
             self.view
                 .text_input(cx, ids!(workspace))
@@ -2064,7 +2180,7 @@ impl HagencyPanel {
                     self.runtime_resources_loading = false;
                     self.view.check_box(cx, ids!(assignment_confirm)).set_active(cx, false, Animate::No);
                     self.section(cx, ids!(setup_section));
-                    self.status(cx, "This Agent is now handled here. Configure Codex and local budgets before starting.");
+                    self.status(cx, "This Agent is now handled here. Configure a local runtime and budgets before starting.");
                 }
                 if !self.devices_loaded {self.run(cx, Target::Devices, Command::Devices);}
                 else {self.run(cx, Target::Bindings, Command::Bindings {agent_id: agent});}
@@ -2221,6 +2337,13 @@ impl HagencyPanel {
             }
             Target::ListService => {self.refresh_runtime_list(cx);}
             Target::ServiceRoomChanged => {self.local(cx,Target::Runtime,LocalAction::AgentServiceStatus,None);}
+            Target::ReplyPolicyChanged => {
+                let updated = &value["binding"];
+                if let Some(binding) = self.bindings.iter_mut().find(|b| string(b, "id") == string(updated, "id")) {
+                    *binding = updated.clone();
+                }
+                self.status(cx, "Room reply behavior saved.");
+            }
             Target::BindingChanged => {
                 self.policy = Value::Null;
                 if let Some(agent_id) = self.agent(cx) {
@@ -2228,6 +2351,7 @@ impl HagencyPanel {
                 }
             }
             Target::Bindings => {
+                self.clear_approval_state(cx);self.approvals.clear();
                 self.bindings = array(value, "bindings");
                 self.label_bindings(cx,ids!(bindings));
                 self.label_bindings(cx,ids!(policy_binding));
@@ -2283,7 +2407,7 @@ impl HagencyPanel {
             }
             Target::WorkspacePrepared => {
                 self.view.text_input(cx,ids!(workspace)).set_text(cx,string(value,"workspace"));
-                self.status(cx,"Private workspace is ready. Save the Codex profile to use it.");
+                self.status(cx,"Private workspace is ready. Save the model profile to use it.");
             }
             Target::ProviderModels => {
                 let runtime_check = self.runtime_resources_loading && self.view.view(cx,ids!(runtime_section)).visible();
@@ -2304,18 +2428,19 @@ impl HagencyPanel {
                 self.provider_authenticated = value["authenticated"] == true;
                 self.view.label(cx, ids!(credential)).set_text(cx, crate::i18n::tr(""));
                 let signed_in = value["authenticated"] == true;
-                let shared=value["shared"] == true && value["credentialSource"] == "local_codex";
+                let external=matches!(string(value,"runtime"),"claude"|"octos");
+                let shared=value["shared"] == true && (value["credentialSource"] == "local_codex" || external);
                 let signing_in = !shared && !signed_in && self.provider_url.is_some();
-                self.view.button(cx,ids!(use_local_provider)).set_visible(cx,!shared);
+                self.view.button(cx,ids!(use_local_provider)).set_visible(cx,!shared || (external && !signed_in));
                 self.view.button(cx,ids!(disconnect_provider)).set_visible(cx,shared);
-                self.view.button(cx,ids!(provider_login)).set_visible(cx,!shared && !signed_in && !signing_in);
+                self.view.button(cx,ids!(provider_login)).set_visible(cx,!external && !shared && !signed_in && !signing_in);
                 self.view.button(cx,ids!(provider_cancel)).set_visible(cx,signing_in);
                 self.view.button(cx,ids!(provider_logout)).set_visible(cx,signed_in && !shared);
                 self.view.button(cx,ids!(provider_open)).set_visible(cx,signing_in);
                 self.view.view(cx,ids!(provider_pending_actions)).set_visible(cx,signing_in);
                 self.view.label(cx, ids!(provider_status)).set_text(
                     cx,
-                    if shared && signed_in {crate::i18n::tr("Using your signed-in local Codex account on this device.")} else if shared {crate::i18n::tr("Local Codex is signed out. Sign in through Codex, then check the account.")} else if signed_in {crate::i18n::tr("Separate Codex account connected on this device.")} else if signing_in {crate::i18n::tr("Finish Codex sign-in in your browser, then check the account.")} else {crate::i18n::tr("Connect your own Codex account to run this Agent here.")},
+                    if external && signed_in {crate::i18n::tr("Local runtime connected. Credentials remain managed by its own app.")} else if external {crate::i18n::tr("Sign in or configure profiles in the local runtime, then connect it here.")} else if shared && signed_in {crate::i18n::tr("Using your signed-in local Codex account on this device.")} else if shared {crate::i18n::tr("Local Codex is signed out. Sign in through Codex, then check the account.")} else if signed_in {crate::i18n::tr("Separate Codex account connected on this device.")} else if signing_in {crate::i18n::tr("Finish Codex sign-in in your browser, then check the account.")} else {crate::i18n::tr("Connect your own local account to run this Agent here.")},
                 );
                 self.render_model_advanced(cx);
             }
@@ -2339,17 +2464,13 @@ impl HagencyPanel {
                 if value.to_string().contains("ledger_recovery_required") {
                     self.status(cx,"Restore the complete current-schema ledger of this exact Matrix owner, including spent costs and unresolved holds. No new model requests are allowed; known original replies may reconcile. Stop, restore, then start again.");
                 }
+                self.refresh_approvals(cx);
             }
-            Target::Approvals => {
-                self.approvals = array(value, "approvals");
-                self.labels(
-                    cx,
-                    ids!(approvals),
-                    "Select a pending approval",
-                    &self.approvals,
-                    "proposalId",
-                );
-                self.view.label(cx,ids!(approval_details)).set_text(cx,crate::i18n::tr(if self.approvals.is_empty() {"No pending approvals."} else {"Select a request to review its exact action."}));
+            Target::ApprovalDecision => {
+                self.view.label(cx,ids!(approval_feedback)).set_text(cx,crate::i18n::tr(if value["decided"]==true {
+                    "Decision submitted. Execution is not yet confirmed. Check the Room reply and runtime status."
+                } else {"Decision delivery is unconfirmed. Refresh status; do not resubmit this request."}));
+                self.refresh_approvals(cx);
             }
             Target::AgentCreated => {
                 cx.action(crate::home::project_tree::ProjectTreeChanged {identity:self.identity.clone()});
@@ -2634,6 +2755,14 @@ impl Widget for HagencyPanel {
             self.status(cx,"Account changed. Reopen management for this account; no old operations are adopted.");
             return;
         }
+        if self.approval_timer.is_event(event).is_some() {
+            if self.approval_started.is_some_and(|at|at.elapsed().as_secs()>=10) {
+                self.approval_checked=false;
+                self.view.label(cx,ids!(approval_count)).set_text(cx,crate::i18n::tr("Approvals could not be refreshed. Decisions are disabled until a fresh check succeeds."));
+            }
+            self.sync_navigation(cx);self.render_approval_details(cx);self.refresh_approvals(cx);
+            self.approval_timer=cx.start_timeout(3.0);
+        }
         if self.runtime_list_timer.is_event(event).is_some() {
             if self.view.view(cx,ids!(runtime_section)).visible() && self.local_agent(cx) {
                 if !self.busy {self.local(cx,Target::Runtime,LocalAction::AgentServiceStatus,None);} else {self.runtime_list_timer=cx.start_timeout(2.0);}
@@ -2657,6 +2786,17 @@ impl Widget for HagencyPanel {
             return;
         };
         for action in actions {
+            if let Some(done)=action.downcast_ref::<ApprovalsCompleted>()
+                && self.approval_poll==Some(done.request) {
+                let accepted=self.accepts_approval_poll(cx,done);
+                self.approval_poll=None;self.approval_started=None;
+                if !accepted {self.approval_checked=false;continue;}
+                match &done.result {
+                    Ok(value)=>self.apply_approvals(cx,value),
+                    Err(_)=> {self.approval_checked=false;self.sync_navigation(cx);self.view.label(cx,ids!(approval_count)).set_text(cx,crate::i18n::tr("Approvals could not be refreshed. Decisions are disabled until a fresh check succeeds."));}
+                }
+                cx.stop_timer(self.approval_timer);self.approval_timer=cx.start_timeout(3.0);
+            }
             if let Some(done)=action.downcast_ref::<RuntimeListCompleted>()
                 && self.active && self.identity==done.identity && self.runtime_list_request==done.request {
                 self.runtime_list_loading=false;
@@ -2685,6 +2825,10 @@ impl Widget for HagencyPanel {
                         }
                     }
                     Err(error) => {
+                        if matches!(done.target,Target::ApprovalDecision) {
+                            self.view.label(cx,ids!(approval_feedback)).set_text(cx,crate::i18n::tr("Decision delivery is unconfirmed. Refresh status; do not resubmit this request."));
+                            self.refresh_approvals(cx);
+                        }
                         if self.runtime_resources_loading && matches!(done.target, Target::Policy | Target::ProviderModels) {self.runtime_resources_loading=false;self.runtime_resources_checked=false;}
                         let reauthenticate = matches!(
                             error.as_str(),
@@ -3368,7 +3512,8 @@ impl Widget for HagencyPanel {
                     ),
                 );
             }
-            self.approvals.clear();
+            self.clear_approval_state(cx);
+        self.approvals.clear();
             self.labels(
                 cx,
                 ids!(approvals),
@@ -3431,6 +3576,17 @@ impl Widget for HagencyPanel {
                     );
                 } else if let Some(binding) = binding {
                     self.local(cx, Target::Policy, LocalAction::ResetPolicy, Some(json!({"bindingId":binding,"requester":requester,"layer":(["agent","room","requester"][index]),"expectedRevision":revision})));
+                }
+            }
+            return;
+        }
+        if self.view.button(cx, ids!(reply_policy_toggle)).clicked(actions) {
+            if let (Some(agent_id), Some(binding)) = (self.agent(cx), self.selected(cx, ids!(bindings), &self.bindings)) {
+                if string(&binding, "scopeKind") == "project" && matches!(string(&binding, "state"), "active" | "suspended") {
+                    self.run(cx, Target::ReplyPolicyChanged, Command::Binding {
+                        agent_id, binding_id: string(&binding, "id").into(),
+                        action: BindingAction::SetThreadAutoReply(binding["threadAutoReply"] != true),
+                    });
                 }
             }
             return;
@@ -3504,11 +3660,17 @@ impl Widget for HagencyPanel {
         if self.view.button(cx,ids!(advanced_toggle)).clicked(actions) {
             self.model_advanced=!self.model_advanced;self.render_model_advanced(cx);return;
         }
+        if self.view.drop_down(cx,ids!(runtime_kind)).selected(actions).is_some() {
+            if self.busy || self.runtime_room_active {return;}
+            self.provider_models.clear();self.runtime_efforts.clear();self.credential_ref.clear();self.provider_authenticated=false;self.runtime_resources_checked=false;
+            self.render_models(cx);
+            self.run(cx,Target::ProviderModels,Command::Provider {action:ProviderAction::Models});return;
+        }
         if self.view.drop_down(cx,ids!(model)).selected(actions).is_some() {self.render_efforts(cx);return;}
         if self.view.drop_down(cx,ids!(effort)).selected(actions).is_some() {self.render_effort_note(cx);return;}
         if self.view.button(cx, ids!(save_model)).clicked(actions) {
             if self.credential_ref.is_empty() {
-                self.status(cx, "Check your connected Codex account first.");
+                self.status(cx, "Check your connected local account first.");
                 return;
             }
             let Some(agent) = self.agent(cx) else {
@@ -3518,13 +3680,13 @@ impl Widget for HagencyPanel {
                 || self.policy["scope"] != "agent"
                 || self.policy["modelLoaded"] != true
             {
-                self.status(cx, "Load this Agent's Codex resources before saving.");
+                self.status(cx, "Load this Agent's local resources before saving.");
                 return;
             }
-            let Some(model)=self.selected(cx,ids!(model),&self.provider_models) else {self.status(cx,"Select a model from this device's Codex catalog.");return;};
-            if !self.provider_authenticated || self.credential_ref.is_empty() {self.status(cx,"Connect your Codex account first.");return;}
+            let Some(model)=self.selected(cx,ids!(model),&self.provider_models) else {self.status(cx,"Select a model or profile from this device's catalog.");return;};
+            if !self.provider_authenticated || self.credential_ref.is_empty() {self.status(cx,"Connect your Local account first.");return;}
             let Some(effort)=self.runtime_efforts.get(self.view.drop_down(cx,ids!(effort)).selected_item()).cloned() else {self.status(cx,"Select a supported reasoning effort.");return;};
-            let input = json!({"profile":{"model":model["model"],"credential_ref":self.credential_ref,"workspace_root":self.input(cx,ids!(workspace)),"reasoning_effort":effort}});
+            let input = json!({"profile":{"model":model["model"],"credential_ref":self.selected_credential(cx),"workspace_root":self.input(cx,ids!(workspace)),"reasoning_effort":effort}});
             self.local(cx, Target::Policy, LocalAction::SaveAgentModel, Some(input));
             return;
         }
@@ -3573,12 +3735,12 @@ impl Widget for HagencyPanel {
             }
             let selected_model=self.selected(cx,ids!(model),&self.provider_models);
             if selected_model.as_ref().is_none_or(|m|string(m,"model") != string(&self.policy["modelProfile"],"model")) || string(&self.policy["modelProfile"],"model").is_empty() {
-                self.runtime_feedback(cx,"Save the selected Codex model before starting this Room.");return;
+                self.runtime_feedback(cx,"Save the selected model or profile before starting this Room.");return;
             }
             let effort=self.runtime_efforts.get(self.view.drop_down(cx,ids!(effort)).selected_item()).cloned();
-            let Some(effort)=effort else {self.runtime_feedback(cx,"Load Codex resources and select a supported reasoning effort before starting.");return;};
+            let Some(effort)=effort else {self.runtime_feedback(cx,"Load local resources and select a supported reasoning effort before starting.");return;};
             let saved_effort=string(&self.policy["modelProfile"],"reasoning_effort");
-            if !saved_effort.is_empty() && saved_effort!=effort {self.runtime_feedback(cx,"Save the selected reasoning effort in Codex settings before starting.");return;}
+            if !saved_effort.is_empty() && saved_effort!=effort {self.runtime_feedback(cx,"Save the selected reasoning effort in model settings before starting.");return;}
             let input = json!({"mode":"estimated","estimatedOptIn":true,"reservation":reservation,"takeover":self.view.check_box(cx,ids!(takeover)).active(cx),"effort":effort});
             self.local(cx, Target::Runtime, LocalAction::StartAgentService, Some(input));
             return;
@@ -3588,7 +3750,7 @@ impl Widget for HagencyPanel {
             return;
         }
         if self.view.button(cx, ids!(approvals_check)).clicked(actions) {
-            self.local(cx, Target::Approvals, LocalAction::Approvals, None);
+            self.refresh_approvals(cx);
             return;
         }
         if self
@@ -3597,22 +3759,21 @@ impl Widget for HagencyPanel {
             .selected(actions)
             .is_some()
         {
-            if let Some(p) = self.selected(cx, ids!(approvals), &self.approvals) {
-                self.view.label(cx, ids!(approval_details)).set_text(
-                    cx,
-                    &serde_json::to_string_pretty(&p["proposal"]).unwrap_or_default(),
-                );
-            }
+            self.render_approval_details(cx);self.sync_navigation(cx);
             return;
         }
         if self.view.button(cx, ids!(approve)).clicked(actions)
             || self.view.button(cx, ids!(reject)).clicked(actions)
         {
             if let Some(p) = self.selected(cx, ids!(approvals), &self.approvals) {
+                if self.busy || !self.local_agent(cx) || !self.approval_checked || self.approval_blocked.contains(string(&p,"proposalId"))
+                    || !self.approval_scope(cx).is_some_and(|(a,b,r)|super::approvals::matches(&p,&a,&b,&r,super::approvals::now())) {return;}
                 let approved = self.view.button(cx, ids!(approve)).clicked(actions);
+                self.approval_blocked.insert(string(&p,"proposalId").into());
+                self.view.label(cx,ids!(approval_feedback)).set_text(cx,crate::i18n::tr("Submitting decision…"));
                 self.local(
                     cx,
-                    Target::Changed,
+                    Target::ApprovalDecision,
                     LocalAction::Decision {
                         approval_id: string(&p, "proposalId").into(),
                     },
@@ -3789,6 +3950,7 @@ impl HagencyPanelRef {
             panel.agents_loaded = false;
             panel.agents_loading = false;
             panel.bindings.clear();
+            panel.clear_approval_state(cx);panel.approval_blocked.clear();
             panel.approvals.clear();
             panel.policy = Value::Null;
             panel.creation = None;
@@ -3932,6 +4094,49 @@ impl HagencyPanelRef {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn approval_widget_filters_rooms_keeps_selection_and_disables_stale_decisions() {
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        let mut panel=cx.with_vm(|vm|{makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);vm.bx.captured_errors=Some(Vec::new());let v=script_eval!(vm,{mod.widgets.HagencyPanel {}});let p=HagencyPanel::script_from_value(vm,v);assert!(vm.take_errors().is_empty());p});
+        panel.agents=vec![json!({"id":"a","executionDeviceId":"device-here","state":"active","generation":1})];
+        local_device_fixture(&mut panel,"a");
+        panel.labels(&mut cx,ids!(agents),"Select my Agent",&panel.agents,"id");
+        panel.view.drop_down(&mut cx,ids!(agents)).set_selected_item(&mut cx,1);
+        panel.bindings=vec![json!({"id":"b1","roomId":"!one:s"}),json!({"id":"b2","roomId":"!two:s"})];
+        panel.labels(&mut cx,ids!(bindings),"Select a Room binding",&panel.bindings,"id");
+        panel.select_policy_room(&mut cx,1);
+        let agent=panel.agent(&mut cx).unwrap();
+        let row=|id:&str,b:&str,r:&str|json!({"proposalId":id,"argsDigest":"a".repeat(64),"proposal":{"scope":{"agent":agent,"binding":b,"room":r,"requester":"@owner:s"},"tool":"model.request","arguments":{"inputPreview":"Exact request"},"risk":"model_request","expires":crate::hagency::approvals::now()+300}});
+        let data=json!({"approvals":[row("one","b1","!one:s"),row("two","b2","!two:s"),row("wrong-room","b1","!two:s")]});
+        panel.apply_approvals(&mut cx,&data);
+        assert_eq!(panel.approvals.len(),1);assert_eq!(panel.approvals[0]["proposalId"],"one");
+        panel.view.drop_down(&mut cx,ids!(approvals)).set_selected_item(&mut cx,1);
+        panel.apply_approvals(&mut cx,&data);
+        assert_eq!(panel.view.drop_down(&mut cx,ids!(approvals)).selected_item(),1);
+        panel.sync_navigation(&mut cx);assert!(panel.view.button(&mut cx,ids!(approve)).borrow().unwrap().enabled());
+        panel.approval_blocked.insert("one".into());panel.sync_navigation(&mut cx);
+        assert!(!panel.view.button(&mut cx,ids!(approve)).borrow().unwrap().enabled());
+        panel.approval_blocked.clear();panel.approval_checked=false;panel.sync_navigation(&mut cx);
+        assert!(!panel.view.button(&mut cx,ids!(approve)).borrow().unwrap().enabled());
+        panel.approval_checked=true;panel.approvals[0]["proposal"]["expires"]=json!(0);panel.sync_navigation(&mut cx);
+        assert!(!panel.view.button(&mut cx,ids!(approve)).borrow().unwrap().enabled());
+        panel.active=true;panel.page=Page::Agents;
+        panel.view.view(&mut cx,ids!(agent_detail)).set_visible(&mut cx,true);
+        panel.view.view(&mut cx,ids!(runtime_section)).set_visible(&mut cx,true);
+        panel.identity="owner-session".into();panel.approval_poll=Some(12);
+        let mut late=ApprovalsCompleted {identity:panel.identity.clone(),request:12,agent:agent.clone(),binding:"b1".into(),room:"!one:s".into(),result:Ok(data.clone())};
+        assert!(panel.accepts_approval_poll(&mut cx,&late));
+        panel.page=Page::Projects;assert!(!panel.accepts_approval_poll(&mut cx,&late));panel.page=Page::Agents;
+        late.identity="old-session".into();assert!(!panel.accepts_approval_poll(&mut cx,&late));late.identity=panel.identity.clone();
+        panel.select_policy_room(&mut cx,2);assert!(panel.approval_poll.is_none());assert!(panel.approvals.is_empty());assert!(!panel.accepts_approval_poll(&mut cx,&late));
+        panel.apply_approvals(&mut cx,&data);assert_eq!(panel.approvals.len(),1);assert_eq!(panel.approvals[0]["proposalId"],"two");
+        panel.active=false;
+        panel.apply(&mut cx,Target::ApprovalDecision,&json!({"decided":true}));
+        assert_eq!(panel.view.label(&mut cx,ids!(approval_feedback)).text(),crate::i18n::tr("Decision submitted. Execution is not yet confirmed. Check the Room reply and runtime status."));
+        panel.apply(&mut cx,Target::ApprovalDecision,&Value::Null);
+        assert_eq!(panel.view.label(&mut cx,ids!(approval_feedback)).text(),crate::i18n::tr("Decision delivery is unconfirmed. Refresh status; do not resubmit this request."));
+    }
+
     use super::*;
     fn local_device_fixture(panel: &mut HagencyPanel, agent: &str) {
         panel.execution_agent_record = json!({"id":agent,"executionDeviceId":"device-here","generation":1});
@@ -4506,6 +4711,33 @@ mod tests {
         assert!(panel.view.button(&mut cx,ids!(room_roster_check)).visible());
 
     }
+    #[test]
+    fn room_reply_policy_defaults_to_mentions_and_tracks_only_selected_binding() {
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        let mut panel=cx.with_vm(|vm|{makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);let value=script_eval!(vm,{mod.widgets.HagencyPanel {}});HagencyPanel::script_from_value(vm,value)});
+        panel.bindings = vec![
+            json!({"id":"direct","scopeKind":"owner_direct","state":"active"}),
+            json!({"id":"room-a","scopeKind":"project","projectId":"project","state":"active","threadAutoReply":false}),
+            json!({"id":"room-b","scopeKind":"project","projectId":"project","state":"active","threadAutoReply":true})];
+        panel.labels(&mut cx,ids!(bindings),"Select",&panel.bindings,"id");
+        panel.view.drop_down(&mut cx,ids!(bindings)).set_selected_item(&mut cx,1);
+        panel.sync_navigation(&mut cx);
+        assert!(!panel.view.view(&mut cx,ids!(reply_policy)).visible());
+        panel.view.drop_down(&mut cx,ids!(bindings)).set_selected_item(&mut cx,2);
+        panel.sync_navigation(&mut cx);
+        assert!(panel.view.view(&mut cx,ids!(reply_policy)).visible());
+        assert!(panel.view.label(&mut cx,ids!(reply_policy_status)).text().contains("Every message"));
+        panel.apply(&mut cx,Target::ReplyPolicyChanged,&json!({"binding":{"id":"room-a","scopeKind":"project","projectId":"project","state":"active","threadAutoReply":true}}));
+        panel.sync_navigation(&mut cx);
+        assert_eq!(panel.view.drop_down(&mut cx,ids!(bindings)).selected_item(),2);
+        assert!(panel.view.label(&mut cx,ids!(reply_policy_status)).text().contains("Everyone"));
+        panel.apply(&mut cx,Target::ReplyPolicyChanged,&json!({"binding":{"id":"room-b","scopeKind":"project","projectId":"project","state":"active","threadAutoReply":false}}));
+        panel.sync_navigation(&mut cx);
+        assert!(panel.view.label(&mut cx,ids!(reply_policy_status)).text().contains("Everyone"),"another Room response cannot change this Room's behavior");
+        panel.busy=true;panel.sync_navigation(&mut cx);
+        assert!(!panel.view.button(&mut cx,ids!(reply_policy_toggle)).borrow().unwrap().enabled());
+    }
+
     #[test]
     fn direct_chat_setup_keeps_created_identity_and_only_opens_confirmed_same_agent_chat() {
         let mut cx=Cx::new(Box::new(|_,_|{}));

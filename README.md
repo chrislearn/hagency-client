@@ -111,3 +111,5 @@ Distributed under [Apache-2.0](LICENSE). Inherited Robrix code retains its
 [third-party notices](licenses/THIRD-PARTY-NOTICES.html).
 
 See [development, isolated profiles and native acceptance](docs/local-development.md).
+
+[GitHub CI and releases](docs/github-ci.md)

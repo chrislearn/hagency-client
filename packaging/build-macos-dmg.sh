@@ -40,7 +40,7 @@
 #   APPLE_TEAM_ID   Apple Developer Team ID
 #
 # The Developer ID signing certificate name is read from
-# package.metadata.packager.macos.signing_identity in Cargo.toml.
+# APPLE_SIGNING_IDENTITY or package.metadata.packager.macos.signing_identity in Cargo.toml.
 #
 # Usage:
 #   APPLE_ID=… APPLE_PASSWORD=… APPLE_TEAM_ID=… ./packaging/build-macos-dmg.sh
@@ -76,9 +76,9 @@ fi
 
 # Read signing_identity from Cargo.toml. Use [[:space:]] -- BSD sed on macOS
 # does not understand \s.
-SIGNING_IDENTITY=$(sed -n 's/^signing_identity[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$CARGO_TOML")
+SIGNING_IDENTITY=${APPLE_SIGNING_IDENTITY:-$(sed -n 's/^signing_identity[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$CARGO_TOML")}
 if [[ -z "$SIGNING_IDENTITY" ]]; then
-    echo "Error: signing_identity not found in Cargo.toml -- required for notarization." >&2
+    echo "Error: set APPLE_SIGNING_IDENTITY or signing_identity in Cargo.toml for notarization." >&2
     exit 1
 fi
 
@@ -142,16 +142,18 @@ codesign_with_retry() {
 
 # --- Step 1: Clean prior build artifacts in dist/ -----------------------------
 
+PRODUCT_NAME=$(sed -n 's/^product_name[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$CARGO_TOML")
+test -n "$PRODUCT_NAME"
 PRODUCT_VERSION=$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$CARGO_TOML" | head -1)
 case "$(uname -m)" in
     arm64)  PACKAGER_ARCH=aarch64 ;;
     x86_64) PACKAGER_ARCH=x86_64 ;;
     *)      PACKAGER_ARCH=$(uname -m) ;;
 esac
-CANONICAL_DMG="$PROJECT_DIR/dist/Rinx_${PRODUCT_VERSION}_${PACKAGER_ARCH}.dmg"
+CANONICAL_DMG="$PROJECT_DIR/dist/${PRODUCT_NAME}_${PRODUCT_VERSION}_${PACKAGER_ARCH}.dmg"
 
 echo "==> Cleaning prior build artifacts in dist/..."
-rm -rf "$PROJECT_DIR/dist/Rinx.app" \
+rm -rf "$PROJECT_DIR/dist/$PRODUCT_NAME.app" \
        "$PROJECT_DIR/dist/.cargo-packager" \
        "$CANONICAL_DMG"
 
@@ -179,7 +181,7 @@ TS_MARKER=$(mktemp)
 echo "==> Running cargo packager (unsigned: we sign + notarize ourselves with retries)..."
 env -u APPLE_ID -u APPLE_PASSWORD -u APPLE_TEAM_ID cargo packager --release
 
-APP_PATH="$PROJECT_DIR/dist/Rinx.app"
+APP_PATH="$PROJECT_DIR/dist/$PRODUCT_NAME.app"
 DMG_FILE=$(find "$PROJECT_DIR/dist" -maxdepth 1 -name '*.dmg' -newer "$TS_MARKER" -print -quit)
 rm -f "$TS_MARKER"
 
@@ -205,7 +207,7 @@ codesign --verify --verbose=2 "$APP_PATH"
 # --- Step 4: Apply Applications-folder icon fix to DMG ------------------------
 
 echo "==> Applying Applications folder icon fix to DMG..."
-"$SCRIPT_DIR/fix-dmg-applications-icon.sh" "$DMG_FILE" "$BG_IMAGE"
+"$SCRIPT_DIR/fix-dmg-applications-icon.sh" "$DMG_FILE" "$BG_IMAGE" "$PRODUCT_NAME.app"
 
 # --- Step 5: Embed signed .app into DMG ---------------------------------------
 #
@@ -237,12 +239,12 @@ cleanup_rw() {
 }
 trap 'cleanup_rw; mv "$CARGO_TOML.bak" "$CARGO_TOML" 2>/dev/null && echo "Restored Cargo.toml"' EXIT
 
-if [[ ! -d "$MOUNT_DIR/Rinx.app" ]]; then
-    echo "Error: Rinx.app not found inside mounted DMG at $MOUNT_DIR" >&2
+if [[ ! -d "$MOUNT_DIR/$PRODUCT_NAME.app" ]]; then
+    echo "Error: $PRODUCT_NAME.app not found inside mounted DMG at $MOUNT_DIR" >&2
     exit 1
 fi
-rm -rf "$MOUNT_DIR/Rinx.app"
-ditto "$APP_PATH" "$MOUNT_DIR/Rinx.app"
+rm -rf "$MOUNT_DIR/$PRODUCT_NAME.app"
+ditto "$APP_PATH" "$MOUNT_DIR/$PRODUCT_NAME.app"
 
 sync
 sleep 2
