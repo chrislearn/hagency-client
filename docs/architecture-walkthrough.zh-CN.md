@@ -1,5 +1,8 @@
 [English](architecture-walkthrough.md) | [中文](architecture-walkthrough.zh-CN.md)
 
+> 历史文档：下文记录已移除的 Fleet/Engagement 架构，不作为当前部署、登录或加密 Agent 支持说明。
+> 当前操作见[owner client README](../README.zh-CN.md)、[本地开发](local-development.zh-CN.md)与[Desktop 使用指南](../../hagency-desktop/docs/hagency-quickstart.zh-CN.md)。
+
 # 代码导读：从 Palpo 申请到 agent 回复
 
 本导读面向要修改 `native/` 下原生 Rust 服务的开发者。它沿着[使用指南](user-guide/README.zh-CN.md)背后的代码路径走一遍：

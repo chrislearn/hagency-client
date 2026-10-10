@@ -5,6 +5,8 @@ use std::io;
 
 mod session;
 pub use session::OwnedSession;
+mod octos;
+pub use octos::OwnedOctosSession;
 mod claude;
 pub use claude::OwnedClaudeSession;
 

@@ -1,48 +1,28 @@
 [English](server-login.md) | [中文](server-login.zh-CN.md)
 
-# Pasion 登录与 Fleet 自动接入
+# 个人服务器登录
 
-使用本地 `hagency-client` 项目，编译后的命令仍叫 `hagency`。通过
-`hagency start` 启动；源码构建使用独立前端资源时，可以运行
-`hagency serve --state-dir <state> --palpo-transport --console-assets <assets>`。
-首次绑定使用 `hagency console-access` 生成的本地访问链接，状态目录和监听
-地址要与运行中的客户端一致。
+按[开发指南](local-development.zh-CN.md)构建运行当前 owner client。`hagency start`
+打开本机控制台；`hagency open --state-dir <同一状态目录>` 通过运行中 host 的私人
+IPC 获取访问链接。本机控制台访问与 server 认证是两个步骤。
 
-在设置页面或项目方页面填写 Hagency Server 地址、Fleet 名称，点击
-**登录并连接**，在服务器的 Pasion 页面登录。Rust 后端通过 PKCE 换取 token，
-验证账号、创建自己的 Fleet、保存返回的配置并启动 outbound 连接。
-连接验证会自动重试，初次尝试后持续约三分钟；超时会显示失败。
-仅接入 Fleet 不会执行编程 agent，编程运行时和资源提供需要单独设置。
+选择保存的账号/服务器或输入 Hagency server origin。本机开发使用
+`http://127.0.0.1:8088`，远程或命名域名需要可信 HTTPS。不追加 `/login`、
+`/_pasion/` 或 API 路径。在官方 Pasion 浏览器流程中使用自己的个人账号授权。
 
-服务器需要启用 Pasion 委托认证，在服务器自己的 `hagency.toml` 中配置：
+Pasion PKCE 与实际 Matrix whoami 验证身份。原生管理使用 `/api/hagency/v1`，
+server 浏览器管理使用封闭 `/api/browser/hagency/v1` BFF；原生 API 拒绝浏览器
+Cookie/Origin。集成 Appservice 由 server 持有，不需要逐安装 Fleet、AS 注册、
+machine-token 导入或 `[fleet_access]` 配置。
 
-```toml
-[fleet_access]
-allow_self_service = true
-max_per_user = 3
-```
+登录后创建/采纳 Project Space 与有权限的讨论 Room，再创建或选择 Agent。
+永久主人身份、独立 Room 成员关系及创建策略由 server 检查；模型凭据、预算与
+工具由本机主人控制。登录不执行推理，资源配置后显式启动活动范围。
 
-自助接入默认关闭。未开放时，有效账号仍能登录本地，但不会创建 Fleet。
-App Service 的注册权限由服务器持有，用户只取得自己 Fleet 的凭据。
-本地状态目录保存一个安装 ID，重复登录会复用同一个 Fleet；每个 Fleet
-对应自己的 App Service。客户端通过 outbound 连接，无需公网 IP 或供服务器
-回调的域名，OAuth 的浏览器回调使用回环 IP。远端服务器必须使用 HTTPS；
-本地开发只允许回环 IP 的 HTTP 地址。
+保存的 profile 与近期服务器地址支持切换账号。切换停止前一主人的运行并要求新鲜
+个人授权；账号状态、工作目录与账本继续隔离。模型登录与 Pasion 登录独立，不向
+server 导出模型凭据。
 
-首次绑定需要已有的本地操作员访问权限，随后服务器地址、Pasion subject 和
-Matrix 账号固定在私有文件 `server-login.json` 中，其他账号不能取得本机控制权。
-Pasion token 仅保存在 Rust 进程内存中，不进入浏览器存储或绑定文件。本地
-后端通过已绑定服务器验证 token，服务器再使用私有服务凭据查询 Pasion。
-验证结果最多缓存 30 秒，过期、撤销或无法验证的 token 会被拒绝。本地会话
-最长 15 分钟，重启后需要重新登录；`console-access` 保留为本地恢复通道。
-
-`palpo-transport.json`、`palpo.machine_token` 和 `palpo-appservice.json` 仍是
-私有运行配置。机器凭据与人的登录分开，因此浏览器退出登录不会停止已经
-配置好的 Fleet。管理员提供的旧配置仍能通过 **导入已有配置（可选）** 导入。
-已配置其他 Fleet 的本地安装会拒绝自动切换；继续使用现有配置，或为新的
-自动接入初始化独立状态目录。
-
-服务器原生 API：`GET /_hagency/client/v1/discovery`、`GET .../identity`、
-`POST .../fleets` 和 `POST .../fleets/{id}/connect`。认证请求使用 Pasion
-Bearer token，不携带浏览器 Cookie 或 Origin。创建接口只接受 `installationId`
-和 `name`，所有者由服务器验证后的身份确定。
+失败时先检查[server 发现/TLS/就绪](../../hagency-server/docs/LOCAL_DEPLOYMENT.zh-CN.md)
+再重试登录。创建结果与执行结果未知时保留原请求并显式恢复，不制造重复。
+旧 Fleet 登录记录不是当前 owner 格式的配置指南。

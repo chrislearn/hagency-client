@@ -13373,3 +13373,245 @@ Live, working-tree binary: kill -9 mid-round, restart ready in two seconds, both
   1 ignored (legacy `link` references in existing TSP widgets); it is not a
   passing qualification claim. OAuth mismatch and callback-cancellation tests
   both pass after fixture corrections, with the original SDK validation.
+
+## 2026-10-09: Desktop Contacts shortcut cleanup
+
+- Removed the Group Chats shortcut, its divider, and its click handler from hagency-desktop/src/home/mobile.rs at the operator's request.
+- Verified in /Volumes/Data/Works/chrislearn/hagency-desktop: git diff --check and cargo check --locked -p rinx passed (existing warnings only). No live UI verification performed.
+- The provisioned task-writer is absent in this source checkout; no canonical task-state update is claimed.
+
+## 2026-10-09: Desktop Agent startup feedback
+
+- Reproduced the inconsistent status logic in desktop src/hagency/ui.rs: detail claimed running from enabled intent plus any runtime, while list omitted checking_provider and hid service/worker errors. Current live testagent subsequently showed Running; no persistent startup failure was established.
+- Unified list/detail/direct-chat descriptions, exposed safe static service/worker error codes and retry timing, showed Starting/Stopping while requests are pending, retained failed-action and validation feedback across status polling, and polled startup every two seconds. Added English/Chinese strings.
+- Desktop management UI tests passed 36/36, including two new readiness/error regressions; locked check/build and diff check passed. Updated desktop rebuilt and launched. No new model request was sent.
+- Additional verification: direct-chat runtime notice tests passed 2/2. Live updated Desktop shows the same confirmed Running description in Service; original private chat already contains a testagent reply to the user's hello. A stop/start check reproduces missing estimated-accounting consent and now shows that exact explanation inside Service. After restoring the original 10000-token/low configuration, one click visibly shows Starting… plus discovery progress; no new chat/model request was sent.
+
+## 2026-10-09: Desktop tab loading placement
+
+- Moved generic Loading… to the management header, to the right of the title; it no longer reserves an extra status row above the tabs. Existing error/action messages retain their current presentation. Updated the existing layout regression to assert no vertical movement while loading.
+- Verification: existing header/loading layout test passed 1/1, git diff --check and locked binary build passed; refreshed Desktop launched with the change.
+- Operator follow-up: replaced header Loading… text with the existing animated Makepad LoadingSpinner (18px, muted stroke). Loading visibility still shares the same request lifecycle and reserves no additional status row. Existing layout regression passed.
+
+## 2026-10-09: Desktop Add agent modal
+
+- Moved the Members Add agent picker in sibling hagency-desktop/src/home/mobile_chat_info.rs from the inline panel into a centered Modal using the same SmallModal, ModalTitle and ModalButtonsRow as Invite people. Added room context, Cancel and positive Add agent buttons; retained existing lookup, original binding request keys and response isolation. Modal input takes priority over the members panel; tab changes, stale session state, Escape and Cancel close it.
+- Verification in /Volumes/Data/Works/chrislearn/hagency-desktop: information_target_tests passed 8/8, including the updated overlay/list geometry regression; locked binary build and git diff --check passed. Existing compiler/linker warnings remain. Rebuilt development app launched; actual Team discussion window confirms centered overlay, populated Agent dropdown, Escape dismissal, reopen and Cancel dismissal with unchanged members geometry. No binding was submitted.
+- No task-writer is provisioned in this source checkout; no canonical task-state update is claimed.
+
+## 2026-10-09: Desktop Service notice button
+
+- Updated hagency-desktop/src/home/agent_runtime_notice.rs from Open Agent Run to Open Service with matching English/Chinese resources. Service is the existing settings tab name.
+- Corrected the fixed-height button's inherited 10px vertical padding: now 32px high with zero vertical padding and 12px horizontal padding; vertically centered the notice row and increased its spacing. Preserved the existing AgentRun navigation action and prior readiness changes.
+- Verification in the edited Desktop source: locked binary build, translation JSON parsing and git diff --check pass. Native visual verification remains incomplete: the development app bundle stalled in resource File::open (sample retained in Desktop .run); duplicate instances were removed. Direct unbundled execution successfully loaded resources and was left running, but the computer-use app inventory does not expose that executable for final screenshot/click verification. No messages were sent or service policy changed.
+- task-writer remains absent; no canonical task-state update is claimed.
+
+## 2026-10-09: Desktop sidebar header cleanup
+
+- Removed the duplicated Room title, member count and history shortcuts from both desktop inline and compact information sidebars. Overview/Members tabs now occupy the top of the sidebar. Shared mobile information keeps its existing summary.
+- Moved search and shared-attachment shortcuts to the desktop chat header, immediately left of the right-sidebar toggle; both open the original current-Room history flow with Messages/Media filters and work with the sidebar closed.
+- Verification from the Desktop source: desktop_information_columns_tests 5/5 (including button order, exact current-Room actions and sidebar toggles), mobile information_target_tests 8/8, locked binary build and git diff --check pass. An initial DSL test failure exposed a missing summary ancestor in the nested override; corrected before final tests. Native screenshot verification remains unavailable for the directly launched executable.
+- No provisioned task-writer in this source checkout; no canonical task-state update claimed.
+
+## 2026-10-09: Desktop header tooltip placement
+
+- Root cause of the operator's clipped search/attachment screenshots: NavigationBarButton emits Right-positioned tooltips on desktop; Makepad narrows them to the remaining width at the window edge.
+- Added opt-in tooltip_below and enabled it on desktop thread-back/search/attachment buttons and RinxRoomInfoToggleButton. Bottom placement uses existing horizontal centering/edge clamping and full text measurement.
+- Desktop information-column regression suite 5/5, locked binary build and git diff --check pass. Native hovered-tooltip screenshot verification remains unavailable for the unbundled executable; no visual pass is claimed.
+- task-writer remains absent; no canonical task-state update claimed.
+
+## 2026-10-09: Back controls and Room Overview audit
+
+- Added shared RinxBackButton (Back, left arrow, 40px, zero vertical padding) and reused it for Hagency detail/list navigation, external integrations, space management, mini-app history and optional approval/ops panels. Room notification and service subpages use it too.
+- Audited Room Overview: Agent Access opened global external bots/AppServices settings, unrelated to the current Room's Hagency Agent permissions. Removed that misleading entry from Overview; its existing app-settings entry remains. Room details, notifications, Room Agent services and feature-gated legacy approvals keep their existing scope.
+- Room Agent services now opens a dedicated subpage with Back, exact bound-owner Agent selection/status and Open Service. Added English/Chinese explanation that Agent service settings apply across its connected Rooms. Tab switches close the subpage; backend-unavailable failures clear stale selection and show a retry message. No Agent permissions or runtime intent changed.
+- Initial subpage test exposed PortalList's ineffective set_visible; wrapped it in a View and fixed visibility at the parent. Final source verification: information_target_tests 8/8, Hagency UI tests 36/36, desktop columns 5/5, locked binary build, translation JSON parsing and git diff --check pass. No native visual verification claimed.
+- task-writer is absent in this source checkout; no canonical task-state update claimed.
+
+## 2026-10-09: Members grouped by Agent owner
+
+- Added asynchronous read-only ownership enrichment to Desktop's shared Room member component. Authenticated own-Agent roster handles private/non-project Rooms; registered RoomRoster supplies other visible Agents' exact puppetMxid/ownerMxid. Matrix JOIN profiles remain the displayed membership truth and load independently.
+- Sort human/independent members by display name + exact ID; place each confirmed Agent immediately after its present human owner, indented 20px. Absent owners, unknown/external bots and Hagency service remain separate. Conflicting mappings, self-links and Agent ownership chains/cycles do not generate false groups. All members retain profile-click targets.
+- Reduced member avatars from 40px to 32px and row height from 62px to 56px. Show a small Members-only notice on actual failed/incomplete ownership discovery; responses are fenced by account, origin, epoch, Room and request. No model requests, invites or permissions changed.
+- Final source checks: information_target_tests 11/11 (new ordering/conflict/stale-response tests and actual 32px avatar/20px indentation draw assertions), desktop columns 5/5, locked binary build, JSON parsing and git diff --check pass. An initial test caught an unavailable Inset name during script_apply_eval; direct row layout mutation fixes it. Native live screenshot verification remains unavailable; no visual pass claimed.
+- task-writer remains absent; no canonical task-state update claimed.
+
+## 2026-10-09: Member name/Matrix ID spacing
+
+- Root cause: both name and Matrix ID inherited Makepad Label's theme.mspace_1 padding, adding excessive separation inside each member row. Explicitly set both labels to height:Fit/padding:0; text-column spacing is now 2px with zero padding. Preserve 56px member rows, 32px avatars and existing owner grouping/indentation.
+- Extended the existing actual member-draw regression to measure a 2px gap for both owner and Agent rows. Focused test 1/1, locked binary build and git diff --check pass. Native live screenshot verification not claimed.
+- task-writer remains absent; no canonical task-state update claimed.
+
+- Operator follow-up in the same spacing task: reduce avatar-to-text gap too. Member row spacing is now 8px. Final actual-draw regression checks both 8px horizontal and 2px vertical gaps on owner/Agent rows, while preserving 32px avatars and 20px indentation. Focused test 1/1, locked binary build and git diff --check pass; refreshed unbundled Desktop launched.
+
+## 2026-10-09: Owner/Agent vertical grouping spacing
+
+- Operator requested a slightly tighter gap between an owner and their Agents. Indented Agent rows now use height 48px and vertical align 0.25; ordinary members retain height 56px and align 0.5. Recycled rows reset both properties along with indentation. Avatar size and name/ID spacing remain as previously configured.
+- Existing actual-draw regression verifies owner-to-Agent avatar distance 48px (8px tighter) and Agent-to-next-owner distance 56px (unchanged). Focused test 1/1, locked binary build and git diff --check pass. No native screenshot pass claimed.
+- task-writer remains absent; no canonical task-state update claimed.
+
+## 2026-10-09: Compact desktop profile actions
+
+- Changed the four profile actions to two equal-width buttons per row, with shared 36px height, 16px icons and 8px horizontal row gap. Shortened Copy Link to User / Jump to Read Receipt to Copy Link / Read Receipt, including Chinese translations; other-user messaging uses Messages and own-account File Transfer is preserved. Existing action IDs and handlers remain intact.
+- Existing desktop_information_columns_tests 5/5, locked binary build, JSON parsing and git diff --check pass. Native screenshot verification not claimed.
+- task-writer remains absent; no canonical task-state update claimed.
+
+## 2026-10-09: Profile action alignment and member name size
+
+- Left-aligned icon/text content in all four compact profile actions with Align{x:0,y:0.5}. Reduced sidebar member names from 12 to 11 times the configured text scale; Matrix IDs remain 9.
+- Existing information_target_tests 11/11 and git diff --check pass. Native screenshot verification not claimed.
+- Locked Desktop binary build passed; refreshed unbundled Desktop. task-writer remains absent; no canonical task-state update claimed.
+
+## 2026-10-09: Desktop checkout cleanup and Server main sync
+
+- Desktop remains clean on main (b2e237f0). Deleted merged local main-old and pruned stale worktree metadata. Preserved Rinx checkout on feat/homeserver-history: it contains modified .gitignore and untracked/ignored .octos data, holds the shared .git directory, and has a VS Code process file handle; it is not established as disposable.
+- Server clean dev (5358614a6db1bc9dfef59f00886a571a65e774e4) pushed to origin/main using explicit force-with-lease against fetched origin/main. Reset local main ref to dev, switched to main, and set tracking to origin/main. Local HEAD/main/origin-main/dev hashes match; remote main verified by ls-remote.
+
+## 2026-10-10: Personal Agent owner presence and room departure
+
+- Generated the Server task report before implementation; reviewed owner authorization, actual JOIN, joining/paused scopes, kick/rebind, queued/running work, private direct Rooms, generation races and network failures.
+- Implemented durable membership-loss departure in the current Server product. Background reconciliation now checks suspended bindings, final activation rejects/retires post-JOIN absence, and cleanup rechecks generation after Matrix observation. Owner-only direct Rooms support explicit re-adoption after confirmed left.
+- Updated regressions for explicit rebind after loss while preserving ordinary pause/resume. Added PostgreSQL pre/final-join ownership and real cleanup-worker/local HTTP leave-failure-retry tests; queue cancellation and running unknown remain distinct. Earlier old-contract test failures and a fixture compile error were corrected before final full validation.
+- Final verification from `/Volumes/Data/Works/chrislearn/hagency-server`: Agent service 57/57 with 0 ignored; strict all-target Clippy and git diff --check pass. Temporary database removed. Report contains boundaries and review results. No deployment or live Matrix/provider qualification claimed; no task-writer is provisioned in this source checkout.
+
+## 2026-10-10: Desktop Project disclosure and detail navigation
+
+- Changed the Desktop source at `/Volumes/Data/Works/chrislearn/hagency-desktop/src/home/project_tree.rs`: the chevron is now an independent sibling NavigationBarButton with a 24 × 36 hit area. It only toggles expansion; Project body clicks only open ProjectDetails and preserve both expanded and collapsed states. Room navigation and the existing menu routing remain intact.
+- Verification from the edited Desktop checkout: `cargo test --locked -p rinx home::project_tree::tests --lib -- --test-threads=1` passed 11/11, including grouped widget-action regression coverage for both click targets in both expansion states and the sibling widget structure. `cargo build --locked -p rinx --bin rinx` and `git diff --check` passed. Native visual/pointer verification was not performed. Existing dead-code and linker warnings remain.
+- No provisioned task-writer exists in these source checkouts; no canonical task-state update claimed.
+
+## 2026-10-10: Local test environment and Desktop launch
+
+- Reused the existing healthy local HTTPS test container stack and Caddy; host IPv6 `https://hagency.local/_matrix/client/versions` and OIDC discovery return 200. Started the rebuilt Desktop using `packaging/run-macos.sh target/debug/rinx`, launcher PID87559 and app PID87734, with the existing default account profile. Log: `/Volumes/Data/Works/chrislearn/hagency-desktop/.run/desktop-project-disclosure-20261010.log`.
+- Login restoration failed: Matrix auth_metadata returns400 because the server container cannot fetch the HTTPS OIDC issuer. Host IPv4 and container requests fail with TLS internal alerts; host IPv6 succeeds. Another local project's Caddy configuration binds IPv4 loopback443 and serves other hostnames. Its admin is disabled and passwordless sudo is unavailable. Did not stop or modify the unrelated project's service. Desktop remains open at login; logged-in readiness is not claimed.
+
+## 2026-10-10: Local test OIDC route recovered
+
+- Confirmed host IPv4 and Docker host-gateway443 TLS failure while IPv6 worked. Added the current Mac address `192.168.1.21` to the Hagency-only Caddy bind and mapped the test compose server's `hagency.local` to it. Kept the existing `room-pause-notice-20261008` image overlay and database volumes. Did not modify or stop unrelated Caddy instances. Original local configurations were backed up.
+- Container OIDC discovery200, Matrix auth_metadata200 and healthy container status pass. Restarted the owned Desktop instance: app PID93392, launcher93304; existing Alice profile resumes Matrix sync and loads joined rooms, saved room timeline and five members. Log: `/Volumes/Data/Works/chrislearn/hagency-desktop/.run/desktop-project-disclosure-fixed-env-20261010.log`. Some account-data404 logs remain; they did not block startup.
+- This route depends on the Mac's current network address. Recovery/start instructions: `/Volumes/Data/Works/chrislearn/hagency-server/.run/hagency-local-https-20261007/container-route-20261010.md`.
+
+## 2026-10-10: Login server dropdown layout and duplicate address
+
+- Updated Desktop source `/Volumes/Data/Works/chrislearn/hagency-desktop/src/login/login_screen.rs`: local BelowInput menu, 292px width matching the normal card content, and zero inherited settings margin. Shared settings dropdown remains unchanged.
+- Saved-server choice now hides the manual address row; Other server… reveals/clears manual entry. Continue reads the selected saved origin directly. Explicit CLI/reauthentication origin clears stale selection. Added English/Chinese option text.
+- Verification from the edited Desktop checkout: login browser_login_tests 3/3, including existing reapply/reopen regression extended with hidden/manual switching and exact 292 × 38 control geometry; locked binary build, translation JSON parsing and git diff --check pass. Existing compiler/linker warnings remain. No native screenshot verification or app restart claimed. Preserved the pre-existing project_tree.rs changes.
+- No task-writer is provisioned in this source checkout; no canonical task-state update claimed.
+
+## 2026-10-10: Project folder expand/collapse button
+
+- Updated Desktop `src/home/project_tree.rs`: replaced disclosure chevrons with local 20px closed/open folder SVGs, inside a 28 × 36 independent button. Removed the adjacent square icon and its empty wrapper from the Project name button. Folder toggles expansion, name opens ProjectDetails, and existing room indentation/menu actions remain intact.
+- Verification from `/Volumes/Data/Works/chrislearn/hagency-desktop`: project_tree tests 11/11 (including independent disclosure/details action coverage), locked binary build, SVG XML validation and git diff --check pass. Existing dead-code/linker warnings remain. No live native screenshot or app restart claimed. Prior login changes preserved.
+- task-writer remains absent; no canonical task-state update claimed.
+
+## 2026-10-10: Navigation focus background and Projects login readiness
+
+- Desktop NavigationBarButton now draws keyboard focus using the hover background and removes the outline; pointer focus suppression and Return/Space activation remain. This prevents a teal frame around only the Project name section.
+- ProjectTree refreshes on LoginSuccess and observes current-account readiness on repeated active activation and UI Signals, rather than requiring activation changes or waiting for its 30-second poll. Existing service identity/request/account fences remain.
+- Final project_tree tests 13/13, locked binary build and git diff --check pass. New cases cover retry of an already-active tree on LoginSuccess and initial Project rows without joined Rooms or creation events. An initial test-fixture Arc-to-Box compile error was corrected before final validation. Existing compiler/linker warnings remain.
+- Native verification: refreshed Desktop restores Alice and automatically displays both existing Projects without creating anything; clicked Project name, keyboard Return, folder expansion and Room selection all visibly retain background highlights without the extra focus border. Left the app in Team discussion. This is restored-session startup, not first-ever live login qualification.
+- Bundled LaunchServices startup stalled in resource File::open (sample in Desktop .run); the attempted UI attachment started a duplicate. Removed both owned uninitialized processes and directly launched the freshly built bundle executable from the Desktop checkout. Final app PID13268 initialized and logged in. Log `.run/desktop-project-focus-direct-20261010.log`; no messages, Projects, permissions or service policy were changed.
+- No task-writer is provisioned; no canonical task-state update claimed.
+
+## 2026-10-10: Server/client/Desktop documentation maintenance
+
+- Updated the three source checkouts directly. Added bilingual Server local deployment/TLS/container diagnostics and runnable testing guides, including readiness startup-latch boundaries, explicit integration binary selection, Python prerequisites, isolated PostgreSQL fixture cleanup, persistent-volume credentials and upgrade/recovery links. Corrected the Server guide's optional-Pasion and reload-auth statements.
+- Added bilingual Desktop development, sibling path-dependency layout, macOS launch/debug mode, isolated profile, automated/native acceptance and packaging guidance. Updated membership-loss versus ordinary-pause recovery in Server/ Desktop docs.
+- Replaced stale client development/login instructions with current OwnerHost build/start/open and personal Pasion authorization. Documented the retained dev/console wrappers' removed flags/subcommand rather than presenting them as working commands. Marked four retained Fleet user/architecture guides historical and linked current guides.
+- Verified active/new local Markdown links, anchors and code fences across 28 changed/new documentation files, shell example syntax with bash -n, and git diff --check in all three actual checkouts. No application code, runtime configuration, service, account or database was changed; no deployment/inference or full application test rerun is claimed. Pre-existing client coordination/design changes were preserved.
+- task-writer remains absent in this source checkout; no canonical task-state update claimed.
+
+## 2026-10-10: Desktop agent tools and owner-approval parity audit
+
+- Read current Desktop, Client OwnerHost and original `/Volumes/Data/Works/hagency-org/hagency-rs` approval/runtime implementations. No application code or runtime settings changed.
+- Current Desktop Service start uses Agent-wide service with host_files=false; the host-files checkbox is hidden. Scoped list/read/create exist in the lower-level host path, while native shell/files/MCP are unreleased. Original runtime supports command/file/MCP/permission-profile callbacks and durable approval application/grant state.
+- Found selected-Room approval presentation mismatch: current pending endpoint returns Agent-wide approvals and Desktop assigns the array without filtering by binding. Backend still binds decisions to exact owner/device/proposal digest and current authority. Current approval details are raw JSON, manually refreshed, with no dedicated durable history/application-result surface.
+- Current Cargo defaults exclude agent_chat, contrary to docs/agent-chat.md and docs/robrix2-parity.md. Explicit feature-enabled approval tests pass 41/41. Initial default selector ran zero tests and is not approval validation.
+- Client standalone agent-local suite initially fails compiling rusqlite u64 SQL conversions (missing fallible_uint feature); explicit `--features rusqlite/fallible_uint` passes 69 tests with 1 ignored. This is a crate feature-declaration/build reproducibility issue, not evidence of a runtime approval bypass. No live provider/native UI approval qualification performed. task-writer remains absent.
+
+## 2026-10-10: Desktop approval scope, feedback and foreground notifications
+
+- Edited actual Desktop and Client source checkouts. Desktop Cargo defaults now include agent_chat and the comment distinguishes approval cards from the workflow preference; minimal builds remain supported. Agent-local explicitly enables rusqlite/fallible_uint, fixing standalone test compilation. No native tool capabilities were opened.
+- Added exact Agent/binding/Room/expiry filtering before rendering and submission. Fresh polling retains a live selection, disables stale decisions on failed or overdue reads, and rejects obsolete account/request/scope/hidden-page responses. UI waiting retains the original owner/device bootstrap read rather than canceling it.
+- Service foreground polling refreshes every three seconds, displays count-only in-app notices for new pending IDs, and renders tool/Room/requester/directory/risk/countdown plus exact arguments and request preview. Submission has separate feedback, a panel-session repeat-submission lock, and honest acknowledged/unconfirmed wording; neither claims successful tool execution. No OS/background notifications, durable approval history or tool application receipts claimed.
+- Verification: default full Desktop library suite passed446 with2 existing ignored tests; final native Hagency regression passed42 after final waiting/read changes. Client standalone agent-local passed69 with1 existing ignored. Locked default Desktop binary build and no-default-features check passed; final diff checks in both edited repos passed. Added tests cover cross-room/malformed/expired data, selection retention, stale/blocked buttons, late account/scope/page replies, notification deduplication, exact write details and decision-versus-execution feedback. Initial Makepad derive-qualified-field failure and test-helper API issues were corrected before passing verification.
+- Catalog parity, placeholders and all newly introduced translation call sites pass. The repository-wide translation checker still fails on pre-existing missing keys (including empty strings and prior unrelated labels); no failure was reclassified as success. Native live provider/approval UI was not exercised; the running personal Desktop was not restarted. No task-writer is provisioned; no canonical task-state mutation claimed.
+
+## 2026-10-10: Two-account personal Agent / shared Room video
+
+- Operator authorized resetting local disposable test data and filming Alice/Bob from zero. Backed up three prior PostgreSQL databases/configs, retained originals, and switched owned local HTTPS stack to three empty video_20261010 databases; new isolated Desktop profiles. No production/reset of unrelated services.
+- Real native UI created Alice-owned 小策 · 活动助手, linked local Codex/model, started Agent-wide service, created project/Room, added Agent and invited Bob. Alice real @mention, Bob same-thread follow-up and Alice summary all received real model replies; both clients showed shared history and member/owner grouping. Room is invite-only: group-shared service, not unrestricted internet-public access.
+- Read local /Volumes/Data/Repos/fframes video skill/docs. Generated 104-second Chinese authentic screenshot sequence with FFrames (inspect:391 sampled frames, no problems;12-frame contact sheet verified). Built native-window continuous capture clips for Alice and Bob with real further requests/replies and original capture timestamps; final MP4 combines these. Artifacts/source under Desktop .run/demo-video-20261010; backup/recovery manifest under Server .run/hagency-local-https-20261007/demo-recording-20261010.
+- Shell/macOS Screenshot recording attempts did not produce usable footage; no new recording permission was granted. Window clips were captured with the already-authorized computer-use screenshot API. FFrames 1.1 starter transitively pulled incompatible usvgr/ffmedia releases; artifact-only exact compatibility pins fixed build. No application code edited. Temporary proxy/hung ffmpeg cleaned up; demo accounts/apps remain available. No task-writer provisioned.
+
+## 2026-10-10: Cross-user owner notification and configurable permissions follow-up audit
+
+- Read-only code audit of current Desktop/OwnerHost and original hagency-rs. Current personal-Agent pending approvals remain owner-device-local; foreground selected Service notices do not constitute private Matrix delivery or background/OS notification. Owner identity/device, exact proposal digest/scope, expiry and single-use decisions are enforced.
+- Current Agent/Room/requester policies expose request Allow/Deny/AskOwner and tool Deny/AskOwner/exact tools+directories. Any applicable deny wins; missing layers default tool Deny. Exact allowlist mismatches deny rather than escalate to owner. Risk strings are supplied by capability adapters, not a configurable risk classifier. Scoped room files enforce a hard workspace boundary before approval; native shell/files/MCP remain unreleased in ordinary Service.
+- Original runtime supplies workspace/read-only sandbox and network restrictions, private owner approval delivery plus public status, exact command/network/permission grants with task/always scope and revoke. Original per-agent execution policy is primarily YOLO plus grants, not the full proposed configurable path/risk/fallback engine. No code/config changes or new tests/live qualification performed. task-writer remains absent.
+
+## 2026-10-10: Agent permissions and owner-approval design report
+
+- User requested design only. Created Desktop docs/design/2026-10-10-agent-permissions-owner-approval.zh-CN.md with current/legacy evidence, completed/partial/missing matrix, proposed policy inheritance migration, operation/path rules, private owner notification architecture, persistent decision/execution states, staged delivery and acceptance scenarios. No application code, permissions, services or runtime configuration changed in this documentation turn.
+- Validated all15 local references, document structure and Desktop diff whitespace. Prior implementation test results are identified as prior evidence; no new code tests or live notification/approval qualification claimed. task-writer remains absent; no canonical task-state mutation claimed.
+
+## 2026-10-10: Full registration → personal Agent → collaborative Room film
+
+- User clarified that the movie must start with real user registration, include personal Agent settings/private use, then joining another person's collaborative Project/Room and bringing one's own Agent for others. Supersedes previous shorter demonstration framing.
+- Created a second set of three empty journey_20261010 databases; preserved previous video databases/config. Registered Alice and Bob through actual Pasion browser forms and display-name setup, each logged into separate native Desktop profiles. Alice created 小策 · 我的活动助手, saved local Codex/model, 100000 total Token limit, allow requests/ban high-risk tools, and 12000 per-request reservation. Real owner-private chat provided advice/checklist. Bob created Project/Room and invited Alice separately; Alice joined both, then added her existing personal Agent in the Room member UI. Bob real @mention and both users' same-thread requests received actual model replies. Final member panel preserves Agent ownership under Alice and independent Bob membership.
+- Corrected an observed input error: reservation field loaded a default after initial observation and paste appended to produce1000012000, so first private request was denied by quota. Stopped, verified field, selected all/set12000 and restarted; new private requests succeeded. One group follow-up did not carry earlier budget/time; subsequent explicit confirmation succeeded. Do not claim full long-conversation context qualification. No application code changes.
+- Artifact under actual Desktop .run/demo-journey-20261010: 152-second real-interface FFrames storyboard plus continuous window-capture ending, Chinese chapter captions/no voice. Inspection571 sampled frames passes after font fix;32-frame strip/key ending checked. First montage render had missing DM Sans warning; replaced logo family with available HeitiSC and rebuilt/rechecked/rendered. Old backup and film retained. New reset manifest under Server .run/hagency-local-https-20261007/demo-journey-20261010. Canonical task-writer absent.
+
+
+## 2026-10-10: Configurable Room Agent reply trigger
+
+- Implemented user-requested default: every collaboration Room message needs a canonical @mention, including known-thread follow-ups. Added owner-controlled per-Agent/per-Room `threadAutoReply` option, default false on new and upgraded databases. Opt-in permits follow-ups from any authorized member in a previously activated exact-binding thread; unknown threads and ordinary messages still require @. Private owner chat remains direct.
+- Server adds authenticated PUT reply-policy, ownership/state/scope validation, audit and persistent migration. Native client carries exact boolean body through the validated agent/binding proxy. Desktop advanced Room settings shows the current rule and a toggle, hides it for owner-direct, disables it while busy, and retains the Room after saving. Updated English/Chinese quickstart and UI strings. Preserved all prior unrelated changes.
+- Validation: Server 43 dedicated PostgreSQL integration tests and15 unit tests passed. New route test additionally verifies a different member, persistence across DomainStore reopening, enable/disable, known/new threads, owner denial and Room isolation. Private-chat rejection regression passed. Native3 new command/proxy serialization tests passed; Desktop38 management-widget tests passed; cargo check rinx lib passed; diff whitespace checks passed across all three repositories.
+- During verification the first route assertion caught an unmodified compact SQL-routing condition; fixed it and reran. A native-path assertion compiled before its corrected /console/api expectation, then rerun passed. Initial exact-selector invocation matched0 tests and was not counted as evidence. Database is dedicated hagency_reply_policy_test_20261010; demo databases untouched.
+- Updated source only: existing running demo server image and Desktop binaries have not been rebuilt/restarted or filmed with the new option. task-writer is absent from this source checkout; no canonical task-state mutation claimed.
+
+
+## 2026-10-10: Continuous operation recording correction — awaiting OS unlock
+
+- User rejected screenshot montage and explicitly requested a complete live operation screen recording. Acknowledged correction: capture continuous clicks, typing, scrolling, window switches and real Agent responses from two fresh registrations; no storyboard/slideshow replacement.
+- Built current Desktop rinx binary and updated server image hagency-server:reply-policy-continuous-20261010. Added missing reply-policy OpenAPI endpoint/Binding field/examples and reviewed API source fingerprint/count (52 owner operations); contract validator passes. Dedicated continuous_20261010 Matrix/Auth/Agent databases and isolated Desktop alice/bob profiles prepared; old journey data retained. Configs staged but not activated. Build manifest under Server .run/hagency-local-https-20261007/demo-continuous-20261010.
+- CUA inspected Screen & System Audio Recording: ChatGPT off, Codex Computer Use on. Applied prior user's explicit permission authorization by clicking ChatGPT switch. macOS requires administrator password in current Privacy & Security sheet; requested user to authenticate in OS window, never send password to chat. No successful new permission or movie claimed. Other app selection times out behind this modal; waiting on user unlock. No continuous capture started and no substitute screenshot film delivered.
+
+
+## 2026-10-10: Authorized continuous screen recording — live flow completed
+
+- Screen recording permission now works. Actual continuous macOS capture, not a screenshot montage. Native apps required fresh data profiles in standard home Application Support; earlier volume profile startup blocked in a filesystem open. Existing unrelated apps and data retained.
+- Restarted dedicated local HTTPS stack with updated reply-policy image and fresh continuous_take2 Matrix/Auth/Agent databases; first take remains retained after Chinese simulated typing emitted only a middle dot. Native Chinese fields now use paste and visible verification.
+- Through real UI, registered Alice and Bob from zero, set display names, created Alice-owned 小策 · 我的活动助手, connected local Codex GPT-6.1-Sol/low, set total100000 Token limit and deny high-risk tools, started service with estimated12000 reservation, and received a real private chat reply.
+- Bob created 周末活动工作室 and 周末活动筹备, invited Alice to both Space and Room, Alice accepted both and added her Agent. Bob canonical @ request and Alice canonical @ follow-up received real replies in the same Matrix thread. Plain Bob thread text received no Agent reply under default policy. Alice enabled thread auto-reply through advanced Room settings; Bob subsequent no-@ follow-up received a real task-allocation reply. Members panel showed Alice, Bob and Alice-owned Agent together.
+- Continuous raw captured765.861667 seconds,2560x1080,H264,44173 frames. screencapture interruption finalizes movie in the system ScreenRecordings group container, so copied the verified finalized file to Desktop .run/demo-continuous-20261010/hagency-full-operation-raw.mov. Preparing readable crop and validating playback before delivery. No microphone recorded. No task-writer provisioned; no canonical task-state mutation claimed.
+
+- Delivery verified: hagency-full-operation.mp4 exports successfully,1280×800/30fps/22976 frames/765.866667 seconds/94962386 bytes; full ffmpeg decode exits0. Original765.861667-second timeline retained (frame-rate rounding only), seven navigation chapters included, final reply and sampled operation/crop frames visually reviewed. Main MP4 queued in Codex file panel. Continuous real-operation video complete.
+
+
+## 2026-10-10: Demo chapter explanation pages and current-step titles
+
+- Operator requested explanation pages for each chapter and a small current-step title at the top of the video. Added seven five-second Chinese chapter pages and an independent72px header outside the original recording area. Adjusted Agent-add/thread-policy boundaries after inspecting actual footage so introductions precede the operations. Original operation22976 frames retained; added1050 intro frames.
+- Exported Desktop .run/demo-continuous-20261010/hagency-full-operation-chaptered.mp4:1280×872,30fps,24026 frames,800.866992 seconds,33432359 bytes, seven corrected seek chapters. All card/header text fits; explanation page and actual-operation header visually reviewed. Full ffmpeg video decode exits0 without errors. New film queued for Codex preview; original film and raw capture retained.
+
+
+## 2026-10-10: Compact operation video
+
+- Operator requested cutting idle waits. Exported Desktop `.run/demo-continuous-20261010/hagency-demo-compact.mp4`, 255.166992 seconds (4m15s), 1280×872/30fps/7655 frames/14080649 bytes. Removed waiting and account housekeeping, used1.5x for routine registration/setup while keeping private replies and shared conversation chapters at1x. Preserved seven2.5-second chapter explanations, top step titles, actual UI actions and responses; originals retained. Final cut decisions recorded in `compact/final-edit.json`. Full ffmpeg decode exit0; keyframes visually reviewed. No task-writer exists in checkout; no canonical task-state mutation claimed.
+
+## 2026-10-10: Server/Desktop GitHub CI and release configuration
+
+- Audited local and GitHub workflows/runs/releases. Added Server quality gates plus two native Linux architecture container jobs and verified manifest assembly; PR builds do not publish. Added monthly Actions dependency update proposals.
+- Desktop fixes missing pinned sibling source checkout across Cargo workflows, enables native five-platform PR/main checks while retaining manual mobile builds, replaces inherited release with seven installers/checksums/artifact uploads/all-success draft release. Standard token replaces RINX_RELEASE; optional macOS signed/notarized path accepts configured signing identity and current product name. Rinx AUR is manual-only. Added release docs and README links in both actual source trees.
+- New workflows pass actionlint; release/main/server also pass integrated ShellCheck. macOS script bash syntax and ShellCheck error-level checks pass. OpenAPI 52+4 operations and10 guard tests pass; xtask5 tests pass. Current Server uncommitted feature code fails formatting; did not reformat concurrent unrelated work or change its reviewed source fingerprints. Scratch published client check confirms current Desktop lock differs from published pin; native-client publishing/pin update is required before those local feature changes can pass. Full cross-platform build/image/installer/runtime results await real GitHub runs; no push/release/deployment performed.
+- task-writer wrapper absent; no canonical task-state mutation claimed.
+
+## 2026-10-10: Server Git remote update
+
+- Updated actual source checkout `/Volumes/Data/Works/chrislearn/hagency-server` origin to `https://github.com/hagency-org/hagency-server.git`; verified fetch and push URLs. Existing upstream already points to the same organization repository. No push performed. task-writer is absent in this checkout.
+
+## 2026-10-10: Authorized publication of current Client/Server/Desktop changes
+
+- Operator explicitly requested pushing all changes to remote. All three local main branches initially matched origin/main. Client formatted successfully; Agent-local library70 tests and runtime library8 tests passed (one Agent-local test remains ignored), and the native hagency binary cargo check passed. Server formatted and reviewed reply-policy router contract fingerprint updated; OpenAPI52+4 operations and10 guard tests pass. Desktop dependency pin will be advanced to this published Client commit before its push.
+- Current feature implementations, documentation and CI configuration are being published together; full runner/platform and optional live/ignored integration verdicts remain distinct from local unit/compile evidence. task-writer remains absent.

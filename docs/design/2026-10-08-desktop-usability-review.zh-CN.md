@@ -342,3 +342,35 @@ Service 详情原来独立放置 Start 与 Stop，只隐藏了运行时的 Start
 新增真实 HTTP 邀请回归通过，相关邀请回归 11 项和导航回归 4 项通过。最终 Desktop 全库 **369 passed、0 failed、1 ignored**，构建与两个 Bundle 的严格签名校验通过。最终构建与源码摘要记录于 Desktop `.run/hagency-local-https-20261007/demo-build-manifest.json`；现有复核 SHA256 清单随本次源码和报告更新。
 
 成片全部 UI 来自实际窗口，包含真实 Agent 回复和加密私聊；没有录入账号凭据。六个 fframes 章节通过 inspect，完整 MP4 解码及抽帧检查通过。没有把未操作的高级权限、远程设备接管、文件能力或 Mini apps 记为本次验收。新建私聊的异步竞争路径经源码复核和全库测试，修复后已有私聊入口完成实机复测，未另建第三个账号复现该竞争。
+
+
+## 紧凑线程入口与导航焦点（2026-10-08）
+
+线程摘要由有常驻底色、1.5px 边框、12px 内边距和双行预览的大卡片，改成 30px 高的单行入口：16px 线程图标、强调色回复数、小号灰色最新回复。预览单行省略，保留 sender 与内容；整行仍能打开对应线程，线程内不重复显示摘要。悬停提供轻微底色，移出、触屏释放和 ClearHover 均恢复透明。也补齐单数“1 reply”的翻译调用。参考 [Slack 的线程组织方式](https://slack.com/intl/en-gb/help/articles/115000769927-Use-threads-to-organise-discussions)，将入口作为消息附属操作而非另一张内容卡片。
+
+Projects 截图中的青色框是鼠标点击触发的键盘焦点环，而非项目选中边框。NavigationBarButton 保留指针点击后的键盘可操作性，但仅键盘聚焦／按键显示焦点环；鼠标或触屏点击清除焦点环，键盘焦点丢失清除指针来源标记。键盘描边内缩 1px，避免轮廓贴边裁切。项目与 Room 的选中背景、菜单和层级行为保持。
+
+实机核对明暗主题的字号、图标、预览省略及边框，点击摘要打开真实已有回复，项目鼠标点击无青框，Space 键能展开项目并显示键盘焦点环。测试后恢复 Alice 原来的 Light 设置。两套测试 Bundle 均更新；没有修改账号、服务权限或额度。相关源码两文件逐项复核，最终构建、严格签名及 Desktop 全库测试通过：**369 passed、0 failed、1 ignored**。日志为 Desktop `.run/hagency-local-https-20261007/compact-thread-build.log`、`compact-thread-tests.log`。
+
+- [明亮主题线程入口](screenshots/2026-10-08-compact-thread/light-room.png)
+- [暗色主题线程入口](screenshots/2026-10-08-compact-thread/dark-room.png)
+- [点击打开线程](screenshots/2026-10-08-compact-thread/thread-open.png)
+- [项目鼠标点击无描边](screenshots/2026-10-08-compact-thread/dark-project-pointer.png)
+- [键盘操作保留焦点提示](screenshots/2026-10-08-compact-thread/dark-project-keyboard.png)
+
+
+## 恢复旧版回复卡片，仅压缩左侧横向占用（2026-10-09）
+
+按用户澄清撤回上一节的线程单行样式，恢复旧卡片的常驻背景、边框、圆角、12px 内边距、原字号及双行预览，悬停结束恢复原底色。只将左侧改成一个按内容宽度布局的竖列：25px 图标居中在上，原字号回复数居中在下，文字无额外内边距；右侧继续显示原来的最新回复预览。这样不再让图标与回复数横向叠加占位。此前导航指针／键盘焦点改进保留。
+
+复核了嵌套后的回复数控件仍能按 ID 填充、左右布局在明暗主题中对齐、预览仍有两行以及整卡点击仍打开同一线程，返回主 Room 正常。两个 Desktop Bundle 已更新并严格签名验证，构建通过，现有 Room 布局／线程导航测试 5 passed、0 failed；日志为 Desktop `.run/hagency-local-https-20261007/stacked-thread-build.log`、`stacked-thread-tests.log`。
+
+- [暗色主题旧卡片与竖排元信息](screenshots/2026-10-09-stacked-thread/dark-room.png)
+- [明亮主题旧卡片与竖排元信息](screenshots/2026-10-09-stacked-thread/light-room.png)
+
+本节取代上一节的线程卡片样式结论；历史截图保留记录方案变化。
+
+
+### 聊天头像与正文列（2026-10-09）
+
+按最新要求，Desktop 消息头像从 48px 调整为 **32px**，字母头像随尺寸自动缩放。头像／时间列从 65px 收窄至 49px，右侧名字、正文、附件和回复卡片整体向左移动 16px；普通消息的名字行顶部间距从 16px 降至 8px。连续消息采用相同 49px 列宽，引用预览的关联缩进相应减小 16px，避免连续消息仍停在旧位置。小型系统事件头像、右侧成员列表及移动端布局不受此更改影响。最终截图沿用本节明暗主题图片，以 32px 版本为准。

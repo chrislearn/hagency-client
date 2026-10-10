@@ -13,6 +13,7 @@ use hagency_agent_local::{
     Ledger, Scope,
     codex::{self, BudgetMode, Profile},
     inbox::{self, Finish, State},
+    runtime,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -548,16 +549,21 @@ impl OwnedRuntime {
             }
             _ => {}
         }
-        config
-            .profile
-            .validate()
+        runtime::validate(&config.profile, &config.credential_ref)
             .map_err(|_| RuntimeError::Profile)?;
         if config.profile.executable
-            != super::owner_provider::executable().map_err(|_| RuntimeError::Profile)?
+            != super::owner_provider::external::executable(runtime::kind(&config.credential_ref))
+                .map_err(|_| RuntimeError::Profile)?
         {
             return Err(RuntimeError::Profile);
         }
-        if super::owner_provider::selected_reference(
+        if runtime::managed_reference(&config.credential_ref).is_some() {
+            super::owner_provider::external::verify_reference(
+                &config.profile.codex_home,
+                &config.credential_ref,
+            )
+            .map_err(|_| RuntimeError::Profile)?;
+        } else if super::owner_provider::selected_reference(
             &config.profile.codex_home,
             config.profile.shared_auth,
         )
@@ -638,12 +644,13 @@ impl OwnedRuntime {
         .map_err(|_| RuntimeError::Profile)?;
         // Paths are owner-specific, and must be initialized by the owner. A
         // caller cannot silently repurpose ~/.codex or another owner's login.
-        let expected = super::owner_provider::paths(
+        let expected = super::owner_provider::external::paths_for_reference(
             &root,
             device.origin(),
             device.issuer(),
             device.subject(),
             device.owner_mxid(),
+            &config.credential_ref,
         )
         .map_err(|_| RuntimeError::Profile)?;
         if config.profile.codex_home != expected.codex_home
@@ -678,7 +685,8 @@ impl OwnedRuntime {
                     && p.workspace_root == config.profile.cwd.to_string_lossy()
                     && p.credential_ref == config.credential_ref
                     && (p.credential_ref.starts_with("keychain:")
-                        || p.credential_ref.starts_with("codex-managed:")) => {}
+                        || p.credential_ref.starts_with("codex-managed:")
+                        || runtime::managed_reference(&p.credential_ref).is_some()) => {}
             _ => return Err(RuntimeError::Profile),
         }
         let key = identity(&device, &config.agent_id);
@@ -1366,7 +1374,7 @@ async fn run_host(
     let agent = initial.config.agent_id.clone();
     // Verify the owner's dedicated provider before any acquisition or explicit
     // takeover can disrupt an existing device. This is account/config only.
-    let mut provider = tokio::select! {biased;_=canceled(&mut cancel)=>return Err(RuntimeError::Stopped),p=initial.config.profile.spawn()=>p.map_err(|_|RuntimeError::Provider)?};
+    let mut provider = tokio::select! {biased;_=canceled(&mut cancel)=>return Err(RuntimeError::Stopped),p=runtime::spawn(&initial.config.profile,&initial.config.credential_ref)=>p.map_err(|_|RuntimeError::Provider)?};
     let checked = tokio::select! {biased;_=canceled(&mut cancel)=>Err(RuntimeError::Stopped),r=async {provider.session.initialize().await?;provider.session.verify_host_environment().await?;provider.session.require_local_account().await}=>r.map_err(|_|RuntimeError::Provider)};
     let _ = provider.stop().await;
     checked?;
@@ -1417,7 +1425,7 @@ async fn run_host(
             tokio::spawn(async move {
                 let mut work=work;
                 let result=async {
-                    let mut provider=tokio::select! {biased;_=canceled(&mut work.receiver)=>return Err(RuntimeError::Stopped),p=work.config.profile.spawn()=>p.map_err(|_|RuntimeError::Profile)?};
+                    let mut provider=tokio::select! {biased;_=canceled(&mut work.receiver)=>return Err(RuntimeError::Stopped),p=runtime::spawn(&work.config.profile,&work.config.credential_ref)=>p.map_err(|_|RuntimeError::Profile)?};
                     let checked=tokio::select! {biased;_=canceled(&mut work.receiver)=>Err(RuntimeError::Stopped),r=async {provider.session.initialize().await?;provider.session.verify_host_environment().await?;provider.session.require_local_account().await}=>r.map_err(|_|RuntimeError::Provider)};
                     let _=provider.stop().await;checked?;
                     let mut ledger=local(Ledger::open_scoped(&path,&owner,&profile_id))?;
@@ -1971,7 +1979,7 @@ async fn run_turn<T: Transport>(
     } else {
         None
     };
-    let mut provider = tokio::select! {biased; _=canceled(cancel)=>return Err(RuntimeError::Stopped), p=profile.spawn()=>p.map_err(|_|RuntimeError::Profile)?};
+    let mut provider = tokio::select! {biased; _=canceled(cancel)=>return Err(RuntimeError::Stopped), p=runtime::spawn_for_scope(&profile,&config.credential_ref,ledger,&scope)=>p.map_err(|_|RuntimeError::Profile)?};
     let (queue, mut receiver) = codex::approval_queue(1).map_err(|_| RuntimeError::Profile)?;
     let host = transport.approval_host();
     if config.host_files {

@@ -375,7 +375,7 @@ fn observe_stop(owner: &mut SupervisedProcess) -> Cleanup {
     }
 }
 #[cfg(unix)]
-fn exit_identity(status: i32) -> Option<String> {
+pub(super) fn exit_identity(status: i32) -> Option<String> {
     use std::os::unix::process::ExitStatusExt;
     let status = std::process::ExitStatus::from_raw(status);
     if let Some(code) = status.code() {
@@ -385,7 +385,7 @@ fn exit_identity(status: i32) -> Option<String> {
     }
 }
 #[cfg(not(unix))]
-fn exit_identity(_status: i32) -> Option<String> {
+pub(super) fn exit_identity(_status: i32) -> Option<String> {
     None
 }
 struct Operation<'a> {
@@ -416,4 +416,19 @@ impl Drop for Operation<'_> {
             self.runner.stop();
         }
     }
+}
+
+pub(super) fn stderr_tail(tail: &[u8], max: usize) -> String {
+    let text = String::from_utf8_lossy(tail);
+    let start = text.ceil_char_boundary(text.len().saturating_sub(max));
+    text[start..]
+        .chars()
+        .map(|c| {
+            if c.is_control() && c != '\n' {
+                '\u{FFFD}'
+            } else {
+                c
+            }
+        })
+        .collect()
 }

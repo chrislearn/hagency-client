@@ -407,7 +407,7 @@ fn validate_shared_provider(c: &Value) -> Result<()> {
 }
 pub struct Process {
     pub session: Session<tokio::process::ChildStdout, tokio::process::ChildStdin>,
-    child: tokio::process::Child,
+    pub(crate) child: tokio::process::Child,
 }
 impl Process {
     pub async fn stop(&mut self) -> Result<()> {

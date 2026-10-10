@@ -1,5 +1,6 @@
 //! Dedicated owner provider onboarding. Codex owns OAuth tokens in its OS
 //! keyring; this host only exposes a login URL and verified account status.
+pub(crate) mod external;
 use super::{
     Console, body, console, cookie, current, owned_agents::ledger_path, recheck,
     server_login::OwnerOperation,
@@ -888,6 +889,11 @@ pub(super) fn router() -> Router {
     Router::with_path("owner-provider")
         .goal(dispatch)
         .push(Router::with_path("workspaces/{agent}").goal(dispatch))
+        .push(
+            Router::with_path("runtimes/{runtime}")
+                .goal(dispatch)
+                .push(Router::with_path("{action}").goal(dispatch)),
+        )
         .push(Router::with_path("{action}").goal(dispatch))
 }
 #[handler]
@@ -921,15 +927,28 @@ async fn dispatch(req: &mut Request, depot: &Depot, res: &mut Response) {
             return Err(failure(400, "invalid_arguments"));
         }
         let console = console(depot).map_err(|_| failure(503, "local_state_unavailable"))?;
-        let value = console
-            .0
-            .owner_provider
-            .call(
+        let value = if let Some(runtime) = req.param::<String>("runtime") {
+            external::call(
                 console,
                 cookie(req).map_err(|_| failure(401, "sign_in_required"))?,
+                &runtime,
                 operation,
             )
-            .await?;
+            .await?
+        } else {
+            serde_json::to_value(
+                console
+                    .0
+                    .owner_provider
+                    .call(
+                        console,
+                        cookie(req).map_err(|_| failure(401, "sign_in_required"))?,
+                        operation,
+                    )
+                    .await?,
+            )
+            .map_err(|_| failure(503, "provider_unavailable"))?
+        };
         recheck(depot).map_err(|_| failure(401, "sign_in_required"))?;
         Ok(value)
     }

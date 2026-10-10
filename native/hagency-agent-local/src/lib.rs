@@ -6,6 +6,7 @@ pub mod codex;
 pub mod inbox;
 #[cfg(unix)]
 pub mod room_files;
+pub mod runtime;
 
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
@@ -255,6 +256,7 @@ impl Ledger {
                 "ALTER TABLE model_profiles ADD COLUMN reasoning_effort TEXT NOT NULL DEFAULT ''",
             )?;
         }
+        db.execute_batch("CREATE TABLE IF NOT EXISTS external_sessions (scope TEXT NOT NULL, profile TEXT NOT NULL, session TEXT NOT NULL, counters TEXT NOT NULL DEFAULT '', PRIMARY KEY(scope,profile))")?;
         db.execute_batch("COMMIT")?;
         db.pragma_update(None, "foreign_keys", true)?;
         Ok(Self {
@@ -649,6 +651,27 @@ impl Ledger {
         tx.commit()?;
         Ok(())
     }
+    pub(crate) fn settle_external(
+        &mut self,
+        scope: &Scope,
+        call: &str,
+        usage: &Usage,
+        profile: &str,
+        session: &str,
+        counters: &str,
+    ) -> Result<()> {
+        verify(&self.db, scope)?;
+        key(profile)?;
+        key(session)?;
+        let context = scope.context_key(&self.owner)?;
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        settle_transaction(&tx, scope, call, usage)?;
+        tx.execute("INSERT INTO external_sessions VALUES (?,?,?,?) ON CONFLICT(scope,profile) DO UPDATE SET session=excluded.session,counters=excluded.counters",(context,profile,session,counters))?;
+        tx.commit()?;
+        Ok(())
+    }
     pub fn mark_unknown(&mut self, scope: &Scope, call: &str) -> Result<()> {
         verify(&self.db, scope)?;
         let changed = self.db.execute(
@@ -727,6 +750,7 @@ impl Ledger {
             key(value)?;
         }
         if !(profile.credential_ref.starts_with("keychain:")
+            || runtime::managed_reference(&profile.credential_ref).is_some()
             || profile
                 .credential_ref
                 .strip_prefix("codex-managed:shared-home:")

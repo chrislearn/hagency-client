@@ -66,6 +66,7 @@ pub enum AgentAction {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum BindingAction {
+    SetThreadAutoReply(bool),
     Status,
     Pause,
     Resume,
@@ -250,6 +251,10 @@ pub enum Command {
         agent_id: String,
     },
     Provider {
+        action: ProviderAction,
+    },
+    RuntimeProvider {
+        runtime: String,
         action: ProviderAction,
     },
 }
@@ -500,6 +505,10 @@ fn request(command: Command) -> Result<(&'static str, String, Option<Value>), Na
             key(&agent_id)?;
             key(&binding_id)?;
             let (m, s) = match action {
+                BindingAction::SetThreadAutoReply(enabled) => {
+                    body = Some(serde_json::json!({"threadAutoReply":enabled}));
+                    ("PUT", "/reply-policy")
+                }
                 BindingAction::Status => ("GET", ""),
                 BindingAction::Pause => ("POST", "/pause"),
                 BindingAction::Resume => ("POST", "/resume"),
@@ -515,6 +524,22 @@ fn request(command: Command) -> Result<(&'static str, String, Option<Value>), Na
             (
                 "POST",
                 format!("{root}/owner-provider/workspaces/{agent_id}"),
+            )
+        }
+        Command::RuntimeProvider { runtime, action } => {
+            if !matches!(runtime.as_str(), "claude" | "octos") {
+                return Err(failure(400, "invalid_arguments"));
+            }
+            let (method, suffix) = match action {
+                ProviderAction::Status => ("GET", ""),
+                ProviderAction::Models => ("GET", "/models"),
+                ProviderAction::UseLocal => ("POST", "/use-local"),
+                ProviderAction::Disconnect => ("POST", "/disconnect"),
+                _ => return Err(failure(400, "local_provider_login_managed_locally")),
+            };
+            (
+                method,
+                format!("{root}/owner-provider/runtimes/{runtime}{suffix}"),
             )
         }
         Command::Provider { action } => {
@@ -1109,6 +1134,23 @@ async fn callback(req: &mut Request, depot: &Depot, res: &mut Response) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reply_policy_command_uses_exact_binding_and_boolean_body() {
+        for enabled in [false, true] {
+            let (method, path, body) = request(Command::Binding {
+                agent_id: "agt_1".into(),
+                binding_id: "bnd_1".into(),
+                action: BindingAction::SetThreadAutoReply(enabled),
+            })
+            .unwrap();
+            assert_eq!(method, "PUT");
+            assert_eq!(
+                path,
+                "/console/api/owned-agents/agt_1/bindings/bnd_1/reply-policy"
+            );
+            assert_eq!(body, Some(serde_json::json!({"threadAutoReply":enabled})));
+        }
+    }
     #[test]
     fn native_commands_cannot_select_an_arbitrary_path_or_foreign_binding_route() {
         assert!(

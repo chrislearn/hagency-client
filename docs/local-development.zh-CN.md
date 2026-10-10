@@ -1,65 +1,78 @@
 [English](local-development.md) | [中文](local-development.zh-CN.md)
 
-# 客户端与服务器本地联调
+# owner client 与服务器本地联调
 
-使用 `hagency-client` 和 `hagency-server` 两个源码仓库。两边分别使用各自指定的
-Rust 工具链。客户端控制台构建需要 Node.js 22+，HTTP 服务由 Rust 提供。
+`hagency-client`、`hagency-server`、可选的 `hagency-desktop` 放在同一父目录，
+各自使用仓库指定的 Rust 工具链。owner 控制台构建需要 Node.js 22+ 与 npm；
+本机 HTTP 服务由 Rust 提供。下面客户端命令在本仓库根目录运行。
 
-## 服务器
+## 服务器前置条件
 
-首次初始化按服务器 README 配置，包括 Pasion 资源和管理员账号。后续启动：
+按[server 安装说明](../../hagency-server/README.zh-CN.md)首次配置；之后在 server
+仓库运行 `just db-up` 和 `just dev`。默认 origin 为 `http://127.0.0.1:8088`，
+Web 管理入口 `/login`。必须使用 Pasion 委托 Matrix 认证与集成 Agent Appservice。
+不再需要 Fleet 注册或 `[fleet_access]`。参考
+[部署排障](../../hagency-server/docs/LOCAL_DEPLOYMENT.zh-CN.md)与
+[隔离测试](../../hagency-server/docs/TESTING.zh-CN.md)。
 
-```sh
-just db-up
-just dev
-```
-
-本地地址为 `http://127.0.0.1:8088`，管理登录在 `/login`，Pasion 注册在
-`/_pasion/register`。私人配置位于 `config/dev/` 下的 `hagency.toml`、
-`palpo.toml`、`pasion.toml`。三个 PostgreSQL 数据库分别为 `hagency`、`palpo`、
-`pasion`；Compose 提供的 PostgreSQL 监听 `127.0.0.1:55438`。
-
-客户端自助接入要求 `hagency.toml` 的 `[fleet_access]` 中
-`allow_self_service = true`。本地测试注册可以在 `pasion.toml` 配置
-`[experimental] fixed_verification_code = "123456"`，邮件和短信 provider
-使用 `blackhole`。
-
-## 客户端
+## 构建当前 owner host
 
 ```sh
-just init-dev  # 首次安装控制台构建依赖
-just dev
+npm ci --prefix mockup
+mkdir -p .run
+console_parent="$(mktemp -d "$PWD/.run/owner-console.XXXXXX")"
+node mockup/scripts/build-native-console.mjs --output "$console_parent/assets"
+HAGENCY_CONSOLE_DIR="$console_parent/assets" cargo build --locked -p hagency
+# 仅首次初始化：选择全新的 owner 格式状态目录。
+target/debug/hagency init --state-dir "$PWD/.run/owner-dev-state"
+target/debug/hagency start --state-dir "$PWD/.run/owner-dev-state" \
+  --listen 127.0.0.1:13300 --console-assets "$console_parent/assets"
 ```
 
-开发监视器构建静态控制台和 Rust 程序，按需初始化私人状态目录，并在
-`127.0.0.1:13300` 启动客户端，开启到服务器的出站通信。另开一个终端：
+assets 输出路径必须尚不存在，运行期间保留资源目录。后续启动跳过 `init`，
+另一个终端获取私人访问链接：
 
 ```sh
-just console
+target/debug/hagency open --state-dir "$PWD/.run/owner-dev-state"
 ```
 
-打开终端打印的私人登录链接，不要将链接保存到日志。服务器登录卡片填写
-`http://127.0.0.1:8088` 和安装名称，再通过 Pasion 登录。
-客户端自动创建或复用自己的 Fleet、导入配置，并验证真实 Matrix 事件的接收回执。
-不需要手工下载配置，也不要求客户端有公网地址。
+`open` 通过本机 IPC 访问运行中的 host，不需要 listener 参数。访问链接不要写入日志。
+仅前台服务使用 `start --no-open` 或 `serve`，传入同一状态、listener、assets。
+同一状态目录只能有一个 host，listener 必须为非零 loopback。
 
-控制台地址为 `http://127.0.0.1:13300/console/`。状态、SQLite 数据库和私人机器凭据
-保存在 `.run/dev-state/`，控制台构建产物位于 `.run/dev-console-*`。这些目录均已
-被 Git 忽略。服务器绑定和安装身份在重启后保留；Pasion 浏览器会话只在内存中，
-Rust 服务重启后需要重新登录。
+保留的 `just dev` / `just console` 尚未适配当前 owner host：
+`native/scripts/dev.mjs` 仍传入已移除的 `--palpo-transport` 并检查旧 `operator.token`；
+`just console` 调用已移除的 `console-access`。适配前使用上面的显式命令。
+`just init-dev` 仍可作为 npm 安装依赖快捷方式。`mockup` 中的 `npm run dev`
+是设计预览，不是实际 OwnerHost。
 
-修改 Rust 或控制台源码后自动重建并重启客户端，构建失败时保留原来的运行服务。
-服务器的 `just dev` 同样监视 Rust、前端和组件配置。各终端按 `Ctrl+C` 停止。
-自定义客户端状态目录和端口：
+控制台修改后重新导出 owner assets，使用新 bundle 重启 host；Rust 修改后重新构建。
+字体无法下载时，已有验证的缓存可用控制台 builder 的
+`--font-cache /absolute/path/to/cache` 选项复用；这是构建输入，不是认证或运行状态。
+
+## 登录与配置
+
+输入 server origin 完成个人 Pasion PKCE 登录。Project 对应一个 Space，讨论 Room
+保持独立成员关系。创建/采纳有权限的 Space/Room，选择 Agent 与活动绑定，配置
+主人专用 Codex 凭据、模型、私人目录、Agent/Room/请求者预算及精确工具策略。
+显式接受 Estimated 计费并设置正 reservation 后再启动范围，登录/连接本身不执行模型。
+
+CLI host 使用独立主人 Codex home/keyring，Desktop 还允许显式关联本机已登录的
+Codex 账号；都不向 server 上传模型凭据。见[登录说明](server-login.zh-CN.md)、
+[根指南](../README.zh-CN.md)和
+[Desktop 开发](../../hagency-desktop/docs/local-development.zh-CN.md)。
+
+新 CLI 状态使用 `hagency-client-owned-v1.json`。旧 Fleet 状态单独保留，不复制
+旧配置/SQLite/token 或修改 marker。未知执行/费用保留恢复 hold。Agent 加密范围
+暂缓支持，Desktop 普通人类 Matrix 加密聊天是另一条路径。
+
+## 验证
 
 ```sh
-just dev --state-dir .run/another-client --listen 127.0.0.1:13301
-just console .run/another-client 127.0.0.1:13301
+cargo test --locked -p hagency --lib
+cargo clippy --locked -p hagency --all-targets -- -D warnings
+git diff --check
 ```
 
-如果 Google Fonts 不可访问，使用 `just dev --font-cache /path/to/.next`
-复用此前成功构建的真实字体文件。默认缓存位置为 `.run/font-cache`，包含此前
-构建的 `static/chunks`、`static/css`（如果存在）和 `static/media` 目录。
-
-两端互联不会自动配置编程代理或发布模型资源。需要运行 Agent 时，再在客户端
-配置实际使用的 Codex/Claude 运行环境和资源配额。
+这是本地 engine 检查；完整 Pasion/Matrix fixture 与 Desktop 原生验收见上面专用指南。
+实际 Codex 执行需要显式启动并消耗模型资源，协议 fixture 不能记为推理通过。

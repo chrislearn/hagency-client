@@ -127,3 +127,5 @@ not setup instructions for this executable.
 
 Apache 2.0; retain [LICENSE](LICENSE) and [NOTICE](NOTICE) on redistribution.
 Hagency is a fork of agent-chat; [licensing](docs/LICENSING.md) records attribution.
+
+See [local development](docs/local-development.md) and [personal server login](docs/server-login.md).

@@ -12,7 +12,7 @@ de7b8ca5fcd413737ad69043febce6914af89cd5cb0cb6a60fe6e7d3af5099fa  hagency-client
 3acf9051abf9eb70add2fa59cc8ca3233f8ba752df724069d885acb3ed4d3f0f  hagency-client/docs/design/2026-10-08-agent-processing-reaction.zh-CN.md
 de5e8dc92c2130951e6473edd33625b15395800ee0870fe696fdacded7f03101  hagency-client/docs/design/2026-10-08-agent-runtime-recovery.zh-CN.md
 a0b4df8cc64ddcb137bf88116e44288ea45585c3ea6079abc631a17f179e4442  hagency-client/docs/design/2026-10-08-desktop-room-information.zh-CN.md
-b46e9c92e2ff9d4a1ad354d64637d92d440900fb6a4ca4e7963e1476ac9d65e5  hagency-client/docs/design/2026-10-08-desktop-usability-review.zh-CN.md
+075aa463decff080b046bba6e76e04dc9b58c70d5146ae0b3dc3d80f5a3c7d9a  hagency-client/docs/design/2026-10-08-desktop-usability-review.zh-CN.md
 f289918359c7f1bc6436b6187996ffca891544b0c1353b92e4cef015b063f7ee  hagency-client/docs/design/screenshots/2026-10-08-agent-command-recovery/completed-hidden.png
 2df38922aeaee7a0210601990ddf84ed07f4b3086721b567eb88a3c065a7206b  hagency-client/docs/design/screenshots/2026-10-08-agent-limits/agent-limit.png
 7f5bfe5ee1b2885c8adba9e7b63d4c3096fd1f9b438d6d9c2562b08370a7c823  hagency-client/docs/design/screenshots/2026-10-08-agent-limits/approvals.png
@@ -22,12 +22,19 @@ f289918359c7f1bc6436b6187996ffca891544b0c1353b92e4cef015b063f7ee  hagency-client
 f1d2a93c2a7a29239c31ed4d413e3bd0c3d7b41096cfabab83f032b5543e1c19  hagency-client/docs/design/screenshots/2026-10-08-agent-limits/model.png
 a5b46c67da6dae993f947a49abfc27413e5f680693aeee5282b3daadb155ebba  hagency-client/docs/design/screenshots/2026-10-08-agent-limits/room-limit.png
 e8f848d937550051decdd94d5bfee040a0b6c6ba558d0ff2b1a7c932a269f79c  hagency-client/docs/design/screenshots/2026-10-08-agent-limits/service.png
+b7164af97bc951799695b1af394a4ff54ae943f53ed29e76d86a5148aed64dc2  hagency-client/docs/design/screenshots/2026-10-08-compact-thread/dark-project-keyboard.png
+63846bed746ce4333fe799dc6f3b478e39b9c33a3931aa5c73a1e9e5ebed1b95  hagency-client/docs/design/screenshots/2026-10-08-compact-thread/dark-project-pointer.png
+525eec98bd3b9391c11a23370a73368bc7379d46f81aa6acde8f4173e486d9d9  hagency-client/docs/design/screenshots/2026-10-08-compact-thread/dark-room.png
+70015a1c0728c44ced09676712390044a07e35704f74bf2658e78b82c54c9503  hagency-client/docs/design/screenshots/2026-10-08-compact-thread/light-room.png
+035884fc83437cde27befc192a9164b6f302d5b1bacbbb7c1dd8b69b917ff8de  hagency-client/docs/design/screenshots/2026-10-08-compact-thread/thread-open.png
 85361f3387c9aabb6541246e057f8c7a3c5e8153bd58ba7e693d4fceb6a74484  hagency-client/docs/design/screenshots/2026-10-08-private-chat-default/service-advanced.png
 66dd519a589d2debfa30b4e17c53ab981f24f2a5a189c0ac1d97c5081d15afa3  hagency-client/docs/design/screenshots/2026-10-08-private-chat-default/service-default.png
 e6cdc6c81f14c99b2607aca04de898750e1fc8bb7f1f086a060fc9aa0f023223  hagency-client/docs/design/screenshots/2026-10-08-room-agent-service/01-agent4-original-reply.png
 03447ff4f38805986285407e5e3214976c4645e2ad6e3bd1be7a9f6dd14e7a32  hagency-client/docs/design/screenshots/2026-10-08-room-agent-service/02-room-services-wide.png
 57c54986bfcf1bd0cc04b4df021c470b13317c2a4684565abda44b38171046f5  hagency-client/docs/design/screenshots/2026-10-08-room-agent-service/03-exact-room-service-after-restart.png
 a29df4e2fbdd19002dbee284f5467a6333dd92ccbd216bbf4948e40a5ee05060  hagency-client/docs/design/screenshots/2026-10-08-room-agent-service/04-original-reply-final-wide.png
+4249a0f39d4fbb7f6f5f5cf065a002c1a893d1d91b7eb4fd46bc525aa5857047  hagency-client/docs/design/screenshots/2026-10-09-stacked-thread/dark-room.png
+6ea849002687e589f30a8b4e1d925b2ca59558099db5218b741b6414cfdff728  hagency-client/docs/design/screenshots/2026-10-09-stacked-thread/light-room.png
 ed64ce28a3575bff692a9a6ca015551f2c688c439ac4df51ad5d7ec16d73f9df  hagency-client/mockup/components/OwnedAgentControl.jsx
 46c0c7bae5be32805316ad12851c9c22102143ad3f197ff3b62b4f1f0b04c20d  hagency-client/mockup/components/OwnerRuntimeControl.jsx
 95cb57550b8f92fc6018c0da56e4e1ccaa302c959438294ca9d8399efd75debc  hagency-client/mockup/scripts/check-owner-console.mjs
@@ -91,7 +98,7 @@ a8e949fd17ffe1a204014de2c752e8a8fc1e4ef2b201c9cff7a2665ce166c64a  hagency-deskto
 a235bcb472ee4183fa2dcc726b4416a67d1ac03da1730de7e4be76e801fc7ea3  hagency-desktop/src/home/mod.rs
 7d15aa6f48abf572108e02782e93b385488f9929993bfb213ab435021f4019cc  hagency-desktop/src/home/navigation_tab_bar.rs
 6fa043e6f99f9464a2376a2915cc10b84142eaf231241027cc97b3cd9e914c31  hagency-desktop/src/home/project_tree.rs
-fe38ca87a4b2fac700e8566d1883df5f0a32713c7fdd05c33277d2467777200c  hagency-desktop/src/home/room_screen.rs
+61beb27571287fc6eed6a1bebe5d04e83c7547a08d3cf03289f05508b71b37c3  hagency-desktop/src/home/room_screen.rs
 509f9d16e6a5f7c0aabfc3cd6d82369705b928b01799aefc90102738ed06fac2  hagency-desktop/src/home/rooms_list.rs
 81d6ef50ff4c994ca7a1d0e7750ea8d0c31cae322bc51ed5e69cee184660719c  hagency-desktop/src/home/rooms_sidebar.rs
 ec4cba4443f2286555622272234ad423dd60e242b037103a5e8a05d61e69cbfd  hagency-desktop/src/home/sidebar_action_menu.rs
@@ -112,7 +119,7 @@ f6f39f9ef17a5ce7794b86c8300b7aae7691656da095da16bd6f6a80682241e1  hagency-deskto
 bdc6f9f8e695bbfcc383bc890df6042f5be38b67bbca6d7f825ff271441f7a3c  hagency-desktop/src/shared/icon_button.rs
 33925df523857411ec7368cd48fe5132a8054e189a5e4bc30aa6d2e34602e329  hagency-desktop/src/shared/mentionable_text_input.rs
 22108dcb5bb08f6a769af4cbe0c5bd1d8ce7bfe119f775ff428906f7c059f62a  hagency-desktop/src/shared/mod.rs
-a825381916375f1041fafa5f334b294ae2f831b7b4f75c59f94cc4d2545e4e8e  hagency-desktop/src/shared/navigation_bar_button.rs
+ef6f2c456eb3e86f1ccd1a5c64882d7eb161897b22b3c40db86b9dc79ba405dd  hagency-desktop/src/shared/navigation_bar_button.rs
 f5151707df0f9156b4f37b382f3a8f38ddbbc331f73e00a39219626c9aa3dc50  hagency-desktop/src/shared/styles.rs
 eafcecdc117b3e7ca888768988cb983d9f110dd87230e87f62d1f206930119c5  hagency-desktop/src/shared/web_browser_window.rs
 ffd5cd6d8c4f0dbe6729498ff00f8798feb0a9d60427897ec6daf81da2208ed8  hagency-desktop/src/sliding_sync.rs

@@ -56,6 +56,13 @@ fn absolute(path: PathBuf) -> Result<PathBuf, std::io::Error> {
     }
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(result) = hagency::native_owner::run_guardian_if_requested() {
+        if result.is_err() {
+            std::process::exit(1);
+        }
+        return Ok(());
+    }
+
     let cli = Cli::parse();
     tracing_subscriber::fmt()
         .with_env_filter(

@@ -223,6 +223,8 @@ struct ServerBinding {
     generation: i64,
     #[serde(default)]
     owner_service_paused: bool,
+    #[serde(default)]
+    thread_auto_reply: bool,
 }
 fn required_nullable_device<'de, D: serde::Deserializer<'de>>(
     d: D,
@@ -979,12 +981,13 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                     .agent_model_profile(&reply.owner, &agent)
                     .map_err(local_error)?
                     .ok_or_else(|| error(409, "runtime_profile_unavailable"))?;
-                let provider = super::owner_provider::paths(
+                let provider = super::owner_provider::external::paths_for_reference(
                     &root,
                     &reply.origin,
                     &reply.issuer,
                     &reply.subject,
                     &reply.owner,
+                    &profile.credential_ref,
                 )
                 .map_err(|e| error(e.status, e.code))?;
                 if profile.credential_ref != provider.credential_ref {
@@ -1024,8 +1027,10 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                     recovery_device_id: input.recovery_device_id,
                     recovery_consent_id: input.recovery_consent_id,
                     profile: hagency_agent_local::codex::Profile {
-                        executable: super::owner_provider::executable()
-                            .map_err(|e| error(e.status, e.code))?,
+                        executable: super::owner_provider::external::executable(
+                            hagency_agent_local::runtime::kind(&profile.credential_ref),
+                        )
+                        .map_err(|e| error(e.status, e.code))?,
                         home: provider.home,
                         codex_home: provider.codex_home,
                         cwd: PathBuf::from(profile.workspace_root),
@@ -1138,18 +1143,19 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                     requester: device.owner_mxid().into(),
                 };
                 let (reply, scope, root) = verified(req, depot, &agent, &selected).await?;
-                let provider = super::owner_provider::paths(
+                let profile = ledger(&root, &reply, &scope)?
+                    .model_profile(&scope)
+                    .map_err(local_error)?
+                    .ok_or(error(409, "runtime_profile_unavailable"))?;
+                let provider = super::owner_provider::external::paths_for_reference(
                     &root,
                     &reply.origin,
                     &reply.issuer,
                     &reply.subject,
                     &reply.owner,
+                    &profile.credential_ref,
                 )
                 .map_err(|e| error(e.status, e.code))?;
-                let profile = ledger(&root, &reply, &scope)?
-                    .model_profile(&scope)
-                    .map_err(local_error)?
-                    .ok_or(error(409, "runtime_profile_unavailable"))?;
                 if profile.credential_ref != provider.credential_ref {
                     return Err(error(409, "provider_profile_mismatch"));
                 }
@@ -1161,8 +1167,10 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                     recovery_device_id: input.recovery_device_id,
                     recovery_consent_id: input.recovery_consent_id,
                     profile: hagency_agent_local::codex::Profile {
-                        executable: super::owner_provider::executable()
-                            .map_err(|e| error(e.status, e.code))?,
+                        executable: super::owner_provider::external::executable(
+                            hagency_agent_local::runtime::kind(&profile.credential_ref),
+                        )
+                        .map_err(|e| error(e.status, e.code))?,
                         home: provider.home,
                         codex_home: provider.codex_home,
                         cwd: PathBuf::from(profile.workspace_root),
@@ -1232,6 +1240,32 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                 .map_err(|_| error(502, "invalid_server_response"))?;
             if verified.agent_id != agent {
                 return Err(error(403, "owner_scope_required"));
+            }
+            if parts.len() == 4 && method == Method::PUT && parts[3] == "reply-policy" {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct ReplyPolicy {
+                    thread_auto_reply: bool,
+                }
+                let policy: ReplyPolicy = serde_json::from_slice(
+                    &body(req, 1024)
+                        .await
+                        .map_err(|_| error(400, "invalid_arguments"))?,
+                )
+                .map_err(|_| error(400, "invalid_arguments"))?;
+                return public(
+                    &api(
+                        req,
+                        depot,
+                        OwnerOperation::SetThreadAutoReply {
+                            binding,
+                            enabled: policy.thread_auto_reply,
+                        },
+                    )
+                    .await?
+                    .value,
+                    "binding",
+                );
             }
             if !body(req, 1)
                 .await
@@ -1412,6 +1446,12 @@ async fn dispatch(req: &mut Request, depot: &Depot, res: &mut Response) {
 #[cfg(test)]
 mod profile_tests {
     use super::*;
+    #[test]
+    fn public_binding_keeps_reply_policy_without_leaking_unknown_fields() {
+        let result=public(&json!({"binding":{"id":"b","agentId":"a","projectId":"p","scopeKind":"project","roomId":"!r:test","state":"active","generation":1,"threadAutoReply":true,"token":"secret"}}),"binding").unwrap();
+        assert_eq!(result["binding"]["threadAutoReply"], true);
+        assert!(result["binding"].get("token").is_none());
+    }
     #[test]
     fn profile_marker_accepts_long_identity_and_rejects_oversized_metadata() {
         let temp = tempfile::tempdir().unwrap();

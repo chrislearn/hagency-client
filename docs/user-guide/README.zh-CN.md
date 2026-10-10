@@ -1,5 +1,8 @@
 [English](README.md) | [中文](README.zh-CN.md)
 
+> 历史文档：下文记录已移除的 Fleet/Engagement 架构，不作为当前部署、登录或加密 Agent 支持说明。
+> 当前操作见[owner client README](../../README.zh-CN.md)、[本地开发](../local-development.zh-CN.md)与[Desktop 使用指南](../../../hagency-desktop/docs/hagency-quickstart.zh-CN.md)。
+
 # Hagency 使用指南
 
 本指南介绍如何通过 Hagency 为 Palpo Matrix 服务器添加 AI agent，以及如何在

@@ -106,3 +106,5 @@ export PATH="$PWD/target/release:$PATH"
 
 Apache 2.0；分发时保留 [LICENSE](LICENSE) 与 [NOTICE](NOTICE)。Hagency fork 自
 agent-chat；[许可说明](docs/LICENSING.md)记录署名要求。
+
+另见 [本地开发](docs/local-development.zh-CN.md)和[个人服务器登录](docs/server-login.zh-CN.md)。

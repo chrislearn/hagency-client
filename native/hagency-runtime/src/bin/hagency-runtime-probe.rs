@@ -2,6 +2,7 @@
 #[path = "approval_probe/mod.rs"]
 mod approval_probe;
 mod claude_probe;
+mod octos_probe;
 use serde_json::{Value, json};
 use std::{
     fs::{self, OpenOptions},
@@ -553,6 +554,10 @@ fn main() -> io::Result<()> {
             Path::new(marker),
         ),
         [command, mode, marker] if command == "fake-claude" => claude_probe::run(
+            mode.to_str().ok_or(io::ErrorKind::InvalidInput)?,
+            Path::new(marker),
+        ),
+        [command, mode, marker] if command == "fake-octos" => octos_probe::run(
             mode.to_str().ok_or(io::ErrorKind::InvalidInput)?,
             Path::new(marker),
         ),

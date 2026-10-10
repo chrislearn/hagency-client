@@ -1,57 +1,35 @@
 [English](server-login.md) | [中文](server-login.zh-CN.md)
 
-# Pasion login and automatic Fleet enrollment
+# Personal server login
 
-Use the local `hagency-client` checkout. The executable is still named `hagency`.
-Start it with `hagency start`; for a source build with separate console assets,
-use `hagency serve --state-dir <state> --palpo-transport --console-assets <assets>`.
-Open the local console access link once using `hagency console-access` with the
-same state directory and listen address.
+Build and run the current [owner client](local-development.md). `hagency start`
+opens its local console; `hagency open --state-dir <same-state>` obtains access
+through the running host's private IPC. Local console access is separate from
+server authentication.
 
-In Setup or Project sides, enter the Hagency Server address and Fleet name,
-then click **Sign in and connect**. Sign in on the server's Pasion page. The
-Rust host exchanges the authorization code with PKCE, verifies the account,
-requests its own Fleet, writes the returned configuration and starts outbound
-transport. Connection verification retries automatically, for about three
-minutes after the initial attempts. A timeout is shown as failure, not success.
-No coding agent runs merely because a Fleet is connected; configure the local
-coding runtime and offer resources separately.
+Select a saved account/server or enter the Hagency server origin. Use
+`http://127.0.0.1:8088` for loopback development; remote or named servers require
+trusted HTTPS. Do not append `/login`, `/_pasion/` or API paths. Complete the
+server's official Pasion browser authorization with your personal account.
 
-The server requires delegated Pasion authentication. In its own `hagency.toml`:
+Pasion PKCE plus real Matrix whoami establishes your identity. Native management
+uses `/api/hagency/v1`; server browser management uses the closed
+`/api/browser/hagency/v1` BFF. Native APIs reject browser Cookie/Origin requests.
+The integrated Appservice stays on the server: no per-installation Fleet, AS
+registration, machine-token import or `[fleet_access]` configuration is required.
 
-```toml
-[fleet_access]
-allow_self_service = true
-max_per_user = 3
-```
+After sign-in, create/adopt a Project Space and authorized discussion Rooms, then
+create your Agent or select an existing one. Permanent owner identity, independent
+Room membership and creation policy are enforced by the server. The local owner
+controls provider credentials, budget and tools. Sign-in does not start inference;
+explicitly start an active scope after configuring its resources.
 
-Self-service defaults to disabled. A valid account can still log in locally when
-enrollment is disabled. The server owns App Service registration authority;
-users receive only their Fleet credentials. One installation ID per local
-state directory makes repeated logins idempotent. Each Fleet has its own
-App Service. The client needs no public IP or incoming callback from the server;
-its OAuth browser callback uses a loopback IP. Remote servers must use HTTPS;
-HTTP is allowed only for loopback IPs in development.
+Saved profiles and recent server addresses support switching accounts. Switching
+stops the previous owner's runtime and requires fresh personal authorization;
+account state, workspaces and ledgers remain isolated. Provider login is separate
+from Pasion login and never exports provider credentials to Hagency server.
 
-The first binding requires existing local operator access. Afterwards the
-server origin, Pasion subject and Matrix account are pinned in private
-`server-login.json`. Another user cannot log in and control this client. The
-Pasion token stays in Rust memory, never in browser storage or this binding
-file. The host verifies it through the pinned server, which introspects Pasion
-using its private service credential. Successful verification is cached for at
-most 30 seconds; expired, revoked or unverifiable tokens are refused. Local
-sessions last at most 15 minutes, and require another login after a restart.
-The ordinary `console-access` command remains local recovery authority.
-
-`palpo-transport.json`, `palpo.machine_token` and `palpo-appservice.json` remain
-private runtime files. The machine credential is separate from the human login,
-so a logged-out browser does not stop an already configured Fleet. Manual
-import remains available under **Import an existing configuration (optional)**.
-An installation already configured with another Fleet refuses automatic
-retargeting. Use its existing configuration, or initialize a separate state
-directory for the new automatic enrollment.
-
-Native server API: `GET /_hagency/client/v1/discovery`, `GET .../identity`,
-`POST .../fleets`, and `POST .../fleets/{id}/connect`. Authenticated requests
-use a Pasion bearer token without browser cookies or Origin headers. Enrollment
-accepts only `installationId` and `name`; the owner comes from verified identity.
+For failures, check [server discovery/TLS/readiness](../../hagency-server/docs/LOCAL_DEPLOYMENT.md)
+before retrying login. Keep unknown creation requests and execution outcomes for
+explicit recovery rather than creating duplicates. Retired Fleet login records
+are not setup instructions for the current owner format.

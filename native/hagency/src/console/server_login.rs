@@ -1401,6 +1401,10 @@ pub(super) enum OwnerOperation {
     Binding {
         binding: String,
     },
+    SetThreadAutoReply {
+        binding: String,
+        enabled: bool,
+    },
     PauseBinding {
         binding: String,
     },
@@ -1497,6 +1501,14 @@ impl OwnerOperation {
             ));
         }
         let (method, suffix, body) = match self {
+            Self::SetThreadAutoReply { binding, enabled } => {
+                operation_id(&binding)?;
+                (
+                    Method::PUT,
+                    format!("bindings/{binding}/reply-policy"),
+                    Some(json!({"threadAutoReply":enabled})),
+                )
+            }
             Self::AgentCommandStatus { operation, command } => {
                 if !matches!(operation.as_str(), "agent.create" | "agent.bind") {
                     return Err(OwnerError::new(400, "invalid_arguments"));
@@ -1860,6 +1872,20 @@ mod private_json_tests {
 #[cfg(test)]
 mod scope_policy_request_tests {
     use super::*;
+    #[test]
+    fn reply_policy_uses_owner_server_binding_path() {
+        for enabled in [false, true] {
+            let (method, path, body) = OwnerOperation::SetThreadAutoReply {
+                binding: "bnd_1".into(),
+                enabled,
+            }
+            .request()
+            .unwrap();
+            assert_eq!(method, reqwest::Method::PUT);
+            assert_eq!(path, "/api/hagency/v1/bindings/bnd_1/reply-policy");
+            assert_eq!(body, Some(json!({"threadAutoReply":enabled})));
+        }
+    }
     #[test]
     fn scope_requests_are_fixed_origin_paths_without_claimed_administrator() {
         let (method, path, body) = OwnerOperation::ScopePause {
