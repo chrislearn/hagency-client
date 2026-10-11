@@ -58,14 +58,25 @@ Project/Room 接入策略决定哪些成员可以把 Agent 接入此范围，禁
 | 标签 | 配置与查看内容 |
 | --- | --- |
 | Agent | 身份、执行设备、主人私聊、Room 绑定、暂停／恢复、离开与永久退役。 |
-| 模型与资源 | 本机 Codex 账号、模型、推理选项及保存的 Agent 工作目录。 |
+| 模型与资源 | 本机 Codex／Claude Code／Octos、模型或 profile、推理选项及 Agent 工作目录。 |
 | 限制 | Agent 总额、选中 Room 总额、该 Room 内选中请求者。 |
 | 服务运行 | 选中 Room 运行、估算预留、受限文件工具及待审批请求。 |
 
-选择 **Use my signed-in local Codex account** 可复用本机已登录 Codex，无需
+在“模型与资源”选择 **Local agent runtime**：Codex、Claude Code 或 Octos。
+选择 **Connect my local account** 可复用本机已登录 Codex，无需
 重复登录。Disconnect 只解除当前 Matrix 账号与本机 Codex 的关联，不退出日常
 Codex。也可使用独立 Codex 登录；取消、打开登录链接、退出独立账号对应这一模式。
 从真实模型目录选择模型，选择已有工作目录或准备 Agent 的私有目录，然后保存。
+
+Claude Code 请先在本机完成登录，再连接本地账号；可选择 Sonnet、Opus、Haiku
+本地别名和支持的推理选项。Octos 请先配置本机 profile，再选择具体 profile；
+即使多个 profile 使用同一模型也分别保存，推理选项沿用 Octos profile 设置。
+凭据保留在原应用中，Hagency 只保存当前主人的连接选择。断开连接不会退出原应用。
+切换运行时前先停止服务，保存配置后重新启动。
+
+Claude／Octos 的原生工具仍受 Agent、Room 和请求者三层权限限制；任一层拒绝
+都会阻止操作，需要主人审批的操作显示在现有待审批列表。当前 Room 文件工具开关
+属于 Codex 的 Hagency 文件桥接，未给 Claude／Octos 注册这一桥接。
 
 模型／工作目录属于该 Agent，在它的多个 Room 之间共用；对话、Room 配额和审批
 各自隔离。服务器管理员不审批本地资源选择。
@@ -78,7 +89,7 @@ Codex。也可使用独立 Codex 登录；取消、打开登录链接、退出�
 
 ## 启动与聊天
 
-在 **服务运行** 选择活动主人私聊或讨论 Room，等待已保存的 Codex
+在 **服务运行** 选择活动主人私聊或讨论 Room，等待已保存的本地运行时
 配置及账号校验完成。明确勾选估算记账，填写正数单次预留量，在“模型与资源”中保存模型支持的
 推理档位。受限 host files 默认关闭，目前仅 list／read／create，不提供 native
 shell 或 MCP 执行。

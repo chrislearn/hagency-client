@@ -242,7 +242,7 @@ fn provider_error_message(error: &str) -> Option<&'static str> {
         "codex_binary_unavailable" => "Codex is not installed or could not be started. Check the local Codex installation.",
         "local_codex_home_unavailable" | "provider_directory_unavailable" | "provider_directory_not_canonical" => "Codex's local account or workspace directory is unavailable. Check its local permissions and retry.",
         "local_codex_configuration_unsupported" | "provider_file_credentials_or_config_rejected" => "This Codex configuration cannot be safely used by Hagency. Your existing account has not been changed. Check the configuration or use a separate Codex account.",
-        "provider_profile_mismatch" | "provider_choice_unavailable" => "The saved Local account selection is unavailable or does not match this profile. Reconnect the intended account and retry.",
+        "provider_profile_mismatch" | "provider_choice_unavailable" => "The saved local account selection is unavailable or does not match this profile. Reconnect the intended account and retry.",
         "local_codex_account_not_signed_in" => "Codex is not signed in. Sign in through your local Codex, then check the account again.",
         "provider_keyring_unavailable" => "Codex cannot access the system credential store. Unlock it or check its permissions, then retry.",
         "codex_model_catalog_unavailable" => "Codex could not load its model list. Check the account and connection, then refresh the models.",
@@ -1072,7 +1072,8 @@ impl HagencyPanel {
         let default=model.as_ref().map(|m|string(m,"defaultReasoningEffort")).unwrap_or("");
         let saved = if model.as_ref().is_some_and(|m|m["model"] == self.policy["modelProfile"]["model"]) {string(&self.policy["modelProfile"],"reasoning_effort")} else {""};
         let selected=self.runtime_efforts.iter().position(|s|s==saved).or_else(||self.runtime_efforts.iter().position(|s|s==default)).unwrap_or(0);
-        self.view.drop_down(cx,ids!(effort)).set_labels(cx,if self.runtime_efforts.is_empty(){vec![crate::i18n::tr("Load this model's reasoning choices").into()]}else{self.runtime_efforts.iter().map(|effort|format!("{}{}",effort,if effort==default {crate::i18n::tr(" (default)")} else {""})).collect()});
+        let octos = self.provider_runtime(cx)=="octos";
+        self.view.drop_down(cx,ids!(effort)).set_labels(cx,if self.runtime_efforts.is_empty(){vec![crate::i18n::tr("Load this model's reasoning choices").into()]}else{self.runtime_efforts.iter().map(|effort|format!("{}{}",if octos {crate::i18n::tr("Use profile settings")} else {effort},if effort==default {crate::i18n::tr(" (default)")} else {""})).collect()});
         self.view.drop_down(cx,ids!(effort)).set_selected_item(cx,selected);
         self.render_effort_note(cx);
         self.view.label(cx,ids!(model_note)).set_text(cx,model.as_ref().map(|m|string(m,"description")).unwrap_or_else(||crate::i18n::tr("Connect a local runtime and refresh its models or profiles. Availability is confirmed when an actual request runs.")));
@@ -3684,7 +3685,7 @@ impl Widget for HagencyPanel {
                 return;
             }
             let Some(model)=self.selected(cx,ids!(model),&self.provider_models) else {self.status(cx,"Select a model or profile from this device's catalog.");return;};
-            if !self.provider_authenticated || self.credential_ref.is_empty() {self.status(cx,"Connect your Local account first.");return;}
+            if !self.provider_authenticated || self.credential_ref.is_empty() {self.status(cx,"Connect your local account first.");return;}
             let Some(effort)=self.runtime_efforts.get(self.view.drop_down(cx,ids!(effort)).selected_item()).cloned() else {self.status(cx,"Select a supported reasoning effort.");return;};
             let input = json!({"profile":{"model":model["model"],"credential_ref":self.selected_credential(cx),"workspace_root":self.input(cx,ids!(workspace)),"reasoning_effort":effort}});
             self.local(cx, Target::Policy, LocalAction::SaveAgentModel, Some(input));
@@ -4094,6 +4095,29 @@ impl HagencyPanelRef {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn external_runtime_resources_restore_kind_and_exact_octos_profile() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut panel = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm); crate::app::register_widgets(vm);
+            let value = script_eval!(vm, {mod.widgets.HagencyPanel {}});
+            HagencyPanel::script_from_value(vm, value)
+        });
+        for (kind, index, reference) in [("claude",1,"claude-managed:shared-home:saved"), ("octos",2,"octos-managed:shared-home:saved:review")] {
+            panel.policy=json!({"modelLoaded":true,"modelProfile":{"model":"same","credential_ref":reference,"reasoning_effort":"none"}});
+            panel.render_policy(&mut cx);
+            assert_eq!(panel.view.drop_down(&mut cx,ids!(runtime_kind)).selected_item(),index);
+            panel.apply(&mut cx,Target::ProviderModels,&json!({"runtime":kind,"authenticated":true,"shared":true,"credentialRef":"provider-level-reference","models":[
+                {"model":"same","displayName":"Coding","credentialRef":"other-reference","isDefault":true,"defaultReasoningEffort":"none","supportedReasoningEfforts":[{"reasoningEffort":"none"}]},
+                {"model":"same","displayName":"Review","credentialRef":reference,"defaultReasoningEffort":"none","supportedReasoningEfforts":[{"reasoningEffort":"none"}]}
+            ]}));
+            assert_eq!(panel.view.drop_down(&mut cx,ids!(model)).selected_item(),2);
+            assert_eq!(panel.selected_credential(&mut cx),reference);
+            assert_eq!(panel.runtime_efforts,vec!["none"]);
+            assert!(!panel.view.button(&mut cx,ids!(provider_login)).visible());
+            assert!(!panel.view.button(&mut cx,ids!(provider_logout)).visible());
+        }
+    }
     #[test]
     fn approval_widget_filters_rooms_keeps_selection_and_disables_stale_decisions() {
         let mut cx=Cx::new(Box::new(|_,_|{}));

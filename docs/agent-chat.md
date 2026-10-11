@@ -1,12 +1,29 @@
 # Rinx / Hagency integration
 
 Rinx is the human-facing Matrix client for
-[Hagency](https://github.com/hagency-org/hagency-rs). The current Rust service
-runs local Codex agents. Rinx's bundled Palpo app handles server engagements,
-project and agent requests, coordinator decisions and runtime status. Follow the
-[quick start](hagency-quickstart.md) ([中文](hagency-quickstart.zh-CN.md)) for that
-workflow. This document describes client chat support, including compatibility
-with the earlier agent-chat bridge protocol.
+[Hagency](https://github.com/hagency-org/hagency-rs). Native Projects/Agents
+management runs personal Agents through local Codex, Claude Code or Octos.
+Follow the [quick start](hagency-quickstart.md) ([中文](hagency-quickstart.zh-CN.md))
+for local accounts, model/profile selection, service startup and owner approvals.
+This document describes chat support, including compatibility with the earlier
+agent-chat bridge protocol.
+
+The Claude/Octos protocol integration follows `hagency-rs`
+`aaa52025882c1c506c9c4cc55087ac677f0b0e98` (`origin/fix/run-ceiling` at review).
+Desktop keeps its existing personal-Agent OwnerHost, scoped policy ledger and
+approval UI. Octos OUP runs over stdio with isolated instance data and explicit
+permissions; Claude uses its stream-JSON control callbacks. Saved sessions are
+scoped to owner, Agent, binding, Room, requester and thread. Terminal usage
+includes cache reads/writes; missing usage retains the existing unknown hold.
+Tool cancellation withdraws the exact pending approval, and provider shutdown
+must confirm the process tree stopped before further service work.
+
+Validation is offline: protocol actors exercise approvals, cancellation, failure
+accounting and context recovery, including the actual standalone Desktop binary
+as guardian. Model inference using real Claude/Octos credentials has not been
+verified. Octos 2.0.3-rc.11's local `serve --help` confirms the required stdio,
+instance-data-dir and no-network flags. Hosted Desktop builds require their host
+to dispatch Hagency's guardian entry before initializing the UI.
 
 Chat-specific support is compiled with the `agent_chat` Cargo feature, which
 is enabled by default. A build that explicitly omits it uses placeholder
