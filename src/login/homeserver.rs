@@ -103,7 +103,7 @@ pub async fn login_methods(client: &Client) -> Result<LoginMethods> {
         std::time::Duration::from_secs(10), client.oauth().server_metadata(),
     ).await.map_err(|_| anyhow::anyhow!("Pasion sign-in is temporarily unavailable. Please retry."))??;
     validate_oauth_metadata(&metadata)?;
-    if metadata.issuer != client.homeserver().join("_pasion/")? {
+    if metadata.issuer != client.homeserver().join("auth/")? {
         bail!("This server advertised an unexpected Pasion issuer");
     }
     Ok(LoginMethods {
@@ -167,7 +167,7 @@ where
     let oauth = client.oauth();
     let oauth_metadata = oauth.server_metadata().await?;
     validate_oauth_metadata(&oauth_metadata)?;
-    if oauth_metadata.issuer != client.homeserver().join("_pasion/")? {
+    if oauth_metadata.issuer != client.homeserver().join("auth/")? {
         bail!("This server advertised an unexpected Pasion issuer");
     }
     let (redirect, server) = LocalServerBuilder::new().spawn().await?;
