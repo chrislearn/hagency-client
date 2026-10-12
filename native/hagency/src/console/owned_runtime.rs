@@ -1968,7 +1968,9 @@ async fn run_turn<T: Transport>(
     status: &watch::Sender<RuntimeStatus>,
 ) -> Result<Option<Finish>, RuntimeError> {
     let scope = prepared.dispatch.scope();
-    let mut profile = config.profile.clone();
+    let profile = config.profile.clone();
+    #[cfg(unix)]
+    let mut profile = profile;
     #[cfg(unix)]
     let workspace = if config.host_files {
         let directory = profile.home.parent().ok_or(RuntimeError::Profile)?;
