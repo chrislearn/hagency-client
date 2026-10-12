@@ -11,6 +11,10 @@
 必须声明受支持的 Hagency 协议；普通 Matrix 服务器会被拒绝。Matrix SDK 负责
 会话刷新和保存，原生管理复用当前账号授权，不要求复制 token 或再次登录 Matrix。
 
+Pasion 声明支持注册时，选择服务器后还会显示**创建账号**。点击后通过 OAuth
+`prompt=create` 在浏览器进入 Pasion 注册；完成注册和授权后，SDK 回调会登录
+Desktop。服务器关闭注册时，这个入口隐藏。
+
 登录页及 **Settings → Account** 可选择已保存账号。切换会停止当前主人的本地
 Agent 运行并清理活动权限；原账号的独立数据保留，不转让 Agent 所有权。
 

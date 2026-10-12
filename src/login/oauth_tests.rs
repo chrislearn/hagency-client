@@ -13,11 +13,17 @@ struct Fixture {
     requests: Arc<Mutex<Vec<(String, Value)>>>,
     stop: Arc<AtomicBool>,
     device: Arc<Mutex<Option<String>>>,
+    registration: Arc<AtomicBool>,
     refresh_error: Arc<Mutex<Option<String>>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 impl Fixture {
     fn new() -> Self {
+        Self::with_registration(false)
+    }
+    fn with_registration(registration: bool) -> Self {
+        let registration = Arc::new(AtomicBool::new(registration));
+        let registration_enabled = registration.clone();
         let refresh_error = Arc::new(Mutex::new(None::<String>));
         let token_error = refresh_error.clone();
         let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -87,7 +93,7 @@ impl Fixture {
                         "homeserver":format!("{root}/"),"issuer":format!("{root}/auth/"),
                         "capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-device-v1","owner-direct-v1"]})
                 } else if route.contains("/auth_metadata ") {
-                    json!({"issuer":format!("{root}/auth/"),"authorization_endpoint":format!("{root}/auth/authorize"),"token_endpoint":format!("{root}/auth/token"),"registration_endpoint":format!("{root}/auth/register"),"revocation_endpoint":format!("{root}/auth/revoke"),"response_types_supported":["code"],"grant_types_supported":["authorization_code","refresh_token"],"code_challenge_methods_supported":["S256"],"token_endpoint_auth_methods_supported":["none"]})
+                    json!({"issuer":format!("{root}/auth/"),"authorization_endpoint":format!("{root}/auth/authorize"),"token_endpoint":format!("{root}/auth/token"),"registration_endpoint":format!("{root}/auth/register"),"revocation_endpoint":format!("{root}/auth/revoke"),"response_types_supported":["code"],"grant_types_supported":["authorization_code","refresh_token"],"code_challenge_methods_supported":["S256"],"token_endpoint_auth_methods_supported":["none"],"prompt_values_supported":if registration_enabled.load(Ordering::Acquire) {vec!["login", "create"]} else {vec!["login"]}})
                 } else if route.contains("/register ") {
                     assert!(
                         payload["grant_types"]
@@ -153,6 +159,7 @@ impl Fixture {
             requests,
             stop,
             device,
+            registration,
             refresh_error,
             thread: Some(thread),
         }
@@ -164,6 +171,63 @@ impl Drop for Fixture {
         self.thread.take().unwrap().join().unwrap();
     }
 }
+
+#[tokio::test]
+async fn sdk_oauth_registration_uses_create_prompt_and_completes_login() {
+    let fixture = Fixture::with_registration(true);
+    let client = Client::builder()
+        .homeserver_url(&fixture.origin)
+        .handle_refresh_tokens()
+        .build()
+        .await
+        .unwrap();
+    let methods = login_methods(&client).await.unwrap();
+    assert!(methods.oauth && methods.browser_registration);
+    assert!(!methods.password);
+    let device = fixture.device.clone();
+    oauth_browser_login(&client, true, move |authorization| async move {
+        let url = Url::parse(&authorization).unwrap();
+        let params: std::collections::HashMap<_, _> = url.query_pairs().collect();
+        assert_eq!(url.path(), "/auth/authorize");
+        assert_eq!(params["prompt"], "create");
+        assert_eq!(params["code_challenge_method"], "S256");
+        assert!(!params["code_challenge"].is_empty());
+        *device.lock().unwrap() = Some(
+            params["scope"].split_whitespace()
+                .find_map(|s| s.split_once("device:").map(|(_, d)| d.to_owned()))
+                .unwrap(),
+        );
+        let mut redirect = Url::parse(&params["redirect_uri"]).unwrap();
+        redirect.query_pairs_mut()
+            .append_pair("code", "fixture-code")
+            .append_pair("state", &params["state"]);
+        crate::http::client_builder().build()?.get(redirect).send().await?;
+        Ok(())
+    }).await.unwrap();
+    assert_eq!(client.user_id().unwrap().as_str(), "@fixture:localhost");
+    assert!(client.oauth().full_session().is_some());
+    let requests = fixture.requests.lock().unwrap();
+    assert!(requests.iter().any(|(route, _)| route.contains("/auth/register ")));
+    assert!(requests.iter().any(|(route, _)| route.contains("/auth/token ")));
+    assert!(requests.iter().any(|(route, _)| route.contains("/whoami ")));
+    assert!(!requests.iter().any(|(route, _)| route.contains("/_matrix/client/v3/register ") || route.contains("/login ")));
+}
+
+#[tokio::test]
+async fn sdk_oauth_registration_disabled_after_discovery_refuses_before_dcr_or_browser() {
+    let fixture = Fixture::with_registration(true);
+    let client = Client::builder().homeserver_url(&fixture.origin).build().await.unwrap();
+    assert!(login_methods(&client).await.unwrap().browser_registration);
+    fixture.registration.store(false, Ordering::Release);
+    let error = oauth_browser_login(&client, true, |_| async {
+        panic!("Registration must not open a browser without server support");
+    }).await.unwrap_err();
+    assert!(error.to_string().contains("does not advertise browser account creation"));
+    assert!(!login_methods(&client).await.unwrap().browser_registration);
+    assert!(fixture.requests.lock().unwrap().iter().all(|(route, _)| route.starts_with("GET ")));
+    assert!(client.session().is_none());
+}
+
 #[tokio::test]
 async fn sdk_oauth_dcr_pkce_callback_whoami_refresh_and_session_roundtrip() {
     let fixture = Fixture::new();
@@ -175,9 +239,10 @@ async fn sdk_oauth_dcr_pkce_callback_whoami_refresh_and_session_roundtrip() {
         .unwrap();
     let methods = login_methods(&client).await.unwrap();
     assert!(methods.oauth);
+    assert!(!methods.browser_registration);
     assert!(!methods.password && !methods.sso && methods.providers.is_empty());
     let device = fixture.device.clone();
-    oauth_browser_login(&client, move |authorization| async move {
+    oauth_browser_login(&client, false, move |authorization| async move {
         let url = Url::parse(&authorization).unwrap();
         let params: std::collections::HashMap<_, _> = url
             .query_pairs()
@@ -427,7 +492,7 @@ async fn oauth_reauthentication_mismatch_revokes_only_new_grant_and_retains_prev
         device: Arc<Mutex<Option<String>>>,
         code: &'static str,
     ) -> anyhow::Result<()> {
-        oauth_browser_login(client, move |authorization| async move {
+        oauth_browser_login(client, false, move |authorization| async move {
             let url = Url::parse(&authorization)?;
             let params: std::collections::HashMap<_, _> = url
                 .query_pairs()
@@ -545,7 +610,7 @@ async fn sdk_refresh_transient_failure_recovers_and_terminal_errors_require_logi
     let fixture=Fixture::new();
     let client=Client::builder().homeserver_url(&fixture.origin).handle_refresh_tokens().build().await.unwrap();
     let device=fixture.device.clone();
-    oauth_browser_login(&client,move |authorization| async move {
+    oauth_browser_login(&client,false,move |authorization| async move {
         let url=Url::parse(&authorization).unwrap();
         let params:std::collections::HashMap<String,String>=url.query_pairs().map(|(k,v)|(k.into_owned(),v.into_owned())).collect();
         *device.lock().unwrap()=params["scope"].split_whitespace().find_map(|s|s.split_once("device:").map(|(_,d)|d.to_owned()));

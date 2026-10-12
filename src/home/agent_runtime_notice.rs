@@ -28,6 +28,10 @@ script_mod! {
         width: Fill height: Fit flow: Right spacing: 12 align: Align{y: 0.5} padding: Inset{left: 16 right: 12 top: 8 bottom: 8}
         visible: false show_bg: true draw_bg.color: mod.widgets.RINX_HOVER
         status := Label {width: Fill height: Fit draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
+        View {
+            width: 18 height: 18
+            loading_status := LoadingSpinner {visible: false width: 18 height: 18 draw_bg +: {color: mod.widgets.RINX_MUTED stroke_width: 2.0}}
+        }
         open := RobrixNeutralIconButton {
             text: #(crate::i18n::tr("Open Service")) i18n_text: "Open Service"
             height: 32 padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
@@ -47,12 +51,18 @@ pub struct AgentRuntimeNotice {
     #[rust] active:bool,
 }
 impl AgentRuntimeNotice {
+    fn set_loading(&mut self,cx:&mut Cx,loading:bool) {
+        self.loading=loading;
+        self.view.widget(cx,ids!(loading_status)).set_visible(cx,loading);
+    }
     fn refresh(&mut self,cx:&mut Cx) {
         if self.loading || !self.active || self.room.is_empty() {return;}
         let Ok(service)=Service::for_current() else {self.view.set_visible(cx,false);return;};
         if service.identity()!=self.identity {self.view.set_visible(cx,false);return;}
-        self.loading=true;
-        if self.target.is_some() {self.view.label(cx,ids!(status)).set_text(cx,crate::i18n::tr("Checking local processing…"));self.view.button(cx,ids!(open)).set_enabled(cx,false);self.view.redraw(cx);}
+        // Keep the last status and reserve the spinner's width so polling never
+        // changes line wrapping or moves the timeline below the notice.
+        self.set_loading(cx,true);
+        if self.target.is_some() {self.view.button(cx,ids!(open)).set_enabled(cx,false);self.view.redraw(cx);}
         self.request=self.request.wrapping_add(1);let request=self.request;
         let identity=self.identity.clone(); let room=self.room.clone();
         crate::sliding_sync::spawn_async_task(async move {
@@ -85,13 +95,13 @@ impl AgentRuntimeNotice {
 }
 impl Widget for AgentRuntimeNotice {
     fn handle_event(&mut self,cx:&mut Cx,event:&Event,scope:&mut Scope) {
-        if !Service::for_current().is_ok_and(|s|s.identity()==self.identity) {self.view.set_visible(cx,false);self.target=None;return;}
+        if !Service::for_current().is_ok_and(|s|s.identity()==self.identity) {self.view.set_visible(cx,false);self.view.widget(cx,ids!(loading_status)).set_visible(cx,false);self.target=None;return;}
         if self.timer.is_event(event).is_some() {self.timer=Timer::default();if self.active {self.refresh(cx);}}
         if let Event::Actions(actions)=event {
             for action in actions {
                 if let Some(done)=action.downcast_ref::<NoticeResult>()
                     && done.identity==self.identity && done.room==self.room && done.request==self.request {
-                    self.loading=false;if !done.failed {self.target=done.target.clone();}
+                    self.set_loading(cx,false);if !done.failed {self.target=done.target.clone();}
                     self.view.label(cx,ids!(status)).set_text(cx,crate::i18n::tr(&done.text));
                     self.view.set_visible(cx,self.target.is_some());self.view.button(cx,ids!(open)).set_enabled(cx,self.target.is_some() && !done.failed);
                     self.timer=cx.start_timeout(10.0);self.view.redraw(cx);
@@ -118,7 +128,7 @@ impl AgentRuntimeNoticeRef {
         let identity=Service::for_current().map(|s|s.identity()).unwrap_or_default();
         if identity!=this.identity || room!=this.room {
             cx.stop_timer(this.timer);this.timer=Timer::default();
-            this.identity=identity;this.room=room.into();this.request=this.request.wrapping_add(1);this.loading=false;this.target=None;
+            this.identity=identity;this.room=room.into();this.request=this.request.wrapping_add(1);this.set_loading(cx,false);this.target=None;
             this.view.set_visible(cx,false);
             if !this.identity.is_empty() {this.refresh(cx);}
         } else if this.timer.is_empty() && !this.loading && !this.identity.is_empty() {this.refresh(cx);}
@@ -127,6 +137,41 @@ impl AgentRuntimeNoticeRef {
 #[cfg(test)]
 mod tests {
     use super::*;use serde_json::json;
+    #[test]
+    fn polling_spinner_preserves_status_wrapping_and_notice_height() {
+        use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+        let mut cx=Cx::new(Box::new(|_,_| {}));
+        let mut notice=cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);
+            vm.bx.captured_errors=Some(Vec::new());
+            let value=script_eval!(vm,{mod.widgets.AgentRuntimeNotice {}});
+            let notice=AgentRuntimeNotice::script_from_value(vm,value);
+            assert!(vm.take_errors().is_empty());notice
+        });
+        let text="Running in all connected Rooms on this device. New Rooms are included automatically; configured budgets and policy permissions still apply.";
+        notice.view.set_visible(&mut cx,true);
+        notice.view.label(&mut cx,ids!(status)).set_text(&mut cx,text);
+        for width in [360.0,560.0,900.0] {
+            let mut geometry=Vec::new();
+            for loading in [false,true,false] {
+                notice.set_loading(&mut cx,loading);
+                cx.redraw_all();
+                let pass=DrawPass::new(&mut cx);pass.set_size(&mut cx,dvec2(width,300.0));
+                let mut list=DrawList2d::new(&mut cx);
+                let event=DrawEvent::default();let mut draw=CxDraw::new(&mut cx,&event);let mut cx2d=Cx2d::new(&mut draw);
+                cx2d.begin_pass(&pass,None);list.begin_always(&mut cx2d);cx2d.begin_root_turtle(dvec2(width,300.0),Layout::flow_down());
+                notice.draw_walk_all(&mut cx2d,&mut Scope::empty(),Walk {width:Size::Fixed(width),height:Size::fit(),..Walk::default()});
+                cx2d.end_pass_sized_turtle();list.end(&mut cx2d);cx2d.end_pass(&pass);
+                drop(cx2d);drop(draw);
+                assert_eq!(notice.view.label(&mut cx,ids!(status)).text(),text);
+                assert_eq!(notice.view.widget(&mut cx,ids!(loading_status)).visible(),loading);
+                geometry.push((notice.view.area().rect(&cx),notice.view.label(&mut cx,ids!(status)).area().rect(&cx),notice.view.button(&mut cx,ids!(open)).area().rect(&cx)));
+            }
+            assert!(geometry[0].0.size.y>0.0);
+            assert_eq!(geometry[0],geometry[1],"polling must not resize the notice or move Open Service at width {width}");
+            assert_eq!(geometry[0],geometry[2]);
+        }
+    }
     #[test] fn direct_notice_requires_exact_owner_direct_scope_and_active_binding() {
         let good=json!({"bindings":[{"id":"b","agentId":"a","roomId":"!r:s","scopeKind":"owner_direct","projectId":null,"state":"active"}]});
         assert!(exact_direct_binding(&good,"a","!r:s").is_some());

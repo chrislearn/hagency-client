@@ -13,6 +13,11 @@ service; a normal Matrix server is rejected. The Matrix SDK owns this login's
 refresh and persistence. Native management uses the same current account proof,
 without asking for a copied token or a second Matrix login.
 
+When Pasion advertises account creation, the selected server also shows **Create
+an account**. This opens Pasion registration in your browser with OAuth
+`prompt=create`; after registration and consent, the same SDK callback signs you
+in to Desktop. A server that disables registration hides this option.
+
 Saved accounts are available on the login page and under **Settings → Account**.
 Switching accounts stops the current owner's local Agent runtime and clears its
 active permissions. The previous account's separate data remains; Agent ownership

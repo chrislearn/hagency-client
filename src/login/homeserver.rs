@@ -108,7 +108,10 @@ pub async fn login_methods(client: &Client) -> Result<LoginMethods> {
     }
     Ok(LoginMethods {
         homeserver: client.homeserver().to_string(), password: false, sso: false,
-        oauth: true, oauth_aware_preferred: true, browser_registration: false,
+        oauth: true, oauth_aware_preferred: true,
+        browser_registration: metadata.prompt_values_supported.contains(
+            &matrix_sdk::ruma::api::client::discovery::get_authorization_server_metadata::v1::Prompt::Create,
+        ),
         providers: Vec::new(),
     })
 }
@@ -150,7 +153,7 @@ fn validate_oauth_metadata(
 }
 
 /// Standard SDK OAuth: the SDK installs the Matrix device and alone refreshes it.
-pub(crate) async fn oauth_browser_login<F, Fut>(client: &Client, open: F) -> Result<()>
+pub(crate) async fn oauth_browser_login<F, Fut>(client: &Client, register: bool, open: F) -> Result<()>
 where
     F: FnOnce(String) -> Fut,
     Fut: std::future::Future<Output = Result<()>>,
@@ -169,6 +172,10 @@ where
     validate_oauth_metadata(&oauth_metadata)?;
     if oauth_metadata.issuer != client.homeserver().join("auth/")? {
         bail!("This server advertised an unexpected Pasion issuer");
+    }
+    // Recheck at activation: registration may have been disabled since discovery.
+    if register && !oauth_metadata.prompt_values_supported.contains(&Prompt::Create) {
+        bail!("This server does not advertise browser account creation. Try password registration if available.");
     }
     let (redirect, server) = LocalServerBuilder::new().spawn().await?;
     let metadata = ClientMetadata {
@@ -191,7 +198,7 @@ where
             Some(Raw::new(&metadata)?.into()),
             None,
         )
-        .prompt(vec![Prompt::from("login")])
+        .prompt(vec![if register { Prompt::Create } else { Prompt::from("login") }])
         .build()
         .await?;
     if let Err(e) = open(data.url.to_string()).await {

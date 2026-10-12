@@ -6071,12 +6071,12 @@ async fn run_registration(
 
 /// Use only provider IDs advertised by the selected homeserver.
 async fn run_sso_login(homeserver_url: String, provider_id: Option<String>, register: bool) -> Result<(Client, ClientSessionPersisted)> {
-    let reauth = OAUTH_REAUTH.lock().unwrap().clone().filter(|(origin,_)| origin.trim_end_matches('/')==homeserver_url.trim_end_matches('/'));
+    let reauth = OAUTH_REAUTH.lock().unwrap().clone().filter(|(origin,_)| !register && origin.trim_end_matches('/')==homeserver_url.trim_end_matches('/'));
     if let Some((_, owner)) = reauth {
         let stored: persistence::FullSessionPersisted = serde_json::from_slice(&tokio::fs::read(persistence::session_file_path(&owner)).await?)?;
         if matches!(stored.user_session, persistence::PersistedUserSession::OAuth { .. }) {
             let (client,_) = persistence::restore_session_for_login(owner.clone()).await?;
-            crate::login::homeserver::oauth_browser_login(&client, |url| async move {
+            crate::login::homeserver::oauth_browser_login(&client, false, |url| async move {
                 Uri::new(&url).open().map_err(|_| anyhow!("Unable to open your browser"))
             }).await?;
             if client.user_id()!=Some(&owner) { bail!("Pasion returned another Matrix account"); }
@@ -6093,8 +6093,7 @@ async fn run_sso_login(homeserver_url: String, provider_id: Option<String>, regi
     }, app_data_dir()).await?;
     let methods = crate::login::homeserver::login_methods(&client).await?;
     if methods.oauth {
-        if register { bail!("Sign in through Pasion first; account creation is handled by your server."); }
-        crate::login::homeserver::oauth_browser_login(&client, |url| async move {
+        crate::login::homeserver::oauth_browser_login(&client, register, |url| async move {
             Uri::new(&url).open().map_err(|_| anyhow!("Unable to open your browser"))
         }).await?;
         return Ok((client, session));

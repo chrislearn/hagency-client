@@ -753,6 +753,33 @@ mod browser_login_tests {
     use super::browser_login_allowed;
 
     #[test]
+    fn oauth_registration_button_follows_server_capability() {
+        use super::*;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut screen = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            vm.bx.captured_errors = Some(Vec::new());
+            let value = script_eval!(vm, {mod.widgets.LoginScreen {}});
+            let screen = LoginScreen::script_from_value(vm, value);
+            assert!(vm.take_errors().is_empty());
+            screen
+        });
+        for browser_registration in [false, true, false] {
+            screen.show_methods(&mut cx, LoginMethods {
+                homeserver: "https://hagency.meldry.com/".to_owned(),
+                password: false, sso: false, oauth: true,
+                oauth_aware_preferred: true, browser_registration,
+                providers: Vec::new(),
+            });
+            assert_eq!(screen.view.button(&mut cx, ids!(register_option_button)).visible(), browser_registration);
+            assert!(screen.view.button(&mut cx, ids!(browser_login_button)).visible());
+            assert!(!screen.view.view(&mut cx, ids!(registration_form)).visible());
+            assert!(!screen.view.view(&mut cx, ids!(password_form)).visible());
+        }
+    }
+
+    #[test]
     fn recent_servers_survive_reapply_and_reopen_without_changing_address() {
         use super::*;
         let mut cx=Cx::new(Box::new(|_,_| {}));
