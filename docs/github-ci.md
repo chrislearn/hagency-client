@@ -118,3 +118,10 @@ miniapp file byte-identical. The failed v1.1.0 tag is retained; the repair ships
 in v1.1.1. The final v1.1.2 candidate also installs `libva2` and
 `libva-drm2`, required by the packaging dependency scanner for Makepad video.
 Failure caches are retained so packaging repairs can reuse compiled dependencies.
+
+The second Windows gate passed445tests but found two nested-bundle failures:
+the vendored contract hashed Windows path separators instead of the producer
+encoding. `bundle::digest_dir` now joins components with `/`; original manifests
+and the Unix digest remain unchanged. A pinned nested-bundle hash is checked on
+every platform before the Desktop library tests. v1.1.2 is created only after
+the complete installer gate passes.

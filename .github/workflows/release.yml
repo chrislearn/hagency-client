@@ -102,7 +102,9 @@ jobs:
           cargo install cargo-packager --version 0.10.1 --locked
           cargo install robius-packaging-commands --version 0.4.1 --locked
       - name: Test Desktop before packaging
-        run: cargo test --locked --features agent_chat --lib
+        run: |
+          cargo test --locked -p octosense-app-contract --lib
+          cargo test --locked --features agent_chat --lib
       - name: Import Apple certificate for configured signed releases
         if: runner.os == 'macOS' && vars.MACOS_SIGNED_RELEASE == 'true'
         uses: ./.github/actions/import-apple-cert

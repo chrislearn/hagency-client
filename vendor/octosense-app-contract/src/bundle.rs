@@ -26,7 +26,14 @@ pub fn digest_dir(root: &Path) -> Result<String, String> {
         // Path, then length, then content: without the length a file ending
         // where the next path begins could be shuffled without changing the
         // digest.
-        hasher.update(relative.to_string_lossy().as_bytes());
+        // A producer's Unix digest must also verify on Windows. Join path
+        // components rather than replacing backslashes in Unix filenames.
+        let canonical = relative
+            .components()
+            .map(|component| component.as_os_str().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join("/");
+        hasher.update(canonical.as_bytes());
         hasher.update(&[0]);
         hasher.update(&(bytes.len() as u64).to_le_bytes());
         hasher.update(&bytes);
@@ -68,6 +75,16 @@ mod tests {
         fs::write(dir.join("page.card"), b"card source").unwrap();
         fs::write(dir.join("kit/kit.json"), b"{}").unwrap();
         dir
+    }
+
+    #[test]
+    fn nested_bundle_preserves_the_producer_digest_on_every_platform() {
+        let dir = scratch("portable-digest");
+        assert_eq!(
+            digest_dir(&dir).unwrap(),
+            "f49aecc1bcac20831972bdf6675b7e882d8899d57bc3ceacc1b37e4a6f5aae8f"
+        );
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

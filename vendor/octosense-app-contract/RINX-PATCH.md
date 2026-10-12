@@ -32,3 +32,9 @@ it cannot create a replacement approval.
 Native project room selection and its required host feature match App Hub
 `978a28f`. Only the selected joined room crosses the Rinx picker boundary;
 Palpo independently checks current owner authority before binding it.
+
+Desktop Windows integrity repair (2026-10-13): bundle digest paths now join
+filesystem components with `/`, matching the original Unix producer encoding
+without rewriting literal backslashes in Unix filenames. Manifest hashes and
+admission rules are unchanged. A fixed nested-bundle digest regression runs in
+every installer job. Preserve this repair until the shared release includes it.
