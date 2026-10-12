@@ -64,7 +64,7 @@ impl WireState {
         match path {
             "/api/hagency/v1/discovery" => (
                 200,
-                json!({"product":"hagency-server","version":"0.1.0","protocolVersion":3,"capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-device-v1","owner-direct-v1"],"homeserver":origin,"issuer":format!("{origin}_pasion/")}),
+                json!({"product":"hagency-server","version":"0.1.0","protocolVersion":3,"capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-device-v1","owner-direct-v1"],"homeserver":origin,"issuer":format!("{origin}auth/")}),
             ),
             "/api/hagency/v1/agents/agent-a" if self.restore_scope => (
                 200,
@@ -84,7 +84,7 @@ impl WireState {
             ),
             "/api/hagency/v1/identity" => (
                 200,
-                json!({"userId":"uid","mxid":OWNER,"subject":"sub","clientId":"sdk-client","issuer":format!("{origin}_pasion/"),"validUntilMs":wall_ms()+30_000}),
+                json!({"userId":"uid","mxid":OWNER,"subject":"sub","clientId":"sdk-client","issuer":format!("{origin}auth/"),"validUntilMs":wall_ms()+30_000}),
             ),
             "/api/hagency/v1/devices" => {
                 self.device_generation += 1;

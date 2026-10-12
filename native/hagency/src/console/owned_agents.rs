@@ -439,7 +439,7 @@ pub(crate) fn profile_identity(
     owner: &str,
 ) -> Result<String, Error> {
     if origin.len() > 2048
-        || issuer != format!("{origin}_pasion/")
+        || issuer != format!("{origin}auth/")
         || subject.is_empty()
         || subject.len() > 4096
         || subject.chars().any(char::is_control)
@@ -461,7 +461,13 @@ pub(crate) fn profile_identity(
         return Err(Error::Unauthorized);
     }
     let digest = Sha256::digest(
-        serde_json::to_vec(&(origin, issuer, subject, owner)).map_err(|_| Error::Unavailable)?,
+        serde_json::to_vec(&(
+            origin,
+            crate::server_admission::profile_namespace_issuer(origin),
+            subject,
+            owner,
+        ))
+        .map_err(|_| Error::Unavailable)?,
     );
     Ok(format!("{digest:x}"))
 }
@@ -504,7 +510,14 @@ pub(crate) fn ledger_path(
     }
     let stored: LocalProfileIdentity =
         serde_json::from_slice(&read_identity_marker(&marker)?).map_err(|_| Error::Unavailable)?;
-    if stored != expected {
+    let legacy = LocalProfileIdentity {
+        version: expected.version,
+        origin: expected.origin.clone(),
+        issuer: crate::server_admission::profile_namespace_issuer(origin),
+        subject: expected.subject.clone(),
+        owner: expected.owner.clone(),
+    };
+    if stored != expected && stored != legacy {
         return Err(Error::Unauthorized);
     }
     let path = directory.join("agent-local.sqlite");
@@ -513,6 +526,13 @@ pub(crate) fn ledger_path(
         .map_err(|_| Error::Unavailable)?;
     // Pin the database too: directory markers alone cannot make copied data valid.
     Ledger::open_scoped(&path, owner, &digest).map_err(|_| Error::Unauthorized)?;
+    if stored == legacy {
+        hagency_store::private::replace(
+            &marker,
+            &serde_json::to_vec(&expected).map_err(|_| Error::Unavailable)?,
+        )
+        .map_err(|_| Error::Unavailable)?;
+    }
     Ok(path)
 }
 
@@ -1457,7 +1477,7 @@ mod profile_tests {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("state");
         let origin = "https://server.example/";
-        let issuer = "https://server.example/_pasion/";
+        let issuer = "https://server.example/auth/";
         let owner = format!("@{}:example", "a".repeat(200));
         let subject = "s".repeat(255);
         let first = ledger_path(&root, origin, issuer, &subject, &owner).unwrap();
@@ -1469,6 +1489,51 @@ mod profile_tests {
         );
         hagency_store::private::replace(&marker, &vec![b' '; 32769]).unwrap();
         assert!(ledger_path(&root, origin, issuer, &subject, &owner).is_err());
+    }
+
+    #[test]
+    fn auth_path_upgrade_preserves_scoped_ledger_and_rewrites_only_matching_marker() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("state");
+        let origin = "https://server.example/";
+        let issuer = "https://server.example/auth/";
+        let owner = "@alice:example";
+        let legacy_issuer = crate::server_admission::profile_namespace_issuer(origin);
+        let legacy_digest = format!(
+            "{:x}",
+            Sha256::digest(
+                serde_json::to_vec(&(origin, &legacy_issuer, "subject", owner)).unwrap()
+            )
+        );
+        assert_eq!(
+            profile_identity(origin, issuer, "subject", owner).unwrap(),
+            legacy_digest
+        );
+        assert!(profile_identity(origin, &legacy_issuer, "subject", owner).is_err());
+        let path = ledger_path(&root, origin, issuer, "subject", owner).unwrap();
+        let marker = path.parent().unwrap().join("profile-identity.json");
+        let legacy = LocalProfileIdentity {
+            version: 1,
+            origin: origin.into(),
+            issuer: legacy_issuer,
+            subject: "subject".into(),
+            owner: owner.into(),
+        };
+        hagency_store::private::replace(&marker, &serde_json::to_vec(&legacy).unwrap()).unwrap();
+        assert_eq!(
+            ledger_path(&root, origin, issuer, "subject", owner).unwrap(),
+            path
+        );
+        let migrated: LocalProfileIdentity =
+            serde_json::from_slice(&read_identity_marker(&marker).unwrap()).unwrap();
+        assert_eq!(migrated.issuer, issuer);
+        assert_eq!(migrated.subject, "subject");
+        let wrong = LocalProfileIdentity {
+            subject: "different".into(),
+            ..legacy
+        };
+        hagency_store::private::replace(&marker, &serde_json::to_vec(&wrong).unwrap()).unwrap();
+        assert!(ledger_path(&root, origin, issuer, "subject", owner).is_err());
     }
 
     #[cfg(unix)]
@@ -1490,7 +1555,7 @@ mod profile_tests {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().join("state");
         let origin = "https://server.example/";
-        let issuer = "https://server.example/_pasion/";
+        let issuer = "https://server.example/auth/";
         let owner = "@alice:example";
         let a = ledger_path(&root, origin, issuer, "subject-a", owner).unwrap();
         let b = ledger_path(&root, origin, issuer, "subject-b", owner).unwrap();
@@ -1498,7 +1563,7 @@ mod profile_tests {
         let other = ledger_path(
             &root,
             "https://other.example/",
-            "https://other.example/_pasion/",
+            "https://other.example/auth/",
             "subject-a",
             owner,
         )
@@ -1572,7 +1637,7 @@ mod profile_tests {
             ledger_path(
                 &root,
                 origin,
-                "https://bad.example/_pasion/",
+                "https://bad.example/auth/",
                 "subject-a",
                 owner
             )

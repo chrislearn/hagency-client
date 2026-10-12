@@ -49,7 +49,7 @@ async function open(storage) {
     } else if (url.pathname === '/console/server-login/start') {
       assert.equal(req.method(), 'POST');
       const value = JSON.parse(req.postData()); starts.push(value);
-      body = { url: `${value.server}/_pasion/authorize?state=stub&prompt=login` };
+      body = { url: `${value.server}/auth/authorize?state=stub&prompt=login` };
     } else if (url.pathname === '/console/server-login/switch') {
       assert.equal(req.method(), 'POST');const value=JSON.parse(req.postData());assert.deepEqual(Object.keys(value),['profileId']);switches.push(value);
       if (switchRejected) return req.respond({status:403,contentType:'application/json',body:JSON.stringify({code:'local_access_required'})});
@@ -159,7 +159,7 @@ try {
 
   // The selector is ONLY server origins, deduplicated even with multiple saved
   // owners on the same server. No saved username is promised to Pasion.
-  profiles=[{profileId:'profile-a',server:'https://bound.example.test',issuer:'https://bound.example.test/_pasion/',mxid:'@alice:example.test',name:'Alice device'},{profileId:'profile-b',server:'https://second.example.test',issuer:'https://second.example.test/_pasion/',mxid:'@bob:second.test',name:'Bob device'},{profileId:'profile-c',server:'https://bound.example.test',issuer:'https://bound.example.test/_pasion/',mxid:'@carol:example.test',name:'Carol device'}];
+  profiles=[{profileId:'profile-a',server:'https://bound.example.test',issuer:'https://bound.example.test/auth/',mxid:'@alice:example.test',name:'Alice device'},{profileId:'profile-b',server:'https://second.example.test',issuer:'https://second.example.test/auth/',mxid:'@bob:second.test',name:'Bob device'},{profileId:'profile-c',server:'https://bound.example.test',issuer:'https://bound.example.test/auth/',mxid:'@carol:example.test',name:'Carol device'}];
   activeProfileId='profile-a';configured=true;authorized=true;state='device_authorized';serverAddress=profiles[0].server;deviceName=profiles[0].name;
   page=await open(JSON.stringify(['https://second.example.test','https://bound.example.test']));
   await page.waitForSelector('[data-server-history]');

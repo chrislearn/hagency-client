@@ -9,7 +9,7 @@ server authentication.
 
 Select a saved account/server or enter the Hagency server origin. Use
 `http://127.0.0.1:8088` for loopback development; remote or named servers require
-trusted HTTPS. Do not append `/login`, `/_pasion/` or API paths. Complete the
+trusted HTTPS. Do not append `/login`, `/auth/` or API paths. Complete the
 server's official Pasion browser authorization with your personal account.
 
 Pasion PKCE plus real Matrix whoami establishes your identity. Native management

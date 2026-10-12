@@ -3790,7 +3790,7 @@ for raw in sys.stdin:
     async fn approval_registry_fences_owner_device_expiry_digest_and_single_consumption() {
         let pin = DevicePin {
             origin: "https://server.test".into(),
-            issuer: "https://server.test/_pasion/".into(),
+            issuer: "https://server.test/auth/".into(),
             subject: "subject-a".into(),
             owner: OWNER.into(),
             user: "subject-a".into(),
@@ -3851,7 +3851,7 @@ for raw in sys.stdin:
                 2 => wrong.user = "subject-b".into(),
                 3 => wrong.id = "device-b".into(),
                 4 => wrong.generation += 1,
-                5 => wrong.issuer = "https://other.test/_pasion/".into(),
+                5 => wrong.issuer = "https://other.test/auth/".into(),
                 _ => wrong.subject = "different-oauth-subject".into(),
             }
             assert!(matches!(

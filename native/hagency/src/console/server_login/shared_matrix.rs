@@ -48,7 +48,7 @@ impl ServerLogin {
             let identity = get(&client, server.join("/api/hagency/v1/identity").unwrap(), Some(&token)).await?;
             let subject = identity["subject"].as_str().filter(|s| !s.is_empty() && s.len() <= 255).ok_or("invalid_server_response")?;
             let user = identity["userId"].as_str().filter(|s| !s.is_empty() && s.len() <= 128).ok_or("invalid_server_response")?;
-            if identity["mxid"] != expected_owner || identity["issuer"] != server.join("/_pasion/").unwrap().as_str() || identity["clientId"] != snapshot.client_id || grant["mxid"] != identity["mxid"] || grant["userId"] != identity["userId"] { return Err("matrix_account_mismatch"); }
+            if identity["mxid"] != expected_owner || identity["issuer"] != server.join("/auth/").unwrap().as_str() || identity["clientId"] != snapshot.client_id || grant["mxid"] != identity["mxid"] || grant["userId"] != identity["userId"] { return Err("matrix_account_mismatch"); }
             let previous = self.binding.lock().await.clone();
             if let Some(previous) = &previous && previous.origin == expected_origin && previous.owner.as_deref() == Some(expected_owner) && previous.subject.as_deref().is_some_and(|s| s != subject) { return Err("matrix_account_mismatch"); }
             let binding = Binding { origin: expected_origin.into(), client_id: snapshot.client_id.clone(), installation_id: previous.as_ref().filter(|p| p.origin == expected_origin && p.client_id == snapshot.client_id && p.owner.as_deref() == Some(expected_owner) && p.subject.as_deref() == Some(subject)).map(|p| p.installation_id.clone()).unwrap_or(random()?), name: "Hagency Desktop".into(), owner: Some(expected_owner.into()), subject: Some(subject.into()) };
@@ -211,7 +211,7 @@ mod tests {
         let origin = format!("http://{}/", listener.local_addr().unwrap());
         let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
         let records = requests.clone();
-        let issuer = format!("{origin}_pasion/");
+        let issuer = format!("{origin}auth/");
         let mxid = mxid.to_owned();
         let task = tokio::spawn(async move {
             loop {
@@ -286,7 +286,7 @@ mod tests {
                         + 30_000;
                     let value = match path.as_str() {
                         "/api/hagency/v1/discovery" => {
-                            json!({"product":"hagency-server","version":"0.1.0","protocolVersion":3,"capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-device-v1","owner-direct-v1"],"homeserver":issuer.strip_suffix("_pasion/").unwrap(),"issuer":issuer})
+                            json!({"product":"hagency-server","version":"0.1.0","protocolVersion":3,"capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-device-v1","owner-direct-v1"],"homeserver":issuer.strip_suffix("auth/").unwrap(),"issuer":issuer})
                         }
                         "/api/hagency/v1/sessions/pasion" => {
                             json!({"token":"a".repeat(64),"userId":"uid","mxid":mxid,"validUntilMs":until})
@@ -512,7 +512,7 @@ mod tests {
         assert!(
             !records
                 .iter()
-                .any(|(path, _)| path.starts_with("/_pasion/"))
+                .any(|(path, _)| path.starts_with("/auth/"))
         );
         let metadata =
             std::fs::read_to_string(root.path().join("state/server-login-revocations.json"))
@@ -545,7 +545,7 @@ mod tests {
         assert!(
             !records
                 .iter()
-                .any(|(path, _)| path.starts_with("/_pasion/"))
+                .any(|(path, _)| path.starts_with("/auth/"))
         );
         assert!(!records.iter().any(|(path, _)| path.ends_with("/devices")));
         assert!(
@@ -587,7 +587,7 @@ mod tests {
         assert!(
             !records
                 .iter()
-                .any(|(path, _)| path.starts_with("/_pasion/"))
+                .any(|(path, _)| path.starts_with("/auth/"))
         );
         let saved =
             std::fs::read_to_string(root.path().join("state/server-login-revocations.json"))
@@ -635,7 +635,7 @@ mod tests {
                 .lock()
                 .unwrap()
                 .iter()
-                .any(|(path, _)| path.starts_with("/_pasion/"))
+                .any(|(path, _)| path.starts_with("/auth/"))
         );
         task.abort();
     }

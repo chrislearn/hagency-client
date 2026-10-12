@@ -34,7 +34,7 @@ try {
       mutations.push({ path: url.pathname, body: req.postData() ? JSON.parse(req.postData()) : null });
       await new Promise(resolve => setTimeout(resolve, 120));
       if (fail) { value = { code: 'server_unavailable' }; status = 503; }
-      else if (url.pathname.endsWith('/start')) value = { url: 'https://matrix.example.test/_pasion/oauth2/authorize?prompt=login' };
+      else if (url.pathname.endsWith('/start')) value = { url: 'https://matrix.example.test/auth/oauth2/authorize?prompt=login' };
       else { authorized = false; value = { activeProfileId: null, needsLogin: true }; }
     } else if (url.pathname === '/console/api/owned-agents') { value = authorized ? { ownerMxid: mismatchedOwner ? '@bob:example.test' : '@alice:example.test', agents: [], projects: [] } : { code: 'sign_in_required' }; status = authorized ? 200 : 401; }
     else if (url.pathname.startsWith('/console/api/')) { assert.equal(req.method(), 'GET', 'account menu must never submit model/provider/runtime actions'); value = { projects: [], profiles: [], state: 'signed_out', runtime: null }; }

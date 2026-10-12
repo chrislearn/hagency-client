@@ -135,7 +135,7 @@ pub fn validate_metadata(origin: &str, value: &Value) -> Result<ServerMetadata, 
         return Err(AdmissionError::MissingCapabilities);
     }
     let issuer = server
-        .join("/_pasion/")
+        .join("/auth/")
         .map_err(|_| AdmissionError::InvalidMetadata)?
         .to_string();
     if value["homeserver"] != server.as_str() || value["issuer"] != issuer {
@@ -193,13 +193,13 @@ mod tests {
     use super::*;
     use serde_json::json;
     fn metadata() -> Value {
-        json!({"product":"hagency-server","version":"0.1.0","protocolVersion":3,"capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-device-v1","owner-direct-v1"],"homeserver":"https://hagency.test/","issuer":"https://hagency.test/_pasion/"})
+        json!({"product":"hagency-server","version":"0.1.0","protocolVersion":3,"capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-device-v1","owner-direct-v1"],"homeserver":"https://hagency.test/","issuer":"https://hagency.test/auth/"})
     }
     #[test]
     fn ordinary_matrix_and_service_identity_alone_cannot_gain_admission() {
         for value in [
             json!({"versions":["v1.12"]}),
-            json!({"protocolVersion":3,"serviceMxid":"@hagency_appservice:test","homeserver":"https://hagency.test/","issuer":"https://hagency.test/_pasion/"}),
+            json!({"protocolVersion":3,"serviceMxid":"@hagency_appservice:test","homeserver":"https://hagency.test/","issuer":"https://hagency.test/auth/"}),
         ] {
             assert_eq!(
                 validate_metadata("https://hagency.test/", &value),
@@ -230,7 +230,7 @@ mod tests {
             Err(AdmissionError::MissingCapabilities)
         );
         value = metadata();
-        value["issuer"] = json!("https://foreign.test/_pasion/");
+        value["issuer"] = json!("https://foreign.test/auth/");
         assert_eq!(
             validate_metadata("https://hagency.test/", &value),
             Err(AdmissionError::InvalidMetadata)
@@ -357,4 +357,10 @@ mod tests {
         assert_eq!(error.code, "unsupported_hagency_server");
         task.await.unwrap();
     }
+}
+
+/// Stable storage namespace for the same embedded identity provider. This is
+/// never used as an OAuth endpoint or accepted as an advertised issuer.
+pub(crate) fn profile_namespace_issuer(origin: &str) -> String {
+    format!("{origin}_pasion/")
 }

@@ -8,7 +8,7 @@ IPC 获取访问链接。本机控制台访问与 server 认证是两个步骤�
 
 选择保存的账号/服务器或输入 Hagency server origin。本机开发使用
 `http://127.0.0.1:8088`，远程或命名域名需要可信 HTTPS。不追加 `/login`、
-`/_pasion/` 或 API 路径。在官方 Pasion 浏览器流程中使用自己的个人账号授权。
+`/auth/` 或 API 路径。在官方 Pasion 浏览器流程中使用自己的个人账号授权。
 
 Pasion PKCE 与实际 Matrix whoami 验证身份。原生管理使用 `/api/hagency/v1`，
 server 浏览器管理使用封闭 `/api/browser/hagency/v1` BFF；原生 API 拒绝浏览器

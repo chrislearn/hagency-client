@@ -11,7 +11,7 @@ fn id(binding: &Binding) -> Option<String> {
     let subject = binding.subject.as_ref()?;
     let raw = serde_json::to_vec(&(
         &binding.origin,
-        format!("{}_pasion/", binding.origin),
+        crate::server_admission::profile_namespace_issuer(&binding.origin),
         subject,
         owner,
     ))
@@ -112,7 +112,7 @@ impl ServerLogin {
     }
     pub(super) async fn profiles_status(&self) -> Value {
         let profiles = self.profiles.lock().await;
-        json!({"activeProfileId": profiles.active_profile_id, "profiles":profiles.accounts.iter().map(|b|json!({"profileId":id(b),"server":b.origin,"issuer":format!("{}_pasion/",b.origin),"mxid":b.owner,"name":b.name})).collect::<Vec<_>>()})
+        json!({"activeProfileId": profiles.active_profile_id, "profiles":profiles.accounts.iter().map(|b|json!({"profileId":id(b),"server":b.origin,"issuer":format!("{}auth/",b.origin),"mxid":b.owner,"name":b.name})).collect::<Vec<_>>()})
     }
     pub(super) async fn select_profile(&self, key: Option<&str>) -> Result<Value, &'static str> {
         let mut profiles = self.profiles.lock().await;

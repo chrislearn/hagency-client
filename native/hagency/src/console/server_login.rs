@@ -81,7 +81,7 @@ pub(super) fn fixture_device(
     (
         AuthorizedDevice {
             origin: origin.into(),
-            issuer: format!("{}_pasion/", origin),
+            issuer: format!("{}auth/", origin),
             subject: subject.into(),
             owner_mxid: mxid.into(),
             user_id: subject.into(),
@@ -466,7 +466,7 @@ impl ServerLogin {
             }
             if !record.oauth_done
                 && let Ok(reply) = client
-                    .post(server.join("/_pasion/oauth2/revoke").unwrap())
+                    .post(server.join("/auth/oauth2/revoke").unwrap())
                     .form(&[
                         ("client_id", record.client_id.as_str()),
                         ("token", record.oauth_token.as_str()),
@@ -565,7 +565,7 @@ fn identity_matches(identity: &Value, binding: &Binding) -> bool {
     identity["mxid"] == binding.owner.as_deref().unwrap_or("")
         && identity["subject"] == binding.subject.as_deref().unwrap_or("")
         && identity["clientId"] == binding.client_id
-        && identity["issuer"] == format!("{}_pasion/", binding.origin)
+        && identity["issuer"] == format!("{}auth/", binding.origin)
 }
 async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
     if session.invalidated {
@@ -604,7 +604,7 @@ async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
         if let Some(refresh) = &session.refresh_token {
             let tokens = response(
                 client
-                    .post(server.join("/_pasion/oauth2/token").unwrap())
+                    .post(server.join("/auth/oauth2/token").unwrap())
                     .form(&[
                         ("grant_type", "refresh_token"),
                         ("client_id", session.binding.client_id.as_str()),
@@ -980,7 +980,7 @@ async fn begin(req: &mut Request, depot: &Depot) -> Result<(String, String), &'s
             registered
                 .set_port(None)
                 .map_err(|_| "invalid_local_origin")?;
-            let registration=response(client.post(server.join("/_pasion/oauth2/registration").unwrap()).json(&json!({"client_name":"Hagency Client","client_uri":"https://github.com/chrislearn/hagency-client","application_type":"native","token_endpoint_auth_method":"none","grant_types":["authorization_code","refresh_token"],"response_types":["code"],"redirect_uris":[registered]})).send().await.map_err(|_|"server_unavailable")?).await?;
+            let registration=response(client.post(server.join("/auth/oauth2/registration").unwrap()).json(&json!({"client_name":"Hagency Client","client_uri":"https://github.com/chrislearn/hagency-client","application_type":"native","token_endpoint_auth_method":"none","grant_types":["authorization_code","refresh_token"],"response_types":["code"],"redirect_uris":[registered]})).send().await.map_err(|_|"server_unavailable")?).await?;
             let client_id = registration["client_id"]
                 .as_str()
                 .filter(|v| v.len() <= 128)
@@ -1007,7 +1007,7 @@ async fn begin(req: &mut Request, depot: &Depot) -> Result<(String, String), &'s
     let nonce = random()?;
     let redirect = local_redirect(req)?;
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
-    let mut authorize = server.join("/_pasion/authorize").unwrap();
+    let mut authorize = server.join("/auth/authorize").unwrap();
     let device = format!("Hagency{}", &binding.installation_id[..16]);
     authorize.query_pairs_mut().extend_pairs([
         ("prompt", "login"),
@@ -1091,7 +1091,7 @@ async fn finish(req: &mut Request, depot: &Depot) -> Result<(String, Value), &'s
     drop(lock);
     if req
         .query::<String>("iss")
-        .is_some_and(|issuer| issuer != format!("{}_pasion/", pending.binding.origin))
+        .is_some_and(|issuer| issuer != format!("{}auth/", pending.binding.origin))
     {
         return Err("owner_mismatch");
     }
@@ -1103,7 +1103,7 @@ async fn finish(req: &mut Request, depot: &Depot) -> Result<(String, Value), &'s
     let server = origin(&pending.binding.origin)?;
     let tokens = response(
         client
-            .post(server.join("/_pasion/oauth2/token").unwrap())
+            .post(server.join("/auth/oauth2/token").unwrap())
             .form(&[
                 ("grant_type", "authorization_code"),
                 ("client_id", pending.binding.client_id.as_str()),
@@ -1160,7 +1160,7 @@ async fn finish(req: &mut Request, depot: &Depot) -> Result<(String, Value), &'s
                 .as_str()
                 .filter(|v| !v.is_empty() && v.len() <= 255)
                 .ok_or("invalid_server_response")?;
-            if identity["issuer"] != server.join("/_pasion/").unwrap().as_str()
+            if identity["issuer"] != server.join("/auth/").unwrap().as_str()
                 || grant["mxid"] != identity["mxid"]
                 || grant["userId"] != identity["userId"]
                 || identity["clientId"] != pending.binding.client_id
@@ -1328,7 +1328,7 @@ async fn register_device(
                 .ok_or("invalid_server_response")?,
             token,
             owner_mxid: binding.owner.clone().ok_or("invalid_server_response")?,
-            issuer: format!("{}_pasion/", binding.origin),
+            issuer: format!("{}auth/", binding.origin),
             subject: binding.subject.clone().ok_or("invalid_server_response")?,
             user_id: user_id.into(),
             valid_until: deadline(&value)?,
@@ -1779,7 +1779,7 @@ impl ServerLogin {
                 .clone()
                 .ok_or_else(|| OwnerError::new(401, "sign_in_required"))?,
             origin: session.binding.origin.clone(),
-            issuer: format!("{}_pasion/", session.binding.origin),
+            issuer: format!("{}auth/", session.binding.origin),
             subject: session
                 .binding
                 .subject

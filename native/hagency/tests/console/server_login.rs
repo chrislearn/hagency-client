@@ -48,9 +48,9 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
     let path = req.uri().path().to_owned();
     let result = match path.as_str() {
         "/api/hagency/v1/discovery" => {
-            json!({"product":"hagency-server","version":"0.1.0","capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-device-v1","owner-direct-v1"],"protocolVersion":3,"issuer":format!("{}/_pasion/",f.origin),"homeserver":format!("{}/",f.origin)})
+            json!({"product":"hagency-server","version":"0.1.0","capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-device-v1","owner-direct-v1"],"protocolVersion":3,"issuer":format!("{}/auth/",f.origin),"homeserver":format!("{}/",f.origin)})
         }
-        "/_pasion/oauth2/registration" => {
+        "/auth/oauth2/registration" => {
             let value: Value = req.parse_json().await.unwrap();
             assert_eq!(value["token_endpoint_auth_method"], "none");
             // Pasion's Matrix DCR policy requires HTTPS application metadata,
@@ -66,7 +66,7 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
             assert_eq!(redirect.path(), "/console/server-login/callback");
             json!({"client_id":"fixture-public-client"})
         }
-        "/_pasion/oauth2/token" => {
+        "/auth/oauth2/token" => {
             use base64::Engine;
             let payload = String::from_utf8(req.payload().await.unwrap().to_vec()).unwrap();
             let fields: std::collections::HashMap<_, _> =
@@ -167,7 +167,7 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
                 res.render(Json(json!({"code":"sign_in_required"})));
                 return;
             }
-            json!({"userId":"stable-user-id","mxid":state.owner,"subject":state.owner,"clientId":"fixture-public-client","issuer":state.issuer_override.clone().unwrap_or_else(||format!("{}/_pasion/",f.origin)),"validUntilMs":until()})
+            json!({"userId":"stable-user-id","mxid":state.owner,"subject":state.owner,"clientId":"fixture-public-client","issuer":state.issuer_override.clone().unwrap_or_else(||format!("{}/auth/",f.origin)),"validUntilMs":until()})
         }
         "/api/hagency/v1/sessions/pasion" | "/api/hagency/v1/sessions/current/renew" => {
             let body: Value = req.parse_json().await.unwrap();
@@ -331,7 +331,7 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
             }
             json!({"agent":{"id":"agt_fixture","ownerUserId":"stable-user-id","puppetMxid":"@_hagency_agt_fixture:example.test","displayName":"My Codex","state":"active","executionDeviceId":state.execution_device,"generation":state.agent_generation.max(1)}})
         }
-        "/api/hagency/v1/sessions/current" | "/_pasion/oauth2/revoke" => {
+        "/api/hagency/v1/sessions/current" | "/auth/oauth2/revoke" => {
             if f.state.lock().unwrap().revoke_unavailable {
                 res.status_code(StatusCode::SERVICE_UNAVAILABLE);
                 res.render(Json(json!({"code":"unavailable"})));
@@ -924,7 +924,7 @@ async fn native_server_login_background_refresh_logout_and_issuer_pin() {
         Some(StatusCode::UNAUTHORIZED)
     );
     let (state, nonce) = start(&service, &fake, "").await;
-    fake.state.lock().unwrap().issuer_override = Some("https://attacker.test/_pasion/".into());
+    fake.state.lock().unwrap().issuer_override = Some("https://attacker.test/auth/".into());
     let reply = callback(&service, &state, &nonce).await;
     assert!(
         !reply
@@ -1907,7 +1907,7 @@ async fn native_real_pasion_dcr_pkce_consent_and_user_device_grants() {
                 Some("continue_authorization_grant")
             );
             let reauthenticate = client
-                .post(format!("{base}/_pasion/api/v1/auth/login"))
+                .post(format!("{base}/auth/api/v1/auth/login"))
                 .json(&json!({"username":fixture["username"],"password":fixture["password"]}))
                 .send()
                 .await
@@ -1929,7 +1929,7 @@ async fn native_real_pasion_dcr_pkce_consent_and_user_device_grants() {
                 .to_owned()
         };
         let consent = client
-            .post(format!("{base}/_pasion/api/v1/oauth2/consent/{grant_id}"))
+            .post(format!("{base}/auth/api/v1/oauth2/consent/{grant_id}"))
             .header("cookie", &browser_cookie)
             .header("origin", base)
             .json(&json!({"action":"consent"}))
@@ -2095,7 +2095,7 @@ async fn real_owner_host_creates_space_room_adopts_discovers_and_creates_agent()
                 Some("continue_authorization_grant")
             );
             let reauthenticate = client
-                .post(format!("{base}/_pasion/api/v1/auth/login"))
+                .post(format!("{base}/auth/api/v1/auth/login"))
                 .json(&json!({"username":fixture["username"],"password":fixture["password"]}))
                 .send()
                 .await
@@ -2117,7 +2117,7 @@ async fn real_owner_host_creates_space_room_adopts_discovers_and_creates_agent()
                 .to_owned()
         };
         let consent = client
-            .post(format!("{base}/_pasion/api/v1/oauth2/consent/{grant_id}"))
+            .post(format!("{base}/auth/api/v1/oauth2/consent/{grant_id}"))
             .header("cookie", &browser_cookie)
             .header("origin", base)
             .json(&json!({"action":"consent"}))

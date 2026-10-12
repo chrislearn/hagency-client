@@ -1012,7 +1012,7 @@ mod tests {
         let a = paths(
             &root,
             "https://server.example/",
-            "https://server.example/_pasion/",
+            "https://server.example/auth/",
             "sub-a",
             "@owner:example",
         )
@@ -1020,7 +1020,7 @@ mod tests {
         let b = paths(
             &root,
             "https://server.example/",
-            "https://server.example/_pasion/",
+            "https://server.example/auth/",
             "sub-b",
             "@owner:example",
         )
@@ -1053,7 +1053,7 @@ mod tests {
         let paths = paths(
             &root,
             "https://server.example/",
-            "https://server.example/_pasion/",
+            "https://server.example/auth/",
             "fresh-subject",
             "@owner:example",
         )
@@ -1086,7 +1086,7 @@ mod tests {
         let mut p = paths(
             &root,
             "https://server.example/",
-            "https://server.example/_pasion/",
+            "https://server.example/auth/",
             "shared-probe",
             "@owner:example",
         )
@@ -1119,7 +1119,7 @@ mod tests {
         let first = paths(
             &root,
             "https://server.example/",
-            "https://server.example/_pasion/",
+            "https://server.example/auth/",
             "test-subject",
             "@alice:example",
         )
@@ -1127,7 +1127,7 @@ mod tests {
         let second = paths(
             &root,
             "https://server.example/",
-            "https://server.example/_pasion/",
+            "https://server.example/auth/",
             "test-subject",
             "@bob:example",
         )
@@ -1135,7 +1135,7 @@ mod tests {
         let changed_subject = paths(
             &root,
             "https://server.example/",
-            "https://server.example/_pasion/",
+            "https://server.example/auth/",
             "different-subject",
             "@alice:example",
         )
@@ -1201,7 +1201,7 @@ for line in sys.stdin:
             let paths = paths(
                 &root.join("state"),
                 "https://server.example/",
-                "https://server.example/_pasion/",
+                "https://server.example/auth/",
                 sub,
                 "@alice:example",
             )
@@ -1237,7 +1237,7 @@ for line in sys.stdin:
         let paths = paths(
             &directory.join("state"),
             "https://server.example/",
-            "https://server.example/_pasion/",
+            "https://server.example/auth/",
             "test-subject",
             "@owner:example",
         )
@@ -1330,7 +1330,7 @@ for line in sys.stdin:
         let paths = paths(
             &root,
             "https://server.example/",
-            "https://server.example/_pasion/",
+            "https://server.example/auth/",
             "test-subject",
             "@fresh-owner:example",
         )

@@ -398,7 +398,7 @@ impl ServerLogin {
                 .clone()
                 .ok_or_else(|| error(401, "sign_in_required"))?,
             origin: session.binding.origin.clone(),
-            issuer: format!("{}_pasion/", session.binding.origin),
+            issuer: format!("{}auth/", session.binding.origin),
             subject: session
                 .binding
                 .subject
@@ -628,7 +628,7 @@ async fn context<'a>(
     let ledger = crate::console::owned_agents::ledger_path(
         &root,
         &identity.0,
-        &format!("{}_pasion/", identity.0),
+        &format!("{}auth/", identity.0),
         &identity.2,
         &identity.1,
     )
