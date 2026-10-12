@@ -103,3 +103,13 @@ Publication validation: Desktop library tests passed locally (447 passed,
 2 ignored). Client native binary compilation and Agent-local/runtime library
 unit tests passed before publishing the pinned client source. Ignored tests
 are not counted as passing. Full platform builds remain GitHub CI results.
+
+## Windows checkout integrity (2026-10-13)
+
+The first tagged installer run found Windows CRLF conversion changed embedded
+contract SHA-256 fixtures and the example miniapp bundle digests. Repository
+`.gitattributes` now keeps text files at LF on every checkout, preserving the
+original producer hashes without disabling verification. A fresh checkout with
+`core.autocrlf=true` verifies all 20 contract hashes and keeps every example
+miniapp file byte-identical. The failed v1.1.0 tag is retained; the repair ships
+in v1.1.1.
