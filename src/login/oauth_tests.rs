@@ -81,10 +81,10 @@ impl Fixture {
                     json!({"versions":["v1.15"],"unstable_features":{}})
                 } else if route.contains("/api/hagency/v1/discovery ") {
                     json!({"product":"hagency-server","version":"0.1.0","protocolVersion":3,
-                        "homeserver":format!("{root}/"),"issuer":format!("{root}/_pasion/"),
+                        "homeserver":format!("{root}/"),"issuer":format!("{root}/auth/"),
                         "capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-device-v1","owner-direct-v1"]})
                 } else if route.contains("/auth_metadata ") {
-                    json!({"issuer":format!("{root}/_pasion/"),"authorization_endpoint":format!("{root}/_pasion/authorize"),"token_endpoint":format!("{root}/_pasion/token"),"registration_endpoint":format!("{root}/_pasion/register"),"revocation_endpoint":format!("{root}/_pasion/revoke"),"response_types_supported":["code"],"grant_types_supported":["authorization_code","refresh_token"],"code_challenge_methods_supported":["S256"],"token_endpoint_auth_methods_supported":["none"]})
+                    json!({"issuer":format!("{root}/auth/"),"authorization_endpoint":format!("{root}/auth/authorize"),"token_endpoint":format!("{root}/auth/token"),"registration_endpoint":format!("{root}/auth/register"),"revocation_endpoint":format!("{root}/auth/revoke"),"response_types_supported":["code"],"grant_types_supported":["authorization_code","refresh_token"],"code_challenge_methods_supported":["S256"],"token_endpoint_auth_methods_supported":["none"]})
                 } else if route.contains("/register ") {
                     assert!(
                         payload["grant_types"]
@@ -121,7 +121,7 @@ impl Fixture {
                 } else if route.contains("/api/hagency/v1/sessions/pasion ") {
                     json!({"token":"a".repeat(64),"userId":"fixture-user","mxid":"@fixture:localhost","validUntilMs":until})
                 } else if route.contains("/api/hagency/v1/identity ") {
-                    json!({"userId":"fixture-user","mxid":"@fixture:localhost","subject":"fixture-subject","issuer":format!("{root}/_pasion/"),"clientId":"desktop-fixture","validUntilMs":until})
+                    json!({"userId":"fixture-user","mxid":"@fixture:localhost","subject":"fixture-subject","issuer":format!("{root}/auth/"),"clientId":"desktop-fixture","validUntilMs":until})
                 } else if route.contains("/api/hagency/v1/devices ") {
                     json!({"deviceId":"fixture-runtime-device","token":"b".repeat(64),"generation":1,"validUntilMs":until})
                 } else if route.contains("/api/hagency/v1/projects ") {
@@ -338,7 +338,7 @@ async fn sdk_oauth_dcr_pkce_callback_whoami_refresh_and_session_roundtrip() {
     assert!(
         !requests
             .iter()
-            .any(|(p, _)| p.contains("/_pasion/revoke") || p.contains("oauth2/revoke"))
+            .any(|(p, _)| p.contains("/auth/revoke") || p.contains("oauth2/revoke"))
     );
     drop(requests);
     // A removed account cannot be recreated by a late refresh callback.
@@ -482,7 +482,7 @@ async fn oauth_reauthentication_mismatch_revokes_only_new_grant_and_retains_prev
     let requests = fixture.requests.lock().unwrap();
     let revoked: Vec<_> = requests
         .iter()
-        .filter(|(p, _)| p.contains("/_pasion/revoke "))
+        .filter(|(p, _)| p.contains("/auth/revoke "))
         .collect();
     assert_eq!(revoked.len(), 2);
     assert_eq!(revoked[0].1["token"], "oauth-refresh-wrong");
@@ -490,7 +490,7 @@ async fn oauth_reauthentication_mismatch_revokes_only_new_grant_and_retains_prev
     assert_eq!(
         requests
             .iter()
-            .filter(|(p, _)| p.contains("/_pasion/register "))
+            .filter(|(p, _)| p.contains("/auth/register "))
             .count(),
         1
     );
@@ -514,7 +514,7 @@ async fn oauth_reauthentication_mismatch_revokes_only_new_grant_and_retains_prev
             .lock()
             .unwrap()
             .iter()
-            .any(|(p, b)| p.contains("/_pasion/revoke ") && b["token"] == "oauth-refresh")
+            .any(|(p, b)| p.contains("/auth/revoke ") && b["token"] == "oauth-refresh")
     );
 }
 

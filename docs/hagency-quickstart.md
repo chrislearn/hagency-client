@@ -74,7 +74,8 @@ invitation. This picker does not create a second Agent identity.
 | Limits | Agent total, selected Room total, and selected requester in that Room. |
 | Service | Selected Room runtime, explicit estimated reservation, scoped files and pending approvals. |
 
-Choose **Use my signed-in local Codex account** to reuse the current machine's
+Select Codex, Claude Code or Octos in **Local agent runtime**.
+Choose **Connect my local account** to reuse the current machine's
 Codex login. No second login is needed when that account is already valid.
 Disconnecting its association keeps your everyday Codex signed in. Separate
 Codex sign-in is also available; cancel/open-URL/sign-out controls apply to that
@@ -95,10 +96,22 @@ Request handling can Allow, Deny or Ask owner. Tool policy can deny high risk, a
 per exact tool, or restrict exact tools/directories. Saving preserves spent usage
 and unresolved holds. A budget hold is not measured usage of zero.
 
+Claude Code uses its existing local sign-in and the Sonnet, Opus or Haiku model
+alias with supported effort choices. Octos uses an existing local profile; profiles
+with the same model remain distinct and keep their own reasoning settings.
+Credentials remain in the provider app. Disconnecting removes this owner's
+association without signing out that app. Stop the service before changing
+runtimes, save the profile, then restart.
+
+Claude/Octos native tools use the existing Agent, Room and requester permission
+layers and owner approval list. A denial at any layer blocks the operation. The
+Room-files switch is the Codex Hagency file bridge; this bridge is not registered
+with Claude or Octos.
+
 ## Start and chat
 
 In **Service**, select an active private chat or Room binding. Wait for
-the saved Codex profile and account check to finish. Explicitly choose estimated
+the saved local runtime profile and account check to finish. Explicitly choose estimated
 accounting, a positive per-request reservation and save a supported reasoning effort in Model & resources.
 Scoped host files are opt-in and currently limited to list/read/create; native
 shell and MCP execution are not exposed by this host.

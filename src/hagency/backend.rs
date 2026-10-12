@@ -128,7 +128,7 @@ impl MatrixTokenSource for SdkTokens {
             .map_err(|_| source_error("matrix_authorization_unavailable"))?
             .map_err(|_| source_error("matrix_authorization_unavailable"))?;
             service.check().map_err(|e| source_error(&e))?;
-            if metadata.issuer.as_str() != format!("{}_pasion/", service.0.origin) {
+            if metadata.issuer.as_str() != format!("{}auth/", service.0.origin) {
                 return Err(source_error("unsupported_hagency_issuer"));
             }
             // This actual SDK request refreshes expired OAuth credentials. Do not

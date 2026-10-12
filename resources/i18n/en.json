@@ -1775,5 +1775,14 @@
   "This Agent is now handled here. Configure a local runtime and budgets before starting.": "This Agent is now handled here. Configure a local runtime and budgets before starting.",
   "Load local resources and select a supported reasoning effort before starting.": "Load local resources and select a supported reasoning effort before starting.",
   "Save the selected reasoning effort in model settings before starting.": "Save the selected reasoning effort in model settings before starting.",
-  "The saved model or workspace is unavailable. Check this Agent's local resources and save them before starting.": "The saved model or workspace is unavailable. Check this Agent's local resources and save them before starting."
+  "The saved model or workspace is unavailable. Check this Agent's local resources and save them before starting.": "The saved model or workspace is unavailable. Check this Agent's local resources and save them before starting.",
+  "Use profile settings": "Use profile settings",
+  "Claude Code is not installed or could not be started. Check the local installation.": "Claude Code is not installed or could not be started. Check the local installation.",
+  "Octos is not installed or could not be started. Check the local installation.": "Octos is not installed or could not be started. Check the local installation.",
+  "Check your local Claude sign-in, then connect the account again.": "Check your local Claude sign-in, then connect the account again.",
+  "The local runtime's account directory is unavailable. Check its local setup.": "The local runtime's account directory is unavailable. Check its local setup.",
+  "No usable Octos profiles were found. Configure a local Octos profile, then refresh.": "No usable Octos profiles were found. Configure a local Octos profile, then refresh.",
+  "The local runtime's account or configuration is unavailable. Check Model & resources and reconnect.": "The local runtime's account or configuration is unavailable. Check Model & resources and reconnect.",
+  "Sign in through the local runtime, then connect it here.": "Sign in through the local runtime, then connect it here.",
+  "The saved local account selection is unavailable or does not match this profile. Reconnect the intended account and retry.": "The saved local account selection is unavailable or does not match this profile. Reconnect the intended account and retry."
 }
