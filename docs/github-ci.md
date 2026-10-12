@@ -9,7 +9,7 @@ GitHub Releases at the 2026-10-10 audit.
 
 Every Cargo workflow now invokes `.github/actions/setup-hagency-client` after
 checking out Desktop. It checks out `chrislearn/hagency-client` at the exact
-published commit `04beb79fdf1995b78f84cf1dcabc315158ccf9ba`, without persisted
+published commit `7da298a93f2f8d48c8f518d189b76c16f995d943`, without persisted
 credentials, and places it at the sibling path required by Cargo.toml. It refuses
 to overwrite an existing sibling tree. Review/update this pin and Desktop's
 Cargo.lock together whenever the native client API changes. It intentionally
@@ -44,10 +44,11 @@ tests, then packages the app with its existing resource and Octos runtime hooks:
 | Windows | amd64 | NSIS EXE installer |
 
 Manual runs upload Actions artifacts only (14-day retention). Tagged runs require
-the tag to match the package version, and create/update a **draft** GitHub Release
+the tag to match the package version, and publish a GitHub Release
 only when all five platform jobs pass. Seven installers are verified against
 per-platform checksums and a combined SHA256SUMS.txt. A rerun refuses to overwrite
-an already published release. Publishing the draft is a separate operator action.
+an already published release. Assets are uploaded to a draft first; the workflow
+then publishes it after the complete upload succeeds.
 The standard GITHUB_TOKEN suffices; RINX_RELEASE is no longer required.
 
 ## Signing

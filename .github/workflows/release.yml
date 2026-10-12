@@ -146,7 +146,7 @@ jobs:
           retention-days: 14
 
   release:
-    name: Assemble draft release
+    name: Publish complete release
     needs: package
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
@@ -180,7 +180,7 @@ jobs:
             printf 'macOS packages are unsigned development builds; Gatekeeper may block installation.\n' >> ../release-notes.md
           fi
           printf 'Windows packages are currently unsigned.\n' >> ../release-notes.md
-      - name: Create or update draft
+      - name: Upload installers and publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
@@ -196,3 +196,4 @@ jobs:
             if [[ "$TAG" == *-* ]]; then args+=(--prerelease); fi
             gh release create "$TAG" release-assets/* "${args[@]}"
           fi
+          gh release edit "$TAG" --draft=false
