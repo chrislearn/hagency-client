@@ -4,6 +4,11 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Create the version tag and publish after all installers pass'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -81,7 +86,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libssl-dev libsqlite3-dev pkg-config cmake clang libclang-dev \
             libxcursor-dev libx11-dev libasound2-dev libpulse-dev libwayland-dev \
-            libxkbcommon-dev libdrm-dev libegl1 libfuse2 patchelf
+            libxkbcommon-dev libdrm-dev libegl1 libva2 libva-drm2 libfuse2 patchelf
       - name: macOS dependencies
         if: runner.os == 'macOS'
         run: brew install cmake
@@ -91,6 +96,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: installer-${{ matrix.platform }}-${{ matrix.arch }}
+          cache-on-failure: true
       - name: Install pinned packaging tools
         run: |
           cargo install cargo-packager --version 0.10.1 --locked
@@ -148,12 +154,20 @@ jobs:
   release:
     name: Publish complete release
     needs: package
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.publish)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Resolve release tag from the built source
+        id: tag
+        run: |
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v8
         with:
           pattern: installers-*
@@ -184,9 +198,19 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/') }}
+          SOURCE_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          if [[ "$IS_TAG" != true ]]; then
+            if gh api "repos/$GH_REPO/git/ref/tags/$TAG" > tag.json 2>/dev/null; then
+              jq -e --arg sha "$SOURCE_SHA" '.object.type == "commit" and .object.sha == $sha' tag.json
+            else
+              gh api --method POST "repos/$GH_REPO/git/refs" \
+                -f "ref=refs/tags/$TAG" -f "sha=$SOURCE_SHA"
+            fi
+          fi
           if gh release view "$TAG" --json isDraft > release.json 2>/dev/null; then
             jq -e '.isDraft == true' release.json
             gh release edit "$TAG" --notes-file release-notes.md

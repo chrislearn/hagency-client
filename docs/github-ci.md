@@ -43,7 +43,10 @@ tests, then packages the app with its existing resource and Octos runtime hooks:
 | macOS | Intel amd64, Apple Silicon arm64 | DMG |
 | Windows | amd64 | NSIS EXE installer |
 
-Manual runs upload Actions artifacts only (14-day retention). Tagged runs require
+Manual runs upload Actions artifacts only by default (14-day retention).
+An explicit `publish=true` dispatch builds and verifies every installer first,
+then creates the version tag at that exact source SHA and publishes the release.
+This uses GITHUB_TOKEN and does not trigger a duplicate tag build. Tagged runs require
 the tag to match the package version, and publish a GitHub Release
 only when all five platform jobs pass. Seven installers are verified against
 per-platform checksums and a combined SHA256SUMS.txt. A rerun refuses to overwrite
@@ -112,4 +115,6 @@ contract SHA-256 fixtures and the example miniapp bundle digests. Repository
 original producer hashes without disabling verification. A fresh checkout with
 `core.autocrlf=true` verifies all 20 contract hashes and keeps every example
 miniapp file byte-identical. The failed v1.1.0 tag is retained; the repair ships
-in v1.1.1.
+in v1.1.1. The final v1.1.2 candidate also installs `libva2` and
+`libva-drm2`, required by the packaging dependency scanner for Makepad video.
+Failure caches are retained so packaging repairs can reuse compiled dependencies.
