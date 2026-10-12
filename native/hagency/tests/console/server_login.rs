@@ -939,7 +939,12 @@ async fn native_server_login_background_refresh_logout_and_issuer_pin() {
     let _ = callback(&service, &state, &nonce).await;
     let last = f.console.authorized_device().await.unwrap();
     fake.state.lock().unwrap().active = false;
-    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+    // The newly refreshed finite proof is cached. Observe background revocation
+    // within its freshness bound, without a console request forcing renewal.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(25);
+    while last.bearer().is_ok() && std::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
     assert!(
         f.console.authorized_device().await.is_err(),
         "invalid_grant disables device capability without browser activity"

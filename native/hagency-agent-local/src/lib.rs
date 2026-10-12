@@ -25,7 +25,7 @@ pub enum Error {
     Budget,
     #[error("request denied or requires owner confirmation")]
     Denied,
-    #[error("unresolved provider charge blocks this binding")]
+    #[error("provider execution outcome is unknown")]
     Unknown,
     #[error("idempotency or revision conflict")]
     Conflict,
@@ -37,6 +37,18 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 const APP_ID: i64 = 0x48414c32;
 const MAX: u64 = 9_007_199_254_740_991;
+const UNREPORTED_ZERO: &str = "unreported-zero-v1";
+
+/// Missing usage is charged as zero; this does not prove execution succeeded.
+fn unreported_usage() -> Usage {
+    Usage {
+        input: 0,
+        output: 0,
+        cached_input: 0,
+        reasoning_output: 0,
+        accounting_version: UNREPORTED_ZERO.into(),
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -487,6 +499,7 @@ impl Ledger {
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        settle_unreported_calls(&tx, Some(&scope.binding))?;
         let previous: Option<(String, String, Option<String>)> = tx
             .query_row(
                 "SELECT digest,state,usage FROM calls WHERE id=?",
@@ -505,14 +518,6 @@ impl Ledger {
                 )?)),
                 _ => Err(Error::Unknown),
             };
-        }
-        let unknown: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM calls WHERE binding=? AND state='unknown')",
-            [&scope.binding],
-            |r| r.get(0),
-        )?;
-        if unknown {
-            return Err(Error::Unknown);
         }
         let prior: Option<(String, String)> = tx
             .query_row(
@@ -668,27 +673,36 @@ impl Ledger {
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         settle_transaction(&tx, scope, call, usage)?;
+        let counters = if usage.accounting_version == UNREPORTED_ZERO && counters.is_empty() {
+            "null"
+        } else {
+            counters
+        };
         tx.execute("INSERT INTO external_sessions VALUES (?,?,?,?) ON CONFLICT(scope,profile) DO UPDATE SET session=excluded.session,counters=excluded.counters",(context,profile,session,counters))?;
         tx.commit()?;
         Ok(())
     }
     pub fn mark_unknown(&mut self, scope: &Scope, call: &str) -> Result<()> {
         verify(&self.db, scope)?;
-        let changed = self.db.execute(
-            "UPDATE calls SET state='unknown' WHERE id=? AND scope=? AND state='pending'",
-            (call, json(scope)?),
-        )?;
-        if changed == 0 {
-            return Err(Error::Conflict);
-        }
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        settle_transaction(&tx, scope, call, &unreported_usage())?;
+        mark_usage_gap(&tx, scope, &self.owner)?;
+        tx.commit()?;
         Ok(())
     }
-    /// Call on exclusive execution-device restart BEFORE accepting fresh work.
+    /// Exclusive execution-device restart: release interrupted estimates as zero.
+    /// Original execution records remain unknown and cannot be replayed.
     pub fn recover_interrupted(&mut self, owner: &str) -> Result<usize> {
         self.owner(owner)?;
-        Ok(self
+        let tx = self
             .db
-            .execute("UPDATE calls SET state='unknown' WHERE state='pending'", [])?)
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changed = tx.execute("UPDATE calls SET state='unknown' WHERE state='pending'", [])?;
+        settle_unreported_calls(&tx, None)?;
+        tx.commit()?;
+        Ok(changed)
     }
     pub fn account(
         &self,
@@ -980,6 +994,44 @@ impl Ledger {
         Ok(())
     }
 }
+/// Runs in the same transaction as recovery/admission, so concurrent requests
+/// cannot release the same historical reservation twice.
+fn settle_unreported_calls(tx: &rusqlite::Transaction, binding: Option<&str>) -> Result<()> {
+    let calls = tx
+        .prepare("SELECT id,scope FROM calls WHERE state='unknown' AND (? IS NULL OR binding=?)")?
+        .query_map((binding, binding), |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    let owner: String = tx.query_row("SELECT owner FROM identity", [], |r| r.get(0))?;
+    for (call, encoded) in calls {
+        let scope: Scope = serde_json::from_str(&encoded)?;
+        settle_transaction(tx, &scope, &call, &unreported_usage())?;
+        mark_usage_gap(tx, &scope, &owner)?;
+    }
+    Ok(())
+}
+
+// Preserve conversation history, while marking cumulative accounting as missing.
+// The next reported total establishes a new baseline without charging old usage.
+fn mark_usage_gap(tx: &rusqlite::Transaction, scope: &Scope, owner: &str) -> Result<()> {
+    let context = scope.context_key(owner)?;
+    let mut contexts = vec![context.clone()];
+    #[cfg(unix)]
+    contexts.push(format!(
+        "{}:{context}",
+        crate::codex::FILE_CAPABILITY_VERSION
+    ));
+    for context in contexts {
+        tx.execute("INSERT INTO codex_usage VALUES (?,'null') ON CONFLICT(scope) DO UPDATE SET counters='null'", [&context])?;
+    }
+    tx.execute(
+        "UPDATE external_sessions SET counters='null' WHERE scope=?",
+        [&context],
+    )?;
+    Ok(())
+}
+
 fn settle_transaction(
     tx: &rusqlite::Transaction,
     scope: &Scope,
@@ -996,14 +1048,16 @@ fn settle_transaction(
     if stored != json(scope)? {
         return Err(Error::Unauthorized);
     }
-    if state == "settled" {
-        return if old.as_deref() == Some(&json(usage)?) {
-            Ok(())
-        } else {
-            Err(Error::Conflict)
-        };
+    if state == "settled" && old.as_deref() == Some(&json(usage)?) {
+        return Ok(());
     }
-    // An adapter exceeding its declared bound is charged honestly and disables further calls.
+    // A later genuine usage receipt may replace the provisional zero once.
+    let provisional_zero = old.as_deref() == Some(&json(&unreported_usage())?);
+    if state == "settled" && !provisional_zero {
+        return Err(Error::Conflict);
+    }
+    let release = if state == "settled" { 0 } else { reserved };
+    // Estimated reservations are not provider caps. Charge actual usage honestly.
     for s in serde_json::from_str::<Vec<Snapshot>>(&snapshots)? {
         let spent: u64 = tx.query_row(
             "SELECT spent FROM accounts WHERE scope=? AND window=?",
@@ -1017,40 +1071,19 @@ fn settle_transaction(
         )?;
         tx.execute(
             "UPDATE accounts SET held=held-?,spent=spent+? WHERE scope=? AND window=?",
-            (reserved, total, &s.scope, &s.window),
+            (release, total, &s.scope, &s.window),
         )?;
     }
     tx.execute(
         "UPDATE calls SET state='settled',usage=? WHERE id=?",
         (json(usage)?, call),
     )?;
-    if total > reserved {
-        // Binding-level adapter breach is durable, even if later a budget window changes.
-        tx.execute(
-            "INSERT INTO calls VALUES (?,?,?,?,0,'[]','unknown',NULL)",
-            (
-                format!("bound-breach:{call}"),
-                &scope.binding,
-                json(scope)?,
-                "adapter-bound-breach",
-            ),
-        )?;
-    }
 
     Ok(())
 }
 
 fn validate_tool(db: &Connection, proposal: &ToolProposal, now: i64) -> Result<Policy> {
     verify(db, &proposal.scope)?;
-    let unresolved: bool = db.query_row(
-        "SELECT EXISTS(SELECT 1 FROM calls WHERE binding=? AND state='unknown')",
-        [&proposal.scope.binding],
-        |r| r.get(0),
-    )?;
-    if unresolved {
-        return Err(Error::Unknown);
-    }
-
     if now < 0 || proposal.expires <= now || proposal.expires - now > 3600 {
         return Err(Error::Denied);
     }

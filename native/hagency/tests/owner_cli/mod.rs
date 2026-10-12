@@ -49,17 +49,45 @@ pub fn request(
     body: &str,
     cookie: Option<&str>,
 ) -> String {
-    let mut stream = TcpStream::connect(address).unwrap();
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .unwrap();
+    request_result(address, method, path, body, cookie).unwrap()
+}
+fn request_result(
+    address: SocketAddr,
+    method: &str,
+    path: &str,
+    body: &str,
+    cookie: Option<&str>,
+) -> std::io::Result<String> {
+    let mut stream = TcpStream::connect(address)?;
+    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     let cookie = cookie
         .map(|value| format!("Cookie: {value}\r\n"))
         .unwrap_or_default();
-    write!(stream,"{method} {path} HTTP/1.1\r\nHost: {address}\r\nOrigin: http://{address}\r\nSec-Fetch-Site: same-origin\r\nContent-Type: application/json\r\n{cookie}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+    write!(
+        stream,
+        "{method} {path} HTTP/1.1\r\nHost: {address}\r\nOrigin: http://{address}\r\nSec-Fetch-Site: same-origin\r\nContent-Type: application/json\r\n{cookie}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    )?;
     let mut out = String::new();
-    stream.read_to_string(&mut out).unwrap();
-    out
+    if let Err(error) = stream.read_to_string(&mut out) {
+        // An early authorization refusal may close with unread request bytes,
+        // producing TCP RST after a complete response. Never accept truncation.
+        let complete = out.split_once("\r\n\r\n").is_some_and(|(headers, body)| {
+            headers
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().ok())
+                        .flatten()
+                })
+                .is_some_and(|length| body.len() == length)
+        });
+        if error.kind() != std::io::ErrorKind::ConnectionReset || !complete {
+            return Err(error);
+        }
+    }
+    Ok(out)
 }
 pub fn status(wire: &str) -> u16 {
     wire.lines()
@@ -103,8 +131,14 @@ pub fn launch(state: &Path, assets: &Path, start: bool) -> Running {
                 .unwrap();
             panic!("OwnerHost exited {code}: {stderr}");
         }
+        // A successful TCP probe can precede HTTP readiness. Only this
+        // side-effect-free health read retries within the existing deadline.
         if TcpStream::connect_timeout(&address, Duration::from_millis(100)).is_ok()
-            && status(&request(address, "GET", "/health", "", None)) == 200
+            && request_result(address, "GET", "/health", "", None).is_ok_and(|wire| {
+                wire.lines()
+                    .next()
+                    .is_some_and(|line| line.split_whitespace().nth(1) == Some("200"))
+            })
         {
             return run;
         }

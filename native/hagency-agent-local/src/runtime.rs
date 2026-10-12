@@ -115,6 +115,18 @@ pub fn validate(profile: &Profile, reference: &str) -> Result<()> {
         return Err(Error::Profile("local provider directory required"));
     }
     crate::key(&profile.model)?;
+    match kind(reference) {
+        Kind::Claude
+            if local_reference(Kind::Claude, &profile.codex_home, None) != reference
+                || !matches!(profile.effort.as_str(), "low" | "medium" | "high" | "max") =>
+        {
+            return Err(Error::Profile("Claude account or effort mismatch"));
+        }
+        Kind::Octos if profile.effort != "none" => {
+            return Err(Error::Profile("Octos requires profile reasoning settings"));
+        }
+        _ => {}
+    }
     if kind(reference) == Kind::Octos {
         let (_, Some(id)) =
             managed_reference(reference).ok_or(Error::Profile("Octos profile required"))?
@@ -152,10 +164,10 @@ impl Process {
     pub async fn stop(&mut self) -> Result<()> {
         match &mut self.session {
             Session::Codex(_) => {
-                if let Some(child) = self.child.as_mut() {
-                    if child.try_wait()?.is_none() {
-                        child.kill().await?;
-                    }
+                if let Some(child) = self.child.as_mut()
+                    && child.try_wait()?.is_none()
+                {
+                    child.kill().await?;
                 }
             }
             Session::Claude { wire, .. } => require_stopped(wire.stop())?,
@@ -173,7 +185,7 @@ fn require_stopped(cleanup: hagency_runtime::owned::Cleanup) -> Result<()> {
     }
 }
 pub enum Session {
-    Codex(codex::Session<ChildStdout, ChildStdin>),
+    Codex(Box<codex::Session<ChildStdout, ChildStdin>>),
     Claude {
         wire: Box<Claude>,
         profile: Profile,
@@ -237,7 +249,7 @@ async fn spawn_inner(
     if kind == Kind::Codex {
         let process = profile.spawn().await?;
         return Ok(Process {
-            session: Session::Codex(process.session),
+            session: Session::Codex(Box::new(process.session)),
             child: Some(process.child),
         });
     }
@@ -280,6 +292,7 @@ async fn spawn_inner(
                     "--tools",
                     "Bash,Read,Write,Edit,Glob,Grep",
                     "--disable-slash-commands",
+                    "--no-chrome",
                     "--effort",
                     &profile.effort,
                 ]);
@@ -293,6 +306,9 @@ async fn spawn_inner(
                 .join(".hagency-octos-instances")
                 .join(digest);
             std::fs::create_dir_all(&instance)?;
+            if instance.canonicalize()? != instance {
+                return Err(Error::Profile("Octos instance symlink"));
+            }
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
@@ -303,7 +319,32 @@ async fn spawn_inner(
             if std::fs::symlink_metadata(&config).is_ok_and(|m| m.file_type().is_symlink()) {
                 return Err(Error::Profile("Octos settings symlink"));
             }
-            std::fs::write(&config, octos::CONFIG)?;
+            use std::io::{Read, Write};
+            let mut options = std::fs::OpenOptions::new();
+            options.read(true).write(true).create(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options
+                    .mode(0o600)
+                    .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits() as i32);
+            }
+            let mut file = options.open(&config)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt;
+                if file.metadata()?.nlink() != 1 {
+                    return Err(Error::Profile("Octos settings hardlink"));
+                }
+            }
+            let mut existing = Vec::new();
+            (&mut file).take(8193).read_to_end(&mut existing)?;
+            if existing.is_empty() {
+                file.write_all(octos::CONFIG)?;
+                file.sync_all()?;
+            } else if existing != octos::CONFIG {
+                return Err(Error::Profile("Octos instance settings changed"));
+            }
             command.env("OCTOS_HOME", &profile.codex_home).args(
                 octos::serve_arguments(
                     profile
@@ -544,6 +585,7 @@ impl Session {
             _ => unreachable!(),
         };
         let (text, mut usage, failed, requests, returns, cumulative) = result?;
+        let is_octos = matches!(self, Self::Octos { .. });
         let (context, session) = match self {
             Self::Claude { wire, context, .. } => {
                 (context.as_str(), wire.session_id().ok_or(Error::Unknown)?)
@@ -553,7 +595,9 @@ impl Session {
             }
             _ => unreachable!(),
         };
-        let counters = if cumulative {
+        // Persist absolute Octos counters even when this turn only exposes turn usage.
+        // This keeps a later session-total event from charging earlier turns twice.
+        let counters = if is_octos && usage.accounting_version != crate::UNREPORTED_ZERO {
             use rusqlite::OptionalExtension;
             let baseline: Option<String> = charge
                 .ledger
@@ -565,24 +609,46 @@ impl Session {
                 )
                 .optional()
                 .map_err(crate::Error::from)?;
-            let absolute = serde_json::to_string(&usage)?;
-            if let Some(baseline) = baseline.filter(|s| !s.is_empty()) {
-                let prior: Usage = serde_json::from_str(&baseline)?;
-                usage.input = usage.input.checked_sub(prior.input).ok_or(Error::Unknown)?;
-                usage.output = usage
-                    .output
-                    .checked_sub(prior.output)
-                    .ok_or(Error::Unknown)?;
-                usage.cached_input = usage
-                    .cached_input
-                    .checked_sub(prior.cached_input)
-                    .ok_or(Error::Unknown)?;
-                usage.reasoning_output = usage
-                    .reasoning_output
-                    .checked_sub(prior.reasoning_output)
-                    .ok_or(Error::Unknown)?;
+            let baseline_missing = baseline.as_deref() == Some("null");
+            let prior: Option<Usage> = baseline
+                .filter(|s| !s.is_empty() && s != "null")
+                .map(|s| serde_json::from_str(&s))
+                .transpose()?;
+            if cumulative {
+                let absolute = serde_json::to_string(&usage)?;
+                if baseline_missing {
+                    usage = crate::unreported_usage();
+                }
+                if let Some(prior) = prior {
+                    usage.input = usage.input.checked_sub(prior.input).ok_or(Error::Unknown)?;
+                    usage.output = usage
+                        .output
+                        .checked_sub(prior.output)
+                        .ok_or(Error::Unknown)?;
+                    usage.cached_input = usage
+                        .cached_input
+                        .checked_sub(prior.cached_input)
+                        .ok_or(Error::Unknown)?;
+                }
+                absolute
+            } else {
+                let mut absolute = usage.clone();
+                if let Some(prior) = prior {
+                    absolute.input = absolute
+                        .input
+                        .checked_add(prior.input)
+                        .ok_or(Error::Unknown)?;
+                    absolute.output = absolute
+                        .output
+                        .checked_add(prior.output)
+                        .ok_or(Error::Unknown)?;
+                    absolute.cached_input = absolute
+                        .cached_input
+                        .checked_add(prior.cached_input)
+                        .ok_or(Error::Unknown)?;
+                }
+                serde_json::to_string(&absolute)?
             }
-            absolute
         } else {
             String::new()
         };
@@ -604,6 +670,7 @@ impl Session {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn permission(
     ledger: &mut Ledger,
     owner: &str,
@@ -772,15 +839,15 @@ async fn run_claude(
             claude::Message::Event { kind, payload, .. } => {
                 if let Some(content) = payload["message"]["content"].as_array() {
                     for block in content {
-                        if block["type"] == "tool_use" {
-                            if let Some(id) = block["id"].as_str() {
-                                requests.insert(id.to_owned());
-                            }
+                        if block["type"] == "tool_use"
+                            && let Some(id) = block["id"].as_str()
+                        {
+                            requests.insert(id.to_owned());
                         }
-                        if block["type"] == "tool_result" {
-                            if let Some(id) = block["tool_use_id"].as_str() {
-                                returns.insert(id.to_owned());
-                            }
+                        if block["type"] == "tool_result"
+                            && let Some(id) = block["tool_use_id"].as_str()
+                        {
+                            returns.insert(id.to_owned());
                         }
                     }
                 }
@@ -794,19 +861,23 @@ async fn run_claude(
                         return Err(Error::Unknown);
                     };
                     let counts = usage.counts();
-                    let fresh = counts.input().ok_or(Error::Unknown)?;
-                    let cache = counts.cache_read().ok_or(Error::Unknown)?;
-                    let write = counts.cache_write().ok_or(Error::Unknown)?;
-                    let total = fresh
-                        .checked_add(cache)
-                        .and_then(|v| v.checked_add(write))
-                        .ok_or(Error::Unknown)?;
-                    let usage = Usage {
-                        input: total,
-                        output: counts.output().ok_or(Error::Unknown)?,
-                        cached_input: cache,
-                        reasoning_output: 0,
-                        accounting_version: "claude-reported-v1".into(),
+                    let usage = match (
+                        counts.input(),
+                        counts.cache_read(),
+                        counts.cache_write(),
+                        counts.output(),
+                    ) {
+                        (Some(fresh), Some(cache), Some(write), Some(output)) => Usage {
+                            input: fresh
+                                .checked_add(cache)
+                                .and_then(|v| v.checked_add(write))
+                                .ok_or(Error::Unknown)?,
+                            output,
+                            cached_input: cache,
+                            reasoning_output: 0,
+                            accounting_version: "claude-reported-v1".into(),
+                        },
+                        _ => crate::unreported_usage(),
                     };
                     return Ok((
                         payload["result"].as_str().unwrap_or("").into(),
@@ -974,18 +1045,23 @@ async fn run_octos(
                 let octos::session::ObservationKind::Idle(evidence) = observation.kind() else {
                     return Err(Error::Unknown);
                 };
-                let cache = evidence.cache_read().ok_or(Error::Unknown)?;
-                let total = evidence
-                    .input()
-                    .and_then(|v| v.checked_add(cache))
-                    .and_then(|v| v.checked_add(evidence.cache_write()?))
-                    .ok_or(Error::Unknown)?;
-                let usage = Usage {
-                    input: total,
-                    output: evidence.output().ok_or(Error::Unknown)?,
-                    cached_input: cache,
-                    reasoning_output: evidence.reasoning().unwrap_or(0),
-                    accounting_version: "octos-reported-v1".into(),
+                let usage = match (
+                    evidence.input(),
+                    evidence.cache_read(),
+                    evidence.cache_write(),
+                    evidence.output(),
+                ) {
+                    (Some(input), Some(cache), Some(write), Some(output)) => Usage {
+                        input: input
+                            .checked_add(cache)
+                            .and_then(|v| v.checked_add(write))
+                            .ok_or(Error::Unknown)?,
+                        output,
+                        cached_input: cache,
+                        reasoning_output: 0,
+                        accounting_version: "octos-reported-v1".into(),
+                    },
+                    _ => crate::unreported_usage(),
                 };
                 return Ok((
                     idle.reply.unwrap_or_default(),
@@ -1009,31 +1085,6 @@ async fn run_octos(
         }
     }
     Err(Error::Unknown)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn references_require_exact_kind_hash_and_octos_profile() {
-        let hash = "a".repeat(64);
-        assert_eq!(
-            managed_reference(&format!("claude-managed:shared-home:{hash}")),
-            Some((Kind::Claude, None))
-        );
-        assert_eq!(
-            managed_reference(&format!("octos-managed:shared-home:{hash}:coding")),
-            Some((Kind::Octos, Some("coding")))
-        );
-        for reference in [
-            format!("octos-managed:shared-home:{hash}"),
-            format!("claude-managed:shared-home:{hash}:coding"),
-            format!("octos-managed:shared-home:{hash}:../private"),
-            "claude-managed:shared-home:bad".into(),
-        ] {
-            assert!(managed_reference(&reference).is_none());
-        }
-    }
 }
 
 /// Read only the CLI's public authentication verdict. Never reads credentials.
@@ -1097,4 +1148,29 @@ fn approval_directory(cwd: &Path, arguments: &Value) -> std::path::PathBuf {
     path.parent()
         .and_then(|p| p.canonicalize().ok())
         .unwrap_or(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn references_require_exact_kind_hash_and_octos_profile() {
+        let hash = "a".repeat(64);
+        assert_eq!(
+            managed_reference(&format!("claude-managed:shared-home:{hash}")),
+            Some((Kind::Claude, None))
+        );
+        assert_eq!(
+            managed_reference(&format!("octos-managed:shared-home:{hash}:coding")),
+            Some((Kind::Octos, Some("coding")))
+        );
+        for reference in [
+            format!("octos-managed:shared-home:{hash}"),
+            format!("claude-managed:shared-home:{hash}:coding"),
+            format!("octos-managed:shared-home:{hash}:../private"),
+            "claude-managed:shared-home:bad".into(),
+        ] {
+            assert!(managed_reference(&reference).is_none());
+        }
+    }
 }

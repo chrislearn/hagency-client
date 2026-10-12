@@ -23,6 +23,14 @@ mod scope;
 mod stdio;
 use pipe::{FRAME_LIMIT, Pipe};
 
+// A standalone macOS Desktop executable also hosts this early guardian entry.
+// First execution of a newly linked debug/app image can exceed five seconds
+// before main runs. Keep admission bounded without changing stop/control bounds.
+#[cfg(target_os = "macos")]
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(15);
+#[cfg(not(target_os = "macos"))]
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
+
 // Private wire data on an anonymous inherited socket. Deserialization is not
 // runner authorization: only this child's host endpoint can send these messages.
 #[derive(Serialize, Deserialize)]
@@ -307,7 +315,7 @@ impl Supervisor {
             #[cfg(target_os = "linux")]
             recovery: None,
         };
-        let until = Instant::now() + Duration::from_secs(5);
+        let until = Instant::now() + STARTUP_TIMEOUT;
         before_prepare(&mut result)?;
         let request = if piped {
             Request::PreparePiped {
@@ -673,7 +681,7 @@ pub fn run_guardian() -> io::Result<()> {
     // /dev/null or the transferred child pipe during the scoped child spawn.
     let input = rustix::io::fcntl_dupfd_cloexec(std::io::stdin(), 3)?;
     let mut pipe = Pipe::new(UnixStream::from(input))?;
-    let until = Instant::now() + Duration::from_secs(5);
+    let until = Instant::now() + STARTUP_TIMEOUT;
     let (launch, piped) = match pipe.required::<Request>(until, FRAME_LIMIT)? {
         Request::Prepare { version: 1, launch } => (launch, false),
         Request::PreparePiped { version: 1, launch } => (launch, true),

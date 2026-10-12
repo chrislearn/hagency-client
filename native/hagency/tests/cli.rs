@@ -86,7 +86,6 @@ fn native_owner_rejects_retired_commands_and_options() {
         "account",
         "registration",
         "console-access",
-        "guardian",
         "agents",
         "tasks",
         "alerts",
@@ -99,6 +98,11 @@ fn native_owner_rejects_retired_commands_and_options() {
             "{name}: {out:?}"
         );
     }
+    // The executable also hosts the private supervisor entry, before CLI
+    // parsing. Without its inherited IPC channel it must refuse quietly.
+    let out = command().arg("guardian").output().unwrap();
+    assert!(!out.status.success());
+    assert!(out.stdout.is_empty() && out.stderr.is_empty());
     for flag in [
         "--agent-driver",
         "--palpo-transport",

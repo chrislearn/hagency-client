@@ -105,11 +105,13 @@ struct StartRuntime {
     recovery_consent_id: Option<String>,
     #[serde(default)]
     binding_id: String,
+    #[serde(default = "default_budget_mode")]
     mode: String,
     #[serde(default)]
     reservation: u64,
-    #[serde(default)]
-    estimated_opt_in: bool,
+    // Accept the obsolete checkbox from older clients without requiring or persisting it.
+    #[serde(default, rename = "estimatedOptIn")]
+    _legacy_estimated_opt_in: serde::de::IgnoredAny,
     #[serde(default)]
     takeover: bool,
     #[serde(default)]
@@ -122,6 +124,9 @@ struct StartRuntime {
 struct ToolDecision {
     args_digest: String,
     approved: bool,
+}
+fn default_budget_mode() -> String {
+    "estimated".into()
 }
 fn default_effort() -> String {
     "medium".into()
@@ -139,6 +144,7 @@ fn runtime_error(e: super::owned_runtime::RuntimeError) -> OwnerError {
         Profile => error(409, "runtime_profile_unavailable"),
         Provider => error(401, "provider_authorization_lost"),
         Transport => error(503, "device_transport_unavailable"),
+        Request => error(409, "execution_not_running"),
         Stopped => error(409, "runtime_stopped"),
     }
 }
@@ -964,12 +970,11 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                 && method == Method::POST
             {
                 let mut input: StartRuntime = parse(req).await?;
-                if input.mode != "estimated"
-                    || !input.estimated_opt_in
-                    || !input.binding_id.is_empty()
-                    || input.host_files
-                {
-                    return Err(error(400, "explicit_estimated_quota_opt_in_required"));
+                if input.mode == "strict" {
+                    return Err(error(409, "codex_strict_quota_unavailable"));
+                }
+                if input.mode != "estimated" || !input.binding_id.is_empty() || input.host_files {
+                    return Err(error(400, "invalid_runtime_start"));
                 }
                 let reply = api(
                     req,
@@ -1145,14 +1150,13 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                     return Err(error(409, "codex_strict_quota_unavailable"));
                 }
                 if input.mode != "estimated"
-                    || !input.estimated_opt_in
                     || input.reservation == 0
                     || ![
                         "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra",
                     ]
                     .contains(&effort.as_str())
                 {
-                    return Err(error(400, "explicit_estimated_quota_opt_in_required"));
+                    return Err(error(400, "invalid_runtime_start"));
                 }
                 let device = host
                     .authorized_device()
@@ -1466,6 +1470,30 @@ async fn dispatch(req: &mut Request, depot: &Depot, res: &mut Response) {
 #[cfg(test)]
 mod profile_tests {
     use super::*;
+    #[test]
+    fn runtime_start_defaults_to_estimated_and_accepts_legacy_checkbox() {
+        for legacy in [None, Some(false), Some(true)] {
+            let mut input = json!({"reservation":10000,"effort":"low"});
+            if let Some(value) = legacy {
+                input["estimatedOptIn"] = json!(value);
+            }
+            let parsed: StartRuntime = serde_json::from_value(input).unwrap();
+            assert_eq!(parsed.mode, "estimated");
+            assert_eq!(parsed.reservation, 10000);
+        }
+        let strict: StartRuntime = serde_json::from_value(json!({"mode":"strict"})).unwrap();
+        assert_eq!(
+            strict.mode, "strict",
+            "an explicit unsupported mode must not silently become estimated"
+        );
+        assert!(serde_json::from_value::<StartRuntime>(json!({"reservation":-1})).is_err());
+        assert!(
+            serde_json::from_value::<StartRuntime>(
+                json!({"reservation":10,"executable":"untrusted"})
+            )
+            .is_err()
+        );
+    }
     #[test]
     fn public_binding_keeps_reply_policy_without_leaking_unknown_fields() {
         let result=public(&json!({"binding":{"id":"b","agentId":"a","projectId":"p","scopeKind":"project","roomId":"!r:test","state":"active","generation":1,"threadAutoReply":true,"token":"secret"}}),"binding").unwrap();

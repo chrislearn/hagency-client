@@ -79,7 +79,7 @@ else:
     count_file = root / 'count'
     count = int(count_file.read_text()) + 1 if count_file.exists() else 1
     count_file.write_text(str(count))
-    totals = {} if mode == 'unknown' else {'input_tokens': 10 * count, 'output_tokens': 7 * count, 'cached_input_tokens': 3 * count, 'cache_write_input_tokens': 4 * count}
+    totals = {} if mode == 'unknown' or (mode == 'mixed_usage' and count == 1) else {'input_tokens': 10 * count, 'output_tokens': 7 * count, 'cached_input_tokens': 3 * count, 'cache_write_input_tokens': 4 * count}
     answer(request, {'usage': totals})
 # Keep the pipe alive until the host drops/stops the original child.
 sys.stdin.read()

@@ -42,6 +42,7 @@ struct Pending {
     known_identity_only: bool,
     expires: Instant,
 }
+#[derive(Clone)]
 struct RemoteSession {
     matrix_source: Option<std::sync::Arc<dyn super::native::MatrixTokenSource>>,
     token: String,
@@ -149,6 +150,7 @@ pub(super) struct ServerLogin {
     profiles_path: Option<PathBuf>,
     profiles: Mutex<profiles::Profiles>,
     transition: Mutex<()>,
+    renewal: Mutex<()>,
     worker_started: AtomicBool,
     stopped: std::sync::Arc<AtomicBool>,
     revocations_path: Option<PathBuf>,
@@ -248,6 +250,7 @@ impl ServerLogin {
             profiles_path,
             profiles: Mutex::new(profiles),
             transition: Mutex::new(()),
+            renewal: Mutex::new(()),
             revocations_path,
             revocations: Mutex::new(revocations),
             worker_started: AtomicBool::new(false),
@@ -285,27 +288,21 @@ impl ServerLogin {
                 if login.stopped.load(Ordering::Acquire) {
                     break;
                 }
-                let mut sessions = login.sessions.lock().await;
-                for session in sessions.values_mut().filter(|s| !s.invalidated) {
-                    if (session.checked.elapsed() >= Duration::from_secs(20)
-                        || session.authorized_until <= Instant::now()
-                        || (session.refresh_token.is_some()
-                            && session.oauth_expires <= Instant::now() + Duration::from_secs(10))
-                        || session.oauth_expires <= Instant::now())
-                        && let Err(error) = renew(session).await
-                    {
-                        let code = if session.matrix_source.is_some()
-                            && matches!(error, Error::Unavailable)
-                        {
-                            "matrix_authorization_unavailable"
-                        } else {
-                            "sign_in_required"
-                        };
-                        login.queue_revocation(session).await;
-                        *login.status.lock().await = json!({"state":"failed","code":code,"deviceAuthorized":false,"transportOnline":false});
-                    }
+                let keys: Vec<_> = login
+                    .sessions
+                    .lock()
+                    .await
+                    .iter()
+                    .filter(|(_, s)| {
+                        !s.invalidated
+                            && (s.checked.elapsed() >= Duration::from_secs(10)
+                                || s.authorized_until <= Instant::now())
+                    })
+                    .map(|(key, _)| key.clone())
+                    .collect();
+                for key in keys {
+                    let _ = login.renew_session(&key).await;
                 }
-                drop(sessions);
                 if last_revocations.elapsed() >= Duration::from_secs(10) {
                     login.flush_revocations().await;
                     last_revocations = Instant::now();
@@ -316,44 +313,114 @@ impl ServerLogin {
     /// A remote cookie cannot turn into a local recovery login when revoked.
     pub(super) async fn validate(&self, cookie: &str) -> Result<(), Error> {
         let key = session_key(cookie);
-        let mut sessions = self.sessions.lock().await;
-        let Some(session) = sessions.get_mut(&key) else {
+        let session = self.sessions.lock().await.get(&key).cloned();
+        let Some(session) = session else {
             return Ok(());
         };
         if session.invalidated || session.expires <= Instant::now() {
             return Err(Error::Unauthorized);
         }
-        if (session.checked.elapsed() >= Duration::from_secs(20)
-            || session.authorized_until <= Instant::now())
-            && let Err(error) = renew(session).await
-        {
-            self.queue_revocation(session).await;
-            *self.status.lock().await = json!({"state":"failed","code":"sign_in_required","deviceAuthorized":false,"transportOnline":false});
-            return Err(error);
-        }
-        Ok(())
+        self.renew_session(&key).await
     }
-    /// Only the trusted Rust runtime can obtain a current device credential.
-    /// An expired browser cookie neither grants nor extends this permission.
+    /// Stop snapshots immediately without waiting for network or session locks.
     pub(super) fn retire(&self) {
         self.stopped.store(true, Ordering::Release);
     }
+    /// Refresh a snapshot outside the session map lock. Renewal is single-flight,
+    /// while management requests and sign-out can proceed independently.
+    async fn renew_session(&self, key: &str) -> Result<(), Error> {
+        let _renewal = self.renewal.lock().await;
+        self.renew_session_inner(key).await
+    }
+    // Caller holds the renewal guard through cookie-generation selection.
+    async fn renew_session_inner(&self, key: &str) -> Result<(), Error> {
+        let mut snapshot = self
+            .sessions
+            .lock()
+            .await
+            .get(key)
+            .cloned()
+            .filter(|s| !s.invalidated)
+            .ok_or(Error::Unauthorized)?;
+        let started = Instant::now();
+        let result = tokio::time::timeout(Duration::from_secs(8), renew(&mut snapshot))
+            .await
+            .unwrap_or(Err(Error::Unavailable));
+        let mut sessions = self.sessions.lock().await;
+        let session = sessions
+            .get_mut(key)
+            .filter(|s| !s.invalidated && s.token == snapshot.token)
+            .ok_or(Error::Unauthorized)?;
+        if self.stopped.load(Ordering::Acquire) {
+            return Err(Error::Unauthorized);
+        }
+        match result {
+            Ok(()) => {
+                *session = snapshot;
+                let mut status = self.status.lock().await;
+                if status["code"] == "matrix_authorization_unavailable" {
+                    *status = json!({"state":"device_authorized","deviceAuthorized":true,"transportOnline":false});
+                    tracing::info!(stage = "owner_renewal", "Owner authorization recovered");
+                }
+                drop(status);
+                tracing::debug!(
+                    stage = "owner_renewal",
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    remaining_ms = session
+                        .authorized_until
+                        .saturating_duration_since(Instant::now())
+                        .as_millis() as u64,
+                    "Owner authorization checked"
+                );
+                Ok(())
+            }
+            Err(Error::Unavailable) => {
+                // Preserve rotated OAuth credentials, but never extend a proof
+                // after a failed request. A later SDK check can recover it.
+                *session = snapshot;
+                tracing::warn!(
+                    stage = "owner_renewal",
+                    elapsed_ms = started.elapsed().as_millis() as u64,
+                    remaining_ms = session
+                        .authorized_until
+                        .saturating_duration_since(Instant::now())
+                        .as_millis() as u64,
+                    code = "matrix_authorization_unavailable",
+                    "Owner renewal will retry"
+                );
+                *self.status.lock().await = json!({"state":"failed","code":"matrix_authorization_unavailable","deviceAuthorized":false,"transportOnline":false});
+                Err(Error::Unavailable)
+            }
+            Err(error) => {
+                self.queue_revocation(session).await;
+                *self.status.lock().await = json!({"state":"failed","code":"sign_in_required","deviceAuthorized":false,"transportOnline":false});
+                Err(error)
+            }
+        }
+    }
+    /// Only the trusted Rust runtime can obtain a current device credential.
     pub(super) async fn authorized_device(&self) -> Result<AuthorizedDevice, Error> {
         if self.stopped.load(Ordering::Acquire) {
             return Err(Error::Unauthorized);
         }
-        let mut sessions = self.sessions.lock().await;
-        let session = sessions
-            .values_mut()
-            .find(|s| {
-                !s.invalidated && (s.matrix_source.is_some() || s.authorized_until > Instant::now())
-            })
+        let _renewal = self.renewal.lock().await;
+        let key = self
+            .sessions
+            .lock()
+            .await
+            .iter()
+            // An expired finite proof can still be refreshed. Selecting the
+            // grant never authorizes execution; renewal must succeed below.
+            .find(|(_, s)| !s.invalidated)
+            .map(|(key, _)| key.clone())
             .ok_or(Error::Unauthorized)?;
-        if session.matrix_source.is_some() && renew(session).await.is_err() {
-            self.queue_revocation(session).await;
-            return Err(Error::Unauthorized);
-        }
-        if self.stopped.load(Ordering::Acquire) {
+        self.renew_session_inner(&key).await?;
+        let sessions = self.sessions.lock().await;
+        let session = sessions
+            .get(&key)
+            .filter(|s| !s.invalidated)
+            .ok_or(Error::Unauthorized)?;
+        if self.stopped.load(Ordering::Acquire) || session.authorized_until <= Instant::now() {
             return Err(Error::Unauthorized);
         }
         let mut device = session.device.clone().ok_or(Error::Unauthorized)?;
@@ -567,6 +634,16 @@ fn identity_matches(identity: &Value, binding: &Binding) -> bool {
         && identity["clientId"] == binding.client_id
         && identity["issuer"] == format!("{}auth/", binding.origin)
 }
+fn renewal_error(code: &str) -> Error {
+    if matches!(
+        code,
+        "sign_in_required" | "authorization_expired" | "authentication_required"
+    ) {
+        Error::Unauthorized
+    } else {
+        Error::Unavailable
+    }
+}
 async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
     if session.invalidated {
         return Err(Error::Unauthorized);
@@ -577,6 +654,13 @@ async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
     if session.matrix_source.is_some()
         && session.checked.elapsed() < Duration::from_secs(5)
         && session.authorized_until > Instant::now() + Duration::from_secs(10)
+        && session.oauth_expires > Instant::now() + Duration::from_secs(10)
+    {
+        return Ok(());
+    }
+    if session.matrix_source.is_none()
+        && session.checked.elapsed() < Duration::from_secs(20)
+        && session.authorized_until > Instant::now()
         && session.oauth_expires > Instant::now() + Duration::from_secs(10)
     {
         return Ok(());
@@ -602,7 +686,7 @@ async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
     };
     if shared_token.is_none() && session.oauth_expires <= Instant::now() + Duration::from_secs(10) {
         if let Some(refresh) = &session.refresh_token {
-            let tokens = response(
+            let tokens = oauth_refresh_response(
                 client
                     .post(server.join("/auth/oauth2/token").unwrap())
                     .form(&[
@@ -614,10 +698,9 @@ async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
                     .await
                     .map_err(|_| Error::Unavailable)?,
             )
-            .await
-            .map_err(|_| Error::Unauthorized)?;
+            .await?;
             let (token, next_refresh, lifetime) =
-                oauth_credentials(&tokens).map_err(|_| Error::Unauthorized)?;
+                oauth_credentials(&tokens).map_err(|_| Error::Unavailable)?;
             session.oauth_token = token;
             if next_refresh.is_some() {
                 session.refresh_token = next_refresh;
@@ -647,10 +730,8 @@ async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
             renewal_response.status().as_u16()
         );
     }
-    let renewed = response(renewal_response)
-        .await
-        .map_err(|_| Error::Unauthorized)?;
-    let mut until = deadline(&renewed).map_err(|_| Error::Unauthorized)?;
+    let renewed = response(renewal_response).await.map_err(renewal_error)?;
+    let mut until = deadline(&renewed).map_err(|_| Error::Unavailable)?;
     if until <= Instant::now() + Duration::from_secs(20)
         && let Some(source) = &session.matrix_source
     {
@@ -685,10 +766,8 @@ async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
                 response.status().as_u16()
             );
         }
-        let refreshed = self::response(response)
-            .await
-            .map_err(|_| Error::Unauthorized)?;
-        until = deadline(&refreshed).map_err(|_| Error::Unauthorized)?;
+        let refreshed = self::response(response).await.map_err(renewal_error)?;
+        until = deadline(&refreshed).map_err(|_| Error::Unavailable)?;
     }
     let identity = get(
         &client,
@@ -696,14 +775,14 @@ async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
         Some(&session.token),
     )
     .await
-    .map_err(|_| {
-        eprintln!("hagency owner renewal failure: stage=server_identity");
-        Error::Unauthorized
+    .map_err(|code| {
+        tracing::warn!(stage = "server_identity", code, "Owner renewal failed");
+        renewal_error(code)
     })?;
     if !identity_matches(&identity, &session.binding) || identity["userId"] != session.user_id {
         return Err(Error::Unauthorized);
     }
-    let identity_until = deadline(&identity).map_err(|_| Error::Unauthorized)?;
+    let identity_until = deadline(&identity).map_err(|_| Error::Unavailable)?;
     if let Some(source) = &session.matrix_source {
         let after = source.access_token().await.map_err(|error| {
             let code = super::native::sdk_source_failure(error);
@@ -731,17 +810,20 @@ fn random() -> Result<String, &'static str> {
 pub(super) fn origin(value: &str) -> Result<Url, &'static str> {
     crate::server_admission::normalize_origin(value).map_err(|e| e.code())
 }
-fn http() -> Result<Client, &'static str> {
-    Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(15))
-        .build()
-        .map_err(|_| "server_unavailable")
+pub(super) fn http() -> Result<Client, &'static str> {
+    static CLIENT: std::sync::LazyLock<Result<Client, &'static str>> =
+        std::sync::LazyLock::new(|| {
+            Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .connect_timeout(Duration::from_secs(10))
+                .timeout(Duration::from_secs(15))
+                .build()
+                .map_err(|_| "server_unavailable")
+        });
+    CLIENT.clone()
 }
-async fn response(mut response: reqwest::Response) -> Result<Value, &'static str> {
-    let status = response.status();
+async fn read_response(mut response: reqwest::Response) -> Result<Value, &'static str> {
     let mut raw = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(|_| "server_unavailable")? {
         if raw.len() + chunk.len() > 128 * 1024 {
@@ -749,8 +831,36 @@ async fn response(mut response: reqwest::Response) -> Result<Value, &'static str
         }
         raw.extend_from_slice(&chunk);
     }
-    let value: Value = serde_json::from_slice(&raw).map_err(|_| "invalid_server_response")?;
+    serde_json::from_slice(&raw).map_err(|_| "invalid_server_response")
+}
+async fn oauth_refresh_response(response: reqwest::Response) -> Result<Value, Error> {
+    let status = response.status();
+    let value = read_response(response)
+        .await
+        .map_err(|_| Error::Unavailable)?;
     if !status.is_success() {
+        return Err(
+            if matches!(status.as_u16(), 400 | 401 | 403)
+                && matches!(
+                    value["error"].as_str(),
+                    Some("invalid_grant" | "invalid_client" | "unauthorized_client")
+                )
+            {
+                Error::Unauthorized
+            } else {
+                Error::Unavailable
+            },
+        );
+    }
+    Ok(value)
+}
+async fn response(response: reqwest::Response) -> Result<Value, &'static str> {
+    let status = response.status();
+    let value = read_response(response).await?;
+    if !status.is_success() {
+        if matches!(status.as_u16(), 401 | 403) {
+            return Err("sign_in_required");
+        }
         return Err(match value["code"].as_str() {
             Some("sign_in_required") => "sign_in_required",
             _ => "server_request_failed",
@@ -1690,29 +1800,47 @@ impl ServerLogin {
         if self.stopped.load(Ordering::Acquire) {
             return Err(OwnerError::new(401, "sign_in_required"));
         }
-        let mut sessions = self.sessions.lock().await;
-        let session = if let Some(cookie) = cookie {
-            sessions.get_mut(&session_key(cookie))
-        } else {
-            sessions.values_mut().find(|session| {
-                !session.invalidated
-                    && session.device.as_ref().is_some_and(|device| {
-                        pin == Some(&super::device_execution::DeviceIdentity::from(device))
+        let renewal = self.renewal.lock().await;
+        let key = {
+            let sessions = self.sessions.lock().await;
+            if let Some(cookie) = cookie {
+                session_key(cookie)
+            } else {
+                sessions
+                    .iter()
+                    .find(|(_, s)| {
+                        !s.invalidated
+                            && s.device.as_ref().is_some_and(|d| {
+                                pin == Some(&super::device_execution::DeviceIdentity::from(d))
+                            })
                     })
-            })
-        }
-        .ok_or_else(|| OwnerError::new(401, "sign_in_required"))?;
-        if session.invalidated || session.expires <= Instant::now() {
-            return Err(OwnerError::new(401, "sign_in_required"));
-        }
-        if (session.checked.elapsed() >= Duration::from_secs(20)
-            || session.authorized_until <= Instant::now())
-            && renew(session).await.is_err()
-        {
-            self.queue_revocation(session).await;
-            *self.status.lock().await = json!({"state":"failed","code":"sign_in_required","deviceAuthorized":false,"transportOnline":false});
-            return Err(OwnerError::new(401, "sign_in_required"));
-        }
+                    .map(|(key, _)| key.clone())
+                    .ok_or_else(|| OwnerError::new(401, "sign_in_required"))?
+            }
+        };
+        self.renew_session_inner(&key).await.map_err(|e| {
+            OwnerError::new(
+                if matches!(e, Error::Unavailable) {
+                    503
+                } else {
+                    401
+                },
+                if matches!(e, Error::Unavailable) {
+                    "server_unavailable"
+                } else {
+                    "sign_in_required"
+                },
+            )
+        })?;
+        let session = self
+            .sessions
+            .lock()
+            .await
+            .get(&key)
+            .cloned()
+            .filter(|s| !s.invalidated && s.expires > Instant::now())
+            .ok_or_else(|| OwnerError::new(401, "sign_in_required"))?;
+        drop(renewal);
         if pin.is_some_and(|pin| {
             session
                 .device
@@ -1772,6 +1900,18 @@ impl ServerLogin {
                 .unwrap_or("server_request_failed");
             return Err(OwnerError::new(status, code));
         }
+        let sessions = self.sessions.lock().await;
+        // Cookie renewal can move this same grant while management HTTP is in
+        // flight. Validate the grant itself; logout still invalidates/removes it.
+        let current = sessions.values().find(|s| s.token == session.token);
+        if self.stopped.load(Ordering::Acquire)
+            || current.is_none_or(|s| s.invalidated || s.expires <= Instant::now())
+        {
+            return Err(OwnerError::new(401, "sign_in_required"));
+        }
+        if current.is_none_or(|s| s.authorized_until <= Instant::now()) {
+            return Err(OwnerError::new(503, "server_unavailable"));
+        }
         Ok(OwnerReply {
             owner: session
                 .binding
@@ -1798,10 +1938,20 @@ impl super::Console {
         pin: &super::device_execution::DeviceIdentity,
         operation: OwnerOperation,
     ) -> Result<OwnerReply, OwnerError> {
-        let current = self
-            .authorized_device()
-            .await
-            .map_err(|_| OwnerError::new(401, "device_authorization_required"))?;
+        let current = self.authorized_device().await.map_err(|e| {
+            OwnerError::new(
+                if matches!(e, Error::Unavailable) {
+                    503
+                } else {
+                    401
+                },
+                if matches!(e, Error::Unavailable) {
+                    "server_unavailable"
+                } else {
+                    "device_authorization_required"
+                },
+            )
+        })?;
         current
             .bearer()
             .map_err(|_| OwnerError::new(401, "device_authorization_required"))?;
@@ -1929,5 +2079,129 @@ mod scope_policy_request_tests {
             body.unwrap(),
             json!({"expectedRevision":9,"policy":{"mode":"disabled"}})
         );
+    }
+}
+
+#[cfg(test)]
+mod oauth_refresh_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test]
+    async fn oauth_http_refresh_failures_preserve_credentials_and_allow_a_valid_retry() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}/", listener.local_addr().unwrap());
+        let now = Instant::now();
+        let mut session = RemoteSession {
+            matrix_source: None,
+            token: "owner-session".into(),
+            oauth_token: "old-access".into(),
+            user_id: "owner".into(),
+            device: None,
+            refresh_token: Some("retained-refresh".into()),
+            oauth_expires: now,
+            authorized_until: now,
+            invalidated: false,
+            binding: Binding {
+                origin: origin.clone(),
+                client_id: "client".into(),
+                installation_id: "installation".into(),
+                name: "fixture".into(),
+                owner: Some("@owner:test".into()),
+                subject: Some("subject".into()),
+            },
+            checked: now,
+            expires: now + Duration::from_secs(900),
+        };
+        let cases = [
+            (503, json!({"error":"server_error"}), false),
+            (429, json!({"error":"slow_down"}), false),
+            (400, json!({"error":"invalid_grant"}), true),
+            (401, json!({"error":"invalid_client"}), true),
+            (200, json!({}), false),
+        ];
+        let mut replies: Vec<_> = cases
+            .iter()
+            .map(|(status, body, _)| (*status, body.clone()))
+            .collect();
+        let until = (SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+            + 30_000) as u64;
+        replies.extend([(200, json!({"access_token":"new-access","refresh_token":"new-refresh","expires_in":900})),
+            (200, json!({"validUntilMs":until})),
+            (200, json!({"mxid":"@owner:test","subject":"subject","clientId":"client","issuer":format!("{origin}auth/"),"userId":"owner","validUntilMs":until}))]);
+        let server = tokio::spawn(async move {
+            for (index, (status, body)) in replies.into_iter().enumerate() {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut raw = Vec::new();
+                loop {
+                    let mut chunk = [0u8; 4096];
+                    let size = socket.read(&mut chunk).await.unwrap();
+                    assert!(size > 0);
+                    raw.extend_from_slice(&chunk[..size]);
+                    let request = String::from_utf8_lossy(&raw);
+                    if let Some((headers, body)) = request.split_once("\r\n\r\n") {
+                        let length = headers
+                            .lines()
+                            .find_map(|line| {
+                                let (name, value) = line.split_once(':')?;
+                                name.eq_ignore_ascii_case("content-length")
+                                    .then(|| value.trim().parse::<usize>().unwrap())
+                            })
+                            .unwrap_or(0);
+                        if body.len() >= length {
+                            break;
+                        }
+                    }
+                }
+                let request = String::from_utf8(raw).unwrap();
+                if index <= 5 {
+                    assert!(request.starts_with("POST /auth/oauth2/token "));
+                    assert!(request.contains("refresh_token=retained-refresh"));
+                }
+                let body = body.to_string();
+                socket.write_all(format!("HTTP/1.1 {status} Fixture\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+            }
+        });
+        for (index, (_, _, terminal)) in cases.into_iter().enumerate() {
+            let result = if index == 0 {
+                // Standalone OAuth must reach renewal after the old proof
+                // expires, rather than turning a temporary outage into logout.
+                let root = tempfile::tempdir().unwrap();
+                let login = ServerLogin::new(Some(root.path())).unwrap();
+                login
+                    .sessions
+                    .lock()
+                    .await
+                    .insert("expired-proof".into(), session.clone());
+                let result = login.authorized_device().await.map(|_| ());
+                session = login
+                    .sessions
+                    .lock()
+                    .await
+                    .get("expired-proof")
+                    .unwrap()
+                    .clone();
+                result
+            } else {
+                renew(&mut session).await
+            };
+            assert!(if terminal {
+                matches!(result, Err(Error::Unauthorized))
+            } else {
+                matches!(result, Err(Error::Unavailable))
+            });
+            assert_eq!(session.oauth_token, "old-access");
+            assert_eq!(session.refresh_token.as_deref(), Some("retained-refresh"));
+            assert_eq!(session.authorized_until, now);
+            assert!(!session.invalidated);
+        }
+        renew(&mut session).await.unwrap();
+        assert_eq!(session.oauth_token, "new-access");
+        assert_eq!(session.refresh_token.as_deref(), Some("new-refresh"));
+        assert!(session.authorized_until > now);
+        server.await.unwrap();
     }
 }

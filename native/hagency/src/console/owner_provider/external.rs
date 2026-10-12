@@ -31,12 +31,14 @@ pub(crate) fn executable(kind: Kind) -> Result<PathBuf, ProviderError> {
         values
     };
     for candidate in candidates.drain(..) {
-        if candidate.is_absolute() {
-            if let Ok(canonical) = candidate.canonicalize() {
-                if canonical.is_file() {
-                    return Ok(canonical);
-                }
+        if candidate.is_absolute()
+            && let Ok(canonical) = candidate.canonicalize()
+            && canonical.is_file()
+        {
+            if kind == Kind::Octos {
+                return native_octos(&canonical).ok_or(failure(503, "octos_binary_unavailable"));
             }
+            return Ok(canonical);
         }
     }
     Err(failure(
@@ -47,6 +49,34 @@ pub(crate) fn executable(kind: Kind) -> Result<PathBuf, ProviderError> {
             _ => "codex_binary_unavailable",
         },
     ))
+}
+// Homebrew/npm launchers must resolve to the supervised native process.
+fn native_octos(path: &Path) -> Option<PathBuf> {
+    fn script(path: &Path) -> Option<bool> {
+        use std::io::Read;
+        let mut prefix = [0u8; 2];
+        std::fs::File::open(path)
+            .ok()?
+            .read_exact(&mut prefix)
+            .ok()?;
+        Some(prefix == *b"#!")
+    }
+    if !script(path)? {
+        return Some(path.to_owned());
+    }
+    let bin = path.parent()?;
+    if bin.file_name()? != "bin" {
+        return None;
+    }
+    ["libexec", "vendor"].iter().find_map(|folder| {
+        let binary = bin
+            .parent()?
+            .join(folder)
+            .join("octos")
+            .canonicalize()
+            .ok()?;
+        (binary.is_file() && !script(&binary)?).then_some(binary)
+    })
 }
 fn homes(kind: Kind) -> Result<(PathBuf, PathBuf), ProviderError> {
     let home = std::env::var_os("HOME")
@@ -264,6 +294,24 @@ pub(crate) async fn call(
         &reply.subject,
         &reply.owner,
     )?;
+    if matches!(operation, Operation::Disconnect) {
+        console
+            .0
+            .owned_runtime
+            .stop_profile(&device)
+            .await
+            .map_err(|_| failure(401, "owner_authorization_required"))?;
+        let path = consent_path(&directory, kind);
+        if path.exists() {
+            std::fs::remove_file(path).map_err(|_| failure(503, "provider_choice_unavailable"))?;
+        }
+        device
+            .bearer()
+            .map_err(|_| failure(401, "owner_authorization_required"))?;
+        return Ok(
+            json!({"runtime":runtime,"state":"disconnected","authenticated":false,"credentialRef":"","models":[],"authUrl":null,"shared":true}),
+        );
+    }
     let (home, folder) = homes(kind)?;
     let binary = executable(kind)?;
     let selected = reference(kind, &folder, None)?;
@@ -351,6 +399,18 @@ pub(crate) async fn call(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn packaged_octos_launchers_resolve_to_native_binary() {
+        let temp = tempfile::tempdir().unwrap();
+        std::fs::create_dir(temp.path().join("bin")).unwrap();
+        std::fs::create_dir(temp.path().join("vendor")).unwrap();
+        let wrapper = temp.path().join("bin/octos.js");
+        let binary = temp.path().join("vendor/octos");
+        std::fs::write(&wrapper, b"#!/usr/bin/env node").unwrap();
+        assert!(native_octos(&wrapper).is_none());
+        std::fs::write(&binary, b"\x7fELF native").unwrap();
+        assert_eq!(native_octos(&wrapper), Some(binary.canonicalize().unwrap()));
+    }
     #[test]
     fn profile_catalog_keeps_public_metadata_and_distinct_profile_references() {
         let temp = tempfile::tempdir().unwrap();

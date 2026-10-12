@@ -22,6 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cwd: root.join("workspace"),
         model: "gpt-6.1-sol".into(),
         effort: "low".into(),
+        shared_auth: false,
     };
     let scope = Scope {
         agent: "handshake".into(),

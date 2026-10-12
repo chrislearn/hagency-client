@@ -1,9 +1,7 @@
 //! Closed user Matrix creation workflow. No model caller, AS token, room deletion
 //! or automatic retry of an uncertain POST createRoom. The private command journal
 //! is scoped to the native installation's pinned origin/MXID/Pasion subject.
-use super::{
-    OwnerError, OwnerOperation, OwnerReply, ServerLogin, http, origin, renew, session_key,
-};
+use super::{OwnerError, OwnerOperation, OwnerReply, ServerLogin, http, origin, session_key};
 use crate::console::{body, console, cookie, current, recheck, same_origin};
 use reqwest::{Method, Url};
 use salvo::prelude::*;
@@ -289,30 +287,28 @@ impl ServerLogin {
         if self.stopped.load(Ordering::Acquire) {
             return Err(error(401, "sign_in_required"));
         }
-        let mut sessions = self.sessions.lock().await;
-        let session = sessions
-            .get_mut(&session_key(cookie))
-            .ok_or_else(|| error(401, "sign_in_required"))?;
-        if session.invalidated || session.expires <= Instant::now() {
-            return Err(error(401, "sign_in_required"));
-        }
-        if (session.checked.elapsed() >= Duration::from_secs(20)
-            || session.authorized_until <= Instant::now()
-            || session.oauth_expires <= Instant::now() + Duration::from_secs(10))
-            && let Err(failure) = renew(session).await
-        {
-            let unavailable =
-                session.matrix_source.is_some() && matches!(failure, super::Error::Unavailable);
-            self.queue_revocation(session).await;
-            return Err(error(
+        let renewal = self.renewal.lock().await;
+        let key = session_key(cookie);
+        self.renew_session_inner(&key).await.map_err(|failure| {
+            let unavailable = matches!(failure, super::Error::Unavailable);
+            error(
                 if unavailable { 503 } else { 401 },
                 if unavailable {
                     "matrix_authorization_unavailable"
                 } else {
                     "sign_in_required"
                 },
-            ));
-        }
+            )
+        })?;
+        let session = self
+            .sessions
+            .lock()
+            .await
+            .get(&key)
+            .cloned()
+            .filter(|s| !s.invalidated && s.expires > Instant::now())
+            .ok_or_else(|| error(401, "sign_in_required"))?;
+        drop(renewal);
         let shared_token = if let Some(source) = &session.matrix_source {
             let snapshot = source.access_token().await.map_err(|failure| {
                 let code = super::super::native::sdk_source_failure(failure);
@@ -384,10 +380,11 @@ impl ServerLogin {
                 return Err(error(401, "matrix_account_changed"));
             }
         }
-        if self.stopped.load(Ordering::Acquire)
-            || session.invalidated
-            || session.expires <= Instant::now()
-            || session.oauth_expires <= Instant::now()
+        let sessions = self.sessions.lock().await;
+        let current = sessions.values().find(|s| s.token == session.token);
+        if current.is_none_or(|s| {
+            s.invalidated || s.expires <= Instant::now() || s.oauth_expires <= Instant::now()
+        }) || self.stopped.load(Ordering::Acquire)
         {
             return Err(error(401, "sign_in_required"));
         }

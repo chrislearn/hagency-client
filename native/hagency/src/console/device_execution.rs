@@ -1,7 +1,7 @@
 //! Host-only device transport. This module performs no model/tool execution and
 //! never ACKs automatically: callers must durably persist events before ACK.
 use super::{AuthorizedDevice, Console};
-use reqwest::{Client, Url};
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -816,22 +816,19 @@ impl Console {
         expected: Option<&DeviceIdentity>,
     ) -> Result<DeviceResponse, DeviceError> {
         let (path, body) = operation.request()?;
-        let device = self
-            .authorized_device()
-            .await
-            .map_err(|_| error(401, "device_authorization_required"))?;
+        let device = self.authorized_device().await.map_err(|e| {
+            if matches!(e, super::Error::Unavailable) {
+                error(503, "server_unavailable")
+            } else {
+                error(401, "device_authorization_required")
+            }
+        })?;
         if expected.is_some_and(|pin| pin != &DeviceIdentity::from(&device)) {
             return Err(error(401, "device_authorization_required"));
         }
         let server =
             Url::parse(device.origin()).map_err(|_| error(503, "invalid_server_binding"))?;
-        let client = Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(15))
-            .build()
-            .map_err(|_| error(503, "server_unavailable"))?;
+        let client = super::server_login::http().map_err(|_| error(503, "server_unavailable"))?;
         let bearer = device
             .bearer()
             .map_err(|_| error(401, "device_authorization_required"))?;
@@ -864,10 +861,13 @@ impl Console {
         device
             .bearer()
             .map_err(|_| error(401, "device_authorization_required"))?;
-        let current = self
-            .authorized_device()
-            .await
-            .map_err(|_| error(401, "device_authorization_required"))?;
+        let current = self.authorized_device().await.map_err(|e| {
+            if matches!(e, super::Error::Unavailable) {
+                error(503, "server_unavailable")
+            } else {
+                error(401, "device_authorization_required")
+            }
+        })?;
         current
             .bearer()
             .map_err(|_| error(401, "device_authorization_required"))?;

@@ -199,6 +199,12 @@ pub async fn discover(origin: &str) -> Result<ServerMetadata, AdmissionError> {
     let value = serde_json::from_slice(&raw).map_err(|_| AdmissionError::UnsupportedServer)?;
     validate_metadata(server.as_str(), &value)
 }
+/// Stable storage namespace for the same embedded identity provider. This is
+/// never used as an OAuth endpoint or accepted as an advertised issuer.
+pub(crate) fn profile_namespace_issuer(origin: &str) -> String {
+    format!("{origin}_pasion/")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -383,10 +389,4 @@ mod tests {
         assert_eq!(error.code, "unsupported_hagency_server");
         task.await.unwrap();
     }
-}
-
-/// Stable storage namespace for the same embedded identity provider. This is
-/// never used as an OAuth endpoint or accepted as an advertised issuer.
-pub(crate) fn profile_namespace_issuer(origin: &str) -> String {
-    format!("{origin}_pasion/")
 }

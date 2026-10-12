@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 // immutable digest (64), execution ID (<=80), and reply digest (64). SQLite page,
 // index and WAL overhead are not a byte-exact file-size or secure-erasure promise.
 const PROOF_BYTES: usize = 208;
-const ACTIVE_RECORDS: &str = "state!='replied' AND NOT (state IN ('rejected','failed') AND json_extract(envelope,'$.body')='')";
+const ACTIVE_RECORDS: &str = "state NOT IN ('replied','unknown') AND NOT (state IN ('rejected','failed') AND json_extract(envelope,'$.body')='')";
 const RETAINED_BYTES: &str = "SELECT coalesce(sum(length(CAST(envelope AS BLOB))+coalesce(length(CAST(reply AS BLOB)),0)+208),0) FROM local_inbox";
 fn no_provider_usage() -> crate::Usage {
     crate::Usage {
@@ -201,7 +201,7 @@ pub enum Finish {
 /// Compact only a terminal record with an exact, retained settlement proof.
 /// This neither deletes started witnesses nor changes calls/accounts/holds.
 fn compact_known_terminals(db: &rusqlite::Connection) -> Result<()> {
-    let mut stmt = db.prepare("SELECT id,envelope,execution_id,state FROM local_inbox WHERE state IN ('rejected','failed') AND json_extract(envelope,'$.body')!=''")?;
+    let mut stmt = db.prepare("SELECT id,envelope,execution_id,state FROM local_inbox WHERE state IN ('rejected','failed','unknown') AND json_extract(envelope,'$.body')!=''")?;
     let rows = stmt
         .query_map([], |r| {
             Ok((
@@ -235,6 +235,13 @@ fn compact_known_terminals(db: &rusqlite::Connection) -> Result<()> {
             )
             .optional()?;
         let Some((scope, state, reserved, snapshots, usage, digest)) = call else {
+            // A terminal attempt without any recorded provider charge is zero.
+            // Keep its immutable identity witness, release only the bulky body.
+            d.body.clear();
+            db.execute(
+                "UPDATE local_inbox SET envelope=? WHERE id=?",
+                (json(&d)?, &id),
+            )?;
             continue;
         };
         if state != "settled" || scope != json(&d.scope())? {
@@ -767,6 +774,8 @@ impl Ledger {
             [],
         )?;
         tx.execute("UPDATE calls SET state='unknown' WHERE state='pending'", [])?;
+        crate::settle_unreported_calls(&tx, None)?;
+        compact_known_terminals(&tx)?;
         tx.commit()?;
         Ok(changed)
     }
@@ -776,9 +785,9 @@ impl Ledger {
         key(binding)?;
         Ok(self.db.query_row("SELECT EXISTS(SELECT 1 FROM local_inbox i JOIN bindings b ON b.id=i.binding WHERE b.agent=? AND i.binding=? AND i.state='reply_ready' AND i.execution_id IS NOT NULL AND length(i.reply)>0)",(agent,binding),|r|r.get(0))?)
     }
-    /// A matching execution identity alone is not accounting continuity: a backup
-    /// taken before reserve must not erase an already incurred provider charge.
-    /// False allows known-output reconciliation but never new model invocation.
+    /// Retain execution identity and validate every available accounting receipt.
+    /// An absent receipt contributes zero under the missing-usage policy; it must
+    /// not block later requests. Missing/mismatched execution custody still fails.
     pub fn covers_execution_history(
         &self,
         owner: &str,
@@ -805,7 +814,9 @@ impl Ledger {
                 "SELECT envelope,state,execution_id,immutable_digest FROM local_inbox WHERE id=?", [&h.dispatch_id],
                 |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional()?;
             let Some((encoded, state, execution, immutable)) = row else {
-                return Ok(false);
+                // Server custody permanently fences started executions. A missing
+                // local historical receipt contributes zero, never a replay.
+                continue;
             };
             let d: Dispatch = serde_json::from_str(&encoded)?;
             if immutable != h.immutable_digest
@@ -839,7 +850,9 @@ impl Ledger {
                 )
                 .optional()?;
             let Some((scope, charge, reserved, snapshots, usage, digest)) = call else {
-                return Ok(false);
+                // Execution custody above prevents replay. Missing accounting is
+                // zero, independently of whether the historical attempt finished.
+                continue;
             };
             if scope != json(&d.scope())? {
                 return Ok(false);
@@ -944,6 +957,14 @@ impl Ledger {
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let changed = tx.execute("UPDATE local_inbox SET state='unknown' WHERE state IN ('prepared','running') AND binding IN (SELECT id FROM bindings WHERE agent=?)", [agent])?;
         tx.execute("UPDATE calls SET state='unknown' WHERE state='pending' AND binding IN (SELECT id FROM bindings WHERE agent=?)", [agent])?;
+        let bindings = tx
+            .prepare("SELECT id FROM bindings WHERE agent=?")?
+            .query_map([agent], |r| r.get::<_, String>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        for binding in bindings {
+            crate::settle_unreported_calls(&tx, Some(&binding))?;
+        }
+        compact_known_terminals(&tx)?;
         tx.commit()?;
         Ok(changed)
     }
@@ -1042,6 +1063,29 @@ impl Ledger {
         let mut stmt=self.db.prepare("SELECT i.id FROM local_inbox i JOIN bindings b ON i.binding=b.id WHERE b.agent=? AND i.binding=? AND i.state=? ORDER BY i.received_at,i.id LIMIT ?")?;
         let ids = stmt
             .query_map((agent, binding, state, limit), |r| r.get::<_, String>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        ids.into_iter()
+            .map(|id| self.inbox_record(owner, &id))
+            .collect()
+    }
+    /// Circular recovery scan. A stuck historical delivery cannot pin the front
+    /// of this binding or consume an unbounded retry pass before new polling.
+    pub fn inbox_for_binding_after(
+        &self,
+        owner: &str,
+        agent: &str,
+        binding: &str,
+        state: State,
+        cursor: &str,
+    ) -> Result<Vec<Record>> {
+        self.owner(owner)?;
+        key(agent)?;
+        key(binding)?;
+        let encoded = serde_json::to_string(&state)?;
+        let state = encoded.trim_matches('"');
+        let mut stmt=self.db.prepare("SELECT i.id FROM local_inbox i JOIN bindings b ON i.binding=b.id WHERE b.agent=? AND i.binding=? AND i.state=? ORDER BY (i.id<=?),i.id LIMIT 1")?;
+        let ids = stmt
+            .query_map((agent, binding, state, cursor), |r| r.get::<_, String>(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         ids.into_iter()
             .map(|id| self.inbox_record(owner, &id))

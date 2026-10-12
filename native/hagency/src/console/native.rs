@@ -780,6 +780,9 @@ impl NativeOwner {
                 .await
             {
                 Ok(next) => next,
+                Err(super::Error::Unavailable) => {
+                    return Err(failure(503, "matrix_authorization_unavailable"));
+                }
                 Err(_) => Some(
                     self.0
                         .host
@@ -1002,9 +1005,11 @@ impl NativeOwner {
                     .await
                 {
                     if code == "matrix_authorization_unavailable" {
-                        self.0.host.console.0.server_login.revoke_native_all().await;
-                        self.0.host.console.stop_owned_runtimes().await;
-                        self.0.host.console.stop_owner_provider().await;
+                        tracing::warn!(
+                            stage = "sdk_post_request",
+                            code,
+                            "Matrix authorization temporarily unavailable; preserving recovery state"
+                        );
                     } else {
                         self.shutdown().await;
                     }
@@ -1135,6 +1140,51 @@ async fn callback(req: &mut Request, depot: &Depot, res: &mut Response) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn external_provider_commands_allow_only_fixed_runtime_routes_and_local_actions() {
+        for runtime in ["claude", "octos"] {
+            for (action, method, suffix) in [
+                (ProviderAction::Status, "GET", ""),
+                (ProviderAction::Models, "GET", "/models"),
+                (ProviderAction::UseLocal, "POST", "/use-local"),
+                (ProviderAction::Disconnect, "POST", "/disconnect"),
+            ] {
+                let (actual, path, body) = request(Command::RuntimeProvider {
+                    runtime: runtime.into(),
+                    action,
+                })
+                .unwrap();
+                assert_eq!(actual, method);
+                assert_eq!(
+                    path,
+                    format!("/console/api/owner-provider/runtimes/{runtime}{suffix}")
+                );
+                assert!(body.is_none());
+            }
+            for action in [
+                ProviderAction::Login,
+                ProviderAction::Logout,
+                ProviderAction::Cancel,
+            ] {
+                assert!(
+                    request(Command::RuntimeProvider {
+                        runtime: runtime.into(),
+                        action
+                    })
+                    .is_err()
+                );
+            }
+        }
+        for runtime in ["../claude", "codex", "remote"] {
+            assert!(
+                request(Command::RuntimeProvider {
+                    runtime: runtime.into(),
+                    action: ProviderAction::Models
+                })
+                .is_err()
+            );
+        }
+    }
     #[test]
     fn reply_policy_command_uses_exact_binding_and_boolean_body() {
         for enabled in [false, true] {

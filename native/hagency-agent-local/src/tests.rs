@@ -176,7 +176,7 @@ fn requester_limits_and_cross_room_context_are_independent() {
     ));
 }
 #[test]
-fn restart_unknown_retains_hold_across_window_and_settlement_is_once() {
+fn restart_releases_unreported_usage_and_late_receipt_is_charged_once() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("local.db");
     let mut l = setup(&path);
@@ -184,14 +184,14 @@ fn restart_unknown_retains_hold_across_window_and_settlement_is_once() {
     drop(l);
     let mut l = Ledger::open(path, OWNER).unwrap();
     assert_eq!(l.recover_interrupted(OWNER).unwrap(), 1);
-    assert!(matches!(
-        l.reserve(&scope(), "new", "d", 10, 86410),
-        Err(Error::Unknown)
-    ));
+    assert_eq!(
+        l.reserve(&scope(), "new", "d", 10, 86410).unwrap(),
+        Reservation::New
+    );
     assert_eq!(
         l.account(&scope(), Layer::Room, Period::UtcDay, 10)
             .unwrap(),
-        (0, 80)
+        (0, 0)
     );
     l.settle(&scope(), "c", &usage(60)).unwrap();
     l.settle(&scope(), "c", &usage(60)).unwrap();
@@ -207,7 +207,7 @@ fn restart_unknown_retains_hold_across_window_and_settlement_is_once() {
     assert_eq!(
         l.account(&scope(), Layer::Room, Period::UtcDay, 86410)
             .unwrap(),
-        (0, 0)
+        (0, 10)
     );
     assert_eq!(
         l.reserve(&scope(), "c", "d", 80, 86410).unwrap(),
@@ -317,7 +317,7 @@ fn foreign_schema_owner_and_scope_mismatch_are_rejected() {
     assert!(l.db.execute("DELETE FROM bindings", []).is_err());
 }
 #[test]
-fn zero_overflow_and_provider_breach_fail_closed() {
+fn zero_and_overflow_reject_but_estimate_overrun_does_not_block() {
     let tmp = tempfile::tempdir().unwrap();
     let mut l = setup(&tmp.path().join("local.db"));
     let s = scope();
@@ -333,10 +333,10 @@ fn zero_overflow_and_provider_breach_fail_closed() {
         l.account(&s, Layer::Room, Period::UtcDay, 10).unwrap(),
         (11, 0)
     );
-    assert!(matches!(
-        l.reserve(&s, "next", "d", 1, 86410),
-        Err(Error::Unknown)
-    ));
+    assert_eq!(
+        l.reserve(&s, "next", "d", 1, 86410).unwrap(),
+        Reservation::New
+    );
 }
 #[test]
 fn policy_widening_does_not_upgrade_an_existing_dispatch() {
@@ -447,7 +447,7 @@ fn concurrent_tool_consumers_cannot_reuse_one_confirmation() {
 }
 
 #[test]
-fn unresolved_provider_charge_stops_late_tool_execution() {
+fn unreported_cost_does_not_block_authorized_tools() {
     let tmp = tempfile::tempdir().unwrap();
     let mut l = setup(&tmp.path().join("local.db"));
     let s = scope();
@@ -468,12 +468,9 @@ fn unresolved_provider_charge_stops_late_tool_execution() {
     };
     l.approve_tool(OWNER, &proposal, 10).unwrap();
     l.mark_unknown(&s, "c").unwrap();
-    assert!(matches!(
-        l.authorize_tool(&proposal, 11),
-        Err(Error::Unknown)
-    ));
+    l.authorize_tool(&proposal, 11).unwrap();
     l.settle(&s, "c", &usage(1)).unwrap();
-    l.authorize_tool(&proposal, 12).unwrap();
+    assert!(l.authorize_tool(&proposal, 12).is_err());
 }
 
 #[test]
@@ -767,7 +764,7 @@ fn retained_unset_is_unrestricted_but_does_not_widen_captured_dispatch_limits() 
 }
 
 #[test]
-fn unlimited_defaults_retain_unknown_charges_after_restart() {
+fn unlimited_defaults_release_unreported_charges_after_restart() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("unknown-unlimited.db");
     let mut ledger = Ledger::open(&path, OWNER).unwrap();
@@ -777,14 +774,11 @@ fn unlimited_defaults_retain_unknown_charges_after_restart() {
     drop(ledger);
     let mut ledger = Ledger::open(path, OWNER).unwrap();
     assert_eq!(ledger.recover_interrupted(OWNER).unwrap(), 1);
-    assert!(matches!(
-        ledger.reserve(&s, "next", "next-dispatch", 1, 86410),
-        Err(Error::Unknown)
-    ));
+    assert!(ledger.outstanding_calls(OWNER).unwrap().is_empty());
     for layer in [Layer::Agent, Layer::Room, Layer::Requester] {
         assert_eq!(
             ledger.account(&s, layer, Period::Lifetime, 86410).unwrap(),
-            (0, 40)
+            (0, 0)
         );
     }
     ledger.settle(&s, "c", &usage(25)).unwrap();
@@ -797,4 +791,59 @@ fn unlimited_defaults_retain_unknown_charges_after_restart() {
             (25, 1)
         );
     }
+}
+
+#[test]
+fn legacy_unknown_hold_is_released_once_without_replaying_or_losing_context() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("legacy.db");
+    let mut l = setup(&path);
+    let s = scope();
+    l.reserve(&s, "old-call", "old-dispatch", 80, 10).unwrap();
+    l.db.execute("UPDATE calls SET state='unknown' WHERE id='old-call'", [])
+        .unwrap();
+    let context = s.context_key(OWNER).unwrap();
+    l.db.execute(
+        "INSERT INTO contexts VALUES (?,?)",
+        (&context, "original-thread"),
+    )
+    .unwrap();
+    drop(l);
+    let mut l = Ledger::open(&path, OWNER).unwrap();
+    assert_eq!(
+        l.reserve(&s, "next-call", "next-dispatch", 10, 10).unwrap(),
+        Reservation::New
+    );
+    assert_eq!(
+        l.account(&s, Layer::Room, Period::UtcDay, 10).unwrap(),
+        (0, 10)
+    );
+    assert_eq!(
+        l.reserve(&s, "old-call", "old-dispatch", 80, 10).unwrap(),
+        Reservation::AlreadySettled(unreported_usage())
+    );
+    assert_eq!(
+        l.db.query_row(
+            "SELECT model_session FROM contexts WHERE scope=?",
+            [&context],
+            |r| r.get::<_, String>(0)
+        )
+        .unwrap(),
+        "original-thread"
+    );
+    assert_eq!(
+        l.db.query_row(
+            "SELECT counters FROM codex_usage WHERE scope=?",
+            [&context],
+            |r| r.get::<_, String>(0)
+        )
+        .unwrap(),
+        "null"
+    );
+    l.settle(&s, "old-call", &usage(25)).unwrap();
+    l.settle(&s, "old-call", &usage(25)).unwrap();
+    assert_eq!(
+        l.account(&s, Layer::Room, Period::UtcDay, 10).unwrap(),
+        (25, 10)
+    );
 }

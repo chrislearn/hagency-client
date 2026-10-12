@@ -21,6 +21,8 @@ pub enum Error {
     Profile(&'static str),
     #[error("Codex protocol mismatch: {0}")]
     Protocol(&'static str),
+    #[error("the stored Codex context no longer exists")]
+    ContextUnavailable,
     #[error("Codex process or stream failed")]
     Io(#[from] std::io::Error),
     #[error("Codex outcome or usage is unknown")]
@@ -573,8 +575,7 @@ impl TurnTools {
         }
     }
 }
-/// Cancellation of the host future must not leave an uncertain active charge
-/// looking like a safely pending job that other dispatches can keep consuming.
+/// Cancellation releases unreported usage as zero while execution remains unknown.
 struct PendingCall<'a> {
     ledger: &'a mut Ledger,
     scope: Scope,
@@ -681,6 +682,18 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
             let frame = self.read().await?;
             if frame.get("id") == Some(&value!(id)) && frame.get("method").is_none() {
                 if frame.get("error").is_some() {
+                    // Verified missing rollout is distinct from transport,
+                    // account and arbitrary protocol errors. Never replay a turn.
+                    if method == "thread/resume"
+                        && params["threadId"].as_str().is_some_and(|thread| {
+                            let message = frame["error"]["message"].as_str();
+                            message
+                                == Some(format!("no rollout found for thread id {thread}").as_str())
+                                || message == Some(format!("thread not found: {thread}").as_str())
+                        })
+                    {
+                        return Err(Error::ContextUnavailable);
+                    }
                     return Err(Error::Protocol(match method {
                         "thread/start" => "thread/start rejected",
                         "thread/resume" => "thread/resume rejected",
@@ -814,7 +827,7 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
         verify(&ledger.db, scope)?;
         let context_key = self.accounting_context_key(scope, &ledger.owner)?;
         self.verify_host_environment().await?;
-        let prior: Option<String> = ledger
+        let mut prior: Option<String> = ledger
             .db
             .query_row(
                 "SELECT model_session FROM contexts WHERE scope=?",
@@ -849,7 +862,28 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
             }
             "thread/start"
         };
-        let response = self.rpc(method, params).await?;
+        let replaced_missing = prior.is_some();
+        let response = match self.rpc(method, params.clone()).await {
+            Err(Error::ContextUnavailable) => {
+                // Start a context for the current new request only. The old
+                // dispatch and its uncertain side effects remain terminal.
+                prior = None;
+                let object = params
+                    .as_object_mut()
+                    .ok_or(Error::Protocol("context parameters"))?;
+                object.remove("threadId");
+                object.remove("excludeTurns");
+                params["ephemeral"] = false.into();
+                params["historyMode"] = "legacy".into();
+                params["allowProviderModelFallback"] = false.into();
+                #[cfg(unix)]
+                if self.host_files.is_some() {
+                    params["dynamicTools"] = host_files::specifications();
+                }
+                self.rpc("thread/start", params).await?
+            }
+            result => result?,
+        };
         let thread = response["thread"]["id"]
             .as_str()
             .ok_or(Error::Protocol("thread identity missing"))?;
@@ -876,7 +910,15 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
             )
             .await?;
         }
-        ledger.db.execute("INSERT INTO contexts(scope,model_session) VALUES(?,?) ON CONFLICT(scope) DO UPDATE SET model_session=excluded.model_session", [&context_key,thread]).map_err(crate::Error::from)?;
+        let tx = ledger.db.transaction().map_err(crate::Error::from)?;
+        tx.execute("INSERT INTO contexts(scope,model_session) VALUES(?,?) ON CONFLICT(scope) DO UPDATE SET model_session=excluded.model_session", [&context_key,thread]).map_err(crate::Error::from)?;
+        if replaced_missing && prior.is_none() {
+            // Cumulative totals belong to the new provider context. Preserve
+            // already settled historical charges; reset only its baseline.
+            tx.execute("DELETE FROM codex_usage WHERE scope=?", [&context_key])
+                .map_err(crate::Error::from)?;
+        }
+        tx.commit().map_err(crate::Error::from)?;
         self.bound_scope = Some(scope.clone());
         self.thread = Some(thread.into());
         self.cwd = profile.cwd.to_str().map(str::to_owned);
@@ -885,7 +927,7 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
         Ok(())
     }
     /// Estimate-only turn accounting. Reserve BEFORE sending turn/start.
-    /// Any timeout, cancellation/drop or lost result leaves durable held tokens.
+    /// Missing usage releases the estimate as zero, without replaying the call.
     #[allow(clippy::too_many_arguments)]
     pub async fn run(
         &mut self,
@@ -935,20 +977,6 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
             .ok_or(Error::Protocol("context missing"))?;
         let cwd = self.cwd.clone().ok_or(Error::Protocol("cwd missing"))?;
         let context = self.accounting_context_key(scope, owner)?;
-        let before: Option<String> = ledger
-            .db
-            .query_row(
-                "SELECT counters FROM codex_usage WHERE scope=?",
-                [&context],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(crate::Error::from)?;
-        let before = before
-            .as_deref()
-            .map(serde_json::from_str::<Counters>)
-            .transpose()?
-            .unwrap_or_default();
         if ledger.reserve(scope, call, dispatch, reservation, now())? != Reservation::New {
             return Err(Error::Protocol(
                 "call already started; refusing provider replay",
@@ -960,6 +988,23 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
             call: call.into(),
             settled: false,
         };
+        let before: Option<String> = charge
+            .ledger
+            .db
+            .query_row(
+                "SELECT counters FROM codex_usage WHERE scope=?",
+                [&context],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(crate::Error::from)?;
+        let baseline_missing = before.as_deref() == Some("null");
+        let before = before
+            .as_deref()
+            .filter(|s| *s != "null")
+            .map(serde_json::from_str::<Counters>)
+            .transpose()?
+            .unwrap_or_default();
         let work = self.run_inner(
             charge.ledger,
             owner,
@@ -970,6 +1015,7 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
             &thread,
             &cwd,
             &before,
+            baseline_missing,
             queue,
             started,
         );
@@ -1016,9 +1062,10 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
         thread: &str,
         cwd: &str,
         before: &Counters,
+        baseline_missing: bool,
         queue: &ApprovalQueue,
         started_notice: Option<tokio::sync::oneshot::Sender<()>>,
-    ) -> Result<(Completed, Counters)> {
+    ) -> Result<(Completed, Option<Counters>)> {
         // Host-file callbacks use the execution identity only on Unix.
         #[cfg(not(unix))]
         let _ = execution;
@@ -1034,6 +1081,7 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
             let _ = notice.send(());
         }
         let mut total = None;
+        let mut last = None;
         let mut text = String::new();
         for _ in 0..4096 {
             let frame = if let Some(frame) = self.deferred.pop_front() {
@@ -1080,9 +1128,10 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
             match method {
                 "thread/tokenUsage/updated" => {
                     exact_scope(params, thread, &turn)?;
-                    let counters = Counters::parse(&params["tokenUsage"]["total"])?;
-                    counters.delta(before)?;
-                    total = Some(counters);
+                    total = Counters::parse(&params["tokenUsage"]["total"]).ok();
+                    last = params["tokenUsage"]
+                        .get("last")
+                        .and_then(|v| Counters::parse(v).ok());
                 }
                 "item/started" | "item/completed" => {
                     exact_scope(params, thread, &turn)?;
@@ -1113,8 +1162,20 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
                         Some("interrupted") => TurnStatus::Interrupted,
                         _ => return Err(Error::Protocol("unknown terminal status")),
                     };
-                    let counters = total.ok_or(Error::Unknown)?;
-                    let usage = counters.delta(before)?;
+                    let (usage, counters) = match total {
+                        Some(counters) if baseline_missing => (
+                            last.and_then(|c| c.delta(&Counters::default()).ok())
+                                .unwrap_or_else(crate::unreported_usage),
+                            Some(counters),
+                        ),
+                        Some(counters) => (
+                            counters
+                                .delta(before)
+                                .unwrap_or_else(|_| crate::unreported_usage()),
+                            Some(counters),
+                        ),
+                        None => (crate::unreported_usage(), None),
+                    };
                     return Ok((
                         Completed {
                             text,
@@ -1573,6 +1634,23 @@ mod tests {
                     Some("thread/name/set") => {
                         emit(&mut w, value!({"id":frame["id"],"result":{}})).await;
                     }
+                    Some("thread/resume")
+                        if matches!(kind, "missing_context" | "resume_denied") =>
+                    {
+                        let message = if kind == "missing_context" {
+                            format!(
+                                "no rollout found for thread id {}",
+                                frame["params"]["threadId"].as_str().unwrap()
+                            )
+                        } else {
+                            "permission denied".into()
+                        };
+                        emit(
+                            &mut w,
+                            value!({"id":frame["id"],"error":{"code":-32000,"message":message}}),
+                        )
+                        .await;
+                    }
                     Some("thread/start" | "thread/resume") => {
                         assert_eq!(frame["params"]["approvalPolicy"], "untrusted");
                         assert_eq!(frame["params"]["sandbox"], "read-only");
@@ -1739,7 +1817,7 @@ mod tests {
         }
     }
     #[tokio::test]
-    async fn malformed_provider_turn_does_not_emit_processing_notice_and_keeps_hold() {
+    async fn malformed_provider_turn_does_not_emit_processing_notice_and_releases_hold() {
         let (_temp, mut ledger, profile) = setup(false);
         let (mut session, _, task) = fake(
             profile.cwd.to_str().unwrap().into(),
@@ -1776,7 +1854,7 @@ mod tests {
             ledger
                 .account(&scope(), Layer::Room, Period::Lifetime, now())
                 .unwrap(),
-            (0, 20)
+            (0, 0)
         );
         drop(session);
         task.await.unwrap();
@@ -1862,9 +1940,9 @@ mod tests {
         task.await.unwrap();
     }
     #[tokio::test]
-    async fn missing_usage_retains_hold_and_resume_does_not_replay_provider() {
+    async fn missing_usage_returns_original_reply_and_allows_new_work_without_replay() {
         let (_temp, mut ledger, profile) = setup(false);
-        let (mut session, _, task) = fake(
+        let (mut session, effects, task) = fake(
             profile.cwd.to_str().unwrap().into(),
             false,
             false,
@@ -1877,6 +1955,31 @@ mod tests {
             .open_context(&mut ledger, &scope(), &profile)
             .await
             .unwrap();
+        let completed = session
+            .run(
+                &mut ledger,
+                "@alice:test",
+                &scope(),
+                "call",
+                "dispatch",
+                "hello",
+                BudgetMode::Estimated { reservation: 20 },
+                &queue,
+            )
+            .await
+            .unwrap();
+        assert_eq!(completed.text, "hello");
+        assert_eq!(completed.usage, crate::unreported_usage());
+        assert_eq!(
+            ledger
+                .account(&scope(), Layer::Room, Period::Lifetime, now())
+                .unwrap(),
+            (0, 0)
+        );
+        assert_eq!(
+            ledger.reserve(&scope(), "new", "new", 1, now()).unwrap(),
+            Reservation::New
+        );
         assert!(matches!(
             session
                 .run(
@@ -1890,18 +1993,9 @@ mod tests {
                     &queue
                 )
                 .await,
-            Err(Error::Unknown)
+            Err(Error::Protocol(_))
         ));
-        assert_eq!(
-            ledger
-                .account(&scope(), Layer::Room, Period::Lifetime, now())
-                .unwrap(),
-            (0, 20)
-        );
-        assert!(matches!(
-            ledger.reserve(&scope(), "new", "new", 1, now()),
-            Err(crate::Error::Unknown)
-        ));
+        assert_eq!(effects.load(Ordering::SeqCst), 0);
         drop(session);
         task.await.unwrap();
     }
@@ -1961,6 +2055,100 @@ mod tests {
         task.await.unwrap();
     }
     #[tokio::test]
+    async fn deleted_provider_context_does_not_poison_new_requests_or_old_charges() {
+        let (_temp, mut ledger, profile) = setup(false);
+        let (queue, _) = approval_queue(1).unwrap();
+        for (call, total, kind) in [("old", 25, "command"), ("new", 10, "missing_context")] {
+            let (mut session, _, task) = fake(
+                profile.cwd.to_str().unwrap().into(),
+                false,
+                true,
+                total,
+                kind,
+            );
+            session.initialize().await.unwrap();
+            session
+                .open_context(&mut ledger, &scope(), &profile)
+                .await
+                .unwrap();
+            let result = session
+                .run(
+                    &mut ledger,
+                    "@alice:test",
+                    &scope(),
+                    call,
+                    call,
+                    "hello",
+                    BudgetMode::Estimated { reservation: 30 },
+                    &queue,
+                )
+                .await
+                .unwrap();
+            assert_eq!(result.usage.input, total);
+            drop(session);
+            task.await.unwrap();
+        }
+        assert_eq!(
+            ledger
+                .account(&scope(), Layer::Room, Period::Lifetime, now())
+                .unwrap(),
+            (35, 0)
+        );
+    }
+    #[tokio::test]
+    async fn arbitrary_resume_failure_never_clears_original_context_or_accounting() {
+        let (_temp, mut ledger, profile) = setup(false);
+        let context = scope().context_key("@alice:test").unwrap();
+        ledger
+            .db
+            .execute(
+                "INSERT INTO contexts VALUES (?,?)",
+                (&context, "original-thread"),
+            )
+            .unwrap();
+        ledger
+            .db
+            .execute("INSERT INTO codex_usage VALUES (?,?)", (&context, "null"))
+            .unwrap();
+        let (mut session, _, task) = fake(
+            profile.cwd.to_str().unwrap().into(),
+            false,
+            true,
+            10,
+            "resume_denied",
+        );
+        session.initialize().await.unwrap();
+        assert!(matches!(
+            session.open_context(&mut ledger, &scope(), &profile).await,
+            Err(Error::Protocol("thread/resume rejected"))
+        ));
+        assert_eq!(
+            ledger
+                .db
+                .query_row(
+                    "SELECT model_session FROM contexts WHERE scope=?",
+                    [&context],
+                    |r| r.get::<_, String>(0)
+                )
+                .unwrap(),
+            "original-thread"
+        );
+        assert_eq!(
+            ledger
+                .db
+                .query_row(
+                    "SELECT counters FROM codex_usage WHERE scope=?",
+                    [&context],
+                    |r| r.get::<_, String>(0)
+                )
+                .unwrap(),
+            "null"
+        );
+        assert!(ledger.outstanding_calls("@alice:test").unwrap().is_empty());
+        drop(session);
+        task.await.unwrap();
+    }
+    #[tokio::test]
     async fn resumed_context_settles_cumulative_usage_delta_once() {
         let (_temp, mut ledger, profile) = setup(false);
         let (queue, _) = approval_queue(1).unwrap();
@@ -1999,6 +2187,64 @@ mod tests {
                 .account(&scope(), Layer::Room, Period::Lifetime, now())
                 .unwrap(),
             (25, 0)
+        );
+    }
+    #[tokio::test]
+    async fn usage_gap_keeps_context_and_never_charges_old_cumulative_tokens() {
+        let (_temp, mut ledger, profile) = setup(false);
+        let (queue, _) = approval_queue(1).unwrap();
+        for (call, reported, total, expected) in [
+            ("missing", false, 0, 0),
+            ("anchor", true, 25, 0),
+            ("next", true, 40, 15),
+        ] {
+            let (mut session, _, task) = fake(
+                profile.cwd.to_str().unwrap().into(),
+                false,
+                reported,
+                total,
+                "command",
+            );
+            session.initialize().await.unwrap();
+            session
+                .open_context(&mut ledger, &scope(), &profile)
+                .await
+                .unwrap();
+            let completed = session
+                .run(
+                    &mut ledger,
+                    "@alice:test",
+                    &scope(),
+                    call,
+                    call,
+                    "hello",
+                    BudgetMode::Estimated { reservation: 30 },
+                    &queue,
+                )
+                .await
+                .unwrap();
+            assert_eq!(completed.usage.input, expected);
+            assert_eq!(completed.text, "hello");
+            let context = scope().context_key("@alice:test").unwrap();
+            assert_eq!(
+                ledger
+                    .db
+                    .query_row(
+                        "SELECT model_session FROM contexts WHERE scope=?",
+                        [&context],
+                        |r| r.get::<_, String>(0)
+                    )
+                    .unwrap(),
+                "thread-a"
+            );
+            drop(session);
+            task.await.unwrap();
+        }
+        assert_eq!(
+            ledger
+                .account(&scope(), Layer::Room, Period::Lifetime, now())
+                .unwrap(),
+            (15, 0)
         );
     }
     #[tokio::test]
@@ -2090,7 +2336,7 @@ mod tests {
         task.await.unwrap();
     }
     #[tokio::test]
-    async fn host_future_cancellation_marks_charge_unknown_before_restart() {
+    async fn host_future_cancellation_releases_charge_without_replay() {
         let (_temp, mut ledger, profile) = setup(false);
         let (mut session, _, task) = fake(
             profile.cwd.to_str().unwrap().into(),
@@ -2125,15 +2371,12 @@ mod tests {
                 result=&mut running=>panic!("turn unexpectedly ended before owner decision: {result:?}"),
             }
         }
-        assert_eq!(
-            ledger.outstanding_calls("@alice:test").unwrap()[0].state,
-            "unknown"
-        );
+        assert!(ledger.outstanding_calls("@alice:test").unwrap().is_empty());
         assert_eq!(
             ledger
                 .account(&scope, Layer::Room, Period::Lifetime, now())
                 .unwrap(),
-            (0, 20)
+            (0, 0)
         );
         task.abort();
         drop(session);

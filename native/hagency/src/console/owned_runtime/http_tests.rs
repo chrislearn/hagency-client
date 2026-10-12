@@ -37,6 +37,7 @@ struct WireState {
     no_messages: bool,
     device_generation: i64,
     restart_busy_remaining: usize,
+    renewal_failures: usize,
     events: Vec<Value>,
     paths: Vec<String>,
     replies: usize,
@@ -115,7 +116,14 @@ impl WireState {
                 }
                 (200, lease(self.epoch))
             }
-            "/hagency/api/v1/execution/leases/renew" => (200, lease(self.epoch)),
+            "/hagency/api/v1/execution/leases/renew" => {
+                if self.renewal_failures > 0 {
+                    self.renewal_failures -= 1;
+                    (503, json!({"code":"server_unavailable"}))
+                } else {
+                    (200, lease(self.epoch))
+                }
+            }
             "/hagency/api/v1/execution/events/poll" => {
                 assert!(
                     input["bindingId"] == "binding-a"
@@ -153,7 +161,9 @@ impl WireState {
                     self.processing_input = Some(input.clone());
                     return (503, json!({"code":"fixture_processing_response_lost"}));
                 }
-                assert_eq!(self.processing_input.as_ref().unwrap(), input);
+                if self.processing_input.as_ref().unwrap()["dispatchId"] == input["dispatchId"] {
+                    assert_eq!(self.processing_input.as_ref().unwrap(), input);
+                }
                 (
                     200,
                     json!({"processing":{"id":"processing-a","dispatchId":input["dispatchId"],"executionId":input["executionId"],"state":"pending","matrixEventId":null}}),
@@ -328,9 +338,10 @@ for raw in sys.stdin:
   with open(marker,'a') as out:out.write('turn\n')
   reply({'turn':{'id':'turn-a','status':'inProgress'}})
   time.sleep(6)
-  if not unknown:emit('thread/tokenUsage/updated',{'threadId':'thread-a','turnId':'turn-a','tokenUsage':{'total':{'inputTokens':3,'outputTokens':2,'cachedInputTokens':0,'reasoningOutputTokens':0,'totalTokens':5}}})
+  first_unknown = unknown and len(open(marker).readlines()) == 1
+  if not first_unknown:emit('thread/tokenUsage/updated',{'threadId':'thread-a','turnId':'turn-a','tokenUsage':{'total':{'inputTokens':3,'outputTokens':2,'cachedInputTokens':0,'reasoningOutputTokens':0,'totalTokens':5},'last':{'inputTokens':3,'outputTokens':2,'cachedInputTokens':0,'reasoningOutputTokens':0,'totalTokens':5}}})
   emit('item/completed',{'threadId':'thread-a','turnId':'turn-a','item':{'id':'message-a','type':'agentMessage','text':'isolated fixture answer'}})
-  emit('turn/completed',{'threadId':'thread-a','turn':{'id':'turn-a','status':'completed'}})
+  emit('turn/completed',{'threadId':'thread-a','turn':{'id':'turn-a','status':'invalid' if first_unknown else 'completed'}})
  else: raise Exception(m)
 "##.replace("MARKER",&serde_json::to_string(marker).unwrap()).replace("LEDGER",&serde_json::to_string(ledger).unwrap()).replace("UNKNOWN",if unknown{"True"}else{"False"});
     std::fs::write(script, source).unwrap();
@@ -548,7 +559,7 @@ async fn fixture_with_processing_failure(unknown: bool, budget: u64, processing_
     )
     .await;
     let ledger = Ledger::open_scoped(&path, OWNER, &profile_id).unwrap();
-    let expected_turns = usize::from(budget > 0);
+    let expected_turns = if unknown { 2 } else { usize::from(budget > 0) };
     assert_eq!(
         std::fs::read_to_string(&marker).unwrap().lines().count(),
         expected_turns
@@ -557,8 +568,8 @@ async fn fixture_with_processing_failure(unknown: bool, budget: u64, processing_
         .account(&scope, Layer::Room, Period::Lifetime, now())
         .unwrap();
     if unknown {
-        assert_eq!(account, (0, 10));
-        assert_eq!(ledger.outstanding_calls(OWNER).unwrap().len(), 1);
+        assert_eq!(account, (5, 0));
+        assert!(ledger.outstanding_calls(OWNER).unwrap().is_empty());
         assert_eq!(
             ledger.inbox_record(OWNER, "dispatch-b").unwrap().state,
             State::Replied
@@ -567,8 +578,13 @@ async fn fixture_with_processing_failure(unknown: bool, budget: u64, processing_
             .as_str()
             .unwrap()
             .to_owned();
-        assert!(reply.contains("历史请求的费用尚待确认"));
-        assert!(!reply.contains("本次用量"));
+        assert!(reply.starts_with("isolated fixture answer"));
+        assert!(reply.contains("本次用量 5 Token"));
+        assert!(!reply.contains("历史请求的费用尚待确认"));
+        assert_eq!(
+            ledger.inbox_record(OWNER, "dispatch-a").unwrap().state,
+            State::Unknown
+        );
     } else {
         assert_eq!(account, (if budget > 0 { 5 } else { 0 }, 0));
         let reply = state.lock().unwrap().first_reply.as_ref().unwrap()["reply"]["body"]
@@ -599,7 +615,16 @@ async fn fixture_with_processing_failure(unknown: bool, budget: u64, processing_
         let s = state.lock().unwrap();
         assert!(s.paths.iter().any(|p| p.ends_with("/events/ack")));
         assert!(s.paths.iter().any(|p| p.ends_with("/events/start")));
-        assert_eq!(s.processing, if budget > 0 { 2 } else { 0 });
+        assert_eq!(
+            s.processing,
+            if unknown {
+                3
+            } else if budget > 0 {
+                2
+            } else {
+                0
+            }
+        );
         if budget > 0 {
             let processing = s
                 .paths
@@ -646,7 +671,7 @@ async fn typed_http_runtime_replies_retries_and_restart_never_repeat_provider_tu
     fixture(false, 100).await;
 }
 #[tokio::test]
-async fn typed_http_runtime_missing_usage_keeps_hold_and_blocks_next_provider_turn() {
+async fn typed_http_runtime_unreported_failure_releases_hold_and_next_provider_turn_succeeds() {
     fixture(true, 100).await;
 }
 #[tokio::test]
@@ -854,7 +879,7 @@ async fn typed_http_runtime_intent_positive_restore_child() {
         )
         .unwrap();
     drop(ledger);
-    let input = json!({"bindingId":"binding-a","mode":"estimated","estimatedOptIn":true,"reservation":50,"effort":"low","hostFiles":false,"takeover":false});
+    let input = json!({"bindingId":"binding-a","reservation":50,"effort":"low","hostFiles":false,"takeover":false});
     native
         .execute(super::super::native::Command::Local {
             agent_id: "agent-a".into(),
@@ -969,9 +994,7 @@ async fn typed_http_runtime_intent_positive_restore_child() {
         .execute(Command::Local {
             agent_id: "agent-a".into(),
             action: LocalAction::StartAgentService,
-            input: Some(
-                json!({"mode":"estimated","estimatedOptIn":true,"reservation":15000,"effort":"low"}),
-            ),
+            input: Some(json!({"reservation":15000,"effort":"low"})),
             binding_id: None,
             requester: None,
         })
@@ -1118,7 +1141,7 @@ async fn typed_http_runtime_intent_positive_restore_child() {
         .execute(Command::Local {
             agent_id: "agent-a".into(),
             action: LocalAction::StartAgentService,
-            input: Some(json!({"mode":"estimated","estimatedOptIn":true})),
+            input: Some(json!({})),
             binding_id: None,
             requester: None,
         })
@@ -1170,7 +1193,7 @@ async fn typed_http_runtime_intent_positive_restore_child() {
         .execute(Command::Local {
             agent_id: "agent-a".into(),
             action: LocalAction::StartAgentService,
-            input: Some(json!({"mode":"estimated","estimatedOptIn":true})),
+            input: Some(json!({})),
             binding_id: None,
             requester: None,
         })
@@ -1216,4 +1239,81 @@ async fn typed_http_runtime_intent_positive_restore_child() {
     stopped.shutdown().await;
     server.abort();
     let _ = server.await;
+}
+
+#[tokio::test]
+async fn heartbeat_retries_transport_failure_but_never_extends_unconfirmed_lease() {
+    for recover in [true, false] {
+        let (origin, state, server) = server(false, 0).await;
+        let root = tempfile::tempdir().unwrap();
+        let native = NativeOwner::open_with_matrix(
+            &root.path().join("state"),
+            &origin,
+            OWNER,
+            Arc::new(Source),
+        )
+        .await
+        .unwrap();
+        let console = native.test_console().clone();
+        let device = console.authorized_device().await.unwrap();
+        {
+            let mut wire = state.lock().unwrap();
+            wire.epoch = 1;
+            wire.renewal_failures = if recover { 1 } else { 100 };
+        }
+        let lease = Lease {
+            agent_id: "agent-a".into(),
+            owner_user_id: "uid".into(),
+            device_id: "device-a".into(),
+            device_generation: 1,
+            epoch: 1,
+            expires_at_ms: wall_ms() + 6_000,
+        };
+        let (stop, receiver) = watch::channel(false);
+        let failed = Arc::new(std::sync::atomic::AtomicU8::new(0));
+        let task = tokio::spawn(heartbeat(
+            console,
+            device,
+            lease,
+            stop.clone(),
+            receiver,
+            failed.clone(),
+        ));
+        if recover {
+            tokio::time::timeout(Duration::from_secs(6), async {
+                loop {
+                    if state
+                        .lock()
+                        .unwrap()
+                        .paths
+                        .iter()
+                        .filter(|p| p.ends_with("/leases/renew"))
+                        .count()
+                        >= 2
+                    {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("heartbeat must retry transient failure within existing lease");
+            stop.send_replace(true);
+            task.await.unwrap();
+            assert_eq!(failed.load(std::sync::atomic::Ordering::Acquire), 0);
+        } else {
+            tokio::time::timeout(Duration::from_secs(7), task)
+                .await
+                .expect("unconfirmed lease must expire")
+                .unwrap();
+            assert!(*stop.borrow());
+            assert_eq!(
+                failed.load(std::sync::atomic::Ordering::Acquire),
+                2,
+                "transport deadline remains recoverable, not permanent credential revocation"
+            );
+        }
+        native.shutdown().await;
+        server.abort();
+    }
 }

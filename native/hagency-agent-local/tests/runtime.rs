@@ -7,10 +7,7 @@ use hagency_agent_local::{
 use hagency_runtime::octos;
 use serde_json::json;
 use std::os::unix::fs::PermissionsExt;
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::PathBuf};
 
 struct Fixture {
     root: tempfile::TempDir,
@@ -78,10 +75,28 @@ impl Fixture {
                         period: Period::Lifetime,
                     },
                     requests: RequestPolicy::Allow,
-                    high_risk: policy,
+                    high_risk: policy.clone(),
                 },
             )
             .unwrap();
+        for layer in [Layer::Room, Layer::Requester] {
+            ledger
+                .set_policy(
+                    "@owner:test",
+                    &scope,
+                    layer,
+                    0,
+                    &Policy {
+                        budget: Budget {
+                            limit: Limit::Unlimited,
+                            period: Period::Lifetime,
+                        },
+                        requests: RequestPolicy::Allow,
+                        high_risk: policy.clone(),
+                    },
+                )
+                .unwrap();
+        }
         Self {
             root,
             ledger,
@@ -91,12 +106,15 @@ impl Fixture {
         }
     }
     async fn process(&mut self) -> Process {
+        let guardian = std::env::var_os("HAGENCY_TEST_GUARDIAN")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_hagency-local-probe")));
         let mut process = spawn_for_scope_with_guardian(
             &self.profile,
             &self.reference,
             &mut self.ledger,
             &self.scope,
-            Some(Path::new(env!("CARGO_BIN_EXE_hagency-local-probe"))),
+            Some(&guardian),
         )
         .await
         .unwrap();
@@ -118,6 +136,53 @@ impl Fixture {
 async fn both_runtimes_settle_cache_inclusive_totals_and_preserve_context_after_reopen() {
     for kind in [Kind::Claude, Kind::Octos] {
         let mut f = Fixture::new(kind, "normal", ToolPolicy::Deny);
+        for call in ["first", "second"] {
+            let mut process = f.process().await;
+            process
+                .session
+                .open_context(&mut f.ledger, &f.scope, &f.profile)
+                .await
+                .unwrap();
+            let (queue, _) = codex::approval_queue(1).unwrap();
+            let reply = process
+                .session
+                .run_with_started(
+                    &mut f.ledger,
+                    "@owner:test",
+                    &f.scope,
+                    call,
+                    call,
+                    "hello",
+                    BudgetMode::Estimated { reservation: 100 },
+                    &queue,
+                    None,
+                )
+                .await
+                .unwrap();
+            assert_eq!(reply.text, "offline reply");
+            assert_eq!(reply.usage.input, 17);
+            assert_eq!(reply.usage.output, 7);
+            process.stop().await.unwrap();
+            f.ledger = Ledger::open(f.path("ledger"), "@owner:test").unwrap();
+        }
+        assert_eq!(f.spent(), (48, 0));
+        let argv = fs::read_to_string(f.path("argv")).unwrap();
+        if kind == Kind::Claude {
+            assert!(argv.contains("--resume"));
+            assert!(argv.contains("--strict-mcp-config"));
+            assert!(argv.contains("disableAllHooks"));
+        }
+        let frames = fs::read_to_string(f.path("frames")).unwrap();
+        if kind == Kind::Octos {
+            assert!(frames.contains("read_only"));
+            assert!(frames.contains("on-request"));
+        }
+    }
+}
+#[tokio::test]
+async fn octos_turn_usage_followed_by_session_usage_never_charges_previous_turn_twice() {
+    for kind in [Kind::Octos] {
+        let mut f = Fixture::new(kind, "mixed_usage", ToolPolicy::Deny);
         for call in ["first", "second"] {
             let mut process = f.process().await;
             process
@@ -273,7 +338,7 @@ async fn cancelled_callbacks_do_not_send_late_verdicts_or_lose_terminal_usage() 
     }
 }
 #[tokio::test]
-async fn unknown_usage_retains_holds_and_failed_known_usage_is_charged() {
+async fn missing_usage_is_zero_and_failed_known_usage_is_charged() {
     for kind in [Kind::Claude, Kind::Octos] {
         for mode in ["unknown", "failed"] {
             let mut f = Fixture::new(kind, mode, ToolPolicy::Deny);
@@ -299,12 +364,16 @@ async fn unknown_usage_retains_holds_and_failed_known_usage_is_charged() {
                 )
                 .await;
             if mode == "unknown" {
-                assert!(matches!(result, Err(Error::Unknown)));
-                assert_eq!(f.spent(), (0, 100));
-                assert!(matches!(
-                    f.ledger.reserve(&f.scope, "retry", "retry", 100, now()),
-                    Err(hagency_agent_local::Error::Unknown)
-                ));
+                let completed = result.unwrap();
+                assert_eq!(completed.usage.input, 0);
+                assert_eq!(completed.usage.output, 0);
+                assert_eq!(f.spent(), (0, 0));
+                assert_eq!(
+                    f.ledger
+                        .reserve(&f.scope, "new-call", "new-dispatch", 100, now())
+                        .unwrap(),
+                    hagency_agent_local::Reservation::New
+                );
             } else {
                 assert!(matches!(result, Err(Error::Failed)));
                 assert_eq!(f.spent(), (24, 0));
@@ -320,7 +389,7 @@ async fn unknown_usage_retains_holds_and_failed_known_usage_is_charged() {
     }
 }
 #[tokio::test]
-async fn cancelling_running_model_preserves_unknown_before_process_stop() {
+async fn cancelling_running_model_releases_usage_before_process_stop() {
     for kind in [Kind::Claude, Kind::Octos] {
         let mut f = Fixture::new(kind, "hold", ToolPolicy::AskOwner);
         let mut process = f.process().await;
@@ -345,11 +414,13 @@ async fn cancelling_running_model_preserves_unknown_before_process_stop() {
             tokio::pin!(turn);
             tokio::select! {pending=ui.recv()=>assert!(pending.is_some()),result=&mut turn=>panic!("unexpected result: {result:?}")};
         }
-        assert_eq!(
-            f.ledger.outstanding_calls("@owner:test").unwrap()[0].state,
-            "unknown"
+        assert!(
+            f.ledger
+                .outstanding_calls("@owner:test")
+                .unwrap()
+                .is_empty()
         );
-        assert_eq!(f.spent(), (0, 100));
+        assert_eq!(f.spent(), (0, 0));
         process.stop().await.unwrap();
         assert!(!f.path("effect").exists());
     }

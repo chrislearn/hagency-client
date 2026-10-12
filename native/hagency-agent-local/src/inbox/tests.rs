@@ -218,7 +218,7 @@ fn wrong_owner_scope_execution_and_lease_fail_without_granting_run() {
     );
 }
 #[test]
-fn startup_seals_prepared_running_calls_and_retains_unsettled_usage() {
+fn startup_seals_execution_and_releases_unreported_usage() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("local.db");
     let mut l = setup(&path);
@@ -253,9 +253,9 @@ fn startup_seals_prepared_running_calls_and_retains_unsettled_usage() {
             10
         )
         .unwrap(),
-        (0, 50)
+        (0, 0)
     );
-    assert_eq!(l.outstanding_calls(OWNER).unwrap()[0].state, "unknown");
+    assert!(l.outstanding_calls(OWNER).unwrap().is_empty());
 }
 #[test]
 fn capacity_rejects_before_receipt_and_safe_lease_redelivery_preserves_execution_identity() {
@@ -531,7 +531,7 @@ fn uncertain_inbox_payload_budget_and_tool_evidence_survive_sent_compaction() {
         l.confirm_matrix_delivery(OWNER, &unknown.id, &uncertain.execution_id)
             .is_err()
     );
-    assert_eq!(l.outstanding_calls(OWNER).unwrap()[0].state, "unknown");
+    assert!(l.outstanding_calls(OWNER).unwrap().is_empty());
     assert_eq!(
         l.account(
             &unknown.scope(),
@@ -540,13 +540,13 @@ fn uncertain_inbox_payload_budget_and_tool_evidence_survive_sent_compaction() {
             10
         )
         .unwrap(),
-        (0, 50)
+        (0, 0)
     );
     let approvals: i64 =
         l.db.query_row("SELECT count(*) FROM approvals", [], |r| r.get(0))
             .unwrap();
     assert_eq!(approvals, 1);
-    assert_eq!(l.inbox_capacity(OWNER).unwrap().active_records, 1);
+    assert_eq!(l.inbox_capacity(OWNER).unwrap().active_records, 0);
 }
 
 #[test]
@@ -666,7 +666,7 @@ fn charge_policy(l: &mut Ledger) {
     }
 }
 #[test]
-fn continuity_empty_history_allows_fresh_but_remote_start_requires_local_charge() {
+fn continuity_missing_charge_is_zero_but_execution_identity_is_retained() {
     let t = tempfile::tempdir().unwrap();
     let mut l = setup(&t.path().join("local.db"));
     assert!(l.covers_execution_history(OWNER, "agent-a", &[]).unwrap());
@@ -674,13 +674,13 @@ fn continuity_empty_history_allows_fresh_but_remote_start_requires_local_charge(
     let p = l.prepare_execution(OWNER, &event().id).unwrap();
     assert!(l.covers_execution_history(OWNER, "agent-a", &[]).unwrap());
     assert!(
-        !l.covers_execution_history(OWNER, "agent-a", &[history(&p)])
+        l.covers_execution_history(OWNER, "agent-a", &[history(&p)])
             .unwrap()
     );
     l.confirm_execution_start(OWNER, &response(&p, true))
         .unwrap();
     assert!(
-        !l.covers_execution_history(OWNER, "agent-a", &[history(&p)])
+        l.covers_execution_history(OWNER, "agent-a", &[history(&p)])
             .unwrap()
     );
 }
@@ -707,10 +707,11 @@ fn continuity_complete_unknown_hold_and_settled_cost_survive_restart_but_reset_b
         l.covers_execution_history(OWNER, "agent-a", &[history(&p)])
             .unwrap()
     );
-    assert!(matches!(
-        l.reserve(&event().scope(), "fresh-call", "new-dispatch", 1, 11),
-        Err(Error::Unknown)
-    ));
+    assert_eq!(
+        l.reserve(&event().scope(), "fresh-call", "new-dispatch", 1, 11)
+            .unwrap(),
+        crate::Reservation::New
+    );
     l.settle(
         &event().scope(),
         &p.execution_id,
@@ -762,7 +763,7 @@ fn continuity_rejection_seals_only_proven_no_call_and_preserves_existing_unknown
     l.mark_unknown(&event().scope(), &p.execution_id).unwrap();
     l.finish_local_execution(OWNER, &event().id, &p.execution_id, Finish::Rejected)
         .unwrap();
-    assert_eq!(l.outstanding_calls(OWNER).unwrap()[0].reserved, 50);
+    assert!(l.outstanding_calls(OWNER).unwrap().is_empty());
     assert!(
         l.covers_execution_history(OWNER, "agent-a", &[history(&p)])
             .unwrap()
@@ -1000,7 +1001,7 @@ fn only_settled_failed_cost_can_compact_unknown_and_unsent_results_stay_retained
         );
         witnesses.push(history(&p));
     }
-    assert_eq!(l.inbox_capacity(OWNER).unwrap().active_records, 2);
+    assert_eq!(l.inbox_capacity(OWNER).unwrap().active_records, 1);
     assert_eq!(
         l.account(
             &event().scope(),
@@ -1031,7 +1032,7 @@ fn only_settled_failed_cost_can_compact_unknown_and_unsent_results_stay_retained
         Some("original undelivered reply")
     );
     assert_eq!(l.inbox_record(OWNER, &e.id).unwrap().dispatch.body, e.body);
-    assert_eq!(l.inbox_capacity(OWNER).unwrap().active_records, 3);
+    assert_eq!(l.inbox_capacity(OWNER).unwrap().active_records, 2);
 }
 
 #[test]
@@ -1224,7 +1225,13 @@ fn no_provider_notice_never_overwrites_pending_unknown_or_settled_model_charges(
                 10
             )
             .unwrap(),
-            if state == "settled" { (5, 0) } else { (0, 50) }
+            if state == "settled" {
+                (5, 0)
+            } else if state == "unknown" {
+                (0, 0)
+            } else {
+                (0, 50)
+            }
         );
     }
 }
@@ -1255,13 +1262,13 @@ fn no_provider_notice_capacity_failure_cannot_leave_a_false_zero_call_proof() {
         State::Running
     );
     assert!(
-        !l.covers_execution_history(OWNER, "agent-a", &[history(&p)])
+        l.covers_execution_history(OWNER, "agent-a", &[history(&p)])
             .unwrap()
     );
 }
 
 #[test]
-fn no_provider_notice_preserves_other_unknown_charges_and_restart_budget_gate() {
+fn no_provider_notice_keeps_original_execution_unknown_but_new_requests_can_run() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("local.db");
     let mut l = setup(&path);
@@ -1274,6 +1281,8 @@ fn no_provider_notice_preserves_other_unknown_charges_and_restart_budget_gate() 
         .unwrap();
     l.mark_unknown(&event().scope(), &first.execution_id)
         .unwrap();
+    l.finish_local_execution(OWNER, &event().id, &first.execution_id, Finish::Unknown)
+        .unwrap();
     let mut notice = event();
     notice.id = "notice-dispatch".into();
     notice.event_id = "$notice:test".into();
@@ -1283,28 +1292,13 @@ fn no_provider_notice_preserves_other_unknown_charges_and_restart_budget_gate() 
     let p = l.prepare_execution(OWNER, &notice.id).unwrap();
     l.confirm_execution_start(OWNER, &response(&p, true))
         .unwrap();
-    assert!(matches!(
-        l.reserve(&notice.scope(), &p.execution_id, &notice.id, 10, 11),
-        Err(Error::Unknown)
-    ));
     l.persist_no_provider_reply(
         OWNER,
         &notice.id,
         &p.execution_id,
-        "Earlier usage is unknown; this request did not call the model.",
+        "Request denied; no model call.",
     )
     .unwrap();
-    for layer in [
-        crate::Layer::Agent,
-        crate::Layer::Room,
-        crate::Layer::Requester,
-    ] {
-        assert_eq!(
-            l.account(&event().scope(), layer, crate::Period::Lifetime, 11)
-                .unwrap(),
-            (0, 50)
-        );
-    }
     drop(l);
     let mut l = Ledger::open(&path, OWNER).unwrap();
     l.recover_agent_executions(OWNER, "agent-a").unwrap();
@@ -1313,20 +1307,35 @@ fn no_provider_notice_preserves_other_unknown_charges_and_restart_budget_gate() 
             .unwrap()
     );
     assert_eq!(
+        l.inbox_record(OWNER, &event().id).unwrap().state,
+        State::Unknown
+    );
+    assert_eq!(
         l.inbox_record(OWNER, &notice.id).unwrap().state,
         State::ReplyReady
     );
-    assert!(matches!(
-        l.reserve(&event().scope(), "another-call", "another-dispatch", 1, 12),
-        Err(Error::Unknown)
-    ));
-    // A no-provider notice cannot make resetting the earlier reservation safe.
+    assert_eq!(
+        l.account(
+            &event().scope(),
+            crate::Layer::Room,
+            crate::Period::Lifetime,
+            12
+        )
+        .unwrap(),
+        (0, 0)
+    );
+    assert_eq!(
+        l.reserve(&event().scope(), "new-call", "new-dispatch", 1, 12)
+            .unwrap(),
+        crate::Reservation::New
+    );
     l.db.execute("UPDATE accounts SET held=0", []).unwrap();
     assert!(
         !l.covers_execution_history(OWNER, "agent-a", &[history(&first), history(&p)])
             .unwrap()
     );
 }
+
 #[test]
 fn no_provider_notice_cannot_relabel_a_settled_model_reply_even_when_body_matches() {
     let temp = tempfile::tempdir().unwrap();

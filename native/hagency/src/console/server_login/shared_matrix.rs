@@ -14,6 +14,11 @@ impl ServerLogin {
         if self.stopped.load(Ordering::Acquire) {
             return Err("matrix_account_changed");
         }
+        let started = Instant::now();
+        tracing::debug!(
+            stage = "owner_adoption_discovery",
+            "Adopting SDK authorization"
+        );
         crate::server_admission::discover(expected_origin)
             .await
             .map_err(|e| e.code())?;
@@ -30,13 +35,28 @@ impl ServerLogin {
         }
         let server = origin(expected_origin)?;
         let client = http()?;
+        tracing::debug!(
+            stage = "owner_adoption_grant",
+            elapsed_ms = started.elapsed().as_millis() as u64,
+            "Requesting owner session"
+        );
         let grant = response(
             client
                 .post(server.join("/hagency/api/v1/sessions/pasion").unwrap())
                 .json(&json!({"accessToken":snapshot.access_token}))
                 .send()
                 .await
-                .map_err(|_| "server_unavailable")?,
+                .map_err(|error| {
+                    tracing::warn!(
+                        stage = "owner_adoption_grant",
+                        elapsed_ms = started.elapsed().as_millis() as u64,
+                        timeout = error.is_timeout(),
+                        connect = error.is_connect(),
+                        body = error.is_body(),
+                        "Owner session request transport failed"
+                    );
+                    "server_unavailable"
+                })?,
         )
         .await?;
         let token = grant["token"]
@@ -45,6 +65,7 @@ impl ServerLogin {
             .ok_or("invalid_server_response")?
             .to_owned();
         let result = async {
+            tracing::debug!(stage="owner_adoption_identity",elapsed_ms=started.elapsed().as_millis() as u64,"Checking owner identity");
             let identity = get(&client, server.join("/hagency/api/v1/identity").unwrap(), Some(&token)).await?;
             let subject = identity["subject"].as_str().filter(|s| !s.is_empty() && s.len() <= 255).ok_or("invalid_server_response")?;
             let user = identity["userId"].as_str().filter(|s| !s.is_empty() && s.len() <= 128).ok_or("invalid_server_response")?;
@@ -53,6 +74,7 @@ impl ServerLogin {
             if let Some(previous) = &previous && previous.origin == expected_origin && previous.owner.as_deref() == Some(expected_owner) && previous.subject.as_deref().is_some_and(|s| s != subject) { return Err("matrix_account_mismatch"); }
             let binding = Binding { origin: expected_origin.into(), client_id: snapshot.client_id.clone(), installation_id: previous.as_ref().filter(|p| p.origin == expected_origin && p.client_id == snapshot.client_id && p.owner.as_deref() == Some(expected_owner) && p.subject.as_deref() == Some(subject)).map(|p| p.installation_id.clone()).unwrap_or(random()?), name: "Hagency Desktop".into(), owner: Some(expected_owner.into()), subject: Some(subject.into()) };
             let until = deadline(&grant)?.min(deadline(&identity)?);
+            tracing::debug!(stage="owner_adoption_device",elapsed_ms=started.elapsed().as_millis() as u64,"Registering execution device");
             let (_, device) = register_device(&client, &server, &token, &binding, user).await?;
             let after = source.access_token().await.map_err(super::super::native::sdk_source_failure)?;
             if after.client_id != binding.client_id || self.stopped.load(Ordering::Acquire) { return Err("matrix_account_changed"); }
@@ -65,6 +87,7 @@ impl ServerLogin {
             sessions.insert(session_key(&cookie), RemoteSession { matrix_source: Some(source), token: token.clone(), oauth_token: String::new(), user_id: user.into(), device: Some(device), refresh_token: None, oauth_expires: until, authorized_until: until, invalidated: false, binding, checked: Instant::now(), expires: Instant::now() + Duration::from_secs(900) });
             *self.status.lock().await = json!({"state":"device_authorized","deviceAuthorized":true,"transportOnline":false});
             Self::start_worker(console);
+            tracing::info!(stage="owner_adoption",elapsed_ms=started.elapsed().as_millis() as u64,"SDK owner authorization ready");
             Ok(cookie)
         }.await;
         if result.is_err() {
@@ -93,9 +116,12 @@ impl ServerLogin {
         if self.stopped.load(Ordering::Acquire) {
             return Err("matrix_account_changed");
         }
-        let sessions = self.sessions.lock().await;
-        let session = sessions
+        let session = self
+            .sessions
+            .lock()
+            .await
             .get(&session_key(cookie))
+            .cloned()
             .filter(|s| !s.invalidated)
             .ok_or("matrix_account_changed")?;
         let source = session
@@ -106,7 +132,14 @@ impl ServerLogin {
             .access_token()
             .await
             .map_err(super::super::native::sdk_source_failure)?;
-        if snapshot.client_id != session.binding.client_id || self.stopped.load(Ordering::Acquire) {
+        let sessions = self.sessions.lock().await;
+        if sessions
+            .values()
+            .find(|s| s.token == session.token)
+            .is_none_or(|s| s.invalidated)
+            || snapshot.client_id != session.binding.client_id
+            || self.stopped.load(Ordering::Acquire)
+        {
             return Err("matrix_account_changed");
         }
         Ok(())
@@ -119,14 +152,15 @@ impl ServerLogin {
         if self.stopped.load(Ordering::Acquire) {
             return Err(Error::Unauthorized);
         }
-        let mut sessions = self.sessions.lock().await;
+        let _renewal = self.renewal.lock().await;
         let key = session_key(cookie);
+        self.renew_session_inner(&key).await?;
+        let mut sessions = self.sessions.lock().await;
         let session = sessions.get_mut(&key).ok_or(Error::Unauthorized)?;
-        if session.invalidated || session.matrix_source.is_none() {
-            return Err(Error::Unauthorized);
-        }
-        if renew(session).await.is_err() || self.stopped.load(Ordering::Acquire) {
-            self.queue_revocation(session).await;
+        if session.invalidated
+            || session.matrix_source.is_none()
+            || self.stopped.load(Ordering::Acquire)
+        {
             return Err(Error::Unauthorized);
         }
         if session.expires <= Instant::now() + Duration::from_secs(60) {
@@ -207,6 +241,23 @@ mod tests {
         Arc<std::sync::Mutex<Vec<(String, Value)>>>,
         tokio::task::JoinHandle<()>,
     ) {
+        fixture_controlled(
+            mxid,
+            late_epoch,
+            Arc::new(std::sync::atomic::AtomicU16::new(0)),
+        )
+        .await
+    }
+    // 1 = slow management response, 2 = transient renewal 503, 3 = terminal renewal 401.
+    async fn fixture_controlled(
+        mxid: &str,
+        late_epoch: Option<Arc<AtomicBool>>,
+        behavior: Arc<std::sync::atomic::AtomicU16>,
+    ) -> (
+        String,
+        Arc<std::sync::Mutex<Vec<(String, Value)>>>,
+        tokio::task::JoinHandle<()>,
+    ) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let origin = format!("http://{}/", listener.local_addr().unwrap());
         let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -222,6 +273,7 @@ mod tests {
                 let issuer = issuer.clone();
                 let mxid = mxid.clone();
                 let late_epoch = late_epoch.clone();
+                let behavior = behavior.clone();
                 tokio::spawn(async move {
                     let mut raw = Vec::new();
                     let mut chunk = [0; 4096];
@@ -305,9 +357,25 @@ mod tests {
                         "/_matrix/client/v3/joined_rooms" => json!({"joined_rooms":[]}),
                         _ => json!({"code":"unexpected_request"}),
                     };
+                    let mode = behavior.load(Ordering::Acquire);
+                    if path.ends_with("/projects") && mode == 1 {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                    let status = if path.ends_with("/renew") && mode == 2 {
+                        503
+                    } else if path.ends_with("/renew") && mode == 3 {
+                        401
+                    } else {
+                        200
+                    };
+                    let value = if status == 200 {
+                        value
+                    } else {
+                        json!({"code":if status==401 {"sign_in_required"} else {"server_unavailable"}})
+                    };
                     let body = value.to_string();
                     let response = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        "HTTP/1.1 {status} Fixture\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                         body.len()
                     );
                     let _ = stream.write_all(response.as_bytes()).await;
@@ -391,6 +459,255 @@ mod tests {
                 .unwrap()
                 .is_err(),
             "invalidated proof stays closed and lock drains"
+        );
+        native.shutdown().await;
+        task.abort();
+    }
+    #[tokio::test]
+    async fn temporary_renewal_preserves_session_without_extending_expired_proof() {
+        let mode = Arc::new(std::sync::atomic::AtomicU16::new(0));
+        let (origin, requests, task) = fixture_controlled("@owner:test", None, mode.clone()).await;
+        let root = tempfile::tempdir().unwrap();
+        let source = Arc::new(Source {
+            token: std::sync::Mutex::new("sdk-first".into()),
+            current: Arc::new(AtomicBool::new(true)),
+            error_code: "matrix_account_changed",
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            refreshes: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let native = NativeOwner::open_with_matrix(
+            &root.path().join("state"),
+            &origin,
+            "@owner:test",
+            source,
+        )
+        .await
+        .unwrap();
+        let login = &native.test_console().0.server_login;
+        let old = login.authorized_device().await.unwrap();
+        mode.store(2, Ordering::Release);
+        for s in login.sessions.lock().await.values_mut() {
+            s.checked = Instant::now() - Duration::from_secs(6);
+        }
+        assert!(matches!(
+            login.authorized_device().await,
+            Err(Error::Unavailable)
+        ));
+        assert!(old.bearer().is_ok());
+        assert!(login.revocations.lock().await.is_empty());
+        for s in login.sessions.lock().await.values_mut() {
+            s.authorized_until = Instant::now() - Duration::from_secs(1);
+            s.oauth_expires = s.authorized_until;
+        }
+        assert!(matches!(
+            login.authorized_device().await,
+            Err(Error::Unavailable)
+        ));
+        assert!(
+            login
+                .sessions
+                .lock()
+                .await
+                .values()
+                .all(|s| !s.invalidated && s.authorized_until < Instant::now())
+        );
+        mode.store(0, Ordering::Release);
+        assert!(login.authorized_device().await.unwrap().bearer().is_ok());
+        assert_eq!(
+            requests
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(p, _)| p.ends_with("/sessions/pasion"))
+                .count(),
+            1
+        );
+        mode.store(3, Ordering::Release);
+        for s in login.sessions.lock().await.values_mut() {
+            s.checked = Instant::now() - Duration::from_secs(6);
+        }
+        assert!(matches!(
+            login.authorized_device().await,
+            Err(Error::Unauthorized)
+        ));
+        assert!(old.bearer().is_err());
+        native.shutdown().await;
+        task.abort();
+    }
+    #[tokio::test]
+    async fn slow_management_does_not_block_renewal_and_late_logout_discards_reply() {
+        let mode = Arc::new(std::sync::atomic::AtomicU16::new(1));
+        let (origin, requests, task) = fixture_controlled("@owner:test", None, mode).await;
+        let root = tempfile::tempdir().unwrap();
+        let source = Arc::new(Source {
+            token: std::sync::Mutex::new("sdk-first".into()),
+            current: Arc::new(AtomicBool::new(true)),
+            error_code: "matrix_account_changed",
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            refreshes: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let native = NativeOwner::open_with_matrix(
+            &root.path().join("state"),
+            &origin,
+            "@owner:test",
+            source,
+        )
+        .await
+        .unwrap();
+        let console = native.test_console().clone();
+        let login = &console.0.server_login;
+        let device = login.authorized_device().await.unwrap();
+        let pin = super::super::super::device_execution::DeviceIdentity::from(&device);
+        let query_console = console.clone();
+        let read = tokio::spawn(async move {
+            query_console
+                .owner_api_pinned(&pin, OwnerOperation::Projects)
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if requests
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|(p, _)| p.ends_with("/projects"))
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        for s in login.sessions.lock().await.values_mut() {
+            s.checked = Instant::now() - Duration::from_secs(6);
+        }
+        tokio::time::timeout(Duration::from_millis(400), login.authorized_device())
+            .await
+            .expect("a slow management request cannot hold the authorization lock")
+            .unwrap();
+        login.revoke_native_all().await;
+        assert!(
+            read.await.unwrap().is_err(),
+            "late reply cannot revive logged-out authority"
+        );
+        native.shutdown().await;
+        task.abort();
+    }
+    #[tokio::test]
+    async fn cookie_rotation_preserves_inflight_management_reply() {
+        let mode = Arc::new(std::sync::atomic::AtomicU16::new(1));
+        let (origin, requests, task) = fixture_controlled("@owner:test", None, mode).await;
+        let root = tempfile::tempdir().unwrap();
+        let source = Arc::new(Source {
+            token: std::sync::Mutex::new("sdk-first".into()),
+            current: Arc::new(AtomicBool::new(true)),
+            error_code: "matrix_account_changed",
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            refreshes: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let native = NativeOwner::open_with_matrix(
+            &root.path().join("state"),
+            &origin,
+            "@owner:test",
+            source,
+        )
+        .await
+        .unwrap();
+        let console = native.test_console().clone();
+        let login = &console.0.server_login;
+        let device = login.authorized_device().await.unwrap();
+        let pin = super::super::super::device_execution::DeviceIdentity::from(&device);
+        let query_console = console.clone();
+        let read = tokio::spawn(async move {
+            query_console
+                .owner_api_pinned(&pin, OwnerOperation::Projects)
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if requests
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|(p, _)| p.ends_with("/projects"))
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        for s in login.sessions.lock().await.values_mut() {
+            s.checked = Instant::now() - Duration::from_secs(6);
+        }
+        tokio::time::timeout(Duration::from_millis(400), login.authorized_device())
+            .await
+            .expect("a slow management request cannot hold the authorization lock")
+            .unwrap();
+        let old_key = {
+            let mut sessions = login.sessions.lock().await;
+            let (key, session) = sessions.iter_mut().next().unwrap();
+            session.expires = Instant::now() + Duration::from_secs(30);
+            key.clone()
+        };
+        native.execute(Command::LoginStatus).await.unwrap();
+        assert!(!login.sessions.lock().await.contains_key(&old_key));
+        read.await
+            .unwrap()
+            .expect("same grant survives cookie rotation while HTTP is in flight");
+        native.shutdown().await;
+        task.abort();
+    }
+    #[tokio::test]
+    async fn cookie_rotation_cannot_make_concurrent_runtime_authorization_stale() {
+        let (origin, _, task) = fixture("@owner:test", None).await;
+        let root = tempfile::tempdir().unwrap();
+        let source = Arc::new(Source {
+            token: std::sync::Mutex::new("sdk-first".into()),
+            current: Arc::new(AtomicBool::new(true)),
+            error_code: "matrix_account_changed",
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            refreshes: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let native = NativeOwner::open_with_matrix(
+            &root.path().join("state"),
+            &origin,
+            "@owner:test",
+            source,
+        )
+        .await
+        .unwrap();
+        let console = native.test_console().clone();
+        let login = &console.0.server_login;
+        let old_key = {
+            let mut sessions = login.sessions.lock().await;
+            let (key, s) = sessions.iter_mut().next().unwrap();
+            s.expires = Instant::now() + Duration::from_secs(30);
+            key.clone()
+        };
+        let gate = login.renewal.lock().await;
+        let rotating = native.clone();
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let rotation = tokio::spawn(async move {
+            started.send(()).unwrap();
+            rotating.execute(Command::LoginStatus).await
+        });
+        ready.await.unwrap();
+        let runtime_console = console.clone();
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let runtime = tokio::spawn(async move {
+            started.send(()).unwrap();
+            runtime_console.authorized_device().await
+        });
+        ready.await.unwrap();
+        drop(gate);
+        rotation.await.unwrap().unwrap();
+        assert!(runtime.await.unwrap().unwrap().bearer().is_ok());
+        assert!(
+            !login.sessions.lock().await.contains_key(&old_key),
+            "test must exercise a real cookie rotation"
         );
         native.shutdown().await;
         task.abort();
@@ -613,10 +930,23 @@ mod tests {
         let error = native.execute(Command::LoginStatus).await.unwrap_err();
         assert_eq!(error.code, "matrix_authorization_unavailable");
         assert_eq!(error.status, 503);
-        assert!(old.bearer().is_err());
+        assert!(
+            old.bearer().is_ok(),
+            "temporary failure cannot revoke an unexpired proof"
+        );
         source.current.store(true, Ordering::Release);
         native.execute(Command::LoginStatus).await.unwrap();
         assert!(native.identity().await.is_ok());
+        assert_eq!(
+            requests
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(p, _)| p.ends_with("/sessions/pasion"))
+                .count(),
+            1,
+            "temporary outage must recover the existing session"
+        );
         native.shutdown().await;
         assert!(
             !requests

@@ -726,7 +726,7 @@ fn native_upgrade_procedure_continues_state() {
     let state = init_state(root.path());
     assert!(!state.join("operator.token").exists());
     let marker_before = owner::marker(&state);
-    // Current owner-ledger unknown charge and its three budget holds.
+    // Current owner ledger preserves known charges and silently releases missing usage.
     seed_owned_state(&state);
     // Step 2: the unit names the versioned N artifact.
     let unit_n = render_unit(&n_artifact, &state);
@@ -769,7 +769,7 @@ fn native_upgrade_rollback_restores_previous() {
     let next = stage_next(root.path());
     let state = init_state(root.path());
     let marker_before = owner::marker(&state);
-    seed_owned_state(&state); // unknown provider charge before the snapshot
+    seed_owned_state(&state); // known and provisional-zero charges before the snapshot
     let backup = root.path().join("backup-state");
     copy_tree(&state, &backup);
     // Install N, start, gate; then upgrade to N+1 and gate.
@@ -811,7 +811,7 @@ fn native_upgrade_rollback_restores_previous() {
     assert_eq!(
         ledger.context_session(&scope()).unwrap(),
         None,
-        "restoring the stopped snapshot discards later context metadata, never clears an unknown charge"
+        "restoring the stopped snapshot discards later context metadata and preserves known charges"
     );
     assert!(term_then_observe_exit(
         &mut restored,

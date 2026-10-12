@@ -183,10 +183,7 @@ impl OwnedRuntime {
         console: &Console,
         agent: &str,
     ) -> Result<Option<ServiceOptions>, RuntimeError> {
-        let device = console
-            .authorized_device()
-            .await
-            .map_err(|_| RuntimeError::Authorization)?;
+        let device = console.authorized_device().await.map_err(device_error)?;
         device.bearer().map_err(|_| RuntimeError::Authorization)?;
         let (path, identity) = intent_location(console, &device)?;
         Ok(options_for_device(
@@ -203,10 +200,7 @@ impl OwnedRuntime {
         console: Console,
         mut config: StartConfig,
     ) -> Result<serde_json::Value, RuntimeError> {
-        let device = console
-            .authorized_device()
-            .await
-            .map_err(|_| RuntimeError::Authorization)?;
+        let device = console.authorized_device().await.map_err(device_error)?;
         device.bearer().map_err(|_| RuntimeError::Authorization)?;
         let pin = DevicePin::from(&device);
         let assigned = console
@@ -334,7 +328,7 @@ impl OwnedRuntime {
                     result = async {
                         let _gate = task_gate.lock().await;
                         if *observed.borrow() || !service_enabled(&path, &profile_id, &intent)? { return Err(RuntimeError::Stopped); }
-                        let current = host.authorized_device().await.map_err(|_| RuntimeError::Authorization)?;
+                        let current = host.authorized_device().await.map_err(device_error)?;
                         current.bearer().map_err(|_| RuntimeError::Authorization)?;
                         if DevicePin::from(&current) != task_pin { return Err(RuntimeError::Authorization); }
                         let assigned = host.owner_api_pinned(&task_pin, OwnerOperation::Agent { agent: intent.agent_id.clone() })
@@ -442,10 +436,7 @@ impl OwnedRuntime {
         console: &Console,
         agent: &str,
     ) -> Result<serde_json::Value, RuntimeError> {
-        let device = console
-            .authorized_device()
-            .await
-            .map_err(|_| RuntimeError::Authorization)?;
+        let device = console.authorized_device().await.map_err(device_error)?;
         device.bearer().map_err(|_| RuntimeError::Authorization)?;
         let pin = DevicePin::from(&device);
         let (path, profile_id) = intent_location(console, &device)?;
@@ -471,7 +462,7 @@ impl OwnedRuntime {
                 },
             )
             .await
-            .map_err(|_| RuntimeError::Authorization)?;
+            .map_err(owner_error)?;
         let runtime = self.status(console, agent).await?;
         let services = self.services.lock().await;
         let entry = services.get(&identity(&device, agent));
@@ -496,10 +487,7 @@ impl OwnedRuntime {
         console: &Console,
         agent: &str,
     ) -> Result<Option<&'static str>, RuntimeError> {
-        let device = console
-            .authorized_device()
-            .await
-            .map_err(|_| RuntimeError::Authorization)?;
+        let device = console.authorized_device().await.map_err(device_error)?;
         device.bearer().map_err(|_| RuntimeError::Authorization)?;
         let pin = DevicePin::from(&device);
         let mut services = self.services.lock().await;
@@ -599,10 +587,7 @@ impl OwnedRuntime {
         pin: &DevicePin,
         agent: &str,
     ) -> Result<(), RuntimeError> {
-        let device = console
-            .authorized_device()
-            .await
-            .map_err(|_| RuntimeError::Authorization)?;
+        let device = console.authorized_device().await.map_err(device_error)?;
         if &DevicePin::from(&device) != pin {
             return Err(RuntimeError::Authorization);
         }

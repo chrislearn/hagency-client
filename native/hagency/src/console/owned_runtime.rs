@@ -55,7 +55,7 @@ pub(super) struct RuntimeIntent {
 }
 impl RuntimeIntent {
     pub(super) fn start_input(&self) -> serde_json::Value {
-        serde_json::json!({"bindingId":self.binding_id,"mode":"estimated","estimatedOptIn":true,
+        serde_json::json!({"bindingId":self.binding_id,
             "reservation":self.reservation,"effort":self.effort,"hostFiles":self.host_files,
             "takeover":false,"recoveryDeviceId":self.device_id,"recoveryConsentId":self.consent_id})
     }
@@ -278,6 +278,8 @@ pub(super) enum RuntimeError {
     Provider,
     #[error("device transport unavailable")]
     Transport,
+    #[error("the current request is no longer executable")]
+    Request,
     #[error("invalid or expired tool approval")]
     Approval,
     #[error("complete owner ledger recovery required")]
@@ -513,10 +515,7 @@ impl OwnedRuntime {
         &self,
         console: &Console,
     ) -> Result<Vec<RuntimeIntent>, RuntimeError> {
-        let device = console
-            .authorized_device()
-            .await
-            .map_err(|_| RuntimeError::Authorization)?;
+        let device = console.authorized_device().await.map_err(device_error)?;
         device.bearer().map_err(|_| RuntimeError::Authorization)?;
         let (path, identity) = intent_location(console, &device)?;
         Ok(intents_for_device(
@@ -572,10 +571,7 @@ impl OwnedRuntime {
         {
             return Err(RuntimeError::Profile);
         }
-        let device = console
-            .authorized_device()
-            .await
-            .map_err(|_| RuntimeError::Authorization)?;
+        let device = console.authorized_device().await.map_err(device_error)?;
         device.bearer().map_err(|_| RuntimeError::Authorization)?;
         if config
             .recovery_device_id
@@ -760,10 +756,7 @@ impl OwnedRuntime {
         pending: codex::PendingApproval,
     ) -> Result<(), RuntimeError> {
         use sha2::{Digest, Sha256};
-        let device = console
-            .authorized_device()
-            .await
-            .map_err(|_| RuntimeError::Authorization)?;
+        let device = console.authorized_device().await.map_err(device_error)?;
         device.bearer().map_err(|_| RuntimeError::Authorization)?;
         if expected != &DevicePin::from(&device) {
             return Err(RuntimeError::Authorization);
@@ -814,10 +807,7 @@ impl OwnedRuntime {
         console: &Console,
         agent: &str,
     ) -> Result<Vec<ApprovalView>, RuntimeError> {
-        let device = console
-            .authorized_device()
-            .await
-            .map_err(|_| RuntimeError::Authorization)?;
+        let device = console.authorized_device().await.map_err(device_error)?;
         device.bearer().map_err(|_| RuntimeError::Authorization)?;
         let mut entries = self.entries_for(&device).await?;
         let Some(entry) = entries.get_mut(&identity(&device, agent)) else {
@@ -857,10 +847,7 @@ impl OwnedRuntime {
         args_digest: &str,
         approved: bool,
     ) -> Result<(), RuntimeError> {
-        let device = console
-            .authorized_device()
-            .await
-            .map_err(|_| RuntimeError::Authorization)?;
+        let device = console.authorized_device().await.map_err(device_error)?;
         device.bearer().map_err(|_| RuntimeError::Authorization)?;
         let owner = console
             .owner_api(
@@ -903,10 +890,7 @@ impl OwnedRuntime {
         console: &Console,
         agent: &str,
     ) -> Result<Option<RuntimeStatus>, RuntimeError> {
-        let device = console
-            .authorized_device()
-            .await
-            .map_err(|_| RuntimeError::Authorization)?;
+        let device = console.authorized_device().await.map_err(device_error)?;
         let entries = self.entries.lock().await;
         device.bearer().map_err(|_| RuntimeError::Authorization)?;
         if entries
@@ -941,10 +925,7 @@ impl OwnedRuntime {
         agent: &str,
         binding: &str,
     ) -> Result<(), RuntimeError> {
-        let device = console
-            .authorized_device()
-            .await
-            .map_err(|_| RuntimeError::Authorization)?;
+        let device = console.authorized_device().await.map_err(device_error)?;
         device.bearer().map_err(|_| RuntimeError::Authorization)?;
         let mut receiver = {
             let mut entries = self.entries.lock().await;
@@ -1066,22 +1047,56 @@ impl Transport for PinnedConsole {
     }
     async fn execute(&self, op: Op) -> Result<Response, RuntimeError> {
         let acquiring = matches!(&op, Op::Acquire { .. });
+        let request = matches!(
+            &op,
+            Op::Ack { .. }
+                | Op::Start { .. }
+                | Op::Processing { .. }
+                | Op::AuthorizeTool { .. }
+                | Op::Reply { .. }
+                | Op::ReconcileKnownReply { .. }
+                | Op::Finish { .. }
+        );
         self.console
             .execution_api_pinned(op, &self.pin)
             .await
-            .map_err(|e| {
-                if acquiring && e.status == 409 && e.code == "agent_leased_to_another_device" {
-                    RuntimeError::LeaseBusy
-                } else if e.code == "execution_history_changed"
-                    || e.code == "ledger_recovery_required"
-                {
-                    RuntimeError::LedgerRecovery
-                } else if matches!(e.status, 401 | 403 | 409) {
-                    RuntimeError::Authorization
-                } else {
-                    RuntimeError::Transport
-                }
-            })
+            .map_err(|e| transport_error(e.status, &e.code, acquiring, request))
+    }
+}
+// Only explicit per-event refusals are isolated. Authentication, device and
+// current-lease failures still fence execution; status alone cannot distinguish them.
+fn transport_error(status: u16, code: &str, acquiring: bool, request: bool) -> RuntimeError {
+    if acquiring && status == 409 && code == "agent_leased_to_another_device" {
+        RuntimeError::LeaseBusy
+    } else if matches!(
+        code,
+        "execution_history_changed" | "ledger_recovery_required"
+    ) {
+        RuntimeError::LedgerRecovery
+    } else if request
+        && matches!(status, 401 | 403 | 409)
+        && matches!(
+            code,
+            "event_expired"
+                | "dispatch_not_offered"
+                | "dispatch_not_acknowledged"
+                | "execution_not_running"
+                | "execution_id_reused"
+                | "reply_payload_changed"
+                | "original_execution_mismatch"
+                | "reply_delivery_permanently_blocked"
+                | "reply_sender_busy"
+                | "reply_not_reconcilable"
+                | "dispatch_epoch_expired"
+                | "room_delivery_denied"
+                | "dispatch_scope_revoked"
+        )
+    {
+        RuntimeError::Request
+    } else if matches!(status, 401 | 403 | 409) {
+        RuntimeError::Authorization
+    } else {
+        RuntimeError::Transport
     }
 }
 async fn operation<T: Transport>(
@@ -1107,7 +1122,7 @@ async fn heartbeat(
     mut lease: Lease,
     stop: watch::Sender<bool>,
     mut receiver: watch::Receiver<bool>,
-    failed: Arc<std::sync::atomic::AtomicBool>,
+    failed: Arc<std::sync::atomic::AtomicU8>,
 ) {
     use std::sync::atomic::Ordering;
     let first_expiry = deadline(&lease).unwrap_or_else(|_| Instant::now());
@@ -1116,14 +1131,27 @@ async fn heartbeat(
         let Ok(expiry) = deadline(&lease) else {
             break "lease_deadline_elapsed";
         };
-        if device.bearer().is_err() {
-            break "device_snapshot_expired";
-        }
+        // The old snapshot pins identity only. The RPC obtains a fresh proof;
+        // expiry of an earlier snapshot must not prevent same-device recovery.
         if Instant::now() >= next {
             let pin = DevicePin::from(&device);
             let renewed = tokio::select! { biased; _=canceled(&mut receiver)=>return, _=tokio::time::sleep_until(expiry.into())=>break "lease_renewal_deadline", result=console.execution_api_pinned(Op::Renew{lease:lease.reference(),ttl_ms:30_000},&pin)=>result };
-            let Ok(Response::Lease(value)) = renewed else {
-                break "lease_renewal_rejected";
+            let value = match renewed {
+                Ok(Response::Lease(value)) => value,
+                Err(error) if !matches!(error.status, 401 | 403 | 409) => {
+                    tracing::warn!(
+                        stage = "lease_renewal",
+                        status = error.status,
+                        remaining_ms =
+                            expiry.saturating_duration_since(Instant::now()).as_millis() as u64,
+                        "Lease renewal transport failure; retrying before deadline"
+                    );
+                    next = Instant::now() + Duration::from_secs(1);
+                    tokio::select! {biased; _=canceled(&mut receiver)=>return,
+                    _=tokio::time::sleep_until(next.min(expiry).into())=>{}}
+                    continue;
+                }
+                _ => break "lease_renewal_rejected",
             };
             lease = value;
             // The successful renewal replaces the lease deadline. Waiting for a
@@ -1132,8 +1160,10 @@ async fn heartbeat(
                 break "renewed_lease_expired";
             };
             let fresh = tokio::select! {biased; _=canceled(&mut receiver)=>return, _=tokio::time::sleep_until(fresh_expiry.into())=>break "device_refresh_deadline", result=console.authorized_device()=>result};
-            let Ok(fresh) = fresh else {
-                break "device_authorization_required";
+            let fresh = match fresh {
+                Ok(fresh) => fresh,
+                Err(super::Error::Unavailable) => break "device_refresh_transport",
+                _ => break "device_authorization_required",
             };
             if fresh.origin() != device.origin()
                 || fresh.issuer() != device.issuer()
@@ -1150,9 +1180,20 @@ async fn heartbeat(
         }
         tokio::select! { biased; _=canceled(&mut receiver)=>return, _=tokio::time::sleep_until(next.min(expiry).into())=>{} }
     };
-    eprintln!("hagency runtime heartbeat failure: stage={reason}");
-    failed.store(true, Ordering::Release);
+    tracing::warn!(stage = reason, "Agent heartbeat stopped");
+    let terminal = matches!(
+        reason,
+        "lease_renewal_rejected" | "device_identity_changed" | "device_authorization_required"
+    );
+    failed.store(if terminal { 1 } else { 2 }, Ordering::Release);
     stop.send_replace(true);
+}
+fn device_error(error: super::Error) -> RuntimeError {
+    if matches!(error, super::Error::Unavailable) {
+        RuntimeError::Transport
+    } else {
+        RuntimeError::Authorization
+    }
 }
 fn failure_code(result: &Result<(), RuntimeError>) -> Option<&'static str> {
     match result {
@@ -1376,7 +1417,7 @@ async fn run_host(
     // takeover can disrupt an existing device. This is account/config only.
     let mut provider = tokio::select! {biased;_=canceled(&mut cancel)=>return Err(RuntimeError::Stopped),p=runtime::spawn(&initial.config.profile,&initial.config.credential_ref)=>p.map_err(|_|RuntimeError::Provider)?};
     let checked = tokio::select! {biased;_=canceled(&mut cancel)=>Err(RuntimeError::Stopped),r=async {provider.session.initialize().await?;provider.session.verify_host_environment().await?;provider.session.require_local_account().await}=>r.map_err(|_|RuntimeError::Provider)};
-    let _ = provider.stop().await;
+    provider.stop().await.map_err(|_| RuntimeError::Provider)?;
     checked?;
     let mut ledger = local(Ledger::open_scoped(&path, &owner, &profile_id))?;
     let (lease, history_snapshot, pre_covered) = acquire_for_start(
@@ -1394,16 +1435,13 @@ async fn run_host(
     // A bounded recovery wait may outlive the initial device snapshot. Acquire
     // used a fresh bearer; heartbeat must begin from that current capability,
     // while preserving the original immutable identity/generation fence.
-    let device = console
-        .authorized_device()
-        .await
-        .map_err(|_| RuntimeError::Authorization)?;
+    let device = console.authorized_device().await.map_err(device_error)?;
     device.bearer().map_err(|_| RuntimeError::Authorization)?;
     if DevicePin::from(&device) != transport.pin {
         return Err(RuntimeError::Authorization);
     }
     let reference = lease.reference();
-    let heartbeat_failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let heartbeat_failed = Arc::new(std::sync::atomic::AtomicU8::new(0));
     let monitor = tokio::spawn(heartbeat(
         console.clone(),
         device,
@@ -1421,18 +1459,17 @@ async fn run_host(
         drop(ledger);
         status.send_replace(RuntimeStatus::new(&agent,if models_allowed{"online"}else{"ledger_recovery_required"},if models_allowed{None}else{Some("ledger_recovery_required")}));
         supervise_bindings(initial,commands,&mut cancel,|work| {
-            let transport=transport.clone();let owner=owner.clone();let profile_id=profile_id.clone();let path=path.clone();let reference=reference.clone();let global_stop=stop.clone();
+            let transport=transport.clone();let owner=owner.clone();let profile_id=profile_id.clone();let path=path.clone();let reference=reference.clone();
             tokio::spawn(async move {
                 let mut work=work;
                 let result=async {
                     let mut provider=tokio::select! {biased;_=canceled(&mut work.receiver)=>return Err(RuntimeError::Stopped),p=runtime::spawn(&work.config.profile,&work.config.credential_ref)=>p.map_err(|_|RuntimeError::Profile)?};
                     let checked=tokio::select! {biased;_=canceled(&mut work.receiver)=>Err(RuntimeError::Stopped),r=async {provider.session.initialize().await?;provider.session.verify_host_environment().await?;provider.session.require_local_account().await}=>r.map_err(|_|RuntimeError::Provider)};
-                    let _=provider.stop().await;checked?;
+                    provider.stop().await.map_err(|_|RuntimeError::Provider)?;checked?;
                     let mut ledger=local(Ledger::open_scoped(&path,&owner,&profile_id))?;
                     let mut ready=RuntimeStatus::new(&work.config.agent_id,if models_allowed{"online_chat_only"}else{"ledger_recovery_required"},if models_allowed{None}else{Some("ledger_recovery_required")}).with_host_files(work.config.host_files);ready.binding_id=Some(work.config.binding_id.clone());work.status.send_replace(ready);
                     execution_loop_with_gate(&transport,&owner,&mut ledger,&work.config,&reference,&mut work.receiver,&work.status,models_allowed).await
                 }.await;
-                if matches!(result,Err(RuntimeError::Provider)) {global_stop.send_replace(true);}
                 let mut final_status=RuntimeStatus::new(&work.config.agent_id,"stopped",failure_code(&result)).with_host_files(work.config.host_files);
                 final_status.binding_id=Some(work.config.binding_id.clone());work.status.send_replace(final_status);
             })
@@ -1441,10 +1478,10 @@ async fn run_host(
     monitor.abort();
     let _ = monitor.await;
     let _ = transport.execute(Op::Release { lease: reference }).await;
-    if heartbeat_failed.load(std::sync::atomic::Ordering::Acquire) {
-        Err(RuntimeError::Authorization)
-    } else {
-        result
+    match heartbeat_failed.load(std::sync::atomic::Ordering::Acquire) {
+        1 => Err(RuntimeError::Authorization),
+        2 => Err(RuntimeError::Transport),
+        _ => result,
     }
 }
 /// One supervisor owns the lease. Workers can never acquire, renew or release it.
@@ -1544,18 +1581,21 @@ async fn execution_loop_with_gate<T: Transport>(
     models_allowed: bool,
 ) -> Result<(), RuntimeError> {
     let mut reported = BTreeSet::new();
+    let mut reply_cursor = String::new();
+    let mut finish_cursors = [String::new(), String::new(), String::new()];
     loop {
         if *cancel.borrow() {
             return Err(RuntimeError::Stopped);
         }
         // Original durable output survives restart; never regenerate it.
-        for record in local(ledger.inbox_for_binding(
+        for record in local(ledger.inbox_for_binding_after(
             owner,
             &config.agent_id,
             &config.binding_id,
             State::ReplyReady,
-            1000,
+            &reply_cursor,
         ))? {
+            reply_cursor = record.dispatch.id.clone();
             if record.dispatch.binding_id != config.binding_id
                 || record.dispatch.agent_id != lease.agent_id
                 || record
@@ -1565,34 +1605,49 @@ async fn execution_loop_with_gate<T: Transport>(
             {
                 continue;
             }
-            send_reply(console, owner, ledger, lease, cancel, &record).await?;
+            retry_reply(console, owner, ledger, lease, cancel, &record).await?;
         }
-        for record in local(ledger.inbox_for_binding(
-            owner,
-            &config.agent_id,
-            &config.binding_id,
-            State::Unknown,
-            1000,
-        ))? {
-            if record.dispatch.binding_id != config.binding_id
-                || !same_lease(&record.dispatch, lease)
-                || reported.contains(&record.dispatch.id)
-            {
-                continue;
-            }
-            if let Some(execution) = record.execution_id {
-                operation(
-                    console,
-                    cancel,
-                    Op::Finish {
-                        lease: lease.clone(),
-                        dispatch_id: record.dispatch.id.clone(),
-                        execution_id: execution,
-                        outcome: Outcome::Unknown,
-                    },
-                )
-                .await?;
-                reported.insert(record.dispatch.id);
+        for (index, (state, outcome)) in [
+            (State::Unknown, Outcome::Unknown),
+            (State::Failed, Outcome::Failed),
+            (State::Rejected, Outcome::Rejected),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            for record in local(ledger.inbox_for_binding_after(
+                owner,
+                &config.agent_id,
+                &config.binding_id,
+                state,
+                &finish_cursors[index],
+            ))? {
+                finish_cursors[index] = record.dispatch.id.clone();
+                if record.dispatch.binding_id != config.binding_id
+                    || !same_lease(&record.dispatch, lease)
+                    || reported.contains(&record.dispatch.id)
+                {
+                    continue;
+                }
+                if let Some(execution) = record.execution_id {
+                    let outcome = operation(
+                        console,
+                        cancel,
+                        Op::Finish {
+                            lease: lease.clone(),
+                            dispatch_id: record.dispatch.id.clone(),
+                            execution_id: execution,
+                            outcome,
+                        },
+                    )
+                    .await;
+                    if matches!(outcome, Err(RuntimeError::Stopped)) {
+                        return Err(RuntimeError::Stopped);
+                    }
+                    if outcome.is_ok() {
+                        reported.insert(record.dispatch.id);
+                    }
+                }
             }
         }
         if !models_allowed {
@@ -1607,7 +1662,7 @@ async fn execution_loop_with_gate<T: Transport>(
             tokio::select! {biased;_=canceled(cancel)=>return Err(RuntimeError::Stopped),_=tokio::time::sleep(Duration::from_millis(250))=>{}}
             continue;
         }
-        let Response::Events(events) = operation(
+        let events = match operation(
             console,
             cancel,
             Op::Poll {
@@ -1616,9 +1671,15 @@ async fn execution_loop_with_gate<T: Transport>(
                 limit: 1,
             },
         )
-        .await?
-        else {
-            return Err(RuntimeError::Transport);
+        .await
+        {
+            Ok(Response::Events(events)) => events,
+            Err(RuntimeError::Transport) => {
+                tokio::select! {biased; _=canceled(cancel)=>return Err(RuntimeError::Stopped), _=tokio::time::sleep(Duration::from_secs(1))=>{}}
+                continue;
+            }
+            Err(error) => return Err(error),
+            _ => return Err(RuntimeError::Transport),
         };
         for event in events {
             let event = convert(event)?;
@@ -1627,7 +1688,48 @@ async fn execution_loop_with_gate<T: Transport>(
             // Poll transport has verified current owner/device/Agent and lease.
             local(ledger.register_binding(owner, &scope))?;
             local(ledger.receive_dispatch(owner, &event, inbox::Limits::default(), now()))?;
-            operation(
+            let record = local(ledger.inbox_record(owner, &event.id))?;
+            // A redelivery is not permission to repeat provider work. Close the
+            // unstarted server offer even after a restart changed the lease epoch.
+            if !matches!(record.state, State::Received | State::Acknowledged) {
+                if let Some(execution) = record.execution_id {
+                    if record.state == State::Prepared {
+                        local(ledger.finish_local_execution(
+                            owner,
+                            &event.id,
+                            &execution,
+                            Finish::Unknown,
+                        ))?;
+                    }
+                    let outcome = match record.state {
+                        State::Failed => Outcome::Failed,
+                        State::Rejected => Outcome::Rejected,
+                        _ => Outcome::Unknown,
+                    };
+                    let result = operation(
+                        console,
+                        cancel,
+                        Op::Finish {
+                            lease: lease.clone(),
+                            dispatch_id: event.id.clone(),
+                            execution_id: execution,
+                            outcome,
+                        },
+                    )
+                    .await;
+                    if matches!(
+                        result,
+                        Err(RuntimeError::Stopped | RuntimeError::Authorization)
+                    ) {
+                        return result.map(|_| ());
+                    }
+                    if result.is_ok() {
+                        reported.insert(event.id.clone());
+                    }
+                }
+                continue;
+            }
+            match operation(
                 console,
                 cancel,
                 Op::Ack {
@@ -1635,8 +1737,45 @@ async fn execution_loop_with_gate<T: Transport>(
                     dispatch_id: event.id.clone(),
                 },
             )
-            .await?;
-            local(ledger.acknowledge_dispatch(owner, &event.id))?;
+            .await
+            {
+                Ok(Response::Acknowledged) => local(ledger.acknowledge_dispatch(owner, &event.id))?,
+                Err(RuntimeError::Transport) => continue,
+                Err(RuntimeError::Request) => {
+                    // No provider work was started. Retain a terminal witness,
+                    // retire this offer, and let the next request be polled.
+                    local(ledger.acknowledge_dispatch(owner, &event.id))?;
+                    let prepared = local(ledger.prepare_execution(owner, &event.id))?;
+                    local(ledger.finish_local_execution(
+                        owner,
+                        &event.id,
+                        &prepared.execution_id,
+                        Finish::Rejected,
+                    ))?;
+                    let result = operation(
+                        console,
+                        cancel,
+                        Op::Finish {
+                            lease: lease.clone(),
+                            dispatch_id: event.id.clone(),
+                            execution_id: prepared.execution_id,
+                            outcome: Outcome::Rejected,
+                        },
+                    )
+                    .await;
+                    if matches!(
+                        result,
+                        Err(RuntimeError::Stopped | RuntimeError::Authorization)
+                    ) {
+                        return result.map(|_| ());
+                    }
+                    if result.is_ok() {
+                        reported.insert(event.id.clone());
+                    }
+                }
+                Err(error) => return Err(error),
+                _ => return Err(RuntimeError::Transport),
+            }
         }
         for record in local(ledger.inbox_for_binding(
             owner,
@@ -1683,21 +1822,38 @@ async fn execution_loop_with_gate<T: Transport>(
                     else {
                         continue;
                     };
-                    run_turn(
-                        console,
-                        lease,
-                        ledger,
-                        owner,
-                        config,
-                        permit.into_prepared(),
-                        cancel,
-                        status,
+                    tokio::time::timeout(
+                        Duration::from_secs(1200),
+                        run_turn(
+                            console,
+                            lease,
+                            ledger,
+                            owner,
+                            config,
+                            permit.into_prepared(),
+                            cancel,
+                            status,
+                        ),
                     )
                     .await
+                    .unwrap_or(Err(RuntimeError::Profile))
                 }
+                Err(error) => Err(error),
                 _ => Err(RuntimeError::Transport),
             };
-            let provider_lost = matches!(&result, Err(RuntimeError::Provider));
+            let turn_error = result.as_ref().err().map(|error| match error {
+                RuntimeError::Provider => "provider_authorization_lost",
+                RuntimeError::Authorization => "authorization_or_lease_lost",
+                RuntimeError::Profile => "profile_or_local_state_unavailable",
+                _ => "device_transport_unavailable",
+            });
+            if let Some(code) = turn_error {
+                tracing::warn!(
+                    stage = "agent_turn",
+                    code,
+                    "Agent turn outcome is unknown; execution will not be replayed"
+                );
+            }
             let authorization_lost = matches!(&result, Err(RuntimeError::Authorization));
             if let Ok(Some(finish)) = result {
                 local(ledger.finish_local_execution(
@@ -1711,7 +1867,7 @@ async fn execution_loop_with_gate<T: Transport>(
                     Finish::Failed => Outcome::Failed,
                     Finish::Unknown => Outcome::Unknown,
                 };
-                operation(
+                let reported_outcome = operation(
                     console,
                     cancel,
                     Op::Finish {
@@ -1721,7 +1877,10 @@ async fn execution_loop_with_gate<T: Transport>(
                         outcome,
                     },
                 )
-                .await?;
+                .await;
+                if matches!(reported_outcome, Err(RuntimeError::Stopped)) {
+                    return Err(RuntimeError::Stopped);
+                }
             } else if result.is_err() {
                 // Network lost after start, process cancellation or storage failure
                 // cannot authorize a retry of provider side effects.
@@ -1745,19 +1904,20 @@ async fn execution_loop_with_gate<T: Transport>(
                     },
                 )
                 .await;
-                if provider_lost {
-                    return Err(RuntimeError::Provider);
-                }
                 if authorization_lost {
                     return Err(RuntimeError::Authorization);
                 }
-                reported_outcome?;
-                reported.insert(prepared.dispatch.id);
+                if matches!(reported_outcome, Err(RuntimeError::Stopped)) {
+                    return Err(RuntimeError::Stopped);
+                }
+                if reported_outcome.is_ok() {
+                    reported.insert(prepared.dispatch.id);
+                }
             } else {
                 let record = local(ledger.inbox_record(owner, &prepared.dispatch.id))?;
-                send_reply(console, owner, ledger, lease, cancel, &record).await?;
+                retry_reply(console, owner, ledger, lease, cancel, &record).await?;
             }
-            let mut ready = RuntimeStatus::new(&config.agent_id, "online_chat_only", None)
+            let mut ready = RuntimeStatus::new(&config.agent_id, "online_chat_only", turn_error)
                 .with_host_files(config.host_files);
             ready.binding_id = Some(config.binding_id.clone());
             status.send_replace(ready);
@@ -1765,13 +1925,13 @@ async fn execution_loop_with_gate<T: Transport>(
         tokio::select! {biased; _=canceled(cancel)=>return Err(RuntimeError::Stopped),_=tokio::time::sleep(Duration::from_secs(1))=>{}}
     }
 }
-async fn fresh_running<T: Transport>(
+async fn check_running<T: Transport>(
     transport: &T,
     lease: &LeaseRef,
     expected: &inbox::Dispatch,
     execution: &str,
     cancel: &mut watch::Receiver<bool>,
-) -> bool {
+) -> Result<(), RuntimeError> {
     let response = operation(
         transport,
         cancel,
@@ -1781,23 +1941,38 @@ async fn fresh_running<T: Transport>(
             execution_id: execution.into(),
         },
     )
-    .await;
-    let Ok(Response::ToolAuthorized(event)) = response else {
-        return false;
+    .await?;
+    let Response::ToolAuthorized(event) = response else {
+        return Err(RuntimeError::Transport);
     };
-    let Ok(event) = convert(event) else {
-        return false;
-    };
-    !*cancel.borrow()
-        && event.id == expected.id
-        && event.scope() == expected.scope()
-        && event.event_id == expected.event_id
-        && event.body == expected.body
-        && event.binding_generation == expected.binding_generation
-        && event.dispatch_epoch == Some(lease.epoch)
-        && event.dispatch_device_id == expected.dispatch_device_id
-        && event.execution_id.as_deref() == Some(execution)
-        && event.state == "running"
+    let event = convert(event)?;
+    if *cancel.borrow() {
+        return Err(RuntimeError::Stopped);
+    }
+    if event.id != expected.id
+        || event.scope() != expected.scope()
+        || event.event_id != expected.event_id
+        || event.body != expected.body
+        || event.binding_generation != expected.binding_generation
+        || event.dispatch_epoch != Some(lease.epoch)
+        || event.dispatch_device_id != expected.dispatch_device_id
+        || event.execution_id.as_deref() != Some(execution)
+        || event.state != "running"
+    {
+        return Err(RuntimeError::Request);
+    }
+    Ok(())
+}
+async fn fresh_running<T: Transport>(
+    transport: &T,
+    lease: &LeaseRef,
+    expected: &inbox::Dispatch,
+    execution: &str,
+    cancel: &mut watch::Receiver<bool>,
+) -> bool {
+    check_running(transport, lease, expected, execution, cancel)
+        .await
+        .is_ok()
 }
 #[cfg(unix)]
 struct LiveToolGate {
@@ -1859,21 +2034,21 @@ async fn monitor_running<T: Transport>(
 ) -> RuntimeError {
     loop {
         tokio::select! {biased;_=canceled(&mut cancel)=>return RuntimeError::Stopped,_=tokio::time::sleep(Duration::from_secs(5))=>{}}
-        if !matches!(
-            tokio::time::timeout(
-                Duration::from_secs(5),
-                fresh_running(
-                    transport,
-                    lease,
-                    &prepared.dispatch,
-                    &prepared.execution_id,
-                    &mut cancel
-                )
-            )
-            .await,
-            Ok(true)
-        ) {
-            return RuntimeError::Authorization;
+        match tokio::time::timeout(
+            Duration::from_secs(5),
+            check_running(
+                transport,
+                lease,
+                &prepared.dispatch,
+                &prepared.execution_id,
+                &mut cancel,
+            ),
+        )
+        .await
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => return error,
+            Err(_) => return RuntimeError::Transport,
         }
     }
 }
@@ -1898,9 +2073,24 @@ async fn processing_notice<T: Transport>(
         )
         .await;
         match result {
-            Ok(Ok(Response::Processing(_))) | Ok(Err(RuntimeError::Authorization)) => return,
+            Ok(Ok(Response::Processing(_))) => {
+                tracing::debug!(
+                    stage = "processing_notice",
+                    attempt,
+                    "Agent processing reaction confirmed"
+                );
+                return;
+            }
+            Ok(Err(RuntimeError::Authorization)) => {
+                tracing::warn!(
+                    stage = "processing_notice",
+                    code = "authorization_required",
+                    "Agent processing reaction rejected"
+                );
+                return;
+            }
             _ if attempt == 0 => tokio::time::sleep(Duration::from_millis(200)).await,
-            _ => tracing::debug!(
+            _ => tracing::warn!(
                 stage = "processing_notice",
                 code = "processing_notice_unavailable",
                 "Agent processing reaction was not confirmed"
@@ -2043,7 +2233,7 @@ async fn run_turn<T: Transport>(
         }
     };
     if !allow {
-        let _ = provider.stop().await;
+        provider.stop().await.map_err(|_| RuntimeError::Provider)?;
         return if *cancel.borrow() {
             Err(RuntimeError::Stopped)
         } else {
@@ -2086,13 +2276,12 @@ async fn run_turn<T: Transport>(
         Ok(completed)=>Ok(Ok(completed)),
         Err(codex::Error::Ledger(hagency_agent_local::Error::Denied))=>Ok(Err("⏸️ 本次请求未获 Agent 主人的处理授权，未调用模型。")),
         Err(codex::Error::Ledger(hagency_agent_local::Error::Budget))=>Ok(Err("⏸️ 暂停处理：Token 可用额度不足，无法为本次请求预留额度。请联系 Agent 主人调整配额。本次未调用模型。")),
-        Err(codex::Error::Ledger(hagency_agent_local::Error::Unknown))=>Ok(Err("⏸️ 暂停处理：历史请求的费用尚待确认，预留额度仍保留。请联系 Agent 主人核对账本后继续。本次未调用模型。")),
         Err(codex::Error::Profile("dedicated owner provider login required"))=>Err(RuntimeError::Provider),
-        Err(codex::Error::Failed)=>{let _=provider.stop().await;return Ok(Some(Finish::Failed));},
+        Err(codex::Error::Failed)=>{provider.stop().await.map_err(|_|RuntimeError::Provider)?;return Ok(Some(Finish::Failed));},
         Err(_)=>Err(RuntimeError::Profile),
     }};
     // Dropping a running turn first seals its reservation; then kill the child.
-    let _ = provider.stop().await;
+    provider.stop().await.map_err(|_| RuntimeError::Provider)?;
     let completed = match result? {
         Ok(completed) => completed,
         Err(reason) => {
@@ -2192,6 +2381,26 @@ fn with_owner_budget(
         ),
     ))
 }
+// A historical delivery failure is scoped to its immutable reply. Retry on a
+// later pass, leaving polling and later requests free to make progress.
+async fn retry_reply<T: Transport>(
+    console: &T,
+    owner: &str,
+    ledger: &mut Ledger,
+    lease: &LeaseRef,
+    cancel: &mut watch::Receiver<bool>,
+    record: &inbox::Record,
+) -> Result<(), RuntimeError> {
+    match send_reply(console, owner, ledger, lease, cancel, record).await {
+        Err(RuntimeError::Stopped) => Err(RuntimeError::Stopped),
+        Err(error) => {
+            tracing::warn!(stage="agent_reply", dispatch_id=%record.dispatch.id, %error,
+                "Reply remains durable; later requests may continue");
+            Ok(())
+        }
+        Ok(()) => Ok(()),
+    }
+}
 async fn send_reply<T: Transport>(
     console: &T,
     owner: &str,
@@ -2202,46 +2411,41 @@ async fn send_reply<T: Transport>(
 ) -> Result<(), RuntimeError> {
     let execution = record.execution_id.clone().ok_or(RuntimeError::Profile)?;
     let body = record.reply.clone().ok_or(RuntimeError::Profile)?;
-    let receipt = loop {
-        match operation(
-            console,
-            cancel,
-            if record.dispatch.dispatch_epoch == Some(lease.epoch) {
-                Op::Reply {
-                    lease: lease.clone(),
+    let receipt = match operation(
+        console,
+        cancel,
+        if record.dispatch.dispatch_epoch == Some(lease.epoch) {
+            Op::Reply {
+                lease: lease.clone(),
+                dispatch_id: record.dispatch.id.clone(),
+                execution_id: execution.clone(),
+                body: body.clone(),
+            }
+        } else {
+            Op::ReconcileKnownReply {
+                lease: lease.clone(),
+                known: super::device_execution::KnownReply {
                     dispatch_id: record.dispatch.id.clone(),
                     execution_id: execution.clone(),
                     body: body.clone(),
-                }
-            } else {
-                Op::ReconcileKnownReply {
-                    lease: lease.clone(),
-                    known: super::device_execution::KnownReply {
-                        dispatch_id: record.dispatch.id.clone(),
-                        execution_id: execution.clone(),
-                        body: body.clone(),
-                        binding_id: record.dispatch.binding_id.clone(),
-                        room_id: record.dispatch.room_id.clone(),
-                        requester_mxid: record.dispatch.requester_mxid.clone(),
-                        thread_root: record.dispatch.thread_root.clone(),
-                        binding_generation: record.dispatch.binding_generation,
-                        original_epoch: record
-                            .dispatch
-                            .dispatch_epoch
-                            .ok_or(RuntimeError::Profile)?,
-                    },
-                }
-            },
-        )
-        .await
-        {
-            Ok(Response::ReplyQueued(receipt)) => break receipt,
-            Err(RuntimeError::Transport) => {
-                tokio::select! {biased;_=canceled(cancel)=>return Err(RuntimeError::Stopped),_=tokio::time::sleep(Duration::from_secs(1))=>{}}
+                    binding_id: record.dispatch.binding_id.clone(),
+                    room_id: record.dispatch.room_id.clone(),
+                    requester_mxid: record.dispatch.requester_mxid.clone(),
+                    thread_root: record.dispatch.thread_root.clone(),
+                    binding_generation: record.dispatch.binding_generation,
+                    original_epoch: record
+                        .dispatch
+                        .dispatch_epoch
+                        .ok_or(RuntimeError::Profile)?,
+                },
             }
-            Err(error) => return Err(error),
-            _ => return Err(RuntimeError::Transport),
-        }
+        },
+    )
+    .await
+    {
+        Ok(Response::ReplyQueued(receipt)) => receipt,
+        Err(error) => return Err(error),
+        _ => return Err(RuntimeError::Transport),
     };
     if receipt.binding_id != record.dispatch.binding_id
         || receipt.room_id != record.dispatch.room_id
@@ -2360,7 +2564,6 @@ mod tests {
         ledger
             .reserve(&scope, "call-b", "dispatch-b", 10, now())
             .unwrap();
-        ledger.mark_unknown(&scope, "call-b").unwrap();
         let completed = codex::Completed {
             text: "长答案".repeat(7000),
             usage,
@@ -2783,11 +2986,10 @@ mod tests {
                         return Ok(Response::Events(vec![]));
                     }
                     if matches!(self.mode, Mode::ReplyRetry | Mode::CrossEpochReply) {
-                        assert_eq!(
-                            ledger.inbox_record(OWNER, "dispatch-a").unwrap().state,
-                            State::Replied
-                        );
-                        self.stop.send_replace(true);
+                        if ledger.inbox_record(OWNER, "dispatch-a").unwrap().state == State::Replied
+                        {
+                            self.stop.send_replace(true);
+                        }
                         return Ok(Response::Events(vec![]));
                     }
                     if calls.iter().filter(|c| **c == "poll").count() > 1 {
@@ -3074,6 +3276,125 @@ mod tests {
         assert_eq!(second.status.borrow().phase, "stopped");
         assert!(commands.is_closed());
         assert!(commands.send(binding_work(config(tmp.path())).0).is_err());
+    }
+    struct BacklogFailureTransport {
+        stop: watch::Sender<bool>,
+        calls: StdMutex<Vec<&'static str>>,
+    }
+    impl Transport for BacklogFailureTransport {
+        async fn execute(&self, op: Op) -> Result<Response, RuntimeError> {
+            let mut calls = self.calls.lock().unwrap();
+            match op {
+                Op::Reply { dispatch_id, .. } => {
+                    assert_eq!(dispatch_id, "dispatch-a");
+                    calls.push("old-reply");
+                    Err(RuntimeError::Authorization)
+                }
+                Op::Finish { .. } => {
+                    calls.push("finish");
+                    Err(RuntimeError::Transport)
+                }
+                Op::Poll { .. } => {
+                    calls.push("poll");
+                    if calls.contains(&"new-start") {
+                        self.stop.send_replace(true);
+                        return Ok(Response::Events(vec![]));
+                    }
+                    let mut next = event();
+                    next.id = "dispatch-next".into();
+                    next.event_id = "$next:test".into();
+                    Ok(Response::Events(vec![wire(&next)]))
+                }
+                Op::Ack { .. } => {
+                    calls.push("ack");
+                    Ok(Response::Acknowledged)
+                }
+                Op::Start { dispatch_id, .. } => {
+                    assert_eq!(dispatch_id, "dispatch-next");
+                    calls.push("new-start");
+                    Err(RuntimeError::Transport)
+                }
+                _ => panic!("historical delivery recovery must never invoke a provider"),
+            }
+        }
+    }
+    #[tokio::test]
+    async fn historical_reply_denial_and_finish_transport_failure_do_not_block_new_dispatch() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut ledger = setup(&tmp.path().join("ledger"), tmp.path());
+        let mut old = event();
+        ledger
+            .receive_dispatch(OWNER, &old, inbox::Limits::default(), now())
+            .unwrap();
+        ledger.acknowledge_dispatch(OWNER, &old.id).unwrap();
+        let prepared = ledger.prepare_execution(OWNER, &old.id).unwrap();
+        old.execution_id = Some(prepared.execution_id.clone());
+        old.state = "running".into();
+        ledger
+            .confirm_execution_start(
+                OWNER,
+                &inbox::ServerStart {
+                    dispatch: old,
+                    newly_started: true,
+                },
+            )
+            .unwrap();
+        ledger
+            .persist_execution_reply(
+                OWNER,
+                "dispatch-a",
+                &prepared.execution_id,
+                "original response",
+            )
+            .unwrap();
+        let (stop, mut cancel) = watch::channel(false);
+        let transport = BacklogFailureTransport {
+            stop,
+            calls: StdMutex::new(vec![]),
+        };
+        let (status, _) = watch::channel(RuntimeStatus::new("agent-a", "test", None));
+        assert!(matches!(
+            tokio::time::timeout(
+                Duration::from_secs(3),
+                execution_loop(
+                    &transport,
+                    OWNER,
+                    &mut ledger,
+                    &config(tmp.path()),
+                    &lease(),
+                    &mut cancel,
+                    &status
+                )
+            )
+            .await
+            .unwrap(),
+            Err(RuntimeError::Stopped)
+        ));
+        assert_eq!(
+            ledger
+                .inbox_record(OWNER, "dispatch-a")
+                .unwrap()
+                .reply
+                .as_deref(),
+            Some("original response")
+        );
+        assert_eq!(
+            ledger.inbox_record(OWNER, "dispatch-next").unwrap().state,
+            State::Unknown
+        );
+        assert_eq!(
+            *transport.calls.lock().unwrap(),
+            vec![
+                "old-reply",
+                "poll",
+                "ack",
+                "new-start",
+                "finish",
+                "old-reply",
+                "finish",
+                "poll"
+            ]
+        );
     }
     #[derive(Clone)]
     struct SharedLeaseTransport {
@@ -3409,7 +3730,7 @@ mod tests {
     #[tokio::test]
     async fn original_reply_retries_after_restart_and_lost_transport_response() {
         let (calls, state) = fixture(Mode::ReplyRetry).await;
-        assert_eq!(calls, vec!["reply", "reply", "poll"]);
+        assert_eq!(calls, vec!["reply", "poll", "reply", "poll"]);
         assert_eq!(state, State::Replied);
     }
     #[cfg(unix)]
@@ -3448,8 +3769,8 @@ for raw in sys.stdin:
     }
     #[cfg(unix)]
     #[tokio::test]
-    async fn pure_model_room_revoke_kills_provider_seals_unknown_hold_and_keeps_other_room_running()
-    {
+    async fn pure_model_room_revoke_kills_provider_releases_unreported_usage_and_keeps_other_room_running()
+     {
         use hagency_agent_local::{Layer, Period};
         use std::os::unix::fs::PermissionsExt;
         let tmp = tempfile::tempdir().unwrap();
@@ -3565,7 +3886,7 @@ for raw in sys.stdin:
             ledger
                 .account(&event().scope(), Layer::Room, Period::Lifetime, now())
                 .unwrap(),
-            (0, 10)
+            (0, 0)
         );
         let before = fb.calls.lock().unwrap().len();
         tokio::time::timeout(Duration::from_secs(3), async {
@@ -3596,7 +3917,7 @@ for raw in sys.stdin:
     }
     #[cfg(unix)]
     #[tokio::test]
-    async fn cancellation_kills_provider_and_preserves_unknown_reserved_charge() {
+    async fn cancellation_kills_provider_and_releases_unreported_charge() {
         use hagency_agent_local::{
             Budget, Layer, Limit, Period, Policy, RequestPolicy, ToolPolicy,
         };
@@ -3678,14 +3999,14 @@ for raw in sys.stdin:
             ledger
                 .account(&event().scope(), Layer::Room, Period::Lifetime, now())
                 .unwrap(),
-            (0, 10)
+            (0, 0)
         );
-        assert_eq!(ledger.outstanding_calls(OWNER).unwrap().len(), 1);
+        assert!(ledger.outstanding_calls(OWNER).unwrap().is_empty());
     }
     #[tokio::test]
     async fn known_original_reply_reconciles_after_new_epoch_without_model_replay() {
         let (calls, state) = fixture(Mode::CrossEpochReply).await;
-        assert_eq!(calls, vec!["reconcile", "reconcile", "poll"]);
+        assert_eq!(calls, vec!["reconcile", "poll", "reconcile", "poll"]);
         assert_eq!(state, State::Replied);
     }
     #[tokio::test]
@@ -3761,6 +4082,18 @@ for raw in sys.stdin:
             stop,
         };
         let record = ledger.inbox_record(OWNER, "dispatch-a").unwrap();
+        assert!(matches!(
+            send_reply(
+                &restored,
+                OWNER,
+                &mut ledger,
+                &newlease,
+                &mut receiver,
+                &record,
+            )
+            .await,
+            Err(RuntimeError::Transport)
+        ));
         send_reply(
             &restored,
             OWNER,
@@ -4181,7 +4514,7 @@ for raw in sys.stdin:
         serde_json::from_value(value).unwrap()
     }
     #[tokio::test]
-    async fn history_fresh_zero_full_settled_and_missing_cost_gate_real_local_ledger() {
+    async fn history_missing_receipt_does_not_block_with_retained_execution_identity() {
         let t = tempfile::tempdir().unwrap();
         let mut l = setup(&t.path().join("ledger.db"), t.path());
         let (_stop, mut cancel) = watch::channel(false);
@@ -4203,7 +4536,7 @@ for raw in sys.stdin:
             pages: StdMutex::new([history_page("b", vec![history.clone()], 1, None)].into()),
         };
         assert!(
-            !history_coverage(&fake, &mut l, OWNER, "agent-a", &mut cancel)
+            history_coverage(&fake, &mut l, OWNER, "agent-a", &mut cancel)
                 .await
                 .unwrap()
                 .1
@@ -4355,7 +4688,7 @@ for raw in sys.stdin:
         );
     }
     #[tokio::test]
-    async fn incomplete_ledger_never_acquires_without_explicit_known_reply_recovery() {
+    async fn conflicting_history_requires_explicit_known_reply_recovery() {
         let t = tempfile::tempdir().unwrap();
         let path = t.path().join("ledger.db");
         let mut l = setup(&path, t.path());
@@ -4367,7 +4700,9 @@ for raw in sys.stdin:
         h.dispatch_id = "dispatch-z".into();
         h.execution_id = "execution-z".into();
         h.binding_id = "binding-z".into();
-        let history = vec![history_identity(&p), h];
+        let mut contradictory = history_identity(&p);
+        contradictory.immutable_digest = "contradictory-digest".into();
+        let history = vec![contradictory, h];
         let (_stop, mut cancel) = watch::channel(false);
         let mut cfg = config(t.path());
         cfg.takeover = Takeover::OwnerRequested;
@@ -4421,6 +4756,272 @@ for raw in sys.stdin:
         assert!(!covered);
         assert_eq!(snapshot.count, 2);
         assert!(fake.pages.lock().unwrap().is_empty());
+    }
+    #[tokio::test]
+    async fn missing_historical_receipt_allows_new_work_without_owner_reconciliation() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mut ledger = setup(&tmp.path().join("ledger"), tmp.path());
+        let old = inbox::Prepared {
+            dispatch: event(),
+            execution_id: "old-execution".into(),
+        };
+        let fake = HistoryFake {
+            pages: StdMutex::new(
+                [
+                    history_page("a", vec![history_identity(&old)], 1, None),
+                    Ok(Response::Lease(Lease {
+                        agent_id: "agent-a".into(),
+                        owner_user_id: "owner-a".into(),
+                        device_id: "device-a".into(),
+                        device_generation: 1,
+                        epoch: 2,
+                        expires_at_ms: wall_ms() + 30000,
+                    })),
+                ]
+                .into(),
+            ),
+        };
+        let (_stop, mut cancel) = watch::channel(false);
+        let (_, snapshot, covered) =
+            acquire_checked(&fake, &mut ledger, OWNER, &config(tmp.path()), &mut cancel)
+                .await
+                .unwrap();
+        assert!(covered);
+        assert_eq!(snapshot.count, 1);
+        assert!(
+            ledger.inbox_record(OWNER, "dispatch-a").is_err(),
+            "old execution must never be recreated"
+        );
+        assert!(fake.pages.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn request_refusals_do_not_impersonate_device_or_lease_revocation() {
+        for code in [
+            "event_expired",
+            "execution_not_running",
+            "dispatch_scope_revoked",
+            "room_delivery_denied",
+            "reply_payload_changed",
+        ] {
+            assert!(matches!(
+                transport_error(409, code, false, true),
+                RuntimeError::Request
+            ));
+            assert!(matches!(
+                transport_error(401, code, false, true),
+                RuntimeError::Request
+            ));
+            assert!(matches!(
+                transport_error(403, code, false, false),
+                RuntimeError::Authorization
+            ));
+        }
+        for code in ["lease_expired", "device_revoked", "unknown_auth_refusal"] {
+            assert!(matches!(
+                transport_error(403, code, false, true),
+                RuntimeError::Authorization
+            ));
+        }
+        assert!(matches!(
+            transport_error(503, "matrix_state_unavailable", false, true),
+            RuntimeError::Transport
+        ));
+    }
+    struct RequestFailureFake {
+        stop: watch::Sender<bool>,
+        steps: StdMutex<std::collections::VecDeque<(&'static str, Result<Response, RuntimeError>)>>,
+    }
+    impl Transport for RequestFailureFake {
+        async fn execute(&self, op: Op) -> Result<Response, RuntimeError> {
+            let actual = match op {
+                Op::Poll { .. } => "poll",
+                Op::Ack { .. } => "ack",
+                Op::Start { .. } => "start",
+                Op::Finish { .. } => "finish",
+                _ => panic!("unexpected provider or replay operation"),
+            };
+            let mut steps = self.steps.lock().unwrap();
+            let (expected, result) = steps.pop_front().expect("bounded recovery calls");
+            assert_eq!(actual, expected);
+            if steps.is_empty() {
+                self.stop.send_replace(true);
+            }
+            result
+        }
+    }
+    #[tokio::test]
+    async fn ack_transient_failure_retries_and_request_refusal_does_not_block_followup() {
+        for refused in [false, true] {
+            let tmp = tempfile::tempdir().unwrap();
+            let mut ledger = setup(&tmp.path().join("ledger"), tmp.path());
+            let mut next = event();
+            next.id = "dispatch-next".into();
+            next.event_id = "$next:test".into();
+            let mut steps = vec![
+                ("poll", Ok(Response::Events(vec![wire(&event())]))),
+                (
+                    "ack",
+                    Err(if refused {
+                        RuntimeError::Request
+                    } else {
+                        RuntimeError::Transport
+                    }),
+                ),
+            ];
+            if refused {
+                steps.push(("finish", Ok(Response::Finished)));
+            } else {
+                steps.extend([
+                    ("poll", Ok(Response::Events(vec![wire(&event())]))),
+                    ("ack", Ok(Response::Acknowledged)),
+                    ("start", Err(RuntimeError::Transport)),
+                    ("finish", Ok(Response::Finished)),
+                ]);
+            }
+            steps.extend([
+                ("poll", Ok(Response::Events(vec![wire(&next)]))),
+                ("ack", Ok(Response::Acknowledged)),
+                ("start", Err(RuntimeError::Transport)),
+                ("finish", Ok(Response::Finished)),
+                ("poll", Ok(Response::Events(vec![]))),
+            ]);
+            let (stop, mut cancel) = watch::channel(false);
+            let fake = RequestFailureFake {
+                stop,
+                steps: StdMutex::new(steps.into()),
+            };
+            let (status, _) = watch::channel(RuntimeStatus::new("agent-a", "test", None));
+            assert!(matches!(
+                tokio::time::timeout(
+                    Duration::from_secs(6),
+                    execution_loop(
+                        &fake,
+                        OWNER,
+                        &mut ledger,
+                        &config(tmp.path()),
+                        &lease(),
+                        &mut cancel,
+                        &status,
+                    )
+                )
+                .await
+                .unwrap(),
+                Err(RuntimeError::Stopped)
+            ));
+            assert!(fake.steps.lock().unwrap().is_empty());
+            assert_eq!(
+                ledger.inbox_record(OWNER, "dispatch-next").unwrap().state,
+                State::Unknown
+            );
+            assert_eq!(
+                ledger.inbox_record(OWNER, "dispatch-a").unwrap().state,
+                if refused {
+                    State::Rejected
+                } else {
+                    State::Unknown
+                }
+            );
+        }
+    }
+    #[tokio::test]
+    async fn restart_redelivery_of_prepared_or_unknown_start_retires_offer_without_replay() {
+        for interrupted in [false, true] {
+            let tmp = tempfile::tempdir().unwrap();
+            let mut ledger = setup(&tmp.path().join("ledger"), tmp.path());
+            ledger
+                .receive_dispatch(OWNER, &event(), inbox::Limits::default(), now())
+                .unwrap();
+            ledger.acknowledge_dispatch(OWNER, "dispatch-a").unwrap();
+            let prepared = ledger.prepare_execution(OWNER, "dispatch-a").unwrap();
+            if interrupted {
+                ledger
+                    .finish_local_execution(
+                        OWNER,
+                        "dispatch-a",
+                        &prepared.execution_id,
+                        Finish::Unknown,
+                    )
+                    .unwrap();
+            }
+            let mut redelivery = event();
+            redelivery.dispatch_epoch = Some(2);
+            let mut next = redelivery.clone();
+            next.id = "dispatch-next".into();
+            next.event_id = "$next:test".into();
+            let (stop, mut cancel) = watch::channel(false);
+            let fake = RequestFailureFake {
+                stop,
+                steps: StdMutex::new(
+                    [
+                        ("poll", Ok(Response::Events(vec![wire(&redelivery)]))),
+                        ("finish", Ok(Response::Finished)),
+                        ("poll", Ok(Response::Events(vec![wire(&next)]))),
+                        ("ack", Ok(Response::Acknowledged)),
+                        ("start", Err(RuntimeError::Transport)),
+                        ("finish", Ok(Response::Finished)),
+                        ("poll", Ok(Response::Events(vec![]))),
+                    ]
+                    .into(),
+                ),
+            };
+            let mut current = lease();
+            current.epoch = 2;
+            let (status, _) = watch::channel(RuntimeStatus::new("agent-a", "test", None));
+            assert!(matches!(
+                tokio::time::timeout(
+                    Duration::from_secs(5),
+                    execution_loop(
+                        &fake,
+                        OWNER,
+                        &mut ledger,
+                        &config(tmp.path()),
+                        &current,
+                        &mut cancel,
+                        &status,
+                    )
+                )
+                .await
+                .unwrap(),
+                Err(RuntimeError::Stopped)
+            ));
+            let old = ledger.inbox_record(OWNER, "dispatch-a").unwrap();
+            assert_eq!(old.state, State::Unknown);
+            assert_eq!(old.execution_id, Some(prepared.execution_id));
+            assert_eq!(old.dispatch.dispatch_epoch, Some(1));
+            assert!(fake.steps.lock().unwrap().is_empty());
+        }
+    }
+    struct RunningFailureFake {
+        authorization: bool,
+    }
+    impl Transport for RunningFailureFake {
+        async fn execute(&self, op: Op) -> Result<Response, RuntimeError> {
+            assert!(matches!(op, Op::AuthorizeTool { .. }));
+            Err(if self.authorization {
+                RuntimeError::Authorization
+            } else {
+                RuntimeError::Transport
+            })
+        }
+    }
+    #[tokio::test]
+    async fn running_monitor_preserves_transport_failure_instead_of_revoking_agent() {
+        let (_stop, cancel) = watch::channel(false);
+        let prepared = inbox::Prepared {
+            dispatch: event(),
+            execution_id: "execution-a".into(),
+        };
+        let result = monitor_running(
+            &RunningFailureFake {
+                authorization: false,
+            },
+            &lease(),
+            &prepared,
+            cancel,
+        )
+        .await;
+        assert!(matches!(result, RuntimeError::Transport));
     }
     struct RestartLeaseFake {
         history_calls: std::sync::atomic::AtomicUsize,
