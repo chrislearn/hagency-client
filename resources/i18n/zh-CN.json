@@ -1784,5 +1784,9 @@
   "No usable Octos profiles were found. Configure a local Octos profile, then refresh.": "未找到可用的 Octos profile，请先配置本机 Octos profile，再刷新。",
   "The local runtime's account or configuration is unavailable. Check Model & resources and reconnect.": "本地运行时的账号或配置不可用，请在模型与资源中检查并重新连接。",
   "Sign in through the local runtime, then connect it here.": "请先在本地运行时登录，再在此连接。",
-  "The saved local account selection is unavailable or does not match this profile. Reconnect the intended account and retry.": "已保存的本地账号选择不可用或与当前配置不一致，请重新连接正确账号后重试。"
+  "The saved local account selection is unavailable or does not match this profile. Reconnect the intended account and retry.": "已保存的本地账号选择不可用或与当前配置不一致，请重新连接正确账号后重试。",
+  "Discussion Rooms": "讨论房间",
+  "1 reply": "1 条回复",
+  "Loading projects…": "正在加载项目…",
+  "Connect your own local account to run this Agent here.": "连接你自己的本地账号，在此设备上运行这个 Agent。"
 }

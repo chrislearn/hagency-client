@@ -1784,5 +1784,9 @@
   "No usable Octos profiles were found. Configure a local Octos profile, then refresh.": "No usable Octos profiles were found. Configure a local Octos profile, then refresh.",
   "The local runtime's account or configuration is unavailable. Check Model & resources and reconnect.": "The local runtime's account or configuration is unavailable. Check Model & resources and reconnect.",
   "Sign in through the local runtime, then connect it here.": "Sign in through the local runtime, then connect it here.",
-  "The saved local account selection is unavailable or does not match this profile. Reconnect the intended account and retry.": "The saved local account selection is unavailable or does not match this profile. Reconnect the intended account and retry."
+  "The saved local account selection is unavailable or does not match this profile. Reconnect the intended account and retry.": "The saved local account selection is unavailable or does not match this profile. Reconnect the intended account and retry.",
+  "Discussion Rooms": "Discussion Rooms",
+  "1 reply": "1 reply",
+  "Loading projects…": "Loading projects…",
+  "Connect your own local account to run this Agent here.": "Connect your own local account to run this Agent here."
 }

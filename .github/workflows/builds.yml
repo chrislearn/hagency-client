@@ -44,7 +44,7 @@ jobs:
     name: Build Ubuntu (${{ matrix.runner }})
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-hagency-client
       - name: Install system dependencies
@@ -93,7 +93,7 @@ jobs:
           - os: macos-15-intel
             arch: x86_64
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-hagency-client
       - name: Install Rust
@@ -118,7 +118,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-hagency-client
       - name: Install Rust
@@ -145,7 +145,7 @@ jobs:
     name: Build iOS (macOS Host)
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-hagency-client
       - name: Install Rust stable and nightly
@@ -197,7 +197,7 @@ jobs:
     name: Build Android (macOS Host)
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-hagency-client
       - name: Install Rust
@@ -234,7 +234,7 @@ jobs:
     name: Build Android (Linux Host)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-hagency-client
       - name: Install Rust
@@ -274,7 +274,7 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-hagency-client
       - name: Install Rust

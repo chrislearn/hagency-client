@@ -1305,6 +1305,7 @@ enum HostedWindow {
     MiniApps,
 }
 
+#[cfg(feature = "octosense-module")]
 impl HostedWindow {
     fn key(self) -> LiveId {
         match self {
