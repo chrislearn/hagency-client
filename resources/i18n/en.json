@@ -1269,6 +1269,7 @@
   "Enter your Hagency server address. Other Matrix servers are not supported.": "Enter your Hagency server address. Other Matrix servers are not supported.",
   "Enter a Hagency server HTTPS address (HTTP is allowed only on local loopback).": "Enter a Hagency server HTTPS address (HTTP is allowed only on local loopback).",
   "The Hagency server could not be reached. Check its address and connection, then retry.": "The Hagency server could not be reached. Check its address and connection, then retry.",
+  "The server rejected the Hagency discovery request. Check the server's public address and reverse proxy configuration.": "The server rejected the Hagency discovery request. Check the server's public address and reverse proxy configuration.",
   "Only Hagency servers are supported. Ordinary Matrix homeservers cannot be used to sign in.": "Only Hagency servers are supported. Ordinary Matrix homeservers cannot be used to sign in.",
   "This Hagency server uses an unsupported API version. Update the client or server.": "This Hagency server uses an unsupported API version. Update the client or server.",
   "This server does not provide the required Hagency OAuth and agent appservice capabilities.": "This server does not provide the required Hagency OAuth and agent appservice capabilities.",

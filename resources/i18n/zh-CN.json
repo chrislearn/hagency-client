@@ -1269,6 +1269,7 @@
   "Enter your Hagency server address. Other Matrix servers are not supported.": "请输入你的 Hagency 服务器地址，不支持其他 Matrix 服务器。",
   "Enter a Hagency server HTTPS address (HTTP is allowed only on local loopback).": "请输入 Hagency 服务器的 HTTPS 地址（仅本机回环地址可使用 HTTP）。",
   "The Hagency server could not be reached. Check its address and connection, then retry.": "无法连接 Hagency 服务器，请检查地址和网络后重试。",
+  "The server rejected the Hagency discovery request. Check the server's public address and reverse proxy configuration.": "服务器拒绝了 Hagency 识别请求，请检查服务器的公开地址和反向代理配置。",
   "Only Hagency servers are supported. Ordinary Matrix homeservers cannot be used to sign in.": "仅支持 Hagency 服务器，不能使用普通 Matrix 服务器登录。",
   "This Hagency server uses an unsupported API version. Update the client or server.": "此 Hagency 服务器的 API 版本不受支持，请更新客户端或服务器。",
   "This server does not provide the required Hagency OAuth and agent appservice capabilities.": "此服务器未提供所需的 Hagency OAuth 登录和智能体应用服务能力。",
