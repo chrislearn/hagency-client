@@ -40,6 +40,7 @@ pub fn view_from_live_ptr(
 pub mod app;
 pub mod accounts;
 mod account_session;
+mod session_auth;
 /// Rinx as an OctoSense app module.
 #[cfg(feature = "octosense-module")]
 pub mod module;

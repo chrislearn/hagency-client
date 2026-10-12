@@ -37,7 +37,12 @@ pub(crate) async fn refresh_sdk_oauth(
     tokio::time::timeout(std::time::Duration::from_secs(8), client.oauth().refresh_access_token())
         .await
         .map_err(|_| source_error("matrix_authorization_unavailable"))?
-        .map_err(|_| source_error("matrix_authorization_unavailable"))?;
+        .map_err(|error| {
+            let code = crate::session_auth::refresh_failure_code(&error);
+            makepad_widgets::warning!("Matrix OAuth refresh failed: {code}");
+            source_error(code)
+        })?;
+    makepad_widgets::log!("Matrix OAuth refresh completed");
     live_check()?;
     Ok(())
 }
@@ -56,7 +61,7 @@ fn recovery_error_code(code: &str) -> &'static str {
         "sign_in_required" => "sign_in_required",
         "invalid_arguments" => "invalid_arguments",
         "invalid_server_response" => "invalid_server_response",
-        "explicit_estimated_quota_opt_in_required" => "explicit_estimated_quota_opt_in_required",
+        "invalid_runtime_start" => "invalid_runtime_start",
         "codex_strict_quota_unavailable" => "codex_strict_quota_unavailable",
         "provider_profile_mismatch" => "provider_profile_mismatch",
         "provider_authorization_lost" => "provider_authorization_lost",
@@ -138,9 +143,7 @@ impl MatrixTokenSource for SdkTokens {
                 .map_err(|_| source_error("matrix_authorization_unavailable"))?
                 .map_err(|error| {
                     source_error(
-                        if error
-                            .as_client_api_error()
-                            .is_some_and(|e| matches!(e.status_code.as_u16(), 401 | 403))
+                        if crate::session_auth::http_requires_login(&error)
                         {
                             "matrix_authorization_required"
                         } else {
@@ -300,9 +303,7 @@ impl Service {
             }
             Err(error) => {
                 *checked = None;
-                if error
-                    .as_client_api_error()
-                    .is_some_and(|e| matches!(e.status_code.as_u16(), 401 | 403))
+                if crate::session_auth::http_requires_login(&error)
                 {
                     drop(checked);
                     self.shutdown().await;
@@ -440,7 +441,11 @@ impl Service {
                 let owner = NativeOwner::open_with_matrix(
                     &self.0.state, &self.0.origin, &self.0.owner,
                     Arc::new(SdkTokens(Arc::downgrade(&self.0))),
-                ).await.map_err(|e| e.code)?;
+                ).await.map_err(|e| {
+                    let code = recovery_error_code(&e.code);
+                    makepad_widgets::warning!("Native owner initialization failed: {code}");
+                    e.code
+                })?;
                 if let Err(error) = self.check() {
                     owner.shutdown().await;
                     return Err(error);

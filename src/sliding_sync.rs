@@ -4737,7 +4737,6 @@ fn handle_load_app_state(user_id: OwnedUserId) {
 
 /// Returns `true` if the given sync service error is due to an invalid/expired access token.
 fn is_invalid_token_error(e: &sync_service::Error) -> bool {
-    use matrix_sdk::ruma::api::error::ErrorKind;
     let sdk_error = match e {
         sync_service::Error::RoomList(
             matrix_sdk_ui::room_list_service::Error::SlidingSync(err)
@@ -4747,10 +4746,8 @@ fn is_invalid_token_error(e: &sync_service::Error) -> bool {
         ) => err,
         _ => return false,
     };
-    matches!(
-        sdk_error.client_api_error_kind(),
-        Some(ErrorKind::UnknownToken { .. } | ErrorKind::MissingToken)
-    )
+    crate::session_auth::requires_login(sdk_error)
+
 }
 
 /// Subscribes to session change notifications from the Matrix client.
@@ -4761,8 +4758,43 @@ fn is_invalid_token_error(e: &sync_service::Error) -> bool {
 fn handle_session_changes(client: Client) -> JoinHandle<()> {
     let mut receiver = client.subscribe_to_session_changes();
     crate::account_session::spawn(async move {
+        let mut check = tokio::time::interval(Duration::from_secs(15));
+        check.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut unavailable = false;
         loop {
-            match receiver.recv().await {
+            let change = tokio::select! {
+                change = receiver.recv() => change,
+                _ = check.tick() => {
+                    if TOKEN_EXPIRED.load(Ordering::Acquire) { break }
+                    let started = std::time::Instant::now();
+                    match tokio::time::timeout(Duration::from_secs(8), client.whoami()).await {
+                        Ok(Ok(_)) => {
+                            if unavailable {
+                                log!("Matrix authorization recovered after temporary failure; elapsed_ms={}",started.elapsed().as_millis());
+                                unavailable = false;
+                                if sync_service_desired_running() {
+                                    apply_sync_service_desired_state("Matrix authorization recovery").await;
+                                }
+                            }
+                        }
+                        Ok(Err(error)) if crate::session_auth::http_requires_login(&error) => {
+                            error!("Matrix authorization requires a new login (SDK refresh rejected).");
+                            TOKEN_EXPIRED.store(true, Ordering::Release);
+                            TOKEN_EXPIRED_NOTIFY.notify_one();
+                            Cx::post_action(LoginAction::LoginFailure("Your login session has expired. Please log in again.".into()));
+                            break;
+                        }
+                        _ => {
+                            if !unavailable {
+                                warning!("Matrix authorization temporarily unavailable; will retry in 15s (elapsed_ms={})",started.elapsed().as_millis());
+                            }
+                            unavailable = true;
+                        }
+                    }
+                    continue;
+                }
+            };
+            match change {
                 Ok(SessionChange::UnknownToken(data)) => {
                     let soft_logout = data.soft_logout;
                     let msg = if soft_logout {
@@ -4779,6 +4811,7 @@ fn handle_session_changes(client: Client) -> JoinHandle<()> {
                     break;
                 }
                 Ok(SessionChange::TokensRefreshed) => {
+                    log!("Matrix SDK credentials refreshed and persisted");
                     // Both SDK authentication APIs save synchronously through
                     // session callbacks before broadcasting this notification.
                 }

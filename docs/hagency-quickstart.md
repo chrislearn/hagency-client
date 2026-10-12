@@ -72,7 +72,7 @@ invitation. This picker does not create a second Agent identity.
 | Agent | Identity/device, owner private chat, Room bindings, pause/resume, leave and permanent retirement. |
 | Model & resources | Provider account, model, reasoning options and saved Agent workspace on this device. |
 | Limits | Agent total, selected Room total, and selected requester in that Room. |
-| Service | Selected Room runtime, explicit estimated reservation, scoped files and pending approvals. |
+| Service | Selected Room runtime, per-request token reservation, scoped files and pending approvals. |
 
 Select Codex, Claude Code or Octos in **Local agent runtime**.
 Choose **Connect my local account** to reuse the current machine's
@@ -111,8 +111,9 @@ with Claude or Octos.
 ## Start and chat
 
 In **Service**, select an active private chat or Room binding. Wait for
-the saved local runtime profile and account check to finish. Explicitly choose estimated
-accounting, a positive per-request reservation and save a supported reasoning effort in Model & resources.
+the saved local runtime profile and account check to finish. Estimated token accounting is used by default; set a positive per-request
+reservation and save a supported reasoning effort in Model & resources. Actual usage may exceed
+the estimate. Missing usage is recorded as zero and releases the reservation automatically; an uncertain execution is never replayed.
 Scoped host files are opt-in and currently limited to list/read/create; native
 shell and MCP execution are not exposed by this host.
 

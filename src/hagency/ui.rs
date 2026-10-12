@@ -694,9 +694,8 @@ script_mod! {
                         runtime_chat_target := Text {draw_text.color: mod.widgets.RINX_MUTED}
                         runtime_status := Text {}
                         runtime_start_options := View {width: Fill height: Fit flow: Down spacing: 8
-                        Text {text: #(crate::i18n::tr("Reserve tokens before each request; actual usage may exceed the estimate. Unknown usage keeps the reservation.")) i18n_text: "Reserve tokens before each request; actual usage may exceed the estimate. Unknown usage keeps the reservation."}
+                        Text {text: #(crate::i18n::tr("Estimated token accounting is used by default. Reserve tokens before each request; actual usage may exceed the estimate. Missing usage is recorded as zero and the reservation is released automatically.")) i18n_text: "Estimated token accounting is used by default. Reserve tokens before each request; actual usage may exceed the estimate. Missing usage is recorded as zero and the reservation is released automatically."}
                         start_requirements := Text {draw_text.color: mod.widgets.RINX_MUTED}
-                        estimated := CheckBox {text: #(crate::i18n::tr("Use estimated token accounting")) i18n_text: "Use estimated token accounting"}
                         Text {text: #(crate::i18n::tr("Reservation per request (tokens)")) i18n_text: "Reservation per request (tokens)"}
                         reservation := Input {empty_text: #(crate::i18n::tr("Positive token count")) i18n_empty_text: "Positive token count"}
                         service_advanced_toggle := Action {text: #(crate::i18n::tr("Advanced service options")) i18n_text: "Advanced service options" spacing: 6 icon_walk: Walk{width: 12 height: 12} draw_icon.svg: ICON_CHEVRON_RIGHT}
@@ -1223,7 +1222,6 @@ impl HagencyPanel {
             ids!(reservation),
             ids!(effort),
             ids!(found_room),
-            ids!(estimated),
             ids!(takeover),
             ids!(host_files),
         ] {
@@ -1338,7 +1336,6 @@ impl HagencyPanel {
         for id in [
             ids!(retire_confirm),
             ids!(leave_confirm),
-            ids!(estimated),
             ids!(takeover),
             ids!(host_files),
         ] {
@@ -1532,7 +1529,7 @@ impl HagencyPanel {
             && !self.credential_ref.is_empty() && string(profile,"credential_ref") == self.selected_credential(cx)
             && (string(profile,"reasoning_effort").is_empty() || self.runtime_efforts.iter().any(|e|e==string(profile,"reasoning_effort")))
             && !self.input(cx,ids!(workspace)).is_empty() && string(profile,"workspace_root") == self.input(cx,ids!(workspace));
-        let reason=if self.runtime_resources_loading {"Checking the saved model and connected local account…"} else if self.view.view(cx,ids!(runtime_section)).visible() && !self.runtime_resources_checked {"Model resources could not be verified. Refresh this Service page to retry."} else if !assigned_here {"Assign this Agent to this device in Agent and device."} else if !self.provider_authenticated {"Connect your account in Model & resources."} else if !model_ready || self.runtime_efforts.is_empty() {"Save a model in Model & resources. A private workspace is created automatically."} else {"Ready to start after you explicitly choose estimated accounting and a positive reservation."};
+        let reason=if self.runtime_resources_loading {"Checking the saved model and connected local account…"} else if self.view.view(cx,ids!(runtime_section)).visible() && !self.runtime_resources_checked {"Model resources could not be verified. Refresh this Service page to retry."} else if !assigned_here {"Assign this Agent to this device in Agent and device."} else if !self.provider_authenticated {"Connect your account in Model & resources."} else if !model_ready || self.runtime_efforts.is_empty() {"Save a model in Model & resources. A private workspace is created automatically."} else {"Ready to start with a positive token reservation."};
         self.view.label(cx,ids!(start_requirements)).set_text(cx,crate::i18n::tr(reason));
         let start_ready=self.provider_authenticated && model_ready && !self.runtime_efforts.is_empty() && !self.runtime_resources_loading && self.runtime_resources_checked;
         self.view.button(cx,ids!(service_toggle)).set_enabled(cx, assigned_here && runtime_known && !self.busy && (self.runtime_room_active || start_ready));
@@ -1689,7 +1686,7 @@ impl HagencyPanel {
                 let Some(Ok(status))=self.runtime_list.get(&id) else {return true;};
                 let enabled=service_enabled(status);
                 self.list_service_pending_agent=id.clone();
-                self.run(cx,Target::ListService,Command::Local {agent_id:id,action:if enabled {LocalAction::StopAgentService} else {LocalAction::StartAgentService},input:if enabled {None} else {Some(json!({"mode":"estimated","estimatedOptIn":true}))},binding_id:None,requester:None});
+                self.run(cx,Target::ListService,Command::Local {agent_id:id,action:if enabled {LocalAction::StopAgentService} else {LocalAction::StartAgentService},input:if enabled {None} else {Some(json!({}))},binding_id:None,requester:None});
                 return true;
             }
             if !list.was_scrolling() && row.button(cx, ids!(open)).clicked(actions) {
@@ -3482,7 +3479,6 @@ impl Widget for HagencyPanel {
             self.select_policy_room(cx, index);
             for id in [
                 ids!(leave_confirm),
-                ids!(estimated),
                 ids!(takeover),
                 ids!(host_files),
             ] {
@@ -3714,10 +3710,6 @@ impl Widget for HagencyPanel {
             if !self.local_agent(cx) {
                 self.runtime_feedback(cx,"Assign this Agent to this device before starting it here."); return;
             }
-            if !self.view.check_box(cx, ids!(estimated)).active(cx) {
-                self.runtime_feedback(cx,"Strict caps are unavailable. Estimated accounting requires an explicit choice.");
-                return;
-            }
             let Ok(reservation) = self.input(cx, ids!(reservation)).parse::<u64>() else {
                 self.runtime_feedback(cx, "Enter a positive token reservation.");
                 return;
@@ -3734,7 +3726,7 @@ impl Widget for HagencyPanel {
             let Some(effort)=effort else {self.runtime_feedback(cx,"Load local resources and select a supported reasoning effort before starting.");return;};
             let saved_effort=string(&self.policy["modelProfile"],"reasoning_effort");
             if !saved_effort.is_empty() && saved_effort!=effort {self.runtime_feedback(cx,"Save the selected reasoning effort in model settings before starting.");return;}
-            let input = json!({"mode":"estimated","estimatedOptIn":true,"reservation":reservation,"takeover":self.view.check_box(cx,ids!(takeover)).active(cx),"effort":effort});
+            let input = json!({"reservation":reservation,"takeover":self.view.check_box(cx,ids!(takeover)).active(cx),"effort":effort});
             self.local(cx, Target::Runtime, LocalAction::StartAgentService, Some(input));
             return;
         }
@@ -3980,7 +3972,7 @@ impl HagencyPanelRef {
             ] {
                 panel.view.label(cx, id).set_text(cx, "");
             }
-            for id in [ids!(estimated), ids!(takeover), ids!(host_files)] {
+            for id in [ids!(takeover), ids!(host_files)] {
                 panel
                     .view
                     .check_box(cx, id)
@@ -4227,6 +4219,10 @@ mod tests {
         assert!(runtime_service_description(Some(&Ok(starting)),"a").starts_with("Starting"));
         let checking=json!({"service":{"enabled":true,"watcherRunning":true},"runtime":{"agentId":"a","phase":"checking_provider","bindings":[{"phase":"checking_provider"}]}});
         assert!(runtime_service_description(Some(&Ok(checking)),"a").starts_with("Checking this device"));
+        let unknown=json!({"service":{"enabled":true,"watcherRunning":true},"runtime":{"agentId":"a","phase":"online","bindings":[{"phase":"online_chat_only","lastError":"profile_or_local_state_unavailable"}]}});
+        assert!(runtime_service_description(Some(&Ok(unknown)),"a").starts_with("Running"));
+        let stopped=json!({"service":{"enabled":true,"watcherRunning":true},"runtime":{"agentId":"a","phase":"stopped","lastError":"authorization_or_lease_lost","bindings":[]}});
+        assert!(runtime_service_description(Some(&Ok(stopped)),"a").contains("stopped with an error"));
         let failed=json!({"service":{"enabled":true,"watcherRunning":false,"lastError":"authorization_or_lease_lost"},"runtime":null});
         let description=runtime_service_description(Some(&Ok(failed)),"a");
         assert!(description.contains("needs attention"));
@@ -4312,7 +4308,6 @@ mod tests {
         panel.apply(&mut cx,Target::Bindings,&bindings);
         assert_eq!(panel.binding(&mut cx).as_deref(),Some("other"));
         assert!(panel.view.view(&mut cx,ids!(runtime_section)).visible());
-        assert!(!panel.view.check_box(&mut cx,ids!(estimated)).active(&mut cx));
         assert!(!panel.view.view(&mut cx,ids!(room_advanced_content)).visible());
         // Expanding management options is presentation only; it must keep the selected target.
         panel.room_advanced=true; panel.render_room_advanced(&mut cx);

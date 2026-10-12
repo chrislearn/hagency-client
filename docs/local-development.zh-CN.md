@@ -84,6 +84,33 @@ Project 导航测试覆盖独立文件夹展开、名称打开详情与账号/�
 区分恢复会话和首次登录、fixture 回复和模型回复、控件自动检查和可见原生操作。
 未知执行/费用需保留 hold，删除数据不是恢复手段。
 
+## 续权、租约与回复调试
+
+在 checkout 中将日志保存到私人目录，便于关联发送时间与恢复阶段：
+
+```sh
+umask 077
+mkdir -p .run/diagnostics
+RUST_LOG='warn,hagency=debug,matrix_sdk::authentication::oauth=debug' \
+cargo run --locked --bin rinx > .run/diagnostics/desktop.log 2>&1
+```
+
+关注 `owner_adoption_grant`（创建 Hagency 会话）、`owner_renewal`
+（续权）、`lease_renewal` / `lease_renewal_deadline`（租约）与
+`processing_notice`（👀 请求已接收）。日志记录阶段、耗时和固定错误码；
+SDK OAuth 刷新成功不代表 Hagency 续权或消息投递已成功。
+
+临时网络/服务错误返回可重试状态，原权限只保持到原截止时间；成功续权后恢复。
+`invalid_grant`、`invalid_client` 等登录终止错误进入重新登录；过期租约停止执行。
+在线状态若带执行错误，应显示需要处理，不能只以心跳成功判定运行健康。
+回复与 👀 必须在实际 Room 中验收；协议 fixture 通过不能替代视觉和真实模型验证。
+
+服务器日志可启用 `hagency_agent_service=debug`，观察身份校验、会话连接等待与续权
+耗时。`database_connection_discarded` 表示连接已关闭，或取消/回滚失败留下未结束
+事务，连接已丢弃；`database_reconnected` 表示后续操作已建立新连接。同步检查 PostgreSQL 的
+`pg_stat_activity`、`pg_blocking_pids`，健康检查成功不证明 Agent 请求没有锁等待。
+分享日志前删去 token、密钥和私人消息；SDK 较宽的 INFO 日志可能记录加密备份密钥。
+
 ## 打包
 
 助手二进制见[Octos 打包](../packaging/README-octos.md)，macOS 发布使用

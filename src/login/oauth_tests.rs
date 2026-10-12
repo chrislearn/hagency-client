@@ -13,10 +13,13 @@ struct Fixture {
     requests: Arc<Mutex<Vec<(String, Value)>>>,
     stop: Arc<AtomicBool>,
     device: Arc<Mutex<Option<String>>>,
+    refresh_error: Arc<Mutex<Option<String>>>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
 impl Fixture {
     fn new() -> Self {
+        let refresh_error = Arc::new(Mutex::new(None::<String>));
+        let token_error = refresh_error.clone();
         let socket = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let origin = format!("http://{}", socket.local_addr().unwrap());
         socket.set_nonblocking(true).unwrap();
@@ -133,10 +136,13 @@ impl Fixture {
                 } else {
                     json!({})
                 };
+                let failure = token_error.lock().unwrap().clone().filter(|_| route.contains("/token ") && payload["grant_type"] == "refresh_token");
+                let status = match failure.as_deref() { Some("server_error") => 503, Some(_) => 400, None => 200 };
+                let response = failure.map(|code| json!({"error":code,"error_description":"fixture detail must never enter diagnostics"})).unwrap_or(response);
                 let body = response.to_string();
                 let _ = write!(
                     stream,
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    "HTTP/1.1 {status} Fixture\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                     body.len(),
                     body
                 );
@@ -147,6 +153,7 @@ impl Fixture {
             requests,
             stop,
             device,
+            refresh_error,
             thread: Some(thread),
         }
     }
@@ -531,4 +538,33 @@ fn corrupted_oauth_identity_never_falls_back_to_matrix_authentication() {
         .unwrap(),
         crate::persistence::PersistedUserSession::Matrix(_)
     ));
+}
+
+#[tokio::test]
+async fn sdk_refresh_transient_failure_recovers_and_terminal_errors_require_login() {
+    let fixture=Fixture::new();
+    let client=Client::builder().homeserver_url(&fixture.origin).handle_refresh_tokens().build().await.unwrap();
+    let device=fixture.device.clone();
+    oauth_browser_login(&client,move |authorization| async move {
+        let url=Url::parse(&authorization).unwrap();
+        let params:std::collections::HashMap<String,String>=url.query_pairs().map(|(k,v)|(k.into_owned(),v.into_owned())).collect();
+        *device.lock().unwrap()=params["scope"].split_whitespace().find_map(|s|s.split_once("device:").map(|(_,d)|d.to_owned()));
+        let mut redirect=Url::parse(&params["redirect_uri"]).unwrap();
+        redirect.query_pairs_mut().append_pair("code","fixture-code").append_pair("state",&params["state"]);
+        crate::http::client_builder().build()?.get(redirect).send().await?;
+        Ok(())
+    }).await.unwrap();
+    for (code,status,expected) in [("server_error",503,"matrix_authorization_unavailable"),
+        ("invalid_client",401,"matrix_authorization_required"),("invalid_grant",401,"matrix_authorization_required")] {
+        let before=client.access_token().unwrap();
+        *fixture.refresh_error.lock().unwrap()=Some(code.into());
+        let error=crate::hagency::backend::refresh_sdk_oauth(&client,||Ok(())).await.unwrap_err();
+        assert_eq!(error.status,status);
+        assert_eq!(error.code,expected);
+        assert!(!error.code.contains("fixture detail"));
+        assert_eq!(client.access_token().unwrap(),before,"failed refresh cannot install credentials");
+        *fixture.refresh_error.lock().unwrap()=None;
+        crate::hagency::backend::refresh_sdk_oauth(&client,||Ok(())).await.unwrap();
+        assert_ne!(client.access_token().unwrap(),before,"SDK must retain enough state for an explicit valid recovery");
+    }
 }
