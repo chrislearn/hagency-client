@@ -1016,12 +1016,13 @@ fn settle_unreported_calls(tx: &rusqlite::Transaction, binding: Option<&str>) ->
 // The next reported total establishes a new baseline without charging old usage.
 fn mark_usage_gap(tx: &rusqlite::Transaction, scope: &Scope, owner: &str) -> Result<()> {
     let context = scope.context_key(owner)?;
-    let mut contexts = vec![context.clone()];
     #[cfg(unix)]
-    contexts.push(format!(
-        "{}:{context}",
-        crate::codex::FILE_CAPABILITY_VERSION
-    ));
+    let contexts = [
+        context.clone(),
+        format!("{}:{context}", crate::codex::FILE_CAPABILITY_VERSION),
+    ];
+    #[cfg(not(unix))]
+    let contexts = [context.clone()];
     for context in contexts {
         tx.execute("INSERT INTO codex_usage VALUES (?,'null') ON CONFLICT(scope) DO UPDATE SET counters='null'", [&context])?;
     }
