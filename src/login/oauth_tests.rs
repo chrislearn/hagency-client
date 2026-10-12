@@ -79,7 +79,7 @@ impl Fixture {
                     + 30_000;
                 let response = if route.contains("/versions ") {
                     json!({"versions":["v1.15"],"unstable_features":{}})
-                } else if route.contains("/api/hagency/v1/discovery ") {
+                } else if route.contains("/hagency/api/v1/discovery ") {
                     json!({"product":"hagency-server","version":"0.1.0","protocolVersion":3,
                         "homeserver":format!("{root}/"),"issuer":format!("{root}/auth/"),
                         "capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-device-v1","owner-direct-v1"]})
@@ -118,15 +118,15 @@ impl Fixture {
                         let next = if payload["refresh_token"] == "oauth-refresh" {2} else if payload["refresh_token"] == "oauth-refresh-2" {3} else {4};
                         json!({"access_token":format!("oauth-access-{next}"),"refresh_token":format!("oauth-refresh-{next}"),"token_type":"Bearer","expires_in":3600})
                     }
-                } else if route.contains("/api/hagency/v1/sessions/pasion ") {
+                } else if route.contains("/hagency/api/v1/sessions/pasion ") {
                     json!({"token":"a".repeat(64),"userId":"fixture-user","mxid":"@fixture:localhost","validUntilMs":until})
-                } else if route.contains("/api/hagency/v1/identity ") {
+                } else if route.contains("/hagency/api/v1/identity ") {
                     json!({"userId":"fixture-user","mxid":"@fixture:localhost","subject":"fixture-subject","issuer":format!("{root}/auth/"),"clientId":"desktop-fixture","validUntilMs":until})
-                } else if route.contains("/api/hagency/v1/devices ") {
+                } else if route.contains("/hagency/api/v1/devices ") {
                     json!({"deviceId":"fixture-runtime-device","token":"b".repeat(64),"generation":1,"validUntilMs":until})
-                } else if route.contains("/api/hagency/v1/projects ") {
+                } else if route.contains("/hagency/api/v1/projects ") {
                     json!({"projects":[]})
-                } else if route.contains("/api/hagency/v1/sessions/current/renew ") {
+                } else if route.contains("/hagency/api/v1/sessions/current/renew ") {
                     json!({"validUntilMs":until})
                 } else if route.contains("/whoami ") {
                     json!({"user_id":if head.lines().any(|line| line.eq_ignore_ascii_case("authorization: Bearer oauth-wrong")){"@other:localhost"}else{"@fixture:localhost"},"device_id":if head.lines().any(|line| line.eq_ignore_ascii_case("authorization: Bearer oauth-wrong-device")){Some("different-device".to_owned())}else{current_device.lock().unwrap().clone()}})

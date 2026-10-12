@@ -9,7 +9,7 @@ GitHub Releases at the 2026-10-10 audit.
 
 Every Cargo workflow now invokes `.github/actions/setup-hagency-client` after
 checking out Desktop. It checks out `chrislearn/hagency-client` at the exact
-published commit `d0e88ca518c0a43ac6dfa253c79e826d7a56421d`, without persisted
+published commit `58e2d63cb964d9660dfdf311fd8f886d0b7c60ae`, without persisted
 credentials, and places it at the sibling path required by Cargo.toml. It refuses
 to overwrite an existing sibling tree. Review/update this pin and Desktop's
 Cargo.lock together whenever the native client API changes. It intentionally
@@ -19,6 +19,10 @@ Publication update: the native runtime/provider additions have now been publishe
 in the pinned client commit above. Desktop Cargo.lock was checked with `--locked`
 against this source. Keep future pin and lock updates synchronized; do not remove
 `--locked` or silently resolve a moving branch to hide mismatches.
+
+The pin also includes the native API migration to `/hagency/api/v1`, matching
+the server namespace and Desktop OAuth fixtures. This path-only update requires
+no Cargo.lock dependency changes; locked builds still verify that contract.
 
 ## Checks and artifacts
 

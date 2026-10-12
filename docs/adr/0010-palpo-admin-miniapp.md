@@ -211,7 +211,7 @@ business permissions. Identity bootstrap must not turn into an unrestricted
 HTTP proxy or expose registration/transport secrets in ordinary script results.
 
 App-session revocation and Matrix logout have different lifetimes. The current
-web `/api/logout` logs out its stored Matrix token. An adapter reusing Rinx's
+web `/hagency/api/logout` logs out its stored Matrix token. An adapter reusing Rinx's
 token must not use that path when disconnecting the mini app: revoke only the
 app session. Rinx account logout/switch discards the relevant handles, cached
 user data and pending UI results. Closing an instance stops its calls; reopening
