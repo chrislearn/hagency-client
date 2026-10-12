@@ -125,7 +125,9 @@ jobs:
           FORMATS: ${{ matrix.formats }}
           # linuxdeploy AppImages must run without /dev/fuse on hosted runners.
           APPIMAGE_EXTRACT_AND_RUN: 1
-        run: cargo packager --release --formats "$FORMATS"
+        # An absolute output directory avoids cargo-packager 0.10.1 resolving
+        # generated scripts twice when it changes the working directory.
+        run: cargo packager --verbose --release --out-dir "$PWD/dist" --formats "$FORMATS"
       - name: Collect installers and checksums
         env:
           PLATFORM: ${{ matrix.platform }}

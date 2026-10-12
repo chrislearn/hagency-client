@@ -179,7 +179,8 @@ trap 'mv "$CARGO_TOML.bak" "$CARGO_TOML" 2>/dev/null && echo "Restored Cargo.tom
 TS_MARKER=$(mktemp)
 
 echo "==> Running cargo packager (unsigned: we sign + notarize ourselves with retries)..."
-env -u APPLE_ID -u APPLE_PASSWORD -u APPLE_TEAM_ID cargo packager --release
+env -u APPLE_ID -u APPLE_PASSWORD -u APPLE_TEAM_ID \
+    cargo packager --verbose --release --out-dir "$PROJECT_DIR/dist"
 
 APP_PATH="$PROJECT_DIR/dist/$PRODUCT_NAME.app"
 DMG_FILE=$(find "$PROJECT_DIR/dist" -maxdepth 1 -name '*.dmg' -newer "$TS_MARKER" -print -quit)

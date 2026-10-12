@@ -125,3 +125,10 @@ encoding. `bundle::digest_dir` now joins components with `/`; original manifests
 and the Unix digest remain unchanged. A pinned nested-bundle hash is checked on
 every platform before the Desktop library tests. v1.1.2 is created only after
 the complete installer gate passes.
+
+The Linux ARM64 DEB and pinned Octos runtime built successfully before the
+AppImage script failed. cargo-packager0.10.1 retains a relative intermediate
+path when it creates a missing output directory, then changes its working
+directory before executing that relative script path. Installer commands now
+pass an absolute `--out-dir` (including signed macOS) and enable verbose script
+logs. The output remains the same dist directory.
