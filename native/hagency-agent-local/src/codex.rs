@@ -1019,6 +1019,9 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
         queue: &ApprovalQueue,
         started_notice: Option<tokio::sync::oneshot::Sender<()>>,
     ) -> Result<(Completed, Counters)> {
+        // Host-file callbacks use the execution identity only on Unix.
+        #[cfg(not(unix))]
+        let _ = execution;
         let started = Instant::now();
         let mut tools = TurnTools::default();
         let reply=self.rpc("turn/start",value!({"threadId":thread,"input":[{"type":"text","text":input,"text_elements":[]}],"cwd":cwd,"model":self.model,"effort":self.effort,"approvalPolicy":"untrusted","approvalsReviewer":"user","sandboxPolicy":{"type":"readOnly","networkAccess":false},"environments":[]})).await?;
