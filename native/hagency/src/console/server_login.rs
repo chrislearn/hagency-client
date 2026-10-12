@@ -455,7 +455,7 @@ impl ServerLogin {
             };
             if !record.session_done
                 && let Ok(reply) = client
-                    .delete(server.join("/api/hagency/v1/sessions/current").unwrap())
+                    .delete(server.join("/hagency/api/v1/sessions/current").unwrap())
                     .bearer_auth(&record.session_token)
                     .send()
                     .await
@@ -630,7 +630,7 @@ async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
     let renewal_response = client
         .post(
             server
-                .join("/api/hagency/v1/sessions/current/renew")
+                .join("/hagency/api/v1/sessions/current/renew")
                 .unwrap(),
         )
         .bearer_auth(&session.token)
@@ -671,7 +671,7 @@ async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
         let response = client
             .post(
                 server
-                    .join("/api/hagency/v1/sessions/current/renew")
+                    .join("/hagency/api/v1/sessions/current/renew")
                     .unwrap(),
             )
             .bearer_auth(&session.token)
@@ -692,7 +692,7 @@ async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
     }
     let identity = get(
         &client,
-        server.join("/api/hagency/v1/identity").unwrap(),
+        server.join("/hagency/api/v1/identity").unwrap(),
         Some(&session.token),
     )
     .await
@@ -1121,7 +1121,7 @@ async fn finish(req: &mut Request, depot: &Depot) -> Result<(String, Value), &'s
     let completed = async {
         let grant = response(
             client
-                .post(server.join("/api/hagency/v1/sessions/pasion").unwrap())
+                .post(server.join("/hagency/api/v1/sessions/pasion").unwrap())
                 .json(&json!({"accessToken":token}))
                 .send()
                 .await
@@ -1136,7 +1136,7 @@ async fn finish(req: &mut Request, depot: &Depot) -> Result<(String, Value), &'s
         let verified = async {
             let identity = get(
                 &client,
-                server.join("/api/hagency/v1/identity").unwrap(),
+                server.join("/hagency/api/v1/identity").unwrap(),
                 Some(session_token),
             )
             .await?;
@@ -1301,7 +1301,7 @@ async fn register_device(
 ) -> Result<(Value, AuthorizedDevice), &'static str> {
     let value = response(
         client
-            .post(server.join("/api/hagency/v1/devices").unwrap())
+            .post(server.join("/hagency/api/v1/devices").unwrap())
             .bearer_auth(token)
             .json(&json!({"installationId":binding.installation_id,"name":binding.name}))
             .send()
@@ -1496,7 +1496,7 @@ impl OwnerOperation {
             operation_id(binding)?;
             return Ok((
                 method,
-                format!("/api/hagency/v1/bindings/{binding}{suffix}"),
+                format!("/hagency/api/v1/bindings/{binding}{suffix}"),
                 None,
             ));
         }
@@ -1662,7 +1662,7 @@ impl OwnerOperation {
                 (Method::DELETE, format!("agents/{agent}"), None)
             }
         };
-        Ok((method, format!("/api/hagency/v1/{suffix}"), body))
+        Ok((method, format!("/hagency/api/v1/{suffix}"), body))
     }
 }
 impl ServerLogin {
@@ -1882,7 +1882,7 @@ mod scope_policy_request_tests {
             .request()
             .unwrap();
             assert_eq!(method, reqwest::Method::PUT);
-            assert_eq!(path, "/api/hagency/v1/bindings/bnd_1/reply-policy");
+            assert_eq!(path, "/hagency/api/v1/bindings/bnd_1/reply-policy");
             assert_eq!(body, Some(json!({"threadAutoReply":enabled})));
         }
     }
@@ -1898,7 +1898,7 @@ mod scope_policy_request_tests {
         assert_eq!(method, reqwest::Method::POST);
         assert_eq!(
             path,
-            "/api/hagency/v1/projects/prj_1/rooms/%21r%3Atest/pause-service"
+            "/hagency/api/v1/projects/prj_1/rooms/%21r%3Atest/pause-service"
         );
         assert!(body.is_none());
         assert!(

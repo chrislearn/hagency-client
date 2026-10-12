@@ -228,7 +228,7 @@ async fn fixture(
                     .unwrap(),
                 expected
             );
-            let owner = expected.contains("/api/hagency/");
+            let owner = expected.contains("/hagency/api/v1/");
             assert!(headers.to_ascii_lowercase().contains(if owner {
                 "authorization: bearer owner-session"
             } else {
@@ -293,12 +293,12 @@ async fn links_then_adopts_with_separate_credentials_and_never_overwrites_confli
     let child = json!({"via":["example.test"],"suggested":false});
     let parent = json!({"via":["example.test"],"canonical":true});
     let (login,task)=fixture(vec![
- ("GET /api/hagency/v1/projects",projects.clone(),None),
+ ("GET /hagency/api/v1/projects",projects.clone(),None),
  ("GET /_matrix/client/v3/rooms/!room:example.test/state",state(&c),None),
  ("GET /_matrix/client/v3/rooms/!space:example.test/state",json!([]),None),
  ("PUT /_matrix/client/v3/rooms/!space:example.test/state/m.space.child/!room:example.test",json!({"event_id":"$child"}),Some(child.clone())),
  ("PUT /_matrix/client/v3/rooms/!room:example.test/state/m.space.parent/!space:example.test",json!({"event_id":"$parent"}),Some(parent.clone())),
- ("POST /api/hagency/v1/projects/prj_1/rooms/adopt",json!({"roomId":"!room:example.test"}),Some(json!({"roomId":"!room:example.test"}))),
+ ("POST /hagency/api/v1/projects/prj_1/rooms/adopt",json!({"roomId":"!room:example.test"}),Some(json!({"roomId":"!room:example.test"}))),
  ]).await;
     let mut command = c.clone();
     continue_known(&login, "cookie", &mut command)
@@ -315,7 +315,7 @@ async fn links_then_adopts_with_separate_credentials_and_never_overwrites_confli
         .unwrap()
         .push(json!({"type":"m.space.parent","state_key":"!space:example.test","content":parent}));
     let (login, task) = fixture(vec![
-        ("GET /api/hagency/v1/projects", projects.clone(), None),
+        ("GET /hagency/api/v1/projects", projects.clone(), None),
         (
             "GET /_matrix/client/v3/rooms/!room:example.test/state",
             linked,
@@ -327,7 +327,7 @@ async fn links_then_adopts_with_separate_credentials_and_never_overwrites_confli
             None,
         ),
         (
-            "POST /api/hagency/v1/projects/prj_1/rooms/adopt",
+            "POST /hagency/api/v1/projects/prj_1/rooms/adopt",
             json!({}),
             Some(json!({"roomId":"!room:example.test"})),
         ),
@@ -341,7 +341,7 @@ async fn links_then_adopts_with_separate_credentials_and_never_overwrites_confli
         .unwrap()
         .unwrap();
     let (login,task)=fixture(vec![
- ("GET /api/hagency/v1/projects",projects,None),
+ ("GET /hagency/api/v1/projects",projects,None),
  ("GET /_matrix/client/v3/rooms/!room:example.test/state",state(&c),None),
  ("GET /_matrix/client/v3/rooms/!space:example.test/state",json!([{"type":"m.space.child","state_key":"!room:example.test","content":{"via":["other.test"],"suggested":true}}]),None),
  ]).await;

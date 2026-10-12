@@ -32,7 +32,7 @@ impl ServerLogin {
         let client = http()?;
         let grant = response(
             client
-                .post(server.join("/api/hagency/v1/sessions/pasion").unwrap())
+                .post(server.join("/hagency/api/v1/sessions/pasion").unwrap())
                 .json(&json!({"accessToken":snapshot.access_token}))
                 .send()
                 .await
@@ -45,7 +45,7 @@ impl ServerLogin {
             .ok_or("invalid_server_response")?
             .to_owned();
         let result = async {
-            let identity = get(&client, server.join("/api/hagency/v1/identity").unwrap(), Some(&token)).await?;
+            let identity = get(&client, server.join("/hagency/api/v1/identity").unwrap(), Some(&token)).await?;
             let subject = identity["subject"].as_str().filter(|s| !s.is_empty() && s.len() <= 255).ok_or("invalid_server_response")?;
             let user = identity["userId"].as_str().filter(|s| !s.is_empty() && s.len() <= 128).ok_or("invalid_server_response")?;
             if identity["mxid"] != expected_owner || identity["issuer"] != server.join("/auth/").unwrap().as_str() || identity["clientId"] != snapshot.client_id || grant["mxid"] != identity["mxid"] || grant["userId"] != identity["userId"] { return Err("matrix_account_mismatch"); }
@@ -274,7 +274,7 @@ mod tests {
                     }
                     let short_proof = body["accessToken"] == "sdk-short";
                     records.lock().unwrap().push((path.clone(), body));
-                    if path == "/api/hagency/v1/identity"
+                    if path == "/hagency/api/v1/identity"
                         && let Some(flag) = &late_epoch
                     {
                         flag.store(false, Ordering::Release);
@@ -285,23 +285,23 @@ mod tests {
                         .as_millis() as u64
                         + 30_000;
                     let value = match path.as_str() {
-                        "/api/hagency/v1/discovery" => {
+                        "/hagency/api/v1/discovery" => {
                             json!({"product":"hagency-server","version":"0.1.0","protocolVersion":3,"capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-device-v1","owner-direct-v1"],"homeserver":issuer.strip_suffix("auth/").unwrap(),"issuer":issuer})
                         }
-                        "/api/hagency/v1/sessions/pasion" => {
+                        "/hagency/api/v1/sessions/pasion" => {
                             json!({"token":"a".repeat(64),"userId":"uid","mxid":mxid,"validUntilMs":until})
                         }
-                        "/api/hagency/v1/identity" => {
+                        "/hagency/api/v1/identity" => {
                             json!({"userId":"uid","mxid":mxid,"issuer":issuer,"subject":"sub","clientId":"sdk-client","validUntilMs":until})
                         }
-                        "/api/hagency/v1/devices" => {
+                        "/hagency/api/v1/devices" => {
                             json!({"deviceId":"device","token":"b".repeat(64),"generation":1,"validUntilMs":until})
                         }
-                        "/api/hagency/v1/sessions/current/renew" => {
+                        "/hagency/api/v1/sessions/current/renew" => {
                             json!({"validUntilMs":if short_proof{until-25_000}else{until}})
                         }
-                        "/api/hagency/v1/sessions/current" => json!({}),
-                        "/api/hagency/v1/projects" => json!({"projects":[]}),
+                        "/hagency/api/v1/sessions/current" => json!({}),
+                        "/hagency/api/v1/projects" => json!({"projects":[]}),
                         "/_matrix/client/v3/joined_rooms" => json!({"joined_rooms":[]}),
                         _ => json!({"code":"unexpected_request"}),
                     };
@@ -507,13 +507,9 @@ mod tests {
         assert!(
             records
                 .iter()
-                .any(|(path, _)| path == "/api/hagency/v1/sessions/current")
+                .any(|(path, _)| path == "/hagency/api/v1/sessions/current")
         );
-        assert!(
-            !records
-                .iter()
-                .any(|(path, _)| path.starts_with("/auth/"))
-        );
+        assert!(!records.iter().any(|(path, _)| path.starts_with("/auth/")));
         let metadata =
             std::fs::read_to_string(root.path().join("state/server-login-revocations.json"))
                 .unwrap_or_default();
@@ -542,16 +538,12 @@ mod tests {
         .unwrap();
         assert_eq!(error.code, "matrix_account_mismatch");
         let records = requests.lock().unwrap();
-        assert!(
-            !records
-                .iter()
-                .any(|(path, _)| path.starts_with("/auth/"))
-        );
+        assert!(!records.iter().any(|(path, _)| path.starts_with("/auth/")));
         assert!(!records.iter().any(|(path, _)| path.ends_with("/devices")));
         assert!(
             records
                 .iter()
-                .any(|(path, _)| path == "/api/hagency/v1/sessions/current")
+                .any(|(path, _)| path == "/hagency/api/v1/sessions/current")
         );
         task.abort();
     }
@@ -582,13 +574,9 @@ mod tests {
         assert!(
             records
                 .iter()
-                .any(|(path, _)| path == "/api/hagency/v1/sessions/current")
+                .any(|(path, _)| path == "/hagency/api/v1/sessions/current")
         );
-        assert!(
-            !records
-                .iter()
-                .any(|(path, _)| path.starts_with("/auth/"))
-        );
+        assert!(!records.iter().any(|(path, _)| path.starts_with("/auth/")));
         let saved =
             std::fs::read_to_string(root.path().join("state/server-login-revocations.json"))
                 .unwrap_or_default();
@@ -742,7 +730,7 @@ mod tests {
                 .lock()
                 .unwrap()
                 .iter()
-                .all(|(path, _)| path == "/api/hagency/v1/discovery")
+                .all(|(path, _)| path == "/hagency/api/v1/discovery")
         );
         task.abort();
     }

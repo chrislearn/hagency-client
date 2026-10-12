@@ -62,15 +62,15 @@ impl WireState {
         let generation = self.device_generation.max(1);
         let lease = |epoch| json!({"lease":{"agentId":"agent-a","ownerUserId":"uid","deviceId":"device-a","deviceGeneration":generation,"epoch":epoch,"expiresAtMs":until}});
         match path {
-            "/api/hagency/v1/discovery" => (
+            "/hagency/api/v1/discovery" => (
                 200,
                 json!({"product":"hagency-server","version":"0.1.0","protocolVersion":3,"capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-device-v1","owner-direct-v1"],"homeserver":origin,"issuer":format!("{origin}auth/")}),
             ),
-            "/api/hagency/v1/agents/agent-a" if self.restore_scope => (
+            "/hagency/api/v1/agents/agent-a" if self.restore_scope => (
                 200,
                 json!({"agent":{"id":"agent-a","ownerUserId":"uid","puppetMxid":"@agent:test","displayName":"Fixture","state":"active","generation":1,"executionDeviceId":"device-a","ownerDirectRoomId":"!room-a:test"}}),
             ),
-            "/api/hagency/v1/agents/agent-a/bindings" if self.restore_scope => (
+            "/hagency/api/v1/agents/agent-a/bindings" if self.restore_scope => (
                 200,
                 if self.binding_states.is_empty() {
                     json!({"bindings":[{"id":"binding-a","agentId":"agent-a","projectId":null,"scopeKind":"owner_direct","roomId":"!room-a:test","state":"active","generation":1}]})
@@ -78,28 +78,28 @@ impl WireState {
                     json!({"bindings":self.binding_states.iter().map(|(id,state)|json!({"id":id,"agentId":"agent-a","projectId":null,"scopeKind":if id=="binding-a"{"owner_direct"}else{"project"},"roomId":format!("!room-{}:test",id.trim_start_matches("binding-")),"state":state,"generation":1})).collect::<Vec<_>>()})
                 },
             ),
-            "/api/hagency/v1/sessions/pasion" => (
+            "/hagency/api/v1/sessions/pasion" => (
                 200,
                 json!({"token":"a".repeat(64),"userId":"uid","mxid":OWNER,"validUntilMs":wall_ms()+30_000}),
             ),
-            "/api/hagency/v1/identity" => (
+            "/hagency/api/v1/identity" => (
                 200,
                 json!({"userId":"uid","mxid":OWNER,"subject":"sub","clientId":"sdk-client","issuer":format!("{origin}auth/"),"validUntilMs":wall_ms()+30_000}),
             ),
-            "/api/hagency/v1/devices" => {
+            "/hagency/api/v1/devices" => {
                 self.device_generation += 1;
                 (
                     200,
                     json!({"token":"b".repeat(64),"deviceId":"device-a","generation":self.device_generation,"validUntilMs":wall_ms()+30_000}),
                 )
             }
-            "/api/hagency/v1/sessions/current/renew" => {
+            "/hagency/api/v1/sessions/current/renew" => {
                 (200, json!({"validUntilMs":wall_ms()+30_000}))
             }
-            "/api/hagency/v1/sessions/current" => (200, json!({})),
-            "/api/hagency/v1/execution/leases/release" => (200, json!({"released":true})),
-            "/api/hagency/v1/execution/history" => (200, self.history()),
-            "/api/hagency/v1/execution/leases/acquire" => {
+            "/hagency/api/v1/sessions/current" => (200, json!({})),
+            "/hagency/api/v1/execution/leases/release" => (200, json!({"released":true})),
+            "/hagency/api/v1/execution/history" => (200, self.history()),
+            "/hagency/api/v1/execution/leases/acquire" => {
                 assert_eq!(input["takeover"], false);
                 if self.restart_busy_remaining > 0 {
                     self.restart_busy_remaining -= 1;
@@ -115,8 +115,8 @@ impl WireState {
                 }
                 (200, lease(self.epoch))
             }
-            "/api/hagency/v1/execution/leases/renew" => (200, lease(self.epoch)),
-            "/api/hagency/v1/execution/events/poll" => {
+            "/hagency/api/v1/execution/leases/renew" => (200, lease(self.epoch)),
+            "/hagency/api/v1/execution/events/poll" => {
                 assert!(
                     input["bindingId"] == "binding-a"
                         || self
@@ -128,8 +128,8 @@ impl WireState {
                     json!({"events":self.events.iter().filter(|d|d["state"]=="offered").take(1).cloned().collect::<Vec<_>>()}),
                 )
             }
-            "/api/hagency/v1/execution/events/ack" => (200, json!({"acknowledged":true})),
-            "/api/hagency/v1/execution/events/start" => {
+            "/hagency/api/v1/execution/events/ack" => (200, json!({"acknowledged":true})),
+            "/hagency/api/v1/execution/events/start" => {
                 let d = self
                     .events
                     .iter_mut()
@@ -139,7 +139,7 @@ impl WireState {
                 d["state"] = "running".into();
                 (200, json!({"execution":{"dispatch":d,"newlyStarted":true}}))
             }
-            "/api/hagency/v1/execution/events/processing" => {
+            "/hagency/api/v1/execution/events/processing" => {
                 let dispatch = self
                     .events
                     .iter()
@@ -159,11 +159,11 @@ impl WireState {
                     json!({"processing":{"id":"processing-a","dispatchId":input["dispatchId"],"executionId":input["executionId"],"state":"pending","matrixEventId":null}}),
                 )
             }
-            "/api/hagency/v1/execution/events/authorize-tool" => (
+            "/hagency/api/v1/execution/events/authorize-tool" => (
                 200,
                 json!({"dispatch":self.events.iter().find(|d|d["id"]==input["dispatchId"]).unwrap()}),
             ),
-            "/api/hagency/v1/execution/events/finish" => {
+            "/hagency/api/v1/execution/events/finish" => {
                 let d = self
                     .events
                     .iter_mut()
@@ -176,7 +176,7 @@ impl WireState {
                 }
                 (200, json!({"finished":true}))
             }
-            "/api/hagency/v1/execution/replies" => {
+            "/hagency/api/v1/execution/replies" => {
                 self.replies += 1;
                 if self.replies == 1 {
                     self.first_reply = Some(input.clone());
@@ -271,7 +271,7 @@ async fn server(
                     .unwrap();
                 let body: Value =
                     serde_json::from_slice(&bytes[split..split + length]).unwrap_or(Value::Null);
-                if path.starts_with("/api/hagency/v1/execution/") {
+                if path.starts_with("/hagency/api/v1/execution/") {
                     assert!(
                         headers
                             .to_ascii_lowercase()

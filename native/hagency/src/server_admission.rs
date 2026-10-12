@@ -162,7 +162,7 @@ pub async fn discover(origin: &str) -> Result<ServerMetadata, AdmissionError> {
     let mut response = client
         .get(
             server
-                .join("/api/hagency/v1/discovery")
+                .join("/hagency/api/v1/discovery")
                 .map_err(|_| AdmissionError::InvalidServer)?,
         )
         .send()
@@ -303,7 +303,7 @@ mod tests {
                 let mut request = [0; 4096];
                 let n = socket.read(&mut request).await.unwrap();
                 let request = String::from_utf8_lossy(&request[..n]);
-                assert!(request.starts_with("GET /api/hagency/v1/discovery "));
+                assert!(request.starts_with("GET /hagency/api/v1/discovery "));
                 assert!(!request.to_lowercase().contains("authorization:"));
                 let response = format!(
                     "HTTP/1.1 {status}\r\nLocation: https://foreign.invalid/\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",

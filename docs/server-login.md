@@ -13,8 +13,8 @@ trusted HTTPS. Do not append `/login`, `/auth/` or API paths. Complete the
 server's official Pasion browser authorization with your personal account.
 
 Pasion PKCE plus real Matrix whoami establishes your identity. Native management
-uses `/api/hagency/v1`; server browser management uses the closed
-`/api/browser/hagency/v1` BFF. Native APIs reject browser Cookie/Origin requests.
+uses `/hagency/api/v1`; server browser management uses the closed
+`/hagency/api/browser/v1` BFF. Native APIs reject browser Cookie/Origin requests.
 The integrated Appservice stays on the server: no per-installation Fleet, AS
 registration, machine-token import or `[fleet_access]` configuration is required.
 

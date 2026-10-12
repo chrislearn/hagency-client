@@ -838,7 +838,7 @@ impl Console {
         let mut response = client
             .post(
                 server
-                    .join(&format!("/api/hagency/v1/execution/{path}"))
+                    .join(&format!("/hagency/api/v1/execution/{path}"))
                     .unwrap(),
             )
             .bearer_auth(bearer)

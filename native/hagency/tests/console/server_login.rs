@@ -47,7 +47,7 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
     let f = depot.get_typed::<OAuthFixture>().unwrap();
     let path = req.uri().path().to_owned();
     let result = match path.as_str() {
-        "/api/hagency/v1/discovery" => {
+        "/hagency/api/v1/discovery" => {
             json!({"product":"hagency-server","version":"0.1.0","capabilities":["pasion-oauth","owner-agent-appservice-v1","global-agent-identity-v2","execution-device-v1","owner-direct-v1"],"protocolVersion":3,"issuer":format!("{}/auth/",f.origin),"homeserver":format!("{}/",f.origin)})
         }
         "/auth/oauth2/registration" => {
@@ -152,7 +152,7 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
                 {"type":"m.room.name","state_key":"","content":{"name":"Existing Space"}}
             ])
         }
-        "/api/hagency/v1/identity" => {
+        "/hagency/api/v1/identity" => {
             assert_eq!(
                 req.headers()
                     .get("authorization")
@@ -169,7 +169,7 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
             }
             json!({"userId":"stable-user-id","mxid":state.owner,"subject":state.owner,"clientId":"fixture-public-client","issuer":state.issuer_override.clone().unwrap_or_else(||format!("{}/auth/",f.origin)),"validUntilMs":until()})
         }
-        "/api/hagency/v1/sessions/pasion" | "/api/hagency/v1/sessions/current/renew" => {
+        "/hagency/api/v1/sessions/pasion" | "/hagency/api/v1/sessions/current/renew" => {
             let body: Value = req.parse_json().await.unwrap();
             assert_eq!(body["accessToken"], f.state.lock().unwrap().token);
             if !f.state.lock().unwrap().active {
@@ -183,7 +183,7 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
             }
             json!({"token":"d".repeat(64),"userId":"stable-user-id","mxid":state.owner,"validUntilMs":until()})
         }
-        "/api/hagency/v1/devices" => {
+        "/hagency/api/v1/devices" => {
             if req.method() == Method::GET {
                 json!({"devices":[{"id":"dev_fixture","name":"Current installation","generation":1,"revoked":false,"token":"unexpected-sensitive-field"}]})
             } else {
@@ -285,7 +285,7 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
                 state.direct_index.clone()
             }
         }
-        "/api/hagency/v1/agents/agt_fixture/owner-direct" => {
+        "/hagency/api/v1/agents/agt_fixture/owner-direct" => {
             let input = if req.method() == Method::POST {
                 Some(req.parse_json::<Value>().await.unwrap())
             } else {
@@ -306,7 +306,7 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
                 json!({"ownerDirectRoomId":state.direct_mapping,"binding":binding})
             }
         }
-        "/api/hagency/v1/agents/agt_fixture/execution-device" => {
+        "/hagency/api/v1/agents/agt_fixture/execution-device" => {
             assert_eq!(req.method(), Method::PUT);
             assert_eq!(
                 req.headers()
@@ -331,7 +331,7 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
             }
             json!({"agent":{"id":"agt_fixture","ownerUserId":"stable-user-id","puppetMxid":"@_hagency_agt_fixture:example.test","displayName":"My Codex","state":"active","executionDeviceId":state.execution_device,"generation":state.agent_generation.max(1)}})
         }
-        "/api/hagency/v1/sessions/current" | "/auth/oauth2/revoke" => {
+        "/hagency/api/v1/sessions/current" | "/auth/oauth2/revoke" => {
             if f.state.lock().unwrap().revoke_unavailable {
                 res.status_code(StatusCode::SERVICE_UNAVAILABLE);
                 res.render(Json(json!({"code":"unavailable"})));
@@ -340,17 +340,17 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
             f.state.lock().unwrap().revocations += 1;
             json!({})
         }
-        "/api/hagency/v1/execution/history"
-        | "/api/hagency/v1/execution/leases/acquire"
-        | "/api/hagency/v1/execution/leases/renew"
-        | "/api/hagency/v1/execution/leases/release"
-        | "/api/hagency/v1/execution/events/poll"
-        | "/api/hagency/v1/execution/events/ack"
-        | "/api/hagency/v1/execution/events/start"
-        | "/api/hagency/v1/execution/events/authorize-tool"
-        | "/api/hagency/v1/execution/events/finish"
-        | "/api/hagency/v1/execution/replies"
-        | "/api/hagency/v1/execution/replies/reconcile-known" => {
+        "/hagency/api/v1/execution/history"
+        | "/hagency/api/v1/execution/leases/acquire"
+        | "/hagency/api/v1/execution/leases/renew"
+        | "/hagency/api/v1/execution/leases/release"
+        | "/hagency/api/v1/execution/events/poll"
+        | "/hagency/api/v1/execution/events/ack"
+        | "/hagency/api/v1/execution/events/start"
+        | "/hagency/api/v1/execution/events/authorize-tool"
+        | "/hagency/api/v1/execution/events/finish"
+        | "/hagency/api/v1/execution/replies"
+        | "/hagency/api/v1/execution/replies/reconcile-known" => {
             assert_eq!(
                 req.headers()
                     .get("authorization")
@@ -451,11 +451,11 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
                 json!({"reply":reply})
             }
         }
-        "/api/hagency/v1/projects/prj_fixture/service-state"
-        | "/api/hagency/v1/projects/prj_fixture/rooms/%21room%3Aexample%2Etest/service-state"
-        | "/api/hagency/v1/projects/prj_fixture/creation-policy"
-        | "/api/hagency/v1/projects/prj_fixture/rooms/%21room%3Aexample%2Etest/creation-policy"
-        | "/api/hagency/v1/projects/prj_fixture/rooms/%21room%3Aexample%2Etest/pause-service" => {
+        "/hagency/api/v1/projects/prj_fixture/service-state"
+        | "/hagency/api/v1/projects/prj_fixture/rooms/%21room%3Aexample%2Etest/service-state"
+        | "/hagency/api/v1/projects/prj_fixture/creation-policy"
+        | "/hagency/api/v1/projects/prj_fixture/rooms/%21room%3Aexample%2Etest/creation-policy"
+        | "/hagency/api/v1/projects/prj_fixture/rooms/%21room%3Aexample%2Etest/pause-service" => {
             assert_eq!(
                 req.headers()
                     .get("authorization")
@@ -483,8 +483,8 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
             f.state.lock().unwrap().management_calls += 1;
             json!({"canManagePolicy":true,"revision":3,"creationPolicy":"{\"defaultAllow\":true,\"allow\":[],\"deny\":[]}","servicePaused":false})
         }
-        p if p.starts_with("/api/hagency/v1/commands/") => {
-            let suffix = p.strip_prefix("/api/hagency/v1/commands/").unwrap();
+        p if p.starts_with("/hagency/api/v1/commands/") => {
+            let suffix = p.strip_prefix("/hagency/api/v1/commands/").unwrap();
             let (operation, key) = suffix.split_once('/').unwrap();
             assert_eq!(req.method(), Method::GET);
             assert_eq!(
@@ -510,17 +510,17 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
             }
             result
         }
-        "/api/hagency/v1/agents"
-        | "/api/hagency/v1/projects"
-        | "/api/hagency/v1/agents/agt_fixture/bindings"
-        | "/api/hagency/v1/agents/agt_fixture/pause"
-        | "/api/hagency/v1/agents/agt_fixture/resume"
-        | "/api/hagency/v1/agents/agt_fixture"
-        | "/api/hagency/v1/agents/agt_other"
-        | "/api/hagency/v1/agents/agt_other/bindings"
-        | "/api/hagency/v1/bindings/bnd_fixture"
-        | "/api/hagency/v1/bindings/bnd_fixture/pause"
-        | "/api/hagency/v1/bindings/bnd_fixture/resume" => {
+        "/hagency/api/v1/agents"
+        | "/hagency/api/v1/projects"
+        | "/hagency/api/v1/agents/agt_fixture/bindings"
+        | "/hagency/api/v1/agents/agt_fixture/pause"
+        | "/hagency/api/v1/agents/agt_fixture/resume"
+        | "/hagency/api/v1/agents/agt_fixture"
+        | "/hagency/api/v1/agents/agt_other"
+        | "/hagency/api/v1/agents/agt_other/bindings"
+        | "/hagency/api/v1/bindings/bnd_fixture"
+        | "/hagency/api/v1/bindings/bnd_fixture/pause"
+        | "/hagency/api/v1/bindings/bnd_fixture/resume" => {
             assert_eq!(
                 req.headers()
                     .get("authorization")
@@ -529,7 +529,7 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
                     .unwrap(),
                 format!(
                     "Bearer {}",
-                    if path == "/api/hagency/v1/agents" && req.method() == Method::POST {
+                    if path == "/hagency/api/v1/agents" && req.method() == Method::POST {
                         "e"
                     } else {
                         "d"

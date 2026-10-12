@@ -175,7 +175,7 @@ impl MatrixOperation {
                     Some(body),
                 )
             }
-            Self::Discovery => (Method::GET, "/api/hagency/v1/discovery".into(), None),
+            Self::Discovery => (Method::GET, "/hagency/api/v1/discovery".into(), None),
             Self::JoinedRooms => (Method::GET, "/_matrix/client/v3/joined_rooms".into(), None),
             Self::State(room) => (
                 Method::GET,
