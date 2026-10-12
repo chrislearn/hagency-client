@@ -36,6 +36,7 @@ pub(in crate::console) fn sdk_source_failure(error: NativeError) -> &'static str
         "unsupported_hagency_capabilities" => "unsupported_hagency_capabilities",
         "invalid_hagency_metadata" => "invalid_hagency_metadata",
         "hagency_server_unavailable" => "hagency_server_unavailable",
+        "hagency_server_rejected" => "hagency_server_rejected",
         _ => "matrix_authorization_required",
     }
 }

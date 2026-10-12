@@ -15,6 +15,7 @@ pub struct ServerMetadata {
 pub enum AdmissionError {
     InvalidServer,
     Unavailable,
+    RequestRejected,
     UnsupportedServer,
     UnsupportedProtocol,
     MissingCapabilities,
@@ -25,6 +26,7 @@ impl AdmissionError {
         match self {
             Self::InvalidServer => "invalid_server",
             Self::Unavailable => "hagency_server_unavailable",
+            Self::RequestRejected => "hagency_server_rejected",
             Self::UnsupportedServer => "unsupported_hagency_server",
             Self::UnsupportedProtocol => "unsupported_hagency_protocol",
             Self::MissingCapabilities => "unsupported_hagency_capabilities",
@@ -38,6 +40,9 @@ impl AdmissionError {
             }
             Self::Unavailable => {
                 "The Hagency server could not be reached. Check its address and connection, then retry."
+            }
+            Self::RequestRejected => {
+                "The server rejected the Hagency discovery request. Check the server's public address and reverse proxy configuration."
             }
             Self::UnsupportedServer => {
                 "Only Hagency servers are supported. Ordinary Matrix homeservers cannot be used to sign in."
@@ -171,6 +176,12 @@ pub async fn discover(origin: &str) -> Result<ServerMetadata, AdmissionError> {
     if response.status().is_server_error() {
         return Err(AdmissionError::Unavailable);
     }
+    if matches!(response.status().as_u16(), 401 | 403) {
+        return Err(AdmissionError::RequestRejected);
+    }
+    if response.status().as_u16() == 429 {
+        return Err(AdmissionError::Unavailable);
+    }
     if !response.status().is_success() {
         return Err(AdmissionError::UnsupportedServer);
     }
@@ -290,6 +301,21 @@ mod tests {
                 AdmissionError::UnsupportedServer,
             ),
             ("302 Found", "{}".into(), AdmissionError::UnsupportedServer),
+            (
+                "401 Unauthorized",
+                r#"{"code":"native_origin_required"}"#.into(),
+                AdmissionError::RequestRejected,
+            ),
+            (
+                "403 Forbidden",
+                r#"{"code":"origin_forbidden"}"#.into(),
+                AdmissionError::RequestRejected,
+            ),
+            (
+                "429 Too Many Requests",
+                "{}".into(),
+                AdmissionError::Unavailable,
+            ),
             (
                 "200 OK",
                 " ".repeat(16_385),
