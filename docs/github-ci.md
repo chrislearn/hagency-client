@@ -9,7 +9,7 @@ GitHub Releases at the 2026-10-10 audit.
 
 Every Cargo workflow now invokes `.github/actions/setup-hagency-client` after
 checking out Desktop. It checks out `chrislearn/hagency-client` at the exact
-published commit `a899d943d8edbf4ba2d7e909624b4cde03d5f21e`, without persisted
+published commit `d0e88ca518c0a43ac6dfa253c79e826d7a56421d`, without persisted
 credentials, and places it at the sibling path required by Cargo.toml. It refuses
 to overwrite an existing sibling tree. Review/update this pin and Desktop's
 Cargo.lock together whenever the native client API changes. It intentionally
@@ -66,6 +66,21 @@ The inherited Rinx AUR workflow is manual-only; publishing a Hagency release
 must not publish the unrelated Rinx AUR package. The inherited license refresh
 workflow remains manual and retains its explicit push-token requirement.
 Dependabot proposes monthly GitHub Actions updates without auto-merge.
+
+## Native CI repair (2026-10-12)
+
+Strict native builds exposed unused feature/test-only Desktop helpers and two
+Client values used only by Unix host-file callbacks. The latter are fixed in
+the pinned Client revision above. Keep `-D warnings` enabled so platform-specific
+mistakes continue to fail the build. Matrix ID examples and empty text resets
+are literal values, while the four missing UI messages now have catalog entries.
+
+The repair passed local strict library compilation, 450 Desktop library tests
+(2 ignored), 196 Client runtime tests (5 ignored), and 70 agent-local tests
+(1 ignored). The [native GitHub CI run](https://github.com/hagency-org/hagency-desktop/actions/runs/38201853621)
+also passed its build, test, translation and theme checks. The final cross-platform
+results are tracked on [PR #1](https://github.com/hagency-org/hagency-desktop/pull/1/checks).
+Installer/AUR publishing and mobile build workflows were reviewed but not executed.
 
 ## Verification checkpoint (2026-10-10)
 

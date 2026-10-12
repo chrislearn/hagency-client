@@ -7,7 +7,7 @@ runs:
       with:
         repository: chrislearn/hagency-client
         # Update this pin together with Desktop integration and Cargo.lock.
-        ref: a899d943d8edbf4ba2d7e909624b4cde03d5f21e
+        ref: d0e88ca518c0a43ac6dfa253c79e826d7a56421d
         path: .ci/hagency-client
         persist-credentials: false
     - shell: bash
