@@ -3,11 +3,11 @@ description: Provide the sibling source dependency required by Desktop Cargo.tom
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v7
       with:
         repository: chrislearn/hagency-client
         # Update this pin together with Desktop integration and Cargo.lock.
-        ref: 1f529d9f1af2d16f1cd08a7e7ea1df5d2216a060
+        ref: a899d943d8edbf4ba2d7e909624b4cde03d5f21e
         path: .ci/hagency-client
         persist-credentials: false
     - shell: bash

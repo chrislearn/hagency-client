@@ -479,9 +479,11 @@ impl ApprovalSession {
             }
         }
     }
+    #[cfg(test)]
     pub(crate) fn claim_state(&self, key: &ApprovalClaimKey) -> Option<ClaimState> {
         self.claims.get(key).map(|c| c.state)
     }
+    #[cfg(test)]
     pub(crate) fn remove_room(&mut self, account: &str, room: &str) {
         self.records
             .retain(|k, _| k.account_mxid != account || k.approval_room_id != room);
@@ -489,6 +491,7 @@ impl ApprovalSession {
             .retain(|k, _| k.account_mxid != account || k.approval_room_id != room);
         self.epochs.remove(&(account.into(), room.into()));
     }
+    #[cfg(test)]
     pub(crate) fn clear_account(&mut self, account: &str) {
         self.records.retain(|k, _| k.account_mxid != account);
         self.claims.retain(|k, _| k.account_mxid != account);
@@ -993,6 +996,7 @@ impl ApprovalMarkerIndex {
         self.mark_room_unavailable(account, room);
     }
 
+    #[cfg(test)]
     pub(crate) fn clear_account(&mut self, account: &str) {
         self.markers.retain(|marker| marker.account != account);
         self.protocol_floors

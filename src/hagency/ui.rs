@@ -199,13 +199,6 @@ fn agent_command_details(command:&Value)->String {
     if string(command,"operation") == "agent.create" {heading}
     else {format!("{heading}\nAgent: {}\nProject: {}",string(command,"agentId"),string(&command["input"],"projectId"))}
 }
-fn runtime_room_is_active(runtime:&Value,agent:&str,binding:Option<&str>)->bool {
-    let Some(binding)=binding else {return false;};
-    if string(runtime,"agentId")!=agent {return false;}
-    let selected=array(runtime,"bindings").into_iter().find(|row|string(row,"bindingId")==binding);
-    let value=if let Some(ref row)=selected {row} else if string(runtime,"bindingId")==binding {runtime} else {return false;};
-    matches!(string(value,"phase"),"online"|"online_chat_only"|"executing"|"executing_chat_only"|"executing_host_files"|"awaiting_approval"|"waiting_owner")
-}
 pub(crate) fn runtime_summary(runtime:&Value,agent:&str,binding:Option<&str>)->String {
     if runtime.is_null() {return crate::i18n::tr("Not running on this device.").into();}
     if string(runtime,"agentId") != agent {return crate::i18n::tr("Refresh this Agent's runtime status.").into();}
@@ -301,7 +294,6 @@ fn render_device_badge(cx: &mut Cx, badge: &WidgetRef, state: AgentDeviceState, 
 pub(crate) struct ProjectRoomNavigation {
     pub identity: String,
     pub project_id: String,
-    pub room_id: matrix_sdk::ruma::OwnedRoomId,
 }
 impl ProjectRoomNavigation {
     pub(crate) fn current(&self) -> bool {
@@ -312,7 +304,7 @@ fn navigate_agent_chat(cx: &mut Cx, room: matrix_sdk::ruma::OwnedRoomId, owner_d
     if owner_direct {
         cx.action(crate::home::main_desktop_ui::MainDesktopUiAction::ShowChats);
     } else if let Some((identity, project_id)) = project {
-        cx.action(ProjectRoomNavigation {identity: identity.into(), project_id: project_id.into(), room_id: room.clone()});
+        cx.action(ProjectRoomNavigation {identity: identity.into(), project_id: project_id.into()});
     }
     let name = crate::sliding_sync::get_client().and_then(|client| client.get_room(&room))
         .and_then(|sdk_room| sdk_room.cached_display_name().or_else(|| sdk_room.name().map(matrix_sdk::RoomDisplayName::Named)))
@@ -553,7 +545,7 @@ script_mod! {
  candidates := Select {labels: [#(crate::i18n::tr("Select a joined Space"))]}}
                     candidates_more := Action {visible: false text: #(crate::i18n::tr("Refresh / load more Spaces")) i18n_text: "Refresh / load more Spaces"}
                     existing_room_holder := View {visible: false width: Fill height: Fit flow: Down spacing: 4 Text {text: #(crate::i18n::tr("Room ID")) i18n_text: "Room ID"}
- existing_room := Input {empty_text: #(crate::i18n::tr("!existing-room:server")) i18n_empty_text: "!existing-room:server"}}
+ existing_room := Input {empty_text: "!existing-room:server"}}
                     create_project_room := Primary {text: #(crate::i18n::tr("Create Project")) i18n_text: "Create Project"}
                     creation_result := Text {}
                     recovery := View {visible: false width: Fill height: Fit flow: Down spacing: 8
@@ -624,7 +616,7 @@ script_mod! {
                         policy_target := Text {draw_text.color: mod.widgets.RINX_MUTED}
                         requester_holder := View {width: Fill height: Fit flow: Down spacing: 8
                             Text {text: #(crate::i18n::tr("Member")) i18n_text: "Member"}
-                            requester := Input {empty_text: #(crate::i18n::tr("@requester:server")) i18n_empty_text: "@requester:server"}
+                            requester := Input {empty_text: "@requester:server"}
                             load_policy := Action {text: #(crate::i18n::tr("Load member settings")) i18n_text: "Load member settings"}
                         }
                         policy_usage := Text {draw_text.color: mod.widgets.RINX_MUTED}
@@ -1187,9 +1179,9 @@ impl HagencyPanel {
         self.clear_approval_state(cx);
         self.approvals.clear();
         self.labels(cx,ids!(approvals),"Select a pending approval",&self.approvals,"proposalId");
-        self.view.label(cx,ids!(approval_details)).set_text(cx,crate::i18n::tr(""));
+        self.view.label(cx,ids!(approval_details)).set_text(cx,"");
         self.view.label(cx, ids!(runtime_status)).set_text(cx,crate::i18n::tr("Refresh status to check this Room."));
-        self.view.label(cx, ids!(policy_usage)).set_text(cx, crate::i18n::tr(""));
+        self.view.label(cx, ids!(policy_usage)).set_text(cx, "");
     }
     fn set_busy(&mut self, cx: &mut Cx, busy: bool) {
         self.busy = busy;
@@ -1303,7 +1295,7 @@ impl HagencyPanel {
         );
         self.rooms.clear();
         self.labels(cx, ids!(rooms), "Select a Room", &self.rooms, "roomId");
-        self.view.label(cx, ids!(room_details)).set_text(cx, crate::i18n::tr(""));
+        self.view.label(cx, ids!(room_details)).set_text(cx, "");
         self.run(
             cx,
             Target::Rooms,
@@ -1373,11 +1365,11 @@ impl HagencyPanel {
             &[],
             "proposalId",
         );
-        self.view.label(cx, ids!(approval_details)).set_text(cx, crate::i18n::tr(""));
+        self.view.label(cx, ids!(approval_details)).set_text(cx, "");
         self.view
             .label(cx, ids!(runtime_status))
             .set_text(cx, crate::i18n::tr("Select a Room and refresh its runtime status."));
-        self.view.label(cx, ids!(room_roster)).set_text(cx, crate::i18n::tr(""));
+        self.view.label(cx, ids!(room_roster)).set_text(cx, "");
         self.bindings.clear();
         self.view.label(cx, ids!(agent_details)).set_text(
             cx,
@@ -1431,7 +1423,7 @@ impl HagencyPanel {
     fn clear_members(&mut self, cx: &mut Cx) {
         self.members.clear();
         self.members_room = None;
-        self.view.label(cx, ids!(members_status)).set_text(cx, crate::i18n::tr(""));
+        self.view.label(cx, ids!(members_status)).set_text(cx, "");
         self.view
             .button(cx, ids!(invite_member))
             .set_enabled(cx, false);
@@ -1759,8 +1751,8 @@ impl HagencyPanel {
             return false;
         }
         self.creation=None;self.pending_input=None;self.create_room=room;
-        for id in [ids!(creation_name),ids!(found_room),ids!(existing_room)] {self.view.text_input(cx,id).set_text(cx, crate::i18n::tr(""));}
-        self.view.label(cx,ids!(creation_result)).set_text(cx, crate::i18n::tr(""));
+        for id in [ids!(creation_name),ids!(found_room),ids!(existing_room)] {self.view.text_input(cx,id).set_text(cx, "");}
+        self.view.label(cx,ids!(creation_result)).set_text(cx, "");
         self.view.view(cx,ids!(recovery)).set_visible(cx,false);
         self.view.button(cx,ids!(create_project_room)).set_enabled(cx,!self.busy);
         true
@@ -2205,7 +2197,7 @@ impl HagencyPanel {
                 self.view.drop_down(cx,ids!(agent_pending)).set_selected_item(cx,0);
                 self.view
                     .label(cx, ids!(agent_pending_details))
-                    .set_text(cx, crate::i18n::tr(""));
+                    .set_text(cx, "");
                 self.run(cx, Target::Agents, Command::Agents);
             }
             Target::AgentResumed => {
@@ -2427,7 +2419,7 @@ impl HagencyPanel {
                 self.credential_ref = string(value, "credentialRef").into();
                 self.provider_url = value["authUrl"].as_str().map(str::to_owned);
                 self.provider_authenticated = value["authenticated"] == true;
-                self.view.label(cx, ids!(credential)).set_text(cx, crate::i18n::tr(""));
+                self.view.label(cx, ids!(credential)).set_text(cx, "");
                 let signed_in = value["authenticated"] == true;
                 let external=matches!(string(value,"runtime"),"claude"|"octos");
                 let shared=value["shared"] == true && (value["credentialSource"] == "local_codex" || external);
@@ -3501,7 +3493,7 @@ impl Widget for HagencyPanel {
             self.view
                 .label(cx, ids!(runtime_status))
                 .set_text(cx, crate::i18n::tr("Refresh this Room's runtime status."));
-            self.view.label(cx, ids!(room_roster)).set_text(cx, crate::i18n::tr(""));
+            self.view.label(cx, ids!(room_roster)).set_text(cx, "");
             if let Some(binding) = self.selected(cx, ids!(bindings), &self.bindings) {
                 let room_label = self.binding_label(cx, &binding);
                 self.view.label(cx, ids!(binding_details)).set_text(
@@ -3522,7 +3514,7 @@ impl Widget for HagencyPanel {
                 &[],
                 "proposalId",
             );
-            self.view.label(cx, ids!(approval_details)).set_text(cx, crate::i18n::tr(""));
+            self.view.label(cx, ids!(approval_details)).set_text(cx, "");
             let global = self.view.view(cx, ids!(policy_section)).visible()
                 && self.view.drop_down(cx, ids!(policy_layer)).selected_item() == 0;
             self.local(
@@ -3973,7 +3965,7 @@ impl HagencyPanelRef {
                 ids!(model),
                 ids!(workspace),
             ] {
-                panel.view.text_input(cx, id).set_text(cx, crate::i18n::tr(""));
+                panel.view.text_input(cx, id).set_text(cx, "");
             }
             for id in [
                 ids!(credential),
@@ -3986,7 +3978,7 @@ impl HagencyPanelRef {
                 ids!(provider_status),
                 ids!(policy_usage),
             ] {
-                panel.view.label(cx, id).set_text(cx, crate::i18n::tr(""));
+                panel.view.label(cx, id).set_text(cx, "");
             }
             for id in [ids!(estimated), ids!(takeover), ids!(host_files)] {
                 panel
@@ -4221,12 +4213,6 @@ mod tests {
     }
     #[test]
     fn local_runtime_badge_does_not_confuse_server_identity_with_processing() {
-        let running=json!({"agentId":"a","bindings":[{"bindingId":"private","phase":"online"},{"bindingId":"other","phase":"stopped"}]});
-        assert!(runtime_room_is_active(&running,"a",Some("private")));
-        for binding in ["other","unknown"] {assert!(!runtime_room_is_active(&running,"a",Some(binding)));}
-        assert!(!runtime_room_is_active(&running,"foreign",Some("private")));
-        assert!(!runtime_room_is_active(&running,"a",None));
-
         assert_eq!(runtime_list_label(None,"a"),"Checking local processing…");
         assert!(runtime_list_label(Some(&Ok(json!({"runtime":null}))),"a").starts_with("Not running"));
         assert!(runtime_list_label(Some(&Ok(json!({"runtime":{"agentId":"foreign","phase":"online"}}))),"a").contains("could not be verified"));
@@ -4874,7 +4860,7 @@ mod tests {
             assert_eq!(actions.iter().filter(|a| matches!(a.downcast_ref::<crate::home::main_desktop_ui::MainDesktopUiAction>(), Some(crate::home::main_desktop_ui::MainDesktopUiAction::ShowChats))).count(), usize::from(direct));
             let projects: Vec<_> = actions.iter().filter_map(|a| a.downcast_ref::<ProjectRoomNavigation>()).collect();
             assert_eq!(projects.len(), usize::from(!direct));
-            if !direct {assert_eq!(projects[0].project_id, "project-a");assert_eq!(projects[0].room_id, room);assert_eq!(projects[0].identity, "owner-pin");}
+            if !direct {assert_eq!(projects[0].project_id, "project-a");assert_eq!(projects[0].identity, "owner-pin");}
             assert!(!actions.iter().any(|a| a.downcast_ref::<HagencyAction>().is_some()), "opening a binding must not replace its chat with management");
             let destinations: Vec<_> = actions.iter().filter_map(|a| match a.downcast_ref::<crate::app::AppStateAction>() {
                 Some(crate::app::AppStateAction::NavigateToRoom {destination_room, ..}) => Some(destination_room.room_id().to_owned()),
