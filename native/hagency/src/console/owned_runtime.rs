@@ -978,6 +978,42 @@ impl OwnedRuntime {
         // retire revokes the shared device atomic before invoking this. If a
         // lock is busy without a Tokio caller, the heartbeat still fails closed.
     }
+    pub(super) async fn agent_busy(&self, device: &AuthorizedDevice, agent: &str) -> bool {
+        let key = identity(device, agent);
+        let pin = DevicePin::from(device);
+        self.services
+            .lock()
+            .await
+            .get(&key)
+            .is_some_and(|e| e.profile_matches(&pin))
+            || self
+                .entries
+                .lock()
+                .await
+                .get(&key)
+                .is_some_and(|e| !e.task.is_finished())
+    }
+    pub(super) async fn profile_busy(&self, device: &AuthorizedDevice) -> bool {
+        let pin = DevicePin::from(device);
+        let same = |p: &DevicePin| {
+            p.origin == pin.origin
+                && p.issuer == pin.issuer
+                && p.subject == pin.subject
+                && p.owner == pin.owner
+                && p.user == pin.user
+        };
+        self.services
+            .lock()
+            .await
+            .values()
+            .any(|e| e.profile_matches(&pin))
+            || self
+                .entries
+                .lock()
+                .await
+                .values()
+                .any(|e| same(&e.device) && !e.task.is_finished())
+    }
     pub(super) async fn stop_profile(&self, device: &AuthorizedDevice) -> Result<(), RuntimeError> {
         self.drain_services(Some(&DevicePin::from(device))).await;
         let pin = DevicePin::from(device);

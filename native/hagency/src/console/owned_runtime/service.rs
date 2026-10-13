@@ -43,6 +43,14 @@ fn schedule_retry(
 }
 
 impl ServiceEntry {
+    pub(super) fn profile_matches(&self, pin: &DevicePin) -> bool {
+        self.pin.origin == pin.origin
+            && self.pin.issuer == pin.issuer
+            && self.pin.subject == pin.subject
+            && self.pin.owner == pin.owner
+            && self.pin.user == pin.user
+            && !self.task.is_finished()
+    }
     pub(super) fn cancel_now(&self) {
         self.cancel.send_replace(true);
     }
@@ -766,5 +774,49 @@ mod tests {
         let found = intents_for_device(values, "here");
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].binding_id, ALL_ROOMS);
+    }
+}
+
+#[cfg(test)]
+mod configuration_busy_tests {
+    use super::*;
+    #[tokio::test]
+    async fn model_conflict_is_agent_scoped_while_provider_conflict_is_owner_scoped() {
+        let (device, _) = super::super::super::server_login::fixture_device(
+            "http://127.0.0.1/",
+            "subject",
+            "@owner:test",
+        );
+        let manager = OwnedRuntime::default();
+        let (cancel, mut receiver) = watch::channel(false);
+        let task = tokio::spawn(async move {
+            let _ = receiver.changed().await;
+        });
+        let (_sender, health) = watch::channel(ServiceHealth::default());
+        manager.services.lock().await.insert(
+            identity(&device, "agent_y"),
+            ServiceEntry {
+                pin: DevicePin::from(&device),
+                gate: Arc::new(Mutex::new(())),
+                cancel,
+                task,
+                health,
+            },
+        );
+        assert!(
+            !manager.agent_busy(&device, "agent_x").await,
+            "an active sibling Agent must not block this Agent's saved model"
+        );
+        assert!(
+            manager.agent_busy(&device, "agent_y").await,
+            "target Agent's captured profile must be fenced"
+        );
+        assert!(
+            manager.profile_busy(&device).await,
+            "owner provider association remains blocked by any active Agent"
+        );
+        manager.stop_all().await;
+        assert!(!manager.agent_busy(&device, "agent_y").await);
+        assert!(!manager.profile_busy(&device).await);
     }
 }

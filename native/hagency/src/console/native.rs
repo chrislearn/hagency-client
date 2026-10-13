@@ -1,4 +1,5 @@
 //! Token-free native commands routed through the existing authenticated service.
+mod configuration;
 use super::*;
 use crate::owner_host::OwnerHost;
 use salvo::test::{ResponseExt, TestClient};
@@ -146,6 +147,18 @@ impl<'de> Deserialize<'de> for RoomCreationPolicy {
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Command {
+    AgentConfigurationStatus {
+        agent_id: String,
+    },
+    ExecutionEnvironment {
+        agent_id: String,
+    },
+    AgentConfiguration {
+        agent_id: String,
+        expected_generation: i64,
+        idempotency_key: String,
+        command: Box<Command>,
+    },
     AgentCommands,
     ResumeAgentCommand {
         id: String,
@@ -312,6 +325,11 @@ fn request(command: Command) -> Result<(&'static str, String, Option<Value>), Na
     let root = "/console/api";
     let mut body = None;
     let (method, path) = match command {
+        Command::AgentConfigurationStatus { .. }
+        | Command::ExecutionEnvironment { .. }
+        | Command::AgentConfiguration { .. } => {
+            return Err(failure(400, "configuration_operation_unsupported"));
+        }
         Command::LoginStatus => ("GET", "/console/server-login".into()),
         Command::Logout => ("POST", "/console/server-login/logout".into()),
         Command::BeginLogin => return Err(failure(400, "login_requires_native_context")),
@@ -628,12 +646,20 @@ struct Inner {
     cookie: Mutex<String>,
     nonce: Mutex<Option<String>>,
     calls: Mutex<()>,
+    matrix_sync: Mutex<()>,
+    configuration_stopped: std::sync::atomic::AtomicBool,
+    configuration_tasks: StdMutex<Vec<tokio::task::JoinHandle<()>>>,
     callback_task: StdMutex<Option<tokio::task::JoinHandle<()>>>,
     matrix_source: StdMutex<Option<Arc<dyn MatrixTokenSource>>>,
 }
 impl Drop for Inner {
     fn drop(&mut self) {
         self.host.console.retire();
+        if let Ok(tasks) = self.configuration_tasks.get_mut() {
+            for task in tasks.drain(..) {
+                task.abort();
+            }
+        }
         if let Ok(task) = self.callback_task.get_mut()
             && let Some(task) = task.take()
         {
@@ -647,6 +673,14 @@ impl Drop for Inner {
 pub struct NativeOwner(Arc<Inner>);
 impl NativeOwner {
     pub async fn open(state: &Path, origin: &str, owner: &str) -> Result<Self, NativeError> {
+        Self::open_inner(state, origin, owner, true).await
+    }
+    async fn open_inner(
+        state: &Path,
+        origin: &str,
+        owner: &str,
+        start_worker: bool,
+    ) -> Result<Self, NativeError> {
         let origin = server_login::origin(origin)
             .map_err(|e| failure(400, e))?
             .to_string();
@@ -705,6 +739,9 @@ impl NativeOwner {
             cookie: Mutex::new(cookie),
             nonce: Mutex::new(None),
             calls: Mutex::new(()),
+            matrix_sync: Mutex::new(()),
+            configuration_stopped: std::sync::atomic::AtomicBool::new(false),
+            configuration_tasks: StdMutex::new(Vec::new()),
             callback_task: StdMutex::new(None),
             matrix_source: StdMutex::new(None),
         }));
@@ -717,6 +754,9 @@ impl NativeOwner {
         *native.0.callback_task.lock().unwrap() = Some(task);
         // Consume any bootstrap response without exposing a grant to the caller.
         let _ = grant.take_json::<Value>().await;
+        if start_worker {
+            configuration::start(&native);
+        }
         Ok(native)
     }
     pub async fn open_with_matrix(
@@ -725,7 +765,7 @@ impl NativeOwner {
         owner: &str,
         source: Arc<dyn MatrixTokenSource>,
     ) -> Result<Self, NativeError> {
-        let native = Self::open(state, origin, owner).await?;
+        let native = Self::open_inner(state, origin, owner, false).await?;
         *native
             .0
             .matrix_source
@@ -747,6 +787,7 @@ impl NativeOwner {
         {
             Ok(cookie) => {
                 *native.0.cookie.lock().await = format!("hagency_console={cookie}");
+                configuration::start(&native);
                 Ok(native)
             }
             Err(e) => {
@@ -759,6 +800,7 @@ impl NativeOwner {
         }
     }
     async fn sync_matrix(&self) -> Result<(), NativeError> {
+        let _guard = self.0.matrix_sync.lock().await;
         let source = self
             .0
             .matrix_source
@@ -831,11 +873,33 @@ impl NativeOwner {
     }
     pub fn retire(&self) {
         self.0.host.console.retire();
+        self.0
+            .configuration_stopped
+            .store(true, std::sync::atomic::Ordering::Release);
+        if let Ok(tasks) = self.0.configuration_tasks.lock() {
+            let current = tokio::task::try_id();
+            for task in tasks.iter() {
+                if current != Some(task.id()) {
+                    task.abort();
+                }
+            }
+        }
     }
     pub async fn shutdown(&self) {
         // Fence capabilities synchronously before any awaited cleanup, including
         // a late OAuth exchange or an in-flight runtime/provider launch.
         self.retire();
+        let tasks = self
+            .0
+            .configuration_tasks
+            .lock()
+            .map(|mut tasks| std::mem::take(&mut *tasks))
+            .unwrap_or_default();
+        for task in tasks {
+            if tokio::task::try_id() != Some(task.id()) {
+                let _ = task.await;
+            }
+        }
         self.0.host.console.0.authority.revoke_all().ok();
         let login = &self.0.host.console.0.server_login;
         login.revoke_native_all().await;
@@ -897,7 +961,13 @@ impl NativeOwner {
         Ok(json!({"recoveries":results}))
     }
     pub async fn execute(&self, command: Command) -> Result<Value, NativeError> {
+        if configuration::is_wrapper(&command) {
+            return configuration::remote(self, command).await;
+        }
         let _guard = self.0.calls.lock().await;
+        self.execute_locked(command).await
+    }
+    async fn execute_locked(&self, command: Command) -> Result<Value, NativeError> {
         let matrix_managed = self
             .0
             .matrix_source
