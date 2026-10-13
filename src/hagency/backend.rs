@@ -15,7 +15,7 @@ pub(super) fn management_read(command: &Command) -> bool {
     matches!(command,
         Command::Projects | Command::ProjectRooms {..} | Command::SpaceCandidates {..}
         | Command::RoomRoster {..} | Command::Agents | Command::Bindings {..}
-        | Command::Devices | Command::AgentDetails {..}
+        | Command::Devices | Command::AgentDetails {..} | Command::AgentConfigurationStatus {..}
         | Command::AgentOwnerDirectStatus {..} | Command::ScopeServiceState {..}
         | Command::LoginStatus | Command::AgentCommands | Command::Creations | Command::Creation {..}
         | Command::Binding {action: BindingAction::Status, ..}

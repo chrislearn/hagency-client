@@ -56,6 +56,8 @@ enum Target {
     OwnerDirect,
     OwnerDirectCreated,
     ProviderModels,
+    ConfigurationStatus,
+    ExecutionEnvironment,
     WorkspacePrepared,
     ScopeChanged,
     Policy,
@@ -77,13 +79,18 @@ struct Completed {
     identity: String,
     request: u64,
     target: Target,
+    configuration_fence: Option<(String, i64, String)>,
+    configuration_digest: Option<String>,
     result: Result<Value, String>,
 }
+#[derive(Debug)]
+struct ConfigurationCompleted {identity:String,request:u64,agent:String,generation:i64,device:String,result:Result<Value,String>}
 #[derive(Debug)]
 struct ApprovalsCompleted { identity:String, request:u64, agent:String, binding:String, room:String, result:Result<Value,String> }
 
 type ServiceRowTargets = std::collections::HashMap<WidgetUid,(String,String)>;
 type AgentCardTargets = std::collections::HashMap<WidgetUid,String>;
+type ConfigurationKeys = std::collections::HashMap<String, String>;
 type RuntimeStates = std::collections::HashMap<String,Result<Value,String>>;
 #[derive(Debug)]
 struct RuntimeListCompleted { identity:String, request:u64, states:Vec<(String,Result<Value,String>)> }
@@ -165,6 +172,28 @@ fn string<'a>(v: &'a Value, key: &str) -> &'a str {
 }
 fn current_completion(active: bool, identity: &str, request: u64, done: &Completed) -> bool {
     active && done.identity == identity && done.request == request
+}
+// This whitelist is deliberately narrower than local management. Credentials and
+// Room/requester policy remain managed only on the execution device.
+fn remote_configuration_command(command: &Command) -> bool {
+    matches!(command,
+        Command::Local {action: LocalAction::AgentModel | LocalAction::AgentPolicy
+            | LocalAction::SaveAgentModel | LocalAction::SaveAgentPolicy,
+            binding_id: None, requester: None, ..}
+        | Command::PrepareAgentWorkspace {..}
+        | Command::Provider {action: ProviderAction::Status | ProviderAction::Models | ProviderAction::UseLocal}
+        | Command::RuntimeProvider {action: ProviderAction::Status | ProviderAction::Models | ProviderAction::UseLocal, ..})
+}
+fn configuration_outcome_unconfirmed(error: &str) -> bool {
+    matches!(error,"invalid_configuration_response"|"configuration_outcome_unknown"|"configuration_request_unknown"|"configuration_request_timeout"|"server_unavailable"|"device_transport_unavailable"|"matrix_authorization_unavailable")
+}
+fn configuration_connection_lost(error: &str) -> bool {
+    matches!(error,"configuration_device_offline"|"configuration_device_unavailable"|"execution_device_offline"|"configuration_target_changed"|"server_unavailable"|"device_transport_unavailable"|"matrix_authorization_unavailable"|"device_authorization_required")
+}
+fn configuration_matches(configuration: &Value, agent: &Value) -> bool {
+    configuration["agentId"] == agent["id"] && configuration["agentGeneration"] == agent["generation"]
+        && configuration["executionDeviceId"] == agent["executionDeviceId"]
+        && configuration["deviceGeneration"].as_i64().is_some_and(|generation| generation > 0)
 }
 fn policy_matches(policy: &Value, agent: &str, binding: &str, requester: &str) -> bool {
     string(policy, "agentId") == agent
@@ -326,6 +355,17 @@ fn agent_empty_message(loaded: bool, loading: bool) -> &'static str {
 fn user_error(error: &str) -> &str {
     if let Some(message) = provider_error_message(error) { return message; }
     match error {
+        "configuration_unsupported" | "unsupported_hagency_capabilities" => "This server does not support execution device configuration. Upgrade the server and execution device client, then refresh.",
+        "server_unavailable" | "configuration_local_state_unavailable" => "Could not reach execution device configuration. Check your connection and refresh.",
+        "configuration_authority_changed" | "configuration_authority_invalidated" => "Account or device authorization changed. Sign in again and reopen this Agent.",
+        "configuration_device_offline" | "execution_device_offline" | "configuration_device_unavailable" => "Execution device offline. Cached settings are read-only.",
+        "invalid_configuration_response" | "configuration_outcome_unknown" | "configuration_request_unknown" | "configuration_request_expired" | "configuration_request_timeout" => "Application result is unknown. Refresh the execution device settings before retrying; the original request is retained.",
+        "configuration_request_busy" | "configuration_runtime_busy" | "configuration_queue_full" => "The execution device is busy. Stop its active service there or wait for the current configuration request.",
+        "configuration_generation_conflict" | "configuration_assignment_changed" | "configuration_target_changed" => "Execution device assignment changed. Reopen this Agent.",
+        "configuration_model_unavailable" | "configuration_provider_unavailable" => "The selected model, profile or reasoning effort is unavailable on the execution device. Refresh its environment and choose an available option.",
+        "invalid_model_profile" | "invalid_local_model" | "workspace_not_canonical" | "workspace_root_invalid" => "The model profile or workspace is invalid on the execution device. Choose its catalog entry and an existing absolute directory, or leave the workspace empty.",
+        "invalid_local_policy" => "The execution device rejected the workspace or policy settings. Custom workspaces must be existing absolute directories; check token allowances and exact tool and directory rules.",
+        "policy_revision_conflict" | "local_revision_conflict" => "The Agent policy changed. Reload the execution device settings before saving again.",
         "agent_lease_busy"=>"The previous runtime lease is still active. Wait briefly and retry.",
         "room_join_required" => {
             "Join this Space or Room first. Discussion Rooms have independent membership."
@@ -576,6 +616,8 @@ script_mod! {
                         policy_tab := Action {text: #(crate::i18n::tr("Limits")) i18n_text: "Limits"}
                         runtime_tab := Action {text: #(crate::i18n::tr("Service")) i18n_text: "Service"}
                     }
+                    configuration_notice := Text {visible: false draw_text.color: mod.widgets.RINX_MUTED}
+                    configuration_refresh := Action {visible: false text: #(crate::i18n::tr("Refresh execution device environment")) i18n_text: "Refresh execution device environment"}
                     local_device_notice := Section {visible: false width: Fill height: Fit flow: Down spacing: 8
                         local_device_message := Text {}
                         assignment_confirm := CheckBox {text: #(crate::i18n::tr("Switching devices stops the previous lease. Its configuration is not copied. Restore this owner's complete ledger and configure resources before running here.")) i18n_text: "Switching devices stops the previous lease. Its configuration is not copied. Restore this owner's complete ledger and configure resources before running here."}
@@ -679,7 +721,7 @@ script_mod! {
                             provider_logout := Action {visible: false text: #(crate::i18n::tr("Sign out of separate Codex account")) i18n_text: "Sign out of separate Codex account"}
                         }
                         Text {text: #(crate::i18n::tr("Disconnecting here keeps your local runtime signed in.")) i18n_text: "Disconnecting here keeps your local runtime signed in." draw_text.color: mod.widgets.RINX_MUTED}
-                        Text {text: #(crate::i18n::tr("Agent workspace on this device")) i18n_text: "Agent workspace on this device"}
+                        workspace_label := Text {text: #(crate::i18n::tr("Agent workspace on this device")) i18n_text: "Agent workspace on this device"}
                         workspace := Input {empty_text: #(crate::i18n::tr("Automatic: private workspace for this Agent")) i18n_empty_text: "Automatic: private workspace for this Agent"}
                         Text {text: #(crate::i18n::tr("Leave empty to use this Agent's private workspace. Custom directories must already exist.")) i18n_text: "Leave empty to use this Agent's private workspace. Custom directories must already exist." draw_text.color: mod.widgets.RINX_MUTED}
                         prepare_workspace := Action {text: #(crate::i18n::tr("Prepare this Agent's private workspace")) i18n_text: "Prepare this Agent's private workspace"}
@@ -865,6 +907,14 @@ pub struct HagencyPanel {
     agent_pending_commands: Vec<Value>,
     #[rust]
     agent_journal_loaded: bool,
+    #[rust] configuration_status: Value,
+    #[rust] configuration_environment: Value,
+    #[rust] configuration_timer: Timer,
+    #[rust] configuration_discover: bool,
+    #[rust] configuration_feedback: String,
+    #[rust] configuration_metadata_error: String,
+    #[rust] configuration_poll_request: Option<u64>,
+    #[rust] configuration_keys: ConfigurationKeys,
     #[rust]
     execution_agent_record: Value,
     #[rust]
@@ -974,6 +1024,87 @@ impl HagencyPanel {
     fn local_agent(&self, cx: &mut Cx) -> bool {
         self.agent(cx).as_deref() == Some(string(&self.execution_agent_record, "id"))
             && agent_device_state(&self.execution_agent_record, &self.current_device_id, &self.execution_devices, self.devices_loaded) == AgentDeviceState::Here
+    }
+    fn remote_agent(&self, cx: &mut Cx) -> bool {
+        self.agent(cx).as_deref() == Some(string(&self.execution_agent_record, "id"))
+            && matches!(string(&self.execution_agent_record,"state"),"active"|"suspended"|"creating")
+            && agent_device_state(&self.execution_agent_record, &self.current_device_id, &self.execution_devices, self.devices_loaded) == AgentDeviceState::Other
+    }
+    fn configuration_online(&self) -> bool {
+        self.configuration_metadata_error.is_empty() && configuration_matches(&self.configuration_status, &self.execution_agent_record) && self.configuration_status["online"] == true
+    }
+    fn clear_configuration(&mut self, cx: &mut Cx) {
+        self.configuration_status = Value::Null;
+        self.configuration_environment = Value::Null;
+        self.configuration_discover = false;
+        self.configuration_poll_request=None;
+        self.configuration_feedback.clear();
+        self.configuration_metadata_error.clear();
+        cx.stop_timer(self.configuration_timer);
+        self.provider_models.clear(); self.runtime_efforts.clear(); self.credential_ref.clear();
+        self.provider_authenticated = false; self.provider_url = None; self.policy = Value::Null;
+        self.render_models(cx);
+        self.view.text_input(cx,ids!(workspace)).set_text(cx, "");
+        self.view.label(cx,ids!(provider_status)).set_text(cx, "");
+        self.view.label(cx,ids!(policy_usage)).set_text(cx, "");
+    }
+    fn finish_configuration_intent(&mut self, digest: Option<&String>, result: &Result<Value, String>) {
+        if let Some(digest)=digest && result.as_ref().err().is_none_or(|error|!configuration_outcome_unconfirmed(error)) {
+            self.configuration_keys.remove(digest);
+        }
+        match result {
+            Ok(_) if digest.is_some()=>self.configuration_feedback=crate::i18n::tr("Settings saved on the execution device.").into(),
+            Err(error)=> {
+                if digest.is_some() {self.configuration_feedback=visible_error(error);}
+                else {self.configuration_metadata_error=visible_error(error);}
+                if configuration_connection_lost(error) {
+                    self.configuration_status["online"]=false.into();
+                    self.configuration_status["cached"]=true.into();
+                }
+            }
+            Ok(_)=>self.configuration_metadata_error.clear(),
+        }
+    }
+    fn load_configuration(&mut self, cx: &mut Cx) {
+        let Some(agent_id) = self.agent(cx) else {return;};
+        self.configuration_poll_request=None;
+        self.configuration_discover = true;
+        self.run(cx,Target::ConfigurationStatus,Command::AgentConfigurationStatus {agent_id});
+    }
+    fn poll_configuration_status(&mut self, cx: &mut Cx) {
+        if self.busy || self.configuration_poll_request.is_some() || !self.remote_agent(cx) {self.configuration_timer=cx.start_timeout(3.0);return;}
+        let Some(agent)=self.agent(cx) else {return;};
+        let Ok(service)=Service::for_current() else {return;};
+        if service.identity()!=self.identity {return;}
+        let request=nonce();self.configuration_poll_request=Some(request);
+        let identity=self.identity.clone();
+        let generation=self.execution_agent_record["generation"].as_i64().unwrap_or(0);
+        let device=string(&self.execution_agent_record,"executionDeviceId").to_owned();
+        spawn_async_task(async move {
+            let result=service.execute(Command::AgentConfigurationStatus {agent_id:agent.clone()}).await;
+            Cx::post_action(ConfigurationCompleted {identity,request,agent,generation,device,result});
+        });
+    }
+    fn render_configuration(&self, cx: &mut Cx) {
+        let remote = self.remote_agent(cx);
+        self.view.label(cx,ids!(configuration_notice)).set_visible(cx, remote);
+        self.view.button(cx,ids!(configuration_refresh)).set_visible(cx,remote);
+        if !remote {self.view.label(cx,ids!(workspace_label)).set_text(cx,crate::i18n::tr("Agent workspace on this device"));return;}
+        let state = if !self.configuration_metadata_error.is_empty() {self.configuration_metadata_error.as_str()}
+            else if !configuration_matches(&self.configuration_status,&self.execution_agent_record) {crate::i18n::tr("Checking execution device environment…")}
+            else if self.configuration_status["online"] == true {crate::i18n::tr("Execution device online")}
+            else {crate::i18n::tr("Execution device offline. Cached settings are read-only.")};
+        let freshness = if self.configuration_status["cached"] == true {crate::i18n::tr("Cached observation")} else {crate::i18n::tr("Current observation")};
+        let timestamp = |field:&str| self.configuration_status[field].as_i64()
+            .and_then(|ms|chrono::DateTime::<chrono::Utc>::from_timestamp_millis(ms))
+            .map(|at|at.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S %:z").to_string())
+            .unwrap_or_else(||crate::i18n::tr("Not observed yet").into());
+        let text=crate::i18n::format("{device} · {state}\n{freshness}: {observed} · Last heartbeat: {heartbeat}", &[
+            ("device",self.device_badge(&self.execution_agent_record)),("state",state.into()),("freshness",freshness.into()),
+            ("observed",timestamp("observedAtMs")),("heartbeat",timestamp("lastSeenAtMs"))]);
+        let text=if self.configuration_feedback.is_empty() {text} else {format!("{text}\n{}",self.configuration_feedback)};
+        self.view.label(cx,ids!(configuration_notice)).set_text(cx,&text);
+        self.view.label(cx,ids!(workspace_label)).set_text(cx,&crate::i18n::format("Agent workspace on {device}",&[("device",self.device_badge(&self.execution_agent_record))]));
     }
     fn device_badge(&self, agent: &Value) -> String {
         let state = agent_device_state(agent, &self.current_device_id, &self.execution_devices, self.devices_loaded);
@@ -1347,6 +1478,7 @@ impl HagencyPanel {
         self.runtime_efforts.clear();
         self.runtime_resources_checked = false;
         self.runtime_resources_loading = false;
+        self.clear_configuration(cx);
         self.execution_agent_record = Value::Null;
 
         if self.direct_agent != string(&a,"id") {self.cancel_direct_retry(cx);}
@@ -1477,6 +1609,8 @@ impl HagencyPanel {
                 identity,
                 request,
                 target: Target::Members,
+                configuration_fence: None,
+                configuration_digest: None,
                 result,
             });
         });
@@ -1494,6 +1628,9 @@ impl HagencyPanel {
                 .set_enabled(cx, self.agent_journal_loaded && !self.busy);
         }
         let assigned_here = self.local_agent(cx);
+        let remote = self.remote_agent(cx);
+        let configurable = assigned_here || (remote && self.configuration_online());
+        self.render_configuration(cx);
         self.view.view(cx,ids!(runtime_start_options)).set_visible(cx,!self.runtime_room_active);
         let runtime_known=self.agent_service_state.is_object();
         let mut service_toggle=self.view.button(cx,ids!(service_toggle));
@@ -1508,20 +1645,31 @@ impl HagencyPanel {
         render_device_badge(cx, &badge, agent_device_state(&self.execution_agent_record, &self.current_device_id, &self.execution_devices, self.devices_loaded), &self.device_badge(&self.execution_agent_record));
         self.view.view(cx, ids!(local_device_notice)).set_visible(cx, !assigned_here);
         self.view.label(cx, ids!(local_device_message)).set_text(cx, if self.devices_loaded && !self.execution_agent_record.is_null() {
-            "This Agent is not handled on this device. Local settings here do not configure its other device."
+            crate::i18n::tr("Model and Agent limits configure the assigned execution device. Service controls remain on that device.")
         } else {crate::i18n::tr("Checking execution device…")});
         let assignable = self.devices_loaded && self.execution_agent_record["id"].as_str() == self.agent(cx).as_deref() && self.execution_agent_record["generation"].as_i64().is_some_and(|generation| generation > 0) && matches!(string(&self.execution_agent_record, "state"), "creating" | "active" | "suspended") && !self.current_device_id.is_empty() && self.execution_devices.iter().any(|d|string(d,"id") == self.current_device_id && d["revoked"] == false);
         self.view.button(cx, ids!(assign_current_device)).set_enabled(cx, assignable && !assigned_here && !self.busy && self.view.check_box(cx, ids!(assignment_confirm)).active(cx));
         self.view.check_box(cx, ids!(assignment_confirm)).set_visible(cx, assignable && !assigned_here);
         self.view.button(cx, ids!(assign_current_device)).set_visible(cx, assignable && !assigned_here);
-        for id in [ids!(model_tab), ids!(policy_tab), ids!(runtime_tab)] {self.view.button(cx, id).set_enabled(cx, assigned_here && !self.busy);}
+        for id in [ids!(model_tab), ids!(policy_tab)] {self.view.button(cx, id).set_enabled(cx, (assigned_here || remote) && !self.busy);}
+        self.view.button(cx,ids!(runtime_tab)).set_enabled(cx,assigned_here && !self.busy);
+        self.view.drop_down(cx,ids!(policy_layer)).set_disabled(cx,remote || self.busy);
+        self.view.button(cx,ids!(reset_policy)).set_visible(cx,!remote);
+        self.view.button(cx,ids!(configuration_refresh)).set_enabled(cx,!self.busy);
+        if remote {self.view.drop_down(cx,ids!(policy_layer)).set_selected_item(cx,0);}
+        for id in [ids!(provider_login),ids!(provider_logout),ids!(provider_cancel),ids!(provider_open),ids!(disconnect_provider)] {
+            if remote {self.view.button(cx,id).set_visible(cx,false);}
+        }
+        for id in [ids!(use_local_provider),ids!(provider_check),ids!(provider_advanced_check),ids!(refresh_models),ids!(prepare_workspace)] {
+            self.view.button(cx,id).set_enabled(cx,configurable && !self.busy);
+        }
         let runtime=self.provider_runtime(cx);
-        self.view.drop_down(cx,ids!(runtime_kind)).set_disabled(cx,self.busy || self.runtime_room_active);
-        self.view.label(cx,ids!(runtime_provider_note)).set_text(cx,crate::i18n::tr(match runtime {
+        self.view.drop_down(cx,ids!(runtime_kind)).set_disabled(cx,self.busy || self.runtime_room_active || (remote && !configurable));
+        self.view.label(cx,ids!(runtime_provider_note)).set_text(cx,crate::i18n::tr(if remote {"Connect uses the owner's provider on the execution device and affects that owner's other Agents. Sign-in and credentials stay on that device."} else {match runtime {
             "claude"=>"Claude uses its local sign-in. Sign in through Claude Code before connecting.",
             "octos"=>"Octos runs the selected local profile. Provider credentials stay in Octos; reasoning uses the profile's settings.",
             _=>"Codex uses its local sign-in or a separate account.",
-        }));
+        }}));
         let profile=&self.policy["modelProfile"];
         let current_model=self.selected(cx,ids!(model),&self.provider_models);
         let model_ready=profile["model"].as_str().is_some_and(|m|!m.is_empty())
@@ -1586,7 +1734,7 @@ impl HagencyPanel {
         for id in [ids!(save_policy), ids!(reset_policy)] {
             self.view
                 .button(cx, id)
-                .set_enabled(cx, exact && assigned_here && !self.busy);
+                .set_enabled(cx, exact && configurable && (!remote || id == ids!(save_policy)) && !self.busy);
         }
         let model_exact = agent.as_ref().is_some_and(|agent| {
             string(&self.policy, "agentId") == agent
@@ -1594,9 +1742,9 @@ impl HagencyPanel {
                 && self.policy["modelLoaded"] == true
         });
         let model_selected=self.selected(cx,ids!(model),&self.provider_models).is_some();
-        self.view.button(cx, ids!(save_model)).set_enabled(cx, assigned_here && model_exact && self.provider_authenticated && !self.credential_ref.is_empty() && model_selected && !self.runtime_efforts.is_empty() && !self.busy);
+        self.view.button(cx, ids!(save_model)).set_enabled(cx, configurable && model_exact && self.provider_authenticated && !self.credential_ref.is_empty() && model_selected && !self.runtime_efforts.is_empty() && !self.busy);
         let policy_visible = self.view.view(cx, ids!(policy_section)).visible();
-        if !assigned_here && (self.view.view(cx, ids!(model_section)).visible() || self.view.view(cx, ids!(policy_section)).visible() || self.view.view(cx, ids!(runtime_section)).visible()) {self.section(cx, ids!(setup_section));}
+        if !assigned_here && ((!remote && (self.view.view(cx, ids!(model_section)).visible() || self.view.view(cx, ids!(policy_section)).visible())) || self.view.view(cx, ids!(runtime_section)).visible()) {self.section(cx, ids!(setup_section));}
         self.view.label(cx, ids!(runtime_chat_target)).set_text(cx, crate::i18n::tr("Automatically serves all connected Rooms, including Rooms added later."));
         let room_scoped = self.view.view(cx, ids!(setup_section)).visible();
         let setup_visible = self.view.view(cx, ids!(setup_section)).visible();
@@ -1861,8 +2009,25 @@ impl HagencyPanel {
             other=>other,
         };
         let list_control = matches!(target,Target::ListService) && matches!(&command,Command::Local {agent_id,action:LocalAction::StartAgentService | LocalAction::StopAgentService,binding_id:None,requester:None,..} if self.agents.iter().any(|a|string(a,"id")==agent_id && agent_device_state(a,&self.current_device_id,&self.execution_devices,self.devices_loaded)==AgentDeviceState::Here));
-        if matches!(&command, Command::Local {..} | Command::Provider {..} | Command::RuntimeProvider {..} | Command::PrepareAgentWorkspace {..}) && !self.local_agent(cx) && !list_control {
-            self.status(cx, "This Agent is not handled on this device. Assign it here before configuring local resources.");return;
+        let remote = self.remote_agent(cx);
+        let mut configuration_fence = None;
+        let mut configuration_digest = None;
+        let command = if matches!(&command, Command::Local {..} | Command::Provider {..} | Command::RuntimeProvider {..} | Command::PrepareAgentWorkspace {..}) && !self.local_agent(cx) && !list_control {
+            if !remote || !remote_configuration_command(&command) {self.status(cx, "This action is available only on the execution device.");return;}
+            if !self.configuration_online() {self.status(cx,"Execution device offline. Cached settings are read-only.");return;}
+            let agent_id=string(&self.execution_agent_record,"id").to_owned();
+            let expected_generation=self.execution_agent_record["generation"].as_i64().unwrap_or(0);
+            configuration_fence=Some((agent_id.clone(),expected_generation,string(&self.execution_agent_record,"executionDeviceId").into()));
+            let mutation=matches!(&command,Command::Local {action:LocalAction::SaveAgentModel|LocalAction::SaveAgentPolicy,..}|Command::PrepareAgentWorkspace {..}|Command::Provider {action:ProviderAction::UseLocal}|Command::RuntimeProvider {action:ProviderAction::UseLocal,..});
+            let idempotency_key=if mutation {
+                let digest=format!("{}:{agent_id}:{expected_generation}:{}:{}:{command:?}",self.identity,string(&self.execution_agent_record,"executionDeviceId"),self.configuration_status["deviceGeneration"]);
+                configuration_digest=Some(digest.clone());
+                self.configuration_keys.entry(digest).or_insert_with(||uuid::Uuid::new_v4().to_string()).clone()
+            } else {uuid::Uuid::new_v4().to_string()};
+            Command::AgentConfiguration {agent_id,expected_generation,idempotency_key,command:Box::new(command)}
+        } else {command};
+        if matches!(&command,Command::AgentConfigurationStatus {..}|Command::ExecutionEnvironment {..}) {
+            configuration_fence=Some((string(&self.execution_agent_record,"id").into(),self.execution_agent_record["generation"].as_i64().unwrap_or(0),string(&self.execution_agent_record,"executionDeviceId").into()));
         }
         if self.busy || !self.active {
             return;
@@ -1889,25 +2054,29 @@ impl HagencyPanel {
                 self.view.label(cx,ids!(runtime_status)).set_text(cx,crate::i18n::tr(if self.runtime_pending_action==Some(true) {"Starting service. Discovering connected Rooms…"} else {"Stopping…"}));
             }
         }
+        if configuration_digest.is_some() {self.configuration_feedback=crate::i18n::tr("Applying settings on the execution device…").into();}
         self.set_busy(cx, true);
         self.sync_navigation(cx);
-        let quiet = matches!(target,Target::ListService | Target::ServiceRoomChanged) || (matches!(target,Target::Runtime) && self.agent_service_state.is_object());
-        self.status(
+        let quiet = matches!(target,Target::ListService | Target::ServiceRoomChanged | Target::ConfigurationStatus) || (matches!(target,Target::Runtime) && self.agent_service_state.is_object());
+        if !matches!(target,Target::ConfigurationStatus) {self.status(
             cx,
             if quiet {""} else {match target {
+                Target::Policy if remote && configuration_digest.is_some() => "Applying settings on the execution device…",
                 Target::Changed => "Saving changes…",
                 Target::AgentCreated => "Creating Agent…",
                 Target::AgentBound | Target::ProjectAdopted | Target::RoomAdopted => "Connecting…",
                 Target::Creation => "Checking creation…",
                 _ => "Loading…",
             }},
-        );
+        );}
         spawn_async_task(async move {
             let result = service.execute(command).await;
             Cx::post_action(Completed {
                 identity,
                 request,
                 target,
+                configuration_fence,
+                configuration_digest,
                 result,
             });
         });
@@ -2358,6 +2527,50 @@ impl HagencyPanel {
                     return;
                 }
                 if self.local_agent(cx) {self.local(cx, Target::Policy, LocalAction::AgentPolicy, None);}
+                else if self.remote_agent(cx) {self.load_configuration(cx);}
+            }
+            Target::ConfigurationStatus => {
+                let metadata=&value["configuration"];
+                if !configuration_matches(metadata,&self.execution_agent_record) {self.clear_configuration(cx);self.status(cx,"Execution device assignment changed. Reopen this Agent.");return;}
+                let was_online=configuration_matches(&self.configuration_status,&self.execution_agent_record) && self.configuration_status["online"]==true;
+                let device_changed=self.configuration_status["deviceGeneration"].is_number()
+                    && self.configuration_status["deviceGeneration"]!=metadata["deviceGeneration"];
+                let requested=std::mem::take(&mut self.configuration_discover);
+                if device_changed {
+                    let feedback=self.configuration_feedback.clone();
+                    self.clear_configuration(cx);self.configuration_feedback=feedback;
+                }
+                self.configuration_status=metadata.clone();
+                self.configuration_metadata_error.clear();
+                let discover=requested || (metadata["online"]==true && (!was_online || device_changed));
+                if discover && self.configuration_online() {
+                    if let Some(agent_id)=self.agent(cx) {self.run(cx,Target::ExecutionEnvironment,Command::ExecutionEnvironment {agent_id});}
+                } else if discover && metadata["environment"].is_object() {
+                    self.apply(cx,Target::ExecutionEnvironment,&metadata["environment"]);
+                }
+                cx.stop_timer(self.configuration_timer);self.configuration_timer=cx.start_timeout(3.0);
+                self.render_configuration(cx);
+                self.sync_navigation(cx);
+            }
+            Target::ExecutionEnvironment => {
+                if value["configuration"]["agentId"].as_str()!=self.agent(cx).as_deref() {return;}
+                self.configuration_environment=value.clone();
+                let v=&value["configuration"];
+                self.policy=json!({"agentId":v["agentId"],"scope":"agent","policies":[v["policy"]],"usage":[v["usage"]],"modelProfile":v["modelProfile"],"modelLoaded":true});
+                self.render_policy(cx);
+                let runtime=self.provider_runtime(cx);
+                if let Some(provider)=array(value,"providers").iter().find(|p|string(p,"runtime")==runtime).cloned() {
+                    self.apply(cx,Target::ProviderModels,&provider);
+                } else {
+                    self.provider_models.clear();self.runtime_efforts.clear();self.credential_ref.clear();self.provider_authenticated=false;self.render_models(cx);
+                    self.view.label(cx,ids!(provider_status)).set_text(cx,crate::i18n::tr("This runtime is unavailable on the execution device."));
+                }
+                self.render_configuration(cx);self.sync_navigation(cx);
+                // Refresh the server observation time after the execution device
+                // publishes a live environment; cached/offline reads stay inert.
+                if self.configuration_online() && let Some(agent_id)=self.agent(cx) {
+                    self.run(cx,Target::ConfigurationStatus,Command::AgentConfigurationStatus {agent_id});
+                }
             }
             Target::Policy => {
                 self.policy = if value["policy"].is_object() {
@@ -2432,6 +2645,16 @@ impl HagencyPanel {
                     cx,
                     if external && signed_in {crate::i18n::tr("Local runtime connected. Credentials remain managed by its own app.")} else if external {crate::i18n::tr("Sign in or configure profiles in the local runtime, then connect it here.")} else if shared && signed_in {crate::i18n::tr("Using your signed-in local Codex account on this device.")} else if shared {crate::i18n::tr("Local Codex is signed out. Sign in through Codex, then check the account.")} else if signed_in {crate::i18n::tr("Separate Codex account connected on this device.")} else if signing_in {crate::i18n::tr("Finish Codex sign-in in your browser, then check the account.")} else {crate::i18n::tr("Connect your own local account to run this Agent here.")},
                 );
+                if self.remote_agent(cx) {
+                    self.provider_url=None;
+                    let installation=if value["installed"]==true {crate::i18n::tr("Installed")} else {crate::i18n::tr("Not installed")};
+                    let version=value["version"].as_str().unwrap_or(crate::i18n::tr("Version unknown"));
+                    let readiness=match string(value,"state") {"ready"=>crate::i18n::tr("Ready"),"unsupported"=>crate::i18n::tr("Unsupported"),"disconnected"=>crate::i18n::tr("Disconnected"),_=>crate::i18n::tr("Unavailable")};
+                    let verified=if value["accountVerified"]==true {crate::i18n::tr("Account verified")} else {crate::i18n::tr("Account verification unavailable")};
+                    self.view.label(cx,ids!(provider_status)).set_text(cx,&format!("{installation} · {version} · {readiness} · {verified}"));
+                    self.view.label(cx,ids!(runtime_provider_note)).set_text(cx,crate::i18n::tr("Connect uses the owner's provider on the execution device and affects that owner's other Agents. Sign-in and credentials stay on that device."));
+                    for id in [ids!(provider_login),ids!(provider_logout),ids!(provider_cancel),ids!(provider_open),ids!(disconnect_provider)] {self.view.button(cx,id).set_visible(cx,false);}
+                }
                 self.render_model_advanced(cx);
             }
             Target::Runtime => {
@@ -2525,7 +2748,7 @@ impl HagencyPanel {
         self.status(cx,message);
     }
     fn local(&mut self, cx: &mut Cx, target: Target, action: LocalAction, input: Option<Value>) {
-        if !self.local_agent(cx) {self.status(cx, "This Agent is not handled on this device. Assign it here before configuring local resources.");return;}
+        if !self.local_agent(cx) && !self.remote_agent(cx) {self.status(cx, "This action is available only on the execution device.");return;}
         if matches!(
             action,
             LocalAction::AgentPolicy
@@ -2758,6 +2981,11 @@ impl Widget for HagencyPanel {
                 if !self.busy {self.local(cx,Target::Runtime,LocalAction::AgentServiceStatus,None);} else {self.runtime_list_timer=cx.start_timeout(2.0);}
             } else {self.refresh_runtime_list(cx);}
         }
+        if self.configuration_timer.is_event(event).is_some() {
+            if self.remote_agent(cx) && self.view.view(cx,ids!(agent_detail)).visible() {
+                self.poll_configuration_status(cx);
+            }
+        }
         if self.read_timer.is_event(event).is_some() {
             self.expire_read_wait(cx, std::time::Instant::now());
             return;
@@ -2776,6 +3004,19 @@ impl Widget for HagencyPanel {
             return;
         };
         for action in actions {
+            if let Some(done)=action.downcast_ref::<ConfigurationCompleted>()
+                && self.configuration_poll_request==Some(done.request) {
+                self.configuration_poll_request=None;
+                if self.busy {self.configuration_timer=cx.start_timeout(3.0);continue;}
+                if done.identity==self.identity && self.agent(cx).as_deref()==Some(done.agent.as_str())
+                    && self.execution_agent_record["generation"].as_i64()==Some(done.generation)
+                    && string(&self.execution_agent_record,"executionDeviceId")==done.device {
+                    match &done.result {
+                        Ok(value)=>self.apply(cx,Target::ConfigurationStatus,value),
+                        Err(error)=> {self.finish_configuration_intent(None,&Err(error.clone()));self.sync_navigation(cx);self.configuration_timer=cx.start_timeout(3.0);}
+                    }
+                }
+            }
             if let Some(done)=action.downcast_ref::<ApprovalsCompleted>()
                 && self.approval_poll==Some(done.request) {
                 let accepted=self.accepts_approval_poll(cx,done);
@@ -2798,6 +3039,9 @@ impl Widget for HagencyPanel {
                 && current_completion(self.active, &self.identity, self.request, done)
             {
                 self.cancel_read_wait(cx);
+                if done.configuration_fence.as_ref().is_some_and(|(agent,generation,device)|self.agent(cx).as_deref()!=Some(agent.as_str()) || self.execution_agent_record["generation"].as_i64()!=Some(*generation) || string(&self.execution_agent_record,"executionDeviceId")!=device) {
+                    self.set_busy(cx,false);self.clear_configuration(cx);continue;
+                }
                 if matches!(done.target,Target::ListService) {self.list_service_pending_agent.clear();}
                 if matches!(done.target,Target::Runtime) && self.runtime_pending_action.take().is_some() {
                     self.runtime_action_error=done.result.as_ref().err().map(|error|runtime_diagnostic(error)).unwrap_or_default();
@@ -2805,16 +3049,18 @@ impl Widget for HagencyPanel {
                 self.set_busy(cx, false);
                 self.sync_navigation(cx);
                 if matches!(done.target, Target::Agents) { self.agents_loading = false; }
+                if done.configuration_fence.is_some() {self.finish_configuration_intent(done.configuration_digest.as_ref(),&done.result);}
                 match &done.result {
                     Ok(value) => {
                         self.view.button(cx, ids!(login)).set_visible(cx, false);
-                        self.status(cx, "");
+                        if !matches!(done.target,Target::ConfigurationStatus) {self.status(cx, "");}
                         self.apply(cx, done.target, value);
                         if matches!(done.target,Target::Provider) && value["authenticated"] == true && self.view.view(cx,ids!(model_section)).visible() {
                             self.run(cx,Target::ProviderModels,Command::Provider {action:ProviderAction::Models});
                         }
                     }
                     Err(error) => {
+                        if done.configuration_fence.is_some() {self.sync_navigation(cx);}
                         if matches!(done.target,Target::ApprovalDecision) {
                             self.view.label(cx,ids!(approval_feedback)).set_text(cx,crate::i18n::tr("Decision delivery is unconfirmed. Refresh status; do not resubmit this request."));
                             self.refresh_approvals(cx);
@@ -2839,7 +3085,7 @@ impl Widget for HagencyPanel {
                         } else {
                             visible_error(error)
                         };
-                        self.status(cx, &message);
+                        if !matches!(done.target,Target::ConfigurationStatus) {self.status(cx, &message);}
                         if matches!(done.target,Target::Runtime) {
                             let current=Ok(self.agent_service_state.clone());
                             let mut summary=runtime_service_description(Some(&current),self.agent(cx).as_deref().unwrap_or(""));
@@ -3110,6 +3356,12 @@ impl Widget for HagencyPanel {
                 self.section(cx, section);
                 if section == ids!(runtime_section) {self.load_runtime_resources(cx); return;}
                 if section == ids!(policy_section) || section == ids!(model_section) {
+                    if self.remote_agent(cx) {
+                        self.view.drop_down(cx,ids!(policy_layer)).set_selected_item(cx,0);
+                        self.clear_configuration(cx);
+                        self.load_configuration(cx);
+                        return;
+                    }
                     self.policy = Value::Null;
                     let global = section == ids!(policy_section)
                         && self.view.drop_down(cx, ids!(policy_layer)).selected_item() == 0;
@@ -3168,6 +3420,7 @@ impl Widget for HagencyPanel {
             cx.action(crate::accounts::AccountAction::Reauthenticate);
             return;
         }
+        if self.view.button(cx,ids!(configuration_refresh)).clicked(actions) {self.load_configuration(cx);return;}
         if self.view.button(cx, ids!(refresh)).clicked(actions) {
             if self.page == Page::Projects {
                 self.run(cx, Target::Journal, Command::Creations);
@@ -3937,6 +4190,7 @@ impl HagencyPanelRef {
             panel.bindings.clear();
             panel.clear_approval_state(cx);panel.approval_blocked.clear();
             panel.approvals.clear();
+            panel.clear_configuration(cx);panel.configuration_keys.clear();
             panel.policy = Value::Null;
             panel.creation = None;
             panel.pending_input = None;
@@ -4079,6 +4333,98 @@ impl HagencyPanelRef {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn remote_configuration_retry_window_ends_after_confirmed_save_or_validation_failure() {
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        let mut panel=cx.with_vm(|vm| {makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);let value=script_eval!(vm,{mod.widgets.HagencyPanel {}});HagencyPanel::script_from_value(vm,value)});
+        let digest="account:a:3:model-A".to_owned();
+        let first_key=uuid::Uuid::new_v4().to_string();
+        panel.configuration_keys.insert(digest.clone(),first_key.clone());
+        panel.configuration_status=json!({"online":true,"cached":false});
+        panel.finish_configuration_intent(Some(&digest),&Err("configuration_outcome_unknown".into()));
+        assert_eq!(panel.configuration_keys[&digest],first_key,"unconfirmed saves reuse the original idempotency key");
+        assert!(panel.configuration_status["online"]==true,"unknown application result does not assert device offline");
+        panel.finish_configuration_intent(Some(&digest),&Err("invalid_configuration_response".into()));
+        assert_eq!(panel.configuration_keys[&digest],first_key,"an invalid post-save response cannot prove that no write occurred");
+        panel.finish_configuration_intent(Some(&digest),&Ok(json!({"agentId":"a"})));
+        assert!(!panel.configuration_keys.contains_key(&digest));
+        let later_key=panel.configuration_keys.entry(digest.clone()).or_insert_with(||uuid::Uuid::new_v4().to_string()).clone();
+        assert_ne!(later_key,first_key,"model A → B → A cannot replay the first A save receipt");
+        panel.finish_configuration_intent(Some(&digest),&Err("invalid_local_policy".into()));
+        assert!(!panel.configuration_keys.contains_key(&digest));
+        assert!(panel.configuration_status["online"]==true,"a validation failure leaves the execution device online");
+        let validation=panel.configuration_feedback.clone();
+        panel.finish_configuration_intent(None,&Ok(json!({"configuration":{"online":true}})));
+        assert_eq!(panel.configuration_feedback,validation,"quiet metadata reads preserve visible mutation errors");
+        panel.finish_configuration_intent(None,&Err("configuration_device_offline".into()));
+        assert!(panel.configuration_status["online"]==false);assert!(panel.configuration_status["cached"]==true);
+        assert_eq!(panel.configuration_feedback,validation);
+    }
+    #[test]
+    fn remote_configuration_allowlist_rejects_room_credentials_and_runtime_controls() {
+        let local=|action,binding_id,requester|Command::Local {agent_id:"a".into(),action,input:None,binding_id,requester};
+        for action in [LocalAction::AgentModel,LocalAction::AgentPolicy,LocalAction::SaveAgentModel,LocalAction::SaveAgentPolicy] {
+            assert!(remote_configuration_command(&local(action.clone(),None,None)));
+            assert!(!remote_configuration_command(&local(action.clone(),Some("room".into()),None)));
+            assert!(!remote_configuration_command(&local(action,None,Some("member".into()))));
+        }
+        for action in [LocalAction::Policy,LocalAction::Model,LocalAction::SavePolicy,LocalAction::ResetAgentPolicy,LocalAction::ResetPolicy,LocalAction::RuntimeStart,LocalAction::RuntimeStop,LocalAction::Approvals,LocalAction::StartAgentService,LocalAction::StopAgentService] {
+            assert!(!remote_configuration_command(&local(action,None,None)));
+        }
+        for action in [ProviderAction::Status,ProviderAction::Models,ProviderAction::UseLocal] {
+            assert!(remote_configuration_command(&Command::RuntimeProvider {runtime:"octos".into(),action}));
+        }
+        for action in [ProviderAction::Login,ProviderAction::Logout,ProviderAction::Disconnect,ProviderAction::Cancel] {
+            assert!(!remote_configuration_command(&Command::Provider {action}));
+        }
+    }
+    #[test]
+    fn remote_configuration_metadata_rejects_stale_generation_agent_and_device() {
+        let agent=json!({"id":"a","generation":3,"executionDeviceId":"A"});
+        let fresh=json!({"agentId":"a","agentGeneration":3,"executionDeviceId":"A","deviceGeneration":2});
+        assert!(configuration_matches(&fresh,&agent));
+        for (field,wrong) in [("agentId",json!("b")),("agentGeneration",json!(2)),("executionDeviceId",json!("B")),("deviceGeneration",Value::Null)] {
+            let mut stale=fresh.clone();stale[field]=wrong;
+            assert!(!configuration_matches(&stale,&agent),"{field} must bind the cached snapshot");
+        }
+    }
+    #[test]
+    fn cached_remote_environment_uses_target_catalog_and_disables_writes_and_local_controls() {
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        let mut panel=cx.with_vm(|vm| {makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);let value=script_eval!(vm,{mod.widgets.HagencyPanel {}});HagencyPanel::script_from_value(vm,value)});
+        panel.agents=vec![json!({"id":"a","generation":3,"executionDeviceId":"A","state":"active"})];
+        panel.labels(&mut cx,ids!(agents),"Select",&panel.agents,"id");panel.view.drop_down(&mut cx,ids!(agents)).set_selected_item(&mut cx,1);
+        panel.execution_agent_record=panel.agents[0].clone();panel.current_device_id="B".into();panel.devices_loaded=true;
+        panel.execution_devices=vec![json!({"id":"A","name":"Execution workstation","revoked":false}),json!({"id":"B","revoked":false})];
+        panel.section(&mut cx,ids!(model_section));
+        panel.configuration_status=json!({"agentId":"a","agentGeneration":3,"executionDeviceId":"A","deviceGeneration":1,"online":false,"cached":true,"observedAtMs":1710000000000i64,"lastSeenAtMs":1710000000001i64});
+        panel.provider_models=vec![json!({"model":"B-only"})];panel.credential_ref="B-credential".into();
+        let reference="octos-managed:shared-home:A:review";
+        let env=json!({"providers":[{"runtime":"octos","installed":true,"version":"1.2.3","versionSupported":true,"state":"ready","authenticated":true,"accountVerified":false,"credentialRef":reference,"shared":true,"models":[{"model":"A-only","credentialRef":reference,"displayName":"A profile","isDefault":true,"defaultReasoningEffort":"none","supportedReasoningEfforts":[{"reasoningEffort":"none"}]}]}],"configuration":{"agentId":"a","policy":{"revision":1,"policy":{"budget":{"limit":"Unlimited","period":"Lifetime"},"requests":"Allow","high_risk":"Deny"}},"usage":{"spent":2,"held":0},"modelProfile":{"model":"A-only","credential_ref":reference,"workspace_root":"/A/workspace","reasoning_effort":"none"}}});
+        panel.apply(&mut cx,Target::ExecutionEnvironment,&env);panel.sync_navigation(&mut cx);
+        assert_eq!(panel.provider_models.len(),1);assert_eq!(panel.provider_models[0]["model"],"A-only");assert_eq!(panel.selected_credential(&mut cx),reference);
+        assert_eq!(panel.view.text_input(&mut cx,ids!(workspace)).text(),"/A/workspace");
+        assert!(panel.view.label(&mut cx,ids!(workspace_label)).text().contains("Execution workstation"));
+        assert!(panel.view.label(&mut cx,ids!(configuration_notice)).text().contains("Cached observation"));
+        assert!(panel.view.label(&mut cx,ids!(provider_status)).text().contains("1.2.3"));
+        for id in [ids!(save_model),ids!(save_policy),ids!(prepare_workspace),ids!(use_local_provider),ids!(runtime_tab)] {
+            assert!(!panel.view.button(&mut cx,id).borrow().unwrap().enabled());
+        }
+        for id in [ids!(provider_login),ids!(provider_logout),ids!(disconnect_provider),ids!(reset_policy)] {assert!(!panel.view.button(&mut cx,id).visible());}
+        panel.configuration_status["online"]=true.into();panel.configuration_status["cached"]=false.into();panel.sync_navigation(&mut cx);
+        assert!(panel.view.button(&mut cx,ids!(save_model)).borrow().unwrap().enabled());
+        assert!(panel.view.button(&mut cx,ids!(save_policy)).borrow().unwrap().enabled());
+        let mut status=panel.configuration_status.clone();status["deviceGeneration"]=2.into();status["online"]=false.into();status["environment"]=Value::Null;
+        panel.apply(&mut cx,Target::ConfigurationStatus,&json!({"configuration":status}));
+        assert!(panel.provider_models.is_empty(),"a different execution device generation cannot display the old catalog");
+        assert!(panel.policy.is_null());assert_eq!(panel.view.text_input(&mut cx,ids!(workspace)).text(),"");
+        panel.clear_configuration(&mut cx);panel.sync_navigation(&mut cx);
+        assert!(panel.provider_models.is_empty());assert!(panel.credential_ref.is_empty());assert!(panel.policy.is_null());
+        assert!(!panel.view.button(&mut cx,ids!(save_model)).borrow().unwrap().enabled());
+        panel.finish_configuration_intent(None,&Err("unsupported_hagency_capabilities".into()));panel.sync_navigation(&mut cx);
+        assert!(panel.view.label(&mut cx,ids!(configuration_notice)).text().contains("does not support execution device configuration"));
+        assert!(!panel.view.label(&mut cx,ids!(configuration_notice)).text().contains("Checking execution device environment"));
+    }
     #[test]
     fn external_runtime_resources_restore_kind_and_exact_octos_profile() {
         let mut cx = Cx::new(Box::new(|_, _| {}));
@@ -4658,7 +5004,9 @@ mod tests {
         panel.sync_navigation(&mut cx);
         assert_eq!(panel.execution_devices.len(),3, "revoked metadata must remain available for device badges");
         assert!(panel.view.view(&mut cx, ids!(execution_badge)).label(&mut cx, ids!(device_label)).text().contains("Desktop"));
-        assert!(!panel.view.button(&mut cx, ids!(policy_tab)).borrow().unwrap().enabled());
+        assert!(panel.view.button(&mut cx, ids!(policy_tab)).borrow().unwrap().enabled(), "remote Agent policy is accessible without moving assignment");
+        assert!(panel.view.button(&mut cx, ids!(model_tab)).borrow().unwrap().enabled());
+        assert!(!panel.view.button(&mut cx, ids!(runtime_tab)).borrow().unwrap().enabled());
         assert!(!panel.view.button(&mut cx, ids!(assign_current_device)).borrow().unwrap().enabled(), "moving execution requires explicit confirmation");
         panel.view.check_box(&mut cx, ids!(assignment_confirm)).set_active(&mut cx, true, Animate::No);
         panel.sync_navigation(&mut cx);
@@ -4818,7 +5166,7 @@ mod tests {
         let (release, waiting) = tokio::sync::oneshot::channel();
         // Simulates a bootstrap already having side effects. UI expiration
         // must neither abort its cleanup nor cause an automatic second call.
-        let original = tokio::spawn(async move {waiting.await.unwrap(); Completed {identity:"same-account".into(),request,target:Target::Agents,result:Ok(json!({"agents":[]}))}});
+        let original = tokio::spawn(async move {waiting.await.unwrap(); Completed {identity:"same-account".into(),request,target:Target::Agents,configuration_fence:None,configuration_digest:None,result:Ok(json!({"agents":[]}))}});
         let before = std::time::Instant::now(); panel.arm_read_wait(&mut cx, &Command::Agents);
         let deadline = panel.read_wait.as_ref().unwrap().deadline;
         assert!(deadline >= before + std::time::Duration::from_secs(45));
@@ -5014,6 +5362,8 @@ mod tests {
             identity: "server/account/epoch1".into(),
             request: 7,
             target: Target::Changed,
+            configuration_fence: None,
+            configuration_digest: None,
             result: Ok(Value::Null),
         };
         assert!(current_completion(true, "server/account/epoch1", 7, &done));
