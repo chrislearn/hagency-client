@@ -276,6 +276,8 @@ pub(super) enum RuntimeError {
     Profile,
     #[error("shared provider account or environment unavailable")]
     Provider,
+    #[error("provider execution unavailable: {0}")]
+    Execution(&'static str),
     #[error("device transport unavailable")]
     Transport,
     #[error("the current request is no longer executable")]
@@ -300,9 +302,16 @@ pub(super) struct RuntimeStatus {
     pub host_file_tools: bool,
     pub file_replace: bool,
     pub network_tools: bool,
+    pub web_search: bool,
     pub capability_version: Option<&'static str>,
 }
 impl RuntimeStatus {
+    fn with_capabilities(self, config: &StartConfig) -> Self {
+        let mut status = self.with_host_files(config.host_files);
+        status.web_search = config.profile.web_search
+            && runtime::kind(&config.credential_ref) == runtime::Kind::Codex;
+        status
+    }
     fn with_host_files(mut self, enabled: bool) -> Self {
         self.host_file_tools = enabled;
         if enabled {
@@ -322,6 +331,7 @@ impl RuntimeStatus {
             host_file_tools: false,
             file_replace: false,
             network_tools: false,
+            web_search: false,
             capability_version: None,
         }
     }
@@ -351,8 +361,8 @@ struct BindingWork {
 }
 fn binding_work(config: StartConfig) -> (BindingWork, BindingHandle, RuntimeStatus) {
     let (cancel, receiver) = watch::channel(false);
-    let mut status = RuntimeStatus::new(&config.agent_id, "checking_provider", None)
-        .with_host_files(config.host_files);
+    let mut status =
+        RuntimeStatus::new(&config.agent_id, "checking_provider", None).with_capabilities(&config);
     status.binding_id = Some(config.binding_id.clone());
     let (sender, rx) = watch::channel(status.clone());
     (
@@ -1238,9 +1248,29 @@ fn failure_code(result: &Result<(), RuntimeError>) -> Option<&'static str> {
         Err(RuntimeError::LeaseBusy) => Some("agent_lease_busy"),
         Err(RuntimeError::Profile) => Some("profile_or_local_state_unavailable"),
         Err(RuntimeError::Provider) => Some("provider_authorization_lost"),
+        Err(RuntimeError::Execution(code)) => Some(code),
         Err(RuntimeError::LedgerRecovery) => Some("ledger_recovery_required"),
         Err(RuntimeError::ExecutionDevice) => Some("agent_execution_device_required"),
         _ => Some("device_transport_unavailable"),
+    }
+}
+fn provider_failure(stage: &'static str, error: &codex::Error) -> RuntimeError {
+    let (kind, detail) = error.diagnostic();
+    tracing::warn!(
+        stage,
+        kind,
+        detail,
+        event = error.diagnostic_event(),
+        "Local provider operation failed"
+    );
+    match error {
+        codex::Error::Profile("dedicated owner provider login required") => RuntimeError::Provider,
+        codex::Error::Profile(_) | codex::Error::Ledger(_) => RuntimeError::Profile,
+        codex::Error::Timeout => RuntimeError::Execution("codex_provider_timeout"),
+        codex::Error::Protocol(_) | codex::Error::EventScope { .. } | codex::Error::Json(_) => {
+            RuntimeError::Execution("codex_protocol_mismatch")
+        }
+        _ => RuntimeError::Execution("codex_provider_unavailable"),
     }
 }
 /// Consume stable metadata pages without retaining unbounded message/history payloads.
@@ -1395,7 +1425,7 @@ async fn acquire_for_start<T: Transport>(
             {
                 saw_busy = true;
                 let mut waiting = RuntimeStatus::new(&config.agent_id, "waiting_for_lease", None)
-                    .with_host_files(config.host_files);
+                    .with_capabilities(config);
                 waiting.binding_id = Some(config.binding_id.clone());
                 status.send_replace(waiting.clone());
                 binding_status.send_replace(waiting);
@@ -1503,10 +1533,10 @@ async fn run_host(
                     let checked=tokio::select! {biased;_=canceled(&mut work.receiver)=>Err(RuntimeError::Stopped),r=async {provider.session.initialize().await?;provider.session.verify_host_environment().await?;provider.session.require_local_account().await}=>r.map_err(|_|RuntimeError::Provider)};
                     provider.stop().await.map_err(|_|RuntimeError::Provider)?;checked?;
                     let mut ledger=local(Ledger::open_scoped(&path,&owner,&profile_id))?;
-                    let mut ready=RuntimeStatus::new(&work.config.agent_id,if models_allowed{"online_chat_only"}else{"ledger_recovery_required"},if models_allowed{None}else{Some("ledger_recovery_required")}).with_host_files(work.config.host_files);ready.binding_id=Some(work.config.binding_id.clone());work.status.send_replace(ready);
+                    let mut ready=RuntimeStatus::new(&work.config.agent_id,if models_allowed{"online_chat_only"}else{"ledger_recovery_required"},if models_allowed{None}else{Some("ledger_recovery_required")}).with_capabilities(&work.config);ready.binding_id=Some(work.config.binding_id.clone());work.status.send_replace(ready);
                     execution_loop_with_gate(&transport,&owner,&mut ledger,&work.config,&reference,&mut work.receiver,&work.status,models_allowed).await
                 }.await;
-                let mut final_status=RuntimeStatus::new(&work.config.agent_id,"stopped",failure_code(&result)).with_host_files(work.config.host_files);
+                let mut final_status=RuntimeStatus::new(&work.config.agent_id,"stopped",failure_code(&result)).with_capabilities(&work.config);
                 final_status.binding_id=Some(work.config.binding_id.clone());work.status.send_replace(final_status);
             })
         }).await
@@ -1692,7 +1722,7 @@ async fn execution_loop_with_gate<T: Transport>(
                 "ledger_recovery_required",
                 Some("ledger_recovery_required"),
             )
-            .with_host_files(config.host_files);
+            .with_capabilities(config);
             blocked.binding_id = Some(config.binding_id.clone());
             status.send_replace(blocked);
             tokio::select! {biased;_=canceled(cancel)=>return Err(RuntimeError::Stopped),_=tokio::time::sleep(Duration::from_millis(250))=>{}}
@@ -1831,6 +1861,7 @@ async fn execution_loop_with_gate<T: Transport>(
             if profile.model != config.profile.model
                 || profile.credential_ref != config.credential_ref
                 || profile.workspace_root != config.profile.cwd.to_string_lossy()
+                || profile.web_search != config.profile.web_search
             {
                 return Err(RuntimeError::Profile);
             }
@@ -1872,7 +1903,12 @@ async fn execution_loop_with_gate<T: Transport>(
                         ),
                     )
                     .await
-                    .unwrap_or(Err(RuntimeError::Profile))
+                    .unwrap_or_else(|_| {
+                        Err(provider_failure(
+                            "agent_turn_deadline",
+                            &codex::Error::Timeout,
+                        ))
+                    })
                 }
                 Err(error) => Err(error),
                 _ => Err(RuntimeError::Transport),
@@ -1881,6 +1917,7 @@ async fn execution_loop_with_gate<T: Transport>(
                 RuntimeError::Provider => "provider_authorization_lost",
                 RuntimeError::Authorization => "authorization_or_lease_lost",
                 RuntimeError::Profile => "profile_or_local_state_unavailable",
+                RuntimeError::Execution(code) => code,
                 _ => "device_transport_unavailable",
             });
             if let Some(code) = turn_error {
@@ -1954,7 +1991,7 @@ async fn execution_loop_with_gate<T: Transport>(
                 retry_reply(console, owner, ledger, lease, cancel, &record).await?;
             }
             let mut ready = RuntimeStatus::new(&config.agent_id, "online_chat_only", turn_error)
-                .with_host_files(config.host_files);
+                .with_capabilities(config);
             ready.binding_id = Some(config.binding_id.clone());
             status.send_replace(ready);
         }
@@ -2183,6 +2220,7 @@ async fn review_request<T: Transport>(
             .is_ok())
 }
 #[allow(clippy::too_many_arguments)]
+#[tracing::instrument(skip_all, fields(agent_id = %config.agent_id, binding_id = %config.binding_id, dispatch_id = %prepared.dispatch.id))]
 async fn run_turn<T: Transport>(
     transport: &T,
     lease: &LeaseRef,
@@ -2207,7 +2245,7 @@ async fn run_turn<T: Transport>(
     } else {
         None
     };
-    let mut provider = tokio::select! {biased; _=canceled(cancel)=>return Err(RuntimeError::Stopped), p=runtime::spawn_for_scope(&profile,&config.credential_ref,ledger,&scope)=>p.map_err(|_|RuntimeError::Profile)?};
+    let mut provider = tokio::select! {biased; _=canceled(cancel)=>return Err(RuntimeError::Stopped), p=runtime::spawn_for_scope(&profile,&config.credential_ref,ledger,&scope)=>p.map_err(|error|provider_failure("provider_spawn", &error))?};
     let (queue, mut receiver) = codex::approval_queue(1).map_err(|_| RuntimeError::Profile)?;
     let host = transport.approval_host();
     if config.host_files {
@@ -2291,7 +2329,7 @@ async fn run_turn<T: Transport>(
         },
         None,
     )
-    .with_host_files(config.host_files);
+    .with_capabilities(config);
     executing.binding_id = Some(config.binding_id.clone());
     status.send_replace(executing);
     let mut pre_model_cancel = cancel.clone();
@@ -2299,12 +2337,12 @@ async fn run_turn<T: Transport>(
     let (started_tx, started_rx) = tokio::sync::oneshot::channel();
     let result = tokio::select! {biased; _=canceled(cancel)=>Err(RuntimeError::Stopped), error=monitor_running(transport,lease,&prepared,permission_cancel)=>Err(error), r=async {
         let model = async {
-        provider.session.initialize().await?;
-        provider.session.verify_host_environment().await?;
-        provider.session.require_local_account().await?;
-        provider.session.open_context(ledger,&scope,&profile).await?;
+        provider.session.initialize().await.inspect_err(|error|{provider_failure("provider_initialize", error);})?;
+        provider.session.verify_host_environment().await.inspect_err(|error|{provider_failure("provider_environment", error);})?;
+        provider.session.require_local_account().await.inspect_err(|error|{provider_failure("provider_account", error);})?;
+        provider.session.open_context(ledger,&scope,&profile).await.inspect_err(|error|{provider_failure("provider_context", error);})?;
         if !fresh_running(transport,lease,&prepared.dispatch,&prepared.execution_id,&mut pre_model_cancel).await {return Err(codex::Error::Protocol("running dispatch authorization lost"));}
-        provider.session.run_with_started(ledger,owner,&scope,&prepared.execution_id,&prepared.dispatch.id,&prepared.dispatch.body,config.mode.clone(),&queue,Some(started_tx)).await
+        provider.session.run_with_started(ledger,owner,&scope,&prepared.execution_id,&prepared.dispatch.id,&prepared.dispatch.body,config.mode.clone(),&queue,Some(started_tx)).await.inspect_err(|error|{provider_failure("provider_turn", error);})
         };
         let (result, ()) = tokio::join!(model, processing_notice(transport,lease,&prepared,started_rx));
         result
@@ -2312,9 +2350,8 @@ async fn run_turn<T: Transport>(
         Ok(completed)=>Ok(Ok(completed)),
         Err(codex::Error::Ledger(hagency_agent_local::Error::Denied))=>Ok(Err("⏸️ 本次请求未获 Agent 主人的处理授权，未调用模型。")),
         Err(codex::Error::Ledger(hagency_agent_local::Error::Budget))=>Ok(Err("⏸️ 暂停处理：Token 可用额度不足，无法为本次请求预留额度。请联系 Agent 主人调整配额。本次未调用模型。")),
-        Err(codex::Error::Profile("dedicated owner provider login required"))=>Err(RuntimeError::Provider),
         Err(codex::Error::Failed)=>{provider.stop().await.map_err(|_|RuntimeError::Provider)?;return Ok(Some(Finish::Failed));},
-        Err(_)=>Err(RuntimeError::Profile),
+        Err(error)=>Err(provider_failure("agent_turn_result", &error)),
     }};
     // Dropping a running turn first seals its reservation; then kill the child.
     provider.stop().await.map_err(|_| RuntimeError::Provider)?;
@@ -2504,6 +2541,24 @@ async fn send_reply<T: Transport>(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn provider_failure_preserves_execution_category_in_runtime_status() {
+        for (error, code) in [
+            (
+                super::codex::Error::Protocol("cross-turn event"),
+                "codex_protocol_mismatch",
+            ),
+            (super::codex::Error::Unknown, "codex_provider_unavailable"),
+            (super::codex::Error::Timeout, "codex_provider_timeout"),
+            (
+                super::codex::Error::Profile("missing executable or directory"),
+                "profile_or_local_state_unavailable",
+            ),
+        ] {
+            let failure = super::provider_failure("fixture", &error);
+            assert_eq!(super::failure_code(&Err(failure)), Some(code));
+        }
+    }
 
     #[test]
     fn completion_summary_reports_this_turn_without_double_counting_subsets() {
@@ -2940,6 +2995,7 @@ mod tests {
                 model: "test-model".into(),
                 effort: "low".into(),
                 shared_auth: false,
+                web_search: true,
             },
             mode: BudgetMode::Estimated { reservation: 10 },
             credential_ref: "keychain:test".into(),
@@ -2961,6 +3017,7 @@ mod tests {
                     model: "test-model".into(),
                     workspace_root: root.to_string_lossy().into(),
                     reasoning_effort: String::new(),
+                    web_search: true,
                     credential_ref: "keychain:test".into(),
                 },
             )
@@ -3783,8 +3840,10 @@ for raw in sys.stdin:
     elif method=='initialized': pass
     elif method=='thread/name/set': reply({})
     elif method=='config/read':
-        config={'project_doc_max_bytes':0,'skills':{'include_instructions':False,'bundled':{'enabled':False}},'include_apps_instructions':False,'include_environment_context':False,'developer_instructions':'','web_search':'disabled','mcp_servers':{},'features':{}}
-        for name in ['shell_tool','unified_exec','code_mode_host','code_mode','hooks','plugins','multi_agent','multi_agent_v2','skill_search','skill_mcp_dependency_install','shell_snapshot','view_image','image_generation','apps','tool_search','tool_suggest','web_search','web_search_cached','web_search_request','standalone_web_search','memory_tool']: config['features'][name]=False
+        config={'project_doc_max_bytes':0,'skills':{'include_instructions':False,'bundled':{'enabled':False}},'include_apps_instructions':False,'include_environment_context':False,'developer_instructions':'','web_search':'live','mcp_servers':{},'features':{}}
+        for name in ['shell_tool','unified_exec','code_mode_host','code_mode','hooks','plugins','multi_agent','multi_agent_v2','skill_search','skill_mcp_dependency_install','shell_snapshot','view_image','browser_use','browser_use_external','browser_use_full_cdp_access','browser_annotation_api','computer_use','in_app_browser','goals','image_generation','apps','tool_search','tool_suggest','web_search','web_search_cached','web_search_request','standalone_web_search','memory_tool']: config['features'][name]=False
+        config['features']['standalone_web_search']=True
+        config['features']['code_mode_host']=True
         reply({'config':config})
     elif method=='account/read': reply({'requiresOpenaiAuth':True,'account':{'type':'chatgpt'}})
     elif method=='thread/start':

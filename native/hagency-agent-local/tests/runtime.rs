@@ -43,6 +43,7 @@ impl Fixture {
             }
             .into(),
             shared_auth: true,
+            web_search: true,
         };
         let primary = octos::ProfileModel {
             family: "offline".into(),

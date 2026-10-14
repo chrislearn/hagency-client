@@ -102,6 +102,30 @@ fn exact(v: &Value, keys: &[&str]) -> Result<(), NativeError> {
 struct ModelInput {
     profile: ModelProfile,
 }
+fn model_profile_shape(value: &Value) -> Result<(), NativeError> {
+    if value.get("web_search").is_some() {
+        exact(
+            value,
+            &[
+                "model",
+                "credential_ref",
+                "workspace_root",
+                "reasoning_effort",
+                "web_search",
+            ],
+        )
+    } else {
+        exact(
+            value,
+            &[
+                "model",
+                "credential_ref",
+                "workspace_root",
+                "reasoning_effort",
+            ],
+        )
+    }
+}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct PolicyInput {
@@ -115,16 +139,7 @@ fn validate_input(op: &str, input: &Value) -> Result<(), NativeError> {
         }
         "save_agent_model" => {
             exact(input, &["profile"]).is_ok()
-                && exact(
-                    &input["profile"],
-                    &[
-                        "model",
-                        "credential_ref",
-                        "workspace_root",
-                        "reasoning_effort",
-                    ],
-                )
-                .is_ok()
+                && model_profile_shape(&input["profile"]).is_ok()
                 && serde_json::from_value::<ModelInput>(input.clone()).is_ok()
         }
         "save_agent_policy" => {
@@ -569,15 +584,7 @@ fn validate_result(op: &str, v: &Value, agent: &str) -> Result<(), NativeError> 
                 return Err(invalid());
             }
             if !v["modelProfile"].is_null() {
-                exact(
-                    &v["modelProfile"],
-                    &[
-                        "model",
-                        "credential_ref",
-                        "workspace_root",
-                        "reasoning_effort",
-                    ],
-                )?;
+                model_profile_shape(&v["modelProfile"])?;
                 let _: ModelProfile =
                     serde_json::from_value(v["modelProfile"].clone()).map_err(|_| invalid())?;
             }
