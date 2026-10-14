@@ -87,6 +87,11 @@ Codex sign-in is also available; cancel/open-URL/sign-out controls apply to that
 separate account. Save a model and reasoning effort from the real catalog. A private workspace is
 created automatically; a custom workspace is optional under Advanced settings.
 
+Codex's **Live web search** is enabled by default and can be disabled in Model & resources.
+The setting belongs to this Agent and applies across its Rooms. Save, then stop and restart
+the service to apply changes. Live search retrieves current sources; local command networking
+remains separately controlled.
+
 The model/workspace belong to this Agent across its Rooms. Conversations, budgets
 and approvals stay Room-scoped. The server administrator does not approve these
 local resource choices.

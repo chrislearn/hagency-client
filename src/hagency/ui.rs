@@ -711,6 +711,10 @@ script_mod! {
                         Text {text: #(crate::i18n::tr("Reasoning effort")) i18n_text: "Reasoning effort"}
                         effort := Select {labels: [#(crate::i18n::tr("Checking model choices…"))]}
                         effort_note := Text {draw_text.color: mod.widgets.RINX_MUTED}
+                        web_search_holder := View {width: Fill height: Fit flow: Down spacing: 4
+                            web_search := CheckBox {text: #(crate::i18n::tr("Live web search")) i18n_text: "Live web search"}
+                            Text {text: #(crate::i18n::tr("Enabled by default. Save and restart the service to apply changes.")) i18n_text: "Enabled by default. Save and restart the service to apply changes." draw_text.color: mod.widgets.RINX_MUTED}
+                        }
                         refresh_models := Action {text: #(crate::i18n::tr("Refresh available models")) i18n_text: "Refresh available models"}
                         advanced_toggle := Action {text: #(crate::i18n::tr("Advanced settings")) i18n_text: "Advanced settings" spacing: 6 icon_walk: Walk{width: 12 height: 12} draw_icon.svg: ICON_CHEVRON_RIGHT}
                         advanced_settings := View {visible: false width: Fill height: Fit flow: Down spacing: 8
@@ -1178,6 +1182,8 @@ impl HagencyPanel {
         self.direct_timer=cx.start_timeout(2.0_f64.powi(i32::from(attempts.min(3))));
     }
     fn render_models(&mut self, cx:&mut Cx) {
+        let codex = self.provider_runtime(cx)=="codex";
+        self.view.view(cx,ids!(web_search_holder)).set_visible(cx,codex);
         let configured = string(&self.policy["modelProfile"],"model");
         let previous = self.selected(cx,ids!(model),&self.provider_models).map(|m|string(&m,"model").to_owned());
         let selected = self.provider_models.iter().position(|m| string(m,"model") == configured && (string(m,"credentialRef").is_empty() || string(m,"credentialRef") == string(&self.policy["modelProfile"],"credential_ref")))
@@ -2081,7 +2087,11 @@ impl HagencyPanel {
             });
         });
     }
+    fn model_save_input(&self, cx: &mut Cx, model: &Value, effort: &str) -> Value {
+        json!({"profile":{"model":model["model"],"credential_ref":self.selected_credential(cx),"workspace_root":self.input(cx,ids!(workspace)),"reasoning_effort":effort,"web_search":self.view.check_box(cx,ids!(web_search)).active(cx)}})
+    }
     fn render_policy(&self, cx: &mut Cx) {
+        self.view.check_box(cx,ids!(web_search)).set_active(cx,self.policy["modelProfile"]["web_search"].as_bool().unwrap_or(true),Animate::No);
         if self.policy["modelLoaded"] == true {
             let profile = &self.policy["modelProfile"];
             let selected=self.provider_models.iter().position(|m|string(m,"model") == string(profile,"model") && (string(m,"credentialRef").is_empty() || string(m,"credentialRef") == string(profile,"credential_ref")));
@@ -3928,7 +3938,7 @@ impl Widget for HagencyPanel {
             let Some(model)=self.selected(cx,ids!(model),&self.provider_models) else {self.status(cx,"Select a model or profile from this device's catalog.");return;};
             if !self.provider_authenticated || self.credential_ref.is_empty() {self.status(cx,"Connect your local account first.");return;}
             let Some(effort)=self.runtime_efforts.get(self.view.drop_down(cx,ids!(effort)).selected_item()).cloned() else {self.status(cx,"Select a supported reasoning effort.");return;};
-            let input = json!({"profile":{"model":model["model"],"credential_ref":self.selected_credential(cx),"workspace_root":self.input(cx,ids!(workspace)),"reasoning_effort":effort}});
+            let input = self.model_save_input(cx,&model,&effort);
             self.local(cx, Target::Policy, LocalAction::SaveAgentModel, Some(input));
             return;
         }
@@ -4333,6 +4343,21 @@ impl HagencyPanelRef {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn web_search_default_toggle_save_and_reload_use_the_agent_profile() {
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        let mut panel=cx.with_vm(|vm| {makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);let value=script_eval!(vm,{mod.widgets.HagencyPanel {}});HagencyPanel::script_from_value(vm,value)});
+        panel.policy=json!({"modelLoaded":true,"modelProfile":{"model":"probe","credential_ref":"keychain:probe","workspace_root":"/work"}});
+        panel.render_policy(&mut cx);
+        assert!(panel.view.check_box(&mut cx,ids!(web_search)).active(&mut cx));
+        panel.view.check_box(&mut cx,ids!(web_search)).set_active(&mut cx,false,Animate::No);
+        let saved=panel.model_save_input(&mut cx,&json!({"model":"probe"}),"low");
+        assert_eq!(saved["profile"]["web_search"],false);
+        panel.view.check_box(&mut cx,ids!(web_search)).set_active(&mut cx,true,Animate::No);
+        panel.policy["modelProfile"]=saved["profile"].clone();
+        panel.render_policy(&mut cx);
+        assert!(!panel.view.check_box(&mut cx,ids!(web_search)).active(&mut cx));
+    }
     #[test]
     fn remote_configuration_retry_window_ends_after_confirmed_save_or_validation_failure() {
         let mut cx=Cx::new(Box::new(|_,_|{}));

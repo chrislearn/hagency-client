@@ -1819,5 +1819,7 @@
   "The execution device rejected the workspace or policy settings. Custom workspaces must be existing absolute directories; check token allowances and exact tool and directory rules.": "执行设备拒绝了工作目录或策略设置。自定义工作目录必须是已存在的绝对目录；请检查 token 额度及工具和目录的精确规则。",
   "This server does not support execution device configuration. Upgrade the server and execution device client, then refresh.": "此服务器不支持执行设备配置。请升级服务器和执行设备客户端后刷新。",
   "Could not reach execution device configuration. Check your connection and refresh.": "无法连接执行设备配置服务。请检查网络并刷新。",
-  "Account or device authorization changed. Sign in again and reopen this Agent.": "账号或设备授权已变化。请重新登录并再次打开此 Agent。"
+  "Account or device authorization changed. Sign in again and reopen this Agent.": "账号或设备授权已变化。请重新登录并再次打开此 Agent。",
+  "Live web search": "联网搜索",
+  "Enabled by default. Save and restart the service to apply changes.": "默认开启。保存后，停止并重新启动服务使设置生效。"
 }

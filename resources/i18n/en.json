@@ -1819,5 +1819,7 @@
   "The execution device rejected the workspace or policy settings. Custom workspaces must be existing absolute directories; check token allowances and exact tool and directory rules.": "The execution device rejected the workspace or policy settings. Custom workspaces must be existing absolute directories; check token allowances and exact tool and directory rules.",
   "This server does not support execution device configuration. Upgrade the server and execution device client, then refresh.": "This server does not support execution device configuration. Upgrade the server and execution device client, then refresh.",
   "Could not reach execution device configuration. Check your connection and refresh.": "Could not reach execution device configuration. Check your connection and refresh.",
-  "Account or device authorization changed. Sign in again and reopen this Agent.": "Account or device authorization changed. Sign in again and reopen this Agent."
+  "Account or device authorization changed. Sign in again and reopen this Agent.": "Account or device authorization changed. Sign in again and reopen this Agent.",
+  "Live web search": "Live web search",
+  "Enabled by default. Save and restart the service to apply changes.": "Enabled by default. Save and restart the service to apply changes."
 }
