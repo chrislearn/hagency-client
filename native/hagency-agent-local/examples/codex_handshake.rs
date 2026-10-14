@@ -23,6 +23,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         model: "gpt-6.1-sol".into(),
         effort: "low".into(),
         shared_auth: false,
+        web_search: true,
     };
     let scope = Scope {
         agent: "handshake".into(),

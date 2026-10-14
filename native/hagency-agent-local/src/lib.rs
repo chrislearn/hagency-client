@@ -193,6 +193,11 @@ pub struct ModelProfile {
     pub workspace_root: String,
     #[serde(default)]
     pub reasoning_effort: String,
+    #[serde(default = "default_web_search")]
+    pub web_search: bool,
+}
+pub const fn default_web_search() -> bool {
+    true
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PolicyVersion {
@@ -267,6 +272,10 @@ impl Ledger {
             db.execute_batch(
                 "ALTER TABLE model_profiles ADD COLUMN reasoning_effort TEXT NOT NULL DEFAULT ''",
             )?;
+        }
+        let has_web_search: bool = db.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('model_profiles') WHERE name='web_search')", [], |r|r.get(0))?;
+        if !has_web_search {
+            db.execute_batch("ALTER TABLE model_profiles ADD COLUMN web_search INTEGER NOT NULL DEFAULT 1 CHECK(web_search IN (0,1))")?;
         }
         db.execute_batch("CREATE TABLE IF NOT EXISTS external_sessions (scope TEXT NOT NULL, profile TEXT NOT NULL, session TEXT NOT NULL, counters TEXT NOT NULL DEFAULT '', PRIMARY KEY(scope,profile))")?;
         db.execute_batch("COMMIT")?;
@@ -778,7 +787,7 @@ impl Ledger {
         {
             return Err(Error::Invalid("local credential reference or workspace"));
         }
-        self.db.execute("INSERT INTO model_profiles (agent,model,credential_ref,workspace_root,reasoning_effort) VALUES (?,?,?,?,?) ON CONFLICT(agent) DO UPDATE SET model=excluded.model,credential_ref=excluded.credential_ref,workspace_root=excluded.workspace_root,reasoning_effort=excluded.reasoning_effort",(agent,&profile.model,&profile.credential_ref,&profile.workspace_root,&profile.reasoning_effort))?;
+        self.db.execute("INSERT INTO model_profiles (agent,model,credential_ref,workspace_root,reasoning_effort,web_search) VALUES (?,?,?,?,?,?) ON CONFLICT(agent) DO UPDATE SET model=excluded.model,credential_ref=excluded.credential_ref,workspace_root=excluded.workspace_root,reasoning_effort=excluded.reasoning_effort,web_search=excluded.web_search",(agent,&profile.model,&profile.credential_ref,&profile.workspace_root,&profile.reasoning_effort,profile.web_search))?;
         Ok(())
     }
     pub fn model_profile(&self, scope: &Scope) -> Result<Option<ModelProfile>> {
@@ -794,7 +803,7 @@ impl Ledger {
         Ok(self
             .db
             .query_row(
-                "SELECT model,credential_ref,workspace_root,reasoning_effort FROM model_profiles WHERE agent=?",
+                "SELECT model,credential_ref,workspace_root,reasoning_effort,web_search FROM model_profiles WHERE agent=?",
                 [agent],
                 |r| {
                     Ok(ModelProfile {
@@ -802,6 +811,7 @@ impl Ledger {
                         credential_ref: r.get(1)?,
                         workspace_root: r.get(2)?,
                         reasoning_effort: r.get(3)?,
+                        web_search: r.get(4)?,
                     })
                 },
             )

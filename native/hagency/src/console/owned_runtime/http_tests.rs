@@ -324,8 +324,10 @@ for raw in sys.stdin:
  elif m=='initialized': pass
  elif m=='account/read': reply({'requiresOpenaiAuth':True,'account':{'type':'chatgpt'}})
  elif m=='config/read':
-  c={'project_doc_max_bytes':0,'skills':{'include_instructions':False,'bundled':{'enabled':False}},'include_apps_instructions':False,'include_environment_context':False,'developer_instructions':'','web_search':'disabled','mcp_servers':{},'features':{}}
-  for n in ['shell_tool','unified_exec','code_mode_host','code_mode','hooks','plugins','multi_agent','multi_agent_v2','skill_search','skill_mcp_dependency_install','shell_snapshot','view_image','image_generation','apps','tool_search','tool_suggest','web_search','web_search_cached','web_search_request','standalone_web_search','memory_tool']:c['features'][n]=False
+  c={'project_doc_max_bytes':0,'skills':{'include_instructions':False,'bundled':{'enabled':False}},'include_apps_instructions':False,'include_environment_context':False,'developer_instructions':'','web_search':'live','mcp_servers':{},'features':{}}
+  for n in ['shell_tool','unified_exec','code_mode_host','code_mode','hooks','plugins','multi_agent','multi_agent_v2','skill_search','skill_mcp_dependency_install','shell_snapshot','view_image','browser_use','browser_use_external','browser_use_full_cdp_access','browser_annotation_api','computer_use','in_app_browser','goals','image_generation','apps','tool_search','tool_suggest','web_search','web_search_cached','web_search_request','standalone_web_search','memory_tool']:c['features'][n]=False
+  c['features']['standalone_web_search']=True
+  c['features']['code_mode_host']=True
   reply({'config':c})
  elif m in ['thread/start','thread/resume']:
   reply({'thread':{'id':'thread-a','cwd':p['cwd']},'cwd':p['cwd'],'model':p['model'],'approvalPolicy':'untrusted','approvalsReviewer':'user','sandbox':{'type':'readOnly','networkAccess':False}})
@@ -509,6 +511,7 @@ async fn fixture_with_processing_failure(unknown: bool, budget: u64, processing_
                 credential_ref: "keychain:fixture".into(),
                 workspace_root: workspace.to_string_lossy().into(),
                 reasoning_effort: String::new(),
+                web_search: true,
             },
         )
         .unwrap();
@@ -540,6 +543,7 @@ async fn fixture_with_processing_failure(unknown: bool, budget: u64, processing_
             model: "test-model".into(),
             effort: "low".into(),
             shared_auth: false,
+            web_search: true,
         },
         mode: BudgetMode::Estimated { reservation: 10 },
         credential_ref: "keychain:fixture".into(),
@@ -753,6 +757,7 @@ async fn typed_http_runtime_intent_recovery_rechecks_scope_and_explicit_stop_sur
             model: "m".into(),
             effort: saved.effort.clone(),
             shared_auth: false,
+            web_search: true,
         },
         mode: BudgetMode::Estimated {
             reservation: saved.reservation,
@@ -875,6 +880,7 @@ async fn typed_http_runtime_intent_positive_restore_child() {
                 credential_ref: paths.credential_ref,
                 workspace_root: workspace.to_string_lossy().into(),
                 reasoning_effort: String::new(),
+                web_search: true,
             },
         )
         .unwrap();

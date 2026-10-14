@@ -143,6 +143,7 @@ fn runtime_error(e: super::owned_runtime::RuntimeError) -> OwnerError {
         LedgerRecovery => error(409, "ledger_recovery_required"),
         Profile => error(409, "runtime_profile_unavailable"),
         Provider => error(401, "provider_authorization_lost"),
+        Execution(code) => error(503, code),
         Transport => error(503, "device_transport_unavailable"),
         Request => error(409, "execution_not_running"),
         Stopped => error(409, "runtime_stopped"),
@@ -1066,6 +1067,7 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                             profile.reasoning_effort
                         },
                         shared_auth: provider.shared,
+                        web_search: profile.web_search,
                     },
                     mode: hagency_agent_local::codex::BudgetMode::Estimated {
                         reservation: input.reservation,
@@ -1205,6 +1207,7 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                             profile.reasoning_effort
                         },
                         shared_auth: provider.shared,
+                        web_search: profile.web_search,
                     },
                     mode: hagency_agent_local::codex::BudgetMode::Estimated {
                         reservation: input.reservation,

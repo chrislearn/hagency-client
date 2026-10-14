@@ -16,6 +16,7 @@ fn agent_policy_before_binding_shares_runtime_budget_and_preserves_charges() {
         credential_ref: "keychain:codex:owner".into(),
         workspace_root: tmp.path().to_str().unwrap().into(),
         reasoning_effort: String::new(),
+        web_search: true,
     };
     l.set_agent_model_profile(OWNER, "a1", &model).unwrap();
     assert!(
@@ -382,6 +383,7 @@ fn local_model_profile_contains_only_a_keychain_reference() {
         credential_ref: "raw-secret".into(),
         workspace_root: "/tmp/task".into(),
         reasoning_effort: String::new(),
+        web_search: true,
     };
     assert!(l.set_model_profile(OWNER, &s, &profile).is_err());
     profile.credential_ref = "keychain:hagency/codex/alice".into();
@@ -393,6 +395,35 @@ fn local_model_profile_contains_only_a_keychain_reference() {
     assert_eq!(reopened.model_profile(&s).unwrap(), Some(profile.clone()));
     profile.reasoning_effort = "unsupported-effort".into();
     assert!(reopened.set_model_profile(OWNER, &s, &profile).is_err());
+}
+#[test]
+fn web_search_defaults_on_and_disabled_profile_survives_restart_and_legacy_migration() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("local.db");
+    let mut ledger = setup(&path);
+    let mut profile: ModelProfile = serde_json::from_value(serde_json::json!({"model":"codex","credential_ref":"keychain:owner","workspace_root":"/tmp/task","reasoning_effort":"low"})).unwrap();
+    assert!(profile.web_search);
+    profile.web_search = false;
+    ledger.set_model_profile(OWNER, &scope(), &profile).unwrap();
+    drop(ledger);
+    let mut reopened = Ledger::open(&path, OWNER).unwrap();
+    assert_eq!(
+        reopened.model_profile(&scope()).unwrap(),
+        Some(profile.clone())
+    );
+    assert!(
+        reopened
+            .set_model_profile("@foreign:test", &scope(), &profile)
+            .is_err()
+    );
+    reopened
+        .db
+        .execute_batch("ALTER TABLE model_profiles DROP COLUMN web_search")
+        .unwrap();
+    drop(reopened);
+    let migrated = Ledger::open(&path, OWNER).unwrap();
+    profile.web_search = true;
+    assert_eq!(migrated.model_profile(&scope()).unwrap(), Some(profile));
 }
 #[test]
 fn concurrent_tool_consumers_cannot_reuse_one_confirmation() {

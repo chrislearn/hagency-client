@@ -13,7 +13,7 @@ const MAX_TEXT_BYTES: usize = 65_536;
 const MAX_RESPONSE_BYTES: usize = 40 * 1024 * 1024;
 
 /// Immutable host-only profile/device pin. No bearer or browser token is stored.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub(super) struct DeviceIdentity {
     pub(super) origin: String,
     pub(super) issuer: String,
