@@ -72,6 +72,10 @@ Project/Room 接入策略决定哪些成员可以把 Agent 接入此范围，禁
 Codex。也可使用独立 Codex 登录；取消、打开登录链接、退出独立账号对应这一模式。
 从真实模型目录选择模型，选择已有工作目录或准备 Agent 的私有目录，然后保存。
 
+Codex 的“联网搜索”（Live web search）默认开启，可在此页面关闭；该选项属于
+当前 Agent，并在它的多个 Room 间共用。保存后停止并重新启动服务，使修改生效。
+开启后使用实时网页搜索并提供来源；本地命令的网络权限仍独立受控。
+
 Claude Code 请先在本机完成登录，再连接本地账号；可选择 Sonnet、Opus、Haiku
 本地别名和支持的推理选项。Octos 请先配置本机 profile，再选择具体 profile；
 即使多个 profile 使用同一模型也分别保存，推理选项沿用 Octos profile 设置。
