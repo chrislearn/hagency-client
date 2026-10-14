@@ -85,8 +85,9 @@ jobs:
         shell: bash
         run: |
           export HAGENCY_NATIVE_CONSOLE_ASSETS="$RUNNER_TEMP/native-console-assets"
-          export HAGENCY_BROWSER_NODE="$(command -v node)"
-          export HAGENCY_BROWSER_CHROME="$(cd mockup && node -e 'process.stdout.write(require("playwright-core").chromium.executablePath())')"
+          HAGENCY_BROWSER_NODE="$(command -v node)"
+          HAGENCY_BROWSER_CHROME="$(cd mockup && node -e 'process.stdout.write(require("playwright-core").chromium.executablePath())')"
+          export HAGENCY_BROWSER_NODE HAGENCY_BROWSER_CHROME
           # Failure-path screenshots only: the browser drivers skip their
           # routine screenshots when a native executable is under test.
           export HAGENCY_CONSOLE_SCREENSHOTS="$RUNNER_TEMP/console-screenshots"
@@ -95,7 +96,15 @@ jobs:
           # OwnerHost replaces the historical Fleet browser product qualification.
           # Legacy SDK route tests remain in the full workspace suite.
           cargo test --locked -p hagency --features native-console-browser --test console native_console_rail_pages_are_shipped_and_served -- --nocapture
-          export CHROME="$HAGENCY_BROWSER_CHROME"
+          # Stub UI tests run only on this disposable hosted runner. Ubuntu's
+          # AppArmor policy blocks the downloaded Chromium's namespace sandbox.
+          # Keep this launcher separate from the product/native browser inputs.
+          cat > "$RUNNER_TEMP/hagency-ci-chromium" <<'SH'
+          #!/usr/bin/env bash
+          exec "$HAGENCY_BROWSER_CHROME" --no-sandbox "$@"
+          SH
+          chmod +x "$RUNNER_TEMP/hagency-ci-chromium"
+          export CHROME="$RUNNER_TEMP/hagency-ci-chromium"
           node mockup/scripts/check-owner-console.mjs
           node mockup/scripts/check-owner-login.mjs
           node mockup/scripts/check-owner-account-menu.mjs
