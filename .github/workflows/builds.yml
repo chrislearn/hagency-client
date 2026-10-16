@@ -46,7 +46,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/setup-hagency-client
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -95,7 +94,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/setup-hagency-client
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -120,7 +118,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/setup-hagency-client
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -147,7 +144,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/setup-hagency-client
       - name: Install Rust stable and nightly
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -199,7 +195,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/setup-hagency-client
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -236,7 +231,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/setup-hagency-client
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -276,7 +270,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/setup-hagency-client
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 

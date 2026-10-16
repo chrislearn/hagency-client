@@ -4736,6 +4736,7 @@ dependencies = [
 [[package]]
 name = "hagency"
 version = "0.1.0"
+source = "git+https://github.com/chrislearn/hagency-client.git?branch=main#39e990c8d483d6bd29b4135742f486e7b83ad137"
 dependencies = [
  "base64 0.22.1",
  "cap-fs-ext",
@@ -4772,6 +4773,7 @@ dependencies = [
 [[package]]
 name = "hagency-agent-local"
 version = "0.1.0"
+source = "git+https://github.com/chrislearn/hagency-client.git?branch=main#39e990c8d483d6bd29b4135742f486e7b83ad137"
 dependencies = [
  "getrandom 0.3.4",
  "hagency-platform",
@@ -4789,6 +4791,7 @@ dependencies = [
 [[package]]
 name = "hagency-core"
 version = "0.1.0"
+source = "git+https://github.com/chrislearn/hagency-client.git?branch=main#39e990c8d483d6bd29b4135742f486e7b83ad137"
 dependencies = [
  "regex",
  "ruma-common",
@@ -4803,6 +4806,7 @@ dependencies = [
 [[package]]
 name = "hagency-execution"
 version = "0.1.0"
+source = "git+https://github.com/chrislearn/hagency-client.git?branch=main#39e990c8d483d6bd29b4135742f486e7b83ad137"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
@@ -4825,6 +4829,7 @@ dependencies = [
 [[package]]
 name = "hagency-files"
 version = "0.1.0"
+source = "git+https://github.com/chrislearn/hagency-client.git?branch=main#39e990c8d483d6bd29b4135742f486e7b83ad137"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
@@ -4835,6 +4840,7 @@ dependencies = [
 [[package]]
 name = "hagency-matrix"
 version = "0.1.0"
+source = "git+https://github.com/chrislearn/hagency-client.git?branch=main#39e990c8d483d6bd29b4135742f486e7b83ad137"
 dependencies = [
  "getrandom 0.3.4",
  "hagency-core",
@@ -4862,6 +4868,7 @@ dependencies = [
 [[package]]
 name = "hagency-matrix-format"
 version = "0.1.0"
+source = "git+https://github.com/chrislearn/hagency-client.git?branch=main#39e990c8d483d6bd29b4135742f486e7b83ad137"
 dependencies = [
  "idna 1.1.0",
  "linkify",
@@ -4876,6 +4883,7 @@ dependencies = [
 [[package]]
 name = "hagency-media"
 version = "0.1.0"
+source = "git+https://github.com/chrislearn/hagency-client.git?branch=main#39e990c8d483d6bd29b4135742f486e7b83ad137"
 dependencies = [
  "base64 0.22.1",
  "hagency-files",
@@ -4889,6 +4897,7 @@ dependencies = [
 [[package]]
 name = "hagency-media-store"
 version = "0.1.0"
+source = "git+https://github.com/chrislearn/hagency-client.git?branch=main#39e990c8d483d6bd29b4135742f486e7b83ad137"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
@@ -4903,6 +4912,7 @@ dependencies = [
 [[package]]
 name = "hagency-metering"
 version = "0.1.0"
+source = "git+https://github.com/chrislearn/hagency-client.git?branch=main#39e990c8d483d6bd29b4135742f486e7b83ad137"
 dependencies = [
  "serde",
  "serde_json",
@@ -4913,6 +4923,7 @@ dependencies = [
 [[package]]
 name = "hagency-palpo"
 version = "0.1.0"
+source = "git+https://github.com/chrislearn/hagency-client.git?branch=main#39e990c8d483d6bd29b4135742f486e7b83ad137"
 dependencies = [
  "hagency-core",
  "hagency-store",
@@ -4928,6 +4939,7 @@ dependencies = [
 [[package]]
 name = "hagency-platform"
 version = "0.1.0"
+source = "git+https://github.com/chrislearn/hagency-client.git?branch=main#39e990c8d483d6bd29b4135742f486e7b83ad137"
 dependencies = [
  "libc",
  "rustix",
@@ -4940,6 +4952,7 @@ dependencies = [
 [[package]]
 name = "hagency-runtime"
 version = "0.1.0"
+source = "git+https://github.com/chrislearn/hagency-client.git?branch=main#39e990c8d483d6bd29b4135742f486e7b83ad137"
 dependencies = [
  "hagency-platform",
  "serde",
@@ -4953,6 +4966,7 @@ dependencies = [
 [[package]]
 name = "hagency-store"
 version = "0.1.0"
+source = "git+https://github.com/chrislearn/hagency-client.git?branch=main#39e990c8d483d6bd29b4135742f486e7b83ad137"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
@@ -10123,7 +10137,7 @@ dependencies = [
 
 [[package]]
 name = "rinx"
-version = "1.1.2"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "arboard",

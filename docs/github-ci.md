@@ -7,24 +7,14 @@ GitHub Releases at the 2026-10-10 audit.
 
 ## Source dependency
 
-Every Cargo workflow now invokes `.github/actions/setup-hagency-client` after
-checking out Desktop. It checks out `chrislearn/hagency-client` at the exact
-published commit `7da298a93f2f8d48c8f518d189b76c16f995d943`, without persisted
-credentials, and places it at the sibling path required by Cargo.toml. It refuses
-to overwrite an existing sibling tree. Review/update this pin and Desktop's
-Cargo.lock together whenever the native client API changes. It intentionally
-cannot consume unpublished changes from an operator's local sibling repository.
+Desktop depends directly on `https://github.com/chrislearn/hagency-client.git`,
+branch `main`. Cargo.lock records the exact source revision for reproducible
+`--locked` builds, including the engine's internal crates. No sibling checkout
+or CI checkout/move action is needed.
 
-Publication update: the native runtime/provider additions have now been published
-in the pinned client commit above. Desktop Cargo.lock was checked with `--locked`
-against this source. Keep future pin and lock updates synchronized; do not remove
-`--locked` or silently resolve a moving branch to hide mismatches.
-
-The pin also includes the native API migration to `/hagency/api/v1`, matching
-the server namespace and Desktop OAuth fixtures. This path-only update requires
-no Cargo.lock dependency changes; locked builds still verify that contract.
-Discovery responses rejected with 401/403 are reported as request rejections,
-so reverse-proxy configuration errors are not mislabeled as ordinary Matrix servers.
+To adopt newer engine changes, run `cargo update -p hagency`, review the lockfile
+and validate Desktop against the new revision before publishing. Do not remove
+`--locked` from verification or packaging.
 
 ## Checks and artifacts
 
