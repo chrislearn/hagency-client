@@ -342,6 +342,7 @@ Rinx runs on all major desktop and mobile platforms:
 macOS, Windows, Linux, Android, and iOS.
 """
 icons = [
+    "./resources/icon.icns",
     "./resources/icon_32.png",
     "./resources/icon_48.png",
     "./resources/icon_64.png",
