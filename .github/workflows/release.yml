@@ -225,4 +225,8 @@ jobs:
             if [[ "$TAG" == *-* ]]; then args+=(--prerelease); fi
             gh release create "$TAG" release-assets/* "${args[@]}"
           fi
-          gh release edit "$TAG" --draft=false --latest
+          if [[ "$TAG" == *-* ]]; then
+            gh release edit "$TAG" --draft=false
+          else
+            gh release edit "$TAG" --draft=false --latest
+          fi
