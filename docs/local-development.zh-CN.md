@@ -4,15 +4,9 @@
 
 ## 源码布局与构建
 
-三个仓库应位于同一父目录。Desktop 使用 client 原生 owner engine 的路径依赖，
-在实际修改的 Desktop checkout 中构建，不要从另一个副本验证：
-
-```text
-parent/
-├─ hagency-server/
-├─ hagency-client/
-└─ hagency-desktop/
-```
+Cargo 直接从 `https://github.com/chrislearn/hagency-client.git` 的 `main` 分支
+获取主人引擎，Cargo.lock 锁定具体提交，无需同级 client 源码目录。在 Desktop
+checkout 中构建：
 
 Desktop 固定 Rust 1.98.0，server 使用自己的工具链。macOS 需要 Xcode command-line
 tools 和 CMake（`brew install cmake`）；Linux 需要 CMake、Clang/libclang、OpenSSL、

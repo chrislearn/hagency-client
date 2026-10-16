@@ -4,15 +4,9 @@
 
 ## Checkout and build
 
-Keep these repositories as siblings; Desktop uses path dependencies from the
-client's native owner engine. Build from the Desktop checkout, not a copied repo:
-
-```text
-parent/
-├─ hagency-server/
-├─ hagency-client/
-└─ hagency-desktop/
-```
+Cargo fetches the owner engine directly from the `main` branch of
+`https://github.com/chrislearn/hagency-client.git`. Cargo.lock pins its exact
+revision, so a sibling client checkout is not required. Build from Desktop:
 
 The Desktop pins Rust 1.98.0; the server selects its own toolchain. On macOS,
 install Xcode command-line tools and CMake (`brew install cmake`). Linux requires
