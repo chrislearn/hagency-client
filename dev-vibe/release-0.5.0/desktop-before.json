@@ -397,5 +397,7 @@
       "version": "0.8.3",
       "title": null
     }
-  ]
+  ],
+  "lock_source_commit": "3233da33c2321bac8b60a4d1d842e8960d1ed0fb",
+  "lock_sha256": "de0d6ad67f6f0a9914bc2a46bf4ffe99deaeb699ceaba781ccaa43d2eb459a76"
 }

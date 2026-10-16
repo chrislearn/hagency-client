@@ -122,3 +122,18 @@ path when it creates a missing output directory, then changes its working
 directory before executing that relative script path. Installer commands now
 pass an absolute `--out-dir` (including signed macOS) and enable verbose script
 logs. The output remains the same dist directory.
+
+## 0.5.0 readiness (2026-10-16)
+
+The packager now uses the generated `resources/icon.icns` explicitly. The new
+`tools/check-release-icons.py` preflight catches missing/invalid icon inputs
+before expensive builds. This avoids cargo-packager 0.10.1 trying to convert a
+plain 1024px PNG into an unsupported 1x ICNS representation.
+
+Compatible transport security updates pass the main CI and all five desktop
+builds. Formal 0.5.0 publishing is on hold: the Desktop lockfile still has five
+vulnerability matches, and the independently built pinned Octos workspace lock
+has 36. These counts are not proof of reachability for every advisory. The
+[release assessment](../dev-vibe/release-0.5.0/assessment.zh.md) records the actual
+PDF/XML paths, feature boundaries, lock hashes and remaining upstream work.
+Neither cancelled installer run published a v0.5.0 tag or Release.

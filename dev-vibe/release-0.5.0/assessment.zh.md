@@ -46,3 +46,9 @@
 - [修改前主锁文件](desktop-before.json)、[补丁后主锁文件](desktop-after.json)、[独立 Octos 锁文件](bundled-octos.json)。这些是完整锁文件匹配结果，不是可利用性数量。
 - 修复提交 [主 CI](https://github.com/hagency-org/hagency-desktop/actions/runs/38837925139) 和 [五平台构建](https://github.com/hagency-org/hagency-desktop/actions/runs/38837925226) 全部通过。
 - 发布运行 [38832134391](https://github.com/hagency-org/hagency-desktop/actions/runs/38832134391)、[38837925791](https://github.com/hagency-org/hagency-desktop/actions/runs/38837925791) 已取消。正式下载入口仍是 [现有 GitHub Releases](https://github.com/hagency-org/hagency-desktop/releases)。
+
+## 本轮最终验证
+
+安全补丁提交 `7ad1b8dca67222bd8312952799b3dc397e12062a` 的 [主 CI 38842267586](https://github.com/hagency-org/hagency-desktop/actions/runs/38842267586) 和 [五平台构建 38842267688](https://github.com/hagency-org/hagency-desktop/actions/runs/38842267688) 均成功。远端 macOS 原生库 461 项通过、2 忽略；本地 Windows 456 项通过、2 忽略。翻译缺失0、主题与真实图标校验通过。机器审计快照附有被审计锁文件的源码提交和SHA-256；Octos锁与固定提交逐字节一致。
+
+未启动安全补丁版本的正式安装包发布；仍没有v0.5.0标签或公开Release。是否扩大范围升级上游以满足发布条件，以及Cloud生产上线，分别等待用户选择。
