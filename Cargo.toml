@@ -348,6 +348,7 @@ icons = [
     "./resources/icon_128.png",
     "./resources/icon_256.png",
     "./resources/icon_512.png",
+    "./resources/icon_1024.png",
     "./resources/icon.ico",
 ]
 out_dir = "./dist"

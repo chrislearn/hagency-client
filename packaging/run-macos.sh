@@ -64,7 +64,7 @@ trap 'forward_signal INT 130' INT
 trap 'forward_signal TERM 143' TERM
 trap 'forward_signal HUP 129' HUP
 
-inputs=$(/usr/bin/shasum -a 256 "$binary" "$packaging_dir/macos/Info.plist" "${BASH_SOURCE[0]}")
+inputs=$(/usr/bin/shasum -a 256 "$binary" "$packaging_dir/macos/Info.plist" "$packaging_dir/../resources/icon.icns" "${BASH_SOURCE[0]}")
 if [[ -f $binary_dir/octos ]]; then
     inputs+=$'\n'$(/usr/bin/shasum -a 256 "$binary_dir/octos")
 fi
@@ -82,12 +82,15 @@ if [[ $inputs != "$previous_inputs" || ! -f $bundle/Contents/MacOS/rinx ]]; then
     # Copy before signing: a symlink or hard link would mutate Cargo's executable.
     mkdir -p "$staging/Hagency Desktop.app/Contents/MacOS"
     cp "$binary" "$staging/Hagency Desktop.app/Contents/MacOS/rinx"
+    mkdir -p "$staging/Hagency Desktop.app/Contents/Resources"
+    cp "$packaging_dir/../resources/icon.icns" "$staging/Hagency Desktop.app/Contents/Resources/icon.icns"
     if [[ -f $binary_dir/octos ]]; then
         cp "$binary_dir/octos" "$staging/Hagency Desktop.app/Contents/MacOS/octos"
         /usr/bin/codesign --force --sign - "$staging/Hagency Desktop.app/Contents/MacOS/octos"
     fi
     cp "$packaging_dir/macos/Info.plist" "$staging/Hagency Desktop.app/Contents/Info.plist"
     plist="$staging/Hagency Desktop.app/Contents/Info.plist"
+    /usr/libexec/PlistBuddy -c 'Set :CFBundleIconFile icon.icns' "$plist"
     /usr/libexec/PlistBuddy -c 'Set :CFBundleIdentifier org.hagency.desktop.development' "$plist"
     /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName Hagency Desktop Development' "$plist"
     /usr/libexec/PlistBuddy -c 'Set :CFBundleName Hagency Desktop Development' "$plist"
