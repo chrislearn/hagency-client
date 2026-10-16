@@ -1,5 +1,7 @@
 # Hagency Desktop
 
+0.5.0 已准备但尚未正式发布：[发布检查报告](dev-vibe/release-0.5.0/assessment.zh.md) 记录了待处理的上游依赖安全项。已发布版本见 [GitHub Releases](https://github.com/hagency-org/hagency-desktop/releases)。
+
 [English](README.md) | 简体中文
 
 Hagency Desktop 是原生 Rust/Makepad 客户端，将 Matrix 聊天、Project 工作区和

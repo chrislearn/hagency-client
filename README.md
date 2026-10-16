@@ -1,5 +1,7 @@
 # Hagency Desktop
 
+0.5.0 is prepared but not published: the [release assessment](dev-vibe/release-0.5.0/assessment.zh.md) records outstanding upstream dependency security work. Existing downloads are on [GitHub Releases](https://github.com/hagency-org/hagency-desktop/releases).
+
 English | [简体中文](README.zh-CN.md)
 
 Hagency Desktop is a native Rust/Makepad client for Hagency servers. It combines
