@@ -4,9 +4,10 @@
 
 ## 源码布局与构建
 
-Cargo 直接从 `https://github.com/chrislearn/hagency-client.git` 的 `main` 分支
-获取主人引擎，Cargo.lock 锁定具体提交，无需同级 client 源码目录。在 Desktop
-checkout 中构建：
+Desktop 和主人引擎已统一到 hagency-client 工作区，使用 `../hagency` 本地路径依赖，
+并由仓库根 Cargo.lock 锁定依赖。以下命令在 `crates/hagency-desktop` 执行。
+Windows 使用仓库根 `tools/dev.ps1`，将构建产物、缓存和临时目录放到
+`D:/BuildCache/hagency-client`，详见[工作区指南](../../../docs/workspace.md)。
 
 Desktop 固定 Rust 1.98.0，server 使用自己的工具链。macOS 需要 Xcode command-line
 tools 和 CMake（`brew install cmake`）；Linux 需要 CMake、Clang/libclang、OpenSSL、
@@ -53,7 +54,7 @@ server 按[安装说明](../../hagency-server/README.zh-CN.md)与
 cargo test --locked -p rinx --lib
 cargo test --locked -p rinx home::project_tree::tests --lib -- --test-threads=1
 cargo test --locked -p rinx browser_login_tests --lib -- --test-threads=1
-cargo test --locked --manifest-path crates/article-core/Cargo.toml
+cargo test --locked --manifest-path ../article-core/Cargo.toml
 python3 tools/wechat-ux/check_i18n.py
 ```
 
