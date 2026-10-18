@@ -32,17 +32,17 @@ HTTPS transport and private SDK acceptance into a host-driven single attempt.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/src/upload.rs
-- native/hagency-matrix/src/upload/state.rs
-- native/hagency-matrix/src/upload/operation.rs
-- native/hagency-matrix/src/collector.rs
-- native/hagency-matrix/src/lib.rs
-- native/hagency-matrix/src/http.rs
-- native/hagency-matrix/src/upload_custody.rs
-- native/hagency-matrix/src/sdk/upload_custody.rs
-- native/hagency-matrix/tests/staged_upload/mod.rs
-- native/hagency-matrix/tests/staged_upload/fixture.rs
-- native/hagency-matrix/Cargo.toml
+- crates/hagency-matrix/src/upload.rs
+- crates/hagency-matrix/src/upload/state.rs
+- crates/hagency-matrix/src/upload/operation.rs
+- crates/hagency-matrix/src/collector.rs
+- crates/hagency-matrix/src/lib.rs
+- crates/hagency-matrix/src/http.rs
+- crates/hagency-matrix/src/upload_custody.rs
+- crates/hagency-matrix/src/sdk/upload_custody.rs
+- crates/hagency-matrix/tests/staged_upload/mod.rs
+- crates/hagency-matrix/tests/staged_upload/fixture.rs
+- crates/hagency-matrix/Cargo.toml
 - ./Cargo.lock
 - knowledge/decisions/adr-089-native-staged-upload-owner.md
 - specs/task-rust-staged-upload-owner.spec.md

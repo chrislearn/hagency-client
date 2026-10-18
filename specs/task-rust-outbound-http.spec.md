@@ -35,10 +35,10 @@ or domain/Matrix authorization is introduced by these transport tests.
 - ./Cargo.toml
 - ./Cargo.lock
 - .github/workflows/rust.yml
-- native/hagency-palpo/**
-- native/hagency-store/src/outbound.rs
-- native/hagency-store/src/outbound/repository.rs
-- native/hagency-store/src/outbound/tests.rs
+- crates/hagency-palpo/**
+- crates/hagency-store/src/outbound.rs
+- crates/hagency-store/src/outbound/repository.rs
+- crates/hagency-store/src/outbound/tests.rs
 - specs/task-rust-outbound-http.spec.md
 - knowledge/decisions/adr-042-native-outbound-http.md
 - docs/**

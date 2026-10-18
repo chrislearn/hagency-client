@@ -41,10 +41,10 @@ first retry.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/domain.rs
-- native/hagency-store/tests/retention_decisions.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/domain.rs
+- crates/hagency-store/tests/retention_decisions.rs
 - specs/task-rust-retention-decisions.spec.md
 - knowledge/decisions/adr-095-native-state-ownership.md
 - knowledge/decisions/adr-125-admitted-corpus-retention.md

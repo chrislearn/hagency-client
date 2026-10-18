@@ -40,18 +40,18 @@ main.rs, which was the gap.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/accounts.rs
-- native/hagency/src/console/accounts.rs
-- native/hagency/src/console.rs
-- native/hagency/src/console/authority.rs
-- native/hagency/src/console/client.rs
-- native/hagency/src/console/assets.rs
-- native/hagency/src/main.rs
-- native/hagency/tests/console/accounts.rs
-- native/hagency/tests/console.rs
-- native/hagency/tests/console/browser.rs
-- native/hagency/tests/cli.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/accounts.rs
+- crates/hagency/src/console/accounts.rs
+- crates/hagency/src/console.rs
+- crates/hagency/src/console/authority.rs
+- crates/hagency/src/console/client.rs
+- crates/hagency/src/console/assets.rs
+- crates/hagency/src/main.rs
+- crates/hagency/tests/console/accounts.rs
+- crates/hagency/tests/console.rs
+- crates/hagency/tests/console/browser.rs
+- crates/hagency/tests/cli.rs
 - mockup/lib/native-api.js
 - mockup/lib/i18n.js
 - mockup/components/NativeAccounts.jsx
@@ -62,12 +62,12 @@ main.rs, which was the gap.
 - knowledge/decisions/adr-108-native-console-resource-publication.md
 - knowledge/decisions/adr-111-native-console-resource-configuration.md
 - knowledge/decisions/adr-114-native-managed-account-binding.md
-- native/README.md
+- docs/native-engine.md
 - docs/progress.md
 
 ### Forbidden
 - Live services, live auth, credentials in tree, deployed state.
-- native/hagency-store/src/domain/accounts.rs; the CLI's offline account verb implementation (only its pair test binds here).
+- crates/hagency-store/src/domain/accounts.rs; the CLI's offline account verb implementation (only its pair test binds here).
 
 ## Acceptance Criteria
 

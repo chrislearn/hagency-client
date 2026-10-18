@@ -72,54 +72,54 @@
 | ` M` | `mockup/components/ServerLoginControl.jsx` | `0b5a12a07afcf37db9f8a35013b7a24be1b008420a252de529d93d206af9e049` |
 | ` M` | `mockup/lib/i18n.js` | `b6267ff8077566cd551714cc3ff5de2d8f5722160e3978dcada46ac4a25591a9` |
 | ` M` | `mockup/scripts/build-native-console.mjs` | `5edecea97fb23909a3e37d93410130d078b9e78f0b015d7fade535fe764e979b` |
-| ` M` | `native/hagency/Cargo.toml` | `84aabcda23815416f60fcba9c468e5e30823edd985658e47743f0f7eb12d9c78` |
-| ` M` | `native/hagency/src/console.rs` | `5d4422f1380856c10e8d2c58fde60a059b90c626e9a63c4cd9aa4ab0b1adeffd` |
-| ` M` | `native/hagency/src/console/assets.rs` | `d58e24b65274a1622ebd86d4401938d9c6300da6f7957e01b03498cf390dd4c2` |
-| ` M` | `native/hagency/src/console/authority.rs` | `f3ea9e99b6ad2e9f942e4c94a1f650f639cdc9e1d2fd19ee129f14ca31b1304a` |
-| ` M` | `native/hagency/src/console/server_login.rs` | `75a387e114401cfeae118cbd292def555257e414a274ba8d7f649ee35233ab0b` |
-| ` M` | `native/hagency/src/lib.rs` | `d8797d72093f844b0825aeca8dcd2e2577a5134f4cdc68d04995a11bff082607` |
-| ` M` | `native/hagency/src/main.rs` | `354c91152c3e330703ba620fe769f9ce66bebeda464df5322a0ff7a055d0f4c2` |
-| ` M` | `native/hagency/src/service.rs` | `d7216b7a388cebfcddd8eefeac9e6a0bfd61a4509f24e625308412a0a103bb84` |
-| ` M` | `native/hagency/tests/bootstrap.rs` | `839c8f6e57fe54f43fe6c496872b14da6335ef73b1fe58af50472d23f4db9c72` |
-| ` M` | `native/hagency/tests/bootstrap/accounts.rs` | `e4fc8c14f6ffe00e8c10475d8f08db57e3a09756237396d650e550d92422d812` |
-| ` D` | `native/hagency/tests/bootstrap/approval.rs` | `deleted` |
-| ` M` | `native/hagency/tests/bootstrap/fixture.rs` | `2bccf2e4c1858244968a2c589654a28e22269c0844f7c0d56643147c6e0de7fe` |
-| ` M` | `native/hagency/tests/bootstrap/scope.rs` | `04df328abd3886e47bedf290e33c0f6e75581cd9f8061797026c36c914feef80` |
-| ` M` | `native/hagency/tests/cli.rs` | `fdc629976fadb585677946410f27784ab907f421b208f4907b76001f1ffc2fcc` |
-| ` D` | `native/hagency/tests/configured_fleet.rs` | `deleted` |
-| ` D` | `native/hagency/tests/configured_fleet/mod.rs` | `deleted` |
-| ` M` | `native/hagency/tests/console.rs` | `4dfc8b42e4c9234de9667f8809799dd01a1bea9fc590c69816bdcbb36a663a97` |
-| ` D` | `native/hagency/tests/console/browser.rs` | `deleted` |
-| ` D` | `native/hagency/tests/console/live_actions.rs` | `deleted` |
-| ` M` | `native/hagency/tests/console/rail.rs` | `382b328ee479f2355b38524d60f8f386f0a896f90f7928ca0baf329fd25fca18` |
-| ` M` | `native/hagency/tests/console/server_login.rs` | `e3100e5594a98aad18c48807ef42c49a299a181f7565bfe6e583539f61e40436` |
-| ` D` | `native/hagency/tests/console/status_strip.rs` | `deleted` |
-| ` D` | `native/hagency/tests/file_service.rs` | `deleted` |
-| ` D` | `native/hagency/tests/file_service/fixture.rs` | `deleted` |
-| ` D` | `native/hagency/tests/file_service/recovery.rs` | `deleted` |
-| ` M` | `native/hagency/tests/inline_factory.rs` | `103d63d77c45f7fcee38b8f73d72b0145bbe91a60b2f8c3dde4a0718c49cf2ff` |
-| ` M` | `native/hagency/tests/inline_factory/mod.rs` | `34406d329d2012e7e6109d130453286af9dfc11230e1435a6a3b2da753233a4a` |
-| ` D` | `native/hagency/tests/login.rs` | `deleted` |
-| ` M` | `native/hagency/tests/mcp.rs` | `b7b515cf7abd7621151bf41d8004480de9154a6d774391f63edd6cd19762cefe` |
-| ` M` | `native/hagency/tests/mcp_coordination/fixture.rs` | `798984001938673c2ab52684b711db7474441bf396ffb264b9bd9cbded9fb51e` |
-| ` M` | `native/hagency/tests/ops.rs` | `8b575aed0fee979087321282430630086360744cb1617c223c46bf27ee42ee12` |
-| ` M` | `native/hagency/tests/owned_matrix/support.rs` | `51b852f4c92a67f251683c8447e9c30d4ecfa4a0ebd9c5d5815e5cdb78bb5b38` |
-| ` M` | `native/hagency/tests/owned_mcp.rs` | `309a0453c4d94181ff13121079a59a67eedf82801f40414396aec1ad5700d1ba` |
-| ` M` | `native/hagency/tests/palpo_service.rs` | `3f9f67bc3c6f2d68d91da68b6d6e9bb556e87e74307e049edd7adbc1511ffea1` |
-| ` M` | `native/hagency/tests/palpo_service/fixture.rs` | `baff02d8192a9ce99655823b13dd33f26aadea630696df101f12b58a154f5403` |
-| ` D` | `native/hagency/tests/received_files.rs` | `deleted` |
-| ` D` | `native/hagency/tests/received_files/fixture.rs` | `deleted` |
-| ` D` | `native/hagency/tests/received_files/recovery.rs` | `deleted` |
-| ` M` | `native/hagency/tests/release_cutover.rs` | `d87e6f1a7bb40482d5ff98906e5d27a256a7335b362a4c8f5a79251fc681132d` |
-| ` M` | `native/hagency/tests/service_launchd.rs` | `1aa4f58854c45be9adaecf7353c1650fa1126073eef12bf1497328355e9a3949` |
-| ` M` | `native/hagency/tests/service_linux.rs` | `f4af97cd6468095ca6087cd3d261544c1c984fffbe4c7a8d4d7d3df19f186cae` |
-| ` M` | `native/hagency/tests/setup.rs` | `d9955548f876fcbec589ab9865519368109a366b23df8c613b1e618e70b44a6b` |
-| ` M` | `native/hagency/tests/task_client.rs` | `5c2b4ea102881e506baba68d250232018bf3bd526d816f74542a246fb2eabb7e` |
-| ` M` | `native/hagency/tests/task_client/mcp.rs` | `6e5c82c13b76992dabc033d61f873a6edce97e99e975ad63ec4e807890f2844d` |
-| ` M` | `native/hagency/tests/warm_runtime.rs` | `1f04eb18445423fdcdd4436d1f994708893646fb1b97afd3571e7c2e53524a65` |
-| ` M` | `native/scripts/check-production-callers.mjs` | `0516762ae4d9792ea1543462ea393f0af947b616266aa3d4b15f0641a4bdfe01` |
-| ` M` | `native/scripts/check-production-callers.test.mjs` | `790fa0fe639d726369f1164058852003c99c0b80af01982d3dbea848bfc4d5a7` |
-| ` M` | `native/scripts/check-spec-bindings.mjs` | `eb36620f746faa7a27b99ad1d577885fbc0354a1835ea2dc95ad2346ac7a3e88` |
+| ` M` | `crates/hagency/Cargo.toml` | `84aabcda23815416f60fcba9c468e5e30823edd985658e47743f0f7eb12d9c78` |
+| ` M` | `crates/hagency/src/console.rs` | `5d4422f1380856c10e8d2c58fde60a059b90c626e9a63c4cd9aa4ab0b1adeffd` |
+| ` M` | `crates/hagency/src/console/assets.rs` | `d58e24b65274a1622ebd86d4401938d9c6300da6f7957e01b03498cf390dd4c2` |
+| ` M` | `crates/hagency/src/console/authority.rs` | `f3ea9e99b6ad2e9f942e4c94a1f650f639cdc9e1d2fd19ee129f14ca31b1304a` |
+| ` M` | `crates/hagency/src/console/server_login.rs` | `75a387e114401cfeae118cbd292def555257e414a274ba8d7f649ee35233ab0b` |
+| ` M` | `crates/hagency/src/lib.rs` | `d8797d72093f844b0825aeca8dcd2e2577a5134f4cdc68d04995a11bff082607` |
+| ` M` | `crates/hagency/src/main.rs` | `354c91152c3e330703ba620fe769f9ce66bebeda464df5322a0ff7a055d0f4c2` |
+| ` M` | `crates/hagency/src/service.rs` | `d7216b7a388cebfcddd8eefeac9e6a0bfd61a4509f24e625308412a0a103bb84` |
+| ` M` | `crates/hagency/tests/bootstrap.rs` | `839c8f6e57fe54f43fe6c496872b14da6335ef73b1fe58af50472d23f4db9c72` |
+| ` M` | `crates/hagency/tests/bootstrap/accounts.rs` | `e4fc8c14f6ffe00e8c10475d8f08db57e3a09756237396d650e550d92422d812` |
+| ` D` | `crates/hagency/tests/bootstrap/approval.rs` | `deleted` |
+| ` M` | `crates/hagency/tests/bootstrap/fixture.rs` | `2bccf2e4c1858244968a2c589654a28e22269c0844f7c0d56643147c6e0de7fe` |
+| ` M` | `crates/hagency/tests/bootstrap/scope.rs` | `04df328abd3886e47bedf290e33c0f6e75581cd9f8061797026c36c914feef80` |
+| ` M` | `crates/hagency/tests/cli.rs` | `fdc629976fadb585677946410f27784ab907f421b208f4907b76001f1ffc2fcc` |
+| ` D` | `crates/hagency/tests/configured_fleet.rs` | `deleted` |
+| ` D` | `crates/hagency/tests/configured_fleet/mod.rs` | `deleted` |
+| ` M` | `crates/hagency/tests/console.rs` | `4dfc8b42e4c9234de9667f8809799dd01a1bea9fc590c69816bdcbb36a663a97` |
+| ` D` | `crates/hagency/tests/console/browser.rs` | `deleted` |
+| ` D` | `crates/hagency/tests/console/live_actions.rs` | `deleted` |
+| ` M` | `crates/hagency/tests/console/rail.rs` | `382b328ee479f2355b38524d60f8f386f0a896f90f7928ca0baf329fd25fca18` |
+| ` M` | `crates/hagency/tests/console/server_login.rs` | `e3100e5594a98aad18c48807ef42c49a299a181f7565bfe6e583539f61e40436` |
+| ` D` | `crates/hagency/tests/console/status_strip.rs` | `deleted` |
+| ` D` | `crates/hagency/tests/file_service.rs` | `deleted` |
+| ` D` | `crates/hagency/tests/file_service/fixture.rs` | `deleted` |
+| ` D` | `crates/hagency/tests/file_service/recovery.rs` | `deleted` |
+| ` M` | `crates/hagency/tests/inline_factory.rs` | `103d63d77c45f7fcee38b8f73d72b0145bbe91a60b2f8c3dde4a0718c49cf2ff` |
+| ` M` | `crates/hagency/tests/inline_factory/mod.rs` | `34406d329d2012e7e6109d130453286af9dfc11230e1435a6a3b2da753233a4a` |
+| ` D` | `crates/hagency/tests/login.rs` | `deleted` |
+| ` M` | `crates/hagency/tests/mcp.rs` | `b7b515cf7abd7621151bf41d8004480de9154a6d774391f63edd6cd19762cefe` |
+| ` M` | `crates/hagency/tests/mcp_coordination/fixture.rs` | `798984001938673c2ab52684b711db7474441bf396ffb264b9bd9cbded9fb51e` |
+| ` M` | `crates/hagency/tests/ops.rs` | `8b575aed0fee979087321282430630086360744cb1617c223c46bf27ee42ee12` |
+| ` M` | `crates/hagency/tests/owned_matrix/support.rs` | `51b852f4c92a67f251683c8447e9c30d4ecfa4a0ebd9c5d5815e5cdb78bb5b38` |
+| ` M` | `crates/hagency/tests/owned_mcp.rs` | `309a0453c4d94181ff13121079a59a67eedf82801f40414396aec1ad5700d1ba` |
+| ` M` | `crates/hagency/tests/palpo_service.rs` | `3f9f67bc3c6f2d68d91da68b6d6e9bb556e87e74307e049edd7adbc1511ffea1` |
+| ` M` | `crates/hagency/tests/palpo_service/fixture.rs` | `baff02d8192a9ce99655823b13dd33f26aadea630696df101f12b58a154f5403` |
+| ` D` | `crates/hagency/tests/received_files.rs` | `deleted` |
+| ` D` | `crates/hagency/tests/received_files/fixture.rs` | `deleted` |
+| ` D` | `crates/hagency/tests/received_files/recovery.rs` | `deleted` |
+| ` M` | `crates/hagency/tests/release_cutover.rs` | `d87e6f1a7bb40482d5ff98906e5d27a256a7335b362a4c8f5a79251fc681132d` |
+| ` M` | `crates/hagency/tests/service_launchd.rs` | `1aa4f58854c45be9adaecf7353c1650fa1126073eef12bf1497328355e9a3949` |
+| ` M` | `crates/hagency/tests/service_linux.rs` | `f4af97cd6468095ca6087cd3d261544c1c984fffbe4c7a8d4d7d3df19f186cae` |
+| ` M` | `crates/hagency/tests/setup.rs` | `d9955548f876fcbec589ab9865519368109a366b23df8c613b1e618e70b44a6b` |
+| ` M` | `crates/hagency/tests/task_client.rs` | `5c2b4ea102881e506baba68d250232018bf3bd526d816f74542a246fb2eabb7e` |
+| ` M` | `crates/hagency/tests/task_client/mcp.rs` | `6e5c82c13b76992dabc033d61f873a6edce97e99e975ad63ec4e807890f2844d` |
+| ` M` | `crates/hagency/tests/warm_runtime.rs` | `1f04eb18445423fdcdd4436d1f994708893646fb1b97afd3571e7c2e53524a65` |
+| ` M` | `tools/native/check-production-callers.mjs` | `0516762ae4d9792ea1543462ea393f0af947b616266aa3d4b15f0641a4bdfe01` |
+| ` M` | `tools/native/check-production-callers.test.mjs` | `790fa0fe639d726369f1164058852003c99c0b80af01982d3dbea848bfc4d5a7` |
+| ` M` | `tools/native/check-spec-bindings.mjs` | `eb36620f746faa7a27b99ad1d577885fbc0354a1835ea2dc95ad2346ac7a3e88` |
 | ` M` | `specs/task-rust-attempt-containment.spec.md` | `19ea8047db3029ecd848776ab0c8873901c03ae14dc6b04aaecbabdd5eb80ab2` |
 | ` M` | `specs/task-rust-bridge-never-decides.spec.md` | `3c35e1ed563c823694be33d3a424f32b7f5ede1eec5d2bc9b58fabda1ed0b953` |
 | ` M` | `specs/task-rust-codex-approvals.spec.md` | `addb662cd1c422dda2f2e7258e45babeb8c73b9eee91ac6cee3edf3219e199c3` |
@@ -190,34 +190,34 @@
 | `??` | `mockup/scripts/check-owner-console.mjs` | `28ee22e763dae415a0a28787bea157c34e2b6a49b6b7191651cb4638d518e173` |
 | `??` | `mockup/scripts/check-owner-login.mjs` | `9e7b46965a26136cf549fd7bc4ee30301e63540b183a4c63f78afd804df1c2ff` |
 | `??` | `mockup/scripts/check-owner-projects.mjs` | `5dc209237d5df75567a4916356af8722f3a37b9d627959117a023814614624fb` |
-| `??` | `native/hagency-agent-local/Cargo.toml` | `3757b06697f215a4a883e6de097a4525fc9e6edf6f885f043b8b31106e64a466` |
-| `??` | `native/hagency-agent-local/README.md` | `5fd9578c32376b6a231bdda02925a4502a79bd5dca226a0a7b35eb4789181c38` |
-| `??` | `native/hagency-agent-local/examples/codex_handshake.rs` | `772db6c084695b84c9c067e3a996120957e313e2b33da700f29d4d4ec5036b78` |
-| `??` | `native/hagency-agent-local/examples/codex_host_files_handshake.rs` | `681688272bdbe47b39cc06f0961cb56370123c511d3ba1d422d30f2e9a91d0a0` |
-| `??` | `native/hagency-agent-local/src/codex.rs` | `6c88449457c828a7cb4d2882d02fc900820882e0ed5cafb03143d7d079e5c3b2` |
-| `??` | `native/hagency-agent-local/src/codex/host_files.rs` | `d14a57a55faba25c88dfe10da68d9d7340273468184ee0992d7ac3a47d00d139` |
-| `??` | `native/hagency-agent-local/src/inbox.rs` | `aac3dbd8ddc3858160c1ba6cc4477dbe70739f356c1bf86f419ca0f4dc9c9032` |
-| `??` | `native/hagency-agent-local/src/inbox/tests.rs` | `f02d95986d583321edc9f73ca525546c86ae096682c97af90cd9edbc4af8ad2c` |
-| `??` | `native/hagency-agent-local/src/lib.rs` | `a8d2a8156609380cb4fa4db6a06a334f12e3613f9ac528e71277f7d424fd7540` |
-| `??` | `native/hagency-agent-local/src/room_files.rs` | `16b8a51db4538d7d0261cde23637a0ea05707a82aab9adfd5744217b7a3f0fcf` |
-| `??` | `native/hagency-agent-local/src/room_files/tests.rs` | `7ac45fb1734bf495edcdf6285121b8d5aac2efd78d7b71b869da20f60626e4f8` |
-| `??` | `native/hagency-agent-local/src/schema.sql` | `ca2206370aafafc1958ceccf0d2944591440c1eb3f5e7a33f5631cedbc4cde37` |
-| `??` | `native/hagency-agent-local/src/tests.rs` | `13a66aaa307d296060f95c28ee5cc9815d5f67e637dbcdad0d637811251852c9` |
-| `??` | `native/hagency/README.md` | `92b0b75cc0aee43620dd06b2b1b24a230784308f8370c2e2fd11359dc8d6f925` |
-| `??` | `native/hagency/README.zh-CN.md` | `408b2026a590589a78e346c5f50db222231b2869ac631db2e08527786fbb0914` |
-| `??` | `native/hagency/src/console/device_execution.rs` | `6d3ce815c09460f7e7fcfa7d2fafb90e988eda710552bd4e09e6ee2c412d44b2` |
-| `??` | `native/hagency/src/console/owned_agents.rs` | `f591d56a1db1e518df8e5b1a0bcca31d26efc65a8b2e171b8f47044412990395` |
-| `??` | `native/hagency/src/console/owned_runtime.rs` | `3f1af92e86e0c9179f5e20f3ff5eee4ebb555073cfb0d52468f395c67a3683a2` |
-| `??` | `native/hagency/src/console/owner_projects.rs` | `b928871289a4826b746f35fc5d2287f880899624fca07f77d96966e5dfe8f28d` |
-| `??` | `native/hagency/src/console/owner_provider.rs` | `ee487cf8467284d7d19bf52dacf486a0be776e1b0aa81590ac56150a2e54db15` |
-| `??` | `native/hagency/src/console/server_login/matrix_creations.rs` | `a3839a2a6d86e56bae35111e3d5eb1fd09f4b3b2a7474305f71a8104077f0eb3` |
-| `??` | `native/hagency/src/console/server_login/matrix_creations/tests.rs` | `edf2abd9f9b304af7134acfb776f8ec089cd4a6531e0243933bc4124f8db9a10` |
-| `??` | `native/hagency/src/console/server_login/profiles.rs` | `46df2258c37170b6e42d38f93198729837a7264d8847ae8bcd9fc97c9a6470cf` |
-| `??` | `native/hagency/src/owner_host.rs` | `7da633a24c7c798cdf31e24c231ee06118790209161b7f1e73779b6d8829a5ab` |
-| `??` | `native/hagency/tests/fixtures/sdk_mcp_test_peer.rs` | `b959edfb0a16bb1bf5d796d37367a957e2569c82d1dd5cafeaef24eece943b9d` |
-| `??` | `native/hagency/tests/owner_cli/mod.rs` | `ab5997647eddafde741a3a5912735ef25d5e3b734e171bb26da1d1b43074a49d` |
-| `??` | `native/hagency/tests/release_state/mod.rs` | `716bb0e12fbcc01b0bdaefbfa4fce9e34b92bc72c3433ebed054fa32dc8d3c53` |
-| `??` | `native/scripts/check-spec-bindings.test.mjs` | `8eba74b75e5863b6d6b154c8de9f4a2f25f719a54f5506840999c9268e6c14b7` |
+| `??` | `crates/hagency-agent-local/Cargo.toml` | `3757b06697f215a4a883e6de097a4525fc9e6edf6f885f043b8b31106e64a466` |
+| `??` | `crates/hagency-agent-local/README.md` | `5fd9578c32376b6a231bdda02925a4502a79bd5dca226a0a7b35eb4789181c38` |
+| `??` | `crates/hagency-agent-local/examples/codex_handshake.rs` | `772db6c084695b84c9c067e3a996120957e313e2b33da700f29d4d4ec5036b78` |
+| `??` | `crates/hagency-agent-local/examples/codex_host_files_handshake.rs` | `681688272bdbe47b39cc06f0961cb56370123c511d3ba1d422d30f2e9a91d0a0` |
+| `??` | `crates/hagency-agent-local/src/codex.rs` | `6c88449457c828a7cb4d2882d02fc900820882e0ed5cafb03143d7d079e5c3b2` |
+| `??` | `crates/hagency-agent-local/src/codex/host_files.rs` | `d14a57a55faba25c88dfe10da68d9d7340273468184ee0992d7ac3a47d00d139` |
+| `??` | `crates/hagency-agent-local/src/inbox.rs` | `aac3dbd8ddc3858160c1ba6cc4477dbe70739f356c1bf86f419ca0f4dc9c9032` |
+| `??` | `crates/hagency-agent-local/src/inbox/tests.rs` | `f02d95986d583321edc9f73ca525546c86ae096682c97af90cd9edbc4af8ad2c` |
+| `??` | `crates/hagency-agent-local/src/lib.rs` | `a8d2a8156609380cb4fa4db6a06a334f12e3613f9ac528e71277f7d424fd7540` |
+| `??` | `crates/hagency-agent-local/src/room_files.rs` | `16b8a51db4538d7d0261cde23637a0ea05707a82aab9adfd5744217b7a3f0fcf` |
+| `??` | `crates/hagency-agent-local/src/room_files/tests.rs` | `7ac45fb1734bf495edcdf6285121b8d5aac2efd78d7b71b869da20f60626e4f8` |
+| `??` | `crates/hagency-agent-local/src/schema.sql` | `ca2206370aafafc1958ceccf0d2944591440c1eb3f5e7a33f5631cedbc4cde37` |
+| `??` | `crates/hagency-agent-local/src/tests.rs` | `13a66aaa307d296060f95c28ee5cc9815d5f67e637dbcdad0d637811251852c9` |
+| `??` | `crates/hagency/README.md` | `92b0b75cc0aee43620dd06b2b1b24a230784308f8370c2e2fd11359dc8d6f925` |
+| `??` | `crates/hagency/README.zh-CN.md` | `408b2026a590589a78e346c5f50db222231b2869ac631db2e08527786fbb0914` |
+| `??` | `crates/hagency/src/console/device_execution.rs` | `6d3ce815c09460f7e7fcfa7d2fafb90e988eda710552bd4e09e6ee2c412d44b2` |
+| `??` | `crates/hagency/src/console/owned_agents.rs` | `f591d56a1db1e518df8e5b1a0bcca31d26efc65a8b2e171b8f47044412990395` |
+| `??` | `crates/hagency/src/console/owned_runtime.rs` | `3f1af92e86e0c9179f5e20f3ff5eee4ebb555073cfb0d52468f395c67a3683a2` |
+| `??` | `crates/hagency/src/console/owner_projects.rs` | `b928871289a4826b746f35fc5d2287f880899624fca07f77d96966e5dfe8f28d` |
+| `??` | `crates/hagency/src/console/owner_provider.rs` | `ee487cf8467284d7d19bf52dacf486a0be776e1b0aa81590ac56150a2e54db15` |
+| `??` | `crates/hagency/src/console/server_login/matrix_creations.rs` | `a3839a2a6d86e56bae35111e3d5eb1fd09f4b3b2a7474305f71a8104077f0eb3` |
+| `??` | `crates/hagency/src/console/server_login/matrix_creations/tests.rs` | `edf2abd9f9b304af7134acfb776f8ec089cd4a6531e0243933bc4124f8db9a10` |
+| `??` | `crates/hagency/src/console/server_login/profiles.rs` | `46df2258c37170b6e42d38f93198729837a7264d8847ae8bcd9fc97c9a6470cf` |
+| `??` | `crates/hagency/src/owner_host.rs` | `7da633a24c7c798cdf31e24c231ee06118790209161b7f1e73779b6d8829a5ab` |
+| `??` | `crates/hagency/tests/fixtures/sdk_mcp_test_peer.rs` | `b959edfb0a16bb1bf5d796d37367a957e2569c82d1dd5cafeaef24eece943b9d` |
+| `??` | `crates/hagency/tests/owner_cli/mod.rs` | `ab5997647eddafde741a3a5912735ef25d5e3b734e171bb26da1d1b43074a49d` |
+| `??` | `crates/hagency/tests/release_state/mod.rs` | `716bb0e12fbcc01b0bdaefbfa4fce9e34b92bc72c3433ebed054fa32dc8d3c53` |
+| `??` | `tools/native/check-spec-bindings.test.mjs` | `8eba74b75e5863b6d6b154c8de9f4a2f25f719a54f5506840999c9268e6c14b7` |
 | `??` | `specs/native-bootstrap-sdk.spec.md` | `f9ac46c5d61037b8904e5463ce85ead8fb52db93ce981a6bc7f95c7dee5d2c20` |
 | `??` | `specs/native-owner-client.spec.md` | `32c15ed209f29d2ab2c493860a8ddd36cc6a25100b36887e640552a21aceff1e` |
 | `??` | `specs/native-setup-sdk.spec.md` | `d203ec400519d8c052e96b4f8906eb490d58591a7565354c5bc6e6cd0ae5b2f9` |

@@ -2,6 +2,16 @@
 
 # Hagency 客户端
 
+原生 Desktop 与本地 Agent 引擎现由本仓库统一维护。所有 Rust package 位于
+`crates/`，桌面程序在 [`crates/hagency-desktop`](crates/hagency-desktop/README.md)，
+Cargo package 和二进制名暂保留 `rinx`，通过本地路径依赖同仓库引擎。
+原 `hagency-org/hagency-desktop` 仓库仅保留历史源码和安装包。
+
+Windows 使用 `./tools/dev.ps1` 运行桌面程序，或使用
+`./tools/dev.ps1 check --locked -p rinx --lib` 检查。脚本把构建产物、Cargo/npm 缓存
+及构建临时文件直接定位到 `D:/BuildCache/hagency-client`，并核对实际输出目录。
+完整结构和命令见[工作区指南](docs/workspace.md)。现有 CLI 的浏览器 Owner 控制台继续保留。
+
 使用自己的本地 Codex，为 Matrix Room 中的 agent 处理请求。你通过 Pasion 用
 **自己的 Matrix 账号**登录；`hagency-server` 创建傀儡账号并记录永久主人。本地客户端
 控制模型凭据、额度、发言者策略和工具权限；服务器管理员只控制成员是否有权及在何处
@@ -97,7 +107,7 @@ export PATH="$PWD/target/release:$PATH"
 不等于启动生产 OwnerHost。开发时 start/serve 可加 `--console-assets /绝对路径/owner-console`；
 安装用户服务需使用嵌入正确控制台的二进制。缺少 owner 控制台会明确报错，不回退旧资源。
 
-[可执行程序说明](native/hagency/README.zh-CN.md)列出当前命令边界，
+[可执行程序说明](crates/hagency/README.zh-CN.md)列出当前命令边界，
 [实施报告](docs/design/2026-10-07-server-appservice-client-refactor.zh-CN.md)记录重构决策。
 保留的 Fleet/Engagement/资源审批设计及旧架构指南属于历史实现，不能作为当前程序的接入
 操作指南。

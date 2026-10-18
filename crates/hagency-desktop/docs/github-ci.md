@@ -1,20 +1,17 @@
 # GitHub CI and desktop installers
 
 The repository inherited Rinx workflows. Before this repair, main CI failed to
-find `../hagency-client/native/hagency`, and the inherited release required a
+find `../hagency-client/crates/hagency`, and the inherited release required a
 RINX_RELEASE token and Apple signing configuration. There were no Hagency
 GitHub Releases at the 2026-10-10 audit.
 
 ## Source dependency
 
-Desktop depends directly on `https://github.com/chrislearn/hagency-client.git`,
-branch `main`. Cargo.lock records the exact source revision for reproducible
-`--locked` builds, including the engine's internal crates. No sibling checkout
-or CI checkout/move action is needed.
-
-To adopt newer engine changes, run `cargo update -p hagency`, review the lockfile
-and validate Desktop against the new revision before publishing. Do not remove
-`--locked` from verification or packaging.
+Desktop and the owner engine now live in the hagency-client workspace.
+The `hagency` dependency resolves to `../hagency`; the repository root Cargo.lock
+is the single dependency lock. Engine and UI changes are validated together.
+Keep `--locked` in verification and packaging. Current workflows live at the
+repository root as `desktop-main.yml`, `desktop-builds.yml` and `desktop-release.yml`.
 
 ## Checks and artifacts
 
@@ -134,6 +131,6 @@ Compatible transport security updates pass the main CI and all five desktop
 builds. Formal 0.5.0 publishing is on hold: the Desktop lockfile still has five
 vulnerability matches, and the independently built pinned Octos workspace lock
 has 36. These counts are not proof of reachability for every advisory. The
-[release assessment](../dev-vibe/release-0.5.0/assessment.zh.md) records the actual
+[release assessment](../../../dev-vibe/desktop/release-0.5.0/assessment.zh.md) records the actual
 PDF/XML paths, feature boundaries, lock hashes and remaining upstream work.
 Neither cancelled installer run published a v0.5.0 tag or Release.

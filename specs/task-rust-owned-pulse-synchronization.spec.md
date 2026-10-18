@@ -27,8 +27,8 @@ closure fixture without changing runtime deadlines or custody guarantees.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-runtime/tests/owned.rs
-- native/hagency-runtime/src/bin/hagency-runtime-probe.rs
+- crates/hagency-runtime/tests/owned.rs
+- crates/hagency-runtime/src/bin/hagency-runtime-probe.rs
 - specs/task-rust-owned-pulse-synchronization.spec.md
 - docs/progress.md
 - docs/agent-knowledge.md

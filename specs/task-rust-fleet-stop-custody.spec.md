@@ -32,7 +32,7 @@ positive settlement obligation; it does not redefine full migration completion.
 
 ## Allowed changes
 
-- native/hagency/src/bootstrap/driver.rs
+- crates/hagency/src/bootstrap/driver.rs
 - specs/task-rust-development-bootstrap.spec.md
 - this spec
 - knowledge/decisions/adr-130-native-agent-lifecycle-authority.md

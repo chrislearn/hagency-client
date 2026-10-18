@@ -39,31 +39,31 @@ its original Started workspace before a child or MCP request can begin.
 
 ### Allowed Changes
 - ./Cargo.lock
-- native/hagency/Cargo.toml
-- native/hagency/src/main.rs
-- native/hagency/src/lib.rs
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/bootstrap/config.rs
-- native/hagency/src/bootstrap/driver.rs
-- native/hagency/src/bootstrap/workspace.rs
-- native/hagency/tests/bootstrap.rs
-- native/hagency/tests/bootstrap/fixture.rs
-- native/hagency/tests/bootstrap/scope.rs
-- native/hagency/tests/fixtures/owned_mcp_peer.rs
-- native/hagency/tests/cli.rs
-- native/hagency/tests/http.rs
-- native/hagency-execution/src/lib.rs
-- native/hagency-execution/src/operation.rs
-- native/hagency-execution/src/registration.rs
-- native/hagency-execution/tests/owned.rs
-- native/hagency-execution/tests/owned/registration.rs
-- native/hagency-execution/tests/support/reply_loss.rs
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/src/domain/execution.rs
-- native/hagency-store/src/domain/owned_dispatch.rs
-- native/hagency-store/tests/owned_claim.rs
+- crates/hagency/Cargo.toml
+- crates/hagency/src/main.rs
+- crates/hagency/src/lib.rs
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/bootstrap/config.rs
+- crates/hagency/src/bootstrap/driver.rs
+- crates/hagency/src/bootstrap/workspace.rs
+- crates/hagency/tests/bootstrap.rs
+- crates/hagency/tests/bootstrap/fixture.rs
+- crates/hagency/tests/bootstrap/scope.rs
+- crates/hagency/tests/fixtures/owned_mcp_peer.rs
+- crates/hagency/tests/cli.rs
+- crates/hagency/tests/http.rs
+- crates/hagency-execution/src/lib.rs
+- crates/hagency-execution/src/operation.rs
+- crates/hagency-execution/src/registration.rs
+- crates/hagency-execution/tests/owned.rs
+- crates/hagency-execution/tests/owned/registration.rs
+- crates/hagency-execution/tests/support/reply_loss.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/src/domain/execution.rs
+- crates/hagency-store/src/domain/owned_dispatch.rs
+- crates/hagency-store/tests/owned_claim.rs
 - knowledge/decisions/adr-096-native-development-bootstrap.md
 - specs/task-rust-development-bootstrap.spec.md
 - docs/progress.md
@@ -94,7 +94,7 @@ Scenario: Compatible claiming preserves exact route workspace resource and after
   Level: integration
   Test Double: actual SQLite writer queue transaction locks and mixed queued dispatches
   Test: native_owned_claim_profile
-  Targets: native/hagency-store/src/domain.rs
+  Targets: crates/hagency-store/src/domain.rs
   Given unsupported runtime shared workspace Done follow-up recovery-report stale and supported verified dispatches sharing the queue
   When the host profile claims using its original writer
   Then only current compatible canonical work can receive a new capability and exclusive lease

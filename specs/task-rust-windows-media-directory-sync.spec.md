@@ -32,17 +32,17 @@ opening while preserving unconfirmed inspection and exact retained custody.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/private.rs
-- native/hagency-store/src/private/windows_directory.rs
-- native/hagency-store/src/private/windows_directory/tests.rs
-- native/hagency-store/Cargo.toml
-- native/hagency-media-store/src/lib.rs
-- native/hagency-media-store/src/tests.rs
-- native/hagency-media-store/Cargo.toml
-- native/hagency-media-store/examples/windows_directory_flush.rs
-- native/hagency-media-store/examples/windows_directory_flush/handles.rs
-- native/hagency-media-store/examples/windows_directory_flush/token.rs
-- native/hagency-media-store/examples/windows_directory_flush/fixture.rs
+- crates/hagency-store/src/private.rs
+- crates/hagency-store/src/private/windows_directory.rs
+- crates/hagency-store/src/private/windows_directory/tests.rs
+- crates/hagency-store/Cargo.toml
+- crates/hagency-media-store/src/lib.rs
+- crates/hagency-media-store/src/tests.rs
+- crates/hagency-media-store/Cargo.toml
+- crates/hagency-media-store/examples/windows_directory_flush.rs
+- crates/hagency-media-store/examples/windows_directory_flush/handles.rs
+- crates/hagency-media-store/examples/windows_directory_flush/token.rs
+- crates/hagency-media-store/examples/windows_directory_flush/fixture.rs
 - ./Cargo.lock
 - .github/workflows/rust.yml
 - knowledge/decisions/adr-104-native-windows-directory-sync.md

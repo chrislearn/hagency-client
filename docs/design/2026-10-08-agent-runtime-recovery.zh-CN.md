@@ -16,7 +16,7 @@
 
 模型、workspace、Codex 登录和真实能力目录须已保存且仍有效；不猜默认模型/目录/effort，不为恢复创建第二次 Codex 登录，不把缺资源显示为在线。原已选择参数仍受当前能力检查，失败应显示明确恢复原因，不能永久 Loading。
 
-本轮源码涉及 `native/hagency/src/console/owned_runtime.rs` 中运行意图持久化、设备筛选与 Stop 删除，以及 Native facade 和 Desktop backend 的当前身份恢复调用。生产已冻结；最终 build/test 日志见下文。专项测试不与全量结果重复计数。
+本轮源码涉及 `crates/hagency/src/console/owned_runtime.rs` 中运行意图持久化、设备筛选与 Stop 删除，以及 Native facade 和 Desktop backend 的当前身份恢复调用。生产已冻结；最终 build/test 日志见下文。专项测试不与全量结果重复计数。
 
 ## 队列、费用与未知结果
 

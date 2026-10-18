@@ -51,18 +51,18 @@ ownership, Applied/Active/routes, either deployment profile or live qualificatio
 
 ## Allowed changes
 
-- native/hagency-store/src/task_context.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/src/domain/owned_dispatch.rs
-- native/hagency-store/tests/task_context.rs
-- native/hagency-execution/src/host.rs
-- native/hagency-execution/src/operation.rs
-- native/hagency-runtime/src/codex/session/driver.rs
-- native/hagency-runtime/src/owned/session.rs
-- native/hagency-runtime/tests/session.rs
-- native/hagency/src/task_client.rs
-- native/hagency/tests/owned_mcp.rs
-- native/hagency/tests/fixtures/owned_mcp_peer.rs
+- crates/hagency-store/src/task_context.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/src/domain/owned_dispatch.rs
+- crates/hagency-store/tests/task_context.rs
+- crates/hagency-execution/src/host.rs
+- crates/hagency-execution/src/operation.rs
+- crates/hagency-runtime/src/codex/session/driver.rs
+- crates/hagency-runtime/src/owned/session.rs
+- crates/hagency-runtime/tests/session.rs
+- crates/hagency/src/task_client.rs
+- crates/hagency/tests/owned_mcp.rs
+- crates/hagency/tests/fixtures/owned_mcp_peer.rs
 - specs/task-rust-retained-runtime-task-context.spec.md
 - knowledge/decisions/adr-057-native-owned-mcp-launch.md
 - knowledge/decisions/adr-147-provisioning-verdict-effect-route.md

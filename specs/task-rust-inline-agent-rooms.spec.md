@@ -55,17 +55,17 @@ home/runtime, both ADR-016 profiles and genuine completion/routes remain owed.
 
 ## Allowed changes
 
-- native/hagency-matrix/src/token_provision.rs
-- native/hagency-matrix/src/token_provision/rooms.rs
-- native/hagency-matrix/src/token_provision/rooms/custody.rs
-- native/hagency-matrix/src/provisioning.rs
-- native/hagency-matrix/src/enrollment.rs
-- native/hagency-matrix/src/enrollment/provisioning.rs
-- native/hagency-matrix/tests/intake/provisioning.rs
-- native/hagency-matrix/tests/enrollment/provisioning.rs
-- native/hagency-matrix/tests/provision_rooms/mod.rs
-- native/hagency/src/bootstrap/config.rs
-- native/hagency/tests/bootstrap.rs
+- crates/hagency-matrix/src/token_provision.rs
+- crates/hagency-matrix/src/token_provision/rooms.rs
+- crates/hagency-matrix/src/token_provision/rooms/custody.rs
+- crates/hagency-matrix/src/provisioning.rs
+- crates/hagency-matrix/src/enrollment.rs
+- crates/hagency-matrix/src/enrollment/provisioning.rs
+- crates/hagency-matrix/tests/intake/provisioning.rs
+- crates/hagency-matrix/tests/enrollment/provisioning.rs
+- crates/hagency-matrix/tests/provision_rooms/mod.rs
+- crates/hagency/src/bootstrap/config.rs
+- crates/hagency/tests/bootstrap.rs
 - knowledge/decisions/adr-147-provisioning-verdict-effect-route.md
 - this spec, docs/agent-knowledge.md, docs/progress.md
 

@@ -32,8 +32,8 @@ IO and exact handle inheritance on the existing atomic job launcher.
 
 ### Allowed Changes
 - ./Cargo.lock
-- native/hagency-platform/**
-- native/hagency-runtime/**
+- crates/hagency-platform/**
+- crates/hagency-runtime/**
 - knowledge/decisions/adr-044-native-windows-runner-io.md
 - specs/task-rust-windows-runner-io.spec.md
 - docs/**

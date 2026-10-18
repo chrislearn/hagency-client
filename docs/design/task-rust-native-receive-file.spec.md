@@ -71,77 +71,77 @@ and all required platform qualification results.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/src/media_download.rs
-- native/hagency-matrix/src/lib.rs
+- crates/hagency-matrix/src/media_download.rs
+- crates/hagency-matrix/src/lib.rs
 - specs/task-rust-receive-file-prerequisites.spec.md
 - specs/task-rust-received-file-identity.spec.md
 - specs/task-rust-received-scope.spec.md
-- native/hagency-store/tests/common/mod.rs
-- native/hagency-store/tests/approvals.rs
-- native/hagency-store/tests/replies.rs
-- native/hagency-store/tests/conversations.rs
-- native/hagency-store/tests/usage.rs
-- native/hagency-store/tests/file_delivery.rs
-- native/hagency-store/tests/file_uploads.rs
-- native/hagency-store/tests/owned_completion.rs
-- native/hagency-store/tests/verified_ingress/notice_custody.rs
-- native/hagency-store/tests/workflows/mod.rs
-- native/hagency-store/tests/workflows/custody.rs
-- native/hagency-core/src/attachments.rs
-- native/hagency-store/src/domain/attachments.rs
-- native/hagency-store/src/domain/messages.rs
-- native/hagency-store/tests/verified_ingress/attachments.rs
-- native/hagency-store/tests/messages.rs
-- native/hagency/src/bootstrap/config.rs
-- native/hagency/src/bootstrap/driver.rs
-- native/hagency/src/bootstrap/inbox.rs
-- native/hagency-store/src/domain/owned_dispatch.rs
-- native/hagency-store/src/domain/execution.rs
-- native/hagency-store/tests/owned_claim.rs
-- native/hagency-core/src/lib.rs
-- native/hagency-core/src/received_files.rs
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/src/domain/received_files.rs
-- native/hagency-store/src/migrations/021-received-files.sql
-- native/hagency-store/tests/received_files.rs
-- native/hagency-store/tests/schema_fixtures.rs
-- native/hagency-matrix/src/receive.rs
-- native/hagency-matrix/tests/intake/receive.rs
-- native/hagency-execution/Cargo.toml
-- native/hagency-execution/src/lib.rs
-- native/hagency-execution/src/workspace.rs
-- native/hagency-execution/src/workspace/received.rs
-- native/hagency-execution/tests/owned.rs
-- native/hagency-execution/tests/owned/receive.rs
-- native/hagency-platform/src/lib.rs
-- native/hagency-platform/src/file_identity.rs
-- native/hagency/src/lib.rs
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/bootstrap/workspace.rs
-- native/hagency/src/receive_service.rs
-- native/hagency/src/receive_service/job.rs
-- native/hagency/src/receive_service/worker.rs
-- native/hagency/src/receive_service/types.rs
-- native/hagency/src/runner.rs
-- native/hagency/src/runner/received_files.rs
-- native/hagency/src/task_client.rs
-- native/hagency/src/task_client/received_files.rs
-- native/hagency/src/task_client/transport.rs
-- native/hagency/src/mcp.rs
-- native/hagency/src/mcp/catalog.rs
-- native/hagency/src/mcp/receive_catalog.rs
-- native/hagency-execution/src/host.rs
-- native/hagency-runtime/src/codex/session/task_mcp.rs
-- native/hagency/Cargo.toml
-- native/hagency/tests/received_files.rs
-- native/hagency/tests/received_files/fixture.rs
-- native/hagency/tests/received_files/recovery.rs
-- native/hagency/tests/fixtures/receive_mcp_peer.rs
-- native/hagency/tests/mcp.rs
-- native/hagency/tests/task_client/mcp.rs
-- native/hagency/tests/http.rs
+- crates/hagency-store/tests/common/mod.rs
+- crates/hagency-store/tests/approvals.rs
+- crates/hagency-store/tests/replies.rs
+- crates/hagency-store/tests/conversations.rs
+- crates/hagency-store/tests/usage.rs
+- crates/hagency-store/tests/file_delivery.rs
+- crates/hagency-store/tests/file_uploads.rs
+- crates/hagency-store/tests/owned_completion.rs
+- crates/hagency-store/tests/verified_ingress/notice_custody.rs
+- crates/hagency-store/tests/workflows/mod.rs
+- crates/hagency-store/tests/workflows/custody.rs
+- crates/hagency-core/src/attachments.rs
+- crates/hagency-store/src/domain/attachments.rs
+- crates/hagency-store/src/domain/messages.rs
+- crates/hagency-store/tests/verified_ingress/attachments.rs
+- crates/hagency-store/tests/messages.rs
+- crates/hagency/src/bootstrap/config.rs
+- crates/hagency/src/bootstrap/driver.rs
+- crates/hagency/src/bootstrap/inbox.rs
+- crates/hagency-store/src/domain/owned_dispatch.rs
+- crates/hagency-store/src/domain/execution.rs
+- crates/hagency-store/tests/owned_claim.rs
+- crates/hagency-core/src/lib.rs
+- crates/hagency-core/src/received_files.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/src/domain/received_files.rs
+- crates/hagency-store/src/migrations/021-received-files.sql
+- crates/hagency-store/tests/received_files.rs
+- crates/hagency-store/tests/schema_fixtures.rs
+- crates/hagency-matrix/src/receive.rs
+- crates/hagency-matrix/tests/intake/receive.rs
+- crates/hagency-execution/Cargo.toml
+- crates/hagency-execution/src/lib.rs
+- crates/hagency-execution/src/workspace.rs
+- crates/hagency-execution/src/workspace/received.rs
+- crates/hagency-execution/tests/owned.rs
+- crates/hagency-execution/tests/owned/receive.rs
+- crates/hagency-platform/src/lib.rs
+- crates/hagency-platform/src/file_identity.rs
+- crates/hagency/src/lib.rs
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/bootstrap/workspace.rs
+- crates/hagency/src/receive_service.rs
+- crates/hagency/src/receive_service/job.rs
+- crates/hagency/src/receive_service/worker.rs
+- crates/hagency/src/receive_service/types.rs
+- crates/hagency/src/runner.rs
+- crates/hagency/src/runner/received_files.rs
+- crates/hagency/src/task_client.rs
+- crates/hagency/src/task_client/received_files.rs
+- crates/hagency/src/task_client/transport.rs
+- crates/hagency/src/mcp.rs
+- crates/hagency/src/mcp/catalog.rs
+- crates/hagency/src/mcp/receive_catalog.rs
+- crates/hagency-execution/src/host.rs
+- crates/hagency-runtime/src/codex/session/task_mcp.rs
+- crates/hagency/Cargo.toml
+- crates/hagency/tests/received_files.rs
+- crates/hagency/tests/received_files/fixture.rs
+- crates/hagency/tests/received_files/recovery.rs
+- crates/hagency/tests/fixtures/receive_mcp_peer.rs
+- crates/hagency/tests/mcp.rs
+- crates/hagency/tests/task_client/mcp.rs
+- crates/hagency/tests/http.rs
 - ./Cargo.lock
 - knowledge/decisions/adr-105-native-receive-file-workflow.md
 - docs/design/task-rust-native-receive-file.spec.md
@@ -159,7 +159,7 @@ and all required platform qualification results.
 Scenario: Real intake produces one original frozen dispatch
   Level: integration
   Test Double: actual SDK intake canonical writer and real host claim
-  Targets: native/hagency/src/bootstrap/inbox.rs
+  Targets: crates/hagency/src/bootstrap/inbox.rs
   Test: native_receive_inbox_selection
   Given an existing host-configured session task and workspace with unmentioned background uploads
   When one actual intake admits an addressed trigger or a direct upload and the host selects its inbox
@@ -170,7 +170,7 @@ Scenario: Real intake produces one original frozen dispatch
 Scenario: Current discovery preserves attachment lineage and privacy
   Level: integration
   Test Double: actual canonical attachment projections selected dispatch and current runner commands
-  Targets: native/hagency-store/src/domain/attachments.rs
+  Targets: crates/hagency-store/src/domain/attachments.rs
   Test: native_receive_visible_context
   Given selected trigger background follow-up foreign later and pre-promotion attachment events
   When current attachment pages and exact ticket authorization query the original writer
@@ -181,7 +181,7 @@ Scenario: Current discovery preserves attachment lineage and privacy
 Scenario: Cache facts bind every original request field
   Level: integration
   Test Double: real SQLite transactions original attachment ticket and dependent recomputed hashes
-  Targets: native/hagency-store/src/domain/received_files.rs
+  Targets: crates/hagency-store/src/domain/received_files.rs
   Test: native_receive_record_binding
   Given a current original ticket and complete request metadata with configured bounds
   When original reservation exact replay and coherent metadata scope or hash substitutions are committed
@@ -192,7 +192,7 @@ Scenario: Cache facts bind every original request field
 Scenario: Local write authority is issued only once
   Level: integration
   Test Double: real writer lost transaction reply and actual reopen
-  Targets: native/hagency-store/src/domain/received_files.rs
+  Targets: crates/hagency-store/src/domain/received_files.rs
   Test: native_receive_original_write_once
   Given a reserved original operation and actual checked byte facts
   When WritePossible or Ready commits but its reply is lost and original state is inspected
@@ -203,7 +203,7 @@ Scenario: Local write authority is issued only once
 Scenario: Checked results preserve their original writer across queue waits
   Level: integration
   Test Double: counted authenticated TLS real decryption original and stale copied writers
-  Targets: native/hagency-matrix/src/receive.rs
+  Targets: crates/hagency-matrix/src/receive.rs
   Test: native_receive_checked_result
   Given an actual authenticated manifest and admitted receive with a lower configured byte limit
   When GET or a later sink queue is delayed before final result revalidation
@@ -214,7 +214,7 @@ Scenario: Checked results preserve their original writer across queue waits
 Scenario: A sink writes only through the original physical root
   Level: integration
   Test Double: real owned Started operation physical files and controlled write checkpoints
-  Targets: native/hagency-execution/src/workspace/received.rs
+  Targets: crates/hagency-execution/src/workspace/received.rs
   Test: native_receive_workspace_sink
   Given a current original binding and bounded fully verified byte data
   When the sink writes or encounters root replacement links reparse points occupied destinations or retirement during actual IO
@@ -225,7 +225,7 @@ Scenario: A sink writes only through the original physical root
 Scenario: Retained file comparisons preserve platform identities
   Level: integration
   Test Double: actual open files aliases and independent replacement files
-  Targets: native/hagency-platform/src/file_identity.rs
+  Targets: crates/hagency-platform/src/file_identity.rs
   Test: native_receive_file_identity
   Given the original regular file a duplicate handle and a separately created object
   When platform comparison checks both retained objects
@@ -235,7 +235,7 @@ Scenario: Retained file comparisons preserve platform identities
 Scenario: Actual native MCP receives bytes from real encrypted ingress
   Level: integration
   Test Double: real native serve native MCP fixed protocol peer local TLS and independent SDK sender
-  Targets: native/hagency/tests/received_files.rs
+  Targets: crates/hagency/tests/received_files.rs
   Test: native_receive_executable
   Given fresh private service state original host provisioned canonical work and actual explicit enrollment
   When the independent sender supplies a real encrypted attachment through sync and the launched runtime discovers and receives its original event
@@ -247,7 +247,7 @@ Scenario: Actual native MCP receives bytes from real encrypted ingress
 Scenario: Transport authentication cannot become historical byte authority
   Level: integration
   Test Double: actual loopback requests native MCP contexts and canonical retirement mutations
-  Targets: native/hagency/tests/received_files.rs
+  Targets: crates/hagency/tests/received_files.rs
   Test: native_receive_authority
   Given original current expired retired foreign and same-localpart impostor contexts
   When discovery receive and cached replay are requested before and after privacy promotion
@@ -258,7 +258,7 @@ Scenario: Transport authentication cannot become historical byte authority
 Scenario: Bounded replay keeps the original bytes and destination
   Level: integration
   Test Double: counted real TLS retained jobs actual modified files and permanent quota
-  Targets: native/hagency/tests/received_files.rs
+  Targets: crates/hagency/tests/received_files.rs
   Test: native_receive_replay_bounds
   Given two live operations or exhausted original disk record quota and a completed original file
   When exact requests replay a caller disappears or the existing destination changes
@@ -269,7 +269,7 @@ Scenario: Bounded replay keeps the original bytes and destination
 Scenario: Restart preserves historical facts without revived workspace authority
   Level: integration
   Test Double: real child process exit reopened original database and counted TLS
-  Targets: native/hagency/tests/received_files/recovery.rs
+  Targets: crates/hagency/tests/received_files/recovery.rs
   Test: native_receive_restart
   Given Reserved WritePossible and Ready records from actual prior receive operations
   When all original process owners are gone and a fresh service opens the same state
@@ -280,7 +280,7 @@ Scenario: Restart preserves historical facts without revived workspace authority
 Scenario: Interrupted download and write evidence remain distinct
   Level: integration
   Test Double: paused or truncated real TLS controlled actual sink write and canonical negative observations
-  Targets: native/hagency/tests/received_files.rs
+  Targets: crates/hagency/tests/received_files.rs
   Test: native_receive_uncertainty
   Given an original receive before and after possible local creation
   When authority expires cancellation occurs or a network or filesystem acknowledgement is lost
@@ -291,7 +291,7 @@ Scenario: Interrupted download and write evidence remain distinct
 Scenario: Receive close retains unfinished owners
   Level: integration
   Test Double: actual worker task unwind channel loss original destinations and shared Collector close
-  Targets: native/hagency/tests/received_files.rs
+  Targets: crates/hagency/tests/received_files.rs
   Test: native_receive_shutdown
   Given queued active and uncertain receive work together with original execution and send owners
   When close quiesces admission and retirement races an actual worker operation
@@ -302,7 +302,7 @@ Scenario: Receive close retains unfinished owners
 Scenario: Closed tool schemas and original context stay compatible
   Level: integration
   Test Double: real native MCP process and bounded loopback protocol decoder
-  Targets: native/hagency/tests/task_client/mcp.rs
+  Targets: crates/hagency/tests/task_client/mcp.rs
   Test: native_receive_protocol
   Given default send-only receive-only and combined host tool profiles
   When actual enabled tools inherited environment and tool arguments are exercised

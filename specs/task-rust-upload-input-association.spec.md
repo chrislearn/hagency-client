@@ -27,10 +27,10 @@ claim and the retained encrypted material with its committed storage namespace.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain/uploads.rs
-- native/hagency-store/tests/file_uploads.rs
-- native/hagency-media-store/src/types.rs
-- native/hagency-media-store/src/tests/restoration.rs
+- crates/hagency-store/src/domain/uploads.rs
+- crates/hagency-store/tests/file_uploads.rs
+- crates/hagency-media-store/src/types.rs
+- crates/hagency-media-store/src/tests/restoration.rs
 - knowledge/decisions/adr-090-native-upload-input-association.md
 - specs/task-rust-upload-input-association.spec.md
 - docs/agent-knowledge.md

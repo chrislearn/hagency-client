@@ -19,7 +19,7 @@ wiring" clauses defer to.
 ## Constraints
 
 ### Must
-- Add the pump as a new module `native/hagency/src/bootstrap/approval.rs` (sibling of `driver.rs`, wired by a plain `mod approval;` in `bootstrap.rs`), taking the `ApprovalRequests` value through exactly one new `Driver::start` parameter — the one buildable handoff (Q1): the driver has no usable `&mut` window after `Box::pin(operation.wait_boxed())`, so it forwards the value and the pump owns the single-consumer receiver.
+- Add the pump as a new module `crates/hagency/src/bootstrap/approval.rs` (sibling of `driver.rs`, wired by a plain `mod approval;` in `bootstrap.rs`), taking the `ApprovalRequests` value through exactly one new `Driver::start` parameter — the one buildable handoff (Q1): the driver has no usable `&mut` window after `Box::pin(operation.wait_boxed())`, so it forwards the value and the pump owns the single-consumer receiver.
 - Run the pump on the service's multi-threaded runtime — host/service scope — and terminate it by the channel's own end (`recv() == None` when the worker's `finish_notices` drops the sender); no runner capability, workspace access or driver runtime may reach the pump.
 - Build all four construction deliverables: `HostApprovalConfig::new` over the approval bot's own `HostConfig`/`HostIdentity`; `with_fresh_account_enrollment(anchors)`; `ApprovalCollector::new(HostApprovalConfig, DomainStore)`; and `Host::with_approvals(ApprovalHost)` on the `Host` the operation is built from — without which `Operation::start_mode` creates no channel at all.
 - Carry the approval credential in `bootstrap/config.rs`'s `Prepared` (a second credential set: the pooled ordinary `HostConfig` is neither `Clone` nor admissible — `Collector::new` refuses `approval == true`).
@@ -35,13 +35,13 @@ wiring" clauses defer to.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/bootstrap/approval.rs
-- native/hagency/src/bootstrap/driver.rs
-- native/hagency/src/bootstrap/config.rs
-- native/hagency/tests/bootstrap.rs
-- native/hagency/tests/bootstrap/approval.rs
-- native/hagency-matrix/src/approval_delivery.rs
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/bootstrap/approval.rs
+- crates/hagency/src/bootstrap/driver.rs
+- crates/hagency/src/bootstrap/config.rs
+- crates/hagency/tests/bootstrap.rs
+- crates/hagency/tests/bootstrap/approval.rs
+- crates/hagency-matrix/src/approval_delivery.rs
 - knowledge/decisions/adr-110-native-private-approval-card.md
 - knowledge/decisions/adr-112-native-private-approval-delivery.md
 - specs/task-rust-private-approval-wiring.spec.md
@@ -50,7 +50,7 @@ wiring" clauses defer to.
 
 ### Forbidden
 - Live services, live homeservers, credentials in tree and deployed state.
-- native/hagency/src/console.rs; native/hagency-store/src/domain/approvals/card.rs; native/hagency-matrix/src/collector.rs.
+- crates/hagency/src/console.rs; crates/hagency-store/src/domain/approvals/card.rs; crates/hagency-matrix/src/collector.rs.
 
 ## Acceptance Criteria
 

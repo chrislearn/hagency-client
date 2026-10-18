@@ -43,7 +43,7 @@ The guard owns no repository, connection, sender or task and cannot form a cycle
 Normal unobserved shutdown installs no callback, accesses no observation slot and
 allocates no Probe. Custody Store snapshots keep the new domain phase absent.
 
-Enable only rusqlite's empty trace feature in native/hagency-store/Cargo.toml.
+Enable only rusqlite's empty trace feature in crates/hagency-store/Cargo.toml.
 Cargo unifies that Rust API feature for the existing pinned package; it adds no
 package, version, lockfile entry, SQLite C build flag or runtime logger. This
 feature availability is distinct from installing an actual per-connection hook.

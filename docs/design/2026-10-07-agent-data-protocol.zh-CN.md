@@ -244,7 +244,7 @@
 
 ### 客户端账本与收件
 
-来源：[schema.sql](../../native/hagency-agent-local/src/schema.sql)；本次核对 SHA-256 `ca2206370aafafc1958ceccf0d2944591440c1eb3f5e7a33f5631cedbc4cde37`。
+来源：[schema.sql](../../crates/hagency-agent-local/src/schema.sql)；本次核对 SHA-256 `ca2206370aafafc1958ceccf0d2944591440c1eb3f5e7a33f5631cedbc4cde37`。
 
 #### `profile_identity`
 
@@ -421,7 +421,7 @@ Agent 单一设备 lease 可以服务多个明确启动的 binding；Room 独立
 
 ### 设备切换与账本连续性契约
 
-实现来源：[服务端历史分页](../../../hagency-server/crates/agent-service/src/transport_history.rs)、[本地凭证核验](../../native/hagency-agent-local/src/inbox.rs)及[客户端运行入口](../../native/hagency/src/console/owned_runtime.rs)。
+实现来源：[服务端历史分页](../../../hagency-server/crates/agent-service/src/transport_history.rs)、[本地凭证核验](../../crates/hagency-agent-local/src/inbox.rs)及[客户端运行入口](../../crates/hagency/src/console/owned_runtime.rs)。
 
 `POST /api/hagency/v1/execution/history` 使用当前 owner/device bearer，不要求预先持有该 Agent lease。请求 `{agentId,cursor,snapshot}`；第一页可用 null，后续 cursor 必须携带原 `{count,digest}` 快照。响应为 `{history:{agentId,snapshot,executions,nextCursor}}`，最多 128 条，按 dispatch ID 的 C collation 排序。历史包含全部 binding、旧 epoch 和退役记录中 execution ID 非空的条目。其他 owner 无权读取。
 

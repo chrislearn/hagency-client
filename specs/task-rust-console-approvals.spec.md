@@ -36,14 +36,14 @@ refusal for a nonexistent route asserts nothing.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/
-- native/hagency/src/console/approvals.rs
-- native/hagency/src/console.rs
-- native/hagency/src/console/assets.rs
-- native/hagency/tests/console/approvals.rs
-- native/hagency/tests/console.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/
+- crates/hagency/src/console/approvals.rs
+- crates/hagency/src/console.rs
+- crates/hagency/src/console/assets.rs
+- crates/hagency/tests/console/approvals.rs
+- crates/hagency/tests/console.rs
 - mockup/lib/native-api.js
 - mockup/components/NativeApprovals.jsx
 - mockup/app/approvals/page.jsx
@@ -57,7 +57,7 @@ refusal for a nonexistent route asserts nothing.
 
 ### Forbidden
 - Live services, credentials, deployed state and Matrix server changes.
-- native/hagency-matrix/src/approval_delivery.rs (the delivery route's own commit owns it, with lib.rs and bootstrap.rs); native/hagency/src/console/authority.rs; mockup/app/api/**.
+- crates/hagency-matrix/src/approval_delivery.rs (the delivery route's own commit owns it, with lib.rs and bootstrap.rs); crates/hagency/src/console/authority.rs; mockup/app/api/**.
 
 ## Acceptance Criteria
 

@@ -492,9 +492,9 @@ This document changes no live service and is not evidence those tests have run.
 [palpo-store]: https://github.com/palpo-im/palpo/blob/3f1ad3ba5c80a7206521b3eb4059a4f1f3786700/web-admin/lib/store.mjs
 [palpo-outbound]: https://github.com/palpo-im/palpo/blob/3f1ad3ba5c80a7206521b3eb4059a4f1f3786700/web-admin/deploy/outbound-v2.md
 [hagency-fleet]: https://github.com/hagency-org/hagency-rs/blob/e51a0b1385437c7b5e6893e68233b8173a0db018/knowledge/decisions/adr-187-palpo-fleet-without-coordinator.md
-[hagency-import]: https://github.com/hagency-org/hagency-rs/blob/e51a0b1385437c7b5e6893e68233b8173a0db018/native/hagency/src/bootstrap/registration.rs
-[hagency-live-import]: https://github.com/hagency-org/hagency-rs/blob/e51a0b1385437c7b5e6893e68233b8173a0db018/native/hagency/src/console/palpo_import.rs
-[hagency-engagements]: https://github.com/hagency-org/hagency-rs/blob/e51a0b1385437c7b5e6893e68233b8173a0db018/native/hagency/src/console/engagements.rs
+[hagency-import]: https://github.com/hagency-org/hagency-rs/blob/e51a0b1385437c7b5e6893e68233b8173a0db018/crates/hagency/src/bootstrap/registration.rs
+[hagency-live-import]: https://github.com/hagency-org/hagency-rs/blob/e51a0b1385437c7b5e6893e68233b8173a0db018/crates/hagency/src/console/palpo_import.rs
+[hagency-engagements]: https://github.com/hagency-org/hagency-rs/blob/e51a0b1385437c7b5e6893e68233b8173a0db018/crates/hagency/src/console/engagements.rs
 [hagency-allocation]: https://github.com/hagency-org/hagency-rs/blob/e51a0b1385437c7b5e6893e68233b8173a0db018/knowledge/decisions/adr-186-engagement-allocation-pause-and-top-up.md
 [matrix-notifications]: https://spec.matrix.org/v1.16/client-server-api/#push-notifications
 [octosense-glance]: https://github.com/OctoSense-org/OctoSense/blob/a30984868a121b36fc1c8a3c2e50753c5fe0410e/crates/shell/src/glance.rs

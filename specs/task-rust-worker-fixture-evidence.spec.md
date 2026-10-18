@@ -25,8 +25,8 @@ an unchanged shutdown deadline returns an unknown result.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/outbound/tests.rs
-- native/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/outbound/tests.rs
+- crates/hagency-store/src/domain_worker.rs
 - knowledge/decisions/adr-075-native-windows-worker-evidence.md
 - specs/task-rust-worker-fixture-evidence.spec.md
 - docs/plan.md

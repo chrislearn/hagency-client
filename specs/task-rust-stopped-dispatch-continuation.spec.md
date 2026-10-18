@@ -34,14 +34,14 @@ and enqueue a distinct instruction. Preserve the original unknown outcome.
 
 ## Allowed changes
 
-- native/hagency-store/src/domain/execution.rs
-- native/hagency-store/src/domain/conversation_lifecycle.rs
-- native/hagency-store/src/domain/stopped_inspection.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/owned_completion.rs
-- native/hagency/src/console/agents.rs
-- native/hagency/tests/console/agents.rs
-- native/hagency-execution/tests/owned/inspection.rs
+- crates/hagency-store/src/domain/execution.rs
+- crates/hagency-store/src/domain/conversation_lifecycle.rs
+- crates/hagency-store/src/domain/stopped_inspection.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/owned_completion.rs
+- crates/hagency/src/console/agents.rs
+- crates/hagency/tests/console/agents.rs
+- crates/hagency-execution/tests/owned/inspection.rs
 - knowledge/decisions/adr-164-native-stopped-dispatch-continuation.md
 - this spec
 - docs/**

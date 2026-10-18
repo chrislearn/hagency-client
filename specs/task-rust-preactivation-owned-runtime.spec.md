@@ -49,24 +49,24 @@ required by the full goal; no new bootstrap profile exposes this prerequisite.
 
 ## Allowed changes
 
-- native/hagency-store/src/domain/provision_runtime.rs
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/domain/accounts.rs
-- native/hagency-store/src/domain/owned_dispatch.rs
-- native/hagency-store/src/agent_home.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/tests/provision_runtime.rs
-- native/hagency-execution/src/warm.rs
-- native/hagency-execution/src/host.rs
-- native/hagency-execution/src/operation.rs
-- native/hagency-execution/src/lib.rs
-- native/hagency-runtime/src/codex/transport.rs
-- native/hagency-runtime/src/codex/session/driver.rs
-- native/hagency-runtime/src/owned/session.rs
-- native/hagency-runtime/tests/session.rs
-- native/hagency/tests/warm_runtime.rs
-- native/hagency/tests/fixtures/owned_mcp_peer.rs
+- crates/hagency-store/src/domain/provision_runtime.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/domain/accounts.rs
+- crates/hagency-store/src/domain/owned_dispatch.rs
+- crates/hagency-store/src/agent_home.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/tests/provision_runtime.rs
+- crates/hagency-execution/src/warm.rs
+- crates/hagency-execution/src/host.rs
+- crates/hagency-execution/src/operation.rs
+- crates/hagency-execution/src/lib.rs
+- crates/hagency-runtime/src/codex/transport.rs
+- crates/hagency-runtime/src/codex/session/driver.rs
+- crates/hagency-runtime/src/owned/session.rs
+- crates/hagency-runtime/tests/session.rs
+- crates/hagency/tests/warm_runtime.rs
+- crates/hagency/tests/fixtures/owned_mcp_peer.rs
 - specs/task-rust-preactivation-owned-runtime.spec.md
 - knowledge/decisions/adr-053-native-owned-dispatch.md
 - knowledge/decisions/adr-147-provisioning-verdict-effect-route.md

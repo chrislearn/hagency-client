@@ -33,22 +33,22 @@ per subject, with its own boundary; the qualification half is the sibling spec
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/tests/common/mod.rs
-- native/hagency-matrix/tests/common/pair.rs
-- native/hagency-matrix/tests/fixtures/**
-- native/hagency-matrix/tests/**
-- native/hagency/tests/**
+- crates/hagency-matrix/tests/common/mod.rs
+- crates/hagency-matrix/tests/common/pair.rs
+- crates/hagency-matrix/tests/fixtures/**
+- crates/hagency-matrix/tests/**
+- crates/hagency/tests/**
 - specs/task-r...[credential-redacted].spec.md
 - knowledge/decisions/adr-144-two-agent-integration-acceptance.md
 - docs/progress.md
 
-The SR-2/ADR-133 launchd harness (`native/hagency/tests/service_launchd.rs`)
+The SR-2/ADR-133 launchd harness (`crates/hagency/tests/service_launchd.rs`)
 is touched in the acceptance-commits lineage for the XML-comment-stripping
 defect review r3 named (F11/F12); the path is already covered above.
 
 ### Forbidden
 - Live services, live models, credentials and deployed state.
-- native/hagency-matrix/src/approval_intake.rs; the fake peer's TLS trust material.
+- crates/hagency-matrix/src/approval_intake.rs; the fake peer's TLS trust material.
 
 ## Acceptance Criteria
 

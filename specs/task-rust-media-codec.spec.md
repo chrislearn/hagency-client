@@ -38,9 +38,9 @@ This contract retains the design boundaries in [ADR-027](../knowledge/decisions/
 ### Allowed Changes
 - ./Cargo.toml
 - ./Cargo.lock
-- native/hagency-media/**
-- native/scripts/media-vectors.mjs
-- native/fixtures/media.json
+- crates/hagency-media/**
+- tools/native/media-vectors.mjs
+- tests/fixtures/media.json
 - .github/workflows/ci.yml
 - knowledge/decisions/adr-061-native-media-codec.md
 - specs/task-rust-media-codec.spec.md

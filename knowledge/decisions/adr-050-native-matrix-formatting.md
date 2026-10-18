@@ -70,7 +70,7 @@ Unsafe reference definitions are prevented from becoming definitions in one
 compatibility reparse, preserving paragraph continuation and later valid
 references. This is formatting adaptation, never permission or routing inference.
 
-`native/scripts/matrix-format-vectors.mjs` executes the retained pure helper,
+`tools/native/matrix-format-vectors.mjs` executes the retained pure helper,
 checks installed and locked markdown-it 15.0.1, sanitize-html 2.17.7 and
 linkify-it 6.1.0, and records source and Node-lock hashes. Its 63 vectors are
 byte-exact content expectations, not snapshots invented from Rust. Source and

@@ -33,11 +33,11 @@ workflow acceptance, not installed Codex sandbox or production migration parity.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency/tests/received_files.rs
-- native/hagency/tests/received_files/fixture.rs
-- native/hagency/tests/received_files/recovery.rs
-- native/hagency/tests/fixtures/receive_mcp_peer.rs
-- native/hagency/Cargo.toml
+- crates/hagency/tests/received_files.rs
+- crates/hagency/tests/received_files/fixture.rs
+- crates/hagency/tests/received_files/recovery.rs
+- crates/hagency/tests/fixtures/receive_mcp_peer.rs
+- crates/hagency/Cargo.toml
 - specs/task-rust-receive-executable.spec.md
 - knowledge/decisions/adr-105-native-receive-file-workflow.md
 - docs/progress.md

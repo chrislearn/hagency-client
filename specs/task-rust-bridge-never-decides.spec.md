@@ -40,37 +40,37 @@ runtime's idle re-qualification records and never stops.
 
 ## Allowed changes
 
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/bootstrap/driver.rs
-- native/hagency/src/bootstrap/fleet.rs
-- native/hagency/src/bootstrap/approval.rs
-- native/hagency/src/lib.rs
-- native/hagency/src/main.rs
-- native/hagency/tests/**
-- native/hagency-matrix/src/approval_delivery.rs
-- native/hagency-matrix/src/approval_delivery/**
-- native/hagency-matrix/src/approval_intake.rs
-- native/hagency-matrix/src/enrollment.rs
-- native/hagency-matrix/src/sdk/enrollment.rs
-- native/hagency-matrix/src/sdk/keys.rs
-- native/hagency-matrix/src/sdk/encrypted_message.rs (decision B: an excluded device's withheld share is skipped, not refused)
-- native/hagency-matrix/src/sdk.rs (decision B: the enrollment poison applies only to a ledger left mid-mutation)
-- native/hagency-matrix/src/collector.rs (decision A: a refused read fences nothing)
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/bootstrap/driver.rs
+- crates/hagency/src/bootstrap/fleet.rs
+- crates/hagency/src/bootstrap/approval.rs
+- crates/hagency/src/lib.rs
+- crates/hagency/src/main.rs
+- crates/hagency/tests/**
+- crates/hagency-matrix/src/approval_delivery.rs
+- crates/hagency-matrix/src/approval_delivery/**
+- crates/hagency-matrix/src/approval_intake.rs
+- crates/hagency-matrix/src/enrollment.rs
+- crates/hagency-matrix/src/sdk/enrollment.rs
+- crates/hagency-matrix/src/sdk/keys.rs
+- crates/hagency-matrix/src/sdk/encrypted_message.rs (decision B: an excluded device's withheld share is skipped, not refused)
+- crates/hagency-matrix/src/sdk.rs (decision B: the enrollment poison applies only to a ledger left mid-mutation)
+- crates/hagency-matrix/src/collector.rs (decision A: a refused read fences nothing)
 - specs/task-rust-matrix-approval-cleanup-observation.spec.md (decision C: the identity-refusal scenario's wording and binding)
-- native/hagency-matrix/src/lib.rs
-- native/hagency-matrix/tests/**
-- native/hagency-store/src/domain/approvals.rs
-- native/hagency-store/src/domain/attempt_events.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/src/domain.rs (decision D only: the migration registry line and version 39)
-- native/hagency-store/src/migrations/039-attempt-over-budget.sql (decision D: the `over_budget` phase widens the 037 CHECK, which SQLite cannot alter in place)
-- native/hagency-store/tests/**
-- native/hagency-execution/src/operation.rs
-- native/hagency-execution/src/warm.rs
-- native/hagency-execution/src/factory.rs (decision D, warm rule only: the `idle_status` accessor the host projects)
-- native/hagency-execution/src/lib.rs
-- native/hagency-execution/tests/**
+- crates/hagency-matrix/src/lib.rs
+- crates/hagency-matrix/tests/**
+- crates/hagency-store/src/domain/approvals.rs
+- crates/hagency-store/src/domain/attempt_events.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/src/domain.rs (decision D only: the migration registry line and version 39)
+- crates/hagency-store/src/migrations/039-attempt-over-budget.sql (decision D: the `over_budget` phase widens the 037 CHECK, which SQLite cannot alter in place)
+- crates/hagency-store/tests/**
+- crates/hagency-execution/src/operation.rs
+- crates/hagency-execution/src/warm.rs
+- crates/hagency-execution/src/factory.rs (decision D, warm rule only: the `idle_status` accessor the host projects)
+- crates/hagency-execution/src/lib.rs
+- crates/hagency-execution/tests/**
 - knowledge/decisions/adr-183-bridge-never-decides-done.md
 - knowledge/decisions/adr-047-native-matrix-transport.md
 - knowledge/decisions/adr-137-private-approval-send-fail-closed.md

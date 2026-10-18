@@ -41,7 +41,7 @@ target/debug/hagency open --state-dir "$PWD/.run/owner-dev-state"
 同一状态目录只能有一个 host，listener 必须为非零 loopback。
 
 保留的 `just dev` / `just console` 尚未适配当前 owner host：
-`native/scripts/dev.mjs` 仍传入已移除的 `--palpo-transport` 并检查旧 `operator.token`；
+`tools/native/dev.mjs` 仍传入已移除的 `--palpo-transport` 并检查旧 `operator.token`；
 `just console` 调用已移除的 `console-access`。适配前使用上面的显式命令。
 `just init-dev` 仍可作为 npm 安装依赖快捷方式。`mockup` 中的 `npm run dev`
 是设计预览，不是实际 OwnerHost。

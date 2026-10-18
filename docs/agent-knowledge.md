@@ -1267,7 +1267,7 @@ No application credentials or runtime connections are part of this static site.
 
 - **Native migration checkpoint:** implementation now lives in the isolated
   `hagency-rust-migration-20260909` worktree on `feat/rust-migration`, based on
-  merged `5dbef22`. See `native/README.md` and ADR-095. Native init uses fresh private
+  merged `5dbef22`. See `docs/native-engine.md` and ADR-095. Native init uses fresh private
   state and the development API defaults to port13300; it never reads `.env` or
   imports live state. Full Agent/Palpo/console parity is not implemented.
   Rust spec selectors are checked against the real Cargo catalog in Native Rust
@@ -1538,7 +1538,7 @@ and stderr while writing, and do not turn transport EOF into clean dispatch
 completion. Actual child/guardian handoff, authority, approval and sandbox gates
 remain open; native Agent execution is still disabled.
 
-Native inventory (2026-09-10): `native/scripts/inventory.mjs --check` compares a
+Native inventory (2026-09-10): `tools/native/inventory.mjs --check` compares a
 source-derived snapshot against current tracked files. Espree 11.2.0 is pinned as
 a direct build dependency; no application module executes during inventory.
 Policy file lists explicit helper roles/owners/gates; new or stale helpers fail.
@@ -1867,7 +1867,7 @@ qualification with the newly integrated Matrix collector until its own run ends.
   room/device/send authority. Markdown parsing has raw HTML constructs disabled,
   followed by the retained Matrix tag/attribute/scheme allowlist. The JavaScript
   oracle checks exact dependency/source/lock identity. Run
-  `node native/scripts/matrix-format-vectors.mjs --check`; CI installs locked dependencies
+  `node tools/native/matrix-format-vectors.mjs --check`; CI installs locked dependencies
   for the pure JS oracle with all install scripts disabled. Native capacity errors and
   malformed edit rejection are intentional; formatting is not Matrix delivery.
 
@@ -3144,7 +3144,7 @@ and the shared finite HTTP request capacity can refuse revocation as Busy.
 
 - **Concurrent native/Node checks, 2026-09-11:** ESLint must globally ignore
   `**/target/**`, since Cargo creates/removes temporary compiler directories
-  during builds. Keep native/scripts source in the identifier gate. The actual
+  during builds. Keep tools/native source in the identifier gate. The actual
   ESLint path/undefined-source regression in undefined-identifier-gate.test.js
   distinguishes generated output exclusion from disabling source analysis.
 
@@ -4972,7 +4972,7 @@ asserted. Preserve older unknown owners20841/18059/83315 too.
   `live-recover-dispatch-rig`.
 
 - Spec `Production caller:` lines are checked by
-  `native/scripts/check-production-callers.mjs` on every hosted lane; a wrong
+  `tools/native/check-production-callers.mjs` on every hosted lane; a wrong
   impl name is `unresolved`, a fn only reached through another crate's field
   is `missing`, a common method name (`handle`) is `ambiguous` — each fails
   the lane. Name the wired root the checker already credits (fleet
@@ -4982,7 +4982,7 @@ asserted. Preserve older unknown owners20841/18059/83315 too.
 
 ## 2026-10-05: Pasion-bound local access
 
-Automatic login/enrollment lives in `native/hagency/src/console/server_login.rs` and `mockup/components/ServerLoginControl.jsx`. The first binding needs local authority, later sign-ins pin origin/subject/MXID. Tokens stay in memory; finite sessions do not persist in console-logins.json. Native server API is documented in docs/server-login.md. Development artifacts live under ignored .run/. Source changes belong to hagency-client, not the separate hagency-rs checkout.
+Automatic login/enrollment lives in `crates/hagency/src/console/server_login.rs` and `mockup/components/ServerLoginControl.jsx`. The first binding needs local authority, later sign-ins pin origin/subject/MXID. Tokens stay in memory; finite sessions do not persist in console-logins.json. Native server API is documented in docs/server-login.md. Development artifacts live under ignored .run/. Source changes belong to hagency-client, not the separate hagency-rs checkout.
 
 - **SQLite / Matrix dependency alignment, 2026-10-08:** Client now uses
   Matrix SDK crates 0.19.1, Ruma 0.17.0 / ruma-common 0.20.0 and rusqlite
@@ -5035,7 +5035,7 @@ Automatic login/enrollment lives in `native/hagency/src/console/server_login.rs`
 
 - **Projects login readiness and focus, 2026-10-10:** ProjectTree may already be active before Service::for_current can identify the logged-in SDK account. Repeated set_active(true) now checks readiness/identity rather than returning unconditionally; UI Signals check it too, and LoginSuccess triggers refresh directly. Existing request/account fences and periodic retry remain. NavigationBarButton keyboard focus now uses the hover background instead of an outline, so focus does not frame only the Project name half. Pointer focus suppression and keyboard activation remain. This fixes code-level readiness gaps; first-ever live login is not established by a restored-session restart.
 
-- **Current operational docs, 2026-10-10:** Server docs/LOCAL_DEPLOYMENT.{md,zh-CN.md} and docs/TESTING.{md,zh-CN.md} now collect local routing/readiness and isolated test commands; Desktop docs/local-development.{md,zh-CN.md} covers build/launch/private profiles. Agent integration script requires explicit HAGENCY_TEST_SERVER_BINARY because its default targets an external developer checkout. Client native/scripts/dev.mjs still passes removed --palpo-transport and checks operator.token; just console still uses removed console-access. Current documented manual OwnerHost commands avoid these stale wrappers; wrapper implementation is not fixed by documentation. Pasion delegation is required; /readyz is an AS startup latch, not continuous transport health.
+- **Current operational docs, 2026-10-10:** Server docs/LOCAL_DEPLOYMENT.{md,zh-CN.md} and docs/TESTING.{md,zh-CN.md} now collect local routing/readiness and isolated test commands; Desktop docs/local-development.{md,zh-CN.md} covers build/launch/private profiles. Agent integration script requires explicit HAGENCY_TEST_SERVER_BINARY because its default targets an external developer checkout. Client tools/native/dev.mjs still passes removed --palpo-transport and checks operator.token; just console still uses removed console-access. Current documented manual OwnerHost commands avoid these stale wrappers; wrapper implementation is not fixed by documentation. Pasion delegation is required; /readyz is an AS startup latch, not continuous transport health.
 
 - **Desktop tool/approval audit, 2026-10-10:** Distinguish current `src/hagency` OwnerHost personal-Agent path from optional legacy `agent_chat` Matrix approvals. Actual Desktop Cargo defaults exclude agent_chat despite stale parity docs; explicit approval selector passes41. Service start rejects host_files=true and fixes false, with hidden Desktop checkbox; low-level scoped files and approval callback implementations do not establish ordinary UI tool availability. Pending local approvals are Agent-wide, while Service presents selected Room context without filtering; exact backend authority remains enforced. Standalone agent-local test build requires rusqlite/fallible_uint (69 pass,1 ignored), otherwise u64 SQL conversion compilation fails.
 
@@ -5062,7 +5062,7 @@ Continuous demo recording (2026-10-10): user requires live full operation footag
 
 ## GitHub CI audit and delivery configuration (2026-10-10)
 
-- Server org repository had no Actions workflows; Desktop retained Rinx workflows but its last three main runs failed. Latest 38000954189 failed because the sibling native/hagency dependency was absent; no Desktop GitHub Releases existed.
+- Server org repository had no Actions workflows; Desktop retained Rinx workflows but its last three main runs failed. Latest 38000954189 failed because the sibling crates/hagency dependency was absent; no Desktop GitHub Releases existed.
 - Server source now has native amd64/arm64 full Docker build/smoke/digest merge after Rust/OpenAPI/disposable PostgreSQL gates, GHCR provenance/SBOM, with no PR pushes. Desktop Cargo workflows provision exact published chrislearn/hagency-client 5dae3dfa61101e8eb77b267ceb75b154a39871fa at the required sibling path; five-platform installers, checksums and draft assembly use GITHUB_TOKEN. Signed macOS is opt-in via vars/secrets; inherited AUR auto-publication removed.
 - Concurrent local feature work adds client RuntimeProvider/runtime and a Desktop lock dependency absent from published client pin. Publish client changes and update pin/lock together before shipping that feature set. Never replace --locked with moving-branch resolution. Source-specific docs/github-ci.md records delivery setup and limitations.
 

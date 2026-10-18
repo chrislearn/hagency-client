@@ -33,20 +33,20 @@ or reads a credential.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain/accounts.rs
-- native/hagency-store/src/migrations/029-account-logout-receipt.sql
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/tests/accounts.rs
-- native/hagency-store/tests/
-- native/hagency/src/bootstrap/accounts.rs (the offline CLI retire path: the stores retire_account now takes the host-observed logout outcome, so this arm threads it)
+- crates/hagency-store/src/domain/accounts.rs
+- crates/hagency-store/src/migrations/029-account-logout-receipt.sql
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/tests/accounts.rs
+- crates/hagency-store/tests/
+- crates/hagency/src/bootstrap/accounts.rs (the offline CLI retire path: the stores retire_account now takes the host-observed logout outcome, so this arm threads it)
 - specs/task-rust-account-retirement.spec.md
 - knowledge/decisions/adr-114-native-managed-account-binding.md
 - docs/progress.md
 
 ### Forbidden
 - Live providers, live credentials, deployed state.
-- mockup/**; native/hagency/src/console/** (MA-S3a's retire route is unchanged); the migration chain beyond 029; any login-driving code path (MA-S1's).
+- mockup/**; crates/hagency/src/console/** (MA-S3a's retire route is unchanged); the migration chain beyond 029; any login-driving code path (MA-S1's).
 
 ## Acceptance Criteria
 

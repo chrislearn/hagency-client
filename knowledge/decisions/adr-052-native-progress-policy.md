@@ -109,7 +109,7 @@ Only an explicitly inspected zero can produce "but sent nothing" after activity.
 The crate neither performs that inspection nor certifies Matrix authenticity.
 
 The retained source has several defects that are deliberately **not** reproduced.
-`native/fixtures/progress.json` keeps these correction cases separate from exact
+`tests/fixtures/progress.json` keeps these correction cases separate from exact
 parity cases, with measured legacy/native outcomes and rationale:
 
 - A malformed selected perGroup value may fall back to a broader policy. Native

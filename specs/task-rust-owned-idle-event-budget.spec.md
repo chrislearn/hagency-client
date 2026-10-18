@@ -31,10 +31,10 @@ independently; that original Windows failure is preserved pending requalificatio
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-execution/src/host.rs
-- native/hagency-execution/tests/owned.rs
-- native/hagency-execution/tests/owned/idle.rs
-- native/hagency-runtime/src/bin/hagency-runtime-probe.rs
+- crates/hagency-execution/src/host.rs
+- crates/hagency-execution/tests/owned.rs
+- crates/hagency-execution/tests/owned/idle.rs
+- crates/hagency-runtime/src/bin/hagency-runtime-probe.rs
 - .github/workflows/rust.yml
 - specs/task-rust-owned-idle-event-budget.spec.md
 - knowledge/decisions/adr-113-native-owned-idle-event-budget.md

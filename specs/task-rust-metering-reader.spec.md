@@ -32,11 +32,11 @@ masquerade as a complete measurement.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-metering/src/reader.rs
-- native/hagency-metering/src/lib.rs
-- native/hagency-metering/tests/reader.rs
-- native/scripts/reader-vectors.mjs
-- native/fixtures/reader.json
+- crates/hagency-metering/src/reader.rs
+- crates/hagency-metering/src/lib.rs
+- crates/hagency-metering/tests/reader.rs
+- tools/native/reader-vectors.mjs
+- tests/fixtures/reader.json
 - knowledge/decisions/adr-119-native-metering-reader.md
 - specs/task-rust-metering-reader.spec.md
 - .github/workflows/rust.yml

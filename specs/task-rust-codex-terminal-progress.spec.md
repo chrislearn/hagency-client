@@ -21,9 +21,9 @@ pinned 0.154.0 schema and port its progress semantics without granting permissio
 
 ## Allowed changes
 
-- native/hagency-runtime/src/codex/session/**
-- native/hagency-runtime/tests/session.rs
-- native/hagency-runtime/tests/session/**
+- crates/hagency-runtime/src/codex/session/**
+- crates/hagency-runtime/tests/session.rs
+- crates/hagency-runtime/tests/session/**
 - specs/task-rust-codex-terminal-progress.spec.md
 - knowledge/decisions/adr-171-codex-terminal-progress.md
 - docs/**

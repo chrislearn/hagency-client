@@ -401,7 +401,7 @@ platform-aware outcomes — `CanonicalReplyReady` on Linux, `Unknown` beside
   parked-writer seam that is test-private to `hagency-store`, recorded in
   the ADR as the store-side suite's arm.
 - E5: grep confirms no `u64::MAX` ceiling remains in
-  `native/hagency/tests/alerts*` (the fixture has used the JSON-safe
+  `crates/hagency/tests/alerts*` (the fixture has used the JSON-safe
   `GENEROUS` since slice (b)).
 - E6: future consumers are now the real retained pair — the SSE echo
   (`backend-v2.js:1866`) and the console page; "Matrix delivery" dropped (no
@@ -414,7 +414,7 @@ platform-aware outcomes — `CanonicalReplyReady` on Linux, `Unknown` beside
   the immediate-first-tick behaviour is stated.
 - Store tests untouched per the brief; the orchestrator's three fixes there
   (name collision, Reserved-state `register_session`, scoped-request
-  verifier) are noted for the `native/hagency/tests/alerts/` fixture to
+  verifier) are noted for the `crates/hagency/tests/alerts/` fixture to
   follow — its one engagement per pool is admitted, approved and effective
   through `admit`/`approve` only, so none of the three failure modes apply.
 
@@ -488,7 +488,7 @@ platform-aware outcomes — `CanonicalReplyReady` on Linux, `Unknown` beside
   sleep-based polling in tests. The `Options` field was deliberately avoided
   (a builder instead) so no existing `Options` literal outside this slice
   needed touching.
-- Tests (`native/hagency/tests/alerts.rs`): the authority matrix applied to
+- Tests (`crates/hagency/tests/alerts.rs`): the authority matrix applied to
   the new route, the publication read (every retained field, parsed detail,
   resolved absent, limit respected), and the sweep loop (short period, tick
   observed on the watch, writer held busy via a second connection's
@@ -628,7 +628,7 @@ platform-aware outcomes — `CanonicalReplyReady` on Linux, `Unknown` beside
   entry vs `TurnEnded` while any entry is unwritten) or where the entry's
   frame had reached. Added an ordered per-entry phase trace and a
   cancellation record so the next failure names both.
-- `native/hagency-execution`: pending entries carry a test-only `PhaseTrace`
+- `crates/hagency-execution`: pending entries carry a test-only `PhaseTrace`
   (`["retained"]` at insertion, then `acknowledged`, `prepared`, `begun`,
   `admitted`, `checked`, `write-accepted`, `recorded`, plus the cancellation
   primitives `resolved-before-write`/`resolved-after-write` and
@@ -669,7 +669,7 @@ platform-aware outcomes — `CanonicalReplyReady` on Linux, `Unknown` beside
   verbatim). An absent period bucket stays `None`, never zero. Read-side
   only: no admission, refusal or publication change; evidence stays
   host-attributed and untrusted.
-- Oracle `native/scripts/ceiling-vectors.mjs`: the retained
+- Oracle `tools/native/ceiling-vectors.mjs`: the retained
   `lib/metering/ledger.js` computes spent/consumed for eight vectors
   including the BigLittle lockout (681,089 drawn vs 13,609,601 consumed) and
   a month-roll unknown case; ledger and backend sources pinned by sha256;
@@ -3050,7 +3050,7 @@ edits remain uncommitted; the nested website main is clean and pushed.
   focused Clippy pass. The initial Clippy run found one collapsible condition; it
   was corrected, with no suppressed lint or altered assertion.
 - The new task contract parses and lints at 100% quality. agent-spec 1.4.0 lifecycle
-  ran against `native/hagency-runtime`: all four scenario selectors execute real
+  ran against `crates/hagency-runtime`: all four scenario selectors execute real
   tests (3 + 2 + 2 + 2), and the explicit boundary check passes, 5/5 overall.
 - This is protocol preparation only. Runtime IO/write ACK, typed thread/turn and
   approval authority, sandbox observation, process custody, real runtime platform
@@ -7102,7 +7102,7 @@ pending. Final local hagency/hagency-store Clippy with warnings denied also pass
 Root accepted the browser authority design and exact 31-path boundary before its
 source additions (27 original paths, pinned cap-fs-ext manifest/lock amendment,
 then `.github/workflows/rust.yml` for the explicit browser lane and
-`native/scripts/check-rust-spec-bindings.mjs` for all-feature selector inventory).
+`tools/native/check-rust-spec-bindings.mjs` for all-feature selector inventory).
 Work is isolated
 from migration1cb60d7 in `hagency-native-console-usage-20260911`; original dirty
 checkout and live services remain untouched. Contract parse/lint completed before
@@ -7448,7 +7448,7 @@ Concurrent verify-ci originally failed while ESLint traversed a transient Cargo
 `target/debug/deps/rustc*` directory removed by compilation. The global ignore
 now excludes root and nested `target` artifacts while native JavaScript sources
 remain linted. A real ESLint regression proves both exclusions and rejection of
-an undefined identifier in native/scripts; the full identifier test file passes
+an undefined identifier in tools/native; the full identifier test file passes
 8/8. This fixes artifact traversal, without suppressing the source rule. The
 original failure, source-independent integrated results and corrected checks are
 retained under `<local-evidence>/hagency-rust-migration/2026-09-10/`.
@@ -7683,7 +7683,7 @@ private-owner/MCP service qualification and complete M6 remain separate gates.
 ### 2026-09-11 — ADR111 additional configuration implementation
 
 Parent approved the 34-path proposal from d85369d and then the exact 35th path
-native/hagency/tests/console/resources.rs for its accidental `config` substring
+crates/hagency/tests/console/resources.rs for its accidental `config` substring
 privacy assertion. The contract was parsed/linted before source edits and again
 before that amendment. An initial unsupported Execution heading was refused and
 corrected to Decisions; original refusal text is retained externally.
@@ -8006,7 +8006,7 @@ client qualification and ongoing identity/key management remain separate.
   and the fleet summary that keeps shared workspaces ambiguous. No filesystem
   access; per-session totals reuse the ADR-055 `parse_session`. Unknown stays
   `null`, never zero; refused parses count as skipped.
-- Gates: `native/scripts/attribution-vectors.mjs` generates the 107-vector
+- Gates: `tools/native/attribution-vectors.mjs` generates the 107-vector
   oracle fixture from the retained JavaScript and its `--check` was added to
   the Rust CI job after `metering-vectors.mjs --check`;
   `cargo fmt/clippy -D warnings` and `cargo test -p hagency-metering --locked`
@@ -8099,7 +8099,7 @@ client qualification and ongoing identity/key management remain separate.
   and unknown-ownership claims apart. `meter_fleet` ports the TTL cache
   (force, `computedAt` stamp, `reset`) keyed over fleet identity and home
   directory with an injected clock.
-- Gates: `native/scripts/reader-vectors.mjs` records 21 vectors (13 reads,
+- Gates: `tools/native/reader-vectors.mjs` records 21 vectors (13 reads,
   5 reports, 3 fleets) from the retained JavaScript over synthetic trees and
   its `--check` was added to the Rust CI job after the attribution line;
   `cargo fmt/clippy -D warnings` and `cargo test -p hagency-metering
@@ -8463,7 +8463,7 @@ client qualification and ongoing identity/key management remain separate.
   flow was superseded, and one remains: operator recovery and resume, which has
   a decision record but no code yet. The audit's method is now enforced rather
   than remembered: a spec `Production caller:` line must resolve in the
-  production call graph, and `native/scripts/check-production-callers.mjs`
+  production call graph, and `tools/native/check-production-callers.mjs`
   fails the build on a caller that is absent, ambiguous or unresolved, with a
   tracked gap id required for anything still owed.
 - 2026-09-14: the checker earned its keep by being given real input. Run
@@ -8632,7 +8632,7 @@ client qualification and ongoing identity/key management remain separate.
   **The Windows lane had been dead before its test phase, for a non-Windows
   reason.** `corpus-retention-vectors.mjs --check` byte-compared its fixture raw
   while every sibling oracle normalises; that fixture sits in
-  `hagency-store/tests/fixtures/`, outside the `/native/fixtures/*.json text eol=lf`
+  `hagency-store/tests/fixtures/`, outside the `/tests/fixtures/*.json text eol=lf`
   pin, so a Windows checkout gets CRLF and the compare fails. Because that step
   precedes the test phase, every later step was skipped. Fixed by normalising the
   comparison rather than guarding the step off on Windows — a guard would have
@@ -10822,7 +10822,7 @@ client qualification and ongoing identity/key management remain separate.
   store/native Clippy handle86709 returned exit0. `git diff --check` passes.
 - The default production-callers checker exited1 before analysis because its
   git-index file enumeration still includes the already-deleted
-  native/hagency-runtime/src/codex/json.rs. Its source is unchanged in this slice;
+  crates/hagency-runtime/src/codex/json.rs. Its source is unchanged in this slice;
   do not count the unavailable gate as passed or recreate the deleted module.
 - Lifecycle/recovery skill guidance kept target validation in the same write
   transaction and preserved stopped-task custody. No UI/i18n code, formatter,

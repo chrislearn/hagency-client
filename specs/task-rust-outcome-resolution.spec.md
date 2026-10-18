@@ -36,11 +36,11 @@ missing process-stop evidence. Preserve the original unknown attempt.
 
 ## Allowed changes
 
-- native/hagency-store/src/**
-- native/hagency-store/tests/**
-- native/hagency/src/console/agents.rs
-- native/hagency/tests/console/agents.rs
-- native/hagency-execution/tests/owned/inspection.rs
+- crates/hagency-store/src/**
+- crates/hagency-store/tests/**
+- crates/hagency/src/console/agents.rs
+- crates/hagency/tests/console/agents.rs
+- crates/hagency-execution/tests/owned/inspection.rs
 - knowledge/decisions/adr-165-native-outcome-resolution.md
 - this spec
 - docs/**

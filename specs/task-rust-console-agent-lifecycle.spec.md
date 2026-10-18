@@ -38,30 +38,30 @@ together. The roster renders only controls with a real durable effect.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency/src/main.rs
-- native/hagency/src/console.rs # the lifecycle router + operator issuer wiring and the scope error map — the scope cannot route or refuse without them
-- native/hagency/src/console/client.rs # lifecycle_access() issues the operator CLI ticket — the flag has no issuer without it
-- native/hagency/src/console/authority.rs
-- native/hagency/src/console/agents.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/domain/conversation_lifecycle.rs
+- crates/hagency/src/main.rs
+- crates/hagency/src/console.rs # the lifecycle router + operator issuer wiring and the scope error map — the scope cannot route or refuse without them
+- crates/hagency/src/console/client.rs # lifecycle_access() issues the operator CLI ticket — the flag has no issuer without it
+- crates/hagency/src/console/authority.rs
+- crates/hagency/src/console/agents.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/domain/conversation_lifecycle.rs
 - mockup/app/agents/page.jsx
 - mockup/components/NativeAgents.jsx # the lifecycle controls rendered from served permissions — the page has no controls without it
 - mockup/components/Data.jsx # the agents load path and permissions slice — the controls cannot read manageLifecycle without it
 - mockup/lib/native-api.js # stopAgent + the exact-key validator — the implemented control has no client without it
 - mockup/scripts/native-console-browser.mjs # the lifecycle browser lane over the roster walk — the browser scenario has no driver without it
 - mockup/lib/i18n.js
-- native/hagency/tests/console/agents.rs
-- native/hagency/tests/console.rs
-- native/hagency/tests/cli.rs
-- native/hagency/tests/console/browser.rs
+- crates/hagency/tests/console/agents.rs
+- crates/hagency/tests/console.rs
+- crates/hagency/tests/cli.rs
+- crates/hagency/tests/console/browser.rs
 - specs/task-rust-console-agent-lifecycle.spec.md
 - knowledge/decisions/adr-130-native-agent-lifecycle-authority.md
 - docs/progress.md
 
 ### Forbidden
 - Live services, live agents, credentials and deployed state.
-- native/hagency/src/console/resources.rs; mockup/app/api/**; every other hagency-store file (the two licensed store paths carry exactly one new public entry — `stop_dispatch_for_agent`, F1's fix — and the fence kernel and settlement stay the store's own).
+- crates/hagency/src/console/resources.rs; mockup/app/api/**; every other hagency-store file (the two licensed store paths carry exactly one new public entry — `stop_dispatch_for_agent`, F1's fix — and the fence kernel and settlement stay the store's own).
 
 ## Acceptance Criteria
 

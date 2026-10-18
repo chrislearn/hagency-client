@@ -26,12 +26,12 @@ the original failed results and the production refusal of an unacknowledged slot
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-execution/src/approval.rs
-- native/hagency-execution/src/approval/control.rs
-- native/hagency-execution/src/approval/observations.rs
-- native/hagency-execution/src/approval/state.rs
-- native/hagency-execution/tests/support/approval_loss.rs
-- native/hagency-execution/tests/owned/approvals.rs
+- crates/hagency-execution/src/approval.rs
+- crates/hagency-execution/src/approval/control.rs
+- crates/hagency-execution/src/approval/observations.rs
+- crates/hagency-execution/src/approval/state.rs
+- crates/hagency-execution/tests/support/approval_loss.rs
+- crates/hagency-execution/tests/owned/approvals.rs
 - specs/task-rust-owned-approval-usage-receipts.spec.md
 - docs/agent-knowledge.md
 - docs/progress.md

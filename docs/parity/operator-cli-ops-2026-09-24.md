@@ -5,7 +5,7 @@ The Rust binary is well behind TS for work done outside the browser. Out of 42 o
 **Paths used below**
 - **TS** = `TS-repo`
 - **R** = `TS-repo-rust-migration-finish-20260915`
-- **RS** = `R/native/hagency/src`
+- **RS** = `R/crates/hagency/src`
 
 **Rust command set.** The clap tree in `RS/main.rs:17-166` has these subcommands: `mcp`, `task` (runner-side), `init`, `account {prepare,inspect,retire,login}`, `registration register`, `provision existing`, `intake-refuse-stale-session`, `console-access`, `alerts`, `engagements`, `resources` and `serve`. Of these, `alerts`, `engagements` and `resources` are read-only inspection commands.
 
@@ -32,7 +32,7 @@ The Rust binary is well behind TS for work done outside the browser. Out of 42 o
 2. **`namespace_prefix` is written by hand in `agent-driver.json`.**
    - It is part of the closed profile `appservice_login_home_rooms_enrollment_step_v1` (`config.rs:224-229`).
    - `agent-driver.json` is loaded at `config.rs:403-406`.
-   - The prefix must be lowercase letters, digits or `_`, 128 characters or fewer (`R/native/hagency-matrix/src/token_provision/application_service.rs:18-28`).
+   - The prefix must be lowercase letters, digits or `_`, 128 characters or fewer (`R/crates/hagency-matrix/src/token_provision/application_service.rs:18-28`).
    - The same JSON also needs a hand-computed `matrix.registration_fingerprint`. It must equal the canonical digest of the registration (`hagency-matrix/src/provisioning.rs:117-119,189`; 64 hex characters, `hagency-matrix/src/config.rs:112`). Nothing prints this digest: `registration register` outputs only `{"ok":true}` (`RS/main.rs:236-240`).
 3. **Nothing issues an appservice registration.**
    - Searching all native `.rs` files for `as_token|hs_token|asToken|hsToken|/_matrix/app/` finds nothing outside tests.

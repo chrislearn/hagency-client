@@ -35,7 +35,7 @@ protocol acknowledgements into execution authority.
 ### Allowed Changes
 - ./Cargo.toml
 - ./Cargo.lock
-- native/hagency-runtime/**
+- crates/hagency-runtime/**
 - specs/task-rust-codex-protocol.spec.md
 - knowledge/decisions/adr-032-native-codex-protocol.md
 - docs/**

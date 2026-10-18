@@ -27,17 +27,17 @@ manufacturing a source Snapshot or permission to retry a possible upload.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-media-store/src/lib.rs
-- native/hagency-media-store/src/types.rs
-- native/hagency-media-store/src/restoration.rs
-- native/hagency-media-store/src/tests.rs
-- native/hagency-media-store/src/tests/restoration.rs
+- crates/hagency-media-store/src/lib.rs
+- crates/hagency-media-store/src/types.rs
+- crates/hagency-media-store/src/restoration.rs
+- crates/hagency-media-store/src/tests.rs
+- crates/hagency-media-store/src/tests/restoration.rs
 - knowledge/decisions/adr-077-native-encrypted-staging-restoration.md
 - specs/task-rust-encrypted-staging-restoration.spec.md
 - docs/plan.md
 - docs/progress.md
 - docs/agent-knowledge.md
-- native/README.md
+- docs/native-engine.md
 
 ## Acceptance Criteria
 

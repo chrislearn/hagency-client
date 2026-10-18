@@ -22,8 +22,8 @@ Use exact cursor and response digest receipt identity, as ordinary intake does.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/src/sdk/approval_intake.rs
-- native/hagency-matrix/tests/approval_intake/mod.rs
+- crates/hagency-matrix/src/sdk/approval_intake.rs
+- crates/hagency-matrix/tests/approval_intake/mod.rs
 - specs/task-rust-approval-sync-cursor.spec.md
 - knowledge/decisions/adr-166-approval-sync-cursor.md
 - docs/agent-knowledge.md

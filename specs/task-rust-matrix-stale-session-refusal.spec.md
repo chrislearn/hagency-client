@@ -33,18 +33,18 @@ local operator refusal, not a retry, retarget, automatic recovery or task succes
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain/verified_ingress.rs
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-matrix/src/intake.rs
-- native/hagency-matrix/src/event_batch.rs
-- native/hagency-matrix/src/event_batch/disposition.rs
-- native/hagency-matrix/src/sdk.rs
-- native/hagency-matrix/tests/intake/**
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/bootstrap/intake_refusal.rs
-- native/hagency/src/main.rs
+- crates/hagency-store/src/domain/verified_ingress.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-matrix/src/intake.rs
+- crates/hagency-matrix/src/event_batch.rs
+- crates/hagency-matrix/src/event_batch/disposition.rs
+- crates/hagency-matrix/src/sdk.rs
+- crates/hagency-matrix/tests/intake/**
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/bootstrap/intake_refusal.rs
+- crates/hagency/src/main.rs
 - knowledge/decisions/adr-151-native-stale-session-refusal.md
 - docs/progress.md
 

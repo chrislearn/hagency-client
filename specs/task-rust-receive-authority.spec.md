@@ -27,10 +27,10 @@ capability association check. Neither helper grants replacement write authority.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain/owned_dispatch.rs
-- native/hagency-store/src/domain/received_files.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/received_files.rs
+- crates/hagency-store/src/domain/owned_dispatch.rs
+- crates/hagency-store/src/domain/received_files.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/received_files.rs
 - specs/task-rust-receive-authority.spec.md
 - docs/agent-knowledge.md
 - docs/progress.md

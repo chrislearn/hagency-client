@@ -16,7 +16,7 @@ Agents sharing a room and separate DMs.**"
 no untested cell (`:387-388`). The backlog's §4 finds this requirement "planned
 nowhere" and calls it the single largest omission. Every native integration harness
 on this tree is single-engagement: `Fixture::new()`
-(`native/hagency-matrix/tests/common/mod.rs:60-93`) admits and approves one request
+(`crates/hagency-matrix/tests/common/mod.rs:60-93`) admits and approves one request
 and binds its identity to that one engagement (`:85`), and no two-engagement fixture
 exists anywhere under `native/*/tests` (grep → none; 95 call sites use the single
 form). So "two Agents" is a fixture gap before it is an assertion gap.
@@ -28,7 +28,7 @@ one room, asserts only the addressed agent's client sends, and refuses a
 private-root-threaded reply and an ambiguous sender with nothing sent. The
 mechanisms native composes all exist: the real-TLS fake peer
 (`hagency-palpo/tests/common/mod.rs:168`), the owned-dispatch full workflow
-(`native/hagency/tests/owned_matrix.rs:11`), DM and group ciphertext in both
+(`crates/hagency/tests/owned_matrix.rs:11`), DM and group ciphertext in both
 directions for one engagement (`hagency-matrix/tests/outgoing/mod.rs:451`), the
 store's cross-engagement isolation analogue (`conversations.rs:196`), and the
 DM-only approval-room rule (`approval_intake.rs:19-30`).
@@ -70,7 +70,7 @@ admission, E2EE against a second real device with real key upload/claim, and the
 approval round-trip through a real owner client. The evidence record lives
 **crate-side** — the class `adr-140-real-codex-sandbox-qualification.md`
 defines on this branch (an always-present test validating a tracked record;
-note ADR-075 keeps its own evidence inline in prose): `native/hagency/qualification/
+note ADR-075 keeps its own evidence inline in prose): `crates/hagency/qualification/
 two-agent.json` — a tracked file naming the pinned artifact and version, the
 environment, the three verdicts and what remains unproven, in the ADR-075 record
 shape (the run id, the exact failures, the verdict). The always-present test
@@ -108,9 +108,9 @@ qualification-only.
 ## Amendment 2026-09-13 — MA-M8b's evidence lands as a file plus an always-present test
 
 The qualification record is a tracked evidence file at
-`native/hagency/qualification/two-agent.json`, validated by
+`crates/hagency/qualification/two-agent.json`, validated by
 `native_two_agent_qualification_records_its_evidence`
-(`native/hagency/tests/qualification.rs`) on EVERY leg — ungated, failing with a
+(`crates/hagency/tests/qualification.rs`) on EVERY leg — ungated, failing with a
 named reason when the file is absent, partial, stale or carries no verdict for
 any claim (ADR-140's evidence class; `qualification/codex-sandbox.json` is the
 exemplar). Until an operator run is recorded, the file is an honest placeholder

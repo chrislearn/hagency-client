@@ -94,8 +94,8 @@ Accepting arbitrary URLs, methods or capabilities in tool arguments would turn s
 
 A hosted failure of this helper was reported as `Error: Protocol` with exit 1.
 At HEAD the helper funnels **21** `Error::Protocol` constructions into that one
-verdict — 17 in `native/hagency/src/mcp.rs`, 3 in `native/hagency/src/mcp/json.rs`
-and 1 in `native/hagency/src/mcp/stdio.rs` — of which **15** are on the
+verdict — 17 in `crates/hagency/src/mcp.rs`, 3 in `crates/hagency/src/mcp/json.rs`
+and 1 in `crates/hagency/src/mcp/stdio.rs` — of which **15** are on the
 pre-`tools/list` path (11 / 3 / 1 respectively; `mcp.rs`'s twelfth,
 "session already closed", is unreachable from the stdio loop, which returns on the
 first refusal). The refusals are now named, and each class carries its own process

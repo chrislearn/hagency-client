@@ -43,16 +43,16 @@ headroom it used so no client re-derives it.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain/usage.rs
-- native/hagency-store/src/domain/usage/reads.rs
-- native/hagency-store/src/domain/usage/types.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/tests/usage.rs
-- native/hagency-store/tests/usage/admission.rs
-- native/hagency-store/tests/fixtures/ceiling-vectors.json
-- native/hagency/tests/usage.rs
-- native/scripts/ceiling-vectors.mjs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain/usage.rs
+- crates/hagency-store/src/domain/usage/reads.rs
+- crates/hagency-store/src/domain/usage/types.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/tests/usage.rs
+- crates/hagency-store/tests/usage/admission.rs
+- crates/hagency-store/tests/fixtures/ceiling-vectors.json
+- crates/hagency/tests/usage.rs
+- tools/native/ceiling-vectors.mjs
 - specs/task-rust-usage-ceiling-admission.spec.md
 - knowledge/decisions/adr-123-native-usage-ceiling-admission.md
 - docs/progress.md

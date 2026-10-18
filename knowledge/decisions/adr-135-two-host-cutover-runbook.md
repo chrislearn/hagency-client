@@ -148,7 +148,7 @@ not cover. It does not rewrite the original text.
 
 **Correction A — step 4's migration fence is eight migrations stale.** Step 4
 checks `user_version` is "exactly `25`" with "`026` the next free migration".
-The store now carries migrations `022`-`033` (`native/hagency-store/src/migrations/`,
+The store now carries migrations `022`-`033` (`crates/hagency-store/src/migrations/`,
 32 files). An operator following step 4 literally against a current artifact sees
 `33`, reads "stop - the old runtime must not be started against it", and aborts a
 healthy cutover. A fence that fires on the correct case is worse than none: the
@@ -173,7 +173,7 @@ only "matrix" string in this record is step 8's `[bridge-matrix]` retirement), s
 the `/ready` gate at step 3 is reached without the precondition below ever firing.
 The constraint applies to any profile that DOES configure matrix, and a future
 revision of this runbook that adds one inherits it:
-`Prepared::load` (`native/hagency/src/bootstrap/config.rs:305-318`, straight-line,
+`Prepared::load` (`crates/hagency/src/bootstrap/config.rs:305-318`, straight-line,
 unskippable) requires `provisioning_registration_for_engagement(&engagement_id)`
 to return a row before a matrix serve starts. That query
 (`domain/verified_ingress.rs:206-207`) joins `engagements e JOIN registrations r

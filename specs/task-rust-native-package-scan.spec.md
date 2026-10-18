@@ -36,8 +36,8 @@ the two selectors are distinct checks, not the same one twice.
 ## Boundaries
 
 ### Allowed Changes
-- native/scripts/ (the scan script or test module)
-- native/hagency/tests/
+- tools/native/ (the scan script or test module)
+- crates/hagency/tests/
 - specs/task-rust-native-package-scan.spec.md
 - docs/progress.md
 

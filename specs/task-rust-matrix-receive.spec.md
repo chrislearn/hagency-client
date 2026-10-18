@@ -33,12 +33,12 @@ This contract retains the design boundaries in [ADR-027](../knowledge/decisions/
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/src/receive.rs
-- native/hagency-matrix/src/collector.rs
-- native/hagency-matrix/src/media_download.rs
-- native/hagency-matrix/src/lib.rs
-- native/hagency-matrix/tests/intake/receive.rs
-- native/hagency-matrix/tests/intake/mod.rs
+- crates/hagency-matrix/src/receive.rs
+- crates/hagency-matrix/src/collector.rs
+- crates/hagency-matrix/src/media_download.rs
+- crates/hagency-matrix/src/lib.rs
+- crates/hagency-matrix/tests/intake/receive.rs
+- crates/hagency-matrix/tests/intake/mod.rs
 - knowledge/decisions/adr-076-native-matrix-receive.md
 - specs/task-rust-matrix-receive.spec.md
 - docs/progress.md

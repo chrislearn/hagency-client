@@ -38,10 +38,10 @@ This contract retains the design boundaries in [ADR-026](../knowledge/decisions/
 ## Boundaries
 
 ### Allowed Changes
-- native/README.md
-- native/hagency-progress/**
-- native/scripts/progress-vectors.mjs
-- native/fixtures/progress.json
+- docs/native-engine.md
+- crates/hagency-progress/**
+- tools/native/progress-vectors.mjs
+- tests/fixtures/progress.json
 - ./Cargo.toml
 - ./Cargo.lock
 - .github/workflows/rust.yml

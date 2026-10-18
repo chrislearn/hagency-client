@@ -41,18 +41,18 @@ reading the thread later. None is added here.
 
 ## Allowed changes
 
-- native/hagency-core/src/messages.rs
-- native/hagency-store/src/domain/messages.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/delegated_intents.rs
-- native/hagency/src/bootstrap/driver.rs
-- native/hagency/src/mcp.rs
-- native/hagency/src/mcp/catalog.rs
-- native/hagency/src/task_client.rs
-- native/hagency/src/task_client/transport.rs
-- native/hagency-runtime/src/task_mcp.rs
-- native/hagency/tests/**
-- native/hagency-runtime/tests/claude_task_mcp.rs
+- crates/hagency-core/src/messages.rs
+- crates/hagency-store/src/domain/messages.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/delegated_intents.rs
+- crates/hagency/src/bootstrap/driver.rs
+- crates/hagency/src/mcp.rs
+- crates/hagency/src/mcp/catalog.rs
+- crates/hagency/src/task_client.rs
+- crates/hagency/src/task_client/transport.rs
+- crates/hagency-runtime/src/task_mcp.rs
+- crates/hagency/tests/**
+- crates/hagency-runtime/tests/claude_task_mcp.rs
 - knowledge/decisions/adr-180-codex-coordination-profile.md
 - specs/task-rust-delegated-thread-followup.spec.md
 - docs/**

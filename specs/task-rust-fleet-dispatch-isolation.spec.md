@@ -36,15 +36,15 @@ routing, approval multiplexing, real two-agent qualification or sustained soak.
 
 ## Allowed changes
 
-- native/hagency/src/bootstrap/workspace.rs
-- native/hagency/src/bootstrap/driver.rs
-- native/hagency-store/src/domain/replies.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/owned_completion.rs
-- native/hagency-store/tests/replies.rs
-- native/hagency/tests/owned_matrix/**
-- native/hagency/tests/owned_matrix.rs
-- native/hagency/tests/owned_mcp.rs
+- crates/hagency/src/bootstrap/workspace.rs
+- crates/hagency/src/bootstrap/driver.rs
+- crates/hagency-store/src/domain/replies.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/owned_completion.rs
+- crates/hagency-store/tests/replies.rs
+- crates/hagency/tests/owned_matrix/**
+- crates/hagency/tests/owned_matrix.rs
+- crates/hagency/tests/owned_mcp.rs
 - knowledge/decisions/adr-033-native-final-reply-custody.md
 - knowledge/decisions/adr-093-native-retained-workspace.md
 - this spec, docs/progress.md, docs/agent-knowledge.md

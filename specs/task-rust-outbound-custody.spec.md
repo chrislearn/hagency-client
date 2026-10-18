@@ -34,9 +34,9 @@ Machine credential rotation is distinct from Matrix registration replacement.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-core/src/canonical.rs
-- native/hagency-store/**
-- native/fixtures/outbound-custody.json
+- crates/hagency-core/src/canonical.rs
+- crates/hagency-store/**
+- tests/fixtures/outbound-custody.json
 - specs/task-rust-outbound-custody.spec.md
 - knowledge/decisions/adr-037-native-outbound-custody.md
 - docs/**

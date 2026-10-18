@@ -33,17 +33,17 @@ as final replies before any live Matrix adapter is connected.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-core/src/ingress.rs
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/domain/verified_ingress.rs
-- native/hagency-store/src/domain/notice_custody.rs
-- native/hagency-store/src/domain/task_intents.rs
-- native/hagency-store/src/domain/matrix_routes.rs
-- native/hagency-store/src/migrations/014-notice-custody.sql
-- native/hagency-store/tests/**
-- native/hagency/tests/runner/verified_ingress.rs
-- native/README.md
+- crates/hagency-core/src/ingress.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/domain/verified_ingress.rs
+- crates/hagency-store/src/domain/notice_custody.rs
+- crates/hagency-store/src/domain/task_intents.rs
+- crates/hagency-store/src/domain/matrix_routes.rs
+- crates/hagency-store/src/migrations/014-notice-custody.sql
+- crates/hagency-store/tests/**
+- crates/hagency/tests/runner/verified_ingress.rs
+- docs/native-engine.md
 - specs/task-rust-notice-custody.spec.md
 - knowledge/decisions/adr-045-native-notice-custody.md
 - docs/**

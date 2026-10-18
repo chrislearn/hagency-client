@@ -34,8 +34,8 @@ bounded Codex session and verify it with a real offline native fixture.
 
 ### Allowed Changes
 - ./Cargo.lock
-- native/hagency-platform/**
-- native/hagency-runtime/**
+- crates/hagency-platform/**
+- crates/hagency-runtime/**
 - specs/task-rust-owned-runner-io.spec.md
 - knowledge/decisions/adr-040-native-owned-runner-io.md
 - docs/**

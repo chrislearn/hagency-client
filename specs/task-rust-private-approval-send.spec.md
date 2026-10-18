@@ -37,17 +37,17 @@ the wiring sends and what happens when it cannot.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/src/approval_delivery.rs
-- native/hagency-matrix/src/approval_delivery/state.rs
-- native/hagency-matrix/src/approval_delivery/public.rs
-- native/hagency-matrix/tests/
-- native/hagency-store/src/domain/approvals.rs
-- native/hagency-store/src/domain/approvals/
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/migrations/032-approval-denial-reason.sql
-- native/hagency-store/tests/
+- crates/hagency-matrix/src/approval_delivery.rs
+- crates/hagency-matrix/src/approval_delivery/state.rs
+- crates/hagency-matrix/src/approval_delivery/public.rs
+- crates/hagency-matrix/tests/
+- crates/hagency-store/src/domain/approvals.rs
+- crates/hagency-store/src/domain/approvals/
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/migrations/032-approval-denial-reason.sql
+- crates/hagency-store/tests/
 - specs/task-rust-private-approval-send.spec.md
 - knowledge/decisions/adr-137-private-approval-send-fail-closed.md
 - knowledge/decisions/adr-003-two-channel-ui-approval.md
@@ -57,7 +57,7 @@ the wiring sends and what happens when it cannot.
 
 ### Forbidden
 - Live homeservers, credentials, deployed state.
-- native/hagency/src/console/** (PC-C2's observation routes); native/hagency/src/mcp/** (PC-C3's tools); native/hagency/src/bootstrap/** (PC-C0's wiring); migrations other than 032 (026 RT-7.s, 027 RT-7.s, 028 MA-S1.s).
+- crates/hagency/src/console/** (PC-C2's observation routes); crates/hagency/src/mcp/** (PC-C3's tools); crates/hagency/src/bootstrap/** (PC-C0's wiring); migrations other than 032 (026 RT-7.s, 027 RT-7.s, 028 MA-S1.s).
 
 ## Acceptance Criteria
 

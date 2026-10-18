@@ -25,11 +25,11 @@ inspection/resolution workflow or authorize settlement of the old live failure.
 
 ## Allowed changes
 
-- native/hagency/src/console/agents.rs
-- native/hagency/tests/console/agents.rs
-- native/hagency-store/src/domain/execution.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/tasks.rs
+- crates/hagency/src/console/agents.rs
+- crates/hagency/tests/console/agents.rs
+- crates/hagency-store/src/domain/execution.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/tasks.rs
 - knowledge/decisions/adr-148-operator-recovery-resume.md
 - this spec
 - docs/**

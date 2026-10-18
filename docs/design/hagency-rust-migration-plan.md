@@ -4,7 +4,7 @@ Date: 2026-09-14. Status: delivery slices landing on feat/rust-migration by host
 
 Requirements: [REQ-RUST-MIGRATION-PLAN](../../knowledge/requirements/req-rust-migration-plan.md) and the subsequent [implementation authorization](../../knowledge/requirements/req-rust-migration-execution.md).
 
-Current checkpoint: [native README](../../native/README.md). [ADR-095](../../knowledge/decisions/adr-095-native-state-ownership.md) resolves transaction ownership and adds latency, early proof and integration gates from the plan review. The implementation baseline is merged `5dbef22`; the inventory below records the earlier planning baseline.
+Current checkpoint: [native README](../../docs/native-engine.md). [ADR-095](../../knowledge/decisions/adr-095-native-state-ownership.md) resolves transaction ownership and adds latency, early proof and integration gates from the plan review. The implementation baseline is merged `5dbef22`; the inventory below records the earlier planning baseline.
 
 ## 1. Goal and decisions
 
@@ -646,7 +646,7 @@ records. Nothing here claims completion of a milestone.
 surface: app-server argv and opt-in driver" (the argv is `app-server` alone
 with policy in the typed request, the driver is opt-in, both deliberate; the
 stdio equivalence pinned by a recorded fixture,
-`native/fixtures/codex-cli/app-server-help-0.153.4.excerpt.txt`); ADR-140
+`tests/fixtures/codex-cli/app-server-help-0.153.4.excerpt.txt`); ADR-140
 "Qualify the real Codex sandbox behind a compiled-out feature" (amended to the
 evidence-file class: an operator-run example writes a tracked record the CI
 test validates and fails on when missing — never a skip). Designed and ready:
@@ -717,7 +717,7 @@ commands, checks, refusals, the rollback refusal point named at end of step
 5), ADR-136 "Windows is paused as a native release target" (the §5
 platform-scope note above records it in this plan), ADR-144 "Two-agent
 integration acceptance" (MA-M8a in process + MA-M8b as the operator-run
-evidence record at `native/hagency/qualification/two-agent.json`). Designed
+evidence record at `crates/hagency/qualification/two-agent.json`). Designed
 and ready: the release workflow draft (`.github/workflows/release-native.yml`,
 dispatch-only by design until M9) and the six Lane C spec companions.
 Implemented today: the readiness routes, the SIGTERM→drain→ADR-120-close

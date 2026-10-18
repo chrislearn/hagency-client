@@ -35,7 +35,7 @@ export default function AgentsPage() {
  * The per-agent execution policy (#27; TS parity: backend-v2.js:10865-10885).
  *
  * It talks to the console's OWN route (`/console/api/agents/:id/execution-policy`,
- * server: native/hagency/src/console/exec_policy.rs), never the retained
+ * server: crates/hagency/src/console/exec_policy.rs), never the retained
  * proxy `/api/hagency/*`: the two are different products and only the native
  * one is served by the Rust console. The session cookie is Path=/console, so
  * it rides along.

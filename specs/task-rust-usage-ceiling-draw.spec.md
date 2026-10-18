@@ -39,15 +39,15 @@ unknown evidence into zero or cache reads into spend.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain/usage.rs
-- native/hagency-store/src/domain/usage/reads.rs
-- native/hagency-store/src/domain/usage/types.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/tests/usage.rs
-- native/hagency-store/tests/usage/**
-- native/hagency-store/tests/fixtures/ceiling-vectors.json
-- native/scripts/ceiling-vectors.mjs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain/usage.rs
+- crates/hagency-store/src/domain/usage/reads.rs
+- crates/hagency-store/src/domain/usage/types.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/tests/usage.rs
+- crates/hagency-store/tests/usage/**
+- crates/hagency-store/tests/fixtures/ceiling-vectors.json
+- tools/native/ceiling-vectors.mjs
 - .github/workflows/rust.yml
 - specs/task-rust-usage-ceiling-draw.spec.md
 - knowledge/decisions/adr-121-native-usage-ceiling-draw.md

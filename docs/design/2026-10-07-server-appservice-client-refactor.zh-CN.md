@@ -29,7 +29,7 @@ Desktop Agent 创建、资源、接入权限和运行闭环的最新核对与修
 
 ### 正式实施进度与不能混淆的验证层次
 
-以下为位置修正后的实际代码状态，优先于文中最初的差异基线。此前 `refactor-drafts/appservice-domain/` 仍是历史草稿；正式实现现在位于服务端 `crates/agent-service/`，使用 PostgreSQL 新 schema `hagency_agent_v1`，并已由真实 backend 引用。客户端新增 `native/hagency-agent-local/`；两个新增领域均不导入旧 Fleet 数据。
+以下为位置修正后的实际代码状态，优先于文中最初的差异基线。此前 `refactor-drafts/appservice-domain/` 仍是历史草稿；正式实现现在位于服务端 `crates/agent-service/`，使用 PostgreSQL 新 schema `hagency_agent_v1`，并已由真实 backend 引用。客户端新增 `crates/hagency-agent-local/`；两个新增领域均不导入旧 Fleet 数据。
 
 | 实施项 | 已落地的行为 | 当前证据及剩余门槛 |
 |---|---|---|
@@ -241,14 +241,14 @@ Project 管理员可由 Space 的 Matrix 权限映射，首期建议提供显式
 
 | 核对位置 | 已有实现 | 与目标的差距 |
 |---|---|---|
-| client `native/hagency/src/console/server_login.rs` 的 `begin` / `finish` | 请求 discovery，动态登记 native public OAuth client，使用授权码、PKCE S256、state 与回调 cookie；Rust host 换 token，调用服务端 identity | 登录后继续执行 `enroll`，把用户登录与 Fleet 安装混为一条流程；discovery 返回的 issuer 未被消费核对，授权与 token 地址直接拼接固定路径 |
+| client `crates/hagency/src/console/server_login.rs` 的 `begin` / `finish` | 请求 discovery，动态登记 native public OAuth client，使用授权码、PKCE S256、state 与回调 cookie；Rust host 换 token，调用服务端 identity | 登录后继续执行 `enroll`，把用户登录与 Fleet 安装混为一条流程；discovery 返回的 issuer 未被消费核对，授权与 token 地址直接拼接固定路径 |
 | 同文件 `enroll` | POST `/_hagency/client/v1/fleets`，下载配置，调用 `palpo_live.import`，轮询 Fleet connect/readiness | 客户端取得 Fleet registration 的 `as_token` / `hs_token` 与 machine token；这些凭据必须从新用户登录和客户端连接路径移除 |
 | 同文件 `RemoteSession` / `validate` | 用户 token 在进程内保存，本地 session 最长 900 秒，每 30 秒通过 identity 复核；绑定 owner、Pasion subject、OAuth client ID | 登记声明支持 refresh_token，但源码没有消费 refresh_token、刷新或重启恢复；复核约束用于本地 UI，并未证明旧 machine transport 会随用户会话撤销而停止 |
 | client `console/authority.rs::server_session`、`console.rs::logout` | 生成有限期本地 cookie；登出撤销本地 authority session | 登录授予现有 publication/configuration/account 本地能力，未形成新 owner/device scope；登出未在此路径撤销 Pasion token、服务端设备或执行租约 |
 | client `mockup/components/ServerLoginControl.jsx`、`app/project-sides/import-palpo.jsx` | 已有 Pasion 登录按钮及状态；同时保留管理员配置手工导入入口 | UI 与文案仍围绕 Fleet 名称、配置导入及 connect；`configured` 只表明保存过身份绑定，不代表当前已认证或已连接 |
 | server `crates/backend/src/admin/native_client.rs` | 要求 Pasion delegated auth，服务端 introspection 检查 active/sub/scope/client_id，再用 Matrix whoami 核对实际用户，排除 guest，并比较用户名映射 | 验证后仍创建用户 Fleet 并交付旧 custody；尚未变成新 Hagency 用户会话、受限设备凭证与 Agent owner 授权 |
 | server `crates/backend/src/pasion.rs::prepare` | 配置 Pasion issuer、内部 introspection 和 Palpo 既有 delegated auth；Pasion 作为身份服务接入 | 保留此集成基础，使用 Palpo/Pasion 既有能力；登录方案不要求修改 Palpo 默认源码或新增授权旁路 |
-| client `native/hagency/tests/console/server_login.rs` | fixture 检查 PKCE、回调 cookie、不同 owner 拒绝、过期与撤销；fixture 还模拟旧 Fleet 配置及凭据保存 | 是模拟 OAuth 服务，不能证明真实 Pasion 的 DCR、授权同意、回调端口匹配或服务端联合身份核验；新测试应断言没有 Fleet/AS 凭据下发 |
+| client `crates/hagency/tests/console/server_login.rs` | fixture 检查 PKCE、回调 cookie、不同 owner 拒绝、过期与撤销；fixture 还模拟旧 Fleet 配置及凭据保存 | 是模拟 OAuth 服务，不能证明真实 Pasion 的 DCR、授权同意、回调端口匹配或服务端联合身份核验；新测试应断言没有 Fleet/AS 凭据下发 |
 
 ### 认证、业务授权与执行权分开
 
@@ -560,7 +560,7 @@ Appservice 接收到加密事件不等于拥有明文。若希望内容只由创
 
 ### 现有加密能力与复用边界
 
-当前源码已经包含 Matrix SDK 的 Olm/Megolm、加密 state/crypto SQLite store、房间事件解密、缺失密钥事件保留与恢复、设备密钥检查、房间密钥分享和加密发送，并非需要从零实现密码学。代码证据为 `native/hagency-matrix/Cargo.toml`、`src/sdk.rs`、`src/sdk/encrypted_message.rs`、`src/sdk/keys.rs` 与 `tests/outgoing/crypto_fixture.rs`。
+当前源码已经包含 Matrix SDK 的 Olm/Megolm、加密 state/crypto SQLite store、房间事件解密、缺失密钥事件保留与恢复、设备密钥检查、房间密钥分享和加密发送，并非需要从零实现密码学。代码证据为 `crates/hagency-matrix/Cargo.toml`、`src/sdk.rs`、`src/sdk/encrypted_message.rs`、`src/sdk/keys.rs` 与 `tests/outgoing/crypto_fixture.rs`。
 
 这些模块仍接入旧 `hagency-core` 的 ReplyRoute、旧 `hagency-store` 与服务进程内 SDK owner，因此源码存在不能证明新架构的客户端加密已完成。优先抽取/改接 SDK、密钥和事件处理能力，在新 client 的全新 crypto state 中运行；新 server 只处理受限设备和密文路由。复用代码和依赖不等于导入旧数据结构或旧密钥。
 
@@ -693,17 +693,17 @@ server 的 PostgreSQL 业务库与 client 的本地存储分开初始化与备�
 | server `crates/operations/src/store.rs` | 当前 PostgreSQL `public.hagency_admin_state` JSONB 保存 Fleet 与项目等，使用共享写锁和数据库 advisory lock；新结构必须独立初始化并拒绝旧业务数据，不能自动转换旧文档 |
 | server `crates/operations/src/outbound.rs`、`notifications.rs` | 已有持久化投递和通知机制，可复用可靠性思想，但收件人和 scope 改为永久 owner/设备/binding |
 | server `crates/hagency-contract`、`crates/frontend` | 已有领域协议与管理页面；新版本需改 wire 类型与入口，去除 Fleet、资源批准及转让可能性 |
-| client `native/hagency/src/console/server_login.rs` | 已有面向服务器的登录实现，并有本地未提交改动；重构须保留现有工作，不能另写脱离真实客户端的登录壳 |
-| client `native/hagency/src/bootstrap/palpo_import.rs`、`palpo.rs`、`palpo_work.rs` | 仍有 Fleet 导入及申请接收，真实 `admit_request` 创建待批准 Engagement；替换为新用户/设备协议 |
-| client `native/hagency-core/src/authority.rs`、`project.rs` | 旧权限和 Agent/resource/Engagement 模型；替换为服务器授权 binding 与本地请求策略 |
-| client `native/hagency-store/src/domain/matrix_routes.rs`、`quota_holds.rs`、`engagement_terms.rs` | 旧路由及额度围绕 Engagement；全新本地数据结构按 Agent/Room/requester 保存上下文、额度与预留 |
-| client `native/hagency-matrix/src/provisioning.rs`、`token_provision/application_service.rs` | 已有傀儡账号创建机制；身份创建与服务级 AS secrets 的责任应迁到 server |
-| client `native/hagency-matrix/src/sdk.rs`、`sdk/encrypted_message.rs`、`sdk/keys.rs` | 加密能力可以作为重构基础，但需改接新客户端密钥托管与受限设备协议 |
-| client `native/hagency/src/console/exec_policy.rs`、`native/hagency-execution/src/local_codex.rs` | 已有执行策略和 Codex 执行基础；移除旧 Engagement 资源前提，加入 Room/requester 许可与计量 |
+| client `crates/hagency/src/console/server_login.rs` | 已有面向服务器的登录实现，并有本地未提交改动；重构须保留现有工作，不能另写脱离真实客户端的登录壳 |
+| client `crates/hagency/src/bootstrap/palpo_import.rs`、`palpo.rs`、`palpo_work.rs` | 仍有 Fleet 导入及申请接收，真实 `admit_request` 创建待批准 Engagement；替换为新用户/设备协议 |
+| client `crates/hagency-core/src/authority.rs`、`project.rs` | 旧权限和 Agent/resource/Engagement 模型；替换为服务器授权 binding 与本地请求策略 |
+| client `crates/hagency-store/src/domain/matrix_routes.rs`、`quota_holds.rs`、`engagement_terms.rs` | 旧路由及额度围绕 Engagement；全新本地数据结构按 Agent/Room/requester 保存上下文、额度与预留 |
+| client `crates/hagency-matrix/src/provisioning.rs`、`token_provision/application_service.rs` | 已有傀儡账号创建机制；身份创建与服务级 AS secrets 的责任应迁到 server |
+| client `crates/hagency-matrix/src/sdk.rs`、`sdk/encrypted_message.rs`、`sdk/keys.rs` | 加密能力可以作为重构基础，但需改接新客户端密钥托管与受限设备协议 |
+| client `crates/hagency/src/console/exec_policy.rs`、`crates/hagency-execution/src/local_codex.rs` | 已有执行策略和 Codex 执行基础；移除旧 Engagement 资源前提，加入 Room/requester 许可与计量 |
 
 客户端相关路径已在真实仓库核对。此前对旧路径进行的测试或静态审计不能自动算作真实仓库的验收；正式实施应在上述真实版本重新执行相关验证。迁移的独立领域草稿此前通过 10 个单元测试，仅证明其有限领域约束，不证明已集成 HTTP、认证、Appservice、PostgreSQL 或 Codex 任务执行。
 
-历史服务端入口 `crates/backend/src/admin/fleet.rs`、`native_client.rs` 及 `crates/operations/src/workflow.rs`、`store.rs` 已删除；现行入口为[用户 API](../../../hagency-server/crates/agent-service/src/api.rs)和[新领域](../../../hagency-server/crates/agent-service/src/domain.rs)。保留的 SDK 源码入口：[客户端申请接收](../../native/hagency/src/bootstrap/palpo_work.rs)、[客户端权限验证](../../native/hagency-core/src/authority.rs)、[客户端执行路由](../../native/hagency-store/src/domain/matrix_routes.rs)、[客户端账号创建](../../native/hagency-matrix/src/provisioning.rs)。
+历史服务端入口 `crates/backend/src/admin/fleet.rs`、`native_client.rs` 及 `crates/operations/src/workflow.rs`、`store.rs` 已删除；现行入口为[用户 API](../../../hagency-server/crates/agent-service/src/api.rs)和[新领域](../../../hagency-server/crates/agent-service/src/domain.rs)。保留的 SDK 源码入口：[客户端申请接收](../../crates/hagency/src/bootstrap/palpo_work.rs)、[客户端权限验证](../../crates/hagency-core/src/authority.rs)、[客户端执行路由](../../crates/hagency-store/src/domain/matrix_routes.rs)、[客户端账号创建](../../crates/hagency-matrix/src/provisioning.rs)。
 
 ### 差异及改造程度
 

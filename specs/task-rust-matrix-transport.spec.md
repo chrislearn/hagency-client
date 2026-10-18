@@ -35,16 +35,16 @@ bounded authenticated observations without enabling event admission or sends.
 ### Allowed Changes
 - ./Cargo.toml
 - ./Cargo.lock
-- native/hagency-matrix/**
-- native/hagency-matrix/src/lib.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-core/src/replies.rs
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/domain/matrix_routes.rs
-- native/hagency-store/src/migrations/015-matrix-transport.sql
-- native/hagency-store/tests/**
-- native/hagency/tests/**
+- crates/hagency-matrix/**
+- crates/hagency-matrix/src/lib.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-core/src/replies.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/domain/matrix_routes.rs
+- crates/hagency-store/src/migrations/015-matrix-transport.sql
+- crates/hagency-store/tests/**
+- crates/hagency/tests/**
 - specs/task-rust-matrix-transport.spec.md
 - knowledge/decisions/adr-047-native-matrix-transport.md
 - docs/**

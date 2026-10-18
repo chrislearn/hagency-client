@@ -29,15 +29,15 @@ commitment without reconstructing source custody or current send authority.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain/file_delivery.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/file_delivery.rs
-- native/hagency-store/tests/file_delivery/worker.rs
-- native/hagency-media/src/descriptor.rs
-- native/hagency-media-store/src/frame.rs
-- native/hagency-media-store/src/lib.rs
-- native/hagency-media-store/src/tests.rs
-- native/hagency-media-store/src/tests/association.rs
+- crates/hagency-store/src/domain/file_delivery.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/file_delivery.rs
+- crates/hagency-store/tests/file_delivery/worker.rs
+- crates/hagency-media/src/descriptor.rs
+- crates/hagency-media-store/src/frame.rs
+- crates/hagency-media-store/src/lib.rs
+- crates/hagency-media-store/src/tests.rs
+- crates/hagency-media-store/src/tests/association.rs
 - knowledge/decisions/adr-100-native-file-publication-association.md
 - specs/task-rust-file-publication-association.spec.md
 - docs/agent-knowledge.md

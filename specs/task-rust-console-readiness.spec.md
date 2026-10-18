@@ -25,7 +25,7 @@ stays frozen.
 
 ### Must Not
 - Do not read `/health`, add any console route for readiness, or proxy `/ready` through `/console/api/*`.
-- Do not add any field to `manifest.json` or touch `native/hagency/src/console/assets.rs` — the constants travel as a bundled `.js`, and "no Rust change" holds by construction.
+- Do not add any field to `manifest.json` or touch `crates/hagency/src/console/assets.rs` — the constants travel as a bundled `.js`, and "no Rust change" holds by construction.
 - Do not enumerate readiness state words in the client — one vocabulary, the server's.
 - Do not add restart or stop controls — explicitly out of scope until the service wrapper exists.
 - Do not change the readiness contract: `/health` 200-while-live, `/ready` the 503 boundary, the `ComponentState` vocabulary and its enumeration test, diagnostic-never-authority.
@@ -47,15 +47,15 @@ page's own PageHead sites — the one page-file exception to Forbidden. -->
 - mockup/lib/i18n.js
 - mockup/app/resources/new/page.jsx
 - mockup/scripts/build-native-console.mjs
-- native/hagency/tests/console/status_strip.rs
-- native/hagency/tests/console.rs
+- crates/hagency/tests/console/status_strip.rs
+- crates/hagency/tests/console.rs
 - specs/task-rust-console-readiness.spec.md
 - knowledge/decisions/adr-145-console-readiness-version-strip.md
 - docs/progress.md
 
 ### Forbidden
 - Live services, credentials, deployed state.
-- native/hagency/src/** (no Rust source file — the strip's own rule); mockup/app/** page files; the manifest schema.
+- crates/hagency/src/** (no Rust source file — the strip's own rule); mockup/app/** page files; the manifest schema.
 
 ## Acceptance Criteria
 

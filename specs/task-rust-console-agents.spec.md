@@ -42,25 +42,25 @@ is bound there, executed only in the enabled lane.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency/src/console/agents.rs
-- native/hagency/src/console.rs
-- native/hagency/src/console/assets.rs
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/lib.rs
-- native/hagency/tests/console/agents.rs
-- native/hagency/tests/console/real_agent.rs
-- native/hagency/tests/inline_factory/mod.rs
-- native/hagency/tests/console.rs
-- native/hagency/tests/console/browser.rs
-- native/hagency/Cargo.toml
+- crates/hagency/src/console/agents.rs
+- crates/hagency/src/console.rs
+- crates/hagency/src/console/assets.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency/tests/console/agents.rs
+- crates/hagency/tests/console/real_agent.rs
+- crates/hagency/tests/inline_factory/mod.rs
+- crates/hagency/tests/console.rs
+- crates/hagency/tests/console/browser.rs
+- crates/hagency/Cargo.toml
 - mockup/app/agents/page.jsx
 - mockup/components/NativeAgents.jsx
 - mockup/lib/native-api.js
 - mockup/scripts/build-native-console.mjs
 - specs/task-rust-console-agents.spec.md
 - knowledge/decisions/adr-126-native-agent-roster.md
-- native/README.md
+- docs/native-engine.md
 - docs/progress.md
 
 ### Forbidden

@@ -28,11 +28,11 @@ Use the installed 0.154.0 schema and existing TS approval tests as references.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-runtime/**
-- native/hagency-execution/**
-- native/hagency-store/tests/**
-- native/hagency/src/bootstrap/config.rs
-- native/hagency/tests/bootstrap*
+- crates/hagency-runtime/**
+- crates/hagency-execution/**
+- crates/hagency-store/tests/**
+- crates/hagency/src/bootstrap/config.rs
+- crates/hagency/tests/bootstrap*
 - specs/task-rust-codex-mcp-approval.spec.md
 - knowledge/decisions/adr-160-native-codex-mcp-approval.md
 - docs/**

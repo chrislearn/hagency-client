@@ -34,13 +34,13 @@ file. Keep upstream observations separate from host execution authority.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-runtime/src/codex/session/observation.rs
-- native/hagency-runtime/tests/session.rs
-- native/hagency-runtime/tests/session/command_witness.rs
-- native/hagency-execution/examples/codex_qualify.rs
-- native/hagency-execution/examples/codex_qualify/witness.rs
-- native/hagency-execution/qualification/source_digests.rs
-- native/hagency-execution/tests/qualification.rs
+- crates/hagency-runtime/src/codex/session/observation.rs
+- crates/hagency-runtime/tests/session.rs
+- crates/hagency-runtime/tests/session/command_witness.rs
+- crates/hagency-execution/examples/codex_qualify.rs
+- crates/hagency-execution/examples/codex_qualify/witness.rs
+- crates/hagency-execution/qualification/source_digests.rs
+- crates/hagency-execution/tests/qualification.rs
 - specs/task-rust-codex-command-witness.spec.md
 - knowledge/decisions/adr-140-real-codex-sandbox-qualification.md
 - docs/progress.md

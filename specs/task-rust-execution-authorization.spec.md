@@ -32,12 +32,12 @@ grant, runner permission response and effective OS sandbox.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-core/src/lib.rs
-- native/hagency-core/src/execution.rs
-- native/hagency-core/src/execution/**
-- native/hagency-core/tests/execution.rs
-- native/fixtures/execution.json
-- native/scripts/execution-vectors.mjs
+- crates/hagency-core/src/lib.rs
+- crates/hagency-core/src/execution.rs
+- crates/hagency-core/src/execution/**
+- crates/hagency-core/tests/execution.rs
+- tests/fixtures/execution.json
+- tools/native/execution-vectors.mjs
 - .github/workflows/rust.yml
 - specs/task-rust-execution-authorization.spec.md
 - knowledge/decisions/adr-039-native-execution-authorization.md

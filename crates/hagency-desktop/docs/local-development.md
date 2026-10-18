@@ -4,9 +4,11 @@
 
 ## Checkout and build
 
-Cargo fetches the owner engine directly from the `main` branch of
-`https://github.com/chrislearn/hagency-client.git`. Cargo.lock pins its exact
-revision, so a sibling client checkout is not required. Build from Desktop:
+Desktop and its owner engine share the hagency-client workspace. The engine
+is a local path dependency (`../hagency`); use the root Cargo.lock. Commands
+below run from `crates/hagency-desktop`, unless explicitly stated otherwise.
+On Windows, use the root `tools/dev.ps1` wrapper to keep all build outputs and
+caches in D:/BuildCache/hagency-client. See the [workspace guide](../../../docs/workspace.md).
 
 The Desktop pins Rust 1.98.0; the server selects its own toolchain. On macOS,
 install Xcode command-line tools and CMake (`brew install cmake`). Linux requires
@@ -44,8 +46,8 @@ instances against the same data directory. A new directory starts with no saved
 accounts; it does not clone another account's keys, ledger or provider association.
 Keep private state and logs out of Git. Logs may contain account/Room metadata.
 
-For the server use [server setup](../../hagency-server/README.md) and
-[connection diagnostics](../../hagency-server/docs/LOCAL_DEPLOYMENT.md). Start
+For the server use [server setup](https://github.com/hagency-org/hagency-server/blob/main/README.md) and
+[connection diagnostics](https://github.com/hagency-org/hagency-server/blob/main/docs/LOCAL_DEPLOYMENT.md). Start
 source dev or Compose server, then enter its origin in Desktop, for example
 `http://127.0.0.1:8088`. OAuth permits HTTP only for loopback IPs. A local hostname
 requires HTTPS, matching Pasion issuer and trusted certificates. Check the server
@@ -61,7 +63,7 @@ normal Matrix homeserver without Hagency/Pasion is not the current login target.
 cargo test --locked -p rinx --lib
 cargo test --locked -p rinx home::project_tree::tests --lib -- --test-threads=1
 cargo test --locked -p rinx browser_login_tests --lib -- --test-threads=1
-cargo test --locked --manifest-path crates/article-core/Cargo.toml
+cargo test --locked --manifest-path ../article-core/Cargo.toml
 python3 tools/wechat-ux/check_i18n.py
 ```
 
@@ -69,7 +71,7 @@ Project navigation tests cover separate folder expansion and Project detail
 selection plus account/login refresh. Login widget tests cover saved/manual
 server selection. They do not replace a native visual/pointer check. Ignored live
 tests require their documented private fixtures and are not included as passed.
-See [server testing](../../hagency-server/docs/TESTING.md) for protocol/database checks.
+See [server testing](https://github.com/hagency-org/hagency-server/blob/main/docs/TESTING.md) for protocol/database checks.
 
 ## Native acceptance sequence
 

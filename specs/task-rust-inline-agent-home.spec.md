@@ -45,13 +45,13 @@ routes, not a substitute for either deployment profile or full M0–M9 gates.
 
 ## Allowed changes
 
-- native/hagency-store/src/agent_home.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-matrix/src/provisioning.rs
-- native/hagency-matrix/tests/intake/provisioning.rs
-- native/hagency-matrix/tests/provision_rooms/mod.rs
-- native/hagency/src/bootstrap/config.rs
-- native/hagency/tests/bootstrap.rs
+- crates/hagency-store/src/agent_home.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-matrix/src/provisioning.rs
+- crates/hagency-matrix/tests/intake/provisioning.rs
+- crates/hagency-matrix/tests/provision_rooms/mod.rs
+- crates/hagency/src/bootstrap/config.rs
+- crates/hagency/tests/bootstrap.rs
 - specs/task-rust-inline-agent-home.spec.md
 - knowledge/decisions/adr-147-provisioning-verdict-effect-route.md
 - docs/agent-knowledge.md

@@ -12,7 +12,7 @@ tags: [release, packaging, versioning, native]
 
 The service review's F7: the native workspace version is `0.1.0`
 (`Cargo.toml:6` — the single `[workspace.package]` version every crate
-inherits via `version.workspace = true`, e.g. `native/hagency/Cargo.toml:4`),
+inherits via `version.workspace = true`, e.g. `crates/hagency/Cargo.toml:4`),
 the retained product is `1.2.0` (`package.json:3`), `release.yml` has **no
 cargo step** (its gate, stamping and packaging derive everything from
 `package.json`), and the migration plan §9 step 1 requires "a versioned
@@ -55,12 +55,12 @@ shebanged entry, no `node` in any wrapper the package ships. The check is
 staged release tree and fails on any of those findings — never skips. The
 native binary's own no-Node guarantee is already tested
 (`native_binary_survives_crash_without_node`,
-`native/hagency/tests/cli.rs:98`); the scan extends it from the process to
+`crates/hagency/tests/cli.rs:98`); the scan extends it from the process to
 the package. (The retained remote tarball keeps its Node — different
 channel, different artifact, not scanned by this check.)
 
 **Cutover identity.** The binary reports the workspace version through the
-existing clap `version` wiring (`native/hagency/src/main.rs:8-10`, so
+existing clap `version` wiring (`crates/hagency/src/main.rs:8-10`, so
 `hagency --version` prints it); ADR-134 adds **no** field to the `/ready`
 payload — the readiness contract (`/health` 200-while-live, `/ready` 503
 boundary, component vocabulary) stays exactly as brief 21 F2/F3 fixed it,

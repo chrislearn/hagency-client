@@ -32,10 +32,10 @@ Applied; full automatic account/home/runtime fulfillment remains required.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/domain.rs
-- native/hagency/src/bootstrap/provision.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/domain.rs
+- crates/hagency/src/bootstrap/provision.rs
 - knowledge/decisions/adr-147-provisioning-verdict-effect-route.md
 - docs/progress.md
 

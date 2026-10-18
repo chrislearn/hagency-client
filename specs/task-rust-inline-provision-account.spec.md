@@ -42,14 +42,14 @@ physical-completion/session-route selectors or make the console roster green.
 
 ## Allowed changes
 
-- native/hagency-matrix/src/provisioning.rs
-- native/hagency-matrix/src/token_provision.rs
-- native/hagency-matrix/src/config.rs, lib.rs, intake.rs
-- native/hagency-matrix/tests/intake/provisioning.rs
-- native/hagency-store/src/domain/verified_ingress.rs, domain_worker.rs
-- native/hagency-store/tests/domain.rs
-- native/hagency/src/bootstrap/config.rs
-- native/hagency/tests/bootstrap.rs, native/hagency/tests/bootstrap/
+- crates/hagency-matrix/src/provisioning.rs
+- crates/hagency-matrix/src/token_provision.rs
+- crates/hagency-matrix/src/config.rs, lib.rs, intake.rs
+- crates/hagency-matrix/tests/intake/provisioning.rs
+- crates/hagency-store/src/domain/verified_ingress.rs, domain_worker.rs
+- crates/hagency-store/tests/domain.rs
+- crates/hagency/src/bootstrap/config.rs
+- crates/hagency/tests/bootstrap.rs, crates/hagency/tests/bootstrap/
 - this spec, ADR-147's implementation checkpoint, docs/progress.md
 
 ## Scenarios

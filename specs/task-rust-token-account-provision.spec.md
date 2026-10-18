@@ -52,12 +52,12 @@ its token. It is account evidence, not dispatch/room/crypto authority.
 
 ## Allowed changes
 
-- `native/hagency-matrix/src/token_provision.rs`
-- `native/hagency-matrix/src/token_provision/`
-- `native/hagency-matrix/src/config.rs`, `http.rs`, `lib.rs`
-- `native/hagency-matrix/tests/token_provision.rs`
-- `native/hagency-matrix/tests/common/mod.rs` (zero-delay fixture writes only)
-- `native/hagency-matrix/Cargo.toml`, `Cargo.lock` for the already-used RNG
+- `crates/hagency-matrix/src/token_provision.rs`
+- `crates/hagency-matrix/src/token_provision/`
+- `crates/hagency-matrix/src/config.rs`, `http.rs`, `lib.rs`
+- `crates/hagency-matrix/tests/token_provision.rs`
+- `crates/hagency-matrix/tests/common/mod.rs` (zero-delay fixture writes only)
+- `crates/hagency-matrix/Cargo.toml`, `Cargo.lock` for the already-used RNG
 - this spec, ADR-147's truthful checkpoint, `docs/progress.md`
 
 ## Scenarios

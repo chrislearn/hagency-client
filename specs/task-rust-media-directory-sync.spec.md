@@ -26,8 +26,8 @@ that cannot acknowledge fsync.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-media-store/src/lib.rs
-- native/hagency-media-store/src/tests.rs
+- crates/hagency-media-store/src/lib.rs
+- crates/hagency-media-store/src/tests.rs
 - knowledge/decisions/adr-066-native-media-staging.md
 - specs/task-rust-media-directory-sync.spec.md
 - docs/progress.md

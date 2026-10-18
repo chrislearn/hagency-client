@@ -28,7 +28,7 @@ does not modify.
 **The two divergences.**
 
 1. **Terminal states.** The port writes three terminal states — `Rejected`,
-   `Revoked` and `Failed` (`native/hagency-core/src/project.rs:236-243`) — and
+   `Revoked` and `Failed` (`crates/hagency-core/src/project.rs:236-243`) — and
    this record concerns only the first two; `Failed` (provision not applied,
    `domain.rs:1406-1408`) has no retained counterpart to diverge from and stays
    as is. The retained product has
@@ -37,9 +37,9 @@ does not modify.
    `endedReason` (`'rejected'` `:604`, `'revoked'` `:735`).
 2. **Retirement representation.** The port schedules a `retire` row in an
    `effects` table carrying `kind`, `state`, a `fence` and a
-   `UNIQUE(engagement_id,kind)` (`native/hagency-store/src/domain.sql:50-59`),
+   `UNIQUE(engagement_id,kind)` (`crates/hagency-store/src/domain.sql:50-59`),
    and holds a per-engagement `CleanupState`
-   (`native/hagency-core/src/project.rs:246-251`). The retained product writes a
+   (`crates/hagency-core/src/project.rs:246-251`). The retained product writes a
    per-record `withdrawal` object on the engagement
    (`lib/engagement-store.js:700-725`) and a `matrixRetirement` object on the
    agent record (`backend-v2.js:15197-15215`).
@@ -75,10 +75,10 @@ The consumers that branch on the distinction:
 
 **What a reader of the engagements projection sees.** The stored projection is
 the `Engagement` struct, which carries `state` **and** `cleanup`
-(`native/hagency-core/src/project.rs:265-266`). The roster read copies
+(`crates/hagency-core/src/project.rs:265-266`). The roster read copies
 `state: engagement.state` (`domain.rs:1060`) and the console serves it as
 `state: row.state` with `state: EngagementState`
-(`native/hagency/src/console/agents.rs:42`, `:94`). So an operator sees the
+(`crates/hagency/src/console/agents.rs:42`, `:94`). So an operator sees the
 literal state — `"rejected"` or `"revoked"` — plus, via `cleanup`, whether the
 engagement owes retirement work at all.
 
@@ -121,8 +121,8 @@ that reads the `retire` row.
 
 `claim_effect` already selects both kinds (`domain.rs:1342`); the provision arm
 is driven inline by the provisioning intake
-(`native/hagency-matrix/src/intake.rs:405-407`). The console retire surface
-landed at `native/hagency/src/console/engagements.rs:28-29` — `{id}/retire`
+(`crates/hagency-matrix/src/intake.rs:405-407`). The console retire surface
+landed at `crates/hagency/src/console/engagements.rs:28-29` — `{id}/retire`
 performs the retirement decision (`revoke`) and `{id}/cleanup-retry` resets a
 failed retire effect (`retry_cleanup`, `:157-169`), the operator-triggered,
 no-sweeper shape this section decided. Still open on that surface: the
@@ -155,7 +155,7 @@ is **not settled by the evidence I hold.** The settled part is only that the por
 has no such step today; whether it *should* have one depends on a capability I
 cannot see from this lane: whether the port's Palpo transport exposes an
 agent-retirement endpoint at all. **Evidence that would settle it:** an
-inspection of `native/hagency-palpo` (and the outbound transport configuration)
+inspection of `crates/hagency-palpo` (and the outbound transport configuration)
 for an agent-retirement request/response pair. Until then, the retire-effect
 driver's scope is "claim, observe, record" with the remote step explicitly
 unowned — named here rather than assumed into a builder's remit.

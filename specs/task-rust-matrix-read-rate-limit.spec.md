@@ -41,8 +41,8 @@ new dial repeats nothing. GETs reuse connections so far fewer dials are needed.
 
 ## Allowed changes
 
-- native/hagency-matrix/src/http.rs
-- native/hagency-matrix/src/http/**
+- crates/hagency-matrix/src/http.rs
+- crates/hagency-matrix/src/http/**
 - specs/task-rust-matrix-read-rate-limit.spec.md
 - knowledge/decisions/adr-174-matrix-read-rate-limit.md
 - docs/**

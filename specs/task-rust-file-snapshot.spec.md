@@ -34,7 +34,7 @@ ADR-027 without adding runtime paths, network delivery or a second domain store.
 ### Allowed Changes
 - ./Cargo.toml
 - ./Cargo.lock
-- native/hagency-files/**
+- crates/hagency-files/**
 - specs/task-rust-file-snapshot.spec.md
 - knowledge/decisions/adr-058-native-workspace-file-snapshots.md
 - docs/agent-knowledge.md

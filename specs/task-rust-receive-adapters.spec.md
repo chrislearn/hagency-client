@@ -33,20 +33,20 @@ and physical sink ownership with the original service; it adds no such authority
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency/src/lib.rs
-- native/hagency/src/runner.rs
-- native/hagency/src/runner/received.rs
-- native/hagency/src/task_client.rs
-- native/hagency/src/task_client/received.rs
-- native/hagency/src/task_client/transport.rs
-- native/hagency/src/mcp.rs
-- native/hagency/src/mcp/catalog.rs
-- native/hagency/src/mcp/receive_catalog.rs
-- native/hagency-execution/src/host.rs
-- native/hagency-runtime/src/codex/session/task_mcp.rs
-- native/hagency/tests/mcp.rs
-- native/hagency/tests/task_client/mcp.rs
-- native/hagency/tests/runner.rs
+- crates/hagency/src/lib.rs
+- crates/hagency/src/runner.rs
+- crates/hagency/src/runner/received.rs
+- crates/hagency/src/task_client.rs
+- crates/hagency/src/task_client/received.rs
+- crates/hagency/src/task_client/transport.rs
+- crates/hagency/src/mcp.rs
+- crates/hagency/src/mcp/catalog.rs
+- crates/hagency/src/mcp/receive_catalog.rs
+- crates/hagency-execution/src/host.rs
+- crates/hagency-runtime/src/codex/session/task_mcp.rs
+- crates/hagency/tests/mcp.rs
+- crates/hagency/tests/task_client/mcp.rs
+- crates/hagency/tests/runner.rs
 - specs/task-rust-receive-adapters.spec.md
 - docs/agent-knowledge.md
 - docs/progress.md

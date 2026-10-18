@@ -31,21 +31,21 @@ dispatch ledger, without enabling an incompletely integrated production runner.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-runtime/src/claude/session.rs
-- native/hagency-runtime/src/claude/session/observation.rs
-- native/hagency-runtime/src/claude/session/usage.rs
-- native/hagency-runtime/src/owned/claude.rs
-- native/hagency-runtime/src/bin/claude_probe/mod.rs
-- native/hagency-runtime/tests/claude_usage.rs
-- native/hagency-runtime/tests/claude_owned.rs
-- native/hagency-metering/src/lib.rs
-- native/hagency-metering/src/observation.rs
-- native/hagency-metering/src/claude_usage.rs
-- native/hagency-metering/tests/claude_usage.rs
-- native/hagency-execution/src/usage.rs
-- native/hagency-execution/src/usage/**
-- native/hagency-execution/tests/support/usage.rs
-- native/hagency-execution/tests/support/claude_usage.rs
+- crates/hagency-runtime/src/claude/session.rs
+- crates/hagency-runtime/src/claude/session/observation.rs
+- crates/hagency-runtime/src/claude/session/usage.rs
+- crates/hagency-runtime/src/owned/claude.rs
+- crates/hagency-runtime/src/bin/claude_probe/mod.rs
+- crates/hagency-runtime/tests/claude_usage.rs
+- crates/hagency-runtime/tests/claude_owned.rs
+- crates/hagency-metering/src/lib.rs
+- crates/hagency-metering/src/observation.rs
+- crates/hagency-metering/src/claude_usage.rs
+- crates/hagency-metering/tests/claude_usage.rs
+- crates/hagency-execution/src/usage.rs
+- crates/hagency-execution/src/usage/**
+- crates/hagency-execution/tests/support/usage.rs
+- crates/hagency-execution/tests/support/claude_usage.rs
 - knowledge/decisions/adr-157-native-claude-usage-capture.md
 - specs/task-rust-claude-usage-capture.spec.md
 - docs/progress.md

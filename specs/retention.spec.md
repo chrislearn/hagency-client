@@ -56,14 +56,14 @@ not lose" property inside a named window.
 ## Boundaries
 
 ### Allowed Changes
-- `native/hagency-store/src/migrations/026-corpus-retention.sql`
-- `native/hagency-store/src/domain.rs`, `domain/messages.rs`,
+- `crates/hagency-store/src/migrations/026-corpus-retention.sql`
+- `crates/hagency-store/src/domain.rs`, `domain/messages.rs`,
   `domain/verified_ingress.rs`, `domain_worker.rs`, `lib.rs`
-- `native/hagency/src/bootstrap.rs`, `native/hagency/src/lib.rs`
+- `crates/hagency/src/bootstrap.rs`, `crates/hagency/src/lib.rs`
   (the retention sweep's readiness mirror, the ceiling sweep's shape)
-- `native/hagency-store/tests/retention.rs`,
-  `native/hagency-store/tests/fixtures/corpus-retention-vectors.json`
-- `native/scripts/corpus-retention-vectors.mjs`, `backend-v2.js`
+- `crates/hagency-store/tests/retention.rs`,
+  `crates/hagency-store/tests/fixtures/corpus-retention-vectors.json`
+- `tools/native/corpus-retention-vectors.mjs`, `backend-v2.js`
   (`__backendV2TestInternals` export only), the fourteen schema-head
   assertions, `specs/retention.spec.md`, `knowledge/decisions/adr-125-*`,
   `docs/progress.md`

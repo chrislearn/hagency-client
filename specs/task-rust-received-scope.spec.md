@@ -32,10 +32,10 @@ This slice adds no local file write service MCP route or cache-path authority.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/src/receive.rs
-- native/hagency-matrix/src/media_download.rs
-- native/hagency-matrix/src/lib.rs
-- native/hagency-matrix/tests/intake/receive.rs
+- crates/hagency-matrix/src/receive.rs
+- crates/hagency-matrix/src/media_download.rs
+- crates/hagency-matrix/src/lib.rs
+- crates/hagency-matrix/tests/intake/receive.rs
 - specs/task-rust-received-scope.spec.md
 - docs/agent-knowledge.md
 - docs/progress.md

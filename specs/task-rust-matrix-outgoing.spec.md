@@ -32,14 +32,14 @@ HTTPS and owned SDK crypto without losing external outcomes or changing authorit
 
 ### Allowed Changes
 - ./Cargo.lock
-- native/hagency-matrix/**
-- native/hagency-core/src/replies.rs
-- native/hagency-core/src/ingress.rs
-- native/hagency-store/src/domain/replies.rs
-- native/hagency-store/src/domain/notice_custody.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/verified_ingress.rs
-- native/hagency-store/tests/replies.rs
+- crates/hagency-matrix/**
+- crates/hagency-core/src/replies.rs
+- crates/hagency-core/src/ingress.rs
+- crates/hagency-store/src/domain/replies.rs
+- crates/hagency-store/src/domain/notice_custody.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/verified_ingress.rs
+- crates/hagency-store/tests/replies.rs
 - specs/task-rust-matrix-outgoing.spec.md
 - knowledge/decisions/adr-059-native-matrix-outgoing.md
 - docs/agent-knowledge.md

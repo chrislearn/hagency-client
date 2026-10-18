@@ -35,11 +35,11 @@ ingress while retaining exact source custody across the SDK and domain owners.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/**
-- native/hagency-core/src/ingress.rs
-- native/hagency-store/src/domain/verified_ingress.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/**
+- crates/hagency-matrix/**
+- crates/hagency-core/src/ingress.rs
+- crates/hagency-store/src/domain/verified_ingress.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/**
 - specs/task-rust-matrix-event-intake.spec.md
 - knowledge/decisions/adr-054-native-matrix-event-intake.md
 - docs/agent-knowledge.md

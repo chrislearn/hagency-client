@@ -32,10 +32,10 @@ records or granting counters source attribution or measurement authority.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-metering/src/lib.rs
-- native/hagency-metering/src/observation.rs
-- native/hagency-metering/src/runtime_usage.rs
-- native/hagency-metering/tests/runtime_usage.rs
+- crates/hagency-metering/src/lib.rs
+- crates/hagency-metering/src/observation.rs
+- crates/hagency-metering/src/runtime_usage.rs
+- crates/hagency-metering/tests/runtime_usage.rs
 - knowledge/decisions/adr-071-native-typed-runtime-usage.md
 - specs/task-rust-typed-runtime-usage.spec.md
 - docs/agent-knowledge.md

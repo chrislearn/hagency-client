@@ -3,8 +3,10 @@ fn main() {
     println!("cargo:rerun-if-changed=apps");
     let root = std::path::PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
     let catalog = rinx_system_apps::pack(&root).expect("validate Rinx system apps");
-    let catalog_path = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("system-apps.json");
-    std::fs::write(catalog_path, serde_json::to_vec(&catalog).unwrap()).expect("embed Rinx system apps");
+    let catalog_path =
+        std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("system-apps.json");
+    std::fs::write(catalog_path, serde_json::to_vec(&catalog).unwrap())
+        .expect("embed Rinx system apps");
 
     // cargo-makepad discovers resources of Git/registry dependencies through
     // a package-name.path file beside the compiled libraries. Rinx is also a
@@ -36,7 +38,10 @@ fn main() {
         let plist = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap())
             .join("packaging/macos/Info.plist");
         println!("cargo:rerun-if-changed=packaging/macos/Info.plist");
-        println!("cargo:rustc-link-arg-bin=rinx=-Wl,-sectcreate,__TEXT,__info_plist,{}", plist.display());
+        println!(
+            "cargo:rustc-link-arg-bin=rinx=-Wl,-sectcreate,__TEXT,__info_plist,{}",
+            plist.display()
+        );
     }
 
     if target_os == "windows" {
@@ -44,7 +49,7 @@ fn main() {
         #[cfg(windows)]
         {
             let mut res = winresource::WindowsResource::new();
-            res.set_icon("resources/icon.ico");
+            res.set_icon(root.join("resources/icon.ico").to_str().expect("icon path"));
             // Explicit VERSIONINFO fields. Without these, Windows shows
             // "Unknown publisher" in the UAC/SmartScreen install prompt
             // (CompanyName/LegalCopyright are empty by default), and the
@@ -59,7 +64,10 @@ fn main() {
     }
 
     // Get version info about Rinx, the matrix SDK, and testflight.
-    println!("cargo:rerun-if-changed=Cargo.lock");
+    println!(
+        "cargo:rerun-if-changed={}",
+        workspace_root().join("Cargo.lock").display()
+    );
     let (sdk_version, sdk_git_rev, sdk_url) = read_matrix_sdk_info();
     println!("cargo:rustc-env=MATRIX_SDK_VERSION={sdk_version}");
     println!("cargo:rustc-env=MATRIX_SDK_GIT_REV={sdk_git_rev}");
@@ -77,14 +85,21 @@ fn main() {
 /// Returns Rinx's own current git commit info as a commit hash and a permalink.
 fn read_rinx_git_info() -> (String, String) {
     // Tell cargo to re-run when the git-tracked HEAD changes.
-    println!("cargo:rerun-if-changed=.git/HEAD");
-    if let Ok(head) = std::fs::read_to_string(".git/HEAD") {
+    println!(
+        "cargo:rerun-if-changed={}",
+        workspace_root().join(".git/HEAD").display()
+    );
+    if let Ok(head) = std::fs::read_to_string(workspace_root().join(".git/HEAD")) {
         if let Some(branch_ref) = head.trim().strip_prefix("ref: ") {
-            println!("cargo:rerun-if-changed=.git/{branch_ref}");
+            println!(
+                "cargo:rerun-if-changed={}",
+                workspace_root().join(".git").join(branch_ref).display()
+            );
         }
     }
 
     let Ok(output) = std::process::Command::new("git")
+        .current_dir(workspace_root())
         .args(["rev-parse", "HEAD"])
         .output()
     else {
@@ -98,7 +113,7 @@ fn read_rinx_git_info() -> (String, String) {
         return (String::new(), String::new());
     }
     let short_rev: String = full_sha.chars().take(8).collect();
-    let url = format!("https://github.com/upstreamlabs/Rinx/tree/{full_sha}");
+    let url = format!("https://github.com/chrislearn/hagency-client/tree/{full_sha}");
     (short_rev, url)
 }
 
@@ -106,7 +121,7 @@ fn read_rinx_git_info() -> (String, String) {
 ///
 /// Returns `(version, short_git_rev, url)`.
 fn read_matrix_sdk_info() -> (String, String, String) {
-    let Ok(lockfile_text) = std::fs::read_to_string("Cargo.lock") else {
+    let Ok(lockfile_text) = std::fs::read_to_string(workspace_root().join("Cargo.lock")) else {
         return (String::new(), String::new(), String::new());
     };
     let Ok(lockfile) = toml::from_str::<toml::Value>(&lockfile_text) else {
@@ -117,9 +132,8 @@ fn read_matrix_sdk_info() -> (String, String, String) {
         .get("package")
         .and_then(|p| p.as_array())
         .and_then(|pkgs| {
-            pkgs.iter().find(|p| {
-                p.get("name").and_then(|n| n.as_str()) == Some("matrix-sdk")
-            })
+            pkgs.iter()
+                .find(|p| p.get("name").and_then(|n| n.as_str()) == Some("matrix-sdk"))
         })
     else {
         return (String::new(), String::new(), String::new());
@@ -146,10 +160,22 @@ fn read_matrix_sdk_info() -> (String, String, String) {
         (short_rev, url)
     } else if !version.is_empty() {
         // Registry/path/other sources: fall back to the crates.io URL.
-        (String::new(), format!("https://crates.io/crates/matrix-sdk/{version}"))
+        (
+            String::new(),
+            format!("https://crates.io/crates/matrix-sdk/{version}"),
+        )
     } else {
         (String::new(), String::new())
     };
 
     (version, git_rev, url)
+}
+
+fn workspace_root() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .to_owned()
 }

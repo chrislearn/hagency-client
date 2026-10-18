@@ -25,29 +25,29 @@ ADR-111's.
 
 ### Must Not
 - Do not add a `name`, `rateCapPerDay`, `apiBaseUrl`, `apiKeySet`, `extraArgs` or `usedBy` key — absent by ADR-111 and the store's own shape, not by omission.
-- Do not change `qualification.rs`'s policy tables, `resources_for_role` itself, the two existing scopes, any mutation route, the operator refusal `roles_are_model_derived` (`native/hagency/src/resources.rs:95`), or the count assertion at `resources.rs:150-152`.
+- Do not change `qualification.rs`'s policy tables, `resources_for_role` itself, the two existing scopes, any mutation route, the operator refusal `roles_are_model_derived` (`crates/hagency/src/resources.rs:95`), or the count assertion at `resources.rs:150-152`.
 - Do not touch the console boundary machinery (five-document exception, hoops, semaphore, `build-native-console.mjs`) — no page is added.
 - Do not gate any scenario by OS or feature in the binding set.
 
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain.rs
-- native/hagency-store/tests/catalog_publication.rs
-- native/hagency/src/console/resources.rs
-- native/hagency/tests/console/resources.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/tests/catalog_publication.rs
+- crates/hagency/src/console/resources.rs
+- crates/hagency/tests/console/resources.rs
 - mockup/components/NativeResources.jsx
 - mockup/lib/native-api.js
 - mockup/lib/i18n.js # nr.fillable/nr.families/nr.overTier in both dictionaries — the new columns render bare keys without them
 - mockup/scripts/native-console-resources-browser.mjs # the catalogue assertions in the resources browser walk — the browser scenario has no driver without it
 - specs/task-rust-console-presets.spec.md
 - knowledge/decisions/adr-108-native-console-resource-publication.md
-- native/README.md
+- docs/native-engine.md
 - docs/progress.md
 
 ### Forbidden
 - Live services, credentials, deployed state and Matrix server changes.
-- native/hagency-core/src/qualification.rs; native/hagency/src/resources.rs; mockup/app/resources/page.jsx; mockup/app/capability/page.jsx.
+- crates/hagency-core/src/qualification.rs; crates/hagency/src/resources.rs; mockup/app/resources/page.jsx; mockup/app/capability/page.jsx.
 
 ## Acceptance Criteria
 

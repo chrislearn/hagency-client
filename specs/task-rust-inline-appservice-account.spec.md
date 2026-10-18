@@ -43,20 +43,20 @@ new real mini3 Palpo/Robrix qualification, not a replacement for those gates.
 
 ## Allowed changes
 
-- native/hagency-matrix/src/token_provision.rs
-- native/hagency-matrix/src/token_provision/custody.rs
-- native/hagency-matrix/src/token_provision/application_service.rs
-- native/hagency-matrix/src/token_provision/rooms.rs
-- native/hagency-matrix/src/provisioning.rs
-- native/hagency-matrix/src/config.rs
-- native/hagency-matrix/src/collector.rs
-- native/hagency-matrix/src/enrollment/provisioning.rs
-- native/hagency-matrix/src/lib.rs
-- native/hagency-matrix/tests/token_provision.rs
-- native/hagency-matrix/tests/intake/provisioning.rs
-- native/hagency-matrix/tests/provision_rooms/mod.rs
-- native/hagency/src/bootstrap/config.rs
-- native/hagency/tests/bootstrap.rs
+- crates/hagency-matrix/src/token_provision.rs
+- crates/hagency-matrix/src/token_provision/custody.rs
+- crates/hagency-matrix/src/token_provision/application_service.rs
+- crates/hagency-matrix/src/token_provision/rooms.rs
+- crates/hagency-matrix/src/provisioning.rs
+- crates/hagency-matrix/src/config.rs
+- crates/hagency-matrix/src/collector.rs
+- crates/hagency-matrix/src/enrollment/provisioning.rs
+- crates/hagency-matrix/src/lib.rs
+- crates/hagency-matrix/tests/token_provision.rs
+- crates/hagency-matrix/tests/intake/provisioning.rs
+- crates/hagency-matrix/tests/provision_rooms/mod.rs
+- crates/hagency/src/bootstrap/config.rs
+- crates/hagency/tests/bootstrap.rs
 - specs/task-rust-inline-appservice-account.spec.md
 - knowledge/decisions/adr-147-provisioning-verdict-effect-route.md
 - docs/agent-knowledge.md

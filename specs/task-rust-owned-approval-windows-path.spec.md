@@ -30,14 +30,14 @@ namespace. Keep launch and filesystem custody unchanged.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-execution/src/workspace.rs
-- native/hagency-execution/src/workspace/approval_path.rs
-- native/hagency-execution/src/operation.rs
-- native/hagency-execution/src/host.rs
-- native/hagency-execution/tests/owned.rs
-- native/hagency/tests/owned_mcp.rs
-- native/hagency/tests/received_files.rs
-- native/hagency-execution/tests/owned/approvals.rs
+- crates/hagency-execution/src/workspace.rs
+- crates/hagency-execution/src/workspace/approval_path.rs
+- crates/hagency-execution/src/operation.rs
+- crates/hagency-execution/src/host.rs
+- crates/hagency-execution/tests/owned.rs
+- crates/hagency/tests/owned_mcp.rs
+- crates/hagency/tests/received_files.rs
+- crates/hagency-execution/tests/owned/approvals.rs
 - specs/task-rust-owned-approval-windows-path.spec.md
 - knowledge/decisions/adr-116-owned-approval-windows-path.md
 - docs/progress.md

@@ -38,14 +38,14 @@ remain required, including the two original missing factory selectors.
 
 ## Allowed changes
 
-- native/hagency-platform/src/supervisor.rs
-- native/hagency-platform/src/supervisor/unix.rs
-- native/hagency-platform/src/supervisor/windows.rs
-- native/hagency-platform/tests/guardian.rs
-- native/hagency-runtime/src/owned/session.rs
-- native/hagency-execution/src/warm.rs
-- native/hagency/tests/warm_runtime.rs
-- native/hagency/tests/fixtures/owned_mcp_peer.rs
+- crates/hagency-platform/src/supervisor.rs
+- crates/hagency-platform/src/supervisor/unix.rs
+- crates/hagency-platform/src/supervisor/windows.rs
+- crates/hagency-platform/tests/guardian.rs
+- crates/hagency-runtime/src/owned/session.rs
+- crates/hagency-execution/src/warm.rs
+- crates/hagency/tests/warm_runtime.rs
+- crates/hagency/tests/fixtures/owned_mcp_peer.rs
 - knowledge/decisions/adr-040-native-owned-runner-io.md
 - knowledge/decisions/adr-053-native-owned-dispatch.md
 - knowledge/decisions/adr-147-provisioning-verdict-effect-route.md

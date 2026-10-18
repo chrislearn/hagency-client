@@ -38,24 +38,24 @@ those records' outcomes.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/tests/ (the disk-full injection)
-- native/hagency-store/src/repository.rs (one documented unconditional test seam: `open_with_page_limit(path, max_pages)`)
-- native/hagency-store/src/domain.rs (the same seam, exposing it on the domain constructor)
-- native/hagency-palpo/src/adapter.rs (the outbound adapter issuing `Command::Publication` with `Rejected`/`Unknown`)
-- native/hagency-palpo/src/lib.rs (the adapter error type and its retryable classification)
-- native/hagency-palpo/tests/
-- native/hagency-store/src/outbound/repository.rs (the pending/publication selection path and `BeginPublication`'s state handling)
-- native/hagency-matrix/src/outgoing.rs, native/hagency-matrix/src/sdk/outgoing.rs (the file-publication adapter)
-- native/hagency-matrix/src/upload/operation.rs (the upload path's `mark_upload_uncertain` production caller)
-- native/hagency-matrix/tests/
-- native/hagency/tests/
-- native/scripts/
+- crates/hagency-store/tests/ (the disk-full injection)
+- crates/hagency-store/src/repository.rs (one documented unconditional test seam: `open_with_page_limit(path, max_pages)`)
+- crates/hagency-store/src/domain.rs (the same seam, exposing it on the domain constructor)
+- crates/hagency-palpo/src/adapter.rs (the outbound adapter issuing `Command::Publication` with `Rejected`/`Unknown`)
+- crates/hagency-palpo/src/lib.rs (the adapter error type and its retryable classification)
+- crates/hagency-palpo/tests/
+- crates/hagency-store/src/outbound/repository.rs (the pending/publication selection path and `BeginPublication`'s state handling)
+- crates/hagency-matrix/src/outgoing.rs, crates/hagency-matrix/src/sdk/outgoing.rs (the file-publication adapter)
+- crates/hagency-matrix/src/upload/operation.rs (the upload path's `mark_upload_uncertain` production caller)
+- crates/hagency-matrix/tests/
+- crates/hagency/tests/
+- tools/native/
 - specs/task-rust-native-fault-injection.spec.md
 - docs/progress.md
 
 ### Forbidden
 - Live services, live homeservers, credentials, deployed state.
-- native/hagency-store/src/** except the one licensed disk-full seam and the outbound repository selection path above (the store's behavior is otherwise asserted, not changed — this includes not introducing a named capacity error or a reason column); native/hagency-matrix/src/** except the two adapter/upload paths licensed above; native/hagency-palpo/src/** except `adapter.rs` and `lib.rs`.
+- crates/hagency-store/src/** except the one licensed disk-full seam and the outbound repository selection path above (the store's behavior is otherwise asserted, not changed — this includes not introducing a named capacity error or a reason column); crates/hagency-matrix/src/** except the two adapter/upload paths licensed above; crates/hagency-palpo/src/** except `adapter.rs` and `lib.rs`.
 
 ## Acceptance Criteria
 

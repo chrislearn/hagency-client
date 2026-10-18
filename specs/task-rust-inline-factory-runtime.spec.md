@@ -69,23 +69,23 @@ remain required by the full goal, not replaced by this implementation contract.
 ## Allowed changes
 
 - ./Cargo.lock
-- native/hagency-matrix/Cargo.toml
-- native/hagency-matrix/src/provisioning.rs
-- native/hagency-matrix/src/provisioning/factory.rs
-- native/hagency-matrix/src/collector.rs
-- native/hagency-matrix/src/approval_intake.rs
-- native/hagency-matrix/src/lib.rs
-- native/hagency-execution/src/factory.rs
-- native/hagency-execution/src/host.rs
-- native/hagency-execution/src/warm.rs
-- native/hagency-execution/src/lib.rs
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain/provision_runtime.rs
-- native/hagency-store/src/domain/accounts.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/provision_runtime.rs
-- native/hagency/tests/inline_factory.rs
-- native/hagency/tests/inline_factory/**
+- crates/hagency-matrix/Cargo.toml
+- crates/hagency-matrix/src/provisioning.rs
+- crates/hagency-matrix/src/provisioning/factory.rs
+- crates/hagency-matrix/src/collector.rs
+- crates/hagency-matrix/src/approval_intake.rs
+- crates/hagency-matrix/src/lib.rs
+- crates/hagency-execution/src/factory.rs
+- crates/hagency-execution/src/host.rs
+- crates/hagency-execution/src/warm.rs
+- crates/hagency-execution/src/lib.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain/provision_runtime.rs
+- crates/hagency-store/src/domain/accounts.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/provision_runtime.rs
+- crates/hagency/tests/inline_factory.rs
+- crates/hagency/tests/inline_factory/**
 - knowledge/decisions/adr-053-native-owned-dispatch.md
 - knowledge/decisions/adr-147-provisioning-verdict-effect-route.md
 - this spec, docs/agent-knowledge.md, docs/progress.md

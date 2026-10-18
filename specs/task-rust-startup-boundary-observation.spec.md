@@ -37,11 +37,11 @@ unavailable. Neither original explains its underlying operation or backend cause
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency/src/main.rs
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/bootstrap/config.rs
-- native/hagency/src/file_service/recovery.rs
-- native/hagency/tests/file_service/fixture.rs
+- crates/hagency/src/main.rs
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/bootstrap/config.rs
+- crates/hagency/src/file_service/recovery.rs
+- crates/hagency/tests/file_service/fixture.rs
 - specs/task-rust-startup-boundary-observation.spec.md
 - knowledge/context/native-startup-boundary-observation.md
 - docs/progress.md

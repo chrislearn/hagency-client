@@ -2,7 +2,7 @@
 
 ## 2026-10-13 — execution device configuration
 
-`hagency-desktop` uses the sibling `hagency-client/native/hagency` dependency. The CI checkout pin in `.github/actions/setup-hagency-client/action.yml` must include the NativeOwner configuration wrappers whenever Desktop calls them. A local sibling build alone cannot verify that checkout pin.
+`hagency-desktop` uses the sibling `hagency-client/crates/hagency` dependency. The CI checkout pin in `.github/actions/setup-hagency-client/action.yml` must include the NativeOwner configuration wrappers whenever Desktop calls them. A local sibling build alone cannot verify that checkout pin.
 
 NativeOwner contracts: `AgentConfigurationStatus` returns `{configuration: metadata}`; `ExecutionEnvironment` returns raw `{providers, configuration}`; `AgentConfiguration` wraps only the approved Local/Provider/RuntimeProvider/PrepareAgentWorkspace commands and returns the raw operation result. The server schema is defined in `../hagency-server/docs/design/2026-10-13-cross-device-agent-configuration.zh-CN.md` and its review.
 

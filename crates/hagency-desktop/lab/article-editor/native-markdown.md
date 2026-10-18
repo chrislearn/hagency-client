@@ -69,7 +69,7 @@ by these tests.
 
 - 652 official CommonMark 0.31.2 parser examples and 24 GFM extension examples.
   The GFM 0.29 inherited core cases are not counted again. See
-  [fixture provenance](../../crates/article-core/tests/fixtures/README.md).
+  [fixture provenance](../../../article-core/tests/fixtures/README.md).
 - Core regressions cover global references, duplicate Chinese headings,
   footnotes, alerts, breaks, source preservation after unrelated edits, large
   documents, and asset bindings.

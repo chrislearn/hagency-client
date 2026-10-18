@@ -30,13 +30,13 @@ SDK enrollment, encrypted sending and executable coordination follow separately.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain/approvals.rs
-- native/hagency-store/src/domain/approvals/card.rs
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/tests/approvals.rs
-- native/hagency-store/tests/approvals/card.rs
+- crates/hagency-store/src/domain/approvals.rs
+- crates/hagency-store/src/domain/approvals/card.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/tests/approvals.rs
+- crates/hagency-store/tests/approvals/card.rs
 - specs/task-rust-private-approval-card.spec.md
 - knowledge/decisions/adr-110-native-private-approval-card.md
 - docs/progress.md

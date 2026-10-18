@@ -36,30 +36,30 @@ dropped; shutdown always completes.
 
 ## Allowed changes
 
-- native/hagency-store/src/migrations/038-agent-fences.sql
-- native/hagency-store/src/domain/agent_fences.rs (new)
-- native/hagency-store/src/domain/execution.rs
-- native/hagency-store/src/domain/messages.rs
-- native/hagency-store/src/domain/task_intents.rs
-- native/hagency-store/src/domain/outcome_resolution.rs
-- native/hagency-store/src/domain/owned_dispatch.rs
-- native/hagency-store/src/domain/stopped_inspection.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/tests/**
-- native/hagency-runtime/Cargo.toml
-- native/hagency-runtime/src/owned/session.rs
-- native/hagency-execution/Cargo.toml
-- native/hagency-execution/src/operation.rs
-- native/hagency-execution/src/factory.rs
-- native/hagency-execution/src/warm.rs
-- native/hagency/Cargo.toml
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/bootstrap/driver.rs
-- native/hagency/src/bootstrap/fleet.rs
-- native/hagency/src/main.rs
-- native/hagency/tests/**
+- crates/hagency-store/src/migrations/038-agent-fences.sql
+- crates/hagency-store/src/domain/agent_fences.rs (new)
+- crates/hagency-store/src/domain/execution.rs
+- crates/hagency-store/src/domain/messages.rs
+- crates/hagency-store/src/domain/task_intents.rs
+- crates/hagency-store/src/domain/outcome_resolution.rs
+- crates/hagency-store/src/domain/owned_dispatch.rs
+- crates/hagency-store/src/domain/stopped_inspection.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/tests/**
+- crates/hagency-runtime/Cargo.toml
+- crates/hagency-runtime/src/owned/session.rs
+- crates/hagency-execution/Cargo.toml
+- crates/hagency-execution/src/operation.rs
+- crates/hagency-execution/src/factory.rs
+- crates/hagency-execution/src/warm.rs
+- crates/hagency/Cargo.toml
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/bootstrap/driver.rs
+- crates/hagency/src/bootstrap/fleet.rs
+- crates/hagency/src/main.rs
+- crates/hagency/tests/**
 - knowledge/decisions/adr-182-one-fact-one-blast-radius.md
 - knowledge/decisions/adr-036-native-codex-session.md
 - knowledge/decisions/adr-096-native-development-bootstrap.md

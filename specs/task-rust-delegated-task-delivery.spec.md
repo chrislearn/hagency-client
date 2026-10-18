@@ -45,17 +45,17 @@ intent, and the assignee's own driver dispatches the delegated task.
 
 ## Allowed changes
 
-- native/hagency-store/src/domain/task_intents.rs
-- native/hagency-store/src/domain/notice_custody.rs
-- native/hagency-store/src/domain/messages.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/received_files.rs
-- native/hagency-store/tests/delegated_intents.rs
-- native/hagency/src/bootstrap/driver.rs
-- native/hagency/src/bootstrap/notice.rs
-- native/hagency/tests/configured_fleet.rs
-- native/hagency/tests/configured_fleet/**
-- native/hagency/tests/fixtures/owned_mcp_peer.rs
+- crates/hagency-store/src/domain/task_intents.rs
+- crates/hagency-store/src/domain/notice_custody.rs
+- crates/hagency-store/src/domain/messages.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/received_files.rs
+- crates/hagency-store/tests/delegated_intents.rs
+- crates/hagency/src/bootstrap/driver.rs
+- crates/hagency/src/bootstrap/notice.rs
+- crates/hagency/tests/configured_fleet.rs
+- crates/hagency/tests/configured_fleet/**
+- crates/hagency/tests/fixtures/owned_mcp_peer.rs
 - knowledge/decisions/adr-180-codex-coordination-profile.md
 - knowledge/decisions/adr-146-production-callers-and-store-surface.md
 - specs/task-rust-delegated-task-delivery.spec.md

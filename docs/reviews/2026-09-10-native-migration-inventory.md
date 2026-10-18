@@ -46,12 +46,12 @@ navigation aids; they are not a complete shell call graph.
 Install development dependencies with `npm ci`, then run from this checkout:
 
 ```sh
-node native/scripts/inventory.mjs --check
+node tools/native/inventory.mjs --check
 node node_modules/vitest/vitest.mjs run tests/native-migration-inventory.test.js
 ```
 
 After intentionally reviewing source or policy changes, regenerate with
-`node native/scripts/inventory.mjs --write`. Both the policy and generated snapshot
+`node tools/native/inventory.mjs --write`. Both the policy and generated snapshot
 belong in review. The checker fails for unresolved supported registration forms,
 new/missing helpers, unclassified listeners, missing reviewed module links, parser
 version changes and fixture drift. It never rewrites the snapshot during a check.

@@ -32,11 +32,11 @@ encryption without reconstructing upload authority or wiring a network workflow.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/Cargo.toml
-- native/hagency-matrix/src/sdk.rs
-- native/hagency-matrix/src/upload_custody.rs
-- native/hagency-matrix/src/sdk/upload_custody.rs
-- native/hagency-matrix/tests/upload_custody/mod.rs
+- crates/hagency-matrix/Cargo.toml
+- crates/hagency-matrix/src/sdk.rs
+- crates/hagency-matrix/src/upload_custody.rs
+- crates/hagency-matrix/src/sdk/upload_custody.rs
+- crates/hagency-matrix/tests/upload_custody/mod.rs
 - knowledge/decisions/adr-084-native-matrix-upload-custody.md
 - specs/task-rust-matrix-upload-custody.spec.md
 - docs/agent-knowledge.md

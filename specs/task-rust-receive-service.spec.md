@@ -30,16 +30,16 @@ real incoming executable qualification remains required for the full workflow.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency/src/receive_service.rs
-- native/hagency/src/receive_service/types.rs
-- native/hagency/src/receive_service/job.rs
-- native/hagency/src/receive_service/worker.rs
-- native/hagency/src/receive_service/pipeline.rs
-- native/hagency/src/receive_service/recovery.rs
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/bootstrap/config.rs
-- native/hagency/src/bootstrap/driver.rs
-- native/hagency/src/bootstrap/workspace.rs
+- crates/hagency/src/receive_service.rs
+- crates/hagency/src/receive_service/types.rs
+- crates/hagency/src/receive_service/job.rs
+- crates/hagency/src/receive_service/worker.rs
+- crates/hagency/src/receive_service/pipeline.rs
+- crates/hagency/src/receive_service/recovery.rs
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/bootstrap/config.rs
+- crates/hagency/src/bootstrap/driver.rs
+- crates/hagency/src/bootstrap/workspace.rs
 - specs/task-rust-receive-service.spec.md
 - knowledge/decisions/adr-105-native-receive-file-workflow.md
 - docs/progress.md

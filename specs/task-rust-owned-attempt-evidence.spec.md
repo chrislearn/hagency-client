@@ -39,36 +39,36 @@ Decided in ADR-181. No verdict, rule or recovery path changes in this slice.
 
 ## Allowed changes
 
-- native/hagency-store/src/migrations/037-runner-attempt-evidence.sql
-- native/hagency-store/src/domain/execution.rs
-- native/hagency-store/src/domain/owned_dispatch.rs
-- native/hagency-store/src/domain/attempt_events.rs (new)
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/tests/**
-- native/hagency-execution/Cargo.toml
-- native/hagency-execution/src/operation.rs
-- native/hagency-execution/src/warm.rs
-- native/hagency-execution/src/factory.rs
-- native/hagency-execution/src/host.rs
-- native/hagency-execution/src/local_codex.rs
-- native/hagency-execution/src/approval/**
-- native/hagency-execution/tests/**
-- native/hagency-runtime/Cargo.toml
-- native/hagency-runtime/src/owned.rs
-- native/hagency-runtime/src/owned/session.rs
-- native/hagency-runtime/src/codex/transport.rs
-- native/hagency-runtime/tests/**
-- native/hagency-platform/Cargo.toml
-- native/hagency-platform/src/supervisor.rs
-- native/hagency-platform/src/supervisor/unix.rs
-- native/hagency-platform/src/supervisor/unix/macos.rs
-- native/hagency-platform/src/supervisor/unix/pipe.rs
-- native/hagency-platform/tests/**
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/bootstrap/driver.rs
-- native/hagency/src/main.rs
-- native/hagency/tests/**
+- crates/hagency-store/src/migrations/037-runner-attempt-evidence.sql
+- crates/hagency-store/src/domain/execution.rs
+- crates/hagency-store/src/domain/owned_dispatch.rs
+- crates/hagency-store/src/domain/attempt_events.rs (new)
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/tests/**
+- crates/hagency-execution/Cargo.toml
+- crates/hagency-execution/src/operation.rs
+- crates/hagency-execution/src/warm.rs
+- crates/hagency-execution/src/factory.rs
+- crates/hagency-execution/src/host.rs
+- crates/hagency-execution/src/local_codex.rs
+- crates/hagency-execution/src/approval/**
+- crates/hagency-execution/tests/**
+- crates/hagency-runtime/Cargo.toml
+- crates/hagency-runtime/src/owned.rs
+- crates/hagency-runtime/src/owned/session.rs
+- crates/hagency-runtime/src/codex/transport.rs
+- crates/hagency-runtime/tests/**
+- crates/hagency-platform/Cargo.toml
+- crates/hagency-platform/src/supervisor.rs
+- crates/hagency-platform/src/supervisor/unix.rs
+- crates/hagency-platform/src/supervisor/unix/macos.rs
+- crates/hagency-platform/src/supervisor/unix/pipe.rs
+- crates/hagency-platform/tests/**
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/bootstrap/driver.rs
+- crates/hagency/src/main.rs
+- crates/hagency/tests/**
 - knowledge/decisions/adr-181-native-owned-attempt-evidence.md
 - knowledge/decisions/adr-029-native-process-scopes.md
 - knowledge/decisions/adr-040-native-owned-runner-io.md

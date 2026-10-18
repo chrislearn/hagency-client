@@ -28,8 +28,8 @@ verdict or phase meaning (ADR-120).
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/database.rs
-- native/hagency-store/tests/close_path.rs
+- crates/hagency-store/src/database.rs
+- crates/hagency-store/tests/close_path.rs
 - knowledge/decisions/adr-120-native-bounded-close-path.md
 - specs/task-rust-native-bounded-close-path.spec.md
 - docs/progress.md

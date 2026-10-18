@@ -36,25 +36,25 @@ original provision left.
 
 ## Allowed changes
 
-- native/hagency-store/src/domain/provision_runtime.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/agent_home.rs
-- native/hagency-store/tests/provision_runtime.rs
-- native/hagency-execution/src/factory.rs
-- native/hagency-execution/src/host.rs
-- native/hagency-execution/src/warm.rs
-- native/hagency-matrix/src/collector.rs
-- native/hagency-matrix/src/token_provision.rs
-- native/hagency-matrix/src/token_provision/rooms.rs
-- native/hagency-matrix/src/enrollment/provisioning.rs
-- native/hagency-matrix/src/provisioning.rs
-- native/hagency-matrix/src/provisioning/factory.rs
-- native/hagency-matrix/tests/token_provision.rs
-- native/hagency-matrix/tests/transport.rs
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/bootstrap/fleet.rs
-- native/hagency/tests/inline_factory.rs
-- native/hagency/tests/inline_factory/mod.rs
+- crates/hagency-store/src/domain/provision_runtime.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/agent_home.rs
+- crates/hagency-store/tests/provision_runtime.rs
+- crates/hagency-execution/src/factory.rs
+- crates/hagency-execution/src/host.rs
+- crates/hagency-execution/src/warm.rs
+- crates/hagency-matrix/src/collector.rs
+- crates/hagency-matrix/src/token_provision.rs
+- crates/hagency-matrix/src/token_provision/rooms.rs
+- crates/hagency-matrix/src/enrollment/provisioning.rs
+- crates/hagency-matrix/src/provisioning.rs
+- crates/hagency-matrix/src/provisioning/factory.rs
+- crates/hagency-matrix/tests/token_provision.rs
+- crates/hagency-matrix/tests/transport.rs
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/bootstrap/fleet.rs
+- crates/hagency/tests/inline_factory.rs
+- crates/hagency/tests/inline_factory/mod.rs
 - knowledge/decisions/adr-147-provisioning-verdict-effect-route.md
 - knowledge/decisions/adr-047-native-matrix-transport.md
 - specs/task-rust-factory-agent-reattach.spec.md

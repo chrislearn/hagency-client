@@ -35,13 +35,13 @@ Host before permission, task tools, usage and owned lifecycle are wired.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-runtime/src/lib.rs
-- native/hagency-runtime/src/json.rs
-- native/hagency-runtime/src/codex.rs
-- native/hagency-runtime/src/codex/json.rs
-- native/hagency-runtime/src/codex/wire.rs
-- native/hagency-runtime/src/claude.rs
-- native/hagency-runtime/tests/claude.rs
+- crates/hagency-runtime/src/lib.rs
+- crates/hagency-runtime/src/json.rs
+- crates/hagency-runtime/src/codex.rs
+- crates/hagency-runtime/src/codex/json.rs
+- crates/hagency-runtime/src/codex/wire.rs
+- crates/hagency-runtime/src/claude.rs
+- crates/hagency-runtime/tests/claude.rs
 - specs/task-rust-claude-stream-protocol.spec.md
 - knowledge/decisions/adr-154-native-claude-stream-protocol.md
 - docs/progress.md

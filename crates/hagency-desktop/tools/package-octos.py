@@ -34,11 +34,11 @@ def read_lock(root=ROOT):
         raise ValueError("Invalid pinned Octos runtime lock")
     revisions = set(re.findall(
         r'git\+https://github\.com/octos-org/octos\.git\?rev=([0-9a-f]{40})#',
-        (root / "Cargo.lock").read_text()))
+        (root / "Cargo.lock" if (root / "Cargo.lock").is_file() else root.parent.parent / "Cargo.lock").read_text()))
     # nix may come from a separate historical vendor revision. Only the
     # kernel crate's source determines the runtime contract.
     cli = re.search(r'name = "octos-cli"\nversion = "[^\"]+"\nsource = "git\+https://github\.com/octos-org/octos\.git\?rev=([0-9a-f]{40})#',
-                    (root / "Cargo.lock").read_text())
+                    (root / "Cargo.lock" if (root / "Cargo.lock").is_file() else root.parent.parent / "Cargo.lock").read_text())
     if not cli or cli[1] != lock["revision"] or lock["revision"] not in revisions:
         raise ValueError("Octos packaging pin differs from Cargo.lock; update them together")
     return lock
@@ -185,7 +185,8 @@ def main(argv=None):
     if args.mode == "android" and target != ANDROID:
         parser.error("Android packages currently target aarch64-linux-android")
     lock = read_lock()
-    work = ROOT / "target/octos-runtime"
+    metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--no-deps", "--locked", "--format-version", "1"], cwd=ROOT, text=True))
+    work = Path(metadata["target_directory"]) / "octos-runtime"
     source = prepare_source(lock, work, args.offline)
     if args.kernel:
         if target != host_target():

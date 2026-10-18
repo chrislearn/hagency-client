@@ -53,7 +53,7 @@ cargo run --offline --features agent_chat --bin robrix
 
 **实测结果：201 项单元测试通过、2 项忽略；14 项原生流程检查通过；937 条双语文案、986 个翻译调用点检查无缺项。**
 
-实际结果及截图见 [validation.json](validation.json) 和 [evidence](evidence/)。可直接查看[桌面编辑器](evidence/18-desktop-editor-en.png)、[主题选择](evidence/06-theme.png)、[封面设置](evidence/07-cover.png)和[全文预览](evidence/08-full-preview.png)。测试使用隔离的临时账号资料与真实 Palpo 服务，没有操作个人 Matrix 账号。原生自动化通过 Makepad 输入桥接驱动真实控件，截图来自运行中的应用。
+实际结果及截图见 [validation.json](validation.json) 和 [evidence](evidence)。可直接查看[桌面编辑器](evidence/18-desktop-editor-en.png)、[主题选择](evidence/06-theme.png)、[封面设置](evidence/07-cover.png)和[全文预览](evidence/08-full-preview.png)。测试使用隔离的临时账号资料与真实 Palpo 服务，没有操作个人 Matrix 账号。原生自动化通过 Makepad 输入桥接驱动真实控件，截图来自运行中的应用。
 
 ```sh
 cargo test --offline --features agent_chat --lib

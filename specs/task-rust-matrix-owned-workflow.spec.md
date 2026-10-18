@@ -31,9 +31,9 @@ inventing delivery, trust, task completion or process-cleanup evidence.
 
 ### Allowed Changes
 - ./Cargo.lock
-- native/hagency/Cargo.toml
-- native/hagency/tests/owned_matrix.rs
-- native/hagency/tests/owned_matrix/**
+- crates/hagency/Cargo.toml
+- crates/hagency/tests/owned_matrix.rs
+- crates/hagency/tests/owned_matrix/**
 - specs/task-rust-matrix-owned-workflow.spec.md
 - knowledge/decisions/adr-062-native-matrix-owned-workflow.md
 - docs/agent-knowledge.md

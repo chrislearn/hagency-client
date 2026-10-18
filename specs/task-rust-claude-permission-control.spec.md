@@ -37,15 +37,15 @@ the noninteractive boundary; it is not an owner verdict or a new public API.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-runtime/src/claude.rs
-- native/hagency-runtime/src/claude/session.rs
-- native/hagency-runtime/src/claude/session/**
-- native/hagency-runtime/src/owned/claude.rs
-- native/hagency-runtime/src/bin/claude_probe/mod.rs
-- native/hagency-runtime/tests/claude_control.rs
-- native/hagency-runtime/tests/claude.rs
-- native/hagency-runtime/tests/claude_owned.rs
-- native/hagency-runtime/examples/claude_permission_probe.rs
+- crates/hagency-runtime/src/claude.rs
+- crates/hagency-runtime/src/claude/session.rs
+- crates/hagency-runtime/src/claude/session/**
+- crates/hagency-runtime/src/owned/claude.rs
+- crates/hagency-runtime/src/bin/claude_probe/mod.rs
+- crates/hagency-runtime/tests/claude_control.rs
+- crates/hagency-runtime/tests/claude.rs
+- crates/hagency-runtime/tests/claude_owned.rs
+- crates/hagency-runtime/examples/claude_permission_probe.rs
 - knowledge/decisions/adr-005-supported-runtime-approval-adapters.md
 - knowledge/decisions/adr-156-native-claude-permission-control.md
 - specs/task-rust-claude-permission-control.spec.md

@@ -36,15 +36,15 @@ here as the divergence so no reader looks for a retained tool to match.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency/src/mcp/catalog.rs
-- native/hagency/src/mcp.rs
-- native/hagency/src/mcp/**
-- native/hagency-store/src/domain/approvals.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/tests/
-- native/hagency/tests/mcp.rs
-- native/hagency/tests/mcp/**
+- crates/hagency/src/mcp/catalog.rs
+- crates/hagency/src/mcp.rs
+- crates/hagency/src/mcp/**
+- crates/hagency-store/src/domain/approvals.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/tests/
+- crates/hagency/tests/mcp.rs
+- crates/hagency/tests/mcp/**
 - specs/task-rust-mcp-approval-tools.spec.md
 - knowledge/decisions/adr-064-native-matrix-approval-intake.md
 - knowledge/decisions/adr-110-native-private-approval-card.md
@@ -52,7 +52,7 @@ here as the divergence so no reader looks for a retained tool to match.
 
 ### Forbidden
 - Live services, credentials, deployed state and Matrix server changes.
-- native/hagency/src/console.rs; the card validator and `MAX_CARD`; the catalog's existing tools' schemas.
+- crates/hagency/src/console.rs; the card validator and `MAX_CARD`; the catalog's existing tools' schemas.
 
 ## Acceptance Criteria
 

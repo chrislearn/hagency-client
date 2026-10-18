@@ -27,8 +27,8 @@ reply receiver disappears before the domain writer executes it.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/matrix_invalidation/worker.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/matrix_invalidation/worker.rs
 - knowledge/decisions/adr-091-native-matrix-invalidation-custody.md
 - specs/task-rust-matrix-invalidation-custody.spec.md
 - docs/agent-knowledge.md

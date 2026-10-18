@@ -68,10 +68,10 @@ owed.
 What the native service does today:
 
 - It passes `/sync` to matrix-sdk-crypto unchanged (`receive_sync_response` in
-  `native/hagency-matrix/src/sdk.rs`), so absent counts stay absent, as decided
+  `crates/hagency-matrix/src/sdk.rs`), so absent counts stay absent, as decided
   above.
 - It uploads device keys, one-time keys and a fallback key once, during
-  enrollment (`native/hagency-matrix/src/sdk/enrollment.rs`). After that it
+  enrollment (`crates/hagency-matrix/src/sdk/enrollment.rs`). After that it
   never sends the SDK's later `KeysUpload` requests, so one-time keys are not
   replenished even when the homeserver does report a count. ADR-102 ("no ...
   OTK replenishment") and ADR-043 ("one-time-key/device maintenance" as a

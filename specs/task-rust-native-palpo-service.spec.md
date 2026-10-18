@@ -41,14 +41,14 @@ configuration, publication uncertainty and joined worker custody.
 
 ### Allowed Changes
 - ./Cargo.lock
-- native/hagency/Cargo.toml
-- native/hagency/src/main.rs
-- native/hagency/src/lib.rs
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/bootstrap/config.rs
-- native/hagency/src/bootstrap/palpo.rs
-- native/hagency/tests/palpo_service.rs
-- native/hagency/tests/palpo_service/fixture.rs
+- crates/hagency/Cargo.toml
+- crates/hagency/src/main.rs
+- crates/hagency/src/lib.rs
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/bootstrap/config.rs
+- crates/hagency/src/bootstrap/palpo.rs
+- crates/hagency/tests/palpo_service.rs
+- crates/hagency/tests/palpo_service/fixture.rs
 - knowledge/decisions/adr-096-native-development-bootstrap.md
 - knowledge/decisions/adr-109-native-catalog-publication.md
 - knowledge/context/native-palpo-service.md

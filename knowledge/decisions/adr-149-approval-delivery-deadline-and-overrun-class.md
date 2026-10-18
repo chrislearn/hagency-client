@@ -10,7 +10,7 @@ tags: [native, approval, delivery, deadline, cancellation, custody]
 ## Context
 
 `native_private_approval_delivery_is_wired`
-(`native/hagency/tests/bootstrap/approval.rs:67`) failed on a hosted Ubuntu lane
+(`crates/hagency/tests/bootstrap/approval.rs:67`) failed on a hosted Ubuntu lane
 with `approval card not delivered within the fixture watchdog`
 (`:191-193`) and the child's own stderr naming
 `send outcome: Matrix operation cancelled`. It is an intermittent: it is not
@@ -24,7 +24,7 @@ decision window, and its overrun is reported as a cancellation.**
 Three sites compose that:
 
 1. The delivery deadline is derived from the *owner's* expiry —
-   `native/hagency-matrix/src/approval_delivery.rs:92-94`:
+   `crates/hagency-matrix/src/approval_delivery.rs:92-94`:
    `Instant::now() + Duration::from_millis(card.owner_expires_at().saturating_sub(now)).min(Duration::from_secs(45))`.
 2. On that same deadline the job **cancels the very token it handed the work
    future** — `:96` `let cancel = cancel.child_token();` (the token passed to
@@ -32,35 +32,35 @@ Three sites compose that:
    `tokio::select!{r=&mut work=>r,_=tokio::time::sleep_until(deadline)=>{cancel.cancel();work.await}}`.
 3. The transport then reports the expired budget as a cancellation, because the
    select is `biased` with the token arm first —
-   `native/hagency-matrix/src/http.rs:479-483`:
+   `crates/hagency-matrix/src/http.rs:479-483`:
    `_ = cancel.cancelled() => Err(Error::Cancelled)` precedes
    `result = timeout_at(deadline, future) => result.map_err(|_| Error::Timeout)`.
    An overrun and a real cancellation are therefore indistinguishable at the
    instant they occur, and both surfaces carry distinct words —
-   `native/hagency-matrix/src/lib.rs:39-42` (`"Matrix operation cancelled"`,
+   `crates/hagency-matrix/src/lib.rs:39-42` (`"Matrix operation cancelled"`,
    `"Matrix operation timed out"`).
 
 The 1000 ms budget this inherits is not incidental. `owner_wait_ms` is fixed at
-`native/hagency/src/bootstrap/config.rs:412` (`ApprovalHost::new(8, 2, 1000,
+`crates/hagency/src/bootstrap/config.rs:412` (`ApprovalHost::new(8, 2, 1000,
 response_reserve_ms)`), validated at
-`native/hagency-execution/src/approval/capacity.rs:14-32`. It originates as the
-owner's decision deadline — `native/hagency-runtime/src/codex/transport/control.rs:41`
+`crates/hagency-execution/src/approval/capacity.rs:14-32`. It originates as the
+owner's decision deadline — `crates/hagency-runtime/src/codex/transport/control.rs:41`
 (`let owner = self.origin + Duration::from_millis(admitted + owner_ms);`) — and
 is inverted back to a wall-clock expiry at
-`native/hagency-execution/src/approval/state.rs:224-230`. That single number is
+`crates/hagency-execution/src/approval/state.rs:224-230`. That single number is
 then made to fund the host's whole delivery: reading the card
-(`native/hagency/src/bootstrap/approval.rs:85-101`), opening the bot's SDK
+(`crates/hagency/src/bootstrap/approval.rs:85-101`), opening the bot's SDK
 owner, `Command::Read`/`Start`/`Query`, `POST /keys/query`, `Command::Encrypt`
 and the room-event `PUT` (`approval_delivery.rs:298-375`). When that work
-overruns, `checkpoint` (`native/hagency-matrix/src/enrollment.rs:265-273`) sees
+overruns, `checkpoint` (`crates/hagency-matrix/src/enrollment.rs:265-273`) sees
 `cancel.is_cancelled()` first and returns `Cancelled`, never `Timeout`.
 
 **Precedent — the shape decided here already exists three times.** Sibling
 delivery surfaces separate the classes and map a fired *deadline* to `Timeout`:
-`native/hagency-matrix/src/attachments.rs:259-265` (token arm, then a
+`crates/hagency-matrix/src/attachments.rs:259-265` (token arm, then a
 `tokio::time::sleep_until(deadline) => Err(Error::Timeout)` arm, then an in-band
-`is_cancelled()` / `now >= deadline` re-check), `native/hagency-matrix/src/upload.rs:193-197`,
-and `native/hagency-matrix/src/receive.rs:99-102`. The approval-card send is the
+`is_cancelled()` / `now >= deadline` re-check), `crates/hagency-matrix/src/upload.rs:193-197`,
+and `crates/hagency-matrix/src/receive.rs:99-102`. The approval-card send is the
 one card-delivery path that does not; the fresh-enrollment wrapper
 (`approval_delivery/enrollment.rs:29`) shares the self-cancel shape and stays
 outside this record's scope.
@@ -92,7 +92,7 @@ delivery clock (`approval_delivery.rs:92` on this head) while
 nothing else changes hands**:
 
 - it stays the admission gate for the card —
-  `native/hagency-store/src/domain/approvals/card.rs:46-50` refuses a card whose
+  `crates/hagency-store/src/domain/approvals/card.rs:46-50` refuses a card whose
   `owner_expires_at <= now` or exceeds the request's own `expires_at`;
 - it stays the veto a fresh check applies before any authority is conferred
   (the same `check_private_approval_card` gate);
@@ -134,9 +134,9 @@ at `66c5a184`:
 - **Therefore the change is safe, and that is also the cost**: because nothing
   branches on the distinction, no existing behaviour proves the distinction is
   preserved. The only current evidence for the class is the operator-visible
-  string in `delivery_denial_reason` (`native/hagency-store/src/domain/approvals.rs:458`),
+  string in `delivery_denial_reason` (`crates/hagency-store/src/domain/approvals.rs:458`),
   against a hand-written literal in
-  `native/hagency-store/tests/approvals/reissue.rs:27` —
+  `crates/hagency-store/tests/approvals/reissue.rs:27` —
   `"private approval card send failed: Matrix operation timed out"`. **That
   literal is the precedent the product should match and the product currently
   contradicts**: the store's own test suite already assumes an overrun says
@@ -182,7 +182,7 @@ every sibling that classifies at the I/O boundary (`attachments.rs:259-265`,
 **No deadline, budget, ceiling or watchdog is lengthened by this record.**
 
 - `STARTUP_WATCHDOG` stays at 15 s
-  (`native/hagency/tests/bootstrap/fixture.rs:22`); it bounds *fixture waits*,
+  (`crates/hagency/tests/bootstrap/fixture.rs:22`); it bounds *fixture waits*,
   not the product's delivery.
 - `owner_wait_ms` stays 1000 (`config.rs:412`) and its validation stays
   (`capacity.rs:14-32`); this record does not raise the owner's budget.
@@ -194,15 +194,15 @@ every sibling that classifies at the I/O boundary (`attachments.rs:259-265`,
   stops spending the owner's window — and is recorded here rather than slipped
   past this rule.
 - `pump.close()`'s 2 s bound
-  (`native/hagency/src/bootstrap/approval.rs:132`, inside `close()` at
+  (`crates/hagency/src/bootstrap/approval.rs:132`, inside `close()` at
   `:131-136`) and the shutdown ordering
-  (`native/hagency/src/bootstrap.rs:1078-1084`) are unchanged.
+  (`crates/hagency/src/bootstrap.rs:1078-1084`) are unchanged.
 
 **The fixture's 25 ms poll and the single shared fake-peer queue are
 observability artifacts and are explicitly NOT the fix.** The poll
-(`native/hagency/tests/bootstrap/approval.rs:136` and `:171`,
+(`crates/hagency/tests/bootstrap/approval.rs:136` and `:171`,
 `Duration::from_millis(25)`) and the one `mpsc::channel(32)` request queue
-shared by two identities (`native/hagency-matrix/tests/common/mod.rs`: `:316` on
+shared by two identities (`crates/hagency-matrix/tests/common/mod.rs`: `:316` on
 the current head, `:275-280`, `:306` when written) make the intermittent reproducible under parallel load. They do not
 cause it. A path that cancels its own send at ~1000 ms is broken at any load
 level; lengthening the watchdog or making the poll faster would hide the defect
@@ -216,7 +216,7 @@ whose budget expires now returns `Error::Timeout`, never `Error::Cancelled`
 (`approval_delivery.rs:106-107`: the deadline arm returns — it does not cancel a
 token and does not await the inner work). The asserting test landed as
 `native_private_approval_delivery_overrun_is_a_timeout`
-(`native/hagency-matrix/tests/approval_delivery/overrun.rs:12`): the SDK owner
+(`crates/hagency-matrix/tests/approval_delivery/overrun.rs:12`): the SDK owner
 is held at phase 3, time advances past the 45 s delivery ceiling, and the send
 must resolve `Err(Error::Timeout)` (`:55`) with the denial row carrying the
 "timed out" reason (`:79`) — red on the pre-fix product, green on this head.
@@ -233,12 +233,12 @@ test alone.
 
 | Site | Change |
 |---|---|
-| `native/hagency-matrix/src/approval_delivery.rs:92-94` | Anchor the ceiling on a delivery clock started at first attempt, not on `card.owner_expires_at()`; keep the owner expiry as the card's admission gate (`card.rs:46-50`), unchanged. |
-| `native/hagency-matrix/src/approval_delivery.rs:96,101-102` | Replace the deadline arm with a returning `Err(Error::Timeout)` arm (sibling shape); do not cancel the child token, and do not await the inner work unboundedly from the deadline arm. |
-| `native/hagency-matrix/src/http.rs:479-483` | No edit: `put`/`perform` self-derive a per-trip deadline from their own limits (`http.rs:407-408`), which is a second, independent bound; the delivery clock never reaches this file. |
-| `native/hagency-matrix/src/enrollment.rs:265-273` | Unchanged; `checkpoint` already returns `Timeout` on an expired deadline once the token is not falsely cancelled. |
-| `native/hagency-matrix/tests/approval_delivery/privacy.rs:97,111-114` and `…/enrollment.rs:188-193` | Pin the class on the expiry scenario instead of `is_err()`. |
-| `native/hagency-store/tests/approvals/reissue.rs:27` | Already the intended literal; no change — it is the evidence the product should match. |
+| `crates/hagency-matrix/src/approval_delivery.rs:92-94` | Anchor the ceiling on a delivery clock started at first attempt, not on `card.owner_expires_at()`; keep the owner expiry as the card's admission gate (`card.rs:46-50`), unchanged. |
+| `crates/hagency-matrix/src/approval_delivery.rs:96,101-102` | Replace the deadline arm with a returning `Err(Error::Timeout)` arm (sibling shape); do not cancel the child token, and do not await the inner work unboundedly from the deadline arm. |
+| `crates/hagency-matrix/src/http.rs:479-483` | No edit: `put`/`perform` self-derive a per-trip deadline from their own limits (`http.rs:407-408`), which is a second, independent bound; the delivery clock never reaches this file. |
+| `crates/hagency-matrix/src/enrollment.rs:265-273` | Unchanged; `checkpoint` already returns `Timeout` on an expired deadline once the token is not falsely cancelled. |
+| `crates/hagency-matrix/tests/approval_delivery/privacy.rs:97,111-114` and `…/enrollment.rs:188-193` | Pin the class on the expiry scenario instead of `is_err()`. |
+| `crates/hagency-store/tests/approvals/reissue.rs:27` | Already the intended literal; no change — it is the evidence the product should match. |
 
 Good, because: an overrun is reported as what it is, so the ADR-137 denial text
 tells the operator the truth and the next investigation does not chase a

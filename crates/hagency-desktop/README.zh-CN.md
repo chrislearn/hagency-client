@@ -1,6 +1,10 @@
 # Hagency Desktop
 
-0.5.0 已准备但尚未正式发布：[发布检查报告](dev-vibe/release-0.5.0/assessment.zh.md) 记录了待处理的上游依赖安全项。已发布版本见 [GitHub Releases](https://github.com/hagency-org/hagency-desktop/releases)。
+原生程序现位于 hagency-client 的统一工作区中，通过 `../hagency` 使用同仓库引擎。
+依赖由仓库根 Cargo.lock 锁定，构建说明见[工作区指南](../../docs/workspace.md)。
+Windows 使用仓库根 `tools/dev.ps1`，将构建产物及缓存放到 D:/BuildCache/hagency-client。
+
+0.5.0 已准备但尚未正式发布：[发布检查报告](../../dev-vibe/desktop/release-0.5.0/assessment.zh.md) 记录了待处理的上游依赖安全项。已发布版本见 [GitHub Releases](https://github.com/hagency-org/hagency-desktop/releases)。
 
 [English](README.md) | 简体中文
 
@@ -72,7 +76,7 @@ Agent 加密 Room 执行暂缓，这不等于删除 Matrix 聊天的加密能力
 
 ## 构建与开发
 
-Cargo 从 [`chrislearn/hagency-client`](https://github.com/chrislearn/hagency-client) 的 `main` 分支获取主人引擎，Cargo.lock 记录构建使用的具体提交，无需同级源码目录。安装 CMake 和平台依赖后执行：
+Desktop 与主人引擎同属 [`hagency-client`](https://github.com/chrislearn/hagency-client) 工作区，使用 `../hagency` 本地路径依赖和仓库根 Cargo.lock。以下命令在 `crates/hagency-desktop` 执行；Windows 优先使用仓库根的 `tools/dev.ps1`。安装 CMake 和平台依赖后执行：
 
 ```sh
 cargo run --locked --bin rinx

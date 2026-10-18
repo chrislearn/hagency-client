@@ -26,13 +26,13 @@
 
 | 编号 | 依据 | 用途 |
 |---|---|---|
-| C1 | [当前权限类型](/Volumes/Data/Works/chrislearn/hagency-client/native/hagency-agent-local/src/lib.rs:119) | 请求／工具策略 |
-| C2 | [工具策略合并和默认策略](/Volumes/Data/Works/chrislearn/hagency-client/native/hagency-agent-local/src/lib.rs:1019) | 拒绝优先、精确白名单、默认拒绝 |
-| C3 | [工作区文件提案](/Volumes/Data/Works/chrislearn/hagency-client/native/hagency-agent-local/src/room_files.rs:200) | 目录边界、风险标记、有效期 |
-| C4 | [原生回调入口](/Volumes/Data/Works/chrislearn/hagency-client/native/hagency-agent-local/src/codex.rs:1133) | 回调发布门控 |
-| C5 | [OwnerHost 审批队列](/Volumes/Data/Works/chrislearn/hagency-client/native/hagency/src/console/owned_runtime.rs:748) | 本地设备、归属、有效期 |
-| C6 | [OwnerHost 主人决定](/Volumes/Data/Works/chrislearn/hagency-client/native/hagency/src/console/owned_runtime.rs:844) | 主人身份、绑定、摘要、单次消费 |
-| C7 | [模型请求审批](/Volumes/Data/Works/chrislearn/hagency-client/native/hagency/src/console/owned_runtime.rs:1904) | 接受请求与批准工具的区别 |
+| C1 | [当前权限类型](/Volumes/Data/Works/chrislearn/hagency-client/crates/hagency-agent-local/src/lib.rs:119) | 请求／工具策略 |
+| C2 | [工具策略合并和默认策略](/Volumes/Data/Works/chrislearn/hagency-client/crates/hagency-agent-local/src/lib.rs:1019) | 拒绝优先、精确白名单、默认拒绝 |
+| C3 | [工作区文件提案](/Volumes/Data/Works/chrislearn/hagency-client/crates/hagency-agent-local/src/room_files.rs:200) | 目录边界、风险标记、有效期 |
+| C4 | [原生回调入口](/Volumes/Data/Works/chrislearn/hagency-client/crates/hagency-agent-local/src/codex.rs:1133) | 回调发布门控 |
+| C5 | [OwnerHost 审批队列](/Volumes/Data/Works/chrislearn/hagency-client/crates/hagency/src/console/owned_runtime.rs:748) | 本地设备、归属、有效期 |
+| C6 | [OwnerHost 主人决定](/Volumes/Data/Works/chrislearn/hagency-client/crates/hagency/src/console/owned_runtime.rs:844) | 主人身份、绑定、摘要、单次消费 |
+| C7 | [模型请求审批](/Volumes/Data/Works/chrislearn/hagency-client/crates/hagency/src/console/owned_runtime.rs:1904) | 接受请求与批准工具的区别 |
 | D1 | [Desktop 权限编辑器](/Volumes/Data/Works/chrislearn/hagency-desktop/src/hagency/ui.rs:611) | Agent／Room／请求者设置 |
 | D2 | [Desktop 前台审批刷新](/Volumes/Data/Works/chrislearn/hagency-desktop/src/hagency/ui.rs:898) | 提醒范围、刷新、详情 |
 | D3 | [当前审批说明](/Volumes/Data/Works/chrislearn/hagency-desktop/docs/agent-chat.md) | 兼容与个人 Agent 边界 |
@@ -40,7 +40,7 @@
 | O2 | [原版私密审批投递](/Volumes/Data/Works/hagency-org/hagency-rs/bridge-matrix.js:9330) | 私密详情和请求房间状态 |
 | O3 | [原版沙箱设置](/Volumes/Data/Works/hagency-org/hagency-rs/router/src/runner.ts:810) | 工作区、只读、网络限制 |
 | O4 | [原版精确授权范围](/Volumes/Data/Works/hagency-org/hagency-rs/lib/execution-authorization.js:15) | 命令、网络、权限 profile |
-| O5 | [原版执行权限存储](/Volumes/Data/Works/hagency-org/hagency-rs/native/hagency-store/src/domain/exec_policy.rs:97) | YOLO、授权记录、下一次调度生效 |
+| O5 | [原版执行权限存储](/Volumes/Data/Works/hagency-org/hagency-rs/crates/hagency-store/src/domain/exec_policy.rs:97) | YOLO、授权记录、下一次调度生效 |
 
 “已完成”表示当前代码具备并有相应证据，不表示本文已做生产端到端资格验证。“部分完成”表示有组件但普通产品链路不完整。
 

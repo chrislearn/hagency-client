@@ -39,16 +39,16 @@ the owner has joined.
 
 ## Allowed changes
 
-- native/hagency-matrix/src/lib.rs
-- native/hagency-matrix/src/token_provision/rooms.rs
-- native/hagency-matrix/src/provisioning.rs
-- native/hagency-matrix/src/provisioning/factory.rs
-- native/hagency-matrix/src/intake.rs
-- native/hagency-matrix/tests/provision_rooms/mod.rs
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/bootstrap/fleet.rs
-- native/hagency/tests/inline_factory.rs
-- native/hagency/tests/inline_factory/mod.rs
+- crates/hagency-matrix/src/lib.rs
+- crates/hagency-matrix/src/token_provision/rooms.rs
+- crates/hagency-matrix/src/provisioning.rs
+- crates/hagency-matrix/src/provisioning/factory.rs
+- crates/hagency-matrix/src/intake.rs
+- crates/hagency-matrix/tests/provision_rooms/mod.rs
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/bootstrap/fleet.rs
+- crates/hagency/tests/inline_factory.rs
+- crates/hagency/tests/inline_factory/mod.rs
 - knowledge/decisions/adr-147-provisioning-verdict-effect-route.md
 - specs/task-rust-owner-join-wait.spec.md
 - specs/task-rust-inline-agent-rooms.spec.md

@@ -21,7 +21,7 @@ Branch `task/30` from `9775f997`. Status: **done** (acceptance proven by a new t
 
 **Test harness only — no production change was needed.** The store already has the correct behaviour (proved below).
 
-- `native/hagency/tests/configured_fleet/mod.rs`
+- `crates/hagency/tests/configured_fleet/mod.rs`
   - `Peer::new(..., count)` + `Fixture::three_agents()` (`:114`) — agent count parameterized 2→N; `three_agents` runs the local-Codex profile so the @mention→task→reply chain is the one the acceptance names.
   - `Fixture::restart(signal)` (`:806-856`) — `/bin/kill -TERM|-KILL` the real service process, wait for exit, relaunch the binary over the SAME durable state dir on a fresh ephemeral port.
   - `RestartSignal { Term, Kill }` (`:66-72`).
@@ -29,7 +29,7 @@ Branch `task/30` from `9775f997`. Status: **done** (acceptance proven by a new t
   - `assert_project_scope` generation bound `1 + agents.len()` (`:515-525`).
   - `assert_ready` off-by-one fix: snapshot `agents` array = the full entries map (**root backend + n agents**), so `agents.len() == 1 + n`, matching `registered_backends == 1 + n` (`:780`).
   - DM owner-join find: `(0..self.agents.len())` + `!owner` guard (`:1462-1467`).
-- `native/hagency/tests/configured_fleet.rs`
+- `crates/hagency/tests/configured_fleet.rs`
   - New `native_configured_fleet_three_agents_reattach_after_restart` (`:259-369`): for TERM and KILL, three agents answer three exact @mentions (round 1), the service restarts over durable state, and the re-attached runtimes answer three fresh @mentions (round 2) with **no account re-registration** (`account_posts` unchanged) and **no key re-upload** (`crypto.writes.len()` unchanged).
 
 ## Production wiring path (no test-only seams)

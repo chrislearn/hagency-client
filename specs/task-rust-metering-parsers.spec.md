@@ -30,10 +30,10 @@ text authority over Agent attribution budgets or canonical task state.
 ### Allowed Changes
 - ./Cargo.toml
 - ./Cargo.lock
-- native/hagency-metering/**
-- native/scripts/metering-vectors.mjs
-- native/fixtures/metering.json
-- native/README.md
+- crates/hagency-metering/**
+- tools/native/metering-vectors.mjs
+- tests/fixtures/metering.json
+- docs/native-engine.md
 - .github/workflows/rust.yml
 - knowledge/decisions/adr-055-native-metering-parsers.md
 - specs/task-rust-metering-parsers.spec.md

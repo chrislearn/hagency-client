@@ -29,17 +29,17 @@ management boundary without treating untrusted transcript counts as quota truth.
 
 ### Allowed Changes
 - ./Cargo.lock
-- native/hagency/Cargo.toml
-- native/hagency/src/lib.rs
-- native/hagency/src/usage.rs
-- native/hagency/tests/usage.rs
-- native/hagency/tests/usage/**
-- native/hagency-store/src/domain/usage.rs
-- native/hagency-store/src/domain/usage/reads.rs
-- native/hagency-store/src/domain/usage/types.rs
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/lib.rs
+- crates/hagency/Cargo.toml
+- crates/hagency/src/lib.rs
+- crates/hagency/src/usage.rs
+- crates/hagency/tests/usage.rs
+- crates/hagency/tests/usage/**
+- crates/hagency-store/src/domain/usage.rs
+- crates/hagency-store/src/domain/usage/reads.rs
+- crates/hagency-store/src/domain/usage/types.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/lib.rs
 - knowledge/decisions/adr-067-native-usage-read-api.md
 - specs/task-rust-usage-read-api.spec.md
 - docs/agent-knowledge.md

@@ -28,11 +28,11 @@ when original process memory and runner capability are unavailable.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain/uploads.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/tests/file_uploads.rs
-- native/hagency-store/tests/file_uploads/settlement.rs
+- crates/hagency-store/src/domain/uploads.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/tests/file_uploads.rs
+- crates/hagency-store/tests/file_uploads/settlement.rs
 - knowledge/decisions/adr-085-native-upload-settlement.md
 - specs/task-rust-upload-settlement.spec.md
 - docs/progress.md

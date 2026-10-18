@@ -590,7 +590,7 @@ production pager.
 
 ## Rule: migration numbers follow landing order
 
-The store's upgrade loop (`native/hagency-store/src/database.rs`) applies
+The store's upgrade loop (`crates/hagency-store/src/database.rs`) applies
 versions strictly one by one (`next = current + 1`, exactly one registry
 entry per step) and `user_version` is a single linear head — so a
 migration's file number, its registry slot and the head pin are **one

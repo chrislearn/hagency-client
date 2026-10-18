@@ -47,21 +47,21 @@ lifecycle must use the same enabled feature and inspect each actual test count.
 ## Boundaries
 
 ### Allowed Changes
-- native/scripts/check-rust-spec-bindings.mjs
+- tools/native/check-rust-spec-bindings.mjs
 - .github/workflows/rust.yml
 - ./Cargo.lock
-- native/hagency/Cargo.toml
-- native/hagency/src/lib.rs
-- native/hagency/src/main.rs
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/console.rs
-- native/hagency/src/console/assets.rs
-- native/hagency/src/console/authority.rs
-- native/hagency/src/console/usage.rs
-- native/hagency/src/console/client.rs
-- native/hagency/tests/console.rs
-- native/hagency/tests/console/fixture.rs
-- native/hagency/tests/console/browser.rs
+- crates/hagency/Cargo.toml
+- crates/hagency/src/lib.rs
+- crates/hagency/src/main.rs
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/console.rs
+- crates/hagency/src/console/assets.rs
+- crates/hagency/src/console/authority.rs
+- crates/hagency/src/console/usage.rs
+- crates/hagency/src/console/client.rs
+- crates/hagency/tests/console.rs
+- crates/hagency/tests/console/fixture.rs
+- crates/hagency/tests/console/browser.rs
 - mockup/next.config.mjs
 - mockup/package.json
 - mockup/components/Data.jsx
@@ -75,7 +75,7 @@ lifecycle must use the same enabled feature and inspect each actual test count.
 - tests/dashboard-native-usage.test.js
 - knowledge/decisions/adr-107-native-console-usage.md
 - specs/task-rust-native-console-usage.spec.md
-- native/README.md
+- docs/native-engine.md
 - docs/agent-knowledge.md
 - docs/progress.md
 

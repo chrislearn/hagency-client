@@ -27,7 +27,7 @@ responses without changing production deadlines or claiming missing application 
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-permissions/tests/coordinator.rs
+- crates/hagency-permissions/tests/coordinator.rs
 - specs/task-rust-approval-cancel-fixture.spec.md
 - knowledge/decisions/adr-046-codex-approval-adapter.md
 - docs/agent-knowledge.md

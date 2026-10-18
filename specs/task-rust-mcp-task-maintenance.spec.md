@@ -28,17 +28,17 @@ Provide an executable native MCP task helper using the existing scoped task API.
 
 ### Allowed Changes
 - ./Cargo.lock
-- native/hagency/Cargo.toml
-- native/hagency/src/mcp.rs
-- native/hagency/src/mcp/**
-- native/hagency/src/main.rs
-- native/hagency/src/lib.rs
-- native/hagency/src/task_client.rs
-- native/hagency/tests/task_client.rs
-- native/hagency/tests/task_client/**
-- native/hagency/tests/mcp.rs
-- native/hagency/tests/mcp/**
-- native/README.md
+- crates/hagency/Cargo.toml
+- crates/hagency/src/mcp.rs
+- crates/hagency/src/mcp/**
+- crates/hagency/src/main.rs
+- crates/hagency/src/lib.rs
+- crates/hagency/src/task_client.rs
+- crates/hagency/tests/task_client.rs
+- crates/hagency/tests/task_client/**
+- crates/hagency/tests/mcp.rs
+- crates/hagency/tests/mcp/**
+- docs/native-engine.md
 - specs/task-rust-mcp-task-maintenance.spec.md
 - knowledge/decisions/adr-049-native-mcp-task-maintenance.md
 - docs/**

@@ -9,17 +9,17 @@ tags: [active, rust, registration, onboarding, bootstrap, console, parity]
 
 Give the port the ability to write its own fleet registration. The native store
 already owns the write — `DomainRepository::register`
-(`native/hagency-store/src/domain.rs:730-766`) is the **sole** writer of the
+(`crates/hagency-store/src/domain.rs:730-766`) is the **sole** writer of the
 `registrations` table outside tests — but its facade
-(`native/hagency-store/src/domain_worker.rs:2841-2842`) has no production caller.
+(`crates/hagency-store/src/domain_worker.rs:2841-2842`) has no production caller.
 A fresh deployment therefore has no `registrations` row, and the provisioning
 ingress cannot start: bootstrap reads that row fail-closed at config load
-(`native/hagency/src/bootstrap/config.rs:305-318`, via
+(`crates/hagency/src/bootstrap/config.rs:305-318`, via
 `provisioning_registration_for_engagement`,
-`native/hagency-store/src/domain/verified_ingress.rs:198-214`, which joins the
+`crates/hagency-store/src/domain/verified_ingress.rs:198-214`, which joins the
 engagement on `fleet_id` **and** `generation`), and the intake's verdict path
 needs the representative mxid from the same record
-(`native/hagency-matrix/src/intake.rs:299-306`). Nothing else in the port writes
+(`crates/hagency-matrix/src/intake.rs:299-306`). Nothing else in the port writes
 the table.
 
 The retained product records the same act as a project side:
@@ -35,25 +35,25 @@ act, and the port already models the row — only the caller is missing.
 
 The port needs both, for different reasons:
 
-- **Bootstrap-time is load-bearing.** `native/hagency/src/bootstrap/config.rs:305-318`
+- **Bootstrap-time is load-bearing.** `crates/hagency/src/bootstrap/config.rs:305-318`
   refuses to start a host whose engagement names no registration (or a
   registration with no reception room) — the comment says so at `:300-304`:
   "refuses to start rather than observing nothing and silently dropping the
   provisioning ingress". So the row must exist **before** `serve`, written by the
   same trusted local layer as the other pre-serve bootstrap steps
-  (`register_workspace` at `native/hagency/src/bootstrap.rs:871-875`, the
+  (`register_workspace` at `crates/hagency/src/bootstrap.rs:871-875`, the
   managed-account binding at `:876-892`). The established port precedent for a
   pre-serve store write exposed to an operator is a **CLI subcommand**, not a
   route: the G4 account bootstrap dispatches `hagency account …` from
-  `native/hagency/src/main.rs:202-206` into
-  `hagency::bootstrap::accounts::run` (`native/hagency/src/bootstrap/accounts.rs:40`).
+  `crates/hagency/src/main.rs:202-206` into
+  `hagency::bootstrap::accounts::run` (`crates/hagency/src/bootstrap/accounts.rs:40`).
 - **Route-driven is the retained shape.** The retained product registers through
   `POST /api/project-sides` (`backend-v2.js:9861`), an operator route. Parity
   therefore also wants an authenticated route, mounted on the console API surface
-  the port already has (`native/hagency/src/console.rs:70-80`, where
+  the port already has (`crates/hagency/src/console.rs:70-80`, where
   `project_sides::router()` is mounted at `:75` — today that router is read-only:
   `Router::with_path("project-sides").get(list)`,
-  `native/hagency/src/console/project_sides.rs:21`).
+  `crates/hagency/src/console/project_sides.rs:21`).
 
 Both are in scope, as two scenarios, because they are different acts with
 different authorities: a bootstrap CLI write (trusted local operator, no HTTP),
@@ -66,11 +66,11 @@ with only the CLI loses the retained operator surface.
 ### Must
 
 - Reach the write through `DomainRepository::register`
-  (`native/hagency-store/src/domain.rs:730`) and its facade
+  (`crates/hagency-store/src/domain.rs:730`) and its facade
   (`domain_worker.rs:2841`) — the sole writer of `registrations`. No second
   `INSERT INTO registrations`.
 - Validate the record before writing (`registration.validate()`,
-  `native/hagency-core/src/authority.rs:36-58`): `fleet_id` is `hf_` plus 32 hex,
+  `crates/hagency-core/src/authority.rs:36-58`): `fleet_id` is `hf_` plus 32 hex,
   `generation` is `> 0` and `<= JSON_SAFE_MAX`, `server_name` parses as a Matrix
   server name, `reception_room_id` is a room id on that server,
   `representative_mxid` and `approval_bot_mxid` are user ids on that server, the
@@ -87,9 +87,9 @@ with only the CLI loses the retained operator surface.
 - Bound the table (`domain.rs:735-741`, `bounded_row(…, "registrations",
   "fleet_id", …, 1024)`).
 - Authenticate the **route** caller through the console session and bearer the
-  other console routes use (`native/hagency/src/console.rs:70-80`), and
+  other console routes use (`crates/hagency/src/console.rs:70-80`), and
   re-check before responding (the console's recheck-after-write pattern,
-  `native/hagency/src/console/agents.rs:236-244`).
+  `crates/hagency/src/console/agents.rs:236-244`).
 - Report the missing prerequisite honestly at bootstrap: a serve whose engagement
   names no registration stays the named fail-closed refusal it already is
   (`bootstrap/config.rs:300-318`) — this slice adds the writer, it does not
@@ -112,14 +112,14 @@ with only the CLI loses the retained operator surface.
 
 ## Production-caller gate
 
-The gate (`native/scripts/check-production-callers.mjs`, a wired CI step at
+The gate (`tools/native/check-production-callers.mjs`, a wired CI step at
 `.github/workflows/rust.yml:124`) resolves a concrete `crate::path::fn`
 against the production call graph. Both callers landed 2026-09-15 and every
 scenario's `Production caller:` line now names one of them:
 
 - Bootstrap-time: `hagency::bootstrap::registration::run` — the module
-  mirroring `native/hagency/src/bootstrap/accounts.rs`, dispatched from a
-  subcommand in `native/hagency/src/main.rs` beside `Command::Account`,
+  mirroring `crates/hagency/src/bootstrap/accounts.rs`, dispatched from a
+  subcommand in `crates/hagency/src/main.rs` beside `Command::Account`,
   calling the facade `DomainStore::register` (`domain_worker.rs:2841`).
 - Route-driven: `hagency::console::project_sides::save` — the POST handler
   on the existing `project_sides` router, gated by the shared
@@ -131,7 +131,7 @@ authority, not in the write.
 ## Representation divergences (UNRESOLVED — decision owed, not decided here)
 
 1. **The key differs: fleet id vs server name.** The port keys `registrations` by
-   `fleet_id` (`native/hagency-store/src/domain.sql`: `fleet_id TEXT PRIMARY
+   `fleet_id` (`crates/hagency-store/src/domain.sql`: `fleet_id TEXT PRIMARY
    KEY`). The retained product keys a side by its **server name**, and says the
    id *is* the server name on purpose: "a generated id would let two records
    claim one homeserver, and the invariant that makes this design coherent is

@@ -24,12 +24,12 @@ the native exact-single-member parser currently refuses that response.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/src/http.rs
-- native/hagency-matrix/src/upload_custody.rs
-- native/hagency-matrix/tests/media_upload.rs
-- native/hagency-matrix/tests/upload_custody/mod.rs
-- native/hagency-matrix/tests/fixtures/palpo-upload-response.json
-- native/hagency/src/file_service/pipeline.rs
+- crates/hagency-matrix/src/http.rs
+- crates/hagency-matrix/src/upload_custody.rs
+- crates/hagency-matrix/tests/media_upload.rs
+- crates/hagency-matrix/tests/upload_custody/mod.rs
+- crates/hagency-matrix/tests/fixtures/palpo-upload-response.json
+- crates/hagency/src/file_service/pipeline.rs
 - specs/task-rust-upload-blurhash.spec.md
 - knowledge/decisions/adr-167-upload-blurhash.md
 - docs/agent-knowledge.md

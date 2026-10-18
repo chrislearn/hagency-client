@@ -32,12 +32,12 @@ service queues and executable receive integration are separately owned gates.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-execution/Cargo.toml
-- native/hagency-execution/src/lib.rs
-- native/hagency-execution/src/workspace.rs
-- native/hagency-execution/src/workspace/received.rs
-- native/hagency-execution/tests/owned.rs
-- native/hagency-execution/tests/owned/receive.rs
+- crates/hagency-execution/Cargo.toml
+- crates/hagency-execution/src/lib.rs
+- crates/hagency-execution/src/workspace.rs
+- crates/hagency-execution/src/workspace/received.rs
+- crates/hagency-execution/tests/owned.rs
+- crates/hagency-execution/tests/owned/receive.rs
 - ./Cargo.lock
 - specs/task-rust-receive-workspace-sink.spec.md
 - docs/agent-knowledge.md

@@ -9,7 +9,7 @@ tags: [active, rust, execution, guardian, diagnostics, only-macos]
 ## Intent
 
 The guardian half of `task-rust-owned-attempt-evidence.spec.md` (ADR-181) whose
-tests run only on macOS (`native/hagency-platform/tests/stop_evidence.rs` is
+tests run only on macOS (`crates/hagency-platform/tests/stop_evidence.rs` is
 `#![cfg(target_os = "macos")]`). It is split out so the spec-binding check defers
 these selectors on other platforms instead of reporting them missing. Same
 constraints as the parent spec: the evidence authorizes nothing and changes no
@@ -17,7 +17,7 @@ verdict.
 
 ## Allowed changes
 
-- native/hagency-platform/**
+- crates/hagency-platform/**
 - specs/task-rust-owned-attempt-evidence-macos.spec.md
 
 ## Scenarios

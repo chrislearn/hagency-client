@@ -2,24 +2,24 @@
 name = "rinx"
 authors = ["OctoSense Contributors", "Kevin Boos <kevinaboos@gmail.com>", "Robius Project Maintainers"]
 description = "Hagency Desktop: Matrix Project workspaces and locally managed AI Agents."
-documentation = "https://github.com/upstreamlabs/Rinx#readme"
+documentation = "https://github.com/chrislearn/hagency-client/tree/main/crates/hagency-desktop#readme"
 edition = "2024" ## mostly just to allow let-chains
-homepage = "https://github.com/upstreamlabs/Rinx"
+homepage = "https://github.com/chrislearn/hagency-client"
 keywords = ["matrix", "chat", "client", "robius", "makepad"]
 license = "Apache-2.0"
 readme = "README.md"
 categories = ["gui"]
-repository = "https://github.com/upstreamlabs/Rinx"
+repository = "https://github.com/chrislearn/hagency-client"
 version = "0.5.0"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-hagency = { git = "https://github.com/chrislearn/hagency-client.git", branch = "main" }
-octosense-theme-contract = { path = "crates/theme-contract", version = "0.1.0" }
-rinx-system-apps = { path = "crates/system-apps" }
-article-core = { path = "crates/article-core", features = ["l0"] }
-rinx-miniapp-core = { path = "crates/miniapp-core" }
-rinx-miniapp-catalog = { path = "crates/miniapp-catalog" }
+hagency = { path = "../hagency" }
+octosense-theme-contract = { path = "../theme-contract", version = "0.1.0" }
+rinx-system-apps = { path = "../system-apps" }
+article-core = { path = "../article-core", features = ["l0"] }
+rinx-miniapp-core = { path = "../miniapp-core" }
+rinx-miniapp-catalog = { path = "../miniapp-catalog" }
 uuid = { version = "1", features = ["v4"] }
 ## The assistant (ADR 0007): the scoped service contract a host injects. The
 ## local-runtime and remote connectors are optional (`octos-local`,
@@ -33,7 +33,7 @@ octoscript-widgets = { git = "https://github.com/OctoSense-org/Octoscript-Makepa
 ## Hub change does not force a Rinx release; the mini-app catalog client and the
 ## Splash sandbox are Rinx's own (crates/miniapp-catalog, src/miniapps/sandbox.rs).
 octosense-app-contract = "1.2"
-article-makepad = { path = "crates/article-makepad" }
+article-makepad = { path = "../article-makepad" }
 ## The OctoSense module contract. Only a host build uses it, and the host redirects
 ## all of makepad to its own prepared checkout of the same OctoSense-org/makepad
 ## revision (OctoSense's .sources/makepad), whatever URL a crate names it by.
@@ -47,7 +47,7 @@ makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = 
 
 
 robius-directories = { git = "https://github.com/project-robius/robius" }
-robius-file-picker = { path = "vendor/robius-file-picker" }
+robius-file-picker = { path = "../robius-file-picker" }
 robius-location    = { git = "https://github.com/project-robius/robius" }
 robius-open        = { git = "https://github.com/project-robius/robius" }
 robius-share       = { git = "https://github.com/project-robius/robius" }
@@ -226,32 +226,8 @@ log_space_service_diffs = []
 name = "palpo_action_room"
 required-features = ["palpo-instrument"]
 
-[patch.crates-io]
-# Octos' existing OpenHarmony ioctl ABI correction for rustyline's nix 0.29.
-nix = { git = "https://github.com/octos-org/octos.git", rev = "deb433e9a452c03d8fe7f4f6a26b42785c47ced7" }
-# Pending additive App Hub contract release; see vendor/octosense-app-contract/RINX-PATCH.md.
-octosense-app-contract = { path = "vendor/octosense-app-contract" }
-## This is required to avoid a version conflict on the libsqlite3-sys crate,
-## which is a native crate that can only exist once in the dependency graph.
-## The `matrix-sdk` crate's dependencies require a specific version of `libsqlite3-sys`
-## (via rustsqlite which requires libsqlite3-sys 0.38),
-## whereas the `tsp_sdk` crate depends on `sqlx`, which requires a different version
-## of `libsqlite3-sys` (via `aries-askar`, which depends on `askar-storage`,
-## which requires libsqlite3-sys 0.30.0).
-## So this patch is a custom version of sqlx 0.8.6 that updates the libsqlite3-sys
-## dependency to version 0.38, which is compatible with the version required by
-## the matrix-sdk crate.
-## See <https://github.com/launchbadge/sqlx/pull/3928/files#diff-4f4849707ed063bc5de6d9f6d105f0e7baf62d1085b3c8aee4a547468b89248fR57>
-sqlx = { git = "https://github.com/project-robius/sqlx.git", branch = "update_libsqlite3-sys_version" }
-
-## The main branch of the `tsp_sdk` repo already includes this patch, so we copy it here.
-## This is required for the askar repos to work with the above-patched `sqlx` crate.
-## See <https://github.com/openwallet-foundation/askar/pull/386>
-askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
-
-
 [build-dependencies]
-rinx-system-apps = { path = "crates/system-apps" }
+rinx-system-apps = { path = "../system-apps" }
 serde_json = "1"
 toml = "1"
 
@@ -265,48 +241,6 @@ all-features = true
 
 ## Keep dev builds small: line tables are enough for backtraces, dependencies
 ## get no debug info, and incremental caches are disabled (they grow unbounded).
-[profile.dev]
-debug = "line-tables-only"
-incremental = false
-
-[profile.dev.package."*"]
-debug = false
-
-[profile.release]
-debug = false
-strip = "symbols"
-
-## An optimized profile for development, with full debug info and assertions.
-[profile.debug-opt]
-inherits = "dev"
-opt-level = 3
-
-## An optimized release profile with thin LTO.
-[profile.release-lto]
-inherits = "release"
-lto = "thin"
-
-## Enable full optimizations when building app bundles for distribution.
-[profile.distribution]
-inherits = "release"
-codegen-units = 1
-lto = "fat"
-
-## For very fast compilation, not for creating an actual high-quality executable.
-## This is primarily useful for CI builds.
-[profile.fast]
-inherits = "dev"
-opt-level = 0
-debug = false
-lto = "off"
-strip = true
-debug-assertions = false
-
-
-
-## Configuration for cargo makepad (`cargo makepad android build-aab`).
-## The `[package.metadata.packager]` section below already sets the package ID
-## and product name, so we just need a version code for Google Play Store builds.
 [package.metadata.makepad.android]
 ## Specifying "auto" will set it to a format like 'YYYYMMDDHH'.
 version_code = "auto"
@@ -329,7 +263,7 @@ authors = [
 publisher = "Upstream Labs"
 license_file = "LICENSE"
 copyright = "Copyright 2023-2026, Project Robius"
-homepage = "https://github.com/upstreamlabs/Rinx"
+homepage = "https://github.com/chrislearn/hagency-client"
 ### Note: there is an 80-character max for the one-line summary.
 description = "Matrix Project workspaces and locally managed AI Agents"
 ### Note: there is an 80-character max for each line of the `long_description`.
@@ -383,13 +317,7 @@ resources = [
 ## runs it through `cmd /C`, which rejects a command split across lines.
 ## Note: `geoclue-2.0` has to be declared by hand. It's a D-Bus service that `robius-location`
 ## talks to over a socket, so there's no linked library or dlopen'd soname for the tool to find.
-before-each-package-command = """
-robius-packaging-commands before-each-package \
-    --force-makepad \
-    --binary-name rinx \
-    --path-to-binary ./target/release/rinx \
-    --add-deb-dep geoclue-2.0 && \
-python3 tools/package-octos.py desktop"""
+before-each-package-command = "python3 tools/package-desktop.py"
 
 ## This is not yet implemented, so remove it.
 # deep_link_protocols = [
@@ -477,64 +405,6 @@ used_underscore_binding = "allow"
 # Pin one Makepad and Octoscript runtime across Rinx and its transitive kits.
 # The www alias allows Cargo patches to redirect older revisions of the same
 # repository. OctoSense shells replace these with their prepared runtime source.
-
-[patch."https://github.com/OctoSense-org/makepad.git"]
-makepad-script = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-widgets = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-code-editor = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-app-module = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-ai = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-studio-protocol = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-network = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-wm-api = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-ai-services = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-strict-json = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-wm-theme = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-sheets = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-photos = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-aichat = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-markdown = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-markdown-widgets = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-
-[patch."https://github.com/OctoSense-org/makepad"]
-makepad-script = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-widgets = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-code-editor = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-app-module = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-ai = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-studio-protocol = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-network = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-wm-api = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-ai-services = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-strict-json = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-wm-theme = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-sheets = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-photos = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-aichat = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-markdown = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-markdown-widgets = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-
-[patch."https://github.com/kevinaboos/makepad"]
-makepad-widgets = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-makepad-code-editor = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-
-[patch."https://github.com/ZhangHanDong/makepad.git"]
-makepad-widgets = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
-
-[patch."https://github.com/OctoSense-org/Octoscript.git"]
-octoscript-ui-l0 = { git = "https://www.github.com/OctoSense-org/Octoscript.git", rev = "dbd48cfb799551c11e30970c393777d29644a605" }
-# octos-research (via the local kernel) runs on the Octoscript core; keep it
-# on the same revision, as OctoSense does, so the graph has one Octoscript.
-octoscript-core = { git = "https://www.github.com/OctoSense-org/Octoscript.git", rev = "dbd48cfb799551c11e30970c393777d29644a605" }
-
-[patch."https://github.com/OctoSense-org/Octoscript"]
-octoscript-ui-l0 = { git = "https://www.github.com/OctoSense-org/Octoscript.git", rev = "dbd48cfb799551c11e30970c393777d29644a605" }
-octoscript-core = { git = "https://www.github.com/OctoSense-org/Octoscript.git", rev = "dbd48cfb799551c11e30970c393777d29644a605" }
-
-[patch."https://github.com/OctoSense-org/Octoscript-Makepad.git"]
-octoscript-makepad = { git = "https://www.github.com/OctoSense-org/Octoscript-Makepad.git", rev = "cb66de073469063abeb2a5ab2a2bbf3cdb365745" }
-octoscript-widgets = { git = "https://www.github.com/OctoSense-org/Octoscript-Makepad.git", rev = "cb66de073469063abeb2a5ab2a2bbf3cdb365745" }
-octoscript-node = { git = "https://www.github.com/OctoSense-org/Octoscript-Makepad.git", rev = "cb66de073469063abeb2a5ab2a2bbf3cdb365745" }
 
 [[example]]
 name = "palpo_local"

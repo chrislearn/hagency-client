@@ -29,10 +29,10 @@ approval coordinator into an owned runner or establish full M6 parity.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain/approvals.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/approvals.rs
-- native/hagency-store/tests/approvals/clock.rs
+- crates/hagency-store/src/domain/approvals.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/approvals.rs
+- crates/hagency-store/tests/approvals/clock.rs
 - specs/task-rust-approval-fresh-clock.spec.md
 - knowledge/decisions/adr-043-native-owner-approvals.md
 - docs/progress.md

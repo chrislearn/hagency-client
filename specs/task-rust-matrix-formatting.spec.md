@@ -31,9 +31,9 @@ for M6, without live transport or private-route authority.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix-format/**
-- native/scripts/matrix-format-vectors.mjs
-- native/fixtures/matrix-format.json
+- crates/hagency-matrix-format/**
+- tools/native/matrix-format-vectors.mjs
+- tests/fixtures/matrix-format.json
 - ./Cargo.toml
 - ./Cargo.lock
 - .github/workflows/rust.yml
