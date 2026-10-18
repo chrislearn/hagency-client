@@ -19,3 +19,7 @@
 - PR #2 已合并至 Client main，merge 0622ce8aad384fc21efd98f1661552c5b96f979d，本地已同步。为让实际 main 自动CI获取runner，旧两次手动运行已取消；其fmt/clippy/测试清单/调用图及Owner浏览器已通过，不是全矩阵完成。
 - 原 Desktop README 双语与 MIGRATION.md 在 cd616d95749af8560a90743c316da679de578077 推送，明确合仓原因、目标和历史Release保留。实际 archiveRepository 调用被GitHub拒绝，API verified archived=false / admin=false / maintain=false / push=true。必须由该仓库管理员完成归档，不需要再询问用户是否授权（用户已经明确授权）。
 - 主分支自动检查39128551810/39128551856/39128551885；未正式发布安装包。Desktop便携article-core检查已通过，完整mainCI状态后续以运行结果为准。
+- 0.6.0发布工作流已实现，详情../release-0.6.0.zh.md。用户随后明确“先不发布上线”；保持暂停标签、Release及Cloud部署。用户反馈CI失败不代表恢复正式发布。
+- CI修复7fb76731已推送main：无checkout的Desktop汇总用runner.temp，升级fixture复制crates/和根.cargo/config.toml、遵守metadata实际target；Octos审批fixture处理写回执之前的合法完成事件，保持同一PreparedApproval和单次答复断言。没有跳过失败测试或修改生产协议。
+- 修复后的主CI39134040705、五平台构建39134040825、Desktop CI39134040782全部success。主CI212个Rust套件2049 passed、0 failed、174原有ignored，真实升级/回滚和4项Octos审批全部通过。安装包39134041425仅publish=false；完整进展见../client-ci-failure-2026-10-18.zh.md。
+- 安装包39134041425最终success：五平台全部成功，七种安装包及各平台SHA256上传为五份CI附件。Publish complete release明确skipped；没有Release、v0.6.0标签或Cloud部署。正式发布job中的合并校验与Release上传没有在本轮执行，不能将构建验收称作已发布或实际安装/启动验收。
