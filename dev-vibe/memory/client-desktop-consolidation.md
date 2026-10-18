@@ -2,6 +2,10 @@
 
 更新：2026-10-18。
 
+- 最新仓库地址为 https://github.com/hagency-org/hagency-client.git，用户已明确指定。origin 已更新；旧 chrislearn/hagency-client 由 GitHub 重定向到同一仓库，历史 PR/提交链接仍可解析。当前 canonical metadata、About 源码链接、OAuth 公开 client_uri 及匹配断言已更新，未改业务控制逻辑。
+- GitHub fork parent 是 hagency-org/hagency-rs。比较 Client b6da949b 与上游1212833a：ahead3814/behind101，共同祖先e51a0b13；上游101=79非merge+22merge。合仓前39e990c8也behind101，故不是Desktop导入漏提交。这里只做差异分析，没有merge/cherry-pick/rebase上游。
+- 79个非merge按主题：旧Coordinator/Fleet37、Claude18、Octos17、工作区安全与ADR194共2、末尾跨运行时修复5。当前已重整Claude/Octos桥接，4个Octos底层文件与上游最新逐字一致，不能把behind数当成功能缺失数。分析见../upstream-divergence-analysis-2026-10-18.zh.md。
+
 - 用户明确要求实际合入 Desktop、重新组织目录、所有 crates 放到 crates/，并为原 Desktop 仓库写迁移原因后归档。此前“只考察”范围已被本次指令覆盖。
 - 实施分支 chris/consolidate-desktop-crates 已合并，本地当前为 main。Desktop 52d88b20 历史完整导入，导入 merge e9f5b4a4。
 - 28 个 package 全部在根 crates/；桌面 crate 为 crates/hagency-desktop，package/bin 暂保留 rinx，默认 workspace 成员为 Desktop，hagency path 指向 ../hagency。

@@ -82,7 +82,7 @@ costs; restore the same owner's complete ledger when the recovery gate requires 
 
 ## Build and check
 
-Desktop is part of the [`hagency-client`](https://github.com/chrislearn/hagency-client)
+Desktop is part of the [`hagency-client`](https://github.com/hagency-org/hagency-client)
 workspace. Its owner engine is the local `../hagency` crate, and the repository
 root Cargo.lock records all dependency pins. The workspace pins Rust 1.98.0.
 Install CMake and the platform's native build dependencies, then run:

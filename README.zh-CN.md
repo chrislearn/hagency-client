@@ -2,6 +2,8 @@
 
 # Hagency 客户端
 
+当前仓库地址：[hagency-org/hagency-client](https://github.com/hagency-org/hagency-client)。
+
 原生 Desktop 与本地 Agent 引擎现由本仓库统一维护。所有 Rust package 位于
 `crates/`，桌面程序在 [`crates/hagency-desktop`](crates/hagency-desktop/README.md)，
 Cargo package 和二进制名暂保留 `rinx`，通过本地路径依赖同仓库引擎。

@@ -2,14 +2,14 @@
 name = "rinx"
 authors = ["OctoSense Contributors", "Kevin Boos <kevinaboos@gmail.com>", "Robius Project Maintainers"]
 description = "Hagency Desktop: Matrix Project workspaces and locally managed AI Agents."
-documentation = "https://github.com/chrislearn/hagency-client/tree/main/crates/hagency-desktop#readme"
+documentation = "https://github.com/hagency-org/hagency-client/tree/main/crates/hagency-desktop#readme"
 edition = "2024" ## mostly just to allow let-chains
-homepage = "https://github.com/chrislearn/hagency-client"
+homepage = "https://github.com/hagency-org/hagency-client"
 keywords = ["matrix", "chat", "client", "robius", "makepad"]
 license = "Apache-2.0"
 readme = "README.md"
 categories = ["gui"]
-repository = "https://github.com/chrislearn/hagency-client"
+repository = "https://github.com/hagency-org/hagency-client"
 version = "0.5.0"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
@@ -263,7 +263,7 @@ authors = [
 publisher = "Upstream Labs"
 license_file = "LICENSE"
 copyright = "Copyright 2023-2026, Project Robius"
-homepage = "https://github.com/chrislearn/hagency-client"
+homepage = "https://github.com/hagency-org/hagency-client"
 ### Note: there is an 80-character max for the one-line summary.
 description = "Matrix Project workspaces and locally managed AI Agents"
 ### Note: there is an 80-character max for each line of the `long_description`.

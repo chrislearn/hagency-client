@@ -113,7 +113,7 @@ fn read_rinx_git_info() -> (String, String) {
         return (String::new(), String::new());
     }
     let short_rev: String = full_sha.chars().take(8).collect();
-    let url = format!("https://github.com/chrislearn/hagency-client/tree/{full_sha}");
+    let url = format!("https://github.com/hagency-org/hagency-client/tree/{full_sha}");
     (short_rev, url)
 }
 

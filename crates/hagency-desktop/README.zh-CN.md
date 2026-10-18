@@ -76,7 +76,7 @@ Agent 加密 Room 执行暂缓，这不等于删除 Matrix 聊天的加密能力
 
 ## 构建与开发
 
-Desktop 与主人引擎同属 [`hagency-client`](https://github.com/chrislearn/hagency-client) 工作区，使用 `../hagency` 本地路径依赖和仓库根 Cargo.lock。以下命令在 `crates/hagency-desktop` 执行；Windows 优先使用仓库根的 `tools/dev.ps1`。安装 CMake 和平台依赖后执行：
+Desktop 与主人引擎同属 [`hagency-client`](https://github.com/hagency-org/hagency-client) 工作区，使用 `../hagency` 本地路径依赖和仓库根 Cargo.lock。以下命令在 `crates/hagency-desktop` 执行；Windows 优先使用仓库根的 `tools/dev.ps1`。安装 CMake 和平台依赖后执行：
 
 ```sh
 cargo run --locked --bin rinx

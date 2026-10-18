@@ -2,6 +2,8 @@
 
 # Hagency client
 
+Canonical repository: [hagency-org/hagency-client](https://github.com/hagency-org/hagency-client).
+
 Hagency Desktop and the local Agent engine are maintained together in this repository.
 All Rust packages live in `crates/`; the native Rust/Makepad application is
 [`crates/hagency-desktop`](crates/hagency-desktop/README.md), with Cargo package

@@ -57,7 +57,7 @@ async fn oauth(req: &mut Request, depot: &Depot, res: &mut Response) {
             // even when a native client's callback uses HTTP loopback.
             assert_eq!(
                 value["client_uri"],
-                "https://github.com/chrislearn/hagency-client"
+                "https://github.com/hagency-org/hagency-client"
             );
             assert_eq!(value["application_type"], "native");
             let redirect =
