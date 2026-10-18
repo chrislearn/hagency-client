@@ -50,4 +50,20 @@ Quinn-proto 0.11.18；tokio-rustls 按引擎精确约束统一为 0.26.4。随�
 - Windows Desktop 原生库单元测试 456 通过，2 忽略；12 个共享和引擎 package 的 47 组测试共 288 通过，41 忽略。
 - 实际调用 Windows `tools/dev.ps1` 的 `-p` 参数转发与无默认特性 Desktop 库检查通过；存储层独立 `cargo check --locked -p hagency-store --lib` 通过。
 - Windows 全量引擎集成测试无法作为通过结论：`ops` 引用了仅 Unix 提供的 `stop_clean`，两个相关文件与导入前逐字一致；其余 Windows 全量探测也出现原有绝对 Unix 路径及平台执行测试失败，已停止无效的平台全量探测，没有将失败或忽略项记为通过。
-- Linux 快速 CI 的严格 Clippy、格式和编译测试清单检查已通过，实际回归及三平台全矩阵已在远端启动；最终状态需以对应运行结果为准。
+- 预合并手动 CI 的 Linux 严格 Clippy、格式、编译测试清单及调用图检查通过；Owner Web 实际浏览器检查通过。合并后自动检查启动，已取消旧分支的两次手动运行，避免与主分支重复占用 runner；不把手动运行记为整套成功。
+
+## 远端迁移
+
+[PR #2](https://github.com/chrislearn/hagency-client/pull/2) 已合并到 Client main，
+合并提交 `0622ce8aad384fc21efd98f1661552c5b96f979d`，保留 Desktop 原始历史。
+本地 Client 已切回 main 并同步该提交。
+
+原 Desktop 的中英文 README 和 MIGRATION.md 已通过提交
+`cd616d95749af8560a90743c316da679de578077` 推送至 main，说明迁移原因、新地址和
+历史安装包保留安排。随后执行 `gh repo archive hagency-org/hagency-desktop --yes`，
+GitHub 明确拒绝：`chrislearn does not have the correct permissions to execute ArchiveRepository`。
+实际 API 核对 `archived=false`，当前账号只有 push/WRITE，无 admin/maintain；
+归档本身仍需原仓库管理员完成，不能声称已归档。
+
+合并后的检查：CI `39128551810`、Desktop CI `39128551856`、五平台构建
+`39128551885`。这些运行不发布安装包。
