@@ -10,3 +10,5 @@
 - 本次保留 Web 控制台，不发行安装包；历史下载继续指向旧 Desktop Releases。原 0.5.0 安全审计和随包 Octos 独立锁问题保留。
 - Desktop 原仓库当前 gh viewerPermission=WRITE，是否允许 archive 需执行并核实，不能提前称已归档。新目标 Client 为 ADMIN。
 - 详细实现与验证：../client-desktop-consolidation-2026-10-18.zh.md；工作区指南 docs/workspace.md。
+- 本地 Desktop check 与 456 单测通过/2忽略；12 个共享/引擎包共288通过/41忽略，32 Node 与8打包回归通过。独立crate选择发现rusqlite原先隐赖MatrixSDK默认feature，现显式启用fallible_uint。
+- 原引擎Windows全量并非通过：ops::stop_clean仅Unix、模型测试写死/tmp/task及其他平台执行探测失败；未因合仓削弱检查或记为通过。原文件已比对一致；支持平台回归在GitHub运行39127796689和39127799243，PR https://github.com/chrislearn/hagency-client/pull/2。
