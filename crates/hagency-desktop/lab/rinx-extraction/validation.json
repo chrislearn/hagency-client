@@ -1,0 +1,50 @@
+{
+  "passed": true,
+  "source_branch": "OctoSense-org/robrix2:wechat-ui",
+  "source_revision": "16913e0c6f0397b4ed1272b7dcd421935521d5f3",
+  "project": "OctoSense-org/Rinx",
+  "branch": "main",
+  "license": "Apache-2.0",
+  "inherited_robrix_license": "MIT (LICENSE-MIT preserved verbatim)",
+  "platform": "macOS arm64",
+  "rust": "1.98.0",
+  "unit_tests": {
+    "rinx_passed": 188,
+    "rinx_failed": 0,
+    "rinx_ignored": 2,
+    "article_core_passed": 16
+  },
+  "commands": [
+    "cargo check --locked --features agent_chat",
+    "cargo test --locked --features agent_chat --lib",
+    "cargo test --locked --manifest-path crates/article-core/Cargo.toml",
+    "cargo build --locked --features agent_chat",
+    "cargo check --locked --no-default-features --features agent_chat",
+    "python3 tools/wechat-ux/check_i18n.py",
+    "python3 tools/wechat-ux/live/native_article_blitz.py"
+  ],
+  "native_checks": [
+    "Rinx window title and sign-in form",
+    "Chinese About Rinx and Robrix/Apache attribution",
+    "Palpo password sign-in and session restore",
+    "mobile_chinese_english_css_theme_authorized_images_and_full_scroll",
+    "long_preview_reports_clipping_and_returns_to_complete_native_reader",
+    "refresh_back_discards_old_session_and_reopen_renders",
+    "desktop_english_preview_refresh_back_and_close"
+  ],
+  "catalog_entries": 947,
+  "missing_translations": 0,
+  "unchanged_matrix_event_types": true,
+  "personal_accounts_used": false,
+  "limits": [
+    "Native validation ran on macOS with mobile-sized and desktop windows, not iOS or Android hardware.",
+    "SSO redirect metadata was updated; no external SSO provider account was used.",
+    "Signed installers and app-store releases have not been produced.",
+    "Existing Blitz grayscale/sepia limitations remain."
+  ],
+  "screenshots": {
+    "login.png": "fdf8397d2289ab2f64f09123c8eee47d2b2506c96b94be4af6d86051a50c7ba6",
+    "about.png": "04df56b98cbb014d5c4a9434f409c8b23591bebc99f827f60615c11928fdc8f2",
+    "article-preview.png": "b331e22573049440c7ef86955f546aaf1e18ee411df0746cc6035f5eb668d377"
+  }
+}

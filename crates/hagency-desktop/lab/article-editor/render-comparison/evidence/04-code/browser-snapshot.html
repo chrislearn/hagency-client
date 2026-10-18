@@ -1,0 +1,86 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Editor.md comparison</title><style>html,body{margin:0;background:#ffffff;color:#191919;font-family:"PingFang SC",system-ui,sans-serif}
+article{box-sizing:border-box;max-width:760px;margin:0 auto;padding:24px;font-size:16px;line-height:1.85;overflow-wrap:break-word}
+h1{font-size:28px;line-height:1.4} h2{font-size:22px;color:#07a858;margin-top:28px}
+h3{font-size:19px} p{margin:16px 0} .author,figcaption{font-size:13px;opacity:.7}
+blockquote{margin:20px 0;padding:12px 18px;border-left:4px solid #07a858;background:#f0f2ef}
+figure{margin:20px auto;text-align:center} figure img{width:100%;max-width:100%;height:auto} a{color:#07a858} hr{border:0;border-top:1px solid #07a858;margin:24px 0}
+
+
+table{border-collapse:collapse;width:100%;margin:18px 0;font-size:.9em;table-layout:fixed}
+th,td{border:1px solid #b8c2bd;padding:8px;overflow-wrap:anywhere}th{background:#edf2ef;font-weight:bold}
+td[align=right],th[align=right]{text-align:right}td[align=center],th[align=center]{text-align:center}
+pre{background:#f3f5f4;border:1px solid #dde3df;border-radius:4px;padding:12px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.55;font-size:13px}
+code{font-family:Menlo,Consolas,monospace}p code,li code,td code{background:#f0f2f1;padding:2px 3px}
+img{max-width:100%;height:auto}pre code{padding:0;background:transparent}
+</style></head><body><article><h3>多语言代码高亮 Codes</h3>
+<h4>行内代码 Inline code</h4>
+<p>执行命令：<code>npm install marked</code></p>
+<h4>缩进风格</h4>
+<p>即缩进四个空格，也做为实现类似 <code>&lt;pre&gt;</code> 预格式化文本 ( Preformatted Text ) 的功能。</p>
+<pre><code><span style="color:#323232">&lt;?php
+    echo &quot;Hello world!&quot;;
+?&gt;
+</span></code></pre>
+<p>预格式化文本：</p>
+<pre><code><span style="color:#323232">| First Header  | Second Header |
+| ------------- | ------------- |
+| Content Cell  | Content Cell  |
+| Content Cell  | Content Cell  |
+</span></code></pre>
+<h4>JS代码　</h4>
+<pre><code><span style="color:#a71d5d">function</span><span style="color:#323232"> </span><span style="color:#795da3">test</span><span style="color:#323232">() {
+    </span><span style="color:#795da3">console</span><span style="color:#323232">.</span><span style="color:#0086b3">log</span><span style="color:#323232">(</span><span style="color:#183691">&quot;Hello world!&quot;</span><span style="color:#323232">);
+}
+ 
+(</span><span style="color:#a71d5d">function</span><span style="color:#323232">(){
+    </span><span style="color:#a71d5d">var</span><span style="color:#323232"> </span><span style="color:#795da3">box</span><span style="color:#323232"> </span><span style="color:#a71d5d">=</span><span style="color:#323232"> </span><span style="color:#a71d5d">function</span><span style="color:#323232">() {
+        </span><span style="color:#a71d5d">return</span><span style="color:#323232"> box.fn.init();
+    };
+
+    </span><span style="color:#0086b3">box</span><span style="color:#323232">.</span><span style="color:#0086b3">prototype</span><span style="color:#323232"> </span><span style="color:#a71d5d">=</span><span style="color:#323232"> box.fn </span><span style="color:#a71d5d">=</span><span style="color:#323232"> {
+        </span><span style="color:#795da3">init</span><span style="color:#323232"> : </span><span style="color:#a71d5d">function</span><span style="color:#323232">(){
+            </span><span style="color:#795da3">console</span><span style="color:#323232">.</span><span style="color:#0086b3">log</span><span style="color:#323232">(</span><span style="color:#183691">'box.init()'</span><span style="color:#323232">);
+
+            </span><span style="color:#a71d5d">return</span><span style="color:#323232"> </span><span style="color:#ed6a43">this</span><span style="color:#323232">;
+        },
+
+        </span><span style="color:#795da3">add</span><span style="color:#323232"> : </span><span style="color:#a71d5d">function</span><span style="color:#323232">(str) {
+            alert(</span><span style="color:#183691">&quot;add&quot;</span><span style="color:#323232">, str);
+
+            </span><span style="color:#a71d5d">return</span><span style="color:#323232"> </span><span style="color:#ed6a43">this</span><span style="color:#323232">;
+        },
+
+        </span><span style="color:#795da3">remove</span><span style="color:#323232"> : </span><span style="color:#a71d5d">function</span><span style="color:#323232">(str) {
+            alert(</span><span style="color:#183691">&quot;remove&quot;</span><span style="color:#323232">, str);
+
+            </span><span style="color:#a71d5d">return</span><span style="color:#323232"> </span><span style="color:#ed6a43">this</span><span style="color:#323232">;
+        }
+    };
+    
+    box.fn.init.</span><span style="color:#0086b3">prototype</span><span style="color:#323232"> </span><span style="color:#a71d5d">=</span><span style="color:#323232"> box.fn;
+    
+    </span><span style="color:#0086b3">window</span><span style="color:#323232">.box </span><span style="color:#a71d5d">=</span><span style="color:#323232">box;
+})();
+
+</span><span style="color:#a71d5d">var</span><span style="color:#323232"> testBox </span><span style="color:#a71d5d">=</span><span style="color:#323232"> box();
+testBox.</span><span style="color:#0086b3">add</span><span style="color:#323232">(</span><span style="color:#183691">&quot;jQuery&quot;</span><span style="color:#323232">).</span><span style="color:#0086b3">remove</span><span style="color:#323232">(</span><span style="color:#183691">&quot;jQuery&quot;</span><span style="color:#323232">);
+</span></code></pre>
+<h4>HTML 代码 HTML codes</h4>
+<pre><code><span style="color:#323232">&lt;!</span><span style="color:#63a35c">DOCTYPE</span><span style="color:#323232"> html&gt;
+&lt;</span><span style="color:#63a35c">html</span><span style="color:#323232">&gt;
+    &lt;</span><span style="color:#63a35c">head</span><span style="color:#323232">&gt;
+        &lt;</span><span style="color:#63a35c">mate</span><span style="color:#323232"> </span><span style="color:#795da3">charest</span><span style="color:#323232">=</span><span style="color:#183691">&quot;utf-8&quot;</span><span style="color:#323232"> /&gt;
+        &lt;</span><span style="color:#63a35c">meta</span><span style="color:#323232"> </span><span style="color:#795da3">name</span><span style="color:#323232">=</span><span style="color:#183691">&quot;keywords&quot;</span><span style="color:#323232"> </span><span style="color:#795da3">content</span><span style="color:#323232">=</span><span style="color:#183691">&quot;Editor.md, Markdown, Editor&quot;</span><span style="color:#323232"> /&gt;
+        &lt;</span><span style="color:#63a35c">title</span><span style="color:#323232">&gt;Hello world!&lt;/</span><span style="color:#63a35c">title</span><span style="color:#323232">&gt;
+        &lt;</span><span style="color:#63a35c">style</span><span style="color:#323232"> </span><span style="color:#795da3">type</span><span style="color:#323232">=</span><span style="color:#183691">&quot;text/css&quot;</span><span style="color:#323232">&gt;
+            </span><span style="color:#63a35c">body</span><span style="color:#323232">{</span><span style="color:#0086b3">font-size</span><span style="color:#323232">:</span><span style="color:#0086b3">14</span><span style="color:#a71d5d">px</span><span style="color:#323232">;</span><span style="color:#0086b3">color</span><span style="color:#323232">:</span><span style="color:#ed6a43">#444</span><span style="color:#323232">;</span><span style="color:#0086b3">font-family</span><span style="color:#323232">: </span><span style="color:#183691">&quot;Microsoft Yahei&quot;</span><span style="color:#323232">, </span><span style="color:#183691">Tahoma</span><span style="color:#323232">, </span><span style="color:#183691">&quot;Hiragino Sans GB&quot;</span><span style="color:#323232">, </span><span style="color:#183691">Arial</span><span style="color:#323232">;</span><span style="color:#0086b3">background</span><span style="color:#323232">:</span><span style="color:#ed6a43">#fff</span><span style="color:#323232">;}
+            </span><span style="color:#63a35c">ul</span><span style="color:#323232">{</span><span style="color:#0086b3">list-style</span><span style="color:#323232">: none;}
+            </span><span style="color:#63a35c">img</span><span style="color:#323232">{</span><span style="color:#0086b3">border</span><span style="color:#323232">:none;</span><span style="color:#0086b3">vertical-align</span><span style="color:#323232">: middle;}
+        &lt;/</span><span style="color:#63a35c">style</span><span style="color:#323232">&gt;
+    &lt;/</span><span style="color:#63a35c">head</span><span style="color:#323232">&gt;
+    &lt;</span><span style="color:#63a35c">body</span><span style="color:#323232">&gt;
+        &lt;</span><span style="color:#63a35c">h1</span><span style="color:#323232"> </span><span style="color:#795da3">class</span><span style="color:#323232">=</span><span style="color:#183691">&quot;text-xxl&quot;</span><span style="color:#323232">&gt;Hello world!&lt;/</span><span style="color:#63a35c">h1</span><span style="color:#323232">&gt;
+        &lt;</span><span style="color:#63a35c">p</span><span style="color:#323232"> </span><span style="color:#795da3">class</span><span style="color:#323232">=</span><span style="color:#183691">&quot;text-green&quot;</span><span style="color:#323232">&gt;Plain text&lt;/</span><span style="color:#63a35c">p</span><span style="color:#323232">&gt;
+    &lt;/</span><span style="color:#63a35c">body</span><span style="color:#323232">&gt;
+&lt;/</span><span style="color:#63a35c">html</span><span style="color:#323232">&gt;
+</span></code></pre></article></body></html>

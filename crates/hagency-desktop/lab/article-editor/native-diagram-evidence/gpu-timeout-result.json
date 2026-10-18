@@ -1,0 +1,23 @@
+{
+  "passed": false,
+  "mode": "Makepad instrumentation / hidden Metal backend",
+  "binary_sha256": "79e1b884b1a7586e2e9e9e48743d096e51d9222f40a2db101b6a2f6e3dff2b62",
+  "checks": [
+    "zero_visible_windows",
+    "formatting_native_pixels",
+    "table_native_pixels"
+  ],
+  "visible_window_samples": [
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "captures": [
+    "formatting",
+    "table",
+    "table-selected",
+    "code"
+  ]
+}

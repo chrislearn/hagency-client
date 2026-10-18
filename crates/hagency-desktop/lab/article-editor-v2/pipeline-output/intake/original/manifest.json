@@ -1,0 +1,188 @@
+{
+  "schema_version": 1,
+  "id": "robrix-article-editor-v2",
+  "artboard": [
+    406,
+    776
+  ],
+  "locales": [
+    "en",
+    "cn"
+  ],
+  "generation": {
+    "atlas": "source/atlas.png",
+    "prompt": "source/atlas-prompt.txt",
+    "provider": "OpenAI Images API via imagegen skill CLI",
+    "model": "gpt-image-2",
+    "requested_size": [
+      3840,
+      2160
+    ],
+    "actual_size": [
+      3840,
+      2160
+    ],
+    "quality": "high"
+  },
+  "scenes": [
+    {
+      "id": "library",
+      "design_id": "article-v2-library",
+      "directory": "scenes/library",
+      "crop": [
+        22,
+        18,
+        554,
+        982
+      ],
+      "surface": "app",
+      "title": "library"
+    },
+    {
+      "id": "visual-editor",
+      "design_id": "article-v2-visual-editor",
+      "directory": "scenes/visual-editor",
+      "crop": [
+        626,
+        18,
+        563,
+        982
+      ],
+      "surface": "app",
+      "title": "visual-editor"
+    },
+    {
+      "id": "image-library",
+      "design_id": "article-v2-image-library",
+      "directory": "scenes/image-library",
+      "crop": [
+        1239,
+        18,
+        576,
+        982
+      ],
+      "surface": "app",
+      "title": "image-library"
+    },
+    {
+      "id": "image-settings",
+      "design_id": "article-v2-image-settings",
+      "directory": "scenes/image-settings",
+      "crop": [
+        1868,
+        18,
+        589,
+        982
+      ],
+      "surface": "app",
+      "title": "image-settings"
+    },
+    {
+      "id": "theme",
+      "design_id": "article-v2-theme",
+      "directory": "scenes/theme",
+      "crop": [
+        2518,
+        18,
+        578,
+        982
+      ],
+      "surface": "app",
+      "title": "theme"
+    },
+    {
+      "id": "cover",
+      "design_id": "article-v2-cover",
+      "directory": "scenes/cover",
+      "crop": [
+        3148,
+        18,
+        658,
+        982
+      ],
+      "surface": "app",
+      "title": "cover"
+    },
+    {
+      "id": "full-preview",
+      "design_id": "article-v2-full-preview",
+      "directory": "scenes/full-preview",
+      "crop": [
+        22,
+        1081,
+        554,
+        915
+      ],
+      "surface": "app",
+      "title": "full-preview"
+    },
+    {
+      "id": "review",
+      "design_id": "article-v2-review",
+      "directory": "scenes/review",
+      "crop": [
+        626,
+        1081,
+        563,
+        915
+      ],
+      "surface": "app",
+      "title": "review"
+    },
+    {
+      "id": "publish-confirmation",
+      "design_id": "article-v2-publish-confirmation",
+      "directory": "scenes/publish-confirmation",
+      "crop": [
+        1239,
+        1081,
+        576,
+        915
+      ],
+      "surface": "app",
+      "title": "publish-confirmation"
+    },
+    {
+      "id": "publication",
+      "design_id": "article-v2-publication",
+      "directory": "scenes/publication",
+      "crop": [
+        1868,
+        1081,
+        589,
+        915
+      ],
+      "surface": "app",
+      "title": "publication"
+    },
+    {
+      "id": "update-confirmation",
+      "design_id": "article-v2-update-confirmation",
+      "directory": "scenes/update-confirmation",
+      "crop": [
+        2518,
+        1081,
+        578,
+        915
+      ],
+      "surface": "app",
+      "title": "update-confirmation"
+    },
+    {
+      "id": "withdraw",
+      "design_id": "article-v2-withdraw",
+      "directory": "scenes/withdraw",
+      "crop": [
+        3148,
+        1081,
+        658,
+        915
+      ],
+      "surface": "app",
+      "title": "withdraw"
+    }
+  ],
+  "artwork": {
+    "root": "artwork"
+  }
+}

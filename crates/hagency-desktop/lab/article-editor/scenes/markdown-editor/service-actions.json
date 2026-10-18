@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "trust_boundary": "Robrix host; L0 has text state only",
+  "actions": [
+    {
+      "id": "article_title",
+      "behavior": "L0 title / title_changed"
+    },
+    {
+      "id": "article_bold",
+      "behavior": "Insert Markdown at current selection"
+    },
+    {
+      "id": "article_italic",
+      "behavior": "Insert Markdown at current selection"
+    },
+    {
+      "id": "article_h2",
+      "behavior": "Insert Markdown heading"
+    },
+    {
+      "id": "article_markdown",
+      "behavior": "L0 markdown / markdown_changed; multiline"
+    },
+    {
+      "id": "article_preview",
+      "behavior": "Sanitize and render immutable native Html preview"
+    },
+    {
+      "id": "article_share",
+      "behavior": "Choose chat then host-confirm sharing package reference only"
+    }
+  ]
+}

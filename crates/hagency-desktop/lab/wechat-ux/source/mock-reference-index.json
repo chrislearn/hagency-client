@@ -1,0 +1,110 @@
+{
+  "chats": {
+    "path": "source/mock-captures-v2/chats.png",
+    "sha256": "7f0e547b59c9694eee840db63d2aa5d79523017f55e4a3c65d3f6d4342f9c935",
+    "kind": "makepad_wechat_capture",
+    "pixels": [
+      800,
+      1600
+    ],
+    "observed_screen": "chats",
+    "reference_locale": "mixed",
+    "review": "Source screen identity visually reviewed; not Robrix similarity acceptance."
+  },
+  "chats-menu": {
+    "path": "source/mock-captures-v2/chats-menu.png",
+    "sha256": "9963633d803814bdddefa2b690091488b4886c1719eb2fd3a735ab78ac33e694",
+    "kind": "makepad_wechat_capture",
+    "pixels": [
+      800,
+      1600
+    ],
+    "observed_screen": "chats-menu",
+    "reference_locale": "mixed",
+    "review": "Source screen identity visually reviewed; not Robrix similarity acceptance."
+  },
+  "add-contact": {
+    "path": "source/mock-captures-v2/add-contact-candidate.png",
+    "sha256": "5fa8de1ed3176a52774bba5bc6eb68130da6d19fee01170ffabba33371aad0f9",
+    "kind": "makepad_wechat_capture",
+    "pixels": [
+      800,
+      1600
+    ],
+    "observed_screen": "add-contact",
+    "reference_locale": "mixed",
+    "review": "Source screen identity visually reviewed; not Robrix similarity acceptance."
+  },
+  "contacts": {
+    "path": "source/mock-captures-v2/contacts.png",
+    "sha256": "55f21b452a4cc3db9cc481eb08a7c8a6bee14e3568fba3e22260afd7868f0881",
+    "kind": "makepad_wechat_capture",
+    "pixels": [
+      800,
+      1600
+    ],
+    "observed_screen": "contacts",
+    "reference_locale": "mixed",
+    "review": "Source screen identity visually reviewed; not Robrix similarity acceptance."
+  },
+  "discover": {
+    "path": "source/mock-captures-v2/discover.png",
+    "sha256": "e52a0ad46bb53ab484d3cbca63cb44e1e71bac60b5e76bcad1bff1547947918f",
+    "kind": "makepad_wechat_capture",
+    "pixels": [
+      800,
+      1600
+    ],
+    "observed_screen": "discover",
+    "reference_locale": "mixed",
+    "review": "Source screen identity visually reviewed; not Robrix similarity acceptance."
+  },
+  "moments": {
+    "path": "source/mock-captures-v2/moments.png",
+    "sha256": "dc55c4006711e15784a3401892e622d5b438b6bda36f2a30fe1b0af42fa72954",
+    "kind": "makepad_wechat_capture",
+    "pixels": [
+      800,
+      1600
+    ],
+    "observed_screen": "moments",
+    "reference_locale": "mixed",
+    "review": "Source screen identity visually reviewed; not Robrix similarity acceptance."
+  },
+  "me": {
+    "path": "source/mock-captures-v2/me.png",
+    "sha256": "1508e8542bededa1a2616d866da0ef9ad91a5bc6b449a78e135cbcec78aaab5d",
+    "kind": "makepad_wechat_capture",
+    "pixels": [
+      800,
+      1600
+    ],
+    "observed_screen": "me",
+    "reference_locale": "mixed",
+    "review": "Source screen identity visually reviewed; not Robrix similarity acceptance."
+  },
+  "profile-edit": {
+    "path": "source/mock-captures-v2/profile-edit.png",
+    "sha256": "60b196563e32b8709da8dcbcfd4c0196d8a9ca9dc4fb34027ecabf0ce5a63158",
+    "kind": "makepad_wechat_capture",
+    "pixels": [
+      800,
+      1600
+    ],
+    "observed_screen": "profile-edit",
+    "reference_locale": "mixed",
+    "review": "Source screen identity visually reviewed; not Robrix similarity acceptance."
+  },
+  "conversation": {
+    "path": "source/mock-captures-v2/conversation.png",
+    "sha256": "c7a7bf5abc1fa68b24590f354a7566821433a593488080b3447fda4c5783d977",
+    "kind": "makepad_wechat_capture",
+    "pixels": [
+      800,
+      1600
+    ],
+    "observed_screen": "conversation",
+    "reference_locale": "mixed",
+    "review": "Source screen identity visually reviewed; not Robrix similarity acceptance."
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "id": "robrix-article-editor",
+  "artboard": [
+    406,
+    776
+  ],
+  "locales": [
+    "en",
+    "cn"
+  ],
+  "generation": {
+    "atlas": "source/atlas-v1.png",
+    "prompt": "source/atlas-prompt.txt",
+    "provider": "OpenAI built-in image_gen",
+    "requested_size": [
+      2048,
+      2048
+    ],
+    "quality": "high",
+    "actual_size": [
+      1254,
+      1254
+    ]
+  },
+  "scenes": [
+    {
+      "id": "received-card",
+      "design_id": "article-received-card",
+      "directory": "scenes/received-card",
+      "crop": [
+        27,
+        43,
+        282,
+        562
+      ],
+      "surface": "app",
+      "title": "received-card"
+    },
+    {
+      "id": "app-details",
+      "design_id": "article-app-details",
+      "directory": "scenes/app-details",
+      "crop": [
+        333,
+        43,
+        282,
+        562
+      ],
+      "surface": "app",
+      "title": "app-details"
+    },
+    {
+      "id": "account-consent",
+      "design_id": "article-account-consent",
+      "directory": "scenes/account-consent",
+      "crop": [
+        639,
+        43,
+        282,
+        562
+      ],
+      "surface": "app",
+      "title": "account-consent"
+    },
+    {
+      "id": "markdown-editor",
+      "design_id": "article-markdown-editor",
+      "directory": "scenes/markdown-editor",
+      "crop": [
+        945,
+        43,
+        282,
+        562
+      ],
+      "surface": "app",
+      "title": "markdown-editor"
+    },
+    {
+      "id": "native-preview",
+      "design_id": "article-native-preview",
+      "directory": "scenes/native-preview",
+      "crop": [
+        27,
+        643,
+        282,
+        562
+      ],
+      "surface": "app",
+      "title": "native-preview"
+    },
+    {
+      "id": "room-picker",
+      "design_id": "article-room-picker",
+      "directory": "scenes/room-picker",
+      "crop": [
+        333,
+        643,
+        282,
+        562
+      ],
+      "surface": "app",
+      "title": "room-picker"
+    },
+    {
+      "id": "publish-confirmation",
+      "design_id": "article-publish-confirmation",
+      "directory": "scenes/publish-confirmation",
+      "crop": [
+        639,
+        643,
+        282,
+        562
+      ],
+      "surface": "app",
+      "title": "publish-confirmation"
+    },
+    {
+      "id": "published",
+      "design_id": "article-published",
+      "directory": "scenes/published",
+      "crop": [
+        945,
+        643,
+        282,
+        562
+      ],
+      "surface": "app",
+      "title": "published"
+    }
+  ],
+  "artwork": {
+    "root": "artwork"
+  }
+}

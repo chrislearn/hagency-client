@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "flow": "robrix-article-editor",
+  "status": "completed",
+  "scope": "Only explicitly executed stages; no automatic visual or production acceptance",
+  "inputs": {
+    "sha256": "3edaeeb540a9713a3d8c10f10a3aa194a8ed18b6e38c4309310ed3aa740fa3bd",
+    "files": {
+      "image-to-appcard-flow.json": "15893814ccf5d995a0f394f2fab39724b9a9b655cacacea9ee898c7ffc64b7b2",
+      "source/atlas-v1.png": "d8d1690fbc0d3aa8c0c568ec77f58966c14f337df1c264dee52f2e63719eec6d",
+      "source/atlas-prompt.txt": "448b02d8075b507a656a2308f9ac5879c432c3b5d98ba09cdcc82112d5730e5f",
+      "scenes/received-card/contract.json": null,
+      "scenes/received-card/mapped.json": null,
+      "scenes/received-card/semantic-map.json": null,
+      "scenes/received-card/service-actions.json": null,
+      "scenes/app-details/contract.json": null,
+      "scenes/app-details/mapped.json": null,
+      "scenes/app-details/semantic-map.json": null,
+      "scenes/app-details/service-actions.json": null,
+      "scenes/account-consent/contract.json": null,
+      "scenes/account-consent/mapped.json": null,
+      "scenes/account-consent/semantic-map.json": null,
+      "scenes/account-consent/service-actions.json": null,
+      "scenes/markdown-editor/contract.json": null,
+      "scenes/markdown-editor/mapped.json": null,
+      "scenes/markdown-editor/semantic-map.json": null,
+      "scenes/markdown-editor/service-actions.json": null,
+      "scenes/native-preview/contract.json": null,
+      "scenes/native-preview/mapped.json": null,
+      "scenes/native-preview/semantic-map.json": null,
+      "scenes/native-preview/service-actions.json": null,
+      "scenes/room-picker/contract.json": null,
+      "scenes/room-picker/mapped.json": null,
+      "scenes/room-picker/semantic-map.json": null,
+      "scenes/room-picker/service-actions.json": null,
+      "scenes/publish-confirmation/contract.json": null,
+      "scenes/publish-confirmation/mapped.json": null,
+      "scenes/publish-confirmation/semantic-map.json": null,
+      "scenes/publish-confirmation/service-actions.json": null,
+      "scenes/published/contract.json": null,
+      "scenes/published/mapped.json": null,
+      "scenes/published/semantic-map.json": null,
+      "scenes/published/service-actions.json": null
+    }
+  },
+  "stages": [
+    {
+      "stage": "intake",
+      "status": "passed",
+      "commands": [
+        {
+          "argv": [
+            "/Library/Developer/CommandLineTools/usr/bin/python3",
+            "/Users/ychen/home/octosense-org/Octoscript-AppCard-calendar/lab/image-to-appcard-flow/atlas.py",
+            "--project",
+            "/Users/ychen/home/octosense-org/robrix2/lab/article-editor",
+            "--manifest",
+            "/Users/ychen/home/octosense-org/robrix2/lab/article-editor/image-to-appcard-flow.json",
+            "--output",
+            "/Users/ychen/home/octosense-org/robrix2/lab/article-editor/pipeline-output/intake"
+          ],
+          "cwd": "/Users/ychen/home/octosense-org/robrix2/lab/article-editor"
+        }
+      ],
+      "logs": [
+        {
+          "path": "intake-0.log",
+          "sha256": "ebd6cd7e7ecb08ee279f779d86837bcfcf1e1d076a087d18a96395162c2c6491",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "stage": "prepare",
+      "status": "passed",
+      "commands": [
+        {
+          "argv": [
+            "/Library/Developer/CommandLineTools/usr/bin/python3",
+            "/Users/ychen/home/octosense-org/Octoscript-AppCard-calendar/lab/image-to-appcard-flow/prepare.py",
+            "--project",
+            "/Users/ychen/home/octosense-org/robrix2/lab/article-editor",
+            "--manifest",
+            "/Users/ychen/home/octosense-org/robrix2/lab/article-editor/image-to-appcard-flow.json",
+            "--intake",
+            "/Users/ychen/home/octosense-org/robrix2/lab/article-editor/pipeline-output/intake"
+          ],
+          "cwd": "/Users/ychen/home/octosense-org/robrix2/lab/article-editor"
+        }
+      ],
+      "logs": [
+        {
+          "path": "prepare-0.log",
+          "sha256": "dec6694453715450383e0dbfcc3cb7aad9a5e9869239ab58a2a2d9a84fa63b8e",
+          "exit_code": 0
+        }
+      ]
+    }
+  ],
+  "not_run": [
+    "observe",
+    "measure",
+    "map",
+    "semantic",
+    "compile",
+    "capture",
+    "gate",
+    "extract",
+    "bundle",
+    "service-test",
+    "wasm",
+    "integrate",
+    "web-test",
+    "hosted-test"
+  ],
+  "finished_at": "2026-09-21T05:07:25.450361+00:00"
+}

@@ -1,0 +1,224 @@
+{
+  "schema_version": 1,
+  "id": "robrix-wechat-mobile-v1",
+  "artboard": [
+    406,
+    776
+  ],
+  "locales": [
+    "en",
+    "cn"
+  ],
+  "generation": {
+    "atlas": "source/atlas-v1.png",
+    "prompt": "source/atlas-prompt.txt",
+    "provider": "OpenAI built-in image_gen tool",
+    "requested_size": [
+      3840,
+      5760
+    ],
+    "quality": "high",
+    "provenance_kind": "generated_target",
+    "model_note": "Underlying model identifier not returned by tool; omitted.",
+    "requested_screen_artboard": [
+      390,
+      844
+    ]
+  },
+  "scenes": [
+    {
+      "id": "chats",
+      "design_id": "robrix-wc-v1-chats",
+      "directory": "scenes/chats",
+      "crop": [
+        16,
+        30,
+        238,
+        455
+      ],
+      "surface": "app",
+      "reference_kind": "generated_target",
+      "reference_locale": "en",
+      "review_status": "storyboard_only; detailed native mapping and visual acceptance pending"
+    },
+    {
+      "id": "search",
+      "design_id": "robrix-wc-v1-search",
+      "directory": "scenes/search",
+      "crop": [
+        270,
+        30,
+        236,
+        455
+      ],
+      "surface": "app",
+      "reference_kind": "generated_target",
+      "reference_locale": "en",
+      "review_status": "storyboard_only; detailed native mapping and visual acceptance pending"
+    },
+    {
+      "id": "conversation",
+      "design_id": "robrix-wc-v1-conversation",
+      "directory": "scenes/conversation",
+      "crop": [
+        521,
+        30,
+        237,
+        455
+      ],
+      "surface": "app",
+      "reference_kind": "generated_target",
+      "reference_locale": "en",
+      "review_status": "storyboard_only; detailed native mapping and visual acceptance pending"
+    },
+    {
+      "id": "compose",
+      "design_id": "robrix-wc-v1-compose",
+      "directory": "scenes/compose",
+      "crop": [
+        773,
+        30,
+        236,
+        455
+      ],
+      "surface": "app",
+      "reference_kind": "generated_target",
+      "reference_locale": "en",
+      "review_status": "storyboard_only; detailed native mapping and visual acceptance pending"
+    },
+    {
+      "id": "attachments",
+      "design_id": "robrix-wc-v1-attachments",
+      "directory": "scenes/attachments",
+      "crop": [
+        16,
+        538,
+        238,
+        464
+      ],
+      "surface": "app",
+      "reference_kind": "generated_target",
+      "reference_locale": "en",
+      "review_status": "storyboard_only; detailed native mapping and visual acceptance pending"
+    },
+    {
+      "id": "chat-info",
+      "design_id": "robrix-wc-v1-chat-info",
+      "directory": "scenes/chat-info",
+      "crop": [
+        270,
+        538,
+        236,
+        464
+      ],
+      "surface": "app",
+      "reference_kind": "generated_target",
+      "reference_locale": "en",
+      "review_status": "storyboard_only; detailed native mapping and visual acceptance pending"
+    },
+    {
+      "id": "contacts",
+      "design_id": "robrix-wc-v1-contacts",
+      "directory": "scenes/contacts",
+      "crop": [
+        521,
+        538,
+        237,
+        464
+      ],
+      "surface": "app",
+      "reference_kind": "generated_target",
+      "reference_locale": "en",
+      "review_status": "storyboard_only; detailed native mapping and visual acceptance pending"
+    },
+    {
+      "id": "contact-profile",
+      "design_id": "robrix-wc-v1-contact-profile",
+      "directory": "scenes/contact-profile",
+      "crop": [
+        773,
+        538,
+        236,
+        464
+      ],
+      "surface": "app",
+      "reference_kind": "generated_target",
+      "reference_locale": "en",
+      "review_status": "storyboard_only; detailed native mapping and visual acceptance pending"
+    },
+    {
+      "id": "discover",
+      "design_id": "robrix-wc-v1-discover",
+      "directory": "scenes/discover",
+      "crop": [
+        16,
+        1054,
+        238,
+        464
+      ],
+      "surface": "app",
+      "reference_kind": "generated_target",
+      "reference_locale": "en",
+      "review_status": "storyboard_only; detailed native mapping and visual acceptance pending"
+    },
+    {
+      "id": "moments",
+      "design_id": "robrix-wc-v1-moments",
+      "directory": "scenes/moments",
+      "crop": [
+        270,
+        1054,
+        236,
+        464
+      ],
+      "surface": "app",
+      "reference_kind": "generated_target",
+      "reference_locale": "en",
+      "review_status": "storyboard_only; detailed native mapping and visual acceptance pending"
+    },
+    {
+      "id": "me",
+      "design_id": "robrix-wc-v1-me",
+      "directory": "scenes/me",
+      "crop": [
+        521,
+        1054,
+        237,
+        464
+      ],
+      "surface": "app",
+      "reference_kind": "generated_target",
+      "reference_locale": "en",
+      "review_status": "storyboard_only; detailed native mapping and visual acceptance pending"
+    },
+    {
+      "id": "settings",
+      "design_id": "robrix-wc-v1-settings",
+      "directory": "scenes/settings",
+      "crop": [
+        773,
+        1054,
+        236,
+        464
+      ],
+      "surface": "app",
+      "reference_kind": "generated_target",
+      "reference_locale": "en",
+      "review_status": "storyboard_only; detailed native mapping and visual acceptance pending"
+    }
+  ],
+  "cards": [],
+  "artwork": {
+    "root": "artwork",
+    "items": []
+  },
+  "outputs": {
+    "intake": "pipeline-output/intake-v1",
+    "runs": "pipeline-output/runs",
+    "cards": "pipeline-output/service-cards",
+    "bundle": "wizard/card-bundle",
+    "wasm": "wizard/wasm-dist"
+  },
+  "browser_modules": [],
+  "checks": {}
+}

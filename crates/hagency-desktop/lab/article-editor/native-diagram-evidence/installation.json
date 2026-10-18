@@ -1,0 +1,11 @@
+{
+  "sha256": "79e1b884b1a7586e2e9e9e48743d096e51d9222f40a2db101b6a2f6e3dff2b62",
+  "signature_valid": true,
+  "drafts_preserved": 5,
+  "source_drafts_preserved": true,
+  "launch_state": "left closed; app was already closed",
+  "headless_checks": 28,
+  "renderer_tests": 21,
+  "rinx_tests": 152,
+  "ignored_tests": 1
+}

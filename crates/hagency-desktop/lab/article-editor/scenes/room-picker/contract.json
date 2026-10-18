@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "id": "article-room-picker",
+  "adapter": "robrix-native-article-v1",
+  "artboard": [
+    406,
+    776
+  ],
+  "font_family": "PingFang SC via Robrix theme on macOS/iOS",
+  "palette": {
+    "page": "ffffff",
+    "header": "ededed",
+    "ink": "191919",
+    "muted": "777777",
+    "accent": "07c160"
+  },
+  "reference_sha256": "d77b7b00424dacd9106b8c093339471e171f4e783435ab4cb134c7a111a614f2",
+  "elements": [
+    {
+      "id": "article_chat_search",
+      "role": "input",
+      "native_widget": "TextInput",
+      "reference_atlas_bounds": [
+        348,
+        715,
+        253,
+        39
+      ],
+      "reference_logical_bounds": [
+        29.02,
+        99.42,
+        349.34,
+        53.85
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Case-insensitive local joined chat name filter",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "article_rooms",
+      "role": "collection",
+      "native_widget": "PortalList",
+      "reference_atlas_bounds": [
+        348,
+        775,
+        253,
+        200
+      ],
+      "reference_logical_bounds": [
+        29.02,
+        182.26,
+        349.34,
+        276.16
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Host-owned joined non-Moments room list; exact room ID selection",
+      "source": "src/article_app/ui.rs"
+    }
+  ]
+}

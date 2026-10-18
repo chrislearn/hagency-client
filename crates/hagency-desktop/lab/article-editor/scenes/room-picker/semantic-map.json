@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "adapter": "robrix-native-article-v1",
+  "reference_sha256": "d77b7b00424dacd9106b8c093339471e171f4e783435ab4cb134c7a111a614f2",
+  "contract_sha256": "da4c0ab65d324dbb186d2ad2dff3eb22bce8d05a7fc6ed93a24d2cbb1653d9b7",
+  "elements": [
+    {
+      "id": "article_chat_search",
+      "role": "input",
+      "native_widget": "TextInput",
+      "reference_atlas_bounds": [
+        348,
+        715,
+        253,
+        39
+      ],
+      "reference_logical_bounds": [
+        29.02,
+        99.42,
+        349.34,
+        53.85
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Case-insensitive local joined chat name filter",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "article_rooms",
+      "role": "collection",
+      "native_widget": "PortalList",
+      "reference_atlas_bounds": [
+        348,
+        775,
+        253,
+        200
+      ],
+      "reference_logical_bounds": [
+        29.02,
+        182.26,
+        349.34,
+        276.16
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Host-owned joined non-Moments room list; exact room ID selection",
+      "source": "src/article_app/ui.rs"
+    }
+  ],
+  "raster_widgets": false,
+  "visual_acceptance": false
+}

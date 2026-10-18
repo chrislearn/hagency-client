@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "adapter": "robrix-native-host-v2",
+  "source": "measured image-to-appcard-flow intake; manually reviewed semantic roles",
+  "source_scene": "visual-editor",
+  "native_source": "src/article_app/ui.rs",
+  "bindings": [
+    {
+      "widget": "article_title / article_markdown",
+      "binding": "L0 title_changed / markdown_changed",
+      "behavior": "Realized with bounded Octoscript L0 source; Markdown is a separate advanced mode"
+    },
+    {
+      "widget": "article_blocks.rich",
+      "binding": "Block.text / marks",
+      "behavior": "Native IME/selection/clipboard, formatted glyph layout, undo/redo"
+    },
+    {
+      "widget": "article_bold / article_italic / article_link",
+      "binding": "Block.format",
+      "behavior": "Apply selected text styles without source markers"
+    },
+    {
+      "widget": "article_h2 / article_quote / article_list",
+      "binding": "BlockKind",
+      "behavior": "Native structured blocks"
+    },
+    {
+      "widget": "article_save",
+      "binding": "storage::save_document",
+      "behavior": "Atomic account-scoped write"
+    },
+    {
+      "widget": "article_preview",
+      "binding": "Document.ready / Page::Preview",
+      "behavior": "Read complete draft snapshot"
+    }
+  ],
+  "raster_policy": "Only independently declared illustration asset is raster. Text, controls, article layout and images are native widgets. No screenshot hotspots.",
+  "upstream_generic_compile": "not run; the generic kit cannot supply the required native rich-input/Matrix host bindings"
+}

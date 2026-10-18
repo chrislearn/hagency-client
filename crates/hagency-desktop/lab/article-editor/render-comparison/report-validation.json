@@ -1,0 +1,86 @@
+{
+  "checks" : [
+    {
+      "mode" : "same",
+      "section" : "01-opening"
+    },
+    {
+      "mode" : "reference",
+      "section" : "01-opening"
+    },
+    {
+      "mode" : "same",
+      "section" : "02-headings"
+    },
+    {
+      "mode" : "reference",
+      "section" : "02-headings"
+    },
+    {
+      "mode" : "same",
+      "section" : "03-text"
+    },
+    {
+      "mode" : "reference",
+      "section" : "03-text"
+    },
+    {
+      "mode" : "same",
+      "section" : "04-code"
+    },
+    {
+      "mode" : "reference",
+      "section" : "04-code"
+    },
+    {
+      "mode" : "same",
+      "section" : "05-images"
+    },
+    {
+      "mode" : "reference",
+      "section" : "05-images"
+    },
+    {
+      "mode" : "same",
+      "section" : "06-lists"
+    },
+    {
+      "mode" : "reference",
+      "section" : "06-lists"
+    },
+    {
+      "mode" : "same",
+      "section" : "07-tables"
+    },
+    {
+      "mode" : "reference",
+      "section" : "07-tables"
+    },
+    {
+      "mode" : "same",
+      "section" : "08-entities"
+    },
+    {
+      "mode" : "reference",
+      "section" : "08-entities"
+    },
+    {
+      "mode" : "same",
+      "section" : "09-math"
+    },
+    {
+      "mode" : "reference",
+      "section" : "09-math"
+    },
+    {
+      "mode" : "same",
+      "section" : "10-diagrams"
+    },
+    {
+      "mode" : "reference",
+      "section" : "10-diagrams"
+    }
+  ],
+  "loaded_pairs" : 20,
+  "passed" : true
+}

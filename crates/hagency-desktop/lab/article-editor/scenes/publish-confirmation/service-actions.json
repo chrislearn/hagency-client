@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "trust_boundary": "Robrix host; L0 has text state only",
+  "actions": [
+    {
+      "id": "article_change",
+      "behavior": "Return to room selection without sending"
+    },
+    {
+      "id": "article_confirm",
+      "behavior": "Recheck grant/membership/power; send captured content with stable transaction ID"
+    }
+  ]
+}

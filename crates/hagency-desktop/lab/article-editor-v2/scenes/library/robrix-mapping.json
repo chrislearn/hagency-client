@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "adapter": "robrix-native-host-v2",
+  "source": "measured image-to-appcard-flow intake; manually reviewed semantic roles",
+  "source_scene": "library",
+  "native_source": "src/article_app/ui.rs",
+  "bindings": [
+    {
+      "widget": "article_search",
+      "binding": "query",
+      "behavior": "Filter the local account article library"
+    },
+    {
+      "widget": "drafts_tab / published_tab / withdrawn_tab",
+      "binding": "library_tab",
+      "behavior": "Filter draft/publication state"
+    },
+    {
+      "widget": "article_new",
+      "binding": "new_document",
+      "behavior": "Create and atomically save own draft"
+    },
+    {
+      "widget": "article_share",
+      "binding": "choose_room(sharing=true)",
+      "behavior": "Share only builtin package descriptor after confirmation"
+    }
+  ],
+  "raster_policy": "Only independently declared illustration asset is raster. Text, controls, article layout and images are native widgets. No screenshot hotspots.",
+  "upstream_generic_compile": "not run; the generic kit cannot supply the required native rich-input/Matrix host bindings"
+}

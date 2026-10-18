@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "adapter": "robrix-native-host-v2",
+  "source": "measured image-to-appcard-flow intake; manually reviewed semantic roles",
+  "source_scene": "cover",
+  "native_source": "src/article_app/ui.rs",
+  "bindings": [
+    {
+      "widget": "cover_pick",
+      "binding": "Document.cover",
+      "behavior": "Independent asset reference"
+    },
+    {
+      "widget": "cover_x / cover_y",
+      "binding": "Cover.focal_x / focal_y",
+      "behavior": "Non-destructive focal point sliders, wide and square native previews"
+    },
+    {
+      "widget": "cover_summary",
+      "binding": "Document.summary",
+      "behavior": "Retain summary with article"
+    },
+    {
+      "widget": "cover_show",
+      "binding": "Cover.show_in_article",
+      "behavior": "Control inclusion in complete article"
+    },
+    {
+      "widget": "article_done",
+      "binding": "Page::Edit",
+      "behavior": "Fixed top completion action"
+    }
+  ],
+  "raster_policy": "Only independently declared illustration asset is raster. Text, controls, article layout and images are native widgets. No screenshot hotspots.",
+  "upstream_generic_compile": "not run; the generic kit cannot supply the required native rich-input/Matrix host bindings"
+}

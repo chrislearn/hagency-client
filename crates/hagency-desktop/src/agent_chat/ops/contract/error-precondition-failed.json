@@ -1,0 +1,5 @@
+{
+  "schema": "com.hagency.agent_ops.v1",
+  "error": "dispatch entity version changed",
+  "code": "precondition_failed"
+}

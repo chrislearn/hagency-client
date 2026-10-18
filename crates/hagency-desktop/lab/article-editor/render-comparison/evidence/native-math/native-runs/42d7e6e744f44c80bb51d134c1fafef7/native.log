@@ -1,0 +1,4 @@
+[I] /Users/ychen/.cargo/git/checkouts/makepad-69d78fae78fc8901/4783726/platform/src/web_socket.rs:280:13 - studio websocket disabled: empty studio_http
+[makepad-remote] listening on 127.0.0.1:57626 pid=94186 app=article_comparison_native grabs=/var/folders/0d/m62_wsfd1d93bwp2cxr82cgw0000gs/T/makepad-remote/article_comparison_native-94186
+[I] /Users/ychen/.cargo/git/checkouts/makepad-69d78fae78fc8901/4783726/platform/src/os/apple/macos/macos_window.rs:205:9 - defang: titlebar container swapped — WindowDragQuery decides drags
+[makepad-remote] remote quit

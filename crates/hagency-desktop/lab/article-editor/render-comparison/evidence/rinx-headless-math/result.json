@@ -1,0 +1,33 @@
+{
+  "passed": true,
+  "mode": "Makepad instrumentation / hidden Metal backend",
+  "binary_sha256": "c990084ba9a25444d26081d9311d90a8cadf05fd5ef302f4fca963e2f09b7ed6",
+  "checks": [
+    "zero_visible_windows",
+    "complete_gist_imports_and_preserves_exact_source",
+    "native_reader_draws_and_scrolls_math_fixture",
+    "production_blitz_preview_renders_and_scrolls",
+    "tex_edit_changes_native_and_blitz_formula_pixels",
+    "restart_preserves_exact_edited_tex"
+  ],
+  "visible_window_samples": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "captures": [
+    "native-math-top",
+    "native-math-middle",
+    "native-math-bottom",
+    "blitz-math-top",
+    "blitz-math-bottom",
+    "native-math-edited",
+    "blitz-math-edited"
+  ]
+}

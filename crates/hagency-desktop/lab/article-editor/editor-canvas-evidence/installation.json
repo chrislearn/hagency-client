@@ -1,0 +1,28 @@
+{
+  "sha256": "0580f55a222fb543243645db065e6654c10e9008dcde0b151a0b9a5a70a754c0",
+  "signature_valid": true,
+  "draft_files_preserved": 1,
+  "draft_snapshot_unchanged": true,
+  "profile_files_written": 0,
+  "login_marker_present_before": false,
+  "login_marker_unchanged": true,
+  "headless_checks": 16,
+  "visible_window_samples": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "launch_state": "Installed. Separate development build remains running; updated app has not been launched."
+}

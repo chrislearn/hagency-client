@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "id": "article-received-card",
+  "adapter": "robrix-native-article-v1",
+  "artboard": [
+    406,
+    776
+  ],
+  "font_family": "PingFang SC via Robrix theme on macOS/iOS",
+  "palette": {
+    "page": "ffffff",
+    "header": "ededed",
+    "ink": "191919",
+    "muted": "777777",
+    "accent": "07c160"
+  },
+  "reference_sha256": "cd4dcdb8fb247d2ab4ee53e4fb9afd3d8f220c21138cecae9a7a95dc4b3cee2a",
+  "elements": [
+    {
+      "id": "open_mini_app",
+      "role": "button",
+      "native_widget": "MiniAppCard",
+      "reference_atlas_bounds": [
+        80,
+        234,
+        218,
+        109
+      ],
+      "reference_logical_bounds": [
+        81.49,
+        263.73,
+        301.01,
+        150.51
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Open admitted package details; no automatic execution",
+      "source": "src/mini_app.rs"
+    },
+    {
+      "id": "card_title",
+      "role": "text",
+      "native_widget": "Label",
+      "reference_atlas_bounds": [
+        151,
+        252,
+        135,
+        20
+      ],
+      "reference_logical_bounds": [
+        179.53,
+        288.58,
+        186.41,
+        27.62
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Localized built-in app name",
+      "source": "src/mini_app.rs"
+    },
+    {
+      "id": "card_origin",
+      "role": "text",
+      "native_widget": "Label",
+      "reference_atlas_bounds": [
+        151,
+        277,
+        135,
+        18
+      ],
+      "reference_logical_bounds": [
+        179.53,
+        323.1,
+        186.41,
+        24.85
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Markdown / native preview",
+      "source": "src/mini_app.rs"
+    }
+  ]
+}

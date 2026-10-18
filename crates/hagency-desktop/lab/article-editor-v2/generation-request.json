@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "status": "generated; native implementation and documented functional checks passed",
+  "requested_model": "gpt-image-2",
+  "execution": "imagegen skill CLI; explicit model requested by user",
+  "generated": true,
+  "actual_model": "gpt-image-2 (explicit Images API request; CLI did not emit a resolved snapshot identifier)",
+  "assets": [
+    {
+      "id": "mobile-ux-atlas-v2",
+      "prompt": "atlas-prompt.txt",
+      "requested_size": [
+        3840,
+        2160
+      ],
+      "quality": "high",
+      "output": "../../output/imagegen/article-editor-v2/mobile-ux-atlas-v2.png",
+      "actual_size": [
+        3840,
+        2160
+      ],
+      "sha256": "65710ae6dd210092fb15d6f72a8772f4377960e0053ff3fceed40a72c3ac0609",
+      "prompt_sha256": "97b6b63a46f04a47f97b316c712c05a110d62bc868c9fcca20307c69043210ce"
+    },
+    {
+      "id": "desktop-editor-v2",
+      "prompt": "desktop-prompt.txt",
+      "requested_size": [
+        1536,
+        1024
+      ],
+      "quality": "high",
+      "output": "../../output/imagegen/article-editor-v2/desktop-editor-v2.png",
+      "actual_size": [
+        1536,
+        1024
+      ],
+      "sha256": "825efcccab4bbbf88b5e7de3daeede962f4d40ca5a3f6be2eb062357111cce8f",
+      "prompt_sha256": "50af8cb2816ec86d25378904dff1a946ce3c43ee2a2d8afb00c336c2aed4b5c5"
+    }
+  ],
+  "native_reference_size": [
+    430,
+    820
+  ],
+  "desktop_reference_size": [
+    1440,
+    960
+  ],
+  "atlas_crop_status": "measured actual generated screen bounds; upstream intake and prepare passed",
+  "native_validation": "passed for documented scope; see validation.json; visual similarity unscored",
+  "visual_acceptance": null,
+  "similarity_score": null,
+  "credential_transport": "user-supplied value passed only in child process environment; no credential persisted",
+  "generation_date": "2026-09-21"
+}

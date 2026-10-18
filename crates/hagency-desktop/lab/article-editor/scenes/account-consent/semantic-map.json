@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "adapter": "robrix-native-article-v1",
+  "reference_sha256": "185109d6ae1fc4747d52e0f5a98b640b6bed6e41a0a138ecef5157f68c0abeb3",
+  "contract_sha256": "3b5a3566f6c9200cb66383ca50b1e75254fdbf2b2c5837c04605312a4e86bb57",
+  "elements": [
+    {
+      "id": "consent_account",
+      "role": "text",
+      "native_widget": "Label",
+      "reference_atlas_bounds": [
+        735,
+        138,
+        143,
+        43
+      ],
+      "reference_logical_bounds": [
+        140.86,
+        131.17,
+        197.45,
+        59.37
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Trusted host current account, never sender identity",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "consent",
+      "role": "layout",
+      "native_widget": "View",
+      "reference_atlas_bounds": [
+        655,
+        222,
+        250,
+        275
+      ],
+      "reference_logical_bounds": [
+        30.4,
+        247.16,
+        345.2,
+        379.72
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Local drafts and per-send publish permission disclosure",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "article_cancel",
+      "role": "button",
+      "native_widget": "Button",
+      "reference_atlas_bounds": [
+        655,
+        526,
+        120,
+        48
+      ],
+      "reference_logical_bounds": [
+        30.4,
+        666.92,
+        165.69,
+        66.28
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Close without grant or draft read",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "article_allow",
+      "role": "button",
+      "native_widget": "Button",
+      "reference_atlas_bounds": [
+        787,
+        526,
+        120,
+        48
+      ],
+      "reference_logical_bounds": [
+        212.67,
+        666.92,
+        165.69,
+        66.28
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Create in-memory account/session/instance grant; load only own draft",
+      "source": "src/article_app/ui.rs"
+    }
+  ],
+  "raster_widgets": false,
+  "visual_acceptance": false
+}

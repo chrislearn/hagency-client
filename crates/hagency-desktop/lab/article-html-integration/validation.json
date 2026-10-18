@@ -1,0 +1,55 @@
+{
+  "passed": true,
+  "date": "2026-09-21",
+  "robrix_branch": "wechat-ui",
+  "robrix_parent": "a194e1fd04fe5878f3c855924c50005bb86e2aa2",
+  "makepad_html_revision": "b16565ae1e56dd7c3a87f00455ae327df599ca3b",
+  "makepad_html_ci": "https://github.com/OctoSense-org/makepad-html/actions/runs/35675362008",
+  "binary_sha256": "81703145b991f998d2c7dc6487bbcc0466725b745e282307051a5baa5a2adb33",
+  "source_sha256": {
+    "Cargo.toml": "05a3c0cde991c19a067811ff3bc097cfc64523ed10feb2d491a94dafb5912a07",
+    "Cargo.lock": "4c65069407c633dac6607e57d4b71080e2ed7705b3fcd1a7571ac4ec6efcd8b2",
+    "src/article_app/preview.rs": "591a97dcf0d03889e9c7b27e15a18fc0238e7c4dfe526f303ce320e937d0b01e",
+    "src/article_app/ui.rs": "14d4195784f57c2251d12e1b2773f3a39200ade10c0687e29597f6572f7dca73",
+    "resources/i18n/en.json": "3958587c69d709a7d947852c31a04242fe4c79826a09167e28303439bf8343bb",
+    "resources/i18n/zh-CN.json": "8734620bf5be719cb76d19c363f3370456d94d77b007952c33eb94f8fae91a9a"
+  },
+  "checks": [
+    "mobile_chinese_english_css_theme_authorized_images_and_full_scroll",
+    "long_preview_reports_clipping_and_returns_to_complete_native_reader",
+    "refresh_back_discards_old_session_and_reopen_renders",
+    "desktop_english_preview_refresh_back_and_close"
+  ],
+  "unit_tests": {
+    "passed": 10,
+    "failed": 0,
+    "command": "cargo +1.98.0 test --locked --features agent_chat --lib article_app::"
+  },
+  "build_checks": [
+    "cargo +1.98.0 check --features agent_chat",
+    "cargo +1.98.0 build --locked --features agent_chat",
+    "cargo +1.98.0 check --locked --no-default-features --features agent_chat"
+  ],
+  "rendering": "Blitz to native Makepad texture; no WebView in the article app",
+  "default_html_preview": true,
+  "personal_accounts_used": false,
+  "server": "existing isolated Palpo test deployment",
+  "os_file_picker_tested": false,
+  "worker_tests": [
+    "link events and disclosure rerender",
+    "drop cancels queued result",
+    "revoked authority cannot deliver actions",
+    "simulated backend panic reports error and next preview renders"
+  ],
+  "limitations": [
+    "Huasheng grayscale/sepia rendering failures are not fixed by this integration",
+    "No arbitrary HTML import or Huasheng theme migration",
+    "Native tests performed on macOS, with mobile-sized and desktop windows, not iOS/Android devices"
+  ],
+  "screenshots": {
+    "mobile-top.png": "b331e22573049440c7ef86955f546aaf1e18ee411df0746cc6035f5eb668d377",
+    "mobile-bottom.png": "b58a3353d935d4b90a5d1a9bec0b24cbbefebb821dc8ea4691e1074561841cb0",
+    "mobile-clipped.png": "2f82d82ab4a95efa35b27c4d42dcda802d9ae755c4b8342f27d0987cd466f548",
+    "desktop-top.png": "e5f45ece4ee377e6043555f32b799fdd9a170e29f0b49c657cc6783b29f4476b"
+  }
+}

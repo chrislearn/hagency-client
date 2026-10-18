@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "trust_boundary": "Robrix host; L0 has text state only",
+  "actions": [
+    {
+      "id": "article_chat_search",
+      "behavior": "Case-insensitive local joined chat name filter"
+    },
+    {
+      "id": "article_rooms",
+      "behavior": "Host-owned joined non-Moments room list; exact room ID selection"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "source": "../../../output/imagegen/article-editor-v2/mobile-ux-atlas-v2.png",
+  "source_sha256": "65710ae6dd210092fb15d6f72a8772f4377960e0053ff3fceed40a72c3ac0609",
+  "crop_xyxy": [
+    661,
+    481,
+    1151,
+    714
+  ],
+  "purpose": "Generated article illustration for disposable test fixture. No generated UI is used as runtime UI.",
+  "sha256": "6a77a141c868998128b7038cdd8c34912c6de13594d5e3c62dab47996c612325"
+}

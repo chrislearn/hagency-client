@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "adapter": "robrix-native-article-v1",
+  "reference_sha256": "82e0d5b26e2ff1a3296de719e38d60f241bbaaff4175a0e940e3d98f974700d9",
+  "contract_sha256": "2a000336d9d7e21f7bcf37b3709874dfb35df814912bdb90d011eb83656ecc60",
+  "elements": [
+    {
+      "id": "publish_account",
+      "role": "text",
+      "native_widget": "Label",
+      "reference_atlas_bounds": [
+        717,
+        726,
+        177,
+        41
+      ],
+      "reference_logical_bounds": [
+        116.01,
+        114.6,
+        244.4,
+        56.61
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Captured grant owner",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "publish_room",
+      "role": "text",
+      "native_widget": "Label",
+      "reference_atlas_bounds": [
+        717,
+        800,
+        171,
+        38
+      ],
+      "reference_logical_bounds": [
+        116.01,
+        216.78,
+        236.11,
+        52.47
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Selected room display name; exact Matrix ID bound separately",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "confirm_html",
+      "role": "rich_text",
+      "native_widget": "Html",
+      "reference_atlas_bounds": [
+        655,
+        867,
+        252,
+        237
+      ],
+      "reference_logical_bounds": [
+        30.4,
+        309.3,
+        347.96,
+        327.25
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Exact immutable content that will be sent",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "article_change",
+      "role": "button",
+      "native_widget": "Button",
+      "reference_atlas_bounds": [
+        655,
+        1126,
+        119,
+        48
+      ],
+      "reference_logical_bounds": [
+        30.4,
+        666.92,
+        164.31,
+        66.28
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Return to room selection without sending",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "article_confirm",
+      "role": "button",
+      "native_widget": "Button",
+      "reference_atlas_bounds": [
+        787,
+        1126,
+        120,
+        48
+      ],
+      "reference_logical_bounds": [
+        212.67,
+        666.92,
+        165.69,
+        66.28
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Recheck grant/membership/power; send captured content with stable transaction ID",
+      "source": "src/article_app/ui.rs"
+    }
+  ],
+  "raster_widgets": false,
+  "visual_acceptance": false
+}

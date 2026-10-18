@@ -1,0 +1,471 @@
+{
+  "schema_version": 1,
+  "scope": "Matrix messaging and four native tabs, extended by the follow-up request for Apple PingFang typography and shareable HTTP/HTTPS web mini apps. Broader WeChat parity remains separate.",
+  "catalog": {
+    "screens": 48,
+    "journeys": 22,
+    "operations": 45,
+    "source_symbols_checked": true
+  },
+  "reference": {
+    "generated_scenes": 12,
+    "captured_mock_scenes": 9,
+    "atlas_actual_pixels": [
+      1024,
+      1536
+    ],
+    "mock_capture_pixels": [
+      800,
+      1600
+    ]
+  },
+  "upstream_stages_passed": [
+    "intake",
+    "prepare"
+  ],
+  "validator_unit_tests": {
+    "passed": 26,
+    "failed": 0,
+    "not_native_acceptance": true
+  },
+  "explorer_browser_checks": {
+    "all_48_state_views": true,
+    "image_references_loaded": true,
+    "mobile_390px_no_overflow": true,
+    "javascript_errors": 0
+  },
+  "robrix_ui_changed": true,
+  "native_similarity_reviewed": false,
+  "similarity_score": null,
+  "remaining": [
+    "Release qualification for native uploads, account switching, device permissions, localization and real device/keyboard behavior",
+    "Broader parity and visual review remain separate; no similarity score awarded",
+    "iOS build/device qualification for PingFang and native web mini apps; this machine has no iOS SDK/simulator."
+  ],
+  "native_smoke": {
+    "passed": true,
+    "captures": 10,
+    "recipient_confirmed": true,
+    "evidence": "/Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/live/native-runs/4f6a40b2dbdc43f59d5b4d2cc62a0ef7",
+    "binary_sha256": "ca6372bf5bdaea98fb47f69439476afda76834921ced74d510d712297904e744",
+    "push_rule_modes_server_verified": 4
+  },
+  "palpo_server_soak": {
+    "kind": "summary",
+    "passed": true,
+    "iterations": 535,
+    "checks": 2355,
+    "failures": 0,
+    "elapsed_seconds": 1800.007840208,
+    "p95_iteration_seconds": 0.6159146659999806
+  },
+  "native_soak": {
+    "kind": "summary",
+    "passed": true,
+    "cycles": 94,
+    "elapsed_seconds": 1809.423124417,
+    "evidence": "evidence/live/native-soak-49a2c4886b09.jsonl",
+    "binary_sha256": "f0ad5235607b7833851a9923e116d32329cfa0508e6d7bf47c2fcab412479f7d",
+    "rss_first_mib": 377.9,
+    "rss_last_mib": 428.5,
+    "rss_peak_mib": 433.4,
+    "limitations": [
+      "Mac native window at 406×776 logical pixels; not a physical iOS/Android test.",
+      "Latest presentation, settings and notification edits require their separate updated-build smoke.",
+      "One initial reply marker may also appear in an earlier failed run; subsequent 93 cycle reply markers are unique to this run."
+    ]
+  },
+  "rust_library_tests": {
+    "command": "cargo test --locked --features agent_chat --lib",
+    "passed": 133,
+    "failed": 0,
+    "scope": "Latest library regression run; does not validate native script rendering."
+  },
+  "native_layouts": [
+    {
+      "viewport": [
+        320,
+        640
+      ],
+      "passed": true,
+      "evidence": "/Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/live/native-runs/ca335531146d41b3a37a42d633c80484"
+    },
+    {
+      "viewport": [
+        375,
+        812
+      ],
+      "passed": true,
+      "evidence": "/Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/live/native-runs/a111082dcf3b4c419a2378406e81cf62"
+    },
+    {
+      "viewport": [
+        430,
+        932
+      ],
+      "passed": true,
+      "evidence": "/Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/live/native-runs/accf4cc7da3845b79eb7b9efd8039402"
+    },
+    {
+      "viewport": [
+        1024,
+        768
+      ],
+      "passed": true,
+      "evidence": "/Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/live/native-runs/b6547c6fbed74cb787f557c7c8047dbd"
+    }
+  ],
+  "native_reconnect": {
+    "passed": true,
+    "scope": "HTTP transport interruption of isolated fixture client",
+    "duplicate_events": 0,
+    "recovery_seconds": 4.009440833000003,
+    "evidence": "evidence/live/reconnect-e706f0d142ac496f822febe54a04c137"
+  },
+  "native_settings_style": {
+    "passed": true,
+    "check": "mobile_settings_white_rows",
+    "sample_rgb": [
+      255,
+      255,
+      255
+    ],
+    "evidence": "/Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/live/native-runs/d2e99b9486d84ba7a12b465a110475e7"
+  },
+  "native_notifications": {
+    "passed": true,
+    "checks": [
+      {
+        "check": "other_session_mute_received",
+        "passed": true,
+        "evidence": "/Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/live/native-runs/3b086b52e9c342ad8d0619bb147b1901"
+      },
+      {
+        "check": "muted_mode_restored_after_restart",
+        "passed": true,
+        "evidence": "/Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/live/native-runs/ae829d3633b54e6f8859629257f32836"
+      },
+      {
+        "check": "other_session_reset_received",
+        "passed": true,
+        "evidence": "/Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/live/native-runs/ae829d3633b54e6f8859629257f32836"
+      }
+    ],
+    "muted_row_icon_visually_inspected": true,
+    "default_baseline_required": true,
+    "escape_and_backdrop_dismissal": true,
+    "scope": "Server push rules, native menu state, external-session transitions, restart; not OS push delivery"
+  },
+  "native_media": {
+    "passed": true,
+    "scope": "API-seeded incoming/outgoing image rendering and native viewer return",
+    "evidence": "/Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/live/native-runs/1bea45abfcbd4f8fb5d082aaebc86b07",
+    "fixture_events": [
+      "$IUBYu9BA0Cn3EOg0OIyNgWUMhPn-ZfKqapqEhAH6JFg",
+      "$ACaap2S5oETr2FFkO9H00XMvWESC7S5oHTWnTJe7z-s"
+    ],
+    "photos": {
+      "incoming": {
+        "bounds": [
+          124,
+          446,
+          480,
+          293
+        ],
+        "mean_rgb_error": 1.3321759259259258
+      },
+      "outgoing": {
+        "bounds": [
+          208,
+          820,
+          458,
+          560
+        ],
+        "mean_rgb_error": 0.23263888888888887
+      }
+    },
+    "viewer": {
+      "bounds": [
+        0,
+        528,
+        812,
+        496
+      ],
+      "mean_rgb_error": 0.24074074074074078
+    },
+    "timeline_anchor_restored": true
+  },
+  "native_message_actions": {
+    "passed": true,
+    "checks": [
+      {
+        "name": "native_anchor",
+        "passed": true
+      },
+      {
+        "name": "native_reply",
+        "passed": true
+      },
+      {
+        "name": "native_edit",
+        "passed": true
+      },
+      {
+        "name": "empty_reaction_keeps_editor_open",
+        "passed": true
+      },
+      {
+        "name": "native_reaction",
+        "passed": true
+      },
+      {
+        "name": "mobile_edited_indicator_visible",
+        "passed": true
+      }
+    ],
+    "evidence": "/Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/live/native-runs/d4a1e15b46c94f0ab1bbfd3bf1206363",
+    "binary_sha256": "88ecb65d19f8da363d38c82ab74e030340913dea837f901cf3caa944a1bdef77"
+  },
+  "separate_parity_work": [
+    "Moments",
+    "payments and wallet",
+    "mini programs",
+    "voice/video calls",
+    "social contact book, friend requests and tags",
+    "full 96-screen / 44-journey localized >=9/10 visual acceptance"
+  ],
+  "native_quotes": {
+    "passed": true,
+    "checks": [
+      {
+        "name": "quote_below_bubble_and_collapsed",
+        "passed": true
+      },
+      {
+        "name": "long_quote_expands",
+        "passed": true
+      },
+      {
+        "name": "collapsed_quote_tap_expands",
+        "passed": true
+      },
+      {
+        "name": "expanded_quote_tap_jumps_to_original",
+        "passed": true
+      }
+    ],
+    "evidence": "/Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/live/native-runs/3b8167b461ce468fbcabff15bad14610",
+    "binary_sha256": "88ecb65d19f8da363d38c82ab74e030340913dea837f901cf3caa944a1bdef77",
+    "scope": "Actual native quote pixels, expansion/collapse, and navigation to an API-seeded original Matrix event",
+    "visually_inspected": [
+      "compact reply composer",
+      "quote below outgoing bubble",
+      "short outgoing bubble retains measured width",
+      "jump lands on the original full-size incoming bubble with event highlight"
+    ]
+  },
+  "native_chat_info": {
+    "passed": true,
+    "evidence": "/Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/live/native-runs/5e8487f4bb4e432dbd234c52235cd893",
+    "checks": [
+      {
+        "name": "matrix_members_rendered",
+        "passed": true
+      },
+      {
+        "name": "existing_invite_flow_and_cancel",
+        "passed": true
+      },
+      {
+        "name": "native_mute_confirmed_by_matrix",
+        "passed": true
+      },
+      {
+        "name": "native_default_confirmed_by_matrix",
+        "passed": true
+      },
+      {
+        "name": "back_preserves_native_draft",
+        "passed": true
+      },
+      {
+        "name": "back_preserves_scrolled_timeline_anchor",
+        "passed": true,
+        "before": {
+          "box": [
+            0.1750000004388901,
+            0.41424418635069427,
+            0.43611111194629393,
+            0.021967154188254456
+          ],
+          "confidence": 1,
+          "text": "Info scroll anchor delta"
+        },
+        "after": {
+          "box": [
+            0.1750000004388901,
+            0.41424418635069427,
+            0.43611111194629393,
+            0.021967154188254456
+          ],
+          "confidence": 1,
+          "text": "Info scroll anchor delta"
+        }
+      },
+      {
+        "name": "chat_info_reopens_after_back_to_roots",
+        "passed": true
+      },
+      {
+        "name": "group_members_replace_previous_direct_room",
+        "passed": true
+      }
+    ],
+    "scroll_fixture_events": [
+      "$L3dt8a2biF2Vv1U2MkW2cWg0Vm7HmAvvhmdCuOGXeLg",
+      "$_1PnZlwu8JOb3MoxV5Q3DQsyG-iEF55NQHXJLmsMZhA",
+      "$Rg1GpblmSW2ZF6IgQXs8Zba0DzCtHrYsOhf81vDZQGI",
+      "$XsmvdxLKd2Xr6DBPjKMMom3layNaawlB-BNQNpBR_iU",
+      "$QrvBXQhhYFtnDX8Qar6_bDGcyN_G1-J2iV6BjBGM54Q",
+      "$fasdiPgnpz0Kwp_5nENDtogJ_hJ4lUiB6xjWDIjeSOE",
+      "$VHO5aGsjj6LppJeI2z6-n_0W9Bzq_T-ZWbgCa4WlIp0",
+      "$kdw4xdhi4Ij3asv_BMoYHbKicnEMS2Zbklarbscg4A4",
+      "$66z8EryA1scDe_lFP4vCgU89n6kdCZNp4CL3fy7hrMI",
+      "$sqKAv2N-txK4zxQVa65j67TIMEfG57jKDXRNHv6UGPY",
+      "$YI0kk3DWzVJSFP3FvYeyFuxVOXe4YGKpA0A6LAiR6t8",
+      "$Th0PNuCIoB0XufEPAyLUCngeM-Y02vyitlj9B6H1hEI"
+    ],
+    "binary_sha256": "fc2fe8945fe7a0ed9840f1155c337e894e1c8b93691c246b4187606e51b8ba68",
+    "scope": "Real Matrix members, existing invite cancellation, notification writes, native stack/draft preservation and measured scroll return"
+  },
+  "current_native_binary_sha256": "13f56eb33c2abfb44bc888221d7f9ba458f72fc39007357cf0d7cf1142b1b848",
+  "build_checks": {
+    "agent_chat_build": {
+      "command": "cargo build --locked --features agent_chat",
+      "passed": true
+    },
+    "default_feature_check": {
+      "command": "cargo check --locked --no-default-features",
+      "passed": true
+    },
+    "warnings": [
+      "Pre-existing duplicate dependency package warnings",
+      "Darwin linker compact-unwind size warning"
+    ]
+  },
+  "latest_navigation_soak": {
+    "kind": "summary",
+    "passed": true,
+    "cycles": 17,
+    "elapsed_seconds": 312.638873,
+    "evidence": "evidence/live/native-soak-611334a4423c.jsonl",
+    "binary_sha256": "fc2fe8945fe7a0ed9840f1155c337e894e1c8b93691c246b4187606e51b8ba68",
+    "native_run": "evidence/live/native-runs/1a915b70d57a43efbc577642011b4bcd",
+    "chat_info_draft_cycles": 17,
+    "draw_errors": 0,
+    "rss_first_mib": 403.8,
+    "rss_last_mib": 425.6,
+    "rss_peak_mib": 430.8,
+    "scope": "Updated navigation regression soak. Four native tabs, Chat Info, draft/back/reopen, recipient-confirmed sends and rendered peer replies; not physical-device or similarity acceptance."
+  },
+  "known_failed_runs": [
+    {
+      "evidence": "evidence/live/native-soak-82cdc1776106.jsonl",
+      "reason": "Functional cycles passed but strict draw-list error check failed. Corrected Chat Info return to use normal save/restore lifecycle."
+    }
+  ],
+  "current_gallery": {
+    "passed": true,
+    "evidence": "/Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/live/native-runs/398a2a7029ac48578ed442001f71b48b",
+    "scope": "Current-build gallery captures; not similarity acceptance",
+    "captures": 5,
+    "binary_sha256": "fc2fe8945fe7a0ed9840f1155c337e894e1c8b93691c246b4187606e51b8ba68"
+  },
+  "production_scope_status": "Implemented and runtime-tested for the agreed Matrix/four-tab pass; broader parity and physical-device release qualification remain separate.",
+  "apple_typography": {
+    "passed": true,
+    "checks": [
+      "mixed_english_chinese_composer_rendered",
+      "exact_utf8_body_delivered_once",
+      "incoming_bold_and_regular_mixed_text_rendered",
+      "pingfang_active_without_native_errors"
+    ],
+    "evidence": "evidence/live/font-check/native-runs/1443075026c547e98e2f6320fd466462",
+    "receipt": "evidence/live/native-fonts.json",
+    "binary_sha256": "e36a8f8f614b0d285ba12e19c8e572ba9da0e4b5a96eea4ef1429cff99d23942",
+    "platform": "macOS",
+    "ios_status": "Implemented with the same CoreText path; not built/run here because the iOS SDK and simulator are unavailable."
+  },
+  "web_mini_apps_native": {
+    "passed": true,
+    "checks": [
+      "unsafe_scheme_rejected_without_navigation",
+      "http_page_visible_in_native_wkwebview",
+      "javascript_input_and_web_history_work",
+      "native_card_sent_once_and_rendered",
+      "existing_card_shared_to_second_chat_once",
+      "incoming_card_opens_and_close_restores_chat"
+    ],
+    "evidence": "evidence/live/mini-app-check/native-runs/be0d7c12cded44908afec9f4126c8a9c",
+    "receipt": "evidence/live/native-mini-apps.json",
+    "binary_sha256": "13f56eb33c2abfb44bc888221d7f9ba458f72fc39007357cf0d7cf1142b1b848",
+    "platform": "macOS",
+    "capture_method": "WindowServer capture and OS pointer events for native WKWebView; Makepad bridge for native app controls."
+  },
+  "web_mini_apps_headless": {
+    "passed": true,
+    "checks": [
+      "owned_makepad_window_is_hidden",
+      "unsafe_scheme_rejected_without_navigation",
+      "hidden_webkit_loads_http_and_executes_javascript_after_reload",
+      "native_card_sent_once_and_rendered",
+      "existing_card_shared_to_second_chat_once",
+      "incoming_card_opens_and_close_restores_chat"
+    ],
+    "evidence": "evidence/live/mini-app-headless-check/native-runs/604193137e794a0cac87a35ecdc1357b",
+    "receipt": "evidence/live/native-mini-apps-headless.json",
+    "binary_sha256": "13f56eb33c2abfb44bc888221d7f9ba458f72fc39007357cf0d7cf1142b1b848",
+    "platform": "macOS",
+    "visual_similarity_evidence": false
+  },
+  "sign_in": {
+    "scope": "Existing-account password and Matrix SSO; matrix.org public discovery, with private Palpo credentials for native sign-in tests",
+    "rust_library_tests_passed": 139,
+    "native_login": {
+      "passed": true,
+      "checks": [
+        "matrix_org_public_discovery_advertises_password_and_sso",
+        "invalid_server_rejected_before_browser_or_credentials",
+        "unsupported_sso_recoverable_without_opening_browser",
+        "wrong_password_error_returns_to_form",
+        "native_password_signin_and_real_palpo_room_sync",
+        "session_persisted_owner_only",
+        "restart_restores_same_account_and_device_without_password"
+      ],
+      "evidence": "/Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/live/login-check-1789884084250171000/native-runs/f6794ac69e144c3ea917bb83abde876b",
+      "mode": "headless",
+      "binary_sha256": "1b97b4f105691b46446b5ba401fe31d4a3856309fd1fa8ba85f0dfb833257c7e",
+      "restore_evidence": "/Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/live/login-check-1789884084250171000/native-runs/adc75674814b4824931be1b90c01b003"
+    },
+    "native_oauth_only": false,
+    "qr_login": false,
+    "ios_runtime_verified": false,
+    "real_account_authentication": "User completes their credentials/provider MFA in the interactive app; not performed by automation."
+  },
+  "social_login_icons": {
+    "passed": true,
+    "checks": [
+      "provider_icons_and_buttons_visible_406x900",
+      "provider_icons_and_buttons_visible_375x812",
+      "google_login_button_icon_click_uses_selected_server_sso",
+      "github_login_button_icon_click_uses_selected_server_sso",
+      "provider_icons_and_buttons_visible_320x640"
+    ],
+    "captures": [
+      "/Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/live/social-icons-1789884676081279000/406x900/social-sign-in.png",
+      "/Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/live/social-icons-1789884676081279000/375x812/social-sign-in.png",
+      "/Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/live/social-icons-1789884676081279000/320x640/social-sign-in.png"
+    ],
+    "binary_sha256": "4bd51ccd761ade3ed2b1e2e492ab1df69da690449a334fd41af7e6f1be4d14e5"
+  }
+}

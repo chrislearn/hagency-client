@@ -1,0 +1,1797 @@
+//! The RoomInputBar widget contains all components related to sending messages/content to a room.
+//!
+//! The RoomInputBar is capped to a maximum height of 75% of the containing RoomScreen's height.
+//!
+//! The widgets included in the RoomInputBar are:
+//! * a preview of the message the user is replying to.
+//! * the location preview (which allows you to send your current location to the room),
+//!   plus a menu item to show the location preview.
+//! * a button that opens the RoomScreen-level popup menu for uploads/location.
+//! * If TSP is enabled, a checkbox to enable TSP signing for the outgoing message.
+//! * A MentionableTextInput, which allows the user to type a message
+//!   and mention other users via the `@` key.
+//! * Native streaming speech-to-text dictation, via a microphone button inside the text input.
+//! * A button to send the message.
+//! * The editing pane, which is shown when the user is editing a previous message.
+//! * A tombstone footer, which is shown if the room has been tombstoned (replaced).
+//! * A "cannot-send-message" notice, which is shown if the user cannot send messages to the room.
+//!
+
+use crate::theme::Snapshot as ThemeSnapshot;
+use std::sync::Arc;
+use makepad_widgets::*;
+use robius_speech::{NativeSpeechEvent, NativeSpeechSession, Replacement, SpeechErrorKind};
+use super::speech_input::{SpeechInput, SpeechPhase};
+use matrix_sdk::room::RoomMember;
+use matrix_sdk::room::reply::{EnforceThread, Reply};
+use ruma::events::room::message::AddMentions;
+use matrix_sdk_ui::timeline::{EmbeddedEvent, EventTimelineItem, TimelineEventItemId};
+use ruma::{events::room::message::{LocationMessageEventContent, MessageType, ReplyWithinThread, RoomMessageEventContent}, OwnedEventId, OwnedRoomId, OwnedTransactionId};
+use crate::{block_user_modal::{BlockUserModalAction, BlockUserRequest}, home::{editing_pane::{EditingPaneState, EditingPaneWidgetExt, EditingPaneWidgetRefExt}, location_preview::{LocationPreviewWidgetExt, LocationPreviewWidgetRefExt}, room_screen::{MessageAction, populate_preview_of_timeline_item}, rooms_list::RoomsListRef, tombstone_footer::{SuccessorRoomDetails, TombstoneFooterWidgetExt}, upload_progress::{UploadProgressViewWidgetRefExt, UploadState}}, join_leave_room_modal::{JoinLeaveModalKind, JoinLeaveRoomModalAction}, location::init_location_subscriber, profile::user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId}, room::BasicRoomDetails, settings::app_preferences::{AppPreferencesAction, AppPreferencesGlobal}, shared::{avatar::{AvatarState, AvatarWidgetRefExt}, file_upload_modal::{AttachmentUpload, FileUploadAttemptId, PendingUpload, handle_picked_file, handle_picker_launch_errors}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt, MentionableTextInputState}, popup_list::{PopupKind, enqueue_popup_notification}, room_input_popup_menu::RoomInputPopupMenuAction, slash_commands::{SlashCommandAction, SlashCommandOutcome}}, sliding_sync::{MatrixRequest, TimelineKind, UserPowerLevels, submit_async_request}, utils};
+use crate::room::reply_preview::CollapsiblePreviewWidgetRefExt;
+
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
+
+
+    // ---- Composer toolbar building blocks (robrix2's visual language, RBX_* tokens) ----
+    // Ghost icon button for the composer toolbar: transparent fill, subtle
+    // hover/press wash, secondary-grey icon.
+    mod.widgets.ComposerToolButton = mod.widgets.RobrixIconButton {
+        width: 40 height: 40
+        align: Align{x: 0.5 y: 0.5}
+        margin: Inset{left: 2, right: 2, top: 2, bottom: 2}
+        padding: Inset{left: 8, right: 8, top: 6, bottom: 6}
+        spacing: 0,
+        draw_icon +: { color: (RBX_FG_SECONDARY) }
+        draw_bg +: {
+            color: #0000
+            color_hover: (RBX_BG_HOVER)
+            color_down: (RBX_BG_PRESSED)
+            border_size: 0.0
+            border_radius: (RBX_RADIUS_SM)
+        }
+        icon_walk: Walk{width: 20, height: 20}
+        text: "",
+    }
+
+    mod.widgets.ComposerEmojiPickerButton = mod.widgets.ComposerToolButton {
+        draw_icon.svg: ICON_ADD_REACTION
+    }
+    mod.widgets.ComposerMoreButton = mod.widgets.ComposerToolButton {
+        draw_icon.svg: ICON_ADD
+    }
+
+    // Same ghost shell, but renders a text glyph (e.g. "@" / "/") instead of an
+    // SVG icon — used for the mention and slash-command shortcuts.
+    mod.widgets.ComposerGlyphButton = mod.widgets.RobrixIconButton {
+        margin: Inset{left: 2, right: 2, top: 2, bottom: 2}
+        padding: Inset{left: 9, right: 9, top: 4, bottom: 4}
+        spacing: 0,
+        align: Align{x: 0.5, y: 0.5}
+        icon_walk: Walk{width: 0, height: 0}
+        draw_bg +: {
+            color: #0000
+            color_hover: (RBX_BG_HOVER)
+            color_down: (RBX_BG_PRESSED)
+            border_size: 0.0
+            border_radius: (RBX_RADIUS_SM)
+        }
+        draw_text +: {
+            color: (RBX_FG_SECONDARY)
+            color_hover: (RBX_FG_SECONDARY)
+            color_down: (RBX_FG_SECONDARY)
+            text_style: MESSAGE_TEXT_STYLE { font_size: (16.0 * mod.widgets.RINX_TEXT_SCALE) }
+        }
+        text: "",
+    }
+
+    // One entry of the quick emoji row that the toolbar's emoji button toggles.
+    mod.widgets.ComposerEmojiButton = mod.widgets.RobrixIconButton {
+        spacing: 0
+        text: ""
+        margin: 0
+        padding: Inset{left: 8, right: 8, top: 6, bottom: 6}
+        icon_walk: Walk{width: 0, height: 0}
+        draw_text +: {
+            color: (RBX_FG_PRIMARY)
+            color_hover: (RBX_FG_PRIMARY)
+            color_down: (RBX_FG_PRIMARY)
+            text_style: MESSAGE_TEXT_STYLE { font_size: (15.0 * mod.widgets.RINX_TEXT_SCALE) }
+        }
+        draw_bg +: {
+            color: (RBX_BG_SURFACE)
+            color_hover: (RBX_BG_HOVER)
+            color_down: (RBX_BG_PRESSED)
+            border_size: 1.0
+            border_color: (RBX_STROKE_SOFT)
+            border_radius: (RBX_RADIUS_SM)
+        }
+    }
+
+    mod.widgets.RoomInputBar = set_type_default() do #(RoomInputBar::register_widget(vm)) {
+        ..mod.widgets.RoundedView
+
+        width: Fill,
+        height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
+        flow: Down,
+        clip_x: false,
+        clip_y: false,
+        new_batch: true
+
+        // The composer is a floating card: this wrapper is painted in the page
+        // colour and insets the white `input_bar` card so a gap shows around it.
+        padding: Inset{left: 8, right: 8, top: 4, bottom: 8}
+        show_bg: true,
+        draw_bg +: {
+            color: (COLOR_PRIMARY_DARKER)
+            border_size: 0.0
+        }
+
+        // The top-most element is a preview of the message that the user is replying to, if any.
+        replying_preview := ReplyingPreview { }
+
+        // Below that, display a preview of the current location that a user is about to send.
+        location_preview := LocationPreview { }
+
+        // Upload progress view (shown when a file upload is in progress)
+        upload_progress_view := UploadProgressView { }
+
+        // Below that, display one of multiple possible views:
+        // * the message input bar (buttons and message TextInput).
+        // * a notice that the user can't send messages to this room.
+        // * if this room was tombstoned, a "footer" view showing the successor room info.
+        // * the EditingPane, which slides up as an overlay in front of the other views below.
+        overlay_wrapper := View {
+            width: Fill,
+            height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
+            flow: Overlay,
+
+            // The white composer card: a toolbar row on top, then the quick
+            // emoji row (hidden until toggled), then the text input + send button.
+            input_bar := RoundedView {
+                width: Fill,
+                height: Fit{max: FitBound.Rel{base: Base.Full, factor: 0.75}}
+                flow: Down
+                padding: 6,
+                spacing: 4
+                show_bg: true,
+                draw_bg +: {
+                    color: (RBX_BG_SURFACE)
+                    border_radius: (RBX_RADIUS_XS)
+                    border_color: (RBX_STROKE_SOFT)
+                    border_size: 1.0
+                }
+
+                button_row := View {
+                    width: Fill, height: Fit
+                    flow: Right
+                    align: Align{y: 0.5}
+
+                    // A checkbox that enables TSP signing for the outgoing message.
+                    // If TSP is not enabled, this will be an empty invisible view.
+                    tsp_sign_checkbox := TspSignAnycastCheckbox {
+                        margin: Inset{left: 4, right: 2}
+                    }
+
+                    // Opens the native file picker directly.
+                    send_attachment_button := mod.widgets.ComposerToolButton {
+                        draw_icon +: { svg: (ICON_ADD_ATTACHMENT) }
+                    }
+
+                    // Inserts an "@" to start a member mention.
+                    at_mention_button := mod.widgets.ComposerGlyphButton {
+                        text: "@",
+                    }
+
+                    // Toggles the quick emoji row above the input.
+                    emoji_picker_button := mod.widgets.ComposerEmojiPickerButton {}
+
+                    // Inserts a "/" to open the slash-command popup.
+                    slash_command_button := mod.widgets.ComposerGlyphButton {
+                        text: "/",
+                    }
+
+                    // Opens the popup menu with the other things to send (photos, files, location).
+                    open_popup_menu_button := mod.widgets.ComposerMoreButton {}
+                }
+
+                emoji_picker_popup := View {
+                    visible: false
+                    width: Fit
+                    height: Fit
+                    flow: Right{wrap: true}
+                    align: Align{x: 0.0, y: 0.5}
+                    margin: Inset{left: 5, top: 1, bottom: 1}
+                    spacing: 6
+
+                    emoji_smile_button := mod.widgets.ComposerEmojiButton { text: "😀" }
+                    emoji_joy_button := mod.widgets.ComposerEmojiButton { text: "😂" }
+                    emoji_thumbsup_button := mod.widgets.ComposerEmojiButton { text: "👍" }
+                    emoji_heart_button := mod.widgets.ComposerEmojiButton { text: "❤️" }
+                    emoji_fire_button := mod.widgets.ComposerEmojiButton { text: "🔥" }
+                    emoji_party_button := mod.widgets.ComposerEmojiButton { text: "🎉" }
+                    emoji_think_button := mod.widgets.ComposerEmojiButton { text: "🤔" }
+                    emoji_clap_button := mod.widgets.ComposerEmojiButton { text: "👏" }
+                }
+
+                // Bottom row: message input (fill) + send button (right). This is the
+                // focused row, so it rides just above the on-screen keyboard.
+                message_row := View {
+                    width: Fill, height: Fit
+                    flow: Right
+                    // Bottom-align everything so the send button sticks to the bottom
+                    // even when the mentionable_text_input box is very tall.
+                    align: Align{y: 1.0},
+
+                    mentionable_text_input := MentionableTextInput {
+                        width: Fill,
+                        flow: Overlay,
+                        margin: Inset{ top: 2, bottom: 2, left: 2, right: 4 },
+
+                        text_input := RobrixTextInput {
+                            empty_text: #(crate::i18n::tr("Write a message (in Markdown)…")) i18n_empty_text: "Write a message (in Markdown)…"
+                            is_multiline: true,
+                            // Reserve the microphone's gutter so it never overlaps the draft.
+                            padding: Inset{top: 10, bottom: 10, left: 8, right: 48}
+                            // Borderless + transparent: the text sits directly on the
+                            // white composer card.
+                            draw_bg +: {
+                                border_size: 0.0
+                                color: #0000
+                                color_hover: #0000
+                                color_focus: #0000
+                                color_down: #0000
+                                color_empty: #0000
+                            }
+                        }
+
+                        speech_overlay := View {
+                            width: Fill, height: Fill
+                            align: Align{x: 1.0, y: 1.0}
+                            // No vertical padding: the button is nearly as tall as a
+                            // single-line input, so any would push it past the bottom edge.
+                            padding: Inset{top: 0, bottom: 0, left: 4, right: 4}
+
+                            // One widget for both states: the icon at rest, a meter while recording.
+                            speech_button := RobrixIconButton {
+                                width: 32, height: 32
+                                padding: 7
+                                spacing: 0
+                                grab_key_focus: false
+                                enable_long_press: false
+                                icon_walk: Walk{width: 18, height: 18}
+                                draw_icon +: {
+                                    svg: crate_resource("self://resources/icons/microphone.svg")
+                                    color: mod.widgets.RINX_INK
+                                }
+                                draw_bg +: {
+                                    color: #0000
+                                    color_hover: mod.widgets.RINX_HOVER
+                                    color_down: mod.widgets.RINX_PRESSED
+                                    // Set from Rust: 1.0 while recording, plus the three
+                                    // most recent microphone levels, each normalized 0..=1.
+                                    recording: instance(0.0)
+                                    level_0: instance(0.0)
+                                    level_1: instance(0.0)
+                                    level_2: instance(0.0)
+                                    bar_color: instance(mod.widgets.RINX_ON_ACCENT)
+                                    pixel: fn() {
+                                        let sdf = Sdf2d.viewport(self.pos * self.rect_size)
+                                        // Same state blend the stock button face uses.
+                                        let face = mix(
+                                            mix(self.color, self.color_hover, self.hover),
+                                            self.color_down,
+                                            self.down
+                                        )
+                                        sdf.box(0.5, 0.5, self.rect_size.x - 1.0, self.rect_size.y - 1.0, self.border_radius)
+                                        sdf.fill(face)
+                                        if self.recording > 0.5 {
+                                            // Three bars, centred in the button by construction.
+                                            let bar = 3.0
+                                            let gap = 3.0
+                                            let x = (self.rect_size.x - (bar * 3.0 + gap * 2.0)) * 0.5
+                                            let middle = self.rect_size.y * 0.5
+                                            let h0 = 4.0 + self.level_0 * 13.0
+                                            let h1 = 4.0 + self.level_1 * 13.0
+                                            let h2 = 4.0 + self.level_2 * 13.0
+                                            sdf.box(x, middle - h0 * 0.5, bar, h0, 1.5)
+                                            sdf.fill(self.bar_color)
+                                            sdf.box(x + bar + gap, middle - h1 * 0.5, bar, h1, 1.5)
+                                            sdf.fill(self.bar_color)
+                                            sdf.box(x + (bar + gap) * 2.0, middle - h2 * 0.5, bar, h2, 1.5)
+                                            sdf.fill(self.bar_color)
+                                        }
+                                        return sdf.result
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Filled teal send button: a rounded square, white icon, greyed out
+                    // (via `enable_send_message_button`) while the draft is empty.
+                    send_message_button := RobrixIconButton {
+                        enabled: false,
+                        width: 40, height: 40,
+                        align: Align{x: 0.5, y: 0.5}
+                        spacing: 0,
+                        text: "",
+                        margin: Inset{left: 2, right: 2, top: 2, bottom: 2}
+                        padding: 0
+                        draw_bg +: {
+                            color: (RBX_BG_DISABLED)
+                            color_hover: (RBX_ACCENT_HOVER)
+                            color_down: (RBX_ACCENT_PRESSED)
+                            color_disabled: (RBX_BG_DISABLED)
+                            border_size: 0.0
+                            border_radius: (RBX_RADIUS_XS)
+                        }
+                        draw_icon +: { svg: (ICON_SEND), color: (RBX_FG_DISABLED) }
+                        icon_walk: Walk{width: 22, height: 22},
+                    }
+                }
+            }
+
+            can_not_send_message_notice := SolidView {
+                visible: false
+                padding: 20
+                align: Align{x: 0.5, y: 0.5}
+                width: Fill, height: Fit
+
+                show_bg: true
+                draw_bg.color: (COLOR_SECONDARY)
+
+                text := Label {
+                    width: Fill,
+                    flow: Flow.Right{wrap: true},
+                    align: Align{x: 0.5, y: 0.5}
+                    draw_text +: {
+                        color: (COLOR_TEXT)
+                        text_style: theme.font_italic {font_size: (12.2 * mod.widgets.RINX_TEXT_SCALE)}
+                    }
+                    text: #(crate::i18n::tr("You don't have permission to post to this room.")) i18n_text: "You don't have permission to post to this room.",
+                }
+            }
+
+            tombstone_footer := TombstoneFooter { }
+
+            editing_pane := EditingPane { }
+        }
+    }
+    mod.widgets.MobileRoomInputBar = mod.widgets.RoomInputBar {
+        mobile: true
+        replying_preview := mod.widgets.MobileReplyingPreview {}
+        padding: Inset{left: 8 right: 8 top: 6 bottom: 8}
+        draw_bg.color: mod.widgets.RINX_PAGE
+        overlay_wrapper +: {
+            input_bar +: {
+                padding: 0 spacing: 0
+                draw_bg +: {color: mod.widgets.RINX_PAGE border_size: 0 border_radius: 0}
+                button_row.visible: false
+                message_row +: {
+                    align: Align{y: 0.5} spacing: 5
+                    mentionable_text_input +: {
+                        margin: 0
+                        text_input +: {
+                            empty_text: #(crate::i18n::tr("Message")) i18n_empty_text: "Message"
+                            padding: Inset{left: 10 right: 35 top: 10 bottom: 10}
+                            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: (12.5 * mod.widgets.RINX_TEXT_SCALE)}}
+                            draw_bg +: {
+                                color: mod.widgets.RINX_SURFACE color_hover: mod.widgets.RINX_SURFACE color_focus: mod.widgets.RINX_SURFACE
+                                color_empty: mod.widgets.RINX_SURFACE border_radius: 5
+                            }
+                        }
+                    }
+                    send_message_button +: {
+                        visible: false margin: 0
+                    }
+                    mobile_emoji_button := mod.widgets.ComposerEmojiPickerButton {margin: 0}
+                    mobile_more_button := mod.widgets.ComposerMoreButton {margin: 0}
+                }
+            }
+        }
+    }
+
+}
+
+/// Which view the `RoomInputBar` should show, based on room state.
+enum RoomInputBarMode<'a> {
+    /// The user can send messages, so show the regular message input bar.
+    Input,
+    /// The user cannot send messages, so show a notice saying so.
+    CannotSend,
+    /// This room was replaced, so show the tombstone footer.
+    Tombstoned {
+        room_id: &'a OwnedRoomId,
+        successor: &'a SuccessorRoomDetails,
+    },
+}
+
+/// The input bar at the bottom of a RoomScreen that allows the user to send messages, upload files, etc.
+///
+/// It also shows the tombstone footer for rooms that have been tombstoned,
+/// or a notice that the user cannot send messages to this room.
+#[derive(Script, Widget)]
+pub struct RoomInputBar {
+    #[rust]
+    appearance: ThemeSnapshot,
+    #[live]
+    mobile: bool,
+    #[source]
+    source: ScriptObjectRef,
+    #[deref]
+    view: View,
+
+    /// Whether the `ReplyingPreview` was visible when the `EditingPane` was shown.
+    /// If true, when the `EditingPane` gets hidden, we need to re-show the `ReplyingPreview`.
+    #[rust] was_replying_preview_visible: bool,
+    /// Info about the message event that the user is currently replying to, if any.
+    #[rust] replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
+    /// Cached natural Fit height of the input_bar, used as the animation
+    /// target when the editing pane is being hidden.
+    #[rust] input_bar_natural_height: f64,
+    /// Whether the currently-displayed room is encrypted, used to style the send button.
+    #[rust] is_encrypted: bool,
+    /// Whether the send button is currently enabled (the message input is non-empty).
+    #[rust] is_send_enabled: bool,
+    /// The room or thread that this RoomInputBar is currently within.
+    #[rust] timeline_kind: Option<TimelineKind>,
+    /// The widget UID of the RoomScreen containing this RoomInputBar.
+    #[rust] room_screen_widget_uid: Option<WidgetUid>,
+    /// The currently-running speech-to-text dictation session.
+    #[rust] speech: Option<SpeechInput>,
+    /// What the microphone button is currently displaying.
+    #[rust] speech_controls: SpeechControls,
+    /// Whether the quick emoji row above the text input is currently shown.
+    #[rust] is_emoji_picker_expanded: bool,
+}
+
+/// The microphone buttons current display state.
+#[derive(Default, PartialEq)]
+pub(super) struct SpeechControls {
+    /// Whether this platform has STT recognition at all.
+    /// * `Some(true)` if speech input is supported and available.
+    /// * `Some(false)` if speech input is not supported or available.
+    /// * `None` if it's unknown.
+    pub supported: Option<bool>,
+    /// The phase being shown, or `None` when no session is running
+    pub phase: Option<SpeechPhase>,
+    /// The three most recent microphone level samples, oldest first.
+    /// These determine the height/amplitude of the three bars that are drawn
+    /// in place of the microphone icon as a little sound waveform.
+    pub levels: Option<[f32; 3]>,
+}
+
+impl ScriptHook for RoomInputBar {
+    fn on_after_apply(
+        &mut self,
+        vm: &mut ScriptVm,
+        apply: &Apply,
+        _scope: &mut Scope,
+        _value: ScriptValue,
+    ) {
+        self.appearance = crate::theme::snapshot_for_vm(vm);
+        if apply.is_script_reapply() {
+            vm.with_cx_mut(|cx| self.enable_send_message_button(cx, self.is_send_enabled));
+        }
+    }
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            let send_on_enter = cx.global::<AppPreferencesGlobal>().0.send_on_enter;
+            self.mentionable_text_input(cx, ids!(mentionable_text_input))
+                .text_input_ref()
+                .set_submit_on_enter(send_on_enter);
+            self.initialize_speech_controls(cx);
+        });
+    }
+}
+
+impl Widget for RoomInputBar {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if matches!(event, Event::LiveEdit | Event::ScriptReapply) {
+            // Theme/language reapplication restores the template SVG. Restore
+            // the room's lock badge after the VM has finished that apply walk.
+            self.update_encryption_state(cx, self.is_encrypted);
+        }
+        // Pressing `Escape` will stop speech recording/recognition regardless of key focus.
+        let should_end_speech = matches!(event, Event::KeyDown(KeyEvent { key_code: KeyCode::Escape, .. }))
+            && matches!(self.speech_phase(), Some(SpeechPhase::Listening) | Some(SpeechPhase::Starting));
+        if should_end_speech {
+            match self.speech.as_mut() {
+                Some(speech) if speech.phase == SpeechPhase::Listening => speech.stop(),
+                _ => self.cancel_dictation(cx),
+            }
+            self.update_speech_controls(cx);
+            return;
+        }
+
+        self.handle_speech_event(cx, event);
+        self.take_assistant_draft(cx);
+
+        match event.hits(cx, self.view.widget(cx, ids!(replying_preview.reply_preview_content)).area()) {
+            // If the hit occurred on the replying message preview, jump to it.
+            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                if let Some(event_id) = self.replying_to.as_ref()
+                    .and_then(|(event_tl_item, _)| event_tl_item.event_id().map(ToOwned::to_owned))
+                {
+                    if let Some(room_screen_widget_uid) = self.room_screen_widget_uid {
+                        cx.widget_action(
+                            room_screen_widget_uid,
+                            MessageAction::JumpToEvent(event_id),
+                        );
+                    }
+                } else {
+                    enqueue_popup_notification(
+                        "BUG: couldn't find the message you're replying to.",
+                        PopupKind::Error,
+                        None,
+                    );
+                }
+            }
+            _ => {}
+        }
+
+        if let Event::Actions(actions) = event {
+            self.handle_actions(cx, actions);
+        }
+
+        self.view.handle_event(cx, event, scope);
+
+        // Now that the text in the input bar is up to date (after handling this event),
+        // we can add any dictated words to it.
+        // But we still wait if an IME is composing, or the user is dragging a selection
+        // since we don't want those two things to conflict.
+        if self.speech.is_some() {
+            let input = self.mentionable_text_input(cx, ids!(mentionable_text_input)).text_input_ref();
+            if input.is_composing() || cx.fingers.is_area_captured(input.area()) {
+                if let Some(speech) = self.speech.as_mut() {
+                    speech.dictation.interrupt();
+                }
+            } else {
+                let selection = input.selection();
+                let replacement = self.speech.as_mut().and_then(|speech| {
+                    speech.dictation.settle(&input.text(), selection.start().index..selection.end().index)
+                });
+                if let Some(replacement) = replacement {
+                    self.apply_replacement(cx, replacement);
+                }
+                if self.speech.as_ref().is_some_and(|speech| speech.ended) {
+                    self.cancel_dictation(cx);
+                }
+            }
+        }
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // Shrink the input_bar's height as the editing pane slides in,
+        // and grow it back as the editing pane slides out.
+        // slide=1.0 → editing pane hidden → input_bar at full Fit height.
+        // slide=0.0 → editing pane shown → input_bar at zero height.
+        let slide = self.editing_pane(cx, ids!(editing_pane)).slide();
+        let input_bar = self.view.view(cx, ids!(input_bar));
+
+        // Remap slide through a steeper curve so the input_bar reaches
+        // its full target height before the ExpDecay tail.
+        let remapped = (slide as f64 * 1.25).min(1.0);
+        if remapped >= 1.0 {
+            // Input_bar has reached its full natural height: switch to Fit
+            // so it can respond to content changes normally.
+            // Update the cached height for future animations.
+            let h = input_bar.area().rect(cx).size.y;
+            if h > 0.0 {
+                self.input_bar_natural_height = h;
+            }
+            if let Some(mut inner) = input_bar.borrow_mut() {
+                inner.walk.height = Size::fit();
+            }
+        } else {
+            let target = self.input_bar_natural_height;
+            if let Some(mut inner) = input_bar.borrow_mut() {
+                inner.walk.height = Size::Fixed((target * remapped).max(0.0));
+            }
+        }
+
+        self.view.view(cx, ids!(replying_preview))
+            .widget(cx, ids!(reply_preview_content))
+            .set_visible(cx, true);
+
+        self.view.draw_walk(cx, scope, walk)
+    }
+
+    /// Gives key focus to the inner message text input.
+    fn set_key_focus(&self, cx: &mut Cx) {
+        self.child_by_path(ids!(input_bar.mentionable_text_input))
+            .as_mentionable_text_input()
+            .set_key_focus(cx);
+    }
+}
+
+impl RoomInputBar {
+    fn initialize_speech_controls(&mut self, cx: &mut Cx) {
+        static IS_SPEECH_SUPPORTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let is_speech_supported = *IS_SPEECH_SUPPORTED.get_or_init(|| {
+            let supported = NativeSpeechSession::is_supported();
+            log!("Native speech-to-text input is {} (engine: {}).",
+                if supported { "available" } else { "unavailable" },
+                robius_speech::engine_name(),
+            );
+            supported
+        });
+        self.apply_speech_support(cx, is_speech_supported);
+    }
+
+    /// Puts a dictated replacement text snippet into the text input.
+    ///
+    /// This goes into the message box as an ordinary series of undo-able text edits.
+    fn apply_replacement(&mut self, cx: &mut Cx, replacement: Replacement) {
+        let mentionable = self.mentionable_text_input(cx, ids!(mentionable_text_input));
+        let undo = if replacement.continues { text_input::UndoGroup::Extend } else { text_input::UndoGroup::New };
+        match mentionable.text_input_ref().replace_range(cx, replacement.range, &replacement.text, undo) {
+            Ok(()) => {
+                if let Some(speech) = self.speech.as_mut() {
+                    speech.dictation.applied();
+                }
+            }
+            // If the text replacement was refused due to a live IME composition or the input filter,
+            // nothing gets lost, so no worries.
+            // The next transcript will still include the same words that weren't applied.
+            Err(error) => log!("Speech input could not update the draft: {error:?}"),
+        }
+        self.redraw(cx);
+    }
+
+    /// Show or hide the microphone button for speech-to-text recognition.
+    fn apply_speech_support(&mut self, cx: &mut Cx, is_speech_supported: bool) {
+        self.speech_controls.supported = Some(is_speech_supported);
+        self.view(cx, ids!(speech_overlay)).set_visible(cx, is_speech_supported);
+        if !is_speech_supported {
+            let mut input = self.mentionable_text_input(cx, ids!(mentionable_text_input)).text_input_ref();
+            script_apply_eval!(cx, input, {padding: 10});
+        }
+    }
+
+    /// Stop and discard any pending speech-to-text callbacks (with recognition text results).
+    ///
+    /// Any already-displayed text will stay in the text input.
+    fn cancel_dictation(&mut self, cx: &mut Cx) {
+        self.speech = None;
+        self.update_speech_controls(cx);
+    }
+
+    /// Returns the phase of the current speech recognition session, if one is running.
+    fn speech_phase(&self) -> Option<SpeechPhase> {
+        self.speech.as_ref().filter(|speech| !speech.ended).map(|speech| speech.phase)
+    }
+
+    fn update_speech_controls(&mut self, cx: &mut Cx) {
+        let new_phase = self.speech_phase();
+        let levels = self.speech.as_ref().map(|speech| speech.levels);
+        // Starting or ending a session completely re-styles the whole button;
+        // a phase change only affects the tooltip, so only that needs redrawing.
+        let is_active = new_phase.is_some();
+        if is_active != self.speech_controls.phase.is_some() {
+            let bg = if is_active {
+                self.appearance.accent
+            } else {
+                vec4(0.0, 0.0, 0.0, 0.0)
+            };
+            let hover = if is_active {
+                self.appearance.accent
+            } else {
+                self.appearance.hover
+            };
+            // The soundwave animation replaces the icon rather than sitting beside it,
+            // so we just hide the microphone icon while recording.
+            let icon = if is_active {
+                vec4(0.0, 0.0, 0.0, 0.0)
+            } else {
+                self.appearance.ink
+            };
+            let recording = if is_active { 1.0 } else { 0.0 };
+            let mut button = self.button(cx, ids!(speech_button));
+            script_apply_eval!(cx, button, {
+                draw_icon +: {color: #(icon)}
+                draw_bg +: {
+                    color: #(bg), color_hover: #(hover), color_down: #(hover),
+                    recording: #(recording)
+                }
+            });
+            self.redraw(cx);
+        }
+        if new_phase != self.speech_controls.phase {
+            self.speech_controls.phase = new_phase;
+            self.redraw(cx);
+        }
+        if levels != self.speech_controls.levels {
+            self.speech_controls.levels = levels;
+            if let Some(levels) = levels {
+                let mut button = self.button(cx, ids!(speech_button));
+                script_apply_eval!(cx, button, {
+                    draw_bg +: {level_0: #(levels[0]), level_1: #(levels[1]), level_2: #(levels[2])}
+                });
+            }
+        }
+    }
+
+    fn handle_speech_event(&mut self, cx: &mut Cx, event: &Event) {
+        // Leaving the room or the app ends dictation. Typing in the message box does not.
+        let switched_tab = if let Event::Actions(actions) = event {
+            actions.iter().any(|action| matches!(action.as_widget_action().cast(), DockAction::TabWasPressed(_)))
+        } else { false };
+        if self.speech.is_some() {
+            if switched_tab || matches!(event, Event::Background | Event::Shutdown) {
+                self.cancel_dictation(cx);
+            } else if let Some(speech) = self.speech.as_mut() {
+                // This event may be about to change the message text, and we read new
+                // speech results below, before it gets there. So hold the words back.
+                speech.dictation.interrupt();
+            }
+        }
+        let events = self.speech.as_mut().map(|speech| speech.poll()).unwrap_or_default();
+        for event in events {
+            match event {
+                NativeSpeechEvent::Transcript { text, is_final } => {
+                    // Returns nothing while held: the keystroke hasn't reached the text
+                    // input yet, so writing now would drag the caret out from under it.
+                    let Some(speech) = self.speech.as_mut() else { break };
+                    if let Some(replacement) = speech.dictation.transcript(&text, is_final) {
+                        self.apply_replacement(cx, replacement);
+                    }
+                }
+                // The session is dropped once this event has been dispatched, so
+                // a final utterance that arrived alongside its end still lands.
+                NativeSpeechEvent::Stopped => {
+                    if let Some(speech) = self.speech.as_mut() { speech.ended = true; }
+                    break;
+                }
+                NativeSpeechEvent::Error(error) => {
+                    if let Some(speech) = self.speech.as_mut() { speech.ended = true; }
+                    // Only hide the microphone once the recognizer is really gone:
+                    // Unavailable can also mean something retryable, like lost network.
+                    if error.kind() == SpeechErrorKind::Unavailable
+                        && !NativeSpeechSession::is_supported()
+                    {
+                        self.apply_speech_support(cx, false);
+                    }
+                    enqueue_popup_notification(format!("Speech input: {error}"), PopupKind::Error, Some(8.0));
+                    break;
+                }
+                _ => {}
+            }
+        }
+        self.update_speech_controls(cx);
+
+        let area = self.button(cx, ids!(speech_button)).area();
+        match event.hits(cx, area) {
+            Hit::FingerHoverIn(_) => {
+                cx.widget_action(self.widget_uid(), TooltipAction::HoverIn {
+                    // Name the shortcut only while it does something, and name what
+                    // it does: while finishing there is nothing left for it to stop.
+                    text: match self.speech_phase() {
+                        Some(SpeechPhase::Listening) => "Stop speech input (Esc)",
+                        Some(SpeechPhase::Starting) => "Cancel speech input (Esc)",
+                        Some(SpeechPhase::Finishing) => "Finishing transcription…",
+                        None => "Dictate a message",
+                    }.into(),
+                    widget_rect: area.rect(cx),
+                    options: CalloutTooltipOptions { position: TooltipPosition::Top, ..Default::default() },
+                });
+            }
+            Hit::FingerHoverOut(_) => cx.widget_action(self.widget_uid(), TooltipAction::HoverOut),
+            _ => {}
+        }
+    }
+
+    fn handle_actions(
+        &mut self,
+        cx: &mut Cx,
+        actions: &Actions,
+    ) {
+        let mentionable_text_input = self.mentionable_text_input(cx, ids!(mentionable_text_input));
+        let text_input = mentionable_text_input.text_input_ref();
+
+        // Handle a click on the microphone button, which starts or stops speech-to-text dictation.
+        if self.button(cx, ids!(speech_button)).clicked(actions)
+            && self.view(cx, ids!(input_bar)).visible()
+            && !self.editing_pane(cx, ids!(editing_pane)).is_currently_shown(cx)
+            && self.timeline_kind.is_some()
+        {
+            match self.speech_phase() {
+                Some(SpeechPhase::Listening) => self.speech.as_mut().unwrap().stop(),
+                Some(_) => self.cancel_dictation(cx),
+                None => {
+                    text_input.set_key_focus(cx);
+                    match SpeechInput::start(&text_input) {
+                        Ok(speech) => self.speech = Some(speech),
+                        Err(error) => enqueue_popup_notification(format!("Speech input: {error}"), PopupKind::Error, Some(8.0)),
+                    }
+                }
+            }
+            self.update_speech_controls(cx);
+        }
+
+        for action in actions {
+            // Handle changes to the `send_on_enter` preference.
+            if let Some(AppPreferencesAction::SendOnEnterChanged(v)) = action.downcast_ref() {
+                text_input.set_submit_on_enter(*v);
+                continue;
+            }
+        }
+
+        // Clear the replying-to preview pane if the "cancel reply" button was clicked
+        // or if the `Escape` key was pressed within the message input box.
+        if self.button(cx, ids!(cancel_reply_button)).clicked(actions)
+            || text_input.escaped(actions)
+        {
+            self.clear_replying_to(cx);
+            self.redraw(cx);
+        }
+
+        // Everything below here requires the current room/thread kind.
+        let (Some(timeline_kind), Some(room_screen_widget_uid)) =
+            (self.timeline_kind.clone(), self.room_screen_widget_uid)
+        else {
+            return;
+        };
+
+        let open_popup_menu_button = self.button(cx, ids!(open_popup_menu_button));
+        if open_popup_menu_button.clicked(actions) || self.button(cx, ids!(mobile_more_button)).clicked(actions) {
+            let button_rect = if self.mobile {
+                self.button(cx, ids!(mobile_more_button)).area().rect(cx)
+            } else { open_popup_menu_button.area().rect(cx) };
+            cx.widget_action(
+                room_screen_widget_uid,
+                RoomInputPopupMenuAction::Show { button_rect },
+            );
+        }
+
+        // The composer toolbar shortcuts. Each one goes through the text input
+        // as an ordinary edit, so `@` and `/` open the same popups typing does.
+        if self.button(cx, ids!(send_attachment_button)).clicked(actions) {
+            self.open_file_picker(cx, timeline_kind.clone());
+        }
+        if self.button(cx, ids!(at_mention_button)).clicked(actions) {
+            mentionable_text_input.insert_at_cursor(cx, "@");
+        }
+        if self.button(cx, ids!(slash_command_button)).clicked(actions) {
+            if timeline_kind.thread_root_event_id().is_some() {
+                enqueue_popup_notification(
+                    "Slash commands are only supported in the main room timeline.",
+                    PopupKind::Warning,
+                    Some(4.0),
+                );
+            } else {
+                mentionable_text_input.insert_at_cursor(cx, "/");
+            }
+        }
+        if self.button(cx, ids!(emoji_picker_button)).clicked(actions)
+            || self.button(cx, ids!(mobile_emoji_button)).clicked(actions) {
+            self.is_emoji_picker_expanded = !self.is_emoji_picker_expanded;
+            self.view.view(cx, ids!(emoji_picker_popup)).set_visible(cx, self.is_emoji_picker_expanded);
+            self.redraw(cx);
+        }
+        if self.is_emoji_picker_expanded {
+            for (button_id, emoji) in [
+                (ids!(emoji_smile_button), "😀"),
+                (ids!(emoji_joy_button), "😂"),
+                (ids!(emoji_thumbsup_button), "👍"),
+                (ids!(emoji_heart_button), "❤️"),
+                (ids!(emoji_fire_button), "🔥"),
+                (ids!(emoji_party_button), "🎉"),
+                (ids!(emoji_think_button), "🤔"),
+                (ids!(emoji_clap_button), "👏"),
+            ] {
+                if self.button(cx, button_id).clicked(actions) {
+                    mentionable_text_input.insert_at_cursor(cx, emoji);
+                }
+            }
+        }
+
+        // Handle the send location button being clicked.
+        if self.button(cx, ids!(location_preview.send_location_button)).clicked(actions) {
+            let location_preview = self.location_preview(cx, ids!(location_preview));
+            if let Some((coords, _system_time_opt)) = location_preview.get_current_data() {
+                let geo_uri = format!("{}{},{}", utils::GEO_URI_SCHEME, coords.latitude, coords.longitude);
+                let message = RoomMessageEventContent::new(
+                    MessageType::Location(
+                        LocationMessageEventContent::new(geo_uri.clone(), geo_uri)
+                    )
+                );
+                let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
+                    event_tl_item.event_id().map(|event_id| {
+                        let enforce_thread = if timeline_kind.thread_root_event_id().is_some() {
+                            EnforceThread::Threaded(ReplyWithinThread::Yes)
+                        } else {
+                            EnforceThread::MaybeThreaded
+                        };
+                        Reply {
+                            event_id: event_id.to_owned(),
+                            enforce_thread,
+                            add_mentions: AddMentions::Yes,
+                        }
+                    })
+                ).or_else(||
+                    timeline_kind.thread_root_event_id().map(|thread_root_event_id|
+                        Reply {
+                            event_id: thread_root_event_id.clone(),
+                            enforce_thread: EnforceThread::Threaded(ReplyWithinThread::No),
+                            add_mentions: AddMentions::No,
+                        }
+                    )
+                );
+                submit_async_request(MatrixRequest::SendMessage {
+                    routing: None,
+                    timeline_kind: timeline_kind.clone(),
+                    message,
+                    replied_to,
+                    #[cfg(feature = "tsp")]
+                    sign_with_tsp: self.is_tsp_signing_enabled(cx),
+                });
+
+                self.clear_replying_to(cx);
+                location_preview.clear();
+                location_preview.redraw(cx);
+            }
+        }
+
+        // Keyboard events still reach a hidden input bar (like the send msg shortcut),
+        // so we have to ignore them unless the user is allowed to send a message.
+        let can_post = self.view.view(cx, ids!(input_bar)).visible();
+
+        // Handle the send message button being clicked, or a `Returned` action
+        // from the message text input, which already respects the user's app setting.
+        if can_post && (
+            self.button(cx, ids!(send_message_button)).clicked(actions)
+            || text_input.returned(actions).is_some()
+        ) {
+            self.cancel_dictation(cx);
+            let entered_text = mentionable_text_input.text().trim().to_string();
+            if !entered_text.is_empty() {
+                match mentionable_text_input.parse_input(&entered_text) {
+                    SlashCommandOutcome::Message(message) => {
+                        let settings = crate::agent_access::current();
+                        let routing = match crate::agent_access::routing::directives(&settings, crate::sliding_sync::current_user_id().as_deref(), timeline_kind.room_id(), cx.get_global::<RoomsListRef>().is_direct_room(timeline_kind.room_id()).unwrap_or(false), &message, self.replying_to.as_ref().map(|(event, _)|event.sender())) {
+                            Ok(routing) => routing,
+                            Err(error) => {enqueue_popup_notification(error, PopupKind::Error, Some(5.0)); return;}
+                        };
+                        let replied_to = self.replying_to.take().and_then(|(event_tl_item, _emb)|
+                            event_tl_item.event_id().map(|event_id| {
+                                let enforce_thread = if timeline_kind.thread_root_event_id().is_some() {
+                                    EnforceThread::Threaded(ReplyWithinThread::Yes)
+                                } else {
+                                    EnforceThread::MaybeThreaded
+                                };
+                                Reply {
+                                    event_id: event_id.to_owned(),
+                                    enforce_thread,
+                                    add_mentions: AddMentions::Yes,
+                                }
+                            })
+                        ).or_else(||
+                            timeline_kind.thread_root_event_id().map(|thread_root_event_id|
+                                Reply {
+                                    event_id: thread_root_event_id.clone(),
+                                    enforce_thread: EnforceThread::Threaded(ReplyWithinThread::No),
+                                    add_mentions: AddMentions::No,
+                                }
+                            )
+                        );
+                        submit_async_request(MatrixRequest::SendMessage {
+                            routing,
+                            timeline_kind: timeline_kind.clone(),
+                            message,
+                            replied_to,
+                            #[cfg(feature = "tsp")]
+                            sign_with_tsp: self.is_tsp_signing_enabled(cx),
+                        });
+
+                        self.clear_replying_to(cx);
+                        mentionable_text_input.set_text(cx, "");
+                        self.enable_send_message_button(cx, false);
+                    }
+                    SlashCommandOutcome::Action(action) => {
+                        self.run_slash_command_action(cx, action, timeline_kind.room_id(), room_screen_widget_uid);
+                        mentionable_text_input.set_text(cx, "");
+                        self.enable_send_message_button(cx, false);
+                    }
+                    // Keep the text around so the user can fix the command and try again.
+                    SlashCommandOutcome::Error(error) => {
+                        enqueue_popup_notification(error, PopupKind::Error, Some(8.0));
+                    }
+                }
+            }
+        }
+
+        // If the user starts/stops typing in the message input box,
+        // send a typing notice to the room and update the send_message_button state.
+        let is_text_input_empty = if let Some(new_text) = text_input.changed(actions) {
+            let is_empty = new_text.is_empty();
+            if can_post {
+                submit_async_request(MatrixRequest::SendTypingNotice {
+                    room_id: timeline_kind.room_id().clone(),
+                    typing: !is_empty,
+                });
+            }
+            is_empty
+        } else {
+            text_input.text().is_empty()
+        };
+        // Only restyle the button when its enabled state actually changes,
+        // not on every actions pass.
+        let should_enable = !is_text_input_empty;
+        if should_enable != self.is_send_enabled {
+            self.enable_send_message_button(cx, should_enable);
+        }
+
+        // Handle the user pressing the up arrow in an empty message input box
+        // to edit their latest sent message.
+        if can_post && is_text_input_empty {
+            if let Some(KeyEvent {
+                key_code: KeyCode::ArrowUp,
+                modifiers: KeyModifiers { shift: false, control: false, alt: false, logo: false },
+                ..
+            }) = text_input.key_down_unhandled(actions) {
+                cx.widget_action(
+                    room_screen_widget_uid, 
+                    MessageAction::EditLatest,
+                );
+            }
+        }
+
+        // When the hide animation fully completes, restore the replying preview.
+        if self.view.editing_pane(cx, ids!(editing_pane)).was_hidden(actions) {
+            self.on_editing_pane_hidden(cx);
+        }
+    }
+
+    /// Runs the given slash command action within this room.
+    fn run_slash_command_action(
+        &mut self,
+        cx: &mut Cx,
+        action: SlashCommandAction,
+        room_id: &OwnedRoomId,
+        room_screen_widget_uid: WidgetUid,
+    ) {
+        let profile_of = |user_id| UserProfile {
+            user_id,
+            username: None,
+            avatar_state: AvatarState::Unknown,
+        };
+        match action {
+            SlashCommandAction::InviteAgent => {
+                cx.action(crate::home::invite_modal::InviteModalAction::Open(utils::RoomNameId::empty(room_id.clone())));
+            }
+            SlashCommandAction::LeaveRoom => {
+                let room_details = match cx.get_global::<RoomsListRef>().get_room_name(room_id) {
+                    Some(room_name_id) => BasicRoomDetails::Name(room_name_id),
+                    None => BasicRoomDetails::RoomId(utils::RoomNameId::empty(room_id.clone())),
+                };
+                cx.action(JoinLeaveRoomModalAction::Open {
+                    kind: JoinLeaveModalKind::LeaveRoom(room_details),
+                    show_tip: false,
+                });
+            }
+            SlashCommandAction::InviteUser(user_id) => {
+                submit_async_request(MatrixRequest::InviteUser {
+                    room_id: room_id.clone(),
+                    user_id,
+                })
+            }
+            SlashCommandAction::OpenDirectMessage(user_id) => {
+                submit_async_request(MatrixRequest::OpenOrCreateDirectMessage {
+                    user_profile: profile_of(user_id),
+                    // Don't just create a new DM room, we want to first get confirmation
+                    // from the user just like we do for the normal Direct Message button.
+                    allow_create: false,
+                })
+            }
+            SlashCommandAction::ShowUserProfile(user_id) => {
+                // Only the RoomScreen owns the user profile pane, so it has to handle this.
+                cx.widget_action(
+                    room_screen_widget_uid,
+                    ShowUserProfileAction::ShowUserProfile(UserProfileAndRoomId {
+                        user_profile: profile_of(user_id),
+                        room_id: room_id.clone(),
+                    }),
+                )
+            }
+            SlashCommandAction::BlockUser { user_id, block } => {
+                cx.action(BlockUserModalAction::Open(BlockUserRequest {
+                    user_id,
+                    display_name: None,
+                    block,
+                    reject_invite_to: None,
+                }))
+            }
+            SlashCommandAction::SetDisplayName(new_display_name) => {
+                submit_async_request(MatrixRequest::SetDisplayName {
+                    new_display_name: Some(new_display_name),
+                })
+            }
+        }
+    }
+
+    fn show_current_location_preview(&mut self, cx: &mut Cx) {
+        if let Err(_e) = init_location_subscriber(cx) {
+            error!("Failed to initialize location subscriber");
+            enqueue_popup_notification(
+                "Couldn't start location services. Please try again.",
+                PopupKind::Error,
+                None,
+            );
+        }
+        self.view.location_preview(cx, ids!(location_preview)).show(cx);
+        self.redraw(cx);
+    }
+
+    /// Shows a preview of the given event that the user is currently replying to
+    /// above the message input bar.
+    ///
+    /// If `grab_key_focus` is true, this will also automatically focus the keyboard
+    /// on the message input box so that the user can immediately start typing their reply.
+    fn show_replying_to(
+        &mut self,
+        cx: &mut Cx,
+        replying_to: (EventTimelineItem, EmbeddedEvent),
+        timeline_kind: &TimelineKind,
+        grab_key_focus: bool,
+    ) {
+        // When the user clicks the reply button next to a message, we need to:
+        // 1. Populate and show the ReplyingPreview, of course.
+        let replying_preview = self.view(cx, ids!(replying_preview));
+        let (replying_preview_username, _) = replying_preview
+            .avatar(cx, ids!(reply_preview_content.preview_content.reply_preview_avatar))
+            .set_avatar_and_get_username(
+                cx,
+                timeline_kind,
+                replying_to.0.sender(),
+                Some(replying_to.0.sender_profile()),
+                replying_to.0.event_id(),
+                true,
+            );
+
+        replying_preview
+            .label(cx, ids!(reply_preview_content.preview_content.reply_preview_username))
+            .set_text(cx, replying_preview_username.as_str());
+
+        populate_preview_of_timeline_item(
+            cx,
+            &replying_preview.html_or_plaintext(cx, ids!(reply_preview_content.preview_content.reply_preview_body)),
+            replying_to.0.content(),
+            replying_to.0.sender(),
+            &replying_preview_username,
+        );
+
+        replying_preview.set_visible(cx, true);
+        let reply_preview_content = replying_preview.widget(cx, ids!(reply_preview_content));
+        reply_preview_content.set_visible(cx, true);
+        reply_preview_content.as_collapsible_preview().reset_measured_height();
+        reply_preview_content.view(cx, ids!(preview_content)).redraw_texture_cache();
+        self.replying_to = Some(replying_to);
+
+        // 2. Hide other views that are irrelevant to a reply, e.g.,
+        //    the `EditingPane` would improperly cover up the ReplyPreview.
+        self.editing_pane(cx, ids!(editing_pane)).force_reset_hide(cx);
+        self.on_editing_pane_hidden(cx);
+        // 3. Automatically focus the keyboard on the message input box
+        //    so that the user can immediately start typing their reply
+        //    without having to manually click on the message input box.
+        if grab_key_focus {
+            self.text_input(cx, ids!(input_bar.mentionable_text_input.text_input)).set_key_focus(cx);
+        }
+        self.button(cx, ids!(cancel_reply_button)).reset_hover(cx);
+        self.redraw(cx);
+    }
+
+    /// Fills the input bar with the content of a message that failed to send (so the user can retry it).
+    fn restore_unsent_message(
+        &mut self,
+        cx: &mut Cx,
+        message: &RoomMessageEventContent,
+        replied_to: Option<(EventTimelineItem, EmbeddedEvent)>,
+        timeline_kind: &TimelineKind,
+    ) {
+        self.cancel_dictation(cx);
+        match &message.msgtype {
+            // don't do this for locations, which might already be outdates
+            MessageType::Location(_) => { }
+            msgtype => {
+                let restored = match msgtype {
+                    MessageType::Emote(emote) => format!("/me {}", emote.body),
+                    MessageType::Notice(notice) => format!("/notice {}", notice.body),
+                    // Escape a leading slash so it isn't treated as a command
+                    MessageType::Text(text) if text.body.starts_with('/') => format!("/{}", text.body),
+                    other => other.body().to_owned(),
+                };
+                let mentionable_text_input = self.mentionable_text_input(cx, ids!(mentionable_text_input));
+                let existing = mentionable_text_input.text();
+                let new_text = if existing.trim().is_empty() {
+                    restored
+                } else {
+                    format!("{existing}\n{restored}")
+                };
+                mentionable_text_input.set_text(cx, &new_text);
+                self.enable_send_message_button(cx, true);
+            }
+        }
+
+        if let Some(replied_to) = replied_to {
+            self.show_replying_to(cx, replied_to, timeline_kind, false);
+        }
+        self.redraw(cx);
+    }
+
+    /// Puts a draft the assistant left for this room into the composer. It
+    /// only fills the text (after any unsent text of the person's own); the
+    /// person decides whether to send it.
+    fn take_assistant_draft(&mut self, cx: &mut Cx) {
+        let Some(TimelineKind::MainRoom { room_id }) = self.timeline_kind.as_ref() else { return };
+        let Some(draft) = crate::assistant::take_draft(room_id.as_str()) else { return };
+        self.cancel_dictation(cx);
+        // A leading slash would run as a command when the person sends it.
+        let draft = if draft.starts_with('/') { format!("/{draft}") } else { draft };
+        let input = self.mentionable_text_input(cx, ids!(mentionable_text_input));
+        let existing = input.text();
+        let text = if existing.trim().is_empty() { draft } else { format!("{existing}\n{draft}") };
+        input.set_text(cx, &text);
+        self.enable_send_message_button(cx, true);
+        self.redraw(cx);
+    }
+
+    /// Clears (and makes invisible) the preview of the message
+    /// that the user is currently replying to.
+    fn clear_replying_to(&mut self, cx: &mut Cx) {
+        self.view(cx, ids!(replying_preview)).set_visible(cx, false);
+        self.replying_to = None;
+    }
+
+    /// Shows the editing pane to allow the user to edit the given event.
+    fn show_editing_pane(
+        &mut self,
+        cx: &mut Cx,
+        behavior: ShowEditingPaneBehavior,
+        timeline_kind: TimelineKind,
+    ) {
+        // The editing pane covers the message box, so dictation into it ends here.
+        self.cancel_dictation(cx);
+        // Cache the input_bar's natural height before the animation shrinks it.
+        let input_bar_height = self.view.view(cx, ids!(input_bar)).area().rect(cx).size.y;
+        if input_bar_height > 0.0 {
+            self.input_bar_natural_height = input_bar_height;
+        }
+
+        // Hide the replying preview and location preview while the editing
+        // pane is shown. The input_bar is not hidden; instead it is slid out
+        // of view in draw_walk using the EditingPane's slide value.
+        let replying_preview = self.view.view(cx, ids!(replying_preview));
+        self.was_replying_preview_visible = replying_preview.visible();
+        replying_preview.set_visible(cx, false);
+        self.view.location_preview(cx, ids!(location_preview)).clear();
+
+        let editing_pane = self.view.editing_pane(cx, ids!(editing_pane));
+        match behavior {
+            ShowEditingPaneBehavior::ShowNew { event_tl_item } => {
+                editing_pane.show(cx, event_tl_item, timeline_kind);
+            }
+            ShowEditingPaneBehavior::RestoreExisting { editing_pane_state } => {
+                editing_pane.restore_state(cx, editing_pane_state, timeline_kind);
+            }
+        };
+
+        self.redraw(cx);
+    }
+
+    /// This should be invoked after the EditingPane has been fully hidden.
+    fn on_editing_pane_hidden(&mut self, cx: &mut Cx) {
+        // Restore the replying_preview (which would've been hidden when the editing pane was shown).
+        if self.was_replying_preview_visible && self.replying_to.is_some() {
+            self.view.view(cx, ids!(replying_preview)).set_visible(cx, true);
+            self.view.widget(cx, ids!(replying_preview.reply_preview_content)).set_visible(cx, true);
+        }
+        self.redraw(cx);
+        // We don't need to do anything with the editing pane itself here,
+        // because it has already been hidden by the time this function gets called.
+    } 
+
+    /// Updates the room state to set which mode and views are shown in the RoomInputBar.
+    fn update_room_state(
+        &mut self,
+        cx: &mut Cx,
+        room_id: &OwnedRoomId,
+        tombstone_info: Option<&SuccessorRoomDetails>,
+        user_power_levels: UserPowerLevels,
+    ) {
+        // If the room is tombstoned, that takes precedence over anything else.
+        let mode = match tombstone_info {
+            Some(successor) => RoomInputBarMode::Tombstoned { room_id, successor },
+            None if user_power_levels.can_send_message() => RoomInputBarMode::Input,
+            None => RoomInputBarMode::CannotSend,
+        };
+        self.view.view(cx, ids!(input_bar))
+            .set_visible(cx, matches!(mode, RoomInputBarMode::Input));
+        self.view.view(cx, ids!(can_not_send_message_notice))
+            .set_visible(cx, matches!(mode, RoomInputBarMode::CannotSend));
+
+        let tombstone_footer = self.tombstone_footer(cx, ids!(tombstone_footer));
+        if let RoomInputBarMode::Tombstoned { room_id, successor } = mode {
+            tombstone_footer.show(cx, room_id, successor);
+        } else {
+            tombstone_footer.hide(cx);
+        }
+
+        // The user can't post here anymore, so cancel any in-progress edit, reply, input, etc.
+        if !matches!(mode, RoomInputBarMode::Input) {
+            self.cancel_dictation(cx);
+            self.editing_pane(cx, ids!(editing_pane)).force_reset_hide(cx);
+            self.was_replying_preview_visible = false;
+            self.clear_replying_to(cx);
+            self.view.location_preview(cx, ids!(location_preview)).clear();
+        }
+
+        let can_notify = user_power_levels.can_notify_room();
+        self.mentionable_text_input(cx, ids!(mentionable_text_input))
+            .set_can_notify_room(cx, can_notify);
+        self.mentionable_text_input(cx, ids!(editing_pane.editing_content.edit_text_input))
+            .set_can_notify_room(cx, can_notify);
+    }
+
+    /// Enables or disables (grays out) the send_message_button.
+    ///
+    /// When enabled, the button color is set based on the room's encryption state.
+    fn enable_send_message_button(&mut self, cx: &mut Cx, enable: bool) {
+        self.is_send_enabled = enable;
+        let mut send_message_button = self.view.button(cx, ids!(send_message_button));
+        // The send button is the teal accent whenever there is something to send,
+        // for encrypted and unencrypted rooms alike (the lock badge on the icon
+        // carries the encryption state); greyed out otherwise.
+        let (fg_color, bg_color) = if enable {
+            (self.appearance.on_accent, self.appearance.accent)
+        } else {
+            (
+                self.appearance.role("color.content.disabled"),
+                self.appearance.field,
+            )
+        };
+        if self.mobile {
+            send_message_button.set_visible(cx, enable);
+            self.view.button(cx, ids!(mobile_more_button)).set_visible(cx, !enable);
+        }
+        script_apply_eval!(cx, send_message_button, {
+            enabled: #(enable),
+            draw_icon.color: #(fg_color),
+            draw_bg.color: #(bg_color),
+        });
+    }
+
+    /// Updates the send button (icon + color style) and empty message text
+    /// based on this room's encryption status.
+    fn update_encryption_state(&mut self, cx: &mut Cx, is_encrypted: bool) {
+        self.is_encrypted = is_encrypted;
+
+        // The send button carries a closed-lock badge when encrypted
+        // and an opened-lock badge when not encrypted.
+        let mut send_message_button = self.view.button(cx, ids!(send_message_button));
+        let empty_text: &str;
+        if is_encrypted {
+            script_apply_eval!(cx, send_message_button, {
+                draw_icon.svg: mod.widgets.ICON_SEND_ENCRYPTED,
+            });
+            empty_text = crate::i18n::tr("Write an encrypted message (in Markdown)…");
+        } else {
+            script_apply_eval!(cx, send_message_button, {
+                draw_icon.svg: mod.widgets.ICON_SEND_UNENCRYPTED,
+            });
+            empty_text = crate::i18n::tr("Write a message (in Markdown)…");
+        }
+
+        self.text_input(cx, ids!(input_bar.mentionable_text_input.text_input))
+            .set_empty_text(cx, if self.mobile {
+                if is_encrypted { crate::i18n::tr("Message") } else { crate::i18n::tr("Message (unencrypted)") }
+            } else { empty_text }.to_string());
+
+        let enable = self.is_send_enabled;
+        self.enable_send_message_button(cx, enable);
+    }
+
+    /// Returns true if the TSP signing checkbox is checked, false otherwise.
+    ///
+    /// If TSP is not enabled, this will always return false.
+    #[cfg(feature = "tsp")]
+    fn is_tsp_signing_enabled(&self, cx: &mut Cx) -> bool {
+        self.view.check_box(cx, ids!(tsp_sign_checkbox)).active(cx)
+    }
+
+    /// Checks and returns whether this room/timeline already has an in-progress upload.
+    ///
+    /// If so, it returns true and shows the user a warning popup.
+    fn check_if_upload_in_progress(&self) -> bool {
+        if !self.view.child_by_path(ids!(upload_progress_view)).as_upload_progress_view().has_active_upload() {
+            return false;
+        }
+        enqueue_popup_notification(
+            "Finish or cancel your current upload before starting another one.",
+            PopupKind::Warning,
+            Some(7.0),
+        );
+        true
+    }
+
+    /// Shows the native file picker dialog to select a file to be uploaded.
+    fn open_file_picker(
+        &mut self,
+        cx: &mut Cx,
+        timeline_kind: TimelineKind,
+    ) {
+        if self.check_if_upload_in_progress() {
+            return;
+        }
+
+        let on_picked = self.upload_picker_callback(cx, timeline_kind);
+        handle_picker_launch_errors(
+            robius_file_picker::FileDialog::new().pick_file(on_picked)
+        );
+    }
+
+    /// Shows the native media picker dialog to select a photo or video to be uploaded.
+    fn open_photo_video_picker(
+        &mut self,
+        cx: &mut Cx,
+        timeline_kind: TimelineKind,
+    ) {
+        if self.check_if_upload_in_progress() {
+            return;
+        }
+
+        let on_picked = self.upload_picker_callback(cx, timeline_kind);
+        handle_picker_launch_errors(
+            robius_file_picker::FileDialog::new().pick_image_or_video(on_picked)
+        );
+    }
+
+    fn upload_picker_callback(
+        &self,
+        _cx: &mut Cx,
+        timeline_kind: TimelineKind,
+    ) -> impl FnOnce(robius_file_picker::Result<Option<robius_file_picker::PickedFile>>) + Send + 'static {
+        let in_reply_to = self.replying_to
+            .as_ref()
+            .and_then(|(event_tl_item, _embedded_event)| event_tl_item.event_id().map(ToOwned::to_owned));
+        #[cfg(feature = "tsp")]
+        let sign_with_tsp = self.is_tsp_signing_enabled(_cx);
+
+        // `robius-file-picker` ensures that this `on_picked` callback runs on a bg thread.
+        let epoch = crate::account_session::epoch();
+        move |result| handle_picked_file(epoch, result, move |file_data| {
+            Ok(PendingUpload::Attachment(AttachmentUpload {
+                timeline_kind,
+                file_data,
+                in_reply_to,
+                #[cfg(feature = "tsp")]
+                sign_with_tsp,
+            }))
+        })
+    }
+}
+
+impl RoomInputBarRef {
+    /// Shows a preview of the given event that the user is currently replying to
+    /// above the message input bar.
+    pub fn show_replying_to(
+        &self,
+        cx: &mut Cx,
+        replying_to: (EventTimelineItem, EmbeddedEvent),
+        timeline_kind: &TimelineKind,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.show_replying_to(cx, replying_to, timeline_kind, true);
+    }
+
+    /// Fills the input bar with the content of a message that failed to send (so the user can retry it).
+    pub fn restore_unsent_message(
+        &self,
+        cx: &mut Cx,
+        message: &RoomMessageEventContent,
+        replied_to: Option<(EventTimelineItem, EmbeddedEvent)>,
+        timeline_kind: &TimelineKind,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.restore_unsent_message(cx, message, replied_to, timeline_kind);
+    }
+
+    /// Shows the editing pane to allow the user to edit the given event.
+    pub fn show_editing_pane(
+        &self,
+        cx: &mut Cx,
+        event_tl_item: EventTimelineItem,
+        timeline_kind: TimelineKind,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.show_editing_pane(
+            cx,
+            ShowEditingPaneBehavior::ShowNew { event_tl_item },
+            timeline_kind,
+        );
+    }
+
+    /// See [`RoomInputBar::update_room_state()`].
+    pub fn update_room_state(
+        &self,
+        cx: &mut Cx,
+        room_id: &OwnedRoomId,
+        tombstone_info: Option<&SuccessorRoomDetails>,
+        user_power_levels: UserPowerLevels,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.update_room_state(cx, room_id, tombstone_info, user_power_levels);
+    }
+
+    /// Updates the message input's placeholder based on this room's encryption status.
+    pub fn update_encryption_state(&self, cx: &mut Cx, is_encrypted: bool) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.update_encryption_state(cx, is_encrypted);
+    }
+
+    /// Opens the native picker to upload a photo or video into this room.
+    pub fn open_photo_video_picker(
+        &self,
+        cx: &mut Cx,
+        timeline_kind: TimelineKind,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.open_photo_video_picker(cx, timeline_kind);
+    }
+
+    /// Opens the native picker to upload a file into this room.
+    pub fn open_file_picker(
+        &self,
+        cx: &mut Cx,
+        timeline_kind: TimelineKind,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.open_file_picker(cx, timeline_kind);
+    }
+
+    /// Shows the preview flow for sending the current location into this room.
+    pub fn show_current_location_preview(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.show_current_location_preview(cx);
+    }
+
+    /// Forwards the result of an edit request to the `EditingPane` widget
+    /// within this `RoomInputBar`.
+    pub fn handle_edit_result(
+        &self,
+        cx: &mut Cx,
+        timeline_event_item_id: TimelineEventItemId,
+        edit_result: Result<(), matrix_sdk_ui::timeline::Error>,
+    ) {
+        let Some(inner) = self.borrow_mut() else { return };
+        inner.editing_pane(cx, ids!(editing_pane))
+            .handle_edit_result(cx, timeline_event_item_id, edit_result);
+    }
+
+    /// Tells this RoomInputBar which room or thread it is being shown beneath.
+    pub fn set_room_context(
+        &self,
+        cx: &mut Cx,
+        room_screen_widget_uid: WidgetUid,
+        timeline_kind: TimelineKind,
+        room_members: Option<Arc<Vec<RoomMember>>>,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        let room_id = timeline_kind.room_id().to_owned();
+        if inner.timeline_kind.as_ref() != Some(&timeline_kind) {
+            inner.cancel_dictation(cx);
+        }
+        inner.room_screen_widget_uid = Some(room_screen_widget_uid);
+        inner.timeline_kind = Some(timeline_kind);
+        inner.mentionable_text_input(cx, ids!(mentionable_text_input))
+            .set_room_context(cx, room_id.clone(), room_members.clone());
+        inner.mentionable_text_input(cx, ids!(editing_pane.editing_content.edit_text_input))
+            .set_room_context(cx, room_id, room_members);
+    }
+
+    /// Save a snapshot of the UI state of this `RoomInputBar`.
+    ///
+    /// If speech recognition is running, this will stop it and release the microphone.
+    pub fn save_state(&self) -> RoomInputBarState {
+        let Some(inner) = self.borrow() else { return Default::default() };
+        let saved = RoomInputBarState {
+            was_replying_preview_visible: inner.was_replying_preview_visible,
+            replying_to: inner.replying_to.clone(),
+            editing_pane_state: inner.child_by_path(ids!(editing_pane)).as_editing_pane().save_state(),
+            mentionable_input_state: inner.child_by_path(ids!(input_bar.mentionable_text_input)).as_mentionable_text_input().save_state(),
+            upload: inner.child_by_path(ids!(upload_progress_view)).as_upload_progress_view().save_state(),
+        };
+        if let Some(speech) = &inner.speech {
+            speech.cancel();
+        }
+        // Clear the location preview. We don't save this state because the
+        // current location might change by the next time the user opens this same room.
+        inner.child_by_path(ids!(location_preview)).as_location_preview().clear();
+        saved
+    }
+
+    /// Restore the UI state of this `RoomInputBar` from the given state snapshot.
+    pub fn restore_state(
+        &self,
+        cx: &mut Cx,
+        timeline_kind: TimelineKind,
+        saved_state: RoomInputBarState,
+        user_power_levels: UserPowerLevels,
+        tombstone_info: Option<&SuccessorRoomDetails>,
+        is_encrypted: bool,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.cancel_dictation(cx);
+        let RoomInputBarState {
+            was_replying_preview_visible,
+            mentionable_input_state,
+            replying_to,
+            editing_pane_state,
+            upload,
+        } = saved_state;
+
+        // Note: we do *not* restore the location preview state here; see `save_state()`.
+
+        // 0. Apply this room's encryption state.
+        inner.update_encryption_state(cx, is_encrypted);
+
+        // 1. Restore the state of the MentionableTextInput.
+        inner.mentionable_text_input(cx, ids!(input_bar.mentionable_text_input))
+            .restore_state(cx, mentionable_input_state);
+
+        // 2. Restore the state of the replying-to preview.
+        if let Some(replying_to) = replying_to {
+            inner.show_replying_to(cx, replying_to, &timeline_kind, false);
+        } else {
+            inner.clear_replying_to(cx);
+        }
+        inner.was_replying_preview_visible = was_replying_preview_visible;
+
+        // 3. Restore the state of the editing pane.
+        if let Some(editing_pane_state) = editing_pane_state {
+            inner.show_editing_pane(
+                cx,
+                ShowEditingPaneBehavior::RestoreExisting { editing_pane_state },
+                timeline_kind.clone(),
+            );
+        } else {
+            inner.editing_pane(cx, ids!(editing_pane)).force_reset_hide(cx);
+            inner.on_editing_pane_hidden(cx);
+        }
+
+        // 4. Restore the state of the upload progress view.
+        inner.child_by_path(ids!(upload_progress_view))
+            .as_upload_progress_view()
+            .restore_state(cx, upload);
+
+        // 5. Apply this room's tombstone state and the user's power levels.
+        inner.update_room_state(cx, timeline_kind.room_id(), tombstone_info, user_power_levels);
+    }
+
+    /// See [`UploadProgressView::on_timeline_reconnected()`].
+    pub fn on_timeline_reconnected(&self, cx: &mut Cx) {
+        let Some(inner) = self.borrow() else { return };
+        inner.child_by_path(ids!(upload_progress_view))
+            .as_upload_progress_view()
+            .on_timeline_reconnected(cx);
+    }
+
+    /// Hides the upload progress view for the given upload attempt.
+    pub fn hide_upload_progress(&self, cx: &mut Cx, upload_id: FileUploadAttemptId) {
+        let Some(inner) = self.borrow() else { return };
+        inner.child_by_path(ids!(upload_progress_view))
+            .as_upload_progress_view()
+            .hide(cx, upload_id);
+    }
+
+    /// Marks the given upload as having been added to the send queue.
+    pub fn set_upload_as_queued(
+        &self,
+        cx: &mut Cx,
+        upload_id: FileUploadAttemptId,
+        transaction_id: OwnedTransactionId,
+        is_encrypted: bool,
+    ) {
+        let Some(inner) = self.borrow() else { return };
+        inner.child_by_path(ids!(upload_progress_view))
+            .as_upload_progress_view()
+            .set_as_queued(cx, upload_id, transaction_id, is_encrypted);
+    }
+
+    /// Updates the upload progress bar for the given upload attempt.
+    pub fn set_upload_progress(
+        &self,
+        cx: &mut Cx,
+        upload_id: FileUploadAttemptId,
+        current_bytes: usize,
+        total_bytes: usize,
+    ) {
+        let Some(inner) = self.borrow() else { return };
+        inner.child_by_path(ids!(upload_progress_view))
+            .as_upload_progress_view()
+            .set_progress(cx, upload_id, current_bytes, total_bytes);
+    }
+
+    /// Shows an upload error, offering a Retry button if `retryable_upload` is `Some`.
+    pub fn show_upload_error(
+        &self,
+        cx: &mut Cx,
+        upload_id: FileUploadAttemptId,
+        error: &str,
+        retryable_upload: Option<AttachmentUpload>,
+    ) {
+        let Some(inner) = self.borrow() else { return };
+        inner.child_by_path(ids!(upload_progress_view))
+            .as_upload_progress_view()
+            .show_error(cx, upload_id, error, retryable_upload);
+    }
+
+    /// Handles a started file upload and clears only the reply captured for this upload.
+    pub fn handle_file_upload_started(
+        &self,
+        cx: &mut Cx,
+        upload_id: FileUploadAttemptId,
+        file_name: &str,
+        in_reply_to: Option<&OwnedEventId>,
+        abort_handle: futures_util::future::AbortHandle,
+        timeline_kind: TimelineKind,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+
+        inner.child_by_path(ids!(upload_progress_view))
+            .as_upload_progress_view()
+            .show(cx, upload_id, file_name, abort_handle, timeline_kind);
+
+        if let Some(in_reply_to) = in_reply_to {
+            let should_clear_reply = inner
+                .replying_to
+                .as_ref()
+                .and_then(|(event_tl_item, _embedded_event)| event_tl_item.event_id())
+                .is_some_and(|current_reply_event_id| current_reply_event_id == in_reply_to);
+            if should_clear_reply {
+                inner.clear_replying_to(cx);
+            }
+        }
+    }
+
+    /// Returns whether TSP signing is enabled.
+    #[cfg(feature = "tsp")]
+    pub fn is_tsp_signing_enabled(&self, cx: &mut Cx) -> bool {
+        let Some(inner) = self.borrow() else { return false };
+        inner.is_tsp_signing_enabled(cx)
+    }
+}
+
+/// The saved UI state of a `RoomInputBar` widget.
+#[derive(Default)]
+pub struct RoomInputBarState {
+    /// Whether or not the `replying_preview` widget was shown.
+    was_replying_preview_visible: bool,
+    /// The state of the MentionableTextInput within this input bar.
+    mentionable_input_state: MentionableTextInputState,
+    /// The event that the user is currently replying to, if any.
+    replying_to: Option<(EventTimelineItem, EmbeddedEvent)>,
+    /// The state of the `EditingPane`, if any message was being edited.
+    editing_pane_state: Option<EditingPaneState>,
+    /// The upload in progress for this room, if any,
+    /// which keeps working in the background even while the room is hidden.
+    upload: Option<UploadState>,
+}
+
+/// Defines what to do when showing the `EditingPane` from the `RoomInputBar`.
+#[allow(clippy::large_enum_variant)]
+enum ShowEditingPaneBehavior {
+    /// Show a new edit session, e.g., when first clicking "edit" on a message.
+    ShowNew {
+        event_tl_item: EventTimelineItem,
+    },
+    /// Restore the state of an `EditingPane` that already existed, e.g., when
+    /// reopening a room that had an `EditingPane` open when it was closed.
+    RestoreExisting {
+        editing_pane_state: EditingPaneState,
+    },
+}

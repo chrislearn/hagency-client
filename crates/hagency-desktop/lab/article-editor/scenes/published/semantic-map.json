@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "adapter": "robrix-native-article-v1",
+  "reference_sha256": "86b02a9b317765fcfb36ea964c6984b95501020f5eb87f65841010bc269da153",
+  "contract_sha256": "6322436bdb361f220e416f78a146e778e6d3c5822cb41a68fdf70e702564a27d",
+  "elements": [
+    {
+      "id": "success_title",
+      "role": "text",
+      "native_widget": "Label",
+      "reference_atlas_bounds": [
+        1050,
+        888,
+        96,
+        32
+      ],
+      "reference_logical_bounds": [
+        153.29,
+        338.29,
+        132.56,
+        44.19
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Success only after SDK accepts send",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "success_room",
+      "role": "text",
+      "native_widget": "Label",
+      "reference_atlas_bounds": [
+        1000,
+        947,
+        210,
+        21
+      ],
+      "reference_logical_bounds": [
+        84.25,
+        419.76,
+        289.96,
+        29.0
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Actual destination",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "article_edit",
+      "role": "button",
+      "native_widget": "Button",
+      "reference_atlas_bounds": [
+        960,
+        1057,
+        252,
+        52
+      ],
+      "reference_logical_bounds": [
+        29.02,
+        571.64,
+        347.96,
+        71.8
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Return to own draft",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "article_share_again",
+      "role": "button",
+      "native_widget": "Button",
+      "reference_atlas_bounds": [
+        960,
+        1120,
+        252,
+        53
+      ],
+      "reference_logical_bounds": [
+        29.02,
+        658.63,
+        347.96,
+        73.18
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Start host-controlled share flow",
+      "source": "src/article_app/ui.rs"
+    }
+  ],
+  "raster_widgets": false,
+  "visual_acceptance": false
+}

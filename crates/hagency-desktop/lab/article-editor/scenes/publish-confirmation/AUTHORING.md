@@ -1,0 +1,1 @@
+Authored reference mapping uses the Robrix native adapter, not the upstream static Studio compiler. See ../../README.md. Approximate reference regions are retained separately from real widget dumps; no automatic visual score.

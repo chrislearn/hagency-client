@@ -1,0 +1,183 @@
+{
+  "dpr" : 2,
+  "elements" : {
+    "blockquote" : [
+
+    ],
+    "h1" : [
+
+    ],
+    "h2" : [
+
+    ],
+    "h3" : [
+      {
+        "height" : 35,
+        "width" : 392,
+        "x" : 24,
+        "y" : 43
+      }
+    ],
+    "li" : [
+
+    ],
+    "p" : [
+      {
+        "height" : 24,
+        "width" : 392,
+        "x" : 24,
+        "y" : 97
+      },
+      {
+        "height" : 58,
+        "width" : 392,
+        "x" : 24,
+        "y" : 137
+      },
+      {
+        "height" : 24,
+        "width" : 392,
+        "x" : 24,
+        "y" : 211
+      },
+      {
+        "height" : 96.703125,
+        "width" : 392,
+        "x" : 24,
+        "y" : 251
+      },
+      {
+        "height" : 29,
+        "width" : 392,
+        "x" : 24,
+        "y" : 363.703125
+      },
+      {
+        "height" : 64.078125,
+        "width" : 392,
+        "x" : 24,
+        "y" : 408.703125
+      },
+      {
+        "height" : 71.484375,
+        "width" : 392,
+        "x" : 24,
+        "y" : 488.78125
+      },
+      {
+        "height" : 46.15625,
+        "width" : 392,
+        "x" : 24,
+        "y" : 576.265625
+      }
+    ],
+    "pre" : [
+
+    ],
+    "table" : [
+
+    ]
+  },
+  "engine" : "macOS WKWebView \/ WebKit",
+  "font" : "16px \"PingFang SC\", system-ui, sans-serif",
+  "fonts" : [
+    {
+      "family" : "KaTeX_AMS",
+      "status" : "unloaded"
+    },
+    {
+      "family" : "KaTeX_Caligraphic",
+      "status" : "unloaded"
+    },
+    {
+      "family" : "KaTeX_Caligraphic",
+      "status" : "unloaded"
+    },
+    {
+      "family" : "KaTeX_Fraktur",
+      "status" : "unloaded"
+    },
+    {
+      "family" : "KaTeX_Fraktur",
+      "status" : "unloaded"
+    },
+    {
+      "family" : "KaTeX_Main",
+      "status" : "unloaded"
+    },
+    {
+      "family" : "KaTeX_Main",
+      "status" : "unloaded"
+    },
+    {
+      "family" : "KaTeX_Main",
+      "status" : "unloaded"
+    },
+    {
+      "family" : "KaTeX_Main",
+      "status" : "loaded"
+    },
+    {
+      "family" : "KaTeX_Math",
+      "status" : "unloaded"
+    },
+    {
+      "family" : "KaTeX_Math",
+      "status" : "loaded"
+    },
+    {
+      "family" : "KaTeX_SansSerif",
+      "status" : "unloaded"
+    },
+    {
+      "family" : "KaTeX_SansSerif",
+      "status" : "unloaded"
+    },
+    {
+      "family" : "KaTeX_SansSerif",
+      "status" : "unloaded"
+    },
+    {
+      "family" : "KaTeX_Script",
+      "status" : "unloaded"
+    },
+    {
+      "family" : "KaTeX_Size1",
+      "status" : "unloaded"
+    },
+    {
+      "family" : "KaTeX_Size2",
+      "status" : "loaded"
+    },
+    {
+      "family" : "KaTeX_Size3",
+      "status" : "unloaded"
+    },
+    {
+      "family" : "KaTeX_Size4",
+      "status" : "loaded"
+    },
+    {
+      "family" : "KaTeX_Typewriter",
+      "status" : "unloaded"
+    }
+  ],
+  "height" : 700,
+  "images" : [
+
+  ],
+  "macos" : "Version 26.6.2 (Build 25G83)",
+  "math" : {
+    "errors" : 0,
+    "formulas" : 9
+  },
+  "page_javascript" : false,
+  "source_sha256" : "445fa92dc0c746a8ff64653a04a9de7aa4690e02d2c08f4d668a861368c3e858",
+  "tiles" : [
+    {
+      "file" : "webview-math-tile-0.png",
+      "y_css" : 0
+    }
+  ],
+  "width" : 440
+}

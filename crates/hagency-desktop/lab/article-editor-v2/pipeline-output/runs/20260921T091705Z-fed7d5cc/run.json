@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "flow": "robrix-article-editor-v2",
+  "status": "completed",
+  "scope": "Only explicitly executed stages; no automatic visual or production acceptance",
+  "inputs": {
+    "sha256": "06380aa84c52cfbddf6279e842c88c04a6e51eaf05791f3c248cc5fd6347cd55",
+    "files": {
+      "image-to-appcard-flow.json": "531b20569c72b5215c516ca20c8c96aa8b5dbfc5239fddd99493cce3a6f6ffea",
+      "source/atlas.png": "65710ae6dd210092fb15d6f72a8772f4377960e0053ff3fceed40a72c3ac0609",
+      "source/atlas-prompt.txt": "97b6b63a46f04a47f97b316c712c05a110d62bc868c9fcca20307c69043210ce",
+      "scenes/library/contract.json": null,
+      "scenes/library/mapped.json": null,
+      "scenes/library/semantic-map.json": null,
+      "scenes/library/service-actions.json": null,
+      "scenes/visual-editor/contract.json": null,
+      "scenes/visual-editor/mapped.json": null,
+      "scenes/visual-editor/semantic-map.json": null,
+      "scenes/visual-editor/service-actions.json": null,
+      "scenes/image-library/contract.json": null,
+      "scenes/image-library/mapped.json": null,
+      "scenes/image-library/semantic-map.json": null,
+      "scenes/image-library/service-actions.json": null,
+      "scenes/image-settings/contract.json": null,
+      "scenes/image-settings/mapped.json": null,
+      "scenes/image-settings/semantic-map.json": null,
+      "scenes/image-settings/service-actions.json": null,
+      "scenes/theme/contract.json": null,
+      "scenes/theme/mapped.json": null,
+      "scenes/theme/semantic-map.json": null,
+      "scenes/theme/service-actions.json": null,
+      "scenes/cover/contract.json": null,
+      "scenes/cover/mapped.json": null,
+      "scenes/cover/semantic-map.json": null,
+      "scenes/cover/service-actions.json": null,
+      "scenes/full-preview/contract.json": null,
+      "scenes/full-preview/mapped.json": null,
+      "scenes/full-preview/semantic-map.json": null,
+      "scenes/full-preview/service-actions.json": null,
+      "scenes/review/contract.json": null,
+      "scenes/review/mapped.json": null,
+      "scenes/review/semantic-map.json": null,
+      "scenes/review/service-actions.json": null,
+      "scenes/publish-confirmation/contract.json": null,
+      "scenes/publish-confirmation/mapped.json": null,
+      "scenes/publish-confirmation/semantic-map.json": null,
+      "scenes/publish-confirmation/service-actions.json": null,
+      "scenes/publication/contract.json": null,
+      "scenes/publication/mapped.json": null,
+      "scenes/publication/semantic-map.json": null,
+      "scenes/publication/service-actions.json": null,
+      "scenes/update-confirmation/contract.json": null,
+      "scenes/update-confirmation/mapped.json": null,
+      "scenes/update-confirmation/semantic-map.json": null,
+      "scenes/update-confirmation/service-actions.json": null,
+      "scenes/withdraw/contract.json": null,
+      "scenes/withdraw/mapped.json": null,
+      "scenes/withdraw/semantic-map.json": null,
+      "scenes/withdraw/service-actions.json": null
+    }
+  },
+  "stages": [
+    {
+      "stage": "intake",
+      "status": "passed",
+      "commands": [
+        {
+          "argv": [
+            "/Library/Developer/CommandLineTools/usr/bin/python3",
+            "/Users/ychen/home/octosense-org/Octoscript-AppCard-calendar/lab/image-to-appcard-flow/atlas.py",
+            "--project",
+            "/Users/ychen/home/octosense-org/robrix2/lab/article-editor-v2",
+            "--manifest",
+            "/Users/ychen/home/octosense-org/robrix2/lab/article-editor-v2/image-to-appcard-flow.json",
+            "--output",
+            "/Users/ychen/home/octosense-org/robrix2/lab/article-editor-v2/pipeline-output/intake"
+          ],
+          "cwd": "/Users/ychen/home/octosense-org/robrix2/lab/article-editor-v2"
+        }
+      ],
+      "logs": [
+        {
+          "path": "intake-0.log",
+          "sha256": "c701cf6ed4e0f6bb6582cefbbb0df5aecfb0f25b5cca8552b701308cdc3176fd",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "stage": "prepare",
+      "status": "passed",
+      "commands": [
+        {
+          "argv": [
+            "/Library/Developer/CommandLineTools/usr/bin/python3",
+            "/Users/ychen/home/octosense-org/Octoscript-AppCard-calendar/lab/image-to-appcard-flow/prepare.py",
+            "--project",
+            "/Users/ychen/home/octosense-org/robrix2/lab/article-editor-v2",
+            "--manifest",
+            "/Users/ychen/home/octosense-org/robrix2/lab/article-editor-v2/image-to-appcard-flow.json",
+            "--intake",
+            "/Users/ychen/home/octosense-org/robrix2/lab/article-editor-v2/pipeline-output/intake"
+          ],
+          "cwd": "/Users/ychen/home/octosense-org/robrix2/lab/article-editor-v2"
+        }
+      ],
+      "logs": [
+        {
+          "path": "prepare-0.log",
+          "sha256": "06e879b501a260089eb89bac3751a48d9ec03484e1a027fb73e23693469fb204",
+          "exit_code": 0
+        }
+      ]
+    }
+  ],
+  "not_run": [
+    "observe",
+    "measure",
+    "map",
+    "semantic",
+    "compile",
+    "capture",
+    "gate",
+    "extract",
+    "bundle",
+    "service-test",
+    "wasm",
+    "integrate",
+    "web-test",
+    "hosted-test"
+  ],
+  "finished_at": "2026-09-21T09:17:07.576357+00:00"
+}

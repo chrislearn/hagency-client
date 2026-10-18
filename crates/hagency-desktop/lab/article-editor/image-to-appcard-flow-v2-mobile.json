@@ -1,0 +1,140 @@
+{
+ "schema_version": 1,
+ "id": "rinx-article-editor-v2-mobile",
+ "artboard": [
+  406,
+  776
+ ],
+ "locales": [
+  "en",
+  "cn"
+ ],
+ "generation": {
+  "atlas": "source/atlas-v2-mobile.png",
+  "prompt": "source/atlas-v2-mobile-prompt.txt",
+  "provider": "OpenAI Images API",
+  "model": "gpt-image-2",
+  "requested_size": [
+   2048,
+   2048
+  ],
+  "quality": "high",
+  "actual_size": [
+   2048,
+   2048
+  ]
+ },
+ "scenes": [
+  {
+   "id": "article-list",
+   "design_id": "article-v2-article-list",
+   "directory": "scenes-v2/mobile/article-list",
+   "crop": [
+    20,
+    28,
+    480,
+    956
+   ],
+   "surface": "app",
+   "title": "article-list"
+  },
+  {
+   "id": "markdown-editing",
+   "design_id": "article-v2-markdown-editing",
+   "directory": "scenes-v2/mobile/markdown-editing",
+   "crop": [
+    531,
+    28,
+    475,
+    956
+   ],
+   "surface": "app",
+   "title": "markdown-editing"
+  },
+  {
+   "id": "live-preview",
+   "design_id": "article-v2-live-preview",
+   "directory": "scenes-v2/mobile/live-preview",
+   "crop": [
+    1038,
+    28,
+    475,
+    956
+   ],
+   "surface": "app",
+   "title": "live-preview"
+  },
+  {
+   "id": "theme-sheet",
+   "design_id": "article-v2-theme-sheet",
+   "directory": "scenes-v2/mobile/theme-sheet",
+   "crop": [
+    1546,
+    29,
+    474,
+    955
+   ],
+   "surface": "app",
+   "title": "theme-sheet"
+  },
+  {
+   "id": "insert-image",
+   "design_id": "article-v2-insert-image",
+   "directory": "scenes-v2/mobile/insert-image",
+   "crop": [
+    26,
+    1029,
+    474,
+    952
+   ],
+   "surface": "app",
+   "title": "insert-image"
+  },
+  {
+   "id": "cover-summary",
+   "design_id": "article-v2-cover-summary",
+   "directory": "scenes-v2/mobile/cover-summary",
+   "crop": [
+    531,
+    1029,
+    475,
+    952
+   ],
+   "surface": "app",
+   "title": "cover-summary"
+  },
+  {
+   "id": "choose-chat",
+   "design_id": "article-v2-choose-chat",
+   "directory": "scenes-v2/mobile/choose-chat",
+   "crop": [
+    1038,
+    1029,
+    474,
+    952
+   ],
+   "surface": "app",
+   "title": "choose-chat"
+  },
+  {
+   "id": "published",
+   "design_id": "article-v2-published",
+   "directory": "scenes-v2/mobile/published",
+   "crop": [
+    1546,
+    1029,
+    474,
+    952
+   ],
+   "surface": "app",
+   "title": "published"
+  }
+ ],
+ "artwork": {
+  "root": "artwork"
+ },
+ "outputs": {
+  "intake": "pipeline-output/intake-v2-mobile",
+  "runs": "pipeline-output/runs"
+ }
+}

@@ -1,0 +1,164 @@
+{
+ "scene": "split-editor",
+ "reference": "pipeline-output/intake-v2-desktop/scenes/article-v2-split-editor/reference.png",
+ "grab": "(scratch capture, not retained)",
+ "side_by_side": "evidence-v2/split-editor-compare.png",
+ "band_mean_diff": [
+  28.1,
+  14.6,
+  16.7,
+  9.9,
+  12.5,
+  12.4,
+  32.9,
+  47.4,
+  36.2,
+  9.2
+ ],
+ "diff_regions": [
+  {
+   "rect_pt": [
+    728.0,
+    248.0,
+    4.0,
+    40.0
+   ],
+   "cells": 10,
+   "colour_distance": 182,
+   "native": "#F5F5F5",
+   "page": "#3EAA6A"
+  },
+  {
+   "rect_pt": [
+    1024.0,
+    496.0,
+    148.0,
+    192.0
+   ],
+   "cells": 1641,
+   "colour_distance": 137,
+   "native": "#CAD0CF",
+   "page": "#6A7045"
+  },
+  {
+   "rect_pt": [
+    776.0,
+    132.0,
+    32.0,
+    36.0
+   ],
+   "cells": 58,
+   "colour_distance": 116,
+   "native": "#868686",
+   "page": "#FBFBFB"
+  },
+  {
+   "rect_pt": [
+    424.0,
+    48.0,
+    20.0,
+    20.0
+   ],
+   "cells": 25,
+   "colour_distance": 115,
+   "native": "#FFFFFF",
+   "page": "#8C8C8B"
+  },
+  {
+   "rect_pt": [
+    392.0,
+    12.0,
+    16.0,
+    20.0
+   ],
+   "cells": 20,
+   "colour_distance": 110,
+   "native": "#858585",
+   "page": "#F0F3F2"
+  },
+  {
+   "rect_pt": [
+    432.0,
+    12.0,
+    16.0,
+    20.0
+   ],
+   "cells": 18,
+   "colour_distance": 109,
+   "native": "#858585",
+   "page": "#F1F3F2"
+  },
+  {
+   "rect_pt": [
+    156.0,
+    152.0,
+    12.0,
+    16.0
+   ],
+   "cells": 11,
+   "colour_distance": 107,
+   "native": "#909090",
+   "page": "#FCFCFC"
+  },
+  {
+   "rect_pt": [
+    472.0,
+    48.0,
+    20.0,
+    20.0
+   ],
+   "cells": 24,
+   "colour_distance": 105,
+   "native": "#FFFFFF",
+   "page": "#959595"
+  },
+  {
+   "rect_pt": [
+    108.0,
+    184.0,
+    20.0,
+    20.0
+   ],
+   "cells": 25,
+   "colour_distance": 105,
+   "native": "#FFFFFF",
+   "page": "#95CEA8"
+  },
+  {
+   "rect_pt": [
+    728.0,
+    184.0,
+    36.0,
+    40.0
+   ],
+   "cells": 71,
+   "colour_distance": 102,
+   "native": "#F7F7F7",
+   "page": "#919191"
+  },
+  {
+   "rect_pt": [
+    80.0,
+    188.0,
+    12.0,
+    16.0
+   ],
+   "cells": 10,
+   "colour_distance": 100,
+   "native": "#FFFFFF",
+   "page": "#9AD1AD"
+  },
+  {
+   "rect_pt": [
+    124.0,
+    312.0,
+    20.0,
+    24.0
+   ],
+   "cells": 28,
+   "colour_distance": 100,
+   "native": "#FFFFFF",
+   "page": "#9AD0AD"
+  }
+ ]
+}

@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "trust_boundary": "Robrix host; L0 has text state only",
+  "actions": [
+    {
+      "id": "article_cancel",
+      "behavior": "Close without grant or draft read"
+    },
+    {
+      "id": "article_allow",
+      "behavior": "Create in-memory account/session/instance grant; load only own draft"
+    }
+  ]
+}

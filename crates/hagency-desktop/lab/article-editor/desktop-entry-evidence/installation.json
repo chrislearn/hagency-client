@@ -1,0 +1,8 @@
+{
+  "sha256": "e56006da2ef253ce62cca361ea5f5598ac24c9da22745c7615e482b825cb9bb3",
+  "signature_valid": true,
+  "normal_profile_in_use": true,
+  "matrix_org_account_preserved": true,
+  "headless_checks": 14,
+  "launch_state": "running with existing matrix.org profile"
+}

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "trust_boundary": "Robrix host; L0 has text state only",
+  "actions": [
+    {
+      "id": "article_publish",
+      "behavior": "Choose a joined chat; no send until final host confirmation"
+    }
+  ]
+}

@@ -1,0 +1,115 @@
+{
+  "adapter": "robrix-native-article-v1",
+  "mapping_checks": [
+    "received-card",
+    "app-details",
+    "account-consent",
+    "markdown-editor",
+    "native-preview",
+    "room-picker",
+    "publish-confirmation",
+    "published"
+  ],
+  "visual_acceptance": false,
+  "similarity_score": null,
+  "inputs": {
+    "Cargo.lock": "774e42aafcec4289a28be12a5a6e523e254253166aff7deb0c7babdfdf748314",
+    "resources/mini_apps/article-editor/app.card": "8ff772b47119224182c3217fb92f3c59020ab4c890cb9ac222551cd1e2edf565",
+    "src/article_app/model.rs": "61f065be142c451be8d45bcb53d7c2cf2cd1da0167be50284188538d3877787b",
+    "src/article_app/ui.rs": "1130a2cf3b66fd97eecd3d41a3532d4c85391a01a57a9f6048cf80e77e40f140"
+  },
+  "native_checks": [
+    "native_markdown_html_publish_and_recipient_delivery",
+    "shared_app_card_contains_no_sender_authority",
+    "reopening_requires_consent_and_restores_own_draft",
+    "recipient_authenticates_as_self_and_starts_without_sender_draft",
+    "recipient_publish_uses_recipient_matrix_identity",
+    "english_chinese_native_ui_and_persisted_draft"
+  ],
+  "native_binary_hashes": [
+    "1d33c28819c048b03f66bbb3a22eb3b12e4e7756784cc2cd8cf764becb0770e9"
+  ],
+  "behavior_passed": true,
+  "platform": "macOS arm64, hidden Makepad native windows; two Palpo fixture accounts",
+  "fixture_run_id": "c393e925bd44480b85a5409b9fa141de",
+  "tested_rooms": "Unencrypted test DMs; encrypted-room delivery and iOS device execution were not exercised in this run.",
+  "captures": {
+    "received-card.png": {
+      "sha256": "ef175642183b36f720461bc81e57f1e53e43116933e6cd98238206a3e4051c25",
+      "size": [
+        812,
+        1552
+      ]
+    },
+    "app-details.png": {
+      "sha256": "0d1840f482fe124acb4e3364c36ac5d57e72d1d9ed76e23e93e4263b8bf4ad9c",
+      "size": [
+        812,
+        1552
+      ]
+    },
+    "account-consent.png": {
+      "sha256": "a1b501f94649b269a15e26714e67888ef4ea109255f879649ad94fe31cfbb9ae",
+      "size": [
+        812,
+        1552
+      ]
+    },
+    "markdown-editor.png": {
+      "sha256": "238a07831e1bdf52b6822ed440fc1739a45fa58892b3e01cd363a628778273d4",
+      "size": [
+        812,
+        1552
+      ]
+    },
+    "native-preview.png": {
+      "sha256": "b2f6ed9d6dabb4992425e0cdbf95e2a7369f7c0e7ec54a140bdfd7ebbeaee75c",
+      "size": [
+        812,
+        1552
+      ]
+    },
+    "room-picker.png": {
+      "sha256": "42c1ddee31b7a57b1306f57c3a02e1b2a47d1256b58812944fe1655b65909156",
+      "size": [
+        812,
+        1552
+      ]
+    },
+    "publish-confirmation.png": {
+      "sha256": "17c47a3f105d3a193dc7e6e61cadd0c9b7cb4d5c688cec10b52b3fc70bba6468",
+      "size": [
+        812,
+        1552
+      ]
+    },
+    "published.png": {
+      "sha256": "2058871ac41ec5c67fb30bd9a517af5e81919ffc74d38aa1a6e9a5a426073944",
+      "size": [
+        812,
+        1552
+      ]
+    },
+    "details-en.png": {
+      "sha256": "4e9b81c582f1ebde24aec2746e0766ae6f55478b698a4ed8d8013aeb87f48376",
+      "size": [
+        812,
+        1552
+      ]
+    },
+    "preview-en.png": {
+      "sha256": "47e2bf029891170cdbbbc1507a58384aef52dcb17fe9c5e3802ecaff149511ec",
+      "size": [
+        812,
+        1552
+      ]
+    },
+    "recipient-account-consent.png": {
+      "sha256": "5e6a20151d9e4b671c378362b2442a7b11b536f28e9dc275c1b05a1f723744c9",
+      "size": [
+        812,
+        1552
+      ]
+    }
+  }
+}

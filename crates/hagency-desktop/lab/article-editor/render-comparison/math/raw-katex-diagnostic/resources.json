@@ -1,0 +1,25 @@
+{
+  "full_page": true,
+  "resources": {
+    "https://comparison.invalid/fonts/KaTeX_AMS-Regular.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_AMS-Regular.ttf",
+    "https://comparison.invalid/fonts/KaTeX_Caligraphic-Bold.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_Caligraphic-Bold.ttf",
+    "https://comparison.invalid/fonts/KaTeX_Caligraphic-Regular.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_Caligraphic-Regular.ttf",
+    "https://comparison.invalid/fonts/KaTeX_Fraktur-Bold.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_Fraktur-Bold.ttf",
+    "https://comparison.invalid/fonts/KaTeX_Fraktur-Regular.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_Fraktur-Regular.ttf",
+    "https://comparison.invalid/fonts/KaTeX_Main-Bold.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_Main-Bold.ttf",
+    "https://comparison.invalid/fonts/KaTeX_Main-BoldItalic.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_Main-BoldItalic.ttf",
+    "https://comparison.invalid/fonts/KaTeX_Main-Italic.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_Main-Italic.ttf",
+    "https://comparison.invalid/fonts/KaTeX_Main-Regular.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_Main-Regular.ttf",
+    "https://comparison.invalid/fonts/KaTeX_Math-BoldItalic.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_Math-BoldItalic.ttf",
+    "https://comparison.invalid/fonts/KaTeX_Math-Italic.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_Math-Italic.ttf",
+    "https://comparison.invalid/fonts/KaTeX_SansSerif-Bold.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_SansSerif-Bold.ttf",
+    "https://comparison.invalid/fonts/KaTeX_SansSerif-Italic.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_SansSerif-Italic.ttf",
+    "https://comparison.invalid/fonts/KaTeX_SansSerif-Regular.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_SansSerif-Regular.ttf",
+    "https://comparison.invalid/fonts/KaTeX_Script-Regular.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_Script-Regular.ttf",
+    "https://comparison.invalid/fonts/KaTeX_Size1-Regular.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_Size1-Regular.ttf",
+    "https://comparison.invalid/fonts/KaTeX_Size2-Regular.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_Size2-Regular.ttf",
+    "https://comparison.invalid/fonts/KaTeX_Size3-Regular.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_Size3-Regular.ttf",
+    "https://comparison.invalid/fonts/KaTeX_Size4-Regular.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_Size4-Regular.ttf",
+    "https://comparison.invalid/fonts/KaTeX_Typewriter-Regular.ttf": "/Users/ychen/home/octosense-org/Rinx/lab/article-editor/render-comparison/math/fonts/KaTeX_Typewriter-Regular.ttf"
+  }
+}

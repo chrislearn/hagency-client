@@ -1,0 +1,87 @@
+{
+  "contract": "com.hagency.agent_ops.v1",
+  "release_status": "development",
+  "source_commit": null,
+  "artifacts": [
+    {
+      "path": "cancel-dispatch-response.json",
+      "sha256": "16fba3fc55d09fbe5148a1957920bd4ab4b1ca9a5cce1e4db7b3c8e17dc8cbd6"
+    },
+    {
+      "path": "client-session-grant.json",
+      "sha256": "ea4601c057e311e1244580c5ed67ce06013c103c9cec443f6c551904cd5da531"
+    },
+    {
+      "path": "client-session-request.json",
+      "sha256": "2e37e7adf1163dd38aa9a7e0aec75ad7fe77a565c05a5895d01bf978ac25b449"
+    },
+    {
+      "path": "client-session.json",
+      "sha256": "6b386f1313cc86e8c84483357a06c08d10693098bde467a5dcc142fac27a7799"
+    },
+    {
+      "path": "contract.schema.json",
+      "sha256": "c3b7777c30a69b7f302cc5e3687814beec5ea87333df7701af25db69bbd731d1"
+    },
+    {
+      "path": "error-precondition-failed.json",
+      "sha256": "61794f2a82d3856cfb529c908c70b786a893d271e1e88e2d5629965cc210ac8b"
+    },
+    {
+      "path": "grant-exchange-request.json",
+      "sha256": "ff29ad94d5195881ab46d8b36166f5b9d1958c29863b49bf8bc426543511a602"
+    },
+    {
+      "path": "grant-proof-material.json",
+      "sha256": "8ffa3cd00e70c4f095e58b9552aef9bb6594bef5ea36b4854bcda44615b8f40b"
+    },
+    {
+      "path": "invalid-empty-capability.json",
+      "sha256": "d327dd216172fcb8ad7ffa08ab10ccf92512e68d2093bd5d4c2deeed8e352abf"
+    },
+    {
+      "path": "invalid-terminal-resolution-with-recovery.json",
+      "sha256": "d3f40820099bade206a14e3ad7d7c5cd367755fed568a7064319e1ca515e6fe9"
+    },
+    {
+      "path": "invalidation.json",
+      "sha256": "3b547be298a8cc7d2c4e58d3aeee37bb1e584b6f4d9b36da65b0aec971504042"
+    },
+    {
+      "path": "outcome-inspection.json",
+      "sha256": "45fd7ed38c86188765bc4ded1f00323d8e6b711810eb7d04a3fee225970b7e83"
+    },
+    {
+      "path": "protocol-limits.json",
+      "sha256": "ab58fc046980ca0ef903b48abc5fb8135b0ce93e2c515a9bb29ee91ae3b41fa4"
+    },
+    {
+      "path": "resolve-outcome-request-accept-completed.json",
+      "sha256": "f0a78ef15884560ad6e69de9efdf1bd1d96b470b398fdc421a809bb704a33b5b"
+    },
+    {
+      "path": "resolve-outcome-request-continue.json",
+      "sha256": "c265b5d375561513d567ccf752f39f0af46604d6369815b19c15404132b3ef69"
+    },
+    {
+      "path": "resolve-outcome-request-keep-blocked.json",
+      "sha256": "324b0a9aecbf61ce33bef105069bfbfbe9ab50227761c61ab707f4c9a60e9a10"
+    },
+    {
+      "path": "resolve-outcome-response.json",
+      "sha256": "bd78ea28df0dd243c05fb899ae50dacdf8fac3495a031f99204a11e3fc876354"
+    },
+    {
+      "path": "session-proof-material.json",
+      "sha256": "ce7467440bbb85e9deeb55d388956f6b2388e40b16c2aeb17ab2e3e79dc28453"
+    },
+    {
+      "path": "snapshot.json",
+      "sha256": "78e17760f5212745680c31d5e6473ea896f09b8b99e6c1d9329700285480c2d0"
+    },
+    {
+      "path": "stable-errors.json",
+      "sha256": "34d239a1787b895d50cf6776a00e72e443d26aa257cfcaff011aa63a92876704"
+    }
+  ]
+}

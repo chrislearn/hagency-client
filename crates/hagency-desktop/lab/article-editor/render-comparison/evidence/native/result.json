@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "binary_sha256": "26f547b41046b5a118ab526d2f74e0ca61d21a6621096f7ae35f1aa4051267e0",
+  "checks": [
+    "Pinned Rinx renderer in native Makepad HtmlView",
+    "Table HTML matches same-HTML WebView capture",
+    "Native scrolling changes visible content"
+  ],
+  "screenshots": {
+    "native-tables-top.png": "11af876628ba4ed36922a08802e3009c968b72919b9a43ff2c093ce12cccdf1f",
+    "native-tables-bottom.png": "6248e21671a85f4b7e448b8f418fb5848818f81d0a927a5a2dadccdb72b9d82d"
+  }
+}

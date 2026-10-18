@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "upstream_revision": "a6ea4e2c33a9e35ec27a9e94d6c40ff3386ee3cc",
+  "run_receipt": "pipeline-output/runs/20260920T000525Z-0e74d2d9/run.json",
+  "run_receipt_sha256": "000977caab782a8821ed1af6a459fbcbcfb4fd85fbfd8f35943602732cec4fd9",
+  "completed_stages": [
+    "intake",
+    "prepare"
+  ],
+  "not_run": [
+    "observe",
+    "measure",
+    "map",
+    "semantic",
+    "compile",
+    "capture",
+    "gate",
+    "extract",
+    "bundle",
+    "service-test",
+    "wasm",
+    "integrate",
+    "web-test",
+    "hosted-test"
+  ],
+  "prepared_scenes": 12,
+  "native_mapping": "not_authored",
+  "production_ui_changed": false,
+  "similarity_accepted": false,
+  "score": null
+}

@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "url": "https://github.com/octos-org/octos.git",
+  "revision": "fe08d8e6b3b32e672b0f956a2b692c3c8205b167",
+  "features": [
+    "api",
+    "git",
+    "ast"
+  ]
+}

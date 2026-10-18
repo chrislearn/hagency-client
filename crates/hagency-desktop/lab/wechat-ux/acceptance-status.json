@@ -1,0 +1,9 @@
+{
+  "accepted": false,
+  "score": null,
+  "errors": [
+    "No native/review evidence receipt: /Users/ychen/home/robrix-hagency/lab/wechat-ux/evidence/acceptance.json"
+  ],
+  "required_screens": 96,
+  "required_journeys": 44
+}

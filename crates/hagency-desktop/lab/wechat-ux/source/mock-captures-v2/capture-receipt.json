@@ -1,0 +1,157 @@
+{
+  "kind": "makepad_wechat_capture",
+  "url": "https://wasm.robius.rs/makepad_wechat/",
+  "captured_at": "2026-09-20T00:22:40.644692+00:00",
+  "logical_viewport": [
+    400,
+    800
+  ],
+  "device_pixel_ratio": 2,
+  "pixels": [
+    800,
+    1600
+  ],
+  "locale": "mixed English/Chinese as shipped by mock",
+  "deployed_source_commit": null,
+  "not_actual_wechat": true,
+  "scope": "Reference screenshots only; no native Robrix or backend acceptance.",
+  "review_status": "unreviewed",
+  "assets": [
+    {
+      "url": "https://wasm.robius.rs/makepad_wechat/makepad_wechat.wasm",
+      "status": 200,
+      "sha256": "c3c233439df7a39ee82727f40e6b81c1c54a58174577a3ce7eda624c83a38f94"
+    }
+  ],
+  "screens": [
+    {
+      "id": "chats",
+      "path": "chats.png",
+      "sha256": "7f0e547b59c9694eee840db63d2aa5d79523017f55e4a3c65d3f6d4342f9c935",
+      "inputs": [],
+      "observed_state_review": "pending"
+    },
+    {
+      "id": "chats-menu",
+      "path": "chats-menu.png",
+      "sha256": "9963633d803814bdddefa2b690091488b4886c1719eb2fd3a735ab78ac33e694",
+      "inputs": [
+        {
+          "type": "canvas_pointer",
+          "x": 380,
+          "y": 65
+        }
+      ],
+      "observed_state_review": "pending"
+    },
+    {
+      "id": "add-contact-candidate",
+      "path": "add-contact-candidate.png",
+      "sha256": "5fa8de1ed3176a52774bba5bc6eb68130da6d19fee01170ffabba33371aad0f9",
+      "inputs": [
+        {
+          "type": "canvas_pointer",
+          "x": 380,
+          "y": 65
+        },
+        {
+          "type": "canvas_pointer",
+          "x": 280,
+          "y": 101
+        }
+      ],
+      "observed_state_review": "pending"
+    },
+    {
+      "id": "contacts",
+      "path": "contacts.png",
+      "sha256": "55f21b452a4cc3db9cc481eb08a7c8a6bee14e3568fba3e22260afd7868f0881",
+      "inputs": [
+        {
+          "type": "canvas_pointer",
+          "x": 150,
+          "y": 765
+        }
+      ],
+      "observed_state_review": "pending"
+    },
+    {
+      "id": "discover",
+      "path": "discover.png",
+      "sha256": "e52a0ad46bb53ab484d3cbca63cb44e1e71bac60b5e76bcad1bff1547947918f",
+      "inputs": [
+        {
+          "type": "canvas_pointer",
+          "x": 250,
+          "y": 765
+        }
+      ],
+      "observed_state_review": "pending"
+    },
+    {
+      "id": "moments",
+      "path": "moments.png",
+      "sha256": "dc55c4006711e15784a3401892e622d5b438b6bda36f2a30fe1b0af42fa72954",
+      "inputs": [
+        {
+          "type": "canvas_pointer",
+          "x": 250,
+          "y": 765
+        },
+        {
+          "type": "canvas_pointer",
+          "x": 150,
+          "y": 121
+        }
+      ],
+      "observed_state_review": "pending"
+    },
+    {
+      "id": "me",
+      "path": "me.png",
+      "sha256": "1508e8542bededa1a2616d866da0ef9ad91a5bc6b449a78e135cbcec78aaab5d",
+      "inputs": [
+        {
+          "type": "canvas_pointer",
+          "x": 345,
+          "y": 765
+        }
+      ],
+      "observed_state_review": "pending"
+    },
+    {
+      "id": "profile-edit",
+      "path": "profile-edit.png",
+      "sha256": "60b196563e32b8709da8dcbcfd4c0196d8a9ca9dc4fb34027ecabf0ce5a63158",
+      "inputs": [
+        {
+          "type": "canvas_pointer",
+          "x": 345,
+          "y": 765
+        },
+        {
+          "type": "canvas_pointer",
+          "x": 380,
+          "y": 176
+        }
+      ],
+      "observed_state_review": "pending"
+    },
+    {
+      "id": "conversation",
+      "path": "conversation.png",
+      "sha256": "c7a7bf5abc1fa68b24590f354a7566821433a593488080b3447fda4c5783d977",
+      "inputs": [
+        {
+          "type": "canvas_pointer",
+          "x": 150,
+          "y": 170
+        }
+      ],
+      "observed_state_review": "pending"
+    }
+  ],
+  "errors": [],
+  "browser": "153.0.8010.12",
+  "renderer": "Chromium SwiftShader"
+}

@@ -1,0 +1,2 @@
+# Keep bundled manifests, contract fixtures and scripts byte-identical on every OS.
+* text=auto eol=lf

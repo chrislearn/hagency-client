@@ -1,0 +1,52 @@
+{
+  "passed": false,
+  "mode": "Makepad instrumentation / hidden Metal backend",
+  "binary_sha256": "e56006da2ef253ce62cca361ea5f5598ac24c9da22745c7615e482b825cb9bb3",
+  "checks": [
+    "zero_visible_windows",
+    "desktop_contacts_button_opens_full_width_page",
+    "desktop_contacts_filter_and_profile",
+    "desktop_contact_opens_existing_chat",
+    "desktop_contact_directory_search_page",
+    "desktop_contacts_joined_groups",
+    "desktop_contact_group_opens_chat",
+    "desktop_contacts_home_round_trip",
+    "desktop_contacts_repeated_chat_switches",
+    "desktop_sidebar_editor_button_and_translated_tooltip",
+    "desktop_button_opens_article_library",
+    "desktop_create_save_and_native_preview",
+    "desktop_close_reopen_preserves_draft_source",
+    "desktop_entry_and_draft_survive_process_restart"
+  ],
+  "visible_window_samples": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "captures": [
+    "desktop-contacts",
+    "desktop-contact-profile",
+    "desktop-contact-chat",
+    "desktop-find-contact",
+    "desktop-contact-groups",
+    "desktop-group-chat",
+    "desktop-contacts-repeated-switches",
+    "desktop-article-button",
+    "desktop-article-library",
+    "desktop-article-preview",
+    "desktop-article-source-restarted",
+    "failure"
+  ],
+  "offline_read_receipt_failures": 18
+}

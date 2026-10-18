@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "adapter": "robrix-native-host-v2",
+  "source": "measured image-to-appcard-flow intake; manually reviewed semantic roles",
+  "source_scene": "update-confirmation",
+  "native_source": "src/article_app/ui.rs",
+  "bindings": [
+    {
+      "widget": "article_confirm",
+      "binding": "OperationKind::Update",
+      "behavior": "m.replace references original event; persistent transaction ID for retries"
+    },
+    {
+      "widget": "article_change",
+      "binding": "draft editing",
+      "behavior": "Return before side effect or keep new copy when prior result is uncertain"
+    }
+  ],
+  "raster_policy": "Only independently declared illustration asset is raster. Text, controls, article layout and images are native widgets. No screenshot hotspots.",
+  "upstream_generic_compile": "not run; the generic kit cannot supply the required native rich-input/Matrix host bindings"
+}

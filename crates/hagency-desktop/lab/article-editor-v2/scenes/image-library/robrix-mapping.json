@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "adapter": "robrix-native-host-v2",
+  "source": "measured image-to-appcard-flow intake; manually reviewed semantic roles",
+  "source_scene": "image-library",
+  "native_source": "src/article_app/ui.rs",
+  "bindings": [
+    {
+      "widget": "image_pick",
+      "binding": "storage::import_image",
+      "behavior": "Native device picker; bounded JPEG/PNG decoding, orientation, metadata removal"
+    },
+    {
+      "widget": "image_library.Asset",
+      "binding": "use_image",
+      "behavior": "Insert retained local immutable asset; upload only after publish confirmation"
+    }
+  ],
+  "raster_policy": "Only independently declared illustration asset is raster. Text, controls, article layout and images are native widgets. No screenshot hotspots.",
+  "upstream_generic_compile": "not run; the generic kit cannot supply the required native rich-input/Matrix host bindings"
+}

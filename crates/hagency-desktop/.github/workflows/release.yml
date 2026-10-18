@@ -1,0 +1,233 @@
+name: Hagency Desktop installers
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Create the version tag and publish after all installers pass'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+
+jobs:
+  package:
+    name: Installer (${{ matrix.platform }}-${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            platform: linux
+            arch: amd64
+            formats: deb,appimage
+          - runner: ubuntu-22.04-arm
+            platform: linux
+            arch: arm64
+            formats: deb,appimage
+          - runner: macos-14
+            platform: macos
+            arch: arm64
+            formats: dmg
+          - runner: macos-15-intel
+            platform: macos
+            arch: amd64
+            formats: dmg
+          - runner: windows-2022
+            platform: windows
+            arch: amd64
+            formats: nsis
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.0
+      - name: Check version and stamp macOS bundle
+        env:
+          TAG: ${{ github.ref_name }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/') }}
+        run: |
+          python3 tools/check-release-icons.py
+          python3 - <<'PY'
+          import os, re, plistlib
+          from pathlib import Path
+          version = re.search(r'^version\s*=\s*"([^"]+)"', Path('Cargo.toml').read_text(), re.M)[1]
+          if os.environ['IS_TAG'] == 'true':
+              assert os.environ['TAG'] == 'v' + version, 'Tag must match Desktop version'
+          p = Path('packaging/macos/Info.plist')
+          data = plistlib.loads(p.read_bytes())
+          data.update(CFBundleIdentifier='org.hagency.desktop', CFBundleName='Hagency Desktop',
+                      CFBundleDisplayName='Hagency Desktop', CFBundleShortVersionString=version,
+                      CFBundleVersion=os.environ['GITHUB_RUN_NUMBER'])
+          p.write_bytes(plistlib.dumps(data))
+          PY
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev libsqlite3-dev pkg-config cmake clang libclang-dev \
+            libxcursor-dev libx11-dev libasound2-dev libpulse-dev libwayland-dev \
+            libxkbcommon-dev libdrm-dev libegl1 libva2 libva-drm2 libfuse2 patchelf
+      - name: macOS dependencies
+        if: runner.os == 'macOS'
+        run: brew install cmake
+      - name: Windows installer tools
+        if: runner.os == 'Windows'
+        run: choco install nsis --no-progress -y
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: installer-${{ matrix.platform }}-${{ matrix.arch }}
+          cache-on-failure: true
+      - name: Install pinned packaging tools
+        run: |
+          cargo install cargo-packager --version 0.10.1 --locked
+          cargo install robius-packaging-commands --version 0.4.1 --locked
+      - name: Test Desktop before packaging
+        run: |
+          cargo test --locked -p octosense-app-contract --lib
+          cargo test --locked --features agent_chat --lib
+      - name: Import Apple certificate for configured signed releases
+        if: runner.os == 'macOS' && vars.MACOS_SIGNED_RELEASE == 'true'
+        uses: ./.github/actions/import-apple-cert
+        with:
+          certificate: ${{ secrets.APPLE_CERTIFICATE }}
+          password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      - name: Signed and notarized macOS package
+        if: runner.os == 'macOS' && vars.MACOS_SIGNED_RELEASE == 'true'
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ vars.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash packaging/build-macos-dmg.sh
+      - name: Package installers
+        if: runner.os != 'macOS' || vars.MACOS_SIGNED_RELEASE != 'true'
+        env:
+          FORMATS: ${{ matrix.formats }}
+          # linuxdeploy AppImages must run without /dev/fuse on hosted runners.
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        # An absolute output directory avoids cargo-packager 0.10.1 resolving
+        # generated scripts twice when it changes the working directory.
+        run: cargo packager --verbose --release --out-dir "$PWD/dist" --formats "$FORMATS"
+      - name: Collect installers and checksums
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, os, shutil
+          from pathlib import Path
+          extensions = {'linux': ['.deb', '.AppImage'], 'macos': ['.dmg'], 'windows': ['.exe']}[os.environ['PLATFORM']]
+          out = Path('release-assets'); out.mkdir()
+          sums = []
+          for ext in extensions:
+              files = list(Path('dist').glob('*' + ext))
+              assert len(files) == 1, f'Expected one {ext} installer, got {files}'
+              src = files[0]
+              dest = out / f"hagency-desktop-{os.environ['PLATFORM']}-{os.environ['ARCH']}{ext}"
+              shutil.copy2(src, dest)
+              sums.append(f'{hashlib.sha256(dest.read_bytes()).hexdigest()}  {dest.name}\n')
+          (out / f"SHA256SUMS-{os.environ['PLATFORM']}-{os.environ['ARCH']}.txt").write_text(''.join(sums))
+          PY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installers-${{ matrix.platform }}-${{ matrix.arch }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish complete release
+    needs: package
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.publish)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Resolve release tag from the built source
+        id: tag
+        run: |
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: installers-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify complete release and write build notes
+        env:
+          MACOS_SIGNED: ${{ vars.MACOS_SIGNED_RELEASE }}
+          SOURCE_SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd release-assets
+          cat SHA256SUMS-*.txt > SHA256SUMS.txt
+          test "$(wc -l < SHA256SUMS.txt)" -eq 7
+          sha256sum --check SHA256SUMS.txt
+          # shellcheck disable=SC2016
+          printf 'Hagency Desktop installers built from `%s`.\n\n' "$SOURCE_SHA" > ../release-notes.md
+          # shellcheck disable=SC2016
+          printf 'Linux: amd64/arm64 DEB and AppImage. macOS: Intel/Apple Silicon DMG. Windows: amd64 NSIS installer.\n\nVerify downloads against `SHA256SUMS.txt`.\n\n' >> ../release-notes.md
+          if [[ "$MACOS_SIGNED" == true ]]; then
+            printf 'macOS packages are Developer ID signed and notarized.\n' >> ../release-notes.md
+          else
+            printf 'macOS packages are unsigned development builds; Gatekeeper may block installation.\n' >> ../release-notes.md
+          fi
+          printf 'Windows packages are currently unsigned.\n' >> ../release-notes.md
+          printf '\n' >> ../release-notes.md
+          cat ../packaging/release-notes.md >> ../release-notes.md
+      - name: Upload installers and publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/') }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$IS_TAG" != true ]]; then
+            if gh api "repos/$GH_REPO/git/ref/tags/$TAG" > tag.json 2>/dev/null; then
+              jq -e --arg sha "$SOURCE_SHA" '.object.type == "commit" and .object.sha == $sha' tag.json
+            else
+              gh api --method POST "repos/$GH_REPO/git/refs" \
+                -f "ref=refs/tags/$TAG" -f "sha=$SOURCE_SHA"
+            fi
+          fi
+          if gh release view "$TAG" --json isDraft > release.json 2>/dev/null; then
+            jq -e '.isDraft == true' release.json
+            gh release edit "$TAG" --notes-file release-notes.md
+            gh release upload "$TAG" release-assets/* --clobber
+          else
+            args=(--draft --verify-tag --title "Hagency Desktop $TAG" --notes-file release-notes.md)
+            if [[ "$TAG" == *-* ]]; then args+=(--prerelease); fi
+            gh release create "$TAG" release-assets/* "${args[@]}"
+          fi
+          if [[ "$TAG" == *-* ]]; then
+            gh release edit "$TAG" --draft=false
+          else
+            gh release edit "$TAG" --draft=false --latest
+          fi

@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "flow": "rinx-article-editor-v2-mobile",
+  "status": "completed",
+  "scope": "Only explicitly executed stages; no automatic visual or production acceptance",
+  "inputs": {
+    "sha256": "65f195e69b1b3e2b55e42f8fed8dd742f06c4c38451b36c761cc12b7cf1717e2",
+    "files": {
+      "image-to-appcard-flow-v2-mobile.json": "479c3ead7e9e90aa58d06e3b4d30e675a40bfc79bfb75520324a2d406647ebf5",
+      "source/atlas-v2-mobile.png": "97429485dcf45a42a440f46edd4d69a894a874cb486c492115d12cf42fa935ba",
+      "source/atlas-v2-mobile-prompt.txt": "bc2c5acf47f52cbb3649f1d08a97e8e9bfd69c321dfd7b340530d636ecefde73",
+      "scenes-v2/mobile/article-list/contract.json": null,
+      "scenes-v2/mobile/article-list/mapped.json": null,
+      "scenes-v2/mobile/article-list/semantic-map.json": null,
+      "scenes-v2/mobile/article-list/service-actions.json": null,
+      "scenes-v2/mobile/markdown-editing/contract.json": null,
+      "scenes-v2/mobile/markdown-editing/mapped.json": null,
+      "scenes-v2/mobile/markdown-editing/semantic-map.json": null,
+      "scenes-v2/mobile/markdown-editing/service-actions.json": null,
+      "scenes-v2/mobile/live-preview/contract.json": null,
+      "scenes-v2/mobile/live-preview/mapped.json": null,
+      "scenes-v2/mobile/live-preview/semantic-map.json": null,
+      "scenes-v2/mobile/live-preview/service-actions.json": null,
+      "scenes-v2/mobile/theme-sheet/contract.json": null,
+      "scenes-v2/mobile/theme-sheet/mapped.json": null,
+      "scenes-v2/mobile/theme-sheet/semantic-map.json": null,
+      "scenes-v2/mobile/theme-sheet/service-actions.json": null,
+      "scenes-v2/mobile/insert-image/contract.json": null,
+      "scenes-v2/mobile/insert-image/mapped.json": null,
+      "scenes-v2/mobile/insert-image/semantic-map.json": null,
+      "scenes-v2/mobile/insert-image/service-actions.json": null,
+      "scenes-v2/mobile/cover-summary/contract.json": null,
+      "scenes-v2/mobile/cover-summary/mapped.json": null,
+      "scenes-v2/mobile/cover-summary/semantic-map.json": null,
+      "scenes-v2/mobile/cover-summary/service-actions.json": null,
+      "scenes-v2/mobile/choose-chat/contract.json": null,
+      "scenes-v2/mobile/choose-chat/mapped.json": null,
+      "scenes-v2/mobile/choose-chat/semantic-map.json": null,
+      "scenes-v2/mobile/choose-chat/service-actions.json": null,
+      "scenes-v2/mobile/published/contract.json": null,
+      "scenes-v2/mobile/published/mapped.json": null,
+      "scenes-v2/mobile/published/semantic-map.json": null,
+      "scenes-v2/mobile/published/service-actions.json": null
+    }
+  },
+  "stages": [
+    {
+      "stage": "intake",
+      "status": "passed",
+      "commands": [
+        {
+          "argv": [
+            "/Library/Developer/CommandLineTools/usr/bin/python3",
+            "/Users/ychen/home/octosense-org/Octoscript-AppCard-flow/lab/image-to-appcard-flow/atlas.py",
+            "--project",
+            "/private/tmp/claude-505/-Users-ychen-home-robrix-hagency/46061f79-0763-44b7-a570-365f859fa86e/scratchpad/rinx-ed/lab/article-editor",
+            "--manifest",
+            "/private/tmp/claude-505/-Users-ychen-home-robrix-hagency/46061f79-0763-44b7-a570-365f859fa86e/scratchpad/rinx-ed/lab/article-editor/image-to-appcard-flow-v2-mobile.json",
+            "--output",
+            "/private/tmp/claude-505/-Users-ychen-home-robrix-hagency/46061f79-0763-44b7-a570-365f859fa86e/scratchpad/rinx-ed/lab/article-editor/pipeline-output/intake-v2-mobile"
+          ],
+          "cwd": "/private/tmp/claude-505/-Users-ychen-home-robrix-hagency/46061f79-0763-44b7-a570-365f859fa86e/scratchpad/rinx-ed/lab/article-editor"
+        }
+      ],
+      "logs": [
+        {
+          "path": "intake-0.log",
+          "sha256": "247fee937d22916e8e82751c8f5b606a98c7eace216efa24e4872571b556c141",
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "stage": "prepare",
+      "status": "passed",
+      "commands": [
+        {
+          "argv": [
+            "/Library/Developer/CommandLineTools/usr/bin/python3",
+            "/Users/ychen/home/octosense-org/Octoscript-AppCard-flow/lab/image-to-appcard-flow/prepare.py",
+            "--project",
+            "/private/tmp/claude-505/-Users-ychen-home-robrix-hagency/46061f79-0763-44b7-a570-365f859fa86e/scratchpad/rinx-ed/lab/article-editor",
+            "--manifest",
+            "/private/tmp/claude-505/-Users-ychen-home-robrix-hagency/46061f79-0763-44b7-a570-365f859fa86e/scratchpad/rinx-ed/lab/article-editor/image-to-appcard-flow-v2-mobile.json",
+            "--intake",
+            "/private/tmp/claude-505/-Users-ychen-home-robrix-hagency/46061f79-0763-44b7-a570-365f859fa86e/scratchpad/rinx-ed/lab/article-editor/pipeline-output/intake-v2-mobile"
+          ],
+          "cwd": "/private/tmp/claude-505/-Users-ychen-home-robrix-hagency/46061f79-0763-44b7-a570-365f859fa86e/scratchpad/rinx-ed/lab/article-editor"
+        }
+      ],
+      "logs": [
+        {
+          "path": "prepare-0.log",
+          "sha256": "795457b20ae165bb85fca5451d49dedd8e2a9528c737ff260332c4d4dbda2497",
+          "exit_code": 0
+        }
+      ]
+    }
+  ],
+  "not_run": [
+    "observe",
+    "measure",
+    "map",
+    "semantic",
+    "compile",
+    "capture",
+    "gate",
+    "extract",
+    "bundle",
+    "service-test",
+    "wasm",
+    "integrate",
+    "web-test",
+    "hosted-test"
+  ],
+  "finished_at": "2026-09-23T05:05:25.338206+00:00"
+}

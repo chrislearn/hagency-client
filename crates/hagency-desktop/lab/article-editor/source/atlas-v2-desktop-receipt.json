@@ -1,0 +1,16 @@
+{
+ "atlas": "atlas-v2-desktop.png",
+ "prompt": "atlas-v2-desktop-prompt.txt",
+ "provider": "OpenAI Images API",
+ "model": "gpt-image-2",
+ "requested_size": "2560x1600",
+ "quality": "high",
+ "actual_size": [
+  2560,
+  1600
+ ],
+ "prompt_sha256": "89d2e7fe0eb0c7c5b7b8464fa00a3c049c3623dd3a5a1c8f88071638f2a5f93e",
+ "atlas_sha256": "f111d4527f1f9f106bed2e90443f1c7b068582cf1f3b3bf71c5ef5ca3649d65a",
+ "generated_at": "2026-09-23T05:03:19.401504Z",
+ "revised_prompt_returned": false
+}
