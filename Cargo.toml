@@ -1,5 +1,6 @@
 [workspace]
-members = ["native/hagency-agent-local", "native/hagency-core", "native/hagency-store", "native/hagency", "native/hagency-crypto-proof", "native/hagency-platform", "native/hagency-runtime", "native/hagency-palpo", "native/hagency-permissions", "native/hagency-matrix", "native/hagency-matrix-format", "native/hagency-metering", "native/hagency-progress", "native/hagency-execution", "native/hagency-progress-runtime", "native/hagency-files", "native/hagency-media", "native/hagency-media-store"]
+members = ["crates/*"]
+default-members = ["crates/hagency-desktop"]
 resolver = "3"
 
 [workspace.package]
@@ -15,19 +16,19 @@ cap-fs-ext = { version = "=4.0.3" }
 cap-std = { version = "=4.0.3" }
 clap = { version = "4.5.54" }
 getrandom = { version = "=0.3.4" }
-hagency-core = { path = "native/hagency-core" }
-hagency-execution = { path = "native/hagency-execution" }
-hagency-files = { path = "native/hagency-files" }
-hagency-matrix = { path = "native/hagency-matrix" }
-hagency-matrix-format = { path = "native/hagency-matrix-format" }
-hagency-media = { path = "native/hagency-media" }
-hagency-media-store = { path = "native/hagency-media-store" }
-hagency-metering = { path = "native/hagency-metering" }
-hagency-palpo = { path = "native/hagency-palpo" }
-hagency-platform = { path = "native/hagency-platform" }
-hagency-progress = { path = "native/hagency-progress" }
-hagency-runtime = { path = "native/hagency-runtime" }
-hagency-store = { path = "native/hagency-store" }
+hagency-core = { path = "crates/hagency-core" }
+hagency-execution = { path = "crates/hagency-execution" }
+hagency-files = { path = "crates/hagency-files" }
+hagency-matrix = { path = "crates/hagency-matrix" }
+hagency-matrix-format = { path = "crates/hagency-matrix-format" }
+hagency-media = { path = "crates/hagency-media" }
+hagency-media-store = { path = "crates/hagency-media-store" }
+hagency-metering = { path = "crates/hagency-metering" }
+hagency-palpo = { path = "crates/hagency-palpo" }
+hagency-platform = { path = "crates/hagency-platform" }
+hagency-progress = { path = "crates/hagency-progress" }
+hagency-runtime = { path = "crates/hagency-runtime" }
+hagency-store = { path = "crates/hagency-store" }
 hmac = { version = "=0.12.1" }
 http = { version = "=1.5.0" }
 http-body-util = { version = "=0.1.5" }
@@ -48,7 +49,9 @@ reqwest = { version = "=0.12.28", default-features = false }
 rmcp = { version = "=1.8.0", default-features = false }
 ruma = { version = "=0.17.0" }
 ruma-common = { version = "=0.20.0" }
-rusqlite = { version = "=0.40.2", default-features = false, features = ["cache"] }
+# The engine stores checked unsigned counters. Declare this directly instead
+# of relying on Matrix SDK feature unification when selecting individual crates.
+rusqlite = { version = "=0.40.2", default-features = false, features = ["cache", "fallible_uint"] }
 rustix = { version = "=1.1.4" }
 ryu-js = { version = "=1.0.3" }
 salvo = { version = "=1.0.1", default-features = false }
@@ -81,3 +84,116 @@ opt-level = 3
 [profile.release]
 lto = "thin"
 strip = true
+
+[profile.dev]
+debug = "line-tables-only"
+incremental = false
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.debug-opt]
+inherits = "dev"
+opt-level = 3
+
+## An optimized release profile with thin LTO.
+[profile.release-lto]
+inherits = "release"
+lto = "thin"
+
+## Enable full optimizations when building app bundles for distribution.
+[profile.distribution]
+inherits = "release"
+codegen-units = 1
+lto = "fat"
+
+## For very fast compilation, not for creating an actual high-quality executable.
+## This is primarily useful for CI builds.
+[profile.fast]
+inherits = "dev"
+opt-level = 0
+debug = false
+lto = "off"
+strip = true
+debug-assertions = false
+[patch.crates-io]
+# Octos' existing OpenHarmony ioctl ABI correction for rustyline's nix 0.29.
+nix = { git = "https://github.com/octos-org/octos.git", rev = "deb433e9a452c03d8fe7f4f6a26b42785c47ced7" }
+# Pending additive App Hub contract release; see crates/octosense-app-contract/RINX-PATCH.md.
+octosense-app-contract = { path = "crates/octosense-app-contract" }
+## This is required to avoid a version conflict on the libsqlite3-sys crate,
+## which is a native crate that can only exist once in the dependency graph.
+## The `matrix-sdk` crate's dependencies require a specific version of `libsqlite3-sys`
+## (via rustsqlite which requires libsqlite3-sys 0.38),
+## whereas the `tsp_sdk` crate depends on `sqlx`, which requires a different version
+## of `libsqlite3-sys` (via `aries-askar`, which depends on `askar-storage`,
+## which requires libsqlite3-sys 0.30.0).
+## So this patch is a custom version of sqlx 0.8.6 that updates the libsqlite3-sys
+## dependency to version 0.38, which is compatible with the version required by
+## the matrix-sdk crate.
+## See <https://github.com/launchbadge/sqlx/pull/3928/files#diff-4f4849707ed063bc5de6d9f6d105f0e7baf62d1085b3c8aee4a547468b89248fR57>
+sqlx = { git = "https://github.com/project-robius/sqlx.git", branch = "update_libsqlite3-sys_version" }
+
+## The main branch of the `tsp_sdk` repo already includes this patch, so we copy it here.
+## This is required for the askar repos to work with the above-patched `sqlx` crate.
+## See <https://github.com/openwallet-foundation/askar/pull/386>
+askar-storage = { git = "https://github.com/openwallet-foundation/askar.git" }
+
+
+[patch."https://github.com/OctoSense-org/makepad.git"]
+makepad-script = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-widgets = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-code-editor = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-app-module = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-ai = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-studio-protocol = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-network = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-wm-api = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-ai-services = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-strict-json = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-wm-theme = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-sheets = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-photos = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-aichat = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-markdown = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-markdown-widgets = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+
+[patch."https://github.com/OctoSense-org/makepad"]
+makepad-script = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-widgets = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-code-editor = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-app-module = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-ai = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-studio-protocol = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-network = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-wm-api = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-ai-services = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-strict-json = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-wm-theme = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-sheets = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-photos = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-aichat = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-markdown = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-markdown-widgets = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+
+[patch."https://github.com/kevinaboos/makepad"]
+makepad-widgets = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+makepad-code-editor = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+
+[patch."https://github.com/ZhangHanDong/makepad.git"]
+makepad-widgets = { git = "https://www.github.com/OctoSense-org/makepad.git", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54" }
+
+[patch."https://github.com/OctoSense-org/Octoscript.git"]
+octoscript-ui-l0 = { git = "https://www.github.com/OctoSense-org/Octoscript.git", rev = "dbd48cfb799551c11e30970c393777d29644a605" }
+# octos-research (via the local kernel) runs on the Octoscript core; keep it
+# on the same revision, as OctoSense does, so the graph has one Octoscript.
+octoscript-core = { git = "https://www.github.com/OctoSense-org/Octoscript.git", rev = "dbd48cfb799551c11e30970c393777d29644a605" }
+
+[patch."https://github.com/OctoSense-org/Octoscript"]
+octoscript-ui-l0 = { git = "https://www.github.com/OctoSense-org/Octoscript.git", rev = "dbd48cfb799551c11e30970c393777d29644a605" }
+octoscript-core = { git = "https://www.github.com/OctoSense-org/Octoscript.git", rev = "dbd48cfb799551c11e30970c393777d29644a605" }
+
+[patch."https://github.com/OctoSense-org/Octoscript-Makepad.git"]
+octoscript-makepad = { git = "https://www.github.com/OctoSense-org/Octoscript-Makepad.git", rev = "cb66de073469063abeb2a5ab2a2bbf3cdb365745" }
+octoscript-widgets = { git = "https://www.github.com/OctoSense-org/Octoscript-Makepad.git", rev = "cb66de073469063abeb2a5ab2a2bbf3cdb365745" }
+octoscript-node = { git = "https://www.github.com/OctoSense-org/Octoscript-Makepad.git", rev = "cb66de073469063abeb2a5ab2a2bbf3cdb365745" }

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "adapter": "robrix-native-host-v2",
+  "source": "measured image-to-appcard-flow intake; manually reviewed semantic roles",
+  "source_scene": "review",
+  "native_source": "src/article_app/ui.rs",
+  "bindings": [
+    {
+      "widget": "review_checks",
+      "binding": "ready + asset_bytes",
+      "behavior": "Check title/body and local media integrity"
+    },
+    {
+      "widget": "review_continue",
+      "binding": "choose_room / prepare",
+      "behavior": "Choose joined conversation by name, or retain original destination on update"
+    }
+  ],
+  "raster_policy": "Only independently declared illustration asset is raster. Text, controls, article layout and images are native widgets. No screenshot hotspots.",
+  "upstream_generic_compile": "not run; the generic kit cannot supply the required native rich-input/Matrix host bindings"
+}

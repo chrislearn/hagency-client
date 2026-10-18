@@ -32,11 +32,11 @@ FileService to the original Started workspace and Matrix owner".
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-execution/src/operation.rs
-- native/hagency-execution/src/lib.rs
-- native/hagency-execution/tests/owned.rs
-- native/hagency/src/bootstrap.rs
-- native/hagency/tests/file_service/fixture.rs
+- crates/hagency-execution/src/operation.rs
+- crates/hagency-execution/src/lib.rs
+- crates/hagency-execution/tests/owned.rs
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/tests/file_service/fixture.rs
 - knowledge/decisions/adr-053-native-owned-dispatch.md
 - knowledge/decisions/adr-101-native-file-service-integration.md
 - knowledge/context/native-file-owned-observation.md

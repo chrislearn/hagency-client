@@ -2,6 +2,21 @@
 
 # Hagency client
 
+Hagency Desktop and the local Agent engine are maintained together in this repository.
+All Rust packages live in `crates/`; the native Rust/Makepad application is
+[`crates/hagency-desktop`](crates/hagency-desktop/README.md), with Cargo package
+and executable name `rinx`. Desktop uses the engine directly through a local path
+dependency. The former `hagency-org/hagency-desktop` repository preserves historical
+source and releases; new development belongs here.
+
+On Windows, use `./tools/dev.ps1` to run Desktop, or
+`./tools/dev.ps1 check --locked -p rinx --lib` to check it. The wrapper keeps build
+outputs, Cargo/npm caches and temporary build files under `D:/BuildCache/hagency-client`
+and verifies Cargo's actual output directory. See the
+[workspace guide](docs/workspace.md) for builds, the CLI and release workflows.
+
+The browser Owner console remains available for the existing CLI workflow below.
+
 Run your own Codex Agents in Matrix Rooms through `hagency-server`. You sign in
 with your personal Matrix account through Pasion. The server creates each Agent's
 puppet account and records its permanent owner; your local client controls model
@@ -117,7 +132,7 @@ routes; `npm run dev` in `mockup` is not the production OwnerHost. For developme
 installation expects a binary with the correct embedded console. A binary without
 an owner console fails explicitly rather than falling back to old assets.
 
-See [the executable guide](native/hagency/README.md) for command boundaries and
+See [the executable guide](crates/hagency/README.md) for command boundaries and
 [the implementation report](docs/design/2026-10-07-server-appservice-client-refactor.zh-CN.md)
 for the reviewed refactor. Retained Fleet/Engagement/resource approval design
 records and old architecture guides describe historical implementations; they are

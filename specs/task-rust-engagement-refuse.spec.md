@@ -8,9 +8,9 @@ tags: [active, rust, engagement, lifecycle, console, parity]
 ## Intent
 
 Give the engagement lifecycle its refusal arm. The native store already models a
-refusal — `DomainRepository::reject` (`native/hagency-store/src/domain.rs:1257`),
+refusal — `DomainRepository::reject` (`crates/hagency-store/src/domain.rs:1257`),
 a two-line wrapper over `end(command_id, id, false)`
-(`native/hagency-store/src/domain.rs:1285-1334`), which is the sole writer of
+(`crates/hagency-store/src/domain.rs:1285-1334`), which is the sole writer of
 `EngagementState::Rejected` (`:1318`) — but no production code calls it. An
 admitted request that a provider or operator declines therefore has no exit in
 the Rust port: the engagement stays `pending` forever.
@@ -50,7 +50,7 @@ two guarded states differ (a refusal is `pending`-only).
   what the retention phase's candidate query reads
   (`engagement_retention.rs:380-382`).
 - Authenticate the operator behind the console session and the finite scope gate
-  the console already uses (`native/hagency/src/console/agents.rs:139-160`), and
+  the console already uses (`crates/hagency/src/console/agents.rs:139-160`), and
   re-check that scope before responding — the console's recheck-after-write
   pattern (`agents.rs:236-244`).
 
@@ -62,7 +62,7 @@ two guarded states differ (a refusal is `pending`-only).
 - Do not add a Matrix-level deny verdict in this slice. The retained
   `denyPending` (`backend-v2.js:10958`) denies an *approval delivery*, a
   different act; the Rust intake deliberately refuses a non-`approve` decision as
-  `Error::Wire` (`native/hagency-matrix/src/intake.rs:290-292`).
+  `Error::Wire` (`crates/hagency-matrix/src/intake.rs:290-292`).
 - Do not change `end`, the state guard, the `decisions`/`engagement_ends`
   schemas, or move the write into a new store method.
 - Do not add any timer, sweeper or background retry (see the retire slice's
@@ -74,7 +74,7 @@ two guarded states differ (a refusal is `pending`-only).
 
 1. **Two terminal states where the retained product has one.** The port
    distinguishes `EngagementState::Rejected` from `EngagementState::Revoked`
-   (`native/hagency-core/src/project.rs:236-243`; `state_name` `domain.rs:143-144`).
+   (`crates/hagency-core/src/project.rs:236-243`; `state_name` `domain.rs:143-144`).
    The retained product has **one** terminal state — `STATES =
    ['pending','active','ended']` (`lib/engagement-store.js:39`) — differentiated
    only by `endedReason` (`'rejected'` `:604`, `'revoked'` `:735`). **This spec
@@ -83,7 +83,7 @@ two guarded states differ (a refusal is `pending`-only).
    must be restated against a single `ended`-with-reason shape. **Unresolved.**
 2. **A shared effects/fence table where the retained product keeps a per-record
    field.** The port writes `effects(kind IN ('provision','retire'), state,
-   fence)` (`native/hagency-store/src/domain.sql:50-59`) and a `cleanup` field on
+   fence)` (`crates/hagency-store/src/domain.sql:50-59`) and a `cleanup` field on
    the engagement. The retained product keeps a per-record `withdrawal` object
    (`lib/engagement-store.js:736`) and `matrixRetirement` on the agent
    (`backend-v2.js:15198`). **This spec assumes the port keeps its table**, and
@@ -98,11 +98,11 @@ record.
 ## Production-caller gate (state honestly)
 
 Every scenario names `hagency::console::engagements::verdict` — the handler **this
-slice intends to add** (`native/hagency/src/console/engagements.rs`, mounted under
+slice intends to add** (`crates/hagency/src/console/engagements.rs`, mounted under
 the console API `/api` router beside `agents::router()`,
-`native/hagency/src/console.rs:70-80`). That name **cannot resolve yet**: the
+`crates/hagency/src/console.rs:70-80`). That name **cannot resolve yet**: the
 module file does not exist. Measured on `66c5a184` with this slice present,
-`node native/scripts/check-production-callers.mjs` (a wired CI gate,
+`node tools/native/check-production-callers.mjs` (a wired CI gate,
 `.github/workflows/rust.yml:124`) returns `count 31, wired 17`, `unresolved` = 6
 entries for this file's lines — the named handlers, all with reason "no module
 file for hagency::console::engagements". Baseline without this file: `count 17,

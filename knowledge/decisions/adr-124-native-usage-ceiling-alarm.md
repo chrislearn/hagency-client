@@ -301,7 +301,7 @@ hides the triage buttons without it — matching the resources page's notice pat
 review of the console alert-transition authority fix (the session-scoped,
 session-authored console route landed on the integration branch) flagged one
 deliberate asymmetry that this amendment's own rationale does not cover: the
-operator bearer route (`native/hagency/src/alerts.rs`) reaches the same store
+operator bearer route (`crates/hagency/src/alerts.rs`) reaches the same store
 transition (`transition_ceiling_alert`) with **token-only authority** — the
 `authorize` hoop's bearer-token check, no `Session`, no configure scope — and
 a **client-supplied `actor`** string, length-bounded to 128 at the store with

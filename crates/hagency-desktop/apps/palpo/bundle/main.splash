@@ -1,0 +1,735 @@
+width: Fill height: Fill flow: Down spacing: 12
+show_bg: true draw_bg.color: mod.widgets.RINX_PAGE
+
+if !mod.rinx_theme.reloading() {
+    mod.palpo = {room_board: false board_generation: 0 ready: false busy: false admin: false coordinator: false owner: false services: [] user: "" page: "inbox" filter: "needs_action"
+        rows: [] resources: [] selected: nil pending: 0 offset: 0 total: 0 notice: "Connecting with your Rinx account…"
+        notification_settings: nil device_time_zone: nil quiet_enabled: false quiet_start: "22:00" quiet_end: "08:00" quiet_zone: "UTC"
+        form: {title: "" service: "" payload: {} fields: []} has_draft: false request_count: 0
+        polling: false view_generation: 0 connecting: "" connection_error: ""}
+    if fs.exists("draft.json") {
+        let saved = fs.read("draft.json").parse_json()
+        if saved != nil {
+            let restored = "{\"roomName\":\"\"}".parse_json()
+            for key value in saved { restored[key] = value }
+            mod.palpo.form = restored mod.palpo.has_draft = true
+        }
+    }
+}
+let P = mod.palpo
+fn available(service){ for name in P.services { if name == service { return true } } return false }
+fn refusal_text(reason){
+    if reason == "agent_unavailable" { return "The agent was provisioned, but its runtime or Matrix chat connection needs attention. Ask the Hagency owner to inspect the current state." }
+    if reason == "provisioning_outcome_unknown" { return "Agent setup stopped with an uncertain result. Its allocation is retained. Ask the Hagency owner to inspect the original setup before retrying." }
+    if reason == "provisioning_failed" { return "Agent setup failed. Ask the Hagency owner to check the runtime configuration." }
+    if reason == "insufficient_capacity" { return "Not enough capacity remains in this allocation." }
+    if reason == "authority_changed" { return "The coordinator authorization changed or expired." }
+    if reason == "project_unavailable" { return "The project is no longer available for this request." }
+    if reason == "resource_unavailable" { return "The requested resource is unavailable." }
+    if reason == "request_conflict" { return "This request conflicts with a recorded decision." }
+    return "Hagency could not validate this request. Review its project and room settings."
+}
+fn setup_text(setup){
+    if setup.state == "ready" { return "Project rooms verified" }
+    if setup.state == "pending" { return "Project setup is waiting for Hagency and Matrix verification." }
+    if setup.reason == "project_membership_pending" { return "The Hagency representative could not join the project room. Check its invitation, then retry." }
+    if setup.reason == "private_membership_pending" { return "The approval bot could not join your private room. Check its invitation, then retry." }
+    if setup.reason == "room_authority_changed" { return "Project room permissions or private-room membership need attention before retrying." }
+    if setup.reason == "authority_changed" { return "The engagement authorization changed. Check the current coordinator before retrying." }
+    return "Project setup could not be verified. Check the connection and room settings, then retry."
+}
+fn control_text(control){
+    if control.execution == "rename_pending" { return "Name saved · waiting for Matrix verification" }
+    if control.execution == "rename_failed" { return "Matrix could not verify the new name. Hagency will retry." }
+    if control.execution == "control_pending" { return "Waiting for Hagency to receive your " + control.operation + " request." }
+    if control.execution == "control_refused" { return "The operation was refused. " + refusal_text(control.reason) }
+    if control.execution == "retiring" { return "Removing agent · runtime and Matrix cleanup pending" }
+    if control.execution == "cleanup_failed" { return "Cleanup failed. You can retry the removal." }
+    if control.execution == "inspection_required" { return "Cleanup is uncertain. The Hagency operator must inspect it before retrying." }
+    if control.execution == "retired" { return "Agent removed · cleanup verified. Usage settlement is tracked separately." }
+    return "Hagency applied the " + control.operation + " request."
+}
+// Dynamic render closures resolve the current host prototypes on every reapply.
+mod.widgets.PalpoCard = RoundedView{width: Fill height: Fit flow: Down padding: 16 spacing: 10
+    draw_bg +: {color: mod.widgets.RINX_SURFACE border_color: mod.widgets.RINX_BORDER border_size: 1 border_radius: theme.corner_radius}}
+
+fn draw_page(){ ui.navigation.set_visible(!P.room_board) ui.content.render() ui.navigation.render() ui.status.set_text(P.notice) }
+fn call(service, args, complete){
+    if P.busy { return }
+    P.busy = true
+    P.request_count = P.request_count + 1
+    P.notice = "Working…"
+    ui.status.set_text(P.notice)
+    host.request(service, args, fn(r){
+        P.busy = false
+        if r.is_ok { P.notice = "" complete(r.data) }
+        else { P.notice = r.error }
+        draw_page()
+    })
+}
+fn watch_board(generation){
+    if !P.ready || !P.room_board || generation != P.board_generation { return }
+    start_timeout(30.0, || {
+        if !P.ready || !P.room_board || generation != P.board_generation { return }
+        if P.page == "inbox" && !P.busy { refresh_page() }
+        watch_board(generation)
+    })
+}
+fn action_data(data){
+    let selected = "{\"legacy\":false,\"projectSetup\":null,\"previousDecision\":null,\"connectionVerification\":\"unverified\"}".parse_json()
+    for key value in data { selected[key] = value }
+    return selected
+}
+fn connection_state(row, fleet){
+    if P.connecting == fleet { return "verifying" }
+    let info = "{\"connectionVerification\":\"\",\"connectionVerified\":false,\"execution\":\"\"}".parse_json()
+    for key value in row { info[key] = value }
+    if info.connectionVerification == "verified" || info.connectionVerified == true { return "verified" }
+    if info.connectionVerification == "unavailable" { return "unavailable" }
+    if P.connection_error == fleet { return "retry" }
+    if info.connectionVerification == "" {
+        if info.execution == "verified" { return "verified" }
+        return "unverified"
+    }
+    return info.connectionVerification
+}
+fn connection_text(state){
+    if state == "verified" { return "Connected" }
+    if state == "verifying" { return "Verifying…" }
+    if state == "retry" { return "Retry verification" }
+    return "Verify connection"
+}
+fn agent_progress_pending(row){
+    return row.state == "requested" || (row.state == "approved" && (row.execution == "pending" || row.execution == "provisioning" || row.execution == "unavailable" || row.execution == "unknown"))
+}
+fn watch_status(generation){
+    if !P.ready || generation != P.board_generation { return }
+    start_timeout(2.0, || {
+        if !P.ready || generation != P.board_generation { return }
+        let service = "" let args = {}
+        if P.page == "action" {
+            let row = P.selected
+            if (row.kind == "association" && row.state == "approved" && row.execution == "verifying") || (row.kind == "agent" && agent_progress_pending(row)) {
+                service = "palpo.inbox.get" args = {id: row.id}
+            }
+        }
+        if P.page == "requests" {
+            for row in P.rows {
+                if agent_progress_pending(row) { service = "palpo.requests.list" args = {offset: P.offset limit: 50} }
+            }
+        }
+        if P.page == "fleets" {
+            for row in P.rows {
+                let state = connection_state(row, row.id)
+                if state == "unverified" || state == "verifying" || state == "retry" { service = "palpo.fleets.list" }
+            }
+        }
+        if service != "" && !P.busy && !P.polling {
+            let page = P.page let view = P.view_generation
+            P.polling = true
+            host.request(service, args, fn(r){
+                P.polling = false
+                if generation != P.board_generation || view != P.view_generation || page != P.page || P.busy { return }
+                if r.is_ok {
+                    let changed = false
+                    if page == "action" {
+                        let selected = action_data(r.data.action)
+                        changed = selected.to_json() != P.selected.to_json()
+                        P.selected = selected
+                    } else if page == "requests" {
+                        changed = r.data.requests.to_json() != P.rows.to_json() || r.data.total != P.total
+                        P.rows = r.data.requests P.total = r.data.total
+                    } else {
+                        changed = r.data.fleets.to_json() != P.rows.to_json()
+                        P.rows = r.data.fleets
+                    }
+                    if changed { P.notice = "" draw_page() }
+                } else { P.notice = "Status could not be refreshed. Retrying automatically." ui.status.set_text(P.notice) }
+            })
+        }
+        watch_status(generation)
+    })
+}
+fn verify_connection(fleet){
+    if P.busy || P.connecting == fleet { return }
+    P.busy = true P.connecting = fleet P.connection_error = "" P.view_generation = P.view_generation + 1
+    P.notice = "Verifying connection… This updates automatically."
+    draw_page()
+    host.request("palpo.fleets.connect", {fleetId: fleet}, fn(r){
+        P.busy = false P.connecting = ""
+        if r.is_ok {
+            if P.page == "action" && P.selected.kind == "association" && P.selected.result.fleetId == fleet {
+                let info = "{\"connectionVerification\":\"verifying\"}".parse_json()
+                for key value in r.data.fleet { info[key] = value }
+                P.selected.connectionVerification = info.connectionVerification
+            }
+            if P.page == "fleets" {
+                for i in P.rows.len() { if P.rows[i].id == fleet { P.rows[i] = r.data.fleet } }
+            }
+            P.notice = if r.data.fleet.connectionVerified {"Connection verified."} else {"Connection probe sent. Waiting for Hagency; this updates automatically."}
+        } else { P.connection_error = fleet P.notice = r.error }
+        draw_page()
+    })
+}
+fn connect_app(){
+    call("palpo.session.open", {}, fn(data){
+        P.room_board = data.roomBoard P.board_generation = P.board_generation + 1
+        P.ready = true P.admin = data.isAdmin P.coordinator = data.canApproveProjects == true P.owner = data.isResourceOwner == true P.user = data.userId P.services = data.services
+        if P.room_board { watch_board(P.board_generation) }
+        watch_status(P.board_generation)
+        if data.openAction != "" { review_action({id: data.openAction}) } else { refresh_page() }
+    })
+}
+fn open_page(page){
+    if P.busy { return }
+    P.view_generation = P.view_generation + 1
+    P.page = page P.rows = [] P.selected = nil P.notice = "" P.offset = 0
+    draw_page() refresh_page()
+}
+fn inbox_filter(value){ P.filter = value open_page("inbox") }
+fn inbox_page(offset){ if P.busy { return } P.view_generation = P.view_generation + 1 P.offset = offset P.rows = [] refresh_page() }
+fn refresh_page(){
+    if !P.ready { connect_app() return }
+    if P.page == "action" { review_action(P.selected) return }
+    if P.page == "inbox" {
+        call("palpo.inbox.list", {view: P.filter offset: P.offset limit: 50}, fn(data){ P.rows = data.actions P.pending = data.pendingCount P.total = data.total })
+    }
+    if P.page == "notifications" {
+        call("palpo.notifications.get", {}, fn(data){ apply_notification_settings(data) })
+    }
+    if P.page == "projects" {
+        call("palpo.projects.list", {offset: P.offset limit: 50}, fn(data){ P.rows = data.projects P.total = data.total })
+    }
+    if P.page == "requests" {
+        call("palpo.requests.list", {offset: P.offset limit: 50}, fn(data){ P.rows = data.requests P.total = data.total })
+    }
+    if P.page == "resources" {
+        call("palpo.catalog.list", {}, fn(data){ P.rows = data.fleets })
+    }
+    if P.page == "fleets" {
+        call("palpo.fleets.list", {}, fn(data){ P.rows = data.fleets })
+    }
+    if P.page == "activity" {
+        call("palpo.activity.list", {}, fn(data){ P.rows = data.events })
+    }
+    if P.page == "accounts" {
+        call("palpo.accounts.list", {}, fn(data){ P.rows = data.requests })
+    }
+    if P.page == "agents" {
+        call("palpo.agents.list", {fleetId: P.selected.id}, fn(data){ P.rows = data.agents })
+    }
+}
+fn apply_notification_settings(data){
+    P.notification_settings = data
+    P.device_time_zone = data.deviceTimeZone
+    P.quiet_enabled = data.quietHours != nil
+    if P.quiet_enabled {
+        P.quiet_start = data.quietHours.start P.quiet_end = data.quietHours.end P.quiet_zone = data.quietHours.timeZone
+    } else {
+        P.quiet_start = "22:00" P.quiet_end = "08:00"
+        P.quiet_zone = if P.device_time_zone != nil {P.device_time_zone} else {"UTC"}
+    }
+}
+fn save_notification_settings(){
+    let prefs = P.notification_settings
+    let quiet = nil
+    if P.quiet_enabled { quiet = {start: P.quiet_start end: P.quiet_end timeZone: P.quiet_zone} }
+    call("palpo.notifications.set", {expectedRevision: prefs.revision enabled: prefs.enabled remindersEnabled: prefs.remindersEnabled
+        reminderMinutes: prefs.reminderMinutes quietHours: quiet}, fn(data){
+        apply_notification_settings(data) P.notice = "Notification settings saved for your account. Pending actions stay in your Inbox."
+    })
+}
+fn save_form(){ fs.write("draft.json", P.form.to_json()) P.has_draft = true }
+fn edit_field(i, value){ P.form.fields[i].value = value P.form.payload[P.form.fields[i].key] = value save_form() }
+fn new_form(title, service, payload, fields){
+    call("palpo.intent.new", {}, fn(data){
+        if service == "palpo.inbox.decide" || service == "palpo.agents.control" || service == "palpo.inbox.activate" { payload.commandId = data.requestId }
+        if service == "palpo.inbox.submit" || service == "palpo.fleets.register" || service == "palpo.requests.create" || service == "palpo.fleets.migrate" || service == "palpo.fleets.set_state" { payload.requestId = data.requestId }
+        P.form = {title: title service: service payload: payload fields: fields roomName: ""}
+        P.page = "form" save_form()
+    })
+}
+fn submit_form(){
+    call(P.form.service, P.form.payload, fn(data){
+        let previous_filter = P.filter
+        fs.write("draft.json", "null") P.has_draft = false
+        P.notice = "Saved. The server will keep this request when you close the app."
+        P.page = "inbox" P.filter = "waiting" P.selected = nil P.rows = [] P.offset = 0
+        if P.form.service == "palpo.inbox.decide" { P.filter = "needs_action" }
+        if P.form.service == "palpo.inbox.activate" { P.page = "projects" }
+        if P.form.service == "palpo.requests.create" || P.form.service == "palpo.agents.control" { P.page = "requests" }
+        if P.form.service == "palpo.fleets.register" || P.form.service == "palpo.fleets.migrate" || P.form.service == "palpo.fleets.set_state" || P.form.service == "palpo.agents.rename" || P.form.service == "palpo.agents.register" { P.page = "fleets" }
+        if P.page != "inbox" { P.filter = previous_filter }
+        refresh_page()
+    })
+}
+fn request_project(fleet, resource){
+    let allocation = resource.id
+    if resource.allocationId != nil { allocation = resource.allocationId }
+    new_form("Request a project", "palpo.inbox.submit", {kind: "project" fleetId: fleet.id resourceIds: [allocation] name: "" reason: ""}, [
+        {key: "name" label: "Project name" value: ""}
+        {key: "reason" label: "What will your project do?" value: ""}
+    ])
+}
+fn choose_project_room(){
+    call("palpo.projects.select_room", {}, fn(data){
+        if !data.cancelled {
+            P.form.payload.roomId = data.roomId P.form.roomName = data.name save_form()
+        }
+    })
+}
+fn control_agent(row, operation){
+    new_form(if operation == "retire" {"Remove agent"} else {if operation == "retry_cleanup" {"Retry cleanup"} else {if operation == "stop" {"Pause agent"} else {"Resume agent"}}},
+        "palpo.agents.control", {agentActionId: row.id operation: operation kind: "agent_control"}, [])
+}
+fn rename_agent(row){
+    new_form("Rename agent", "palpo.agents.control", {agentActionId: row.id operation: "rename" kind: "agent_control" displayName: row.agentDefinition.name}, [
+        {key: "displayName" label: "Display name" value: row.agentDefinition.name}
+    ])
+}
+fn request_tokens(row){
+    new_form("Request more tokens", "palpo.inbox.submit", {kind: "token_top_up" agentActionId: row.id expectedAllocatedTokens: row.allocatedTokens requestedAdditionalTokens: "10000"}, [
+        {key: "requestedAdditionalTokens" label: "Additional tokens" value: "10000"}
+    ])
+}
+fn review_action(row){
+    if P.busy { return }
+    P.view_generation = P.view_generation + 1
+    call("palpo.inbox.get", {id: row.id}, fn(data){
+        P.selected = action_data(data.action) P.page = "action"
+        host.request("palpo.inbox.seen", {id: row.id}, fn(r){})
+    })
+}
+fn decision(value){
+    let row = P.selected
+    new_form(if value == "approve" {"Approve request"} else {"Reject request"}, "palpo.inbox.decide",
+        {id: row.id expectedRevision: row.revision decision: value reason: ""}, [{key: "reason" label: "Decision reason" value: ""}])
+}
+fn continue_action(){
+    if P.selected.nextAction == "continue_legacy_project" {
+        P.form = {title: "Continue project request" service: "palpo.inbox.submit" payload: P.selected.continuation fields: [] roomName: ""}
+        P.page = "form" save_form()
+        return
+    }
+    retry_project_setup(P.selected.id, P.selected.revision)
+}
+fn retry_project_setup(action, revision){
+    new_form("Retry project setup", "palpo.inbox.activate", {id: action expectedRevision: revision}, [])
+}
+fn snooze_action(){
+    call("palpo.inbox.snooze", {id: P.selected.id minutes: 60}, fn(data){ P.notice = "Reminders snoozed for one hour. This action remains pending." })
+}
+fn fleet_action(fleet, operation){
+    if operation == "export" {
+        call("palpo.fleets.export", {fleetId: fleet.id}, fn(data){
+            P.notice = if data.saved {"Configuration saved. Import it on your Hagency server, then verify the connection."} else {"Save cancelled. You can download the same configuration again."}
+        })
+    }
+    if operation == "connect" { verify_connection(fleet.id) }
+    if operation == "install" { call("palpo.fleets.install", {fleetId: fleet.id}, fn(data){ refresh_page() }) }
+    if operation == "pause" || operation == "resume" || operation == "revoke" {
+        new_form(operation + " Matrix access", "palpo.fleets.set_state", {fleetId: fleet.id action: operation}, [])
+    }
+    if operation == "queue" { call("palpo.fleets.queue", {fleetId: fleet.id}, fn(data){ P.notice = "Delivery queue: " + data.queue.pending + " pending / " + data.queue.records + " records." }) }
+    if operation == "migrate" { new_form("Renew connection credentials", "palpo.fleets.migrate", {fleetId: fleet.id rotate: true}, []) }
+}
+fn retry_fleet_change(fleet){
+    let change = fleet.pendingCredentialChange
+    let payload = {fleetId: fleet.id requestId: change.requestId}
+    let service = "palpo.fleets.set_state"
+    if change.kind == "rotation" { service = "palpo.fleets.migrate" payload.rotate = change.rotate } else { payload.action = change.action }
+    P.form = {title: "Retry connection change" service: service payload: payload fields: []}
+    P.has_draft = true save_form() P.page = "form" draw_page()
+}
+fn register_fleet(){
+    new_form("Register a fleet", "palpo.fleets.register", {name: "" ownerMxid: "" transportMode: "outbound"}, [
+        {key: "name" label: "Fleet name" value: ""}
+        {key: "ownerMxid" label: "Owner Matrix account" value: ""}
+    ])
+}
+fn open_agents(fleet){ P.selected = fleet P.page = "agents" P.rows = [] draw_page() refresh_page() }
+fn register_identity(){
+    new_form("Register approved identity", "palpo.agents.register", {fleetId: P.selected.id agentId: "" role: "" displayName: "" approvedRequestId: ""}, [
+        {key: "agentId" label: "Agent identifier" value: ""}
+        {key: "displayName" label: "Display name" value: ""}
+        {key: "role" label: "Public role" value: ""}
+        {key: "approvedRequestId" label: "Approved request reference" value: ""}
+    ])
+}
+fn rename_identity(agent){
+    new_form("Rename identity", "palpo.agents.rename", {fleetId: P.selected.id agentId: agent.id displayName: agent.displayName}, [
+        {key: "displayName" label: "Display name" value: agent.displayName}
+    ])
+}
+fn retire_identity(agent){
+    P.form = {title: "Retire Matrix identity" service: "palpo.agents.retire" payload: {fleetId: P.selected.id agentId: agent.id} fields: []}
+    P.page = "confirm" draw_page()
+}
+fn select_agent_resource(project){
+    P.selected = project P.page = "agent_resources" P.rows = []
+    call("palpo.catalog.list", {projectId: project.id}, fn(data){ P.rows = data.fleets })
+}
+fn request_agent(resource, role){
+    let payload = {projectId: P.selected.id role: role requestedTokens: "100000" ratePerDay: "10000" agentDefinition: {name: "" resourceId: resource.id}}
+    if resource.allocationId != nil { payload.resourceAllocationId = resource.allocationId }
+    new_form("Request an agent", "palpo.requests.create", payload, [
+        {key: "agentName" label: "Agent name" value: ""}
+        {key: "requestedTokens" label: "Initial tokens" value: "100000"}
+        {key: "ratePerDay" label: "Daily rate" value: "10000"}
+    ])
+}
+fn submit_current(){
+    if P.form.service == "palpo.requests.create" {
+        P.form.payload.agentDefinition.name = P.form.fields[0].value
+        // agentName is a form-only key, not a second backend identity field.
+        let old = P.form.payload
+        P.form.payload = {requestId: old.requestId projectId: old.projectId resourceAllocationId: old.resourceAllocationId role: old.role requestedTokens: old.requestedTokens ratePerDay: old.ratePerDay agentDefinition: old.agentDefinition}
+        save_form()
+    }
+    submit_form()
+}
+
+if !mod.rinx_theme.reloading() { start_timeout(0.05, || connect_app()) }
+if mod.rinx_theme.reloading() { start_timeout(0.05, || {ui.content.render_style() ui.navigation.render_style()}) }
+
+View{width: Fill height: Fit flow: Right spacing: 12 align: Align{y: 0.5}
+    mod.widgets.RinxPageTitle{width: Fill text: "Palpo"}
+    refresh := mod.widgets.RinxButton{text: "Refresh" on_click: || refresh_page()}
+    disconnect := mod.widgets.RinxButton{text: "Disconnect" on_click: || call("palpo.session.disconnect", {}, fn(data){ P.ready = false P.notice = "Palpo disconnected. Rinx remains signed in." })}
+}
+navigation := View{width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 6 on_render: || {
+    if P.ready && !P.room_board {
+        inbox := mod.widgets.RinxButton{text: "Inbox · " + P.pending on_click: || open_page("inbox")}
+        if available("palpo.projects.list") { projects := mod.widgets.RinxButton{text: "Projects" on_click: || open_page("projects")} }
+        if available("palpo.requests.list") { requests := mod.widgets.RinxButton{text: "Agents" on_click: || open_page("requests")} }
+        if available("palpo.catalog.list") { resources := mod.widgets.RinxButton{text: "Resources" on_click: || open_page("resources")} }
+        if available("palpo.fleets.list") { fleets := mod.widgets.RinxButton{text: "Engagements" on_click: || open_page("fleets")} }
+        if available("palpo.notifications.get") && available("palpo.notifications.set") { notifications := mod.widgets.RinxButton{text: "Notifications" on_click: || open_page("notifications")} }
+        if available("palpo.actions.room.ensure") { actions_room := mod.widgets.RinxButton{text: "My Actions" on_click: || call("palpo.actions.room.ensure", {}, fn(data){ P.notice = "Opening My Actions in Rinx." })} }
+        if P.admin {
+            if available("palpo.activity.list") { activity := mod.widgets.RinxButton{text: "Activity" on_click: || open_page("activity")} }
+            if available("palpo.accounts.list") { accounts := mod.widgets.RinxButton{text: "Signups" on_click: || open_page("accounts")} }
+        }
+    }
+}}
+status := mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: P.notice}
+content := ScrollYView{width: Fill height: Fill flow: Down spacing: 12 on_render: || {
+    if !P.ready {
+        mod.widgets.PalpoCard{
+            mod.widgets.RinxPageTitle{width: Fill text: "Your account, one place"}
+            mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: "Projects, resources and pending actions use the Matrix account you already signed into in Rinx."}
+            mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Your server must support Palpo mini apps. No additional password is needed."}
+            retry := mod.widgets.RinxPrimaryButton{text: "Connect" on_click: || connect_app()}
+        }
+    }
+    if P.ready {
+        mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: P.user + if P.admin {" · Matrix administrator"} else {""} + if P.coordinator {" · Engagement coordinator"} else {""} + if P.owner {" · Resource owner"} else {""} + if !P.admin && !P.coordinator && !P.owner {" · Project member"} else {""}}
+        if P.page == "inbox" {
+            View{width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 6
+                needs := mod.widgets.RinxButton{text: "Needs my action" on_click: || inbox_filter("needs_action")}
+                waiting := mod.widgets.RinxButton{text: "Waiting" on_click: || inbox_filter("waiting")}
+                history := mod.widgets.RinxButton{text: "History" on_click: || inbox_filter("history")}
+            }
+            if P.filter != "history" { mod.widgets.PalpoCard{
+                mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: "Pending actions stay here until they are resolved."}
+                mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Reading or dismissing a notification does not complete a request."}
+                mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "The Hagency owner allocates resources to your engagement. Project and agent requests are reviewed here by its coordinator."}
+                if P.has_draft && (P.form.service != "palpo.inbox.submit" || P.form.payload.kind != "contribution") && available(P.form.service) { resume := mod.widgets.RinxButton{text: "Resume draft" on_click: || {P.page = "form" draw_page()}} }
+            } }
+            if P.rows.len() == 0 { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "No requests in this view. Refresh to check for updates."} }
+            for i in P.rows.len() {
+                let row = P.rows[i]
+                mod.widgets.PalpoCard{
+                    mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: row.payload.name}
+                    mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: row.kind + " · " + row.state}
+                    mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: row.payload.reason}
+                    review := mod.widgets.RinxButton{text: "Open latest result" on_click: || review_action(row)}
+                }
+            }
+            View{width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 6
+                if P.offset > 0 { previous := mod.widgets.RinxButton{text: "Previous" on_click: || inbox_page(P.offset - 50)} }
+                if P.offset + 50 < P.total { next := mod.widgets.RinxButton{text: "Next" on_click: || inbox_page(P.offset + 50)} }
+            }
+        }
+        if P.page == "action" {
+            let row = P.selected
+            mod.widgets.PalpoCard{
+                mod.widgets.RinxPageTitle{width: Fill text: row.payload.name}
+                mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: row.kind + " · " + row.state}
+                mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: row.payload.reason}
+                mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Requested by " + row.ownerMxid}
+                if row.execution != nil && row.execution != "allocation_refused" { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Execution · " + row.execution} }
+                if row.execution == "provisioning_unknown" || row.execution == "provisioning_failed" || row.execution == "unavailable" { mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: "Agent setup needs attention"} mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: refusal_text(row.failureReason)} }
+                if row.execution == "allocation_refused" { mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: "Allocation refused"} mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: refusal_text(row.failureReason)} }
+                if row.kind == "agent" && available("palpo.agents.control") {
+                    if row.agentControl != nil { mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: control_text(row.agentControl)} }
+                }
+                if row.kind == "association" {
+                    mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: "Coordinator · " + row.payload.coordinatorMxid}
+                    mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Runtime · " + row.payload.runtimeId}
+                    if row.canRetrySetup && available("palpo.fleets.install") {
+                        retry_setup := mod.widgets.RinxPrimaryButton{text: "Retry connection setup" on_click: || call("palpo.fleets.install", {fleetId: row.fleetId}, fn(data){review_action(row)})}
+                    }
+                }
+                if row.canDecide {
+                    View{width: Fill height: Fit spacing: 8
+                        approve := mod.widgets.RinxPrimaryButton{text: "Approve" on_click: || decision("approve")}
+                        reject := mod.widgets.RinxButton{text: "Reject" on_click: || decision("reject")}
+                    }
+                }
+                if row.kind == "project" && row.projectSetup != nil { mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: setup_text(row.projectSetup)} }
+                if row.legacy == true { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: row.migrationNote} }
+                if row.previousDecision != nil { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Earlier decision · " + row.previousDecision.by + " · " + row.previousDecision.reason} }
+                if row.nextAction == "continue_legacy_project" && row.canContinue && available("palpo.inbox.submit") {
+                    continue_legacy := mod.widgets.RinxPrimaryButton{text: "Continue project request" on_click: || continue_action()}
+                }
+                if available("palpo.inbox.activate") && row.canContinue && row.nextAction != "export_and_connect" && row.nextAction != "continue_legacy_project" {
+                    continue_work := mod.widgets.RinxPrimaryButton{text: "Retry project setup" on_click: || continue_action()}
+                    mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Approval is recorded. This step completes the server operation."}
+                }
+                if row.kind == "association" && available("palpo.fleets.connect") {
+                    let state = connection_state(row, row.result.fleetId)
+                    let disabled = P.busy || state == "verifying" || state == "verified"
+                    if row.canConnect == true || state == "verified" {
+                        verify := mod.widgets.RinxButton{text: connection_text(state) enabled: !disabled
+                            draw_text.color: if disabled {mod.widgets.RINX_DISABLED} else {mod.widgets.RINX_INK}
+                            draw_bg.color: if disabled {mod.widgets.RINX_FIELD} else {mod.widgets.RINX_SURFACE}
+                            on_click: || fleet_action({id: row.result.fleetId}, "connect")}
+                    }
+                }
+                if row.nextAction == "export_and_connect" && row.canContinue {
+                    export := mod.widgets.RinxPrimaryButton{text: "Save configuration" on_click: || fleet_action({id: row.result.fleetId}, "export")}
+
+                }
+                if row.needsMyAction { snooze := mod.widgets.RinxButton{text: "Remind me in an hour" on_click: || snooze_action()} }
+                latest := mod.widgets.RinxButton{text: "Refresh result" on_click: || review_action(row)}
+            }
+        }
+        if P.page == "notifications" && P.notification_settings != nil {
+            let prefs = P.notification_settings
+            mod.widgets.PalpoCard{
+                mod.widgets.RinxPageTitle{width: Fill text: "Notifications"}
+                mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Saved for this Matrix account across devices. Pending actions stay in your Inbox even when notifications are off."}
+                notifications_enabled := mod.widgets.RinxButton{text: if prefs.enabled {"Action notifications: On"} else {"Action notifications: Off"}
+                    on_click: || {prefs.enabled = !prefs.enabled draw_page()}}
+                reminders_enabled := mod.widgets.RinxButton{text: if prefs.remindersEnabled {"Reminders: On"} else {"Reminders: Off"}
+                    on_click: || {prefs.remindersEnabled = !prefs.remindersEnabled draw_page()}}
+                mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Reminders are timed from when an action starts. Reading it does not finish it. Missed reminders are combined into one."}
+                for i in prefs.reminderMinutes.len() {
+                    let label = "Reminder " + (i + 1) + " (minutes after action starts)"
+                    mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: label}
+                    mod.widgets.RinxInput{width: Fill text: "" + prefs.reminderMinutes[i] empty_text: label
+                        on_change: |value| { prefs.reminderMinutes[i] = value }}
+                }
+                mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Use increasing times between 15 minutes and 7 days. After the last reminder, the action remains pending."}
+                quiet_hours := mod.widgets.RinxButton{text: if P.quiet_enabled {"Quiet hours: On"} else {"Quiet hours: Off"}
+                    on_click: || {P.quiet_enabled = !P.quiet_enabled draw_page()}}
+                if P.quiet_enabled {
+                    mod.widgets.RinxLabel{width: Fill text: "Quiet hours start (HH:MM)"}
+                    mod.widgets.RinxInput{width: Fill text: P.quiet_start empty_text: "Quiet hours start (HH:MM)" on_change: |value| {P.quiet_start = value}}
+                    mod.widgets.RinxLabel{width: Fill text: "Quiet hours end (HH:MM)"}
+                    mod.widgets.RinxInput{width: Fill text: P.quiet_end empty_text: "Quiet hours end (HH:MM)" on_change: |value| {P.quiet_end = value}}
+                    mod.widgets.RinxLabel{width: Fill text: "Time zone"}
+                    mod.widgets.RinxInput{width: Fill text: P.quiet_zone empty_text: "Time zone" on_change: |value| {P.quiet_zone = value}}
+                    if P.device_time_zone != nil {
+                        device_zone := mod.widgets.RinxButton{text: "Use this device's time zone" on_click: || {P.quiet_zone = P.device_time_zone draw_page()}}
+                    }
+                    mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Use a time zone such as America/Los_Angeles. Quiet hours follow daylight saving time and postpone all Palpo notifications."}
+                }
+                save_notifications := mod.widgets.RinxPrimaryButton{text: "Save notification settings" on_click: || save_notification_settings()}
+            }
+        }
+        if P.page == "form" {
+            mod.widgets.PalpoCard{
+                mod.widgets.RinxPageTitle{width: Fill text: P.form.title}
+                mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Draft saved on this device. You can retry safely."}
+                if P.form.service == "palpo.agents.control" {
+                    mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: if P.form.payload.operation == "retire" {"Remove this agent from the runtime and its Matrix rooms. Chat history stays available. Completion waits for verified cleanup; unknown usage keeps its reservation."} else {"This change is sent to the agent's Hagency runtime. Its latest result stays in My agents."}}
+                }
+                if P.form.service == "palpo.inbox.activate" { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Retry the approved project's room setup. The original approval, room bindings and resource grant are retained."} }
+                if P.form.service == "palpo.fleets.set_state" {
+                    mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "This changes the engagement's Matrix credentials. Revocation is final. Existing allocations and history remain; stopping a remote runtime requires separate confirmation. Resume requires a new connection check."}
+                }
+                if P.form.service == "palpo.fleets.migrate" {
+                    mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Save the updated configuration, import it into the same Hagency engagement and verify its connection. Other engagements keep their own credentials. Pending deliveries and agent allocations are retained."}
+                }
+                if P.form.service == "palpo.inbox.submit" && P.form.payload.kind == "project" {
+                    mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: if P.form.roomName != "" {"Project room: " + P.form.roomName} else {"A new project room will be created."}}
+                    choose_room := mod.widgets.RinxButton{text: "Choose an existing room" on_click: || choose_project_room()}
+                    if P.form.roomName != "" {
+                        new_room := mod.widgets.RinxButton{text: "Create a new room instead" on_click: || {P.form.payload.roomId = nil P.form.roomName = "" save_form() draw_page()}}
+                    }
+                }
+                for i in P.form.fields.len() {
+                    let item = P.form.fields[i]
+                    mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: item.label}
+                    mod.widgets.RinxInput{width: Fill text: item.value empty_text: item.label on_change: |value| edit_field(i, value)}
+                    if P.form.service == "palpo.requests.create" && item.key == "agentName" {
+                        mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Start with a letter. Use letters, numbers, hyphens or underscores, up to 64 characters."}
+                    }
+                }
+                submit := mod.widgets.RinxPrimaryButton{text: "Submit" on_click: || submit_current()}
+                cancel := mod.widgets.RinxButton{text: "Back to Inbox" on_click: || open_page("inbox")}
+            }
+        }
+        if P.page == "confirm" {
+            mod.widgets.PalpoCard{
+                mod.widgets.RinxPageTitle{width: Fill text: P.form.title}
+                mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: "This changes Matrix access. It does not confirm that a remote agent process has stopped."}
+                confirm := mod.widgets.RinxPrimaryButton{text: "Confirm" on_click: || call(P.form.service, P.form.payload, fn(data){ open_page("fleets") })}
+                cancel := mod.widgets.RinxButton{text: "Cancel" on_click: || open_page("fleets")}
+            }
+        }
+        if P.page == "projects" {
+            if available("palpo.catalog.list") { new_project := mod.widgets.RinxPrimaryButton{text: "Request a project" on_click: || open_page("resources")} }
+            if P.rows.len() == 0 { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Your approved projects will appear here."} }
+            for i in P.rows.len() {
+                let project = P.rows[i]
+                mod.widgets.PalpoCard{
+                    mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: project.name}
+                    mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: project.state + " · " + project.ownerMxid}
+                    if project.projectSetup != nil { mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: setup_text(project.projectSetup)} }
+                    if project.canRetrySetup && available("palpo.inbox.activate") { retry_setup := mod.widgets.RinxButton{text: "Retry project setup" on_click: || retry_project_setup(project.actionId, project.revision)} }
+                    if project.canRequest && available("palpo.requests.create") { agent := mod.widgets.RinxPrimaryButton{text: "Request agent" on_click: || select_agent_resource(project)} }
+                    if !project.canRequest { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "New agent requests are not available for this project yet."} }
+                }
+            }
+        }
+        if P.page == "resources" || P.page == "agent_resources" {
+            mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Resources published by Hagency. Approval does not reserve token capacity."}
+            if P.rows.len() == 0 { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "No resource catalog is available yet."} }
+            for i in P.rows.len() {
+                let fleet = P.rows[i]
+                if P.page == "resources" || fleet.id == P.selected.fleetId {
+                    mod.widgets.PalpoCard{
+                        mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: fleet.name}
+                        mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: fleet.state}
+                        if fleet.capabilities != nil {
+                            for j in fleet.capabilities.offers.len() {
+                                let offer = fleet.capabilities.offers[j]
+                                for k in offer.resources.len() {
+                                    let resource = offer.resources[k]
+                                    mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: resource.name + " · " + offer.role}
+                                    mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: resource.framework + " · " + resource.model}
+                                    if P.page == "resources" { choose := mod.widgets.RinxPrimaryButton{text: "Request project here" on_click: || request_project(fleet, resource)} }
+                                    if P.page == "agent_resources" { choose := mod.widgets.RinxPrimaryButton{text: "Use this resource" on_click: || request_agent(resource, offer.role)} }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if P.page == "requests" {
+            mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Agent provisioning and connection readiness are verified by the server."}
+            if P.rows.len() == 0 { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Your agent requests will appear here, including those awaiting approval or setup."} }
+            for i in P.rows.len() {
+                let row = P.rows[i]
+                mod.widgets.PalpoCard{
+                    if row.agentDefinition != nil { mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: row.agentDefinition.name} }
+                    mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: row.role + " · " + row.state}
+                    mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Initial request: " + row.requestedTokens + " tokens"}
+                    if row.execution != nil && row.execution != "allocation_refused" { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Execution · " + row.execution} }
+                    if row.execution == "migration_pending" { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "This earlier request is retained. Its Hagency owner must complete migration before runtime controls become available."} }
+                    if row.execution == "provisioning_unknown" || row.execution == "provisioning_failed" || row.execution == "unavailable" { mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: "Agent setup needs attention"} mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: refusal_text(row.failureReason)} }
+                if row.execution == "allocation_refused" { mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: "Allocation refused"} mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: refusal_text(row.failureReason)} }
+                    if row.allocatedTokens != nil { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Allocated: " + row.allocatedTokens + " tokens"} }
+                    if row.allocatedTokens == nil && row.execution != "allocation_refused" { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Allocation confirmation pending"} }
+                    if row.usage != nil {
+                        if row.usage.consumedTokens != nil {
+                            mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: if row.usage.complete == true {"Final accounted usage: " + row.usage.consumedTokens + " tokens"} else {"Consumed: at least " + row.usage.consumedTokens + " tokens"}}
+                            if row.usage.state == "stale" { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Usage sample is out of date. Refresh for the latest report."} }
+                        }
+                        if row.usage.consumedTokens == nil { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Token consumption not reported yet"} }
+                    }
+                    if row.agentMxid != nil { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: row.agentMxid} }
+                    if available("palpo.requests.open") && row.canOpenChat { open_agent_chat := mod.widgets.RinxPrimaryButton{text: "Open agent chat" on_click: || call("palpo.requests.open", {requestId: row.chatRequestId}, fn(data){ P.notice = "Opening the agent's project room in Rinx." })} }
+                    if row.canRequestTopUp == true { more_tokens := mod.widgets.RinxButton{text: "Request more tokens" on_click: || request_tokens(row)} }
+                    if available("palpo.agents.control") {
+                        if row.agentControl != nil { mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: control_text(row.agentControl)} }
+                        if row.canRename { rename_agent := mod.widgets.RinxButton{text: "Rename agent" on_click: || rename_agent(row)} }
+                        if row.canPause { pause_agent := mod.widgets.RinxButton{text: "Pause agent" on_click: || control_agent(row,"stop")} }
+                        if row.canResume { resume_agent := mod.widgets.RinxButton{text: "Resume agent" on_click: || control_agent(row,"start")} }
+                        if row.canRetire { remove_agent := mod.widgets.RinxButton{text: "Remove agent" on_click: || control_agent(row,"retire")} }
+                        if row.canRetryCleanup { retry_cleanup := mod.widgets.RinxButton{text: "Retry cleanup" on_click: || control_agent(row,"retry_cleanup")} }
+                    }
+                    if available("palpo.inbox.get") { agent_result := mod.widgets.RinxButton{text: "Open latest result" on_click: || review_action(row)} }
+                }
+            }
+        }
+        if P.page == "projects" || P.page == "requests" {
+            View{width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 6
+                if P.offset > 0 { previous := mod.widgets.RinxButton{text: "Previous" on_click: || inbox_page(P.offset - 50)} }
+                if P.offset + 50 < P.total { next := mod.widgets.RinxButton{text: "Next" on_click: || inbox_page(P.offset + 50)} }
+            }
+        }
+        if P.page == "fleets" {
+            if P.admin && available("palpo.fleets.register") { register := mod.widgets.RinxPrimaryButton{text: "Register fleet" on_click: || register_fleet()} }
+            if P.rows.len() == 0 { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "No server engagements are available to this account."} }
+            for i in P.rows.len() {
+                let fleet = P.rows[i]
+                mod.widgets.PalpoCard{
+                    mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: fleet.name}
+                    mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: fleet.state + " · " + fleet.ownerMxid}
+                    if fleet.coordinatorMxid != nil { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Coordinator · " + fleet.coordinatorMxid} }
+                    if fleet.connectionVerified == true { mod.widgets.RinxLabel{text: "Connection verified"} }
+                    if fleet.lastVerifiedAt != nil { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Last verified · " + fleet.lastVerifiedAt} }
+                    if fleet.connectivity != nil { mod.widgets.RinxHint{text: "Runtime · " + fleet.connectivity} }
+                    if fleet.lastError != nil { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: fleet.lastError} }
+                    if fleet.localTaskStop == "unconfirmed" { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Remote runtime stop has not been confirmed."} }
+                    View{width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 6
+                        if fleet.canExport == true && available("palpo.fleets.export") { export := mod.widgets.RinxButton{text: "Save configuration" on_click: || fleet_action(fleet, "export")} }
+                        if available("palpo.fleets.connect") {
+                            let state = connection_state(fleet, fleet.id)
+                            let disabled = P.busy || state == "verifying" || state == "verified"
+                            if fleet.canConnect == true || state == "verified" {
+                                verify := mod.widgets.RinxButton{text: connection_text(state) enabled: !disabled
+                                    draw_text.color: if disabled {mod.widgets.RINX_DISABLED} else {mod.widgets.RINX_INK}
+                                    draw_bg.color: if disabled {mod.widgets.RINX_FIELD} else {mod.widgets.RINX_SURFACE}
+                                    on_click: || fleet_action(fleet, "connect")}
+                            }
+                        }
+                        if fleet.canInstall == true && available("palpo.fleets.install") { install := mod.widgets.RinxButton{text: "Retry setup" on_click: || fleet_action(fleet, "install")} }
+                        if fleet.canPause == true && available("palpo.fleets.set_state") { pause_fleet := mod.widgets.RinxButton{text: "Pause Matrix access" on_click: || fleet_action(fleet, "pause")} }
+                        if fleet.canResume == true && available("palpo.fleets.set_state") { resume_fleet := mod.widgets.RinxButton{text: "Resume Matrix access" on_click: || fleet_action(fleet, "resume")} }
+                        if fleet.canRevoke == true && available("palpo.fleets.set_state") { revoke_fleet := mod.widgets.RinxButton{text: "Revoke Matrix access" on_click: || fleet_action(fleet, "revoke")} }
+                        if fleet.canRotate == true && available("palpo.fleets.migrate") { rotate_fleet := mod.widgets.RinxButton{text: "Renew credentials" on_click: || fleet_action(fleet, "migrate")} }
+                        if fleet.canInspectQueue == true && available("palpo.fleets.queue") { queue := mod.widgets.RinxButton{text: "Delivery queue" on_click: || fleet_action(fleet, "queue")} }
+                        if fleet.pendingCredentialChange != nil { retry_fleet := mod.widgets.RinxButton{text: "Retry connection change" on_click: || retry_fleet_change(fleet)} }
+                    }
+                }
+            }
+        }
+        if P.page == "agents" {
+            register := mod.widgets.RinxPrimaryButton{text: "Register approved identity" on_click: || register_identity()}
+            if P.rows.len() == 0 { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "No managed identities in this fleet."} }
+            for i in P.rows.len() {
+                let agent = P.rows[i]
+                mod.widgets.PalpoCard{
+                    mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: agent.displayName}
+                    mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: agent.mxid + " · " + agent.state}
+                    rename := mod.widgets.RinxButton{text: "Rename" on_click: || rename_identity(agent)}
+                    retire := mod.widgets.RinxButton{text: "Retire identity" on_click: || retire_identity(agent)}
+                }
+            }
+        }
+        if P.page == "activity" {
+            if P.rows.len() == 0 { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "No administration activity yet."} }
+            for i in P.rows.len() { let row = P.rows[i] mod.widgets.PalpoCard{mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: row.action + " · " + row.result} mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: row.actor + " · " + row.at}} }
+        }
+        if P.page == "accounts" {
+            mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "Account decisions open in their original trusted Matrix approval room."}
+            if P.rows.len() == 0 { mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: "No account signup requests."} }
+            for i in P.rows.len() {
+                let row = P.rows[i]
+                mod.widgets.PalpoCard{
+                    mod.widgets.RinxLabel{width: Fill flow: Flow.Right{wrap: true} text: row.displayName + " · " + row.status}
+                    mod.widgets.RinxHint{width: Fill flow: Flow.Right{wrap: true} text: row.reason}
+                    if row.canOpen && available("palpo.accounts.open") {
+                        open_signup := mod.widgets.RinxPrimaryButton{text: "Open signup request" on_click: || call("palpo.accounts.open", {requestId: row.id}, fn(data){ P.notice = "Opening the original approval request in Rinx." })}
+                    }
+                }
+            }
+        }
+    }
+}}

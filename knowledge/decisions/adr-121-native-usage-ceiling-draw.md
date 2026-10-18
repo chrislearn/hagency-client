@@ -44,7 +44,7 @@ and this slice changes no allocation, admission or publication decision.
 
 ## Consequences
 
-The oracle is `native/scripts/ceiling-vectors.mjs`: the retained
+The oracle is `tools/native/ceiling-vectors.mjs`: the retained
 `lib/metering/ledger.js` computes `spent`/`consumed` from the same observation
 sets (including the BigLittle lockout numbers) and the two retained
 `remainingFor` lines are mirrored verbatim for the combination; both source

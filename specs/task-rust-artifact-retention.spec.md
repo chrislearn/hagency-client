@@ -58,13 +58,13 @@ names the **refusal** on the other OS instead of disappearing from the leg.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-media-store/src/**
-- native/hagency-media-store/tests/**
-- native/hagency-execution/src/**
-- native/hagency-execution/tests/**
-- native/hagency/src/main.rs
-- native/hagency/src/mcp/**
-- native/hagency/tests/**
+- crates/hagency-media-store/src/**
+- crates/hagency-media-store/tests/**
+- crates/hagency-execution/src/**
+- crates/hagency-execution/tests/**
+- crates/hagency/src/main.rs
+- crates/hagency/src/mcp/**
+- crates/hagency/tests/**
 - knowledge/decisions/adr-129-native-recovery-artifact-retention.md
 - specs/task-rust-artifact-retention.spec.md
 - specs/task-rust-artifact-retention-node.spec.md

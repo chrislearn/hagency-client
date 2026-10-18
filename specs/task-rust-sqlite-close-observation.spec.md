@@ -32,10 +32,10 @@ original failed verdicts and all existing deadlines.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/Cargo.toml
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/shutdown.rs
+- crates/hagency-store/Cargo.toml
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/shutdown.rs
 - knowledge/decisions/adr-106-native-sqlite-close-observation.md
 - specs/task-rust-sqlite-close-observation.spec.md
 - docs/agent-knowledge.md
@@ -71,7 +71,7 @@ Scenario: Ownership release still follows actual connection destruction
   Level: integration
   Test Double: actual writer held before ownership-file drop
   Test: native_domain_shutdown_ownership_drop
-  Targets: native/hagency-store/src/domain_worker.rs
+  Targets: crates/hagency-store/src/domain_worker.rs
   Given completed original SQLite entry and connection destruction
   When the ownership-file boundary is held
   Then the original private lock stays retained and no ACK is fabricated after the original timeout

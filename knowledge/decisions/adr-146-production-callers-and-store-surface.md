@@ -44,7 +44,7 @@ ADR-146, the next unallocated number.
 **(a) The production-caller rule.** A spec `Then` line that names a store write
 carries a `Production caller:` line naming the production function
 (`crate::path::fn`) that reaches the write. A checker
-(`native/scripts/check-production-callers.mjs`, owed by
+(`tools/native/check-production-callers.mjs`, owed by
 `specs/task-rust-production-callers-check.spec.md`) fails when that caller is
 absent from the production call graph, computed with tests, fixtures and the
 bootstrap probe stripped. `Production caller: owed (Gn)` is the only exemption:
@@ -77,7 +77,7 @@ only caller of most store writes and is never evidence of production
 reachability. The original audit missed `create_canonical_task` entirely for
 exactly this reason. Every row below was therefore judged with the checker spec's
 strip: `#[cfg(test)]` items and `#[test]` fns removed, `*/tests/*`,
-`native/fixtures/**`, and the probe/fixture binaries
+`tests/fixtures/**`, and the probe/fixture binaries
 (`hagency-platform/src/bin/hagency-platform-probe.rs`,
 `hagency-platform/src/bin/hagency-cgroup-probe.rs`,
 `hagency-progress-runtime/src/bin/hagency-progress-probe.rs`,
@@ -176,7 +176,7 @@ when a production caller does (see the §12 bullet added with this ADR).
 
 ## Amendment 2026-09-14 — `bootstrap/driver.rs` is production
 
-The original strip list misclassified `native/hagency/src/bootstrap/driver.rs`
+The original strip list misclassified `crates/hagency/src/bootstrap/driver.rs`
 as a probe. It is the production host driver (`Driver::start`, `run`,
 `settle_pending_stops`, the claim at driver.rs:257); only its `#[cfg(test)]
 mod tests` is test code, and the checker's cfg(test) stripping already removes
@@ -208,7 +208,7 @@ input, reported by integration + glm9.)
 ## Amendment 2026-09-14 (second) — audit re-run on the landed head (88e05d5f)
 
 The audit was re-run after ~40 commits. Method unchanged (strip `#[cfg(test)]`
-items and `#[test]` fns; exclude tests/, native/fixtures/, examples/, probe
+items and `#[test]` fns; exclude tests/, tests/fixtures/, examples/, probe
 bins; every finding grep-confirmed per the original evidence rule).
 
 **Closed gaps** (production caller now reaches the write):

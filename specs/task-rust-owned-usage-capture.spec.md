@@ -30,25 +30,25 @@ identity, double-counting retries or turning missing observations into zero.
 
 ### Allowed Changes
 - ./Cargo.lock
-- native/hagency-execution/Cargo.toml
-- native/hagency-execution/src/lib.rs
-- native/hagency-execution/src/host.rs
-- native/hagency-execution/src/operation.rs
-- native/hagency-execution/src/usage.rs
-- native/hagency-execution/tests/owned.rs
-- native/hagency-execution/tests/owned/usage.rs
-- native/hagency-execution/tests/support/usage.rs
-- native/hagency-execution/tests/support/reply_loss.rs
-- native/hagency-runtime/src/bin/hagency-runtime-probe.rs
-- native/hagency-store/src/domain/usage/types.rs
-- native/hagency-store/src/domain/usage/reads.rs
-- native/hagency/tests/usage.rs
+- crates/hagency-execution/Cargo.toml
+- crates/hagency-execution/src/lib.rs
+- crates/hagency-execution/src/host.rs
+- crates/hagency-execution/src/operation.rs
+- crates/hagency-execution/src/usage.rs
+- crates/hagency-execution/tests/owned.rs
+- crates/hagency-execution/tests/owned/usage.rs
+- crates/hagency-execution/tests/support/usage.rs
+- crates/hagency-execution/tests/support/reply_loss.rs
+- crates/hagency-runtime/src/bin/hagency-runtime-probe.rs
+- crates/hagency-store/src/domain/usage/types.rs
+- crates/hagency-store/src/domain/usage/reads.rs
+- crates/hagency/tests/usage.rs
 - knowledge/decisions/adr-070-native-owned-usage-capture.md
 - specs/task-rust-owned-usage-capture.spec.md
 - docs/plan.md
 - docs/progress.md
 - docs/agent-knowledge.md
-- native/README.md
+- docs/native-engine.md
 
 ## Acceptance Criteria
 

@@ -20,13 +20,13 @@ every tool that reaches another session approved by the owner per call.
 
 ## Allowed changes
 
-- native/hagency-runtime/src/task_mcp.rs
-- native/hagency-runtime/src/codex/session/task_mcp.rs
-- native/hagency-execution/src/host.rs
-- native/hagency-execution/src/factory.rs
-- native/hagency/src/bootstrap/config.rs
-- native/hagency-store/src/domain/task_intents.rs
-- native/hagency-store/tests/received_files.rs
+- crates/hagency-runtime/src/task_mcp.rs
+- crates/hagency-runtime/src/codex/session/task_mcp.rs
+- crates/hagency-execution/src/host.rs
+- crates/hagency-execution/src/factory.rs
+- crates/hagency/src/bootstrap/config.rs
+- crates/hagency-store/src/domain/task_intents.rs
+- crates/hagency-store/tests/received_files.rs
 - specs/task-rust-codex-coordination-profile.spec.md
 - specs/task-rust-owned-mcp-launch.spec.md
 - knowledge/decisions/adr-180-codex-coordination-profile.md

@@ -30,9 +30,9 @@ Agent attribution budgets or canonical task state.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-metering/**
-- native/scripts/attribution-vectors.mjs
-- native/fixtures/attribution.json
+- crates/hagency-metering/**
+- tools/native/attribution-vectors.mjs
+- tests/fixtures/attribution.json
 - knowledge/decisions/adr-118-native-metering-attribution.md
 - specs/task-rust-metering-attribution.spec.md
 - .github/workflows/rust.yml

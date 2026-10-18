@@ -23,9 +23,9 @@ semantics and explain the permitted next action at the actual tool response.
 
 ## Allowed changes
 
-- native/hagency/src/mcp.rs
-- native/hagency/src/mcp/file_catalog.rs
-- native/hagency/tests/file_service.rs
+- crates/hagency/src/mcp.rs
+- crates/hagency/src/mcp/file_catalog.rs
+- crates/hagency/tests/file_service.rs
 - specs/task-rust-file-settlement-guidance.spec.md
 - knowledge/decisions/adr-177-file-settlement-guidance.md
 - docs/**

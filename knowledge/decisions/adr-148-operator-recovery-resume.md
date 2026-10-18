@@ -76,7 +76,7 @@ have unwound.
 
 **Landed (2026-09-15).** The route this record decides now exists — `POST
 /console/api/agents/{id}/recover-dispatch` under `Scope::AgentLifecycle`
-(`native/hagency/src/console/agents.rs:33`, handler `:263`) — so the
+(`crates/hagency/src/console/agents.rs:33`, handler `:263`) — so the
 "no operator path back" below describes the pre-decision state, closed as G5a
 in ADR-146.
 
@@ -124,8 +124,8 @@ old process stopped and inspect every named workspace. Never runner-callable"
 (`domain/execution.rs:1023-1025`). The trigger that matches that authority is the
 console's agent-lifecycle surface: it is the console's scope for direct store
 mutations — agent `start`/`stop`/`preset` ride it today
-(`native/hagency/src/console/agents.rs:27-32`, gated by `can_lifecycle`,
-`native/hagency/src/console/authority.rs:333`), and the same scope already gates
+(`crates/hagency/src/console/agents.rs:27-32`, gated by `can_lifecycle`,
+`crates/hagency/src/console/authority.rs:333`), and the same scope already gates
 the bounded grant-revocation mutation. A new route `POST
 /console/api/agents/{id}/recover-dispatch` (or its dispatch-addressed analogue)
 under `Scope::AgentLifecycle` is the smallest authority-consistent trigger.

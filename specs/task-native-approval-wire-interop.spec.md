@@ -39,9 +39,9 @@ actual original-writer cards, without changing domain or Matrix authority.
 - specs/task-n...[credential-redacted].spec.md
 - tests/native-approval-wire-interop.test.js
 - tests/fixtures/native-approval-wire.json
-- native/hagency-store/tests/approvals/card.rs
-- native/hagency-matrix/tests/fixtures/approval-vectors.json
-- native/scripts/approval-vectors.mjs
+- crates/hagency-store/tests/approvals/card.rs
+- crates/hagency-matrix/tests/fixtures/approval-vectors.json
+- tools/native/approval-vectors.mjs
 - docs/progress.md
 - docs/agent-knowledge.md
 

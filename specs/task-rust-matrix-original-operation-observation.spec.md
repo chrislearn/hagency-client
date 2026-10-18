@@ -31,15 +31,15 @@ the original result and operation ownership.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/src/collector.rs
-- native/hagency-matrix/src/intake.rs
-- native/hagency-matrix/src/sdk.rs
-- native/hagency-matrix/src/outgoing.rs
-- native/hagency-matrix/tests/outgoing/mod.rs
-- native/hagency-matrix/src/collector/observation.rs
-- native/hagency-matrix/tests/intake/mod.rs
-- native/hagency-matrix/tests/intake/attachments.rs
-- native/hagency-matrix/tests/operation_observation/mod.rs
+- crates/hagency-matrix/src/collector.rs
+- crates/hagency-matrix/src/intake.rs
+- crates/hagency-matrix/src/sdk.rs
+- crates/hagency-matrix/src/outgoing.rs
+- crates/hagency-matrix/tests/outgoing/mod.rs
+- crates/hagency-matrix/src/collector/observation.rs
+- crates/hagency-matrix/tests/intake/mod.rs
+- crates/hagency-matrix/tests/intake/attachments.rs
+- crates/hagency-matrix/tests/operation_observation/mod.rs
 - knowledge/decisions/adr-094-native-matrix-original-operation-observation.md
 - specs/task-rust-matrix-original-operation-observation.spec.md
 - docs/agent-knowledge.md

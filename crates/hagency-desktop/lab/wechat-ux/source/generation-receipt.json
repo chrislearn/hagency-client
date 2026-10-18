@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "kind": "generated_target",
+  "tool": "built-in image_gen.imagegen",
+  "provider": "OpenAI",
+  "model": null,
+  "model_note": "Tool did not return a model identifier; not inferred.",
+  "atlas": "atlas-v1.png",
+  "atlas_sha256": "bd045113914b038b1d4245d53affe07c8893c8c05876d0fc7de499f3f60dd16c",
+  "prompt": "atlas-prompt.txt",
+  "prompt_sha256": "2a41324fb59565f56de4a245550c6588d0c501f19a192090bb2b5adac8fd7e46",
+  "requested_size": [
+    3840,
+    5760
+  ],
+  "actual_size": [
+    1024,
+    1536
+  ],
+  "requested_quality": "high",
+  "actual_quality_setting": "not exposed by tool",
+  "source_screens": 12,
+  "reference_locale": "en",
+  "authentic_wechat_capture": false,
+  "native_ui_implemented": false,
+  "visual_review_accepted": false,
+  "limitations": [
+    "Actual source resolution is below requested resolution.",
+    "Prepared references are resampled enlargements, not higher-resolution generation.",
+    "Requested 390x844 screen aspect was not preserved by generation.",
+    "This generated storyboard is not a versioned capture of WeChat.",
+    "Chinese references and remaining 36 state references are not yet available."
+  ]
+}

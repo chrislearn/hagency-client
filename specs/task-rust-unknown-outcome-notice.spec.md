@@ -48,14 +48,14 @@ worker's wait for the operator's resolution.
 
 ## Allowed changes
 
-- native/hagency-store/src/domain/task_intents.rs
-- native/hagency-store/src/domain/owned_dispatch.rs
-- native/hagency-store/src/domain/notice_custody.rs
-- native/hagency-store/tests/received_files.rs
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/bootstrap/driver.rs
-- native/hagency/src/bootstrap/notice.rs
-- native/hagency/src/bootstrap/fleet.rs
+- crates/hagency-store/src/domain/task_intents.rs
+- crates/hagency-store/src/domain/owned_dispatch.rs
+- crates/hagency-store/src/domain/notice_custody.rs
+- crates/hagency-store/tests/received_files.rs
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/bootstrap/driver.rs
+- crates/hagency/src/bootstrap/notice.rs
+- crates/hagency/src/bootstrap/fleet.rs
 - knowledge/decisions/adr-045-native-notice-custody.md
 - knowledge/decisions/adr-162-native-stopped-owner-inspection.md
 - specs/task-rust-unknown-outcome-notice.spec.md

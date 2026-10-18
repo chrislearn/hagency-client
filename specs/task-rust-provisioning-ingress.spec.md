@@ -33,29 +33,29 @@ effect observed) to `verify_request` and `admit`, exactly as ADR-095's
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/src/intake.rs
-- native/hagency-matrix/src/collector.rs
-- native/hagency-matrix/src/collector/observation.rs
-- native/hagency-matrix/src/event_batch.rs
-- native/hagency-matrix/src/lib.rs
-- native/hagency-matrix/src/config.rs
-- native/hagency-core/src/replies.rs
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/bootstrap/config.rs
-- native/hagency/src/lib.rs
-- native/hagency-store/src/domain/verified_ingress.rs
-- native/hagency-store/src/domain/approvals.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-matrix/tests/
-- native/hagency/tests/
-- native/fixtures/
+- crates/hagency-matrix/src/intake.rs
+- crates/hagency-matrix/src/collector.rs
+- crates/hagency-matrix/src/collector/observation.rs
+- crates/hagency-matrix/src/event_batch.rs
+- crates/hagency-matrix/src/lib.rs
+- crates/hagency-matrix/src/config.rs
+- crates/hagency-core/src/replies.rs
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/bootstrap/config.rs
+- crates/hagency/src/lib.rs
+- crates/hagency-store/src/domain/verified_ingress.rs
+- crates/hagency-store/src/domain/approvals.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-matrix/tests/
+- crates/hagency/tests/
+- tests/fixtures/
 - specs/task-rust-provisioning-ingress.spec.md
 - knowledge/decisions/adr-095-native-state-ownership.md
 - docs/progress.md
 
 ### Forbidden
 - Live services, live homeservers, credentials, deployed state.
-- native/hagency-store/src/domain.rs (admit is unchanged); native/hagency-core/src/authority.rs (verify_request is unchanged); native/hagency/src/console/**.
+- crates/hagency-store/src/domain.rs (admit is unchanged); crates/hagency-core/src/authority.rs (verify_request is unchanged); crates/hagency/src/console/**.
 
 ## Decisions (2026-09-14, integration fix-up after the builder's blocker report)
 

@@ -34,19 +34,19 @@ an already running operation, its lease, or a callback deadline.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-core/src/tasks.rs
-- native/hagency-execution/src/host.rs
-- native/hagency-execution/src/operation.rs
-- native/hagency-execution/src/warm.rs
-- native/hagency-execution/src/approval/capacity.rs
-- native/hagency-execution/tests/owned/**
-- native/hagency-runtime/src/bin/hagency-runtime-probe.rs
-- native/hagency-store/src/domain/execution.rs
-- native/hagency-store/src/domain/approvals/owned.rs
-- native/hagency-store/tests/owned_claim.rs
-- native/hagency-store/tests/approvals/owned.rs
-- native/hagency/src/bootstrap/config.rs
-- native/hagency/src/bootstrap/driver.rs
+- crates/hagency-core/src/tasks.rs
+- crates/hagency-execution/src/host.rs
+- crates/hagency-execution/src/operation.rs
+- crates/hagency-execution/src/warm.rs
+- crates/hagency-execution/src/approval/capacity.rs
+- crates/hagency-execution/tests/owned/**
+- crates/hagency-runtime/src/bin/hagency-runtime-probe.rs
+- crates/hagency-store/src/domain/execution.rs
+- crates/hagency-store/src/domain/approvals/owned.rs
+- crates/hagency-store/tests/owned_claim.rs
+- crates/hagency-store/tests/approvals/owned.rs
+- crates/hagency/src/bootstrap/config.rs
+- crates/hagency/src/bootstrap/driver.rs
 - specs/task-rust-owned-execution-budget.spec.md
 - knowledge/decisions/adr-161-native-execution-budget-parity.md
 - knowledge/decisions/adr-053-native-owned-dispatch.md

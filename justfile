@@ -9,7 +9,7 @@ init-dev:
 
 # Build from source and watch Rust/console changes; private state lives in .run/.
 dev *args:
-    node native/scripts/dev.mjs "$@"
+    node tools/native/dev.mjs "$@"
 
 # Obtain a fresh local console sign-in link. Do not redirect it into logs.
 console state=".run/dev-state" listen="127.0.0.1:13300":

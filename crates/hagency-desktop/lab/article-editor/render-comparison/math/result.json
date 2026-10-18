@@ -1,0 +1,28 @@
+{
+  "formulas": 9,
+  "katex": "0.16.22",
+  "source_unchanged": true,
+  "reference_html_sha256": "445fa92dc0c746a8ff64653a04a9de7aa4690e02d2c08f4d668a861368c3e858",
+  "rinx_html_sha256": "99964a9a42fbb13c829b7adc9f5fa24dd4ce8f7e5a4e31e74ba42aafdef86baf",
+  "font_resources": 20,
+  "denied_resources": [],
+  "renderer_sha256": "df22c32cc93529286f678c579d77d276b51d27d94010e755357dbe9e0a644ea3",
+  "normalizations": [
+    {
+      "index": 4,
+      "changes": [
+        "Remove redundant outer \\( \\) inside $$"
+      ]
+    },
+    {
+      "index": 6,
+      "changes": [
+        "Interpret Editor.md Markdown-escaped underscores as TeX subscripts"
+      ]
+    }
+  ],
+  "production_math_added": true,
+  "native_math": "makepad-latex-math + NewCMMath; 2x generated PNG glyphs",
+  "native_compatibility": "Leading displaystyle/textstyle interpreted; Bigl/Bigr pairs use content-sized delimiters",
+  "comparison": "Independent math typesetters; KaTeX/WebKit reference versus production Rinx/Blitz"
+}

@@ -27,8 +27,8 @@ Palpo custody fixture shutdown fails without claiming a historical root cause.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/worker.rs
-- native/hagency-palpo/tests/transport.rs
+- crates/hagency-store/src/worker.rs
+- crates/hagency-palpo/tests/transport.rs
 - knowledge/decisions/adr-082-native-custody-shutdown-observation.md
 - specs/task-rust-custody-shutdown-observation.spec.md
 - docs/progress.md

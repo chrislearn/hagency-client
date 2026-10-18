@@ -32,13 +32,13 @@ runner HTTP API. Task truth and idempotency remain in its one domain writer.
 
 ### Allowed Changes
 - ./Cargo.lock
-- native/hagency/Cargo.toml
-- native/hagency/src/lib.rs
-- native/hagency/src/main.rs
-- native/hagency/src/task_client.rs
-- native/hagency/src/task_client/**
-- native/hagency/tests/task_client.rs
-- native/README.md
+- crates/hagency/Cargo.toml
+- crates/hagency/src/lib.rs
+- crates/hagency/src/main.rs
+- crates/hagency/src/task_client.rs
+- crates/hagency/src/task_client/**
+- crates/hagency/tests/task_client.rs
+- docs/native-engine.md
 - specs/task-rust-task-client.spec.md
 - knowledge/decisions/adr-041-native-task-client.md
 - docs/**

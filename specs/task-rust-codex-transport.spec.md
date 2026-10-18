@@ -33,7 +33,7 @@ stderr streams without starting a runtime or assuming dispatch authority.
 
 ### Allowed Changes
 - ./Cargo.lock
-- native/hagency-runtime/**
+- crates/hagency-runtime/**
 - specs/task-rust-codex-transport.spec.md
 - knowledge/decisions/adr-034-native-codex-transport.md
 - docs/**

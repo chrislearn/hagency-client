@@ -30,14 +30,14 @@ turning protocol metadata into provider billing or canonical allocation authorit
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-runtime/src/codex/session.rs
-- native/hagency-runtime/src/codex/session/driver.rs
-- native/hagency-runtime/src/codex/session/observation.rs
-- native/hagency-runtime/src/codex/session/usage.rs
-- native/hagency-runtime/tests/session.rs
-- native/hagency-runtime/tests/session/usage.rs
-- native/hagency-progress-runtime/src/lib.rs
-- native/hagency-progress-runtime/tests/attachment.rs
+- crates/hagency-runtime/src/codex/session.rs
+- crates/hagency-runtime/src/codex/session/driver.rs
+- crates/hagency-runtime/src/codex/session/observation.rs
+- crates/hagency-runtime/src/codex/session/usage.rs
+- crates/hagency-runtime/tests/session.rs
+- crates/hagency-runtime/tests/session/usage.rs
+- crates/hagency-progress-runtime/src/lib.rs
+- crates/hagency-progress-runtime/tests/attachment.rs
 - knowledge/decisions/adr-069-native-runtime-usage-observation.md
 - specs/task-rust-runtime-usage-observation.spec.md
 - docs/plan.md

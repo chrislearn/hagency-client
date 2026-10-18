@@ -32,16 +32,16 @@ ordered typed observations without cancelling a read or fabricating activity.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-runtime/src/codex/connection.rs
-- native/hagency-runtime/src/codex/transport.rs
-- native/hagency-runtime/src/codex/transport/control.rs
-- native/hagency-runtime/src/codex/session.rs
-- native/hagency-runtime/src/codex/session/driver.rs
-- native/hagency-runtime/src/codex/session/control.rs
-- native/hagency-runtime/src/owned/session.rs
-- native/hagency-runtime/tests/session.rs
-- native/hagency-runtime/tests/session/control.rs
-- native/hagency-runtime/tests/owned.rs
+- crates/hagency-runtime/src/codex/connection.rs
+- crates/hagency-runtime/src/codex/transport.rs
+- crates/hagency-runtime/src/codex/transport/control.rs
+- crates/hagency-runtime/src/codex/session.rs
+- crates/hagency-runtime/src/codex/session/driver.rs
+- crates/hagency-runtime/src/codex/session/control.rs
+- crates/hagency-runtime/src/owned/session.rs
+- crates/hagency-runtime/tests/session.rs
+- crates/hagency-runtime/tests/session/control.rs
+- crates/hagency-runtime/tests/owned.rs
 - knowledge/decisions/adr-034-native-codex-transport.md
 - knowledge/decisions/adr-036-native-codex-session.md
 - knowledge/decisions/adr-040-native-owned-runner-io.md

@@ -18,7 +18,7 @@ sibling spec `specs/task-rust-integration-acceptance.spec.md`.
 ## Constraints
 
 ### Must
-- Keep the evidence record crate-side at native/hagency/qualification/two-agent.json, tracking the pinned artifact and version, the environment, one verdict per claim, and what remains unproven.
+- Keep the evidence record crate-side at crates/hagency/qualification/two-agent.json, tracking the pinned artifact and version, the environment, one verdict per claim, and what remains unproven.
 - Keep the validating test always present on every hosted leg and ungated; a missing, partial, stale or non-verdict record fails it.
 - Keep the qualification itself operator-run against a real Palpo homeserver and a real owner client, with the runbook under docs/.
 - State in the record which cells are qualification-only so the M8 exit gate is never read green from a hosted run.
@@ -32,9 +32,9 @@ sibling spec `specs/task-rust-integration-acceptance.spec.md`.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency/qualification/two-agent.json
-- native/hagency/tests/qualification.rs
-- native/hagency/tests/qualification/**
+- crates/hagency/qualification/two-agent.json
+- crates/hagency/tests/qualification.rs
+- crates/hagency/tests/qualification/**
 - docs/design/**
 - .github/workflows/rust.yml
 - specs/task-r...[credential-redacted].spec.md
@@ -58,7 +58,7 @@ Scenario: The qualification record exists, is pinned and carries a verdict per c
 
 ## Decisions
 
-- The evidence record lives at `native/hagency/qualification/two-agent.json`,
+- The evidence record lives at `crates/hagency/qualification/two-agent.json`,
   schema `hagency-two-agent-qualification-v1` (`hagency-two-agent-qualification`
   is its provenance), with: `placeholder`/`placeholder_reason` while unrecorded;
   `pinned_native_version` + `native_version` + full 40-hex `commit` +

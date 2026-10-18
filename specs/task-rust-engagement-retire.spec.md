@@ -9,7 +9,7 @@ tags: [active, rust, engagement, lifecycle, console, parity]
 
 Give the engagement lifecycle its retirement arm, and its operator-driven
 cleanup retry. The native store already models both — `DomainRepository::revoke`
-(`native/hagency-store/src/domain.rs:1260`) and
+(`crates/hagency-store/src/domain.rs:1260`) and
 `DomainRepository::retry_cleanup` (`:1265`) — but no production code calls
 either. `revoke` is a two-line wrapper over `end(command_id, id, true)`
 (`:1285-1334`), the sole writer of `EngagementState::Revoked` (`:1316`);
@@ -60,7 +60,7 @@ slice's own writer.
   must be moved back to `pending` with its outcome digest cleared (`:1277-1280`);
   anything else is `Error::State`.
 - Authenticate the operator through the console session and finite scope gate
-  (`native/hagency/src/console/agents.rs:139-160`), with the console's
+  (`crates/hagency/src/console/agents.rs:139-160`), with the console's
   recheck-after-write pattern (`agents.rs:236-244`).
 
 ### Must Not
@@ -72,7 +72,7 @@ slice's own writer.
   The retry is an operator action only.
 - Do not fold retirement into the provisioning ingress, and do not add a Matrix
   deny verdict (the intake refuses a non-`approve` decision as `Error::Wire`,
-  `native/hagency-matrix/src/intake.rs:290-292`).
+  `crates/hagency-matrix/src/intake.rs:290-292`).
 - Do not change `end`, `retry_cleanup`, the state guard, the `effects`/`decisions`
   /`engagement_ends` schemas, or the retention prune's predicates.
 - Do not name a `Test:` selector for a test that does not exist. Every scenario
@@ -83,7 +83,7 @@ slice's own writer.
 - **The retire-effect driver is NOT in this slice.** `claim_effect` is what moves
   a `pending` effect to `started` and `observe_effect` what settles it
   (`domain.rs:1338-1356`, `:1357+`), and today only the provisioning intake drives
-  them for `kind='provision'` (`native/hagency-matrix/src/intake.rs:405-415`). A
+  them for `kind='provision'` (`crates/hagency-matrix/src/intake.rs:405-415`). A
   `kind='retire'` effect therefore cannot reach `failed` until a retire driver
   exists. **This slice asserts the retirement *decision* and the retry *write*;
   the scenario that exercises a failed retirement supplies the failed row as its
@@ -99,14 +99,14 @@ slice's own writer.
 
 1. **Two terminal states where the retained product has one.** The port
    distinguishes `EngagementState::Revoked` from `EngagementState::Rejected`
-   (`native/hagency-core/src/project.rs:236-243`; `domain.rs:143-144`). The
+   (`crates/hagency-core/src/project.rs:236-243`; `domain.rs:143-144`). The
    retained product has **one** terminal state — `STATES =
    ['pending','active','ended']` (`lib/engagement-store.js:39`) — differentiated
    only by `endedReason` (`'revoked'` `:735`). **This spec assumes the port keeps
    its two states** and asserts `revoked`. **Unresolved.**
 2. **A shared effects/fence table where the retained product keeps a per-record
    retirement field.** The port writes `effects(kind IN ('provision','retire'),
-   state, fence)` (`native/hagency-store/src/domain.sql:50-59`) plus a `cleanup`
+   state, fence)` (`crates/hagency-store/src/domain.sql:50-59`) plus a `cleanup`
    obligation on the engagement, and retries by resetting the `retire` row
    (`domain.rs:1277`). The retained product keeps `withdrawal` per record
    (`{state:'pending'|'failed'|'retained'|'complete', scope:'room'|'agent'}`,
@@ -125,11 +125,11 @@ record.
 
 Every scenario names `hagency::console::engagements::retire` or
 `hagency::console::engagements::cleanup_retry` — the handlers **this slice intends
-to add** (`native/hagency/src/console/engagements.rs`, mounted under the console
+to add** (`crates/hagency/src/console/engagements.rs`, mounted under the console
 API `/api` router beside `agents::router()`,
-`native/hagency/src/console.rs:70-80`). Those names **cannot resolve yet**: the
+`crates/hagency/src/console.rs:70-80`). Those names **cannot resolve yet**: the
 module file does not exist. Measured on `66c5a184` with this slice present,
-`node native/scripts/check-production-callers.mjs` (a wired CI gate,
+`node tools/native/check-production-callers.mjs` (a wired CI gate,
 `.github/workflows/rust.yml:124`) returns `count 31, wired 17`, `unresolved` = 8
 entries for this file's lines — the named handlers, all with reason "no module
 file for hagency::console::engagements". Baseline without this file: `count 17,
@@ -208,7 +208,7 @@ Scenario: A failed retirement is never retried without an operator
   Then the retire effect remains failed, the engagement remains revoked, and no automatic retry write occurs
   Production caller: hagency::console::engagements::cleanup_retry
   Retained: no sweeper — the only interval helper (backend-v2.js:17422-17426) is unused for withdrawals; the retry is the operator re-POSTing the revoke route (:15221-15251, comment :15233-15234)
-  Also: the failed retire pins the engagement from the retention prune (native/hagency-store/src/domain/engagement_retention.rs:386-388)
+  Also: the failed retire pins the engagement from the retention prune (crates/hagency-store/src/domain/engagement_retention.rs:386-388)
 
 ## Out of Scope
 

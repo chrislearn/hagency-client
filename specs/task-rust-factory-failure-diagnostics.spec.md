@@ -25,12 +25,12 @@ the original owners are still alive.
 
 ## Allowed changes
 
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/bootstrap/driver.rs
-- native/hagency/src/bootstrap/fleet.rs
-- native/hagency/src/file_service/pipeline.rs
-- native/hagency/tests/configured_fleet/mod.rs
-- native/hagency/tests/configured_fleet.rs
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/bootstrap/driver.rs
+- crates/hagency/src/bootstrap/fleet.rs
+- crates/hagency/src/file_service/pipeline.rs
+- crates/hagency/tests/configured_fleet/mod.rs
+- crates/hagency/tests/configured_fleet.rs
 - specs/task-rust-factory-failure-diagnostics.spec.md
 - knowledge/decisions/adr-175-factory-failure-diagnostics.md
 - docs/**

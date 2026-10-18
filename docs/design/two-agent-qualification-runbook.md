@@ -5,7 +5,7 @@ three claims an in-process fixture cannot honestly prove, executed against a
 REAL Palpo homeserver and a REAL owner client, recorded as a tracked evidence
 file, and validated by the always-present test
 `native_two_agent_qualification_records_its_evidence`
-(`native/hagency/tests/qualification.rs`). That test fails — never skips —
+(`crates/hagency/tests/qualification.rs`). That test fails — never skips —
 while the record is missing, partial, stale or carries no verdict per claim;
 hosted runners skip it by name in `.github/workflows/rust.yml` because they
 will never have a real homeserver.
@@ -79,7 +79,7 @@ Actual model calls and two-agent isolation still require live verification.
    card, answer it, and let both agents spend tokens.
 5. Verify each DM body on the receiving device (E2EE), confirm the shared
    room contains no DM body, and read the usage attribution per engagement.
-6. Rewrite `native/hagency/qualification/two-agent.json` in the SAME COMMIT
+6. Rewrite `crates/hagency/qualification/two-agent.json` in the SAME COMMIT
    as any launch-path change: drop `placeholder`, fill every field the test
    validates (schema, versions, full commit hash, timestamp, homeserver
    identity as a sha256 DIGEST — never a hostname —, both engagements, the
@@ -93,7 +93,7 @@ Actual model calls and two-agent isolation still require live verification.
 The record never carries homeserver names, room aliases, credentials, bearer
 tokens, client secrets, or any device key material — identities are sha256 hex
 digests, never names. Until an operator run is recorded,
-`native/hagency/qualification/two-agent.json` is a checked-in placeholder and
+`crates/hagency/qualification/two-agent.json` is a checked-in placeholder and
 the validating test is red on purpose; that is the honest state, never a skip.
 A red validating test proves the record's shape and verdicts, not that the run
 happened.

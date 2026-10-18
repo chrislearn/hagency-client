@@ -1,0 +1,9 @@
+# Native account captures can contain private messages. Keep them local.
+evidence/
+# Reproducible crops/references and immutable run logs; generated with upstream.
+pipeline-output/
+scenes/
+wizard/
+# Rebuild the offline specification viewer with tools/wechat-ux/ux.py report.
+index*.html
+__pycache__/

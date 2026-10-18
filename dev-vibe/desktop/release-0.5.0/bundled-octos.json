@@ -1,0 +1,479 @@
+{
+  "scope": "Full lockfile audit; matches are not proof that every affected path is reachable in the shipped feature set.",
+  "database": {
+    "advisory-count": 1329,
+    "last-commit": "edb58f5974b83eb8302332821cb6d389777aa351",
+    "last-updated": "2026-10-14T22:18:32+02:00"
+  },
+  "count": 36,
+  "vulnerabilities": [
+    {
+      "id": "RUSTSEC-2026-0044",
+      "package": "aws-lc-sys",
+      "version": "0.37.1",
+      "title": "AWS-LC X.509 Name Constraints Bypass via Wildcard/Unicode CN",
+      "patched": [
+        ">=0.39.0"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0044.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0045",
+      "package": "aws-lc-sys",
+      "version": "0.37.1",
+      "title": "Timing Side-Channel in AES-CCM Tag Verification in AWS-LC",
+      "patched": [
+        ">=0.38.0"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0045.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0046",
+      "package": "aws-lc-sys",
+      "version": "0.37.1",
+      "title": "PKCS7_verify Certificate Chain Validation Bypass in AWS-LC",
+      "patched": [
+        ">=0.38.0"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0046.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0047",
+      "package": "aws-lc-sys",
+      "version": "0.37.1",
+      "title": "PKCS7_verify Signature Validation Bypass in AWS-LC",
+      "patched": [
+        ">=0.38.0"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0047.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0048",
+      "package": "aws-lc-sys",
+      "version": "0.37.1",
+      "title": "CRL Distribution Point Scope Check Logic Error in AWS-LC",
+      "patched": [
+        ">=0.39.0"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0048.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0204",
+      "package": "crossbeam-epoch",
+      "version": "0.9.18",
+      "title": "Invalid pointer dereference in `fmt::Pointer` impl for `Atomic` and `Shared` when the underlying pointer is invalid",
+      "patched": [
+        ">=0.9.20"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0204.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0258",
+      "package": "h2",
+      "version": "0.4.13",
+      "title": "h2 unbounded empty DATA frames",
+      "patched": [
+        ">=0.4.16"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0258.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0141",
+      "package": "lettre",
+      "version": "0.11.19",
+      "title": "TLS hostname verification disabled when using Boring TLS backend",
+      "patched": [
+        ">=0.11.22"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0141.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0187",
+      "package": "lopdf",
+      "version": "0.36.0",
+      "title": "Stack overflow in lopdf via deeply nested PDF objects",
+      "patched": [
+        ">=0.42.0"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0187.html"
+    },
+    {
+      "id": "RUSTSEC-2025-0020",
+      "package": "pyo3",
+      "version": "0.23.5",
+      "title": "Risk of buffer overflow in `PyString::from_object`",
+      "patched": [
+        ">=0.24.1"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2025-0020.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0177",
+      "package": "pyo3",
+      "version": "0.23.5",
+      "title": "Missing `Sync` bound on `PyCFunction::new_closure` closures",
+      "patched": [
+        ">=0.29.0"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0177.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0194",
+      "package": "quick-xml",
+      "version": "0.37.5",
+      "title": "Quadratic run time when checking a start tag for duplicate attribute names",
+      "patched": [
+        ">=0.41.0"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0194.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0195",
+      "package": "quick-xml",
+      "version": "0.37.5",
+      "title": "Unbounded namespace-declaration allocation in `NsReader` enables memory-exhaustion denial of service",
+      "patched": [
+        ">=0.41.0"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0195.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0037",
+      "package": "quinn-proto",
+      "version": "0.11.13",
+      "title": "Denial of service in Quinn endpoints",
+      "patched": [
+        ">=0.11.14"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0037.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0185",
+      "package": "quinn-proto",
+      "version": "0.11.13",
+      "title": " Remote memory exhaustion in quinn-proto from unbounded out-of-order stream reassembly",
+      "patched": [
+        ">=0.11.15"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0185.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0338",
+      "package": "quinn-proto",
+      "version": "0.11.13",
+      "title": "Remote peer can panic quinn-proto with zero-length STREAM frames during unordered reads",
+      "patched": [
+        ">=0.11.18"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0338.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0339",
+      "package": "quinn-proto",
+      "version": "0.11.13",
+      "title": "Unbounded growth of pending connection ID retirements in quinn-proto",
+      "patched": [
+        ">=0.11.17"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0339.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0340",
+      "package": "quinn-proto",
+      "version": "0.11.13",
+      "title": "Peer minimum ACK delay can panic quinn-proto when ACK_FREQUENCY transmission is enabled",
+      "patched": [
+        ">=0.11.18"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0340.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0342",
+      "package": "quinn-proto",
+      "version": "0.11.13",
+      "title": "Zero-length DATAGRAM frames bypass the receive buffer limit in quinn-proto",
+      "patched": [
+        ">=0.11.17"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0342.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0346",
+      "package": "rustls",
+      "version": "0.22.4",
+      "title": "`Debug` impls for client session values expose TLS secrets",
+      "patched": [
+        ">=0.23.46"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0346.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0349",
+      "package": "rustls",
+      "version": "0.22.4",
+      "title": "Unauthenticated ServerHello can downgrade later connections to classical key exchange",
+      "patched": [
+        ">=0.23.46"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0349.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0285",
+      "package": "rustls",
+      "version": "0.23.36",
+      "title": "TLS 1.3 handshake messages incorrectly accepted across encryption level boundaries",
+      "patched": [
+        ">=0.23.45"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0285.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0346",
+      "package": "rustls",
+      "version": "0.23.36",
+      "title": "`Debug` impls for client session values expose TLS secrets",
+      "patched": [
+        ">=0.23.46"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0346.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0348",
+      "package": "rustls",
+      "version": "0.23.36",
+      "title": "Brotli certificate decompression can allocate up to 1 GiB before authentication",
+      "patched": [
+        ">=0.23.46"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0348.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0349",
+      "package": "rustls",
+      "version": "0.23.36",
+      "title": "Unauthenticated ServerHello can downgrade later connections to classical key exchange",
+      "patched": [
+        ">=0.23.46"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0349.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0049",
+      "package": "rustls-webpki",
+      "version": "0.102.8",
+      "title": "CRLs not considered authoritative by Distribution Point due to faulty matching logic",
+      "patched": [
+        ">=0.103.10"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0049.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0098",
+      "package": "rustls-webpki",
+      "version": "0.102.8",
+      "title": "Name constraints for URI names were incorrectly accepted",
+      "patched": [
+        ">=0.103.12, <0.104.0-alpha.1",
+        ">=0.104.0-alpha.6"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0098.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0099",
+      "package": "rustls-webpki",
+      "version": "0.102.8",
+      "title": "Name constraints were accepted for certificates asserting a wildcard name",
+      "patched": [
+        ">=0.103.12, <0.104.0-alpha.1",
+        ">=0.104.0-alpha.6"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0099.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0104",
+      "package": "rustls-webpki",
+      "version": "0.102.8",
+      "title": "Reachable panic in certificate revocation list parsing",
+      "patched": [
+        ">=0.103.13, <0.104.0-alpha.1",
+        ">=0.104.0-alpha.7"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0104.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0049",
+      "package": "rustls-webpki",
+      "version": "0.103.9",
+      "title": "CRLs not considered authoritative by Distribution Point due to faulty matching logic",
+      "patched": [
+        ">=0.103.10"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0049.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0098",
+      "package": "rustls-webpki",
+      "version": "0.103.9",
+      "title": "Name constraints for URI names were incorrectly accepted",
+      "patched": [
+        ">=0.103.12, <0.104.0-alpha.1",
+        ">=0.104.0-alpha.6"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0098.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0099",
+      "package": "rustls-webpki",
+      "version": "0.103.9",
+      "title": "Name constraints were accepted for certificates asserting a wildcard name",
+      "patched": [
+        ">=0.103.12, <0.104.0-alpha.1",
+        ">=0.104.0-alpha.6"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0099.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0104",
+      "package": "rustls-webpki",
+      "version": "0.103.9",
+      "title": "Reachable panic in certificate revocation list parsing",
+      "patched": [
+        ">=0.103.13, <0.104.0-alpha.1",
+        ">=0.104.0-alpha.7"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0104.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0067",
+      "package": "tar",
+      "version": "0.4.44",
+      "title": "`unpack_in` can chmod arbitrary directories by following symlinks",
+      "patched": [
+        ">=0.4.45"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0067.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0068",
+      "package": "tar",
+      "version": "0.4.44",
+      "title": "tar-rs incorrectly ignores PAX size headers if header size is nonzero",
+      "patched": [
+        ">=0.4.45"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0068.html"
+    },
+    {
+      "id": "RUSTSEC-2026-0257",
+      "package": "webbrowser",
+      "version": "1.2.1",
+      "title": "Unix `BROWSER` handling allows browser argument injection",
+      "patched": [
+        ">=1.2.2"
+      ],
+      "url": "https://rustsec.org/advisories/RUSTSEC-2026-0257.html"
+    }
+  ],
+  "warnings": [
+    {
+      "kind": "unmaintained",
+      "id": "RUSTSEC-2025-0141",
+      "package": "bincode",
+      "version": "1.3.3",
+      "title": "Bincode is unmaintained"
+    },
+    {
+      "kind": "unmaintained",
+      "id": "RUSTSEC-2025-0057",
+      "package": "fxhash",
+      "version": "0.2.1",
+      "title": "fxhash - no longer maintained"
+    },
+    {
+      "kind": "unmaintained",
+      "id": "RUSTSEC-2026-0173",
+      "package": "proc-macro-error2",
+      "version": "2.0.1",
+      "title": "proc-macro-error2 is unmaintained"
+    },
+    {
+      "kind": "unsound",
+      "id": "RUSTSEC-2026-0190",
+      "package": "anyhow",
+      "version": "1.0.101",
+      "title": "Unsoundness in `Error::downcast_mut()`"
+    },
+    {
+      "kind": "unsound",
+      "id": "RUSTSEC-2026-0221",
+      "package": "event-listener",
+      "version": "5.4.1",
+      "title": "`event-listener` allows `!Send` tags to cross thread boundaries via `StackSlot`"
+    },
+    {
+      "kind": "unsound",
+      "id": "RUSTSEC-2026-0306",
+      "package": "faster-hex",
+      "version": "0.10.0",
+      "title": "`hex_decode_unchecked` AVX2 path reads past `src`"
+    },
+    {
+      "kind": "unsound",
+      "id": "RUSTSEC-2025-0067",
+      "package": "libyml",
+      "version": "0.0.5",
+      "title": "`libyml::string::yaml_string_extend` is unsound and unmaintained"
+    },
+    {
+      "kind": "unsound",
+      "id": "RUSTSEC-2026-0253",
+      "package": "lru",
+      "version": "0.16.3",
+      "title": "Potential use-after-free due to lack of panic safety in `LruCache::pop()`"
+    },
+    {
+      "kind": "unsound",
+      "id": "RUSTSEC-2026-0186",
+      "package": "memmap2",
+      "version": "0.9.9",
+      "title": "Unchecked pointer offset in crate `memmap2`"
+    },
+    {
+      "kind": "unsound",
+      "id": "RUSTSEC-2026-0097",
+      "package": "rand",
+      "version": "0.8.5",
+      "title": "Rand is unsound with a custom logger using `rand::rng()`"
+    },
+    {
+      "kind": "unsound",
+      "id": "RUSTSEC-2026-0097",
+      "package": "rand",
+      "version": "0.9.2",
+      "title": "Rand is unsound with a custom logger using `rand::rng()`"
+    },
+    {
+      "kind": "unsound",
+      "id": "RUSTSEC-2025-0068",
+      "package": "serde_yml",
+      "version": "0.0.12",
+      "title": "serde_yml crate is unsound and unmaintained"
+    },
+    {
+      "kind": "yanked",
+      "id": null,
+      "package": "chacha20",
+      "version": "0.10.1",
+      "title": null
+    },
+    {
+      "kind": "yanked",
+      "id": null,
+      "package": "spin",
+      "version": "0.9.8",
+      "title": null
+    }
+  ],
+  "lock_source_commit": "fe08d8e6b3b32e672b0f956a2b692c3c8205b167",
+  "lock_sha256": "cfed26d0a98f515574607f6015a9547caccace48df43f510c2df38063fe45e64"
+}

@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "id": "article-app-details",
+  "adapter": "robrix-native-article-v1",
+  "artboard": [
+    406,
+    776
+  ],
+  "font_family": "PingFang SC via Robrix theme on macOS/iOS",
+  "palette": {
+    "page": "ffffff",
+    "header": "ededed",
+    "ink": "191919",
+    "muted": "777777",
+    "accent": "07c160"
+  },
+  "reference_sha256": "a49206919359f8f8bcca6dab1d4fc6f44f6aa52e2683c2842eecb7df5bdbaee8",
+  "elements": [
+    {
+      "id": "article_heading",
+      "role": "text",
+      "native_widget": "Label",
+      "reference_atlas_bounds": [
+        411,
+        62,
+        105,
+        20
+      ],
+      "reference_logical_bounds": [
+        116.01,
+        26.23,
+        144.98,
+        27.62
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "App details",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "details",
+      "role": "layout",
+      "native_widget": "View",
+      "reference_atlas_bounds": [
+        334,
+        95,
+        281,
+        510
+      ],
+      "reference_logical_bounds": [
+        9.69,
+        71.8,
+        388.0,
+        704.2
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Built-in app identity and version",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "article_continue",
+      "role": "button",
+      "native_widget": "Button",
+      "reference_atlas_bounds": [
+        347,
+        526,
+        255,
+        54
+      ],
+      "reference_logical_bounds": [
+        27.64,
+        666.92,
+        352.1,
+        74.56
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Display current Matrix account and consent; no grant yet",
+      "source": "src/article_app/ui.rs"
+    }
+  ]
+}

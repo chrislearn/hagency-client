@@ -31,12 +31,12 @@ managed runners through the bounded MCP helper and existing scoped HTTP API.
 ## Boundaries
 
 ### Allowed Changes
-- native/README.md
-- native/hagency/src/task_client.rs
-- native/hagency/src/task_client/**
-- native/hagency/src/mcp.rs
-- native/hagency/src/mcp/**
-- native/hagency/tests/**
+- docs/native-engine.md
+- crates/hagency/src/task_client.rs
+- crates/hagency/src/task_client/**
+- crates/hagency/src/mcp.rs
+- crates/hagency/src/mcp/**
+- crates/hagency/tests/**
 - specs/task-rust-mcp-coordination.spec.md
 - knowledge/decisions/adr-051-native-mcp-coordination.md
 - docs/agent-knowledge.md

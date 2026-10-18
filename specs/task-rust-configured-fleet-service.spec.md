@@ -56,22 +56,22 @@ real client approval, two-agent/live soak, parity or release requirements.
 
 ## Allowed changes
 
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/bootstrap/**
-- native/hagency/src/lib.rs
-- native/hagency/src/runner/files.rs
-- native/hagency/src/runner/received.rs
-- native/hagency/src/file_service.rs
-- native/hagency/src/receive_service.rs
-- native/hagency-execution/src/factory.rs
-- native/hagency-matrix/src/provisioning/factory.rs
-- native/hagency-store/src/domain/owned_dispatch.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/owned_dispatch.rs
-- native/hagency/tests/bootstrap.rs
-- native/hagency/tests/inline_factory.rs
-- native/hagency/tests/inline_factory/**
-- native/hagency/tests/fixtures/owned_mcp_peer.rs
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/bootstrap/**
+- crates/hagency/src/lib.rs
+- crates/hagency/src/runner/files.rs
+- crates/hagency/src/runner/received.rs
+- crates/hagency/src/file_service.rs
+- crates/hagency/src/receive_service.rs
+- crates/hagency-execution/src/factory.rs
+- crates/hagency-matrix/src/provisioning/factory.rs
+- crates/hagency-store/src/domain/owned_dispatch.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/owned_dispatch.rs
+- crates/hagency/tests/bootstrap.rs
+- crates/hagency/tests/inline_factory.rs
+- crates/hagency/tests/inline_factory/**
+- crates/hagency/tests/fixtures/owned_mcp_peer.rs
 - knowledge/decisions/adr-147-provisioning-verdict-effect-route.md
 - this spec, docs/progress.md, docs/agent-knowledge.md
 

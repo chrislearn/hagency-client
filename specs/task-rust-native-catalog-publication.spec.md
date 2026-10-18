@@ -30,17 +30,17 @@ separate; this partition must not claim them complete.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/lib.rs
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain/catalog_publication.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/catalog_publication.rs
-- native/hagency-palpo/src/adapter.rs
-- native/hagency-palpo/src/catalog.rs
-- native/hagency-palpo/src/lib.rs
-- native/hagency-palpo/tests/catalog.rs
-- native/hagency-palpo/tests/common/mod.rs
-- native/hagency-palpo/Cargo.toml
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain/catalog_publication.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/catalog_publication.rs
+- crates/hagency-palpo/src/adapter.rs
+- crates/hagency-palpo/src/catalog.rs
+- crates/hagency-palpo/src/lib.rs
+- crates/hagency-palpo/tests/catalog.rs
+- crates/hagency-palpo/tests/common/mod.rs
+- crates/hagency-palpo/Cargo.toml
 - ./Cargo.lock
 - knowledge/decisions/adr-109-native-catalog-publication.md
 - specs/task-rust-native-catalog-publication.spec.md

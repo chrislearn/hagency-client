@@ -46,7 +46,7 @@ Each step names the file and function to open; search for the function name. ADR
 | --- | --- |
 | [native/](../native/) | The Rust crates (section 4), test fixtures and the spec-binding check scripts. The workspace manifest is [Cargo.toml](../Cargo.toml) at the repository root. |
 | [mockup/](../mockup/) | The console's Next.js source. Node is a build-time tool; a release build embeds the static export in the binary (section 13). |
-| [deploy/](../deploy/), [install/install-native.sh](../install/install-native.sh) | The system unit and launchd plist for `hagency serve`, and the installer that renders them. `hagency service install` writes its own per-user units ([service.rs](../native/hagency/src/service.rs)) and needs neither. |
+| [deploy/](../deploy/), [install/install-native.sh](../install/install-native.sh) | The system unit and launchd plist for `hagency serve`, and the installer that renders them. `hagency service install` writes its own per-user units ([service.rs](../crates/hagency/src/service.rs)) and needs neither. |
 | [specs/](../specs/), [knowledge/](../knowledge/) | Task contracts bound to tests, and the ADRs and requirements behind them |
 | [docs/](.) | Product documentation: this walkthrough, the [user guide](user-guide/README.md), operator [guides/](guides/) and [history/](history/README.md) (historical TypeScript-era architecture and guides). Everything under `docs/` other than `user-guide/`, `guides/`, `history/` and this walkthrough is internal working notes, not product documentation. There are two exceptions: [LICENSING.md](LICENSING.md), the licensing statement, and the agent workspace templates (`workspace-*-template.md`) that `hagency-store` compiles in. |
 
@@ -54,27 +54,27 @@ Code comments often cite `backend-v2.js`, `bridge-matrix.js` and `lib/*.js` with
 
 ## 3. Start at the executable
 
-Open [native/hagency/src/main.rs](../native/hagency/src/main.rs). The `Command` enum is the whole surface:
+Open [crates/hagency/src/main.rs](../crates/hagency/src/main.rs). The `Command` enum is the whole surface:
 
 | Subcommand | Who runs it | What it does |
 | --- | --- | --- |
-| `start` | The operator, or the per-user service | The fleet entry point (ADR-189). It resolves the state directory (`default_state_dir` in [service.rs](../native/hagency/src/service.rs) when `--state-dir` is absent), runs `init_state` from [setup.rs](../native/hagency/src/setup.rs) when there is no `operator.token`, and runs the same `serve` body as `serve --palpo-transport`, with the embedded console. It refuses to start when the binary has no embedded console and no `--console-assets` is given. |
-| `service install`, `service uninstall` | The operator | Write and load a per-user service that runs `start --no-open` ([service.rs](../native/hagency/src/service.rs)): the LaunchAgent `io.hagency` (`launchctl bootstrap gui/<uid>`) on macOS, or the `systemd --user` unit `hagency.service` (`enable --now`) on Linux. The unit carries the binary's canonical path and the installer's `PATH`. `uninstall` keeps the state directory. |
+| `start` | The operator, or the per-user service | The fleet entry point (ADR-189). It resolves the state directory (`default_state_dir` in [service.rs](../crates/hagency/src/service.rs) when `--state-dir` is absent), runs `init_state` from [setup.rs](../crates/hagency/src/setup.rs) when there is no `operator.token`, and runs the same `serve` body as `serve --palpo-transport`, with the embedded console. It refuses to start when the binary has no embedded console and no `--console-assets` is given. |
+| `service install`, `service uninstall` | The operator | Write and load a per-user service that runs `start --no-open` ([service.rs](../crates/hagency/src/service.rs)): the LaunchAgent `io.hagency` (`launchctl bootstrap gui/<uid>`) on macOS, or the `systemd --user` unit `hagency.service` (`enable --now`) on Linux. The unit carries the binary's canonical path and the installer's `PATH`. `uninstall` keeps the state directory. |
 | `serve` | `start`, install-native.sh's units, or the operator | The daemon. Everything in sections 5–14 runs inside it. Coordinator installs run it with explicit flags. |
 | `guardian` (hidden, Unix) | `serve`, as a child process | Owns one runner's process tree (section 11). |
 | `mcp` | Codex, as an MCP server | The task helper that gives the agent its tools (section 12). |
 | `task …` | The agent, from a shell | The same task operations as a CLI. |
-| `intake-refuse-stale-session` | The operator | Rejects one quarantined SDK batch, named by its digest, whose events are pre-session: each one's `origin_ts` is earlier than its session route's `ingress_since`, the moment that session began admitting Matrix input. It records a stale-session receipt per event and retries no model, SDK apply or domain admission ([bootstrap/intake_refusal.rs](../native/hagency/src/bootstrap/intake_refusal.rs); `refuse_stale_session_batch` in `hagency-matrix/src/intake.rs`, `stale_matrix_session_receipt` in `hagency-store/src/domain/verified_ingress.rs`). |
-| `setup` | The operator, or the installer in fleet mode | The CLI form of the Setup page's first step (section 13). Prepares an imported fleet's state directory: initializes it if new, finds Codex and its sign-in folder, writes `fleet-runtime.json` and validates it with `serve`'s loader (`check_fleet_runtime` in [bootstrap.rs](../native/hagency/src/bootstrap.rs); [setup.rs](../native/hagency/src/setup.rs)). |
+| `intake-refuse-stale-session` | The operator | Rejects one quarantined SDK batch, named by its digest, whose events are pre-session: each one's `origin_ts` is earlier than its session route's `ingress_since`, the moment that session began admitting Matrix input. It records a stale-session receipt per event and retries no model, SDK apply or domain admission ([bootstrap/intake_refusal.rs](../crates/hagency/src/bootstrap/intake_refusal.rs); `refuse_stale_session_batch` in `hagency-matrix/src/intake.rs`, `stale_matrix_session_receipt` in `hagency-store/src/domain/verified_ingress.rs`). |
+| `setup` | The operator, or the installer in fleet mode | The CLI form of the Setup page's first step (section 13). Prepares an imported fleet's state directory: initializes it if new, finds Codex and its sign-in folder, writes `fleet-runtime.json` and validates it with `serve`'s loader (`check_fleet_runtime` in [bootstrap.rs](../crates/hagency/src/bootstrap.rs); [setup.rs](../crates/hagency/src/setup.rs)). |
 | `init`, `account`, `registration`, `side-registration`, `provision` | The operator | Create the state directory and credentials offline. Only `account` and `registration register` can drive a running service instead, with `--listen`. |
 | `console-access`, `engagements`, `resources`, `alerts` | The operator | Loopback clients of the running service. |
-| `backup`, `restore`, `rotate` | The operator | Online SQLite backup, restore and credential rotation ([ops/](../native/hagency/src/ops/)). |
+| `backup`, `restore`, `rotate` | The operator | Online SQLite backup, restore and credential rotation ([ops/](../crates/hagency/src/ops/)). |
 
 `guardian` and `mcp` branch off in `main` before any Tokio runtime is built. Everything else runs on one multi-threaded runtime built in `main`.
 
 ### Two ways to run `serve`
 
-`Bootstrap::open_with_options` in [bootstrap.rs](../native/hagency/src/bootstrap.rs) picks the mode from the flags:
+`Bootstrap::open_with_options` in [bootstrap.rs](../crates/hagency/src/bootstrap.rs) picks the mode from the flags:
 
 | Flags | Mode | Agents come from |
 | --- | --- | --- |
@@ -83,7 +83,7 @@ Open [native/hagency/src/main.rs](../native/hagency/src/main.rs). The `Command` 
 
 The units in [deploy/](../deploy/) carry an `__AGENT_DRIVER__` placeholder (`<!--__AGENT_DRIVER_ARG__-->` in the plist). [install-native.sh](../install/install-native.sh) fills it by `--mode`: empty for `fleet`, the default, so the unit runs `serve --palpo-transport`; `--agent-driver` for `coordinator`, which the installer accepts only with an `agent-driver.json` in `--config-dir`. In fleet mode the installer runs `hagency setup` unless `--config-dir` supplied a `fleet-runtime.json`.
 
-`hagency start` is the imported-fleet mode with no flags to choose. It calls the same `serve` function as `serve --palpo-transport`, with one addition: `announce` in [service.rs](../native/hagency/src/service.rs) waits up to 60 s for the service to answer, then asks it for a console link through `console::client::access`. On an interactive terminal it prints the link and opens it (`open` on macOS, `xdg-open` on Linux) unless `--no-open`. When stdout is not a terminal, as under the per-user service, it logs only the `hagency console-access` command, so the link never reaches a log file.
+`hagency start` is the imported-fleet mode with no flags to choose. It calls the same `serve` function as `serve --palpo-transport`, with one addition: `announce` in [service.rs](../crates/hagency/src/service.rs) waits up to 60 s for the service to answer, then asks it for a console link through `console::client::access`. On an interactive terminal it prints the link and opens it (`open` on macOS, `xdg-open` on Linux) unless `--no-open`. When stdout is not a terminal, as under the per-user service, it logs only the `hagency console-access` command, so the link never reaches a log file.
 
 `open_with_options` opens the custody store, then the domain store. In a coordinator install it also builds the approval-bot pump, the file and receive services and the factory service. Last, it builds the Palpo transport (`palpo::Live`). A fresh install with no imported fleet does not refuse to start; the transport waits for the console import.
 
@@ -92,31 +92,31 @@ The units in [deploy/](../deploy/) carry an `__AGENT_DRIVER__` placeholder (`<!-
 - retries approval-bot enrollment with a 1–60 s backoff until it succeeds;
 - only then starts the approval forwarder, the coordinator's driver and the factory loop.
 
-All HTTP traffic shares one loopback port (`127.0.0.1:13300` by default). `App::new` in [lib.rs](../native/hagency/src/lib.rs) refuses any listen address that is not loopback. The service reaches Palpo and Matrix only through outbound connections.
+All HTTP traffic shares one loopback port (`127.0.0.1:13300` by default). `App::new` in [lib.rs](../crates/hagency/src/lib.rs) refuses any listen address that is not loopback. The service reaches Palpo and Matrix only through outbound connections.
 
 | Path | Caller | Auth |
 | --- | --- | --- |
 | `/health`, `/ready` | Supervisors | None. `/ready` answers 503 while any configured component is not ready. |
 | `/console/**` | The operator's browser | Session cookie (section 13) |
 | `/console/api/**` | The console's JavaScript | Session cookie plus same-origin checks |
-| `/api/native/v1/**` | Operator CLI | Bearer `operator.token`, checked by `authorize` in [lib.rs](../native/hagency/src/lib.rs), which runs `local_authority` and then compares the bearer token's SHA-256 in constant time |
-| `/api/native/v1/runner/**` | The `mcp` helper inside a runner | Per-dispatch runner capability ([runner.rs](../native/hagency/src/runner.rs)) |
+| `/api/native/v1/**` | Operator CLI | Bearer `operator.token`, checked by `authorize` in [lib.rs](../crates/hagency/src/lib.rs), which runs `local_authority` and then compares the bearer token's SHA-256 in constant time |
+| `/api/native/v1/runner/**` | The `mcp` helper inside a runner | Per-dispatch runner capability ([runner.rs](../crates/hagency/src/runner.rs)) |
 
 `serve` reads no `.env`. Its configuration is the files in `--state-dir`:
 
 | File | Purpose | Written by |
 | --- | --- | --- |
 | `operator.token` | Operator bearer secret | `hagency init` |
-| `palpo-transport.json`, `palpo.machine_token`, `palpo-appservice.json` | The imported fleet's transport and App Service registration | The Palpo import, `write` in [bootstrap/palpo_import.rs](../native/hagency/src/bootstrap/palpo_import.rs) |
-| `fleet-runtime.json` | Imported fleet: the local Codex executable and its hash, file tools, limits and agent homes (profile `palpo_fleet_runtime_v1`) | `configure` in [setup.rs](../native/hagency/src/setup.rs), called by the Setup page (`POST /console/api/setup/check`) or by `hagency setup`; it also creates `agent-homes/` for `home.root`. Or the operator, through the installer's `--config-dir`. Loaded by `load_fleet_runtime` in [bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs) |
-| `representative.identity.json`, `matrix.representative_token`, `matrix.appservice_token`, `matrix.provisioning_key`, `approval-<owner>.*`, `approval-sdk-<owner>/` | Imported fleet: the representative's device, the App Service token, the agents' provisioning key, and one approval device per owner | The fleet service ([bootstrap/fleet_identity.rs](../native/hagency/src/bootstrap/fleet_identity.rs)) |
-| `runtime-home/` | Imported fleet without a `local_codex` block: the agents' `HOME` and `CODEX_HOME` (section 7) | `serve`, created owner-private when it loads `fleet-runtime.json` (`load_fleet_runtime` in [bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs)) |
+| `palpo-transport.json`, `palpo.machine_token`, `palpo-appservice.json` | The imported fleet's transport and App Service registration | The Palpo import, `write` in [bootstrap/palpo_import.rs](../crates/hagency/src/bootstrap/palpo_import.rs) |
+| `fleet-runtime.json` | Imported fleet: the local Codex executable and its hash, file tools, limits and agent homes (profile `palpo_fleet_runtime_v1`) | `configure` in [setup.rs](../crates/hagency/src/setup.rs), called by the Setup page (`POST /console/api/setup/check`) or by `hagency setup`; it also creates `agent-homes/` for `home.root`. Or the operator, through the installer's `--config-dir`. Loaded by `load_fleet_runtime` in [bootstrap/config.rs](../crates/hagency/src/bootstrap/config.rs) |
+| `representative.identity.json`, `matrix.representative_token`, `matrix.appservice_token`, `matrix.provisioning_key`, `approval-<owner>.*`, `approval-sdk-<owner>/` | Imported fleet: the representative's device, the App Service token, the agents' provisioning key, and one approval device per owner | The fleet service ([bootstrap/fleet_identity.rs](../crates/hagency/src/bootstrap/fleet_identity.rs)) |
+| `runtime-home/` | Imported fleet without a `local_codex` block: the agents' `HOME` and `CODEX_HOME` (section 7) | `serve`, created owner-private when it loads `fleet-runtime.json` (`load_fleet_runtime` in [bootstrap/config.rs](../crates/hagency/src/bootstrap/config.rs)) |
 | `fleet-workspace/` | Imported fleet: a private placeholder workspace for the fleet host; no dispatch is routed to it | `serve`, in the same load |
 | `factory-task-contexts/` | Imported fleet: the task contexts the warm task bridge hands to each dispatch | `serve`, in the same load |
-| `console-logins.json` | SHA-256 hashes of the console access link and of each login, so a restart does not sign the operator out | The console ([console/authority.rs](../native/hagency/src/console/authority.rs)) |
-| `agent-driver.json`, `matrix.*`, `approval.*` | Coordinator install: runner, workspaces, Matrix and approval settings, factory service | The operator ([bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs)) |
-| `agent-matrix-provision_<engagement>/` | Each provisioned agent's credential and SDK store | Provisioning ([hagency-matrix/src/token_provision.rs](../native/hagency-matrix/src/token_provision.rs); the directory is named in `TokenAccountProvision::configured` as `agent-matrix-` plus the effect id `provision_<engagement>`) |
-| `domain.sqlite3`, `custody.sqlite3` | Domain state; Palpo transport custody (section 5) | [native/hagency-store](../native/hagency-store/src/) |
+| `console-logins.json` | SHA-256 hashes of the console access link and of each login, so a restart does not sign the operator out | The console ([console/authority.rs](../crates/hagency/src/console/authority.rs)) |
+| `agent-driver.json`, `matrix.*`, `approval.*` | Coordinator install: runner, workspaces, Matrix and approval settings, factory service | The operator ([bootstrap/config.rs](../crates/hagency/src/bootstrap/config.rs)) |
+| `agent-matrix-provision_<engagement>/` | Each provisioned agent's credential and SDK store | Provisioning ([hagency-matrix/src/token_provision.rs](../crates/hagency-matrix/src/token_provision.rs); the directory is named in `TokenAccountProvision::configured` as `agent-matrix-` plus the effect id `provision_<engagement>`) |
+| `domain.sqlite3`, `custody.sqlite3` | Domain state; Palpo transport custody (section 5) | [crates/hagency-store](../crates/hagency-store/src/) |
 
 ## 4. The crates
 
@@ -177,7 +177,7 @@ Start with three crates: `hagency-core` for the vocabulary as types, `hagency-st
 | One running dispatch | Thread `hagency-owned-dispatch` (warm agents: `hagency-warm-owned-runtime`) | `hagency-execution/src/operation.rs`, `warm.rs` |
 | Runner process tree | `hagency guardian` child process, then Codex | `hagency-platform` |
 | File delivery, received files | Threads `hagency-file-service`, `hagency-receive-service` | `file_service.rs`, `receive_service.rs` |
-| Agent tools | `hagency mcp` child process of Codex, talking HTTP to the runner API | `native/hagency/src/mcp.rs` |
+| Agent tools | `hagency mcp` child process of Codex, talking HTTP to the runner API | `crates/hagency/src/mcp.rs` |
 
 ```mermaid
 flowchart LR
@@ -246,8 +246,8 @@ sequenceDiagram
     L->>P: POST updates {probeReceipts}
 ```
 
-1. [console/palpo_import.rs](../native/hagency/src/console/palpo_import.rs) accepts the upload and calls `Live::import` in [bootstrap/palpo.rs](../native/hagency/src/bootstrap/palpo.rs).
-2. `parse` in [bootstrap/palpo_import.rs](../native/hagency/src/bootstrap/palpo_import.rs) accepts exactly one shape:
+1. [console/palpo_import.rs](../crates/hagency/src/console/palpo_import.rs) accepts the upload and calls `Live::import` in [bootstrap/palpo.rs](../crates/hagency/src/bootstrap/palpo.rs).
+2. `parse` in [bootstrap/palpo_import.rs](../crates/hagency/src/bootstrap/palpo_import.rs) accepts exactly one shape:
    - The fleet id is `hf_` plus 32 hex characters, and the sender is `<fleet>_representative`.
    - There is one exclusive user namespace `@<fleet>_…:<server>` and no room or alias namespaces.
    - `as_token`, `hs_token` and the machine token are all different.
@@ -258,19 +258,19 @@ sequenceDiagram
    - **State directory:** three private files.
    - With `--palpo-transport` set, the transport starts at once, without a restart. A re-import of the same fleet keeps the bound reception room and the running fleet service.
 4. Credentials are write-only. `SideRecord` in `hagency-store/src/domain/side_lifecycle.rs` exposes `credential_kind` and `has_credential`, never the token. The import route answers with public facts only.
-5. The transport is [hagency-palpo](../native/hagency-palpo/src/).
+5. The transport is [hagency-palpo](../crates/hagency-palpo/src/).
    - `adapter.rs` long-polls `GET {endpoint}/poll` on two lanes, then calls `POST ack` and `POST updates`.
    - The **matrix lane** relays App Service transactions. The **work lane** carries jobs such as probes and agent requests.
    - The poll waits 25 s and the catalog republishes every 15 s (`config.rs`).
    - Nothing listens for inbound connections. A homeserver behind NAT works without exposing Hagency.
-6. "Verify connection & create reception" in Palpo makes the representative post a `com.hagency.connection.probe.v1` event. `work_once` in [bootstrap/palpo_work.rs](../native/hagency/src/bootstrap/palpo_work.rs) re-reads that event as the representative, and `decide` in [bootstrap/probe.rs](../native/hagency/src/bootstrap/probe.rs) checks the room. The room is bound only if it is invite-only and unencrypted, the representative has joined, and no other reception room is bound. The receipt returns to Palpo in the next `updates`. A failed probe is retried until it succeeds.
+6. "Verify connection & create reception" in Palpo makes the representative post a `com.hagency.connection.probe.v1` event. `work_once` in [bootstrap/palpo_work.rs](../crates/hagency/src/bootstrap/palpo_work.rs) re-reads that event as the representative, and `decide` in [bootstrap/probe.rs](../crates/hagency/src/bootstrap/probe.rs) checks the room. The room is bound only if it is invite-only and unencrypted, the representative has joined, and no other reception room is bound. The receipt returns to Palpo in the next `updates`. A failed probe is retried until it succeeds.
 7. The same loop (`run` in `palpo_work.rs`) lets the approval bot accept invites to private approval rooms every 15 s (`approval_invites_once`).
 
-Test examples: `native_palpo_import_route_saves_the_owner_download` and `native_palpo_import_route_refuses_a_foreign_file` in [hagency/tests/console/palpo_import.rs](../native/hagency/tests/console/palpo_import.rs).
+Test examples: `native_palpo_import_route_saves_the_owner_download` and `native_palpo_import_route_refuses_a_foreign_file` in [hagency/tests/console/palpo_import.rs](../crates/hagency/tests/console/palpo_import.rs).
 
 ## 7. The fleet service (ADR-187)
 
-An imported fleet runs with no coordinator agent. [ADR-187](../knowledge/decisions/adr-187-palpo-fleet-without-coordinator.md) and its amendment set the rules. `FleetService::start` in [bootstrap/fleet_service.rs](../native/hagency/src/bootstrap/fleet_service.rs) runs one supervisor task. It walks four stages, logs each change, and never exits. The two `awaiting_*` stages poll at a fixed 5 s; the `identities` stage and a refused configuration back off from 1 s to 60 s (`BACKOFF_MIN`, `BACKOFF_MAX`):
+An imported fleet runs with no coordinator agent. [ADR-187](../knowledge/decisions/adr-187-palpo-fleet-without-coordinator.md) and its amendment set the rules. `FleetService::start` in [bootstrap/fleet_service.rs](../crates/hagency/src/bootstrap/fleet_service.rs) runs one supervisor task. It walks four stages, logs each change, and never exits. The two `awaiting_*` stages poll at a fixed 5 s; the `identities` stage and a refused configuration back off from 1 s to 60 s (`BACKOFF_MIN`, `BACKOFF_MAX`):
 
 ```mermaid
 flowchart LR
@@ -279,9 +279,9 @@ flowchart LR
     C --> D["running<br/>host + agents + owner pumps"]
 ```
 
-`build` loads `fleet-runtime.json` (`load_fleet_runtime` in [bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs), which checks the pinned binary with `verify_executable`) once, on the way to `running`; a running service keeps that configuration until the process restarts. A configuration that `build` refuses shows as `refused_config` and is retried, re-reading the file each time. One cause is a Codex update: `fleet-runtime.json` pins the binary's SHA-256, and the Setup page rewrites a stale file (`runtimeStale`, section 13). A service already `running` when Codex is updated does not reload the rewritten file; the operator restarts it, and the page says so (`restartNeeded`).
+`build` loads `fleet-runtime.json` (`load_fleet_runtime` in [bootstrap/config.rs](../crates/hagency/src/bootstrap/config.rs), which checks the pinned binary with `verify_executable`) once, on the way to `running`; a running service keeps that configuration until the process restarts. A configuration that `build` refuses shows as `refused_config` and is retried, re-reading the file each time. One cause is a Codex update: `fleet-runtime.json` pins the binary's SHA-256, and the Setup page rewrites a stale file (`runtimeStale`, section 13). A service already `running` when Codex is updated does not reload the rewritten file; the operator restarts it, and the page says so (`restartNeeded`).
 
-**Identities** (`ensure` in [bootstrap/fleet_identity.rs](../native/hagency/src/bootstrap/fleet_identity.rs)):
+**Identities** (`ensure` in [bootstrap/fleet_identity.rs](../crates/hagency/src/bootstrap/fleet_identity.rs)):
 - The representative gets one device by App Service login. It is created once and reused. A stored token the homeserver no longer accepts is refused, never replaced, because room custody is bound to it.
 - The App Service token is copied to `matrix.appservice_token`. The agents' provisioning key `matrix.provisioning_key` is random, created once and never sent anywhere.
 - An approval device from an earlier hand-built install (`approval.access_token`) is adopted, not re-created.
@@ -289,7 +289,7 @@ flowchart LR
 **Running.** `build` creates a `TokenProvisioningHost` from the imported files with `with_agent_rooms_pinned_anchors`, plus the membership sweep, which acts with the representative's credential. It then creates a `fleet::Service` with `Provider::Fleet`. `run` then:
 1. Calls `prepare_owners` once, so that agents re-attached after a restart find their owner's approval device.
 2. Starts the agent service (`fleet::Service::run`).
-3. Every 2 s, calls `prepare_owners` and then `provision_pass` in [hagency-matrix/src/provisioning.rs](../native/hagency-matrix/src/provisioning.rs). One engagement's refusal goes into the pass report and never stops another (ADR-182).
+3. Every 2 s, calls `prepare_owners` and then `provision_pass` in [hagency-matrix/src/provisioning.rs](../crates/hagency-matrix/src/provisioning.rs). One engagement's refusal goes into the pass report and never stops another (ADR-182).
 
 **Owners** (`prepare_owners`). For each engagement that is pending, waiting for its owner, or already provisioned:
 1. `fleet_identity::owner_anchor` returns the owner's pinned master key. With none pinned, `fetch_master_key` reads the key with the representative's device (`POST /keys/query`) and pins it. An owner with no cross-signing key yet makes the provision wait; "no key" never means "no anchor needed".
@@ -297,23 +297,23 @@ flowchart LR
 3. `owner_collector` builds an `ApprovalCollector` anchored on the fleet (`HostApprovalConfig::for_fleet`), and `attach_owner_approvals` hands it to the host. Until it is attached, a warm agent's provision waits before it claims anything.
 4. `supervise_pump` runs that owner's approval pump. It retries enrollment, and it restarts a drain that ended on a refused card, so one bad card does not stop that owner's approvals.
 
-**Owner anchors are trusted on first use.** The table is `owner_anchors` ([hagency-store/src/domain/owner_anchors.rs](../native/hagency-store/src/domain/owner_anchors.rs), [migrations/059-owner-anchors.sql](../native/hagency-store/src/migrations/059-owner-anchors.sql)). It holds one row per owner: `master_key`, `source` (`first_use` or `operator`), and `mismatch_key`/`mismatch_at` for a later, different key, which is never adopted. This amends ADR-102 for imported fleets: the first answer from the homeserver is trusted. The fleet service never re-reads a pinned key, so a later change surfaces only as an enrollment refusal (section 15).
+**Owner anchors are trusted on first use.** The table is `owner_anchors` ([hagency-store/src/domain/owner_anchors.rs](../crates/hagency-store/src/domain/owner_anchors.rs), [migrations/059-owner-anchors.sql](../crates/hagency-store/src/migrations/059-owner-anchors.sql)). It holds one row per owner: `master_key`, `source` (`first_use` or `operator`), and `mismatch_key`/`mismatch_at` for a later, different key, which is never adopted. This amends ADR-102 for imported fleets: the first answer from the homeserver is trusted. The fleet service never re-reads a pinned key, so a later change surfaces only as an enrollment refusal (section 15).
 
-**Agents** ([bootstrap/fleet.rs](../native/hagency/src/bootstrap/fleet.rs)). `Provider` says where agents come from: `Coordinator` (a coordinator's collector) or `Fleet` (the provisioning host). `Service::admit` accepts at most 16 agents. For a fleet agent, it:
+**Agents** ([bootstrap/fleet.rs](../crates/hagency/src/bootstrap/fleet.rs)). `Provider` says where agents come from: `Coordinator` (a coordinator's collector) or `Fleet` (the provisioning host). `Service::admit` accepts at most 16 agents. For a fleet agent, it:
 - gives the agent its owner's approval pump, and refuses if that owner has none yet;
 - records the agent's transport, so the public "waiting for approval" notice is sent by the waiting agent;
 - starts the agent's own invite poller (`AgentOwner.invites`, section 10);
 - starts its driver, file and receive services.
 
-**Codex sign-in.** The user signs in to Codex; Hagency never runs a login. `detect_codex` in [setup.rs](../native/hagency/src/setup.rs) finds the binary `setup` would use and runs only `codex --version` and `codex login status` (10 s timeout each). For `codex login status`, the exit status decides `signed_in`, and the output decides the sign-in kind (`chatgpt` or `api_key`), which the Setup page shows. A fleet agent's Codex credential comes from `fleet-runtime.json` (`FleetRuntimeConfig` in [bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs)), which the Setup page or `hagency setup` writes (the page always uses the default Codex folder): with a `local_codex` block (preset `local_codex`, seat `local_codex_seat`, the user's `HOME` and Codex folder) by default, without one under `--no-local-codex`. Setup reports whether that folder holds a sign-in (`auth.json`) and prints the `CODEX_HOME=… codex login` command when it does not. With a `local_codex` block, the agent reuses an existing Codex sign-in on the host through that block's `codex_home`. Without one, `HOME` and `CODEX_HOME` point at `<state>/runtime-home`. The fleet runtime has no managed account: `hagency account` namespaces and `agent-driver.json`'s `managed_account` apply to a coordinator install only (the launch environment is set in [hagency-execution/src/host.rs](../native/hagency-execution/src/host.rs)).
+**Codex sign-in.** The user signs in to Codex; Hagency never runs a login. `detect_codex` in [setup.rs](../crates/hagency/src/setup.rs) finds the binary `setup` would use and runs only `codex --version` and `codex login status` (10 s timeout each). For `codex login status`, the exit status decides `signed_in`, and the output decides the sign-in kind (`chatgpt` or `api_key`), which the Setup page shows. A fleet agent's Codex credential comes from `fleet-runtime.json` (`FleetRuntimeConfig` in [bootstrap/config.rs](../crates/hagency/src/bootstrap/config.rs)), which the Setup page or `hagency setup` writes (the page always uses the default Codex folder): with a `local_codex` block (preset `local_codex`, seat `local_codex_seat`, the user's `HOME` and Codex folder) by default, without one under `--no-local-codex`. Setup reports whether that folder holds a sign-in (`auth.json`) and prints the `CODEX_HOME=… codex login` command when it does not. With a `local_codex` block, the agent reuses an existing Codex sign-in on the host through that block's `codex_home`. Without one, `HOME` and `CODEX_HOME` point at `<state>/runtime-home`. The fleet runtime has no managed account: `hagency account` namespaces and `agent-driver.json`'s `managed_account` apply to a coordinator install only (the launch environment is set in [hagency-execution/src/host.rs](../crates/hagency-execution/src/host.rs)).
 
 **Request intake has one path.** On an imported fleet, reception requests are admitted only by the Palpo work lane (`admit_request` in `palpo_work.rs`, section 9).
 
 ## 8. Resources and the catalog
 
 Resources are created in three places:
-- **Setup page.** `POST /console/api/setup/resource` (`offer` in [console/setup.rs](../native/hagency/src/console/setup.rs)) creates a published `local_codex` resource from a model, a reasoning effort and a monthly ceiling (20,000,000 tokens when omitted). It refuses a pair that `configuration_choices` in `hagency-core/src/qualification.rs` does not qualify (`setup_unqualified_model`), and it needs `fleet-runtime.json` (`setup_runtime_missing`). It takes the seat from the file's `local_codex.seat`, so the resource always matches the sign-in. It writes through `edit_resource`, the same store call as the operator API.
-- **Operator API.** `POST /api/native/v1/resources` (`put_resource` in [resources.rs](../native/hagency/src/resources.rs)) writes a resource from its full definition. The API does not check that a resource matches the `local_codex` sign-in. With a `local_codex` block, `LocalCodex::admit_provision` (at provisioning) and `LocalCodex::admit` (per dispatch) in `hagency-execution/src/local_codex.rs` refuse a resource whose `seat_id` differs from the block's `seat`, whose framework is not `codex`, whose provider is set and not `openai`, or that needs a managed account; without the block, any seat works.
+- **Setup page.** `POST /console/api/setup/resource` (`offer` in [console/setup.rs](../crates/hagency/src/console/setup.rs)) creates a published `local_codex` resource from a model, a reasoning effort and a monthly ceiling (20,000,000 tokens when omitted). It refuses a pair that `configuration_choices` in `hagency-core/src/qualification.rs` does not qualify (`setup_unqualified_model`), and it needs `fleet-runtime.json` (`setup_runtime_missing`). It takes the seat from the file's `local_codex.seat`, so the resource always matches the sign-in. It writes through `edit_resource`, the same store call as the operator API.
+- **Operator API.** `POST /api/native/v1/resources` (`put_resource` in [resources.rs](../crates/hagency/src/resources.rs)) writes a resource from its full definition. The API does not check that a resource matches the `local_codex` sign-in. With a `local_codex` block, `LocalCodex::admit_provision` (at provisioning) and `LocalCodex::admit` (per dispatch) in `hagency-execution/src/local_codex.rs` refuse a resource whose `seat_id` differs from the block's `seat`, whose framework is not `codex`, whose provider is set and not `openai`, or that needs a managed account; without the block, any seat works.
 - **Console.** The resources route in `console/resources.rs` hands creation to `resource_configuration::create`, which copies an existing source resource (`source_resource_id`) with a new model, reasoning effort or ceiling. This page cannot create a resource from nothing; the Setup page can. With no resources, the page's empty state points an imported fleet to the Setup page and a coordinator install to managed-account enrollment (`console/accounts.rs`); a resource bound to a managed account is refused by a fleet host, which has none (`hagency-execution/src/host.rs`).
 
 `console/resource_configuration.rs` also changes an existing resource's model, reasoning effort and monthly ceiling, using `expectedRevision` for optimistic concurrency.
@@ -350,7 +350,7 @@ stateDiagram-v2
     failed --> [*]
 ```
 
-**Admission.** `admit_request` in [bootstrap/palpo_work.rs](../native/hagency/src/bootstrap/palpo_work.rs) re-reads the source event, observes the rooms, and calls `verify_request` in `hagency-core/src/authority.rs`. These must hold:
+**Admission.** `admit_request` in [bootstrap/palpo_work.rs](../crates/hagency/src/bootstrap/palpo_work.rs) re-reads the source event, observes the rooms, and calls `verify_request` in `hagency-core/src/authority.rs`. These must hold:
 - The reception and project rooms are invite-only and unencrypted.
 - The requester, the owner and the representative have joined the project room.
 - The owner has power level 100 there.
@@ -371,7 +371,7 @@ stateDiagram-v2
 
 `refresh_statuses` in `palpo_work.rs` reports each state back to Palpo: `pending`, `active` while provisioning, `active` plus `complete`, `rejected` or `ended`. It also sends the allocated tokens, the agent's MXID and `ready` once the agent has joined its room.
 
-**Provisioning.** `provision_pass` in [hagency-matrix/src/provisioning.rs](../native/hagency-matrix/src/provisioning.rs) runs every pending `provision_<id>` effect and gives each provision that is waiting for its owner one more look. The fleet service calls it every 2 s; a coordinator install calls it from the coordinator's intake turn (`hagency-matrix/src/intake.rs`). Each claim is fenced by its effect id. The order comes from ADR-184:
+**Provisioning.** `provision_pass` in [hagency-matrix/src/provisioning.rs](../crates/hagency-matrix/src/provisioning.rs) runs every pending `provision_<id>` effect and gives each provision that is waiting for its owner one more look. The fleet service calls it every 2 s; a coordinator install calls it from the coordinator's intake turn (`hagency-matrix/src/intake.rs`). Each claim is fenced by its effect id. The order comes from ADR-184:
 
 1. Create `@<fleet>_<32hex>:<server>` through App Service `/register`, then log in to get device `DEVICE_<engagement>` (`token_provision.rs`, `token_provision/application_service.rs`).
 2. Set the display name to the project's agent name.
@@ -384,10 +384,10 @@ Step 5 comes before step 6 so that the owner's client always has the agent's key
 
 Every Matrix write records a custody stage before and after it: `dm-possible`/`dm-response`, `invite-possible`/`invite-response`, and so on (`token_provision/rooms/custody.rs`). After a lost response, the next attempt inspects the room instead of repeating the write.
 
-**Re-attach after a restart.** `reattach_factory` in [hagency-matrix/src/provisioning/factory.rs](../native/hagency-matrix/src/provisioning/factory.rs) brings back each agent the factory completed. It continues the stored transport generation, or opens generation + 1 when that generation was fenced. The DM session id carries the generation after a fenced re-attach (`session_<engagement>` for generation 1, `session_<engagement>_<n>` after that), because the store never rebinds a session whose route a fence retired.
+**Re-attach after a restart.** `reattach_factory` in [hagency-matrix/src/provisioning/factory.rs](../crates/hagency-matrix/src/provisioning/factory.rs) brings back each agent the factory completed. It continues the stored transport generation, or opens generation + 1 when that generation was fenced. The DM session id carries the generation after a fenced re-attach (`session_<engagement>` for generation 1, `session_<engagement>_<n>` after that), because the store never rebinds a session whose route a fence retired.
 
 **Retirement.**
-- `POST …/retire` revokes a pending, reserved or active engagement. A reserved engagement's provision effect is cancelled. If provisioning had started, the call queues a `retire_<id>` effect. The agent's driver runs it: it leaves every room and logs the device out ([hagency-matrix/src/retire.rs](../native/hagency-matrix/src/retire.rs)). An agent that never got a credential is settled by `settle_unattached_retirements` in the provisioning pass.
+- `POST …/retire` revokes a pending, reserved or active engagement. A reserved engagement's provision effect is cancelled. If provisioning had started, the call queues a `retire_<id>` effect. The agent's driver runs it: it leaves every room and logs the device out ([hagency-matrix/src/retire.rs](../crates/hagency-matrix/src/retire.rs)). An agent that never got a credential is settled by `settle_unattached_retirements` in the provisioning pass.
 - A failed retirement is re-run only by `POST …/cleanup-retry`.
 
 ## 10. Rooms, and who can talk to an agent
@@ -413,7 +413,7 @@ Only human messages wake an agent; `!` commands and `/thread` directives are rec
 
 ### Invites
 
-`poll_round` in [bootstrap/invites.rs](../native/hagency/src/bootstrap/invites.rs) runs every 10 s for one agent:
+`poll_round` in [bootstrap/invites.rs](../crates/hagency/src/bootstrap/invites.rs) runs every 10 s for one agent:
 - An invite from a trusted inviter is joined at once. Trusted means the project owner recorded for that room, or the agent's own owner.
 - Any other invite, including one whose inviter cannot be read, becomes a row in `pending_invites`. The operator accepts or declines it in the console under Invitations (`console/invites.rs`). The next round then joins or leaves.
 - Declines are remembered, so the same invite cannot come back.
@@ -421,19 +421,19 @@ Only human messages wake an agent; `!` commands and `/thread` directives are rec
 
 On an imported fleet, each agent runs its own poller (`AgentOwner.invites` in `fleet.rs`). In a coordinator install, only the coordinator's poller runs (`Bootstrap::serve`).
 
-Test examples: `untrusted_invite_becomes_a_pending_decision`, `owner_invite_takes_the_trusted_inviter_arm_and_joins` and `console_accept_queues_the_join_and_the_next_poll_performs_it` in [hagency/tests/invites.rs](../native/hagency/tests/invites.rs).
+Test examples: `untrusted_invite_becomes_a_pending_decision`, `owner_invite_takes_the_trusted_inviter_arm_and_joins` and `console_accept_queues_the_join_and_the_next_poll_performs_it` in [hagency/tests/invites.rs](../crates/hagency/tests/invites.rs).
 
 ### Joined rooms (ADR-188)
 
 [ADR-188](../knowledge/decisions/adr-188-agents-work-in-rooms-they-join.md) lets an agent work in rooms it joins after it was created. The data path:
 
-1. **Store.** `joined_rooms` ([hagency-store/src/domain/joined_rooms.rs](../native/hagency-store/src/domain/joined_rooms.rs), [migrations/074-joined-rooms.sql](../native/hagency-store/src/migrations/074-joined-rooms.sql)) has one row per (engagement, room), with `state` = `working`, `encrypted_shared` or `retired`, and `notice_at`. An engagement holds at most 12 live joined rooms (`MAX_JOINED_ROOMS`). Joining a retired room again makes it `working`.
+1. **Store.** `joined_rooms` ([hagency-store/src/domain/joined_rooms.rs](../crates/hagency-store/src/domain/joined_rooms.rs), [migrations/074-joined-rooms.sql](../crates/hagency-store/src/migrations/074-joined-rooms.sql)) has one row per (engagement, room), with `state` = `working`, `encrypted_shared` or `retired`, and `notice_at`. An engagement holds at most 12 live joined rooms (`MAX_JOINED_ROOMS`). Joining a retired room again makes it `working`.
 2. **Each driver pass.** `ProvisionedAgent::inboxes` calls `joined_rooms` in `provisioning/factory.rs`:
    - It reads the rows. A room the agent is no longer in, according to `GET /joined_rooms`, is retired.
    - It observes each remaining room. An encrypted room whose members are not exactly the owner and the agent becomes `encrypted_shared`; every other room is `working`.
    - For a working room, `joined_session` resolves a session `joined_<engagement>_<transport>_<generation>_<hash>` and adds the room to the claim profile with `OwnedClaimRoom::joined_group`.
    - A room that cannot be observed or routed is skipped this pass. It never stops the identity rooms.
-3. **Collector.** The `Inner` struct in [hagency-matrix/src/collector.rs](../native/hagency-matrix/src/collector.rs) keeps two in-memory maps: `joined` (room → working) and `joined_shared`. `host_rooms()` returns the identity rooms plus the working joined rooms. `observed()` adds the reception room. These sets drive the sync filter, intake targets and send checks.
+3. **Collector.** The `Inner` struct in [hagency-matrix/src/collector.rs](../crates/hagency-matrix/src/collector.rs) keeps two in-memory maps: `joined` (room → working) and `joined_shared`. `host_rooms()` returns the identity rooms plus the working joined rooms. `observed()` adds the reception room. These sets drive the sync filter, intake targets and send checks.
 4. **Store admission.** The room-scope writer in `domain/matrix_routes.rs` accepts a group room other than the project room only while `joined_working` finds a working row. `refresh_matrix_rooms` in `domain/owned_dispatch.rs` lets joined rooms be added or dropped, but the identity rooms must stay unchanged, and the profile holds at most 16 rooms. The claim query in `domain/execution.rs` also checks for a working row.
 5. **Wake rule.** In `admit_matrix_input`, a group-room message wakes the agent if it mentions the agent, or if `owner_only_joined_room` finds a working joined room whose only members are the owner and the agent.
 6. **Encrypted and shared.** The agent stays joined and posts one plain `m.notice` explaining that it cannot work there. If someone posts later, it repeats the notice at most once every 15 minutes (`RENOTICE_GAP_MS`). It reads only senders and timestamps, never message content. The state is checked again on every pass, so a room where only the owner remains becomes `working`.
@@ -441,11 +441,11 @@ Test examples: `untrusted_invite_becomes_a_pending_decision`, `owner_invite_take
 
 Approvals and tokens are unchanged: work in a joined room spends the same allocation, and its cards go to the owner's approval room.
 
-Test examples: `native_joined_room_record_state_and_notice`, `native_joined_group_room_scope_needs_a_working_join`, `native_joined_room_wake_rules` and `native_claim_profile_carries_joined_rooms` in [hagency-store/tests/joined_rooms.rs](../native/hagency-store/tests/joined_rooms.rs).
+Test examples: `native_joined_room_record_state_and_notice`, `native_joined_group_room_scope_needs_a_working_join`, `native_joined_room_wake_rules` and `native_claim_profile_carries_joined_rooms` in [hagency-store/tests/joined_rooms.rs](../crates/hagency-store/tests/joined_rooms.rs).
 
 ### Why joined rooms never enter `HostConfig.rooms`
 
-An agent's encrypted SDK store is bound to a digest. `binding()` in [hagency-matrix/src/config.rs](../native/hagency-matrix/src/config.rs) hashes these fields:
+An agent's encrypted SDK store is bound to a digest. `binding()` in [hagency-matrix/src/config.rs](../crates/hagency-matrix/src/config.rs) hashes these fields:
 - the origin and the registration fingerprint and generation;
 - the engagement, server, account and device;
 - the set of `HostConfig.rooms` ids.
@@ -484,14 +484,14 @@ sequenceDiagram
     D->>HS: PUT /send (reply relation, formatted HTML)
 ```
 
-**Intake.** Each active agent has a driver: an OS thread named `hagency-agent-driver` with its own current-thread runtime (`Driver::start_agent` in [bootstrap/driver.rs](../native/hagency/src/bootstrap/driver.rs)). The fleet service starts one driver per admitted agent.
+**Intake.** Each active agent has a driver: an OS thread named `hagency-agent-driver` with its own current-thread runtime (`Driver::start_agent` in [bootstrap/driver.rs](../crates/hagency/src/bootstrap/driver.rs)). The fleet service starts one driver per admitted agent.
 
 `run_continuous` repeats `run`:
 1. `collector.collect`, then resume any unfinished outgoing custody.
 2. Refresh the agent's rooms and inboxes (`ProvisionedAgent::inboxes`, including joined rooms), and build a `HostIntakePlan` from them.
 3. `collector.intake(plan)`. Idle passes sleep 1 s, and errors back off up to 60 s.
 
-`Inner::intake` in [hagency-matrix/src/intake.rs](../native/hagency-matrix/src/intake.rs) handles one pass:
+`Inner::intake` in [hagency-matrix/src/intake.rs](../crates/hagency-matrix/src/intake.rs) handles one pass:
 1. Check the agent's identity with `whoami`.
 2. Issue one `GET /sync` with `timeout=0`, a room filter and the stored `since`, and narrow the response to the observed rooms (`scope_sync`).
 3. Pass the response to the SDK owner thread (`Owner::intake_start` in `sdk.rs`). It journals the batch, applies it to the encrypted state store, and retries envelopes that earlier lacked keys.
@@ -519,14 +519,14 @@ The driver posts a "started" notice. That event becomes the anchor that later pr
 - The engagement is `active`, with no open `quota_holds` row, no agent fence and no quarantine.
 - The workspace lease is free.
 - The account's readiness is known.
-- Fewer than `max_live` dispatches are live: 8 for an owner with a warm runtime (factory and fleet agents), otherwise 1 (`max_live` in [bootstrap/config.rs](../native/hagency/src/bootstrap/config.rs)).
+- Fewer than `max_live` dispatches are live: 8 for an owner with a warm runtime (factory and fleet agents), otherwise 1 (`max_live` in [bootstrap/config.rs](../crates/hagency/src/bootstrap/config.rs)).
 
 The lease bumps the fence and mints a `RunnerCapability`: dispatch id, runner id, fence number and a secret stored only as a hash.
 
-**Execution.** `execute` in [hagency-execution/src/operation.rs](../native/hagency-execution/src/operation.rs) runs on a `hagency-owned-dispatch` thread:
+**Execution.** `execute` in [hagency-execution/src/operation.rs](../crates/hagency-execution/src/operation.rs) runs on a `hagency-owned-dispatch` thread:
 1. `hagency-execution/src/host.rs` resolves the workspace. When the agent's workspace mode is `worktree` and the session has a thread root, the dispatch gets its own `git worktree`, and is refused if no worktree directory is configured (ADR-011). Every other dispatch uses the agent's shared workspace. It also sets the environment, including `HAGENCY_RUNNER_API_ADDR` and the capability, and fixes argv to `["app-server"]`.
 2. `OwnedSession::spawn` (`hagency-runtime/src/owned/session.rs`) starts `hagency guardian`.
-   - **Unix:** a socket pair carries a Prepare/Start handshake ([hagency-platform/src/supervisor/unix.rs](../native/hagency-platform/src/supervisor/unix.rs)). The guardian puts Codex in its own process group, becomes subreaper on Linux, and kills the whole group on stop.
+   - **Unix:** a socket pair carries a Prepare/Start handshake ([hagency-platform/src/supervisor/unix.rs](../crates/hagency-platform/src/supervisor/unix.rs)). The guardian puts Codex in its own process group, becomes subreaper on Linux, and kills the whole group on stop.
    - **Windows:** no guardian. The child is created directly inside a kill-on-close Job Object (`hagency-platform/src/windows.rs`).
 3. The Codex app-server protocol (`hagency-runtime/src/codex/session/driver.rs`) runs `initialize`, `thread/start` and `turn/start`, then reads updates until `TurnEnded`.
    - `thread/start` sets `sandbox: workspace-write` (or `read-only`), `approvalPolicy: on-request`, no network and no extra writable roots (`codex/session.rs`). `state.rs` checks that Codex echoed these settings back.
@@ -540,7 +540,7 @@ The lease bumps the fence and mints a `RunnerCapability`: dispatch id, runner id
 
 After the guardian proves the process tree is gone, `publish_owned_completion` marks the reply `ready`. If cleanup cannot be proven, the reply is not published and the driver fences the agent instead.
 
-**Reply.** `finish_attempt` in `driver.rs` claims the final reply and calls `collector.send_final`. `Inner::outgoing` in [hagency-matrix/src/outgoing.rs](../native/hagency-matrix/src/outgoing.rs) then:
+**Reply.** `finish_attempt` in `driver.rs` claims the final reply and calls `collector.send_final`. `Inner::outgoing` in [hagency-matrix/src/outgoing.rs](../crates/hagency-matrix/src/outgoing.rs) then:
 - Looks up any earlier receipt for this reply and returns it if one exists.
 - Builds the content with a body and a Markdown-rendered `formatted_body` (`hagency-matrix-format`, raw HTML disabled).
 - Adds the reply relation from `reply_relation` (`outgoing/state.rs`): `m.thread` when the source message was in a thread, `m.in_reply_to` for this example's top-level group message, nothing in a DM.
@@ -548,11 +548,11 @@ After the guardian proves the process tree is gone, `publish_owned_completion` m
 
 A resumed send reuses the same transaction id.
 
-Test example: `native_two_agent_task_handoff_observes_usage_on_the_right_engagement` in [hagency/tests/two_agent_handoff.rs](../native/hagency/tests/two_agent_handoff.rs).
+Test example: `native_two_agent_task_handoff_observes_usage_on_the_right_engagement` in [hagency/tests/two_agent_handoff.rs](../crates/hagency/tests/two_agent_handoff.rs).
 
 ## 12. Tools and approvals
 
-Codex starts `hagency mcp` as the MCP server `hagency_task_writer`. The always-on tools are `TASK_MCP_TOOLS`. Three optional groups are switched on in the runtime configuration by `coordination_tools`, `send_file` and `receive_file` ([hagency-runtime/src/task_mcp.rs](../native/hagency-runtime/src/task_mcp.rs)). Routes are under `/api/native/v1/runner/`, and the task and coordination handlers pass a `RunnerCommand` (`hagency-core/src/tasks.rs`) to `DomainStore::runner_command`. The file routes hand off to their service threads:
+Codex starts `hagency mcp` as the MCP server `hagency_task_writer`. The always-on tools are `TASK_MCP_TOOLS`. Three optional groups are switched on in the runtime configuration by `coordination_tools`, `send_file` and `receive_file` ([hagency-runtime/src/task_mcp.rs](../crates/hagency-runtime/src/task_mcp.rs)). Routes are under `/api/native/v1/runner/`, and the task and coordination handlers pass a `RunnerCommand` (`hagency-core/src/tasks.rs`) to `DomainStore::runner_command`. The file routes hand off to their service threads:
 
 | Tool | Route | Handler in `runner.rs` or `runner/` | Pre-approved |
 | --- | --- | --- | --- |
@@ -566,7 +566,7 @@ Codex starts `hagency mcp` as the MCP server `hagency_task_writer`. The always-o
 | `send_file`, `get_file_delivery` | `file-deliveries`, `file-deliveries/{id}` | `files.rs` (`submit`, `inspect`), then the file-service thread | No |
 | `list_received_files`, `receive_file` | `received-files` | `received.rs`, then the receive-service thread | No |
 
-The runner API also serves routes that Codex never calls as tools: `approval` and `approval/consume`, `inbox`, `tasks/{id}/comments`, `graphs/*` ([runner/workflows.rs](../native/hagency/src/runner/workflows.rs)), `final-replies` ([runner/replies.rs](../native/hagency/src/runner/replies.rs)), `late-output` ([runner/completion.rs](../native/hagency/src/runner/completion.rs)) and a fixed refusal on `PATCH agent`. The helper's catalog hides `get_approval`, `consume_approval` and `accept_task` from the owned Codex profile (`mcp.rs`).
+The runner API also serves routes that Codex never calls as tools: `approval` and `approval/consume`, `inbox`, `tasks/{id}/comments`, `graphs/*` ([runner/workflows.rs](../crates/hagency/src/runner/workflows.rs)), `final-replies` ([runner/replies.rs](../crates/hagency/src/runner/replies.rs)), `late-output` ([runner/completion.rs](../crates/hagency/src/runner/completion.rs)) and a fixed refusal on `PATCH agent`. The helper's catalog hides `get_approval`, `consume_approval` and `accept_task` from the owned Codex profile (`mcp.rs`).
 
 The pre-approved set is written into Codex's MCP config by `codex/session/task_mcp.rs`. Every other tool call, and every command or file change that Codex wants outside its sandbox, reaches Hagency as an approval request on the app-server connection.
 
@@ -593,7 +593,7 @@ sequenceDiagram
   - A request may expire at most 600 s ahead.
   - Caps count open requests: 16 per dispatch fence, 64 per engagement, 1024 overall.
 - **Standing grants.** `derive` in `hagency-core/src/execution.rs` turns each request into a scope: an exact command plus cwd and extra permissions, a network host plus protocol, and so on (ADR-039). A grant matches on that scope key, the agent's context key and the approval binding's generation. A `task` grant also needs the same task and epoch; an `always` grant does not. When no scope can be derived, the owner can approve once or deny.
-- **Delivery.** `Pump::drain` in [bootstrap/approval.rs](../native/hagency/src/bootstrap/approval.rs) re-reads each card from the store and sends it as the approval bot. On an imported fleet there is one pump per owner, supervised by `supervise_pump` (section 7).
+- **Delivery.** `Pump::drain` in [bootstrap/approval.rs](../crates/hagency/src/bootstrap/approval.rs) re-reads each card from the store and sends it as the approval bot. On an imported fleet there is one pump per owner, supervised by `supervise_pump` (section 7).
   - `observe_approval_room` marks the room unavailable as soon as it gains a third member or loses encryption.
   - If a send fails after it has started, `deny_for_failed_delivery` records a deny (ADR-137). After a delivered card, a redacted status notice goes to the task's thread, sent as the agent. The delivery budget is 45 s (`hagency-matrix/src/approval_delivery.rs`, ADR-149).
 - **Verdict.** `approval_batch.rs` accepts the owner's verdict only if all of these hold:
@@ -609,7 +609,7 @@ The execution policy stores a `yolo` flag (`domain/exec_policy.rs`), but every n
 
 The console lists approvals and revokes grants (`console/approvals.rs`), and lists and unbinds approval rooms (`console/approval_bindings.rs`). Approving happens only in the approval room.
 
-Test examples: [hagency-matrix/tests/approval_delivery/](../native/hagency-matrix/tests/approval_delivery/), for example `native_private_approval_fresh_enrollment_and_delivery` and `native_private_approval_send_cancellation_and_loss`.
+Test examples: [hagency-matrix/tests/approval_delivery/](../crates/hagency-matrix/tests/approval_delivery/), for example `native_private_approval_fresh_enrollment_and_delivery` and `native_private_approval_send_cancellation_and_loss`.
 
 ## 13. Tokens, usage and the console
 
@@ -626,12 +626,12 @@ Test examples: [hagency-matrix/tests/approval_delivery/](../native/hagency-matri
 
 **Alerts.** `sweep_ceiling_overruns` (`domain/ceiling_alerts.rs`) runs hourly and raises `agent_ceiling_overrun` when a resource's draws exceed its ceiling. Alerts only inform the operator; the pause is what stops new work.
 
-Test examples: `native_quota_pause_when_spend_reaches_the_allocation` and `native_quota_no_pause_on_unknown_usage` in [hagency-store/tests/engagement_allocation.rs](../native/hagency-store/tests/engagement_allocation.rs), and `native_allocation_route_top_up_lifts_the_pause_and_is_idempotent` in `hagency/tests/console/engagements_allocation.rs`.
+Test examples: `native_quota_pause_when_spend_reaches_the_allocation` and `native_quota_no_pause_on_unknown_usage` in [hagency-store/tests/engagement_allocation.rs](../crates/hagency-store/tests/engagement_allocation.rs), and `native_allocation_route_top_up_lifts_the_pause_and_is_idempotent` in `hagency/tests/console/engagements_allocation.rs`.
 
 **The console.** The console is the Next.js app in [mockup/](../mockup/).
-- `mockup/scripts/build-native-console.mjs` exports the native pages statically, with a `manifest.json` of every file's size and SHA-256. When `HAGENCY_CONSOLE_DIR` names that export at build time, [hagency/build.rs](../native/hagency/build.rs) includes every file in the binary. At start `serve` loads `--console-assets <dir>` if given, else the embedded files (`Console::embedded_with_state`), else runs with no console. Both are checked against the manifest and served under `/console/` ([console/assets.rs](../native/hagency/src/console/assets.rs)). The client is `mockup/lib/native-api.js`.
-- The Setup page (ADR-189, [mockup/app/setup/page.jsx](../mockup/app/setup/page.jsx)) uses three routes in [console/setup.rs](../native/hagency/src/console/setup.rs):
-  - `GET /console/api/setup` answers 200 for a signed-in console session (a failed session recheck is refused) and writes nothing. It runs `detect_codex` and reports `applicable`, the agents, `runtimeConfigured`, `runtimeStale`, the Palpo import and transport state, and the qualified offer choices with the resource count. `applicable` is true only on a fleet host, whose Palpo handle has a fleet address; a coordinator install reports false. `serve` without `--palpo-transport` also reports `applicable: false`. When `applicable` is false, the page says the runtime is configured in `agent-driver.json`. `runtimeStale` is true when `fleet-runtime.json` exists but its pinned `executable` or `executable_sha256` no longer matches the detected Codex, for example after a Codex update (`runtime_matches` in [setup.rs](../native/hagency/src/setup.rs)); `runtimeConfigured` is then false, because the fleet service would refuse the file (`refused_config`).
+- `mockup/scripts/build-native-console.mjs` exports the native pages statically, with a `manifest.json` of every file's size and SHA-256. When `HAGENCY_CONSOLE_DIR` names that export at build time, [hagency/build.rs](../crates/hagency/build.rs) includes every file in the binary. At start `serve` loads `--console-assets <dir>` if given, else the embedded files (`Console::embedded_with_state`), else runs with no console. Both are checked against the manifest and served under `/console/` ([console/assets.rs](../crates/hagency/src/console/assets.rs)). The client is `mockup/lib/native-api.js`.
+- The Setup page (ADR-189, [mockup/app/setup/page.jsx](../mockup/app/setup/page.jsx)) uses three routes in [console/setup.rs](../crates/hagency/src/console/setup.rs):
+  - `GET /console/api/setup` answers 200 for a signed-in console session (a failed session recheck is refused) and writes nothing. It runs `detect_codex` and reports `applicable`, the agents, `runtimeConfigured`, `runtimeStale`, the Palpo import and transport state, and the qualified offer choices with the resource count. `applicable` is true only on a fleet host, whose Palpo handle has a fleet address; a coordinator install reports false. `serve` without `--palpo-transport` also reports `applicable: false`. When `applicable` is false, the page says the runtime is configured in `agent-driver.json`. `runtimeStale` is true when `fleet-runtime.json` exists but its pinned `executable` or `executable_sha256` no longer matches the detected Codex, for example after a Codex update (`runtime_matches` in [setup.rs](../crates/hagency/src/setup.rs)); `runtimeConfigured` is then false, because the fleet service would refuse the file (`refused_config`).
   - `POST /console/api/setup/check` detects again. When `fleet-runtime.json` is missing or stale and Codex is found and signed in, it calls `setup::configure` with the service's own listen address; for a stale file it passes `force`, which keeps the old file as `fleet-runtime.json.bak-<seconds>`, and its answer carries `restartNeeded: true` when it rewrote a stale file without error; the page then tells the operator to restart Hagency (`launchctl kickstart -k gui/$(id -u)/io.hagency`, `systemctl --user restart hagency`, or stop and start `hagency start`). The rewrite uses `setup`'s defaults (`local_codex` from `$CODEX_HOME` or `~/.codex`); an operator who chose `--codex-home` or `--no-local-codex` re-runs `hagency setup --force` with the same options. A coordinator install is refused with `setup_not_fleet`. The page calls it on its own, without a click, when the status is applicable and shows a signed-in Codex and no configured runtime (so also when the runtime is stale); **Check again** calls it after the user installs Codex or signs in.
   - `POST /console/api/setup/resource` creates the first or a further resource (section 8).
 
@@ -690,17 +690,17 @@ The user guide's ["Known limitations"](user-guide/README.md#known-limitations) i
 
 **An agent tool.**
 1. Add the name to `TASK_MCP_TOOLS` or an optional group in `hagency-runtime/src/task_mcp.rs`.
-2. Describe it in the helper's catalog under `native/hagency/src/mcp/`, dispatch it in `mcp.rs`, and add the HTTP call in `native/hagency/src/task_client/`.
+2. Describe it in the helper's catalog under `crates/hagency/src/mcp/`, dispatch it in `mcp.rs`, and add the HTTP call in `crates/hagency/src/task_client/`.
 3. Add the runner route in `runner.rs` and a `RunnerCommand` variant in `hagency-core/src/tasks.rs`.
 4. Decide whether `codex/session/task_mcp.rs` pre-approves it, and update that file's tests. A tool that reaches another session or sends data out of the workspace needs the owner.
 
 **A room an agent may use.** Never add it to `HostConfig.rooms`; that changes the SDK store binding (section 10). Record it in `joined_rooms` and let the driver pass pick it up.
 
-**A console route.** Add it under `native/hagency/src/console/` and mount it in `console.rs`. If it backs a new page, add the page to `ROUTES` in `mockup/scripts/build-native-console.mjs`.
+**A console route.** Add it under `crates/hagency/src/console/` and mount it in `console.rs`. If it backs a new page, add the page to `ROUTES` in `mockup/scripts/build-native-console.mjs`.
 
 **Tests and contracts.**
 - Run `cargo test --locked -p <crate>` for the crates you touched, then `cargo clippy --workspace --all-targets --locked -- -D warnings`.
-- Behaviour is bound to tests through task contracts in `specs/`. Add or update the scenario and bind it to your test. `native/scripts/check-rust-spec-bindings.mjs` checks the bindings, and `native/scripts/check-production-callers.mjs` checks that every `Production caller:` line in a spec resolves in the production call graph (ADR-146).
+- Behaviour is bound to tests through task contracts in `specs/`. Add or update the scenario and bind it to your test. `tools/native/check-rust-spec-bindings.mjs` checks the bindings, and `tools/native/check-production-callers.mjs` checks that every `Production caller:` line in a spec resolves in the production call graph (ADR-146).
 
 ## 17. Where to go next
 

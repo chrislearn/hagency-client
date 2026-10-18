@@ -39,13 +39,13 @@ This contract retains the design boundaries in [ADR-026](../knowledge/decisions/
 ### Allowed Changes
 - ./Cargo.toml
 - ./Cargo.lock
-- native/hagency-progress-runtime/**
-- native/hagency-progress/src/**
-- native/hagency-progress/tests/**
-- native/hagency-runtime/src/codex/session.rs
-- native/hagency-runtime/src/codex/session/**
-- native/hagency-runtime/src/owned/session.rs
-- native/hagency-runtime/tests/session.rs
+- crates/hagency-progress-runtime/**
+- crates/hagency-progress/src/**
+- crates/hagency-progress/tests/**
+- crates/hagency-runtime/src/codex/session.rs
+- crates/hagency-runtime/src/codex/session/**
+- crates/hagency-runtime/src/owned/session.rs
+- crates/hagency-runtime/tests/session.rs
 - knowledge/decisions/adr-056-native-progress-attachment.md
 - specs/task-rust-progress-attachment.spec.md
 - docs/**

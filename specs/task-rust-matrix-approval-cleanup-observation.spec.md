@@ -28,11 +28,11 @@ the original verdicts; their backend causes remain unproven.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/src/approval_intake.rs
-- native/hagency-matrix/tests/approval_intake/mod.rs
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/shutdown.rs
+- crates/hagency-matrix/src/approval_intake.rs
+- crates/hagency-matrix/tests/approval_intake/mod.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/shutdown.rs
 - knowledge/decisions/adr-099-native-matrix-approval-cleanup-observation.md
 - specs/task-rust-matrix-approval-cleanup-observation.spec.md
 - docs/agent-knowledge.md

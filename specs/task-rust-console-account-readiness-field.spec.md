@@ -34,23 +34,23 @@ login, and what it deliberately never shows.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency/src/console/accounts.rs
-- native/hagency/src/console.rs
-- native/hagency/src/console/assets.rs
+- crates/hagency/src/console/accounts.rs
+- crates/hagency/src/console.rs
+- crates/hagency/src/console/assets.rs
 - mockup/components/NativeAccounts.jsx
 - mockup/lib/native-api.js
 - mockup/lib/i18n.js
 - mockup/app/accounts/page.jsx
 - mockup/scripts/build-native-console.mjs
-- native/hagency/tests/console/accounts.rs
-- native/hagency/tests/console.rs
-- native/hagency/tests/console/browser.rs
+- crates/hagency/tests/console/accounts.rs
+- crates/hagency/tests/console.rs
+- crates/hagency/tests/console/browser.rs
 - specs/task-rust-console-account-readiness-field.spec.md
 - docs/progress.md
 
 ### Forbidden
 - Live providers, live probes, credentials in tree, deployed state.
-- native/hagency-store/** (MA-S1 owns the fact); any login-driving code path; native/hagency/src/bootstrap/accounts.rs; native/hagency/src/main.rs.
+- crates/hagency-store/** (MA-S1 owns the fact); any login-driving code path; crates/hagency/src/bootstrap/accounts.rs; crates/hagency/src/main.rs.
 
 ## Acceptance Criteria
 

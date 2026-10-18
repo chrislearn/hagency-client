@@ -36,14 +36,14 @@ Claude admission, permission delivery or canonical task settlement.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-runtime/src/claude.rs
-- native/hagency-runtime/src/claude/**
-- native/hagency-runtime/src/owned.rs
-- native/hagency-runtime/src/owned/claude.rs
-- native/hagency-runtime/src/bin/claude_probe/mod.rs
-- native/hagency-runtime/src/bin/hagency-runtime-probe.rs
-- native/hagency-runtime/tests/claude_session.rs
-- native/hagency-runtime/tests/claude_owned.rs
+- crates/hagency-runtime/src/claude.rs
+- crates/hagency-runtime/src/claude/**
+- crates/hagency-runtime/src/owned.rs
+- crates/hagency-runtime/src/owned/claude.rs
+- crates/hagency-runtime/src/bin/claude_probe/mod.rs
+- crates/hagency-runtime/src/bin/hagency-runtime-probe.rs
+- crates/hagency-runtime/tests/claude_session.rs
+- crates/hagency-runtime/tests/claude_owned.rs
 - specs/task-rust-claude-owned-session.spec.md
 - knowledge/decisions/adr-155-native-claude-owned-session.md
 - docs/progress.md

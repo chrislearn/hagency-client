@@ -1,0 +1,12 @@
+state title { shape: text, initial: "" }
+state markdown { shape: text, initial: "" }
+event title_changed { title: set($value) }
+event markdown_changed { markdown: set($value) }
+copy title_hint { class: vocabulary, en: "Article title", zh: "文章标题" }
+copy body_hint { class: vocabulary, en: "Write in Markdown…", zh: "用 Markdown 写下你的文章…" }
+view root Surface {
+  Col {
+    Field(text: title, placeholder: copy.title_hint, on_change: title_changed)
+    Field(text: markdown, placeholder: copy.body_hint, on_change: markdown_changed)
+  }
+}

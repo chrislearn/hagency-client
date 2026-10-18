@@ -36,7 +36,7 @@ approval, lease and process custody.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-runtime/**
+- crates/hagency-runtime/**
 - specs/task-rust-codex-session.spec.md
 - knowledge/decisions/adr-036-native-codex-session.md
 - docs/**

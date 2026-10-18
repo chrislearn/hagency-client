@@ -13,7 +13,7 @@ The runner evidence review (finding 3) showed that "skipped, and reported as
 skipped" is not expressible with ordinary cargo test mechanics: an env-gated
 early return reports **ok/passed** when the real binary is absent, and
 `#[ignore]` still appears in `cargo test -- --list`. The service review's F4
-adds the binding constraint: `native/scripts/check-rust-spec-bindings.mjs`
+adds the binding constraint: `tools/native/check-rust-spec-bindings.mjs`
 inventories selectors on **every hosted matrix leg** (`rust.yml:59` matrix,
 `:108` step) and exits 1 on any missing name, so a selector hidden behind a
 cargo feature or a file-level `#![cfg]` fails CI on the legs that do not
@@ -30,7 +30,7 @@ with `HAGENCY_CODEX_QUALIFY_BIN` pointing at the pinned executable. The
 example launches the real `codex app-server`, exercises the write-inside and
 write-outside cases through the existing `Host`/owned-session path, and
 writes an **evidence file** at a documented path
-(`native/hagency-execution/qualification/codex-sandbox.json`, tracked in git)
+(`crates/hagency-execution/qualification/codex-sandbox.json`, tracked in git)
 containing: the pinned Codex version string, the two verdicts
 (`write_inside`, `refuses_outside`), the full log path, the host OS/arch, and
 the commit under test.

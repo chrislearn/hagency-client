@@ -25,9 +25,9 @@ Supply exact host send checkpoints without granting runtime transport authority.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain/replies.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/replies.rs
+- crates/hagency-store/src/domain/replies.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/replies.rs
 - specs/task-rust-reply-send-boundary.spec.md
 - specs/task-rust-final-replies.spec.md
 - knowledge/decisions/adr-033-native-final-reply-custody.md

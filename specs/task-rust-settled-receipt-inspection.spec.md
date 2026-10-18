@@ -33,7 +33,7 @@ This diagnostic is factual only; it cannot settle delivery or authorize a send.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency/examples/matrix_custody.rs
+- crates/hagency/examples/matrix_custody.rs
 - docs/progress.md
 
 ## Acceptance Criteria

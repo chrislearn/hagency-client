@@ -31,15 +31,15 @@ retains its existing authority and cleanup meaning.
 
 ## Allowed changes
 
-- native/hagency-store/src/domain/matrix_routes.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/replies.rs
-- native/hagency-matrix/src/config.rs
-- native/hagency-matrix/src/collector.rs
-- native/hagency-matrix/src/provisioning.rs
-- native/hagency-matrix/src/token_provision.rs
-- native/hagency/tests/configured_fleet.rs
-- native/hagency/tests/configured_fleet/**
+- crates/hagency-store/src/domain/matrix_routes.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/replies.rs
+- crates/hagency-matrix/src/config.rs
+- crates/hagency-matrix/src/collector.rs
+- crates/hagency-matrix/src/provisioning.rs
+- crates/hagency-matrix/src/token_provision.rs
+- crates/hagency/tests/configured_fleet.rs
+- crates/hagency/tests/configured_fleet/**
 - knowledge/decisions/adr-153-native-factory-room-generations.md
 - this spec, docs/progress.md, docs/agent-knowledge.md
 

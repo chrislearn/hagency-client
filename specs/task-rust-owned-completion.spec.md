@@ -30,17 +30,17 @@ execution, and publish only through the same retained owner's bounded cleanup pa
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-core/**
-- native/hagency-store/**
-- native/hagency-execution/**
-- native/hagency/src/runner/**
-- native/hagency/src/runner.rs
-- native/hagency/src/task_client/**
-- native/hagency/src/task_client.rs
-- native/hagency/src/mcp/**
-- native/hagency/src/mcp.rs
-- native/hagency/tests/**
-- native/hagency-runtime/src/codex/session/task_mcp.rs
+- crates/hagency-core/**
+- crates/hagency-store/**
+- crates/hagency-execution/**
+- crates/hagency/src/runner/**
+- crates/hagency/src/runner.rs
+- crates/hagency/src/task_client/**
+- crates/hagency/src/task_client.rs
+- crates/hagency/src/mcp/**
+- crates/hagency/src/mcp.rs
+- crates/hagency/tests/**
+- crates/hagency-runtime/src/codex/session/task_mcp.rs
 - specs/task-rust-owned-completion.spec.md
 - specs/task-rust-owned-completion-integration.spec.md
 - knowledge/decisions/adr-060-native-owned-completion.md

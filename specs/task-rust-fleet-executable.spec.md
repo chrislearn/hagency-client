@@ -40,14 +40,14 @@ not a replacement for real model, sandbox, owner approval, media or live soaking
 
 ## Allowed changes
 
-- native/hagency/tests/configured_fleet.rs
-- native/hagency/tests/configured_fleet/**
-- native/hagency/tests/fixtures/owned_mcp_peer.rs
-- native/hagency/src/bootstrap/**
-- native/hagency/src/bootstrap.rs
-- native/hagency-matrix/src/provisioning/**
-- native/hagency-execution/src/factory.rs
-- native/hagency-execution/src/warm.rs
+- crates/hagency/tests/configured_fleet.rs
+- crates/hagency/tests/configured_fleet/**
+- crates/hagency/tests/fixtures/owned_mcp_peer.rs
+- crates/hagency/src/bootstrap/**
+- crates/hagency/src/bootstrap.rs
+- crates/hagency-matrix/src/provisioning/**
+- crates/hagency-execution/src/factory.rs
+- crates/hagency-execution/src/warm.rs
 - this spec, docs/progress.md, docs/agent-knowledge.md
 
 ## Scenarios

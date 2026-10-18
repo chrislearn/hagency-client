@@ -28,12 +28,12 @@ eligible events, and preserve unknown SDK and negative authority fences.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/src/event_batch.rs
-- native/hagency-matrix/src/event_batch/**
-- native/hagency-matrix/src/sdk.rs
-- native/hagency-matrix/src/intake.rs
-- native/hagency-matrix/tests/intake/**
-- native/hagency/tests/owned_matrix.rs
+- crates/hagency-matrix/src/event_batch.rs
+- crates/hagency-matrix/src/event_batch/**
+- crates/hagency-matrix/src/sdk.rs
+- crates/hagency-matrix/src/intake.rs
+- crates/hagency-matrix/tests/intake/**
+- crates/hagency/tests/owned_matrix.rs
 - specs/task-rust-matrix-event-rejections.spec.md
 - specs/task-rust-matrix-owned-workflow.spec.md
 - knowledge/decisions/adr-065-native-matrix-event-rejections.md

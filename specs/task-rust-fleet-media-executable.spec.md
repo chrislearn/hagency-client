@@ -42,12 +42,12 @@ replacement for real server/client files, actual model/approval or sustained soa
 
 ## Allowed changes
 
-- native/hagency/tests/configured_fleet.rs
-- native/hagency/tests/configured_fleet/**
-- native/hagency/tests/fixtures/owned_mcp_peer.rs
-- native/hagency/src/bootstrap/**
-- native/hagency/src/file_service/**
-- native/hagency/src/file_service.rs
+- crates/hagency/tests/configured_fleet.rs
+- crates/hagency/tests/configured_fleet/**
+- crates/hagency/tests/fixtures/owned_mcp_peer.rs
+- crates/hagency/src/bootstrap/**
+- crates/hagency/src/file_service/**
+- crates/hagency/src/file_service.rs
 - this spec, docs/progress.md, docs/agent-knowledge.md
 
 ## Scenarios

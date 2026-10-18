@@ -1,0 +1,22 @@
+Use case: ui-mockup. Create ONE original high-resolution image containing FOUR complete desktop UX screens for the native Markdown article editor of the Rinx chat app (文章编辑器). Generate all four screens together in this single image; do not generate separate images. Grid: 2 columns by 2 rows, reading order left-to-right then top-to-bottom. Every screen is the same 1280x800 (16:10) landscape window-content rectangle, flat and front-on, with no OS title bar, no device, no perspective, no shadows outside the screens. Keep screens equally sized, fully visible and separated by generous uniform 40px gutters on a plain neutral gray backdrop. Put nothing in the gutters.
+
+Visual language, identical in every screen: WeChat-like and calm. Light gray #ededed top bar 52px tall, white editing surfaces, dark #191919 PingFang-style Chinese text, primary green #07c160 buttons with white text, thin #e5e5e5 hairline dividers, 8px corner radii, generous whitespace, small monochrome line icons. No gradients, no mascots, no chat bubbles, no lorem ipsum. Use only the exact short Chinese copy given here.
+
+Recurring article fixture: title 周末读书笔记; Markdown source lines exactly:
+# 周末读书笔记
+> 好的文字来自认真观察。
+## 慢下来
+今天读到一句话，想把它记下来。
+- 阅读
+- 记录
+![](img://book) ![](img://coffee) ![](img://park)
+The three images are warm natural photos: an open book on a wooden table, a cup of coffee by a window, a green park path.
+
+Shared editor layout (screens 1 to 3): top bar with small back chevron and 文章编辑器 at left; centered title 周末读书笔记; at right a pill 样式：经典绿 with a small down caret, a three-part segmented control 编辑 | 双栏 | 预览 with 双栏 selected, gray text 已保存, and a green button 发布. Below the top bar the window is split into two equal panes by a hairline. Left pane: a slim formatting toolbar with icons for bold B, italic I, heading H, quote, bullet list, numbered list, link, image, code, table and divider; below it the Markdown source above in a clean monospaced font with faint gray line numbers, headings tinted green, the image lines tinted blue. Right pane: very light gray #f5f5f5 backdrop with a centered white phone-width article column (about 375px wide, subtle border) showing the rendered article in the selected theme: large bold title, a quote with a green left bar, section heading 慢下来, the paragraph, a real bullet list, and the three photos side by side as one tight three-column row. Bottom status line across the window in small gray text: 1,286 字 · 约 4 分钟 · 3 张图片.
+
+(1) Split view editing: exactly the shared layout, caret visible at the end of the paragraph line in the source.
+(2) Theme gallery: same layout, but a 320px panel slides in at the right edge titled 文章样式 with a small close X, showing a two-column grid of twelve small theme cards, each a tiny article thumbnail with its name below: 经典绿, 暖纸, 海蓝, 墨白, 杂志, 纽约时报, 金融时报, 极简, 科技, 长文, 优雅, 深度阅读. 金融时报 is selected with a green outline; three cards show a small filled star (favorites). The top pill reads 样式：金融时报 and the preview column is re-themed with a soft salmon #fff1e5 background and serif headings.
+(3) Pasting images: same split layout while three image files are dragged onto the left pane: the left pane shows a translucent green tint with a dashed green rounded border and centered text 松开以插入 3 张图片 and smaller 自动压缩 · 本地保存. A small dark toast at bottom center reads 已压缩 2.4 MB → 380 KB.
+(4) Publish sheet: the split editor dimmed behind a centered white modal 520px wide titled 发布文章 with a close X. Inside: 封面 with a 16:9 crop of the book photo and a small 更换 link; 摘要 field containing 好的文字来自认真观察。; 发布到 with three chat rows with round group avatars 设计小组 (selected, green check), 读书会, 朋友; bottom buttons 取消 (gray) and 发布 (green).
+
+All text crisp and legible for later measurement. This atlas is a design reference; the final product text, fields and rendering are native Makepad widgets.

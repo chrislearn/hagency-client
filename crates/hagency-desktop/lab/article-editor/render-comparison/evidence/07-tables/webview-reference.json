@@ -1,0 +1,96 @@
+{
+  "dpr" : 2,
+  "elements" : {
+    "blockquote" : [
+
+    ],
+    "h1" : [
+
+    ],
+    "h2" : [
+
+    ],
+    "h3" : [
+      {
+        "height" : 35,
+        "width" : 392,
+        "x" : 24,
+        "y" : 43
+      }
+    ],
+    "li" : [
+
+    ],
+    "p" : [
+
+    ],
+    "pre" : [
+
+    ],
+    "table" : [
+      {
+        "height" : 173,
+        "width" : 392,
+        "x" : 24,
+        "y" : 97
+      },
+      {
+        "height" : 130,
+        "width" : 392,
+        "x" : 24,
+        "y" : 288
+      },
+      {
+        "height" : 130,
+        "width" : 392,
+        "x" : 24,
+        "y" : 436
+      },
+      {
+        "height" : 130,
+        "width" : 392,
+        "x" : 24,
+        "y" : 584
+      },
+      {
+        "height" : 173,
+        "width" : 392,
+        "x" : 24,
+        "y" : 732
+      },
+      {
+        "height" : 173,
+        "width" : 392,
+        "x" : 24,
+        "y" : 923
+      }
+    ]
+  },
+  "engine" : "macOS WKWebView \/ WebKit",
+  "font" : "16px \"PingFang SC\", system-ui, sans-serif",
+  "fonts" : [
+
+  ],
+  "height" : 1169,
+  "images" : [
+
+  ],
+  "macos" : "Version 26.6.2 (Build 25G83)",
+  "math" : {
+    "errors" : 0,
+    "formulas" : 0
+  },
+  "page_javascript" : false,
+  "source_sha256" : "740e4505280158ce012431af5b2d609dd05c284d53e5e2e46965a28056f00c2b",
+  "tiles" : [
+    {
+      "file" : "07-tables\/webview-reference-tile-0.png",
+      "y_css" : 0
+    },
+    {
+      "file" : "07-tables\/webview-reference-tile-469.png",
+      "y_css" : 469
+    }
+  ],
+  "width" : 440
+}

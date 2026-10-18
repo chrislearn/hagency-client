@@ -1,0 +1,411 @@
+[package]
+name = "rinx"
+authors = ["OctoSense Contributors", "Kevin Boos <kevinaboos@gmail.com>", "Robius Project Maintainers"]
+description = "Hagency Desktop: Matrix Project workspaces and locally managed AI Agents."
+documentation = "https://github.com/chrislearn/hagency-client/tree/main/crates/hagency-desktop#readme"
+edition = "2024" ## mostly just to allow let-chains
+homepage = "https://github.com/chrislearn/hagency-client"
+keywords = ["matrix", "chat", "client", "robius", "makepad"]
+license = "Apache-2.0"
+readme = "README.md"
+categories = ["gui"]
+repository = "https://github.com/chrislearn/hagency-client"
+version = "0.5.0"
+metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
+
+[dependencies]
+hagency = { path = "../hagency" }
+octosense-theme-contract = { path = "../theme-contract", version = "0.1.0" }
+rinx-system-apps = { path = "../system-apps" }
+article-core = { path = "../article-core", features = ["l0"] }
+rinx-miniapp-core = { path = "../miniapp-core" }
+rinx-miniapp-catalog = { path = "../miniapp-catalog" }
+uuid = { version = "1", features = ["v4"] }
+## The assistant (ADR 0007): the scoped service contract a host injects. The
+## local-runtime and remote connectors are optional (`octos-local`,
+## `octos-remote`), so a hosted build links no runtime of its own.
+octosense-app-peers = { git = "https://github.com/OctoSense-org/OctoSense.git", rev = "98666debcf466a6322ba2f1cc5150ad7ffe5890c" }
+octoscript-ui-l0 = { git = "https://github.com/OctoSense-org/Octoscript.git", rev = "dbd48cfb799551c11e30970c393777d29644a605" }
+octoscript-makepad = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "cb66de073469063abeb2a5ab2a2bbf3cdb365745" }
+octoscript-widgets = { git = "https://github.com/OctoSense-org/Octoscript-Makepad.git", rev = "cb66de073469063abeb2a5ab2a2bbf3cdb365745" }
+## The app contract (OctoSense ADR 0005): manifest, policy, integrity and running
+## a package, by version from crates.io. Rinx names no App Hub commit, so an App
+## Hub change does not force a Rinx release; the mini-app catalog client and the
+## Splash sandbox are Rinx's own (crates/miniapp-catalog, src/miniapps/sandbox.rs).
+octosense-app-contract = "1.2"
+article-makepad = { path = "../article-makepad" }
+## The OctoSense module contract. Only a host build uses it, and the host redirects
+## all of makepad to its own prepared checkout of the same OctoSense-org/makepad
+## revision (OctoSense's .sources/makepad), whatever URL a crate names it by.
+makepad-app-module = { git = "https://github.com/OctoSense-org/makepad", rev = "1f3b1dedfbb81424eb8dbf69e5e2c634fa73dc54", optional = true }
+makepad-html-renderer = { package = "makepad-html", git = "https://github.com/OctoSense-org/makepad-html", rev = "b16565ae1e56dd7c3a87f00455ae327df599ca3b", optional = true, features = ["makepad"] }
+# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "dev", features = ["serde"] }
+# makepad-code-editor = { git = "https://github.com/makepad/makepad", branch = "dev" }
+
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "button-grab-key-focus", features = ["serde"] }
+makepad-code-editor = { git = "https://github.com/kevinaboos/makepad", branch = "button-grab-key-focus" }
+
+
+robius-directories = { git = "https://github.com/project-robius/robius" }
+robius-file-picker = { path = "../robius-file-picker" }
+robius-location    = { git = "https://github.com/project-robius/robius" }
+robius-open        = { git = "https://github.com/project-robius/robius" }
+robius-share       = { git = "https://github.com/project-robius/robius" }
+robius-speech      = { git = "https://github.com/project-robius/robius", rev = "166991b1b18188ee2d8441f7118721cee2a0c6eb" } # the speech_to_text branch was deleted; this is its last commit (robius PR #25)
+robius-use-makepad = "0.1.1" ## auto-configures all `robius-*` crates to work with Makepad.
+
+
+anyhow = "1.0"
+base64 = { version = "0.22.1", optional = true }
+ed25519-dalek = { version = "2.2.0", optional = true }
+sha2 = { version = "0.10.9", optional = true }
+bitflags = "2.6.0"
+blurhash = { version = "0.2.3", default-features = false }
+bytesize = "2.0"
+chrono = "0.4"
+iana-time-zone = "0.1.64"
+clap = { version = "4.0.16", features = ["derive"] }
+crossbeam-channel = "0.5.10"
+crossbeam-queue = "0.3.8"
+eyeball = { version = "0.8.8", features = ["tracing"] } # same as matrix-sdk-ui
+eyeball-im = { version = "0.9.0", features = [ "tracing" ] } # same as matrix-sdk-ui
+futures = "0.3"
+imbl = { version = "7.0.1", features = ["serde"] } # same as matrix-sdk-ui
+futures-util = "0.3"
+hashbrown = { version = "0.16", features = ["raw-entry"] }
+htmlize = { version = "1.0.5", features = ["unescape"] }
+indexmap = "2.6.0"
+image = { version = "0.25.9", default-features = false, features = ["png", "jpeg"] }
+pulldown-cmark = "0.13.0"
+libc = "0.2"
+mime = "0.3"
+mime_guess = "2.0"
+linkify = "0.10.0"
+matrix-sdk-base = { version = "=0.19.1" }
+matrix-sdk = { version = "=0.19.1", default-features = false, features = [
+    "e2e-encryption",
+    "automatic-room-key-forwarding",
+    "markdown",
+    "sqlite",
+    "bundled-sqlite",
+    "sso-login",
+    ## The SDK no longer registers a rustls crypto provider unless we ask for one.
+    "rustls-aws-lc-rs",
+] }
+matrix-sdk-crypto = { version = "=0.19.1", default-features = false }
+matrix-sdk-ui = { version = "=0.19.1", default-features = false }
+## Use the same ruma version as what's specified in matrix-sdk's Cargo.toml.
+## Enable a few extra features:
+## * "compat-optional" feature to allow missing body field in m.room.tombstone event.
+## * "compat-unset-avatar" feature to allow deleting the user's avatar to work properly.
+## * "unstable-compat-lax-syncv5-deser" feature to tolerate deserialization failures, which we added.
+## * Note: we need a feature like "compat-unset-display-name" to unset display names, but that doesn't exist yet.
+##
+ruma = { version = "=0.17.0", features = [
+    "html-matrix",
+    "compat-optional",
+    "compat-unset-avatar",
+    "unstable-compat-lax-syncv5-deser",
+] }
+blake3 = "1.8"
+num_cpus = "1.17.0"
+rand = "0.8.5"
+rangemap = "1.5.0"
+sanitize-filename = "0.6"
+serde = "1.0"
+serde_json = "1.0"
+thiserror = "2.0.16"
+tokio = { version = "1.43.1", features = ["macros", "rt-multi-thread"] }
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+unicode-segmentation = "1.11.0"
+url = "2.5.0"
+
+
+## Dependencies for TSP support.
+## Commit "f0bc4625dcd729e07e4a36257df2f1d94c81cef4" is the most recent one without the invalid change to pin serde to 1.0.219.
+## See my issue here: <https://github.com/openwallet-foundation-labs/tsp/issues/237>.
+## However, that commit doesn't build.... yikes. So we have to use a slightly older commit in the "rev" field below.
+tsp_sdk = { git = "https://github.com/openwallet-foundation-labs/tsp.git", rev = "1cd0cc9442e144ad7c01ccd30daffbb3a52c0f20", optional = true, features = [
+    "async",
+    "resolve",
+] }
+quinn = { version = "0.11", default-features = false, optional = true }
+## We only include this such that we can specify the prebuilt-nasm feature,
+## which is required to build this on Windows x86_64 without having to install NASM separately.
+aws-lc-rs = { version = "1.13", optional = true, features = ["prebuilt-nasm"] }
+percent-encoding = { version = "2.3", optional = true }
+## The following reqwest 0.12 features were taken from the tsp_sdk's `Cargo.toml` file.
+## This is only needed for the optional TSP feature; the matrix-sdk uses reqwest 0.13 internally,
+## which is re-exported as `matrix_sdk::reqwest` and used by regular (non-TSP) Rinx code.
+reqwest = { version = "0.12", default-features = false, optional = true, features = [
+    "rustls-tls-native-roots",
+    "json",
+    "stream",
+    "charset",
+    "http2",
+    "macos-system-configuration",
+] }
+
+## For OAuth/SSO login on iOS, via `ASWebAuthenticationSession`. Ugh....
+[target.'cfg(target_os = "ios")'.dependencies]
+robius-web-auth-session = { git = "https://github.com/project-robius/robius" }
+
+## On Android, the matrix-sdk no longer sets up TLS roots for rustls by default,
+## so we have to do it manually.
+[target.'cfg(target_os = "android")'.dependencies]
+webpki-root-certs = "1"
+
+# AWS-LC has no pregenerated ABI bindings for OpenHarmony.
+[target.'cfg(target_env = "ohos")'.dependencies]
+aws-lc-rs = { version = "1.13", features = ["bindgen"] }
+napi-derive-ohos = "0.0.9"
+napi-ohos = "0.1.3"
+
+
+## Article editor on desktop: pasting images and picking several images at once.
+[target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
+arboard = { version = "3.4", default-features = false, features = ["image-data"] }
+rfd = { version = "0.17.2", default-features = false, features = ["xdg-portal"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+dispatch2 = "0.3"
+
+[target.'cfg(any(target_os = "macos", target_os = "windows", all(target_os = "linux", not(target_env = "ohos"))))'.dependencies]
+dark-light = "2"
+
+
+[features]
+# Isolated local accounts exist only in instrument builds.
+palpo-instrument = []
+default = ["standalone", "agent_chat"]
+## The standalone app's entry point (window, menus, `app_main!`). A host that
+## links Rinx as a module disables it.
+standalone = ["octos-local", "octos-remote"]
+## Standalone Octos modes (ADR 0007). `octos-local`: Rinx owns one local
+## kernel (the packaged `octos` next to the executable, never one on PATH),
+## started on the first authorized AI request and stopped on exit.
+## `octos-remote`: an explicitly configured remote octos server.
+octos-local = ["octosense-app-peers/octos-core"]
+octos-remote = ["octosense-app-peers/ws"]
+## Rinx as an OctoSense app module (`rinx::module::RINX_MODULE`).
+octosense-module = ["dep:makepad-app-module"]
+## Experimental CPU HTML/CSS article preview; the native editor stays available.
+html_preview = ["dep:makepad-html-renderer"]
+# Compatibility for existing Rinx build commands.
+article_blitz = ["html_preview"]
+## Enables experimental support for using TSP wallets.
+tsp = ["dep:tsp_sdk", "dep:quinn", "dep:aws-lc-rs", "dep:percent-encoding", "dep:reqwest"]
+
+## Enables experimental support for the agent-chat / hagency control plane
+## (<https://github.com/hagency-org/hagency>): native owner-approval cards for
+## `com.agentchat.approval.*` events, agent puppet presentation, companion
+## bridge-bot invites, and the workflow slash-commands offered in rooms that
+## contain a `*_coordinator` agent. Included by default. Approval cards do not require the workflow preference;
+## only workflow slash-command suggestions use Settings → Preferences.
+agent_chat = ["dep:base64", "dep:ed25519-dalek", "dep:sha2"]
+## Opt in to testing the pinned, unreleased Hagency Agent Operations contract.
+## Production agent_chat builds retain the release gate.
+agent_ops_dev = ["agent_chat"]
+
+## Hides the command prompt console/log window on Windows.
+## This is enabled automatically for packaged builds via cargo-packager
+## (see `build.rs`), but you can also enable it manually if desired.
+hide_windows_console = []
+
+## Logs all diffs received by the Matrix RoomListService.
+log_room_list_diffs = []
+
+## Logs all diffs to all room timelines.
+log_timeline_diffs = []
+
+## Logs all diffs received by the Matrix SpaceService.
+log_space_service_diffs = []
+
+
+[[example]]
+name = "palpo_action_room"
+required-features = ["palpo-instrument"]
+
+[build-dependencies]
+rinx-system-apps = { path = "../system-apps" }
+serde_json = "1"
+toml = "1"
+
+## On Windows, use the `winresource` crate to embed the app's icon and metadata into the executable.
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
+
+[package.metadata.docs.rs]
+all-features = true
+
+## Keep dev builds small: line tables are enough for backtraces, dependencies
+## get no debug info, and incremental caches are disabled (they grow unbounded).
+[package.metadata.makepad.android]
+## Specifying "auto" will set it to a format like 'YYYYMMDDHH'.
+version_code = "auto"
+
+
+## Rinx has some plist keys that need to be merged into Makepad's generated iOS Info.plist.
+[package.metadata.makepad.ios]
+info_plist = "packaging/ios/Info.additions.plist"
+
+
+## Configuration for `cargo packager`
+[package.metadata.packager]
+product_name = "Hagency Desktop"
+identifier = "org.hagency.desktop"
+category = "SocialNetworking"
+authors = [
+    "Project Robius <contact@robius.rs>",
+    "Kevin Boos <kevinaboos@gmail.com>",
+]
+publisher = "Upstream Labs"
+license_file = "LICENSE"
+copyright = "Copyright 2023-2026, Project Robius"
+homepage = "https://github.com/chrislearn/hagency-client"
+### Note: there is an 80-character max for the one-line summary.
+description = "Matrix Project workspaces and locally managed AI Agents"
+### Note: there is an 80-character max for each line of the `long_description`.
+long_description = """
+Rinx is a native Matrix messenger derived from Robrix, written in Rust
+using the Makepad UI framework (https://github.com/makepad/makepad)
+and the Project Robius app dev framework and platform abstractions
+(https://github.com/project-robius).
+Rinx runs on all major desktop and mobile platforms:
+macOS, Windows, Linux, Android, and iOS.
+"""
+icons = [
+    "./resources/icon.icns",
+    "./resources/icon_32.png",
+    "./resources/icon_48.png",
+    "./resources/icon_64.png",
+    "./resources/icon_128.png",
+    "./resources/icon_256.png",
+    "./resources/icon_512.png",
+    "./resources/icon_1024.png",
+    "./resources/icon.ico",
+]
+out_dir = "./dist"
+# One pinned local assistant runtime; installed beside Rinx by the packager.
+external-binaries = ["./dist/runtime/octos"]
+
+## Here, we define the list of resource directories for both Makepad and Rinx.
+## The `src` directory is based on `./dist/` as the `out_dir` (above), which is where the
+## `robius-packaging-commands` tool outputs the resources that it discovers after each build.
+## See the README from the `robius-packaging-commands` repo for more details.
+resources = [
+    # Makepad resources
+    { src = "./dist/resources/makepad_widgets", target = "makepad_widgets" },
+    { src = "./dist/resources/makepad_fonts_chinese_bold", target = "makepad_fonts_chinese_bold" },
+    { src = "./dist/resources/makepad_fonts_chinese_bold_2", target = "makepad_fonts_chinese_bold_2" },
+    { src = "./dist/resources/makepad_fonts_chinese_regular", target = "makepad_fonts_chinese_regular" },
+    { src = "./dist/resources/makepad_fonts_chinese_regular_2", target = "makepad_fonts_chinese_regular_2" },
+    { src = "./dist/resources/makepad_fonts_emoji", target = "makepad_fonts_emoji" },
+    # Rinx resources and inherited license notices
+    { src = "./LICENSE", target = "licenses/LICENSE" },
+    { src = "./LICENSE-MIT", target = "licenses/LICENSE-MIT" },
+    { src = "./NOTICE", target = "licenses/NOTICE" },
+    { src = "./dist/runtime/licenses/octos-LICENSE", target = "licenses/octos-LICENSE" },
+    { src = "./dist/resources/rinx", target = "rinx" },
+]
+
+## We use the `robius-packaging-commands` tool to build the entire Rinx app project,
+## which properly configures the release build settings for each target platform
+## (e.g., it sets the `MAKEPAD`/`MAKEPAD_PACKAGE_DIR` env vars to the appropriate value).
+## Every line ends in a TOML `\`, so this reaches the shell as one line: Windows
+## runs it through `cmd /C`, which rejects a command split across lines.
+## Note: `geoclue-2.0` has to be declared by hand. It's a D-Bus service that `robius-location`
+## talks to over a socket, so there's no linked library or dlopen'd soname for the tool to find.
+before-each-package-command = "python3 tools/package-desktop.py"
+
+## This is not yet implemented, so remove it.
+# deep_link_protocols = [
+#     { schemes = [
+#         "rinx",
+#         "matrix",
+#     ], role = "viewer" }, ## `name` is left as default
+# ]
+
+[package.metadata.packager.deb]
+depends = "./dist/depends_deb.txt"
+desktop_template = "./packaging/rinx.desktop"
+section = "utils"
+
+## These metainfo and licensing files are needed for package manager compliance.
+[package.metadata.packager.deb.files]
+"./packaging/org.octosense.rinx.metainfo.xml" = "/usr/share/metainfo/org.octosense.rinx.metainfo.xml"
+"./packaging/debian-copyright" = "/usr/share/doc/rinx/copyright"
+"./licenses/THIRD-PARTY-NOTICES.html" = "/usr/share/doc/rinx/THIRD-PARTY-NOTICES.html"
+"./LICENSE" = "/usr/share/doc/rinx/LICENSE"
+"./LICENSE-MIT" = "/usr/share/doc/rinx/LICENSE-MIT"
+"./NOTICE" = "/usr/share/doc/rinx/NOTICE"
+
+[package.metadata.packager.appimage.files]
+"./packaging/org.octosense.rinx.metainfo.xml" = "/usr/share/metainfo/org.octosense.rinx.metainfo.xml"
+"./packaging/debian-copyright" = "/usr/share/doc/rinx/copyright"
+"./licenses/THIRD-PARTY-NOTICES.html" = "/usr/share/doc/rinx/THIRD-PARTY-NOTICES.html"
+"./LICENSE" = "/usr/share/doc/rinx/LICENSE"
+"./LICENSE-MIT" = "/usr/share/doc/rinx/LICENSE-MIT"
+"./NOTICE" = "/usr/share/doc/rinx/NOTICE"
+
+[package.metadata.packager.pacman.files]
+"./packaging/org.octosense.rinx.metainfo.xml" = "/usr/share/metainfo/org.octosense.rinx.metainfo.xml"
+"./packaging/debian-copyright" = "/usr/share/licenses/rinx/copyright"
+"./licenses/THIRD-PARTY-NOTICES.html" = "/usr/share/licenses/rinx/THIRD-PARTY-NOTICES.html"
+"./LICENSE" = "/usr/share/licenses/rinx/LICENSE"
+"./LICENSE-MIT" = "/usr/share/licenses/rinx/LICENSE-MIT"
+"./NOTICE" = "/usr/share/licenses/rinx/NOTICE"
+
+[package.metadata.packager.macos]
+minimum_system_version = "11.0"
+frameworks = []
+info_plist_path = "./packaging/macos/Info.plist"
+entitlements = "./packaging/macos/Entitlements.plist"
+# Set signing_identity through your own release environment.
+
+
+## Configuration for `cargo packager`'s generation of a macOS `.dmg`.
+[package.metadata.packager.dmg]
+background = "./packaging/macos/dmg-background.png"
+window_size = { width = 960, height = 540 }
+app_position = { x = 200, y = 250 }
+application_folder_position = { x = 760, y = 250 }
+
+
+## Configuration for `cargo packager`'s generation of a Windows `.exe` setup installer.
+[package.metadata.packager.nsis]
+installer_icon = "./resources/icon.ico"
+## See this: <https://nsis.sourceforge.io/Docs/Chapter4.html#varconstant>
+appdata_paths = [
+    "$APPDATA/$PUBLISHER/$PRODUCTNAME",
+    "$LOCALAPPDATA/$PRODUCTNAME",
+]
+
+[lints.rust]
+keyword_idents_2024 = "forbid"
+non_ascii_idents = "forbid"
+non_local_definitions = "forbid"
+unsafe_op_in_unsafe_fn = "forbid"
+unnameable_types = "warn"
+unused_import_braces = "warn"
+
+## Configuration for clippy lints.
+[lints.clippy]
+blocks_in_conditions = "allow"
+collapsible_if = "allow"
+collapsible_else_if = "allow"
+doc_overindented_list_items = "allow"
+module_name_repetitions = "allow"
+needless_late_init = "allow"
+too_many_arguments = "allow"
+uninlined_format_args = "allow"
+used_underscore_binding = "allow"
+
+# Pin one Makepad and Octoscript runtime across Rinx and its transitive kits.
+# The www alias allows Cargo patches to redirect older revisions of the same
+# repository. OctoSense shells replace these with their prepared runtime source.
+
+[[example]]
+name = "palpo_local"
+required-features = ["palpo-instrument"]

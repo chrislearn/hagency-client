@@ -34,18 +34,18 @@ one exact post-Started file binding under the accepted trusted-ancestor contract
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-execution/Cargo.toml
-- native/hagency-execution/src/lib.rs
-- native/hagency-execution/src/host.rs
-- native/hagency-execution/src/operation.rs
-- native/hagency-execution/src/workspace.rs
-- native/hagency-execution/tests/owned.rs
-- native/hagency-execution/tests/owned/workspace.rs
-- native/hagency-execution/tests/support/reply_loss.rs
-- native/hagency/tests/owned_mcp.rs
-- native/hagency/tests/owned_matrix/support.rs
-- native/hagency-platform/src/lib.rs
-- native/hagency-platform/src/directory_identity.rs
+- crates/hagency-execution/Cargo.toml
+- crates/hagency-execution/src/lib.rs
+- crates/hagency-execution/src/host.rs
+- crates/hagency-execution/src/operation.rs
+- crates/hagency-execution/src/workspace.rs
+- crates/hagency-execution/tests/owned.rs
+- crates/hagency-execution/tests/owned/workspace.rs
+- crates/hagency-execution/tests/support/reply_loss.rs
+- crates/hagency/tests/owned_mcp.rs
+- crates/hagency/tests/owned_matrix/support.rs
+- crates/hagency-platform/src/lib.rs
+- crates/hagency-platform/src/directory_identity.rs
 - ./Cargo.lock
 - knowledge/decisions/adr-093-native-retained-workspace.md
 - specs/task-rust-retained-workspace.spec.md

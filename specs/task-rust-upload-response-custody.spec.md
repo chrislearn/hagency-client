@@ -27,10 +27,10 @@ protected acceptance journal without inventing provenance from reserialized JSON
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/src/http.rs
-- native/hagency-matrix/src/media_upload.rs
-- native/hagency-matrix/src/lib.rs
-- native/hagency-matrix/tests/media_upload.rs
+- crates/hagency-matrix/src/http.rs
+- crates/hagency-matrix/src/media_upload.rs
+- crates/hagency-matrix/src/lib.rs
+- crates/hagency-matrix/tests/media_upload.rs
 - knowledge/decisions/adr-083-native-upload-response-custody.md
 - specs/task-rust-upload-response-custody.spec.md
 - docs/progress.md

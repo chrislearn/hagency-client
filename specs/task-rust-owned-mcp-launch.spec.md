@@ -31,12 +31,12 @@ and verify real helper task maintenance separately from upstream and cleanup out
 
 ### Allowed Changes
 - ./Cargo.lock
-- native/hagency/Cargo.toml
-- native/hagency/tests/owned_mcp.rs
-- native/hagency-execution/**
-- native/hagency-runtime/src/codex/session.rs
-- native/hagency-runtime/src/codex/session/task_mcp.rs
-- native/hagency/tests/fixtures/owned_mcp_peer.rs
+- crates/hagency/Cargo.toml
+- crates/hagency/tests/owned_mcp.rs
+- crates/hagency-execution/**
+- crates/hagency-runtime/src/codex/session.rs
+- crates/hagency-runtime/src/codex/session/task_mcp.rs
+- crates/hagency/tests/fixtures/owned_mcp_peer.rs
 - knowledge/decisions/adr-057-native-owned-mcp-launch.md
 - specs/task-rust-owned-mcp-launch.spec.md
 - docs/**

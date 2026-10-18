@@ -580,7 +580,7 @@ missing/expired observation is refused, never fabricated.
   `registration.reception_room_id` (the store's `Registration`), and the
   intake sync filter (`intake.rs:194-197`, `:226`) must include the
   reception room** so its `/state` arrives in the same sync. The config file
-  that supplies the id (`native/hagency/src/bootstrap/config.rs`, currently
+  that supplies the id (`crates/hagency/src/bootstrap/config.rs`, currently
   `deny_unknown_fields` with only `rooms: Vec<Room>`) is licensed for the
   new field. **Side effect named:** `HostConfig::binding()` digests `rooms`
   as SDK identity (`config.rs:176-184`), so adding the reception room

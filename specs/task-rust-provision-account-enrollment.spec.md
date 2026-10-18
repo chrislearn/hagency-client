@@ -46,15 +46,15 @@ profiles and the original completion/session-route gates remain required.
 
 ## Allowed changes
 
-- native/hagency-matrix/src/token_provision.rs
-- native/hagency-matrix/src/provisioning.rs
-- native/hagency-matrix/src/enrollment.rs
-- native/hagency-matrix/src/enrollment/provisioning.rs
-- native/hagency-matrix/tests/intake/provisioning.rs
-- native/hagency-matrix/tests/enrollment/fixture.rs
-- native/hagency-matrix/tests/enrollment/mod.rs
-- native/hagency-matrix/tests/enrollment/provisioning.rs
-- native/hagency-matrix/tests/token_provision.rs
+- crates/hagency-matrix/src/token_provision.rs
+- crates/hagency-matrix/src/provisioning.rs
+- crates/hagency-matrix/src/enrollment.rs
+- crates/hagency-matrix/src/enrollment/provisioning.rs
+- crates/hagency-matrix/tests/intake/provisioning.rs
+- crates/hagency-matrix/tests/enrollment/fixture.rs
+- crates/hagency-matrix/tests/enrollment/mod.rs
+- crates/hagency-matrix/tests/enrollment/provisioning.rs
+- crates/hagency-matrix/tests/token_provision.rs
 - this spec, docs/agent-knowledge.md, docs/progress.md
 
 ## Scenarios

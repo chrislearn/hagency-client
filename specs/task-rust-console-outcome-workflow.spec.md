@@ -28,10 +28,10 @@ native console, with bounded discovery of stopped dispatches per engagement.
 
 ## Allowed changes
 
-- native/hagency-store/src/domain/stopped_inspection.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency/src/console/agents.rs
-- native/hagency/tests/console/**
+- crates/hagency-store/src/domain/stopped_inspection.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency/src/console/agents.rs
+- crates/hagency/tests/console/**
 - mockup/components/NativeAgents.jsx
 - mockup/components/NativeStoppedWork.jsx
 - mockup/lib/native-api.js

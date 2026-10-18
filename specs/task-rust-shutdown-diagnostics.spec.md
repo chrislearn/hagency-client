@@ -29,12 +29,12 @@ without changing service timing or interpreting an unknown outcome as closure.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/shutdown.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/tests/shutdown.rs
-- native/hagency/tests/mcp_coordination/fixture.rs
-- native/hagency/tests/runner.rs
+- crates/hagency-store/src/shutdown.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/tests/shutdown.rs
+- crates/hagency/tests/mcp_coordination/fixture.rs
+- crates/hagency/tests/runner.rs
 - specs/task-rust-shutdown-diagnostics.spec.md
 - knowledge/context/native-shutdown-diagnostics.md
 - docs/agent-knowledge.md

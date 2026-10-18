@@ -135,9 +135,9 @@ reach.
 
 The origin rules this slice's hoops implement had no executable comparison against the retained
 product: the proxy's `sameOriginWrite`, its default-deny allowlist and canonicaliser, and the
-backend's one-origin CORS gate were read, never replayed. `native/scripts/console-origin-vectors.mjs`
+backend's one-origin CORS gate were read, never replayed. `tools/native/console-origin-vectors.mjs`
 now EXECUTES them over a fixed request table and writes
-`native/hagency/tests/fixtures/console-origin-vectors.json`; `--check` re-derives and fails on
+`crates/hagency/tests/fixtures/console-origin-vectors.json`; `--check` re-derives and fails on
 drift. Both retained sources are pinned by sha256 in the fixture, so a changed allowlist or a
 changed origin rule fails the check rather than silently re-blessing a different answer. The Rust
 test `native_console_origin_matches_retained_vectors` replays each row against the native

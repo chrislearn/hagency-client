@@ -1,0 +1,329 @@
+{
+  "schema": 1,
+  "date": "2026-09-21",
+  "status": "passed_for_documented_development_scope",
+  "branch": "wechat-ui",
+  "base_commit": "05daf9bdb05fafc6d8f04dcb312a35f1d46a661e",
+  "build": {
+    "command": "cargo build --offline --features agent_chat --bin robrix",
+    "platform": "macOS",
+    "configuration": "debug",
+    "binary_sha256": "77cf4ab2a271d97c6366c6c985e26642b9e395fa834e5d5f797569ca7456a351",
+    "passed": true,
+    "warnings": [
+      "Unused inherited rich input API members",
+      "Linker __eh_frame compact unwind size warning"
+    ]
+  },
+  "unit_tests": {
+    "command": "cargo test --offline --features agent_chat --lib",
+    "passed": 201,
+    "failed": 0,
+    "ignored": 2
+  },
+  "i18n": {
+    "command": "python3 tools/wechat-ux/check_i18n.py",
+    "catalog_entries": 937,
+    "translated_call_sites": 986,
+    "missing": 0
+  },
+  "native": {
+    "window_points": [
+      [
+        430,
+        820
+      ],
+      [
+        1440,
+        960
+      ]
+    ],
+    "service": "disposable Palpo fixture",
+    "method": "real Makepad native input bridge and screenshots; no personal account automation",
+    "results": [
+      {
+        "script": "tools/wechat-ux/live/native_article_v2.py",
+        "passed": true,
+        "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/result.json",
+        "checks": [
+          "native_chinese_input_and_selected_text_bold",
+          "native_image_selection_settings_theme_cover_and_persistence",
+          "full_review_reaches_final_paragraph",
+          "matrix_publish_contains_portable_article_and_uploaded_image",
+          "recipient_opens_native_article_reader",
+          "update_keeps_original_matrix_identity_and_reader_gets_latest_revision",
+          "withdraw_redacts_original_and_revision_and_preserves_local_draft",
+          "shared_editor_requires_recipient_consent_and_does_not_share_sender_drafts",
+          "english_desktop_three_column_editor"
+        ]
+      },
+      {
+        "script": "tools/wechat-ux/live/native_article_v2_encrypted.py",
+        "passed": true,
+        "source": "lab/wechat-ux/evidence/live/article-editor-v2/encrypted-8ae45081fd5a4767900bd75f022c4f56/result.json",
+        "checks": [
+          "encrypted_room_uses_encrypted_event_and_encrypted_image_descriptor",
+          "recipient_decrypts_and_opens_native_article",
+          "encrypted_article_withdrawal"
+        ]
+      },
+      {
+        "script": "tools/wechat-ux/live/native_article_v2_layout.py",
+        "passed": true,
+        "source": "lab/wechat-ux/evidence/live/article-editor-v2/c30f7a1430de4caf93c9821b5dc548d1/sender/layout-result.json",
+        "checks": [
+          "native_selected_text_link_persists",
+          "desktop_three_columns_after_polish"
+        ]
+      }
+    ],
+    "check_count": 14,
+    "passed": true,
+    "rendered_encrypted_image_visually_inspected": true
+  },
+  "image_pipeline": {
+    "requested_model": "gpt-image-2",
+    "stages_passed": [
+      "intake",
+      "prepare"
+    ],
+    "native_mapping": "manually authored Robrix host adapter; see NATIVE-MAPPING.md",
+    "generic_compile_and_wasm_run": false
+  },
+  "not_qualified": [
+    "real iOS device and on-screen keyboard",
+    "real CJK IME composition",
+    "automated operating-system file picker",
+    "network/process fault injection and concurrent-device revisions",
+    "independent page-by-page visual similarity acceptance"
+  ],
+  "visual_similarity_score": null,
+  "evidence": [
+    {
+      "file": "evidence/12-received-article-card.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/recipient/native-runs/3c80493a1cf3428f8e3af99ea659597d/12-received-article-card.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "6bb32e4ead67f219d3fecfed0c5f6781a0870ab40e388edc89bceb057971e5da"
+    },
+    {
+      "file": "evidence/13-recipient-native-reader.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/recipient/native-runs/3c80493a1cf3428f8e3af99ea659597d/13-recipient-native-reader.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "df77e40203a56002c718fcd9eae330637109787af59053e584fcf109c657b180"
+    },
+    {
+      "file": "evidence/15-recipient-updated-reader.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/recipient/native-runs/3c80493a1cf3428f8e3af99ea659597d/15-recipient-updated-reader.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "5acf80a0c7ab0b76651ac3ef08bb119ce38d88d49b2b826555801be95343b36f"
+    },
+    {
+      "file": "evidence/17-recipient-own-consent.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/recipient/native-runs/3c80493a1cf3428f8e3af99ea659597d/17-recipient-own-consent.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "304086ed0a1637114e2fd17795b2f3ae417818d8bfb9606748630e28b6b47432"
+    },
+    {
+      "file": "evidence/01-library.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/sender/native-runs/87a19c8a18844b40a152e7766ce7825a/01-library.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "38496fe31bb2b15b5b1ac68bc57450b483851f3dcab06a3d8e0620ddc0b17bb5"
+    },
+    {
+      "file": "evidence/02-visual-editor.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/sender/native-runs/87a19c8a18844b40a152e7766ce7825a/02-visual-editor.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "6558f77619dbab2bd55c943a2e1b952bb67f70d21f6f7cf294995f2de4394ffe"
+    },
+    {
+      "file": "evidence/03-image-library.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/sender/native-runs/87a19c8a18844b40a152e7766ce7825a/03-image-library.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "6b31e7ca5272719d847302f826e3204ec7a4c06ee24ccb27b15cc51134df930b"
+    },
+    {
+      "file": "evidence/04-inline-image.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/sender/native-runs/87a19c8a18844b40a152e7766ce7825a/04-inline-image.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "a6cf55aa26d5a4e33e3ff87ed61d6e917361dff5f48798a862c8285e07380af8"
+    },
+    {
+      "file": "evidence/05-image-settings.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/sender/native-runs/87a19c8a18844b40a152e7766ce7825a/05-image-settings.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "816d03e4c21b29274acb6741d83d865fefde1a4b34e07d942f03aafb9e7a3a3b"
+    },
+    {
+      "file": "evidence/06-theme.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/sender/native-runs/87a19c8a18844b40a152e7766ce7825a/06-theme.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "4020a080b6cc440aadde4ef19eef71c891c9d864d571b2ded997a54555ef5279"
+    },
+    {
+      "file": "evidence/07-cover.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/sender/native-runs/87a19c8a18844b40a152e7766ce7825a/07-cover.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "a6f4c7bbdf225b9a4a0a71b301eb1742503e36c6773d331c2866b3b5e73d17ed"
+    },
+    {
+      "file": "evidence/08-full-preview-end.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/sender/native-runs/87a19c8a18844b40a152e7766ce7825a/08-full-preview-end.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "d88653adcac3f08c94fb29be3a101b653a0e6c9aa06bcacf0a53e67aaebf779b"
+    },
+    {
+      "file": "evidence/08-full-preview.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/sender/native-runs/87a19c8a18844b40a152e7766ce7825a/08-full-preview.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "efe15a665211119776c10a6d42923ad59d5a9eed7bf6e63f5dad588766cec24b"
+    },
+    {
+      "file": "evidence/09-review.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/sender/native-runs/87a19c8a18844b40a152e7766ce7825a/09-review.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "15e86a411d22119df5d076e9f5fc3c269d45549fd6ae574963929cfc70eec1bf"
+    },
+    {
+      "file": "evidence/10-publish-confirmation.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/sender/native-runs/87a19c8a18844b40a152e7766ce7825a/10-publish-confirmation.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "051bc88f095f52ff9667914753dceb9813c9134d0806c202291dcde4f4c013b4"
+    },
+    {
+      "file": "evidence/11-publication.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/sender/native-runs/87a19c8a18844b40a152e7766ce7825a/11-publication.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "66e64504d650a5a89c86d208b94e580b3f6d6ea493fb857dabc1dc8628bc0f99"
+    },
+    {
+      "file": "evidence/14-update-confirmation.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/sender/native-runs/87a19c8a18844b40a152e7766ce7825a/14-update-confirmation.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "480c11a57817b30baf1a7df07dd48e15c40f8ce04e37f290e07bd65cfe01c604"
+    },
+    {
+      "file": "evidence/16-withdraw-confirmation.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/sender/native-runs/87a19c8a18844b40a152e7766ce7825a/16-withdraw-confirmation.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "032863293ee856f4eb1c56adbfec2a57ea130745bc9ff0d555e5d73fd00d38da"
+    },
+    {
+      "file": "evidence/18-desktop-editor-en.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/71053ab1ddad4efda2a586c67cbaa5b7/sender/native-runs/bea0683c67644a3da52b815f3e0c08a8/18-desktop-editor-en.png",
+      "pixels": [
+        2880,
+        1800
+      ],
+      "sha256": "ae27bcfd41ee654a25c5921279f3c5bc229e8edb4aa5d8689545f59eec3578d0"
+    },
+    {
+      "file": "evidence/encrypted-publication.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/encrypted-8ae45081fd5a4767900bd75f022c4f56/alex/native-runs/bd94605628104ad1bb1cd9fd14d75c53/encrypted-publication.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "ec42922af070c805db6aff795936f778312ddc2f4c508ecdb8929544cf6adf64"
+    },
+    {
+      "file": "evidence/encrypted-reader.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/encrypted-8ae45081fd5a4767900bd75f022c4f56/emma/native-runs/d80495e0267a420689c1b5034eb8a258/encrypted-reader.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "1f389898ad095788c87680e8fc07250a70528d94c343a89288a6c407a6910b88"
+    },
+    {
+      "file": "evidence/theme-layout-zh.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/c30f7a1430de4caf93c9821b5dc548d1/sender/native-runs/6c9dd6195da44519a7dc2d0e8f676c18/theme-layout-zh.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "63c03557a668205864994cb8edff0b0bec5270f40790e415325fc45838c3fc4a"
+    },
+    {
+      "file": "evidence/visual-link-editor-zh.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/c30f7a1430de4caf93c9821b5dc548d1/sender/native-runs/6c9dd6195da44519a7dc2d0e8f676c18/visual-link-editor-zh.png",
+      "pixels": [
+        860,
+        1640
+      ],
+      "sha256": "88bc16dd89574312cfc8e6de443c4d7046cf6011d5911ac0b9cdd64c9c1325f5"
+    },
+    {
+      "file": "evidence/desktop-editor-en.png",
+      "source": "lab/wechat-ux/evidence/live/article-editor-v2/c30f7a1430de4caf93c9821b5dc548d1/sender/native-runs/235b38e28ab54383b79fda9f5112a3b5/desktop-editor-en.png",
+      "pixels": [
+        2880,
+        1800
+      ],
+      "sha256": "6d47d1cef0cc39ad4bf053c90760e03f2d66a0ee561bad2e1f9c0361b852b28a"
+    }
+  ],
+  "source_files_sha256": {
+    "src/article_app/backend.rs": "16f00a4bb883e93647c506f5d700f59bc2e6260d6ba87a7f19cea5af4b78484b",
+    "src/article_app/document.rs": "e1b4224238e06af3b9ed3c7f010f0eec5bb2ed8cf4abf26d165d50bc6b03ed1f",
+    "src/article_app/mod.rs": "4e65cfbdbc81b3b46f7e61e6b6b79ebcb6fccc43940899572a1bc4625020ffb0",
+    "src/article_app/model.rs": "2217a0539b78e4c8279bb252ede396582288f7c49ea087dcca118783acde1cac",
+    "src/article_app/rich_input.rs": "2e69d5116bb5ef772db4a1117d03401af7b37e9b774a36a4072583185f53a9e0",
+    "src/article_app/rich_layout.rs": "4fc205afe066101075e0e9f71de106c47a5ef616a33bf8c1f1e8c43579f9e4f8",
+    "src/article_app/storage.rs": "4a375421842ee157c9ddef7c52453543e6438cddf278a8e053311ac3420f2037",
+    "src/article_app/ui.rs": "8238482ecbc83b6cd6ee50596becd5a434147198b72225f179c0f99ead98b54b"
+  }
+}

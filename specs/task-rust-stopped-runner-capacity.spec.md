@@ -29,9 +29,9 @@ Do not change the limit or clear any task, stop, workspace or input state.
 
 ## Allowed changes
 
-- native/hagency-store/src/domain/execution.rs
-- native/hagency-store/tests/owned_claim.rs
-- native/hagency-execution/tests/owned/inspection.rs
+- crates/hagency-store/src/domain/execution.rs
+- crates/hagency-store/tests/owned_claim.rs
+- crates/hagency-execution/tests/owned/inspection.rs
 - knowledge/decisions/adr-148-operator-recovery-resume.md
 - knowledge/decisions/adr-162-native-stopped-owner-inspection.md
 - knowledge/decisions/adr-163-native-stopped-runner-capacity.md

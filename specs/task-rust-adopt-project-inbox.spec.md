@@ -25,8 +25,8 @@ room as a second inbox, enabling native group/DM qualification with local runner
 
 ## Allowed changes
 
-- native/hagency/src/bootstrap/provision.rs
-- native/hagency/src/bootstrap/provision/**
+- crates/hagency/src/bootstrap/provision.rs
+- crates/hagency/src/bootstrap/provision/**
 - specs/task-rust-adopt-project-inbox.spec.md
 - knowledge/decisions/adr-172-adopt-project-inbox.md
 - docs/**

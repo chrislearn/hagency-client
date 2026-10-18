@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "source": "apps",
+  "repository": "https://github.com/hagency-org/Rinx",
+  "apps": [
+    {
+      "directory": "article-editor",
+      "native": "article-editor"
+    }
+  ]
+}

@@ -41,12 +41,12 @@ writer rather than reopen a potentially reused thread ID.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/shutdown.rs
-- native/hagency-store/src/shutdown/native_writer.rs
-- native/hagency-store/src/shutdown/native_writer/windows.rs
-- native/hagency-store/src/lib.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/shutdown.rs
+- crates/hagency-store/src/shutdown/native_writer.rs
+- crates/hagency-store/src/shutdown/native_writer/windows.rs
+- crates/hagency-store/src/lib.rs
 - knowledge/decisions/adr-106-native-sqlite-close-observation.md
 - knowledge/context/native-sqlite-writer-observation.md
 - specs/task-rust-native-writer-observation.spec.md

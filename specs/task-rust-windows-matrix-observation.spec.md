@@ -26,10 +26,10 @@ Windows Matrix library failures while preserving deadlines and error results.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/tests/common/mod.rs
-- native/hagency-matrix/tests/intake/mod.rs
-- native/hagency-matrix/tests/intake/attachments.rs
-- native/hagency-matrix/tests/approval_intake/mod.rs
+- crates/hagency-matrix/tests/common/mod.rs
+- crates/hagency-matrix/tests/intake/mod.rs
+- crates/hagency-matrix/tests/intake/attachments.rs
+- crates/hagency-matrix/tests/approval_intake/mod.rs
 - knowledge/decisions/adr-088-native-windows-matrix-observation.md
 - specs/task-rust-windows-matrix-observation.spec.md
 - docs/agent-knowledge.md

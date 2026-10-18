@@ -47,39 +47,39 @@ current or historical authority checks.
 
 ### Allowed Changes
 - ./Cargo.lock
-- native/hagency/Cargo.toml
-- native/hagency-execution/src/host.rs
-- native/hagency-runtime/src/codex/session/task_mcp.rs
-- native/hagency/src/lib.rs
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/bootstrap/config.rs
-- native/hagency/src/bootstrap/driver.rs
-- native/hagency/src/bootstrap/workspace.rs
-- native/hagency/src/file_service.rs
-- native/hagency/src/file_service/types.rs
-- native/hagency/src/file_service/worker.rs
-- native/hagency/src/file_service/job.rs
-- native/hagency/src/file_service/pipeline.rs
-- native/hagency/src/file_service/recovery.rs
-- native/hagency/src/runner.rs
-- native/hagency/src/runner/files.rs
-- native/hagency/src/task_client.rs
-- native/hagency/src/task_client/files.rs
-- native/hagency/src/task_client/transport.rs
-- native/hagency/src/mcp.rs
-- native/hagency/src/mcp/catalog.rs
-- native/hagency/src/mcp/file_catalog.rs
-- native/hagency/tests/file_service.rs
-- native/hagency/tests/file_service/fixture.rs
-- native/hagency/tests/file_service/admission.rs
-- native/hagency/tests/file_service/scope.rs
-- native/hagency/tests/file_service/recovery.rs
-- native/hagency/tests/file_service/shutdown.rs
-- native/hagency/tests/fixtures/file_mcp_peer.rs
-- native/hagency/tests/bootstrap/fixture.rs
-- native/hagency/tests/mcp.rs
-- native/hagency/tests/task_client/mcp.rs
-- native/hagency/tests/http.rs
+- crates/hagency/Cargo.toml
+- crates/hagency-execution/src/host.rs
+- crates/hagency-runtime/src/codex/session/task_mcp.rs
+- crates/hagency/src/lib.rs
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/bootstrap/config.rs
+- crates/hagency/src/bootstrap/driver.rs
+- crates/hagency/src/bootstrap/workspace.rs
+- crates/hagency/src/file_service.rs
+- crates/hagency/src/file_service/types.rs
+- crates/hagency/src/file_service/worker.rs
+- crates/hagency/src/file_service/job.rs
+- crates/hagency/src/file_service/pipeline.rs
+- crates/hagency/src/file_service/recovery.rs
+- crates/hagency/src/runner.rs
+- crates/hagency/src/runner/files.rs
+- crates/hagency/src/task_client.rs
+- crates/hagency/src/task_client/files.rs
+- crates/hagency/src/task_client/transport.rs
+- crates/hagency/src/mcp.rs
+- crates/hagency/src/mcp/catalog.rs
+- crates/hagency/src/mcp/file_catalog.rs
+- crates/hagency/tests/file_service.rs
+- crates/hagency/tests/file_service/fixture.rs
+- crates/hagency/tests/file_service/admission.rs
+- crates/hagency/tests/file_service/scope.rs
+- crates/hagency/tests/file_service/recovery.rs
+- crates/hagency/tests/file_service/shutdown.rs
+- crates/hagency/tests/fixtures/file_mcp_peer.rs
+- crates/hagency/tests/bootstrap/fixture.rs
+- crates/hagency/tests/mcp.rs
+- crates/hagency/tests/task_client/mcp.rs
+- crates/hagency/tests/http.rs
 - knowledge/decisions/adr-101-native-file-service-integration.md
 - specs/task-rust-file-service-integration.spec.md
 - docs/progress.md
@@ -96,7 +96,7 @@ current or historical authority checks.
 Scenario: Actual native bootstrap and first MCP file call deliver to the original encrypted conversation
   Level: integration
   Test Double: real native executable MCP fixed offline runtime peer local TLS and encrypted recipient SDK
-  Targets: native/hagency/src/file_service.rs
+  Targets: crates/hagency/src/file_service.rs
   Retired-Test: native_file_service_executable
   Given legitimate queued canonical work and the one fixed private development profile with files enabled
   When real serve authenticates Collector claims work registers the retained workspace and launches the pinned peer
@@ -108,7 +108,7 @@ Scenario: Actual native bootstrap and first MCP file call deliver to the origina
 Scenario: Durable admission and caller loss preserve one original bounded job
   Level: integration
   Test Double: real writer source file and local TLS with controlled response and capture checkpoints
-  Targets: native/hagency/src/file_service.rs
+  Targets: crates/hagency/src/file_service.rs
   Test: native_file_service_admission
   Given two available service slots and an active pipeline waiting on real HTTP
   When a second request arrives or an HTTP caller disappears before or after durable admission
@@ -119,7 +119,7 @@ Scenario: Durable admission and caller loss preserve one original bounded job
 Scenario: Current source authority and historical status authority cannot be exchanged
   Level: integration
   Test Double: actual runner HTTP headers original writer retained root and legitimate retirement mutations
-  Targets: native/hagency/src/file_service.rs
+  Targets: crates/hagency/src/file_service.rs
   Test: native_file_service_authority
   Given current original expired retired foreign and same-localpart impostor credentials
   When send_file and exact get_file_delivery are called through the actual routes
@@ -130,7 +130,7 @@ Scenario: Current source authority and historical status authority cannot be exc
 Scenario: Stable request replay and finite retained capacity do not duplicate capture or effects
   Level: integration
   Test Double: real source mutation two retained uncertain operations and counted TLS requests
-  Targets: native/hagency/src/file_service.rs
+  Targets: crates/hagency/src/file_service.rs
   Test: native_file_service_replay_bounds
   Given an admitted original call and two retained active or unknown slots
   When the source changes exact and conflicting requests replay or a third new request arrives
@@ -142,7 +142,7 @@ Scenario: Stable request replay and finite retained capacity do not duplicate ca
 Scenario: Stage and SDK recovery preserve incomplete facts across actual process death
   Level: integration
   Test Double: actual protected journals SDK receipt local TLS and a fresh native service process
-  Targets: native/hagency/src/file_service.rs
+  Targets: crates/hagency/src/file_service.rs
   Retired-Test: native_file_service_restart
   Given original committed source metadata and private SDK Complete with first domain Delivered deliberately not committed
   When every original process owner is gone and real startup opens the same protected state
@@ -153,7 +153,7 @@ Scenario: Stage and SDK recovery preserve incomplete facts across actual process
 Scenario: Cancellation and lost network evidence keep original uncertainty
   Level: integration
   Test Double: actual paused binary POST encrypted PUT and real negative room observations
-  Targets: native/hagency/src/file_service.rs
+  Targets: crates/hagency/src/file_service.rs
   Retired-Test: native_file_service_uncertainty
   Given a current pipeline before and after each possible external write boundary
   When cancellation retirement deadline expiry or a truncated acknowledgement occurs
@@ -164,7 +164,7 @@ Scenario: Cancellation and lost network evidence keep original uncertainty
 Scenario: Borrowed close retains the only physical SDK media and process owners
   Level: integration
   Test Double: actual Bootstrap service worker owned runtime journal locks and controlled pending operations
-  Targets: native/hagency/src/file_service.rs
+  Targets: crates/hagency/src/file_service.rs
   Test: native_file_service_shutdown
   Given admitting blocked active and unresolved jobs with the original execution Report
   When shutdown quiesces admission and retires workspace access
@@ -175,7 +175,7 @@ Scenario: Borrowed close retains the only physical SDK media and process owners
 Scenario: MCP and default service boundaries remain explicit and bounded
   Level: integration
   Test Double: actual native MCP SDK client and real loopback HTTP malformed requests
-  Targets: native/hagency/src/file_service.rs
+  Targets: crates/hagency/src/file_service.rs
   Test: native_file_service_protocol
   Given disabled and enabled development configurations and closed tool schemas
   When unknown duplicate oversized or authority-bearing fields and valid file operations are submitted
@@ -193,7 +193,7 @@ Scenario: The safe result names which unknown it is
 Scenario: Original executable failures retain bounded child evidence
   Level: integration
   Test Double: actual native children with valid and refused private configuration
-  Targets: native/hagency/tests/file_service/fixture.rs
+  Targets: crates/hagency/tests/file_service/fixture.rs
   Retired-Test: native_file_service_original_observation
   Given the original executable fixture and its own child process
   When an HTTP wait or assertion fails before cleanup or the child actually exits

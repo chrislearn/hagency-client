@@ -1,0 +1,7 @@
+{
+  "passed": true,
+  "checks": [
+    "native_select_all_copy_includes_unicode_emoji_math_code_and_aligned_cells"
+  ],
+  "binary_sha256": "1ac30591372f868fbfbb4e0be83fb4a2aefe4248eb2df86f4b20536d6f2cf59f"
+}

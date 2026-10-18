@@ -1,0 +1,167 @@
+{
+  "validated_at_utc": "2026-09-21T18:08:17.784412+00:00",
+  "target": "aarch64-apple-darwin",
+  "branch": "wechat-ui",
+  "component_commits": [
+    "c5d2b68e",
+    "637d24c8"
+  ],
+  "toolchain": "rustc 1.97.1 (Robrix/core/native); Rust 1.98.0 (independent Blitz suite)",
+  "tests": {
+    "robrix": {
+      "passed": 185,
+      "failed": 0,
+      "ignored": 2,
+      "command": "cargo test --offline --locked --features agent_chat,article_blitz --lib",
+      "ignored_reason": "Existing Moments live-fixture and Hagency backend integration tests require their separately configured environments."
+    },
+    "article_core": {
+      "passed": 17,
+      "failed": 0,
+      "command": "cargo test --offline --manifest-path crates/article-core/Cargo.toml --features l0"
+    },
+    "article_makepad": {
+      "passed": 3,
+      "failed": 0,
+      "command": "cargo test --offline --manifest-path crates/article-makepad/Cargo.toml --lib"
+    },
+    "article_blitz": {
+      "passed": 14,
+      "failed": 0,
+      "evidence": "lab/article-blitz/validation.json"
+    }
+  },
+  "build_checks": {
+    "default_features_library": true,
+    "agent_chat_article_blitz_binary": true,
+    "agent_chat_without_blitz_binary": true
+  },
+  "i18n": {
+    "catalog_entries": 946,
+    "translated_call_sites": 986,
+    "missing": 0
+  },
+  "native": {
+    "standalone": {
+      "passed": true,
+      "checks": [
+        "native_chinese_english_selection_bold_theme_save_without_matrix_or_octosense",
+        "separate_process_reopens_existing_schema2_draft"
+      ],
+      "evidence_directory": "lab/wechat-ux/evidence/live/article-components/9ab284c03b334c1899169d37ff183e16",
+      "binary_sha256": [
+        "287b7e125dc104021420f441864c882cb5504ec1478986ceffb10efb5f2c1346"
+      ]
+    },
+    "matrix_lifecycle": {
+      "passed": true,
+      "checks": [
+        "native_chinese_input_and_selected_text_bold",
+        "native_image_selection_settings_theme_cover_and_persistence",
+        "full_review_reaches_final_paragraph",
+        "matrix_publish_contains_portable_article_and_uploaded_image",
+        "recipient_opens_native_article_reader",
+        "update_keeps_original_matrix_identity_and_reader_gets_latest_revision",
+        "withdraw_redacts_original_and_revision_and_preserves_local_draft",
+        "shared_editor_requires_recipient_consent_and_does_not_share_sender_drafts",
+        "english_desktop_three_column_editor"
+      ],
+      "evidence_directory": "lab/wechat-ux/evidence/live/article-editor-v2/b9f6066e7dfa466186d965e90d128d4f",
+      "binary_sha256": [
+        "fbdce93eed59dd49369059c342260ae7004b1a1c5db788307cbf2a1e0ff3f056"
+      ]
+    },
+    "encrypted_matrix": {
+      "passed": true,
+      "checks": [
+        "encrypted_room_uses_encrypted_event_and_encrypted_image_descriptor",
+        "recipient_decrypts_and_opens_native_article",
+        "encrypted_article_withdrawal"
+      ],
+      "evidence_directory": "lab/wechat-ux/evidence/live/article-editor-v2/encrypted-db1267ab74d243de90ba285c2d41a449",
+      "binary_sha256": [
+        "dab4a82c550bf134e496b7b7b5e8559f5f2e90031bc66b77529b59cb32f4a43f"
+      ]
+    },
+    "robrix_blitz": {
+      "passed": true,
+      "checks": [
+        "mobile_chinese_english_css_theme_authorized_images_and_full_scroll",
+        "long_preview_reports_clipping_and_returns_to_complete_native_reader",
+        "desktop_english_preview_refresh_back_and_close"
+      ],
+      "evidence_directory": "lab/wechat-ux/evidence/live/article-blitz/edc6d01b9e004246bcea8430f61b1696",
+      "binary_sha256": [
+        "dab4a82c550bf134e496b7b7b5e8559f5f2e90031bc66b77529b59cb32f4a43f"
+      ]
+    },
+    "without_blitz": {
+      "passed": true,
+      "checks": [
+        "feature_disabled_native_editor_and_reader_work_and_experimental_entry_is_absent"
+      ],
+      "evidence_directory": "lab/wechat-ux/evidence/live/article-components/without-blitz-aa050beda622404ea25efe95c028eec7",
+      "binary_sha256": [
+        "185f3b68512ed93591516bc4d3d1953c56abcc3a86afd0e21941b312d430eb1f"
+      ]
+    }
+  },
+  "artifact_sha256": {
+    "lab/article-components/evidence/robrix-css-desktop-top.png": "cc69d387fd202b80b7c499e2ca0d6db53d45f1fdd19835a539b4a08e593770d4",
+    "lab/article-components/evidence/robrix-css-mobile-bottom.png": "bd661ea7e7fffedd4455f32ad0c63ff23650e85d1164c5184aa57f7d34d75303",
+    "lab/article-components/evidence/robrix-css-mobile-clipped.png": "8bf07d981fa587d026278185c92ea9458f96990cc220b876b2033b15f3e2cb8b",
+    "lab/article-components/evidence/robrix-css-mobile-top.png": "9c2f322b399ce15ceaab432be739283829983561d2807351fcc23fc4125729c0",
+    "lab/article-components/evidence/robrix-without-blitz.png": "6b9e0fba498702f540fb2797dc3e417caac9886bc96f5e7a0ab637a2bb7ff22d",
+    "lab/article-components/evidence/standalone-editor.png": "f84af8dba99ffe245ffa682695de7864b74da0bdcaaa245ec2f7daa3334b120d",
+    "lab/article-components/evidence/standalone-reopened.png": "491f808754bc26494cfd640d6779792a9d1c561f7b1f59e750d8d48614ee83c0"
+  },
+  "source_sha256": {
+    "Cargo.lock": "38efb464c187ccfa0ef8596afc0454fd16440c9a042ec2a17b2772d9331a6f98",
+    "Cargo.toml": "ee6c0c251cf7096fab85f1ea0a39671ea5724d935686a375b13bd62229928cac",
+    "crates/article-blitz/Cargo.lock": "58eaf7c5dc097b9c60187876e828a6d843ead6952ef052bd617d3a1622564952",
+    "crates/article-blitz/Cargo.toml": "21d967c33dfe80f5e90004043081d82772301449c05b88dbaa3b231775e71fe2",
+    "crates/article-blitz/examples/native_preview.rs": "ea033eadfa7ea78f55fa0c1039f8cd3de933f218ebd8404ced8ef14d432fd6bb",
+    "crates/article-blitz/examples/render_fixture.rs": "c29c53d69613ac5d1331ac715090de1fb686b9331703725e6922c8169e9c7f23",
+    "crates/article-blitz/src/lib.rs": "4473402b78bd4afd007605d871d41dc8cda42323a0ade22f22da9ea649bd1210",
+    "crates/article-blitz/src/makepad.rs": "f75ec75215a3863baee9535d5c8467bb67a288c45218c120425851f0d37ae46d",
+    "crates/article-blitz/tests/rendering.rs": "f1a2533e957e48ae7cf381514e27087f370997d290df6d21eafeeec2c604c016",
+    "crates/article-core/Cargo.lock": "891efdcfc58b58921bb5c546674aaee96ce9a33a76b677cf78a65aa08fd6a2ef",
+    "crates/article-core/Cargo.toml": "f15abfe8600be4c3e590cf9830d74fd111763d76df428358c895ab3b24d17680",
+    "crates/article-core/resources/app.card": "8ff772b47119224182c3217fb92f3c59020ab4c890cb9ac222551cd1e2edf565",
+    "crates/article-core/src/assets.rs": "d806a5a803640f00cbac00639977fa594a0636d6c093150b34340f179af3ba05",
+    "crates/article-core/src/bindings.rs": "981e7250ca5012d4646fecb4d41d2b0b065d06fc82ca63e3f7d724d536874cfc",
+    "crates/article-core/src/document.rs": "094ef1d8a5f67a563b6229fde5e22eae49c22bf875352cac0fd80402699e7b13",
+    "crates/article-core/src/editing.rs": "8499e86cc24fcddc5bbbbeb28b4237a82cfe52a220ac6643ec727fc31d15aa54",
+    "crates/article-core/src/host.rs": "03d6d2ba142db31a91c7049098095958ea738a64db58a46f2d8b69dbe53ec326",
+    "crates/article-core/src/lib.rs": "5789b7a8ff70943dbbc73bee0bf75450d27bdca66e9f654150e7463cfb3f7569",
+    "crates/article-core/src/storage.rs": "4517a2ed7c0d491a3bbc854b30a90178e2599020d141d35ebbd40f778fcaf2f7",
+    "crates/article-core/tests/host_isolation.rs": "9c1337e410959d298ef5a34ed371b1ce43af730b622e7160a4f6ca0a1da350a5",
+    "crates/article-makepad/Cargo.lock": "e87a1b7ad5a3ed5c80da5fd512cfe951c3dd8ac3f9f6a721aaea949c0210c603",
+    "crates/article-makepad/Cargo.toml": "aba12a5f8a4dc34cac913379d0fbffb7290237443ebce6bb728f699f09ec6526",
+    "crates/article-makepad/examples/standalone.rs": "0506cb3c2addbfb7b8e75be0e4ac015a5993b1d867a9b1b04b23198c876977f4",
+    "crates/article-makepad/src/apple_fonts.rs": "9e3300bcbf8945008e230dd5ef32248acaf1acd19df91933a0beb411e163fba2",
+    "crates/article-makepad/src/lib.rs": "a93c098fc16c01afb376c043c32bfa81301038c9ed80ba828101a4c30fbd9ed6",
+    "crates/article-makepad/src/presentation.rs": "7c016905b1b6b6e83ddc3d0da69833f26d00452b404143f975166d7c2098fe27",
+    "crates/article-makepad/src/rich_input.rs": "2e69d5116bb5ef772db4a1117d03401af7b37e9b774a36a4072583185f53a9e0",
+    "crates/article-makepad/src/rich_layout.rs": "4fc205afe066101075e0e9f71de106c47a5ef616a33bf8c1f1e8c43579f9e4f8",
+    "resources/i18n/en.json": "7caca66545177c03a34e0649db6acd94e8712ad9115188390c6c40b6e04d1b58",
+    "resources/i18n/zh-CN.json": "718780d88d81fb111f79a2b101e000fa51c3b47df5f222a3079ab1abdd3b6015",
+    "src/apple_fonts.rs": "662b7e37b02703d6079a47c815124797741b483ca9f9095c92fbffe4d985ad41",
+    "src/article_app/backend.rs": "5c6d288f1c4ebee1ad15278c773dcd4ae88c50a04ddac5e39ca96b5e8ad6795e",
+    "src/article_app/document.rs": "a5eebed0b4bdd2b7e53e6bd89cbdd4ae71aec9175680e4201e873562a9a8031b",
+    "src/article_app/host.rs": "deab66826a55669bc9a7d3e6bfe9d6c4264780037bbf60e6b98b2d62c45292f8",
+    "src/article_app/mod.rs": "cc23ed0e019a3d9a2c83db1e697582c47a7d39d1adda397f3ea69330066453d2",
+    "src/article_app/model.rs": "e0a964cf1c074c7594da9368cf26eb3e850fba80718d07538d451421b8dd3b0b",
+    "src/article_app/preview.rs": "df79e0780981eb233d7fd889eaf74994901ca81d01470cee907d26e7998495c9",
+    "src/article_app/storage.rs": "256252b17fe05caaaaa92ff739eafd580329d0959414095b37437f7d770141e4",
+    "src/article_app/ui.rs": "c45bc8498e2bf48a40443ddfe444b19990121c1f5062fc5ca50af362065ef089"
+  },
+  "qualifications": [
+    "Native tests used only isolated disposable Palpo accounts; no personal sessions.",
+    "An initial normal Palpo run had a disconnected SSH tunnel; the tunnel was restored before the passing lifecycle run.",
+    "A native startup returned a transient 404 before its first draw; the harness now retries that response within its deadline.",
+    "Image bytes were seeded from the normalized artwork fixture; the OS file picker is not automated.",
+    "No OctoSense package, arbitrary HTML editing/import, iOS device validation or WeChat similarity score is claimed.",
+    "Blitz is an optional static bitmap preview with resource/output limits, not a process sandbox."
+  ]
+}

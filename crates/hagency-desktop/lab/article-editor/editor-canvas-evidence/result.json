@@ -1,0 +1,60 @@
+{
+  "passed": true,
+  "mode": "Makepad instrumentation / hidden Metal backend",
+  "binary_sha256": "0580f55a222fb543243645db065e6654c10e9008dcde0b151a0b9a5a70a754c0",
+  "checks": [
+    "zero_visible_windows",
+    "source_apply_renders_in_editor_canvas",
+    "image_rendered_on_editing_canvas",
+    "code_rendered_on_editing_canvas",
+    "table_rendered_on_editing_canvas",
+    "emoji_rendered_on_editing_canvas",
+    "math_rendered_on_editing_canvas",
+    "diagram_rendered_on_editing_canvas",
+    "flow_and_sequence_rendered_on_editing_canvas",
+    "double_dollar_math_inside_sentences_stays_inline",
+    "html_highlighting_on_editing_canvas",
+    "javascript_highlighting_on_editing_canvas",
+    "full_sample_source_unchanged_after_rendering",
+    "full_preview_still_renders",
+    "edit_one_block_and_render_preserves_other_blocks_and_references",
+    "edited_block_source_and_render_survive_restart"
+  ],
+  "visible_window_samples": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "captures": [
+    "editor-applied-top",
+    "editor-image",
+    "editor-code",
+    "editor-code-javascript",
+    "editor-code-html",
+    "editor-table",
+    "editor-emoji",
+    "editor-math",
+    "editor-diagram",
+    "editor-end",
+    "editor-full-preview",
+    "editor-block-edited",
+    "editor-block-restarted"
+  ],
+  "expected_offline_network_errors": {
+    "read_receipts": 0,
+    "backwards_pagination": 0
+  },
+  "unexpected_runtime_errors": 0
+}

@@ -1,0 +1,62 @@
+[
+  {
+    "url": "https://img.shields.io/bower/v/editor.md.svg",
+    "file": "716a10b74956eb3d.svg",
+    "bytes": 1280,
+    "sha256": "f4a21c24d1ca21f47b9f90a113c4535800604a2d58bbc22b4e4b13367f8eafc3"
+  },
+  {
+    "url": "https://img.shields.io/github/forks/pandao/editor.md.svg",
+    "file": "c12b2f1770a8f77b.svg",
+    "bytes": 2790,
+    "sha256": "22b759bb0d7872d80511ca6e6b48f425ff5b29921b7fe1a67469d5637f38abd8"
+  },
+  {
+    "url": "https://img.shields.io/github/issues/pandao/editor.md.svg",
+    "file": "21eccd7541d83000.svg",
+    "bytes": 1298,
+    "sha256": "bf99d8b226f29bb2569383cd17b511e52a67eeac6f3e8d7a1f3e5793d520d7ce"
+  },
+  {
+    "url": "https://img.shields.io/github/release/pandao/editor.md.svg",
+    "file": "ff84643e42168f5e.svg",
+    "bytes": 1290,
+    "sha256": "03f0e39d6acd40e52ee1b5b24acf33a67390e5c4f1d2bf47a752cfe0b81de171"
+  },
+  {
+    "url": "https://img.shields.io/github/stars/pandao/editor.md.svg",
+    "file": "3e098ff7c461a4d5.svg",
+    "bytes": 2786,
+    "sha256": "217c8163fb2e50a32f8f5e450ef1b18d06830cac000edc6a1fefdcea5c96a971"
+  },
+  {
+    "url": "https://img.shields.io/github/tag/pandao/editor.md.svg",
+    "file": "6e7b9444d915e26d.svg",
+    "bytes": 1270,
+    "sha256": "dd6285e684090e562417a660caa9265b7ca982fcb8a0fc88f79fa524cee331ac"
+  },
+  {
+    "url": "https://pandao.github.io/editor.md/examples/images/4.jpg",
+    "file": "1677f1954e29896e.jpg",
+    "bytes": 121969,
+    "sha256": "2d7fc8e5cd28a8716ddf5428114fe6d8b854c97de8c54708b7f1cdc85d7aa6ce"
+  },
+  {
+    "url": "https://pandao.github.io/editor.md/examples/images/7.jpg",
+    "file": "0139ab8a33f1bbc6.jpg",
+    "bytes": 95090,
+    "sha256": "531287b1f8db7eb0214deed71c816db33c17873dd8981d344e1d37330e44acd1"
+  },
+  {
+    "url": "https://pandao.github.io/editor.md/examples/images/8.jpg",
+    "file": "42c05991b247cf7b.jpg",
+    "bytes": 17555,
+    "sha256": "2abd0280a84168cef2cde00a9cac4f157893011e01e0c3b734ae1b8c26b474ff"
+  },
+  {
+    "url": "https://pandao.github.io/editor.md/images/logos/editormd-logo-180x180.png",
+    "file": "4eef4119cf1eda8b.png",
+    "bytes": 7963,
+    "sha256": "66d6c6c48838fc30228ef2498b8ef6451dc02c3087bc937d61ac9f1b4cdcce65"
+  }
+]

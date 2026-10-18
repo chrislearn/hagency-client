@@ -85,7 +85,7 @@
 | 国际化 | `src/i18n.rs`、`resources/i18n/{en,zh-CN}.json` | 静态与动态标签一致、英文残留、长文本截断/表单混排 |
 | 当前用户文档 | `README.md`、`README.zh-CN.md`、`docs/hagency-quickstart[.zh-CN].md`、`docs/multi-account.md` | 与新准入、执行设备、单次授权及保留功能一致 |
 
-跨仓库仅核协议说明及实际调用边界：client `native/hagency/src/console/{native,server_login,owner_projects,owned_agents,owned_runtime,owner_provider}.rs` 与 `server_login/`、`native/hagency-agent-local/src/{lib,codex}.rs`；server `crates/agent-service` 的身份/Project/Room/指定设备/租约/AS/outbox。该跨仓库列表不扩大本轮 GUI 修改范围，不替代此前安全审核与 PG/契约测试。
+跨仓库仅核协议说明及实际调用边界：client `crates/hagency/src/console/{native,server_login,owner_projects,owned_agents,owned_runtime,owner_provider}.rs` 与 `server_login/`、`crates/hagency-agent-local/src/{lib,codex}.rs`；server `crates/agent-service` 的身份/Project/Room/指定设备/租约/AS/outbox。该跨仓库列表不扩大本轮 GUI 修改范围，不替代此前安全审核与 PG/契约测试。
 
 ## 发现与修复记录（主代理补）
 

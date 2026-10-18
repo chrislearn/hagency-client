@@ -1,0 +1,28 @@
+{
+  "article-core": {
+    "packages": 80,
+    "target": "aarch64-apple-darwin",
+    "features": [
+      "l0"
+    ],
+    "forbidden_application_or_matrix_dependencies": []
+  },
+  "article-makepad": {
+    "packages": 147,
+    "target": "aarch64-apple-darwin",
+    "features": [],
+    "forbidden_application_or_matrix_dependencies": []
+  },
+  "article-blitz": {
+    "packages": 272,
+    "target": "aarch64-apple-darwin",
+    "features": [
+      "makepad"
+    ],
+    "forbidden_application_or_matrix_dependencies": []
+  },
+  "robrix_makepad": {
+    "unique_widget_sources": 1,
+    "source": "git+https://github.com/kevinaboos/makepad?branch=button-grab-key-focus#47837267faf6970a6cc36acedf9f83846b277307"
+  }
+}

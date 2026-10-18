@@ -1,0 +1,1465 @@
+{
+  "schema_version": 1,
+  "id": "robrix-wechat-mobile-v1",
+  "scope": "Mobile first, light theme, WeChat-inspired generated target; no claim of parity with an observed WeChat version.",
+  "source_revisions": {
+    "robrix": "7c98054a8b0f6662099869ad719d1a2d0b874a7b",
+    "appcard": "a6ea4e2c33a9e35ec27a9e94d6c40ff3386ee3cc",
+    "makepad_wechat": "02d2f1e97b2f7a609016f928b9ee1c6d1d72cefb"
+  },
+  "fixture": {
+    "id": "morgan-alice-v1",
+    "clock": "09:41",
+    "account": "@morgan:ux.test",
+    "peer": "@alice:ux.test",
+    "group": "Design team",
+    "group_members": 5,
+    "incoming": "Are we still meeting at 10?",
+    "outgoing": "Yes, see you there.",
+    "draft": "I'll bring the notes.",
+    "policy": "Synthetic fixture only. No real account or tokens in artifacts."
+  },
+  "tokens": {
+    "bg": "#EDEDED",
+    "surface": "#FFFFFF",
+    "text": "#191919",
+    "secondary": "#888888",
+    "divider": "#D9D9D9",
+    "accent": "#07C160",
+    "outgoing": "#95EC69",
+    "avatar_radius": 6,
+    "conversation_row": 76,
+    "avatar": 48,
+    "title_bar": 44,
+    "tab_content_height": 50,
+    "minimum_touch_target": 44,
+    "note": "Authoring targets, not measured facts about a specific WeChat version."
+  },
+  "screen_rules": {
+    "navigation": "Four root tabs; independent retained state; pushed routes hide bottom tabs; back closes modal/input before popping route.",
+    "composer": "Native TextInput; IME composition never triggers premature send; keyboard/emoji/tray mutually exclusive; preserve drafts per room.",
+    "bubbles": "Sender-based left/right alignment; max width about 72% of available content; text selectable/wrapped; group sender label and reply preview.",
+    "security": "Keep Matrix E2EE, verification, recovery, receipt preference, room permissions and existing confirmations.",
+    "unavailable": "Mocks may depict unavailable features but must not emit success or count toward backend acceptance."
+  },
+  "screens": [
+    {
+      "id": "chats",
+      "title": "Chats",
+      "tab": "Chats",
+      "tier": "core",
+      "visible": "Room list with pinned section, unread/mention badges, muted state, avatar, sender preview and timestamp",
+      "interactions": "Open Alice, search, plus menu, long press, switch tabs",
+      "return_behavior": "Retain list anchor; clear selection only, keep unread semantics",
+      "operations": [
+        "open_chat",
+        "filter_chats",
+        "mark_read",
+        "mark_unread",
+        "pin_chat"
+      ],
+      "reference": "chats",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "search",
+      "title": "Search results",
+      "tab": "Chats",
+      "tier": "core",
+      "visible": "Focused query Alice; clear and Cancel; contact and chat sections",
+      "interactions": "Type/debounce; choose result; clear; cancel",
+      "return_behavior": "Cancel restores prior scroll; stale query results ignored",
+      "operations": [
+        "filter_chats",
+        "message_search",
+        "profile"
+      ],
+      "reference": "search",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "conversation",
+      "title": "Conversation",
+      "tab": "Chats",
+      "tier": "core",
+      "visible": "Title/back/info; incoming white and outgoing green bubbles; time separators; draft composer",
+      "interactions": "Send, paginate, long press, avatar tap, info, back",
+      "return_behavior": "Retain draft and scroll; bottom tabs hidden; new incoming messages do not jump older reading position",
+      "operations": [
+        "open_chat",
+        "load_history",
+        "mark_read",
+        "typing",
+        "profile"
+      ],
+      "reference": "conversation",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "compose",
+      "title": "Keyboard and draft",
+      "tab": "Chats",
+      "tier": "core",
+      "visible": "Multiline draft above keyboard; Send enabled iff valid content; safe-area handling",
+      "interactions": "Type, Send, newline, hide keyboard, rotate",
+      "return_behavior": "Back closes input panel first; return preserves draft; no overlap",
+      "operations": [
+        "send_text",
+        "typing"
+      ],
+      "reference": "compose",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "attachments",
+      "title": "Attachment tray",
+      "tab": "Chats",
+      "tier": "core",
+      "visible": "Two rows of native action cells; enabled capabilities distinguished",
+      "interactions": "Photo, file, location; close tray; return to keyboard",
+      "return_behavior": "Only one of keyboard, emoji or attachment panel visible",
+      "operations": [
+        "pick_photo",
+        "pick_file",
+        "location",
+        "voice_message",
+        "call"
+      ],
+      "reference": "attachments",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "chat-info",
+      "title": "Chat Info",
+      "tab": "Chats",
+      "tier": "core",
+      "visible": "Member tiles, search history, mute, sticky, clear, leave action",
+      "interactions": "Inspect members; toggle pinned/mute; destructive actions confirm",
+      "return_behavior": "Close returns same conversation anchor and draft",
+      "operations": [
+        "room_members",
+        "invite_member",
+        "message_search",
+        "mute_chat",
+        "pin_chat",
+        "leave_room"
+      ],
+      "reference": "chat-info",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "contacts",
+      "title": "Contacts",
+      "tab": "Contacts",
+      "tier": "core",
+      "visible": "New Friends/Groups/Tags; alpha sections and index rail; avatars",
+      "interactions": "Search, alphabet drag, open contact, add friend",
+      "return_behavior": "Switch tab retains contacts position; index must hit section accurately",
+      "operations": [
+        "contacts",
+        "profile"
+      ],
+      "reference": "contacts",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "contact-profile",
+      "title": "Contact profile",
+      "tab": "Contacts",
+      "tier": "core",
+      "visible": "Avatar, name, ID, remarks/tags, permissions, Moments, Messages, Call",
+      "interactions": "Open Messages; profile menu/block; back",
+      "return_behavior": "First DM confirmation; failed creation stays on profile; existing DM reused",
+      "operations": [
+        "profile",
+        "open_dm",
+        "confirm_dm",
+        "block_user",
+        "call"
+      ],
+      "reference": "contact-profile",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "discover",
+      "title": "Discover",
+      "tab": "Discover",
+      "tier": "core",
+      "visible": "Grouped Moments/Scan/Search/Nearby/Mini Programs rows; badges",
+      "interactions": "Open feature and return; tab switch",
+      "return_behavior": "Unsupported rows explicit; no false successful operations",
+      "operations": [
+        "moments",
+        "scan",
+        "message_search",
+        "mini_programs"
+      ],
+      "reference": "discover",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "moments",
+      "title": "Moments feed",
+      "tab": "Discover",
+      "tier": "core",
+      "visible": "Cover/avatar, author, post text, image grid, time, comments, actions",
+      "interactions": "Scroll, open photo, like/comment, camera",
+      "return_behavior": "Keep feed anchor; retry offline; privacy boundaries maintained",
+      "operations": [
+        "moments",
+        "view_media"
+      ],
+      "reference": "generated_target",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "me",
+      "title": "Me",
+      "tab": "Me",
+      "tier": "core",
+      "visible": "Profile/ID/QR, Services, Favorites, Posts, Cards, Stickers, Settings",
+      "interactions": "Profile edit, saved items, settings, services",
+      "return_behavior": "Root tab selection persists; rows large enough for touch",
+      "operations": [
+        "profile",
+        "settings",
+        "favorites",
+        "services"
+      ],
+      "reference": "me",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "settings",
+      "title": "Settings",
+      "tab": "Me",
+      "tier": "core",
+      "visible": "Account/security, notifications, privacy, general, about, account switch/logout",
+      "interactions": "Open section, change preference, return, logout confirmation",
+      "return_behavior": "Preserve preference state; risky changes never implicit",
+      "operations": [
+        "settings",
+        "verify_device",
+        "logout"
+      ],
+      "reference": "settings",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "chats-empty",
+      "title": "No conversations",
+      "tab": "Chats",
+      "tier": "edge",
+      "visible": "Empty-state guidance and create/join entry",
+      "interactions": "Create contact/group or cancel",
+      "return_behavior": "No invented conversations",
+      "operations": [
+        "contacts",
+        "group_create"
+      ],
+      "reference": "chats-empty",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "chats-offline",
+      "title": "Offline room list",
+      "tab": "Chats",
+      "tier": "edge",
+      "visible": "Cached conversations plus quiet offline banner",
+      "interactions": "Open cached room, retry connection",
+      "return_behavior": "No endless blocking spinner",
+      "operations": [
+        "open_chat"
+      ],
+      "reference": "chats-offline",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "chats-menu",
+      "title": "Plus menu",
+      "tab": "Chats",
+      "tier": "edge",
+      "visible": "Start chat, add contact, scan; dismiss surface",
+      "interactions": "Choose action; outside-tap/Escape dismiss",
+      "return_behavior": "Menu not clipped at safe area; dismiss sends nothing",
+      "operations": [
+        "contacts",
+        "group_create",
+        "scan"
+      ],
+      "reference": "chats-menu",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "chat-context",
+      "title": "Conversation actions",
+      "tab": "Chats",
+      "tier": "edge",
+      "visible": "Long-press/swipe action sheet: unread, pin, mute, remove",
+      "interactions": "Choose action or cancel",
+      "return_behavior": "Cancel no mutation; remove is not LeaveRoom or global ClearEventCache",
+      "operations": [
+        "mark_unread",
+        "pin_chat",
+        "mute_chat"
+      ],
+      "reference": "chat-context",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "search-empty",
+      "title": "No search results",
+      "tab": "Chats",
+      "tier": "edge",
+      "visible": "Query with no matches, clear and Cancel",
+      "interactions": "Edit or clear query",
+      "return_behavior": "Never show previous query's results",
+      "operations": [
+        "filter_chats",
+        "message_search"
+      ],
+      "reference": "search-empty",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "sending",
+      "title": "Message sending",
+      "tab": "Chats",
+      "tier": "edge",
+      "visible": "Local echo with pending state and original transaction identity",
+      "interactions": "Back/foreground; await acknowledgment",
+      "return_behavior": "Draft clears once queued; no duplicated echo on sync",
+      "operations": [
+        "send_text"
+      ],
+      "reference": "sending",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "send-failed",
+      "title": "Message failed",
+      "tab": "Chats",
+      "tier": "edge",
+      "visible": "Failed bubble and Retry affordance; rest of timeline usable",
+      "interactions": "Retry same item; edit/recover draft",
+      "return_behavior": "Failure visible; duplicate retries do not duplicate messages",
+      "operations": [
+        "retry_send"
+      ],
+      "reference": "send-failed",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "reply",
+      "title": "Reply compose",
+      "tab": "Chats",
+      "tier": "edge",
+      "visible": "Quoted message preview with cancel above keyboard",
+      "interactions": "Send reply; cancel; source tap",
+      "return_behavior": "Correct event relation and preserved draft",
+      "operations": [
+        "reply",
+        "send_text"
+      ],
+      "reference": "reply",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "message-menu",
+      "title": "Message actions",
+      "tab": "Chats",
+      "tier": "edge",
+      "visible": "Copy/Reply/Forward/Delete/Reactions according to ownership",
+      "interactions": "Select action; dismiss",
+      "return_behavior": "Long press not scroll; permission-sensitive choices",
+      "operations": [
+        "reply",
+        "edit_message",
+        "delete_message",
+        "reaction"
+      ],
+      "reference": "message-menu",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "emoji",
+      "title": "Emoji panel",
+      "tab": "Chats",
+      "tier": "edge",
+      "visible": "Emoji picker, recents, category rail, delete/send",
+      "interactions": "Insert native Unicode emoji; switch keyboard",
+      "return_behavior": "Grapheme-safe deletion and draft retention",
+      "operations": [
+        "send_text",
+        "local_navigation"
+      ],
+      "reference": "emoji",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "photo-preview",
+      "title": "Photo preview",
+      "tab": "Chats",
+      "tier": "edge",
+      "visible": "Selected image/file with cancel/send and caption",
+      "interactions": "Confirm once; cancel; add caption",
+      "return_behavior": "No network upload on cancel",
+      "operations": [
+        "pick_photo",
+        "send_attachment"
+      ],
+      "reference": "photo-preview",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "upload-progress",
+      "title": "Upload progress",
+      "tab": "Chats",
+      "tier": "edge",
+      "visible": "Progress, pending item, visible failure/cancel",
+      "interactions": "Await, cancel, retry",
+      "return_behavior": "Room switch cannot send to wrong timeline",
+      "operations": [
+        "send_attachment"
+      ],
+      "reference": "upload-progress",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "image-viewer",
+      "title": "Image viewer",
+      "tab": "Chats",
+      "tier": "edge",
+      "visible": "Full media, close, zoom/pan, loading/retry",
+      "interactions": "Zoom, close, save/share if supported",
+      "return_behavior": "Back returns exact timeline position",
+      "operations": [
+        "view_media"
+      ],
+      "reference": "image-viewer",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "history-loading",
+      "title": "History pagination",
+      "tab": "Chats",
+      "tier": "edge",
+      "visible": "Top spinner or end marker, anchored visible messages",
+      "interactions": "Scroll older; stop; retry",
+      "return_behavior": "No duplicate events or jumps",
+      "operations": [
+        "load_history"
+      ],
+      "reference": "history-loading",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "voice-record",
+      "title": "Hold-to-talk",
+      "tab": "Chats",
+      "tier": "extended",
+      "visible": "Hold state, duration, slide-to-cancel, mic permission",
+      "interactions": "Release send; slide cancel; interruption",
+      "return_behavior": "Cancel/interruption emits no voice event",
+      "operations": [
+        "voice_message"
+      ],
+      "reference": "voice-record",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "call-ringing",
+      "title": "Voice/video call",
+      "tab": "Chats",
+      "tier": "extended",
+      "visible": "Caller identity, ringing, decline/accept, speaker/mute",
+      "interactions": "Accept/decline/end; permission denied",
+      "return_behavior": "Call state from backend, never timed slideshow",
+      "operations": [
+        "call"
+      ],
+      "reference": "call-ringing",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "new-friends",
+      "title": "New Friends",
+      "tab": "Contacts",
+      "tier": "extended",
+      "visible": "Pending/accepted requests with identity and optional remark",
+      "interactions": "Accept/decline; inspect sender",
+      "return_behavior": "Distinct from room invitation; repeat accept idempotent",
+      "operations": [
+        "contacts"
+      ],
+      "reference": "new-friends",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "add-contact",
+      "title": "Add contact",
+      "tab": "Contacts",
+      "tier": "extended",
+      "visible": "ID search, profile match, add confirmation",
+      "interactions": "Enter Matrix ID; search; confirm or cancel",
+      "return_behavior": "Unknown ID errors; no speculative automatic DM",
+      "operations": [
+        "contacts",
+        "profile",
+        "open_dm"
+      ],
+      "reference": "add-contact",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "group-picker",
+      "title": "Group member picker",
+      "tab": "Contacts",
+      "tier": "extended",
+      "visible": "Searchable checkable contacts; selected count; Done",
+      "interactions": "Select/deselect; create once",
+      "return_behavior": "No create with empty selection; failure retains choices",
+      "operations": [
+        "group_create"
+      ],
+      "reference": "group-picker",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "group-chat",
+      "title": "Group conversation",
+      "tab": "Chats",
+      "tier": "extended",
+      "visible": "Title/member count, sender labels, mentions, group avatars",
+      "interactions": "Mention member; reply; group info",
+      "return_behavior": "Mention metadata preserved with display text",
+      "operations": [
+        "send_text",
+        "room_members",
+        "reply"
+      ],
+      "reference": "group-chat",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "room-invite",
+      "title": "Matrix room invitation",
+      "tab": "Contacts",
+      "tier": "edge",
+      "visible": "Inviter/room identity, join/decline controls",
+      "interactions": "Join; decline; cancel",
+      "return_behavior": "Map Matrix invitation explicitly, not friendship",
+      "operations": [
+        "accept_invite",
+        "leave_room"
+      ],
+      "reference": "room-invite",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "contact-tags",
+      "title": "Remarks and tags",
+      "tab": "Contacts",
+      "tier": "extended",
+      "visible": "Local remark field, tag picker, Save/Cancel",
+      "interactions": "Edit local alias and grouping",
+      "return_behavior": "Does not rename remote user's profile",
+      "operations": [
+        "contacts"
+      ],
+      "reference": "contact-tags",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "blocked",
+      "title": "Blocked contacts",
+      "tab": "Me",
+      "tier": "edge",
+      "visible": "Blocked identities, unblock confirmation",
+      "interactions": "Block/unblock",
+      "return_behavior": "Server/local preference agreement after restart",
+      "operations": [
+        "block_user"
+      ],
+      "reference": "blocked",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "moments-compose",
+      "title": "Moment composer",
+      "tab": "Discover",
+      "tier": "extended",
+      "visible": "Text, media, visibility, publish/cancel",
+      "interactions": "Choose ACL; publish once; retry",
+      "return_behavior": "Publish only on explicit action; retain unsent draft",
+      "operations": [
+        "moments"
+      ],
+      "reference": "moments-compose",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "moments-comments",
+      "title": "Moment interaction",
+      "tab": "Discover",
+      "tier": "extended",
+      "visible": "Like list, threaded comments, focused input",
+      "interactions": "Like/unlike; comment; delete own comment",
+      "return_behavior": "Authorization, ordering, deduplication",
+      "operations": [
+        "moments"
+      ],
+      "reference": "moments-comments",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "scan-camera",
+      "title": "QR scanner",
+      "tab": "Discover",
+      "tier": "extended",
+      "visible": "Camera frame, torch, album, permission state",
+      "interactions": "Scan valid/invalid QR; cancel",
+      "return_behavior": "Decoded external content first previewed, no auto-join/pay",
+      "operations": [
+        "scan"
+      ],
+      "reference": "scan-camera",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "scan-denied",
+      "title": "Camera denied",
+      "tab": "Discover",
+      "tier": "edge",
+      "visible": "Explanation, settings route, manual alternative",
+      "interactions": "Retry or back",
+      "return_behavior": "No fake scanner success",
+      "operations": [
+        "scan"
+      ],
+      "reference": "scan-denied",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "profile-edit",
+      "title": "My profile",
+      "tab": "Me",
+      "tier": "edge",
+      "visible": "Avatar/name/ID with editable supported fields",
+      "interactions": "Save name/avatar; cancel",
+      "return_behavior": "Update only after success action; rollback failure",
+      "operations": [
+        "rename_self",
+        "avatar_self"
+      ],
+      "reference": "profile-edit",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "favorites",
+      "title": "Favorites",
+      "tab": "Me",
+      "tier": "extended",
+      "visible": "Saved text/media, search, open original",
+      "interactions": "Save/open/remove",
+      "return_behavior": "Private saved-item store, not shared pinned message",
+      "operations": [
+        "favorites"
+      ],
+      "reference": "favorites",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "privacy",
+      "title": "Privacy",
+      "tab": "Me",
+      "tier": "edge",
+      "visible": "Read receipt, blocked user and supported privacy settings",
+      "interactions": "Change preference; back; restart",
+      "return_behavior": "Read receipt privacy preserved when navigating chat",
+      "operations": [
+        "settings",
+        "block_user",
+        "mark_read"
+      ],
+      "reference": "privacy",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "device-verification",
+      "title": "Device verification",
+      "tab": "Me",
+      "tier": "edge",
+      "visible": "Existing Matrix trust/recovery controls in familiar shell",
+      "interactions": "Verify or cancel",
+      "return_behavior": "Cannot suppress recovery/security notices for visual resemblance",
+      "operations": [
+        "verify_device"
+      ],
+      "reference": "device-verification",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "logout-confirm",
+      "title": "Log out confirmation",
+      "tab": "Me",
+      "tier": "edge",
+      "visible": "Consequences and cancel/confirm actions",
+      "interactions": "Cancel or confirm",
+      "return_behavior": "Cancel keeps account; confirm uses existing logout state machine",
+      "operations": [
+        "logout"
+      ],
+      "reference": "logout-confirm",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "services",
+      "title": "Services/App Cards",
+      "tab": "Me",
+      "tier": "extended",
+      "visible": "Owned scoped service cards with source and action state",
+      "interactions": "Open service; act explicitly; return",
+      "return_behavior": "No provider side effects from navigation/render",
+      "operations": [
+        "services"
+      ],
+      "reference": "services",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "payment-confirm",
+      "title": "Payment confirmation",
+      "tab": "Me",
+      "tier": "extended",
+      "visible": "Payee, integer-minor-unit amount, currency, cancel/pay",
+      "interactions": "Explicit pay; duplicate tap; failure",
+      "return_behavior": "No successful payment without real receipt; fixture separate",
+      "operations": [
+        "payments"
+      ],
+      "reference": "payment-confirm",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "mini-program",
+      "title": "Mini program",
+      "tab": "Discover",
+      "tier": "extended",
+      "visible": "Permission and lifecycle-aware embedded application",
+      "interactions": "Open, suspend, back, permission deny",
+      "return_behavior": "Runtime isolation and platform APIs are separate work",
+      "operations": [
+        "mini_programs"
+      ],
+      "reference": "mini-program",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    },
+    {
+      "id": "location-preview",
+      "title": "Location preview",
+      "tab": "Chats",
+      "tier": "edge",
+      "visible": "Map/coordinates plus cancel/send",
+      "interactions": "Confirm or cancel; permission denied",
+      "return_behavior": "One location event only after explicit send",
+      "operations": [
+        "location",
+        "send_text"
+      ],
+      "reference": "location-preview",
+      "implementation_status": "not_verified_against_target",
+      "required_checks": [
+        "native_controls",
+        "back_and_state",
+        "loading_error_empty",
+        "accessibility",
+        "en_cn_copy"
+      ]
+    }
+  ],
+  "journeys": [
+    {
+      "id": "chat-send",
+      "states": [
+        "chats",
+        "conversation",
+        "compose",
+        "sending",
+        "conversation"
+      ],
+      "operations": [
+        "send_text",
+        "typing",
+        "mark_read"
+      ],
+      "procedure": "Tap actual room row; focus composer; type fixture; tap Send; observe local echo then exactly one server event; back to list updated preview.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "send-retry",
+      "states": [
+        "conversation",
+        "compose",
+        "send-failed",
+        "sending",
+        "conversation"
+      ],
+      "operations": [
+        "send_text",
+        "retry_send"
+      ],
+      "procedure": "Inject offline network; send; observe failure; restore network; tap original retry; verify no duplicate server event.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "search-cancel",
+      "states": [
+        "chats",
+        "search",
+        "search-empty",
+        "chats"
+      ],
+      "operations": [
+        "filter_chats"
+      ],
+      "procedure": "Search matching and absent room names, clear and cancel; restore list position and keyboard focus.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "history-anchor",
+      "states": [
+        "chats",
+        "conversation",
+        "history-loading",
+        "conversation"
+      ],
+      "operations": [
+        "load_history"
+      ],
+      "procedure": "Load >=200 fixture events, scroll up, paginate, receive a new event; keep first visible event and pixel offset.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "reply-send",
+      "states": [
+        "conversation",
+        "message-menu",
+        "reply",
+        "sending",
+        "conversation"
+      ],
+      "operations": [
+        "reply",
+        "send_text"
+      ],
+      "procedure": "Long press incoming event; Reply; send; assert m.in_reply_to source event; cancel branch preserves draft.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "media-upload",
+      "states": [
+        "conversation",
+        "attachments",
+        "photo-preview",
+        "upload-progress",
+        "conversation",
+        "image-viewer",
+        "conversation"
+      ],
+      "operations": [
+        "pick_photo",
+        "send_attachment",
+        "view_media"
+      ],
+      "procedure": "Select file; cancel branch uploads nothing; confirm branch uploads and produces encrypted media event; close zoom viewer restores anchor.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "contact-dm",
+      "states": [
+        "contacts",
+        "contact-profile",
+        "conversation"
+      ],
+      "operations": [
+        "profile",
+        "open_dm",
+        "confirm_dm"
+      ],
+      "procedure": "Open known profile; existing DM reused; absent DM asks once; cancellation creates no room.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "pin-unread",
+      "states": [
+        "chats",
+        "chat-context",
+        "chats",
+        "conversation",
+        "chats"
+      ],
+      "operations": [
+        "pin_chat",
+        "mark_unread",
+        "mark_read"
+      ],
+      "procedure": "Pin and restart; verify ordering; mark unread and open; respect preferred receipt privacy.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "chat-settings",
+      "states": [
+        "conversation",
+        "chat-info",
+        "conversation"
+      ],
+      "operations": [
+        "room_members",
+        "mute_chat",
+        "pin_chat"
+      ],
+      "procedure": "Inspect members; mute then unmute with server verification; pinned state survives restart; back preserves draft.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "four-tabs",
+      "states": [
+        "chats",
+        "contacts",
+        "discover",
+        "me",
+        "chats"
+      ],
+      "operations": [
+        "local_navigation"
+      ],
+      "procedure": "Tap four real native tabs in order; assert selected icon/label; root position retained; pushed screens hide tabs.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "moments-post",
+      "states": [
+        "discover",
+        "moments",
+        "moments-compose",
+        "moments",
+        "moments-comments"
+      ],
+      "operations": [
+        "moments"
+      ],
+      "procedure": "Post media with ACL; comment and like; reload/feed pagination preserve server truth; offline failure visible.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "me-profile",
+      "states": [
+        "me",
+        "profile-edit",
+        "me",
+        "settings",
+        "privacy",
+        "settings",
+        "me"
+      ],
+      "operations": [
+        "rename_self",
+        "avatar_self",
+        "settings"
+      ],
+      "procedure": "Save profile, observe backend confirmation; verify permission cancel and failed save rollback; privacy persists.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "logout-cancel",
+      "states": [
+        "me",
+        "settings",
+        "logout-confirm",
+        "settings"
+      ],
+      "operations": [
+        "logout"
+      ],
+      "procedure": "Open logout confirmation and cancel; session and encryption state remain usable.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "invite-member",
+      "states": [
+        "conversation",
+        "chat-info",
+        "group-picker",
+        "chat-info"
+      ],
+      "operations": [
+        "invite_member"
+      ],
+      "procedure": "Select a member; confirm invite; server membership is invite; dismiss does not invite.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "create-group",
+      "states": [
+        "contacts",
+        "group-picker",
+        "group-chat"
+      ],
+      "operations": [
+        "group_create"
+      ],
+      "procedure": "Select >=2 fixture contacts; create once; verify one encrypted room and correct invitees after duplicate taps.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "scan-permission",
+      "states": [
+        "discover",
+        "scan-camera",
+        "scan-denied",
+        "discover"
+      ],
+      "operations": [
+        "scan"
+      ],
+      "procedure": "Deny camera; back; retry; invalid QR safe error; valid Matrix QR requires deliberate navigation.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "voice-cancel",
+      "states": [
+        "conversation",
+        "voice-record",
+        "conversation"
+      ],
+      "operations": [
+        "voice_message"
+      ],
+      "procedure": "Hold and slide cancel/interruption creates no event; release valid recording produces playable audio and duration.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "call-lifecycle",
+      "states": [
+        "contact-profile",
+        "call-ringing",
+        "conversation"
+      ],
+      "operations": [
+        "call"
+      ],
+      "procedure": "Permission deny, cancel, accept and remote hangup update actual call state; no stale microphone capture.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "service-payment",
+      "states": [
+        "me",
+        "services",
+        "payment-confirm",
+        "services"
+      ],
+      "operations": [
+        "services",
+        "payments"
+      ],
+      "procedure": "Open service; cancel payment has no provider mutation; pay once; duplicate event cannot charge twice.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "saved-items",
+      "states": [
+        "conversation",
+        "message-menu",
+        "favorites",
+        "conversation"
+      ],
+      "operations": [
+        "favorites"
+      ],
+      "procedure": "Save event privately; open original from Favorites; remove saved reference without redacting shared event.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "device-trust",
+      "states": [
+        "me",
+        "settings",
+        "device-verification",
+        "settings"
+      ],
+      "operations": [
+        "verify_device"
+      ],
+      "procedure": "Open Matrix device verification; cancel preserves trust state; complete requires matching other device.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    },
+    {
+      "id": "layout-input",
+      "states": [
+        "conversation",
+        "compose",
+        "attachments",
+        "emoji",
+        "conversation"
+      ],
+      "operations": [
+        "local_navigation"
+      ],
+      "procedure": "Narrow/tall viewports, keyboard show/hide, multiline/IME composition, emoji graphemes, back dismiss order and safe areas.",
+      "acceptance": "Required native input trace + observed state assertions; backend operations additionally require server evidence.",
+      "required_for": "full-wechat"
+    }
+  ]
+}

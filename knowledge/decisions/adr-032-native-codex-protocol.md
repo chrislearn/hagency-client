@@ -22,7 +22,7 @@ server. Native Agent execution remains unavailable.
 The installed `codex-cli 0.153.4` exported the protocol with
 `codex app-server generate-json-schema --out <temporary-cache>`. This tooling
 command did not start an Agent, load a project or invoke a model. The versioned
-fixture under `native/hagency-runtime/tests/fixtures/` includes selected generated
+fixture under `crates/hagency-runtime/tests/fixtures/` includes selected generated
 schemas, their original file SHA-256 digests, and reusable envelope vectors. The
 tests consume the vectors offline; they do not depend on an installed Codex binary.
 This establishes a protocol baseline, not a supported production runtime matrix.

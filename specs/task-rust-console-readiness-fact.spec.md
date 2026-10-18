@@ -34,23 +34,23 @@ store half only: the console DTO field is MA-S3b's and stays out.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain/accounts.rs
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/src/migrations/028-account-login-readiness.sql
-- native/hagency-store/tests/accounts.rs
-- native/hagency/src/bootstrap/accounts.rs
-- native/hagency/src/main.rs
-- native/scripts/account-vectors.mjs
-- native/hagency-store/tests/fixtures/account-identity.json
+- crates/hagency-store/src/domain/accounts.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/src/migrations/028-account-login-readiness.sql
+- crates/hagency-store/tests/accounts.rs
+- crates/hagency/src/bootstrap/accounts.rs
+- crates/hagency/src/main.rs
+- tools/native/account-vectors.mjs
+- crates/hagency-store/tests/fixtures/account-identity.json
 - specs/task-rust-console-readiness-fact.spec.md
 - knowledge/decisions/adr-114-native-managed-account-binding.md
 - docs/progress.md
 
 ### Forbidden
 - Live providers, real credentials, deployed state.
-- mockup/** (the DTO field is MA-S3b's); native/hagency/src/console/**; any retained product file.
+- mockup/** (the DTO field is MA-S3b's); crates/hagency/src/console/**; any retained product file.
 
 ## Acceptance Criteria
 

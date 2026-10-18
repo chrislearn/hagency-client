@@ -148,12 +148,12 @@ the retained page for the same deployment.
   store". The page keeps its derived label (`NativeResources.jsx:9`).
 - **`rateCapPerDay`.** `Ceiling` is `{tokens, period}` only
   (`allocation.rs:72-76`); ADR-108 and ADR-111 name daily rate caps absent
-  pending canonical persistence (`native/README.md:716-719` states the same).
+  pending canonical persistence (`docs/native-engine.md:716-719` states the same).
   A `null` would read as "no cap chosen" when the truth is "no such column
   exists", so no key is added and the page renders a reasoned blank — the
   retained page's own device (`resources/page.jsx:119-121`).
 - **`apiBaseUrl`, `apiKeySet`, `extraArgs`.** Forbidden by ADR-111:38 and
-  `native/README.md:716-717`.
+  `docs/native-engine.md:716-717`.
 - **`usedBy`.** Depends on the agent roster (backlog CL-S1); named as a
   dependency, not silently dropped.
 

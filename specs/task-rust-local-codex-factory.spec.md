@@ -26,11 +26,11 @@ the explicitly selected provider-owned local Codex installation and login.
 
 ## Allowed changes
 
-- native/hagency-execution/src/{host,local_codex,factory,warm}.rs
-- native/hagency/src/bootstrap/{config,fleet}.rs
-- native/hagency/tests/{configured_fleet,warm_runtime}.rs
-- native/hagency/tests/configured_fleet/**
-- native/hagency/tests/fixtures/owned_mcp_peer.rs
+- crates/hagency-execution/src/{host,local_codex,factory,warm}.rs
+- crates/hagency/src/bootstrap/{config,fleet}.rs
+- crates/hagency/tests/{configured_fleet,warm_runtime}.rs
+- crates/hagency/tests/configured_fleet/**
+- crates/hagency/tests/fixtures/owned_mcp_peer.rs
 - specs/task-rust-local-codex-factory.spec.md
 - knowledge/decisions/adr-173-local-codex-factory.md
 - docs/**

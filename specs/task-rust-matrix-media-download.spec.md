@@ -38,12 +38,12 @@ This contract retains the design boundaries in [ADR-027](../knowledge/decisions/
 
 ### Allowed Changes
 - ./Cargo.lock
-- native/hagency-matrix/Cargo.toml
-- native/hagency-matrix/src/lib.rs
-- native/hagency-matrix/src/http.rs
-- native/hagency-matrix/src/media_download.rs
-- native/hagency-matrix/tests/media_download.rs
-- native/hagency-matrix/tests/common/mod.rs
+- crates/hagency-matrix/Cargo.toml
+- crates/hagency-matrix/src/lib.rs
+- crates/hagency-matrix/src/http.rs
+- crates/hagency-matrix/src/media_download.rs
+- crates/hagency-matrix/tests/media_download.rs
+- crates/hagency-matrix/tests/common/mod.rs
 - knowledge/decisions/adr-068-native-matrix-media-download.md
 - specs/task-rust-matrix-media-download.spec.md
 - docs/agent-knowledge.md

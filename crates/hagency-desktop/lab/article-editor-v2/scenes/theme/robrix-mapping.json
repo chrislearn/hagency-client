@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "adapter": "robrix-native-host-v2",
+  "source": "measured image-to-appcard-flow intake; manually reviewed semantic roles",
+  "source_scene": "theme",
+  "native_source": "src/article_app/ui.rs",
+  "bindings": [
+    {
+      "widget": "theme_list.Theme.left / right",
+      "binding": "Document.theme",
+      "behavior": "Two columns of native theme samples"
+    },
+    {
+      "widget": "size_normal / size_large",
+      "binding": "large_type",
+      "behavior": "Two readable font sizes"
+    },
+    {
+      "widget": "spacing_comfortable / spacing_compact",
+      "binding": "compact",
+      "behavior": "Body line spacing"
+    },
+    {
+      "widget": "article_done",
+      "binding": "Page::Edit",
+      "behavior": "Preserve content while applying style"
+    }
+  ],
+  "raster_policy": "Only independently declared illustration asset is raster. Text, controls, article layout and images are native widgets. No screenshot hotspots.",
+  "upstream_generic_compile": "not run; the generic kit cannot supply the required native rich-input/Matrix host bindings"
+}

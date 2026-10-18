@@ -3,7 +3,7 @@
 /*
  * The register-a-project-side control (board #45, parity row #33: TS
  * `mockup/app/projects/new/page.jsx:246` `createSide` → `POST /api/project-sides`).
- * The native route the task names (`native/hagency/src/console/project_sides.rs:23`)
+ * The native route the task names (`crates/hagency/src/console/project_sides.rs:23`)
  * already exists and sits behind the console session; the page was
  * refresh-only, so nothing reached it.
  *

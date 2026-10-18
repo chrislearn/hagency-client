@@ -51,14 +51,14 @@ that still carries custody is ever a candidate.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/migrations/030-engagement-retention.sql (registry slot 30, its number assigned by landing order right after MA-S4 (which kept 029) — the strict one-by-one upgrade loop cannot skip a version, so the ledger's pre-allocation was abandoned)
-- native/hagency-store/src/domain/engagement_retention.rs
+- crates/hagency-store/src/migrations/030-engagement-retention.sql (registry slot 30, its number assigned by landing order right after MA-S4 (which kept 029) — the strict one-by-one upgrade loop cannot skip a version, so the ledger's pre-allocation was abandoned)
+- crates/hagency-store/src/domain/engagement_retention.rs
 - the eleven store fixtures that assert the schema head (approvals, ceiling_alerts, conversations, file_delivery, file_uploads, owned_completion, received_files, replies, retention, schema_fixtures, usage tests .rs) — each carries the one literal head-pin assertion the slot-27 move requires
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/src/domain_worker.rs (the two public DomainStore wrappers the tick loop submits through)
-- native/hagency-store/tests/retention_engagements.rs
-- native/hagency/src/bootstrap.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/src/domain_worker.rs (the two public DomainStore wrappers the tick loop submits through)
+- crates/hagency-store/tests/retention_engagements.rs
+- crates/hagency/src/bootstrap.rs
 - specs/task-rust-retention-engagements.spec.md
 - knowledge/decisions/adr-095-native-state-ownership.md
 - knowledge/decisions/adr-125-admitted-corpus-retention.md

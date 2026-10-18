@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "adapter": "robrix-native-host-v2",
+  "source": "measured image-to-appcard-flow intake; manually reviewed semantic roles",
+  "source_scene": "publication",
+  "native_source": "src/article_app/ui.rs",
+  "bindings": [
+    {
+      "widget": "publication_info",
+      "binding": "Publication",
+      "behavior": "Destination and actual revision number"
+    },
+    {
+      "widget": "publication_read",
+      "binding": "Page::Preview",
+      "behavior": "Read complete local publication snapshot"
+    },
+    {
+      "widget": "publication_edit",
+      "binding": "Page::Edit",
+      "behavior": "Edit existing article; preserve original Matrix event identity"
+    },
+    {
+      "widget": "publication_withdraw",
+      "binding": "Page::Withdraw",
+      "behavior": "Separate explicit confirmation"
+    }
+  ],
+  "raster_policy": "Only independently declared illustration asset is raster. Text, controls, article layout and images are native widgets. No screenshot hotspots.",
+  "upstream_generic_compile": "not run; the generic kit cannot supply the required native rich-input/Matrix host bindings"
+}

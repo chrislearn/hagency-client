@@ -27,11 +27,11 @@ without recreating keys or inferring upload absence from later storage reads.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-media-store/src/lib.rs
-- native/hagency-media-store/src/types.rs
-- native/hagency-media-store/src/preparation.rs
-- native/hagency-media-store/src/tests.rs
-- native/hagency-media-store/src/tests/preparation.rs
+- crates/hagency-media-store/src/lib.rs
+- crates/hagency-media-store/src/types.rs
+- crates/hagency-media-store/src/preparation.rs
+- crates/hagency-media-store/src/tests.rs
+- crates/hagency-media-store/src/tests/preparation.rs
 - knowledge/decisions/adr-079-native-encrypted-staging-preparation.md
 - specs/task-rust-encrypted-staging-preparation.spec.md
 - docs/agent-knowledge.md

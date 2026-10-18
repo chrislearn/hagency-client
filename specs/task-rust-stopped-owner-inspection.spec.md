@@ -36,10 +36,10 @@ not an automatic resume or a retrofit of proof into the old failed attempt.
 
 ## Allowed changes
 
-- native/hagency-execution/src/**
-- native/hagency-execution/tests/**
-- native/hagency-store/src/**
-- native/hagency-store/tests/**
+- crates/hagency-execution/src/**
+- crates/hagency-execution/tests/**
+- crates/hagency-store/src/**
+- crates/hagency-store/tests/**
 - specs/task-rust-stopped-owner-inspection.spec.md
 - knowledge/decisions/adr-162-native-stopped-owner-inspection.md
 - docs/**

@@ -46,17 +46,17 @@ fate is unknown or whose completion is unpublished, is ever a candidate.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/migrations/NNN-execution-retention.sql (NNN is allocated from the backlog's migration ledger, section 0.2, when the slice is implemented; it is not the Slice 1 head)
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain/execution.rs
-- native/hagency-store/src/domain/graphs.rs
-- native/hagency-store/src/domain/messages.rs (the phase shares the JSON-safe bound with the messages sweep, so bounded is pub(super))
-- native/hagency-store/src/domain_worker.rs (the DomainStore Job::Run plumbing the phase wrapper rides)
-- native/hagency-store/src/lib.rs
-- native/hagency-store/tests/ceiling_alerts.rs (a live schema-head pin, moving with the migration head)
-- native/hagency-store/tests/retention_execution.rs
-- native/hagency/src/lib.rs (the readiness mirror match arm for the phase's swept outcome)
-- native/hagency/src/bootstrap.rs
+- crates/hagency-store/src/migrations/NNN-execution-retention.sql (NNN is allocated from the backlog's migration ledger, section 0.2, when the slice is implemented; it is not the Slice 1 head)
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain/execution.rs
+- crates/hagency-store/src/domain/graphs.rs
+- crates/hagency-store/src/domain/messages.rs (the phase shares the JSON-safe bound with the messages sweep, so bounded is pub(super))
+- crates/hagency-store/src/domain_worker.rs (the DomainStore Job::Run plumbing the phase wrapper rides)
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/tests/ceiling_alerts.rs (a live schema-head pin, moving with the migration head)
+- crates/hagency-store/tests/retention_execution.rs
+- crates/hagency/src/lib.rs (the readiness mirror match arm for the phase's swept outcome)
+- crates/hagency/src/bootstrap.rs
 - specs/task-rust-retention-execution.spec.md
 - knowledge/decisions/adr-053-native-owned-dispatch.md
 - knowledge/decisions/adr-031-native-task-graph-custody.md

@@ -25,9 +25,9 @@ locking while preserving actual byte-level persistence and custody assertions.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-media-store/src/tests.rs
-- native/hagency-media-store/src/tests/restoration.rs
-- native/hagency-media-store/src/tests/preparation.rs
+- crates/hagency-media-store/src/tests.rs
+- crates/hagency-media-store/src/tests/restoration.rs
+- crates/hagency-media-store/src/tests/preparation.rs
 - knowledge/decisions/adr-081-native-media-fixture-lock-ownership.md
 - specs/task-rust-media-fixture-lock-ownership.spec.md
 - docs/progress.md

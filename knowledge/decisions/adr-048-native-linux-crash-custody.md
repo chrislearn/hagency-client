@@ -189,7 +189,7 @@ ptrace checks remain required before advertising recovery availability.
 
 #### Disposable hosted CI provisioner
 
-`native/scripts/qualify-linux-cgroup.py` is a CI-only external custodian. It
+`tools/native/qualify-linux-cgroup.py` is a CI-only external custodian. It
 requires Linux X64, root and GitHub-hosted runner markers, initial user/cgroup
 namespaces and an existing writable full cgroup2 mount. Those environment
 markers prevent accidental execution; they are not authentication against a

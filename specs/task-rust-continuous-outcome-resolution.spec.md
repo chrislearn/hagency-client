@@ -30,12 +30,12 @@ claiming after observing exact durable resolution.
 
 ## Allowed changes
 
-- native/hagency-store/src/domain/stopped_inspection.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/outcome_resolution/**
-- native/hagency/src/bootstrap/driver.rs
-- native/hagency/tests/bootstrap*
-- native/hagency/tests/fixtures/owned_mcp_peer.rs
+- crates/hagency-store/src/domain/stopped_inspection.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/outcome_resolution/**
+- crates/hagency/src/bootstrap/driver.rs
+- crates/hagency/tests/bootstrap*
+- crates/hagency/tests/fixtures/owned_mcp_peer.rs
 - specs/task-rust-continuous-outcome-resolution.spec.md
 - knowledge/decisions/adr-169-continuous-outcome-resolution.md
 - docs/**

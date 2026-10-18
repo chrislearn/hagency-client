@@ -35,16 +35,16 @@ This contract retains the design boundaries in [ADR-027](../knowledge/decisions/
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/src/collector.rs
-- native/hagency-matrix/src/attachments.rs
-- native/hagency-matrix/src/event_batch.rs
-- native/hagency-matrix/src/intake.rs
-- native/hagency-matrix/src/lib.rs
-- native/hagency-matrix/src/sdk.rs
-- native/hagency-matrix/src/sdk/attachments.rs
-- native/hagency-matrix/tests/intake/mod.rs
-- native/hagency-matrix/tests/intake/crypto_fixture.rs
-- native/hagency-matrix/tests/intake/attachments.rs
+- crates/hagency-matrix/src/collector.rs
+- crates/hagency-matrix/src/attachments.rs
+- crates/hagency-matrix/src/event_batch.rs
+- crates/hagency-matrix/src/intake.rs
+- crates/hagency-matrix/src/lib.rs
+- crates/hagency-matrix/src/sdk.rs
+- crates/hagency-matrix/src/sdk/attachments.rs
+- crates/hagency-matrix/tests/intake/mod.rs
+- crates/hagency-matrix/tests/intake/crypto_fixture.rs
+- crates/hagency-matrix/tests/intake/attachments.rs
 - knowledge/decisions/adr-074-native-matrix-attachment-intake.md
 - specs/task-rust-matrix-attachment-intake.spec.md
 - docs/progress.md

@@ -24,9 +24,9 @@ Expose the existing bounded SDK budget as explicit host startup configuration.
 
 ## Allowed changes
 
-- native/hagency/src/bootstrap/config.rs
-- native/hagency/tests/configured_fleet.rs
-- native/hagency/tests/configured_fleet/**
+- crates/hagency/src/bootstrap/config.rs
+- crates/hagency/tests/configured_fleet.rs
+- crates/hagency/tests/configured_fleet/**
 - specs/task-rust-matrix-sdk-budget.spec.md
 - knowledge/decisions/adr-179-matrix-sdk-budget.md
 - docs/**

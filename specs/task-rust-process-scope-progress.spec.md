@@ -26,7 +26,7 @@ advance during one short sample without weakening process isolation assertions.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-platform/tests/process_scope.rs
+- crates/hagency-platform/tests/process_scope.rs
 - knowledge/decisions/adr-086-native-process-scope-progress-observation.md
 - specs/task-rust-process-scope-progress.spec.md
 - docs/progress.md

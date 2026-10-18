@@ -28,7 +28,7 @@ peer. Nothing about the production launch shape changes.
 - The fixture and its helpers exist only under test support; no production code path references the callback-capable binary or the scripted enrollment.
 
 ### Must Not
-- Do not touch `native/hagency/src/bootstrap/config.rs`'s production launch shape (HOME/CODEX_HOME only, no `HAGENCY_OFFLINE_MODE` or any offline switch).
+- Do not touch `crates/hagency/src/bootstrap/config.rs`'s production launch shape (HOME/CODEX_HOME only, no `HAGENCY_OFFLINE_MODE` or any offline switch).
 - Do not touch the production executable's sha256 pin or any `[[bin]]` layout change.
 - Do not touch any production code path: no runner capability, workspace access, console route, or MCP tool changes; the wiring itself is PC-C0's, landed.
 - Do not weaken PC-C0's Then clauses or rename any of its other selectors; the moved selector binds here with the same name and semantics.
@@ -37,11 +37,11 @@ peer. Nothing about the production launch shape changes.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency/tests/bootstrap/approval.rs
-- native/hagency/tests/support/ (the callback-capable runtime probe fixture and the scripted second-identity enrollment helpers)
-- native/fixtures/ (the callback-capable probe's pinned binary manifest/vector, if any)
-- native/hagency/tests/bootstrap.rs
-- native/hagency/Cargo.toml (the test-probe `[[bin]]` registration only, mirroring the three sibling probes)
+- crates/hagency/tests/bootstrap/approval.rs
+- crates/hagency/tests/support/ (the callback-capable runtime probe fixture and the scripted second-identity enrollment helpers)
+- tests/fixtures/ (the callback-capable probe's pinned binary manifest/vector, if any)
+- crates/hagency/tests/bootstrap.rs
+- crates/hagency/Cargo.toml (the test-probe `[[bin]]` registration only, mirroring the three sibling probes)
 - specs/task-rust-private-approval-delivery-fixture.spec.md
 - specs/task-rust-private-approval-wiring.spec.md
 - knowledge/decisions/adr-138-bounded-native-approval-observation.md
@@ -49,7 +49,7 @@ peer. Nothing about the production launch shape changes.
 
 ### Forbidden
 - Live services, live homeservers, credentials in tree, deployed state.
-- native/hagency/src/bootstrap/config.rs; the production executable's sha256 pin; any production code path; native/hagency/src/bootstrap/approval.rs (PC-C0's wiring, landed); native/hagency-matrix/**.
+- crates/hagency/src/bootstrap/config.rs; the production executable's sha256 pin; any production code path; crates/hagency/src/bootstrap/approval.rs (PC-C0's wiring, landed); crates/hagency-matrix/**.
 
 ## Acceptance Criteria
 
@@ -71,7 +71,7 @@ this slice exists to make possible; it was parked as an owed name while the
 PC-C0b code did not exist (no `Test:` line, because the checker binds only
 names that exist) — the `Test:` line is **restored in this slice's scenario
 above** with the same name and the same end-to-end semantics, and the
-`#[test] fn` in `native/hagency/tests/bootstrap/approval.rs` carries it
+`#[test] fn` in `crates/hagency/tests/bootstrap/approval.rs` carries it
 (this slice's Allowed Changes own that file). The PC-C0 wiring spec keeps its
 other selector (`native_private_approval_delivery_wiring_refuses_without_enrollment`)
 bound where it is, untouched.

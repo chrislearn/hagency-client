@@ -41,12 +41,12 @@ the card and required test-side SDK enrollment; neither proves this round trip.
 
 ## Allowed changes
 
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/bootstrap/approval.rs
-- native/hagency/tests/bootstrap/approval.rs
-- native/hagency/tests/support/approval_enrollment.rs
-- native/hagency/tests/fixtures/approval_mcp_peer.rs
-- native/hagency/tests/fixtures/matrix_crypto_peer.rs
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/bootstrap/approval.rs
+- crates/hagency/tests/bootstrap/approval.rs
+- crates/hagency/tests/support/approval_enrollment.rs
+- crates/hagency/tests/fixtures/approval_mcp_peer.rs
+- crates/hagency/tests/fixtures/matrix_crypto_peer.rs
 - knowledge/decisions/adr-064-native-matrix-approval-intake.md
 - knowledge/decisions/adr-112-native-private-approval-delivery.md
 - this spec, docs/progress.md, docs/agent-knowledge.md

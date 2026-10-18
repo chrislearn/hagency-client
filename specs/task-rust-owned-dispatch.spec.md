@@ -31,19 +31,19 @@ one bounded operation, while keeping production workspace and sandbox qualificat
 ## Boundaries
 
 ### Allowed Changes
-- native/README.md
+- docs/native-engine.md
 - ./Cargo.toml
 - ./Cargo.lock
-- native/hagency-execution/**
-- native/hagency-store/src/domain/owned_dispatch.rs
-- native/hagency-store/src/domain/execution.rs
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/tests/owned_dispatch.rs
-- native/hagency-runtime/src/bin/hagency-runtime-probe.rs
-- native/hagency-platform/src/lib.rs
-- native/hagency/src/runner.rs
+- crates/hagency-execution/**
+- crates/hagency-store/src/domain/owned_dispatch.rs
+- crates/hagency-store/src/domain/execution.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/tests/owned_dispatch.rs
+- crates/hagency-runtime/src/bin/hagency-runtime-probe.rs
+- crates/hagency-platform/src/lib.rs
+- crates/hagency/src/runner.rs
 - knowledge/decisions/adr-053-native-owned-dispatch.md
 - knowledge/decisions/adr-139-native-codex-launch-surface.md
 - knowledge/decisions/adr-140-real-codex-sandbox-qualification.md
@@ -148,7 +148,7 @@ Scenario: The Codex argv is exactly the app-server subcommand
 Scenario: The bare argv still yields stdio on the pinned Codex CLI
   Test: native_codex_stdio_flag_matches_pinned_cli
   Level: integration
-  Test Double: the recorded help excerpt at native/fixtures/codex-cli/app-server-help-0.153.4.excerpt.txt
+  Test Double: the recorded help excerpt at tests/fixtures/codex-cli/app-server-help-0.153.4.excerpt.txt
   Given the fixture excerpt captured from the spec-pinned Codex 0.153.4 binary
   When its captured_version header and transport assertions are validated offline
   Then the excerpt records stdio as the --listen default with --stdio an exact synonym

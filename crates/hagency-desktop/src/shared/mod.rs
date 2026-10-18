@@ -1,0 +1,74 @@
+use makepad_widgets::ScriptVm;
+
+pub mod attachment_download;
+pub mod cached_widget;
+pub mod avatar;
+pub mod agent_usage;
+pub mod collapsible_header;
+pub mod context_menu;
+pub mod expand_arrow;
+pub mod confirmation_modal;
+pub mod file_upload_modal;
+pub mod helpers;
+pub mod hover_highlight;
+pub mod html_or_plaintext;
+pub mod icon_button;
+pub mod jump_to_bottom_button;
+pub mod mention_popup;
+pub mod mentionable_text_input;
+pub mod navigation_bar_button;
+pub mod popup_list;
+pub mod progress_bar;
+pub mod room_filter_input_bar;
+pub mod room_input_popup_menu;
+pub mod slash_commands;
+pub mod styles;
+pub mod text_or_image;
+pub mod timestamp;
+pub mod bouncing_dots;
+pub mod unread_badge;
+pub mod verification_badge;
+pub mod restore_status_view;
+pub mod design_tokens;
+pub mod image_viewer;
+pub mod mobile_details;
+pub mod web_browser;
+pub mod web_browser_session;
+pub mod web_browser_window;
+
+
+pub fn script_mod(vm: &mut ScriptVm) {
+    // Order matters here, as some widget definitions depend on others.
+    crate::theme::script_mod(vm);
+    cached_widget::script_mod(vm);
+    styles::script_mod(vm);
+    design_tokens::script_mod(vm);
+    helpers::script_mod(vm);
+    navigation_bar_button::script_mod(vm);
+    icon_button::script_mod(vm);
+    context_menu::script_mod(vm);
+    expand_arrow::script_mod(vm);
+    unread_badge::script_mod(vm);
+    collapsible_header::script_mod(vm);
+    timestamp::script_mod(vm);
+    room_filter_input_bar::script_mod(vm);
+    room_input_popup_menu::script_mod(vm);
+    avatar::script_mod(vm);
+    mobile_details::script_mod(vm);
+    text_or_image::script_mod(vm);
+    html_or_plaintext::script_mod(vm);
+    agent_usage::script_mod(vm);
+    bouncing_dots::script_mod(vm);
+    jump_to_bottom_button::script_mod(vm);
+    popup_list::script_mod(vm);
+    verification_badge::script_mod(vm);
+    mention_popup::script_mod(vm);
+    mentionable_text_input::script_mod(vm);
+    restore_status_view::script_mod(vm);
+    confirmation_modal::script_mod(vm);
+    image_viewer::script_mod(vm);
+    progress_bar::script_mod(vm);
+    file_upload_modal::script_mod(vm);
+    web_browser::script_mod(vm);
+    web_browser_window::script_mod(vm);
+}

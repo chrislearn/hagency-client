@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "adapter": "robrix-native-host-v2",
+  "source": "measured image-to-appcard-flow intake; manually reviewed semantic roles",
+  "source_scene": "publish-confirmation",
+  "native_source": "src/article_app/ui.rs",
+  "bindings": [
+    {
+      "widget": "publish_account / publish_room / confirm_details",
+      "binding": "Operation snapshot",
+      "behavior": "Show current owner, recipient, revision, image count"
+    },
+    {
+      "widget": "article_confirm",
+      "binding": "backend::execute",
+      "behavior": "Recheck live membership/grant, upload encrypted media where needed, send standard Matrix message plus versioned article extension"
+    },
+    {
+      "widget": "article_change",
+      "binding": "edit / copy pending snapshot",
+      "behavior": "Unsent confirmation invalidated; uncertain transaction retained while editing a new draft copy"
+    }
+  ],
+  "raster_policy": "Only independently declared illustration asset is raster. Text, controls, article layout and images are native widgets. No screenshot hotspots.",
+  "upstream_generic_compile": "not run; the generic kit cannot supply the required native rich-input/Matrix host bindings"
+}

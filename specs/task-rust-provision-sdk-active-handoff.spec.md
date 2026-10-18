@@ -44,16 +44,16 @@ substitute for the still-required full inline factory and live qualification.
 
 ## Allowed changes
 
-- native/hagency-store/src/domain/verified_ingress.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/provision_active.rs
-- native/hagency-matrix/src/collector.rs
-- native/hagency-matrix/src/token_provision.rs
-- native/hagency-matrix/src/enrollment/provisioning.rs
-- native/hagency-matrix/src/sdk.rs
-- native/hagency-matrix/tests/enrollment/provisioning.rs
-- native/hagency-matrix/tests/enrollment/active_handoff.rs
-- native/hagency-matrix/tests/provision_rooms/mod.rs
+- crates/hagency-store/src/domain/verified_ingress.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/provision_active.rs
+- crates/hagency-matrix/src/collector.rs
+- crates/hagency-matrix/src/token_provision.rs
+- crates/hagency-matrix/src/enrollment/provisioning.rs
+- crates/hagency-matrix/src/sdk.rs
+- crates/hagency-matrix/tests/enrollment/provisioning.rs
+- crates/hagency-matrix/tests/enrollment/active_handoff.rs
+- crates/hagency-matrix/tests/provision_rooms/mod.rs
 - knowledge/decisions/adr-102-native-matrix-trust-session-enrollment.md
 - knowledge/decisions/adr-147-provisioning-verdict-effect-route.md
 - this spec, docs/agent-knowledge.md, docs/progress.md

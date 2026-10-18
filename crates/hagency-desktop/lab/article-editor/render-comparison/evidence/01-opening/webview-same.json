@@ -1,0 +1,191 @@
+{
+  "dpr" : 2,
+  "elements" : {
+    "blockquote" : [
+
+    ],
+    "h1" : [
+      {
+        "height" : 39,
+        "width" : 392,
+        "x" : 24,
+        "y" : 42.75
+      },
+      {
+        "height" : 39,
+        "width" : 392,
+        "x" : 24,
+        "y" : 344.25
+      },
+      {
+        "height" : 39,
+        "width" : 392,
+        "x" : 24,
+        "y" : 733.75
+      }
+    ],
+    "h2" : [
+
+    ],
+    "h3" : [
+
+    ],
+    "li" : [
+
+    ],
+    "p" : [
+      {
+        "height" : 29,
+        "width" : 392,
+        "x" : 24,
+        "y" : 100.5
+      },
+      {
+        "height" : 87,
+        "width" : 392,
+        "x" : 24,
+        "y" : 402
+      },
+      {
+        "height" : 58,
+        "width" : 392,
+        "x" : 24,
+        "y" : 505
+      },
+      {
+        "height" : 58,
+        "width" : 392,
+        "x" : 24,
+        "y" : 612
+      },
+      {
+        "height" : 29,
+        "width" : 392,
+        "x" : 24,
+        "y" : 686
+      },
+      {
+        "height" : 29,
+        "width" : 392,
+        "x" : 24,
+        "y" : 791.5
+      },
+      {
+        "height" : 29,
+        "width" : 392,
+        "x" : 24,
+        "y" : 869.5
+      },
+      {
+        "height" : 180,
+        "width" : 392,
+        "x" : 24,
+        "y" : 914.5
+      },
+      {
+        "height" : 58,
+        "width" : 392,
+        "x" : 24,
+        "y" : 1110.5
+      },
+      {
+        "height" : 29,
+        "width" : 392,
+        "x" : 24,
+        "y" : 1184.5
+      },
+      {
+        "height" : 29,
+        "width" : 392,
+        "x" : 24,
+        "y" : 1229.5
+      },
+      {
+        "height" : 29,
+        "width" : 392,
+        "x" : 24,
+        "y" : 1274.5
+      }
+    ],
+    "pre" : [
+
+    ],
+    "table" : [
+
+    ]
+  },
+  "engine" : "macOS WKWebView \/ WebKit",
+  "font" : "16px \"PingFang SC\", system-ui, sans-serif",
+  "fonts" : [
+
+  ],
+  "height" : 1344,
+  "images" : [
+    {
+      "complete" : true,
+      "height" : 180,
+      "src" : "image-82778a8829bb4eda5f6c9d9a74542e8c4a5725b9c09f8102874c384f7d3fe171.png",
+      "width" : 180
+    },
+    {
+      "complete" : true,
+      "height" : 180,
+      "src" : "image-82778a8829bb4eda5f6c9d9a74542e8c4a5725b9c09f8102874c384f7d3fe171.png",
+      "width" : 180
+    },
+    {
+      "complete" : true,
+      "height" : 40,
+      "src" : "image-8bc8020cb47fcba485e17dbf792fcef894929031e950bfc991a65c4202c6d159.png",
+      "width" : 176
+    },
+    {
+      "complete" : true,
+      "height" : 40,
+      "src" : "image-787707841704e904eb9547566e88fd572965ff47a965496f161449ed1ddaa686.png",
+      "width" : 184
+    },
+    {
+      "complete" : true,
+      "height" : 40,
+      "src" : "image-f870d18f52b626ca95a7e03e869947a74b1d91e15847b484c9784d7a52623e3c.png",
+      "width" : 144
+    },
+    {
+      "complete" : true,
+      "height" : 40,
+      "src" : "image-05fc292ded7d9cfa9abc6146e6b63f4ab5d0fd23d5d8b6fdeb68aae1b4fad3ee.png",
+      "width" : 188
+    },
+    {
+      "complete" : true,
+      "height" : 40,
+      "src" : "image-04e4ea4dc7f1fefd34becb0b2a6df9fcc49e10356d1a7ee2a22634cfe757f425.png",
+      "width" : 208
+    },
+    {
+      "complete" : true,
+      "height" : 40,
+      "src" : "image-9ad4232e825f2ab3c8067fbc6d41131a59125ed838793b3933af663f6355f4a9.png",
+      "width" : 176
+    }
+  ],
+  "macos" : "Version 26.6.2 (Build 25G83)",
+  "math" : {
+    "errors" : 0,
+    "formulas" : 0
+  },
+  "page_javascript" : false,
+  "source_sha256" : "457c10ec38d3de4d67ca10843380354d54830b7d683cf5087e80b934b035e4f8",
+  "tiles" : [
+    {
+      "file" : "01-opening\/webview-same-tile-0.png",
+      "y_css" : 0
+    },
+    {
+      "file" : "01-opening\/webview-same-tile-644.png",
+      "y_css" : 644
+    }
+  ],
+  "width" : 440
+}

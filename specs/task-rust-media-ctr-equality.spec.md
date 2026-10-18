@@ -34,7 +34,7 @@ corresponding plaintext byte unchanged; this is valid CTR, not plaintext fallbac
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-media/tests/media.rs
+- crates/hagency-media/tests/media.rs
 - specs/task-rust-media-ctr-equality.spec.md
 - knowledge/context/native-media-ctr-equality.md
 - docs/progress.md

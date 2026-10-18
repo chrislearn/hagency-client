@@ -1,0 +1,191 @@
+{
+  "dpr" : 2,
+  "elements" : {
+    "blockquote" : [
+      {
+        "height" : 114,
+        "width" : 392,
+        "x" : 24,
+        "y" : 300.53125
+      },
+      {
+        "height" : 85,
+        "width" : 392,
+        "x" : 24,
+        "y" : 537.53125
+      },
+      {
+        "height" : 143,
+        "width" : 392,
+        "x" : 24,
+        "y" : 691.53125
+      },
+      {
+        "height" : 85,
+        "width" : 392,
+        "x" : 24,
+        "y" : 1256.53125
+      }
+    ],
+    "h1" : [
+
+    ],
+    "h2" : [
+
+    ],
+    "h3" : [
+      {
+        "height" : 35,
+        "width" : 392,
+        "x" : 24,
+        "y" : 43
+      },
+      {
+        "height" : 35,
+        "width" : 392,
+        "x" : 24,
+        "y" : 482.53125
+      },
+      {
+        "height" : 35,
+        "width" : 392,
+        "x" : 24,
+        "y" : 854.53125
+      }
+    ],
+    "li" : [
+
+    ],
+    "p" : [
+      {
+        "height" : 58,
+        "width" : 392,
+        "x" : 24,
+        "y" : 127
+      },
+      {
+        "height" : 34.53125,
+        "width" : 392,
+        "x" : 24,
+        "y" : 201
+      },
+      {
+        "height" : 29,
+        "width" : 392,
+        "x" : 24,
+        "y" : 251.53125
+      },
+      {
+        "height" : 58,
+        "width" : 352,
+        "x" : 46,
+        "y" : 328.53125
+      },
+      {
+        "height" : 29,
+        "width" : 392,
+        "x" : 24,
+        "y" : 434.53125
+      },
+      {
+        "height" : 29,
+        "width" : 352,
+        "x" : 46,
+        "y" : 565.53125
+      },
+      {
+        "height" : 29,
+        "width" : 392,
+        "x" : 24,
+        "y" : 642.53125
+      },
+      {
+        "height" : 87,
+        "width" : 352,
+        "x" : 46,
+        "y" : 719.53125
+      },
+      {
+        "height" : 29,
+        "width" : 392,
+        "x" : 24,
+        "y" : 908.53125
+      },
+      {
+        "height" : 29,
+        "width" : 392,
+        "x" : 24,
+        "y" : 953.53125
+      },
+      {
+        "height" : 29,
+        "width" : 392,
+        "x" : 24,
+        "y" : 998.53125
+      },
+      {
+        "height" : 29,
+        "width" : 392,
+        "x" : 24,
+        "y" : 1043.53125
+      },
+      {
+        "height" : 29,
+        "width" : 392,
+        "x" : 24,
+        "y" : 1088.53125
+      },
+      {
+        "height" : 29,
+        "width" : 392,
+        "x" : 24,
+        "y" : 1133.53125
+      },
+      {
+        "height" : 58,
+        "width" : 392,
+        "x" : 24,
+        "y" : 1178.53125
+      },
+      {
+        "height" : 29,
+        "width" : 352,
+        "x" : 46,
+        "y" : 1284.53125
+      }
+    ],
+    "pre" : [
+
+    ],
+    "table" : [
+
+    ]
+  },
+  "engine" : "macOS WKWebView \/ WebKit",
+  "font" : "16px \"PingFang SC\", system-ui, sans-serif",
+  "fonts" : [
+
+  ],
+  "height" : 1386,
+  "images" : [
+
+  ],
+  "macos" : "Version 26.6.2 (Build 25G83)",
+  "math" : {
+    "errors" : 0,
+    "formulas" : 0
+  },
+  "page_javascript" : false,
+  "source_sha256" : "91fb2303a870fd8af0725ae656dbfcb97ffac8b3f8b28becb29d731a24a8c9f6",
+  "tiles" : [
+    {
+      "file" : "03-text\/webview-reference-tile-0.png",
+      "y_css" : 0
+    },
+    {
+      "file" : "03-text\/webview-reference-tile-686.png",
+      "y_css" : 686
+    }
+  ],
+  "width" : 440
+}

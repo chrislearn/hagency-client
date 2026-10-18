@@ -39,13 +39,13 @@ cannot predict engagement IDs minted later by authenticated Matrix ingress.
 
 ## Allowed changes
 
-- native/hagency-matrix/src/approval_intake.rs
-- native/hagency-matrix/src/approval_delivery.rs
-- native/hagency-matrix/src/approval_delivery/enrollment.rs
-- native/hagency-matrix/src/provisioning/factory.rs
-- native/hagency/tests/inline_factory.rs
-- native/hagency/tests/inline_factory/mod.rs
-- native/hagency/tests/fixtures/matrix_crypto_peer.rs
+- crates/hagency-matrix/src/approval_intake.rs
+- crates/hagency-matrix/src/approval_delivery.rs
+- crates/hagency-matrix/src/approval_delivery/enrollment.rs
+- crates/hagency-matrix/src/provisioning/factory.rs
+- crates/hagency/tests/inline_factory.rs
+- crates/hagency/tests/inline_factory/mod.rs
+- crates/hagency/tests/fixtures/matrix_crypto_peer.rs
 - knowledge/decisions/adr-064-native-matrix-approval-intake.md
 - knowledge/decisions/adr-112-native-private-approval-delivery.md
 - knowledge/decisions/adr-147-provisioning-verdict-effect-route.md

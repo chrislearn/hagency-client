@@ -1,0 +1,13 @@
+Use case: ui-mockup
+Asset type: high-fidelity desktop native Makepad interface reference for the same Robrix article-authoring mini app as the mobile flow.
+Canvas: 1536 x 1024 pixels, a single complete front-facing flat application window, no device frame, no perspective.
+
+Design a polished WeChat-inspired Chinese article studio called "图文创作". This is an operational product UI, not a promotional page. Three columns: narrow article library on the left, a generous central white document page with true visual editing, and a right inspector. Top bar spans the window with a small back chevron, app name, subtle "已保存" status, secondary "全文预览" and green "发布". Background light grey #f6f6f6, paper white, primary green #07c160, text #191919, PingFang-like Chinese type, thin neutral outlines, only subtle corner radii. Legible exact Chinese text and useful spacing, no excessive shadows or large empty headers.
+
+Left: 220px-equivalent column with small "新建文章" control, search "搜索文章", tabs "草稿 / 已发布", selected article with mountain thumbnail "把周末还给山野", another item "一杯茶的时间". Below a quiet "文章目录" with "开始", "01 走进山野", "02 让脚步慢下来". Selected row is soft pale green. Small bottom "分享小程序" entry separate from publishing.
+
+Center: paper-like page about 660px wide with editable title "把周末还给山野", author "林间来信", then "清晨六点，城市还没有醒来。我们沿着山路出发，把消息提醒留在身后。"; section heading "01 走进山野"; large editorial photograph of misty green mountain ridges at dawn; centered caption "晨光里的山谷"; quote with green left rule "慢一点，才能看见更多。"; final visible paragraph "风穿过松林，光落在石阶。这个周末，我们只做一件事：认真感受眼前的风景。". A phrase in the first paragraph is selected with a pale-green selection and small selection handles. Above it a small floating formatting toolbar with bold B, italic I, link and remove-format icons. NO raw Markdown markers. Bottom of the center shows a quiet count "约 3 分钟 · 6 张图片".
+
+Right: 280px inspector with tabs "样式 / 图片 / 封面", 样式 active. Four small actual theme previews labeled "经典绿", "书页暖白", "海盐蓝", "极简墨色"; selected first card has a green outline/check. Controls "字号 标准 / 大字" and "行距 舒适 / 紧凑". Below a "封面预览" thumbnail crop of the same mountain photograph and "编辑封面与摘要" action. Keep the hierarchy professional and not overcrowded.
+
+Constraints: product can be implemented with native Label, rich text editing, Image, Button, View and lists; no browser tabs, no web address bar, no WebView claims, no code or implementation details, no decorative marketing icons, no fake analytics, no unrequested AI controls, no credential text, no watermarks. Use consistent title/photo/colors with the 12-state mobile atlas. The whole window must fit inside the canvas.

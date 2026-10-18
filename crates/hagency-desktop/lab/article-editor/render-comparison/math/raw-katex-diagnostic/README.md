@@ -1,0 +1,1 @@
+Earlier direct KaTeX HTML/CSS diagnostic using raw Blitz with test-svg. Radical signs were missing and spacing differed. These captures are retained for diagnosis only. Rinx now uses native Makepad math glyph PNGs through its normal production resource grants. See ../index.html.

@@ -33,16 +33,16 @@ receipt row PC-C1's denial-reason migration (currently 032) defines. A future vi
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain/approvals.rs
-- native/hagency-store/src/domain/approvals/
-- native/hagency-store/tests/
+- crates/hagency-store/src/domain/approvals.rs
+- crates/hagency-store/src/domain/approvals/
+- crates/hagency-store/tests/
 - specs/task-rust-private-approval-reissue.spec.md
 - knowledge/decisions/adr-110-native-private-approval-card.md
 - docs/progress.md
 
 ### Forbidden
 - Live services, credentials, deployed state and Matrix server changes.
-- native/hagency-matrix/** (PC-C0/C1's delivery); native/hagency/src/console/** (PC-C2's observation); native/hagency/src/mcp/** (PC-C3's tools); migrations other than PC-C1's already-landed denial-reason migration (currently 032).
+- crates/hagency-matrix/** (PC-C0/C1's delivery); crates/hagency/src/console/** (PC-C2's observation); crates/hagency/src/mcp/** (PC-C3's tools); migrations other than PC-C1's already-landed denial-reason migration (currently 032).
 
 ## Acceptance Criteria
 

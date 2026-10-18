@@ -44,14 +44,14 @@ decision can never disagree about whether a resource is over.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/migrations/024-ceiling-alerts.sql
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain/ceiling_alerts.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/tests/ceiling_alerts.rs
-- native/hagency-store/tests/fixtures/ceiling-vectors.json
-- native/scripts/ceiling-vectors.mjs
+- crates/hagency-store/src/migrations/024-ceiling-alerts.sql
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain/ceiling_alerts.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/tests/ceiling_alerts.rs
+- crates/hagency-store/tests/fixtures/ceiling-vectors.json
+- tools/native/ceiling-vectors.mjs
 - specs/task-rust-usage-ceiling-alarm.spec.md
 - knowledge/decisions/adr-124-native-usage-ceiling-alarm.md
 - docs/progress.md

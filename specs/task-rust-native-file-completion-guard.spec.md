@@ -33,10 +33,10 @@ although its file delivery was still `write_possible`.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain/file_delivery.rs
-- native/hagency-store/src/domain/execution.rs
-- native/hagency-store/src/domain/owned_completion.rs
-- native/hagency-store/tests/file_delivery.rs
+- crates/hagency-store/src/domain/file_delivery.rs
+- crates/hagency-store/src/domain/execution.rs
+- crates/hagency-store/src/domain/owned_completion.rs
+- crates/hagency-store/tests/file_delivery.rs
 - specs/task-rust-native-file-completion-guard.spec.md
 - knowledge/decisions/adr-117-native-file-completion-guard.md
 - docs/agent-knowledge.md

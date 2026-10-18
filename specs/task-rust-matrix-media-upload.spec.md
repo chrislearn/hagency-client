@@ -34,12 +34,12 @@ without asserting event authority delivery or safe retry after an unknown write.
 
 ### Allowed Changes
 - ./Cargo.lock
-- native/hagency-matrix/Cargo.toml
-- native/hagency-matrix/src/lib.rs
-- native/hagency-matrix/src/http.rs
-- native/hagency-matrix/src/media_download.rs
-- native/hagency-matrix/src/media_upload.rs
-- native/hagency-matrix/tests/media_upload.rs
+- crates/hagency-matrix/Cargo.toml
+- crates/hagency-matrix/src/lib.rs
+- crates/hagency-matrix/src/http.rs
+- crates/hagency-matrix/src/media_download.rs
+- crates/hagency-matrix/src/media_upload.rs
+- crates/hagency-matrix/tests/media_upload.rs
 - knowledge/decisions/adr-072-native-matrix-media-upload.md
 - specs/task-rust-matrix-media-upload.spec.md
 - docs/agent-knowledge.md

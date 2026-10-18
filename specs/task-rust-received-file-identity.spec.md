@@ -28,8 +28,8 @@ and does not implement a receive sink or qualify the complete file workflow.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-platform/src/lib.rs
-- native/hagency-platform/src/file_identity.rs
+- crates/hagency-platform/src/lib.rs
+- crates/hagency-platform/src/file_identity.rs
 - specs/task-rust-received-file-identity.spec.md
 - docs/agent-knowledge.md
 - docs/progress.md

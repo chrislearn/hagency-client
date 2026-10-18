@@ -31,10 +31,10 @@ top-level target. Do not suppress permission/sync errors or widen copy limits.
 
 ## Allowed changes
 
-- native/hagency-store/src/private.rs
-- native/hagency-store/src/domain/accounts.rs
-- native/hagency-store/src/agent_home.rs
-- native/hagency-store/src/task_context.rs
+- crates/hagency-store/src/private.rs
+- crates/hagency-store/src/domain/accounts.rs
+- crates/hagency-store/src/agent_home.rs
+- crates/hagency-store/src/task_context.rs
 - knowledge/decisions/adr-147-provisioning-verdict-effect-route.md
 - this spec, docs/progress.md, docs/agent-knowledge.md
 

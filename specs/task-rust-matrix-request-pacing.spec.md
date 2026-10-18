@@ -28,12 +28,12 @@ by the coordinator, approval bot, provisioner, created agents and media clients.
 
 ## Allowed changes
 
-- native/hagency-matrix/src/config.rs
-- native/hagency-matrix/src/http.rs
-- native/hagency-matrix/src/http/pacing_tests.rs
-- native/hagency-matrix/src/lib.rs
-- native/hagency/src/bootstrap/config.rs
-- native/hagency/tests/configured_fleet/mod.rs
+- crates/hagency-matrix/src/config.rs
+- crates/hagency-matrix/src/http.rs
+- crates/hagency-matrix/src/http/pacing_tests.rs
+- crates/hagency-matrix/src/lib.rs
+- crates/hagency/src/bootstrap/config.rs
+- crates/hagency/tests/configured_fleet/mod.rs
 - specs/task-rust-matrix-request-pacing.spec.md
 - knowledge/decisions/adr-176-matrix-request-pacing.md
 - docs/**

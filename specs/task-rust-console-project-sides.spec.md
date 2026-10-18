@@ -36,17 +36,17 @@ listed by `cargo test --list` under `--all-features` exactly as
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/tests/project_sides.rs
-- native/hagency/src/console/project_sides.rs
-- native/hagency/src/console.rs
-- native/hagency/src/console/assets.rs
-- native/hagency/tests/console/project_sides.rs
-- native/hagency/tests/console.rs
-- native/hagency/tests/console/browser.rs
-- native/hagency/Cargo.toml
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/tests/project_sides.rs
+- crates/hagency/src/console/project_sides.rs
+- crates/hagency/src/console.rs
+- crates/hagency/src/console/assets.rs
+- crates/hagency/tests/console/project_sides.rs
+- crates/hagency/tests/console.rs
+- crates/hagency/tests/console/browser.rs
+- crates/hagency/Cargo.toml
 - mockup/app/project-sides/page.jsx
 - mockup/components/NativeProjectSides.jsx
 - mockup/lib/native-api.js
@@ -56,7 +56,7 @@ listed by `cargo test --list` under `--all-features` exactly as
 - mockup/scripts/build-native-console.mjs
 - specs/task-rust-console-project-sides.spec.md
 - knowledge/decisions/adr-132-native-project-side-observation.md
-- native/README.md
+- docs/native-engine.md
 - docs/progress.md
 
 ### Forbidden

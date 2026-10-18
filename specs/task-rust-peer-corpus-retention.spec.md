@@ -40,23 +40,23 @@ slot. Mirrors the messages-phase set scenario-for-scenario.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/migrations/027-peer-corpus-retention.sql
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain/peers.rs
-- native/hagency-store/src/domain/graphs.rs
-- native/hagency-store/src/domain/messages.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/lib.rs
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/lib.rs
-- native/hagency-store/tests/peer_retention.rs
-- native/hagency-store/tests/
+- crates/hagency-store/src/migrations/027-peer-corpus-retention.sql
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain/peers.rs
+- crates/hagency-store/src/domain/graphs.rs
+- crates/hagency-store/src/domain/messages.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/lib.rs
+- crates/hagency-store/tests/peer_retention.rs
+- crates/hagency-store/tests/
 - specs/task-rust-peer-corpus-retention.spec.md
 - knowledge/decisions/adr-125-admitted-corpus-retention.md
 
 ### Forbidden
 - Live services, credentials, deployed state.
-- native/hagency-store/src/domain/ceiling_alerts.rs; migrations other than 027 (026 phase 1's, 028 MA-S1's, 029 MA-S4's, 031 MA-S2's, 032 PC-C1's); the schema-head pin move **to 27** is licensed here and nowhere else.
+- crates/hagency-store/src/domain/ceiling_alerts.rs; migrations other than 027 (026 phase 1's, 028 MA-S1's, 029 MA-S4's, 031 MA-S2's, 032 PC-C1's); the schema-head pin move **to 27** is licensed here and nowhere else.
 
 ## Acceptance Criteria
 

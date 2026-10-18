@@ -32,12 +32,12 @@ settle existing native approval requests without changing Agent chat transport.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/**
-- native/hagency-core/src/approvals.rs
-- native/hagency-store/src/domain/approvals.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/tests/approvals.rs
-- native/hagency-store/tests/approvals/**
+- crates/hagency-matrix/**
+- crates/hagency-core/src/approvals.rs
+- crates/hagency-store/src/domain/approvals.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/tests/approvals.rs
+- crates/hagency-store/tests/approvals/**
 - specs/task-rust-matrix-approval-intake.spec.md
 - knowledge/decisions/adr-064-native-matrix-approval-intake.md
 - docs/agent-knowledge.md

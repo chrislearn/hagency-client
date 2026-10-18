@@ -26,7 +26,7 @@ instead of hiding it behind a later fake-peer timeout.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/tests/transport.rs
+- crates/hagency-matrix/tests/transport.rs
 - knowledge/decisions/adr-080-native-matrix-transport-fixture-errors.md
 - specs/task-rust-matrix-transport-fixture-errors.spec.md
 - docs/progress.md

@@ -15,7 +15,7 @@ retained console's agent roster (`/workforce`,
 `mockup/app/workforce/page.jsx` — the roster the page's own header names:
 "nothing had it for all of them side by side, which is exactly what a roster
 is", `:24-26`) has no native counterpart: grep for `agents` under
-`native/hagency/src/console/` returns nothing. The retained query is
+`crates/hagency/src/console/` returns nothing. The retained query is
 `GET /api/agents` (`backend-v2.js:11695`) → `serializeAgent`
 (`:6822-6913`), whose response spreads the whole agent record and therefore
 carries `homeDir` (`:6890`), `workdir`/`stateDir` (`:6891-6892`),

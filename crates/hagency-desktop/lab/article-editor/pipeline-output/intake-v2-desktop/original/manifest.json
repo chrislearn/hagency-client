@@ -1,0 +1,88 @@
+{
+ "schema_version": 1,
+ "id": "rinx-article-editor-v2-desktop",
+ "artboard": [
+  1280,
+  800
+ ],
+ "locales": [
+  "en",
+  "cn"
+ ],
+ "generation": {
+  "atlas": "source/atlas-v2-desktop.png",
+  "prompt": "source/atlas-v2-desktop-prompt.txt",
+  "provider": "OpenAI Images API",
+  "model": "gpt-image-2",
+  "requested_size": [
+   2560,
+   1600
+  ],
+  "quality": "high",
+  "actual_size": [
+   2560,
+   1600
+  ]
+ },
+ "scenes": [
+  {
+   "id": "split-editor",
+   "design_id": "article-v2-split-editor",
+   "directory": "scenes-v2/desktop/split-editor",
+   "crop": [
+    17,
+    27,
+    1249,
+    737
+   ],
+   "surface": "app",
+   "title": "split-editor"
+  },
+  {
+   "id": "theme-gallery",
+   "design_id": "article-v2-theme-gallery",
+   "directory": "scenes-v2/desktop/theme-gallery",
+   "crop": [
+    1289,
+    27,
+    1244,
+    737
+   ],
+   "surface": "app",
+   "title": "theme-gallery"
+  },
+  {
+   "id": "paste-images",
+   "design_id": "article-v2-paste-images",
+   "directory": "scenes-v2/desktop/paste-images",
+   "crop": [
+    20,
+    804,
+    1243,
+    760
+   ],
+   "surface": "app",
+   "title": "paste-images"
+  },
+  {
+   "id": "publish-sheet",
+   "design_id": "article-v2-publish-sheet",
+   "directory": "scenes-v2/desktop/publish-sheet",
+   "crop": [
+    1295,
+    805,
+    1237,
+    750
+   ],
+   "surface": "app",
+   "title": "publish-sheet"
+  }
+ ],
+ "artwork": {
+  "root": "artwork"
+ },
+ "outputs": {
+  "intake": "pipeline-output/intake-v2-desktop",
+  "runs": "pipeline-output/runs"
+ }
+}

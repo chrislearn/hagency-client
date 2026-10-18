@@ -32,21 +32,21 @@ SDK outgoing engine. Keep domain upload acceptance distinct from room delivery.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/src/lib.rs
-- native/hagency-matrix/src/upload.rs
-- native/hagency-matrix/src/upload/state.rs
-- native/hagency-matrix/src/upload/publication.rs
-- native/hagency-matrix/src/outgoing.rs
-- native/hagency-matrix/src/outgoing/state.rs
-- native/hagency-matrix/src/sdk.rs
-- native/hagency-matrix/src/sdk/outgoing.rs
-- native/hagency-matrix/src/sdk/file_publication.rs
-- native/hagency-matrix/tests/file_publication/mod.rs
-- native/hagency-matrix/tests/file_publication/fixture.rs
-- native/hagency-matrix/tests/file_publication/recovery.rs
-- native/hagency-matrix/tests/outgoing/crypto_fixture.rs
-- native/hagency-matrix/tests/staged_upload/mod.rs
-- native/hagency-matrix/tests/staged_upload/fixture.rs
+- crates/hagency-matrix/src/lib.rs
+- crates/hagency-matrix/src/upload.rs
+- crates/hagency-matrix/src/upload/state.rs
+- crates/hagency-matrix/src/upload/publication.rs
+- crates/hagency-matrix/src/outgoing.rs
+- crates/hagency-matrix/src/outgoing/state.rs
+- crates/hagency-matrix/src/sdk.rs
+- crates/hagency-matrix/src/sdk/outgoing.rs
+- crates/hagency-matrix/src/sdk/file_publication.rs
+- crates/hagency-matrix/tests/file_publication/mod.rs
+- crates/hagency-matrix/tests/file_publication/fixture.rs
+- crates/hagency-matrix/tests/file_publication/recovery.rs
+- crates/hagency-matrix/tests/outgoing/crypto_fixture.rs
+- crates/hagency-matrix/tests/staged_upload/mod.rs
+- crates/hagency-matrix/tests/staged_upload/fixture.rs
 - knowledge/decisions/adr-098-native-encrypted-file-publication.md
 - specs/task-rust-file-publication.spec.md
 - docs/agent-knowledge.md

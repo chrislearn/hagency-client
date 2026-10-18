@@ -2,8 +2,9 @@
 
 # Local owner-client/server development
 
-Keep `hagency-client`, `hagency-server` and optionally `hagency-desktop` as sibling
-checkouts. Each selects its own Rust toolchain. The owner console requires Node.js
+Keep `hagency-client` and `hagency-server` as sibling checkouts. Desktop now lives
+in `crates/hagency-desktop` in this workspace; see [workspace builds](workspace.md).
+The server selects its own Rust toolchain. The owner console requires Node.js
 22+ and npm; the local HTTP host is Rust. All client commands below run in this repo.
 
 ## Server prerequisites
@@ -42,7 +43,7 @@ use `start --no-open` or `serve` with the same state/listener/assets. Only one h
 may own a state directory. The listener must be nonzero loopback.
 
 The retained `just dev` / `just console` wrappers are not current owner-host
-instructions: `native/scripts/dev.mjs` still passes removed `--palpo-transport`
+instructions: `tools/native/dev.mjs` still passes removed `--palpo-transport`
 and checks the old `operator.token`; `just console` calls removed
 `console-access`. Use the explicit commands above until those wrappers are ported.
 `just init-dev` remains an npm dependency-install shortcut. `npm run dev` in

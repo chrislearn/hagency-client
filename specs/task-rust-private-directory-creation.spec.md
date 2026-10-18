@@ -44,11 +44,11 @@ actual create result and validate without recreating a disappeared entry.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/private.rs
-- native/hagency-store/src/private/windows.rs
-- native/hagency-store/src/private/windows/directory_tests.rs
-- native/hagency/tests/file_service/shutdown.rs
-- native/hagency/src/file_service/recovery.rs
+- crates/hagency-store/src/private.rs
+- crates/hagency-store/src/private/windows.rs
+- crates/hagency-store/src/private/windows/directory_tests.rs
+- crates/hagency/tests/file_service/shutdown.rs
+- crates/hagency/src/file_service/recovery.rs
 - specs/task-rust-private-directory-creation.spec.md
 - knowledge/context/native-private-directory-creation.md
 - docs/progress.md

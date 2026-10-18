@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "adapter": "robrix-native-article-v1",
+  "reference_sha256": "bb81e79c91f39718ed8ab30410e60649cee30bb9b189aa2669366733a61ed188",
+  "contract_sha256": "ad4261469dda178f6c822e3ffba412fb6c4f154a7dfab75ec9ff86fd660a6f70",
+  "elements": [
+    {
+      "id": "article_title",
+      "role": "input",
+      "native_widget": "TextInput",
+      "reference_atlas_bounds": [
+        959,
+        120,
+        255,
+        44
+      ],
+      "reference_logical_bounds": [
+        27.64,
+        106.32,
+        352.1,
+        60.75
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "L0 title / title_changed",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "article_bold",
+      "role": "button",
+      "native_widget": "Button",
+      "reference_atlas_bounds": [
+        974,
+        193,
+        27,
+        23
+      ],
+      "reference_logical_bounds": [
+        48.35,
+        207.12,
+        37.28,
+        31.76
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Insert Markdown at current selection",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "article_italic",
+      "role": "button",
+      "native_widget": "Button",
+      "reference_atlas_bounds": [
+        1021,
+        193,
+        24,
+        23
+      ],
+      "reference_logical_bounds": [
+        113.25,
+        207.12,
+        33.14,
+        31.76
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Insert Markdown at current selection",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "article_h2",
+      "role": "button",
+      "native_widget": "Button",
+      "reference_atlas_bounds": [
+        1069,
+        193,
+        25,
+        23
+      ],
+      "reference_logical_bounds": [
+        179.53,
+        207.12,
+        34.52,
+        31.76
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Insert Markdown heading",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "article_markdown",
+      "role": "input",
+      "native_widget": "TextInput",
+      "reference_atlas_bounds": [
+        959,
+        227,
+        254,
+        280
+      ],
+      "reference_logical_bounds": [
+        27.64,
+        254.06,
+        350.72,
+        386.62
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "L0 markdown / markdown_changed; multiline",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "article_status",
+      "role": "text",
+      "native_widget": "Label",
+      "reference_atlas_bounds": [
+        959,
+        548,
+        105,
+        22
+      ],
+      "reference_logical_bounds": [
+        27.64,
+        697.3,
+        144.98,
+        30.38
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Actual saved/error status, never simulated",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "article_preview",
+      "role": "button",
+      "native_widget": "Button",
+      "reference_atlas_bounds": [
+        1100,
+        529,
+        114,
+        45
+      ],
+      "reference_logical_bounds": [
+        222.33,
+        671.06,
+        157.41,
+        62.14
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Sanitize and render immutable native Html preview",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "article_share",
+      "role": "button",
+      "native_widget": "Button",
+      "reference_atlas_bounds": [
+        1161,
+        63,
+        58,
+        20
+      ],
+      "reference_logical_bounds": [
+        306.56,
+        27.62,
+        80.09,
+        27.62
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Choose chat then host-confirm sharing package reference only",
+      "source": "src/article_app/ui.rs"
+    }
+  ],
+  "raster_widgets": false,
+  "visual_acceptance": false
+}

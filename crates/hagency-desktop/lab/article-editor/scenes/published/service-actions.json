@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "trust_boundary": "Robrix host; L0 has text state only",
+  "actions": [
+    {
+      "id": "article_edit",
+      "behavior": "Return to own draft"
+    },
+    {
+      "id": "article_share_again",
+      "behavior": "Start host-controlled share flow"
+    }
+  ]
+}

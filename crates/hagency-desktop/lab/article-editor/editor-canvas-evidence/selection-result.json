@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "checks": [
+    "select_all_replace_and_one_step_undo",
+    "forward_and_reverse_cross_paragraph_drag_formatting",
+    "click_inside_selection_collapses_to_clicked_caret",
+    "shift_click_extends_across_paragraphs",
+    "select_all_includes_80_virtualized_paragraphs",
+    "drag_past_viewport_scrolls_and_selects_new_paragraphs",
+    "placeholder_only_once_for_empty_body_never_for_blank_paragraphs"
+  ]
+}

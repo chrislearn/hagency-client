@@ -21,8 +21,8 @@ report so the operator can diagnose the protocol gap without exposing payloads.
 
 ## Allowed changes
 
-- native/hagency-execution/src/operation.rs
-- native/hagency/src/bootstrap.rs
+- crates/hagency-execution/src/operation.rs
+- crates/hagency/src/bootstrap.rs
 - specs/task-rust-codex-refusal-diagnostics.spec.md
 - knowledge/decisions/adr-168-codex-refusal-diagnostics.md
 - docs/**

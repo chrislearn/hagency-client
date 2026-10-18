@@ -32,7 +32,7 @@ distinguish unknown capacity (`no_ceiling`) from a known ceiling exceeded
 - Leave the admission decision itself unchanged: measured spend joins the
   refusal context in slice 3.
 - Pin the wording to the retained JavaScript through
-  `native/scripts/ceiling-vectors.mjs` message vectors computed by importing
+  `tools/native/ceiling-vectors.mjs` message vectors computed by importing
   `overCommitMessage`, with the source sha256-pinned in the fixture.
 
 ### Must Not
@@ -44,15 +44,15 @@ distinguish unknown capacity (`no_ceiling`) from a known ceiling exceeded
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-core/src/ceiling.rs
-- native/hagency-core/src/lib.rs
-- native/hagency-core/tests/ceiling.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/src/domain.rs
-- native/hagency-store/tests/domain.rs
-- native/hagency-store/tests/resource_configuration.rs
-- native/scripts/ceiling-vectors.mjs
-- native/hagency-store/tests/fixtures/ceiling-vectors.json
+- crates/hagency-core/src/ceiling.rs
+- crates/hagency-core/src/lib.rs
+- crates/hagency-core/tests/ceiling.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/tests/domain.rs
+- crates/hagency-store/tests/resource_configuration.rs
+- tools/native/ceiling-vectors.mjs
+- crates/hagency-store/tests/fixtures/ceiling-vectors.json
 - specs/task-rust-usage-ceiling-refusal.spec.md
 - knowledge/decisions/adr-122-native-usage-ceiling-refusal.md
 - docs/progress.md

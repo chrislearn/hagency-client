@@ -36,9 +36,9 @@ launcher without advertising complete POSIX crash containment.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-platform/**
-- native/scripts/qualify-linux-cgroup.py
-- native/scripts/test-qualify-linux-cgroup.py
+- crates/hagency-platform/**
+- tools/native/qualify-linux-cgroup.py
+- tools/native/test-qualify-linux-cgroup.py
 - .github/workflows/rust.yml
 - knowledge/decisions/adr-048-native-linux-crash-custody.md
 - specs/task-rust-linux-crash-custody.spec.md
@@ -80,7 +80,7 @@ actual sandbox qualification, server enablement, macOS containment and full M4.
 
 
 CI-only executable staging is additionally verified by the exact ordinary-file
-Python suite `python3 -B native/scripts/test-qualify-linux-cgroup.py`. Cargo-bound
+Python suite `python3 -B tools/native/test-qualify-linux-cgroup.py`. Cargo-bound
 lifecycle scenarios above retain native admission/refusal coverage; they do not
 claim Python staging or actual hosted namespace execution. The hosted seven-mode
 qualification remains a separate mandatory workflow command and requires exact

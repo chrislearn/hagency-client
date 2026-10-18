@@ -1,0 +1,846 @@
+[
+  {
+    "i": "main_window",
+    "ty": "Window",
+    "r": [
+      0,
+      0,
+      430,
+      820
+    ],
+    "w": 0
+  },
+  {
+    "i": "caption_bar",
+    "ty": "View",
+    "r": [
+      0,
+      0,
+      430,
+      32
+    ],
+    "w": 0
+  },
+  {
+    "i": "caption_label",
+    "ty": "View",
+    "r": [
+      0,
+      0,
+      430,
+      32
+    ],
+    "w": 0
+  },
+  {
+    "i": "label",
+    "ty": "Label",
+    "r": [
+      174,
+      12,
+      9,
+      11
+    ],
+    "w": 0,
+    "t": "Rinx [remote]"
+  },
+  {
+    "i": "body",
+    "ty": "KeyboardView",
+    "r": [
+      0,
+      32,
+      430,
+      788
+    ],
+    "w": 0
+  },
+  {
+    "i": "overlay_container",
+    "ty": "View",
+    "r": [
+      0,
+      32,
+      430,
+      788
+    ],
+    "w": 0
+  },
+  {
+    "i": "home_screen_view",
+    "ty": "View",
+    "r": [
+      0,
+      32,
+      430,
+      788
+    ],
+    "w": 0
+  },
+  {
+    "i": "home_screen",
+    "ty": "HomeScreen",
+    "r": [
+      0,
+      32,
+      430,
+      788
+    ],
+    "w": 0
+  },
+  {
+    "i": "Mobile",
+    "ty": "View",
+    "r": [
+      0,
+      32,
+      430,
+      788
+    ],
+    "w": 0
+  },
+  {
+    "i": "root_view",
+    "ty": "View",
+    "r": [
+      0,
+      32,
+      430,
+      788
+    ],
+    "w": 0
+  },
+  {
+    "i": "home_screen_page_flip",
+    "ty": "PageFlip",
+    "r": [
+      0,
+      32,
+      430,
+      732
+    ],
+    "w": 0
+  },
+  {
+    "i": "discover_page",
+    "ty": "MobileHub",
+    "r": [
+      0,
+      32,
+      430,
+      732
+    ],
+    "w": 0
+  },
+  {
+    "i": "title_bar",
+    "ty": "View",
+    "r": [
+      0,
+      32,
+      430,
+      48
+    ],
+    "w": 0
+  },
+  {
+    "i": "title",
+    "ty": "Label",
+    "r": [
+      198,
+      43,
+      16,
+      17
+    ],
+    "w": 0,
+    "t": "发现"
+  },
+  {
+    "i": "controls",
+    "ty": "View",
+    "r": [
+      0,
+      32,
+      430,
+      48
+    ],
+    "w": 0
+  },
+  {
+    "i": "-",
+    "ty": "View",
+    "r": [
+      0,
+      56,
+      430,
+      1
+    ],
+    "w": 0
+  },
+  {
+    "i": "pages",
+    "ty": "PageFlip",
+    "r": [
+      0,
+      80,
+      430,
+      684
+    ],
+    "w": 0
+  },
+  {
+    "i": "discover",
+    "ty": "View",
+    "r": [
+      0,
+      80,
+      430,
+      684
+    ],
+    "w": 0
+  },
+  {
+    "i": "-",
+    "ty": "View",
+    "r": [
+      0,
+      80,
+      430,
+      169
+    ],
+    "w": 0
+  },
+  {
+    "i": "discover_article",
+    "ty": "NavigationBarButton",
+    "r": [
+      0,
+      80,
+      430,
+      56
+    ],
+    "w": 0
+  },
+  {
+    "i": "icon",
+    "ty": "Icon",
+    "r": [
+      20,
+      96,
+      24,
+      24
+    ],
+    "w": 0
+  },
+  {
+    "i": "title",
+    "ty": "Label",
+    "r": [
+      63,
+      99,
+      16,
+      16
+    ],
+    "w": 0,
+    "t": "文章编辑器"
+  },
+  {
+    "i": "chevron",
+    "ty": "Icon",
+    "r": [
+      406,
+      102,
+      8,
+      13
+    ],
+    "w": 0
+  },
+  {
+    "i": "-",
+    "ty": "View",
+    "r": [
+      60,
+      136,
+      370,
+      1
+    ],
+    "w": 0
+  },
+  {
+    "i": "discover_moments",
+    "ty": "NavigationBarButton",
+    "r": [
+      0,
+      137,
+      430,
+      56
+    ],
+    "w": 0
+  },
+  {
+    "i": "icon",
+    "ty": "Icon",
+    "r": [
+      20,
+      153,
+      24,
+      24
+    ],
+    "w": 0
+  },
+  {
+    "i": "title",
+    "ty": "Label",
+    "r": [
+      63,
+      157,
+      15,
+      16
+    ],
+    "w": 0,
+    "t": "朋友圈"
+  },
+  {
+    "i": "chevron",
+    "ty": "Icon",
+    "r": [
+      406,
+      158,
+      8,
+      13
+    ],
+    "w": 0
+  },
+  {
+    "i": "1",
+    "ty": "View",
+    "r": [
+      60,
+      193,
+      370,
+      1
+    ],
+    "w": 0
+  },
+  {
+    "i": "explore",
+    "ty": "NavigationBarButton",
+    "r": [
+      0,
+      193,
+      430,
+      56
+    ],
+    "w": 0
+  },
+  {
+    "i": "icon",
+    "ty": "Icon",
+    "r": [
+      20,
+      209,
+      24,
+      24
+    ],
+    "w": 0
+  },
+  {
+    "i": "title",
+    "ty": "Label",
+    "r": [
+      63,
+      213,
+      16,
+      16
+    ],
+    "w": 0,
+    "t": "探索群聊与空间"
+  },
+  {
+    "i": "chevron",
+    "ty": "Icon",
+    "r": [
+      406,
+      215,
+      8,
+      13
+    ],
+    "w": 0
+  },
+  {
+    "i": "mobile_navigation",
+    "ty": "View",
+    "r": [
+      0,
+      764,
+      430,
+      56
+    ],
+    "w": 0
+  },
+  {
+    "i": "Mobile",
+    "ty": "View",
+    "r": [
+      0,
+      764,
+      430,
+      56
+    ],
+    "w": 0
+  },
+  {
+    "i": "chats_tab",
+    "ty": "NavigationBarButton",
+    "r": [
+      0,
+      764,
+      108,
+      56
+    ],
+    "w": 0
+  },
+  {
+    "i": "icon",
+    "ty": "Icon",
+    "r": [
+      42,
+      771,
+      24,
+      24
+    ],
+    "w": 0
+  },
+  {
+    "i": "label",
+    "ty": "Label",
+    "r": [
+      43,
+      808,
+      10,
+      11
+    ],
+    "w": 0,
+    "t": "聊天"
+  },
+  {
+    "i": "contacts_tab",
+    "ty": "NavigationBarButton",
+    "r": [
+      108,
+      764,
+      108,
+      56
+    ],
+    "w": 0
+  },
+  {
+    "i": "icon",
+    "ty": "Icon",
+    "r": [
+      149,
+      771,
+      24,
+      24
+    ],
+    "w": 0
+  },
+  {
+    "i": "label",
+    "ty": "Label",
+    "r": [
+      145,
+      808,
+      11,
+      11
+    ],
+    "w": 0,
+    "t": "通讯录"
+  },
+  {
+    "i": "discover_tab",
+    "ty": "NavigationBarButton",
+    "r": [
+      215,
+      764,
+      108,
+      56
+    ],
+    "w": 0
+  },
+  {
+    "i": "icon",
+    "ty": "Icon",
+    "r": [
+      257,
+      771,
+      24,
+      24
+    ],
+    "w": 0
+  },
+  {
+    "i": "label",
+    "ty": "Label",
+    "r": [
+      258,
+      808,
+      11,
+      11
+    ],
+    "w": 0,
+    "t": "发现"
+  },
+  {
+    "i": "me_tab",
+    "ty": "NavigationBarButton",
+    "r": [
+      323,
+      764,
+      108,
+      56
+    ],
+    "w": 0
+  },
+  {
+    "i": "icon",
+    "ty": "Icon",
+    "r": [
+      364,
+      771,
+      24,
+      24
+    ],
+    "w": 0
+  },
+  {
+    "i": "label",
+    "ty": "Label",
+    "r": [
+      371,
+      808,
+      11,
+      11
+    ],
+    "w": 0,
+    "t": "我"
+  },
+  {
+    "i": "bg_view",
+    "ty": "View",
+    "r": [
+      0,
+      0,
+      430,
+      820
+    ],
+    "w": 0
+  },
+  {
+    "i": "content",
+    "ty": "ArticlePanel",
+    "r": [
+      0,
+      0,
+      430,
+      820
+    ],
+    "w": 0
+  },
+  {
+    "i": "header",
+    "ty": "View",
+    "r": [
+      0,
+      28,
+      430,
+      52
+    ],
+    "w": 0
+  },
+  {
+    "i": "article_back",
+    "ty": "Button",
+    "r": [
+      8,
+      32,
+      36,
+      44
+    ],
+    "w": 0
+  },
+  {
+    "i": "article_heading",
+    "ty": "Label",
+    "r": [
+      55,
+      44,
+      21,
+      20
+    ],
+    "w": 0,
+    "t": "全文预览"
+  },
+  {
+    "i": "article_close",
+    "ty": "Button",
+    "r": [
+      362,
+      33,
+      56,
+      42
+    ],
+    "w": 0,
+    "t": "关闭"
+  },
+  {
+    "i": "preview",
+    "ty": "View",
+    "r": [
+      0,
+      80,
+      430,
+      695
+    ],
+    "w": 0
+  },
+  {
+    "i": "preview_title",
+    "ty": "Label",
+    "r": [
+      27,
+      115,
+      15,
+      18
+    ],
+    "w": 0,
+    "t": "Headless full Markdown"
+  },
+  {
+    "i": "article_reader",
+    "ty": "PortalList",
+    "r": [
+      20,
+      206,
+      390,
+      381
+    ],
+    "w": 0
+  },
+  {
+    "i": "61",
+    "ty": "View",
+    "r": [
+      20,
+      417,
+      390,
+      114
+    ],
+    "w": 0
+  },
+  {
+    "i": "body",
+    "ty": "Html",
+    "r": [
+      20,
+      417,
+      390,
+      102
+    ],
+    "w": 0,
+    "t": "<table><thead><tr><th>First Header</th><th>Second Header</th></tr></thead><tbody>\n<tr><td>Content Cell</td><td>Content Cell</td></tr>\n<tr><td>Content Cell</td><td>Content Cell</td></tr>\n</tbody></table>\n"
+  },
+  {
+    "i": "60",
+    "ty": "View",
+    "r": [
+      20,
+      302,
+      390,
+      114
+    ],
+    "w": 0
+  },
+  {
+    "i": "body",
+    "ty": "Html",
+    "r": [
+      20,
+      302,
+      390,
+      102
+    ],
+    "w": 0,
+    "t": "<table><thead><tr><th>First Header</th><th>Second Header</th></tr></thead><tbody>\n<tr><td>Content Cell</td><td>Content Cell</td></tr>\n<tr><td>Content Cell</td><td>Content Cell</td></tr>\n</tbody></table>\n"
+  },
+  {
+    "i": "62",
+    "ty": "View",
+    "r": [
+      20,
+      531,
+      390,
+      56
+    ],
+    "w": 0
+  },
+  {
+    "i": "body",
+    "ty": "Html",
+    "r": [
+      20,
+      531,
+      390,
+      56
+    ],
+    "w": 0,
+    "t": "<table><thead><tr><th>Function name</th><th>Description</th></tr></thead><tbody>\n<tr><td><code>help()</code></td><td>Display the help window.</td></tr>\n<tr><td><code>destroy()</code></td><td><strong>Destroy your computer!</strong></td></tr>\n</tbody></table>\n"
+  },
+  {
+    "i": "5f",
+    "ty": "View",
+    "r": [
+      20,
+      206,
+      390,
+      97
+    ],
+    "w": 0
+  },
+  {
+    "i": "body",
+    "ty": "Html",
+    "r": [
+      20,
+      206,
+      390,
+      85
+    ],
+    "w": 0,
+    "t": "<table><thead><tr><th>项目</th><th><rcell>1:e4bbb7e6a0bc</rcell></th><th><rcell>0.5:e695b0e9878f</rcell></th></tr></thead><tbody>\n<tr><td>计算机</td><td><rcell>1:2431363030</rcell></td><td><rcell>0.5:35</rcell></td></tr>\n<tr><td>手机</td><td><rcell>1:243132</rcell></td><td><rcell>0.5:3132</rcell></td></tr>\n<tr><td>管线</td><td><rcell>1:2431</rcell></td><td><rcell>0.5:323334</rcell></td></tr>\n</tbody></table>\n"
+  },
+  {
+    "i": "49",
+    "ty": "ArticleCell",
+    "r": [
+      336,
+      226,
+      19,
+      26
+    ],
+    "w": 0
+  },
+  {
+    "i": "61",
+    "ty": "ArticleCell",
+    "r": [
+      328,
+      260,
+      34,
+      26
+    ],
+    "w": 0
+  },
+  {
+    "i": "59",
+    "ty": "ArticleCell",
+    "r": [
+      255,
+      260,
+      19,
+      26
+    ],
+    "w": 0
+  },
+  {
+    "i": "31",
+    "ty": "ArticleCell",
+    "r": [
+      339,
+      206,
+      11,
+      12
+    ],
+    "w": 0
+  },
+  {
+    "i": "29",
+    "ty": "ArticleCell",
+    "r": [
+      222,
+      206,
+      52,
+      12
+    ],
+    "w": 0
+  },
+  {
+    "i": "41",
+    "ty": "ArticleCell",
+    "r": [
+      244,
+      226,
+      30,
+      26
+    ],
+    "w": 0
+  },
+  {
+    "i": "preview_stats",
+    "ty": "Label",
+    "r": [
+      26,
+      611,
+      8,
+      12
+    ],
+    "w": 0,
+    "t": "5888 · 17 分钟阅读 · 10 张图片"
+  },
+  {
+    "i": "css_preview_open",
+    "ty": "Button",
+    "r": [
+      20,
+      646,
+      390,
+      42
+    ],
+    "w": 0,
+    "t": "HTML/CSS 排版预览（实验）"
+  },
+  {
+    "i": "preview_check",
+    "ty": "Button",
+    "r": [
+      20,
+      706,
+      390,
+      46
+    ],
+    "w": 0,
+    "t": "发布前检查"
+  },
+  {
+    "i": "-",
+    "ty": "View",
+    "r": [
+      0,
+      42,
+      430,
+      778
+    ],
+    "w": 0
+  },
+  {
+    "i": "app_tooltip",
+    "ty": "CalloutTooltip",
+    "r": [
+      0,
+      32,
+      430,
+      788
+    ],
+    "w": 0
+  }
+]

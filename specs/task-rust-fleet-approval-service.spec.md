@@ -46,16 +46,16 @@ per-agent file routing, real two-agent operation, client decisions or live soaki
 
 ## Allowed changes
 
-- native/hagency-execution/src/approval.rs
-- native/hagency/src/bootstrap.rs
-- native/hagency/src/bootstrap/approval.rs
-- native/hagency/src/bootstrap/driver.rs
-- native/hagency-matrix/src/approval_intake.rs
-- native/hagency-matrix/src/lib.rs
-- native/hagency-matrix/src/provisioning/factory.rs
-- native/hagency-matrix/tests/approval_intake/mod.rs
-- native/hagency/tests/bootstrap/approval.rs
-- native/hagency/tests/inline_factory/**
+- crates/hagency-execution/src/approval.rs
+- crates/hagency/src/bootstrap.rs
+- crates/hagency/src/bootstrap/approval.rs
+- crates/hagency/src/bootstrap/driver.rs
+- crates/hagency-matrix/src/approval_intake.rs
+- crates/hagency-matrix/src/lib.rs
+- crates/hagency-matrix/src/provisioning/factory.rs
+- crates/hagency-matrix/tests/approval_intake/mod.rs
+- crates/hagency/tests/bootstrap/approval.rs
+- crates/hagency/tests/inline_factory/**
 - knowledge/decisions/adr-064-native-matrix-approval-intake.md
 - knowledge/decisions/adr-112-native-private-approval-delivery.md
 - knowledge/decisions/adr-147-provisioning-verdict-effect-route.md

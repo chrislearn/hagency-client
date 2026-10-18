@@ -39,8 +39,8 @@ workflow — is recorded in this spec and in ADR-134's note.
 ## Boundaries
 
 ### Allowed Changes
-- native/scripts/ (the two-version build and install harness)
-- native/hagency/tests/
+- tools/native/ (the two-version build and install harness)
+- crates/hagency/tests/
 - install/install-native.sh and current per-user deploy templates
 - specs/task-rust-native-upgrade.spec.md
 - knowledge/decisions/adr-134-native-versioned-release.md
@@ -48,7 +48,7 @@ workflow — is recorded in this spec and in ADR-134's note.
 
 ### Forbidden
 - Live services, credentials, deployed state, the production host.
-- .github/workflows/**; native/hagency-store/src/migrations/**; deployed service state.
+- .github/workflows/**; crates/hagency-store/src/migrations/**; deployed service state.
 
 ## Acceptance Criteria
 

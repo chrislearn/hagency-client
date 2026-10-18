@@ -28,35 +28,35 @@ current dispatch without leaking media secrets or expanding frozen input.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-core/src/attachments.rs
-- native/hagency-core/src/lib.rs
-- native/hagency-store/src/lib.rs
-- native/hagency-store/tests/approvals.rs
-- native/hagency-store/tests/replies.rs
-- native/hagency-store/tests/conversations.rs
-- native/hagency-store/tests/usage.rs
-- native/hagency-store/tests/owned_completion.rs
-- native/hagency-store/tests/verified_ingress/notice_custody.rs
-- native/hagency-store/tests/workflows/mod.rs
-- native/hagency-store/tests/workflows/custody.rs
-- native/hagency-store/tests/common/mod.rs
-- native/hagency-store/src/domain.rs
-- native/hagency-store/src/domain/attachments.rs
-- native/hagency-store/src/domain/verified_ingress.rs
-- native/hagency-store/src/domain/messages.rs
-- native/hagency-store/src/domain/execution.rs
-- native/hagency-store/src/domain/task_intents.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-store/src/migrations/018-attachment-visibility.sql
-- native/hagency-store/tests/verified_ingress.rs
-- native/hagency-store/tests/verified_ingress/attachments.rs
-- native/hagency-store/tests/schema_fixtures.rs
+- crates/hagency-core/src/attachments.rs
+- crates/hagency-core/src/lib.rs
+- crates/hagency-store/src/lib.rs
+- crates/hagency-store/tests/approvals.rs
+- crates/hagency-store/tests/replies.rs
+- crates/hagency-store/tests/conversations.rs
+- crates/hagency-store/tests/usage.rs
+- crates/hagency-store/tests/owned_completion.rs
+- crates/hagency-store/tests/verified_ingress/notice_custody.rs
+- crates/hagency-store/tests/workflows/mod.rs
+- crates/hagency-store/tests/workflows/custody.rs
+- crates/hagency-store/tests/common/mod.rs
+- crates/hagency-store/src/domain.rs
+- crates/hagency-store/src/domain/attachments.rs
+- crates/hagency-store/src/domain/verified_ingress.rs
+- crates/hagency-store/src/domain/messages.rs
+- crates/hagency-store/src/domain/execution.rs
+- crates/hagency-store/src/domain/task_intents.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-store/src/migrations/018-attachment-visibility.sql
+- crates/hagency-store/tests/verified_ingress.rs
+- crates/hagency-store/tests/verified_ingress/attachments.rs
+- crates/hagency-store/tests/schema_fixtures.rs
 - knowledge/decisions/adr-073-native-attachment-visibility.md
 - specs/task-rust-attachment-visibility.spec.md
 - docs/plan.md
 - docs/progress.md
 - docs/agent-knowledge.md
-- native/README.md
+- docs/native-engine.md
 
 ## Acceptance Criteria
 

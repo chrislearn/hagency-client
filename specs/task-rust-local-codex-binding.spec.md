@@ -33,21 +33,21 @@ without importing it into a fresh managed namespace or asserting readiness.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-execution/Cargo.toml
+- crates/hagency-execution/Cargo.toml
 - Cargo.lock
-- native/hagency-execution/src/local_codex.rs
-- native/hagency-execution/src/host.rs
-- native/hagency-execution/src/operation.rs
-- native/hagency-execution/src/lib.rs
-- native/hagency-execution/tests/**
-- native/hagency-runtime/src/bin/hagency-runtime-probe.rs
-- native/hagency-store/src/domain/owned_dispatch.rs
-- native/hagency-store/src/domain/execution.rs
-- native/hagency-store/tests/owned_claim.rs
-- native/hagency/src/bootstrap/config.rs
-- native/hagency/tests/bootstrap.rs
-- native/hagency/tests/bootstrap/**
-- native/hagency/tests/fixtures/owned_mcp_peer.rs
+- crates/hagency-execution/src/local_codex.rs
+- crates/hagency-execution/src/host.rs
+- crates/hagency-execution/src/operation.rs
+- crates/hagency-execution/src/lib.rs
+- crates/hagency-execution/tests/**
+- crates/hagency-runtime/src/bin/hagency-runtime-probe.rs
+- crates/hagency-store/src/domain/owned_dispatch.rs
+- crates/hagency-store/src/domain/execution.rs
+- crates/hagency-store/tests/owned_claim.rs
+- crates/hagency/src/bootstrap/config.rs
+- crates/hagency/tests/bootstrap.rs
+- crates/hagency/tests/bootstrap/**
+- crates/hagency/tests/fixtures/owned_mcp_peer.rs
 - knowledge/decisions/adr-159-native-local-codex-binding.md
 - specs/task-rust-local-codex-binding.spec.md
 - docs/design/native-execution-parity.md

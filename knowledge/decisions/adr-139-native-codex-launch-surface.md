@@ -15,10 +15,10 @@ Codex launch and the retained one that no decision named:
 
 1. **argv shape.** The native host launches `codex app-server` with exactly
    one argument — the `Launch` literal at
-   `native/hagency-execution/src/host.rs:289-295`, whose argv is
+   `crates/hagency-execution/src/host.rs:289-295`, whose argv is
    `arguments: vec!["app-server".into()]` at `:291` — with sandbox and
    approval policy carried in the typed `initialize` request JSON
-   (`native/hagency-runtime/src/codex/session.rs:186-187`: `"sandbox":
+   (`crates/hagency-runtime/src/codex/session.rs:186-187`: `"sandbox":
    self.mode()`, `"approvalPolicy": "on-request"`; validated back at
    `session/state.rs:75,86`). The retained router launches
    `app-server --stdio` (`router/src/runner.ts:201-202`), **also** passes
@@ -28,7 +28,7 @@ Codex launch and the retained one that no decision named:
    retained CLI additionally puts policy on argv (`bin/hagency-up:2020`:
    `--sandbox workspace-write --ask-for-approval on-request -C <path>`).
 2. **Activation.** The native development driver is opt-in through
-   `serve --development-driver` (`native/hagency/src/main.rs:109`) and runs
+   `serve --development-driver` (`crates/hagency/src/main.rs:109`) and runs
    one supported attempt from a fixed private profile (ADR-096). The
    retained runner is always-on for every managed agent.
 
@@ -36,7 +36,7 @@ Checked against the installed Codex CLI (0.154.0 on this host,
 `codex app-server --help`): stdio is the default transport (`--listen` default
 `stdio://`), and `--stdio` is documented as an explicit synonym
 ("Use stdio as the transport (equivalent to `--listen stdio://`)"). The
-checked-in probe excerpt `native/hagency-execution/tests/fixtures/codex-app-server-help.txt`
+checked-in probe excerpt `crates/hagency-execution/tests/fixtures/codex-app-server-help.txt`
 was captured from **codex-cli 0.154.0 on 2026-09-13**, and the selector pins
 that version by strict equality. The pinned protocol spec is Codex 0.153.4
 (`specs/task-rust-codex-protocol.spec.md`) — that pin governs wire envelopes;
@@ -71,7 +71,7 @@ Both divergences are deliberate, not accidents.
    configuration belongs in the request, not argv. The retained router's
    `--stdio` flag is redundant for current Codex and harmless; neither
    product's argv changes. The stdio equivalence is pinned by a **recorded
-   fixture**, `native/fixtures/codex-cli/app-server-help-0.153.4.excerpt.txt`
+   fixture**, `tests/fixtures/codex-cli/app-server-help-0.153.4.excerpt.txt`
    (a captured `--help` excerpt whose header records the capture version and
    the assertions: stdio is the `--listen` default, `--stdio` is an exact
    synonym) — **not** by a live binary. The excerpt was captured from 0.154.0

@@ -31,12 +31,12 @@ storage. Rollover is not eviction, crypto reset, or restored route authority.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-matrix/src/sdk.rs
-- native/hagency-matrix/src/sdk/sync_history.rs
-- native/hagency-matrix/src/event_batch.rs
-- native/hagency-matrix/src/event_batch/disposition.rs
-- native/hagency-matrix/tests/intake/**
-- native/hagency/examples/matrix_custody.rs (operator-only read-only evidence; no SDK/network writes)
+- crates/hagency-matrix/src/sdk.rs
+- crates/hagency-matrix/src/sdk/sync_history.rs
+- crates/hagency-matrix/src/event_batch.rs
+- crates/hagency-matrix/src/event_batch/disposition.rs
+- crates/hagency-matrix/tests/intake/**
+- crates/hagency/examples/matrix_custody.rs (operator-only read-only evidence; no SDK/network writes)
 - specs/task-rust-matrix-event-rejections.spec.md
 - docs/progress.md
 

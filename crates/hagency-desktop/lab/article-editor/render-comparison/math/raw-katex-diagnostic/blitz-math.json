@@ -1,0 +1,195 @@
+{
+  "card_rect_css": null,
+  "denied_resources": [],
+  "elements": {
+    "[data-probe]": [],
+    "article": [
+      {
+        "height": 665.25,
+        "width": 440.0,
+        "x": 0.0,
+        "y": 0.0
+      }
+    ],
+    "article > ol": [],
+    "article > p": [
+      {
+        "height": 24.5,
+        "width": 392.0,
+        "x": 24.0,
+        "y": 97.15625
+      },
+      {
+        "height": 59.0,
+        "width": 392.0,
+        "x": 24.0,
+        "y": 137.65625
+      },
+      {
+        "height": 24.5,
+        "width": 392.0,
+        "x": 24.0,
+        "y": 212.65625
+      },
+      {
+        "height": 97.5,
+        "width": 392.0,
+        "x": 24.0,
+        "y": 253.15625
+      },
+      {
+        "height": 29.59375,
+        "width": 392.0,
+        "x": 24.0,
+        "y": 366.65625
+      },
+      {
+        "height": 63.0,
+        "width": 392.0,
+        "x": 24.0,
+        "y": 412.25
+      },
+      {
+        "height": 71.5,
+        "width": 392.0,
+        "x": 24.0,
+        "y": 491.25
+      },
+      {
+        "height": 46.5,
+        "width": 392.0,
+        "x": 24.0,
+        "y": 578.75
+      }
+    ],
+    "article > ul": [],
+    "aside": [],
+    "blockquote": [],
+    "body > footer": [],
+    "button": [],
+    "details": [],
+    "form": [],
+    "h1": [],
+    "img": [],
+    "input": [],
+    "nav": [],
+    "pre": [],
+    "section": [],
+    "table": [],
+    "textarea": []
+  },
+  "engine": "Blitz raw HTML/CSS (no JS)",
+  "full_height_px": 1400,
+  "height_css": 700,
+  "height_px": 1400,
+  "image_decode_probes": [],
+  "local_patch": "wechat-css-1+table-2+text-shadow-3",
+  "product_admission": "unsupported active/document element: svg",
+  "resource_requests": [
+    {
+      "bytes": 63632,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_AMS-Regular.ttf"
+    },
+    {
+      "bytes": 12368,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_Caligraphic-Bold.ttf"
+    },
+    {
+      "bytes": 12344,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_Caligraphic-Regular.ttf"
+    },
+    {
+      "bytes": 19584,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_Fraktur-Bold.ttf"
+    },
+    {
+      "bytes": 19572,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_Fraktur-Regular.ttf"
+    },
+    {
+      "bytes": 51336,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_Main-Bold.ttf"
+    },
+    {
+      "bytes": 32968,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_Main-BoldItalic.ttf"
+    },
+    {
+      "bytes": 33580,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_Main-Italic.ttf"
+    },
+    {
+      "bytes": 53580,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_Main-Regular.ttf"
+    },
+    {
+      "bytes": 31196,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_Math-BoldItalic.ttf"
+    },
+    {
+      "bytes": 31308,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_Math-Italic.ttf"
+    },
+    {
+      "bytes": 24504,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_SansSerif-Bold.ttf"
+    },
+    {
+      "bytes": 22364,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_SansSerif-Italic.ttf"
+    },
+    {
+      "bytes": 19436,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_SansSerif-Regular.ttf"
+    },
+    {
+      "bytes": 16648,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_Script-Regular.ttf"
+    },
+    {
+      "bytes": 12228,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_Size1-Regular.ttf"
+    },
+    {
+      "bytes": 11508,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_Size2-Regular.ttf"
+    },
+    {
+      "bytes": 7588,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_Size3-Regular.ttf"
+    },
+    {
+      "bytes": 10364,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_Size4-Regular.ttf"
+    },
+    {
+      "bytes": 27556,
+      "served": true,
+      "url": "https://comparison.invalid/fonts/KaTeX_Typewriter-Regular.ttf"
+    }
+  ],
+  "revision": "e99fbdbd1d03b9f0aa1622c3f810d95daac92042",
+  "root_content_height_css": 665.0,
+  "scale": 2,
+  "width_css": 440,
+  "width_px": 880
+}

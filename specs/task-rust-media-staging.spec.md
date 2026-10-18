@@ -33,9 +33,9 @@ without turning storage partitions or hashes into execution or Matrix authority.
 ### Allowed Changes
 - ./Cargo.toml
 - ./Cargo.lock
-- native/hagency-media-store/**
-- native/hagency-store/src/private.rs
-- native/hagency-store/src/private/windows.rs
+- crates/hagency-media-store/**
+- crates/hagency-store/src/private.rs
+- crates/hagency-store/src/private/windows.rs
 - specs/task-rust-media-staging.spec.md
 - knowledge/decisions/adr-066-native-media-staging.md
 - docs/agent-knowledge.md

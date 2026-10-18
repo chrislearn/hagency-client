@@ -38,7 +38,7 @@ cargo test -p hagency-store native_outbound_custody --locked --offline
 cargo test -p hagency-store -p hagency-core --locked --offline
 cargo clippy -p hagency-store -p hagency-core --all-targets --locked --offline -- -D warnings
 cargo fmt --all -- --check
-node native/scripts/check-rust-spec-bindings.mjs
+node tools/native/check-rust-spec-bindings.mjs
 ```
 
 Bound selectors cover exact intake, processing, rotation, publication, storage and

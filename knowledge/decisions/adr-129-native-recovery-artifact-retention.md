@@ -31,13 +31,13 @@ closes remain, because both are filesystem surfaces rather than SQLite rows:
 
 Both gaps are on the retained side. Native already bounds the equivalent surfaces
 structurally (`hagency-media-store/src/types.rs:10-13`; `lib.rs:253-258`) and logs
-to stderr rather than to a file (`native/hagency/src/main.rs:138-142`) — so this
+to stderr rather than to a file (`crates/hagency/src/main.rs:138-142`) — so this
 ADR's job is to (a) name native's existing posture explicitly rather than leave it
 implicit and (b) close the two retained gaps without inventing a second, unbounded
 native surface to match them.
 
 **Citation discipline.** An earlier draft of this slice was written against a
-different checkout and cited the stderr writer as `native/hagency/src/main.rs:99-104`,
+different checkout and cited the stderr writer as `crates/hagency/src/main.rs:99-104`,
 attributing `private::directory` to the platform crate. On **this** tree the writer
 is `main.rs:138-142` (`.with_writer(std::io::stderr)` at `:142`) and
 `private::directory` is `hagency-store/src/private.rs:16`. This ADR cites this tree
@@ -48,11 +48,11 @@ repository.
 
 ### 1. Native logs to stderr; rotation belongs to the service manager
 
-`native/hagency/src/main.rs:138-142` installs `tracing_subscriber::fmt()` with
+`crates/hagency/src/main.rs:138-142` installs `tracing_subscriber::fmt()` with
 `.with_writer(std::io::stderr)` (`:142`); the MCP helper additionally writes its
 refusal to stderr and exits with a class code (`main.rs:134`,
 `std::process::exit(error.exit_code())`, and the dedicated helper's deadline exit
-`std::process::exit(74)` at `native/hagency/src/mcp/stdio.rs:43`). Native writes
+`std::process::exit(74)` at `crates/hagency/src/mcp/stdio.rs:43`). Native writes
 **no** log file anywhere. The posture is therefore **stderr**, and the retention
 question is the service manager's:
 
@@ -119,13 +119,13 @@ here unchanged.
 ADR.** The native side needs no new code: a private state directory is established
 through `private::directory` (`hagency-store/src/private.rs:16`), the identity of a
 retained directory is proven by `directory_identity`/`same_directory`
-(`native/hagency-platform/src/directory_identity.rs:14`, `:66`) rather than by a
+(`crates/hagency-platform/src/directory_identity.rs:14`, `:66`) rather than by a
 path string, a created file is sealed per-OS through
 `private::seal_created_file_handle` (`private.rs:117`, DACL on Windows and mode on
 Unix), and the guardian runs non-dumpable so no core file is produced
-(`native/hagency-platform/src/cgroup.rs:311-316`). The media journal's bound is the
+(`crates/hagency-platform/src/cgroup.rs:311-316`). The media journal's bound is the
 store's own (`types.rs:10-13`, `lib.rs:253-258`, service wiring
-`native/hagency/src/file_service/recovery.rs:51`). This ADR names those owners and
+`crates/hagency/src/file_service/recovery.rs:51`). This ADR names those owners and
 adds none.
 
 **The one open acceptance item.** The macOS log retention is unimplemented: no

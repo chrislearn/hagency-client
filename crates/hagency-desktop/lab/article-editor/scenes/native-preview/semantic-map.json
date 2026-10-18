@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "adapter": "robrix-native-article-v1",
+  "reference_sha256": "4bc054cc7dec5e18d17a7831a4f49c848f22733a04ec189e342725a60b40c911",
+  "contract_sha256": "5bc3379593a21f7f8d6a9f68ebf096d0e97af4362a8a5e866cc0e34d3da2836f",
+  "elements": [
+    {
+      "id": "article_html",
+      "role": "rich_text",
+      "native_widget": "Html",
+      "reference_atlas_bounds": [
+        43,
+        735,
+        254,
+        320
+      ],
+      "reference_logical_bounds": [
+        30.4,
+        127.03,
+        350.72,
+        441.85
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Ruma Markdown -> sanitized HTML; no images/links/scripts or browser",
+      "source": "src/article_app/ui.rs"
+    },
+    {
+      "id": "article_publish",
+      "role": "button",
+      "native_widget": "Button",
+      "reference_atlas_bounds": [
+        43,
+        1125,
+        252,
+        51
+      ],
+      "reference_logical_bounds": [
+        30.4,
+        665.54,
+        347.96,
+        70.42
+      ],
+      "measurement": "manual reference inspection; approximate region, not glyph metrics",
+      "behavior": "Choose a joined chat; no send until final host confirmation",
+      "source": "src/article_app/ui.rs"
+    }
+  ],
+  "raster_widgets": false,
+  "visual_acceptance": false
+}

@@ -1,0 +1,601 @@
+{
+  "schema_version": 1,
+  "id": "rinx-article-editor-v2-desktop",
+  "kind": "single-atlas-multi-scene-intake",
+  "created_at": "2026-09-23T05:05:54.975094+00:00",
+  "input_fingerprint": "265b980488f559f358b2c4162161068081f8ac7b8786005a9cf1c172c408350d",
+  "inputs": {
+    "manifest_sha256": "6f533aa6d60520c4ea0eec03b3eb367c298c476c89eec4d2bb0ddbfdc1c631c2",
+    "atlas_sha256": "f111d4527f1f9f106bed2e90443f1c7b068582cf1f3b3bf71c5ef5ca3649d65a",
+    "prompt_sha256": "89d2e7fe0eb0c7c5b7b8464fa00a3c049c3623dd3a5a1c8f88071638f2a5f93e"
+  },
+  "originals": {
+    "atlas": "original/atlas.png",
+    "prompt": "original/prompt.txt",
+    "manifest": "original/manifest.json"
+  },
+  "generation": {
+    "provider": "OpenAI Images API",
+    "model": "gpt-image-2",
+    "requested_size": [
+      2560,
+      1600
+    ],
+    "quality": "high",
+    "actual_size": [
+      2560,
+      1600
+    ],
+    "requested_size_matches_actual": true,
+    "atlas_count": 1,
+    "performed_by_intake": false,
+    "provenance": "Provider/model/requested settings are caller declarations; dimensions and hashes are measured from the supplied bytes"
+  },
+  "artboard": [
+    1280,
+    800
+  ],
+  "pixel_ratio": 2,
+  "source_pixel_matrix": {
+    "format": "PNG",
+    "mode": "RGB",
+    "size": [
+      2560,
+      1600
+    ],
+    "exif_orientation": 1,
+    "orientation_applied": false
+  },
+  "intake_tool_sha256": "176cd64e554ed95536c0cc00f42ec5344addf116624b8dd253294c2477027b08",
+  "scenes": [
+    {
+      "id": "split-editor",
+      "design_id": "article-v2-split-editor",
+      "surface": "app",
+      "declared_scene": {
+        "id": "split-editor",
+        "design_id": "article-v2-split-editor",
+        "directory": "scenes-v2/desktop/split-editor",
+        "crop": [
+          17,
+          27,
+          1249,
+          737
+        ],
+        "surface": "app",
+        "title": "split-editor"
+      },
+      "crop": [
+        17,
+        27,
+        1249,
+        737
+      ],
+      "crop_image": "scenes/article-v2-split-editor/crop.png",
+      "reference_image": "scenes/article-v2-split-editor/reference.png",
+      "provenance": "scenes/article-v2-split-editor/provenance.json",
+      "crop_sha256": "a679b304b182556425c197ad49059a9c03ec3ad9fc1e5cecd5b681648db750c6",
+      "reference_sha256": "c162bf4af5971c0231ce5a1c4438d73c842f69b88e60d1340875a05e39590d64",
+      "source_atlas_sha256": "f111d4527f1f9f106bed2e90443f1c7b068582cf1f3b3bf71c5ef5ca3649d65a",
+      "source_prompt_sha256": "89d2e7fe0eb0c7c5b7b8464fa00a3c049c3623dd3a5a1c8f88071638f2a5f93e",
+      "crop_resampled": false,
+      "crop_mode": "RGB",
+      "transform": {
+        "coordinate_convention": "continuous top-left pixel-boundary coordinates; affine arrays are [a,b,c,d,e,f]",
+        "method": "uniform affine contain",
+        "resampler": "Pillow BICUBIC",
+        "source_crop_pixels": [
+          17,
+          27,
+          1249,
+          737
+        ],
+        "source_crop_size": [
+          1249,
+          737
+        ],
+        "artboard": [
+          1280,
+          800
+        ],
+        "pixel_ratio": 2,
+        "reference_size": [
+          2560,
+          1600
+        ],
+        "uniform_scale": 2.0496397117694154,
+        "offset_pixels": [
+          0.0,
+          44.707766212970455
+        ],
+        "content_bounds_pixels": [
+          0.0,
+          44.707766212970455,
+          2560.0,
+          1510.584467574059
+        ],
+        "crop_to_reference_pixels": [
+          2.0496397117694154,
+          0,
+          0.0,
+          0,
+          2.0496397117694154,
+          44.707766212970455
+        ],
+        "reference_pixels_to_crop": [
+          0.487890625,
+          0,
+          -0.0,
+          0,
+          0.487890625,
+          -21.81250000000004
+        ],
+        "atlas_to_reference_pixels": [
+          2.0496397117694154,
+          0,
+          -34.84387510008006,
+          0,
+          2.0496397117694154,
+          -10.632506004803759
+        ],
+        "reference_pixels_to_atlas": [
+          0.487890625,
+          0,
+          17.0,
+          0,
+          0.487890625,
+          5.187499999999961
+        ],
+        "atlas_to_logical": [
+          1.0248198558847077,
+          0,
+          -17.42193755004003,
+          0,
+          1.0248198558847077,
+          -5.316253002401879
+        ],
+        "logical_to_atlas": [
+          0.97578125,
+          0,
+          17.0,
+          0,
+          0.97578125,
+          5.187499999999961
+        ],
+        "matte_rgb": [
+          240,
+          245,
+          242
+        ],
+        "stretched": false,
+        "reference_resampled": true
+      },
+      "source_review": {
+        "status": "not_reviewed",
+        "reviewer": null
+      },
+      "native_mapping": {
+        "status": "not_started",
+        "automatic": false
+      }
+    },
+    {
+      "id": "theme-gallery",
+      "design_id": "article-v2-theme-gallery",
+      "surface": "app",
+      "declared_scene": {
+        "id": "theme-gallery",
+        "design_id": "article-v2-theme-gallery",
+        "directory": "scenes-v2/desktop/theme-gallery",
+        "crop": [
+          1289,
+          27,
+          1244,
+          737
+        ],
+        "surface": "app",
+        "title": "theme-gallery"
+      },
+      "crop": [
+        1289,
+        27,
+        1244,
+        737
+      ],
+      "crop_image": "scenes/article-v2-theme-gallery/crop.png",
+      "reference_image": "scenes/article-v2-theme-gallery/reference.png",
+      "provenance": "scenes/article-v2-theme-gallery/provenance.json",
+      "crop_sha256": "2d4e09aacb29fc0108b48d1512e49d719ee19340720b442d015cc46b1c560ce5",
+      "reference_sha256": "03400aeea3fe60bc449c0db2a8fa5739224650e97f8eab08f96428e6f81145fa",
+      "source_atlas_sha256": "f111d4527f1f9f106bed2e90443f1c7b068582cf1f3b3bf71c5ef5ca3649d65a",
+      "source_prompt_sha256": "89d2e7fe0eb0c7c5b7b8464fa00a3c049c3623dd3a5a1c8f88071638f2a5f93e",
+      "crop_resampled": false,
+      "crop_mode": "RGB",
+      "transform": {
+        "coordinate_convention": "continuous top-left pixel-boundary coordinates; affine arrays are [a,b,c,d,e,f]",
+        "method": "uniform affine contain",
+        "resampler": "Pillow BICUBIC",
+        "source_crop_pixels": [
+          1289,
+          27,
+          1244,
+          737
+        ],
+        "source_crop_size": [
+          1244,
+          737
+        ],
+        "artboard": [
+          1280,
+          800
+        ],
+        "pixel_ratio": 2,
+        "reference_size": [
+          2560,
+          1600
+        ],
+        "uniform_scale": 2.057877813504823,
+        "offset_pixels": [
+          0.0,
+          41.67202572347276
+        ],
+        "content_bounds_pixels": [
+          0.0,
+          41.67202572347276,
+          2560.0,
+          1516.6559485530545
+        ],
+        "crop_to_reference_pixels": [
+          2.057877813504823,
+          0,
+          0.0,
+          0,
+          2.057877813504823,
+          41.67202572347276
+        ],
+        "reference_pixels_to_crop": [
+          0.4859375,
+          0,
+          -0.0,
+          0,
+          0.4859375,
+          -20.250000000000043
+        ],
+        "atlas_to_reference_pixels": [
+          2.057877813504823,
+          0,
+          -2652.604501607717,
+          0,
+          2.057877813504823,
+          -13.890675241157467
+        ],
+        "reference_pixels_to_atlas": [
+          0.4859375,
+          0,
+          1289.0,
+          0,
+          0.4859375,
+          6.749999999999957
+        ],
+        "atlas_to_logical": [
+          1.0289389067524115,
+          0,
+          -1326.3022508038584,
+          0,
+          1.0289389067524115,
+          -6.945337620578734
+        ],
+        "logical_to_atlas": [
+          0.971875,
+          0,
+          1289.0,
+          0,
+          0.971875,
+          6.749999999999957
+        ],
+        "matte_rgb": [
+          240,
+          245,
+          242
+        ],
+        "stretched": false,
+        "reference_resampled": true
+      },
+      "source_review": {
+        "status": "not_reviewed",
+        "reviewer": null
+      },
+      "native_mapping": {
+        "status": "not_started",
+        "automatic": false
+      }
+    },
+    {
+      "id": "paste-images",
+      "design_id": "article-v2-paste-images",
+      "surface": "app",
+      "declared_scene": {
+        "id": "paste-images",
+        "design_id": "article-v2-paste-images",
+        "directory": "scenes-v2/desktop/paste-images",
+        "crop": [
+          20,
+          804,
+          1243,
+          760
+        ],
+        "surface": "app",
+        "title": "paste-images"
+      },
+      "crop": [
+        20,
+        804,
+        1243,
+        760
+      ],
+      "crop_image": "scenes/article-v2-paste-images/crop.png",
+      "reference_image": "scenes/article-v2-paste-images/reference.png",
+      "provenance": "scenes/article-v2-paste-images/provenance.json",
+      "crop_sha256": "114291706e7641ae501f3d1e76474a2646f552bca36ccd930bac64cc496b6a21",
+      "reference_sha256": "6dfde808deb890da1f45e59a7d27cb856501a4fdd978bdbd1e9552ea44b4d799",
+      "source_atlas_sha256": "f111d4527f1f9f106bed2e90443f1c7b068582cf1f3b3bf71c5ef5ca3649d65a",
+      "source_prompt_sha256": "89d2e7fe0eb0c7c5b7b8464fa00a3c049c3623dd3a5a1c8f88071638f2a5f93e",
+      "crop_resampled": false,
+      "crop_mode": "RGB",
+      "transform": {
+        "coordinate_convention": "continuous top-left pixel-boundary coordinates; affine arrays are [a,b,c,d,e,f]",
+        "method": "uniform affine contain",
+        "resampler": "Pillow BICUBIC",
+        "source_crop_pixels": [
+          20,
+          804,
+          1243,
+          760
+        ],
+        "source_crop_size": [
+          1243,
+          760
+        ],
+        "artboard": [
+          1280,
+          800
+        ],
+        "pixel_ratio": 2,
+        "reference_size": [
+          2560,
+          1600
+        ],
+        "uniform_scale": 2.0595333869670154,
+        "offset_pixels": [
+          0.0,
+          17.377312952534112
+        ],
+        "content_bounds_pixels": [
+          0.0,
+          17.377312952534112,
+          2560.0,
+          1565.2453740949318
+        ],
+        "crop_to_reference_pixels": [
+          2.0595333869670154,
+          0,
+          0.0,
+          0,
+          2.0595333869670154,
+          17.377312952534112
+        ],
+        "reference_pixels_to_crop": [
+          0.485546875,
+          0,
+          -0.0,
+          0,
+          0.485546875,
+          -8.437499999999961
+        ],
+        "atlas_to_reference_pixels": [
+          2.0595333869670154,
+          0,
+          -41.190667739340306,
+          0,
+          2.0595333869670154,
+          -1638.4875301689463
+        ],
+        "reference_pixels_to_atlas": [
+          0.485546875,
+          0,
+          20.0,
+          0,
+          0.485546875,
+          795.5625
+        ],
+        "atlas_to_logical": [
+          1.0297666934835077,
+          0,
+          -20.595333869670153,
+          0,
+          1.0297666934835077,
+          -819.2437650844731
+        ],
+        "logical_to_atlas": [
+          0.97109375,
+          0,
+          20.0,
+          0,
+          0.97109375,
+          795.5625
+        ],
+        "matte_rgb": [
+          240,
+          245,
+          242
+        ],
+        "stretched": false,
+        "reference_resampled": true
+      },
+      "source_review": {
+        "status": "not_reviewed",
+        "reviewer": null
+      },
+      "native_mapping": {
+        "status": "not_started",
+        "automatic": false
+      }
+    },
+    {
+      "id": "publish-sheet",
+      "design_id": "article-v2-publish-sheet",
+      "surface": "app",
+      "declared_scene": {
+        "id": "publish-sheet",
+        "design_id": "article-v2-publish-sheet",
+        "directory": "scenes-v2/desktop/publish-sheet",
+        "crop": [
+          1295,
+          805,
+          1237,
+          750
+        ],
+        "surface": "app",
+        "title": "publish-sheet"
+      },
+      "crop": [
+        1295,
+        805,
+        1237,
+        750
+      ],
+      "crop_image": "scenes/article-v2-publish-sheet/crop.png",
+      "reference_image": "scenes/article-v2-publish-sheet/reference.png",
+      "provenance": "scenes/article-v2-publish-sheet/provenance.json",
+      "crop_sha256": "20c6b3a5efe0c5303680bc45ad09d6a1576de87d53db5897a8f919164c8c9b80",
+      "reference_sha256": "67b1ade2a4a81e878a7a02fd8ebce3e25ec3dc1c818696ded7ce61d63c3561f3",
+      "source_atlas_sha256": "f111d4527f1f9f106bed2e90443f1c7b068582cf1f3b3bf71c5ef5ca3649d65a",
+      "source_prompt_sha256": "89d2e7fe0eb0c7c5b7b8464fa00a3c049c3623dd3a5a1c8f88071638f2a5f93e",
+      "crop_resampled": false,
+      "crop_mode": "RGB",
+      "transform": {
+        "coordinate_convention": "continuous top-left pixel-boundary coordinates; affine arrays are [a,b,c,d,e,f]",
+        "method": "uniform affine contain",
+        "resampler": "Pillow BICUBIC",
+        "source_crop_pixels": [
+          1295,
+          805,
+          1237,
+          750
+        ],
+        "source_crop_size": [
+          1237,
+          750
+        ],
+        "artboard": [
+          1280,
+          800
+        ],
+        "pixel_ratio": 2,
+        "reference_size": [
+          2560,
+          1600
+        ],
+        "uniform_scale": 2.0695230396119646,
+        "offset_pixels": [
+          0.0,
+          23.928860145513227
+        ],
+        "content_bounds_pixels": [
+          0.0,
+          23.928860145513227,
+          2560.0,
+          1552.1422797089735
+        ],
+        "crop_to_reference_pixels": [
+          2.0695230396119646,
+          0,
+          0.0,
+          0,
+          2.0695230396119646,
+          23.928860145513227
+        ],
+        "reference_pixels_to_crop": [
+          0.48320312499999996,
+          0,
+          -0.0,
+          0,
+          0.48320312499999996,
+          -11.562499999999945
+        ],
+        "atlas_to_reference_pixels": [
+          2.0695230396119646,
+          0,
+          -2680.032336297494,
+          0,
+          2.0695230396119646,
+          -1642.0371867421184
+        ],
+        "reference_pixels_to_atlas": [
+          0.48320312499999996,
+          0,
+          1295.0,
+          0,
+          0.48320312499999996,
+          793.4375
+        ],
+        "atlas_to_logical": [
+          1.0347615198059823,
+          0,
+          -1340.016168148747,
+          0,
+          1.0347615198059823,
+          -821.0185933710592
+        ],
+        "logical_to_atlas": [
+          0.9664062499999999,
+          0,
+          1295.0,
+          0,
+          0.9664062499999999,
+          793.4375
+        ],
+        "matte_rgb": [
+          240,
+          245,
+          242
+        ],
+        "stretched": false,
+        "reference_resampled": true
+      },
+      "source_review": {
+        "status": "not_reviewed",
+        "reviewer": null
+      },
+      "native_mapping": {
+        "status": "not_started",
+        "automatic": false
+      }
+    }
+  ],
+  "review_status": "not_reviewed",
+  "native_mapping_status": "not_started",
+  "limitations": [
+    "No image generation executed",
+    "No manual or automatic visual review claimed",
+    "No semantic mapping or native Makepad components generated",
+    "Crop coordinates address the stored atlas pixel matrix without EXIF rotation"
+  ],
+  "files": {
+    "original/atlas.png": "f111d4527f1f9f106bed2e90443f1c7b068582cf1f3b3bf71c5ef5ca3649d65a",
+    "original/manifest.json": "6f533aa6d60520c4ea0eec03b3eb367c298c476c89eec4d2bb0ddbfdc1c631c2",
+    "original/prompt.txt": "89d2e7fe0eb0c7c5b7b8464fa00a3c049c3623dd3a5a1c8f88071638f2a5f93e",
+    "scenes/article-v2-paste-images/crop.png": "114291706e7641ae501f3d1e76474a2646f552bca36ccd930bac64cc496b6a21",
+    "scenes/article-v2-paste-images/provenance.json": "b60b88e897f6ca8a250e53a064fce86005d14108d3715c73c4643b32bd1519d8",
+    "scenes/article-v2-paste-images/reference.png": "6dfde808deb890da1f45e59a7d27cb856501a4fdd978bdbd1e9552ea44b4d799",
+    "scenes/article-v2-publish-sheet/crop.png": "20c6b3a5efe0c5303680bc45ad09d6a1576de87d53db5897a8f919164c8c9b80",
+    "scenes/article-v2-publish-sheet/provenance.json": "278cb5bc7805d9def7d8d894439167b8a440b73bb716059618658338607f8de1",
+    "scenes/article-v2-publish-sheet/reference.png": "67b1ade2a4a81e878a7a02fd8ebce3e25ec3dc1c818696ded7ce61d63c3561f3",
+    "scenes/article-v2-split-editor/crop.png": "a679b304b182556425c197ad49059a9c03ec3ad9fc1e5cecd5b681648db750c6",
+    "scenes/article-v2-split-editor/provenance.json": "3607ab808096261111309b8ae21a3ec826f4b9c1cbb890da8dbb79d934827fe7",
+    "scenes/article-v2-split-editor/reference.png": "c162bf4af5971c0231ce5a1c4438d73c842f69b88e60d1340875a05e39590d64",
+    "scenes/article-v2-theme-gallery/crop.png": "2d4e09aacb29fc0108b48d1512e49d719ee19340720b442d015cc46b1c560ce5",
+    "scenes/article-v2-theme-gallery/provenance.json": "b0d0e89a7b5363ace26828993f277aa7d5800f58ee85947957f1298306714bcf",
+    "scenes/article-v2-theme-gallery/reference.png": "03400aeea3fe60bc449c0db2a8fa5739224650e97f8eab08f96428e6f81145fa"
+  }
+}

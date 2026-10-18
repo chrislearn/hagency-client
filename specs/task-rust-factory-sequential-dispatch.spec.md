@@ -52,15 +52,15 @@ This is normal subsequent work, never fallback from an unsuccessful warm owner.
 
 ## Allowed changes
 
-- native/hagency-execution/src/factory.rs
-- native/hagency-execution/src/operation.rs
-- native/hagency-execution/src/host.rs
-- native/hagency-execution/src/warm.rs
-- native/hagency-execution/src/lib.rs
-- native/hagency-matrix/src/provisioning/factory.rs
-- native/hagency/tests/inline_factory.rs
-- native/hagency/tests/inline_factory/**
-- native/hagency/tests/fixtures/owned_mcp_peer.rs
+- crates/hagency-execution/src/factory.rs
+- crates/hagency-execution/src/operation.rs
+- crates/hagency-execution/src/host.rs
+- crates/hagency-execution/src/warm.rs
+- crates/hagency-execution/src/lib.rs
+- crates/hagency-matrix/src/provisioning/factory.rs
+- crates/hagency/tests/inline_factory.rs
+- crates/hagency/tests/inline_factory/**
+- crates/hagency/tests/fixtures/owned_mcp_peer.rs
 - knowledge/decisions/adr-053-native-owned-dispatch.md
 - knowledge/decisions/adr-147-provisioning-verdict-effect-route.md
 - this spec, docs/progress.md, docs/agent-knowledge.md

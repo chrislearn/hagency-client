@@ -34,16 +34,16 @@ receipt trie; live memory remains finite and historical queries stay bounded.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain/replies.rs
-- native/hagency-store/src/domain_worker.rs
-- native/hagency-matrix/src/sdk.rs
-- native/hagency-matrix/src/sdk/outgoing.rs
-- native/hagency-matrix/src/sdk/sync_history.rs
-- native/hagency-matrix/src/outgoing.rs
-- native/hagency-matrix/src/outgoing/state.rs
-- native/hagency-matrix/src/upload/publication.rs
-- native/hagency-matrix/tests/outgoing/**
-- native/hagency-matrix/tests/file_publication/**
+- crates/hagency-store/src/domain/replies.rs
+- crates/hagency-store/src/domain_worker.rs
+- crates/hagency-matrix/src/sdk.rs
+- crates/hagency-matrix/src/sdk/outgoing.rs
+- crates/hagency-matrix/src/sdk/sync_history.rs
+- crates/hagency-matrix/src/outgoing.rs
+- crates/hagency-matrix/src/outgoing/state.rs
+- crates/hagency-matrix/src/upload/publication.rs
+- crates/hagency-matrix/tests/outgoing/**
+- crates/hagency-matrix/tests/file_publication/**
 - knowledge/decisions/adr-059-native-matrix-outgoing.md
 - knowledge/decisions/adr-152-native-outgoing-receipt-history.md
 - specs/task-rust-matrix-outgoing.spec.md

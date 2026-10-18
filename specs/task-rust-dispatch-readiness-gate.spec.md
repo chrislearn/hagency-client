@@ -34,11 +34,11 @@ at consumption rather than trusting the selector.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-store/src/domain/execution.rs
-- native/hagency-store/tests/
-- native/hagency-store/src/migrations/033-dispatch-park-reason.sql
-- native/hagency-execution/src/host.rs
-- native/hagency-execution/tests/
+- crates/hagency-store/src/domain/execution.rs
+- crates/hagency-store/tests/
+- crates/hagency-store/src/migrations/033-dispatch-park-reason.sql
+- crates/hagency-execution/src/host.rs
+- crates/hagency-execution/tests/
 - specs/task-rust-dispatch-readiness-gate.spec.md
 - knowledge/decisions/adr-053-native-owned-dispatch.md
 - knowledge/decisions/adr-114-native-managed-account-binding.md
@@ -46,7 +46,7 @@ at consumption rather than trusting the selector.
 
 ### Forbidden
 - Live providers, live agents, credentials, deployed state.
-- native/hagency/src/console/**; mockup/**; native/hagency/src/bootstrap/**; migration 028 (MA-S1's, landed before this slice); migrations 029-032 (other slices); every migration after 033.
+- crates/hagency/src/console/**; mockup/**; crates/hagency/src/bootstrap/**; migration 028 (MA-S1's, landed before this slice); migrations 029-032 (other slices); every migration after 033.
 
 ## Acceptance Criteria
 

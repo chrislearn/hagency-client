@@ -24,8 +24,8 @@ that precedent to the approval wire and the client-origin rule.
 
 ## Decision
 
-`native/scripts/approval-vectors.mjs` EXECUTES the retained producer over a
-fixed table and writes `native/hagency-matrix/tests/fixtures/approval-vectors.json`;
+`tools/native/approval-vectors.mjs` EXECUTES the retained producer over a
+fixed table and writes `crates/hagency-matrix/tests/fixtures/approval-vectors.json`;
 `--check` re-derives and fails on drift. Four row families:
 
 - **requests** — `buildOwnerApprovalRequest` (:2600-2646), including the action

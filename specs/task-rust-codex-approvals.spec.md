@@ -34,10 +34,10 @@ upstream provides no proof of effective permission application.
 ## Boundaries
 
 ### Allowed Changes
-- native/hagency-runtime/src/codex*
-- native/hagency-runtime/src/codex/**
-- native/hagency-runtime/tests/**
-- native/hagency-permissions/**
+- crates/hagency-runtime/src/codex*
+- crates/hagency-runtime/src/codex/**
+- crates/hagency-runtime/tests/**
+- crates/hagency-permissions/**
 - ./Cargo.toml
 - ./Cargo.lock
 - specs/task-rust-codex-approvals.spec.md

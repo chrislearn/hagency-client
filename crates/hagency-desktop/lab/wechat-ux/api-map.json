@@ -1,0 +1,455 @@
+{
+  "schema_version": 1,
+  "operations": [
+    {
+      "id": "open_chat",
+      "kind": "ui",
+      "status": "existing",
+      "source": "src/home/rooms_list.rs",
+      "symbol": "RoomsListAction::Selected",
+      "input": "SelectedRoom with real room ID",
+      "result": "RoomScreen opens, list scroll preserved",
+      "notes": "Use current selection action and mobile StackNavigation; do not create a parallel room cache."
+    },
+    {
+      "id": "filter_chats",
+      "kind": "ui",
+      "status": "existing",
+      "source": "src/shared/room_filter_input_bar.rs",
+      "symbol": "MainFilterAction",
+      "input": "query and clear/cancel",
+      "result": "Filtered room list",
+      "notes": "Room-name filtering only; not cross-room message search."
+    },
+    {
+      "id": "send_text",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "SendMessage",
+      "input": "timeline_kind, RoomMessageEventContent, replied_to, sign_with_tsp when enabled",
+      "result": "local echo then TimelineUpdate or failure",
+      "notes": "Route through RoomInputBar so slash commands, replies, mentions, TSP preference and encryption behavior survive."
+    },
+    {
+      "id": "typing",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "SendTypingNotice",
+      "input": "room_id, typing",
+      "result": "remote typing notification",
+      "notes": "Debounce; expiry and close stop typing. Do not mark message sent."
+    },
+    {
+      "id": "load_history",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "PaginateTimeline",
+      "input": "timeline_kind, num_events, direction",
+      "result": "TimelineUpdate; stable visible anchor",
+      "notes": "Keep PortalList virtualization and pagination state."
+    },
+    {
+      "id": "retry_send",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "RetrySend",
+      "input": "timeline_kind, timeline_event_id",
+      "result": "same queued message retry",
+      "notes": "Use original local echo identity; never create a second message."
+    },
+    {
+      "id": "reply",
+      "kind": "ui",
+      "status": "existing",
+      "source": "src/room/room_input_bar.rs",
+      "symbol": "show_replying_to",
+      "input": "event + EmbeddedEvent + timeline_kind",
+      "result": "reply preview then SendMessage.replied_to",
+      "notes": "Existing reply UI owns context; cancel restores draft."
+    },
+    {
+      "id": "edit_message",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "EditMessage",
+      "input": "timeline_kind, timeline_event_item_id, edited_content",
+      "result": "edit result/TimelineUpdate",
+      "notes": "Keep author and room permission checks."
+    },
+    {
+      "id": "delete_message",
+      "kind": "matrix",
+      "status": "partial",
+      "source": "src/sliding_sync.rs",
+      "symbol": "RedactMessage",
+      "input": "timeline_kind, timeline_event_id, reason",
+      "result": "redacted Matrix event",
+      "notes": "Redaction is not WeChat local delete or time-limited recall. Requires distinct UX semantics and existing confirmation."
+    },
+    {
+      "id": "reaction",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "ToggleReaction",
+      "input": "timeline_kind, timeline_event_id, reaction",
+      "result": "updated reaction aggregation",
+      "notes": "Reaction glyphs are not the emoji keyboard."
+    },
+    {
+      "id": "pick_photo",
+      "kind": "ui",
+      "status": "existing",
+      "source": "src/room/room_input_bar.rs",
+      "symbol": "open_photo_video_picker",
+      "input": "timeline context",
+      "result": "FileUploadModal preview",
+      "notes": "Native permission and picker cancellation must return to same draft."
+    },
+    {
+      "id": "pick_file",
+      "kind": "ui",
+      "status": "existing",
+      "source": "src/room/room_input_bar.rs",
+      "symbol": "open_file_picker",
+      "input": "timeline context",
+      "result": "FileUploadModal preview",
+      "notes": "Do not turn a picked file into an automatic upload."
+    },
+    {
+      "id": "send_attachment",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "SendAttachment",
+      "input": "upload_id, AttachmentUpload",
+      "result": "progress, failed/retry, timeline event",
+      "notes": "Use file_upload_modal::submit_attachment_upload for existing queue and encryption semantics."
+    },
+    {
+      "id": "view_media",
+      "kind": "ui",
+      "status": "existing",
+      "source": "src/shared/image_viewer.rs",
+      "symbol": "ImageViewerAction",
+      "input": "media and LoadState",
+      "result": "ImageViewer modal",
+      "notes": "Use fetched/decrypted media, close restores timeline anchor."
+    },
+    {
+      "id": "location",
+      "kind": "ui",
+      "status": "existing",
+      "source": "src/room/room_input_bar.rs",
+      "symbol": "show_current_location_preview",
+      "input": "user initiated current location",
+      "result": "preview then explicit send",
+      "notes": "Permission denial/cancel sends nothing. Not live location sharing."
+    },
+    {
+      "id": "dictation",
+      "kind": "ui",
+      "status": "partial",
+      "source": "src/room/speech_input.rs",
+      "symbol": "Speech",
+      "input": "speech recognition permission",
+      "result": "draft text",
+      "notes": "Speech-to-text is not press-and-hold voice messages; do not claim equivalence."
+    },
+    {
+      "id": "voice_message",
+      "kind": "gap",
+      "status": "missing",
+      "source": null,
+      "symbol": null,
+      "input": "audio recording, cancellation, duration, upload, playback",
+      "result": "voice bubble with accessible duration",
+      "notes": "Needs recorder/playback, waveform, interruption and microphone permission implementation."
+    },
+    {
+      "id": "call",
+      "kind": "gap",
+      "status": "missing",
+      "source": null,
+      "symbol": null,
+      "input": "room + participants + media mode",
+      "result": "ringing/accepted/rejected/ended",
+      "notes": "A mock call button cannot pass a call journey."
+    },
+    {
+      "id": "profile",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "GetUserProfile",
+      "input": "user_id, optional room_id, local_only=false",
+      "result": "UserProfileUpdate",
+      "notes": "Render cached avatar immediately then update; preserve verified identity."
+    },
+    {
+      "id": "open_dm",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "OpenOrCreateDirectMessage",
+      "input": "user_profile, allow_create=false",
+      "result": "FoundExisting or DidNotExist",
+      "notes": "Preserve existing confirmation before creating a DM; then observe NewlyCreated or FailedToCreate."
+    },
+    {
+      "id": "confirm_dm",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "OpenOrCreateDirectMessage",
+      "input": "user_profile, allow_create=true after confirmation",
+      "result": "NewlyCreated or FailedToCreate",
+      "notes": "Debounce pending submission. Reuse existing room when present."
+    },
+    {
+      "id": "room_members",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "GetRoomMembers",
+      "input": "timeline_kind, memberships, local_only=false",
+      "result": "room member update",
+      "notes": "Membership is not an address book. The mobile Chat Info route reads joined room members from the Matrix SDK, including display names and avatars; the composer retains GetRoomMembers for mentions."
+    },
+    {
+      "id": "invite_member",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "InviteUser",
+      "input": "room_id, user_id",
+      "result": "InviteResultAction",
+      "notes": "Use InviteModal confirmation; not phone-contact friend acceptance."
+    },
+    {
+      "id": "accept_invite",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "JoinRoom",
+      "input": "room_id",
+      "result": "JoinRoomResultAction",
+      "notes": "Matrix invitation state; not an equivalent to WeChat New Friends."
+    },
+    {
+      "id": "leave_room",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "LeaveRoom",
+      "input": "room_id after confirmation",
+      "result": "LeaveRoomResultAction",
+      "notes": "Preserve explicit leave confirmation and failure state."
+    },
+    {
+      "id": "pin_chat",
+      "kind": "matrix",
+      "status": "partial",
+      "source": "src/sliding_sync.rs",
+      "symbol": "SetIsFavorite",
+      "input": "room_id, is_favorite",
+      "result": "RoomsList update",
+      "notes": "Favorite flag exists; Sticky on Top needs verified ordering and persistence, not only a new label."
+    },
+    {
+      "id": "mark_unread",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "SetUnreadFlag",
+      "input": "room_id, mark_as_unread",
+      "result": "RoomsList unread state",
+      "notes": "Keep manual unread distinct from notification count."
+    },
+    {
+      "id": "mark_read",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "MarkRoomAsRead",
+      "input": "room_id, preferred_receipt_type",
+      "result": "read marker/unread count",
+      "notes": "Keep the existing privacy preference; do not force public receipts."
+    },
+    {
+      "id": "mute_chat",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "SetRoomNotificationMode",
+      "input": "push rule and notification mode",
+      "result": "confirmed rule + muted icon",
+      "notes": "Native room menu writes Matrix push rules for all messages, mentions, mute, and account defaults, verified against Palpo through native input. Muted row icon and selected choice follow sync changes while the menu is open and survive restart. Touch-device long-press and notification delivery still need device coverage."
+    },
+    {
+      "id": "message_search",
+      "kind": "gap",
+      "status": "missing",
+      "source": "src/home/search_messages.rs",
+      "symbol": "Search (TODO)",
+      "input": "query, scope, pagination, encrypted local index",
+      "result": "results with jump-to-event",
+      "notes": "Existing button is disabled; room filtering is not a substitute."
+    },
+    {
+      "id": "contacts",
+      "kind": "matrix",
+      "status": "partial",
+      "source": "src/home/mobile.rs",
+      "symbol": "refresh_contacts",
+      "input": "stable contact list, aliases, groups, invitation relation",
+      "result": "alphabetized contacts",
+      "notes": "Native alphabetized DM contacts, directory/full-ID search, profile and message entry, plus joined-group browsing. Explicit friend relationships, aliases, and cross-account restoration remain to implement/test."
+    },
+    {
+      "id": "group_create",
+      "kind": "gap",
+      "status": "missing",
+      "source": null,
+      "symbol": null,
+      "input": "name, invitees, encryption, operation identity",
+      "result": "created Matrix group then selected room",
+      "notes": "No CreateRoom variant in current MatrixRequest; add an async API and result action."
+    },
+    {
+      "id": "block_user",
+      "kind": "ui",
+      "status": "existing",
+      "source": "src/block_user_modal.rs",
+      "symbol": "BlockUserModalAction",
+      "input": "BlockUserRequest",
+      "result": "confirmed MatrixRequest::BlockUser",
+      "notes": "Keep modal confirmation and persisted blocked-user list."
+    },
+    {
+      "id": "rename_self",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "SetDisplayName",
+      "input": "new_display_name",
+      "result": "AccountDataAction::DisplayNameChanged or failure",
+      "notes": "Wait for result and roll back on failure."
+    },
+    {
+      "id": "avatar_self",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "UploadAvatar",
+      "input": "FileUploadMetadata",
+      "result": "AccountDataAction::AvatarChanged or failure",
+      "notes": "Retain picker/preview; no screenshot avatar upload."
+    },
+    {
+      "id": "settings",
+      "kind": "ui",
+      "status": "existing",
+      "source": "src/settings/settings_screen.rs",
+      "symbol": "SettingsScreen",
+      "input": "tab/section route",
+      "result": "existing account/preferences/privacy/about content",
+      "notes": "WeChat-style Me shell should route into these existing sections."
+    },
+    {
+      "id": "verify_device",
+      "kind": "matrix",
+      "status": "existing",
+      "source": "src/sliding_sync.rs",
+      "symbol": "RequestSelfVerification",
+      "input": "explicit user action",
+      "result": "VerificationModal and device trust result",
+      "notes": "WeChat styling must preserve Matrix device verification and recovery."
+    },
+    {
+      "id": "logout",
+      "kind": "ui",
+      "status": "existing",
+      "source": "src/logout/logout_confirm_modal.rs",
+      "symbol": "LogoutConfirmModalAction",
+      "input": "explicit confirmation",
+      "result": "logout state machine",
+      "notes": "Do not call MatrixRequest::Logout directly from a generated button."
+    },
+    {
+      "id": "moments",
+      "kind": "gap",
+      "status": "missing",
+      "source": null,
+      "symbol": null,
+      "input": "feed, media posts, reactions, comments, visibility ACL",
+      "result": "persisted social feed",
+      "notes": "Define protocol, store, feed pagination and ACL before real implementation; fixtures only meanwhile."
+    },
+    {
+      "id": "scan",
+      "kind": "gap",
+      "status": "missing",
+      "source": null,
+      "symbol": null,
+      "input": "camera permission + QR content",
+      "result": "validated link preview",
+      "notes": "Needs camera scanning, Matrix link routing and malicious/unknown QR handling."
+    },
+    {
+      "id": "favorites",
+      "kind": "gap",
+      "status": "missing",
+      "source": null,
+      "symbol": null,
+      "input": "saved event/media identifiers",
+      "result": "private saved items",
+      "notes": "Not the same as favorite rooms (SetIsFavorite) or shared pinned events."
+    },
+    {
+      "id": "services",
+      "kind": "gap",
+      "status": "missing",
+      "source": null,
+      "symbol": null,
+      "input": "owned service cards + authorization",
+      "result": "real external service result",
+      "notes": "Use AppCard subtrees for service content; no generic chat-log navigation replacement."
+    },
+    {
+      "id": "payments",
+      "kind": "gap",
+      "status": "missing",
+      "source": null,
+      "symbol": null,
+      "input": "provider, minor currency units, payee, approval, transaction ID",
+      "result": "provider-confirmed transaction",
+      "notes": "No payment API in Robrix. Keep disabled in fixture; never show success without provider receipt."
+    },
+    {
+      "id": "mini_programs",
+      "kind": "gap",
+      "status": "missing",
+      "source": null,
+      "symbol": null,
+      "input": "runtime, permissions, lifecycle, sandbox policy",
+      "result": "app lifecycle and external effects",
+      "notes": "Separate platform feature; AppCard WASM packaging does not implement it."
+    },
+    {
+      "id": "local_navigation",
+      "kind": "ui",
+      "status": "partial",
+      "source": "src/home/home_screen.rs",
+      "symbol": "StackNavigation",
+      "input": "tab, route, keyboard, scroll, draft state",
+      "result": "push/pop or tab switch",
+      "notes": "Native Chats/Contacts/Discover/Me roots and pushed chat/profile/group/Chat Info routes. Native soaks verify draft/back navigation. Full locale, physical keyboard, broad scroll and deep-screen similarity acceptance remains separate."
+    }
+  ]
+}

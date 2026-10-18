@@ -1,0 +1,164 @@
+{
+ "scene": "article-list",
+ "reference": "/private/tmp/claude-505/-Users-ychen-home-robrix-hagency/46061f79-0763-44b7-a570-365f859fa86e/scratchpad/rinx-ed/lab/article-editor/pipeline-output/intake-v2-mobile/scenes/article-v2-article-list/reference.png",
+ "grab": "/private/tmp/claude-505/-Users-ychen-home-robrix-hagency/46061f79-0763-44b7-a570-365f859fa86e/scratchpad/v-article-list.png",
+ "side_by_side": "lab/article-editor/evidence-v2/article-list-compare.png",
+ "band_mean_diff": [
+  18.7,
+  49.8,
+  38.5,
+  57.3,
+  29.6,
+  41.1,
+  16.9,
+  10.2,
+  8.0,
+  13.0
+ ],
+ "diff_regions": [
+  {
+   "rect_pt": [
+    168.0,
+    268.0,
+    16.0,
+    20.0
+   ],
+   "cells": 20,
+   "colour_distance": 123,
+   "native": "#F4F7F5",
+   "page": "#7B7B7B"
+  },
+  {
+   "rect_pt": [
+    124.0,
+    12.0,
+    20.0,
+    20.0
+   ],
+   "cells": 20,
+   "colour_distance": 113,
+   "native": "#858585",
+   "page": "#F5F6F6"
+  },
+  {
+   "rect_pt": [
+    208.0,
+    124.0,
+    16.0,
+    20.0
+   ],
+   "cells": 20,
+   "colour_distance": 103,
+   "native": "#F7F7F7",
+   "page": "#909090"
+  },
+  {
+   "rect_pt": [
+    188.0,
+    268.0,
+    56.0,
+    20.0
+   ],
+   "cells": 58,
+   "colour_distance": 94,
+   "native": "#F4F7F5",
+   "page": "#989898"
+  },
+  {
+   "rect_pt": [
+    248.0,
+    268.0,
+    16.0,
+    20.0
+   ],
+   "cells": 17,
+   "colour_distance": 91,
+   "native": "#F4F7F5",
+   "page": "#9B9B9B"
+  },
+  {
+   "rect_pt": [
+    60.0,
+    12.0,
+    60.0,
+    24.0
+   ],
+   "cells": 55,
+   "colour_distance": 81,
+   "native": "#A3A3A3",
+   "page": "#F5F5F5"
+  },
+  {
+   "rect_pt": [
+    124.0,
+    512.0,
+    100.0,
+    20.0
+   ],
+   "cells": 82,
+   "colour_distance": 77,
+   "native": "#AFAFAF",
+   "page": "#FDFDFD"
+  },
+  {
+   "rect_pt": [
+    36.0,
+    380.0,
+    208.0,
+    112.0
+   ],
+   "cells": 856,
+   "colour_distance": 74,
+   "native": "#F2F3F2",
+   "page": "#BBB3A8"
+  },
+  {
+   "rect_pt": [
+    160.0,
+    32.0,
+    80.0,
+    20.0
+   ],
+   "cells": 73,
+   "colour_distance": 71,
+   "native": "#F0F0F0",
+   "page": "#A8A8A8"
+  },
+  {
+   "rect_pt": [
+    148.0,
+    624.0,
+    16.0,
+    16.0
+   ],
+   "cells": 13,
+   "colour_distance": 66,
+   "native": "#BABABA",
+   "page": "#FDFDFD"
+  },
+  {
+   "rect_pt": [
+    192.0,
+    628.0,
+    20.0,
+    12.0
+   ],
+   "cells": 10,
+   "colour_distance": 63,
+   "native": "#BDBDBD",
+   "page": "#FDFDFD"
+  },
+  {
+   "rect_pt": [
+    28.0,
+    684.0,
+    64.0,
+    16.0
+   ],
+   "cells": 45,
+   "colour_distance": 60,
+   "native": "#C1C1C1",
+   "page": "#FDFDFD"
+  }
+ ]
+}
