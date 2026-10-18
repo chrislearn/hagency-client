@@ -7,11 +7,15 @@ Projects, Matrix chat and locally executed Agents are available in this release.
 - Use the Hagency desktop branding and icons.
 - Maintain Desktop and its local owner engine together in [hagency-org/hagency-client](https://github.com/hagency-org/hagency-client), with a single root Cargo.lock and no sibling source checkout.
 
-The version is intentionally reset from the inherited 1.1.x series to 0.5.0.
+The client version is 0.6.0, following consolidation of Desktop and the local engine.
 Existing installations may need to install this version manually.
 
 Agent encrypted-Room execution is deferred; ordinary encrypted Matrix chat remains available.
 Windows ARM64, mobile store packages, automatic updates and install-and-launch verification on every OS are not included.
 Provider runtimes and accounts must be installed/configured on the execution device.
 
-[Agent setup](https://github.com/hagency-org/hagency-desktop/blob/main/docs/hagency-quickstart.md)
+[Agent setup](https://github.com/hagency-org/hagency-client/blob/main/crates/hagency-desktop/docs/hagency-quickstart.md)
+
+Dependency audit follow-up remains open for the embedded and bundled Octos runtime,
+including PDF/XML parsing. See the [recorded assessment](https://github.com/hagency-org/hagency-client/blob/main/dev-vibe/desktop/release-0.5.0/assessment.zh.md)
+for scope and evidence; this release does not claim a clean dependency audit.

@@ -4735,7 +4735,7 @@ dependencies = [
 
 [[package]]
 name = "hagency"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "base64 0.22.1",
  "cap-fs-ext",
@@ -4781,7 +4781,7 @@ dependencies = [
 
 [[package]]
 name = "hagency-agent-local"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "getrandom 0.3.4",
  "hagency-platform",
@@ -4799,7 +4799,7 @@ dependencies = [
 
 [[package]]
 name = "hagency-core"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "regex",
  "ruma-common",
@@ -4813,7 +4813,7 @@ dependencies = [
 
 [[package]]
 name = "hagency-crypto-proof"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "hagency-store",
  "matrix-sdk-crypto",
@@ -4826,7 +4826,7 @@ dependencies = [
 
 [[package]]
 name = "hagency-execution"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
@@ -4851,7 +4851,7 @@ dependencies = [
 
 [[package]]
 name = "hagency-files"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
@@ -4862,7 +4862,7 @@ dependencies = [
 
 [[package]]
 name = "hagency-matrix"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "base64 0.22.1",
  "cap-std",
@@ -4895,7 +4895,7 @@ dependencies = [
 
 [[package]]
 name = "hagency-matrix-format"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "idna 1.1.0",
  "linkify",
@@ -4909,7 +4909,7 @@ dependencies = [
 
 [[package]]
 name = "hagency-media"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "base64 0.22.1",
  "cap-std",
@@ -4924,7 +4924,7 @@ dependencies = [
 
 [[package]]
 name = "hagency-media-store"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
@@ -4939,7 +4939,7 @@ dependencies = [
 
 [[package]]
 name = "hagency-metering"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4949,7 +4949,7 @@ dependencies = [
 
 [[package]]
 name = "hagency-palpo"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "hagency-core",
  "hagency-store",
@@ -4967,7 +4967,7 @@ dependencies = [
 
 [[package]]
 name = "hagency-permissions"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "hagency-core",
  "hagency-runtime",
@@ -4982,7 +4982,7 @@ dependencies = [
 
 [[package]]
 name = "hagency-platform"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "libc",
  "rustix",
@@ -4995,7 +4995,7 @@ dependencies = [
 
 [[package]]
 name = "hagency-progress"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -5005,7 +5005,7 @@ dependencies = [
 
 [[package]]
 name = "hagency-progress-runtime"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "hagency-platform",
  "hagency-progress",
@@ -5018,7 +5018,7 @@ dependencies = [
 
 [[package]]
 name = "hagency-runtime"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "hagency-platform",
  "serde",
@@ -5032,7 +5032,7 @@ dependencies = [
 
 [[package]]
 name = "hagency-store"
-version = "0.1.0"
+version = "0.6.0"
 dependencies = [
  "cap-fs-ext",
  "cap-std",
@@ -10205,7 +10205,7 @@ dependencies = [
 
 [[package]]
 name = "rinx"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "arboard",

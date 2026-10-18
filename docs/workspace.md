@@ -63,8 +63,13 @@ Desktop CI, platform builds and installers are in
 `.github/workflows/desktop-{main,builds,release}.yml`. Engine CI continues to select
 the engine packages explicitly, so Linux's headless checks do not require Makepad.
 The existing CLI `nv*` artifact workflow remains separate from Desktop's `v*`
-installer workflow. No release is published as part of the repository migration.
-The outstanding Desktop 0.5.0 release assessment remains in
+installer workflow. Desktop and the engine workspace are currently 0.6.0.
+To publish, run `desktop-release.yml` on `main` with `publish=true`, or push the
+matching `v0.6.0` tag. All five platform jobs must test and build successfully;
+only then does the workflow verify seven installers and their checksums and publish
+the complete GitHub Release as Latest. Manual runs with `publish=false` only upload
+CI artifacts. Published releases cannot be overwritten by a rerun.
+The outstanding dependency assessment remains in
 [`dev-vibe/desktop/release-0.5.0`](../dev-vibe/desktop/release-0.5.0/assessment.zh.md).
 
 ## Source history and downloads
@@ -75,6 +80,8 @@ same history. Original Apache/MIT and third-party notices remain with their code
 
 Historical installers remain available from
 [the original Desktop releases](https://github.com/hagency-org/hagency-desktop/releases).
-Future installers are built here. Existing Cloud download links should continue
-to point to available historical installers until a complete release is published
-from this repository; moving source does not create replacement release assets.
+Current installers are published to
+[Hagency Client Releases](https://github.com/hagency-org/hagency-client/releases/latest).
+Cloud uses its stable `releases/latest/download/` URLs and the unchanged
+`hagency-desktop-{platform}-{arch}` asset names; version-specific links and
+`SHA256SUMS.txt` are available on each release.
