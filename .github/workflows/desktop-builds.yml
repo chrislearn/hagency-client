@@ -326,7 +326,9 @@ jobs:
     if: always()
 
     steps:
-      - run: |
+      # This job only reads needs.* and does not check out the source tree.
+      - working-directory: ${{ runner.temp }}
+        run: |
           echo "=== Desktop Builds ==="
           echo "Ubuntu: ${{ needs.build_ubuntu.result }}"
           echo "macOS: ${{ needs.build_macos.result }}"

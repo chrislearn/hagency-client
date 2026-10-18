@@ -11,7 +11,7 @@ use hagency_runtime::{
 };
 use serde_json::{Value, json};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     fs,
     path::{Path, PathBuf},
     time::Duration,
@@ -54,6 +54,7 @@ struct Run {
     _root: tempfile::TempDir,
     marker: PathBuf,
     runner: OwnedOctosSession,
+    early: VecDeque<Event>,
 }
 async fn start(mode: &str, owner_wait_ms: u64) -> Run {
     let root = tempfile::tempdir().unwrap();
@@ -83,6 +84,7 @@ async fn start(mode: &str, owner_wait_ms: u64) -> Run {
         _root: root,
         marker,
         runner,
+        early: VecDeque::new(),
     }
 }
 impl Run {
@@ -94,7 +96,7 @@ impl Run {
             .collect()
     }
     async fn approval(&mut self) -> String {
-        match next_event(&mut self.runner).await {
+        match self.event().await {
             Event::Approval {
                 approval_id,
                 turn_id,
@@ -113,23 +115,49 @@ impl Run {
     async fn answer(&mut self, id: &str, decision: PermissionDecision) {
         let mut prepared = self.runner.prepare_approval(id, decision).unwrap();
         assert!(self.runner.prepared_admissible(&prepared));
-        // Nothing arrives while the answer is written: Octos waits for it.
-        match self
-            .runner
-            .send_prepared_approval(&mut prepared)
-            .await
-            .unwrap()
-        {
-            PreparedUpdate::WriteAccepted(write) => assert!(write.flushed),
-            PreparedUpdate::Event(_) => panic!("no event before the answer leaves"),
+        // The peer can read the answer and emit its next event before this
+        // host observes its own flush. Keep those events in order and resume
+        // the same prepared frame, never prepare or send a second answer.
+        loop {
+            assert!(self.runner.prepared_admissible(&prepared));
+            match self
+                .runner
+                .send_prepared_approval(&mut prepared)
+                .await
+                .unwrap()
+            {
+                PreparedUpdate::WriteAccepted(write) => {
+                    assert!(write.flushed);
+                    break;
+                }
+                PreparedUpdate::Event(event) => {
+                    assert!(matches!(
+                        event,
+                        Event::Tool { ended: true, .. } | Event::TurnEnded { .. }
+                    ));
+                    self.early.push_back(event);
+                    assert!(self.early.len() <= 2, "only the answer's completion events");
+                }
+            }
         }
         assert!(!self.runner.prepared_admissible(&prepared));
+    }
+    async fn event(&mut self) -> Event {
+        loop {
+            let event = match self.early.pop_front() {
+                Some(event) => event,
+                None => self.runner.next().await.unwrap(),
+            };
+            if !matches!(event, Event::Tool { .. }) {
+                return event;
+            }
+        }
     }
     /// The rest of the session: the decision's echo and Octos's answer are
     /// consumed, never events.
     async fn reply(&mut self) -> Option<String> {
         loop {
-            match next_event(&mut self.runner).await {
+            match self.event().await {
                 Event::Idle(idle) => return idle.reply,
                 Event::TurnEnded { .. } => {}
                 _ => panic!("nothing between the answer and the reply"),

@@ -20,9 +20,10 @@ mod owner;
 /// 20-second figure as the unit's TimeoutStopSec, but this one bounds the
 /// /ready poll after start, not the drain after SIGTERM.
 const START_GATE_BUDGET: Duration = Duration::from_secs(20);
-// Non-test includes outside native/**. These exact original inputs participate
+// Non-test includes outside crates/**. These exact original inputs participate
 // in BOTH the version-patched source copy and its content-addressed cache.
 const ROOT_BUILD_INPUTS: &[&str] = &[
+    ".cargo/config.toml",
     "docs/workspace-claude-md-template.md",
     "docs/workspace-agents-md-template.md",
     "docs/workspace-supervisor-claude-template.md",
@@ -341,7 +342,7 @@ fn collect_native_files(dir: &Path, root: &Path, out: &mut Vec<String>) {
     }
 }
 /// Content address over the copied inputs (root manifests + the whole
-/// `native/**` source set and root compile-time inputs), so a changed input rebuilds while
+/// `crates/**` source set and root compile-time inputs), so a changed input rebuilds while
 /// the 3x gate repeats and the second test reuse the same artifact.
 fn source_fingerprint() -> String {
     let root = workspace_root();
@@ -354,7 +355,7 @@ fn source_fingerprint_at(root: &Path) -> String {
         "rust-toolchain.toml".to_string(),
     ];
     files.extend(ROOT_BUILD_INPUTS.iter().map(|file| (*file).to_string()));
-    collect_native_files(&root.join("native"), root, &mut files);
+    collect_native_files(&root.join("crates"), root, &mut files);
     files.sort();
     let mut hasher = Sha256::new();
     for rel in &files {
@@ -375,7 +376,8 @@ fn native_upgrade_shared_templates_are_build_inputs() {
     let fixture = tempfile::tempdir().unwrap();
     let source = fixture.path().join("source");
     let copy = fixture.path().join("copy");
-    fs::create_dir_all(source.join("native")).unwrap();
+    fs::create_dir_all(source.join("crates/hagency/src")).unwrap();
+    fs::write(source.join("crates/hagency/src/main.rs"), "fn main() {}\n").unwrap();
     for file in ["Cargo.toml", "Cargo.lock", "rust-toolchain.toml"] {
         fs::write(source.join(file), file).unwrap();
     }
@@ -405,6 +407,29 @@ fn native_upgrade_shared_templates_are_build_inputs() {
         copy_root_build_inputs(&source, &copy);
         assert_eq!(fs::read(copy.join(file)).unwrap(), bytes);
     }
+    let before = source_fingerprint_at(&source);
+    fs::write(
+        source.join("crates/hagency/src/main.rs"),
+        "fn main() { println!(\"changed source\"); }\n",
+    )
+    .unwrap();
+    assert_ne!(source_fingerprint_at(&source), before);
+}
+fn cargo_target_directory(root: &Path) -> PathBuf {
+    let output = Command::new(env!("CARGO"))
+        .args([
+            "metadata",
+            "--no-deps",
+            "--offline",
+            "--format-version",
+            "1",
+        ])
+        .current_dir(root)
+        .output()
+        .expect("Cargo target directory metadata spawns");
+    assert!(output.status.success(), "Cargo metadata must succeed");
+    let metadata: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    metadata["target_directory"].as_str().unwrap().into()
 }
 /// Build the N+1 artifact once, offline, under a process mutex so both tests
 /// and the gate repeats share a single build. The stamp is the source
@@ -417,10 +442,10 @@ fn native_upgrade_shared_templates_are_build_inputs() {
 fn next_artifact() -> PathBuf {
     let _guard = BUILD_LOCK.lock().unwrap();
     let root = workspace_root();
-    let src = root.join("target/upgrade-next-src");
-    let parent_target = root.join("target");
-    let staged_next = root.join("target/.hagency-upgrade-next");
-    let stamp = root.join("target/.upgrade-next-fingerprint");
+    let parent_target = cargo_target_directory(&root);
+    let src = parent_target.join("upgrade-next-src");
+    let staged_next = parent_target.join(".hagency-upgrade-next");
+    let stamp = parent_target.join(".upgrade-next-fingerprint");
     let fingerprint = source_fingerprint();
     let cached = fs::read_to_string(&stamp)
         .map(|s| s == fingerprint)
@@ -436,7 +461,7 @@ fn next_artifact() -> PathBuf {
         fs::copy(root.join(file), src.join(file)).unwrap();
     }
     copy_root_build_inputs(&root, &src);
-    copy_tree(&root.join("native"), &src.join("native"));
+    copy_tree(&root.join("crates"), &src.join("crates"));
     patch_workspace_version(&src.join("Cargo.toml"), &next_version());
     // Distinct binary name prevents any overwrite of the N artifact used by
     // concurrently running workspace tests; only isolated copied manifests change.
@@ -466,7 +491,10 @@ fn next_artifact() -> PathBuf {
         "the N+1 build must succeed (offline, isolated output, shared dependency cache)"
     );
     fs::copy(
-        parent_target.join("debug/hagency-release-next"),
+        binary().parent().unwrap().join(format!(
+            "hagency-release-next{}",
+            std::env::consts::EXE_SUFFIX
+        )),
         &staged_next,
     )
     .unwrap();
