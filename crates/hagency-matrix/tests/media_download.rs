@@ -63,7 +63,8 @@ fn media() -> MediaId {
     MediaId::new("mxc://media.remote:8448/Abc_-123").unwrap()
 }
 fn vector(len: usize) -> (Vec<u8>, Descriptor, Vec<u8>) {
-    let all: Value = serde_json::from_str(include_str!("../../../tests/fixtures/media.json")).unwrap();
+    let all: Value =
+        serde_json::from_str(include_str!("../../../tests/fixtures/media.json")).unwrap();
     let row = all["vectors"]
         .as_array()
         .unwrap()

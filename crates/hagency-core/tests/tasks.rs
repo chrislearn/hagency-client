@@ -9,8 +9,10 @@ fn native_task_state_machine_matches_javascript() {
         to: TaskState,
         allowed: bool,
     }
-    let cases: Vec<Case> =
-        serde_json::from_str(include_str!("../../../tests/fixtures/task-transitions.json")).unwrap();
+    let cases: Vec<Case> = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/task-transitions.json"
+    ))
+    .unwrap();
     assert_eq!(cases.len(), 25);
     for case in cases {
         assert_eq!(

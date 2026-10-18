@@ -3,8 +3,10 @@ use serde_json::Value;
 
 #[test]
 fn project_identity_vectors_match_javascript() {
-    let fixture: Value =
-        serde_json::from_str(include_str!("../../../tests/fixtures/project-identities.json")).unwrap();
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../tests/fixtures/project-identities.json"
+    ))
+    .unwrap();
     assert_eq!(
         public_resource_id(fixture["preset"].as_str().unwrap()),
         fixture["resourceId"]

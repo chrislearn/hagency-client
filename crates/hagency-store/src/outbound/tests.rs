@@ -203,8 +203,10 @@ fn native_outbound_custody_intake() {
         db.outbound(Command::Activate(duplicate_binding), 1),
         Err(Error::Generation)
     ));
-    let vectors: Value =
-        serde_json::from_str(include_str!("../../../../tests/fixtures/outbound-custody.json")).unwrap();
+    let vectors: Value = serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/outbound-custody.json"
+    ))
+    .unwrap();
     for vector in vectors["vectors"].as_array().unwrap() {
         assert_eq!(
             canonical::encode_transport(&vector["input"]).unwrap(),
