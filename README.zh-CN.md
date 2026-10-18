@@ -4,6 +4,9 @@
 
 当前仓库地址：[hagency-org/hagency-client](https://github.com/hagency-org/hagency-client)。
 
+下载 [Hagency Client 0.6.0](https://github.com/hagency-org/hagency-client/releases/latest)，
+支持 Windows、macOS 和 Linux。校验文件及签名限制见发布说明。
+
 原生 Desktop 与本地 Agent 引擎现由本仓库统一维护。所有 Rust package 位于
 `crates/`，桌面程序在 [`crates/hagency-desktop`](crates/hagency-desktop/README.md)，
 Cargo package 和二进制名暂保留 `rinx`，通过本地路径依赖同仓库引擎。

@@ -1,6 +1,12 @@
 # Hagency Client 0.6.0
 
-2026-10-18 最新指示：用户在实现和构建期间明确说“先不发布上线”。已停止正式发布；不能自动恢复 publish=true 或打标签。以下实现保留。
+最新指示：用户随后明确要求“client 发布版本”，恢复Client 0.6.0正式发布；Cloud部署仍暂停。复用已通过的39134041425五平台CI附件，校验七个安装包及总SHA256清单后发布；标签指向实际构建提交7fb76731700daef7460d59935ba8bd4f69238ec0。发布前main相较构建提交仅增加验证记录文档，未改源码。下文保留此前暂停及验证的历史。
+
+正式发布已完成（2026-10-19 00:02:43 +08）：[Hagency Client v0.6.0](https://github.com/hagency-org/hagency-client/releases/tag/v0.6.0)，GitHub Release id 416549027。API核对draft=false、prerelease=false，且releases/latest指向本版本；refs/tags/v0.6.0直接指向实际构建7fb76731。
+
+- 使用gh CLI提升原CI产物，未重新编译。先逐项验证七个安装包原始SHA256，再生成总SHA256SUMS.txt；上传草稿后与GitHub服务端digest逐项比较全部13个附件（七安装包、五分平台清单、一个总清单），名称、大小、状态与SHA256全部匹配后才公开发布。公开下载SHA256SUMS.txt再次核对一致，七个releases/latest/download安装包入口HEAD全部HTTP 200。
+- 下载/暂存/验证脚本和完整JSON证据均在D:/BuildCache/hagency-client/releases/v0.6.0。签名、依赖审计、移动端及安装/启动验收限制保留在发布说明，没有声称完成这些验收。
+- 标签自动触发重复构建39143210081，已确认completed/cancelled；本次发布的构建来源仍是成功的39134041425，不能把重复构建记作正式发布验收来源。Cloud没有部署。
 
 - Desktop 与本地引擎 workspace 版本均设为 0.6.0；独立组件保持自己的 API 版本。
 - 发布入口 `.github/workflows/desktop-release.yml`，支持匹配版本的 v* 标签或 main 手动 publish=true。五平台各自测试、构建；统一核验七安装包与 SHA256SUMS 后发布 Latest，拒绝覆盖已公开 Release。

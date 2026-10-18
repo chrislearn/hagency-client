@@ -1,6 +1,6 @@
 # Client 和 Desktop 统一工作区
 
-更新：2026-10-18。
+更新：2026-10-19。
 
 - 最新仓库地址为 https://github.com/hagency-org/hagency-client.git，用户已明确指定。origin 已更新；旧 chrislearn/hagency-client 由 GitHub 重定向到同一仓库，历史 PR/提交链接仍可解析。当前 canonical metadata、About 源码链接、OAuth 公开 client_uri 及匹配断言已更新，未改业务控制逻辑。
 - GitHub fork parent 是 hagency-org/hagency-rs。比较 Client b6da949b 与上游1212833a：ahead3814/behind101，共同祖先e51a0b13；上游101=79非merge+22merge。合仓前39e990c8也behind101，故不是Desktop导入漏提交。这里只做差异分析，没有merge/cherry-pick/rebase上游。
@@ -23,3 +23,5 @@
 - CI修复7fb76731已推送main：无checkout的Desktop汇总用runner.temp，升级fixture复制crates/和根.cargo/config.toml、遵守metadata实际target；Octos审批fixture处理写回执之前的合法完成事件，保持同一PreparedApproval和单次答复断言。没有跳过失败测试或修改生产协议。
 - 修复后的主CI39134040705、五平台构建39134040825、Desktop CI39134040782全部success。主CI212个Rust套件2049 passed、0 failed、174原有ignored，真实升级/回滚和4项Octos审批全部通过。安装包39134041425仅publish=false；完整进展见../client-ci-failure-2026-10-18.zh.md。
 - 安装包39134041425最终success：五平台全部成功，七种安装包及各平台SHA256上传为五份CI附件。Publish complete release明确skipped；没有Release、v0.6.0标签或Cloud部署。正式发布job中的合并校验与Release上传没有在本轮执行，不能将构建验收称作已发布或实际安装/启动验收。
+- 用户随后明确“client 发布版本”，恢复Client 0.6.0正式发布授权；Cloud部署仍暂停。直接提升39134041425已验证的七种安装包，全部下载/校验/暂存放D:/BuildCache/hagency-client/releases/v0.6.0；标签必须对应实际构建7fb76731，而非后续仅更新文档的main。最终发布状态见../release-0.6.0.zh.md。
+- 2026-10-19 00:02:43 +08，v0.6.0正式发布为Latest：https://github.com/hagency-org/hagency-client/releases/tag/v0.6.0。Release id416549027，七安装包及六校验清单共13附件的GitHub服务端SHA256全部与本地匹配，公开总清单下载核对一致，七个latest下载入口HEAD均200；标签实际指向7fb76731。标签自动触发重复构建39143210081已completed/cancelled，正式构建来源是成功的39134041425。保持Cloud不部署。根目录和Desktop双语README的当前下载入口更新到Client Releases，历史依赖评估链接保留。

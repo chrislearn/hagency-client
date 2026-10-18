@@ -4,7 +4,7 @@
 依赖由仓库根 Cargo.lock 锁定，构建说明见[工作区指南](../../docs/workspace.md)。
 Windows 使用仓库根 `tools/dev.ps1`，将构建产物及缓存放到 D:/BuildCache/hagency-client。
 
-0.5.0 已准备但尚未正式发布：[发布检查报告](../../dev-vibe/desktop/release-0.5.0/assessment.zh.md) 记录了待处理的上游依赖安全项。已发布版本见 [GitHub Releases](https://github.com/hagency-org/hagency-desktop/releases)。
+Client 0.6.0 已发布，下载见 [Hagency Client Releases](https://github.com/hagency-org/hagency-client/releases/latest)。[发布检查报告](../../dev-vibe/desktop/release-0.5.0/assessment.zh.md) 记录的上游依赖安全项仍待处理，当前限制见 [0.6.0 发布说明](https://github.com/hagency-org/hagency-client/releases/tag/v0.6.0)。
 
 [English](README.md) | 简体中文
 
