@@ -48,5 +48,6 @@ Quinn-proto 0.11.18；tokio-rustls 按引擎精确约束统一为 0.26.4。随�
 - Octos 打包 6 项、外部 target 资源收集 2 项回归通过。
 - 根 GitHub Actions 工作流通过 actionlint 1.7.12 语法检查。
 - Windows Desktop 原生库单元测试 456 通过，2 忽略；12 个共享和引擎 package 的 47 组测试共 288 通过，41 忽略。
+- 实际调用 Windows `tools/dev.ps1` 的 `-p` 参数转发与无默认特性 Desktop 库检查通过；存储层独立 `cargo check --locked -p hagency-store --lib` 通过。
 - Windows 全量引擎集成测试无法作为通过结论：`ops` 引用了仅 Unix 提供的 `stop_clean`，两个相关文件与导入前逐字一致；其余 Windows 全量探测也出现原有绝对 Unix 路径及平台执行测试失败，已停止无效的平台全量探测，没有将失败或忽略项记为通过。
 - Linux 快速 CI 的严格 Clippy、格式和编译测试清单检查已通过，实际回归及三平台全矩阵已在远端启动；最终状态需以对应运行结果为准。

@@ -1,4 +1,6 @@
-param([Parameter(ValueFromRemainingArguments=$true)][string[]]$CargoArguments)
+# Keep Cargo switches verbatim; advanced PowerShell parameter binding would
+# interpret Cargo's -p as an ambiguous common PowerShell parameter.
+$CargoArguments = @($args)
 $ErrorActionPreference = 'Stop'
 $taskCache = 'D:/BuildCache/hagency-client'
 $env:CARGO_TARGET_DIR = "$taskCache/target"
