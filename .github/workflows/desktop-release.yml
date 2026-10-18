@@ -84,10 +84,10 @@ jobs:
         run: |
           python3 tools/check-release-icons.py
           python3 - <<'PY'
-          import os, re, plistlib, tomllib
+          import os, re, plistlib
           from pathlib import Path
           version = re.search(r'^version\s*=\s*"([^"]+)"', Path('Cargo.toml').read_text(), re.M)[1]
-          workspace_version = tomllib.loads(Path('../../Cargo.toml').read_text())['workspace']['package']['version']
+          workspace_version = re.search(r'\[workspace.package\]\s*\nversion\s*=\s*"([^"]+)"', Path('../../Cargo.toml').read_text())[1]
           assert version == workspace_version, 'Desktop and workspace versions must match'
           if os.environ['IS_TAG'] == 'true':
               assert os.environ['TAG'] == 'v' + version, 'Tag must match Client version'
