@@ -18,6 +18,8 @@ pub fn script_mod(vm: &mut ScriptVm) {
     privacy_settings::script_mod(vm);
     about_settings::script_mod(vm);
     speech_settings::script_mod(vm);
+    // External integration forms use the settings styles and are hosted below.
+    crate::agent_access::script_mod(vm);
     settings_screen::script_mod(vm);
 }
 

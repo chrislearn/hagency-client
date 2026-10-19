@@ -824,7 +824,27 @@ impl Widget for HomeScreen {
             }
         }
 
-        self.view.draw_walk(cx, scope, walk)
+        let step = self.view.draw_walk(cx, scope, walk);
+        if step.is_done() {
+            // AdaptiveView can replace its child during this draw. Select the
+            // new child's page as well, so a resize schedules the correct next frame.
+            if let Some(state) = scope.data.get_mut::<AppState>() {
+                self.update_active_page_from_selection(cx, state);
+            }
+            let settings = scope.data.get::<AppState>().is_some_and(|a| a.selected_tab == SelectedTab::Settings);
+            let area = if settings {
+                self.view.widget(cx, ids!(settings_detail)).area()
+            } else {
+                self.view.widget(cx, ids!(home_screen_page_flip)).area()
+            };
+            let rect = area.rect(cx);
+            cx.global::<crate::shared::workspace_pages::WorkspacePageBounds>().0 =
+                (rect.size.x > 0.0 && rect.size.y > 0.0).then_some(rect);
+            if settings && (rect.size.x <= 0.0 || rect.size.y <= 0.0) {
+                self.view.redraw(cx);
+            }
+        }
+        step
     }
 }
 
@@ -1185,11 +1205,13 @@ mod responsive_layout_tests {
         let pass = DrawPass::new(cx);
         pass.set_size(cx, dvec2(1440.0, 900.0));
         let mut list = DrawList2d::new(cx);
+        let overlay = Overlay {draw_list: DrawList::new(cx)};
         let event = DrawEvent::default();
         let mut draw = CxDraw::new(cx, &event);
         let mut cx2d = Cx2d::new(&mut draw);
         cx2d.begin_pass(&pass, None);
         list.begin_always(&mut cx2d);
+        overlay.begin(&mut cx2d);
         cx2d.begin_root_turtle(dvec2(1440.0, 900.0), Layout::flow_overlay());
         home.draw_walk_all(&mut cx2d, &mut Scope::with_data(state), Walk {
             width: Size::Fixed(width),
@@ -1197,6 +1219,7 @@ mod responsive_layout_tests {
             ..Walk::default()
         });
         cx2d.end_pass_sized_turtle();
+        overlay.end(&mut cx2d);
         list.end(&mut cx2d);
         cx2d.end_pass(&pass);
     }
@@ -1207,6 +1230,32 @@ mod responsive_layout_tests {
             Some(if desktop { id!(Desktop) } else { id!(Mobile) }));
         assert_eq!(effective_is_desktop(cx), desktop);
         assert_eq!(crate::home::account_menu::is_desktop_layout(cx), desktop);
+    }
+
+    #[test]
+    fn management_page_bounds_follow_settings_and_workspace_navigation() {
+        let (mut cx, mut home, mut state) = home();
+        for width in [1280.0, 375.0, 1280.0] {
+            for tab in [SelectedTab::Settings, SelectedTab::Home] {
+                state.selected_tab = tab.clone();
+                draw_pane(&mut cx, &mut home, &mut state, width);
+                // Lazy page creation after an adaptive variant swap requests a redraw.
+                draw_pane(&mut cx, &mut home, &mut state, width);
+                let bounds = cx.global::<crate::shared::workspace_pages::WorkspacePageBounds>().0
+                    .unwrap_or_else(|| panic!("missing workspace bounds at width {width}, tab {tab:?}"));
+                assert!(bounds.pos.x + bounds.size.x <= width + 1.0);
+                let expected = home.view.widget(&cx, if tab == SelectedTab::Settings {
+                    ids!(settings_detail)
+                } else {
+                    ids!(home_screen_page_flip)
+                }).area().rect(&cx);
+                assert_eq!(bounds, expected);
+                if tab == SelectedTab::Settings {
+                    let menu = home.view.widget(&cx, ids!(settings_navigation)).area().rect(&cx);
+                    assert!(bounds.pos.x >= menu.pos.x + menu.size.x);
+                }
+            }
+        }
     }
 
     #[test]

@@ -55,26 +55,29 @@ script_mod! {
     let Input = RobrixTextInput {width: Fill height: mod.widgets.RINX_CONTROL_HEIGHT}
     mod.widgets.AgentAccessPanel = #(AgentAccessPanel::register_widget(vm)) {
         ..mod.widgets.SolidView
-        width: Fill height: Fill flow: Down padding: Inset{top: 32 left: 16 right: 16 bottom: 12} spacing: 8 draw_bg.color: mod.widgets.RINX_PAGE
+        width: Fill height: Fill flow: Down padding: Inset{top: 16 left: 24 right: 24 bottom: 12} spacing: 8 draw_bg.color: mod.widgets.RINX_PAGE
         View {width: Fill height: 40 spacing: 8 align: Align{y: 0.5}
             close := RinxBackButton {}
-            Text {text: #(crate::i18n::tr("External bots and AppServices")) i18n_text: "External bots and AppServices"}
+            Text {text: #(crate::i18n::tr("Back to Agent services")) i18n_text: "Back to Agent services"}
         }
         status := Text {}
         ScrollYView {width: Fill height: Fill flow: Down spacing: 10
-            Text {text: #(crate::i18n::tr("Manage external integrations here. Configure your Hagency Agents from Agents in the sidebar.")) i18n_text: "Manage external integrations here. Configure your Hagency Agents from Agents in the sidebar."}
-            Text {text: #(crate::i18n::tr("Registered agents")) i18n_text: "Registered agents"}
-            agents := RobrixSettingsDropDown {width: Fill height: mod.widgets.RINX_CONTROL_HEIGHT labels: ["Select an agent"]}
-            agent_id := Input {empty_text: "@agent:example.org"}
-            framework := RobrixSettingsDropDown {width: Fill height: mod.widgets.RINX_CONTROL_HEIGHT labels: ["Agent" "Octos AppService" "Octos Direct" "Hermes" "OpenClaw"]}
-            Text {text: #(crate::i18n::tr("New chats with registered agents are unencrypted. Existing chats keep their encryption.")) i18n_text: "New chats with registered agents are unencrypted. Existing chats keep their encryption."}
-            register := Action {width: Fill text: #(crate::i18n::tr("Look up and register / re-check")) i18n_text: "Look up and register / re-check"}
+            external_bots_intro := Text {text: #(crate::i18n::tr("Connect existing external Matrix bots here, or configure a separately deployed AppService. To create and run your Hagency Agents, select Agents in the main sidebar for models, execution devices and service controls.")) i18n_text: "Connect existing external Matrix bots here, or configure a separately deployed AppService. To create and run your Hagency Agents, select Agents in the main sidebar for models, execution devices and service controls."}
+            linked_bots_heading := Text {text: #(crate::i18n::tr("Linked external bots")) i18n_text: "Linked external bots"}
+            agents := RobrixSettingsDropDown {width: Fill height: mod.widgets.RINX_CONTROL_HEIGHT labels: [#(crate::i18n::tr("Select an external bot"))]}
+            Text {text: #(crate::i18n::tr("External bot Matrix ID")) i18n_text: "External bot Matrix ID"}
+            agent_id := Input {empty_text: "@bot:example.org"}
+            Text {text: #(crate::i18n::tr("External bot type")) i18n_text: "External bot type"}
+            framework := RobrixSettingsDropDown {width: Fill height: mod.widgets.RINX_CONTROL_HEIGHT labels: [#(crate::i18n::tr("Generic Matrix bot")) "Octos AppService" "Octos Direct" "Hermes" "OpenClaw"] i18n_labels: ["Generic Matrix bot" "Octos AppService" "Octos Direct" "Hermes" "OpenClaw"]}
+            Text {text: #(crate::i18n::tr("New chats with linked external bots are unencrypted. Existing chats keep their encryption.")) i18n_text: "New chats with linked external bots are unencrypted. Existing chats keep their encryption."}
+            register := Action {width: Fill text: #(crate::i18n::tr("Find and link / recheck")) i18n_text: "Find and link / recheck"}
             View {width: Fill height: 40 spacing: 8
                 open := Action {width: Fill text: #(crate::i18n::tr("Open chat")) i18n_text: "Open chat"}
-                unbind := Action {width: Fill text: #(crate::i18n::tr("Unbind agent")) i18n_text: "Unbind agent"}
+                unbind := Action {width: Fill text: #(crate::i18n::tr("Unlink external bot")) i18n_text: "Unlink external bot"}
             }
             Hr {}
             Text {text: #(crate::i18n::tr("Matrix AppService")) i18n_text: "Matrix AppService"}
+            Text {text: #(crate::i18n::tr("Use this section for an AppService you have already deployed. Enter its service address and BotFather account to manage external bots and room bindings.")) i18n_text: "Use this section for an AppService you have already deployed. Enter its service address and BotFather account to manage external bots and room bindings."}
             enabled := RinxCheckBox {text: #(crate::i18n::tr("Enable AppService controls")) i18n_text: "Enable AppService controls"}
             botfather := Input {empty_text: #(crate::i18n::tr("BotFather Matrix ID")) i18n_empty_text: "BotFather Matrix ID"}
             endpoint := Input {empty_text: "http://127.0.0.1:8010"}
@@ -82,7 +85,7 @@ script_mod! {
                 save := Action {width: Fill text: #(crate::i18n::tr("Save")) i18n_text: "Save"}
                 health := Action {width: Fill text: #(crate::i18n::tr("Check service")) i18n_text: "Check service"}
             }
-            rooms := RobrixSettingsDropDown {width: Fill height: mod.widgets.RINX_CONTROL_HEIGHT labels: ["Select a room"]}
+            rooms := RobrixSettingsDropDown {width: Fill height: mod.widgets.RINX_CONTROL_HEIGHT labels: [#(crate::i18n::tr("Select a room"))]}
             binding_id := Input {empty_text: #(crate::i18n::tr("Bot Matrix ID to bind")) i18n_empty_text: "Bot Matrix ID to bind"}
             remark := Input {empty_text: #(crate::i18n::tr("Binding remark")) i18n_empty_text: "Binding remark"}
             bindings := Text {}
@@ -129,6 +132,18 @@ fn nonce() -> u64 {
     NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 impl AgentAccessPanel {
+    fn localize_framework(&self, cx: &mut Cx) {
+        self.view.drop_down(cx, ids!(framework)).set_labels(
+            cx,
+            AgentFramework::ALL.into_iter().map(|framework| {
+                crate::i18n::tr(if framework == AgentFramework::Unknown {
+                    "Generic Matrix bot"
+                } else {
+                    framework.label()
+                }).to_owned()
+            }).collect(),
+        );
+    }
     fn status(&self, cx: &mut Cx, text: &str) {
         self.view
             .label(cx, ids!(status))
@@ -138,12 +153,12 @@ impl AgentAccessPanel {
         self.agents = settings.agent_registry.agent_user_ids();
         self.view.drop_down(cx, ids!(agents)).set_labels(
             cx,
-            std::iter::once(crate::i18n::tr("Select an agent").into())
+            std::iter::once(crate::i18n::tr("Select an external bot").into())
                 .chain(settings.agent_registry.agents().map(|(id, e)| {
                     format!(
                         "{} · {} ({})",
                         e.display_name.as_deref().unwrap_or(id.as_str()),
-                        e.framework.label(),
+                        if e.framework == AgentFramework::Unknown {crate::i18n::tr("Generic Matrix bot")} else {e.framework.label()},
                         id
                     )
                 }))
@@ -246,6 +261,9 @@ impl AgentAccessPanel {
 impl Widget for AgentAccessPanel {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+        if matches!(event, Event::ScriptReapply | Event::LiveEdit) {
+            self.localize_framework(cx);
+        }
         if !self.active {
             return;
         }
@@ -277,7 +295,7 @@ impl Widget for AgentAccessPanel {
                             .agent_registry
                             .register(user.clone(), entry.clone());
                         self.changed(cx, settings);
-                        self.status(cx, "Agent profile checked and saved.");
+                        self.status(cx, "External bot profile checked and saved.");
                     }
                     Ok(Outcome::Health(message)) => self.status(cx, message),
                     Ok(Outcome::Command(room)) => {
@@ -306,7 +324,7 @@ impl Widget for AgentAccessPanel {
                 settings
                     .unregister_agent_and_clear_bot_identity(&unbind.user, self.owner.as_deref());
                 self.changed(cx, settings);
-                self.status(cx, "Agent unbound.");
+                self.status(cx, "External bot unlinked.");
             }
             if let Some(delete) = action.downcast_ref::<DeleteBot>()
                 && self.owner.as_ref() == Some(&delete.owner)
@@ -353,7 +371,7 @@ impl Widget for AgentAccessPanel {
                 }
             };
             if self.owner.as_ref() == Some(&user) {
-                self.status(cx, "Choose an agent other than your own account.");
+                self.status(cx, "Choose an external bot account.");
                 return;
             }
             let framework = AgentFramework::ALL
@@ -400,7 +418,7 @@ impl Widget for AgentAccessPanel {
                 );
                 cx.action(AgentAccessAction::Close);
             } else {
-                self.status(cx, "Register the agent before opening its chat.");
+                self.status(cx, "Link the external bot before opening its chat.");
             }
         }
         if self.view.button(cx, ids!(unbind)).clicked(actions)
@@ -410,12 +428,12 @@ impl Widget for AgentAccessPanel {
             crate::shared::confirmation_modal::confirm_removal(
                 cx,
                 crate::shared::confirmation_modal::ConfirmationModalContent {
-                    title_text: crate::i18n::tr("Unbind agent?").into(),
+                    title_text: crate::i18n::tr("Unlink external bot?").into(),
                     body_text: format!(
                         "{}\n{}",
                         user,
                         crate::i18n::tr(
-                            "Remove the saved agent identity and room bindings. Chats are kept."
+                            "Remove this external bot association and its room bindings. Existing chats are kept."
                         )
                     )
                     .into(),
@@ -586,7 +604,6 @@ impl AgentAccessPanelRef {
     pub fn action(
         &self,
         cx: &mut Cx,
-        modal: ModalRef,
         action: &AgentAccessAction,
         settings: &AgentAccessSettings,
     ) {
@@ -595,6 +612,7 @@ impl AgentAccessPanelRef {
         };
         match action {
             AgentAccessAction::Open => {
+                inner.localize_framework(cx);
                 inner.request = nonce();
                 inner.busy = false;
                 inner.owner = current_user_id();
@@ -635,12 +653,10 @@ impl AgentAccessPanelRef {
                     .set_selected_item(cx, 0);
                 inner.refresh(cx, settings);
                 inner.status(cx, "");
-                modal.open(cx);
             }
             AgentAccessAction::Close => {
                 inner.active = false;
                 inner.request = nonce();
-                modal.close(cx);
             }
             AgentAccessAction::Changed => {}
         }

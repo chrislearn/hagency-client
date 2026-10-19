@@ -1,3 +1,4 @@
+use crate::agent_access::{AgentAccessAction, ui::AgentAccessPanelWidgetExt};
 
 use makepad_widgets::*;
 use super::speech_settings::SpeechSettingsWidgetExt;
@@ -129,6 +130,10 @@ script_mod! {
                             agents_settings := AgentServiceSettings {width: Fill{max: 880}}
                             View {width: Fill height: 24}
                         }
+                        external_bots_settings_page := View {
+                            width: Fill height: Fill
+                            external_bots := AgentAccessPanel {}
+                        }
                         speech_settings_page := ScrollYView {
                             width: Fill height: Fill flow: Down padding: Inset{left: 24 right: 24 top: 20}
                             speech_settings := SpeechSettings {width: Fill{max: 880}}
@@ -174,11 +179,19 @@ enum SettingsCategory {
     About,
 }
 
+/// A settings category was selected; leave any management page opened above it.
+#[derive(Clone, Debug)]
+pub(crate) struct SettingsPageChanged;
+
 /// The top-level widget showing all app and user settings/preferences.
 #[derive(Script, Widget)]
 pub struct SettingsScreen {
     #[deref] view: View,
     #[rust] selected_category: SettingsCategory,
+    #[rust]
+    external_bots_open: bool,
+    #[rust]
+    external_escape: bool,
 }
 
 impl ScriptHook for SettingsScreen {
@@ -189,6 +202,20 @@ impl ScriptHook for SettingsScreen {
 
 impl Widget for SettingsScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if self.external_bots_open
+            && scope.data.get::<AppState>().is_some_and(|a| a.selected_tab != SelectedTab::Settings)
+        {
+            self.close_external_bots(cx);
+        }
+        if matches!(event, Event::KeyUp(k) if k.key_code == KeyCode::Escape) && self.external_escape {
+            self.external_escape = false;
+            return;
+        }
+        if self.external_bots_open && matches!(event, Event::KeyDown(k) if k.key_code == KeyCode::Escape) {
+            self.external_escape = true;
+            self.close_external_bots(cx);
+            return;
+        }
         self.view.handle_event(cx, event, scope);
 
         // ScriptReapply preserves text fields (String / ArcStringMut bail out),
@@ -203,6 +230,28 @@ impl Widget for SettingsScreen {
         }
 
         if let Event::Actions(actions) = event {
+            if [ids!(category_account_button), ids!(category_general_button), ids!(category_interface_button),
+                ids!(category_messages_button), ids!(category_agents_button), ids!(category_speech_button),
+                ids!(category_privacy_button), ids!(category_about_button)]
+                .iter().any(|id| self.view.navigation_bar_button(cx, *id).clicked(actions))
+            {
+                cx.action(SettingsPageChanged);
+            }
+            for action in actions {
+                if let Some(action) = action.downcast_ref::<AgentAccessAction>() {
+                    match action {
+                        AgentAccessAction::Open if scope.data.get::<AppState>().is_some_and(|a| a.selected_tab == SelectedTab::Settings) => {
+                            let state = scope.data.get::<AppState>().unwrap();
+                            self.view.agent_access_panel(cx, ids!(external_bots)).action(cx, action, &state.agent_access);
+                            self.external_bots_open = true;
+                            self.selected_category = SettingsCategory::Agents;
+                            self.sync_selected_category(cx);
+                        }
+                        AgentAccessAction::Close => self.close_external_bots(cx),
+                        _ => {}
+                    }
+                }
+            }
             if self.view.navigation_bar_button(cx, ids!(category_account_button)).clicked(actions) {
                 self.set_selected_category(cx, SettingsCategory::Account);
             } else if self.view.navigation_bar_button(cx, ids!(category_general_button)).clicked(actions) {
@@ -212,6 +261,7 @@ impl Widget for SettingsScreen {
             } else if self.view.navigation_bar_button(cx, ids!(category_messages_button)).clicked(actions) {
                 self.set_selected_category(cx, SettingsCategory::Messages);
             } else if self.view.navigation_bar_button(cx, ids!(category_agents_button)).clicked(actions) {
+                self.close_external_bots(cx);
                 self.set_selected_category(cx, SettingsCategory::Agents);
             } else if self.view.navigation_bar_button(cx, ids!(category_speech_button)).clicked(actions) {
                 self.set_selected_category(cx, SettingsCategory::Speech);
@@ -247,7 +297,12 @@ impl Widget for SettingsScreen {
             }
         };
         if close_pane {
-            cx.action(NavigationBarAction::CloseSettings);
+            if self.external_bots_open && !matches!(event, Event::Actions(actions) if self.button(cx, ids!(close_button)).clicked(actions)) {
+                self.close_external_bots(cx);
+            } else {
+                self.close_external_bots(cx);
+                cx.action(NavigationBarAction::CloseSettings);
+            }
         }
 
         #[cfg(feature = "tsp")]
@@ -351,7 +406,16 @@ impl SettingsScreen {
         }
     }
 
+    fn close_external_bots(&mut self, cx: &mut Cx) {
+        self.view.agent_access_panel(cx, ids!(external_bots)).action(cx, &AgentAccessAction::Close, &Default::default());
+        self.external_bots_open = false;
+        self.sync_selected_category(cx);
+    }
+
     fn set_selected_category(&mut self, cx: &mut Cx, category: SettingsCategory) {
+        if category != SettingsCategory::Agents && self.external_bots_open {
+            self.close_external_bots(cx);
+        }
         self.selected_category = category;
         self.sync_selected_category(cx);
     }
@@ -363,6 +427,7 @@ impl SettingsScreen {
             SettingsCategory::General => id!(general_settings_page),
             SettingsCategory::Interface => id!(interface_settings_page),
             SettingsCategory::Messages => id!(messages_settings_page),
+            SettingsCategory::Agents if self.external_bots_open => id!(external_bots_settings_page),
             SettingsCategory::Agents => id!(agents_settings_page),
             SettingsCategory::Speech => id!(speech_settings_page),
             SettingsCategory::Privacy => id!(privacy_settings_page),
@@ -375,6 +440,7 @@ impl SettingsScreen {
             SettingsCategory::General => "General",
             SettingsCategory::Interface => "Interface",
             SettingsCategory::Messages => "Messages",
+            SettingsCategory::Agents if self.external_bots_open => "External bots and AppServices",
             SettingsCategory::Agents => "Agent services",
             SettingsCategory::Speech => "Speech",
             SettingsCategory::Privacy => "Privacy",
@@ -449,6 +515,41 @@ mod layout_tests {
         cx2d.end_pass_sized_turtle();
         list.end(&mut cx2d);
         cx2d.end_pass(&pass);
+    }
+
+    #[test]
+    fn external_bots_stay_inside_settings_navigation_and_back_returns_to_agent_services() {
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        let mut screen=screen(&mut cx);
+        let mut state=AppState::default();state.selected_tab=SelectedTab::Settings;
+        screen.set_selected_category(&mut cx,SettingsCategory::Agents);
+        let actions=cx.capture_actions(|cx|cx.action(AgentAccessAction::Open));
+        screen.handle_event(&mut cx,&Event::Actions(actions),&mut Scope::with_data(&mut state));
+        assert!(screen.external_bots_open);
+        assert_eq!(screen.view.label(&mut cx,ids!(settings_header_title)).text(),"External bots and AppServices");
+        assert_eq!(screen.view.label(&mut cx,ids!(linked_bots_heading)).text(),"Linked external bots");
+        assert!(screen.view.label(&mut cx,ids!(external_bots_intro)).text().contains("main sidebar"));
+        let input=screen.view.text_input(&mut cx,ids!(external_bots.agent_id));input.set_text(&mut cx,"@external:example.org");
+        for width in [1100.0,375.0] {
+            draw(&mut cx,&mut screen,width);
+            let nav=screen.view.view(&mut cx,ids!(settings_navigation)).area().rect(&cx);
+            let panel=screen.view.widget(&cx,ids!(external_bots)).area().rect(&cx);
+            assert!(nav.size.x>=64.0);assert!(panel.pos.x>=nav.pos.x+nav.size.x);
+            assert!(panel.pos.x+panel.size.x<=width+1.0);
+        }
+        screen.handle_event(&mut cx,&Event::ScriptReapply,&mut Scope::with_data(&mut state));
+        assert!(screen.external_bots_open);assert_eq!(input.text(),"@external:example.org");
+        let actions=cx.capture_actions(|cx|cx.action(AgentAccessAction::Close));
+        screen.handle_event(&mut cx,&Event::Actions(actions),&mut Scope::with_data(&mut state));
+        assert!(!screen.external_bots_open);assert_eq!(state.selected_tab,SelectedTab::Settings);
+        assert_eq!(screen.view.label(&mut cx,ids!(settings_header_title)).text(),"Agent services");
+        let actions=cx.capture_actions(|cx|cx.action(AgentAccessAction::Open));
+        screen.handle_event(&mut cx,&Event::Actions(actions),&mut Scope::with_data(&mut state));
+        assert!(screen.external_bots_open);
+        state.selected_tab=SelectedTab::Home;
+        screen.handle_event(&mut cx,&Event::Actions(Vec::new()),&mut Scope::with_data(&mut state));
+        assert!(!screen.external_bots_open);
+        assert_eq!(crate::i18n::text_for(crate::i18n::Language::Chinese,"Linked external bots"),"已关联的外部机器人");
     }
 
     #[test]

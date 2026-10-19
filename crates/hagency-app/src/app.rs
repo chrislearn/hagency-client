@@ -4,7 +4,7 @@
 
 #[cfg(feature = "agent_chat")]
 use crate::agent_chat::approval_inbox::{ApprovalInboxAction, ApprovalInboxWidgetRefExt};
-use crate::agent_access::{AgentAccessAction, AgentAccessPanelWidgetRefExt};
+use crate::agent_access::AgentAccessAction;
 use std::{
     cell::RefCell,
     collections::{hash_map::DefaultHasher, HashMap},
@@ -71,11 +71,22 @@ mod embedded_content {
                     login_screen := LoginScreen {}
                 }
 
+                workspace_pages := WorkspacePages {
+                    theme_studio_modal := Modal {can_dismiss: false content := ThemeStudio {}}
+                    web_browser_modal := Modal {can_dismiss: false content := WebBrowser {}}
+                    approval_inbox_modal := Modal {can_dismiss: false content := ApprovalInbox {}}
+                    space_management_modal := Modal {can_dismiss: false content := SpaceManagementPanel {}}
+                    article_app_modal := Modal {can_dismiss: false content := ArticlePanel {}}
+                    octoscript_apps_modal := Modal {can_dismiss: false content := MiniAppsPanel {}}
+                    mini_app_modal := Modal {can_dismiss: false content := MiniAppPanel {}}
+                    agent_ops_modal := Modal {can_dismiss: false content := AgentOpsPanel {}}
+                    moments_modal := Modal {can_dismiss: false content := MomentsPanel {}}
+                    room_history_modal := Modal {can_dismiss: false content := RoomHistoryPanel {}}
+                }
+
                 image_viewer_modal := Modal {
                     content := ImageViewer {}
                 }
-                theme_studio_modal := Modal {can_dismiss: false content := ThemeStudio {}}
-                web_browser_modal := Modal {can_dismiss: false content := WebBrowser {}}
                 
                 // The popup that lets the user select users to mention, rooms to link,
                 // or a slash command to run (via kbd triggers like '@', '#', '/').
@@ -125,9 +136,6 @@ mod embedded_content {
                     content := TspVerificationModal {}
                 }
 
-                approval_inbox_modal := Modal {can_dismiss: false content := ApprovalInbox {}}
-                agent_access_modal := Modal {can_dismiss: false content := AgentAccessPanel {}}
-                space_management_modal := Modal {can_dismiss: false content := SpaceManagementPanel {}}
 
                 // A generic modal to confirm any positive action.
                 positive_confirmation_modal := Modal {
@@ -149,23 +157,11 @@ mod embedded_content {
                     content := FileUploadModal {}
                 }
 
-                article_app_modal := Modal {can_dismiss: false content := ArticlePanel {}}
-                octoscript_apps_modal := Modal {can_dismiss: false content := MiniAppsPanel {}}
                 // The assistant's read and send requests: answered only here.
                 assistant_sheet_modal := Modal {can_dismiss: false content := AssistantSheet {}}
-                mini_app_modal := Modal {
-                    can_dismiss: false
-                    content := MiniAppPanel {}
-                }
                 forward_modal := Modal {
                     can_dismiss: false
                     content := ForwardPanel {}
-                }
-                agent_ops_modal := Modal {can_dismiss: false content := AgentOpsPanel {}}
-                moments_modal := Modal {can_dismiss: false content := MomentsPanel {}}
-                room_history_modal := Modal {
-                    can_dismiss: false
-                    content := RoomHistoryPanel {}
                 }
 
                 PopupList {}
@@ -392,6 +388,9 @@ impl MatchEvent for App {
         }
 
         for action in actions {
+            if workspace_navigation(action) {
+                self.close_workspace_pages(cx);
+            }
             if let Some(action) = action.downcast_ref::<crate::accounts::AccountAction>() {
                 if !crate::sliding_sync::account_changing() {
                     self.persist_runtime_state(cx, "account switch");
@@ -537,8 +536,6 @@ impl MatchEvent for App {
                 }
             }
             if let Some(action) = action.downcast_ref::<AgentAccessAction>() {
-                let modal = self.ui.modal(cx, ids!(agent_access_modal));
-                self.ui.agent_access_panel(cx, ids!(agent_access_modal.content)).action(cx, modal, action, &self.app_state.agent_access);
                 if matches!(action, AgentAccessAction::Changed) {self.persist_runtime_state(cx, "agent access");cx.redraw_all();}
             }
             if let Some(action) = action.downcast_ref::<SpaceManagementAction>() {
@@ -1073,6 +1070,38 @@ impl MatchEvent for App {
 }
 
 impl App {
+    fn close_workspace_pages(&mut self, cx: &mut Cx) {
+        // Run each page's cleanup, including cancellation and theme-preview rollback.
+        // Native reader/mini-app windows are independent and remain open.
+        macro_rules! close_page {
+            ($id:ident, $widget:ident, $action:expr) => {{
+                let modal = self.ui.modal(cx, ids!($id));
+                if modal.is_open() {
+                    self.ui.$widget(cx, ids!($id.content)).action(cx, modal, &$action);
+                }
+            }};
+        }
+        close_page!(theme_studio_modal, theme_studio, ThemeStudioAction::Close);
+        close_page!(web_browser_modal, web_browser, WebBrowserAction::Close);
+        close_page!(space_management_modal, space_management_panel, SpaceManagementAction::Close);
+        close_page!(article_app_modal, article_panel, ArticleAction::Close);
+        close_page!(octoscript_apps_modal, mini_apps_panel, MiniAppsAction::Close);
+        close_page!(mini_app_modal, mini_app_panel, MiniAppAction::Close);
+        close_page!(room_history_modal, room_history_panel, RoomHistoryAction::Close);
+        let modal = self.ui.modal(cx, ids!(moments_modal));
+        if modal.is_open() {
+            self.ui.moments_panel(cx, ids!(moments_modal.content)).action(cx, Some(&modal), &MomentsAction::Close);
+        }
+        #[cfg(feature = "agent_chat")]
+        {
+            close_page!(agent_ops_modal, agent_ops_panel, AgentOpsAction::Close);
+            let modal = self.ui.modal(cx, ids!(approval_inbox_modal));
+            if modal.is_open() {
+                self.ui.approval_inbox(cx, ids!(approval_inbox_modal.content)).action(cx, modal, &ApprovalInboxAction::Close, &self.app_state);
+            }
+        }
+    }
+
     fn preserve_reader_session(&self, cx: &mut Cx) {
         self.ui.web_browser_window_host(cx, ids!(web_browser_window_host)).browser(cx).prepare_shutdown();
         self.ui.web_browser(cx, ids!(web_browser_modal.content)).prepare_shutdown();
@@ -1095,6 +1124,8 @@ impl App {
     }
 
     fn clear_session_ui(&mut self, cx: &mut Cx) {
+        self.close_workspace_pages(cx);
+        cx.global::<crate::shared::workspace_pages::WorkspacePageBounds>().0 = None;
         self.lifecycle.last_app_state_save = None;
         self.pending_signup_navigation = None;
         self.ui.image_viewer(cx, ids!(image_viewer_modal.content)).reset(cx);
@@ -1107,8 +1138,6 @@ impl App {
             let modal = self.ui.modal(cx, ids!(approval_inbox_modal));
             self.ui.approval_inbox(cx, ids!(approval_inbox_modal.content)).action(cx, modal, &ApprovalInboxAction::Close, &self.app_state);
         }
-        let modal = self.ui.modal(cx, ids!(agent_access_modal));
-        self.ui.agent_access_panel(cx, ids!(agent_access_modal.content)).action(cx, modal, &AgentAccessAction::Close, &self.app_state.agent_access);
         crate::agent_access::publish(None, &Default::default());
         let modal = self.ui.modal(cx, ids!(space_management_modal));
         self.ui.space_management_panel(cx, ids!(space_management_modal.content)).action(cx, modal, &SpaceManagementAction::Close);
@@ -1140,6 +1169,31 @@ impl App {
         self.app_state.clear_for_session_end();
         self.app_state.app_prefs.broadcast_all(cx);
     }
+}
+
+fn workspace_navigation(action: &Action) -> bool {
+    let navigation = matches!(action.downcast_ref::<NavigationBarAction>(), Some(
+        NavigationBarAction::GoToTab(_) | NavigationBarAction::NewChat | NavigationBarAction::GoToHome
+        | NavigationBarAction::GoToAddRoom | NavigationBarAction::CloseAddRoom
+        | NavigationBarAction::OpenSettings | NavigationBarAction::CloseSettings
+        | NavigationBarAction::OpenOwnProfile | NavigationBarAction::GoToSpace {..}
+    )) || action.downcast_ref::<crate::settings::settings_screen::SettingsPageChanged>().is_some()
+        || action.downcast_ref::<SidebarMenuAction>().is_some()
+        || matches!(action.downcast_ref::<crate::hagency::ui::HagencyAction>(), Some(
+            crate::hagency::ui::HagencyAction::OpenProjects | crate::hagency::ui::HagencyAction::OpenAgents
+        ))
+        || matches!(action.downcast_ref::<MainDesktopUiAction>(), Some(MainDesktopUiAction::ShowChats))
+        || matches!(action.downcast_ref::<AppStateAction>(), Some(AppStateAction::NavigateToRoom {..}))
+        || matches!(action.downcast_ref::<RoomsListAction>(), Some(RoomsListAction::Selected(_)))
+        || matches!(action.downcast_ref::<ThemeStudioAction>(), Some(ThemeStudioAction::Open))
+        || matches!(action.downcast_ref::<MiniAppsAction>(), Some(MiniAppsAction::Open | MiniAppsAction::OpenReviewed))
+        || matches!(action.downcast_ref::<AgentAccessAction>(), Some(AgentAccessAction::Open))
+        || matches!(action.downcast_ref::<SpaceManagementAction>(), Some(SpaceManagementAction::Open {..}));
+    #[cfg(feature = "agent_chat")]
+    let navigation = navigation
+        || matches!(action.downcast_ref::<ApprovalInboxAction>(), Some(ApprovalInboxAction::Open {..}))
+        || matches!(action.downcast_ref::<AgentOpsAction>(), Some(AgentOpsAction::Open));
+    navigation
 }
 
 /// Clears all thread-local UI caches (user profiles, invited rooms, and timeline states).
@@ -1223,8 +1277,6 @@ pub fn register_widgets(vm: &mut ScriptVm) {
     crate::assistant::sheet::script_mod(vm);
     crate::home::account_list::script_mod(vm);
     crate::settings::script_mod(vm);
-    // External integration forms share the settings input/dropdown styles.
-    crate::agent_access::script_mod(vm);
     // RoomInputBar depends on these Home widgets; preload them before room::script_mod.
     crate::home::location_preview::script_mod(vm);
     crate::home::tombstone_footer::script_mod(vm);
@@ -1289,8 +1341,6 @@ impl AppMain for App {
                     let modal = self.ui.modal(cx, ids!(approval_inbox_modal));
                     if modal.is_open() {event.back_pressed(); self.ui.approval_inbox(cx, ids!(approval_inbox_modal.content)).action(cx, modal, &ApprovalInboxAction::Close, &self.app_state); return;}
                 }
-                let modal = self.ui.modal(cx, ids!(agent_access_modal));
-                if modal.is_open() {event.back_pressed(); self.ui.agent_access_panel(cx, ids!(agent_access_modal.content)).action(cx, modal, &AgentAccessAction::Close, &self.app_state.agent_access);return;}
                 let modal = self.ui.modal(cx, ids!(space_management_modal));
                 if modal.is_open() {event.back_pressed(); self.ui.space_management_panel(cx, ids!(space_management_modal.content)).action(cx, modal, &SpaceManagementAction::Close);return;}
                 if self.ui.modal(cx, ids!(web_browser_modal)).is_open() {
@@ -2371,6 +2421,69 @@ mod back_navigation_tests {
         assert!(back(&mut cx, &mut app), "Back must close the open modal");
         assert!(!modal.is_open());
         assert!(!back(&mut cx, &mut app), "With the modal closed, Back goes to the host");
+    }
+
+    #[test]
+    fn management_pages_share_navigation_bounds_and_leave_on_category_change() {
+        use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut app = embedded_app(&mut cx);
+        let pages = [
+            id!(theme_studio_modal), id!(web_browser_modal), id!(approval_inbox_modal),
+            id!(space_management_modal), id!(article_app_modal), id!(octoscript_apps_modal),
+            id!(mini_app_modal), id!(agent_ops_modal), id!(moments_modal), id!(room_history_modal),
+        ];
+        let host = app.ui.widget(&cx, ids!(workspace_pages));
+        assert!(!host.is_empty());
+        for (width, left) in [(1300.0, 300.0), (1100.0, 484.0), (375.0, 65.0)] {
+            let bounds = Rect {pos: dvec2(left, 0.0), size: dvec2(width - left, 760.0)};
+            cx.global::<crate::shared::workspace_pages::WorkspacePageBounds>().0 = Some(bounds);
+            for page in pages {
+                let modal = host.modal(&mut cx, &[page]);
+                assert!(!modal.is_empty(), "page must use the shared host: {page:?}");
+                modal.open(&mut cx);
+                cx.redraw_all();
+                let pass = DrawPass::new(&mut cx);
+                pass.set_size(&mut cx, dvec2(width, 760.0));
+                let mut list = DrawList2d::new(&mut cx);
+                let overlay = Overlay {draw_list: DrawList::new(&mut cx)};
+                let event = DrawEvent::default();
+                let mut draw = CxDraw::new(&mut cx, &event);
+                let mut cx2d = Cx2d::new(&mut draw);
+                cx2d.begin_pass(&pass, None);
+                list.begin_always(&mut cx2d);
+                overlay.begin(&mut cx2d);
+                cx2d.begin_root_turtle(dvec2(width, 760.0), Layout::flow_overlay());
+                host.draw_walk_all(&mut cx2d, &mut Scope::with_data(&mut app.app_state), Walk::fill());
+                cx2d.end_pass_sized_turtle();
+                overlay.end(&mut cx2d);
+                list.end(&mut cx2d);
+                cx2d.end_pass(&pass);
+                drop(cx2d);
+                drop(draw);
+                assert_eq!(cx.fingers.blocked_scrolling_exception_area(), Some(host.area()),
+                    "management pages must leave their navigation scrollable");
+                let down = Event::MouseDown(MouseDownEvent {
+                    abs: dvec2(left - 30.0, 200.0), button: MouseButton::PRIMARY,
+                    window_id: WindowId(0, 0), modifiers: KeyModifiers::default(),
+                    handled: std::cell::Cell::new(Area::Empty), time: 1.0,
+                });
+                host.handle_event(&mut cx, &down, &mut Scope::with_data(&mut app.app_state));
+                assert!(down.pointer_claimed_area().is_empty(), "{page:?} must not claim a navigation press");
+                let content = modal.widget(&cx, ids!(content)).area().rect(&cx);
+                if page == id!(room_history_modal) {
+                    // History deliberately refuses to draw without an authenticated owner.
+                    assert_eq!(content.size, dvec2(0.0, 0.0));
+                } else {
+                    assert!(content.pos.x >= left - 1.0, "{page:?} covered navigation: {content:?}");
+                    assert!(content.pos.x + content.size.x <= width + 1.0, "{page:?} overflowed: {content:?}");
+                }
+                assert!(cx.global::<ModalBounds>().0.is_none(), "page bounds leaked into dialogs");
+                let actions = cx.capture_actions(|cx| cx.action(crate::settings::settings_screen::SettingsPageChanged));
+                app.handle_actions(&mut cx, &actions);
+                assert!(!modal.is_open(), "category navigation must close {page:?}");
+            }
+        }
     }
 
     #[test]

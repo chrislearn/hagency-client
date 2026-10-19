@@ -37,6 +37,7 @@ pub mod mobile_details;
 pub mod web_browser;
 pub mod web_browser_session;
 pub mod web_browser_window;
+pub mod workspace_pages;
 
 
 pub fn script_mod(vm: &mut ScriptVm) {
@@ -75,4 +76,5 @@ pub fn script_mod(vm: &mut ScriptVm) {
     file_upload_modal::script_mod(vm);
     web_browser::script_mod(vm);
     web_browser_window::script_mod(vm);
+    workspace_pages::script_mod(vm);
 }

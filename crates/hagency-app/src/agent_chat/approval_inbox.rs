@@ -50,12 +50,21 @@ script_mod! {
     use mod.widgets.*
     mod.widgets.ApprovalInbox = #(ApprovalInbox::register_widget(vm)) {
         ..mod.widgets.SolidView
-        width: Fill height: Fill flow: Down spacing: 10 padding: Inset{top: 32 left: 16 right: 16 bottom: 12} draw_bg.color: mod.widgets.RINX_PAGE
-        View {width: Fill height: 40 spacing: 8
+        width: Fill height: Fill flow: Down spacing: 16 padding: Inset{top: 20 left: 24 right: 24 bottom: 20} draw_bg.color: mod.widgets.RINX_PAGE
+        View {width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 12 align: Align{y: 0.5}
             close := RinxBackButton {}
-            refresh := RobrixNeutralIconButton {text: #(crate::i18n::tr("Refresh approval rooms")) i18n_text: "Refresh approval rooms"}
+            RinxPageTitle {text: #(crate::i18n::tr("Approval rooms")) i18n_text: "Approval rooms"}
         }
+        RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: mod.widgets.RINX_MUTED text: #(crate::i18n::tr("Find verified private rooms where your agents send approval requests. Open a room to review its requests and respond there. This list contains rooms, not a count of pending approvals.")) i18n_text: "Find verified private rooms where your agents send approval requests. Open a room to review its requests and respond there. This list contains rooms, not a count of pending approvals."}
+        refresh := RinxButton {text: #(crate::i18n::tr("Refresh approval rooms")) i18n_text: "Refresh approval rooms"}
         status := RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: mod.widgets.RINX_INK}
+        empty_state := RoundedView {
+            visible: false width: Fill{max: 880} height: Fit flow: Down padding: 20 spacing: 12
+            draw_bg +: {color: mod.widgets.RINX_SURFACE border_color: mod.widgets.RINX_BORDER border_size: 1 border_radius: mod.widgets.RINX_CONTROL_RADIUS}
+            empty_title := RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} text: #(crate::i18n::tr("No approval rooms found")) i18n_text: "No approval rooms found" draw_text.text_style: theme.font_bold {font_size: mod.widgets.RINX_HEADING_SIZE}}
+            empty_description := RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: mod.widgets.RINX_MUTED}
+            empty_help := RinxHint {width: Fill height: Fit flow: Flow.Right{wrap: true} text: #(crate::i18n::tr("Only joined rooms with valid approval-room markers for your account are listed. A regular chat is not an approval room. Join your agent's approval room, then refresh this list.")) i18n_text: "Only joined rooms with valid approval-room markers for your account are listed. A regular chat is not an approval room. Join your agent's approval room, then refresh this list."}
+        }
         rooms := PortalList {width: Fill height: Fill
             Row := View {width: Fill height: Fit flow: Down padding: 8 spacing: 8
                 title := RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: mod.widgets.RINX_INK}
@@ -89,12 +98,44 @@ pub struct ApprovalInbox {
     indexes: MarkerIndexes,
     #[rust]
     validated_at: u64,
+    #[rust]
+    summary: Option<(usize, usize)>,
+    #[rust]
+    loading: bool,
 }
 fn nonce() -> u64 {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
 impl ApprovalInbox {
+    fn sync_status(&mut self, cx: &mut Cx) {
+        let status = if self.loading {
+            crate::i18n::tr("Checking approval rooms…").to_owned()
+        } else if let Some((scanned, failed)) = self.summary {
+            crate::i18n::format(
+                "Found {count} approval rooms. Checked {scanned} rooms; {failed} checks unavailable.",
+                &[("count", self.candidates.len().to_string()), ("scanned", scanned.to_string()), ("failed", failed.to_string())],
+            )
+        } else {
+            crate::i18n::tr("Sign in to check your approval rooms.").to_owned()
+        };
+        self.view.label(cx, ids!(status)).set_text(cx, &status);
+        self.view.button(cx, ids!(refresh)).set_text(cx, crate::i18n::tr(if self.loading {"Checking approval rooms…"} else {"Refresh approval rooms"}));
+        self.view.button(cx, ids!(refresh)).set_enabled(cx, !self.loading && self.owner.is_some());
+        let empty = !self.loading && self.summary.is_some() && self.candidates.is_empty();
+        self.view.view(cx, ids!(empty_state)).set_visible(cx, empty);
+        self.view.portal_list(cx, ids!(rooms)).set_visible(cx, !self.candidates.is_empty());
+        let incomplete = self.summary.is_some_and(|(_, failed)| failed > 0);
+        self.view.label(cx, ids!(empty_title)).set_text(cx, crate::i18n::tr(if incomplete {"No verified approval rooms available"} else {"No approval rooms found"}));
+        self.view.label(cx, ids!(empty_description)).set_text(cx, crate::i18n::tr(if incomplete {
+            "Some rooms could not be checked. Refresh to try again; unchecked rooms may contain approvals."
+        } else if self.project.is_some() {
+            "No verified approval room was found for this project. This does not indicate an agent startup error."
+        } else {
+            "Your joined rooms do not currently include a verified approval room. This does not indicate an agent startup error."
+        }));
+        self.view.redraw(cx);
+    }
     fn cancel(&mut self) {
         if let Some(cancelled) = self.cancelled.take() {
             cancelled.store(true, Ordering::Relaxed);
@@ -104,7 +145,10 @@ impl ApprovalInbox {
         self.cancel();
         self.candidates.clear();
         self.request = nonce();
-        let Some(client) = get_client() else { return };
+        self.summary = None;
+        self.loading = false;
+        self.owner = current_user_id();
+        let Some(client) = get_client() else { self.sync_status(cx); return };
         let Some(owner) = client.user_id().map(ToOwned::to_owned) else {
             return;
         };
@@ -125,11 +169,8 @@ impl ApprovalInbox {
         let cancelled = Arc::new(AtomicBool::new(false));
         self.cancelled = Some(cancelled.clone());
         let project = self.project.clone();
-        self.view.label(cx, ids!(status)).set_text(
-            cx,
-            crate::i18n::tr("Checking authenticated approval-room markers…"),
-        );
-        self.view.button(cx, ids!(refresh)).set_enabled(cx, false);
+        self.loading = true;
+        self.sync_status(cx);
         spawn_async_task(async move {
             let rooms: Vec<_> = client
                 .rooms()
@@ -267,11 +308,18 @@ impl ApprovalInbox {
 impl Widget for ApprovalInbox {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+        if matches!(event, Event::ScriptReapply | Event::LiveEdit) && self.active {
+            self.sync_status(cx);
+        }
         if !self.active {
             return;
         }
         if current_user_id() != self.owner {
             self.cancel();
+            cx.action(ApprovalInboxAction::Close);
+            return;
+        }
+        if matches!(event, Event::KeyUp(key) if key.key_code == KeyCode::Escape) {
             cx.action(ApprovalInboxAction::Close);
             return;
         }
@@ -306,17 +354,9 @@ impl Widget for ApprovalInbox {
                         .collect();
                     cx.action(ApprovalInboxAction::Saved);
                 }
-                let text = crate::i18n::format(
-                    "Found {count} approval rooms. Checked {scanned} rooms; {failed} checks unavailable.",
-                    &[
-                        ("count", self.candidates.len().to_string()),
-                        ("scanned", result.scanned.to_string()),
-                        ("failed", result.failed.to_string()),
-                    ],
-                );
-                self.view.label(cx, ids!(status)).set_text(cx, &text);
-                self.view.button(cx, ids!(refresh)).set_enabled(cx, true);
-                self.view.redraw(cx);
+                self.summary = Some((result.scanned, result.failed));
+                self.loading = false;
+                self.sync_status(cx);
             }
         }
         for (index, item) in self
@@ -414,10 +454,74 @@ impl ApprovalInboxRef {
                 inner.marker_client = None;
                 inner.indexes.clear();
                 inner.candidates.clear();
+                inner.loading = false;
+                inner.summary = None;
                 inner.request = nonce();
                 modal.close(cx);
             }
             ApprovalInboxAction::Saved => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_partial_and_loading_states_explain_what_was_checked() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut inbox = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            vm.bx.captured_errors = Some(Vec::new());
+            let value = script_eval!(vm, {mod.widgets.ApprovalInbox {}});
+            let inbox = ApprovalInbox::script_from_value(vm, value);
+            assert!(vm.take_errors().is_empty());
+            inbox
+        });
+        inbox.owner = Some(matrix_sdk::ruma::user_id!("@owner:example.org").to_owned());
+        inbox.summary = Some((5, 0));
+        inbox.sync_status(&mut cx);
+        assert!(inbox.view.view(&mut cx, ids!(empty_state)).visible());
+        assert_eq!(inbox.view.label(&mut cx, ids!(empty_title)).text(), "No approval rooms found");
+        assert!(inbox.view.label(&mut cx, ids!(empty_description)).text().contains("does not indicate an agent startup error"));
+        inbox.summary = Some((5, 2));
+        inbox.sync_status(&mut cx);
+        assert_eq!(inbox.view.label(&mut cx, ids!(empty_title)).text(), "No verified approval rooms available");
+        assert!(inbox.view.label(&mut cx, ids!(empty_description)).text().contains("unchecked rooms may contain approvals"));
+        inbox.loading = true;
+        inbox.sync_status(&mut cx);
+        assert!(!inbox.view.view(&mut cx, ids!(empty_state)).visible());
+        assert_eq!(inbox.view.button(&mut cx, ids!(refresh)).text(), "Checking approval rooms…");
+        inbox.loading = false;
+        inbox.summary = Some((5, 0));
+        inbox.sync_status(&mut cx);
+        {
+            use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+            let pass = DrawPass::new(&mut cx);
+            pass.set_size(&mut cx, dvec2(310.0, 760.0));
+            let mut list = DrawList2d::new(&mut cx);
+            let overlay = Overlay {draw_list: DrawList::new(&mut cx)};
+            let event = DrawEvent::default();
+            let mut draw = CxDraw::new(&mut cx, &event);
+            let mut cx2d = Cx2d::new(&mut draw);
+            cx2d.begin_pass(&pass, None);
+            list.begin_always(&mut cx2d);
+            overlay.begin(&mut cx2d);
+            cx2d.begin_root_turtle(dvec2(310.0, 760.0), Layout::flow_overlay());
+            inbox.draw_walk_all(&mut cx2d, &mut Scope::empty(), Walk::fill());
+            cx2d.end_pass_sized_turtle();
+            overlay.end(&mut cx2d);
+            list.end(&mut cx2d);
+            cx2d.end_pass(&pass);
+        }
+        let help = inbox.view.label(&mut cx, ids!(empty_help)).area().rect(&cx);
+        assert!(help.size.y > 30.0, "long empty-state guidance must wrap on narrow pages: {help:?}");
+        assert!(help.pos.x + help.size.x <= 310.0);
+        let cancelled = Arc::new(AtomicBool::new(false));
+        inbox.cancelled = Some(cancelled.clone());
+        inbox.cancel();
+        assert!(cancelled.load(Ordering::Relaxed));
     }
 }
