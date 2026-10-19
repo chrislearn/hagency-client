@@ -366,6 +366,11 @@ impl MatchEvent for App {
             }
         }
         // A resize emits once on release, avoiding disk writes during pointer movement.
+        for resize in actions.iter().filter_map(|action| action.downcast_ref::<crate::shared::sidebar_resize::SidebarWidthSaved>()) {
+            self.app_state.app_prefs.sidebar_widths.set(resize.0, resize.1);
+            self.app_state.app_prefs.on_sidebar_widths_changed(cx);
+            self.persist_runtime_state(cx, "sidebar resize");
+        }
         for resize in actions.iter().filter_map(|action| action.downcast_ref::<crate::room::room_input_bar::ComposerHeightSaved>()) {
             self.app_state.app_prefs.composer_height = resize.0;
             self.app_state.app_prefs.on_composer_height_changed(cx);

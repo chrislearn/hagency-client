@@ -25,6 +25,7 @@ use crate::{
 
 use super::project_tree::{ProjectTreeWidgetExt, ProjectTreeMode};
 use super::rooms_sidebar::DesktopWorkspace;
+use crate::shared::sidebar_resize::{left_widths, SidebarKind, SidebarResizeHandleWidgetExt};
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -159,20 +160,28 @@ script_mod! {
                 }
 
                 persistent_sidebar_frame := View {
-                    width: 200 height: Fill
+                    width: 200 height: Fill flow: Overlay
                     persistent_sidebar := mod.widgets.RoomsSideBar {width: Fill height: Fill}
+                    View {width: Fill height: Fill flow: Right align: Align{x: 1.0}
+                        navigation_resize := SidebarResizeHandle {}
+                    }
                 }
 
                 workspace_context := SolidView {
-                    width: 240 height: Fill flow: Down spacing: 8
-                    padding: Inset{left: 10 right: 10 top: 16 bottom: 12}
+                    width: 240 height: Fill flow: Overlay
                     draw_bg.color: mod.widgets.RINX_SURFACE
+                    View {width: Fill height: Fill flow: Down spacing: 8
+                    padding: Inset{left: 10 right: 10 top: 16 bottom: 12}
                     context_title := RinxLabel {width: Fill height: Fit padding: 0 text: #(crate::i18n::tr("Projects")) draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold {font_size: mod.widgets.RINX_HEADING_SIZE}}}
                     context_search := View {width: Fill height: 36 visible: false
                         room_filter_input_bar := RoomFilterInputBar {height: 36 input.empty_text: #(crate::i18n::tr("Search chats")) input.i18n_empty_text: "Search chats"}
                     }
                     project_chats := View {width: Fill height: Fill
                         CachedWidget {project_tree := ProjectTree {}}
+                    }
+                    }
+                    View {width: Fill height: Fill flow: Right align: Align{x: 1.0}
+                        context_resize := SidebarResizeHandle {}
                     }
                 }
 
@@ -767,15 +776,24 @@ impl Widget for HomeScreen {
         // so we must re-set it to the correct page based on `app_state.selected_tab`.
         self.update_active_page_from_selection(cx, app_state);
         let available = cx.peek_walk_turtle(walk).size.x;
-        let compact = available < 960.0;
+        let desktop = effective_is_desktop(cx);
+        let workspace = *cx.global::<DesktopWorkspace>();
+        let show_context = desktop && available >= 760.0 && app_state.selected_tab == SelectedTab::Home && workspace != DesktopWorkspace::Other;
+        let collapsed = app_state.app_prefs.desktop_sidebar_collapsed;
+        let nav_handle = self.view.sidebar_resize_handle(cx, ids!(navigation_resize));
+        let context_handle = self.view.sidebar_resize_handle(cx, ids!(context_resize));
+        let mut preferred = app_state.app_prefs.sidebar_widths.clone();
+        if let Some(width) = nav_handle.preview() {preferred.navigation = Some(width);}
+        if let Some(width) = context_handle.preview() {preferred.context = Some(width);}
+        let (nav_width, context_width, nav_max, context_max) = left_widths(available, collapsed, show_context, &preferred);
         if let Some(mut rail) = self.view.view(cx, ids!(persistent_sidebar_frame)).borrow_mut() {
-            rail.walk.width = Size::Fixed(if app_state.app_prefs.desktop_sidebar_collapsed {64.0} else if compact {160.0} else {200.0});
+            rail.walk.width = Size::Fixed(nav_width);
         }
         if let Some(mut context) = self.view.view(cx, ids!(workspace_context)).borrow_mut() {
-            context.walk.width = Size::Fixed(if compact {180.0} else {240.0});
+            context.walk.width = Size::Fixed(context_width);
         }
-        let workspace = *cx.global::<DesktopWorkspace>();
-        let show_context = effective_is_desktop(cx) && available >= 760.0 && app_state.selected_tab == SelectedTab::Home && workspace != DesktopWorkspace::Other;
+        nav_handle.configure(cx, SidebarKind::Navigation, nav_width, nav_max, false, desktop && !collapsed);
+        context_handle.configure(cx, SidebarKind::Context, context_width, context_max, false, show_context);
         self.view.view(cx, ids!(workspace_context)).set_visible(cx, show_context);
         let tree = self.view.project_tree(cx, ids!(project_tree));
         tree.set_active(cx, show_context);
@@ -1189,6 +1207,31 @@ mod responsive_layout_tests {
             Some(if desktop { id!(Desktop) } else { id!(Mobile) }));
         assert_eq!(effective_is_desktop(cx), desktop);
         assert_eq!(crate::home::account_menu::is_desktop_layout(cx), desktop);
+    }
+
+    #[test]
+    fn saved_sidebar_widths_fit_restore_and_keep_handles_on_the_edges() {
+        let (mut cx, mut home, mut state) = home();
+        state.app_prefs.sidebar_widths.navigation = Some(260.0);
+        state.app_prefs.sidebar_widths.context = Some(340.0);
+        for (width, collapsed) in [(1280.0, false), (860.0, false), (1280.0, true), (1280.0, false)] {
+            state.app_prefs.desktop_sidebar_collapsed = collapsed;
+            draw_pane(&mut cx, &mut home, &mut state, width);
+            let nav = home.view.view(&mut cx, ids!(persistent_sidebar_frame)).area().rect(&cx);
+            let context = home.view.view(&mut cx, ids!(workspace_context)).area().rect(&cx);
+            assert_eq!(nav.size.x, if collapsed {64.0} else {260.0});
+            assert_eq!(context.pos.x, nav.pos.x + nav.size.x);
+            assert!(width - context.pos.x - context.size.x >= 320.0);
+            if width == 1280.0 {assert_eq!(context.size.x, 340.0);}
+            let nav_handle = home.view.sidebar_resize_handle(&mut cx, ids!(navigation_resize));
+            assert_eq!(nav_handle.visible(), !collapsed);
+            if !collapsed {let handle = nav_handle.area().rect(&cx); assert_eq!(handle.pos.x + handle.size.x, nav.pos.x + nav.size.x);}
+            let handle = home.view.sidebar_resize_handle(&mut cx, ids!(context_resize)).area().rect(&cx);
+            assert_eq!(handle.pos.x + handle.size.x, context.pos.x + context.size.x);
+            assert_eq!(handle.size.x, 6.0);
+            assert_eq!(state.app_prefs.sidebar_widths.navigation, Some(260.0));
+            assert_eq!(state.app_prefs.sidebar_widths.context, Some(340.0));
+        }
     }
 
     #[test]

@@ -14,6 +14,7 @@ use crate::mini_app::{MiniAppCardWidgetRefExt, SharedMiniApp};
 use crate::forwarding::{ForwardAction, ForwardBundle, ForwardCardWidgetRefExt, ForwardMessage};
 use crate::home::mobile_chat_info::MobileChatInfoWidgetExt;
 use crate::shared::navigation_bar_button::NavigationBarButtonWidgetExt;
+use crate::shared::sidebar_resize::{SidebarKind, SidebarResizeHandleWidgetExt};
 
 use hashbrown::{HashMap, HashSet};
 use imbl::Vector;
@@ -1033,14 +1034,18 @@ script_mod! {
             }
             */
                 }
-                desktop_chat_info_panel := SolidView {visible: false width: 280 height: Fill flow: Right draw_bg.color: mod.widgets.RINX_BORDER
+                desktop_chat_info_panel := SolidView {visible: false width: 280 height: Fill flow: Overlay draw_bg.color: mod.widgets.RINX_BORDER
+                    View {width: Fill height: Fill flow: Right
                     View {width: 1 height: Fill}
                     desktop_chat_info_card := View {width: Fill height: Fill desktop_chat_info := MobileChatInfo {summary.summary_details.visible: false}}
+                    }
+                    information_resize := SidebarResizeHandle {}
                 }
             }
             compact_chat_info_panel := View {visible: false width: Fill height: Fill flow: Right align: Align{x: 1.0}
-                compact_chat_info_card := SolidView {width: 280 height: Fill draw_bg.color: mod.widgets.RINX_SURFACE
-                    compact_chat_info := MobileChatInfo {summary.summary_details.visible: false}
+                compact_chat_info_card := SolidView {width: 280 height: Fill flow: Overlay draw_bg.color: mod.widgets.RINX_SURFACE
+                    View {width: Fill height: Fill compact_chat_info := MobileChatInfo {summary.summary_details.visible: false}}
+                    compact_information_resize := SidebarResizeHandle {}
                 }
             }
         }
@@ -1280,6 +1285,9 @@ impl Widget for RoomScreen {
         // Skip event handling if this RoomScreen is uninitialized (a background dock tab after dock restore).
         if self.tl_state.is_none() && self.room_name_id.is_none() {
             return;
+        }
+        for id in [id!(information_resize), id!(compact_information_resize)] {
+            if self.view.sidebar_resize_handle(cx, &[id]).route_pointer_event(cx, event, _scope) {return;}
         }
         let notice=self.view.agent_runtime_notice(cx,ids!(agent_runtime_notice));
         if let Some(app)=_scope.data.get::<crate::app::AppState>() {
@@ -3964,8 +3972,17 @@ impl RoomScreen {
         }
         self.view.view(cx, ids!(desktop_chat_info_panel)).set_visible(cx, show && inline);
         self.view.view(cx, ids!(compact_chat_info_panel)).set_visible(cx, show && !inline);
+        let inline_handle = self.view.sidebar_resize_handle(cx, ids!(information_resize));
+        let compact_handle = self.view.sidebar_resize_handle(cx, ids!(compact_information_resize));
+        let preferred = inline_handle.preview().or(compact_handle.preview())
+            .or(cx.global::<crate::settings::app_preferences::AppPreferencesGlobal>().0.sidebar_widths.information).unwrap_or(280.0);
+        let maximum = if inline {(available - 320.0).clamp(240.0, 480.0)} else {available.clamp(0.0, 480.0)};
+        let width = preferred.clamp(maximum.min(240.0), maximum);
+        if let Some(mut panel) = self.view.view(cx, ids!(desktop_chat_info_panel)).borrow_mut() {panel.walk.width = Size::Fixed(width);}
         let card = self.view.view(cx, ids!(compact_chat_info_card));
-        if let Some(mut card) = card.borrow_mut() { card.walk.width = Size::Fixed(available.clamp(0.0, 280.0)); }
+        if let Some(mut card) = card.borrow_mut() { card.walk.width = Size::Fixed(width); }
+        inline_handle.configure(cx, SidebarKind::Information, width, maximum, true, show && inline);
+        compact_handle.configure(cx, SidebarKind::Information, width, maximum, true, show && !inline && available >= 240.0);
         if show && let Some(room) = self.room_name_id.clone() {
             let info = if inline {ids!(desktop_chat_info)} else {ids!(compact_chat_info)};
             self.view.mobile_chat_info(cx, info).ensure_room(cx, room);
@@ -7849,6 +7866,37 @@ mod desktop_information_columns_tests {
         screen.room_name_id=None;screen.update_desktop_chat_header(&mut cx);
         assert!(!screen.view.navigation_bar_button(&mut cx,ids!(desktop_thread_back)).visible());
     }
+    #[test]
+    fn saved_information_width_restores_and_drag_release_outside_card_still_saves() {
+        let (mut cx, mut screen) = screen();
+        screen.room_name_id = Some(RoomNameId::empty(matrix_sdk::ruma::room_id!("!resize:server").to_owned()));
+        screen.chat_info_requested = true;
+        cx.global::<crate::settings::app_preferences::AppPreferencesGlobal>().0.sidebar_widths.information = Some(420.0);
+        for width in [1000.0, 600.0, 1000.0] {
+            draw(&mut cx, &mut screen, width);
+            let panel = screen.view.view(&mut cx, ids!(desktop_chat_info_panel)).area().rect(&cx);
+            let center = screen.view.view(&mut cx, ids!(chat_center)).area().rect(&cx);
+            assert_eq!(panel.size.x, if width == 600.0 {280.0} else {420.0});
+            assert!(center.size.x >= 320.0);
+            assert_eq!(cx.global::<crate::settings::app_preferences::AppPreferencesGlobal>().0.sidebar_widths.information, Some(420.0));
+        }
+        let handle = screen.view.sidebar_resize_handle(&mut cx, ids!(information_resize));
+        let rect = handle.area().rect(&cx);
+        let start = rect.pos + rect.size * 0.5;
+        cx.fingers.first_mouse_button = Some((MouseButton::PRIMARY, WindowId(0,0)));
+        let down = Event::MouseDown(MouseDownEvent {abs: start, button: MouseButton::PRIMARY, window_id: WindowId(0,0), modifiers: KeyModifiers::default(), handled: std::cell::Cell::new(Area::Empty), time: 1.0});
+        screen.handle_event(&mut cx, &down, &mut Scope::empty());
+        assert!(handle.preview().is_some());
+        let outside = start - dvec2(200.0, 0.0);
+        let movement = Event::MouseMove(MouseMoveEvent {abs: outside, lock_delta: DVec2::default(), window_id: WindowId(0,0), modifiers: KeyModifiers::default(), handled: std::cell::Cell::new(Area::Empty), time: 1.1});
+        screen.handle_event(&mut cx, &movement, &mut Scope::empty());
+        assert_eq!(handle.preview(), Some(480.0));
+        let up = Event::MouseUp(MouseUpEvent {abs: outside, button: MouseButton::PRIMARY, window_id: WindowId(0,0), modifiers: KeyModifiers::default(), time: 1.2});
+        let actions = cx.capture_actions(|cx|screen.handle_event(cx, &up, &mut Scope::empty()));
+        let saved: Vec<_> = actions.iter().filter_map(|a|a.downcast_ref::<crate::shared::sidebar_resize::SidebarWidthSaved>()).collect();
+        assert_eq!(saved.len(), 1); assert_eq!(saved[0].1, Some(480.0));
+    }
+
     #[test]
     fn real_desktop_room_draw_keeps_timeline_and_input_beside_information() {
         let (mut cx, mut screen) = screen();

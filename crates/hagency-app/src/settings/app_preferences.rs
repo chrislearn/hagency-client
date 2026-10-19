@@ -24,6 +24,8 @@ pub struct AppPreferences {
     /// Preferred desktop composer card height in logical pixels. None keeps automatic sizing.
     #[serde(default, deserialize_with = "deserialize_composer_height")]
     pub composer_height: Option<f64>,
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    pub sidebar_widths: crate::shared::sidebar_resize::SidebarWidths,
     /// * If `true` (default), plain Enter sends the message (Shift+Enter inserts a newline).
     /// * If `false`, Cmd+Enter (Apple platforms) / Ctrl+Enter (other platforms) sends the
     ///   message and plain Enter inserts a newline. This is only relevant for physical keyboards;
@@ -66,6 +68,7 @@ impl Default for AppPreferences {
             tabbed_chats: false,
             desktop_sidebar_collapsed: false,
             composer_height: None,
+            sidebar_widths: Default::default(),
             speech: crate::speech::SpeechConfig::default(),
             send_on_enter: true,
             thumbnail_max_height: ThumbnailMaxHeight::default(),
@@ -80,6 +83,10 @@ impl Default for AppPreferences {
 }
 
 impl AppPreferences {
+    pub fn on_sidebar_widths_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.sidebar_widths = self.sidebar_widths.clone();
+        cx.redraw_all();
+    }
     pub fn on_speech_changed(&self, cx: &mut Cx) {
         cx.global::<AppPreferencesGlobal>().0.speech = self.speech.clone();
         cx.action(AppPreferencesAction::SpeechChanged);
@@ -223,6 +230,7 @@ impl AppPreferences {
         self.on_tabbed_chats_changed(cx);
         self.on_desktop_sidebar_collapsed_changed(cx);
         self.on_composer_height_changed(cx);
+        self.on_sidebar_widths_changed(cx);
         self.on_speech_changed(cx);
         self.on_send_on_enter_changed(cx);
         self.on_thumbnail_max_height_changed(cx);

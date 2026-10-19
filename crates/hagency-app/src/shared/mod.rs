@@ -13,6 +13,7 @@ pub mod helpers;
 pub mod hover_highlight;
 pub mod html_or_plaintext;
 pub mod icon_button;
+pub mod sidebar_resize;
 pub mod jump_to_bottom_button;
 pub mod mention_popup;
 pub mod mentionable_text_input;
@@ -48,6 +49,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     helpers::script_mod(vm);
     navigation_bar_button::script_mod(vm);
     icon_button::script_mod(vm);
+    sidebar_resize::script_mod(vm);
     context_menu::script_mod(vm);
     expand_arrow::script_mod(vm);
     unread_badge::script_mod(vm);
