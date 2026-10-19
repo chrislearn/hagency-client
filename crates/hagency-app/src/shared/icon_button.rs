@@ -25,14 +25,13 @@ script_mod! {
         draw_icon.svg: ICON_ARROW_BACK
     }
 
-    mod.widgets.RinxChatInfoButton = mod.widgets.RobrixNeutralIconButton {
-        width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0
+    mod.widgets.RinxMoreButton = mod.widgets.RinxIconButton {
         align: Align{x: 0.5 y: 0.5}
-        text: "···"
-        draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold {font_size: RINX_HEADING_SIZE}}
-        draw_bg +: {color: #0000 color_hover: mod.widgets.RINX_HOVER color_down: mod.widgets.RINX_PRESSED border_size: 0}
-        icon_walk: Walk{width: 0 height: 0}
+        icon_walk: Walk{width: 16 height: 16}
+        draw_icon +: {svg: ICON_MORE_HORIZ color: mod.widgets.RINX_INK preserve_viewbox: true}
+        draw_bg +: {border_radius: 5}
     }
+    mod.widgets.RinxChatInfoButton = mod.widgets.RinxMoreButton {}
 
     mod.widgets.RinxRoomInfoToggleButton = mod.widgets.NavigationBarButton {
         tooltip_below: true

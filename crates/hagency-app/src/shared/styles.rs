@@ -68,6 +68,7 @@ script_mod! {
     mod.widgets.ICON_ARROW_BACK       = crate_resource("self://resources/icons/arrow_back.svg")
     mod.widgets.ICON_SHIELD           = crate_resource("self://resources/icons/shield.svg")
     mod.widgets.ICON_MORE_VERT        = crate_resource("self://resources/icons/more_vert.svg")
+    mod.widgets.ICON_MORE_HORIZ       = crate_resource("self://resources/icons/more_horiz.svg")
     mod.widgets.ICON_CHEVRON_RIGHT    = crate_resource("self://resources/icons/chevron_right.svg")
     mod.widgets.ICON_CHEVRON_LEFT     = crate_resource("self://resources/icons/chevron_left.svg")
     mod.widgets.ICON_CHEVRON_DOWN     = crate_resource("self://resources/icons/chevron_down.svg")

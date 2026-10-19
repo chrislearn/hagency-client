@@ -60,13 +60,7 @@ script_mod! {
                     }
                     unread := UnreadBadge {}
                 }
-                more := RinxGhostButton {
-                    height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
-                    width: 28 text: "⋯"
-                    margin: 0 draw_bg +: {color: #0000 color_hover: mod.widgets.RINX_HOVER color_down: mod.widgets.RINX_PRESSED color_focus: mod.widgets.RINX_SELECTED border_size: 0 border_radius: 5
-                        color_2_hover: vec4(-1.0, -1.0, -1.0, -1.0) color_2_down: vec4(-1.0, -1.0, -1.0, -1.0) color_2_focus: vec4(-1.0, -1.0, -1.0, -1.0)}
-                    draw_text +: {color: mod.widgets.RINX_MUTED color_hover: mod.widgets.RINX_INK color_down: mod.widgets.RINX_INK}
-                }
+                more := RinxMoreButton {}
                 }
 
             }
@@ -709,8 +703,6 @@ impl Widget for ProjectTree {
                 script_apply_eval!(cx, indent, {width: #(if room.is_some() {18.0} else {0.0})});
                 item.label(cx, ids!(name)).set_text(cx, &text);
                 item.button(cx, ids!(more))
-                    .set_text(cx, "⋯");
-                item.button(cx, ids!(more))
                     .set_visible(cx, project.is_some() || matches!(row, Row::Room(_)));
                 item.view(cx, ids!(closed))
                     .set_visible(cx, project.is_some() && !open);
@@ -892,6 +884,31 @@ mod tests {
         assert_eq!(list.items_with_actions(&actions).len(), 1);
         assert!(more.clicked(&actions));
         assert!(!navigation.clicked(&actions));
+
+        // Draw the actual PortalList template: overflow must fit the compact
+        // project/chat row, independently of font baseline or label padding.
+        let pass = DrawPass::new(&mut cx);
+        pass.set_size(&mut cx, dvec2(240.0, 100.0));
+        let mut draw_list = DrawList2d::new(&mut cx);
+        let event = DrawEvent::default();
+        let mut draw = makepad_widgets::makepad_draw::cx_draw::CxDraw::new(&mut cx, &event);
+        let mut cx2d = Cx2d::new(&mut draw);
+        cx2d.begin_pass(&pass, None);
+        draw_list.begin_always(&mut cx2d);
+        cx2d.begin_root_turtle(dvec2(240.0, 100.0), Layout::flow_overlay());
+        row.draw_walk_all(&mut cx2d, &mut Scope::empty(), Walk {width: Size::Fixed(240.0), height: Size::Fixed(37.0), ..Walk::default()});
+        cx2d.end_pass_sized_turtle();
+        draw_list.end(&mut cx2d);
+        cx2d.end_pass(&pass);
+        drop(cx2d);
+        drop(draw);
+        let surface = row.view(&mut cx, ids!(row_surface)).area().rect(&cx);
+        let rect = more.area().rect(&cx);
+        assert_eq!(rect.size, dvec2(32.0, 32.0));
+        assert_eq!(rect.pos.y + rect.size.y * 0.5, surface.pos.y + surface.size.y * 0.5);
+        assert!(rect.pos.x + rect.size.x <= surface.pos.x + surface.size.x);
+        assert!(more.text().is_empty());
+        assert!(more.borrow().unwrap().draw_icon.svg.is_some());
     }
     #[test]
     fn project_disclosure_and_details_clicks_have_independent_effects() {

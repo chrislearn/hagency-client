@@ -28,12 +28,7 @@ script_mod! {
             draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}
         }
     }
-    let RowActions = RinxIconButton {
-        margin: 0 text: "⋯" icon_walk: Walk{width: 0 height: 0}
-        draw_bg +: {color: #0000 color_hover: mod.widgets.RINX_HOVER color_down: mod.widgets.RINX_PRESSED color_focus: mod.widgets.RINX_SELECTED border_size: 0 border_radius: 5
-            color_2_hover: vec4(-1.0, -1.0, -1.0, -1.0) color_2_down: vec4(-1.0, -1.0, -1.0, -1.0) color_2_focus: vec4(-1.0, -1.0, -1.0, -1.0)}
-        draw_text +: {color: mod.widgets.RINX_INK color_hover: mod.widgets.RINX_INK color_down: mod.widgets.RINX_INK}
-    }
+    let RowActions = RinxMoreButton {}
     let DesktopNavButton = NavigationBarButton {
         width: Fill height: 40 flow: Right spacing: 10
         align: Align{x: 0 y: 0.5} padding: Inset{left: 12 right: 8}
@@ -76,15 +71,15 @@ script_mod! {
                 }
             }
             primary_navigation := ScrollYView {width: Fill height: 224 flow: Down spacing: 6 padding: Inset{left: 10 right: 10}
-            View {width: Fill height: 40 flow: Right
+            View {width: Fill height: 40 flow: Right align: Align{y: 0.5}
                 open_projects := DesktopNavButton {nav_icon.draw_icon.svg: ICON_HIERARCHY tooltip_text: #(crate::i18n::tr("Projects")) label.text: #(crate::i18n::tr("Projects")) label.i18n_text: "Projects"}
                 projects_actions := RowActions {}
             }
-            View {width: Fill height: 40 flow: Right
+            View {width: Fill height: 40 flow: Right align: Align{y: 0.5}
                 open_agents := DesktopNavButton {nav_icon.draw_icon.svg: ICON_ROBOT tooltip_text: #(crate::i18n::tr("Agents")) label.text: #(crate::i18n::tr("Agents")) label.i18n_text: "Agents"}
                 agents_actions := RowActions {}
             }
-            View {width: Fill height: 40 flow: Right
+            View {width: Fill height: 40 flow: Right align: Align{y: 0.5}
                 open_chats := DesktopNavButton {nav_icon.draw_icon.svg: ICON_THREADS tooltip_text: #(crate::i18n::tr("Chats")) label.text: #(crate::i18n::tr("Chats")) label.i18n_text: "Chats"}
                 chats_actions := RowActions {}
             }
@@ -786,8 +781,16 @@ mod layout_tests {
                 assert!(icon.size.x > 0.0 && icon.size.y > 0.0 && icon.pos.x >= rect.pos.x && icon.pos.x + icon.size.x <= rect.pos.x + rect.size.x + 0.1, "{id:?} {icon:?} {rect:?}");
                 assert_eq!(button.label(&mut cx, ids!(label)).visible(), !collapsed);
             }
-            for id in [id!(projects_actions),id!(agents_actions),id!(chats_actions)] {
-                assert_eq!(sidebar.view.button(&mut cx, &[id]).visible(), !collapsed);
+            for (action, navigation) in [(id!(projects_actions), id!(open_projects)), (id!(agents_actions), id!(open_agents)), (id!(chats_actions), id!(open_chats))] {
+                let button = sidebar.view.button(&mut cx, &[action]);
+                assert_eq!(button.visible(), !collapsed);
+                if !collapsed {
+                    let rect = button.area().rect(&cx);
+                    let row = sidebar.view.navigation_bar_button(&mut cx, &[navigation]).area().rect(&cx);
+                    assert_eq!(rect.size, dvec2(32.0, 32.0));
+                    assert_eq!(rect.pos.y + rect.size.y * 0.5, row.pos.y + row.size.y * 0.5, "overflow must share the navigation row center");
+                    assert!(button.text().is_empty(), "overflow uses an icon, not a font glyph");
+                }
             }
             let avatar = sidebar.view.avatar(&mut cx, ids!(account.avatar)).area().rect(&cx);
             let account = sidebar.view.widget(&cx, ids!(account)).area().rect(&cx);
