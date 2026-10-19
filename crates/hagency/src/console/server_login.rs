@@ -602,7 +602,10 @@ fn deadline(value: &Value) -> Result<Instant, &'static str> {
 #[cfg(test)]
 #[test]
 fn finite_proof_tolerates_small_clock_skew_without_extending_local_authority() {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
     let proof_started = Instant::now();
     let capped = deadline(&json!({"validUntilMs": now + 32_000})).unwrap();
     assert!(capped <= Instant::now() + Duration::from_secs(30));
@@ -754,9 +757,20 @@ async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
     }
     let renewed = response(renewal_response).await.map_err(renewal_error)?;
     let mut until = deadline(&renewed).map_err(|code| {
-        let clock_ms = SystemTime::now().duration_since(UNIX_EPOCH).ok().map(|d| d.as_millis() as i128);
-        let remaining_ms = renewed["validUntilMs"].as_u64().zip(clock_ms).map(|(until, now)| until as i128 - now);
-        tracing::warn!(stage = "server_renew_deadline", code, ?remaining_ms, "Owner renewal proof rejected");
+        let clock_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .ok()
+            .map(|d| d.as_millis() as i128);
+        let remaining_ms = renewed["validUntilMs"]
+            .as_u64()
+            .zip(clock_ms)
+            .map(|(until, now)| until as i128 - now);
+        tracing::warn!(
+            stage = "server_renew_deadline",
+            code,
+            ?remaining_ms,
+            "Owner renewal proof rejected"
+        );
         Error::Unavailable
     })?;
     if until <= Instant::now() + Duration::from_secs(20)
@@ -795,7 +809,11 @@ async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
         }
         let refreshed = self::response(response).await.map_err(renewal_error)?;
         until = deadline(&refreshed).map_err(|code| {
-            tracing::warn!(stage = "server_refresh_deadline", code, "Owner renewal proof rejected");
+            tracing::warn!(
+                stage = "server_refresh_deadline",
+                code,
+                "Owner renewal proof rejected"
+            );
             Error::Unavailable
         })?;
     }
@@ -813,7 +831,11 @@ async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
         return Err(Error::Unauthorized);
     }
     let identity_until = deadline(&identity).map_err(|code| {
-        tracing::warn!(stage = "server_identity_deadline", code, "Owner renewal proof rejected");
+        tracing::warn!(
+            stage = "server_identity_deadline",
+            code,
+            "Owner renewal proof rejected"
+        );
         Error::Unavailable
     })?;
     if let Some(source) = &session.matrix_source {

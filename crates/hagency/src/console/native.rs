@@ -1203,7 +1203,9 @@ async fn callback(req: &mut Request, depot: &Depot, res: &mut Response) {
         Ok(()) => res.render("Hagency authorization completed. Return to Hagency."),
         Err(e) => {
             res.status_code(StatusCode::from_u16(e.status).unwrap_or(StatusCode::BAD_REQUEST));
-            res.render("Authorization failed. Return to Hagency and retry with the same Matrix account.");
+            res.render(
+                "Authorization failed. Return to Hagency and retry with the same Matrix account.",
+            );
         }
     }
 }

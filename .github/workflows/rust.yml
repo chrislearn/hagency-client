@@ -227,11 +227,21 @@ jobs:
       RESULTS: ${{ toJSON(needs) }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       ISSUE_TITLE: "[nightly] Full matrix regression"
+      ISSUES_ENABLED: ${{ github.event.repository.has_issues }}
     steps:
       - name: Open, refresh, or close the regression issue
         run: |
           set -euo pipefail
           failed=$(jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | "- `\(.key)`: **\(.value.result)**"' <<<"$RESULTS")
+          if [ "$ISSUES_ENABLED" != "true" ]; then
+            if [ -n "$failed" ]; then
+              printf '## Full matrix regression\n\n%s\n\n[Open the run](%s)\n' "$failed" "$RUN_URL" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "Full matrix is green." >> "$GITHUB_STEP_SUMMARY"
+            fi
+            echo "Repository issues are disabled; results recorded in the job summary."
+            exit 0
+          fi
           gh label create nightly-regression --repo "$GITHUB_REPOSITORY" --color B60205 \
             --description "Failure in the scheduled full matrix" --force
           issue=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --label nightly-regression \

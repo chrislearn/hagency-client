@@ -10,7 +10,14 @@ pub fn local_codex_supported_on(os: &str, env: &str) -> bool {
 }
 
 pub fn local_codex_supported() -> bool {
-    local_codex_supported_on(std::env::consts::OS, if cfg!(target_env = "ohos") {"ohos"} else {""})
+    local_codex_supported_on(
+        std::env::consts::OS,
+        if cfg!(target_env = "ohos") {
+            "ohos"
+        } else {
+            ""
+        },
+    )
 }
 pub type Audio = tokio::sync::mpsc::Receiver<Vec<u8>>;
 pub type Updates = Arc<dyn Fn(Update) + Send + Sync>;
@@ -31,9 +38,25 @@ mod tests {
     use super::*;
     #[test]
     fn codex_platform_matrix_excludes_ohos_and_mobile() {
-        for (os, env, supported) in [("windows", "msvc", true), ("macos", "", true), ("linux", "gnu", true), ("linux", "musl", true), ("linux", "ohos", false), ("android", "", false), ("ios", "", false), ("unknown", "", false)] {
+        for (os, env, supported) in [
+            ("windows", "msvc", true),
+            ("macos", "", true),
+            ("linux", "gnu", true),
+            ("linux", "musl", true),
+            ("linux", "ohos", false),
+            ("android", "", false),
+            ("ios", "", false),
+            ("unknown", "", false),
+        ] {
             assert_eq!(local_codex_supported_on(os, env), supported, "{os}/{env}");
         }
-        assert_eq!(local_codex_supported(), cfg!(any(target_os = "windows", target_os = "macos", all(target_os = "linux", not(target_env = "ohos")))));
+        assert_eq!(
+            local_codex_supported(),
+            cfg!(any(
+                target_os = "windows",
+                target_os = "macos",
+                all(target_os = "linux", not(target_env = "ohos"))
+            ))
+        );
     }
 }
