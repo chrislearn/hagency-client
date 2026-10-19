@@ -31,28 +31,25 @@ script_mod! {
             flow: Right,
             spacing: 10
 
-            copy_identity_button := RobrixNeutralIconButton {
+            copy_identity_button := RinxIconButton {
+                width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
                 margin: Inset{left: 5}
-                padding: 12,
-                spacing: 0,
                 draw_icon.svg: (ICON_COPY)
-                icon_walk: Walk{width: 16, height: 16, margin: Inset{right: -2} }
             }
 
-            current_identity_label := Label {
+            current_identity_label := RinxLabel {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true},
                 margin: Inset{top: 8}
                 draw_text +: {
-                    text_style: MESSAGE_TEXT_STYLE { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
                 }
             }
         }
 
         republish_identity_button := RobrixIconButton {
+            height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
             width: Fit,
-            height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-            padding: 10,
             margin: Inset{top: 8, bottom: 10, left: 5},
             draw_icon.svg: (ICON_UPLOAD)
             icon_walk: Walk{width: 16, height: 16}
@@ -66,13 +63,13 @@ script_mod! {
 
         no_wallets_label := View {
             width: Fill, height: Fit
-            Label {
+            RinxLabel {
                 width: Fill, height: Fit
                 margin: Inset{top: 10, bottom: 8, left: 13, right: 10},
                 flow: Flow.Right{wrap: true},
                 draw_text +: {
                     color: (COLOR_TEXT_WARNING_NOT_FOUND),
-                    text_style: MESSAGE_TEXT_STYLE { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
                 }
                 text: "No wallets found. Create or import a wallet."
             }
@@ -111,9 +108,8 @@ script_mod! {
             wrap_spacing: 2
 
             create_did_button := RobrixPositiveIconButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 width: Fit,
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                padding: 10,
                 margin: Inset{left: 5, top: 5, bottom: 5},
                 draw_icon.svg: (ICON_ADD_USER)
                 icon_walk: Walk{width: 19, height: Fit, margin: 0}
@@ -121,9 +117,8 @@ script_mod! {
             }
 
             create_wallet_button := RobrixPositiveIconButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 width: Fit,
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                padding: 10,
                 margin: Inset{left: 5, top: 5, bottom: 5},
                 draw_icon.svg: (ICON_ADD_WALLET)
                 icon_walk: Walk{width: 21, height: Fit, margin: 0}
@@ -131,9 +126,8 @@ script_mod! {
             }
 
             import_wallet_button := RobrixIconButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 width: Fit,
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{left: 5, top: 5, bottom: 5}
                 text: "Import Existing Wallet"
                 draw_icon +: {

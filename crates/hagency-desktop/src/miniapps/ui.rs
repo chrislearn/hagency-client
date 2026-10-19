@@ -46,55 +46,64 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
     mod.widgets.MiniAppsPanel = #(MiniAppsPanel::register_widget(vm)) {
-        width: Fill height: Fill flow: Down padding: 20 spacing: 16
+        width: Fill height: Fill flow: Down padding: 24 spacing: 20
         show_bg: true
         draw_bg +: {color: instance(mod.widgets.RINX_PAGE) pixel: fn() {return self.color}}
-        header := View {width: Fill height: Fit flow: Right spacing: 12
-            close := RinxButton {width: 44 text: "" icon_walk: Walk{width: 20 height: 20} draw_icon.svg: ICON_ARROW_BACK}
-            RinxPageTitle {text: "Mini apps"}
+        header := View {width: Fill height: RINX_BUTTON_HEIGHT flow: Right spacing: 12 align: Align{y: 0.5}
+            close := RinxIconButton {
+                width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
+                draw_icon.svg: ICON_ARROW_BACK
+            }
+            RinxPageTitle {width: Fill text: "Mini apps"}
         }
         library := MiniAppLibrary {visible: false}
         catalog := View {width: Fill height: Fill flow: Down spacing: 12
-            catalog_title := RinxLabel {text: #(crate::i18n::tr("Built-in apps")) i18n_text: "Built-in apps"}
+            catalog_title := RinxHint {text: #(crate::i18n::tr("Built-in apps")) i18n_text: "Built-in apps"}
             catalog_list := PortalList {width: Fill height: Fill
-                App := RoundedView {width: Fill height: 104 padding: 16 spacing: 12 flow: Right align: Align{y: 0.5}
-                    draw_bg +: {color: RINX_SURFACE border_color: RINX_BORDER border_size: 1 border_radius: theme.corner_radius}
-                    article_icon := View {width: Fit height: Fit
-                        Icon {width: 28 height: 28 draw_icon +: {svg: ICON_FILE color: RINX_ACCENT}}
+                App := RinxCard {width: Fill height: 88 padding: 16 spacing: 16 flow: Right align: Align{y: 0.5}
+                    article_icon := RoundedView {width: 40 height: 40 align: Center
+                        draw_bg +: {color: RINX_SELECTED border_radius: RINX_CONTROL_RADIUS}
+                        Icon {icon_walk: Walk{width: 20 height: 20} draw_icon +: {svg: ICON_FILE color: RINX_ACCENT}}
                     }
-                    operations_icon := View {visible: false width: Fit height: Fit
-                        Icon {width: 28 height: 28 draw_icon +: {svg: ICON_SQUARES color: RINX_ACCENT}}
+                    operations_icon := RoundedView {visible: false width: 40 height: 40 align: Center
+                        draw_bg +: {color: RINX_SELECTED border_radius: RINX_CONTROL_RADIUS}
+                        Icon {icon_walk: Walk{width: 20 height: 20} draw_icon +: {svg: ICON_SQUARES color: RINX_ACCENT}}
                     }
                     copy := View {width: Fill height: Fit flow: Down spacing: 6
-                        name := RinxLabel {width: Fill draw_text.text_style: theme.font_bold{font_size: (13 * mod.widgets.RINX_TEXT_SCALE)}}
+                        name := RinxLabel {width: Fill draw_text.text_style: theme.font_bold{font_size: RINX_HEADING_SIZE}}
                         subtitle := RinxHint {width: Fill text: ""}
                     }
-                    launch := RinxPrimaryButton {text: #(crate::i18n::tr("Open")) i18n_text: "Open"}
+                    launch := RinxPrimaryButton {width: 76 text: #(crate::i18n::tr("Open")) i18n_text: "Open"}
                 }
             }
-            browse_hub := RinxButton {width: Fill text: "App Hub"}
-            import_app := RinxButton {width: Fill text: #(crate::i18n::tr("Import an app")) i18n_text: "Import an app"}
+            footer := View {width: Fill height: Fit flow: Down spacing: 16
+                View {width: Fill height: 1 show_bg: true draw_bg.color: RINX_BORDER}
+                actions := View {width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 8
+                    browse_hub := RinxButton {text: "App Hub" draw_icon.svg: ICON_GLOBE}
+                    import_app := RinxButton {text: #(crate::i18n::tr("Import an app")) i18n_text: "Import an app" draw_icon.svg: ICON_DOWNLOAD}
+                }
+            }
         }
         import_form := View {visible: false width: Fill height: Fit flow: Down spacing: 8
             bundle_path := View {width: Fill height: Fit
-                path := TextInput {width: Fill empty_text: "OctoSense bundle folder"}
+                path := RinxInput {width: Fill empty_text: "OctoSense bundle folder"}
             }
             room_access := View {width: Fill height: Fit
-                room := TextInput {width: Fill empty_text: "Room ID to allow (optional)"}
+                room := RinxInput {width: Fill empty_text: "Room ID to allow (optional)"}
             }
-            assistant_status := Label {width: Fill draw_text.color: mod.widgets.RINX_MUTED text: ""}
+            assistant_status := RinxLabel {width: Fill draw_text.color: mod.widgets.RINX_MUTED text: ""}
             core := View {width: Fill height: Fit flow: Down spacing: 6
-                local_family := TextInput {width: Fill empty_text: "Assistant on this device: provider (e.g. deepseek)"}
-                local_model := TextInput {width: Fill empty_text: "Model"}
-                local_base_url := TextInput {width: Fill empty_text: "Base URL (optional)"}
-                local_key := TextInput {width: Fill is_password: true empty_text: "API key (kept in Rinx's own runtime)"}
+                local_family := RinxInput {width: Fill empty_text: "Assistant on this device: provider (e.g. deepseek)"}
+                local_model := RinxInput {width: Fill empty_text: "Model"}
+                local_base_url := RinxInput {width: Fill empty_text: "Base URL (optional)"}
+                local_key := RinxInput {width: Fill is_password: true empty_text: "API key (kept in Rinx's own runtime)"}
                 local_buttons := View {width: Fill height: Fit spacing: 8
                     use_local := RinxButton {text: "Use this device"}
                     turn_off := RinxButton {text: "Turn assistant off"}
                 }
-                endpoint := TextInput {width: Fill empty_text: "Octos server URL"}
-                profile := TextInput {width: Fill empty_text: "Octos profile"}
-                token := TextInput {width: Fill is_password: true empty_text: "Octos access token"}
+                endpoint := RinxInput {width: Fill empty_text: "Octos server URL"}
+                profile := RinxInput {width: Fill empty_text: "Octos profile"}
+                token := RinxInput {width: Fill is_password: true empty_text: "Octos access token"}
                 connect := RinxButton {text: "Connect Octos"}
             }
             buttons := View {width: Fill height: Fit spacing: 8
@@ -113,7 +122,7 @@ script_mod! {
         project_room_picker := View {visible: false width: Fill height: Fill flow: Down spacing: 12
             RinxPageTitle {text: "Choose a project room"}
             RinxHint {width: Fill flow: Flow.Right{wrap: true} text: "Choose a private, unencrypted room you created. Submitting the project will invite its Hagency representative. Rinx shares only your selected room with Palpo."}
-            rooms := DropDown {width: Fill labels: ["Choose a room"] popup_menu +: {width: 280}}
+            rooms := RinxDropDown {width: Fill labels: ["Choose a room"] popup_menu +: {width: 280}}
             selected_room := RinxHint {width: Fill flow: Flow.Right{wrap: true} text: ""}
             use_room := RinxPrimaryButton {text: "Use this room"}
             cancel_room := RinxButton {text: "Cancel"}

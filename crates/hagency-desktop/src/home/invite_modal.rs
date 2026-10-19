@@ -18,10 +18,10 @@ script_mod! {
 
         title := ModalTitle {}
 
-        registered_agents := DropDown {width: Fill labels: ["People you know"]}
+        registered_agents := RinxDropDown {width: Fill labels: ["People you know"]}
         user_id_input := RobrixTextInput {
             draw_text +: {
-                text_style: REGULAR_TEXT {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)},
+                text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_UI_SIZE},
                 color: mod.widgets.RINX_INK
             }
             empty_text: #(crate::i18n::tr("Name or @user:example.org")) i18n_empty_text: "Name or @user:example.org",
@@ -65,14 +65,14 @@ script_mod! {
             height: Fit,
             align: Align{x: 0.5, y: 0.0}
 
-            status_label := Label {
+            status_label := RinxLabel {
                 width: Fill,
                 height: Fit,
                 flow: Flow.Right{wrap: true},
                 align: Align{x: 0.5, y: 0.0}
                 margin: Inset{top: 10}
                 draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)},
+                    text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_BODY_SIZE},
                     color: mod.widgets.RINX_INK
                 }
                 text: ""

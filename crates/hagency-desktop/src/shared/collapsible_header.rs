@@ -49,7 +49,7 @@ script_mod! {
             draw_bg.color: (RBX_FG_TERTIARY)
         }
 
-        label := Label {
+        label := RinxLabel {
             padding: 0,
             width: Fill,
             height: Fit,
@@ -59,7 +59,7 @@ script_mod! {
             max_lines: 1
             draw_text +: {
                 // Lighter weight than the bold section-title token — calmer group label.
-                text_style: REGULAR_TEXT { font_size: (12.5 * mod.widgets.RINX_TEXT_SCALE) },
+                text_style: REGULAR_TEXT { font_size: mod.widgets.RINX_BODY_SIZE },
                 color: (RBX_FG_SECONDARY),
             }
         }

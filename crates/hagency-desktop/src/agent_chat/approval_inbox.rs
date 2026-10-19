@@ -55,11 +55,11 @@ script_mod! {
             close := RinxBackButton {}
             refresh := RobrixNeutralIconButton {text: #(crate::i18n::tr("Refresh approval rooms")) i18n_text: "Refresh approval rooms"}
         }
-        status := Label {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: mod.widgets.RINX_INK}
+        status := RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: mod.widgets.RINX_INK}
         rooms := PortalList {width: Fill height: Fill
             Row := View {width: Fill height: Fit flow: Down padding: 8 spacing: 8
-                title := Label {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: mod.widgets.RINX_INK}
-                detail := Label {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: mod.widgets.RINX_MUTED}
+                title := RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: mod.widgets.RINX_INK}
+                detail := RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: mod.widgets.RINX_MUTED}
                 open := RobrixNeutralIconButton {text: #(crate::i18n::tr("Open approvals")) i18n_text: "Open approvals"}
             }
         }

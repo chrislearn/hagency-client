@@ -133,7 +133,7 @@ script_mod! {
             icon_walk: Walk{ width: 25, height: 20, margin: Inset{top: 2} }
         }
 
-        space_lobby_label := Label {
+        space_lobby_label := RinxLabel {
             width: Fill, height: Fit
             flow: Flow.Right { wrap: true },
             padding: 0,
@@ -147,7 +147,7 @@ script_mod! {
                 color_hover: instance(COLOR_TEXT)
                 color_active: instance(COLOR_TEXT)
 
-                text_style: REGULAR_TEXT {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)},
+                text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_BODY_SIZE},
 
                 get_color: fn() -> vec4 {
                     return mix(
@@ -326,14 +326,14 @@ script_mod! {
                 align: Align { y: 0.5 }
                 spacing: 5,
 
-                name_label := Label {
+                name_label := RinxLabel {
                     width: Fill, height: Fit,
                     margin: 0
                     padding: 0
                     flow: Flow.Right{wrap: true}
                     max_lines: 2
                     text_overflow: Ellipsis
-                    draw_text +: { text_style: REGULAR_TEXT {font_size: (10.5 * mod.widgets.RINX_TEXT_SCALE)}, color: mod.widgets.RINX_INK }
+                    draw_text +: { text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_BODY_SIZE}, color: mod.widgets.RINX_INK }
                 }
 
                 suggested_tag := RoundedView {
@@ -347,23 +347,23 @@ script_mod! {
                         border_size: 0.75
                         border_color: (COLOR_INFO_BLUE)
                     }
-                    suggested_label := Label {
+                    suggested_label := RinxLabel {
                         padding: 0
                         margin: 0
                         width: Fit, height: Fit,
                         text: #(crate::i18n::tr("Suggested")) i18n_text: "Suggested"
-                        draw_text +: { text_style: REGULAR_TEXT {font_size: (8.5 * mod.widgets.RINX_TEXT_SCALE)}, color: (COLOR_INFO_BLUE) }
+                        draw_text +: { text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_META_SIZE}, color: (COLOR_INFO_BLUE) }
                     }
                 }
 
-                info_label := Label {
+                info_label := RinxLabel {
                     width: Fill, height: Fit,
                     margin: 0
                     padding: 0
                     flow: Flow.Right{wrap: true}
                     max_lines: 2
                     text_overflow: Ellipsis
-                    draw_text +: { text_style: REGULAR_TEXT {font_size: (8.5 * mod.widgets.RINX_TEXT_SCALE)}, color: mod.widgets.RINX_MUTED }
+                    draw_text +: { text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_META_SIZE}, color: mod.widgets.RINX_MUTED }
                 }
             }
         }
@@ -390,7 +390,7 @@ script_mod! {
                 padding: 8
                 spacing: 0
                 icon_walk: Walk{width: 0, height: 0}
-                draw_text.text_style: REGULAR_TEXT {font_size: (9.5 * mod.widgets.RINX_TEXT_SCALE)}
+                draw_text.text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_UI_SIZE}
                 text: #(crate::i18n::tr("Join")) i18n_text: "Join"
             }
 
@@ -399,7 +399,7 @@ script_mod! {
                 padding: 8
                 spacing: 0
                 icon_walk: Walk{width: 0, height: 0}
-                draw_text.text_style: REGULAR_TEXT {font_size: (9.5 * mod.widgets.RINX_TEXT_SCALE)}
+                draw_text.text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_UI_SIZE}
                 text: #(crate::i18n::tr("View")) i18n_text: "View"
             }
 
@@ -408,7 +408,7 @@ script_mod! {
                 padding: 8
                 spacing: 0
                 icon_walk: Walk{width: 0, height: 0}
-                draw_text.text_style: REGULAR_TEXT {font_size: (9.5 * mod.widgets.RINX_TEXT_SCALE)}
+                draw_text.text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_UI_SIZE}
                 text: #(crate::i18n::tr("Leave")) i18n_text: "Leave"
             }
         }
@@ -453,14 +453,14 @@ script_mod! {
             }
         }
 
-        label := Label {
+        label := RinxLabel {
             padding: Inset{left: 10}
             width: Fit,
             flow: Flow.Right{wrap: true},
             align: Align{ x: 0.5, y: 0.5 }
             draw_text +: {
                 color: mod.widgets.RINX_MUTED,
-                text_style: REGULAR_TEXT {font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}
+                text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_UI_SIZE}
             }
             text: #(crate::i18n::tr("Loading rooms and spaces...")) i18n_text: "Loading rooms and spaces..."
         }
@@ -493,11 +493,11 @@ script_mod! {
                 }
             }
 
-            label := Label {
+            label := RinxLabel {
                 width: Fit,
                 height: Fit,
                 draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: (9 * mod.widgets.RINX_TEXT_SCALE)},
+                    text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_META_SIZE},
                     color: mod.widgets.RINX_MUTED,
                 }
                 text: #(crate::i18n::tr("Loading...")) i18n_text: "Loading..."
@@ -537,13 +537,13 @@ script_mod! {
                 spacing: 10,
                 align: Align { y: 0.5 }
 
-                space_info_label := Label {
+                space_info_label := RinxLabel {
                     width: Fit,
                     height: Fit,
                     flow: Flow.Right { wrap: false },
                     margin: Inset{left: 2}
                     draw_text +: {
-                        text_style: REGULAR_TEXT {font_size: (10 * mod.widgets.RINX_TEXT_SCALE)},
+                        text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_UI_SIZE},
                         color: mod.widgets.RINX_MUTED,
                     }
                     text: #(crate::i18n::tr("Welcome to the space:")) i18n_text: "Welcome to the space:"
@@ -570,22 +570,22 @@ script_mod! {
                     margin: Inset{ left: 5, right: 12 }
                 }
                 
-                parent_name := Label {
+                parent_name := RinxLabel {
                     width: Fill,
                     height: Fit,
                     flow: Flow.Right { wrap: false },
                     text_overflow: Ellipsis,
                     margin: Inset{top: 4} // vertically center-align with the avatar
                     draw_text +: {
-                        text_style: TITLE_TEXT {font_size: (14 * mod.widgets.RINX_TEXT_SCALE)},
+                        text_style: TITLE_TEXT {font_size: mod.widgets.RINX_SECTION_SIZE},
                         color: mod.widgets.RINX_INK,
                     }
                     text: ""
                 }
 
                 manage_button := RobrixNeutralIconButton {
-                    width: Fit height: 40
-                    text: #(crate::i18n::tr("Manage")) i18n_text: "Manage"
+                    height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                    width: Fit text: #(crate::i18n::tr("Manage")) i18n_text: "Manage"
                     icon_walk: Walk{width: 0 height: 0}
                 }
                 invite_button := RobrixPositiveIconButton {
@@ -611,13 +611,13 @@ script_mod! {
                     margin: 0
                     max_lines: 2
                     text_overflow: Ellipsis
-                    font_size: (10 * mod.widgets.RINX_TEXT_SCALE)
+                    font_size: mod.widgets.RINX_UI_SIZE
                     font_color: mod.widgets.RINX_MUTED
-                    text_style_normal      +: { font_size: (10 * mod.widgets.RINX_TEXT_SCALE), line_spacing: 1.2 }
-                    text_style_italic      +: { font_size: (10 * mod.widgets.RINX_TEXT_SCALE), line_spacing: 1.2 }
-                    text_style_bold        +: { font_size: (10 * mod.widgets.RINX_TEXT_SCALE), line_spacing: 1.2 }
-                    text_style_bold_italic +: { font_size: (10 * mod.widgets.RINX_TEXT_SCALE), line_spacing: 1.2 }
-                    text_style_fixed       +: { font_size: (10 * mod.widgets.RINX_TEXT_SCALE), line_spacing: 1.2 }
+                    text_style_normal      +: { font_size: mod.widgets.RINX_UI_SIZE, line_spacing: 1.2 }
+                    text_style_italic      +: { font_size: mod.widgets.RINX_UI_SIZE, line_spacing: 1.2 }
+                    text_style_bold        +: { font_size: mod.widgets.RINX_UI_SIZE, line_spacing: 1.2 }
+                    text_style_bold_italic +: { font_size: mod.widgets.RINX_UI_SIZE, line_spacing: 1.2 }
+                    text_style_fixed       +: { font_size: mod.widgets.RINX_UI_SIZE, line_spacing: 1.2 }
                     body: ""
                 }
             }

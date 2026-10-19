@@ -106,9 +106,9 @@ script_mod! {
         show_bg: false padding: 0 margin: 0 spacing: 0
         cursor: MouseCursor.Default align: Align{x: 0 y: 0}
         main_content := mod.widgets.ContextMenuContent {
-            width: 235 height: Fit flow: Down align: Align{x: 0 y: 0}
-            padding: 6 spacing: 2 show_bg: true
-            draw_bg +: {color: mod.widgets.RINX_SURFACE border_size: 1 border_color: mod.widgets.RINX_MUTED}
+            width: 176 height: Fit flow: Down align: Align{x: 0 y: 0}
+            show_bg: true
+            draw_bg +: {color: mod.widgets.RINX_SURFACE border_size: 1 border_color: mod.widgets.RINX_BORDER}
             project_overview := mod.widgets.ContextMenuButton {visible: false icon_walk: Walk{width: 0 height: 0} spacing: 0 text: #(crate::i18n::tr("Overview")) i18n_text: "Overview"}
             project_rooms := mod.widgets.ContextMenuButton {visible: false icon_walk: Walk{width: 0 height: 0} spacing: 0 text: #(crate::i18n::tr("Discussion Rooms")) i18n_text: "Discussion Rooms"}
             project_members := mod.widgets.ContextMenuButton {visible: false icon_walk: Walk{width: 0 height: 0} spacing: 0 text: #(crate::i18n::tr("Project members")) i18n_text: "Project members"}
@@ -167,13 +167,11 @@ impl SidebarActionMenu {
             button.set_visible(cx, kind == SidebarMenuKind::Tools);
             button.reset_hover(cx);
         }
-        let margin = menu_position_margin(
-            container,
-            pos,
-            expected_menu_size(if kind == SidebarMenuKind::Tools { 6 } else { 1 }, 0),
-        );
+        let mut menu_size = expected_menu_size(if kind == SidebarMenuKind::Tools { 6 } else { 1 }, 0);
+        menu_size.x = if kind == SidebarMenuKind::Tools {216.0} else {176.0};
+        let margin = menu_position_margin(container, pos, menu_size);
         let mut content = self.view.view(cx, ids!(main_content));
-        script_apply_eval!(cx, content, {margin: #(margin)});
+        script_apply_eval!(cx, content, {width: #(menu_size.x) margin: #(margin)});
         self.visible = true;
         self.focus_after_draw = true;
         self.redraw(cx);
@@ -235,9 +233,10 @@ impl SidebarActionMenu {
             .button(cx, ids!(new_project))
             .set_visible(cx, false);
         self.project_buttons(cx, true);
-        let margin = menu_position_margin(container, pos, expected_menu_size(5, 0));
+        let menu_size = expected_menu_size(5, 0);
+        let margin = menu_position_margin(container, pos, menu_size);
         let mut content = self.view.view(cx, ids!(main_content));
-        script_apply_eval!(cx, content, {margin: #(margin)});
+        script_apply_eval!(cx, content, {width: #(menu_size.x) margin: #(margin)});
         self.project = Some(target.clone());
         self.check_permission(target, false);
     }
@@ -676,8 +675,8 @@ mod render_tests {
             "Card is anchored below its row: {card:?}"
         );
         assert!(
-            (card.size.x - 235.0).abs() < 1.0 && card.size.y > 38.0 && card.size.y < 80.0,
-            "Single-action card uses Fit height: {card:?}"
+            (card.size.x - 176.0).abs() < 1.0 && card.size.y >= 40.0 && card.size.y <= 52.0,
+            "Single-action card stays compact: {card:?}"
         );
         // Inspect the actual submitted draw-command instance buffers, rather
         // than just asserting show_bg/color properties or widget rectangles.

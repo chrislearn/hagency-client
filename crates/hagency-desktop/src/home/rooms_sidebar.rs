@@ -24,12 +24,12 @@ script_mod! {
     let ChatSwitchButton = NavigationBarButton {
         width: Fill height: 32 align: Align{x: 0.0 y: 0.5} padding: Inset{left: 12 right: 8}
         draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED border_radius: 5}
-        label := Label {
-            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: (11.5 * mod.widgets.RINX_TEXT_SCALE)}}
+        label := RinxLabel {
+            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}
         }
     }
-    let RowActions = ButtonFlat {
-        width: 28 height: 40 margin: 0 padding: 0 text: "⋯"
+    let RowActions = RinxIconButton {
+        margin: 0 text: "⋯" icon_walk: Walk{width: 0 height: 0}
         draw_bg +: {color: #0000 color_hover: mod.widgets.RINX_HOVER color_down: mod.widgets.RINX_PRESSED color_focus: mod.widgets.RINX_SELECTED border_size: 0 border_radius: 5
             color_2_hover: vec4(-1.0, -1.0, -1.0, -1.0) color_2_down: vec4(-1.0, -1.0, -1.0, -1.0) color_2_focus: vec4(-1.0, -1.0, -1.0, -1.0)}
         draw_text +: {color: mod.widgets.RINX_INK color_hover: mod.widgets.RINX_INK color_down: mod.widgets.RINX_INK}
@@ -39,8 +39,8 @@ script_mod! {
         align: Align{x: 0 y: 0.5} padding: Inset{left: 12 right: 8}
         draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED border_radius: 5}
         nav_icon := Icon {icon_walk: Walk{width: 18 height: 18} draw_icon.color: mod.widgets.RINX_INK}
-        label := Label {width: Fill max_lines: 1 text_overflow: Ellipsis
-            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: (11.5 * mod.widgets.RINX_TEXT_SCALE)}}
+        label := RinxLabel {width: Fill max_lines: 1 text_overflow: Ellipsis
+            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE}}
         }
     }
     let ChatViewSwitch = SolidView {
@@ -57,20 +57,25 @@ script_mod! {
 
     mod.widgets.RoomsSideBar = #(RoomsSideBar::register_widget(vm)) {
         Desktop := SolidView {
-            padding: Inset{top: 12, left: 10, right: 10, bottom: 12}
+            padding: Inset{top: 12, bottom: 12}
             flow: Down, spacing: 5
             width: Fill, height: Fill
 
             draw_bg.color: (RBX_BG_SURFACE)
 
-            sidebar_heading := View {width: Fill height: 56 flow: Right align: Align{y: 0.5}
-                sidebar_title := Label {text: "Hagency" width: Fill height: Fit margin: Inset{left: 12} draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: 18}}}
+            sidebar_heading := View {width: Fill height: 56 flow: Right align: Align{y: 0.5} margin: Inset{left: 10 right: 10}
+                sidebar_brand := View {
+                    width: Fill height: Fill flow: Right align: Align{x: 0.5 y: 0.5}
+                    padding: Inset{left: 12}
+                    sidebar_logo := RinxBrandLogo {}
+                    sidebar_title := RinxLabel {text: "Hagency" width: Fill height: Fit margin: Inset{left: 8} max_lines: 1 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_BRAND_SIZE}}}
+                }
                 toggle_sidebar := NavigationBarButton {width: 32 height: 32
                     tooltip_text: #(crate::i18n::tr("Collapse sidebar"))
                     fold_icon := Icon {icon_walk: Walk{width: 18 height: 18} draw_icon +: {svg: ICON_CHEVRON_LEFT color: mod.widgets.RINX_INK}}
                 }
             }
-            primary_navigation := ScrollYView {width: Fill height: 224 flow: Down spacing: 6
+            primary_navigation := ScrollYView {width: Fill height: 224 flow: Down spacing: 6 padding: Inset{left: 10 right: 10}
             View {width: Fill height: 40 flow: Right
                 open_projects := DesktopNavButton {nav_icon.draw_icon.svg: ICON_HIERARCHY tooltip_text: #(crate::i18n::tr("Projects")) label.text: #(crate::i18n::tr("Projects")) label.i18n_text: "Projects"}
                 projects_actions := RowActions {}
@@ -86,7 +91,7 @@ script_mod! {
             open_contacts := DesktopNavButton {nav_icon.draw_icon.svg: ICON_PEOPLE tooltip_text: #(crate::i18n::tr("Contacts")) label.text: #(crate::i18n::tr("Contacts")) label.i18n_text: "Contacts"}
             open_miniapps := DesktopNavButton {nav_icon.draw_icon.svg: ICON_SQUARES tooltip_text: #(crate::i18n::tr("Mini apps")) label.text: #(crate::i18n::tr("Mini apps")) label.i18n_text: "Mini apps"}
             }
-            more := DesktopNavButton {nav_icon.draw_icon.svg: ICON_MORE_VERT tooltip_text: #(crate::i18n::tr("More")) label.text: #(crate::i18n::tr("More")) label.i18n_text: "More"}
+            more := DesktopNavButton {margin: Inset{left: 10 right: 10} nav_icon.draw_icon.svg: ICON_MORE_VERT tooltip_text: #(crate::i18n::tr("More")) label.text: #(crate::i18n::tr("More")) label.i18n_text: "More"}
             // CachedWidget eagerly instantiates at on_after_apply. Keep its
             // SDK consumer drawable at zero height before the tree, too.
             conversations := View {
@@ -94,8 +99,8 @@ script_mod! {
                 CachedWidget {rooms_list := RoomsList {}}
             }
             View {width: Fill height: Fill}
-            open_settings := DesktopNavButton {nav_icon.draw_icon.svg: ICON_SETTINGS tooltip_text: #(crate::i18n::tr("Settings")) label.text: #(crate::i18n::tr("Settings")) label.i18n_text: "Settings"}
-            HagencyAccountBar {}
+            open_settings := DesktopNavButton {margin: Inset{left: 10 right: 10} nav_icon.draw_icon.svg: ICON_SETTINGS tooltip_text: #(crate::i18n::tr("Settings")) label.text: #(crate::i18n::tr("Settings")) label.i18n_text: "Settings"}
+            HagencyAccountBar {margin: Inset{left: 10 right: 10}}
         },
 
         Mobile := SolidView {
@@ -114,7 +119,7 @@ script_mod! {
                     draw_bg +: {color: mod.widgets.RINX_SURFACE border_size: 0 border_radius: 5}
                     input +: {
                         empty_text: #(crate::i18n::tr("Search")) i18n_empty_text: "Search"
-                        draw_text.text_style.font_size: (11.5 * mod.widgets.RINX_TEXT_SCALE)
+                        draw_text.text_style.font_size: mod.widgets.RINX_UI_SIZE
                         draw_bg +: {color: mod.widgets.RINX_SURFACE color_hover: mod.widgets.RINX_SURFACE color_focus: mod.widgets.RINX_SURFACE color_empty: mod.widgets.RINX_SURFACE}
                     }
                 }
@@ -139,6 +144,10 @@ pub enum DesktopWorkspace { #[default] Projects, Chats, Other }
 
 #[derive(Debug)]
 pub struct DesktopRailAction;
+
+/// Hosted content keeps its own toggle when the host has no Hagency titlebar.
+#[derive(Default)]
+pub struct SidebarToggleInTitlebar(pub bool);
 
 /// Shared across adaptive sidebar replacements, but reset when signing out.
 #[derive(Default)]
@@ -338,7 +347,14 @@ impl Widget for RoomsSideBar {
             && cx.global::<AppPreferencesGlobal>().0.desktop_sidebar_collapsed;
         self.view.label(cx, ids!(sidebar_title)).set_visible(cx, !collapsed);
         let fold = self.view.navigation_bar_button(cx, ids!(toggle_sidebar));
+        let in_titlebar = cx.global::<SidebarToggleInTitlebar>().0;
+        let brand = self.view.view(cx, ids!(sidebar_brand));
+        brand.set_visible(cx, !collapsed || in_titlebar);
+        if let Some(mut brand) = brand.borrow_mut() {
+            brand.layout.padding.left = if collapsed {0.0} else {12.0};
+        }
         if let Some(mut button) = fold.borrow_mut() {
+            button.set_visible(cx, !in_titlebar);
             button.set_tooltip_text(crate::i18n::tr(if collapsed {"Expand sidebar"} else {"Collapse sidebar"}));
             button.walk.width = Size::Fixed(if collapsed {44.0} else {32.0});
         }

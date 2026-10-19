@@ -5,6 +5,12 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
+    mod.widgets.RinxBrandLogo = Image {
+        width: 24 height: 24
+        fit: ImageFit.Smallest
+        src: crate_resource("self://resources/icon_128.png")
+    }
+
     mod.widgets.ICON_ADD              = crate_resource("self://resources/icons/add.svg")
     mod.widgets.ICON_ADD_REACTION     = crate_resource("self://resources/icons/add_reaction.svg")
     mod.widgets.ICON_ADD_PHOTO        = crate_resource("self://resources/icons/add_photo.svg")
@@ -72,28 +78,30 @@ script_mod! {
     mod.widgets.ICON_SERVICE_PLAY = crate_resource("self://resources/icons/service_play.svg")
     mod.widgets.ICON_SERVICE_STOP = crate_resource("self://resources/icons/service_stop.svg")
     mod.widgets.ICON_SERVICE_PAUSE = crate_resource("self://resources/icons/service_pause.svg")
+    mod.widgets.ICON_PANEL_LEFT       = crate_resource("self://resources/icons/panel_left.svg")
+    mod.widgets.ICON_PANEL_LEFT_OPEN  = crate_resource("self://resources/icons/panel_left_open.svg")
     mod.widgets.ICON_PANEL_RIGHT      = crate_resource("self://resources/icons/panel_right.svg")
     mod.widgets.ICON_PANEL_RIGHT_OPEN = crate_resource("self://resources/icons/panel_right_open.svg")
     mod.widgets.ICON_ADD_ATTACHMENT   = crate_resource("self://resources/icons/add_attachment.svg")
     mod.widgets.ICON_FILE             = crate_resource("self://resources/icons/file.svg")
 
     mod.widgets.TITLE_TEXT = theme.font_regular {
-        font_size: (13 * mod.widgets.RINX_TEXT_SCALE),
+        font_size: mod.widgets.RINX_HEADING_SIZE,
     }
 
     mod.widgets.REGULAR_TEXT = theme.font_regular {
-        font_size: (10 * mod.widgets.RINX_TEXT_SCALE),
+        font_size: mod.widgets.RINX_UI_SIZE,
     }
 
     mod.widgets.BOLD_TEXT = theme.font_bold {
-        font_size: (13 * mod.widgets.RINX_TEXT_SCALE),
+        font_size: mod.widgets.RINX_SECTION_SIZE,
     }
 
     mod.widgets.TEXT_SUB = theme.font_regular {
-        font_size: (10 * mod.widgets.RINX_TEXT_SCALE),
+        font_size: mod.widgets.RINX_META_SIZE,
     }
 
-    mod.widgets.USERNAME_FONT_SIZE = 11 * mod.widgets.RINX_TEXT_SCALE
+    mod.widgets.USERNAME_FONT_SIZE = mod.widgets.RINX_UI_SIZE
 
     mod.widgets.USERNAME_TEXT_COLOR = mod.widgets.RINX_INK
     mod.widgets.USERNAME_TEXT_STYLE = theme.font_bold {
@@ -108,8 +116,8 @@ script_mod! {
 
 
     mod.widgets.MESSAGE_FONT_SIZE = mod.widgets.RINX_BODY_SIZE
-    mod.widgets.MOBILE_MESSAGE_FONT_SIZE = 12.5 * mod.widgets.RINX_TEXT_SCALE
-    mod.widgets.REDACTED_MESSAGE_FONT_SIZE = 10 * mod.widgets.RINX_TEXT_SCALE
+    mod.widgets.MOBILE_MESSAGE_FONT_SIZE = mod.widgets.RINX_BODY_SIZE
+    mod.widgets.REDACTED_MESSAGE_FONT_SIZE = mod.widgets.RINX_UI_SIZE
 
     mod.widgets.MESSAGE_TEXT_COLOR = mod.widgets.RINX_INK
     // notices (automated messages from bots) use a lighter color
@@ -122,11 +130,11 @@ script_mod! {
         line_spacing: (mod.widgets.MESSAGE_TEXT_LINE_SPACING),
     }
 
-    mod.widgets.MESSAGE_REPLY_PREVIEW_FONT_SIZE = mod.widgets.RINX_META_SIZE
+    mod.widgets.MESSAGE_REPLY_PREVIEW_FONT_SIZE = mod.widgets.RINX_UI_SIZE
 
 
 
-    mod.widgets.SMALL_STATE_FONT_SIZE = 9.0 * mod.widgets.RINX_TEXT_SCALE
+    mod.widgets.SMALL_STATE_FONT_SIZE = mod.widgets.RINX_META_SIZE
 
 
     mod.widgets.SMALL_STATE_TEXT_COLOR = mod.widgets.RINX_MUTED
@@ -134,7 +142,7 @@ script_mod! {
         font_size: (mod.widgets.SMALL_STATE_FONT_SIZE),
     }
 
-    mod.widgets.TIMESTAMP_FONT_SIZE = 8.5 * mod.widgets.RINX_TEXT_SCALE
+    mod.widgets.TIMESTAMP_FONT_SIZE = mod.widgets.RINX_META_SIZE
 
     mod.widgets.TIMESTAMP_TEXT_COLOR = mod.widgets.RINX_MUTED
     mod.widgets.TIMESTAMP_TEXT_STYLE = theme.font_regular {
@@ -250,7 +258,7 @@ script_mod! {
     // Settings screen layout
     mod.widgets.SETTINGS_CONTENT_PADDING = 16
     // Ensure all settings buttons have a consistent height
-    mod.widgets.SETTINGS_BUTTON_HEIGHT = 36
+    mod.widgets.SETTINGS_BUTTON_HEIGHT = mod.widgets.RINX_BUTTON_HEIGHT
 
     // Text alignment compensation for non-Label widgets (LinkLabel, IconButton)
     // whose internal rendering origin differs from plain Label.
@@ -260,31 +268,22 @@ script_mod! {
     // The font size used for regular (non-title, non-subsection) text
     // within any settings screen (e.g., dropdown labels, radio/toggle
     // labels, inline helper text inside a control).
-    mod.widgets.SETTINGS_REGULAR_FONT_SIZE = 11 * mod.widgets.RINX_TEXT_SCALE
+    mod.widgets.SETTINGS_REGULAR_FONT_SIZE = mod.widgets.RINX_UI_SIZE
     mod.widgets.SETTINGS_REGULAR_TEXT_STYLE = theme.font_regular {
         font_size: (mod.widgets.SETTINGS_REGULAR_FONT_SIZE),
     }
 
 
     // A text input widget styled for Rinx.
-    mod.widgets.RobrixTextInput = TextInput {
+    mod.widgets.RobrixTextInput = RinxInput {
         width: Fill, height: Fit
         flow: Flow.Right{wrap: true},
         align: Align{y: 0.5}
         margin: 0,
-        padding: 10,
-
-        // For multiline text inputs, we want to show a light-colored scroll bar.
-        scroll_bar +: {
-            draw_bg +: {
-                color: #00000040
-                color_hover: #00000060
-                color_drag: #00000080
-            }
-        }
+        padding: Inset{left: 10 right: 10 top: 7 bottom: 7},
 
         draw_bg +: {
-            border_radius: 4.0 // was previously 2.0
+            border_radius: mod.widgets.RINX_CONTROL_RADIUS
             border_size: 1.0
 
             color: (mod.widgets.COLOR_PRIMARY)
@@ -328,7 +327,7 @@ script_mod! {
             color_empty_hover: (mod.widgets.RINX_MUTED),
             color_empty_focus: (mod.widgets.RINX_MUTED),
 
-            text_style: mod.widgets.MESSAGE_TEXT_STYLE {},
+            text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE},
         }
     }
 

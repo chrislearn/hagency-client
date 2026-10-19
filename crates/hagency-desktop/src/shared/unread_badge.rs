@@ -43,7 +43,7 @@ script_mod! {
             }
         }
         // Label that displays the unread message count
-        label_count := Label {
+        label_count := RinxLabel {
             padding: 0,
             width: Fit,
             height: Fit,
@@ -51,7 +51,7 @@ script_mod! {
             text: "",
             draw_text +: {
                 color: mod.widgets.RINX_ON_ACCENT,
-                text_style: REGULAR_TEXT {font_size: (8.0 * mod.widgets.RINX_TEXT_SCALE)},
+                text_style: REGULAR_TEXT {font_size: (8.0 * mod.widgets.RINX_TEXT_SCALE)}, // style-size: glyph
             }
         }
     }

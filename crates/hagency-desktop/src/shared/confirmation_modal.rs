@@ -56,19 +56,15 @@ script_mod! {
     // The accept button is red with a forbidden icon.
     mod.widgets.NegativeConfirmationModal = mod.widgets.ConfirmationModal {
         buttons_view +: {
-            cancel_button := RobrixNeutralIconButton {
-                width: Fit{min: FitBound.Abs(120.0)},
+            cancel_button := RinxIconButton {
+                width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
                 align: Align{x: 0.5, y: 0.5}
-                padding: 15,
                 draw_icon +: { svg: (ICON_FORBIDDEN) }
-                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
             }
             accept_button := RobrixNegativeIconButton {
-                width: Fit{min: FitBound.Abs(120.0)},
+                width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
                 align: Align{x: 0.5, y: 0.5}
-                padding: 15,
                 draw_icon +: { svg: (ICON_TRASH) }
-                icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1}}
             }
         }
     }

@@ -5,25 +5,25 @@ script_mod! {
     use mod.widgets.*
 
 
-    mod.widgets.TitleLabel = Label {
+    mod.widgets.TitleLabel = RinxLabel {
         width: Fill, height: Fit
         margin: Inset{top: 5},
         align: Align{x: 0.0, y: 0.5}
         flow: Flow.Right{wrap: true},
         draw_text +: {
-            text_style: TITLE_TEXT {font_size: (15 * mod.widgets.RINX_TEXT_SCALE)},
+            text_style: TITLE_TEXT {font_size: mod.widgets.RINX_SECTION_SIZE},
             color: mod.widgets.RINX_INK
         }
     }
 
-    mod.widgets.SubsectionLabel = Label {
+    mod.widgets.SubsectionLabel = RinxLabel {
         width: Fill, height: Fit
         margin: Inset{top: 5},
         align: Align{x: 0.0, y: 0.5}
         flow: Flow.Right { wrap: true },
         draw_text +: {
             color: (COLOR_TEXT),
-            text_style: theme.font_bold { font_size: (13 * mod.widgets.RINX_TEXT_SCALE) },
+            text_style: theme.font_bold { font_size: mod.widgets.RINX_HEADING_SIZE },
         }
     }
 
@@ -47,7 +47,7 @@ script_mod! {
         width: Fill { max: 400 }
         height: Fit { max: FitBound.Rel{base: Base.Full, factor: 1.0} }
         margin: 20
-        padding: Inset{top: 30, right: 25, bottom: 20, left: 25}
+        padding: 20
         flow: Down
 
         // Make the modal scrollable for cases when it's too tall for the app window.
@@ -64,23 +64,23 @@ script_mod! {
         }
     }
 
-    mod.widgets.ModalTitle = Label {
+    mod.widgets.ModalTitle = RinxLabel {
         width: Fill, height: Fit
         flow: Flow.Right{wrap: true}
         align: Align{x: 0.5}
-        margin: Inset{bottom: 25}
+        margin: Inset{bottom: 16}
         draw_text +: {
-            text_style: TITLE_TEXT {font_size: (13 * mod.widgets.RINX_TEXT_SCALE)},
+            text_style: TITLE_TEXT {font_size: mod.widgets.RINX_TITLE_SIZE},
             color: mod.widgets.RINX_INK
         }
     }
 
     // A modal body or description label, which fills the width and wraps.
-    mod.widgets.ModalBody = Label {
+    mod.widgets.ModalBody = RinxLabel {
         width: Fill, height: Fit
         flow: Flow.Right{wrap: true}
         draw_text +: {
-            text_style: REGULAR_TEXT {font_size: (11.5 * mod.widgets.RINX_TEXT_SCALE)},
+            text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_BODY_SIZE},
             color: mod.widgets.RINX_INK
         }
     }
@@ -91,7 +91,7 @@ script_mod! {
         width: Fill, height: Fit
         flow: Flow.Right{wrap: true}
         align: Align{x: 1.0, y: 0.5}
-        spacing: 15
-        padding: Inset{top: 20, bottom: 20}
+        spacing: 8
+        padding: Inset{top: 16, bottom: 0}
     }
 }

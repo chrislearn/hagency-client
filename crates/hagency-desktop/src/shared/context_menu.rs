@@ -2,9 +2,9 @@
 
 use makepad_widgets::*;
 
-pub const BUTTON_HEIGHT: f64 = 38.0;
+pub const BUTTON_HEIGHT: f64 = if cfg!(any(target_os = "android", target_os = "ios", target_env = "ohos")) {44.0} else {32.0};
 const MENU_WIDTH: f64 = 235.0;
-const MENU_PADDING: f64 = 6.0;
+const MENU_PADDING: f64 = 4.0;
 const MENU_SPACING: f64 = 2.0;
 const DIVIDER_MARGIN: f64 = 3.0;
 const DIVIDER_HEIGHT: f64 = 2.0 + 2.0 * DIVIDER_MARGIN; // a `LineH` is 2pt tall
@@ -13,25 +13,25 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    mod.widgets.ContextMenuButton = RobrixIconButton {
+    mod.widgets.ContextMenuButton = RinxGhostButton {
         height: #(BUTTON_HEIGHT)
         width: Fill
         margin: 0
-        padding: Inset{left: 10, right: 12, top: 9, bottom: 9}
+        padding: Inset{left: 10, right: 10, top: 0, bottom: 0}
         spacing: 10
         align: Align{x: 0, y: 0.5}
         icon_walk: Walk{width: 18, height: 18}
 
         draw_bg +: {
-            color: (COLOR_PRIMARY)
+            color: mod.widgets.RINX_SURFACE
             color_hover: mod.widgets.RINX_HOVER
             color_down: mod.widgets.RINX_PRESSED
-            border_radius: 4.0
+            border_radius: RINX_CONTROL_RADIUS
         }
         draw_icon.color: mod.widgets.RINX_INK
         draw_text +: {
             color: mod.widgets.RINX_INK, color_hover: mod.widgets.RINX_INK, color_down: mod.widgets.RINX_INK
-            text_style: REGULAR_TEXT {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}
+            text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_UI_SIZE}
         }
     }
 
@@ -67,8 +67,8 @@ script_mod! {
         draw_bg +: {
             color: (COLOR_PRIMARY)
             border_radius: 5.0
-            border_size: 0.5
-            border_color: mod.widgets.RINX_MUTED
+            border_size: 1.0
+            border_color: mod.widgets.RINX_BORDER
         }
     }
 }

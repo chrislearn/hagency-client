@@ -21,6 +21,9 @@ pub struct AppPreferences {
     /// Keep the desktop's global navigation as an icon rail.
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub desktop_sidebar_collapsed: bool,
+    /// Preferred desktop composer card height in logical pixels. None keeps automatic sizing.
+    #[serde(default, deserialize_with = "deserialize_composer_height")]
+    pub composer_height: Option<f64>,
     /// * If `true` (default), plain Enter sends the message (Shift+Enter inserts a newline).
     /// * If `false`, Cmd+Enter (Apple platforms) / Ctrl+Enter (other platforms) sends the
     ///   message and plain Enter inserts a newline. This is only relevant for physical keyboards;
@@ -48,6 +51,10 @@ pub struct AppPreferences {
     #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
     pub agent_chat_enabled: bool,
 
+    /// Speech recognition service and language; credentials are referenced by environment variable.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    pub speech: crate::speech::SpeechConfig,
+
     // Note: if you add a new preference here, be sure to add a new
     // function `on_<NEW_PREFERENCE>_changed` and update `broadcast_all()`.
 }
@@ -58,6 +65,8 @@ impl Default for AppPreferences {
             view_mode: ViewModeOverride::default(),
             tabbed_chats: false,
             desktop_sidebar_collapsed: false,
+            composer_height: None,
+            speech: crate::speech::SpeechConfig::default(),
             send_on_enter: true,
             thumbnail_max_height: ThumbnailMaxHeight::default(),
             ui_zoom: UiZoom::default(),
@@ -71,6 +80,16 @@ impl Default for AppPreferences {
 }
 
 impl AppPreferences {
+    pub fn on_speech_changed(&self, cx: &mut Cx) {
+        cx.global::<AppPreferencesGlobal>().0.speech = self.speech.clone();
+        cx.action(AppPreferencesAction::SpeechChanged);
+        cx.redraw_all();
+    }
+    pub fn on_composer_height_changed(&self, cx: &mut Cx) {
+        let height = valid_composer_height(self.composer_height);
+        cx.global::<AppPreferencesGlobal>().0.composer_height = height;
+        cx.redraw_all();
+    }
     pub fn on_desktop_sidebar_collapsed_changed(&self, cx: &mut Cx) {
         cx.global::<AppPreferencesGlobal>().0.desktop_sidebar_collapsed = self.desktop_sidebar_collapsed;
         cx.action(AppPreferencesAction::DesktopSidebarCollapsedChanged(self.desktop_sidebar_collapsed));
@@ -203,6 +222,8 @@ impl AppPreferences {
         self.on_view_mode_changed(cx);
         self.on_tabbed_chats_changed(cx);
         self.on_desktop_sidebar_collapsed_changed(cx);
+        self.on_composer_height_changed(cx);
+        self.on_speech_changed(cx);
         self.on_send_on_enter_changed(cx);
         self.on_thumbnail_max_height_changed(cx);
         self.on_ui_zoom_changed(cx);
@@ -436,6 +457,7 @@ impl Default for UiZoom {
 /// widget via `Apply::Reload`.
 #[derive(Debug, Clone)]
 pub enum AppPreferencesAction {
+    SpeechChanged,
     ViewModeChanged(ViewModeOverride),
     TabbedChatsChanged(bool),
     DesktopSidebarCollapsedChanged(bool),
@@ -452,3 +474,39 @@ pub enum AppPreferencesAction {
 /// here via `cx.global::<AppPreferencesGlobal>()`.
 #[derive(Default, Clone)]
 pub struct AppPreferencesGlobal(pub AppPreferences);
+
+/// Reject corrupt or impractical stored values; viewport clamping is separate
+/// so temporarily shrinking a window never destroys the user's preferred size.
+pub(crate) fn valid_composer_height(height: Option<f64>) -> Option<f64> {
+    height.filter(|height| height.is_finite() && (88.0..=640.0).contains(height))
+}
+
+fn deserialize_composer_height<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<f64>, D::Error> {
+    let height = crate::utils::deserialize_or_default(deserializer)?;
+    Ok(valid_composer_height(height))
+}
+
+#[cfg(test)]
+mod composer_height_tests {
+    use super::*;
+    #[test]
+    fn composer_preference_roundtrips_and_rejects_extreme_or_legacy_values() {
+        let mut prefs = AppPreferences::default();
+        prefs.composer_height = Some(240.0);
+        let encoded = serde_json::to_value(&prefs).unwrap();
+        let restored: AppPreferences = serde_json::from_value(encoded.clone()).unwrap();
+        assert_eq!(restored, prefs);
+        let mut legacy = encoded.clone();
+        legacy.as_object_mut().unwrap().remove("composer_height");
+        assert_eq!(serde_json::from_value::<AppPreferences>(legacy).unwrap().composer_height, None);
+        for bad in [serde_json::json!(-1), serde_json::json!(0), serde_json::json!(1), serde_json::json!(100000), serde_json::json!("bad"), serde_json::json!({})] {
+            let mut corrupt = encoded.clone();
+            corrupt["composer_height"] = bad;
+            let restored: AppPreferences = serde_json::from_value(corrupt).unwrap();
+            assert_eq!(restored.composer_height, None);
+            assert_eq!(restored.send_on_enter, prefs.send_on_enter);
+        }
+        assert_eq!(valid_composer_height(Some(f64::NAN)), None);
+        assert_eq!(valid_composer_height(Some(f64::INFINITY)), None);
+    }
+}

@@ -40,18 +40,18 @@ script_mod! {
             border_size: 2.0
         }
 
-        Label {
+        RinxLabel {
             width: Fill,
             height: Fit,
             flow: Flow.Right{wrap: true},
             draw_text +: {
                 color: (MESSAGE_TEXT_COLOR),
-                text_style: MESSAGE_TEXT_STYLE { font_size: (10.0 * mod.widgets.RINX_TEXT_SCALE) },
+                text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
             }
             text: #(crate::i18n::tr("Send your location to this room?")) i18n_text: "Send your location to this room?"
         }
 
-        location_label := Label {
+        location_label := RinxLabel {
             width: Fill,
             height: Fit,
             align: Align{x: 0.0, y: 0.5},

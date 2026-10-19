@@ -258,7 +258,6 @@ script_mod! {
             show_scroll_x: true
             show_scroll_y: false
             scroll_bar_x +: {
-                bar_size: 4
                 use_vertical_finger_scroll: true
             }
         }

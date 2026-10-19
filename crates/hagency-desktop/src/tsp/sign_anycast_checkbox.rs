@@ -15,7 +15,7 @@ script_mod! {
         active: false,
         draw_text +: {
             color: COLOR_TEXT,
-            text_style: theme.font_regular {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)},
+            text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE},
             mark_color_active: COLOR_TEXT,
         }
     }

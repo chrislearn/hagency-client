@@ -439,45 +439,57 @@ fn array(v: &Value, key: &str) -> Vec<Value> {
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
-    let Text = Label {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}}}
+    let Text = RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}}
     let Input = RobrixTextInput {
-        width: Fill height: 40 margin: 0 padding: Inset{left: 12 right: 12 top: 8 bottom: 8}
-        draw_text.text_style: theme.font_regular{font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}
+        width: Fill height: mod.widgets.RINX_CONTROL_HEIGHT margin: 0 padding: Inset{left: 12 right: 12 top: 8 bottom: 8}
+        draw_text.text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE}
     }
     let Select = RobrixSettingsDropDown {
-        width: Fill height: 40 margin: 0
+        width: Fill height: mod.widgets.RINX_CONTROL_HEIGHT margin: 0
         popup_menu_position: PopupMenuPosition.BelowInput
-        draw_text.text_style: theme.font_regular{font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}
+        draw_text.text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE}
         popup_menu: RobrixSettingsPopupMenu {
             width: 360
             menu_item: RobrixSettingsPopupMenuItem {
-                height: 36
-                draw_text.text_style: theme.font_regular{font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}
+                height: mod.widgets.RINX_CONTROL_HEIGHT
+                draw_text.text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE}
             }
         }
     }
-    let Action = RobrixNeutralIconButton {height: 40 icon_walk: Walk{width: 0 height: 0} spacing: 0 padding: Inset{left: 14 right: 14 top: 0 bottom: 0}}
-    let Primary = RobrixIconButton {height: 40 icon_walk: Walk{width: 0 height: 0} spacing: 0 padding: Inset{left: 14 right: 14 top: 0 bottom: 0}}
-    let Danger = RobrixNegativeIconButton {height: 40 icon_walk: Walk{width: 0 height: 0} spacing: 0 padding: Inset{left: 14 right: 14 top: 0 bottom: 0}}
+    let Action = RobrixNeutralIconButton {
+        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+        icon_walk: Walk{width: 0 height: 0} spacing: 0
+    }
+    let Primary = RobrixIconButton {
+        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+        icon_walk: Walk{width: 0 height: 0} spacing: 0
+    }
+    let Danger = RobrixNegativeIconButton {
+        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+        icon_walk: Walk{width: 0 height: 0} spacing: 0
+    }
     let Section = RoundedView {width: Fill height: Fit flow: Down padding: 16 spacing: 10
         draw_bg +: {color: mod.widgets.RINX_SURFACE border_color: mod.widgets.RINX_BORDER border_size: 1 border_radius: 8}
     }
-    let DeviceBadge = RoundedView {width: Fit height: 28 align: Align{y:0.5} padding: Inset{left: 10 right: 10 top: 0 bottom: 0}
+    let DeviceBadge = RoundedView {width: Fit height: 24 align: Align{y:0.5} padding: Inset{left: 8 right: 8 top: 0 bottom: 0}
         draw_bg +: {color: mod.widgets.RINX_HOVER border_radius: 8}
-        device_label := Label {width: Fit height: Fit padding: 0 draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_bold{font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
+        device_label := RinxLabel {width: Fit height: Fit padding: 0 draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_META_SIZE}}}
     }
     let Cards = PortalList {width: Fill height: Fill
         Card := RoundedView {width: Fill height: Fit flow: Right padding: 16 spacing: 16 margin: Inset{bottom: 12} align: Align{y: 0.5}
             draw_bg +: {color: mod.widgets.RINX_SURFACE border_color: mod.widgets.RINX_BORDER border_size: 1 border_radius: 8}
             View {width: Fill height: Fit flow: Down spacing: 6
-                title := Text {draw_text.text_style: theme.font_bold{font_size: (16 * mod.widgets.RINX_TEXT_SCALE)}}
+                title := Text {draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
                 badge_row := View {width: Fill height: Fit flow: Right spacing: 6
                     device_badge := DeviceBadge {visible: false}
                     runtime_badge := DeviceBadge {visible: false}
                 }
-                summary := Text {draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
+                summary := Text {draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}}
             }
-            service_control := RobrixNeutralIconButton {visible: false height: 40 spacing: 6 padding: Inset{left: 12 right: 12 top: 0 bottom: 0} icon_walk: Walk{width: 16 height: 16} draw_icon.svg: ICON_SERVICE_PLAY text: "Start"}
+            service_control := RobrixNeutralIconButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                visible: false spacing: 6 icon_walk: Walk{width: 16 height: 16} draw_icon.svg: ICON_SERVICE_PLAY text: "Start"
+            }
             open := Action {text: #(crate::i18n::tr("View details")) i18n_text: "View details"}
         }
         Filler := View {width: Fill height: 64}
@@ -490,7 +502,7 @@ script_mod! {
         width: Fill height: Fill flow: Down padding: Inset{top: 16 left: 20 right: 0 bottom: 0} spacing: 8 draw_bg.color: mod.widgets.RINX_FIELD
         View {width: Fill height: 40 margin: Inset{right: 20} spacing: 10 align: Align{y: 0.5}
             back := RinxBackButton {visible: false}
-            heading := Text {text: #(crate::i18n::tr("Projects")) i18n_text: "Projects" draw_text.text_style: theme.font_bold{font_size: (16 * mod.widgets.RINX_TEXT_SCALE)}}
+            heading := Text {text: #(crate::i18n::tr("Projects")) i18n_text: "Projects" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
             loading_status := LoadingSpinner {visible: false width: 18 height: 18 draw_bg +: {color: mod.widgets.RINX_MUTED stroke_width: 2.0}}
             new_item := Primary {text: #(crate::i18n::tr("New Project")) i18n_text: "New Project"}
             refresh := Action {text: #(crate::i18n::tr("Refresh")) i18n_text: "Refresh"}
@@ -500,8 +512,8 @@ script_mod! {
         login := Action {visible: false text: #(crate::i18n::tr("Sign in again")) i18n_text: "Sign in again"}
         lists_pane := View {width: Fill height: Fill margin: Inset{right: 20 bottom: 16} flow: Down spacing: 10
                 agent_recovery := Section {visible: false width: Fill height: Fit flow: Down spacing: 8
-                    Text {text: #(crate::i18n::tr("Unfinished Agent requests")) i18n_text: "Unfinished Agent requests" draw_text.text_style: theme.font_bold{font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}}
-                    agent_pending_count := Text {draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
+                    Text {text: #(crate::i18n::tr("Unfinished Agent requests")) i18n_text: "Unfinished Agent requests" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_HEADING_SIZE}}
+                    agent_pending_count := Text {draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}}
                     agent_pending := Select {labels: [#(crate::i18n::tr("Select an original request"))]}
                     agent_pending_details := Text {}
                     resume_agent_command := Action {text: #(crate::i18n::tr("Resume original Agent request")) i18n_text: "Resume original Agent request"}
@@ -510,9 +522,6 @@ script_mod! {
             agent_list_holder := View {visible: false width: Fill height: Fill agent_list := Cards {}}
         }
         details_scroll := ScrollYView {visible: false width: Fill height: Fill flow: Down padding: Inset{right: 20 bottom: 16} spacing: 12
-            scroll_bars +: {scroll_bar_y +: {bar_size: 10 bar_side_margin: 2
-                draw_bg +: {color: mod.widgets.RINX_MUTED color_hover: mod.widgets.RINX_INK color_drag: mod.widgets.RINX_ACCENT size: 5 border_size: 0 border_radius: 2.5}
-            }}
             projects_page := View {width: Fill height: Fit flow: Down spacing: 10
                 View {visible: false width: 0 height: 0 projects := Select {labels: [#(crate::i18n::tr("Select a Project"))]}}
                 project_detail := View {visible: false width: Fill height: Fit flow: Down spacing: 10
@@ -552,7 +561,7 @@ script_mod! {
                             save_creation_policy := Primary {text: #(crate::i18n::tr("Save Agent access permissions")) i18n_text: "Save Agent access permissions"}
                             Hr {width: Fill height: 1}
                             Text {text: #(crate::i18n::tr("Service availability")) i18n_text: "Service availability"}
-                            scope_pause := CheckBox {text: #(crate::i18n::tr("Pause Agent services in this Project or Room")) i18n_text: "Pause Agent services in this Project or Room"}
+                            scope_pause := RinxCheckBox {text: #(crate::i18n::tr("Pause Agent services in this Project or Room")) i18n_text: "Pause Agent services in this Project or Room"}
                             save_scope_pause := Primary {text: #(crate::i18n::tr("Apply service pause")) i18n_text: "Apply service pause"}
                             Text {text: #(crate::i18n::tr("Access permissions and service pause are separate. Resuming services does not change access permissions.")) i18n_text: "Access permissions and service pause are separate. Resuming services does not change access permissions." draw_text.color: mod.widgets.RINX_MUTED}
                         }
@@ -576,7 +585,7 @@ script_mod! {
                     }
                 }
                 project_form := Section {visible: false width: Fill height: Fit flow: Down spacing: 8
-                    creation_heading := Text {visible: false text: #(crate::i18n::tr("Create Project")) i18n_text: "Create Project" draw_text.text_style: theme.font_bold{font_size: (16 * mod.widgets.RINX_TEXT_SCALE)}}
+                    creation_heading := Text {visible: false text: #(crate::i18n::tr("Create Project")) i18n_text: "Create Project" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
                     creation_note := Text {text: #(crate::i18n::tr("Choose a new Space or connect one you already belong to.")) i18n_text: "Choose a new Space or connect one you already belong to." draw_text.color: mod.widgets.RINX_MUTED}
                     Text {text: #(crate::i18n::tr("Create or connect")) i18n_text: "Create or connect"}
                     creation_source := Select {labels: [#(crate::i18n::tr("Create a new Space (default)")) #(crate::i18n::tr("Connect an existing Space"))]}
@@ -598,7 +607,7 @@ script_mod! {
             agents_page := View {visible: false width: Fill height: Fit flow: Down spacing: 10
                 View {visible: false width: 0 height: 0 agents := Select {labels: [#(crate::i18n::tr("Select my Agent"))]}}
                 agent_create := Section {visible: false width: Fill height: Fit flow: Down spacing: 8
-                    agent_creation_heading := Text {visible: false text: #(crate::i18n::tr("Create Agent")) i18n_text: "Create Agent" draw_text.text_style: theme.font_bold{font_size: (16 * mod.widgets.RINX_TEXT_SCALE)}}
+                    agent_creation_heading := Text {visible: false text: #(crate::i18n::tr("Create Agent")) i18n_text: "Create Agent" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
                     Text {text: #(crate::i18n::tr("Create an Agent on this device. Connect a local runtime and add Rooms afterward.")) i18n_text: "Create an Agent on this device. Connect a local runtime and add Rooms afterward." draw_text.color: mod.widgets.RINX_MUTED}
                     agent_binding_target := View {visible: false width: Fill height: Fit flow: Down spacing: 8
                         agent_project := Select {labels: [#(crate::i18n::tr("Select a Project"))]}
@@ -620,13 +629,13 @@ script_mod! {
                     configuration_refresh := Action {visible: false text: #(crate::i18n::tr("Refresh execution device environment")) i18n_text: "Refresh execution device environment"}
                     local_device_notice := Section {visible: false width: Fill height: Fit flow: Down spacing: 8
                         local_device_message := Text {}
-                        assignment_confirm := CheckBox {text: #(crate::i18n::tr("Switching devices stops the previous lease. Its configuration is not copied. Restore this owner's complete ledger and configure resources before running here.")) i18n_text: "Switching devices stops the previous lease. Its configuration is not copied. Restore this owner's complete ledger and configure resources before running here."}
+                        assignment_confirm := RinxCheckBox {text: #(crate::i18n::tr("Switching devices stops the previous lease. Its configuration is not copied. Restore this owner's complete ledger and configure resources before running here.")) i18n_text: "Switching devices stops the previous lease. Its configuration is not copied. Restore this owner's complete ledger and configure resources before running here."}
                         assign_current_device := Primary {text: #(crate::i18n::tr("Handle on this device")) i18n_text: "Handle on this device"}
                     }
                     setup_section := View {width: Fill height: Fit flow: Down spacing: 10
                     identity_section := Section {width: Fill height: Fit flow: Down spacing: 8
-                        Text {text: #(crate::i18n::tr("Identity")) i18n_text: "Identity" draw_text.text_style: theme.font_bold{font_size: (16 * mod.widgets.RINX_TEXT_SCALE)}}
-                        agent_details := Text {max_lines: 3 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
+                        Text {text: #(crate::i18n::tr("Identity")) i18n_text: "Identity" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
+                        agent_details := Text {max_lines: 3 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}}
                         Text {text: #(crate::i18n::tr("Execution device")) i18n_text: "Execution device"}
                         execution_badge := DeviceBadge {}
                         owner_direct_status := Text {}
@@ -643,11 +652,11 @@ script_mod! {
                     }
                     retirement_section := Section {visible: false width: Fill height: Fit padding: 12 spacing: 6
                     Text {text: #(crate::i18n::tr("Dangerous actions")) i18n_text: "Dangerous actions" draw_text.color: mod.widgets.RINX_MUTED}
-                    retire_confirm := CheckBox {text: #(crate::i18n::tr("I confirm retirement stops every Room; this identity remains mine")) i18n_text: "I confirm retirement stops every Room; this identity remains mine"}
+                    retire_confirm := RinxCheckBox {text: #(crate::i18n::tr("I confirm retirement stops every Room; this identity remains mine")) i18n_text: "I confirm retirement stops every Room; this identity remains mine"}
                     retire_agent := Danger {text: #(crate::i18n::tr("Retire Agent permanently")) i18n_text: "Retire Agent permanently"}
                     }
                     policy_section := Section {visible: false width: Fill height: Fit flow: Down spacing: 8
-                        Text {text: #(crate::i18n::tr("Usage limits")) i18n_text: "Usage limits" draw_text.text_style: theme.font_bold{font_size: (16 * mod.widgets.RINX_TEXT_SCALE)}}
+                        Text {text: #(crate::i18n::tr("Usage limits")) i18n_text: "Usage limits" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
                         Text {text: #(crate::i18n::tr("No token limit is required. Set optional limits for this Agent, one Room, or one member in a Room. All applicable limits are checked together.")) i18n_text: "No token limit is required. Set optional limits for this Agent, one Room, or one member in a Room. All applicable limits are checked together." draw_text.color: mod.widgets.RINX_MUTED}
                         Text {text: #(crate::i18n::tr("Apply to")) i18n_text: "Apply to"}
                         policy_layer := Select {labels: [#(crate::i18n::tr("Entire Agent")) #(crate::i18n::tr("One Room")) #(crate::i18n::tr("One member in a Room"))] i18n_labels: ["Entire Agent" "One Room" "One member in a Room"]}
@@ -674,7 +683,7 @@ script_mod! {
                         }
                         zero_limit_note := Text {visible: false text: #(crate::i18n::tr("Use zero tokens to stop usage in this scope.")) i18n_text: "Use zero tokens to stop usage in this scope." draw_text.color: mod.widgets.RINX_MUTED}
                         Hr {width: Fill height: 1}
-                        Text {text: #(crate::i18n::tr("Request permissions")) i18n_text: "Request permissions" draw_text.text_style: theme.font_bold{font_size: (13 * mod.widgets.RINX_TEXT_SCALE)}}
+                        Text {text: #(crate::i18n::tr("Request permissions")) i18n_text: "Request permissions" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_SECTION_SIZE}}
                         Text {text: #(crate::i18n::tr("Request handling")) i18n_text: "Request handling"}
                         requests := Select {labels: [#(crate::i18n::tr("Allow requests")) #(crate::i18n::tr("Deny requests")) #(crate::i18n::tr("Ask owner per request"))] i18n_labels: ["Allow requests" "Deny requests" "Ask owner per request"]}
                         Text {text: #(crate::i18n::tr("High-risk tools")) i18n_text: "High-risk tools"}
@@ -688,7 +697,7 @@ script_mod! {
                         reset_policy := Action {text: #(crate::i18n::tr("Reset this scope")) i18n_text: "Reset this scope"}
                     }
                     model_section := Section {visible: false width: Fill height: Fit flow: Down spacing: 8
-                        Text {text: #(crate::i18n::tr("Model & resources")) i18n_text: "Model & resources" draw_text.text_style: theme.font_bold{font_size: (16 * mod.widgets.RINX_TEXT_SCALE)}}
+                        Text {text: #(crate::i18n::tr("Model & resources")) i18n_text: "Model & resources" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
                         Text {text: #(crate::i18n::tr("Model settings apply to this Agent across its Rooms.")) i18n_text: "Model settings apply to this Agent across its Rooms." draw_text.color: mod.widgets.RINX_MUTED}
                         Text {text: #(crate::i18n::tr("Local agent runtime")) i18n_text: "Local agent runtime"}
                         runtime_kind := Select {labels: ["Codex" "Claude Code" "Octos"]}
@@ -712,7 +721,7 @@ script_mod! {
                         effort := Select {labels: [#(crate::i18n::tr("Checking model choices…"))]}
                         effort_note := Text {draw_text.color: mod.widgets.RINX_MUTED}
                         web_search_holder := View {width: Fill height: Fit flow: Down spacing: 4
-                            web_search := CheckBox {text: #(crate::i18n::tr("Live web search")) i18n_text: "Live web search"}
+                            web_search := RinxCheckBox {text: #(crate::i18n::tr("Live web search")) i18n_text: "Live web search"}
                             Text {text: #(crate::i18n::tr("Enabled by default. Save and restart the service to apply changes.")) i18n_text: "Enabled by default. Save and restart the service to apply changes." draw_text.color: mod.widgets.RINX_MUTED}
                         }
                         refresh_models := Action {text: #(crate::i18n::tr("Refresh available models")) i18n_text: "Refresh available models"}
@@ -736,7 +745,7 @@ script_mod! {
                     }
                     runtime_section := View {visible: false width: Fill height: Fit flow: Down spacing: 12
                         Section {width: Fill height: Fit flow: Down spacing: 8
-                        Text {text: #(crate::i18n::tr("Agent service")) i18n_text: "Agent service" draw_text.text_style: theme.font_bold{font_size: (16 * mod.widgets.RINX_TEXT_SCALE)}}
+                        Text {text: #(crate::i18n::tr("Agent service")) i18n_text: "Agent service" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
                         runtime_chat_target := Text {draw_text.color: mod.widgets.RINX_MUTED}
                         runtime_status := Text {}
                         runtime_start_options := View {width: Fill height: Fit flow: Down spacing: 8
@@ -746,8 +755,8 @@ script_mod! {
                         reservation := Input {empty_text: #(crate::i18n::tr("Positive token count")) i18n_empty_text: "Positive token count"}
                         service_advanced_toggle := Action {text: #(crate::i18n::tr("Advanced service options")) i18n_text: "Advanced service options" spacing: 6 icon_walk: Walk{width: 12 height: 12} draw_icon.svg: ICON_CHEVRON_RIGHT}
                         service_advanced := View {visible: false width: Fill height: Fit flow: Down spacing: 8
-                        takeover := CheckBox {text: #(crate::i18n::tr("Explicitly take over this Agent's device lease")) i18n_text: "Explicitly take over this Agent's device lease"}
-                        host_files := CheckBox {visible: false text: #(crate::i18n::tr("Enable this Room's scoped host files (list/read/create)")) i18n_text: "Enable this Room's scoped host files (list/read/create)"}
+                        takeover := RinxCheckBox {text: #(crate::i18n::tr("Explicitly take over this Agent's device lease")) i18n_text: "Explicitly take over this Agent's device lease"}
+                        host_files := RinxCheckBox {visible: false text: #(crate::i18n::tr("Enable this Room's scoped host files (list/read/create)")) i18n_text: "Enable this Room's scoped host files (list/read/create)"}
                         }
                         }
                         runtime_model_settings := Text {draw_text.color: mod.widgets.RINX_MUTED}
@@ -758,23 +767,26 @@ script_mod! {
                         }
                         }
                         Section {width: Fill height: Fit flow: Down spacing: 8
-                            Text {text: #(crate::i18n::tr("Connected Rooms")) i18n_text: "Connected Rooms" draw_text.text_style: theme.font_bold{font_size: (16 * mod.widgets.RINX_TEXT_SCALE)}}
+                            Text {text: #(crate::i18n::tr("Connected Rooms")) i18n_text: "Connected Rooms" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
                             Text {text: #(crate::i18n::tr("Pause only where needed. Requests in a paused Room receive a notice.")) i18n_text: "Pause only where needed. Requests in a paused Room receive a notice." draw_text.color: mod.widgets.RINX_MUTED}
                             service_rooms := PortalList {width: Fill height: 260
                                 Room := View {width: Fill height: Fit flow: Right padding: Inset{top: 8 bottom: 8} spacing: 8 align: Align{y: 0.5}
                                     View {width: Fill height: Fit flow: Down spacing: 4
-                                        room_name := Text {draw_text.text_style: theme.font_bold{font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}}
+                                        room_name := Text {draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_HEADING_SIZE}}
                                         room_status := Text {draw_text.color: mod.widgets.RINX_MUTED}
                                     }
                                     open_room_chat := Action {text: #(crate::i18n::tr("Open chat")) i18n_text: "Open chat"}
-                                    room_toggle := RobrixNeutralIconButton {height: 40 text: "Pause" spacing: 6 padding: Inset{left: 12 right: 12 top: 0 bottom: 0} icon_walk: Walk{width: 16 height: 16} draw_icon.svg: ICON_SERVICE_PAUSE}
+                                    room_toggle := RobrixNeutralIconButton {
+                                        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                                        text: "Pause" spacing: 6 icon_walk: Walk{width: 16 height: 16} draw_icon.svg: ICON_SERVICE_PAUSE
+                                    }
                                 }
                                 Empty := View {width: Fill height: 48 Text {text: #(crate::i18n::tr("No connected Rooms yet.")) i18n_text: "No connected Rooms yet."}}
                                 Filler := View {width: Fill height: 32}
                             }
                         }
                         Section {width: Fill height: Fit flow: Down spacing: 8
-                        Text {text: #(crate::i18n::tr("Pending approvals")) i18n_text: "Pending approvals" draw_text.text_style: theme.font_bold{font_size: (16 * mod.widgets.RINX_TEXT_SCALE)}}
+                        Text {text: #(crate::i18n::tr("Pending approvals")) i18n_text: "Pending approvals" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
                         Text {text: #(crate::i18n::tr("Only requests or tools configured to ask you appear here.")) i18n_text: "Only requests or tools configured to ask you appear here." draw_text.color: mod.widgets.RINX_MUTED}
                         approvals_check := Action {text: #(crate::i18n::tr("Refresh pending requests/tools")) i18n_text: "Refresh pending requests/tools"}
                         approvals := Select {labels: [#(crate::i18n::tr("Select a pending approval"))]}
@@ -807,7 +819,7 @@ script_mod! {
                             resume_binding := Action {text: #(crate::i18n::tr("Resume Room")) i18n_text: "Resume Room"}
                         }
                         room_danger_heading := Text {text: #(crate::i18n::tr("Dangerous actions")) i18n_text: "Dangerous actions" draw_text.color: mod.widgets.RINX_MUTED}
-                        leave_confirm := CheckBox {text: #(crate::i18n::tr("I want this Agent to leave the selected Room")) i18n_text: "I want this Agent to leave the selected Room"}
+                        leave_confirm := RinxCheckBox {text: #(crate::i18n::tr("I want this Agent to leave the selected Room")) i18n_text: "I want this Agent to leave the selected Room"}
                         leave_binding := Danger {text: #(crate::i18n::tr("Leave this Room")) i18n_text: "Leave this Room"}
                     }
                     }

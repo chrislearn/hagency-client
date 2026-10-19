@@ -11,9 +11,9 @@ script_mod! {
         visible: false width: Fill height: Fit flow: Down spacing: 8
         margin: Inset{top: 8 right: 10} padding: 12
         draw_bg +: {color: (mod.widgets.RBX_BG_SURFACE) border_radius: 4}
-        octos_title := Label {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: (mod.widgets.RBX_FG_PRIMARY)}
-        octos_summary := Label {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: (mod.widgets.RBX_FG_PRIMARY)}
-        octos_status := Label {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: (mod.widgets.RBX_FG_SECONDARY)}
+        octos_title := RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: (mod.widgets.RBX_FG_PRIMARY)}
+        octos_summary := RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: (mod.widgets.RBX_FG_PRIMARY)}
+        octos_status := RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: (mod.widgets.RBX_FG_SECONDARY)}
         octos_buttons := View {width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 8
             octos_0 := AgentApprovalSecondaryButton {}
             octos_1 := AgentApprovalSecondaryButton {}

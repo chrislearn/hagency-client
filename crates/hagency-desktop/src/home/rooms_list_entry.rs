@@ -37,7 +37,7 @@ script_mod! {
         }
     }
 
-    mod.widgets.RoomName = Label {
+    mod.widgets.RoomName = RinxLabel {
         width: Fill, height: Fit
         flow: Flow.Right{wrap: false},
         padding: 0,
@@ -45,12 +45,12 @@ script_mod! {
         text_overflow: Ellipsis
         draw_text +: {
             color: (RBX_FG_PRIMARY),
-            text_style: RBX_TEXT_BODY_STRONG {}
+            text_style: RBX_TEXT_BODY_STRONG {font_size: mod.widgets.RINX_UI_SIZE}
         }
         text: #(crate::i18n::tr("[Room name unknown]"))
     }
 
-    mod.widgets.RoomsListEntryTimestamp = Label {
+    mod.widgets.RoomsListEntryTimestamp = RinxLabel {
         padding: Inset{top: 1},
         width: Fit, height: Fit
         flow: Flow.Right{wrap: false},
@@ -65,14 +65,14 @@ script_mod! {
         latest_message := HtmlOrPlaintext {
             html_view +: {
                 html +: {
-                    font_size: (9.3 * mod.widgets.RINX_TEXT_SCALE)
+                    font_size: mod.widgets.RINX_UI_SIZE
                     max_lines: 2
                     text_overflow: Ellipsis
-                    text_style_normal +: { font_size: (9.3 * mod.widgets.RINX_TEXT_SCALE), line_spacing: 1.32 }
-                    text_style_italic +: { font_size: (9.3 * mod.widgets.RINX_TEXT_SCALE), line_spacing: 1.32 }
-                    text_style_bold +: { font_size: (9.3 * mod.widgets.RINX_TEXT_SCALE), line_spacing: 1.32 }
-                    text_style_bold_italic +: { font_size: (9.3 * mod.widgets.RINX_TEXT_SCALE), line_spacing: 1.32 }
-                    text_style_fixed +: { font_size: (9.3 * mod.widgets.RINX_TEXT_SCALE), line_spacing: 1.32 }
+                    text_style_normal +: { font_size: mod.widgets.RINX_UI_SIZE, line_spacing: 1.32 }
+                    text_style_italic +: { font_size: mod.widgets.RINX_UI_SIZE, line_spacing: 1.32 }
+                    text_style_bold +: { font_size: mod.widgets.RINX_UI_SIZE, line_spacing: 1.32 }
+                    text_style_bold_italic +: { font_size: mod.widgets.RINX_UI_SIZE, line_spacing: 1.32 }
+                    text_style_fixed +: { font_size: mod.widgets.RINX_UI_SIZE, line_spacing: 1.32 }
                     // Scale down the pill (title font, avatar size, avatar text) to fit.
                     a +: {
                         matrix_link_view +: {
@@ -86,14 +86,14 @@ script_mod! {
                                         text_view +: {
                                             text +: {
                                                 draw_text +: {
-                                                    text_style +: { font_size: (6 * mod.widgets.RINX_TEXT_SCALE) }
+                                                    text_style +: { font_size: (6 * mod.widgets.RINX_TEXT_SCALE) } // style-size: avatar
                                                 }
                                             }
                                         }
                                     }
                                     title +: {
                                         draw_text +: {
-                                            text_style +: { font_size: (8.5 * mod.widgets.RINX_TEXT_SCALE) }
+                                            text_style +: { font_size: mod.widgets.RINX_UI_SIZE }
                                         }
                                     }
                                 }
@@ -108,7 +108,7 @@ script_mod! {
                     text_overflow: Ellipsis
                     draw_text +: {
                         color: (RBX_FG_SECONDARY),
-                        text_style: REGULAR_TEXT { font_size: (9.3 * mod.widgets.RINX_TEXT_SCALE), line_spacing: 1.32 },
+                        text_style: REGULAR_TEXT { font_size: mod.widgets.RINX_UI_SIZE, line_spacing: 1.32 },
                     }
                     text: #(crate::i18n::tr("[No recent messages]"))
                 }
@@ -220,19 +220,19 @@ script_mod! {
                 width: 88 height: Fill padding: 4 spacing: 0 align: Align{x: 0.5 y: 0.5}
                 text: #(crate::i18n::tr("Unread")) i18n_text: "Unread" icon_walk: Walk{width: 0 height: 0}
                 draw_bg +: {pixel: fn() {return mod.widgets.RINX_ACCENT.mix(mod.widgets.RINX_ACCENT_DOWN, self.down)}}
-                draw_text +: {color: mod.widgets.RINX_ON_ACCENT color_hover: mod.widgets.RINX_ON_ACCENT color_down: mod.widgets.RINX_ON_ACCENT text_style.font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}
+                draw_text +: {color: mod.widgets.RINX_ON_ACCENT color_hover: mod.widgets.RINX_ON_ACCENT color_down: mod.widgets.RINX_ON_ACCENT text_style.font_size: mod.widgets.RINX_UI_SIZE}
             }
             swipe_hide := RobrixNeutralIconButton {
                 width: 64 height: Fill padding: 4 spacing: 0 align: Align{x: 0.5 y: 0.5}
                 text: #(crate::i18n::tr("Hide")) i18n_text: "Hide" icon_walk: Walk{width: 0 height: 0}
                 draw_bg +: {pixel: fn() {return mod.widgets.RINX_WARNING_FG.mix(mod.widgets.RINX_WARNING_FG, self.down)}}
-                draw_text +: {color: mod.widgets.RINX_WARNING_BG color_hover: mod.widgets.RINX_WARNING_BG color_down: mod.widgets.RINX_WARNING_BG text_style.font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}
+                draw_text +: {color: mod.widgets.RINX_WARNING_BG color_hover: mod.widgets.RINX_WARNING_BG color_down: mod.widgets.RINX_WARNING_BG text_style.font_size: mod.widgets.RINX_UI_SIZE}
             }
             swipe_delete := RobrixNeutralIconButton {
                 width: 72 height: Fill padding: 4 spacing: 0 align: Align{x: 0.5 y: 0.5}
                 text: #(crate::i18n::tr("Delete")) i18n_text: "Delete" icon_walk: Walk{width: 0 height: 0}
                 draw_bg +: {pixel: fn() {return mod.widgets.RINX_DANGER_FG.mix(mod.widgets.RINX_DANGER_FG, self.down)}}
-                draw_text +: {color: mod.widgets.RINX_DANGER_BG color_hover: mod.widgets.RINX_DANGER_BG color_down: mod.widgets.RINX_DANGER_BG text_style.font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}
+                draw_text +: {color: mod.widgets.RINX_DANGER_BG color_hover: mod.widgets.RINX_DANGER_BG color_down: mod.widgets.RINX_DANGER_BG text_style.font_size: mod.widgets.RINX_UI_SIZE}
             }
         }
         chat_row := SolidView {
@@ -256,7 +256,7 @@ script_mod! {
                     visible: false width: Fit height: 18 padding: Inset{left: 5 right: 5}
                     align: Align{x: 0.5 y: 0.5}
                     draw_bg +: {color: mod.widgets.RINX_DANGER_FG border_radius: 9}
-                    count := Label {padding: 0 draw_text +: {color: mod.widgets.RINX_DANGER_BG text_style: theme.font_regular {font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}}}
+                    count := RinxLabel {padding: 0 draw_text +: {color: mod.widgets.RINX_DANGER_BG text_style: theme.font_regular {font_size: mod.widgets.RINX_META_SIZE}}}
                 }
             }
         }
@@ -264,15 +264,15 @@ script_mod! {
             width: Fill height: Fill flow: Down spacing: 6 padding: Inset{top: 2}
             View {
                 width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5}
-                room_name := mod.widgets.RoomName {draw_text.text_style: theme.font_regular {font_size: (12.5 * mod.widgets.RINX_TEXT_SCALE)}}
-                timestamp := mod.widgets.RoomsListEntryTimestamp {draw_text.text_style.font_size: (8.5 * mod.widgets.RINX_TEXT_SCALE)}
+                room_name := mod.widgets.RoomName {draw_text.text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
+                timestamp := mod.widgets.RoomsListEntryTimestamp {draw_text.text_style.font_size: mod.widgets.RINX_META_SIZE}
             }
             View {
                 width: Fill height: Fit flow: Right spacing: 6 align: Align{y: 0.5}
                 mod.widgets.MessagePreview {
                     latest_message +: {
-                        html_view +: {html +: {max_lines: 1 font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}
-                        plaintext_view +: {pt_label +: {max_lines: 1 draw_text +: {text_style +: {font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}}}
+                        html_view +: {html +: {max_lines: 1 font_size: mod.widgets.RINX_UI_SIZE}}
+                        plaintext_view +: {pt_label +: {max_lines: 1 draw_text +: {text_style +: {font_size: mod.widgets.RINX_UI_SIZE}}}}
                     }
                 }
                 muted_indicator := View {

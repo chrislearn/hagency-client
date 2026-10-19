@@ -157,12 +157,12 @@ script_mod! {
         height: Fit,
         align: Align{ x: 0.0, y: 0.5 }
         padding: Inset{left: 0, top: 0, bottom: 10, right: 5}
-        popup_label := Label {
+        popup_label := RinxLabel {
             width: Fill,
             height: Fit,
             draw_text +: {
                 color: mod.widgets.RINX_INK
-                text_style: mod.widgets.MESSAGE_TEXT_STYLE { font_size: (10.5 * mod.widgets.RINX_TEXT_SCALE) },
+                text_style: mod.widgets.MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
             }
         }
     }
@@ -181,30 +181,8 @@ script_mod! {
         }
     }
 
-    mod.widgets.PopupCloseButton = ButtonFlat {
-        width: 32,
-        height: 32,
-        text: "",
-        spacing: 0,
-        margin: 0,
-        padding: 0,
-        align: Align{ x: 0.5, y: 0.5 }
-        label_walk: Walk{ width: 0, height: 0 }
-        icon_walk: Walk{ width: 14, height: 14, margin: 0 }
-        draw_bg +: {
-            border_radius: 4.0
-            border_size: 1.0
-            color: #00000014
-            color_hover: #00000022
-            color_down: #x0000002E
-            border_color: #00000020
-            border_color_hover: #0000002C
-            border_color_down: #00000038
-        }
-        draw_icon +: {
-            svg: (ICON_CLOSE),
-            color: #000000D0,
-        }
+    mod.widgets.PopupCloseButton = RinxIconButton {
+        draw_icon.svg: ICON_CLOSE
     }
 
     mod.widgets.CloseButtonView = View {

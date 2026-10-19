@@ -1,171 +1,150 @@
 
 use makepad_widgets::*;
+use super::speech_settings::SpeechSettingsWidgetExt;
+use crate::shared::navigation_bar_button::NavigationBarButtonWidgetExt;
 
 use crate::{app::AppState, home::navigation_tab_bar::{NavigationBarAction, SelectedTab, get_own_profile}, profile::user_profile::UserProfile, settings::{PopulateMode, account_settings::AccountSettingsWidgetExt, app_settings::AppSettingsWidgetExt, privacy_settings::PrivacySettingsWidgetExt}};
-
-/// Teal "selected" style for a settings category tab (solid RBX_ACCENT + white
-/// text), matching robrix2's segmented-tab look.
-fn apply_settings_tab_selected(cx: &mut Cx, button: &mut ButtonRef) {
-    script_apply_eval!(cx, button, {
-        draw_bg +: {
-            color: mod.widgets.RBX_ACCENT,
-            color_hover: mod.widgets.RBX_ACCENT_HOVER,
-            color_down: mod.widgets.RBX_ACCENT_PRESSED,
-            border_size: 0.0,
-            border_color: #0000,
-            border_color_hover: #0000,
-            border_color_down: #0000,
-        }
-        draw_text +: {
-            color: mod.widgets.RBX_FG_ON_ACCENT,
-            color_hover: mod.widgets.RBX_FG_ON_ACCENT,
-            color_down: mod.widgets.RBX_FG_ON_ACCENT,
-        }
-    });
-}
-
-/// Ghost "unselected" style for a settings category tab (transparent fill,
-/// secondary text, subtle hover wash).
-fn apply_settings_tab_unselected(cx: &mut Cx, button: &mut ButtonRef) {
-    script_apply_eval!(cx, button, {
-        draw_bg +: {
-            color: #0000,
-            color_hover: mod.widgets.RBX_BG_HOVER,
-            color_down: mod.widgets.RBX_BG_PRESSED,
-            border_size: 0.0,
-            border_color: #0000,
-            border_color_hover: #0000,
-            border_color_down: #0000,
-        }
-        draw_text +: {
-            color: mod.widgets.RBX_FG_SECONDARY,
-            color_hover: mod.widgets.RBX_FG_SECONDARY,
-            color_down: mod.widgets.RBX_FG_SECONDARY,
-        }
-    });
-}
 
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    // A settings category tab, ported from robrix2's segmented settings tabs.
-    // Selected/unselected colours are applied at runtime (see the two fns above).
-    mod.widgets.SettingsCategoryTab = RobrixNeutralIconButton {
-        width: Fit, height: Fit,
-        padding: Inset{top: (mod.widgets.SPACE_SM), bottom: (mod.widgets.SPACE_SM), left: (mod.widgets.SPACE_MD), right: (mod.widgets.SPACE_MD)}
-        spacing: 0,
-        icon_walk: Walk{width: 0, height: 0, margin: 0}
-        draw_bg +: { border_radius: (mod.widgets.RBX_RADIUS_XS) }
-        draw_text +: { text_style: (mod.widgets.RBX_TEXT_BODY_STRONG) }
-        text: ""
+    mod.widgets.SettingsCategoryItem = NavigationBarButton {
+        width: Fill height: 40 flow: Right spacing: 10
+        align: Align{x: 0 y: 0.5} padding: Inset{left: 12 right: 12}
+        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED}
+        icon := Icon {icon_walk: Walk{width: 18 height: 18} draw_icon.color: mod.widgets.RINX_INK}
+        label := RinxLabel {
+            width: Fill max_lines: 1 text_overflow: Ellipsis
+            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}
+        }
     }
 
-    // One settings tree for desktop and mobile. Wrapping rows adapt the layout;
-    // categories, controls, actions and preference state are shared.
+    // One content tree preserves edits and scroll positions when categories or
+    // window sizes change. Narrow windows use the same menu with icons only.
     mod.widgets.SettingsScreen = #(SettingsScreen::register_widget(vm)) {
-        width: Fill, height: Fill,
-        flow: Overlay
-
+        width: Fill height: Fill flow: Overlay
         main_content := SolidView {
-            show_bg: true
-            draw_bg.color: (mod.widgets.RBX_BG_CANVAS)
-            padding: Inset{top: (mod.widgets.SPACE_SM), left: (mod.widgets.SETTINGS_CONTENT_PADDING), right: (mod.widgets.SETTINGS_CONTENT_PADDING) },
-            flow: Down
-
-            // Header: "Settings" title + close button.
-            settings_header := View {
-                flow: Right,
-                width: Fill, height: Fit
-                margin: Inset{top: (mod.widgets.SPACE_SM), left: 0, right: (mod.widgets.SPACE_XS)}
-                spacing: (mod.widgets.SPACE_SM),
-                align: Align{y: 0.5}
-
-                settings_header_title := TitleLabel {
-                    width: Fill
-                    padding: 0,
-                    margin: 0,
-                    text: #(crate::i18n::tr("Settings")) i18n_text: "Settings"
-                    draw_text +: {
-                        text_style: (mod.widgets.RBX_TEXT_PAGE_TITLE),
-                        color: (mod.widgets.RBX_FG_PRIMARY)
+            width: Fill height: Fill flow: Right
+            draw_bg.color: mod.widgets.RINX_PAGE
+            settings_navigation := SolidView {
+                width: 184 height: Fill flow: Down
+                padding: Inset{bottom: 12}
+                draw_bg.color: mod.widgets.RINX_SURFACE
+                navigation_header := View {
+                    width: Fill height: 64 align: Align{y: 0.5} padding: Inset{left: 22 right: 22}
+                    navigation_title := RinxLabel {
+                        text: #(crate::i18n::tr("Settings")) i18n_text: "Settings"
+                        draw_text.text_style: theme.font_bold {font_size: mod.widgets.RINX_HEADING_SIZE}
+                    }
+                    navigation_icon := View {
+                        visible: false width: 18 height: 18
+                        Icon {icon_walk: Walk{width: 18 height: 18} draw_icon +: {svg: ICON_SETTINGS color: mod.widgets.RINX_INK}}
                     }
                 }
-
-                // The "X" close button on the top right: bare icon, no fill.
-                close_button := RobrixNeutralIconButton {
-                    width: Fit,
-                    height: Fit,
-                    spacing: 0,
-                    margin: 0,
-                    padding: (mod.widgets.SPACE_MD),
-                    draw_bg +: {
-                        color: #0000
-                        color_hover: (mod.widgets.RBX_BG_HOVER)
-                        color_down: (mod.widgets.RBX_BG_PRESSED)
-                        border_size: 0.0
-                        border_color: #0000
-                        border_color_hover: #0000
-                        border_color_down: #0000
-                        border_radius: (mod.widgets.RBX_RADIUS_XS)
+                settings_category_menu := ScrollYView {
+                    width: Fill height: Fill flow: Down spacing: 4 padding: Inset{left: 10 right: 10}
+                    category_account_button := mod.widgets.SettingsCategoryItem {
+                        tooltip_text: #(crate::i18n::tr("Account"))
+                        icon.draw_icon.svg: ICON_PEOPLE
+                        label +: {text: #(crate::i18n::tr("Account")) i18n_text: "Account"}
                     }
-                    draw_icon +: { svg: (ICON_CLOSE), color: (mod.widgets.RBX_FG_SECONDARY) }
-                    icon_walk: Walk{width: 14, height: 14}
+                    category_general_button := mod.widgets.SettingsCategoryItem {
+                        tooltip_text: #(crate::i18n::tr("General"))
+                        icon.draw_icon.svg: ICON_SETTINGS
+                        label +: {text: #(crate::i18n::tr("General")) i18n_text: "General"}
+                    }
+                    category_interface_button := mod.widgets.SettingsCategoryItem {
+                        tooltip_text: #(crate::i18n::tr("Interface"))
+                        icon.draw_icon.svg: crate_resource("self://resources/icons/article_palette.svg")
+                        label +: {text: #(crate::i18n::tr("Interface")) i18n_text: "Interface"}
+                    }
+                    category_messages_button := mod.widgets.SettingsCategoryItem {
+                        tooltip_text: #(crate::i18n::tr("Messages"))
+                        icon.draw_icon.svg: ICON_THREADS
+                        label +: {text: #(crate::i18n::tr("Messages")) i18n_text: "Messages"}
+                    }
+                    category_agents_button := mod.widgets.SettingsCategoryItem {
+                        tooltip_text: #(crate::i18n::tr("Agent services"))
+                        icon.draw_icon.svg: crate_resource("self://resources/icons/robot.svg")
+                        label +: {text: #(crate::i18n::tr("Agent services")) i18n_text: "Agent services"}
+                    }
+                    category_speech_button := mod.widgets.SettingsCategoryItem {
+                        tooltip_text: #(crate::i18n::tr("Speech"))
+                        icon.draw_icon.svg: crate_resource("self://resources/icons/microphone.svg")
+                        label +: {text: #(crate::i18n::tr("Speech")) i18n_text: "Speech"}
+                    }
+                    category_privacy_button := mod.widgets.SettingsCategoryItem {
+                        tooltip_text: #(crate::i18n::tr("Privacy"))
+                        icon.draw_icon.svg: ICON_SHIELD
+                        label +: {text: #(crate::i18n::tr("Privacy")) i18n_text: "Privacy"}
+                    }
+                    category_about_button := mod.widgets.SettingsCategoryItem {
+                        tooltip_text: #(crate::i18n::tr("About"))
+                        icon.draw_icon.svg: ICON_INFO
+                        label +: {text: #(crate::i18n::tr("About")) i18n_text: "About"}
+                    }
                 }
             }
-
-            header_divider := LineH { padding: 0, margin: Inset{top: (mod.widgets.SPACE_SM), bottom: (mod.widgets.SPACE_SM)} }
-
-            // Category tabs. robrix2 also has Devices and Labs; upstream has no
-            // content for either, so they are not offered here.
-            settings_category_tabs := View {
-                width: Fill, height: Fit
-                flow: Flow.Right{wrap: true}
-                align: Align{y: 0.5}
-                spacing: (mod.widgets.SPACE_SM)
-                margin: Inset{left: (mod.widgets.SPACE_XS), right: (mod.widgets.SPACE_XS), bottom: (mod.widgets.SPACE_SM)}
-
-                category_account_button := mod.widgets.SettingsCategoryTab { text: #(crate::i18n::tr("Account")) i18n_text: "Account" }
-                category_preferences_button := mod.widgets.SettingsCategoryTab { text: #(crate::i18n::tr("Preferences")) i18n_text: "Preferences" }
-                category_privacy_button := mod.widgets.SettingsCategoryTab { text: #(crate::i18n::tr("Privacy")) i18n_text: "Privacy" }
-                category_about_button := mod.widgets.SettingsCategoryTab { text: #(crate::i18n::tr("About")) i18n_text: "About" }
-            }
-
-            settings_sections_wrapper := View {
-                width: Fill height: Fill
-                settings_sections := PageFlip {
-                width: Fill, height: Fill
-                active_page: @account_settings_page
-
-                account_settings_page := ScrollYView {
-                    width: Fill, height: Fill
-                    flow: Down
-                    account_settings := AccountSettings {}
-                    // The TSP wallet settings section (a placeholder without the `tsp` feature).
-                    tsp_settings_screen := TspSettingsScreen {}
-                    View { width: Fill, height: 20 }
+            navigation_divider := SolidView {width: 1 height: Fill draw_bg.color: mod.widgets.RINX_BORDER}
+            settings_detail := View {
+                width: Fill height: Fill flow: Down
+                settings_header := View {
+                    width: Fill height: 64 flow: Right spacing: 12
+                    padding: Inset{left: 24 right: 16} align: Align{y: 0.5}
+                    settings_header_title := RinxLabel {
+                        width: Fill text: #(crate::i18n::tr("Account"))
+                        draw_text.text_style: theme.font_bold {font_size: mod.widgets.RINX_TITLE_SIZE}
+                    }
+                    close_button := RinxIconButton {draw_icon.svg: ICON_CLOSE}
                 }
-
-                preferences_settings_page := ScrollYView {
-                    width: Fill, height: Fill
-                    flow: Down
-                    app_settings := AppSettings {}
-                    View { width: Fill, height: 20 }
-                }
-
-                privacy_settings_page := ScrollYView {
-                    width: Fill, height: Fill
-                    flow: Down
-                    privacy_settings := PrivacySettings {}
-                    View { width: Fill, height: 20 }
-                }
-
-                about_settings_page := ScrollYView {
-                    width: Fill, height: Fill
-                    flow: Down
-                    about_settings := AboutSettings {}
-                    View { width: Fill, height: 20 }
-                }
+                header_divider := SolidView {width: Fill height: 1 draw_bg.color: mod.widgets.RINX_BORDER}
+                settings_sections_wrapper := View {
+                    width: Fill height: Fill
+                    settings_sections := PageFlip {
+                        width: Fill height: Fill active_page: @account_settings_page
+                        account_settings_page := ScrollYView {
+                            width: Fill height: Fill flow: Down padding: Inset{left: 24 right: 24 top: 20}
+                            account_settings := AccountSettings {width: Fill{max: 880} section_title.visible: false}
+                            tsp_settings_screen := TspSettingsScreen {}
+                            View {width: Fill height: 24}
+                        }
+                        general_settings_page := ScrollYView {
+                            width: Fill height: Fill flow: Down padding: Inset{left: 24 right: 24 top: 20}
+                            general_settings := GeneralSettings {width: Fill{max: 880}}
+                            View {width: Fill height: 24}
+                        }
+                        interface_settings_page := ScrollYView {
+                            width: Fill height: Fill flow: Down padding: Inset{left: 24 right: 24 top: 20}
+                            interface_settings := InterfaceSettings {width: Fill{max: 880}}
+                            View {width: Fill height: 24}
+                        }
+                        messages_settings_page := ScrollYView {
+                            width: Fill height: Fill flow: Down padding: Inset{left: 24 right: 24 top: 20}
+                            messages_settings := MessageSettings {width: Fill{max: 880}}
+                            View {width: Fill height: 24}
+                        }
+                        agents_settings_page := ScrollYView {
+                            width: Fill height: Fill flow: Down padding: Inset{left: 24 right: 24 top: 20}
+                            agents_settings := AgentServiceSettings {width: Fill{max: 880}}
+                            View {width: Fill height: 24}
+                        }
+                        speech_settings_page := ScrollYView {
+                            width: Fill height: Fill flow: Down padding: Inset{left: 24 right: 24 top: 20}
+                            speech_settings := SpeechSettings {width: Fill{max: 880}}
+                            View {width: Fill height: 24}
+                        }
+                        privacy_settings_page := ScrollYView {
+                            width: Fill height: Fill flow: Down padding: Inset{left: 24 right: 24 top: 20}
+                            privacy_settings := PrivacySettings {width: Fill{max: 880} section_title.visible: false section_divider.visible: false}
+                            View {width: Fill height: 24}
+                        }
+                        about_settings_page := ScrollYView {
+                            width: Fill height: Fill flow: Down padding: Inset{left: 24 right: 24 top: 20}
+                            about_settings := AboutSettings {width: Fill{max: 880} section_title.visible: false}
+                            View {width: Fill height: 24}
+                        }
+                    }
                 }
             }
         }
@@ -181,21 +160,31 @@ script_mod! {
     }
 }
 
-/// The settings categories, one per tab / page.
+/// The settings categories, one per menu item and content page.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 enum SettingsCategory {
     #[default]
     Account,
-    Preferences,
+    General,
+    Interface,
+    Messages,
+    Agents,
+    Speech,
     Privacy,
     About,
 }
 
 /// The top-level widget showing all app and user settings/preferences.
-#[derive(Script, ScriptHook, Widget)]
+#[derive(Script, Widget)]
 pub struct SettingsScreen {
     #[deref] view: View,
     #[rust] selected_category: SettingsCategory,
+}
+
+impl ScriptHook for SettingsScreen {
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| self.sync_selected_category(cx));
+    }
 }
 
 impl Widget for SettingsScreen {
@@ -204,7 +193,7 @@ impl Widget for SettingsScreen {
 
         // ScriptReapply preserves text fields (String / ArcStringMut bail out),
         // but still resets animator-driven controls and `script_apply_eval`-driven
-        // bits (avatar, button colors, our tab colours). Re-apply just those.
+        // bits (avatar, button colors, the selected category). Re-apply just those.
         // Never re-`set_text` user-editable inputs here, that would wipe in-progress edits.
         if matches!(event, Event::ScriptReapply | Event::LiveEdit) {
             if let Some(app_state) = scope.data.get::<AppState>() {
@@ -214,13 +203,21 @@ impl Widget for SettingsScreen {
         }
 
         if let Event::Actions(actions) = event {
-            if self.view.button(cx, ids!(category_account_button)).clicked(actions) {
+            if self.view.navigation_bar_button(cx, ids!(category_account_button)).clicked(actions) {
                 self.set_selected_category(cx, SettingsCategory::Account);
-            } else if self.view.button(cx, ids!(category_preferences_button)).clicked(actions) {
-                self.set_selected_category(cx, SettingsCategory::Preferences);
-            } else if self.view.button(cx, ids!(category_privacy_button)).clicked(actions) {
+            } else if self.view.navigation_bar_button(cx, ids!(category_general_button)).clicked(actions) {
+                self.set_selected_category(cx, SettingsCategory::General);
+            } else if self.view.navigation_bar_button(cx, ids!(category_interface_button)).clicked(actions) {
+                self.set_selected_category(cx, SettingsCategory::Interface);
+            } else if self.view.navigation_bar_button(cx, ids!(category_messages_button)).clicked(actions) {
+                self.set_selected_category(cx, SettingsCategory::Messages);
+            } else if self.view.navigation_bar_button(cx, ids!(category_agents_button)).clicked(actions) {
+                self.set_selected_category(cx, SettingsCategory::Agents);
+            } else if self.view.navigation_bar_button(cx, ids!(category_speech_button)).clicked(actions) {
+                self.set_selected_category(cx, SettingsCategory::Speech);
+            } else if self.view.navigation_bar_button(cx, ids!(category_privacy_button)).clicked(actions) {
                 self.set_selected_category(cx, SettingsCategory::Privacy);
-            } else if self.view.button(cx, ids!(category_about_button)).clicked(actions) {
+            } else if self.view.navigation_bar_button(cx, ids!(category_about_button)).clicked(actions) {
                 self.set_selected_category(cx, SettingsCategory::About);
             }
         }
@@ -291,6 +288,21 @@ impl Widget for SettingsScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let compact = cx.peek_walk_turtle(walk).size.x < 600.0;
+        if let Some(mut navigation) = self.view.view(cx, ids!(settings_navigation)).borrow_mut() {
+            navigation.walk.width = Size::Fixed(if compact {64.0} else {184.0});
+        }
+        self.view.label(cx, ids!(navigation_title)).set_visible(cx, !compact);
+        self.view.view(cx, ids!(navigation_icon)).set_visible(cx, compact);
+        for id in [id!(category_account_button), id!(category_general_button), id!(category_interface_button), id!(category_messages_button), id!(category_agents_button), id!(category_speech_button), id!(category_privacy_button), id!(category_about_button)] {
+            self.view.navigation_bar_button(cx, &[id]).label(cx, ids!(label)).set_visible(cx, !compact);
+        }
+        for id in [id!(settings_header), id!(account_settings_page), id!(general_settings_page), id!(interface_settings_page), id!(messages_settings_page), id!(agents_settings_page), id!(speech_settings_page), id!(privacy_settings_page), id!(about_settings_page)] {
+            if let Some(mut view) = self.view.view(cx, &[id]).borrow_mut() {
+                view.layout.padding.left = if compact {12.0} else {24.0};
+                view.layout.padding.right = if compact {12.0} else {24.0};
+            }
+        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -327,7 +339,10 @@ impl SettingsScreen {
         match mode {
             PopulateMode::Initial => {
                 self.view.account_settings(cx, ids!(account_settings)).populate(cx, profile);
-                self.view.app_settings(cx, ids!(app_settings)).populate(cx, &app_state.app_prefs);
+                for id in [id!(general_settings), id!(interface_settings), id!(messages_settings), id!(agents_settings)] {
+                    self.view.app_settings(cx, &[id]).populate(cx, &app_state.app_prefs);
+                }
+                self.view.speech_settings(cx, ids!(speech_settings)).populate(cx, &app_state.app_prefs.speech);
                 self.view.privacy_settings(cx, ids!(privacy_settings)).populate(cx);
             }
             PopulateMode::AfterReapply => {
@@ -341,29 +356,43 @@ impl SettingsScreen {
         self.sync_selected_category(cx);
     }
 
-    /// Shows the page for the selected category and restyles the tab row to match.
+    /// Keeps menu selection, detail heading and content page in sync.
     fn sync_selected_category(&mut self, cx: &mut Cx) {
         let page = match self.selected_category {
             SettingsCategory::Account => id!(account_settings_page),
-            SettingsCategory::Preferences => id!(preferences_settings_page),
+            SettingsCategory::General => id!(general_settings_page),
+            SettingsCategory::Interface => id!(interface_settings_page),
+            SettingsCategory::Messages => id!(messages_settings_page),
+            SettingsCategory::Agents => id!(agents_settings_page),
+            SettingsCategory::Speech => id!(speech_settings_page),
             SettingsCategory::Privacy => id!(privacy_settings_page),
             SettingsCategory::About => id!(about_settings_page),
         };
         self.view.page_flip(cx, ids!(settings_sections)).set_active_page(cx, page);
 
+        let heading = match self.selected_category {
+            SettingsCategory::Account => "Account",
+            SettingsCategory::General => "General",
+            SettingsCategory::Interface => "Interface",
+            SettingsCategory::Messages => "Messages",
+            SettingsCategory::Agents => "Agent services",
+            SettingsCategory::Speech => "Speech",
+            SettingsCategory::Privacy => "Privacy",
+            SettingsCategory::About => "About",
+        };
+        self.view.label(cx, ids!(settings_header_title)).set_text(cx, crate::i18n::tr(heading));
         let tabs = [
             (SettingsCategory::Account, ids!(category_account_button)),
-            (SettingsCategory::Preferences, ids!(category_preferences_button)),
+            (SettingsCategory::General, ids!(category_general_button)),
+            (SettingsCategory::Interface, ids!(category_interface_button)),
+            (SettingsCategory::Messages, ids!(category_messages_button)),
+            (SettingsCategory::Agents, ids!(category_agents_button)),
+            (SettingsCategory::Speech, ids!(category_speech_button)),
             (SettingsCategory::Privacy, ids!(category_privacy_button)),
             (SettingsCategory::About, ids!(category_about_button)),
         ];
         for (category, id) in tabs {
-            let mut button = self.view.button(cx, id);
-            if category == self.selected_category {
-                apply_settings_tab_selected(cx, &mut button);
-            } else {
-                apply_settings_tab_unselected(cx, &mut button);
-            }
+            self.view.navigation_bar_button(cx, id).set_selected(cx, category == self.selected_category);
         }
         self.redraw(cx);
     }
@@ -380,5 +409,169 @@ impl SettingsScreenRef {
     pub fn populate(&self, cx: &mut Cx, own_profile: Option<UserProfile>, app_state: &AppState) {
         let Some(mut inner) = self.borrow_mut() else { return; };
         inner.populate(cx, own_profile, app_state);
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+    use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+
+    fn screen(cx: &mut Cx) -> SettingsScreen {
+        cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            vm.bx.captured_errors = Some(Vec::new());
+            let value = script_eval!(vm, {mod.widgets.SettingsScreen {}});
+            let screen = SettingsScreen::script_from_value(vm, value);
+            assert!(vm.take_errors().is_empty());
+            screen
+        })
+    }
+
+    fn draw(cx: &mut Cx, screen: &mut SettingsScreen, width: f64) {
+        cx.redraw_all();
+        let pass = DrawPass::new(cx);
+        pass.set_size(cx, dvec2(width, 760.0));
+        let mut list = DrawList2d::new(cx);
+        let overlay = Overlay {draw_list: DrawList::new(cx)};
+        let event = DrawEvent::default();
+        let mut draw = CxDraw::new(cx, &event);
+        let mut cx2d = Cx2d::new(&mut draw);
+        cx2d.begin_pass(&pass, None);
+        list.begin_always(&mut cx2d);
+        overlay.begin(&mut cx2d);
+        cx2d.begin_root_turtle(dvec2(width, 760.0), Layout::flow_overlay());
+        screen.draw_walk_all(&mut cx2d, &mut Scope::empty(), Walk {
+            width: Size::Fixed(width), height: Size::Fixed(760.0), ..Walk::default()
+        });
+        overlay.end(&mut cx2d);
+        cx2d.end_pass_sized_turtle();
+        list.end(&mut cx2d);
+        cx2d.end_pass(&pass);
+    }
+
+    #[test]
+    fn category_menu_switches_detail_and_preserves_unsaved_inputs() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut screen = screen(&mut cx);
+        let mut state = AppState::default();
+        let input = screen.view.text_input(&mut cx, ids!(display_name_input));
+        assert!(!input.is_empty());
+        input.set_text(&mut cx, "Unsaved display name");
+        let input_uid = input.widget_uid();
+        let thumbnail = screen.view.text_input(&mut cx, ids!(interface_settings.thumb_custom_input));
+        assert!(!thumbnail.is_empty());
+        thumbnail.set_text(&mut cx, "425");
+        let thumbnail_uid = thumbnail.widget_uid();
+        for (category, button, heading) in [
+            (SettingsCategory::General, id!(category_general_button), "General"),
+            (SettingsCategory::Interface, id!(category_interface_button), "Interface"),
+            (SettingsCategory::Messages, id!(category_messages_button), "Messages"),
+            (SettingsCategory::Agents, id!(category_agents_button), "Agent services"),
+            (SettingsCategory::Speech, id!(category_speech_button), "Speech"),
+            (SettingsCategory::Privacy, id!(category_privacy_button), "Privacy"),
+            (SettingsCategory::About, id!(category_about_button), "About"),
+            (SettingsCategory::Account, id!(category_account_button), "Account"),
+        ] {
+            let uid = screen.view.navigation_bar_button(&mut cx, &[button]).widget_uid();
+            let actions = cx.capture_actions(|cx| cx.widget_action(uid,
+                crate::shared::navigation_bar_button::NavigationBarButtonAction::Clicked));
+            screen.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::with_data(&mut state));
+            assert_eq!(screen.selected_category, category);
+            assert_eq!(screen.view.label(&mut cx, ids!(settings_header_title)).text(), crate::i18n::tr(heading));
+            for id in [id!(category_account_button), id!(category_general_button), id!(category_interface_button), id!(category_messages_button), id!(category_agents_button), id!(category_speech_button), id!(category_privacy_button), id!(category_about_button)] {
+                let item = screen.view.navigation_bar_button(&mut cx, &[id]);
+                assert_eq!(item.borrow().unwrap().animator_in_state(&cx, ids!(active.on)), id == button);
+            }
+            screen.handle_event(&mut cx, &Event::ScriptReapply, &mut Scope::with_data(&mut state));
+            assert_eq!(screen.view.text_input(&mut cx, ids!(display_name_input)).widget_uid(), input_uid);
+            assert_eq!(input.text(), "Unsaved display name");
+            assert_eq!(screen.view.text_input(&mut cx, ids!(interface_settings.thumb_custom_input)).widget_uid(), thumbnail_uid);
+            assert_eq!(thumbnail.text(), "425");
+        }
+    }
+
+    #[test]
+    fn separated_preference_controls_keep_their_existing_actions() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let _window = WindowHandle::new(&mut cx);
+        let mut screen = screen(&mut cx);
+        let mut state = AppState::default();
+        let original = state.app_prefs.clone();
+        let groups = [
+            (id!(general_settings), id!(send_on_cmd_enter_toggle)),
+            (id!(interface_settings), id!(ui_zoom_plus_button)),
+            (id!(messages_settings), id!(read_receipts_privacy_dropdown)),
+            (id!(agents_settings), id!(agent_access)),
+        ];
+        for (group, control) in groups {
+            let panel = screen.view.app_settings(&mut cx, &[group]);
+            for (_, other) in groups {
+                assert_eq!(!panel.widget(&cx, &[other]).is_empty(), other == control,
+                    "each control must belong to exactly one category");
+            }
+            panel.populate(&mut cx, &state.app_prefs);
+        }
+        screen.set_selected_category(&mut cx, SettingsCategory::General);
+        let toggle = screen.view.check_box(&mut cx, ids!(general_settings.send_on_cmd_enter_toggle));
+        let actions = cx.capture_actions(|cx| cx.widget_action(toggle.widget_uid(), CheckBoxAction::Change(true)));
+        screen.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::with_data(&mut state));
+        assert!(!state.app_prefs.send_on_enter);
+        screen.set_selected_category(&mut cx, SettingsCategory::Interface);
+        let plus = screen.view.button(&mut cx, ids!(interface_settings.ui_zoom_plus_button));
+        let actions = cx.capture_actions(|cx| cx.widget_action(plus.widget_uid(), ButtonAction::Clicked(KeyModifiers::default())));
+        screen.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::with_data(&mut state));
+        assert_eq!(state.app_prefs.ui_zoom, original.ui_zoom.zoom_in_by(crate::settings::app_preferences::UiZoom::BUTTON_STEP));
+        assert_eq!(state.app_prefs.speech, original.speech);
+        assert_eq!(state.app_prefs.read_receipts_privacy, original.read_receipts_privacy);
+    }
+
+    #[test]
+    fn scrolling_viewport_reaches_panel_edge_while_content_keeps_its_gutter() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut screen = screen(&mut cx);
+        screen.set_selected_category(&mut cx, SettingsCategory::Speech);
+        for (width, gutter) in [(1100.0, 24.0), (375.0, 12.0)] {
+            draw(&mut cx, &mut screen, width);
+            let detail = screen.view.view(&mut cx, ids!(settings_detail)).area().rect(&cx);
+            let page = screen.view.view(&mut cx, ids!(speech_settings_page)).area().rect(&cx);
+            let content = screen.view.widget(&cx, ids!(speech_settings)).area().rect(&cx);
+            assert!((page.pos.x - detail.pos.x).abs() < 0.1);
+            assert!((page.pos.x + page.size.x - detail.pos.x - detail.size.x).abs() < 0.1,
+                "the scroll track must use the panel's outer edge");
+            assert!((content.pos.x - page.pos.x - gutter).abs() < 0.1,
+                "content keeps its readable inset independently of the scrollbar");
+            let menu = screen.view.view(&mut cx, ids!(settings_navigation)).area().rect(&cx);
+            let list = screen.view.view(&mut cx, ids!(settings_category_menu)).area().rect(&cx);
+            assert!((list.pos.x + list.size.x - menu.pos.x - menu.size.x).abs() < 0.1);
+        }
+    }
+
+    #[test]
+    fn category_menu_and_detail_fit_wide_and_narrow_windows() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut screen = screen(&mut cx);
+        for category in [SettingsCategory::General, SettingsCategory::Interface, SettingsCategory::Messages, SettingsCategory::Agents] {
+            screen.set_selected_category(&mut cx, category);
+            for (width, menu_width, labels) in [(1100.0, 184.0, true), (375.0, 64.0, false), (720.0, 184.0, true)] {
+                draw(&mut cx, &mut screen, width);
+                let menu = screen.view.view(&mut cx, ids!(settings_navigation)).area().rect(&cx);
+                let detail = screen.view.view(&mut cx, ids!(settings_detail)).area().rect(&cx);
+                assert_eq!(menu.size.x, menu_width);
+                assert_eq!(detail.pos.x, menu_width + 1.0);
+                assert!(detail.size.x > 0.0 && detail.pos.x + detail.size.x <= width + 0.1);
+                let mut last_y = 0.0;
+                for id in [id!(category_account_button), id!(category_general_button), id!(category_interface_button), id!(category_messages_button), id!(category_agents_button), id!(category_speech_button), id!(category_privacy_button), id!(category_about_button)] {
+                    let item = screen.view.navigation_bar_button(&mut cx, &[id]);
+                    let rect = item.area().rect(&cx);
+                    let icon = item.icon(&mut cx, ids!(icon)).area().rect(&cx);
+                    assert!(rect.pos.y >= last_y && rect.size.y == 40.0);
+                    assert!(icon.size.x > 0.0 && icon.pos.x >= menu.pos.x && icon.pos.x + icon.size.x <= menu.pos.x + menu.size.x);
+                    assert_eq!(item.label(&mut cx, ids!(label)).visible(), labels);
+                    last_y = rect.pos.y + rect.size.y;
+                }
+            }
+        }
     }
 }

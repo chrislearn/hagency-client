@@ -98,7 +98,7 @@ script_mod! {
             }
         }
 
-        space_name := Label {
+        space_name := RinxLabel {
             width: Fill,
             height: 0,
             flow: Flow.Right{wrap: false}, // do not wrap
@@ -109,7 +109,7 @@ script_mod! {
             text_overflow: Ellipsis
             draw_text +: {
                 color: (RBX_NAV_FG)
-                text_style: REGULAR_TEXT {font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}
+                text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_META_SIZE}
             }
         }
 
@@ -134,7 +134,7 @@ script_mod! {
         align: Align{ x: 0.5, y: 0.5 }
         padding: 4,
 
-        label := Label {
+        label := RinxLabel {
             padding: 0
             margin: 0
             width: Fill,
@@ -144,7 +144,7 @@ script_mod! {
             draw_text +: {
                 // Light nav-rail foreground: this label sits on the navy rail.
                 color: (RBX_NAV_FG),
-                text_style: REGULAR_TEXT {font_size: (8 * mod.widgets.RINX_TEXT_SCALE), line_spacing: 1.1}
+                text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_META_SIZE, line_spacing: 1.1}
             }
         }
     }

@@ -281,11 +281,11 @@ script_mod! {
         width: Fill height: Fill flow: Down draw_bg.color: mod.widgets.RINX_PAGE
         padding: Inset{top: mod.widgets.SAFE_INSET_PAD_TOP + #(CAPTION_PADDING) bottom: mod.widgets.SAFE_INSET_PAD_BOTTOM}
         header := DetailHeader {title.text: #(crate::i18n::tr("Search Chat History")) title.i18n_text: "Search Chat History"}
-        room_name := Label {width: Fill height: Fit margin: 12 max_lines: 1 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_ACCENT text_style: theme.font_regular {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
+        room_name := RinxLabel {width: Fill height: Fit margin: 12 max_lines: 1 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_ACCENT text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}}
         browser := View {
             width: Fill height: Fill flow: Down spacing: 8
             search_bar := View {width: Fill height: 40 flow: Right margin: Inset{left: 12 right: 12} spacing: 8
-                history_query := TextInput {width: Fill height: Fill empty_text: #(crate::i18n::tr("Search messages or file names")) i18n_empty_text: "Search messages or file names"}
+                history_query := RinxInput {width: Fill height: Fill empty_text: #(crate::i18n::tr("Search messages or file names")) i18n_empty_text: "Search messages or file names"}
                 search_history := RobrixNeutralIconButton {text: #(crate::i18n::tr("Search")) i18n_text: "Search" width: 64 height: Fill spacing: 0 icon_walk: Walk{width: 0 height: 0}}
             }
             filters := View {width: Fill height: 36 flow: Right margin: Inset{left: 12 right: 12} spacing: 4
@@ -294,7 +294,7 @@ script_mod! {
                 file_filter := RobrixNeutralIconButton {text: #(crate::i18n::tr("Files")) i18n_text: "Files" width: Fill height: Fill spacing: 0 icon_walk: Walk{width: 0 height: 0}}
                 audio_filter := RobrixNeutralIconButton {text: #(crate::i18n::tr("Audio")) i18n_text: "Audio" width: Fill height: Fill spacing: 0 icon_walk: Walk{width: 0 height: 0}}
             }
-            history_status := Label {width: Fill height: Fit margin: Inset{left: 12 right: 12} flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}}
+            history_status := RinxLabel {width: Fill height: Fit margin: Inset{left: 12 right: 12} flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}}
             results := PortalList {
                 width: Fill height: Fill
                 Entry := NavigationBarButton {
@@ -302,29 +302,44 @@ script_mod! {
                     draw_bg +: {color_hover: mod.widgets.RINX_SURFACE color_active: mod.widgets.RINX_SELECTED border_radius: 0}
                     thumbnail := TextOrImage {visible: false width: 64 height: 64
                         image_view +: {height: Fill image +: {height: Fill fit: ImageFit.Smallest}}
-                        text_view +: {height: Fill label +: {max_lines: 2 draw_text.text_style.font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}}
+                        text_view +: {height: Fill label +: {max_lines: 2 draw_text.text_style.font_size: mod.widgets.RINX_META_SIZE}}
                     }
                     View {width: Fill height: Fit flow: Down spacing: 8
-                        metadata := Label {width: Fill max_lines: 1 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_ACCENT text_style: theme.font_regular {font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}}}
-                        body := Label {width: Fill max_lines: 2 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}}}
+                        metadata := RinxLabel {width: Fill max_lines: 1 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_ACCENT text_style: theme.font_regular {font_size: mod.widgets.RINX_META_SIZE}}}
+                        body := RinxLabel {width: Fill max_lines: 2 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}}
                     }
                 }
             }
-            history_more := RobrixNeutralIconButton {text: #(crate::i18n::tr("Load Older")) i18n_text: "Load Older" width: Fill height: 42 margin: 12 spacing: 0 icon_walk: Walk{width: 0 height: 0}}
+            history_more := RobrixNeutralIconButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                text: #(crate::i18n::tr("Load Older")) i18n_text: "Load Older" width: Fill margin: 12 spacing: 0 icon_walk: Walk{width: 0 height: 0}
+            }
         }
         detail := ScrollYView {
             visible: false width: Fill height: Fill flow: Down padding: 16 spacing: 16
-            detail_metadata := Label {width: Fill flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_ACCENT text_style: theme.font_regular {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
+            detail_metadata := RinxLabel {width: Fill flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_ACCENT text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}}
             preview := TextOrImage {visible: false width: Fill height: 260
                 image_view +: {height: Fill image +: {height: Fill fit: ImageFit.Smallest}}
             }
-            detail_body := Label {width: Fill flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}}}
-            detail_hint := Label {width: Fill flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}}
-            view_in_chat := RobrixPositiveIconButton {text: #(crate::i18n::tr("View in Chat")) i18n_text: "View in Chat" width: Fill height: 44 spacing: 0 icon_walk: Walk{width: 0 height: 0}}
-            post_text_to_moments := RobrixNeutralIconButton {text: #(crate::i18n::tr("Post to Moments")) i18n_text: "Post to Moments" width: Fill height: 44 spacing: 0 icon_walk: Walk{width: 0 height: 0}}
+            detail_body := RinxLabel {width: Fill flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}}
+            detail_hint := RinxLabel {width: Fill flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}}
+            view_in_chat := RobrixPositiveIconButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                text: #(crate::i18n::tr("View in Chat")) i18n_text: "View in Chat" width: Fill spacing: 0 icon_walk: Walk{width: 0 height: 0}
+            }
+            post_text_to_moments := RobrixNeutralIconButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                text: #(crate::i18n::tr("Post to Moments")) i18n_text: "Post to Moments" width: Fill spacing: 0 icon_walk: Walk{width: 0 height: 0}
+            }
             attachment_actions := View {width: Fill height: Fit flow: Right spacing: 12
-                download_attachment := RobrixNeutralIconButton {text: #(crate::i18n::tr("Download")) i18n_text: "Download" width: Fill height: 44 spacing: 0 icon_walk: Walk{width: 0 height: 0}}
-                share_attachment := RobrixNeutralIconButton {text: #(crate::i18n::tr("Share")) i18n_text: "Share" width: Fill height: 44 spacing: 0 icon_walk: Walk{width: 0 height: 0}}
+                download_attachment := RobrixNeutralIconButton {
+                    height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                    text: #(crate::i18n::tr("Download")) i18n_text: "Download" width: Fill spacing: 0 icon_walk: Walk{width: 0 height: 0}
+                }
+                share_attachment := RobrixNeutralIconButton {
+                    height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                    text: #(crate::i18n::tr("Share")) i18n_text: "Share" width: Fill spacing: 0 icon_walk: Walk{width: 0 height: 0}
+                }
             }
         }
     }

@@ -66,9 +66,8 @@ script_mod! {
             visible: false,
 
             expand_button := RobrixIconButton {
-                width: Fit, height: Fit,
-                spacing: 4,
-                padding: Inset{top: 4, bottom: 4, left: 8, right: 8},
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                width: Fit, spacing: 4,
                 draw_icon +: {
                     svg: (ICON_TRIANGLE_DOWN)
                     color: mod.widgets.RINX_MUTED
@@ -76,7 +75,7 @@ script_mod! {
                 icon_walk: Walk{width: 10, height: 10}
                 draw_text +: {
                     text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
-                        font_size: (10.0 * mod.widgets.RINX_TEXT_SCALE),
+                        font_size: mod.widgets.RINX_BODY_SIZE,
                     },
                     color: mod.widgets.RINX_MUTED,
                     color_hover: mod.widgets.RINX_MUTED,
@@ -96,10 +95,9 @@ script_mod! {
             }
 
             collapse_button := RobrixIconButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 visible: false,
-                width: Fit, height: Fit,
-                spacing: 4,
-                padding: Inset{top: 4, bottom: 4, left: 8, right: 8},
+                width: Fit, spacing: 4,
                 draw_icon +: {
                     svg: (ICON_TRIANGLE_UP)
                     color: mod.widgets.RINX_MUTED
@@ -107,7 +105,7 @@ script_mod! {
                 icon_walk: Walk{width: 10, height: 10}
                 draw_text +: {
                     text_style: mod.widgets.LINK_PREVIEW_MESSAGE_TEXT_STYLE {
-                        font_size: (10.0 * mod.widgets.RINX_TEXT_SCALE),
+                        font_size: mod.widgets.RINX_BODY_SIZE,
                     },
                     color: mod.widgets.RINX_MUTED,
                     color_hover: mod.widgets.RINX_MUTED,
@@ -145,7 +143,7 @@ script_mod! {
                     width: Fill height: Fit flow: Down spacing: 6
                     inner_content_view := View {
                         width: Fill height: Fit flow: Down
-                        title_label := Label {
+                        title_label := RinxLabel {
                             width: Fill height: Fit padding: 0
                             flow: Flow.Right{wrap: true} max_lines: 2 text_overflow: Ellipsis
                             draw_text +: {
@@ -154,7 +152,7 @@ script_mod! {
                             }
                         }
                     }
-                    description_label := Label {
+                    description_label := RinxLabel {
                         width: Fill height: Fit padding: 0
                         flow: Flow.Right{wrap: true} max_lines: 3 text_overflow: Ellipsis
                         draw_text +: {
@@ -177,7 +175,7 @@ script_mod! {
             footer := View {
                 width: Fill height: Fit flow: Down spacing: 8
                 SolidView {width: Fill height: 1 draw_bg.color: mod.widgets.RINX_BORDER}
-                site_name_label := Label {
+                site_name_label := RinxLabel {
                     width: Fill height: Fit padding: 0 max_lines: 1 text_overflow: Ellipsis
                     draw_text +: {text_style: RBX_TEXT_META {} color: mod.widgets.RINX_MUTED}
                 }

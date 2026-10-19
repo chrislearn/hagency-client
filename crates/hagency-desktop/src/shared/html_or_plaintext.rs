@@ -60,7 +60,7 @@ script_mod! {
                 }
             }
 
-            title := Label {
+            title := RinxLabel {
                 flow: Flow.Right { wrap: false },
                 width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}},
                 max_lines: 1,
@@ -104,7 +104,7 @@ script_mod! {
 
     // A centralized widget where we define styles and custom elements for HTML
     // message content. This is a wrapper around Makepad's built-in `Html` widget.
-    mod.widgets.MessageHtml = Html {
+    mod.widgets.MessageHtml = RinxHtml {
         padding: 0.0,
         width: Fill, height: Fit, // see comment in `HtmlOrPlaintext`
         // `RowAlign.Center` vertically centers each walk on its row. With the
@@ -188,7 +188,7 @@ script_mod! {
             visible: true,
             width: Fill, height: Fit, // see above comment
             flow: Overlay
-            pt_label := Label {
+            pt_label := RinxLabel {
                 width: Fill, height: Fit, // see above comment
                 flow: Flow.Right{wrap: true},
                 padding: 0,

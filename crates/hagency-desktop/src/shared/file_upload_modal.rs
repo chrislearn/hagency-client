@@ -31,14 +31,14 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    mod.widgets.PreviewTruncatedLabel = Label {
+    mod.widgets.PreviewTruncatedLabel = RinxLabel {
         visible: false,
         width: Fill, height: Fit,
         padding: 0
         flow: Flow.Right { wrap: true }
         margin: Inset{top: 8}
         draw_text +: {
-            text_style: REGULAR_TEXT { font_size: (10 * mod.widgets.RINX_TEXT_SCALE) },
+            text_style: REGULAR_TEXT { font_size: mod.widgets.RINX_UI_SIZE },
             color: (SMALL_STATE_TEXT_COLOR)
         }
         text: #(crate::i18n::tr("Preview truncated to 128 KB.")) i18n_text: "Preview truncated to 128 KB."
@@ -73,21 +73,18 @@ script_mod! {
             align: Align{y: 0.5},
             spacing: 10,
 
-            title := Label {
+            title := RinxLabel {
                 width: Fill, height: Fit,
                 draw_text +: {
-                    text_style: TITLE_TEXT { font_size: (16 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: TITLE_TEXT { font_size: mod.widgets.RINX_TITLE_SIZE },
                     color: mod.widgets.RINX_INK
                 }
                 text: #(crate::i18n::tr("Upload File")) i18n_text: "Upload File"
             }
 
-            close_button := RobrixIconButton {
-                width: Fit, height: Fit,
-                padding: 12,
-                spacing: 0
+            close_button := RinxIconButton {
+                width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
                 align: Align{x: 0.5, y: 0.5}
-                icon_walk: Walk{width: 18, height: 18, margin: 0}
                 draw_icon.svg: (ICON_CLOSE)
                 draw_icon.color: mod.widgets.RINX_MUTED
                 draw_bg +: {
@@ -111,45 +108,45 @@ script_mod! {
                 empty_text: #(crate::i18n::tr("Enter caption...")) i18n_empty_text: "Enter caption..."
                 padding: 10,
                 draw_text +: {
-                    text_style: REGULAR_TEXT { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: REGULAR_TEXT { font_size: mod.widgets.RINX_UI_SIZE },
                     color: (COLOR_TEXT),
                 }
             }
         }
 
-        file_info_label := Label {
+        file_info_label := RinxLabel {
             width: Fill, height: Fit,
             padding: 0
             margin: Inset { left: 5 }
             flow: Flow.Right { wrap: true }
             draw_text +: {
-                text_style: REGULAR_TEXT { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                text_style: REGULAR_TEXT { font_size: mod.widgets.RINX_BODY_SIZE },
                 color: (SMALL_STATE_TEXT_COLOR)
             }
             text: ""
         }
 
-        large_attachment_warning_label := Label {
+        large_attachment_warning_label := RinxLabel {
             visible: false,
             width: Fill, height: Fit,
             padding: 0
             margin: Inset { left: 5 }
             flow: Flow.Right { wrap: true }
             draw_text +: {
-                text_style: REGULAR_TEXT { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                text_style: REGULAR_TEXT { font_size: mod.widgets.RINX_BODY_SIZE },
                 color: (COLOR_TEXT_WARNING_NOT_FOUND)
             }
             text: #(crate::i18n::tr("This file is large (over 10 MB). Are you sure you want to upload it to the homeserver?")) i18n_text: "This file is large (over 10 MB). Are you sure you want to upload it to the homeserver?"
         }
 
-        empty_attachment_warning_label := Label {
+        empty_attachment_warning_label := RinxLabel {
             visible: false,
             width: Fill, height: Fit,
             padding: 0
             margin: Inset { left: 5 }
             flow: Flow.Right { wrap: true }
             draw_text +: {
-                text_style: REGULAR_TEXT { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                text_style: REGULAR_TEXT { font_size: mod.widgets.RINX_BODY_SIZE },
                 color: (COLOR_TEXT_WARNING_NOT_FOUND)
             }
             text: #(crate::i18n::tr("This file is empty (0 bytes). Are you sure you want to upload it?")) i18n_text: "This file is empty (0 bytes). Are you sure you want to upload it?"
@@ -177,10 +174,10 @@ script_mod! {
                         width: 28, height: 28,
                         draw_bg +: { color: (SMALL_STATE_TEXT_COLOR) }
                     }
-                    Label {
+                    RinxLabel {
                         width: Fit, height: Fit,
                         draw_text +: {
-                            text_style: REGULAR_TEXT { font_size: (13 * mod.widgets.RINX_TEXT_SCALE) },
+                            text_style: REGULAR_TEXT { font_size: mod.widgets.RINX_BODY_SIZE },
                             color: (SMALL_STATE_TEXT_COLOR)
                         }
                         text: #(crate::i18n::tr("Loading file preview...")) i18n_text: "Loading file preview..."
@@ -207,7 +204,7 @@ script_mod! {
                     code_preview := mod.widgets.LightCodeView {
                         editor +: {
                             width: Fill, height: Fill,
-                            draw_text +: { text_style +: { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) } }
+                            draw_text +: { text_style +: { font_size: mod.widgets.RINX_BODY_SIZE } }
                         }
                         text: ""
                     }
@@ -222,7 +219,7 @@ script_mod! {
                     plain_preview := mod.widgets.PlainCodeView {
                         editor +: {
                             width: Fill, height: Fill,
-                            draw_text +: { text_style +: { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) } }
+                            draw_text +: { text_style +: { font_size: mod.widgets.RINX_BODY_SIZE } }
                         }
                         text: ""
                     }
@@ -272,12 +269,12 @@ script_mod! {
                         } }
                     }
 
-                    Label {
+                    RinxLabel {
                         width: Fill, height: Fit,
                         align: Align {x: 0.5}
                         flow: Flow.Right { wrap: true }
                         draw_text +: {
-                            text_style: TITLE_TEXT { font_size: (15 * mod.widgets.RINX_TEXT_SCALE) },
+                            text_style: TITLE_TEXT { font_size: mod.widgets.RINX_TITLE_SIZE },
                             color: (SMALL_STATE_TEXT_COLOR)
                         }
                         text: #(crate::i18n::tr("No preview available")) i18n_text: "No preview available"

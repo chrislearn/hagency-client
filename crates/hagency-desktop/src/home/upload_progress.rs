@@ -39,13 +39,13 @@ script_mod! {
             align: Align{x: 0.0, y: 0.5},
             spacing: 10,
 
-            file_name_label := Label {
+            file_name_label := RinxLabel {
                 width: Fill,
                 flow: Flow.Right {wrap: true}
                 padding: 0,
                 margin: Inset { left: 1 }
                 draw_text +: {
-                    text_style: REGULAR_TEXT { font_size: (10 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: REGULAR_TEXT { font_size: mod.widgets.RINX_UI_SIZE },
                     color: (COLOR_TEXT)
                 }
                 text: ""
@@ -70,13 +70,13 @@ script_mod! {
             align: Align{x: 0.0, y: 0.5},
             spacing: 10,
 
-            status_label := Label {
+            status_label := RinxLabel {
                 width: Fill,
                 flow: Flow.Right {wrap: true}
                 padding: 0,
                 margin: Inset { left: 1 }
                 draw_text +: {
-                    text_style: REGULAR_TEXT { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: REGULAR_TEXT { font_size: mod.widgets.RINX_BODY_SIZE },
                     color: (COLOR_TEXT)
                 }
                 text: ""

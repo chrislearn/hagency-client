@@ -30,7 +30,7 @@ script_mod! {
             text_view +: {
                 text +: {
                     draw_text +: {
-                        text_style: theme.font_regular { font_size: (6.0 * mod.widgets.RINX_TEXT_SCALE) }
+                        text_style: theme.font_regular { font_size: (6.0 * mod.widgets.RINX_TEXT_SCALE) } // style-size: avatar
                     }
                 }
             }
@@ -38,12 +38,12 @@ script_mod! {
         margin: Inset{top: 5, right: 0},
         width: Fit,
         height: 15.0,
-        plus_template: Label {
+        plus_template: RinxLabel {
             padding: 0,
             flow: Flow.Right { wrap: false },
             draw_text +: {
                 color: #x0,
-                text_style: TITLE_TEXT { font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}
+                text_style: TITLE_TEXT { font_size: mod.widgets.RINX_UI_SIZE}
             }
             text: ""
         }

@@ -66,21 +66,21 @@ script_mod! {
                         src: (mod.widgets.IMG_APP_LOGO),
                     }
 
-                    title := Label {
+                    title := RinxLabel {
                         width: Fit, height: Fit
                         margin: Inset{ bottom: 5 }
                         padding: 0,
                         draw_text +: {
                             color: (COLOR_TEXT)
-                            text_style: TITLE_TEXT {font_size: (16.0 * mod.widgets.RINX_TEXT_SCALE)}
+                            text_style: TITLE_TEXT {font_size: mod.widgets.RINX_TITLE_SIZE}
                         }
                         text: #(crate::i18n::tr("Sign in to Hagency")) i18n_text: "Sign in to Hagency"
                     }
 
                     View {
                         width: Fit height: Fit flow: Right spacing: 12
-                        login_language_en := ButtonFlat {text: "English"}
-                        login_language_zh := ButtonFlat {text: "简体中文"}
+                        login_language_en := RinxGhostButton {text: "English"}
+                        login_language_zh := RinxGhostButton {text: "简体中文"}
                     }
 
                     saved_accounts := mod.widgets.AccountList {
@@ -101,15 +101,15 @@ script_mod! {
                                 border_color: mod.widgets.RINX_BORDER
                                 border_radius: 8
                             }
-                            Label {
+                            RinxLabel {
                                 width: Fill, height: Fit
-                                draw_text +: {color: COLOR_TEXT, text_style: REGULAR_TEXT {font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}}
+                                draw_text +: {color: COLOR_TEXT, text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_BODY_SIZE}}
                                 text: #(crate::i18n::tr("Choose your Hagency server")) i18n_text: "Choose your Hagency server"
                             }
                             recent_servers_row := View {
                                 visible: false, width: Fill, height: Fit
                                 recent_servers := RobrixSettingsDropDown {
-                                    width: Fill, height: 38, margin: 0
+                                    width: Fill, height: mod.widgets.RINX_CONTROL_HEIGHT, margin: 0
                                     popup_menu_position: PopupMenuPosition.BelowInput
                                     popup_menu: RobrixSettingsPopupMenu {
                                         width: 292
@@ -133,22 +133,22 @@ script_mod! {
                                     input_mode: Url
                                 }
                             }
-                            Label {
+                            RinxLabel {
                                 width: Fill, height: Fit
                                 flow: Flow.Right{wrap: true}
-                                draw_text +: {color: mod.widgets.RINX_MUTED, text_style: REGULAR_TEXT {font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}
+                                draw_text +: {color: mod.widgets.RINX_MUTED, text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_UI_SIZE}}
                                 text: #(crate::i18n::tr("Enter your Hagency server address. Other Matrix servers are not supported.")) i18n_text: "Enter your Hagency server address. Other Matrix servers are not supported."
                             }
                         }
                         continue_server_button := RobrixIconButton {
-                            width: Fill, height: 42, padding: 10
-                            align: Align{x: 0.5, y: 0.5}
+                            height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                            width: Fill, align: Align{x: 0.5, y: 0.5}
                             text: #(crate::i18n::tr("Continue")) i18n_text: "Continue"
                         }
-                        server_status := Label {
+                        server_status := RinxLabel {
                             width: Fill, height: Fit
                             flow: Flow.Right{wrap: true}
-                            draw_text +: {color: COLOR_TEXT, text_style: REGULAR_TEXT {font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}
+                            draw_text +: {color: COLOR_TEXT, text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_UI_SIZE}}
                             text: ""
                         }
                     }
@@ -171,14 +171,14 @@ script_mod! {
                             View {
                                 width: Fill, height: Fit, flow: Right
                                 align: Align{y: 0.5}
-                                Label {
+                                RinxLabel {
                                     width: Fill, height: Fit
-                                    draw_text +: {color: mod.widgets.RINX_MUTED, text_style: REGULAR_TEXT {font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}
+                                    draw_text +: {color: mod.widgets.RINX_MUTED, text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_UI_SIZE}}
                                     text: #(crate::i18n::tr("Selected server")) i18n_text: "Selected server"
                                 }
                                 edit_server_button := RobrixNeutralIconButton {
-                                    width: 52, height: 26
-                                    padding: 3, spacing: 0
+                                    height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                                    width: 52, spacing: 0
                                     icon_walk: Walk{width: 0, height: 0}
                                     align: Align{x: 0.5, y: 0.5}
                                     draw_bg +: {
@@ -192,18 +192,18 @@ script_mod! {
                                     text: #(crate::i18n::tr("Edit")) i18n_text: "Edit"
                                 }
                             }
-                            selected_server := Label {
+                            selected_server := RinxLabel {
                                 width: Fill, height: Fit
                                 flow: Flow.Right{wrap: false}
                                 max_lines: 1, text_overflow: Ellipsis
-                                draw_text +: {color: COLOR_TEXT, text_style: REGULAR_TEXT {font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}}
+                                draw_text +: {color: COLOR_TEXT, text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_BODY_SIZE}}
                                 text: ""
                             }
                         }
-                        method_status := Label {
+                        method_status := RinxLabel {
                             width: Fill, height: Fit
                             flow: Flow.Right{wrap: true}
-                            draw_text +: {color: COLOR_TEXT, text_style: REGULAR_TEXT {font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}
+                            draw_text +: {color: COLOR_TEXT, text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_UI_SIZE}}
                             text: ""
                         }
                         provider_list_container := View {
@@ -214,23 +214,23 @@ script_mod! {
                                 Provider := View {
                                     width: Fill, height: 48
                                     provider_button := RobrixIconButton {
-                                        width: Fill, height: 42, padding: 10
-                                        align: Align{x: 0.5, y: 0.5}
+                                        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                                        width: Fill, align: Align{x: 0.5, y: 0.5}
                                         text: ""
                                     }
                                 }
                             }
                         }
                         browser_login_button := RobrixIconButton {
+                            height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                             visible: false
-                            width: Fill, height: 42, padding: 10
-                            align: Align{x: 0.5, y: 0.5}
+                            width: Fill, align: Align{x: 0.5, y: 0.5}
                             text: #(crate::i18n::tr("Continue with single sign-on")) i18n_text: "Continue with single sign-on"
                         }
-                        password_option_button := ButtonFlat {
+                        password_option_button := RinxGhostButton {
+                            height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                             visible: false
-                            width: Fit, height: Fit
-                            text: #(crate::i18n::tr("Sign in with a password instead")) i18n_text: "Sign in with a password instead"
+                            width: Fit, text: #(crate::i18n::tr("Sign in with a password instead")) i18n_text: "Sign in with a password instead"
                         }
                         password_form := View {
                             visible: false
@@ -260,30 +260,30 @@ script_mod! {
                                 View {
                                     width: 38, height: Fill
                                     align: Align{x: 0.5, y: 0.5}
-                                    show_password_button := RobrixNeutralIconButton {
-                                        width: Fit, height: Fit, padding: 5, spacing: 0, margin: 0
+                                    show_password_button := RinxIconButton {
+                                        width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
+                                        margin: 0
                                         draw_icon +: {svg: (mod.widgets.ICON_EYE_CLOSED), color: mod.widgets.RINX_MUTED}
-                                        icon_walk: Walk{width: 18, height: 18, margin: 0}
                                         text: ""
                                     }
-                                    hide_password_button := RobrixNeutralIconButton {
+                                    hide_password_button := RinxIconButton {
+                                        width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
                                         visible: false
-                                        width: Fit, height: Fit, padding: 5, spacing: 0, margin: 0
+                                        margin: 0
                                         draw_icon +: {svg: (mod.widgets.ICON_EYE_OPEN), color: mod.widgets.RINX_MUTED}
-                                        icon_walk: Walk{width: 18, height: 18, margin: 0}
                                         text: ""
                                     }
                                 }
                             }
                             login_button := RobrixIconButton {
-                                width: Fill, height: 42, padding: 10
-                                align: Align{x: 0.5, y: 0.5}
+                                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                                width: Fill, align: Align{x: 0.5, y: 0.5}
                                 text: #(crate::i18n::tr("Sign in with password")) i18n_text: "Sign in with password"
                             }
                         }
-                        register_option_button := ButtonFlat {
-                            width: Fit, height: Fit
-                            text: #(crate::i18n::tr("Create an account")) i18n_text: "Create an account"
+                        register_option_button := RinxGhostButton {
+                            height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                            width: Fit, text: #(crate::i18n::tr("Create an account")) i18n_text: "Create an account"
                         }
                         registration_form := View {
                             visible: false
@@ -304,13 +304,13 @@ script_mod! {
                                 autocapitalize: None, autocorrect: Disabled
                             }
                             submit_registration_button := RobrixIconButton {
-                                width: Fill, height: 42, padding: 10
-                                align: Align{x: 0.5, y: 0.5}
+                                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                                width: Fill, align: Align{x: 0.5, y: 0.5}
                                 text: #(crate::i18n::tr("Create account")) i18n_text: "Create account"
                             }
-                            back_to_login_button := ButtonFlat {
-                                width: Fit, height: Fit
-                                text: #(crate::i18n::tr("Back to sign in")) i18n_text: "Back to sign in"
+                            back_to_login_button := RinxGhostButton {
+                                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                                width: Fit, text: #(crate::i18n::tr("Back to sign in")) i18n_text: "Back to sign in"
                             }
                         }
                     }
@@ -810,7 +810,7 @@ mod browser_login_tests {
             assert_eq!(screen.view.text_input(&mut cx,ids!(homeserver_input)).text(),"https://hagency.local");
             {let pass=DrawPass::new(&mut cx);pass.set_size(&mut cx,dvec2(980.0,760.0));let mut list=DrawList2d::new(&mut cx);let overlay=Overlay{draw_list:DrawList::new(&mut cx)};let e=DrawEvent::default();let mut draw=CxDraw::new(&mut cx,&e);let mut cx2d=Cx2d::new(&mut draw);cx2d.begin_pass(&pass,None);list.begin_always(&mut cx2d);overlay.begin(&mut cx2d);cx2d.begin_root_turtle(dvec2(980.0,760.0),Layout::flow_overlay());screen.view.draw_walk_all(&mut cx2d,&mut Scope::empty(),Walk::fixed(980.0,760.0));overlay.end(&mut cx2d);cx2d.end_pass_sized_turtle();list.end(&mut cx2d);cx2d.end_pass(&pass);}
             let dropdown_rect = screen.view.drop_down(&mut cx,ids!(recent_servers)).area().rect(&cx);
-            assert_eq!(dropdown_rect.size, dvec2(292.0, 38.0));
+            assert_eq!(dropdown_rect.size, dvec2(292.0, 36.0));
         }
         let dropdown = screen.view.drop_down(&mut cx, ids!(recent_servers));
         let actions = cx.capture_actions(|cx| {

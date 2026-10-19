@@ -24,14 +24,10 @@ script_mod! {
         padding: Inset{
             right: (mod.widgets.REACTION_LIST_PADDING_RIGHT)
         }
-        item: Button {
+        item: RinxButton {
+            height: RINX_CHIP_HEIGHT padding: Inset{left: 8 right: 8 top: 0 bottom: 0}
             width: Fit,
-            height: Fit,
-            padding: 6,
-            // Use a zero margin on the left because we want the first reaction
-            // to be flush with the left edge of the message text.
             margin: Inset{ top: 3, bottom: 3, left: 0, right: 6 },
-
             draw_bg +: {
                 // Anything that we apply over must be an `instance`,
                 // and their names must be distinct from the base Button type.
@@ -40,21 +36,19 @@ script_mod! {
                 // Override values from the base Button type.
                 color_hover: mod.widgets.RINX_HOVER
                 hover: 0.0
-                border_size: 1.5
-                border_radius: 3.0
-
+                border_size: 1.0
+                border_radius: mod.widgets.RINX_CONTROL_RADIUS
                 get_color: fn() -> vec4 {
                     return mix(self.reaction_bg_color, mix(self.reaction_bg_color, self.color_hover, 0.2), self.hover)
                 }
-
                 pixel: fn() {
                     let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                     sdf.box(
-                        self.border_size,
-                        self.border_size,
-                        self.rect_size.x - self.border_size * 2.0,
-                        self.rect_size.y - self.border_size * 2.0,
-                        max(1.0, self.border_radius)
+                    self.border_size,
+                    self.border_size,
+                    self.rect_size.x - self.border_size * 2.0,
+                    self.rect_size.y - self.border_size * 2.0,
+                    max(1.0, self.border_radius)
                     )
                     sdf.fill_keep(self.get_color())
                     if self.border_size > 0.0 {
@@ -64,7 +58,7 @@ script_mod! {
                 }
             }
             draw_text +: {
-                text_style: REGULAR_TEXT {font_size: (10 * mod.widgets.RINX_TEXT_SCALE)},
+                text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_UI_SIZE},
                 color: mod.widgets.RINX_INK
                 get_color: fn() -> vec4 {
                     return self.color;

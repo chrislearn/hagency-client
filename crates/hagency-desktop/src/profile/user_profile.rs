@@ -70,9 +70,9 @@ script_mod! {
     mod.widgets.ICON_DOUBLE_CHAT = crate_resource("self://resources/icons/double_chat.svg")
 
     let ProfileAction = RobrixNeutralIconButton {
-        width: Fill height: 36 spacing: 6 margin: 0
+        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+        width: Fill spacing: 6 margin: 0
         align: Align{x: 0 y: 0.5}
-        padding: Inset{left: 8 right: 8 top: 0 bottom: 0}
         icon_walk: Walk{width: 16 height: 16}
     }
 
@@ -99,30 +99,30 @@ script_mod! {
                 text_view +: {
                     text +: {
                         draw_text +: {
-                            text_style: theme.font_regular { font_size: (40.0 * mod.widgets.RINX_TEXT_SCALE) }
+                            text_style: theme.font_regular { font_size: (40.0 * mod.widgets.RINX_TEXT_SCALE) } // style-size: avatar
                         }
                     }
                 }
             }
 
-            user_name := Label {
+            user_name := RinxLabel {
                 width: Fill, height: Fit
                 align: Align{x: 0.5}
                 flow: Flow.Right{wrap: true}
                 draw_text +: {
                     color: mod.widgets.RINX_INK,
-                    text_style: USERNAME_TEXT_STYLE { font_size: (12 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: USERNAME_TEXT_STYLE { font_size: mod.widgets.RINX_HEADING_SIZE },
                 }
                 text: #(crate::i18n::tr("User Name"))
             }
 
-            user_id := Label {
+            user_id := RinxLabel {
                 width: Fill, height: Fit
                 align: Align{x: 0.5}
                 flow: Flow.Right{wrap: true}
                 draw_text +: {
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: MESSAGE_TEXT_STYLE { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
                 }
                 text: #(crate::i18n::tr("User ID"))
             }
@@ -138,34 +138,34 @@ script_mod! {
             align: Align{x: 0.0, y: 0.0}
             padding: Inset{left: 10, right: 10}
 
-            membership_title_label := Label {
+            membership_title_label := RinxLabel {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true}
                 draw_text +: {
-                    text_style: USERNAME_TEXT_STYLE { font_size: (11.5 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: USERNAME_TEXT_STYLE { font_size: mod.widgets.RINX_HEADING_SIZE },
                     color: mod.widgets.RINX_INK
                 }
                 text: #(crate::i18n::tr("Membership in this room")) i18n_text: "Membership in this room"
             }
 
-            membership_status_label := Label {
+            membership_status_label := RinxLabel {
                 margin: Inset{ left: 7 }
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true}
                 draw_text +: {
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: MESSAGE_TEXT_STYLE { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
                 }
                 text: #(crate::i18n::tr("Unknown"))
             }
 
-            role_info_label := Label {
+            role_info_label := RinxLabel {
                 margin: Inset{ left: 7 }
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true}
                 draw_text +: {
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: MESSAGE_TEXT_STYLE { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
                 }
                 text: #(crate::i18n::tr("Unknown"))
             }
@@ -179,11 +179,11 @@ script_mod! {
             spacing: 10,
             padding: Inset{left: 10., right: 10, bottom: 10}
 
-            Label {
+            RinxLabel {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true}
                 draw_text +: {
-                    text_style: USERNAME_TEXT_STYLE { font_size: (11.5 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: USERNAME_TEXT_STYLE { font_size: mod.widgets.RINX_HEADING_SIZE },
                     color: mod.widgets.RINX_INK
                 }
                 text: #(crate::i18n::tr("Actions")) i18n_text: "Actions"
@@ -191,9 +191,9 @@ script_mod! {
 
             View {width: Fill height: 36 flow: Right spacing: 8
                 direct_message_button := RobrixIconButton {
-                    width: Fill height: 36 spacing: 6 margin: 0
+                    height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                    width: Fill spacing: 6 margin: 0
                     align: Align{x: 0 y: 0.5}
-                    padding: Inset{left: 8 right: 8 top: 0 bottom: 0}
                     draw_icon.svg: mod.widgets.ICON_DOUBLE_CHAT
                     icon_walk: Walk{width: 16 height: 16}
                     text: #(crate::i18n::tr("Messages")) i18n_text: "Messages"
@@ -281,14 +281,10 @@ script_mod! {
             }
 
             // The "X" close button on the top left
-            close_button := RobrixNeutralIconButton {
-                width: Fit,
-                height: Fit,
-                spacing: 0,
+            close_button := RinxIconButton {
+                width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
                 margin: 7,
-                padding: 15,
                 draw_icon.svg: (ICON_CLOSE)
-                icon_walk: Walk{width: 14, height: 14}
             }
         }
 

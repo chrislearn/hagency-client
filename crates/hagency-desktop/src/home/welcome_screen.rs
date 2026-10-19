@@ -12,20 +12,20 @@ script_mod! {
         spacing: 20
         show_bg: true
         draw_bg.color: (COLOR_PRIMARY)
-        title := Label {
+        title := RinxLabel {
             width: Fill height: Fit
             text: #(crate::i18n::tr("Your Hagency chats")) i18n_text: "Your Hagency chats"
-            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold {font_size: (22.0 * mod.widgets.RINX_TEXT_SCALE)}}
+            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold {font_size: mod.widgets.RINX_DISPLAY_SIZE}}
         }
-        description := Label {
+        description := RinxLabel {
             width: Fill height: Fit flow: Flow.Right{wrap: true}
             text: #(crate::i18n::tr("Choose a chat in the sidebar, start a conversation with a contact, or explore rooms on your server."))
             i18n_text: "Choose a chat in the sidebar, start a conversation with a contact, or explore rooms on your server."
-            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (14.0 * mod.widgets.RINX_TEXT_SCALE)}}
+            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
         }
         View {width: Fill height: Fit flow: Right spacing: 12
-            new_chat := Button {text: #(crate::i18n::tr("New chat")) i18n_text: "New chat"}
-            explore := Button {text: #(crate::i18n::tr("Explore rooms")) i18n_text: "Explore rooms"}
+            new_chat := RinxButton {text: #(crate::i18n::tr("New chat")) i18n_text: "New chat"}
+            explore := RinxButton {text: #(crate::i18n::tr("Explore rooms")) i18n_text: "Explore rooms"}
         }
     }
 }

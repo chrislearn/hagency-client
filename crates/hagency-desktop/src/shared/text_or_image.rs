@@ -20,7 +20,7 @@ script_mod! {
             show_bg: true,
             draw_bg.color: mod.widgets.RINX_FIELD
 
-            label := Label {
+            label := RinxLabel {
                 width: Fill, height: Fit,
                 flow: Flow.Right{wrap: true},
                 draw_text +: {

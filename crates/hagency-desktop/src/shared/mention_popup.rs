@@ -22,12 +22,12 @@ use matrix_sdk::ruma::{OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId};
 
 // Note: most of the layout dimensions of the popup have to be calc'd in Rust code,
 //       so they're defined here up front for clarity.
-const POPUP_MAX_WIDTH: f64 = 600.0;
-const HEADER_HEIGHT: f64 = 48.0;
-const ROW_HEIGHT: f64 = 52.0;
+const POPUP_MAX_WIDTH: f64 = 480.0;
+const HEADER_HEIGHT: f64 = 32.0;
+const ROW_HEIGHT: f64 = 44.0;
 const MAX_VISIBLE_ROWS: f64 = 7.0;
 /// Padding around the list of suggestions to make it look a bit nicer within the popup.
-const LIST_PADDING: f64 = 6.0;
+const LIST_PADDING: f64 = 4.0;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -35,20 +35,24 @@ script_mod! {
 
     // The row shown for each match within the popup, e.g., a user, room/space, or command.
     mod.widgets.MentionRow = RoundedView {
-        width: Fill, height: #(ROW_HEIGHT), flow: Right, spacing: 9, align: Align{y: 0.5}
-        padding: Inset{left: 10, right: 10}
+        width: Fill, height: #(ROW_HEIGHT), flow: Right, spacing: 8, align: Align{y: 0.5}
+        margin: Inset{left: 4, right: 4}
+        padding: Inset{left: 8, right: 8}
         show_bg: true, cursor: MouseCursor.Hand
         draw_bg +: { color: #00000000, border_radius: 5.0 }
-        avatar := Avatar { width: 30, height: 30 }
+        avatar := Avatar {
+            width: 24, height: 24
+            text_view +: {text +: {draw_text.text_style.font_size: mod.widgets.RINX_UI_SIZE}}
+        }
         info := View {
             width: Fill, height: Fit, flow: Down, spacing: 1
-            title := Label {
+            title := RinxLabel {
                 width: Fill, height: Fit, max_lines: 1, text_overflow: Ellipsis, padding: 0
-                draw_text +: { color: (COLOR_TEXT), text_style: theme.font_bold {font_size: (11 * mod.widgets.RINX_TEXT_SCALE), line_spacing: 1.0} }
+                draw_text +: { color: mod.widgets.RINX_INK, text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE, line_spacing: 1.0} }
             }
-            subtitle := Label {
+            subtitle := RinxLabel {
                 width: Fill, height: Fit, max_lines: 1, text_overflow: Ellipsis, padding: 0
-                draw_text +: { color: mod.widgets.RINX_MUTED, text_style: theme.font_regular {font_size: (9.5 * mod.widgets.RINX_TEXT_SCALE), line_spacing: 1.0} }
+                draw_text +: { color: mod.widgets.RINX_MUTED, text_style: theme.font_regular {font_size: mod.widgets.RINX_META_SIZE, line_spacing: 1.0} }
             }
         }
     }
@@ -57,12 +61,12 @@ script_mod! {
     mod.widgets.MentionLoadingRow = View {
         width: Fill, height: #(ROW_HEIGHT), flow: Right, spacing: 10, align: Align{x: 0.5, y: 0.5}
         loading_spinner := LoadingSpinner {
-            width: 20, height: 20
-            draw_bg +: { color: (COLOR_ACTIVE_PRIMARY), border_size: 2.5 }
+            width: 16, height: 16
+            draw_bg +: { color: mod.widgets.RINX_ACCENT, border_size: 2.0 }
         }
-        loading_label := Label {
+        loading_label := RinxLabel {
             height: Fit
-            draw_text +: { color: mod.widgets.RINX_MUTED, text_style: theme.font_regular {font_size: (10.5 * mod.widgets.RINX_TEXT_SCALE)} }
+            draw_text +: { color: mod.widgets.RINX_MUTED, text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE} }
         }
     }
 
@@ -70,10 +74,10 @@ script_mod! {
     mod.widgets.MentionEmptyRow = View {
         width: Fill, height: #(ROW_HEIGHT), align: Align{x: 0.5, y: 0.5}
         padding: Inset{left: 12, right: 12}
-        empty_label := Label {
+        empty_label := RinxLabel {
             width: Fill, height: Fit, max_lines: 2, text_overflow: Ellipsis
             align: Align{x: 0.5}
-            draw_text +: { color: mod.widgets.RINX_MUTED, text_style: theme.font_regular {font_size: (10.5 * mod.widgets.RINX_TEXT_SCALE)} }
+            draw_text +: { color: mod.widgets.RINX_MUTED, text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE} }
         }
     }
 
@@ -97,37 +101,32 @@ script_mod! {
                 flow: Down
                 show_bg: true
                 draw_bg +: {
-                    color: (COLOR_PRIMARY)
-                    border_radius: 5.0
+                    color: mod.widgets.RINX_SURFACE
+                    border_radius: 8.0
                     border_size: 1.0
-                    border_color: (COLOR_SECONDARY)
-                    shadow_color: #0006
-                    shadow_radius: 12.0
-                    shadow_offset: vec2(0.0, 3.0)
+                    border_color: mod.widgets.RINX_BORDER
+                    shadow_color: #0002
+                    shadow_radius: 8.0
+                    shadow_offset: vec2(0.0, 2.0)
                 }
 
-                header_view := RoundedView {
+                header_view := View {
                     width: Fill, height: #(HEADER_HEIGHT)
                     flow: Right
                     align: Align{y: 0.5}
-                    padding: Inset{left: 16, right: 16}
-                    show_bg: true
-                    draw_bg +: {
-                        color: (COLOR_ROBRIX_PURPLE)
-                        border_radius: 5.0
-                    }
-                    header_label := Label {
+                    padding: Inset{left: 12, right: 12}
+                    header_label := RinxLabel {
                         width: Fill, height: Fit, max_lines: 1, text_overflow: Ellipsis, padding: 0
                         draw_text +: {
-                            color: (COLOR_PRIMARY)
-                            text_style: theme.font_bold {font_size: (13.0 * mod.widgets.RINX_TEXT_SCALE), line_spacing: 1.0}
+                            color: mod.widgets.RINX_MUTED
+                            text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE, line_spacing: 1.0}
                         }
                     }
                 }
 
                 list_container := View {
                     width: Fill, height: Fill
-                    padding: #(LIST_PADDING)
+                    padding: Inset{top: #(LIST_PADDING), bottom: #(LIST_PADDING)}
                     list := PortalList {
                         width: Fill, height: Fill
                         flow: Down
@@ -575,7 +574,7 @@ fn build_row(cx: &mut Cx, list: &mut PortalList, index: usize, item: &MentionIte
             new_widget.label(cx, ids!(info.title)).set_text(cx, "Notify the entire room");
             new_widget.label(cx, ids!(info.subtitle)).set_text(cx, "@room");
             let first = room_name.chars().next().map(|c| c.to_string()).unwrap_or_else(|| "@".into());
-            new_widget.avatar(cx, ids!(avatar)).show_text(cx, Some(COLOR_ROBRIX_PURPLE), None, &first);
+            new_widget.avatar(cx, ids!(avatar)).show_text(cx, None, None, &first);
             new_widget
         }
         MentionItem::Room(candidate) => {

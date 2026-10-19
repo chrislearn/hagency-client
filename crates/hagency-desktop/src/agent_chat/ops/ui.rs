@@ -186,9 +186,12 @@ async fn worker(
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
-    let Text = Label {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
-    let Button = RobrixNeutralIconButton {width: Fill height: 40 spacing: 0 icon_walk: Walk{width: 0 height: 0}}
-    let Input = TextInput {width: Fill height: 38 draw_text +: {text_style: theme.font_regular{font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
+    let Text = RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}}
+    let Button = RobrixNeutralIconButton {
+        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+        width: Fill spacing: 0 icon_walk: Walk{width: 0 height: 0}
+    }
+    let Input = RinxInput {width: Fill height: mod.widgets.RINX_CONTROL_HEIGHT draw_text +: {text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE}}}
     mod.widgets.AgentOpsPanel = #(AgentOpsPanel::register_widget(vm)) {
         ..mod.widgets.SolidView
         width: Fill height: Fill flow: Down padding: Inset{top: 32 left: 16 right: 16 bottom: 12} spacing: 8
@@ -207,17 +210,17 @@ script_mod! {
             bridge := Input {empty_text: #(crate::i18n::tr("Bridge Matrix user ID")) i18n_empty_text: "Bridge Matrix user ID"}
             endpoint := Input {text: "http://127.0.0.1:8090"}
             fingerprint := Input {empty_text: #(crate::i18n::tr("Pinned server fingerprint (sha256:...)")) i18n_empty_text: "Pinned server fingerprint (sha256:...)"}
-            connect := Button {text: #(crate::i18n::tr("Connect")) i18n_text: "Connect"}
+            connect := RinxButton {text: #(crate::i18n::tr("Connect")) i18n_text: "Connect"}
         }
         connected := View {width: Fill height: Fill flow: Down spacing: 8 visible: false
             View {width: Fill height: 40
-                refresh := Button {text: #(crate::i18n::tr("Refresh")) i18n_text: "Refresh"}
-                disconnect := Button {text: #(crate::i18n::tr("Disconnect")) i18n_text: "Disconnect"}
+                refresh := RinxButton {text: #(crate::i18n::tr("Refresh")) i18n_text: "Refresh"}
+                disconnect := RinxButton {text: #(crate::i18n::tr("Disconnect")) i18n_text: "Disconnect"}
             }
             projection := PortalList {width: Fill height: Fill
                 Row := View {width: Fill height: Fit flow: Down padding: 5
                     summary := Text {}
-                    operation := Button {}
+                    operation := RinxButton {}
                 }
             }
         }
@@ -226,15 +229,15 @@ script_mod! {
             Text {text: #(crate::i18n::tr("Review this action before sending it to Hagency.")) i18n_text: "Review this action before sending it to Hagency."}
             inspection_details := Text {}
             resolutions := View {width: Fill height: Fit flow: Down visible: false spacing: 6
-                continue_work := Button {text: #(crate::i18n::tr("Continue with instructions")) i18n_text: "Continue with instructions"}
-                accept := Button {text: #(crate::i18n::tr("Accept as completed")) i18n_text: "Accept as completed"}
-                blocked := Button {text: #(crate::i18n::tr("Keep blocked")) i18n_text: "Keep blocked"}
+                continue_work := RinxButton {text: #(crate::i18n::tr("Continue with instructions")) i18n_text: "Continue with instructions"}
+                accept := RinxButton {text: #(crate::i18n::tr("Accept as completed")) i18n_text: "Accept as completed"}
+                blocked := RinxButton {text: #(crate::i18n::tr("Keep blocked")) i18n_text: "Keep blocked"}
                 chosen := Text {}
                 note := Input {empty_text: #(crate::i18n::tr("Inspection note (required)")) i18n_empty_text: "Inspection note (required)"}
                 recovery := Input {empty_text: #(crate::i18n::tr("Recovery instructions")) i18n_empty_text: "Recovery instructions"}
             }
-            confirm := Button {text: #(crate::i18n::tr("Confirm action")) i18n_text: "Confirm action"}
-            cancel := Button {text: #(crate::i18n::tr("Cancel")) i18n_text: "Cancel"}
+            confirm := RinxButton {text: #(crate::i18n::tr("Confirm action")) i18n_text: "Confirm action"}
+            cancel := RinxButton {text: #(crate::i18n::tr("Cancel")) i18n_text: "Cancel"}
         }
     }
 }

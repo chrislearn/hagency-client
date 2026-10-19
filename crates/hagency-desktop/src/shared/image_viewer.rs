@@ -97,22 +97,18 @@ script_mod! {
 
     mod.widgets.UI_ANIMATION_DURATION_SECS = 0.4
 
-    mod.widgets.ImageViewerButton = RobrixNeutralIconButton {
-
-        width: 44, height: 44
+    mod.widgets.ImageViewerButton = RinxIconButton {
+        width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
         align: Align{x: 0.5, y: 0.5},
-        spacing: 0,
-        padding: 0,
         draw_bg +: {
-            color: (COLOR_SECONDARY * 0.925)
-            color_hover: (COLOR_SECONDARY * 0.825)
-            color_down: (COLOR_SECONDARY * 0.7)
+            color: mod.widgets.RINX_SURFACE
+            color_hover: mod.widgets.RINX_HOVER
+            color_down: mod.widgets.RINX_PRESSED
         }
         draw_icon +: {
             svg: (ICON_ZOOM_OUT),
             color: mod.widgets.RINX_INK
         }
-        icon_walk: Walk{width: 27, height: 27}
     }
 
     mod.widgets.ImageViewer = set_type_default() do #(ImageViewer::register_widget(vm)) {
@@ -174,11 +170,11 @@ script_mod! {
                     }
                 }
 
-                image_viewer_status_label := Label {
+                image_viewer_status_label := RinxLabel {
                     width: Fit, height: 30,
                     text: #(crate::i18n::tr("Loading image...")) i18n_text: "Loading image...",
                     draw_text +: {
-                        text_style: REGULAR_TEXT {font_size: (14 * mod.widgets.RINX_TEXT_SCALE)},
+                        text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_BODY_SIZE},
                         color: (COLOR_TEXT)
                     }
                 }
@@ -215,7 +211,7 @@ script_mod! {
                         text_view +: {
                             text +: {
                                 draw_text +: {
-                                    text_style: TITLE_TEXT { font_size: (15.0 * mod.widgets.RINX_TEXT_SCALE) }
+                                    text_style: TITLE_TEXT { font_size: mod.widgets.RINX_TITLE_SIZE }
                                 }
                             }
                         }
@@ -223,9 +219,9 @@ script_mod! {
                     timestamp := Timestamp {
                         width: Fit,
                         height: Fit,
-                        ts_label := Label {
+                        ts_label := RinxLabel {
                             draw_text +: {
-                                text_style: theme.font_regular {font_size: (9.5 * mod.widgets.RINX_TEXT_SCALE)},
+                                text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE},
                                 color: (COLOR_TEXT)
                             }
                         }
@@ -239,7 +235,7 @@ script_mod! {
                     flow: Right,
                     align: Align{ y: 0.5 }
 
-                    username := Label {
+                    username := RinxLabel {
                         width: Fill,
                         height: Fit,
                         padding: 0
@@ -248,7 +244,7 @@ script_mod! {
                         max_lines: 2
                         text_overflow: Ellipsis
                         draw_text +: {
-                            text_style: REGULAR_TEXT {font_size: (12 * mod.widgets.RINX_TEXT_SCALE)},
+                            text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_BODY_SIZE},
                             color: (COLOR_TEXT)
                         }
                     }
@@ -261,7 +257,7 @@ script_mod! {
                     height: Fit,
                     align: Align{x: 0, y: 0.5}
                     flow: Right
-                    image_name_and_size := Label {
+                    image_name_and_size := RinxLabel {
                         width: Fill,
                         height: Fit,
                         align: Align{x: 0, y: 0.5}
@@ -269,7 +265,7 @@ script_mod! {
                         max_lines: 2
                         text_overflow: Ellipsis
                         draw_text +: {
-                            text_style: REGULAR_TEXT {font_size: (13 * mod.widgets.RINX_TEXT_SCALE)},
+                            text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_BODY_SIZE},
                             color: (COLOR_TEXT),
                         }
                     }

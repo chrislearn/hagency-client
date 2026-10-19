@@ -49,27 +49,24 @@ script_mod! {
         width: Fill height: 48
         flow: Overlay
         draw_bg.color: mod.widgets.MOBILE_BG
-        title := Label {
+        title := RinxLabel {
             width: Fill height: Fill
             align: Align{x: 0.5 y: 0.5}
-            draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_bold {font_size: (12.5 * mod.widgets.RINX_TEXT_SCALE)}}
+            draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_bold {font_size: mod.widgets.RINX_HEADING_SIZE}}
         }
         controls := View {
             width: Fill height: Fill
             flow: Right align: Align{y: 0.5}
-            left := RobrixNeutralIconButton {
-                visible: false width: 48 height: 48 padding: 14
-                align: Align{x: 0.5 y: 0.5} spacing: 0
-                draw_bg +: {color: #x00000000 color_hover: #x00000000 color_down: #x00000000}
+            left := RinxIconButton {
+                width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
+                visible: false align: Align{x: 0.5 y: 0.5} draw_bg +: {color: #x00000000 color_hover: mod.widgets.RINX_HOVER color_down: mod.widgets.RINX_PRESSED}
                 draw_icon +: {svg: ICON_CHEVRON_LEFT color: mod.widgets.MOBILE_INK}
-                icon_walk: Walk{width: 8 height: 14}
             }
             View {width: Fill height: 1}
-            right := RobrixNeutralIconButton {
-                visible: false width: 48 height: 48 padding: 14
-                draw_bg +: {color: #x00000000 color_hover: #x00000000 color_down: #x00000000}
+            right := RinxIconButton {
+                width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
+                visible: false draw_bg +: {color: #x00000000 color_hover: mod.widgets.RINX_HOVER color_down: mod.widgets.RINX_PRESSED}
                 draw_icon +: {svg: ICON_ADD color: mod.widgets.MOBILE_INK}
-                icon_walk: Walk{width: 20 height: 20}
             }
         }
     }
@@ -83,9 +80,9 @@ script_mod! {
             icon_walk: Walk{width: 24 height: 24}
             draw_icon +: {color: mod.widgets.RINX_ACCENT svg: ICON_PEOPLE}
         }
-        title := Label {
+        title := RinxLabel {
             width: Fill height: Fit max_lines: 1 text_overflow: Ellipsis
-            draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_regular {font_size: (12.5 * mod.widgets.RINX_TEXT_SCALE)}}
+            draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
         }
         chevron := Icon {
             icon_walk: Walk{width: 8 height: 13}
@@ -113,12 +110,12 @@ script_mod! {
                     width: Fill height: 48 padding: Inset{left: 10 right: 10 bottom: 10}
                     draw_bg.color: mod.widgets.MOBILE_BG
                     search := RobrixTextInput {
-                        width: Fill height: 36 padding: Inset{left: 12 right: 12 top: 8 bottom: 8}
+                        width: Fill height: mod.widgets.RINX_CONTROL_HEIGHT padding: Inset{left: 12 right: 12 top: 8 bottom: 8}
                         empty_text: #(crate::i18n::tr("Search")) i18n_empty_text: "Search" autocapitalize: None
-                        draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_regular {font_size: (11.5 * mod.widgets.RINX_TEXT_SCALE)}}
+                        draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}
                         draw_bg +: {
                             color: mod.widgets.RINX_FIELD color_hover: mod.widgets.RINX_FIELD color_focus: mod.widgets.RINX_FIELD
-                            color_empty: mod.widgets.RINX_FIELD border_color: mod.widgets.RINX_BORDER border_color_focus: mod.widgets.RINX_ACCENT border_size: 1 border_radius: 6
+                            color_empty: mod.widgets.RINX_FIELD border_color: mod.widgets.RINX_BORDER border_color_focus: mod.widgets.RINX_ACCENT border_size: 1 border_radius: mod.widgets.RINX_CONTROL_RADIUS
                         }
                     }
                 }
@@ -128,9 +125,9 @@ script_mod! {
                         icon +: {draw_icon +: {svg: ICON_ADD_USER color: mod.widgets.RINX_WARNING_FG}}
                     }
                 }
-                status := Label {
+                status := RinxLabel {
                     width: Fill height: Fit padding: 16
-                    draw_text +: {color: mod.widgets.MOBILE_MUTED text_style: theme.font_regular {font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}}
+                    draw_text +: {color: mod.widgets.MOBILE_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
                     text: #(crate::i18n::tr("Loading contacts…")) i18n_text: "Loading contacts…"
                 }
                 list := PortalList {
@@ -141,19 +138,18 @@ script_mod! {
                         section := SolidView {
                             width: Fill height: 28 padding: Inset{left: 16} align: Align{y: 0.5}
                             draw_bg.color: mod.widgets.MOBILE_BG
-                            letter := Label {draw_text +: {color: mod.widgets.MOBILE_MUTED text_style: theme.font_regular {font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}}}
+                            letter := RinxLabel {draw_text +: {color: mod.widgets.MOBILE_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}}
                         }
                         row := NavigationBarButton {
                             width: Fill height: 60 flow: Right spacing: 14 padding: Inset{left: 16 right: 16}
                             align: Align{y: 0.5}
                             draw_bg +: {
-                                color_hover: mod.widgets.RINX_BORDER border_radius: 0
-                                get_color: fn() -> vec4 {return mod.widgets.RINX_ON_ACCENT.mix(self.color_hover, self.hover)}
+                                color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED border_radius: 0
                             }
                             avatar := mod.widgets.MobileAvatar {width: 40 height: 40}
-                            name := Label {
+                            name := RinxLabel {
                                 width: Fill max_lines: 1 text_overflow: Ellipsis
-                                draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_regular {font_size: (12.5 * mod.widgets.RINX_TEXT_SCALE)}}
+                                draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
                             }
                         }
                         mod.widgets.MobileDivider {margin: Inset{left: 70}}
@@ -174,9 +170,9 @@ script_mod! {
             }
             joined_groups := View {
                 width: Fill height: Fill flow: Down
-                group_status := Label {
+                group_status := RinxLabel {
                     width: Fill height: Fit padding: 16
-                    draw_text +: {color: mod.widgets.MOBILE_MUTED text_style: theme.font_regular {font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}}
+                    draw_text +: {color: mod.widgets.MOBILE_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
                 }
                 group_list := PortalList {
                     width: Fill height: Fill
@@ -187,9 +183,9 @@ script_mod! {
                             align: Align{y: 0.5}
                             draw_bg +: {color_hover: mod.widgets.RINX_BORDER border_radius: 0}
                             avatar := mod.widgets.MobileAvatar {width: 48 height: 48}
-                            name := Label {
+                            name := RinxLabel {
                                 width: Fill max_lines: 1 text_overflow: Ellipsis
-                                draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_regular {font_size: (12.5 * mod.widgets.RINX_TEXT_SCALE)}}
+                                draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
                             }
                         }
                         mod.widgets.MobileDivider {margin: Inset{left: 78}}
@@ -205,13 +201,13 @@ script_mod! {
                         avatar := mod.widgets.MobileAvatar {width: 64 height: 64}
                         View {
                             width: Fill height: Fit flow: Down spacing: 12
-                            name := Label {
+                            name := RinxLabel {
                                 width: Fill max_lines: 1 text_overflow: Ellipsis
-                                draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_bold {font_size: (17 * mod.widgets.RINX_TEXT_SCALE)}}
+                                draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_bold {font_size: mod.widgets.RINX_TITLE_SIZE}}
                             }
-                            user_id := Label {
+                            user_id := RinxLabel {
                                 width: Fill max_lines: 1 text_overflow: Ellipsis
-                                draw_text +: {color: mod.widgets.MOBILE_MUTED text_style: theme.font_regular {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}
+                                draw_text +: {color: mod.widgets.MOBILE_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
                             }
                         }
                         Icon {icon_walk: Walk{width: 8 height: 13} draw_icon +: {color: mod.widgets.RINX_DISABLED svg: ICON_CHEVRON_RIGHT}}

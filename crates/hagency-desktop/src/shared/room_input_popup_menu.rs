@@ -9,14 +9,12 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    mod.widgets.RoomInputPopupMenuButton = RobrixIconButton {
-        height: 38
+    mod.widgets.RoomInputPopupMenuButton = RinxGhostButton {
+        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
         width: Fill
         margin: 0
-        padding: Inset{left: 10, right: 12, top: 9, bottom: 9}
         spacing: 10
         align: Align{x: 0, y: 0.5}
-
         draw_bg +: {
             color: (COLOR_PRIMARY)
             color_hover: mod.widgets.RINX_HOVER
@@ -27,10 +25,10 @@ script_mod! {
             color: (COLOR_TEXT)
             color_hover: (COLOR_TEXT)
             color_down: (COLOR_TEXT)
-            text_style: REGULAR_TEXT {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}
+            text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_UI_SIZE}
         }
         draw_icon.color: (COLOR_ACTIVE_PRIMARY_DARKER)
-        icon_walk: Walk{width: 18, height: 18}
+        icon_walk: Walk{width: 16, height: 16}
     }
 
     mod.widgets.RoomInputPopupMenu = set_type_default() do #(RoomInputPopupMenu::register_widget(vm)) {

@@ -74,13 +74,10 @@ script_mod! {
                         empty_text: #(crate::i18n::tr("Enter reaction...")) i18n_empty_text: "Enter reaction..."
                     }
                     reaction_send_button := RobrixPositiveIconButton {
+                        width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
                         enabled: false,
-                        height: #(BUTTON_HEIGHT)
                         align: Align{x: 0.5, y: 0.5}
-                        padding: Inset{left: 10, right: 10, top: 8, bottom: 8}
-                        spacing: 0,
                         draw_icon.svg: (ICON_SEND)
-                        icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                     }
                 }
             }

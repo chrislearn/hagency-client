@@ -1,6 +1,8 @@
 //! The RoomInputBar widget contains all components related to sending messages/content to a room.
 //!
-//! The RoomInputBar is capped to a maximum height of 75% of the containing RoomScreen's height.
+//! The RoomInputBar is capped to 75% of the containing RoomScreen's height.
+//! Desktop users can drag the composer's top edge; its preferred height is
+//! persisted separately from the temporary viewport limit.
 //!
 //! The widgets included in the RoomInputBar are:
 //! * a preview of the message the user is replying to.
@@ -38,23 +40,7 @@ script_mod! {
     // ---- Composer toolbar building blocks (robrix2's visual language, RBX_* tokens) ----
     // Ghost icon button for the composer toolbar: transparent fill, subtle
     // hover/press wash, secondary-grey icon.
-    mod.widgets.ComposerToolButton = mod.widgets.RobrixIconButton {
-        width: 40 height: 40
-        align: Align{x: 0.5 y: 0.5}
-        margin: Inset{left: 2, right: 2, top: 2, bottom: 2}
-        padding: Inset{left: 8, right: 8, top: 6, bottom: 6}
-        spacing: 0,
-        draw_icon +: { color: (RBX_FG_SECONDARY) }
-        draw_bg +: {
-            color: #0000
-            color_hover: (RBX_BG_HOVER)
-            color_down: (RBX_BG_PRESSED)
-            border_size: 0.0
-            border_radius: (RBX_RADIUS_SM)
-        }
-        icon_walk: Walk{width: 20, height: 20}
-        text: "",
-    }
+    mod.widgets.ComposerToolButton = RinxIconButton {draw_icon.color: mod.widgets.RINX_MUTED}
 
     mod.widgets.ComposerEmojiPickerButton = mod.widgets.ComposerToolButton {
         draw_icon.svg: ICON_ADD_REACTION
@@ -65,49 +51,15 @@ script_mod! {
 
     // Same ghost shell, but renders a text glyph (e.g. "@" / "/") instead of an
     // SVG icon — used for the mention and slash-command shortcuts.
-    mod.widgets.ComposerGlyphButton = mod.widgets.RobrixIconButton {
-        margin: Inset{left: 2, right: 2, top: 2, bottom: 2}
-        padding: Inset{left: 9, right: 9, top: 4, bottom: 4}
-        spacing: 0,
-        align: Align{x: 0.5, y: 0.5}
-        icon_walk: Walk{width: 0, height: 0}
-        draw_bg +: {
-            color: #0000
-            color_hover: (RBX_BG_HOVER)
-            color_down: (RBX_BG_PRESSED)
-            border_size: 0.0
-            border_radius: (RBX_RADIUS_SM)
-        }
-        draw_text +: {
-            color: (RBX_FG_SECONDARY)
-            color_hover: (RBX_FG_SECONDARY)
-            color_down: (RBX_FG_SECONDARY)
-            text_style: MESSAGE_TEXT_STYLE { font_size: (16.0 * mod.widgets.RINX_TEXT_SCALE) }
-        }
-        text: "",
+    mod.widgets.ComposerGlyphButton = RinxIconButton {
+        draw_text +: {color: mod.widgets.RINX_MUTED color_hover: mod.widgets.RINX_INK color_down: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: mod.widgets.RINX_GLYPH_SIZE}}
+        icon_walk: Walk{width: 0 height: 0}
     }
 
     // One entry of the quick emoji row that the toolbar's emoji button toggles.
-    mod.widgets.ComposerEmojiButton = mod.widgets.RobrixIconButton {
-        spacing: 0
-        text: ""
-        margin: 0
-        padding: Inset{left: 8, right: 8, top: 6, bottom: 6}
-        icon_walk: Walk{width: 0, height: 0}
-        draw_text +: {
-            color: (RBX_FG_PRIMARY)
-            color_hover: (RBX_FG_PRIMARY)
-            color_down: (RBX_FG_PRIMARY)
-            text_style: MESSAGE_TEXT_STYLE { font_size: (15.0 * mod.widgets.RINX_TEXT_SCALE) }
-        }
-        draw_bg +: {
-            color: (RBX_BG_SURFACE)
-            color_hover: (RBX_BG_HOVER)
-            color_down: (RBX_BG_PRESSED)
-            border_size: 1.0
-            border_color: (RBX_STROKE_SOFT)
-            border_radius: (RBX_RADIUS_SM)
-        }
+    mod.widgets.ComposerEmojiButton = RinxIconButton {
+        draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: mod.widgets.RINX_GLYPH_SIZE}}
+        icon_walk: Walk{width: 0 height: 0}
     }
 
     mod.widgets.RoomInputBar = set_type_default() do #(RoomInputBar::register_widget(vm)) {
@@ -255,13 +207,10 @@ script_mod! {
                             padding: Inset{top: 0, bottom: 0, left: 4, right: 4}
 
                             // One widget for both states: the icon at rest, a meter while recording.
-                            speech_button := RobrixIconButton {
-                                width: 32, height: 32
-                                padding: 7
-                                spacing: 0
+                            speech_button := RinxIconButton {
+                                width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
                                 grab_key_focus: false
                                 enable_long_press: false
-                                icon_walk: Walk{width: 18, height: 18}
                                 draw_icon +: {
                                     svg: crate_resource("self://resources/icons/microphone.svg")
                                     color: mod.widgets.RINX_INK
@@ -281,9 +230,9 @@ script_mod! {
                                         let sdf = Sdf2d.viewport(self.pos * self.rect_size)
                                         // Same state blend the stock button face uses.
                                         let face = mix(
-                                            mix(self.color, self.color_hover, self.hover),
-                                            self.color_down,
-                                            self.down
+                                        mix(self.color, self.color_hover, self.hover),
+                                        self.color_down,
+                                        self.down
                                         )
                                         sdf.box(0.5, 0.5, self.rect_size.x - 1.0, self.rect_size.y - 1.0, self.border_radius)
                                         sdf.fill(face)
@@ -312,14 +261,12 @@ script_mod! {
 
                     // Filled teal send button: a rounded square, white icon, greyed out
                     // (via `enable_send_message_button`) while the draft is empty.
-                    send_message_button := RobrixIconButton {
+                    send_message_button := RinxIconButton {
+                        width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
                         enabled: false,
-                        width: 40, height: 40,
                         align: Align{x: 0.5, y: 0.5}
-                        spacing: 0,
                         text: "",
                         margin: Inset{left: 2, right: 2, top: 2, bottom: 2}
-                        padding: 0
                         draw_bg +: {
                             color: (RBX_BG_DISABLED)
                             color_hover: (RBX_ACCENT_HOVER)
@@ -329,9 +276,14 @@ script_mod! {
                             border_radius: (RBX_RADIUS_XS)
                         }
                         draw_icon +: { svg: (ICON_SEND), color: (RBX_FG_DISABLED) }
-                        icon_walk: Walk{width: 22, height: 22},
                     }
                 }
+            }
+
+            composer_resize_handle := View {
+                width: Fill height: 8 align: Center
+                cursor: MouseCursor.RowResize show_bg: true draw_bg.color: #0000
+                RoundedView {width: 32 height: 2 draw_bg +: {color: mod.widgets.RINX_BORDER border_radius: 1}}
             }
 
             can_not_send_message_notice := SolidView {
@@ -343,13 +295,13 @@ script_mod! {
                 show_bg: true
                 draw_bg.color: (COLOR_SECONDARY)
 
-                text := Label {
+                text := RinxLabel {
                     width: Fill,
                     flow: Flow.Right{wrap: true},
                     align: Align{x: 0.5, y: 0.5}
                     draw_text +: {
                         color: (COLOR_TEXT)
-                        text_style: theme.font_italic {font_size: (12.2 * mod.widgets.RINX_TEXT_SCALE)}
+                        text_style: theme.font_italic {font_size: mod.widgets.RINX_BODY_SIZE}
                     }
                     text: #(crate::i18n::tr("You don't have permission to post to this room.")) i18n_text: "You don't have permission to post to this room.",
                 }
@@ -377,7 +329,7 @@ script_mod! {
                         text_input +: {
                             empty_text: #(crate::i18n::tr("Message")) i18n_empty_text: "Message"
                             padding: Inset{left: 10 right: 35 top: 10 bottom: 10}
-                            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: (12.5 * mod.widgets.RINX_TEXT_SCALE)}}
+                            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
                             draw_bg +: {
                                 color: mod.widgets.RINX_SURFACE color_hover: mod.widgets.RINX_SURFACE color_focus: mod.widgets.RINX_SURFACE
                                 color_empty: mod.widgets.RINX_SURFACE border_radius: 5
@@ -446,6 +398,26 @@ pub struct RoomInputBar {
     #[rust] speech_controls: SpeechControls,
     /// Whether the quick emoji row above the text input is currently shown.
     #[rust] is_emoji_picker_expanded: bool,
+    #[rust] resize_drag: Option<ComposerResizeDrag>,
+    #[rust] resize_bounds: (f64, f64),
+}
+
+/// Persist only completed user resizes, not preference-restore broadcasts.
+#[derive(Debug)]
+pub struct ComposerHeightSaved(pub Option<f64>);
+
+#[derive(Clone, Copy)]
+struct ComposerResizeDrag {
+    start_height: f64,
+    height: f64,
+}
+
+/// Leave room for the timeline and auxiliary reply/upload previews. These are
+/// display limits only: the stored height remains useful on a larger window.
+fn composer_height_bounds(available: f64, auxiliary: f64, minimum: f64) -> (f64, f64) {
+    let maximum = (available * 0.6 - auxiliary - 12.0)
+        .min(available - auxiliary - 172.0).min(640.0).max(minimum);
+    (minimum, maximum)
 }
 
 /// The microphone buttons current display state.
@@ -494,19 +466,15 @@ impl Widget for RoomInputBar {
             // Theme/language reapplication restores the template SVG. Restore
             // the room's lock badge after the VM has finished that apply walk.
             self.update_encryption_state(cx, self.is_encrypted);
+            self.initialize_speech_controls(cx);
         }
-        // Pressing `Escape` will stop speech recording/recognition regardless of key focus.
-        let should_end_speech = matches!(event, Event::KeyDown(KeyEvent { key_code: KeyCode::Escape, .. }))
-            && matches!(self.speech_phase(), Some(SpeechPhase::Listening) | Some(SpeechPhase::Starting));
-        if should_end_speech {
-            match self.speech.as_mut() {
-                Some(speech) if speech.phase == SpeechPhase::Listening => speech.stop(),
-                _ => self.cancel_dictation(cx),
-            }
-            self.update_speech_controls(cx);
+        // Cancel capture or abort an in-flight request; keep the current draft.
+        if matches!(event, Event::KeyDown(KeyEvent {key_code: KeyCode::Escape, ..})) && self.speech_phase().is_some() {
+            self.cancel_dictation(cx);
             return;
         }
 
+        self.handle_composer_resize(cx, event);
         self.handle_speech_event(cx, event);
         self.take_assistant_draft(cx);
 
@@ -571,23 +539,53 @@ impl Widget for RoomInputBar {
         // slide=0.0 → editing pane shown → input_bar at zero height.
         let slide = self.editing_pane(cx, ids!(editing_pane)).slide();
         let input_bar = self.view.view(cx, ids!(input_bar));
+        let available = cx.turtle().rect().size.y;
+        let auxiliary: f64 = [id!(replying_preview), id!(location_preview), id!(upload_progress_view)]
+            .into_iter().map(|id| {
+                let view = self.view.view(cx, &[id]);
+                if view.visible() {view.area().rect(cx).size.y} else {0.0}
+            }).sum();
+        let emoji = self.view.view(cx, ids!(emoji_picker_popup));
+        let emoji_height = if emoji.visible() {emoji.area().rect(cx).size.y.max(32.0) + 6.0} else {0.0};
+        self.resize_bounds = composer_height_bounds(available, auxiliary,
+            88.0 * self.appearance.text_scale.max(1.0) + emoji_height);
+        let preferred = crate::settings::app_preferences::valid_composer_height(
+            cx.global::<AppPreferencesGlobal>().0.composer_height);
+        let preferred = self.resize_drag.map(|drag| drag.height).or(preferred);
+        let manual_height = (!self.mobile).then_some(preferred).flatten()
+            .map(|height| height.clamp(self.resize_bounds.0, self.resize_bounds.1));
+        let resize_enabled = !self.mobile && input_bar.visible() && slide >= 0.999;
+        self.view.view(cx, ids!(composer_resize_handle)).set_visible(cx, resize_enabled);
+        let fill = if manual_height.is_some() {Size::fill()} else {Size::fit()};
+        if let Some(mut row) = self.view.view(cx, ids!(message_row)).borrow_mut() {row.walk.height = fill;}
+        let mentionable = self.mentionable_text_input(cx, ids!(mentionable_text_input));
+        if let Some(mut input) = mentionable.borrow_mut() {input.walk.height = fill;}
+        let text_input = mentionable.text_input_ref();
+        if text_input.walk(cx).height != fill {text_input.set_height(cx, fill);}
+
+        // A Fill text row needs a definite overlay height. Otherwise Fill can
+        // expand the Fit wrapper to the entire room and starve the timeline.
+        if let Some(mut wrapper) = self.view.view(cx, ids!(overlay_wrapper)).borrow_mut() {
+            wrapper.walk.height = if slide >= 0.999 {
+                manual_height.map(Size::Fixed).unwrap_or_else(Size::fit)
+            } else {Size::fit()};
+        }
 
         // Remap slide through a steeper curve so the input_bar reaches
         // its full target height before the ExpDecay tail.
         let remapped = (slide as f64 * 1.25).min(1.0);
         if remapped >= 1.0 {
-            // Input_bar has reached its full natural height: switch to Fit
-            // so it can respond to content changes normally.
-            // Update the cached height for future animations.
+            // Keep automatic content sizing until the user chooses a height.
+            // Cache the actual displayed size for the editing-pane animation.
             let h = input_bar.area().rect(cx).size.y;
             if h > 0.0 {
                 self.input_bar_natural_height = h;
             }
             if let Some(mut inner) = input_bar.borrow_mut() {
-                inner.walk.height = Size::fit();
+                inner.walk.height = manual_height.map(Size::Fixed).unwrap_or_else(Size::fit);
             }
         } else {
-            let target = self.input_bar_natural_height;
+            let target = manual_height.unwrap_or(self.input_bar_natural_height);
             if let Some(mut inner) = input_bar.borrow_mut() {
                 inner.walk.height = Size::Fixed((target * remapped).max(0.0));
             }
@@ -609,16 +607,47 @@ impl Widget for RoomInputBar {
 }
 
 impl RoomInputBar {
+    fn save_composer_height(&self, cx: &mut Cx, height: Option<f64>) {
+        // RoomScreen intentionally gives room widgets an empty Scope. The app
+        // owns account preferences, so commit the value there through an action.
+        cx.action(ComposerHeightSaved(crate::settings::app_preferences::valid_composer_height(height)));
+    }
+
+    fn handle_composer_resize(&mut self, cx: &mut Cx, event: &Event) {
+        let handle = self.view.view(cx, ids!(composer_resize_handle));
+        if self.mobile || !handle.visible() {self.resize_drag = None; return;}
+        match event.hits(cx, handle.area()) {
+            Hit::FingerHoverIn(_) | Hit::FingerHoverOver(_) => cx.set_cursor(MouseCursor::RowResize),
+            Hit::FingerDown(fe) if fe.is_primary_hit() => {
+                if fe.tap_count == 2 {
+                    self.resize_drag = None;
+                    self.save_composer_height(cx, None);
+                } else {
+                    let height = self.view.view(cx, ids!(input_bar)).area().rect(cx).size.y;
+                    self.resize_drag = Some(ComposerResizeDrag {start_height: height, height});
+                }
+                cx.set_cursor(MouseCursor::RowResize);
+            }
+            Hit::FingerMove(fe) => {
+                if let Some(drag) = self.resize_drag.as_mut() {
+                    drag.height = (drag.start_height + fe.abs_start.y - fe.abs.y)
+                        .clamp(self.resize_bounds.0, self.resize_bounds.1);
+                    self.view.redraw(cx);
+                    cx.set_cursor(MouseCursor::RowResize);
+                }
+            }
+            Hit::FingerUp(_) => {
+                if let Some(drag) = self.resize_drag.take() {
+                    self.save_composer_height(cx, Some(drag.height));
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn initialize_speech_controls(&mut self, cx: &mut Cx) {
-        static IS_SPEECH_SUPPORTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-        let is_speech_supported = *IS_SPEECH_SUPPORTED.get_or_init(|| {
-            let supported = NativeSpeechSession::is_supported();
-            log!("Native speech-to-text input is {} (engine: {}).",
-                if supported { "available" } else { "unavailable" },
-                robius_speech::engine_name(),
-            );
-            supported
-        });
+        let config = cx.global::<AppPreferencesGlobal>().0.speech.clone();
+        let is_speech_supported = crate::speech::supported(&config);
         self.apply_speech_support(cx, is_speech_supported);
     }
 
@@ -803,7 +832,7 @@ impl RoomInputBar {
                 Some(_) => self.cancel_dictation(cx),
                 None => {
                     text_input.set_key_focus(cx);
-                    match SpeechInput::start(&text_input) {
+                    match SpeechInput::start(cx, &text_input) {
                         Ok(speech) => self.speech = Some(speech),
                         Err(error) => enqueue_popup_notification(format!("Speech input: {error}"), PopupKind::Error, Some(8.0)),
                     }
@@ -813,6 +842,10 @@ impl RoomInputBar {
         }
 
         for action in actions {
+            if matches!(action.downcast_ref(), Some(AppPreferencesAction::SpeechChanged)) {
+                self.cancel_dictation(cx);
+                self.initialize_speech_controls(cx);
+            }
             // Handle changes to the `send_on_enter` preference.
             if let Some(AppPreferencesAction::SendOnEnterChanged(v)) = action.downcast_ref() {
                 text_input.set_submit_on_enter(*v);
@@ -1794,4 +1827,93 @@ enum ShowEditingPaneBehavior {
     RestoreExisting {
         editing_pane_state: EditingPaneState,
     },
+}
+
+#[cfg(test)]
+mod resize_tests {
+    use super::*;
+    use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+
+    fn fixture(cx: &mut Cx, mobile: bool) -> View {
+        cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            vm.bx.captured_errors = Some(Vec::new());
+            let value = if mobile {
+                script_eval!(vm, {use mod.prelude.widgets.* mod.widgets.View {width: Fill height: Fill flow: Down
+                    timeline := mod.widgets.SolidView {width: Fill height: Fill}
+                    bar := mod.widgets.MobileRoomInputBar {}
+                }})
+            } else {
+                script_eval!(vm, {use mod.prelude.widgets.* mod.widgets.View {width: Fill height: Fill flow: Down
+                    timeline := mod.widgets.SolidView {width: Fill height: Fill}
+                    bar := mod.widgets.RoomInputBar {}
+                }})
+            };
+            let view = View::script_from_value(vm, value);
+            let errors = vm.take_errors();
+            assert!(errors.is_empty(), "{errors:?}");
+            view
+        })
+    }
+
+    fn draw(cx: &mut Cx, view: &mut View, height: f64) {
+        cx.redraw_all();
+        let pass = DrawPass::new(cx);
+        pass.set_size(cx, dvec2(800.0, height));
+        let mut list = DrawList2d::new(cx);
+        let overlay = Overlay {draw_list: DrawList::new(cx)};
+        let event = DrawEvent {redraw_all: true, ..DrawEvent::default()};
+        let mut draw = CxDraw::new(cx, &event);
+        let mut cx2d = Cx2d::new(&mut draw);
+        cx2d.begin_pass(&pass, None);
+        list.begin_always(&mut cx2d);
+        overlay.begin(&mut cx2d);
+        cx2d.begin_root_turtle(dvec2(800.0, height), Layout::flow_overlay());
+        view.draw_walk_all(&mut cx2d, &mut Scope::empty(), Walk {
+            width: Size::Fixed(800.0), height: Size::Fixed(height), ..Walk::default()
+        });
+        overlay.end(&mut cx2d);
+        cx2d.end_pass_sized_turtle();
+        list.end(&mut cx2d);
+        cx2d.end_pass(&pass);
+    }
+
+    #[test]
+    fn saved_composer_height_preserves_draft_and_timeline_when_window_shrinks() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut view = fixture(&mut cx, false);
+        cx.global::<AppPreferencesGlobal>().0.composer_height = Some(360.0);
+        let bar = view.room_input_bar(&mut cx, ids!(bar));
+        let input = bar.mentionable_text_input(&mut cx, ids!(mentionable_text_input)).text_input_ref();
+        input.set_text(&mut cx, "Draft stays intact\nwhen resizing");
+        for height in [800.0, 300.0, 800.0] {
+            draw(&mut cx, &mut view, height);
+            draw(&mut cx, &mut view, height);
+            let card = bar.view(&mut cx, ids!(input_bar)).area().rect(&cx);
+            let timeline = view.view(&mut cx, ids!(timeline)).area().rect(&cx);
+            let text = input.area().rect(&cx);
+            let send = bar.button(&mut cx, ids!(send_message_button)).area().rect(&cx);
+            assert!(card.size.y >= 88.0 && card.size.y <= 360.0, "{card:?}");
+            assert!(timeline.size.y >= 150.0, "height={height} timeline={timeline:?} bar={:?} card={card:?}", bar.area().rect(&cx));
+            let handle = bar.view(&mut cx, ids!(composer_resize_handle)).area().rect(&cx);
+            assert!(handle.size.y > 0.0 && (handle.pos.y - card.pos.y).abs() < 1.0, "handle={handle:?} card={card:?}");
+            assert!(text.size.y >= 32.0 && text.pos.y >= card.pos.y && text.pos.y + text.size.y <= card.pos.y + card.size.y + 0.1, "{text:?} {card:?}");
+            assert!(send.pos.y + send.size.y <= card.pos.y + card.size.y + 0.1);
+            assert_eq!(cx.global::<AppPreferencesGlobal>().0.composer_height, Some(360.0));
+            assert_eq!(input.text(), "Draft stays intact\nwhen resizing");
+            if height == 800.0 {assert_eq!(card.size.y, 360.0);}
+        }
+    }
+
+    #[test]
+    fn mobile_ignores_desktop_height_and_hides_resize_handle() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut view = fixture(&mut cx, true);
+        cx.global::<AppPreferencesGlobal>().0.composer_height = Some(600.0);
+        draw(&mut cx, &mut view, 700.0);
+        let bar = view.room_input_bar(&mut cx, ids!(bar));
+        assert!(!bar.view(&mut cx, ids!(composer_resize_handle)).visible());
+        assert!(bar.view(&mut cx, ids!(input_bar)).area().rect(&cx).size.y < 150.0);
+    }
 }

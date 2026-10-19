@@ -29,7 +29,7 @@ script_mod! {
             }
         }
 
-        restore_status_label := Label {
+        restore_status_label := RinxLabel {
             width: Fill, height: Fit,
             align: Align{x: 0.5, y: 0.0},
             padding: Inset{left: 5.0, right: 0.0}

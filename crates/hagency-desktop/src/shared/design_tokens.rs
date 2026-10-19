@@ -247,14 +247,14 @@ script_mod! {
     // Tightened scale (squarer look, per design direction): every surface gets
     // smaller corners than the original 6/8/8/16/20.
     // Extra-extra-small: tightest radius, used by Agent Registry cards/sheets.
-    mod.widgets.RBX_RADIUS_XXS  = theme.corner_radius * 0.67
-    mod.widgets.RBX_RADIUS_XS   = theme.corner_radius * 0.67
-    mod.widgets.RBX_RADIUS_SM   = theme.corner_radius * 1
+    mod.widgets.RBX_RADIUS_XXS  = mod.widgets.RINX_CONTROL_RADIUS
+    mod.widgets.RBX_RADIUS_XS   = mod.widgets.RINX_CONTROL_RADIUS
+    mod.widgets.RBX_RADIUS_SM   = mod.widgets.RINX_CONTROL_RADIUS
     // Card / sheet default. Shares SM's value on purpose: small surfaces and
     // cards use one calm, tight radius.
-    mod.widgets.RBX_RADIUS_MD   = theme.corner_radius * 1
-    mod.widgets.RBX_RADIUS_LG   = theme.corner_radius * 2
-    mod.widgets.RBX_RADIUS_XL   = theme.corner_radius * 2.67
+    mod.widgets.RBX_RADIUS_MD   = mod.widgets.RINX_CONTROL_RADIUS
+    mod.widgets.RBX_RADIUS_LG   = mod.widgets.RINX_CARD_RADIUS
+    mod.widgets.RBX_RADIUS_XL   = mod.widgets.RINX_CARD_RADIUS
     // Fully-rounded (pill) — use on badges / chips.
     mod.widgets.RBX_RADIUS_PILL = 100.0
 
@@ -271,8 +271,8 @@ script_mod! {
     //     rhythm. Use these instead of hardcoding 32/36/40/48/52 per screen.
     // =========================================================================
     // Control heights (buttons, inputs, segmented tabs).
-    mod.widgets.RBX_CONTROL_H_SM = 32.0   // compact button / chip
-    mod.widgets.RBX_CONTROL_H_MD = 36.0   // standard button / segmented tab (== SETTINGS_BUTTON_HEIGHT)
+    mod.widgets.RBX_CONTROL_H_SM = mod.widgets.RINX_ICON_BUTTON_SIZE   // compact button / chip
+    mod.widgets.RBX_CONTROL_H_MD = mod.widgets.RINX_BUTTON_HEIGHT   // standard button / segmented tab (== SETTINGS_BUTTON_HEIGHT)
     mod.widgets.RBX_CONTROL_H_LG = mod.widgets.RINX_CONTROL_HEIGHT   // large button / text input
     // List / setting row min heights (touch-first on mobile).
     mod.widgets.RBX_ROW_H_DESKTOP = 48.0
@@ -307,9 +307,9 @@ script_mod! {
 
     mod.widgets.RBX_TEXT_PAGE_TITLE    = mod.widgets.RBX_FONT_BOLD    { font_size: mod.widgets.RINX_TITLE_SIZE, line_spacing: 1.25 }
     // Section / group title inside a page.
-    mod.widgets.RBX_TEXT_SECTION_TITLE = mod.widgets.RBX_FONT_BOLD    { font_size: 13.0 * mod.widgets.RINX_TEXT_SCALE, line_spacing: 1.25 }
+    mod.widgets.RBX_TEXT_SECTION_TITLE = mod.widgets.RBX_FONT_BOLD    { font_size: mod.widgets.RINX_SECTION_SIZE, line_spacing: 1.25 }
     // Card title.
-    mod.widgets.RBX_TEXT_CARD_TITLE    = mod.widgets.RBX_FONT_BOLD    { font_size: 12.0 * mod.widgets.RINX_TEXT_SCALE, line_spacing: 1.3 }
+    mod.widgets.RBX_TEXT_CARD_TITLE    = mod.widgets.RBX_FONT_BOLD    { font_size: mod.widgets.RINX_HEADING_SIZE, line_spacing: 1.3 }
     // Default body / list-row title.
     mod.widgets.RBX_TEXT_BODY          = mod.widgets.RBX_FONT_REGULAR { font_size: mod.widgets.RINX_BODY_SIZE, line_spacing: 1.35 }
     // Emphasized body (selected value, key figure).
@@ -317,7 +317,7 @@ script_mod! {
     // Meta / caption / helper text.
     mod.widgets.RBX_TEXT_META          = mod.widgets.RBX_FONT_REGULAR { font_size: mod.widgets.RINX_META_SIZE,  line_spacing: 1.3 }
     // Badge / chip label (single line).
-    mod.widgets.RBX_TEXT_BADGE         = mod.widgets.RBX_FONT_BOLD    { font_size: 9.0 * mod.widgets.RINX_TEXT_SCALE }
+    mod.widgets.RBX_TEXT_BADGE         = mod.widgets.RBX_FONT_BOLD    { font_size: mod.widgets.RINX_META_SIZE }
 }
 
 // Brand identity is content. Interface colors use per-instance theme snapshots.

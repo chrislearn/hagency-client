@@ -53,14 +53,12 @@ script_mod! {
     // A single action row: left-aligned icon + label, with an RBX surface/hover/pressed
     // background and a soft rounded highlight.
     mod.widgets.AccountMenuItem = RobrixIconButton {
-        height: 40,
+        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
         width: Fill,
         margin: 0,
-        padding: Inset{left: 12, right: 12, top: 8, bottom: 8}
         spacing: 12,
         align: Align{x: 0.0, y: 0.5}
         icon_walk: Walk{width: 18, height: 18, margin: Inset{right: 2}}
-
         draw_bg +: {
             color: (mod.widgets.RBX_BG_SURFACE)
             color_hover: (mod.widgets.RBX_BG_HOVER)
@@ -145,7 +143,7 @@ script_mod! {
                     flow: Down,
                     spacing: 0,
 
-                    active_name := Label {
+                    active_name := RinxLabel {
                         width: Fill, height: Fit,
                         margin: 0, padding: 0,
                         text_overflow: Ellipsis
@@ -155,7 +153,7 @@ script_mod! {
                         }
                         text: #(crate::i18n::tr("Display Name"))
                     }
-                    active_user_id := Label {
+                    active_user_id := RinxLabel {
                         width: Fill, height: Fit,
                         margin: 0, padding: 0,
                         text_overflow: Ellipsis
@@ -169,12 +167,12 @@ script_mod! {
 
                 // "Current account" marker on the right: plain bold accent text, which
                 // always renders and has ample contrast on the pale header.
-                active_badge_label := Label {
+                active_badge_label := RinxLabel {
                     width: Fit, height: Fit,
                     margin: 0, padding: 0,
                     draw_text +: {
                         color: (mod.widgets.RBX_ACCENT)
-                        text_style: theme.font_bold { font_size: (10.5 * mod.widgets.RINX_TEXT_SCALE) }
+                        text_style: theme.font_bold { font_size: mod.widgets.RINX_HEADING_SIZE }
                     }
                     text: #(crate::i18n::tr("Active"))
                     i18n_text: "Active"

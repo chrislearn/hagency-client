@@ -5,8 +5,8 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    mod.widgets.DetailLabel = Label {
-        draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: (12.5 * mod.widgets.RINX_TEXT_SCALE)}}
+    mod.widgets.DetailLabel = RinxLabel {
+        draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
     }
     mod.widgets.DetailSection = SolidView {
         width: Fill height: Fit flow: Down draw_bg.color: mod.widgets.RINX_SURFACE
@@ -41,24 +41,22 @@ script_mod! {
         width: Fill height: 48 flow: Overlay draw_bg.color: mod.widgets.RINX_PAGE
         title := mod.widgets.DetailLabel {
             width: Fill height: Fill align: Align{x: 0.5 y: 0.5}
-            draw_text.text_style: theme.font_bold {font_size: (12.5 * mod.widgets.RINX_TEXT_SCALE)}
+            draw_text.text_style: theme.font_bold {font_size: mod.widgets.RINX_HEADING_SIZE}
         }
         controls := View {
             width: Fill height: Fill flow: Right align: Align{y: 0.5}
-            back := RobrixNeutralIconButton {
-                width: 48 height: 48 padding: 14
-                align: Align{x: 0.5 y: 0.5} spacing: 0
-                draw_bg +: {color: #x00000000 color_hover: #x00000000 color_down: #x00000000 border_size: 0}
+            back := RinxIconButton {
+                width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
+                align: Align{x: 0.5 y: 0.5} draw_bg +: {color: #x00000000 color_hover: mod.widgets.RINX_HOVER color_down: mod.widgets.RINX_PRESSED border_size: 0}
                 draw_icon +: {svg: ICON_CHEVRON_LEFT color: mod.widgets.RINX_INK}
-                icon_walk: Walk{width: 8 height: 14}
             }
             View {width: Fill height: 1}
             save := RobrixPositiveIconButton {
-                visible: false text: #(crate::i18n::tr("Save")) i18n_text: "Save" width: 58 height: 30 margin: Inset{right: 12} padding: 0
-                align: Align{x: 0.5 y: 0.5}
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                visible: false text: #(crate::i18n::tr("Save")) i18n_text: "Save" width: 58 margin: Inset{right: 12} align: Align{x: 0.5 y: 0.5}
                 icon_walk: Walk{width: 0 height: 0} spacing: 0
                 draw_bg +: {color: mod.widgets.RINX_ACCENT border_size: 0 border_radius: 4}
-                draw_text +: {color: mod.widgets.RINX_ON_ACCENT text_style: theme.font_regular {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}
+                draw_text +: {color: mod.widgets.RINX_ON_ACCENT text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
             }
         }
     }
@@ -86,17 +84,17 @@ script_mod! {
             width: Fill height: Fit flow: Down spacing: 10
             name := mod.widgets.DetailLabel {
                 width: Fill max_lines: 2 text_overflow: Ellipsis
-                draw_text.text_style: theme.font_bold {font_size: (16 * mod.widgets.RINX_TEXT_SCALE)}
+                draw_text.text_style: theme.font_bold {font_size: mod.widgets.RINX_TITLE_SIZE}
             }
             user_id := mod.widgets.DetailLabel {
                 width: Fill flow: Flow.Right{wrap: true} max_lines: 3 text_overflow: Ellipsis
-                draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (10.5 * mod.widgets.RINX_TEXT_SCALE)}}
+                draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
             }
         }
     }
-    mod.widgets.DetailNote = Label {
+    mod.widgets.DetailNote = RinxLabel {
         width: Fill height: Fit padding: Inset{left: 20 right: 20 top: 12 bottom: 16}
         flow: Flow.Right{wrap: true}
-        draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (10.5 * mod.widgets.RINX_TEXT_SCALE)}}
+        draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
     }
 }

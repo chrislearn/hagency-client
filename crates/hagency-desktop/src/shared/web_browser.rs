@@ -66,9 +66,9 @@ script_mod! {
     use mod.widgets.*
 
     mod.widgets.WebBrowserIconButton = NavigationBarButton {
-        width: 36 height: 36 padding: 8
-        draw_bg +: {color_hover: mod.widgets.RINX_FIELD color_active: mod.widgets.RINX_PRESSED border_radius: 6}
-        icon := Icon {width: 20 height: 20 draw_icon.color: mod.widgets.RINX_INK}
+        width: mod.widgets.RINX_ICON_BUTTON_SIZE height: mod.widgets.RINX_ICON_BUTTON_SIZE padding: 8
+        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_PRESSED border_radius: mod.widgets.RINX_CONTROL_RADIUS}
+        icon := Icon {icon_walk: Walk{width: 16 height: 16} draw_icon.color: mod.widgets.RINX_INK}
     }
 
     mod.widgets.WebBrowser = #(WebBrowser::register_widget(vm)) {
@@ -85,7 +85,7 @@ script_mod! {
                 padding: Inset{left: 10 right: 14 top: 0 bottom: 0}
                 draw_text +: {
                     color: mod.widgets.RINX_MUTED color_active: mod.widgets.RINX_INK color_hover: mod.widgets.RINX_INK
-                    text_style: theme.font_regular {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}
+                    text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}
                 }
                 draw_bg +: {
                     color: mod.widgets.RINX_FIELD color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SURFACE
@@ -105,13 +105,13 @@ script_mod! {
             web_reopen := mod.widgets.WebBrowserIconButton {icon.draw_icon.svg: crate_resource("self://resources/icons/article_refresh.svg")}
             address := View {
                 width: Fill height: Fit flow: Down spacing: 3 padding: Inset{left: 8 right: 8}
-                web_title := Label {
+                web_title := RinxLabel {
                     width: Fill max_lines: 1 text_overflow: Ellipsis padding: 0
-                    draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold {font_size: (13 * mod.widgets.RINX_TEXT_SCALE)}}
+                    draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold {font_size: mod.widgets.RINX_SECTION_SIZE}}
                 }
-                web_address := Label {
+                web_address := RinxLabel {
                     width: Fill height: Fit padding: 0 max_lines: 1 text_overflow: Ellipsis
-                    draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}
+                    draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}
                 }
             }
             web_external := mod.widgets.WebBrowserIconButton {icon.draw_icon.svg: (ICON_EXTERNAL_LINK)}
@@ -120,14 +120,14 @@ script_mod! {
         web_surface := SolidView {
             width: Fill height: Fill flow: Overlay draw_bg.color: mod.widgets.RINX_SURFACE
             native_page := View {width: Fill height: Fill}
-            web_status := Label {
+            web_status := RinxLabel {
                 visible: false width: Fill height: Fit margin: 24 flow: Flow.Right{wrap: true}
                 draw_text.color: mod.widgets.RINX_MUTED
             }
         }
         web_tooltip := Tooltip {
             abs_pos: vec2(0, 0)
-            content +: {padding: 7 tooltip_label +: {width: Fit draw_text.text_style.font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}
+            content +: {padding: 7 tooltip_label +: {width: Fit draw_text.text_style.font_size: mod.widgets.RINX_UI_SIZE}}
         }
     }
 }

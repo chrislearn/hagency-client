@@ -120,7 +120,7 @@ script_mod! {
             }
         }
 
-        label := Label {
+        label := RinxLabel {
             padding: 0
             width: Fill,
             flow: Flow.Right{wrap: true},

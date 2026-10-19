@@ -39,7 +39,7 @@ script_mod! {
                 height: Fit,
                 padding: 10,
                 draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: (12 * mod.widgets.RINX_TEXT_SCALE)},
+                    text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_UI_SIZE},
                     color: mod.widgets.RINX_INK
                 }
                 empty_text: "Identity Username",
@@ -52,7 +52,7 @@ script_mod! {
                 height: Fit,
                 padding: 10,
                 draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: (12 * mod.widgets.RINX_TEXT_SCALE)},
+                    text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_UI_SIZE},
                     color: mod.widgets.RINX_INK
                 }
                 empty_text: "Enter an alias (optional)",
@@ -61,17 +61,17 @@ script_mod! {
             did_type_radio_buttons := View {
                 spacing: 20,
                 width: Fit, height: Fit,
-                did_web := RadioButtonFlat {
+                did_web := RinxRadioButton {
                     text: "Web"
                     draw_text +: { color: (COLOR_TEXT) }
                     animator: { active: { default: on } }
                 }
-                did_webvh := RadioButtonFlat {
+                did_webvh := RinxRadioButton {
                     text: "WebVH"
                     draw_text +: { color: (COLOR_TEXT) }
                     animator: { disabled: { default: on } }
                 }
-                did_peer := RadioButtonFlat {
+                did_peer := RinxRadioButton {
                     text: "Peer",
                     draw_text +: { color: (COLOR_TEXT) }
                     animator: { disabled: { default: on } }
@@ -91,7 +91,7 @@ script_mod! {
                     autocorrect: Disabled,
                     content_type: Url,
                     draw_text +: {
-                        text_style: REGULAR_TEXT {font_size: (10.0 * mod.widgets.RINX_TEXT_SCALE)}
+                        text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_UI_SIZE}
                     }
                 }
 
@@ -107,12 +107,12 @@ script_mod! {
                         draw_bg.color: mod.widgets.RINX_BORDER
                     }
 
-                    Label {
+                    RinxLabel {
                         width: Fit, height: Fit
                         padding:  0
                         draw_text +: {
                             color: mod.widgets.RINX_MUTED
-                            text_style: REGULAR_TEXT {font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}
+                            text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_META_SIZE}
                         }
                         text: "Intermediary server domain"
                     }
@@ -136,7 +136,7 @@ script_mod! {
                     autocorrect: Disabled,
                     content_type: Url,
                     draw_text +: {
-                        text_style: REGULAR_TEXT {font_size: (10.0 * mod.widgets.RINX_TEXT_SCALE)}
+                        text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_UI_SIZE}
                     }
                 }
 
@@ -152,12 +152,12 @@ script_mod! {
                         draw_bg.color: mod.widgets.RINX_BORDER
                     }
 
-                    Label {
+                    RinxLabel {
                         width: Fit, height: Fit
                         padding: 0
                         draw_text +: {
                             color: mod.widgets.RINX_MUTED
-                            text_style: REGULAR_TEXT {font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}
+                            text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_META_SIZE}
                         }
                         text: "DID server domain"
                     }
@@ -194,7 +194,7 @@ script_mod! {
             margin: 0,
             align: Align{x: 0.5, y: 0.0}
             draw_text +: {
-                text_style: REGULAR_TEXT {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}
+                text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_BODY_SIZE}
             }
             text: "status label"
         }

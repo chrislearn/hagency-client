@@ -23,6 +23,7 @@ pub mod room_filter_input_bar;
 pub mod room_input_popup_menu;
 pub mod slash_commands;
 pub mod styles;
+pub mod dropdown;
 pub mod text_or_image;
 pub mod timestamp;
 pub mod bouncing_dots;
@@ -42,6 +43,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     crate::theme::script_mod(vm);
     cached_widget::script_mod(vm);
     styles::script_mod(vm);
+    dropdown::script_mod(vm);
     design_tokens::script_mod(vm);
     helpers::script_mod(vm);
     navigation_bar_button::script_mod(vm);

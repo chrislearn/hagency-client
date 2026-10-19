@@ -249,8 +249,8 @@ script_mod! {
             icon_walk: Walk{width: 24 height: 24}
             draw_icon.color: mod.widgets.RINX_INK
         }
-        label := Label {
-            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: (8 * mod.widgets.RINX_TEXT_SCALE)}}
+        label := RinxLabel {
+            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_META_SIZE}}
         }
     }
 
@@ -893,16 +893,16 @@ script_mod! {
             avatar := Avatar {width: 30 height: 30}
             account_identity := View {
                 width: Fill height: Fit flow: Down spacing: 3
-                name := Label {
+                name := RinxLabel {
                     width: Fill height: Fit padding: 0 max_lines: 1 text_overflow: Ellipsis
-                    draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}
+                    draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}
                 }
-                user := Label {
+                user := RinxLabel {
                     width: Fill height: Fit padding: 0 max_lines: 1 text_overflow: Ellipsis
-                    draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (8 * mod.widgets.RINX_TEXT_SCALE)}}
+                    draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_META_SIZE}}
                 }
             }
-            account_chevron := Label {text: "⌃" draw_text.color: mod.widgets.RINX_INK}
+            account_chevron := RinxLabel {text: "⌃" draw_text.color: mod.widgets.RINX_INK}
         }
     }
 }

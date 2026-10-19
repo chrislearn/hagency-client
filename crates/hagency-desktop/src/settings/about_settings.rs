@@ -34,18 +34,16 @@ script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
 
-    mod.widgets.SmallCopyButton = RobrixNeutralIconButton {
+    mod.widgets.SmallCopyButton = RinxIconButton {
+        width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
         enable_long_press: true,
         margin: 0,
-        padding: 5,
-        spacing: 0,
         draw_icon.svg: (ICON_COPY)
-        icon_walk: Walk{width: 13, height: 13, margin: 0}
     }
 
     mod.widgets.VersionHtml = mod.widgets.MessageHtml {
         width: Fill, height: Fit
-        font_size: (11.5 * mod.widgets.RINX_TEXT_SCALE)
+        font_size: mod.widgets.RINX_BODY_SIZE
         margin: Inset {top: 4}
         body: ""
     }
@@ -55,7 +53,7 @@ script_mod! {
         width: Fill, height: Fit
         flow: Down
 
-        TitleLabel {
+        section_title := TitleLabel {
             text: #(crate::i18n::tr("About Hagency")) i18n_text: "About Hagency"
         }
 
@@ -104,8 +102,7 @@ script_mod! {
         }
 
         privacy_policy_button := RobrixIconButton {
-            height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-            padding: Inset{left: 12, right: 15}
+            height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
             margin: Inset{left: 5, top: 5, bottom: 5}
             draw_icon.svg: (ICON_EXTERNAL_LINK)
             icon_walk: Walk{width: 16, height: 16}
@@ -125,8 +122,7 @@ script_mod! {
             wrap_spacing: 2
 
             homepage_button := RobrixIconButton {
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                padding: Inset{left: 12, right: 15}
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 margin: Inset{left: 5, top: 5, bottom: 5}
                 draw_icon.svg: (ICON_EXTERNAL_LINK)
                 icon_walk: Walk{width: 16, height: 16}
@@ -134,8 +130,7 @@ script_mod! {
             }
 
             source_button := RobrixIconButton {
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                padding: Inset{left: 12, right: 15}
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 margin: Inset{left: 5, top: 5, bottom: 5}
                 draw_icon.svg: (ICON_EXTERNAL_LINK)
                 icon_walk: Walk{width: 16, height: 16}
@@ -143,8 +138,7 @@ script_mod! {
             }
 
             issues_button := RobrixNegativeIconButton {
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                padding: Inset{left: 12, right: 15}
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 margin: Inset{left: 5, top: 5, bottom: 5}
                 draw_icon.svg: (ICON_EXTERNAL_LINK)
                 icon_walk: Walk{width: 16, height: 16}
@@ -165,8 +159,7 @@ script_mod! {
             wrap_spacing: 2
 
             clear_cache_button := RobrixNegativeIconButton {
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                padding: Inset{left: 12, right: 15}
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 margin: Inset{left: 5, top: 5, bottom: 5}
                 draw_icon.svg: (ICON_TRASH)
                 icon_walk: Walk{width: 16, height: 16}

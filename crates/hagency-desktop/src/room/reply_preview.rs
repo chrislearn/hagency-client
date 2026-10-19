@@ -46,20 +46,20 @@ script_mod! {
                 text_view +: {
                     text +: {
                         draw_text +: {
-                            text_style: theme.font_regular { font_size: (6.0 * mod.widgets.RINX_TEXT_SCALE) }
+                            text_style: theme.font_regular { font_size: (6.0 * mod.widgets.RINX_TEXT_SCALE) } // style-size: avatar
                         }
                     }
                 }
             }
 
-            reply_preview_username := Label {
+            reply_preview_username := RinxLabel {
                 width: Fill,
                 flow: Flow.Right { wrap: false },
                 margin: Inset{ left: 5.0, top: 2 }
                 max_lines: 1
                 text_overflow: Ellipsis
                 draw_text +: {
-                    text_style: USERNAME_TEXT_STYLE { font_size: (10 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: USERNAME_TEXT_STYLE { font_size: mod.widgets.RINX_UI_SIZE },
                     color: (USERNAME_TEXT_COLOR)
                 }
                 text: #(crate::i18n::tr("<Username not available>"))
@@ -86,14 +86,14 @@ script_mod! {
                                         text_view +: {
                                             text +: {
                                                 draw_text +: {
-                                                    text_style +: { font_size: (7.61 * mod.widgets.RINX_TEXT_SCALE) }
+                                                    text_style +: { font_size: (7.61 * mod.widgets.RINX_TEXT_SCALE) } // style-size: avatar
                                                 }
                                             }
                                         }
                                     }
                                     title +: {
                                         draw_text +: {
-                                            text_style +: { font_size: (9.3 * mod.widgets.RINX_TEXT_SCALE) }
+                                            text_style +: { font_size: mod.widgets.RINX_UI_SIZE }
                                         }
                                     }
                                 }
@@ -114,14 +114,13 @@ script_mod! {
 
     // The show more button (to expand) and show less button (to collapse) a tall reply preview.
     mod.widgets.ReplyToggleButton = RobrixIconButton {
+        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
         visible: false
-        width: Fit, height: Fit
-        spacing: 4
-        padding: Inset{ top: 4, bottom: 4, left: 8, right: 8 }
+        width: Fit, spacing: 4
         draw_icon +: { color: mod.widgets.RINX_MUTED }
         icon_walk: Walk{ width: 10, height: 10 }
         draw_text +: {
-            text_style: theme.font_regular { font_size: (10.0 * mod.widgets.RINX_TEXT_SCALE), line_spacing: 1.2 }
+            text_style: theme.font_regular { font_size: mod.widgets.RINX_UI_SIZE, line_spacing: 1.2 }
             color: mod.widgets.RINX_MUTED
             color_hover: mod.widgets.RINX_MUTED
             color_down: mod.widgets.RINX_MUTED
@@ -195,7 +194,7 @@ script_mod! {
             align: Align{y: 0.5}
             padding: Inset{left: 14, right: 6, top: 10, bottom: 0}
 
-            Label {
+            RinxLabel {
                 width: Fill,
                 flow: Flow.Right { wrap: true },
                 // Vertically align the text with the X icon in the cancel_reply_button
@@ -209,14 +208,10 @@ script_mod! {
             }
 
             cancel_reply_button := RobrixNegativeIconButton {
-                width: Fit,
-                height: Fit,
-                padding: 13,
-                spacing: 0,
+                width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
                 margin: Inset{left: 5, right: 0},
                 draw_bg.border_radius: 4.0
                 draw_icon.svg: (ICON_CLOSE)
-                icon_walk: Walk{width: 16, height: 16, margin: 0}
             }
         }
 
@@ -248,21 +243,21 @@ script_mod! {
             draw_bg +: {color: mod.widgets.RINX_FIELD border_radius: 4}
             header := View {
                 width: Fill height: Fit flow: Right spacing: 4
-                replying_label := Label {
+                replying_label := RinxLabel {
                     visible: false text: #(crate::i18n::tr("Replying to:")) i18n_text: "Replying to:"
-                    draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}}
+                    draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_META_SIZE}}
                 }
                 reply_preview_avatar := Avatar {visible: false width: 0 height: 0}
-                reply_preview_username := Label {
+                reply_preview_username := RinxLabel {
                     width: Fill max_lines: 1 text_overflow: Ellipsis
-                    draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}}
+                    draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_META_SIZE}}
                 }
             }
             reply_preview_body := HtmlOrPlaintext {
                 plaintext_view +: {pt_label +: {
-                    draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}}
+                    draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}
                 }}
-                html_view +: {html +: {font_size: (9 * mod.widgets.RINX_TEXT_SCALE) font_color: mod.widgets.RINX_MUTED}}
+                html_view +: {html +: {font_size: mod.widgets.RINX_UI_SIZE font_color: mod.widgets.RINX_MUTED}}
             }
         }
     }
@@ -279,10 +274,10 @@ script_mod! {
             visible: true expandable: false
             preview_content +: {panel +: {header +: {replying_label.visible: true}}}
         }
-        cancel_reply_button := RobrixNeutralIconButton {
-            width: 44 height: 44 padding: 12 margin: 0
+        cancel_reply_button := RinxIconButton {
+            width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
+            margin: 0
             draw_icon +: {svg: ICON_CLOSE color: mod.widgets.RINX_MUTED}
-            icon_walk: Walk{width: 16 height: 16}
             draw_bg +: {color: #x00000000 color_hover: #x00000000 border_size: 0}
         }
     }

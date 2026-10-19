@@ -20,12 +20,11 @@ script_mod! {
 
     // Decision buttons follow robrix2's AgentApproval{Primary,Secondary,Danger}Button
     // recipes: a tinted surface with a 1px semantic stroke, RBX_CONTROL_H_MD tall.
-    mod.widgets.AgentApprovalPrimaryButton = Button {
+    mod.widgets.AgentApprovalPrimaryButton = RinxButton {
+        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
         visible: false
         width: Fit
-        height: (mod.widgets.RBX_CONTROL_H_MD)
         spacing: 0
-        padding: Inset{left: 12.0, right: 12.0, top: 7.0, bottom: 7.0}
         icon_walk: Walk{width: 0, height: 0}
         draw_bg +: {
             color: (mod.widgets.RBX_SUCCESS_BG)
@@ -39,7 +38,7 @@ script_mod! {
             border_color_down: (mod.widgets.RBX_SUCCESS_FG)
         }
         draw_text +: {
-            text_style: (mod.widgets.RBX_TEXT_BODY_STRONG)
+            text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE}
             color: (mod.widgets.RBX_SUCCESS_FG)
             color_hover: (mod.widgets.RBX_SUCCESS_FG)
             color_down: (mod.widgets.RBX_SUCCESS_FG)
@@ -48,12 +47,11 @@ script_mod! {
         text: ""
     }
 
-    mod.widgets.AgentApprovalSecondaryButton = Button {
+    mod.widgets.AgentApprovalSecondaryButton = RinxButton {
+        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
         visible: false
         width: Fit
-        height: (mod.widgets.RBX_CONTROL_H_MD)
         spacing: 0
-        padding: Inset{left: 12.0, right: 12.0, top: 7.0, bottom: 7.0}
         icon_walk: Walk{width: 0, height: 0}
         draw_bg +: {
             color: (mod.widgets.RBX_BG_SURFACE)
@@ -67,7 +65,7 @@ script_mod! {
             border_color_down: (mod.widgets.RBX_STROKE_STRONG)
         }
         draw_text +: {
-            text_style: (mod.widgets.RBX_TEXT_BODY_STRONG)
+            text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE}
             color: (mod.widgets.RBX_FG_SECONDARY)
             color_hover: (mod.widgets.RBX_FG_PRIMARY)
             color_down: (mod.widgets.RBX_FG_PRIMARY)
@@ -76,12 +74,11 @@ script_mod! {
         text: ""
     }
 
-    mod.widgets.AgentApprovalDangerButton = Button {
+    mod.widgets.AgentApprovalDangerButton = RinxButton {
+        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
         visible: false
         width: Fit
-        height: (mod.widgets.RBX_CONTROL_H_MD)
         spacing: 0
-        padding: Inset{left: 12.0, right: 12.0, top: 7.0, bottom: 7.0}
         icon_walk: Walk{width: 0, height: 0}
         draw_bg +: {
             color: (mod.widgets.RBX_DANGER_BG)
@@ -95,7 +92,7 @@ script_mod! {
             border_color_down: (mod.widgets.RBX_DANGER_FG)
         }
         draw_text +: {
-            text_style: (mod.widgets.RBX_TEXT_BODY_STRONG)
+            text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE}
             color: (mod.widgets.RBX_DANGER_FG)
             color_hover: (mod.widgets.RBX_DANGER_FG)
             color_down: (mod.widgets.RBX_DANGER_FG)
@@ -119,11 +116,11 @@ script_mod! {
             color: (mod.widgets.RBX_ACCENT_SOFT)
             border_radius: 3.0
         }
-        agent_badge_label := Label {
+        agent_badge_label := RinxLabel {
             width: Fit, height: Fit
             padding: 0
             draw_text +: {
-                text_style: theme.font_regular { font_size: (8.5 * mod.widgets.RINX_TEXT_SCALE), top_drop: -0.08 }
+                text_style: theme.font_regular { font_size: mod.widgets.RINX_META_SIZE, top_drop: -0.08 }
                 color: (mod.widgets.RBX_ACCENT)
             }
             text: ""
@@ -152,7 +149,7 @@ script_mod! {
             spacing: 8.0
             align: Align{y: 0.5}
 
-            title_label := Label {
+            title_label := RinxLabel {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true}
                 padding: 0
@@ -171,7 +168,7 @@ script_mod! {
                     color: (mod.widgets.RBX_BG_SURFACE)
                     border_radius: (mod.widgets.RBX_RADIUS_PILL)
                 }
-                status_label := Label {
+                status_label := RinxLabel {
                     width: Fit, height: Fit
                     padding: 0
                     draw_text +: {
@@ -183,7 +180,7 @@ script_mod! {
             }
         }
 
-        summary_label := Label {
+        summary_label := RinxLabel {
             width: Fill, height: Fit
             flow: Flow.Right{wrap: true}
             padding: 0
@@ -205,7 +202,7 @@ script_mod! {
             deny_button := mod.widgets.AgentApprovalDangerButton {}
         }
 
-        hint_label := Label {
+        hint_label := RinxLabel {
             width: Fill, height: Fit
             flow: Flow.Right{wrap: true}
             padding: 0

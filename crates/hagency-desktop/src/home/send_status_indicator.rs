@@ -87,51 +87,51 @@ script_mod! {
             }
         }
 
-        progress_label: Label {
+        progress_label: RinxLabel {
             padding: 0,
             margin: Inset{top: 1.0},
             flow: Flow.Right { wrap: false },
             draw_text +: {
-                text_style: theme.font_regular { font_size: (8.0 * mod.widgets.RINX_TEXT_SCALE) },
+                text_style: theme.font_regular { font_size: mod.widgets.RINX_META_SIZE },
                 color: (mod.widgets.SEND_STATUS_ICON_COLOR),
             }
             text: ""
         }
 
-        failed_label: Label {
+        failed_label: RinxLabel {
             padding: 0,
             margin: 0,
             flow: Flow.Right { wrap: true },
             max_lines: 2,
             text_overflow: Ellipsis,
             draw_text +: {
-                text_style: theme.font_regular { font_size: (9.5 * mod.widgets.RINX_TEXT_SCALE) },
+                text_style: theme.font_regular { font_size: mod.widgets.RINX_UI_SIZE },
                 color: (COLOR_FG_DANGER_RED),
             }
             text: #(crate::i18n::tr("Send failed, tap to retry.")) i18n_text: "Send failed, tap to retry."
         }
 
-        queued_label: Label {
+        queued_label: RinxLabel {
             padding: 0,
             margin: 0,
             flow: Flow.Right { wrap: true },
             max_lines: 2,
             text_overflow: Ellipsis,
             draw_text +: {
-                text_style: theme.font_regular { font_size: (9.5 * mod.widgets.RINX_TEXT_SCALE) },
+                text_style: theme.font_regular { font_size: mod.widgets.RINX_UI_SIZE },
                 color: (mod.widgets.SEND_STATUS_ICON_COLOR),
             }
             text: #(crate::i18n::tr("Will send when online.")) i18n_text: "Will send when online."
         }
 
-        blocked_label: Label {
+        blocked_label: RinxLabel {
             padding: 0,
             margin: 0,
             flow: Flow.Right { wrap: true },
             max_lines: 2,
             text_overflow: Ellipsis,
             draw_text +: {
-                text_style: theme.font_regular { font_size: (9.5 * mod.widgets.RINX_TEXT_SCALE) },
+                text_style: theme.font_regular { font_size: mod.widgets.RINX_UI_SIZE },
                 color: (mod.widgets.SEND_STATUS_ICON_COLOR),
             }
             text: #(crate::i18n::tr("Waiting on an earlier message.")) i18n_text: "Waiting on an earlier message."

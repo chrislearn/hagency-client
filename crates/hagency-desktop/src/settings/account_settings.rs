@@ -16,7 +16,7 @@ script_mod! {
         width: Fill, height: Fit
         flow: Down
 
-        TitleLabel {
+        section_title := TitleLabel {
             text: #(crate::i18n::tr("Account Settings")) i18n_text: "Account Settings"
         }
 
@@ -36,12 +36,12 @@ script_mod! {
                 border_size: 1.0
                 border_radius: 4.0
             }
-            Label {
+            RinxLabel {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true}
                 draw_text +: {
                     color: (COLOR_FG_ACCEPT_GREEN),
-                    text_style: theme.font_bold { font_size: (11.5 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: theme.font_bold { font_size: mod.widgets.RINX_HEADING_SIZE },
                 }
                 text: #(crate::i18n::tr("This device is verified and can access encrypted messages.")) i18n_text: "This device is verified and can access encrypted messages."
             }
@@ -63,45 +63,44 @@ script_mod! {
                 border_size: 1.0
                 border_radius: 4.0
             }
-            Label {
+            RinxLabel {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true}
                 draw_text +: {
                     color: (COLOR_FG_DANGER_RED),
-                    text_style: theme.font_bold { font_size: (11.5 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: theme.font_bold { font_size: mod.widgets.RINX_HEADING_SIZE },
                 }
                 text: #(crate::i18n::tr("This device is not verified and can't view encrypted messages.")) i18n_text: "This device is not verified and can't view encrypted messages."
             }
 
             verify_device_button := RobrixIconButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 width: Fit,
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                 margin: Inset{top: 10, left: 5, bottom: 4}
                 draw_icon.svg: (VERIFICATION_YES)
                 icon_walk: Walk{width: 16, height: 16}
                 text: #(crate::i18n::tr("Verify this Device")) i18n_text: "Verify this Device"
             }
 
-            Label {
+            RinxLabel {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true}
                 margin: Inset { top: 4, bottom: 1}
                 draw_text +: {
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: theme.font_regular { font_size: (11.5 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: theme.font_regular { font_size: mod.widgets.RINX_BODY_SIZE },
                 }
                 text: #(crate::i18n::tr("Or verify it from another client using this info:")) i18n_text: "Or verify it from another client using this info:"
             }
 
             // Filled in from Rust with the session name + device ID.
-            unverified_device_info_label := Label {
+            unverified_device_info_label := RinxLabel {
                 width: Fill, height: Fit
                 padding: Inset{left: 8}
                 flow: Flow.Right{wrap: true}
                 draw_text +: {
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: theme.font_regular { font_size: (11.5 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: theme.font_regular { font_size: mod.widgets.RINX_BODY_SIZE },
                 }
                 text: ""
             }
@@ -123,7 +122,7 @@ script_mod! {
                 text_view +: {
                     text +: {
                         draw_text +: {
-                            text_style: theme.font_regular { font_size: (35.0 * mod.widgets.RINX_TEXT_SCALE) }
+                            text_style: theme.font_regular { font_size: (35.0 * mod.widgets.RINX_TEXT_SCALE) } // style-size: avatar
                         }
                     }
                 }
@@ -144,9 +143,8 @@ script_mod! {
                     spacing: 10
 
                     upload_avatar_button := RobrixIconButton {
+                        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                         width: 140,
-                        height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                        padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                         margin: 0,
                         draw_icon.svg: (ICON_UPLOAD)
                         icon_walk: Walk{width: 16, height: 16}
@@ -167,9 +165,8 @@ script_mod! {
                     spacing: 10
 
                     delete_avatar_button := RobrixNegativeIconButton {
+                        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                         width: 140,
-                        height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                        padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
                         margin: 0,
                         draw_icon.svg: (ICON_TRASH)
                         icon_walk: Walk{ width: 16, height: 16 }
@@ -213,10 +210,9 @@ script_mod! {
             // These buttons start disabled; Rust code enables them and swaps
             // their styles to RobrixNeutralIconButton / RobrixPositiveIconButton.
             cancel_display_name_button := RobrixNeutralIconButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 enabled: false,
                 width: Fit,
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                padding: 10,
                 margin: Inset{left: 5},
                 draw_icon.svg: (ICON_FORBIDDEN)
                 icon_walk: Walk{width: 16, height: 16, margin: 0}
@@ -224,10 +220,9 @@ script_mod! {
             }
 
             accept_display_name_button := RobrixPositiveIconButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 enabled: false,
-                width: Fit, 
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                padding: 10,
+                width: Fit,
                 margin: Inset{left: 5},
                 draw_icon.svg: (ICON_CHECKMARK)
                 icon_walk: Walk{width: 16, height: 16, margin: 0}
@@ -251,22 +246,20 @@ script_mod! {
             flow: Right,
             spacing: 10
 
-            copy_user_id_button := RobrixNeutralIconButton {
+            copy_user_id_button := RinxIconButton {
+                width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
                 enable_long_press: true,
                 margin: Inset{left: 5}
-                padding: 12,
-                spacing: 0,
                 draw_icon.svg: (ICON_COPY)
-                icon_walk: Walk{width: 16, height: 16, margin: Inset{right: -2} }
             }
 
-            user_id := Label {
+            user_id := RinxLabel {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true},
                 margin: Inset{top: 9}
                 draw_text +: {
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: MESSAGE_TEXT_STYLE { font_size: (11.5 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
                 }
                 text: #(crate::i18n::tr("You are not logged in.")) i18n_text: "You are not logged in."
             }
@@ -285,8 +278,7 @@ script_mod! {
             wrap_spacing: 10
 
             manage_account_button := RobrixIconButton {
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                padding: Inset{left: 12, right: 15}
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 margin: Inset{left: 5}
                 draw_icon.svg: (ICON_EXTERNAL_LINK)
                 icon_walk: Walk{width: 16, height: 16}
@@ -294,8 +286,7 @@ script_mod! {
             }
 
             logout_button := RobrixNegativeIconButton {
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 margin: Inset{left: 5}
                 draw_icon.svg: (ICON_LOGOUT)
                 icon_walk: Walk{ width: 16, height: 16, margin: Inset{right: -2} }

@@ -148,7 +148,7 @@ impl AppModule for RinxModule {
             } else {
                 let message = script_eval!(vm, {
                     use mod.prelude.widgets.*
-                    Label { width: Fill draw_text.wrap: Words text: "Rinx is already open." }
+                    RinxLabel { width: Fill draw_text.wrap: Words text: "Rinx is already open." }
                 });
                 view.view.children.push((live_id!(already_open), WidgetRef::script_from_value(vm, message)));
             }

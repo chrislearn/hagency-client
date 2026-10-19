@@ -41,20 +41,19 @@ script_mod! {
             color: COLOR_SECONDARY
         }
 
-        replacement_reason := Label {
+        replacement_reason := RinxLabel {
             width: Fill, height: Fit,
             flow: Flow.Right{wrap: true},
             align: Align{x: 0.5}
             draw_text +: {
                 color: (TYPING_NOTICE_TEXT_COLOR),
-                text_style: REGULAR_TEXT {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}
+                text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_BODY_SIZE}
             }
         }
 
         join_successor_button := RobrixPositiveIconButton {
-            padding: 15,
+            width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
             draw_icon.svg: (ICON_JOIN_ROOM)
-            icon_walk: Walk{width: 17, height: 17, margin: Inset{left: -2, right: -1} }
         }
 
         successor_room_avatar := Avatar {
@@ -63,18 +62,18 @@ script_mod! {
             text_view +: {
                 text +: {
                     draw_text +: {
-                        text_style: TITLE_TEXT { font_size: (13.0 * mod.widgets.RINX_TEXT_SCALE) }
+                        text_style: TITLE_TEXT { font_size: mod.widgets.RINX_SECTION_SIZE }
                     }
                 }
             }
         }
 
-        successor_room_name := Label {
+        successor_room_name := RinxLabel {
             width: Fill, height: Fit,
             flow: Flow.Right{wrap: true},
             align: Align{x: 0.5}
             draw_text +: {
-                text_style: TITLE_TEXT { font_size: (12 * mod.widgets.RINX_TEXT_SCALE) }
+                text_style: TITLE_TEXT { font_size: mod.widgets.RINX_HEADING_SIZE }
                 color: (COLOR_TEXT)
             }
         }

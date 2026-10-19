@@ -125,13 +125,13 @@ script_mod! {
         ..mod.widgets.View
         visible: false width: Fill height: Fit flow: Down spacing: 4
         agent_reply_body := HtmlOrPlaintext {}
-        stream_status := Label {
+        stream_status := RinxLabel {
             visible: false width: Fill height: Fit
-            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}
+            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE}}
         }
-        agent_reply_fold := ButtonFlat {
-            visible: false width: Fit height: 32 padding: 4
-            draw_text +: {color: mod.widgets.RINX_ACCENT text_style: theme.font_regular{font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}
+        agent_reply_fold := RinxGhostButton {
+            height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+            visible: false width: Fit draw_text +: {color: mod.widgets.RINX_ACCENT text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}
         }
     }
 }

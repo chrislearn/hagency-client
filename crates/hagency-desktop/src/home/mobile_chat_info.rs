@@ -32,10 +32,10 @@ script_mod! {
         draw_bg.color: mod.widgets.MOBILE_BG
         summary := View {width: Fill height: Fit flow: Down padding: 16 spacing: 8
             summary_details := View {width: Fill height: Fit flow: Down spacing: 8
-                summary_name := Label {width: Fill height: Fit max_lines: 2 text_overflow: Ellipsis
-                    draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold{font_size: (15 * mod.widgets.RINX_TEXT_SCALE)}}}
+                summary_name := RinxLabel {width: Fill height: Fit max_lines: 2 text_overflow: Ellipsis
+                    draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}}
                 View {width: Fill height: 32 flow: Right spacing: 8 align: Align{y: 0.5}
-                    summary_count := Label {width: Fill height: Fit draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
+                    summary_count := RinxLabel {width: Fill height: Fit draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE}}}
                     history_search := NavigationBarButton {width: 32 height: 32 padding: 7 tooltip_text: #(crate::i18n::tr("Search Chat History"))
                         Icon {icon_walk: Walk{width: 16 height: 16} draw_icon +: {svg: ICON_SEARCH color: mod.widgets.RINX_MUTED}}}
                     history_media := NavigationBarButton {width: 32 height: 32 padding: 7 tooltip_text: #(crate::i18n::tr("Shared Attachments"))
@@ -43,58 +43,79 @@ script_mod! {
                 }
             }
             View {width: Fill height: 36 flow: Right spacing: 8
-                overview_tab := RobrixNeutralIconButton {width: Fill height: 36 text: #(crate::i18n::tr("Overview")) icon_walk: Walk{width: 0 height: 0}}
-                members_tab := RobrixNeutralIconButton {width: Fill height: 36 text: #(crate::i18n::tr("Members")) icon_walk: Walk{width: 0 height: 0}}
+                overview_tab := RinxGhostButton {
+                    height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                    width: Fill text: #(crate::i18n::tr("Overview")) icon_walk: Walk{width: 0 height: 0}
+                }
+                members_tab := RinxGhostButton {
+                    height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                    width: Fill text: #(crate::i18n::tr("Members")) icon_walk: Walk{width: 0 height: 0}
+                }
             }
         }
-        status := Label {
+        status := RinxLabel {
             width: Fill height: Fit margin: 16
             flow: Flow.Right{wrap: true}
-            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}
+            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}
         }
-        retry := RobrixNeutralIconButton {visible: false text: #(crate::i18n::tr("Retry")) i18n_text: "Retry" height: 44 margin: 12}
+        retry := RobrixNeutralIconButton {
+            height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+            visible: false text: #(crate::i18n::tr("Retry")) i18n_text: "Retry" margin: 12
+        }
         services_panel := View {visible: false width: Fill height: Fit flow: Down padding: Inset{left: 16 right: 16 bottom: 12} spacing: 10
             services_back := RinxBackButton {}
-            Label {width: Fill height: Fit text: #(crate::i18n::tr("Room Agent services")) i18n_text: "Room Agent services"
-                draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold{font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}}}
-            Label {width: Fill height: Fit flow: Flow.Right{wrap: true}
+            RinxLabel {width: Fill height: Fit text: #(crate::i18n::tr("Room Agent services")) i18n_text: "Room Agent services"
+                draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold{font_size: mod.widgets.RINX_BODY_SIZE}}}
+            RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true}
                 text: #(crate::i18n::tr("Only your Agents connected to this Room are shown. Service settings apply to the selected Agent across its connected Rooms."))
                 i18n_text: "Only your Agents connected to this Room are shown. Service settings apply to the selected Agent across its connected Rooms."
-                draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}}
-            services_status := Label {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text.color: mod.widgets.RINX_MUTED}
-            room_services := RobrixSettingsDropDown {width: Fill height: 40 margin: 0 labels: ["Choose an Agent"]
+                draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_META_SIZE}}}
+            services_status := RinxHint {width: Fill height: Fit flow: Flow.Right{wrap: true}}
+            room_services := RobrixSettingsDropDown {width: Fill height: mod.widgets.RINX_CONTROL_HEIGHT margin: 0 labels: ["Choose an Agent"]
                 popup_menu_position: PopupMenuPosition.BelowInput
-                popup_menu: RobrixSettingsPopupMenu {width: 256 menu_item: RobrixSettingsPopupMenuItem {height: 36}}}
+                popup_menu: RobrixSettingsPopupMenu {width: 256 menu_item: RobrixSettingsPopupMenuItem {height: mod.widgets.RINX_CONTROL_HEIGHT}}}
             View {width: Fill height: 36 flow: Right spacing: 8
-                configure_service := RobrixNeutralIconButton {text: #(crate::i18n::tr("Open Service")) i18n_text: "Open Service" height: 36 padding: Inset{left: 10 right: 10 top: 0 bottom: 0} width: Fill icon_walk: Walk{width: 0 height: 0}}
-                refresh_services := RobrixNeutralIconButton {text: #(crate::i18n::tr("Refresh")) height: 36 padding: Inset{left: 10 right: 10 top: 0 bottom: 0} icon_walk: Walk{width: 0 height: 0}}
+                configure_service := RobrixNeutralIconButton {
+                    height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                    text: #(crate::i18n::tr("Open Service")) i18n_text: "Open Service" width: Fill icon_walk: Walk{width: 0 height: 0}
+                }
+                refresh_services := RobrixNeutralIconButton {
+                    height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                    text: #(crate::i18n::tr("Refresh")) icon_walk: Walk{width: 0 height: 0}
+                }
             }
         }
         member_controls := View {visible: false width: Fill height: Fit flow: Down padding: Inset{left: 12 right: 12 bottom: 12} spacing: 8
             View {width: Fill height: 32 flow: Right spacing: 6
-                invite_people := RobrixNeutralIconButton {text: #(crate::i18n::tr("Invite people")) i18n_text: "Invite people" width: Fill height: 32 padding: 6 spacing: 5
-                    icon_walk: Walk{width: 14 height: 14} draw_icon.svg: ICON_ADD_USER}
-                invite_my_agent := RobrixNeutralIconButton {text: #(crate::i18n::tr("Add agent")) i18n_text: "Add agent" width: Fill height: 32 padding: 6 spacing: 5
-                    icon_walk: Walk{width: 14 height: 14} draw_icon.svg: ICON_ROBOT}
+                invite_people := RinxCompactButton {
+                    height: RINX_ICON_BUTTON_SIZE padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                    text: #(crate::i18n::tr("Invite people")) i18n_text: "Invite people" width: Fill spacing: 5
+                    icon_walk: Walk{width: 14 height: 14} draw_icon.svg: ICON_ADD_USER
+                }
+                invite_my_agent := RinxCompactButton {
+                    height: RINX_ICON_BUTTON_SIZE padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                    text: #(crate::i18n::tr("Add agent")) i18n_text: "Add agent" width: Fill spacing: 5
+                    icon_walk: Walk{width: 14 height: 14} draw_icon.svg: ICON_ROBOT
+                }
             }
-            members_empty := Label {visible: false width: Fill height: Fit text: #(crate::i18n::tr("No members available.")) draw_text.color: mod.widgets.RINX_MUTED}
+            members_empty := RinxHint {visible: false width: Fill height: Fit text: #(crate::i18n::tr("No members available.")) draw_text.color: mod.widgets.RINX_MUTED}
         }
-        ownership_status := Label {visible: false width: Fill height: Fit margin: Inset{left: 16 right: 16 bottom: 8}
+        ownership_status := RinxLabel {visible: false width: Fill height: Fit margin: Inset{left: 16 right: 16 bottom: 8}
             flow: Flow.Right{wrap: true}
             text: #(crate::i18n::tr("Some Agent ownership could not be verified. Unmatched members are shown separately."))
             i18n_text: "Some Agent ownership could not be verified. Unmatched members are shown separately."
-            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}}
+            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_META_SIZE}}}
         information_list := View {width: Fill height: Fill
             list := PortalList {
                 width: Fill height: Fill flow: Down
                 Header := mod.widgets.MobileSection {
                     padding: Inset{left: 16 right: 16 top: 4 bottom: 12} spacing: 6 margin: 0
-                    Label {width: Fill text: #(crate::i18n::tr("Room details")) draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold{font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}}}
-                    topic := Label {width: Fill height: Fit flow: Flow.Right{wrap: true}
-                        draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
+                    RinxLabel {width: Fill text: #(crate::i18n::tr("Room details")) draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold{font_size: mod.widgets.RINX_BODY_SIZE}}}
+                    topic := RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true}
+                        draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE}}}
                     View {width: Fill height: 28 flow: Right spacing: 6 align: Align{y: 0.5}
-                        room_id := Label {width: Fill height: Fit max_lines: 1 text_overflow: Ellipsis
-                            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}}}
+                        room_id := RinxLabel {width: Fill height: Fit max_lines: 1 text_overflow: Ellipsis
+                            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_META_SIZE}}}
                         copy_room_id := NavigationBarButton {width: 28 height: 28 padding: 6 tooltip_text: #(crate::i18n::tr("Copy Room ID"))
                             Icon {icon_walk: Walk{width: 14 height: 14} draw_icon +: {svg: ICON_COPY color: mod.widgets.RINX_MUTED}}}
                     }
@@ -108,13 +129,13 @@ script_mod! {
                         avatar := mod.widgets.MobileAvatar {width: 32 height: 32}
                         View {
                             width: Fill height: Fit flow: Down spacing: 2 padding: 0
-                            name := Label {
+                            name := RinxLabel {
                                 width: Fill height: Fit padding: 0 max_lines: 1 text_overflow: Ellipsis
-                                draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}
+                                draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}
                             }
-                            user_id := Label {
+                            user_id := RinxLabel {
                                 width: Fill height: Fit padding: 0 max_lines: 1 text_overflow: Ellipsis
-                                draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}}
+                                draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_META_SIZE}}
                             }
                         }
                     }
@@ -128,13 +149,13 @@ script_mod! {
                         width: Fill height: 56 flow: Right spacing: 10
                         padding: Inset{left: 20 right: 20} align: Align{y: 0.5}
                         draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_HOVER border_radius: 0}
-                        title := Label {
+                        title := RinxLabel {
                             width: Fill max_lines: 1 text_overflow: Ellipsis
-                            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: (12.5 * mod.widgets.RINX_TEXT_SCALE)}}
+                            draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}
                         }
-                        value := Label {
+                        value := RinxLabel {
                             max_lines: 1
-                            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}
+                            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_META_SIZE}}
                         }
                         Icon {
                             icon_walk: Walk{width: 8 height: 13}
@@ -150,11 +171,11 @@ script_mod! {
             content := SmallModal {
                 title := ModalTitle {text: #(crate::i18n::tr("Add agent")) i18n_text: "Add agent"}
                 agent_room := ModalBody {margin: Inset{bottom: 12}}
-                my_agents := RobrixSettingsDropDown {width: Fill height: 40 margin: 0 labels: ["Choose my Agent"]
-                    draw_bg.border_radius: 4
+                my_agents := RobrixSettingsDropDown {width: Fill height: mod.widgets.RINX_CONTROL_HEIGHT margin: 0 labels: ["Choose my Agent"]
+                    draw_bg.border_radius: mod.widgets.RINX_CONTROL_RADIUS
                     popup_menu_position: PopupMenuPosition.BelowInput
-                    draw_text.text_style: theme.font_regular{font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}
-                    popup_menu: RobrixSettingsPopupMenu {width: 310 menu_item: RobrixSettingsPopupMenuItem {height: 36}}}
+                    draw_text.text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE}
+                    popup_menu: RobrixSettingsPopupMenu {width: 310 menu_item: RobrixSettingsPopupMenuItem {height: mod.widgets.RINX_CONTROL_HEIGHT}}}
                 buttons_view := ModalButtonsRow {
                     close_agent_picker := RobrixNeutralIconButton {
                         width: Fit{min: FitBound.Abs(120.0)} align: Align{x: 0.5 y: 0.5} padding: 12
@@ -168,7 +189,10 @@ script_mod! {
                     }
                 }
                 agent_status := ModalBody {}
-                resume_agent_requests := RobrixNeutralIconButton {visible: false text: "Resume original request in Agents" height: 40 margin: Inset{top: 12} icon_walk: Walk{width: 0 height: 0}}
+                resume_agent_requests := RobrixNeutralIconButton {
+                    height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                    visible: false text: "Resume original request in Agents" margin: Inset{top: 12} icon_walk: Walk{width: 0 height: 0}
+                }
             }
         }
     }

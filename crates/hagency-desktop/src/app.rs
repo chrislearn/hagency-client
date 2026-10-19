@@ -12,6 +12,7 @@ use std::{
     time::Duration,
 };
 use makepad_widgets::*;
+use crate::shared::navigation_bar_button::NavigationBarButtonWidgetRefExt;
 use crate::render_maintenance::RenderMaintenance;
 use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomId}};
 use serde::{Deserialize, Serialize};
@@ -199,9 +200,26 @@ script_mod! {
                 caption_bar +: {
                     draw_bg.color: mod.widgets.RINX_PAGE
                     caption_label +: {
-                        label +: {
-                            draw_text +: { color: mod.widgets.RINX_INK }
-                            text: "Hagency"
+                        flow: Overlay
+                        align: Align{x: 0 y: 0}
+                        caption_icon +: {width: 0 height: 0 margin: 0 opacity: 0.0}
+                        label +: {visible: false}
+                        title := View {
+                            width: Fill height: Fill flow: Right align: Center
+                            RinxBrandLogo {width: 18 height: 18 margin: Inset{right: 6}}
+                            RinxLabel {text: "Hagency" draw_text.color: mod.widgets.RINX_INK}
+                        }
+                        titlebar_sidebar := NavigationBarButton {
+                            visible: false
+                            margin: Inset{left: #(if cfg!(target_os = "macos") {80.0} else {8.0})}
+                            width: 32 height: Fill
+                            tooltip_below: true
+                            tooltip_text: #(crate::i18n::tr("Collapse sidebar"))
+                            draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED}
+                            icon := Icon {
+                                icon_walk: Walk{width: 18 height: 18}
+                                draw_icon +: {svg: ICON_PANEL_LEFT color: mod.widgets.RINX_INK}
+                            }
                         }
                     }
                 }
@@ -244,6 +262,7 @@ pub struct App {
     #[rust] app_state: AppState,
     #[rust] lifecycle: AppLifecycle,
     #[rust] render_maintenance: RenderMaintenance,
+    #[rust] titlebar_sidebar_state: RefCell<Option<TitlebarSidebarState>>,
     /// The details of a room we're waiting on to be loaded so that we can navigate to it.
     /// This can be either a room we're waiting to join, or one we're waiting to be invited to.
     /// Also includes an optional room ID to be closed once the awaited room has been loaded.
@@ -255,6 +274,7 @@ pub struct App {
 impl ScriptHook for App {
     /// After a hot-reload update, refresh the login/home screen visibility.
     fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        self.titlebar_sidebar_state.replace(None);
         vm.with_cx_mut(|cx| {
             self.update_login_visibility(cx);
         });
@@ -273,6 +293,8 @@ impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
         if self.started { return; }
         self.started = true;
+        cx.global::<crate::home::rooms_sidebar::SidebarToggleInTitlebar>().0 =
+            !self.embedded && cfg!(any(target_os = "windows", target_os = "macos", target_os = "linux"));
         // only init logging/tracing once.
         //
         // We silence a few overly noisy SDK logs:
@@ -331,6 +353,24 @@ impl MatchEvent for App {
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        if self.app_state.logged_in && crate::home::home_screen::effective_is_desktop(cx)
+            && self.ui.navigation_bar_button(cx, ids!(titlebar_sidebar)).clicked(actions)
+        {
+            cx.action(crate::home::rooms_sidebar::DesktopRailAction);
+        }
+        for saved in actions.iter().filter_map(|action| action.downcast_ref::<crate::speech::SettingsSaved>()) {
+            if saved.0.validate().is_ok() {
+                self.app_state.app_prefs.speech = saved.0.clone();
+                self.app_state.app_prefs.on_speech_changed(cx);
+                self.persist_runtime_state(cx, "speech settings");
+            }
+        }
+        // A resize emits once on release, avoiding disk writes during pointer movement.
+        for resize in actions.iter().filter_map(|action| action.downcast_ref::<crate::room::room_input_bar::ComposerHeightSaved>()) {
+            self.app_state.app_prefs.composer_height = resize.0;
+            self.app_state.app_prefs.on_composer_height_changed(cx);
+            self.persist_runtime_state(cx, "composer resize");
+        }
         let invite_confirmation_modal_content = self.ui.confirmation_modal(cx, ids!(invite_confirmation_modal.content));
         if let Some(_accepted) = invite_confirmation_modal_content.closed(actions) {
             self.ui.modal(cx, ids!(invite_confirmation_modal)).close(cx);
@@ -419,6 +459,7 @@ impl MatchEvent for App {
             match action.downcast_ref() {
                 Some(LogoutAction::LogoutSuccess) => {
                     robius_speech::cancel_all();
+                    crate::speech::capture::cancel_all(cx);
                     self.app_state.logged_in = false;
                     self.ui.modal(cx, ids!(logout_confirm_modal)).close(cx);
                     self.update_login_visibility(cx);
@@ -427,6 +468,7 @@ impl MatchEvent for App {
                 }
                 Some(LogoutAction::ClearAppState { .. }) =>  {
                     robius_speech::cancel_all();
+                    crate::speech::capture::cancel_all(cx);
                     self.clear_session_ui(cx);
                     self.update_login_visibility(cx);
                     self.ui.redraw(cx);
@@ -1105,6 +1147,14 @@ fn clear_all_app_state(cx: &mut Cx) {
     clear_room_preview_cache(cx);
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TitlebarSidebarState {
+    visible: bool,
+    collapsed: bool,
+    theme_revision: u64,
+    language: crate::i18n::Language,
+}
+
 #[derive(Debug)]
 struct AppLifecycle {
     is_foreground: bool,
@@ -1205,7 +1255,11 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        if matches!(event, Event::LiveEdit | Event::ScriptReapply) {
+            self.titlebar_sidebar_state.replace(None);
+        }
         self.render_maintenance.handle_event(cx, event);
+        crate::speech::capture::handle_event(cx, event);
         crate::theme::system::handle_event(cx, event);
         // Peek at Back instead of `back_pressed()`, which marks it handled: Back
         // is taken only when it closes one of these modals. Otherwise it goes on
@@ -1273,6 +1327,18 @@ impl AppMain for App {
         crate::agent_access::publish(current_user_id(), &self.app_state.agent_access);
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
+        self.sync_titlebar_sidebar(cx);
+        // Window's default caption hit test treats custom controls as draggable.
+        // Override only this button, after Window has handled the query.
+        if let Event::WindowDragQuery(query) = event {
+            let button = self.ui.navigation_bar_button(cx, ids!(titlebar_sidebar));
+            if self.ui.window(cx, ids!(main_window)).window_id() == Some(query.window_id)
+                && button.borrow().is_some_and(|button| button.visible())
+                && button.area().rect(cx).contains(query.abs)
+            {
+                query.response.set(WindowDragQueryResponse::Client);
+            }
+        }
         // The backend may restore the next account only after every child has
         // consumed ClearAppState, including hidden settings/room widgets.
         if let Event::Actions(actions) = event {
@@ -1724,6 +1790,39 @@ impl App {
         }
         self.ui.view(cx, ids!(login_screen_view)).set_visible(cx, show_login);
         self.ui.view(cx, ids!(home_screen_view)).set_visible(cx, !show_login);
+        self.sync_titlebar_sidebar(cx);
+    }
+
+    fn sync_titlebar_sidebar(&self, cx: &mut Cx) {
+        let visible = !self.embedded && self.app_state.logged_in
+            && crate::home::home_screen::effective_is_desktop(cx);
+        let collapsed = self.app_state.app_prefs.desktop_sidebar_collapsed;
+        let state = TitlebarSidebarState {
+            visible,
+            collapsed,
+            theme_revision: crate::theme::snapshot(cx).revision,
+            language: crate::i18n::language(),
+        };
+        if self.titlebar_sidebar_state.borrow().as_ref() == Some(&state) {
+            return;
+        }
+        self.titlebar_sidebar_state.replace(Some(state));
+        let button = self.ui.navigation_bar_button(cx, ids!(titlebar_sidebar));
+        button.set_selected(cx, !collapsed);
+        if let Some(mut button) = button.borrow_mut() {
+            button.set_visible(cx, visible);
+            button.set_tooltip_text(crate::i18n::tr(if collapsed {"Expand sidebar"} else {"Collapse sidebar"}));
+        }
+        let mut icon = self.ui.icon(cx, ids!(titlebar_sidebar.icon));
+        if collapsed {
+            script_apply_eval!(cx, icon, {
+                draw_icon +: {svg: mod.widgets.ICON_PANEL_LEFT color: mod.widgets.RINX_INK}
+            });
+        } else {
+            script_apply_eval!(cx, icon, {
+                draw_icon +: {svg: mod.widgets.ICON_PANEL_LEFT_OPEN color: mod.widgets.RINX_ACCENT}
+            });
+        }
     }
 
     fn cancel_signup_navigation(&mut self) {

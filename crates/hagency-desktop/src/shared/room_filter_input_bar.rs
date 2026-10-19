@@ -57,18 +57,16 @@ script_mod! {
                 color_empty: (RBX_BG_SURFACE_SUBTLE)
             }
             draw_text +: {
-                text_style: REGULAR_TEXT { font_size: (10 * mod.widgets.RINX_TEXT_SCALE) },
+                text_style: REGULAR_TEXT { font_size: mod.widgets.RINX_UI_SIZE },
             }
         }
 
-        clear_button := RobrixNeutralIconButton {
+        clear_button := RinxIconButton {
+            width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
             visible: false,
             margin: 0
-            padding: Inset{top: 5, bottom: 5, left: 9, right: 9},
-            spacing: 0,
             align: Align{x: 0.5, y: 0.5}
             draw_icon.svg: (ICON_CLOSE)
-            icon_walk: Walk{width: Fit, height: 10, margin: 0}
         }
     }
 }

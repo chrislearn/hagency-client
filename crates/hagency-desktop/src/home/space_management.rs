@@ -347,9 +347,12 @@ struct LinkFinished {
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
-    let Text = Label {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
-    let Action = RobrixNeutralIconButton {height: 40 icon_walk: Walk{width: 0 height: 0} spacing: 0}
-    let Input = TextInput {width: Fill height: 40}
+    let Text = RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}}
+    let Action = RobrixNeutralIconButton {
+        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+        icon_walk: Walk{width: 0 height: 0} spacing: 0
+    }
+    let Input = RinxInput {width: Fill height: mod.widgets.RINX_CONTROL_HEIGHT}
     mod.widgets.SpaceManagementPanel = #(SpaceManagementPanel::register_widget(vm)) {
         ..mod.widgets.SolidView
         width: Fill height: Fill flow: Down padding: Inset{top: 32 left: 16 right: 16 bottom: 12} spacing: 8
@@ -365,13 +368,13 @@ script_mod! {
             manage_tab := Action {width: Fill text: #(crate::i18n::tr("Manage space")) i18n_text: "Manage space"}
         }
         Text {text: #(crate::i18n::tr("Parent space")) i18n_text: "Parent space"}
-        parent := DropDown {width: Fill labels: ["No parent space"]}
+        parent := RinxDropDown {width: Fill labels: ["No parent space"]}
         create_form := ScrollYView {width: Fill height: Fill flow: Down spacing: 8
-            kind := DropDown {width: Fill labels: [#(crate::i18n::tr("Room")) #(crate::i18n::tr("Space"))] i18n_labels: ["Room" "Space"]}
+            kind := RinxDropDown {width: Fill labels: [#(crate::i18n::tr("Room")) #(crate::i18n::tr("Space"))] i18n_labels: ["Room" "Space"]}
             name := Input {empty_text: #(crate::i18n::tr("Name")) i18n_empty_text: "Name"}
             topic := Input {empty_text: #(crate::i18n::tr("Topic")) i18n_empty_text: "Topic"}
-            public := CheckBox {text: #(crate::i18n::tr("Public")) i18n_text: "Public"}
-            encrypted := CheckBox {text: #(crate::i18n::tr("Encrypted room")) i18n_text: "Encrypted room"}
+            public := RinxCheckBox {text: #(crate::i18n::tr("Public")) i18n_text: "Public"}
+            encrypted := RinxCheckBox {text: #(crate::i18n::tr("Encrypted room")) i18n_text: "Encrypted room"}
             create := Action {width: Fill text: #(crate::i18n::tr("Create")) i18n_text: "Create"}
             created := Action {visible: false width: Fill text: #(crate::i18n::tr("Open")) i18n_text: "Open"}
         }

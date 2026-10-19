@@ -48,7 +48,7 @@ script_mod! {
             align: Align{y: 0.5}
             padding: Inset{left: 5, right: 5}
 
-            Label {
+            RinxLabel {
                 width: Fill,
                 flow: Flow.Right { wrap: true },
                 margin: Inset{top: 3}
@@ -60,25 +60,15 @@ script_mod! {
             }
 
             cancel_button := RobrixNegativeIconButton {
-                width: Fit,
-                height: Fit,
-                padding: 13,
-                spacing: 0,
+                width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
                 margin: Inset{left: 5, right: 5},
-
                 draw_icon.svg: (ICON_CLOSE)
-                icon_walk: Walk{width: 16, height: 16, margin: 0}
             }
 
             accept_button := RobrixPositiveIconButton {
-                width: Fit,
-                height: Fit,
-                padding: 13,
-                spacing: 0,
+                width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
                 margin: Inset{left: 5},
-
                 draw_icon.svg: (ICON_CHECKMARK)
-                icon_walk: Walk{width: 16, height: 16, margin: 0}
             }
         }
 

@@ -39,6 +39,7 @@ pub fn view_from_live_ptr(
 /// The top-level main application module.
 pub mod app;
 pub mod render_maintenance;
+pub mod speech;
 pub mod accounts;
 mod account_session;
 mod session_auth;

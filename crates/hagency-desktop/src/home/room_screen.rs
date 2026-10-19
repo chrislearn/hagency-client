@@ -152,16 +152,15 @@ script_mod! {
         margin: Inset{top: 8, bottom: 2}
 
         open_markdown_button := RobrixIconButton {
-            visible: false height: mod.widgets.SETTINGS_BUTTON_HEIGHT
-            padding: Inset{left: 12 right: 12} margin: Inset{right: 8}
+            height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+            visible: false margin: Inset{right: 8}
             draw_icon.svg: crate_resource("self://resources/icons/eye_open.svg")
             icon_walk: Walk{width: 16 height: 16}
             text: #(crate::i18n::tr("Open")) i18n_text: "Open"
         }
 
         download_button := RobrixIconButton {
-            height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-            padding: Inset{left: 12, right: 12}
+            height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
             margin: 0
             draw_icon.svg: (ICON_DOWNLOAD)
             icon_walk: Walk{width: 16, height: 16}
@@ -169,8 +168,7 @@ script_mod! {
         }
 
         share_button := RobrixIconButton {
-            height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-            padding: Inset{left: 12, right: 12}
+            height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
             margin: Inset{left: 8}
             draw_icon.svg: (ICON_SHARE)
             icon_walk: Walk{width: 16, height: 16}
@@ -189,19 +187,18 @@ script_mod! {
                 width: 16, height: 16
                 draw_bg.color: (COLOR_ACTIVE_PRIMARY)
             }
-            status_label := Label {
+            status_label := RinxLabel {
                 width: Fit, height: Fit,
                 padding: 0
                 margin: 0
                 draw_text +: {
-                    text_style: REGULAR_TEXT { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: REGULAR_TEXT { font_size: mod.widgets.RINX_BODY_SIZE },
                     color: (COLOR_ACTIVE_PRIMARY)
                 }
                 text: #(crate::i18n::tr("Downloading…")) i18n_text: "Downloading…"
             }
             cancel_button := RobrixNegativeIconButton {
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                padding: Inset{left: 12, right: 12}
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 margin: 0
                 draw_icon.svg: (ICON_CLOSE)
                 icon_walk: Walk{width: 16, height: 16}
@@ -210,9 +207,8 @@ script_mod! {
         }
 
         success_button := RobrixPositiveIconButton {
+            height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
             visible: false,
-            height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-            padding: Inset{left: 12, right: 12}
             margin: 0
             draw_icon.svg: (ICON_CHECKMARK)
             icon_walk: Walk{width: 16, height: 16}
@@ -220,9 +216,8 @@ script_mod! {
         }
 
         failure_button := RobrixNegativeIconButton {
+            height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
             visible: false,
-            height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-            padding: Inset{left: 12, right: 12}
             margin: 0
             draw_icon.svg: (ICON_CLOSE)
             icon_walk: Walk{width: 16, height: 16}
@@ -261,10 +256,10 @@ script_mod! {
                 }
                 icon_walk: Walk{width: 25 height: 25}
             }
-            thread_summary_count := Label {
+            thread_summary_count := RinxLabel {
                 width: Fit padding: 0
                 draw_text +: {
-                    text_style: USERNAME_TEXT_STYLE {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}
+                    text_style: USERNAME_TEXT_STYLE {font_size: mod.widgets.RINX_UI_SIZE}
                     color: mod.widgets.COLOR_THREAD_SUMMARY_REPLY_COUNT
                 }
                 text: ""
@@ -401,7 +396,7 @@ script_mod! {
                     width: Fill,
                     height: Fit,
                     align: Align{y: 0.5} spacing: 5 padding: Inset{top: 8 bottom: 7}
-                    username := Label {
+                    username := RinxLabel {
                         width: Fit{max: FitBound.Rel{base: Base.Line, factor: 0.8}},
                         flow: Flow.Right { wrap: false },
                         padding: 0,
@@ -445,7 +440,7 @@ script_mod! {
         avatar := MobileAvatar {width: 40 height: 40}
         edited_indicator := EditedIndicator {
             width: Fill
-            edit_html +: {width: Fill font_size: (8 * mod.widgets.RINX_TEXT_SCALE) font_color: mod.widgets.RINX_MUTED body: #(crate::i18n::tr("edited")) i18n_body: "edited"}
+            edit_html +: {width: Fill font_size: mod.widgets.RINX_META_SIZE font_color: mod.widgets.RINX_MUTED body: #(crate::i18n::tr("edited")) i18n_body: "edited"}
         }
         tsp_sign_indicator := TspSignIndicator {}
     }
@@ -453,9 +448,9 @@ script_mod! {
         width: 250 height: Fit flow: Down spacing: 4
         username_view := View {
             width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 4
-            username := Label {
+            username := RinxLabel {
                 width: Fit{max: FitBound.Rel{base: Base.Line, factor: 0.8}} max_lines: 1 text_overflow: Ellipsis padding: 0
-                draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}}
+                draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_META_SIZE}}
             }
             agent_badge := mod.widgets.AgentBadge {}
             agent_usage_toggle := mod.widgets.AgentUsage {width: Fit show_details: false}
@@ -521,9 +516,9 @@ script_mod! {
         width: 240 height: Fit flow: Down spacing: 4
         username_view := View {
             width: Fill height: Fit flow: Right
-            username := Label {
+            username := RinxLabel {
                 width: Fill max_lines: 1 text_overflow: Ellipsis padding: 0
-                draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}}
+                draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_META_SIZE}}
             }
             agent_badge := mod.widgets.AgentBadge {}
         }
@@ -601,7 +596,7 @@ script_mod! {
 
                 username_view := View {
                     visible: false width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 5
-                    username := Label {width: Fit{max: FitBound.Rel{base: Base.Line, factor: 0.8}} max_lines: 1 text_overflow: Ellipsis draw_text +: {text_style: USERNAME_TEXT_STYLE {} color: (USERNAME_TEXT_COLOR)}}
+                    username := RinxLabel {width: Fit{max: FitBound.Rel{base: Base.Line, factor: 0.8}} max_lines: 1 text_overflow: Ellipsis draw_text +: {text_style: USERNAME_TEXT_STYLE {} color: (USERNAME_TEXT_COLOR)}}
                     agent_usage_toggle := mod.widgets.AgentUsage {width: Fit show_details: false}
                 }
 
@@ -740,7 +735,7 @@ script_mod! {
                 text_view +: {
                     text +: {
                         draw_text +: {
-                            text_style: TITLE_TEXT { font_size: (7.0 * mod.widgets.RINX_TEXT_SCALE) }
+                            text_style: TITLE_TEXT { font_size: (7.0 * mod.widgets.RINX_TEXT_SCALE) } // style-size: avatar
                         }
                     }
                 }
@@ -761,7 +756,7 @@ script_mod! {
                 text: #(crate::i18n::tr("Invite to Room")) i18n_text: "Invite to Room"
             }
 
-            content := Label {
+            content := RinxLabel {
                 width: Fill,
                 height: Fit
                 flow: Flow.Right{wrap: true},
@@ -788,7 +783,7 @@ script_mod! {
             content +: {
                 align: Align{x: 0.5 y: 0.5}
                 margin: 0
-                draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}}
+                draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_META_SIZE}}
             }
         }
     }
@@ -806,7 +801,7 @@ script_mod! {
 
         left_line := LineH { }
 
-        date := Label {
+        date := RinxLabel {
             padding: Inset{left: 7.0, right: 7.0}
             draw_text +: {
                 text_style: TEXT_SUB {},
@@ -825,7 +820,7 @@ script_mod! {
             draw_bg.color: (mod.widgets.COLOR_READ_MARKER)
         }
 
-        date := Label {
+        date := RinxLabel {
             draw_text.color: (mod.widgets.COLOR_READ_MARKER)
             text: #(crate::i18n::tr("New Messages")) i18n_text: "New Messages"
         }
@@ -838,7 +833,7 @@ script_mod! {
     mod.widgets.MobileDateDivider = mod.widgets.DateDivider {
         left_line.visible: false right_line.visible: false
         padding: 6
-        date +: {draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}}}
+        date +: {draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_META_SIZE}}}
     }
     mod.widgets.MobileReadMarker = mod.widgets.MobileDateDivider {date.text: #(crate::i18n::tr("New Messages")) date.i18n_text: "New Messages"}
 
@@ -853,14 +848,14 @@ script_mod! {
         show_bg: true,
         draw_bg.color: (RBX_HIGHLIGHT_NEW), // mostly opaque light green
 
-        label := Label {
+        label := RinxLabel {
             width: Fill,
             height: Fit,
             align: Align{x: 0.5, y: 0.5},
             flow: Flow.Right { wrap: true },
             padding: Inset{ top: 10.0, bottom: 7.0, left: 15.0, right: 15.0 }
             draw_text +: {
-                text_style: MESSAGE_TEXT_STYLE { font_size: (10 * mod.widgets.RINX_TEXT_SCALE) },
+                text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
                 color: (TIMESTAMP_TEXT_COLOR)
             }
             text: #(crate::i18n::tr("Loading earlier messages...")) i18n_text: "Loading earlier messages..."
@@ -946,12 +941,12 @@ script_mod! {
                     tooltip_text: #(crate::i18n::tr("Back to Room"))
                     icon := Icon {icon_walk: Walk{width: 16 height: 16} draw_icon +: {svg: ICON_ARROW_BACK color: mod.widgets.RINX_INK}}
                 }
-                desktop_chat_title := Label {
+                desktop_chat_title := RinxLabel {
                     width: Fill, height: Fit
                     flow: Flow.Right{wrap: false}
                     draw_text +: {
                         color: mod.widgets.RINX_INK
-                        text_style: theme.font_bold {font_size: (13 * mod.widgets.RINX_TEXT_SCALE)}
+                        text_style: theme.font_bold {font_size: mod.widgets.RINX_HEADING_SIZE}
                     }
                     text: ""
                 }

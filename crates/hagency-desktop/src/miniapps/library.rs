@@ -27,21 +27,23 @@ script_mod! {
     mod.widgets.MiniAppLibrary = #(MiniAppLibrary::register_widget(vm)) {
         width: Fill height: Fill flow: Down padding: 16 spacing: 12
         header := View {width: Fill height: 44 flow: Right spacing: 8 align: Align{y: 0.5}
-            back := RinxButton {width: 44 height: 44 text: "" icon_walk: Walk{width: 20 height: 20}
-                draw_icon +: {svg: crate_resource("self://resources/icons/arrow_back.svg") color: mod.widgets.RINX_INK}}
-            title := Label {width: Fill max_lines: 1 text_overflow: Ellipsis text: "Mini apps" draw_text +: {color: mod.widgets.RINX_INK text_style.font_size: (18 * mod.widgets.RINX_TEXT_SCALE)}}
+            back := RinxIconButton {
+                width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
+                draw_icon +: {svg: crate_resource("self://resources/icons/arrow_back.svg") color: mod.widgets.RINX_INK}
+            }
+            title := RinxPageTitle {width: Fill max_lines: 1 text_overflow: Ellipsis text: "Mini apps"}
             refresh := RinxButton {text: "Refresh"}
             developer := RinxButton {text: "Developer"}
         }
-        status := Label {width: Fill height: Fit draw_text.color: mod.widgets.RINX_MUTED text: "Loading App Hub…"}
+        status := RinxLabel {width: Fill height: Fit draw_text.color: mod.widgets.RINX_MUTED text: "Loading App Hub…"}
         collection := View {width: Fill height: Fill flow: Down spacing: 12
             tabs := View {width: Fill height: 44 flow: Right spacing: 6
                 recent := RinxButton {width: Fill text: "Recent"}
                 mine := RinxButton {width: Fill text: "My apps"}
                 browse := RinxButton {width: Fill text: "Browse"}
             }
-            search := RinxInput {width: Fill height: 40 empty_text: "Find mini apps"}
-            empty := Label {visible: false width: Fill height: Fit draw_text.color: mod.widgets.RINX_MUTED}
+            search := RinxInput {width: Fill height: mod.widgets.RINX_CONTROL_HEIGHT empty_text: "Find mini apps"}
+            empty := RinxLabel {visible: false width: Fill height: Fit draw_text.color: mod.widgets.RINX_MUTED}
             list := PortalList {width: Fill height: Fill
                 Filler := View {width: Fill height: 84}
                 App := View {width: Fill height: 84 flow: Down
@@ -49,32 +51,44 @@ script_mod! {
                         width: Fill height: 76 flow: Right spacing: 12 padding: 10 align: Align{y: 0.5}
                         icon := Image {width: 48 height: 48}
                         copy := View {width: Fill height: Fit flow: Down spacing: 5
-                            name := Label {width: Fill max_lines: 1 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_INK text_style.font_size: (15 * mod.widgets.RINX_TEXT_SCALE)}}
-                            subtitle := Label {width: Fill max_lines: 1 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_MUTED text_style.font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}
+                            name := RinxLabel {width: Fill max_lines: 1 text_overflow: Ellipsis draw_text.text_style: theme.font_bold{font_size: RINX_HEADING_SIZE}}
+                            subtitle := RinxHint {width: Fill max_lines: 1 text_overflow: Ellipsis}
                         }
-                        state := Label {draw_text +: {color: mod.widgets.RINX_MUTED text_style.font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}
+                        state := RinxLabel {draw_text +: {color: mod.widgets.RINX_MUTED text_style.font_size: mod.widgets.RINX_UI_SIZE}}
                     }
                 }
             }
         }
         details := ScrollYView {visible: false width: Fill height: Fill flow: Down spacing: 16
-            description := Label {width: Fill draw_text.color: mod.widgets.RINX_INK}
-            publisher := Label {width: Fill draw_text.color: mod.widgets.RINX_MUTED}
-            permissions := Label {width: Fill draw_text.color: mod.widgets.RINX_INK}
-            account := Label {width: Fill draw_text.color: mod.widgets.RINX_MUTED}
+            description := RinxLabel {width: Fill draw_text.color: mod.widgets.RINX_INK}
+            publisher := RinxLabel {width: Fill draw_text.color: mod.widgets.RINX_MUTED}
+            permissions := RinxLabel {width: Fill draw_text.color: mod.widgets.RINX_INK}
+            account := RinxLabel {width: Fill draw_text.color: mod.widgets.RINX_MUTED}
             room_group := View {width: Fill height: Fit flow: Down spacing: 8
-                Label {text: "Allow access to a conversation" draw_text.color: mod.widgets.RINX_MUTED}
-                room := DropDown {width: Fill labels: ["No conversation access"]}
+                RinxLabel {text: "Allow access to a conversation" draw_text.color: mod.widgets.RINX_MUTED}
+                room := RinxDropDown {width: Fill labels: ["No conversation access"]}
             }
-            availability := Label {width: Fill draw_text.color: mod.widgets.RINX_MUTED}
+            availability := RinxLabel {width: Fill draw_text.color: mod.widgets.RINX_MUTED}
             actions := View {width: Fill height: Fit flow: Right spacing: 12
-                primary := RinxPrimaryButton {height: 44 text: "Add"}
-                remove := RinxButton {height: 44 text: "Remove"}
+                primary := RinxPrimaryButton {
+                    height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                    text: "Add"
+                }
+                remove := RinxButton {
+                    height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                    text: "Remove"
+                }
             }
-            remove_note := Label {width: Fill text: "Removing an app keeps its saved documents." draw_text.color: mod.widgets.RINX_MUTED}
+            remove_note := RinxLabel {width: Fill text: "Removing an app keeps its saved documents." draw_text.color: mod.widgets.RINX_MUTED}
             remove_confirm := View {visible: false width: Fill height: Fit flow: Right spacing: 12
-                cancel := RinxButton {height: 44 text: "Cancel"}
-                confirm := RinxButton {height: 44 text: "Remove app"}
+                cancel := RinxButton {
+                    height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                    text: "Cancel"
+                }
+                confirm := RinxButton {
+                    height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                    text: "Remove app"
+                }
             }
         }
     }

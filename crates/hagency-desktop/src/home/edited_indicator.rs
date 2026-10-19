@@ -31,7 +31,7 @@ script_mod! {
         // TODO: re-enable this once we have implemented the edit history modal
         // cursor: MouseCursor.Hand,
 
-        edit_html := Html {
+        edit_html := RinxHtml {
             width: Fit, height: Fit
             flow: Flow.Right { wrap: false },
             padding: 0,

@@ -35,15 +35,18 @@ script_mod! {
                     text_style: theme.font_bold { font_size: (mod.widgets.SETTINGS_REGULAR_FONT_SIZE) },
                 }
             }
-            agent_ops := ButtonFlat {width: Fill height: 40 text: #(crate::i18n::tr("Agent Operations")) i18n_text: "Agent Operations"}
-            Html {
+            agent_ops := RinxGhostButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                width: Fill text: #(crate::i18n::tr("Agent Operations")) i18n_text: "Agent Operations"
+            }
+            RinxHtml {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true}
                 margin: Inset{left: 14, top: 0, bottom: 0, right: 5}
                 padding: 0,
-                font_size: (11 * mod.widgets.RINX_TEXT_SCALE),
+                font_size: mod.widgets.RINX_BODY_SIZE,
                 font_color: mod.widgets.RINX_MUTED,
-                text_style_normal: MESSAGE_TEXT_STYLE { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                text_style_normal: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
                 body: #(crate::i18n::tr("<p>Show workflow commands in coordinator rooms, and /task and /thread in agent rooms. Approval cards remain available when this is off.</p>"))
                 i18n_body: "<p>Show workflow commands in coordinator rooms, and /task and /thread in agent rooms. Approval cards remain available when this is off.</p>"
             }

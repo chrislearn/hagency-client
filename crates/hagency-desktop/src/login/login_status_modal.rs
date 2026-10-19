@@ -18,10 +18,9 @@ script_mod! {
 
         buttons_view := ModalButtonsRow {
             button := RobrixIconButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 align: Align{x: 0.5, y: 0.5}
-                width: Fit, height: Fit
-                padding: 12
-                text: #(crate::i18n::tr("Cancel")) i18n_text: "Cancel"
+                width: Fit, text: #(crate::i18n::tr("Cancel")) i18n_text: "Cancel"
             }
         }
     }

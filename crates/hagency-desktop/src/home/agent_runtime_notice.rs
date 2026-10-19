@@ -27,14 +27,14 @@ script_mod! {
         ..mod.widgets.View
         width: Fill height: Fit flow: Right spacing: 12 align: Align{y: 0.5} padding: Inset{left: 16 right: 12 top: 8 bottom: 8}
         visible: false show_bg: true draw_bg.color: mod.widgets.RINX_HOVER
-        status := Label {width: Fill height: Fit draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}}
+        status := RinxLabel {width: Fill height: Fit draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}}
         View {
             width: 18 height: 18
             loading_status := LoadingSpinner {visible: false width: 18 height: 18 draw_bg +: {color: mod.widgets.RINX_MUTED stroke_width: 2.0}}
         }
         open := RobrixNeutralIconButton {
+            height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
             text: #(crate::i18n::tr("Open Service")) i18n_text: "Open Service"
-            height: 32 padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
             icon_walk: Walk{width: 0 height: 0} spacing: 0
         }
     }

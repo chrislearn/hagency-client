@@ -43,10 +43,10 @@ script_mod! {
                 padding: Inset{top: 0, bottom: 40}
                 align: Align{x: 0.5, y: 0.0}
 
-                title := Label {
+                title := RinxLabel {
                     text: #(crate::i18n::tr("Loading content...")) i18n_text: "Loading content..."
                     draw_text +: {
-                        text_style: TITLE_TEXT {font_size: (13 * mod.widgets.RINX_TEXT_SCALE)},
+                        text_style: TITLE_TEXT {font_size: mod.widgets.RINX_SECTION_SIZE},
                         color: mod.widgets.RINX_INK
                     }
                 }
@@ -58,13 +58,13 @@ script_mod! {
                 flow: Down,
                 spacing: 40,
 
-                status := Label {
+                status := RinxLabel {
                     width: Fill,
                     height: Fit,
                     flow: Flow.Right{wrap: true},
                     draw_text +: {
                         text_style: REGULAR_TEXT {
-                            font_size: (11.5 * mod.widgets.RINX_TEXT_SCALE),
+                            font_size: mod.widgets.RINX_BODY_SIZE,
                         },
                         color: mod.widgets.RINX_INK
                     }

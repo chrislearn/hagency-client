@@ -55,14 +55,14 @@ script_mod! {
                 text_view +: {
                     text +: {
                         draw_text +: {
-                            text_style: TITLE_TEXT { font_size: (10.0 * mod.widgets.RINX_TEXT_SCALE) }
+                            text_style: TITLE_TEXT { font_size: mod.widgets.RINX_UI_SIZE }
                         }
                     }
                 }
             }
 
 
-            inviter_name := Label {
+            inviter_name := RinxLabel {
                 width: Fill, height: Fit,
                 align: Align{x: 0.5, y: 0},
                 margin: Inset{top: 2}
@@ -71,13 +71,13 @@ script_mod! {
                 text: ""
                 draw_text +: {
                     text_style: TITLE_TEXT {
-                        font_size: (15 * mod.widgets.RINX_TEXT_SCALE),
+                        font_size: mod.widgets.RINX_TITLE_SIZE,
                     },
                     color: mod.widgets.RINX_INK
                 }
             }
 
-            inviter_user_id := Label {
+            inviter_user_id := RinxLabel {
                 width: Fill, height: Fit,
                 align: Align{x: 0.5, y: 0},
                 margin: Inset{top: -3},
@@ -85,7 +85,7 @@ script_mod! {
                 text: ""
                 draw_text +: {
                     text_style: TITLE_TEXT {
-                        font_size: (10 * mod.widgets.RINX_TEXT_SCALE),
+                        font_size: mod.widgets.RINX_UI_SIZE,
                     },
                     color: mod.widgets.RINX_MUTED
                 }
@@ -97,7 +97,7 @@ script_mod! {
             }
         }
 
-        invite_message := Label {
+        invite_message := RinxLabel {
             margin: Inset{top: 15, bottom: 15},
             width: Fill, height: Fit,
             align: Align{x: 0.5, y: 0},
@@ -105,7 +105,7 @@ script_mod! {
             text: "",
             draw_text +: {
                 text_style: REGULAR_TEXT {
-                    font_size: (15 * mod.widgets.RINX_TEXT_SCALE),
+                    font_size: mod.widgets.RINX_TITLE_SIZE,
                 },
                 color: mod.widgets.RINX_INK
             }
@@ -124,13 +124,13 @@ script_mod! {
                 text_view +: {
                     text +: {
                         draw_text +: {
-                            text_style: TITLE_TEXT { font_size: (13.0 * mod.widgets.RINX_TEXT_SCALE) }
+                            text_style: TITLE_TEXT { font_size: mod.widgets.RINX_SECTION_SIZE }
                         }
                     }
                 }
             }
 
-            room_name := Label {
+            room_name := RinxLabel {
                 width: Fill, height: Fit,
                 align: Align{x: 0.5, y: 0},
                 text: ""
@@ -138,7 +138,7 @@ script_mod! {
                 flow: Flow.Right{wrap: true},
                 draw_text +: {
                     text_style: TITLE_TEXT {
-                        font_size: (18 * mod.widgets.RINX_TEXT_SCALE),
+                        font_size: mod.widgets.RINX_TITLE_SIZE,
                     },
                     color: mod.widgets.RINX_INK
                 }
@@ -182,14 +182,14 @@ script_mod! {
             text: #(crate::i18n::tr("Reject & Block Sender")) i18n_text: "Reject & Block Sender"
         }
 
-        completion_label := Label {
+        completion_label := RinxLabel {
             width: Fill, height: Fit,
             align: Align{x: 0.5, y: 0},
             margin: Inset{top: 10, bottom: 10},
             flow: Flow.Right{wrap: true},
             draw_text +: {
                 color: (COLOR_FG_ACCEPT_GREEN),
-                text_style: theme.font_bold {font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}
+                text_style: theme.font_bold {font_size: mod.widgets.RINX_HEADING_SIZE}
             }
             text: ""
         }

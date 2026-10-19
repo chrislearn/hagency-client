@@ -47,7 +47,7 @@ script_mod! {
             height: Fit,
             align: Align{x: 0.5, y: 0.0}
 
-            tip := Label {
+            tip := RinxLabel {
                 padding: 0,
                 margin: 0,
                 width: Fill,
@@ -56,7 +56,7 @@ script_mod! {
                 align: Align{x: 0.5}
                 draw_text +: {
                     text_style: REGULAR_TEXT {
-                        font_size: (9 * mod.widgets.RINX_TEXT_SCALE),
+                        font_size: mod.widgets.RINX_META_SIZE,
                     },
                     color: #A,
                 }

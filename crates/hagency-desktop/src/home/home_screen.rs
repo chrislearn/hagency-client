@@ -78,7 +78,7 @@ script_mod! {
                     title +: {
                         draw_text +: {
                             color: mod.widgets.RINX_INK
-                            text_style: theme.font_bold {font_size: (12.5 * mod.widgets.RINX_TEXT_SCALE)}
+                            text_style: theme.font_bold {font_size: mod.widgets.RINX_HEADING_SIZE}
                         }
                     }
                 }
@@ -167,7 +167,7 @@ script_mod! {
                     width: 240 height: Fill flow: Down spacing: 8
                     padding: Inset{left: 10 right: 10 top: 16 bottom: 12}
                     draw_bg.color: mod.widgets.RINX_SURFACE
-                    context_title := Label {width: Fill height: Fit padding: 0 text: #(crate::i18n::tr("Projects")) draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold {font_size: 14}}}
+                    context_title := RinxLabel {width: Fill height: Fit padding: 0 text: #(crate::i18n::tr("Projects")) draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold {font_size: mod.widgets.RINX_HEADING_SIZE}}}
                     context_search := View {width: Fill height: 36 visible: false
                         room_filter_input_bar := RoomFilterInputBar {height: 36 input.empty_text: #(crate::i18n::tr("Search chats")) input.i18n_empty_text: "Search chats"}
                     }

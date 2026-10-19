@@ -30,10 +30,10 @@ script_mod! {
 
     mod.widgets.JoinedSpaces = #(JoinedSpaces::register_widget(vm)) {
         width: Fill height: Fill flow: Down
-        status := Label {
+        status := RinxLabel {
             width: Fill height: Fit padding: 18
             flow: Flow.Right{wrap: true}
-            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}
+            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
             text: #(crate::i18n::tr("Loading joined Spaces…")) i18n_text: "Loading joined Spaces…"
         }
         list := PortalList {
@@ -66,9 +66,9 @@ script_mod! {
                             }
                         }
                     }
-                    name := Label {
+                    name := RinxLabel {
                         width: Fill max_lines: 1 text_overflow: Ellipsis
-                        draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: (12.5 * mod.widgets.RINX_TEXT_SCALE)}}
+                        draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
                     }
                     unread := UnreadBadge {}
                 }
@@ -81,9 +81,9 @@ script_mod! {
                     padding: Inset{left: 48 right: 14}
                     draw_bg +: {color_hover: mod.widgets.RINX_BORDER border_radius: 0}
                     indent := View {width: 0 height: 1}
-                    name := Label {
+                    name := RinxLabel {
                         text: #(crate::i18n::tr("Browse rooms ›")) i18n_text: "Browse rooms ›"
-                        draw_text +: {color: mod.widgets.RINX_ACCENT text_style: theme.font_regular {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}
+                        draw_text +: {color: mod.widgets.RINX_ACCENT text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
                     }
                 }
             }

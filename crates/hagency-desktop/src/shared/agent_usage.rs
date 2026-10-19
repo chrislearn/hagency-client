@@ -148,9 +148,9 @@ script_mod! {
             tooltip_text: #(crate::i18n::tr("Show or hide response usage"))
             Icon {width: 14 height: 14 draw_icon +: {svg: mod.widgets.ICON_USAGE color: mod.widgets.RINX_MUTED}}
         }
-        details := Label {
+        details := RinxLabel {
             visible: false width: Fill height: Fit padding: Inset{top: 1 bottom: 2}
-            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}}
+            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_META_SIZE}}
         }
     }
 }

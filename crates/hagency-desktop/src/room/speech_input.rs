@@ -28,6 +28,7 @@ pub(super) enum SpeechPhase {
 
 pub(super) struct SpeechInput {
     session: Option<NativeSpeechSession>,
+    remote: Option<crate::speech::capture::RemoteSession>,
     receiver: RefCell<Option<Receiver<NativeSpeechEvent>>>,
     cancelled: Cell<bool>,
     /// The latest microphone level the recognizer has reported that we haven't drawn yet.
@@ -49,6 +50,7 @@ impl SpeechInput {
         let selection = input.selection();
         Self {
             session: None,
+            remote: None,
             receiver: RefCell::new(receiver),
             cancelled: Cell::new(false),
             latest_level: Arc::new(AtomicU32::new(NO_LEVEL)),
@@ -60,17 +62,20 @@ impl SpeechInput {
         }
     }
 
-    pub fn start(input: &TextInputRef) -> Result<Self, SpeechError> {
+    pub fn start(cx: &mut Cx, input: &TextInputRef) -> Result<Self, SpeechError> {
         let mut this = Self::new(input, None, SpeechPhase::Starting);
-        this.start_native()?;
+        this.start_native(cx)?;
         Ok(this)
     }
 
-    fn start_native(&mut self) -> Result<(), SpeechError> {
+    fn start_native(&mut self, cx: &mut Cx) -> Result<(), SpeechError> {
         let (sender, receiver) = mpsc::channel();
         let signal = SignalToUI::new();
         let level = self.latest_level.clone();
-        self.session = Some(NativeSpeechSession::start(NativeSpeechOptions::default(), move |event| {
+        let config = cx.global::<crate::settings::app_preferences::AppPreferencesGlobal>().0.speech.clone();
+        config.validate()?;
+        log!("Speech input: provider={:?}, locale={:?}", config.provider, config.locale);
+        let callback = Arc::new(move |event| {
             if let NativeSpeechEvent::AudioLevel(value) = event {
                 // Only draw the latest level value, don't queue them up.
                 level.store(value.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
@@ -78,7 +83,16 @@ impl SpeechInput {
             } else if sender.send(event).is_ok() {
                 signal.set();
             }
-        })?);
+        });
+        if config.provider == crate::speech::Provider::System {
+            let options = NativeSpeechOptions {
+                locale: (!config.locale.is_empty()).then(|| config.locale.clone()),
+                prefer_on_device: config.prefer_on_device,
+            };
+            self.session = Some(NativeSpeechSession::start(options, move |event| callback(event))?);
+        } else {
+            self.remote = Some(crate::speech::capture::RemoteSession::start(cx, config, callback)?);
+        }
         *self.receiver.get_mut() = Some(receiver);
         Ok(())
     }
@@ -87,6 +101,7 @@ impl SpeechInput {
         if let Some(session) = &self.session {
             session.stop();
         }
+        if let Some(remote) = &self.remote {remote.stop();}
         self.phase = SpeechPhase::Finishing;
         self.phase_since = Instant::now();
     }
@@ -97,11 +112,18 @@ impl SpeechInput {
         if let Some(session) = &self.session {
             session.cancel();
         }
+        if let Some(remote) = &self.remote {remote.cancel();}
     }
 
     pub fn poll(&mut self) -> Vec<NativeSpeechEvent> {
         if self.ended { return Vec::new(); }
-        if self.cancelled.get() { return vec![NativeSpeechEvent::Stopped]; }
+        if self.cancelled.get() || self.remote.as_ref().is_some_and(|remote| remote.cancelled()) {
+            return vec![NativeSpeechEvent::Stopped];
+        }
+        if self.remote.as_ref().is_some_and(|remote| remote.finishing()) && self.phase != SpeechPhase::Finishing {
+            self.phase = SpeechPhase::Finishing;
+            self.phase_since = Instant::now();
+        }
         let reported_level = self.latest_level.swap(NO_LEVEL, Ordering::Relaxed);
         if reported_level != NO_LEVEL {
             let level = f32::from_bits(reported_level);
@@ -132,7 +154,7 @@ impl SpeechInput {
         // A backstop for a platform that never sends a terminal event.
         let timeout = match self.phase {
             SpeechPhase::Starting => Some(START_TIMEOUT),
-            SpeechPhase::Finishing => Some(FINISH_TIMEOUT),
+            SpeechPhase::Finishing => Some(if self.remote.is_some() {Duration::from_secs(135)} else {FINISH_TIMEOUT}),
             // The user can stay quiet for as long as they like.
             SpeechPhase::Listening => None,
         };

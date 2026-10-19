@@ -61,7 +61,7 @@ script_mod! {
 
             border_color: instance(#0000)
             border_size: uniform(0.0)
-            border_radius: uniform(4.0)
+            border_radius: uniform(mod.widgets.RINX_CONTROL_RADIUS)
             border_inset: uniform(vec4(0.0))
 
             // Fade `color_hover` in/out by scaling its own alpha rather than

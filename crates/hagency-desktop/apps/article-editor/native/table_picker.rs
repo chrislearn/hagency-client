@@ -13,7 +13,7 @@ script_mod! {
         color_cell: theme.color_bg_container
         color_selected: theme.color_focus
         color_border: theme.color_bevel_outset_2
-        draw_label +: {color: theme.color_text text_style: theme.font_regular{font_size: theme.font_size_p}}
+        draw_label +: {color: theme.color_text text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE}}
     }
 }
 

@@ -14,7 +14,7 @@ script_mod! {
         width: Fit, height: Fit
         flow: Flow.Right { wrap: false },
 
-        ts_label := Label {
+        ts_label := RinxLabel {
             width: Fit, height: Fit
             flow: Flow.Right { wrap: false },
             padding: 0,

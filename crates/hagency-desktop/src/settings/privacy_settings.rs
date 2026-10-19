@@ -28,21 +28,20 @@ script_mod! {
             align: Align{y: 0.5}
 
             unblock_button := RobrixPositiveIconButton {
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                padding: Inset{left: 12, right: 15}
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 icon_walk: Walk{width: 0, height: 0}
                 spacing: 0
                 text: #(crate::i18n::tr("Unblock")) i18n_text: "Unblock"
             }
 
-            user_id := Label {
+            user_id := RinxLabel {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true},
                 max_lines: 2,
                 text_overflow: Ellipsis,
                 draw_text +: {
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: theme.font_bold { font_size: (12 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: theme.font_bold { font_size: mod.widgets.RINX_HEADING_SIZE },
                 }
             }
         }
@@ -63,21 +62,20 @@ script_mod! {
             align: Align{y: 0.5}
 
             revoke_button := RobrixNegativeIconButton {
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                padding: Inset{left: 12, right: 15}
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 icon_walk: Walk{width: 0, height: 0}
                 spacing: 0
                 text: #(crate::i18n::tr("Revoke")) i18n_text: "Revoke"
             }
 
-            room_name := Label {
+            room_name := RinxLabel {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true},
                 max_lines: 2,
                 text_overflow: Ellipsis,
                 draw_text +: {
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: theme.font_bold { font_size: (12 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: theme.font_bold { font_size: mod.widgets.RINX_HEADING_SIZE },
                 }
             }
         }
@@ -89,9 +87,9 @@ script_mod! {
         width: Fill, height: Fit
         flow: Down
 
-        LineH { width: Fill, padding: 10, margin: Inset{top: 20, bottom: 5} }
+        section_divider := LineH { width: Fill, padding: 10, margin: Inset{top: 20, bottom: 5} }
 
-        TitleLabel {
+        section_title := TitleLabel {
             text: #(crate::i18n::tr("Privacy Settings")) i18n_text: "Privacy Settings"
         }
 
@@ -121,13 +119,13 @@ script_mod! {
         }
         no_assistant_rooms_label := View {
             width: Fill, height: Fit
-            Label {
+            RinxLabel {
                 width: Fill, height: Fit
                 margin: Inset{top: 10, bottom: 8, left: 13, right: 10},
                 flow: Flow.Right{wrap: true},
                 draw_text +: {
                     color: (COLOR_TEXT_WARNING_NOT_FOUND),
-                    text_style: MESSAGE_TEXT_STYLE { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
                 }
                 text: #(crate::i18n::tr("The assistant may not read any chat.")) i18n_text: "The assistant may not read any chat."
             }
@@ -162,13 +160,13 @@ script_mod! {
 
         no_blocked_users_label := View {
             width: Fill, height: Fit
-            Label {
+            RinxLabel {
                 width: Fill, height: Fit
                 margin: Inset{top: 10, bottom: 8, left: 13, right: 10},
                 flow: Flow.Right{wrap: true},
                 draw_text +: {
                     color: (COLOR_TEXT_WARNING_NOT_FOUND),
-                    text_style: MESSAGE_TEXT_STYLE { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
                 }
                 text: #(crate::i18n::tr("You haven't blocked anyone.")) i18n_text: "You haven't blocked anyone."
             }

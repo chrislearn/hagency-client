@@ -35,7 +35,7 @@ script_mod! {
         align: Align{y: 0.5}
         spacing: 3,
 
-        header_title := Label {
+        header_title := RinxLabel {
             width: Fill,
             height: Fit,
             padding: 0
@@ -47,7 +47,7 @@ script_mod! {
             draw_text +: {
                 color: (RBX_FG_PRIMARY)
                 // Regular weight (thinner) — reads as a title via size, not boldness.
-                text_style: REGULAR_TEXT { font_size: (14 * mod.widgets.RINX_TEXT_SCALE) }
+                text_style: REGULAR_TEXT { font_size: mod.widgets.RINX_HEADING_SIZE }
             }
         },
 
@@ -71,10 +71,9 @@ script_mod! {
                 icon_walk: Walk{width: 18, height: Fit, margin: Inset{bottom: 2}}
             }
 
-            directory_click_area := Button {
+            directory_click_area := RinxButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 width: (RBX_CONTROL_H_SM),
-                height: (RBX_CONTROL_H_SM)
-                padding: Inset{top: 6, bottom: 6, left: 6, right: 6}
                 spacing: 0,
                 text: ""
                 draw_bg +: {
@@ -115,10 +114,9 @@ script_mod! {
                 icon_walk: Walk{width: 18, height: Fit, margin: Inset{bottom: 2}}
             }
 
-            click_area := Button {
+            click_area := RinxButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 width: (RBX_CONTROL_H_SM),
-                height: (RBX_CONTROL_H_SM)
-                padding: Inset{top: 6, bottom: 6, left: 6, right: 6}
                 spacing: 0,
                 text: ""
                 draw_bg +: {

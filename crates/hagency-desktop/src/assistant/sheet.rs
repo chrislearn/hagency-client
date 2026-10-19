@@ -21,11 +21,11 @@ script_mod! {
             padding: 12
             show_bg: true
             draw_bg +: { color: mod.widgets.RINX_FIELD border_radius: 4.0 }
-            message := Label {
+            message := RinxLabel {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true}
                 draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: (11.5 * mod.widgets.RINX_TEXT_SCALE)},
+                    text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_BODY_SIZE},
                     color: mod.widgets.RINX_INK
                 }
             }

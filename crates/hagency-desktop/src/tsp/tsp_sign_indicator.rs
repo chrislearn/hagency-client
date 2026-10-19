@@ -22,13 +22,13 @@ script_mod! {
         // to click on the indicator to show the user's profile and TSP info.
         // cursor: MouseCursor.Hand,
 
-        tsp_html := Html {
+        tsp_html := RinxHtml {
             width: Fit, height: Fit
             flow: Flow.Right { wrap: false },
             padding: 0,
             margin: 0,
 
-            font_size: (9.5 * mod.widgets.RINX_TEXT_SCALE),
+            font_size: mod.widgets.RINX_UI_SIZE,
             font_color: (TIMESTAMP_TEXT_COLOR),
             body: "TSP ❔"
         }

@@ -25,12 +25,12 @@ script_mod! {
             color: mod.widgets.RINX_SELECTED
         }
 
-        typing_label := Label {
+        typing_label := RinxLabel {
             align: Align{x: 0.0, y: 0.5},
             padding: Inset{left: 5.0, right: 0.0, top: 0.0, bottom: 0.0}
             draw_text +: {
                 color: (TYPING_NOTICE_TEXT_COLOR),
-                text_style: REGULAR_TEXT {font_size: (10.5 * mod.widgets.RINX_TEXT_SCALE)}
+                text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_BODY_SIZE}
             }
             text: #(crate::i18n::tr("Someone is typing")) i18n_text: "Someone is typing"
         }

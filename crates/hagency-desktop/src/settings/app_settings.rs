@@ -1,4 +1,4 @@
-//! App-related (behavior & appearance) settings within the SettingsScreen.
+//! Shared preference behavior and category-specific layouts in SettingsScreen.
 
 use makepad_widgets::*;
 
@@ -50,7 +50,7 @@ script_mod! {
 
     // A label for one setting. It has no vertical margin: spacing above the row
     // comes from the row itself, so it stays the same when the control wraps below.
-    mod.widgets.SettingsItemLabel = Label {
+    mod.widgets.SettingsItemLabel = RinxLabel {
         width: Fit, height: Fit,
         margin: Inset{right: 4}
         align: Align{x: 0.0, y: 0.5}
@@ -63,143 +63,18 @@ script_mod! {
 
     // Descriptions are `<ul>` lists so that wrapped lines hang under the
     // text rather than under the bullet.
-    mod.widgets.SettingsSectionDescription = Html {
+    mod.widgets.SettingsSectionDescription = RinxHtml {
         width: Fill, height: Fit
         flow: Flow.Right{wrap: true}
         margin: Inset{left: 14, top: 0, bottom: 0, right: 5}
         padding: 0,
-        font_size: (11 * mod.widgets.RINX_TEXT_SCALE),
+        font_size: mod.widgets.RINX_META_SIZE,
         font_color: mod.widgets.RINX_MUTED,
-        text_style_normal: MESSAGE_TEXT_STYLE { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
-    }
-
-    // A single item within a Rinx-styled settings DropDown popup menu.
-    mod.widgets.RobrixSettingsPopupMenuItem = PopupMenuItem {
-        width: Fill, height: Fit
-        align: Align{y: 0.5}
-        padding: Inset{top: 8, bottom: 8, left: 28, right: 14}
-
-        draw_text +: {
-            color: (MESSAGE_TEXT_COLOR),
-            color_hover: (MESSAGE_TEXT_COLOR),
-            color_active: (COLOR_ACTIVE_PRIMARY_DARKER),
-            text_style: SETTINGS_REGULAR_TEXT_STYLE {},
-        }
-
-        draw_bg +: {
-            color: (COLOR_PRIMARY),
-            color_hover: (COLOR_BG_PREVIEW),
-            color_active: (COLOR_BG_PREVIEW),
-            border_color: vec4(0.0, 0.0, 0.0, 0.0),
-            border_color_hover: vec4(0.0, 0.0, 0.0, 0.0),
-            border_color_active: vec4(0.0, 0.0, 0.0, 0.0),
-            border_size: 0.0,
-            border_radius: 3.0,
-            mark_color: vec4(0.0, 0.0, 0.0, 0.0),
-            mark_color_active: (COLOR_ACTIVE_PRIMARY_DARKER),
-        }
-    }
-
-    // The popup list shown when a RobrixSettingsDropDown is opened.
-    mod.widgets.RobrixSettingsPopupMenu = PopupMenu {
-        width: 260, height: Fit
-        padding: 4,
-
-        menu_item: mod.widgets.RobrixSettingsPopupMenuItem{}
-
-        draw_bg +: {
-            color: (COLOR_PRIMARY),
-            border_color: (COLOR_SECONDARY_DARKER),
-            border_size: 1.0,
-            border_radius: 4.0,
-        }
-    }
-
-    // A DropDown styled to match other Rinx settings controls.
-    mod.widgets.RobrixSettingsDropDown = DropDownFlat {
-        width: 218, height: (mod.widgets.SETTINGS_BUTTON_HEIGHT),
-        padding: Inset{top: 8, bottom: 8, left: 12, right: 30}
-        margin: Inset{left: 5, top: 5, bottom: 5}
-        align: Align{x: 0.0, y: 0.5}
-
-        popup_menu: mod.widgets.RobrixSettingsPopupMenu {}
-
-        draw_text +: {
-            color: (MESSAGE_TEXT_COLOR),
-            color_hover: (MESSAGE_TEXT_COLOR),
-            color_focus: (MESSAGE_TEXT_COLOR),
-            color_down: (MESSAGE_TEXT_COLOR),
-            text_style: SETTINGS_REGULAR_TEXT_STYLE {},
-        }
-
-        draw_bg +: {
-            color: (COLOR_PRIMARY),
-            color_hover: (COLOR_PRIMARY),
-            color_down: (COLOR_PRIMARY),
-            color_focus: (COLOR_PRIMARY),
-            border_color: (COLOR_SECONDARY_DARKER),
-            border_color_hover: (COLOR_ACTIVE_PRIMARY),
-            border_color_focus: (COLOR_ACTIVE_PRIMARY_DARKER),
-            border_color_down: (COLOR_ACTIVE_PRIMARY_DARKER),
-            border_size: 1.0,
-            border_radius: 4.0,
-            arrow_color: (MESSAGE_TEXT_COLOR),
-            arrow_color_hover: (COLOR_ACTIVE_PRIMARY_DARKER),
-            arrow_color_focus: (COLOR_ACTIVE_PRIMARY_DARKER),
-            arrow_color_down: (COLOR_ACTIVE_PRIMARY_DARKER),
-
-            // The base DropDownFlat shader draws the arrow BEFORE the box,
-            // so the box fill paints over it. Override to draw the rounded
-            // rect first and then the arrow on top.
-            pixel: fn() {
-                let sdf = Sdf2d.viewport(self.pos * self.rect_size)
-
-                sdf.box(
-                    self.border_size
-                    self.border_size
-                    self.rect_size.x - self.border_size * 2.
-                    self.rect_size.y - self.border_size * 2.
-                    self.border_radius
-                )
-
-                let fill = self.color
-                    .mix(self.color_focus, self.focus)
-                    .mix(self.color_hover, self.hover)
-                    .mix(self.color_down, self.down * self.hover)
-                    .mix(self.color_disabled, self.disabled)
-
-                let stroke = self.border_color
-                    .mix(self.border_color_focus, self.focus)
-                    .mix(self.border_color_hover, self.hover)
-                    .mix(self.border_color_down, self.down * self.hover)
-                    .mix(self.border_color_disabled, self.disabled)
-
-                sdf.fill_keep(fill)
-                sdf.stroke(stroke, self.border_size)
-
-                // Draw the down-arrow triangle on top of the filled box.
-                let c = vec2(self.rect_size.x - 14.0, self.rect_size.y * 0.5)
-                let sz = 3.5
-                sdf.move_to(c.x - sz, c.y - sz * 0.5)
-                sdf.line_to(c.x + sz, c.y - sz * 0.5)
-                sdf.line_to(c.x, c.y + sz * 0.75)
-                sdf.close_path()
-
-                let arrow = self.arrow_color
-                    .mix(self.arrow_color_focus, self.focus)
-                    .mix(self.arrow_color_hover, self.hover)
-                    .mix(self.arrow_color_down, self.down * self.hover)
-                    .mix(self.arrow_color_disabled, self.disabled)
-
-                sdf.fill(arrow)
-
-                return sdf.result
-            }
-        }
+        text_style_normal: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_META_SIZE },
     }
 
     // A radio button styled to match other Rinx settings controls.
-    mod.widgets.RobrixSettingsRadioButton = RadioButton {
+    mod.widgets.RobrixSettingsRadioButton = RinxRadioButton {
         height: Fit,
         align: Align{y: 0.5},
         padding: Inset{top: 6, bottom: 6, left: 10, right: 4}
@@ -230,262 +105,274 @@ script_mod! {
     }
 
 
-    // The view containing Rinx app-wide preferences/settings.
+    // Each category owns one disjoint set of controls. The shared Rust widget
+    // keeps their existing preference actions and restoration behavior.
+    let PreferenceHeading = SubsectionLabel {margin: 0}
+    let SettingsPreferenceCard = RinxCard {
+        width: Fill height: Fit flow: Down padding: 16 spacing: 10
+    }
     mod.widgets.AppSettings = #(AppSettings::register_widget(vm)) {
-        width: Fill, height: Fit
-        flow: Down,
-
-        TitleLabel {
-            text: #(crate::i18n::tr("App Settings")) i18n_text: "App Settings"
-        }
-
-        appearance := AppearanceSettings {}
-
-        View {
-            width: Fill height: Fit flow: Flow.Right{wrap: true} align: Align{y: 0.5} spacing: 12
-            SubsectionLabel {text: #(crate::i18n::tr("Language")) i18n_text: "Language"}
-            language_dropdown := mod.widgets.RobrixSettingsDropDown {
-                labels: ["English", "简体中文"] selected_item: 0
-            }
-        }
-
-        View {
-            width: Fill, height: Fit
-            flow: Flow.Right{wrap: true}
-            align: Align{y: 0.5}
-
-            SubsectionLabel {
-                width: Fit,
-                margin: Inset{top: 4}
-                text: #(crate::i18n::tr("Force View Mode:")) i18n_text: "Force View Mode:"
-            }
-
-            view_mode_dropdown := mod.widgets.RobrixSettingsDropDown {
-                labels: [#(crate::i18n::tr("Automatic (default)")), #(crate::i18n::tr("Force wide (desktop)")), #(crate::i18n::tr("Force narrow (mobile)"))] i18n_labels: ["Automatic (default)", "Force wide (desktop)", "Force narrow (mobile)"]
-                selected_item: 0
-            }
-        }
-        mod.widgets.SettingsSectionDescription {
-            body: #(crate::i18n::tr("<ul><li>By default, the app layout auto-adapts based on width.</li></ul>")) i18n_body: "<ul><li>By default, the app layout auto-adapts based on width.</li></ul>"
-        }
-
-        tabbed_chats_toggle := ToggleFlat {
-            margin: Inset{left: 6.5, top: 5, bottom: 4}
-            padding: Inset { left: 15}
-            active: false,
-            draw_bg +: { size: 21 }
-            text: #(crate::i18n::tr("Open each chat in its own tab (desktop)")) i18n_text: "Open each chat in its own tab (desktop)"
-            draw_text +: {
-                text_style: mod.widgets.SETTINGS_BOLD_TEXT_STYLE {},
-            }
-        }
-        mod.widgets.SettingsSectionDescription {
-            body: #(crate::i18n::tr("<ul><li>When off, the desktop layout shows a single chat next to the rooms list, and selecting a room replaces it.</li></ul>")) i18n_body: "<ul><li>When off, the desktop layout shows a single chat next to the rooms list, and selecting a room replaces it.</li></ul>"
-        }
-
-
-        View {
-            width: Fill, height: Fit
-            flow: Flow.Right{wrap: true}
-            align: Align{y: 0.5}
-            spacing: 6
-
-            SubsectionLabel {
-                width: Fit,
-                margin: Inset{top: 4, right: 4}
-                text: #(crate::i18n::tr("UI Zoom Level:")) i18n_text: "UI Zoom Level:"
-            }
-
-            ui_zoom_controls := View {
-                width: Fit
-                height: Fit
-                flow: Right,
-                margin: Inset {top: 8}
-                align: Align{y: 0.5}
-                spacing: 4
-
-                ui_zoom_minus_button := RobrixNeutralIconButton {
-                    width: 28, height: 28,
-                    padding: 0
-                    align: Align{x: 0.5, y: 0.5}
-                    draw_text +: {
-                        text_style: mod.widgets.SETTINGS_REGULAR_TEXT_STYLE { font_size: (14 * mod.widgets.RINX_TEXT_SCALE) },
-                    }
-                    text: "-"
-                }
-
-                ui_zoom_input := RobrixTextInput {
-                    width: 60, height: Fit
-                    align: Align {y: 0.5}
-                    padding: Inset{left: 8, right: 8, top: 5, bottom: 5}
-                    empty_text: "100%"
-                    autocapitalize: None,
-                    autocorrect: Disabled,
-                }
-
-                ui_zoom_plus_button := RobrixNeutralIconButton {
-                    width: 28, height: 28,
-                    padding: 0
-                    align: Align{x: 0.5, y: 0.5}
-                    draw_text +: {
-                        text_style: mod.widgets.SETTINGS_REGULAR_TEXT_STYLE { font_size: (14 * mod.widgets.RINX_TEXT_SCALE) },
-                    }
-                    text: "+"
-                }
-            }
-        }
-
-        ui_zoom_description := mod.widgets.SettingsSectionDescription {
-            body: "" // see UI_ZOOM_DESCRIPTION
-        }
-
-
-        SubsectionLabel {
-            text: #(crate::i18n::tr("Keyboard Shortcut to Send Message")) i18n_text: "Keyboard Shortcut to Send Message"
-        }
-
-        send_on_cmd_enter_toggle := ToggleFlat {
-            margin: Inset{left: 6.5, top: 5, bottom: 10}
-            padding: Inset { left: 15}
-            active: false,
-            draw_bg +: { size: 21 }
-            text: "" // we set this text dynamically based on the toggle state and target platform
-            draw_text +: {
-                text_style: mod.widgets.SETTINGS_BOLD_TEXT_STYLE {},
-            }
-        }
-
-        send_shortcut_description := mod.widgets.SettingsSectionDescription {
-            body: #(crate::i18n::tr("<ul><li>Current setting: 'Enter' to send, 'Shift + Enter' for a new line</li></ul>")) i18n_body: "<ul><li>Current setting: 'Enter' to send, 'Shift + Enter' for a new line</li></ul>"
-        }
-
-        send_shortcut_soft_keyboard_warning := mod.widgets.SettingsSectionDescription {
-            font_color: (COLOR_TEXT_WARNING_NOT_FOUND)
-            body: #(crate::i18n::tr("<ul><li>Note: this only applies to physical (hardware) keyboards.</li></ul>")) i18n_body: "<ul><li>Note: this only applies to physical (hardware) keyboards.</li></ul>"
-        }
-
-        SubsectionLabel {
-            text: #(crate::i18n::tr("Maximum Height of Thumbnails")) i18n_text: "Maximum Height of Thumbnails"
-        }
-
-        View {
-            width: Fill, height: Fit
-            flow: Down,
-            margin: Inset{left: 6},
-            spacing: 4,
-
-            thumb_small_radio := mod.widgets.RobrixSettingsRadioButton {
-                text: #(crate::i18n::tr("Small (200 pixels)")) i18n_text: "Small (200 pixels)"
-            }
-
-            thumb_medium_radio := mod.widgets.RobrixSettingsRadioButton {
-                text: #(crate::i18n::tr("Medium (300 pixels, default)")) i18n_text: "Medium (300 pixels, default)"
-            }
-
-            thumb_large_radio := mod.widgets.RobrixSettingsRadioButton {
-                text: #(crate::i18n::tr("Large (400 pixels)")) i18n_text: "Large (400 pixels)"
-            }
-
+        width: Fill height: Fit flow: Down spacing: 16
+    }
+    mod.widgets.GeneralSettings = mod.widgets.AppSettings {
+        SettingsPreferenceCard {
             View {
-                width: Fill, height: Fit
-                flow: Right,
-                align: Align{y: 0.5}
-                spacing: 6,
-
-                thumb_custom_radio := mod.widgets.RobrixSettingsRadioButton {
-                    text: #(crate::i18n::tr("Custom:")) i18n_text: "Custom:"
-                }
-
-                // Read-only by default, enabled when `thumb_custom_radio` is selected.
-                thumb_custom_input := RobrixTextInput {
-                    width: 60, height: Fit
-                    padding: Inset{left: 8, right: 8, top: 5, bottom: 5}
-                    empty_text: "300"
-                    autocapitalize: None,
-                    autocorrect: Disabled,
-                    is_read_only: true
-                }
-
-                Label {
-                    width: Fit, height: Fit
-                    draw_text +: {
-                        color: (MESSAGE_TEXT_COLOR),
-                        text_style: MESSAGE_TEXT_STYLE { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
-                    }
-                    text: #(crate::i18n::tr("pixels")) i18n_text: "pixels"
+                width: Fill height: Fit flow: Flow.Right{wrap: true} align: Align{y: 0.5} spacing: 12
+                PreferenceHeading {text: #(crate::i18n::tr("Language")) i18n_text: "Language"}
+                language_dropdown := mod.widgets.RobrixSettingsDropDown {
+                    labels: ["English", "简体中文"] selected_item: 0
                 }
             }
         }
+        SettingsPreferenceCard {
+            PreferenceHeading {
+                text: #(crate::i18n::tr("Keyboard Shortcut to Send Message")) i18n_text: "Keyboard Shortcut to Send Message"
+            }
 
-        SubsectionLabel {
-            text: #(crate::i18n::tr("Read Receipts")) i18n_text: "Read Receipts"
-        }
-
-        View {
-            width: Fill, height: Fit
-            flow: Down,
-            margin: Inset{left: 6},
-
-            show_read_receipts_toggle := ToggleFlat {
-                margin: Inset{left: 0.5, top: 5, bottom: 10}
+            send_on_cmd_enter_toggle := ToggleFlat {
+                margin: Inset{left: 6.5, top: 5, bottom: 10}
                 padding: Inset { left: 15}
-                active: true,
+                active: false,
                 draw_bg +: { size: 21 }
-                text: #(crate::i18n::tr("Show who has seen/read a message")) i18n_text: "Show who has seen/read a message"
+                text: "" // we set this text dynamically based on the toggle state and target platform
                 draw_text +: {
                     text_style: mod.widgets.SETTINGS_BOLD_TEXT_STYLE {},
                 }
             }
-            show_read_receipts_description := mod.widgets.SettingsSectionDescription {
-                body: "" // set dynamically, see `SHOW_READ_RECEIPTS_DESC_*`
+
+            send_shortcut_description := mod.widgets.SettingsSectionDescription {
+                body: #(crate::i18n::tr("<ul><li>Current setting: 'Enter' to send, 'Shift + Enter' for a new line</li></ul>")) i18n_body: "<ul><li>Current setting: 'Enter' to send, 'Shift + Enter' for a new line</li></ul>"
             }
 
-            View {
-                width: Fill, height: Fit
-                margin: Inset{top: 6}
-                // `row_align` (not `align.y`) is what centers items within a wrapping row.
-                flow: Flow.Right{wrap: true, row_align: RowAlign.Center}
-
-                mod.widgets.SettingsItemLabel {
-                    width: 155,
-                    text: #(crate::i18n::tr("Send read receipts to:")) i18n_text: "Send read receipts to:"
-                }
-
-                read_receipts_privacy_dropdown := mod.widgets.RobrixSettingsDropDown {
-                    labels: [#(crate::i18n::tr("Everyone (default)")), #(crate::i18n::tr("Only my own devices"))] i18n_labels: ["Everyone (default)", "Only my own devices"]
-                    selected_item: 0
-                }
-            }
-            read_receipts_privacy_description := mod.widgets.SettingsSectionDescription {
-                body: "" // set dynamically, see `READ_RECEIPTS_PRIVACY_DESC_*`
-            }
-
-            View {
-                width: Fill, height: Fit
-                margin: Inset{top: 6}
-                // `row_align` (not `align.y`) is what centers items within a wrapping row.
-                flow: Flow.Right{wrap: true, row_align: RowAlign.Center}
-
-                mod.widgets.SettingsItemLabel {
-                    width: 155,
-                    text: #(crate::i18n::tr("Mark a room as read:")) i18n_text: "Mark a room as read:"
-                }
-
-                mark_as_read_dropdown := mod.widgets.RobrixSettingsDropDown {
-                    width: 240,
-                    labels: [#(crate::i18n::tr("When viewing messages")), #(crate::i18n::tr("Only manually"))] i18n_labels: ["When viewing messages", "Only manually"]
-                    selected_item: 0
-                }
-            }
-            mark_as_read_description := mod.widgets.SettingsSectionDescription {
-                body: "" // set dynamically, see `MARK_AS_READ_DESC_*`
+            send_shortcut_soft_keyboard_warning := mod.widgets.SettingsSectionDescription {
+                font_color: (COLOR_TEXT_WARNING_NOT_FOUND)
+                body: #(crate::i18n::tr("<ul><li>Note: this only applies to physical (hardware) keyboards.</li></ul>")) i18n_body: "<ul><li>Note: this only applies to physical (hardware) keyboards.</li></ul>"
             }
         }
+    }
+    mod.widgets.InterfaceSettings = mod.widgets.AppSettings {
+        SettingsPreferenceCard {
+            appearance := AppearanceSettings {padding: 0}
+        }
+        SettingsPreferenceCard {
+            View {
+                width: Fill, height: Fit
+                flow: Flow.Right{wrap: true}
+                align: Align{y: 0.5}
 
-        // Empty in builds without the `agent_chat` feature.
-        approvals := RobrixNeutralIconButton {visible: #(cfg!(feature = "agent_chat")) text: #(crate::i18n::tr("Approval rooms")) i18n_text: "Approval rooms"}
-        agent_access := RobrixNeutralIconButton {text: #(crate::i18n::tr("External bots and AppServices")) i18n_text: "External bots and AppServices"}
-        agent_chat_preferences := mod.widgets.AgentChatPreferences {}
+                PreferenceHeading {
+                    width: Fit,
+                    margin: Inset{top: 4}
+                    text: #(crate::i18n::tr("Force View Mode:")) i18n_text: "Force View Mode:"
+                }
+
+                view_mode_dropdown := mod.widgets.RobrixSettingsDropDown {
+                    labels: [#(crate::i18n::tr("Automatic (default)")), #(crate::i18n::tr("Force wide (desktop)")), #(crate::i18n::tr("Force narrow (mobile)"))] i18n_labels: ["Automatic (default)", "Force wide (desktop)", "Force narrow (mobile)"]
+                    selected_item: 0
+                }
+            }
+            mod.widgets.SettingsSectionDescription {
+                body: #(crate::i18n::tr("<ul><li>By default, the app layout auto-adapts based on width.</li></ul>")) i18n_body: "<ul><li>By default, the app layout auto-adapts based on width.</li></ul>"
+            }
+
+            tabbed_chats_toggle := ToggleFlat {
+                margin: Inset{left: 6.5, top: 5, bottom: 4}
+                padding: Inset { left: 15}
+                active: false,
+                draw_bg +: { size: 21 }
+                text: #(crate::i18n::tr("Open each chat in its own tab (desktop)")) i18n_text: "Open each chat in its own tab (desktop)"
+                draw_text +: {
+                    text_style: mod.widgets.SETTINGS_BOLD_TEXT_STYLE {},
+                }
+            }
+            mod.widgets.SettingsSectionDescription {
+                body: #(crate::i18n::tr("<ul><li>When off, the desktop layout shows a single chat next to the rooms list, and selecting a room replaces it.</li></ul>")) i18n_body: "<ul><li>When off, the desktop layout shows a single chat next to the rooms list, and selecting a room replaces it.</li></ul>"
+            }
+        }
+        SettingsPreferenceCard {
+            View {
+                width: Fill, height: Fit
+                flow: Flow.Right{wrap: true}
+                align: Align{y: 0.5}
+                spacing: 6
+
+                PreferenceHeading {
+                    width: Fit,
+                    margin: Inset{top: 4, right: 4}
+                    text: #(crate::i18n::tr("UI Zoom Level:")) i18n_text: "UI Zoom Level:"
+                }
+
+                ui_zoom_controls := View {
+                    width: Fit
+                    height: Fit
+                    flow: Right,
+                    margin: Inset {top: 8}
+                    align: Align{y: 0.5}
+                    spacing: 4
+
+                    ui_zoom_minus_button := RobrixNeutralIconButton {
+                        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                        width: 28, align: Align{x: 0.5, y: 0.5}
+                        draw_text +: {
+                            text_style: mod.widgets.SETTINGS_REGULAR_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
+                        }
+                        text: "-"
+                    }
+
+                    ui_zoom_input := RobrixTextInput {
+                        width: 60, height: Fit
+                        align: Align {y: 0.5}
+                        padding: Inset{left: 8, right: 8, top: 5, bottom: 5}
+                        empty_text: "100%"
+                        autocapitalize: None,
+                        autocorrect: Disabled,
+                    }
+
+                    ui_zoom_plus_button := RobrixNeutralIconButton {
+                        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                        width: 28, align: Align{x: 0.5, y: 0.5}
+                        draw_text +: {
+                            text_style: mod.widgets.SETTINGS_REGULAR_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
+                        }
+                        text: "+"
+                    }
+                }
+            }
+
+            ui_zoom_description := mod.widgets.SettingsSectionDescription {
+                body: "" // see UI_ZOOM_DESCRIPTION
+            }
+        }
+        SettingsPreferenceCard {
+            PreferenceHeading {
+                text: #(crate::i18n::tr("Maximum Height of Thumbnails")) i18n_text: "Maximum Height of Thumbnails"
+            }
+
+            View {
+                width: Fill, height: Fit
+                flow: Down,
+                margin: Inset{left: 6},
+                spacing: 4,
+
+                thumb_small_radio := mod.widgets.RobrixSettingsRadioButton {
+                    text: #(crate::i18n::tr("Small (200 pixels)")) i18n_text: "Small (200 pixels)"
+                }
+
+                thumb_medium_radio := mod.widgets.RobrixSettingsRadioButton {
+                    text: #(crate::i18n::tr("Medium (300 pixels, default)")) i18n_text: "Medium (300 pixels, default)"
+                }
+
+                thumb_large_radio := mod.widgets.RobrixSettingsRadioButton {
+                    text: #(crate::i18n::tr("Large (400 pixels)")) i18n_text: "Large (400 pixels)"
+                }
+
+                View {
+                    width: Fill, height: Fit
+                    flow: Right,
+                    align: Align{y: 0.5}
+                    spacing: 6,
+
+                    thumb_custom_radio := mod.widgets.RobrixSettingsRadioButton {
+                        text: #(crate::i18n::tr("Custom:")) i18n_text: "Custom:"
+                    }
+
+                    // Read-only by default, enabled when `thumb_custom_radio` is selected.
+                    thumb_custom_input := RobrixTextInput {
+                        width: 60, height: Fit
+                        padding: Inset{left: 8, right: 8, top: 5, bottom: 5}
+                        empty_text: "300"
+                        autocapitalize: None,
+                        autocorrect: Disabled,
+                        is_read_only: true
+                    }
+
+                    RinxLabel {
+                        width: Fit, height: Fit
+                        draw_text +: {
+                            color: (MESSAGE_TEXT_COLOR),
+                            text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_META_SIZE },
+                        }
+                        text: #(crate::i18n::tr("pixels")) i18n_text: "pixels"
+                    }
+                }
+            }
+        }
+    }
+    mod.widgets.MessageSettings = mod.widgets.AppSettings {
+        SettingsPreferenceCard {
+            PreferenceHeading {
+                text: #(crate::i18n::tr("Read Receipts")) i18n_text: "Read Receipts"
+            }
+
+            View {
+                width: Fill, height: Fit
+                flow: Down,
+                margin: Inset{left: 6},
+
+                show_read_receipts_toggle := ToggleFlat {
+                    margin: Inset{left: 0.5, top: 5, bottom: 10}
+                    padding: Inset { left: 15}
+                    active: true,
+                    draw_bg +: { size: 21 }
+                    text: #(crate::i18n::tr("Show who has seen/read a message")) i18n_text: "Show who has seen/read a message"
+                    draw_text +: {
+                        text_style: mod.widgets.SETTINGS_BOLD_TEXT_STYLE {},
+                    }
+                }
+                show_read_receipts_description := mod.widgets.SettingsSectionDescription {
+                    body: "" // set dynamically, see `SHOW_READ_RECEIPTS_DESC_*`
+                }
+
+                View {
+                    width: Fill, height: Fit
+                    margin: Inset{top: 6}
+                    // `row_align` (not `align.y`) is what centers items within a wrapping row.
+                    flow: Flow.Right{wrap: true, row_align: RowAlign.Center}
+
+                    mod.widgets.SettingsItemLabel {
+                        width: 155,
+                        text: #(crate::i18n::tr("Send read receipts to:")) i18n_text: "Send read receipts to:"
+                    }
+
+                    read_receipts_privacy_dropdown := mod.widgets.RobrixSettingsDropDown {
+                        labels: [#(crate::i18n::tr("Everyone (default)")), #(crate::i18n::tr("Only my own devices"))] i18n_labels: ["Everyone (default)", "Only my own devices"]
+                        selected_item: 0
+                    }
+                }
+                read_receipts_privacy_description := mod.widgets.SettingsSectionDescription {
+                    body: "" // set dynamically, see `READ_RECEIPTS_PRIVACY_DESC_*`
+                }
+
+                View {
+                    width: Fill, height: Fit
+                    margin: Inset{top: 6}
+                    // `row_align` (not `align.y`) is what centers items within a wrapping row.
+                    flow: Flow.Right{wrap: true, row_align: RowAlign.Center}
+
+                    mod.widgets.SettingsItemLabel {
+                        width: 155,
+                        text: #(crate::i18n::tr("Mark a room as read:")) i18n_text: "Mark a room as read:"
+                    }
+
+                    mark_as_read_dropdown := mod.widgets.RobrixSettingsDropDown {
+                        width: 240,
+                        labels: [#(crate::i18n::tr("When viewing messages")), #(crate::i18n::tr("Only manually"))] i18n_labels: ["When viewing messages", "Only manually"]
+                        selected_item: 0
+                    }
+                }
+                mark_as_read_description := mod.widgets.SettingsSectionDescription {
+                    body: "" // set dynamically, see `MARK_AS_READ_DESC_*`
+                }
+            }
+        }
+    }
+    mod.widgets.AgentServiceSettings = mod.widgets.AppSettings {
+        SettingsPreferenceCard {
+            // Empty in builds without the `agent_chat` feature.
+            approvals := RobrixNeutralIconButton {visible: #(cfg!(feature = "agent_chat")) text: #(crate::i18n::tr("Approval rooms")) i18n_text: "Approval rooms"}
+            agent_access := RobrixNeutralIconButton {text: #(crate::i18n::tr("External bots and AppServices")) i18n_text: "External bots and AppServices"}
+            agent_chat_preferences := mod.widgets.AgentChatPreferences {}
+        }
     }
 }
 

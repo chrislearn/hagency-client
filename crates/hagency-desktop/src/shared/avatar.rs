@@ -84,14 +84,14 @@ script_mod! {
             show_bg: true,
             draw_bg.color: (COLOR_AVATAR_BG)
 
-            text := Label {
+            text := RinxLabel {
                 padding: 0,
                 margin: 0,
                 width: Fit, height: Fit,
                 flow: Flow.Right { wrap: false },
                 align: Align{ x: 0.5, y: 0.5 }
                 draw_text +: {
-                    text_style: TITLE_TEXT { font_size: 15. }
+                    text_style: TITLE_TEXT { font_size: 15. } // style-size: avatar
                     color: #f,
                 }
                 text: "?"
@@ -126,9 +126,9 @@ script_mod! {
             tile_text := SolidView {
                 width: Fill height: Fill align: Align{x: 0.5 y: 0.5}
                 draw_bg +: {color: instance(#fff)} // theme-content: replaced with each member's stable identity color before drawing.
-                text := Label {
+                text := RinxLabel {
                     width: Fit height: Fit padding: 0
-                    draw_text +: {color: #fff text_style: theme.font_bold {font_size: 8.0}} // theme-content: white initials contrast with the fixed identity palette.
+                    draw_text +: {color: #fff text_style: theme.font_bold {font_size: 8.0}} // theme-content: white initials contrast with the fixed identity palette. // style-size: avatar
                 }
             }
             tile_image := Image {

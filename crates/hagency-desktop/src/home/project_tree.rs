@@ -25,10 +25,10 @@ script_mod! {
 
     mod.widgets.ProjectTree = #(ProjectTree::register_widget(vm)) {
         width: Fill height: Fill flow: Down
-        status := Label {
+        status := RinxLabel {
             width: Fill height: Fit padding: 18
             flow: Flow.Right{wrap: true}
-            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)}}
+            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
             text: #(crate::i18n::tr("Loading projects…")) i18n_text: "Loading projects…"
         }
         list := PortalList {
@@ -54,16 +54,16 @@ script_mod! {
                     align: Align{y: 0.5} padding: Inset{left: 4 right: 6}
                     draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: #0000 border_radius: 5}
                     indent := View {width: 0 height: 1}
-                    name := Label {
+                    name := RinxLabel {
                         width: Fill max_lines: 1 text_overflow: Ellipsis
-                        draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: (12.5 * mod.widgets.RINX_TEXT_SCALE)}}
+                        draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}
                     }
                     unread := UnreadBadge {}
                 }
-                more := ButtonFlat {
-                    width: 28 height: 36 text: "⋯"
-                    margin: 0 padding: 0
-                    draw_bg +: {color: #0000 color_hover: mod.widgets.RINX_HOVER color_down: mod.widgets.RINX_PRESSED color_focus: mod.widgets.RINX_SELECTED border_size: 0 border_radius: 5
+                more := RinxGhostButton {
+                    height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                    width: 28 text: "⋯"
+                    margin: 0 draw_bg +: {color: #0000 color_hover: mod.widgets.RINX_HOVER color_down: mod.widgets.RINX_PRESSED color_focus: mod.widgets.RINX_SELECTED border_size: 0 border_radius: 5
                         color_2_hover: vec4(-1.0, -1.0, -1.0, -1.0) color_2_down: vec4(-1.0, -1.0, -1.0, -1.0) color_2_focus: vec4(-1.0, -1.0, -1.0, -1.0)}
                     draw_text +: {color: mod.widgets.RINX_MUTED color_hover: mod.widgets.RINX_INK color_down: mod.widgets.RINX_INK}
                 }

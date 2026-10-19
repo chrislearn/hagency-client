@@ -23,20 +23,20 @@ script_mod! {
     use mod.widgets.*
     mod.widgets.ThemeStudio = #(ThemeStudio::register_widget(vm)) {
         ..mod.widgets.SolidView
-        width: Fill{max: 920} height: Fill flow: Down padding: 20 spacing: 12
+        width: Fill{max: 920} height: Fill flow: Down padding: Inset{top: 20 bottom: 20} spacing: 12
         show_bg: true draw_bg.color: RINX_PAGE
-        header := View {width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12
+        header := View {width: Fill height: Fit flow: Right align: Align{y: 0.5} spacing: 12 margin: Inset{left: 20 right: 20}
             RinxPageTitle {width: Fill text: #(crate::i18n::tr("Customize appearance")) i18n_text: "Customize appearance"}
             studio_close := RinxButton {text: #(crate::i18n::tr("Close")) i18n_text: "Close"}
         }
-        actions := View {width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 8
+        actions := View {width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 8 margin: Inset{left: 20 right: 20}
             theme_import := RinxButton {text: #(crate::i18n::tr("Import theme")) i18n_text: "Import theme"}
             theme_export := RinxButton {text: #(crate::i18n::tr("Export theme")) i18n_text: "Export theme"}
             theme_duplicate := RinxButton {text: #(crate::i18n::tr("Duplicate")) i18n_text: "Duplicate"}
             theme_undo := RinxButton {text: #(crate::i18n::tr("Undo theme change")) i18n_text: "Undo theme change"}
             theme_reset := RinxButton {text: #(crate::i18n::tr("Reset appearance")) i18n_text: "Reset appearance"}
         }
-        content := ScrollYView {width: Fill height: Fill flow: Down spacing: 12
+        content := ScrollYView {width: Fill height: Fill flow: Down spacing: 12 padding: Inset{left: 20 right: 20}
             RinxLabel {text: #(crate::i18n::tr("Theme name")) i18n_text: "Theme name"}
             theme_name := RinxInput {width: Fill}
             colors := View {width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 12
@@ -81,12 +81,12 @@ script_mod! {
             }
             share_section := View {width: Fill height: Fit flow: Down spacing: 8
                 RinxHint {width: Fill text: #(crate::i18n::tr("Share a theme file in a conversation. Recipients choose whether to apply it.")) i18n_text: "Share a theme file in a conversation. Recipients choose whether to apply it."}
-                share_rooms := DropDown {width: Fill height: RINX_CONTROL_HEIGHT labels: [#(crate::i18n::tr("Choose a conversation"))]}
+                share_rooms := RinxDropDown {width: Fill height: RINX_CONTROL_HEIGHT labels: [#(crate::i18n::tr("Choose a conversation"))]}
                 theme_share := RinxButton {text: #(crate::i18n::tr("Send theme file")) i18n_text: "Send theme file"}
             }
         }
-        studio_status := RinxHint {width: Fill}
-        footer := View {width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 8
+        studio_status := RinxHint {width: Fill margin: Inset{left: 20 right: 20}}
+        footer := View {width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 8 margin: Inset{left: 20 right: 20}
             theme_apply := RinxPrimaryButton {text: #(crate::i18n::tr("Apply theme")) i18n_text: "Apply theme"}
             theme_cancel := RinxButton {text: #(crate::i18n::tr("Cancel preview")) i18n_text: "Cancel preview"}
         }

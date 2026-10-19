@@ -20,9 +20,8 @@ script_mod! {
             width: 65, height: 75,
             align: Align{x: 0.5, y: 1.0},
             flow: Overlay,
-            inner_button := RobrixIconButton {
-                spacing: 0,
-                width: 50, height: 50,
+            inner_button := RinxIconButton {
+                width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
                 align: Align{x: 0.5, y: 0.5},
                 margin: Inset{bottom: 8},
                 draw_icon +: {
@@ -36,8 +35,6 @@ script_mod! {
                     //     return mix(self.color, self.color_hover, self.hover)
                     // }
                 },
-                icon_walk: Walk{width: 20, height: 20}
-                // draw a circular background for the button
                 draw_bg +: {
                     background_color: mod.widgets.RINX_SURFACE,
                     background_color_hover: mod.widgets.RINX_HOVER,
@@ -86,7 +83,7 @@ script_mod! {
                     }
                 }
                 // Label that displays the unread message count
-                unread_messages_count := Label {
+                unread_messages_count := RinxLabel {
                     padding: 0,
                     width: Fit,
                     height: Fit,
@@ -94,7 +91,7 @@ script_mod! {
                     text: "",
                     draw_text +: {
                         color: mod.widgets.RINX_ON_ACCENT,
-                        text_style: theme.font_regular {font_size: (8.0 * mod.widgets.RINX_TEXT_SCALE)},
+                        text_style: theme.font_regular {font_size: (8.0 * mod.widgets.RINX_TEXT_SCALE)}, // style-size: glyph
                     }
                 }
             }

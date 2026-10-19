@@ -26,18 +26,18 @@ script_mod! {
             padding: 10
             align: Align { y: 0.5 }
 
-            wallet_name := Label {
+            wallet_name := RinxLabel {
                 width: Fit, height: Fit
                 flow: Flow.Right { wrap: false },
                 margin: Inset{top: 2.4, left: 0}
                 draw_text +: {
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: theme.font_bold { font_size: (12 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: theme.font_bold { font_size: mod.widgets.RINX_HEADING_SIZE },
                 }
                 text: "[Wallet Name]"
             }
 
-            wallet_path := Label {
+            wallet_path := RinxLabel {
                 width: Fit{max: FitBound.Rel{base: Base.Line, factor: 1.0}},
                 height: Fit
                 flow: Flow.Right { wrap: false },
@@ -45,7 +45,7 @@ script_mod! {
                 margin: Inset{top: 2.9, left: 8, bottom: 2}
                 draw_text +: {
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: theme.font_regular { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: theme.font_regular { font_size: mod.widgets.RINX_BODY_SIZE },
                 }
                 text: "[Wallet Path/URL]"
             }
@@ -55,14 +55,14 @@ script_mod! {
                 width: Fit, height: Fit
                 margin: Inset{left: 20}
                 align: Align { y: 0.5 }
-                Label {
+                RinxLabel {
                     width: Fit, height: Fit
                     margin: Inset{top: 3}
                     align: Align { y: 0.5 }
                     flow: Flow.Right { wrap: false },
                     draw_text +: {
                         color: (COLOR_FG_ACCEPT_GREEN),
-                        text_style: theme.font_bold { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                        text_style: theme.font_bold { font_size: mod.widgets.RINX_HEADING_SIZE },
                     }
                     text: "✅ Default"
                 }
@@ -73,22 +73,21 @@ script_mod! {
                 width: Fit, height: Fit
                 margin: Inset{left: 20}
                 align: Align { y: 0.5 }
-                Label {
+                RinxLabel {
                     margin: Inset{top: 2.9}
                     width: Fit, height: Fit
                     flow: Flow.Right { wrap: false },
                     align: Align { y: 0.5 }
                     draw_text +: {
                         color: (COLOR_FG_DANGER_RED),
-                        text_style: MESSAGE_TEXT_STYLE { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                        text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
                     }
                     text: "Wallet not found!"
                 }
             }
 
             set_default_wallet_button := RobrixIconButton {
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 margin: Inset{left: 20}
                 draw_icon.svg: (ICON_CHECKMARK)
                 icon_walk: Walk{width: 16, height: 16}
@@ -96,8 +95,7 @@ script_mod! {
             }
 
             remove_wallet_button := RobrixNegativeIconButton {
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 margin: Inset{left: 20}
                 draw_icon.svg: (ICON_CLOSE)
                 icon_walk: Walk{ width: 16, height: 16 }
@@ -105,8 +103,7 @@ script_mod! {
             }
 
             delete_wallet_button := RobrixNegativeIconButton {
-                height: mod.widgets.SETTINGS_BUTTON_HEIGHT,
-                padding: Inset{top: 10, bottom: 10, left: 12, right: 15}
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 margin: Inset{left: 20}
                 draw_icon.svg: (ICON_TRASH)
                 icon_walk: Walk{ width: 16, height: 16 }

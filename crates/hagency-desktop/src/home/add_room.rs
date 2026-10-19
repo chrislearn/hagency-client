@@ -21,7 +21,8 @@ script_mod! {
         draw_bg.color: mod.widgets.RINX_PAGE
         explore_header := DetailHeader { title +: {text: #(crate::i18n::tr("Explore Rooms")) i18n_text: "Explore Rooms"} }
         create_room_space := RobrixNeutralIconButton {
-            width: Fill height: 40 margin: Inset{left: 16 right: 16}
+            height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+            width: Fill margin: Inset{left: 16 right: 16}
             text: #(crate::i18n::tr("Create a room or space")) i18n_text: "Create a room or space"
             icon_walk: Walk{width: 0 height: 0}
         }
@@ -41,18 +42,17 @@ script_mod! {
                 margin: Inset{top: 0, left: 5, right: 5, bottom: 0},
                 padding: Inset{left: 12, right: 12, top: 0, bottom: 0}
                 width: Fill
-                height: 40
+                height: mod.widgets.RINX_CONTROL_HEIGHT
                 empty_text: #(crate::i18n::tr("Room name, alias or link")) i18n_empty_text: "Room name, alias or link"
                 autocapitalize: None,
                 autocorrect: Disabled,
             }
 
             search_for_room_button := RobrixPositiveIconButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
                 draw_bg +: {color: mod.widgets.RINX_ACCENT color_hover: mod.widgets.RINX_ACCENT_HOVER color_down: mod.widgets.RINX_ACCENT_DOWN border_size: 0}
                 draw_text +: {color: mod.widgets.RINX_ON_ACCENT color_hover: mod.widgets.RINX_ON_ACCENT color_down: mod.widgets.RINX_ON_ACCENT}
                 draw_icon.color: mod.widgets.RINX_ON_ACCENT
-                padding: Inset{top: 10, bottom: 10, left: 12, right: 14}
-                height: 40
                 draw_icon.svg: (ICON_SEARCH)
                 icon_walk: Walk{width: 16, height: 16}
                 text: #(crate::i18n::tr("Search")) i18n_text: "Search"
@@ -77,25 +77,25 @@ script_mod! {
                 }
             }
 
-            loading_text := Label {
+            loading_text := RinxLabel {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true},
                 margin: Inset { top: 4 }
                 draw_text +: {
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: MESSAGE_TEXT_STYLE { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
                 }
             }
         }
 
         error_view := View {
             padding: 10
-            error_text := Label {
+            error_text := RinxLabel {
                 width: Fill, height: Fit
                 flow: Flow.Right{wrap: true},
                 draw_text +: {
                     color: (COLOR_FG_DANGER_RED),
-                    text_style: MESSAGE_TEXT_STYLE { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                    text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
                 }
             }
         }
@@ -115,7 +115,7 @@ script_mod! {
                         name := DetailLabel {width: Fill padding: 0 max_lines: 1 text_overflow: Ellipsis}
                         description := DetailLabel {
                             width: Fill padding: 0 max_lines: 1 text_overflow: Ellipsis
-                            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}
+                            draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}
                         }
                     }
                     DetailDivider {}
@@ -155,36 +155,36 @@ script_mod! {
                         text_view +: {
                             text +: {
                                 draw_text +: {
-                                    text_style: TITLE_TEXT { font_size: (16.0 * mod.widgets.RINX_TEXT_SCALE) }
+                                    text_style: TITLE_TEXT { font_size: mod.widgets.RINX_TITLE_SIZE }
                                 }
                             }
                         }
                     }
 
-                    room_name := Label {
+                    room_name := RinxLabel {
                         width: Fill, height: Fit,
                         margin: Inset{top: 3} // align it with the above room_avatar
                         flow: Flow.Right{wrap: true},
                         draw_text +: {
-                            text_style: TITLE_TEXT { font_size: (16 * mod.widgets.RINX_TEXT_SCALE) }
+                            text_style: TITLE_TEXT { font_size: mod.widgets.RINX_TITLE_SIZE }
                             color: (COLOR_TEXT)
                         }
                     }
                 }
 
                 // Something like "This is a [regular|direct] [room|space] with N members."
-                room_summary := Label {
+                room_summary := RinxLabel {
                     width: Fill, height: Fit
                     flow: Flow.Right{wrap: true},
                     margin: Inset{top: 10}
                     draw_text +: {
                         color: (MESSAGE_TEXT_COLOR),
-                        text_style: MESSAGE_TEXT_STYLE { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                        text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
                     }
                 }
 
                 subsection_alias_id := SubsectionLabel {
-                    draw_text +: { text_style: theme.font_regular { font_size: (12 * mod.widgets.RINX_TEXT_SCALE) } }
+                    draw_text +: { text_style: theme.font_regular { font_size: mod.widgets.RINX_BODY_SIZE } }
                 }
 
                 room_alias_and_id_view := View {
@@ -194,34 +194,34 @@ script_mod! {
                     align: Align{y: 0.5}
                     flow: Flow.Right{wrap: true},
 
-                    room_alias := Label {
+                    room_alias := RinxLabel {
                         width: Fit, height: Fit
                         flow: Flow.Right{wrap: true},
                         draw_text +: {
                             color: (MESSAGE_TEXT_COLOR),
-                            text_style: MESSAGE_TEXT_STYLE { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                            text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
                         }
                     }
 
-                    room_id := Label {
+                    room_id := RinxLabel {
                         width: Fit, height: Fit
                         flow: Flow.Right{wrap: true},
                         draw_text +: {
                             color: (SMALL_STATE_TEXT_COLOR),
-                            text_style: MESSAGE_TEXT_STYLE { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) },
+                            text_style: MESSAGE_TEXT_STYLE { font_size: mod.widgets.RINX_BODY_SIZE },
                         }
                     }
                 }
 
                 subsection_topic := SubsectionLabel {
-                    draw_text +: { text_style: theme.font_regular { font_size: (12 * mod.widgets.RINX_TEXT_SCALE) } }
+                    draw_text +: { text_style: theme.font_regular { font_size: mod.widgets.RINX_BODY_SIZE } }
                 }
 
                 room_topic := MessageHtml {
                     padding: Inset{left: 20, top: 5, right: 10, bottom: 10}
                     width: Fill,
                     height: Fit,
-                    font_size: (11 * mod.widgets.RINX_TEXT_SCALE)
+                    font_size: mod.widgets.RINX_BODY_SIZE
                     font_color: (MESSAGE_TEXT_COLOR)
                 }
 
@@ -236,9 +236,8 @@ script_mod! {
                     // This button's text is based on the room state (e.g., joined, left, invited)
                     // the room's join rules (e.g., public, can knock, invite-only (in which we disable it)).
                     join_room_button := RobrixPositiveIconButton {
-                        padding: 15,
+                        width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
                         draw_icon.svg: (ICON_JOIN_ROOM)
-                        icon_walk: Walk{width: 17, height: 17, margin: Inset{left: -2, right: -1} }
                     }
 
                     cancel_button := RobrixNegativeIconButton {

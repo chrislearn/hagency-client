@@ -17,20 +17,20 @@ script_mod! {
         padding: Inset{top: 6, right: 6, bottom: 6, left: 6}
         spacing: 4
 
-        symbol := Label {
+        symbol := RinxLabel {
             width: 72, height: Fit
             align: Align{x: 0.5}
             draw_text +: {
-                text_style: REGULAR_TEXT {font_size: (30 * mod.widgets.RINX_TEXT_SCALE)},
+                text_style: REGULAR_TEXT {font_size: (30 * mod.widgets.RINX_TEXT_SCALE)}, // style-size: glyph
                 color: mod.widgets.RINX_INK
             }
         }
-        description := Label {
+        description := RinxLabel {
             width: 72, height: Fit
             flow: Flow.Right{wrap: true}
             align: Align{x: 0.5}
             draw_text +: {
-                text_style: REGULAR_TEXT {font_size: (9 * mod.widgets.RINX_TEXT_SCALE)},
+                text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_META_SIZE},
                 color: mod.widgets.RINX_INK
             }
         }

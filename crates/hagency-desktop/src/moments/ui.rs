@@ -149,15 +149,17 @@ const CAPTION: f64 = if cfg!(target_os = "macos") { 28.0 } else { 0.0 };
 script_mod! {
     use mod.prelude.widgets.*
     use mod.widgets.*
-    let ActionButton = RobrixNeutralIconButton {width: Fill height: 40 spacing: 0 icon_walk: Walk{width: 0 height: 0}
+    let ActionButton = RobrixNeutralIconButton {
+        height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+        width: Fill spacing: 0 icon_walk: Walk{width: 0 height: 0}
         draw_bg +: {color: #x00000000 color_hover: mod.widgets.RINX_HOVER color_down: mod.widgets.RINX_PRESSED}
     }
-    let Hint = Label {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}}
-    let Body = Label {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}}}
+    let Hint = RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE}}}
+    let Body = RinxLabel {width: Fill height: Fit flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}}
     // A photo cropped to fill its square grid cell, like WeChat Moments.
     let Photo = TextOrImage {width: Fill height: Fill
         image_view +: {height: Fill image +: {width: Fill height: Fill fit: ImageFit.CropToFill}}
-        text_view +: {height: Fill label +: {max_lines: 2 draw_text.text_style.font_size: (9 * mod.widgets.RINX_TEXT_SCALE)}}
+        text_view +: {height: Fill label +: {max_lines: 2 draw_text.text_style.font_size: mod.widgets.RINX_META_SIZE}}
     }
     // Keeps its third of the row even when its photo is hidden, so a partly
     // filled row doesn't stretch its photos.
@@ -173,19 +175,22 @@ script_mod! {
                 moments_refresh := ActionButton {text: #(crate::i18n::tr("Refresh")) i18n_text: "Refresh"}
                 moments_invites := ActionButton {text: #(crate::i18n::tr("Invitations")) i18n_text: "Invitations"}
                 moments_audience := ActionButton {text: #(crate::i18n::tr("Audience")) i18n_text: "Audience"}
-                moments_compose := RobrixPositiveIconButton {text: #(crate::i18n::tr("Post")) i18n_text: "Post" width: 60 height: 36 spacing: 0 icon_walk: Walk{width: 0 height: 0}}
+                moments_compose := RobrixPositiveIconButton {
+                    height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                    text: #(crate::i18n::tr("Post")) i18n_text: "Post" width: 60 spacing: 0 icon_walk: Walk{width: 0 height: 0}
+                }
             }
             moments_feed := PortalList {width: Fill height: Fill
                 Cover := SolidView {width: Fill height: 158 flow: Down padding: 22 align: Align{y: 1.0} spacing: 8
                     draw_bg.color: mod.widgets.RINX_FIELD
-                    cover_name := Label {width: Fill flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold{font_size: (19 * mod.widgets.RINX_TEXT_SCALE)}}}
-                    Label {text: #(crate::i18n::tr("Small moments, shared with friends")) i18n_text: "Small moments, shared with friends" draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: (10 * mod.widgets.RINX_TEXT_SCALE)}}}
+                    cover_name := RinxLabel {width: Fill flow: Flow.Right{wrap: true} draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold{font_size: mod.widgets.RINX_DISPLAY_SIZE}}}
+                    RinxLabel {text: #(crate::i18n::tr("Small moments, shared with friends")) i18n_text: "Small moments, shared with friends" draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE}}}
                 }
                 Post := NavigationBarButton {width: Fill height: Fit flow: Right padding: 16 spacing: 12 align: Align{x: 0.0 y: 0.0}
-                    draw_bg +: {color_hover: mod.widgets.RINX_HOVER border_radius: 0 get_color: fn() -> vec4{return mod.widgets.RINX_ON_ACCENT.mix(self.color_hover,self.hover)}}
+                    draw_bg +: {color_hover: mod.widgets.RINX_HOVER border_radius: 0}
                     post_avatar := MobileAvatar {width: 38 height: 38}
                     View {width: Fill height: Fit flow: Down spacing: 10
-                    post_author := Label {width: Fill max_lines: 1 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_ACCENT text_style: theme.font_bold{font_size: (12 * mod.widgets.RINX_TEXT_SCALE)}}}
+                    post_author := RinxLabel {width: Fill max_lines: 1 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_ACCENT text_style: theme.font_bold{font_size: mod.widgets.RINX_HEADING_SIZE}}}
                     post_body := Body {max_lines: 6 text_overflow: Ellipsis}
                     // Rows are made square-celled at draw time; see `square_album_rows()`.
                     // The transparent backgrounds give the grid and rows a measurable area.
@@ -209,7 +214,7 @@ script_mod! {
         compose_page := ScrollYView {visible: false width: Fill height: Fill flow: Down padding: 16 spacing: 14
             composer_audience := Body {draw_text.color: mod.widgets.RINX_ACCENT}
             Hint {text: #(crate::i18n::tr("Everyone in this timeline can see its posts, comments, likes and members. Invitations apply to this whole timeline. Earlier history may be unavailable to new viewers.")) i18n_text: "Everyone in this timeline can see its posts, comments, likes and members. Invitations apply to this whole timeline. Earlier history may be unavailable to new viewers."}
-            moments_body := TextInput {width: Fill height: 150 empty_text: #(crate::i18n::tr("What's on your mind?")) i18n_empty_text: "What's on your mind?" is_multiline: true}
+            moments_body := RinxInput {width: Fill height: 150 empty_text: #(crate::i18n::tr("What's on your mind?")) i18n_empty_text: "What's on your mind?" is_multiline: true}
             // Thumbnails of the photos/videos picked for this post, in a 3x3 grid like WeChat.
             compose_album := View {width: Fill height: Fit flow: Down spacing: 3 visible: false show_bg: true draw_bg.color: #x00000000
                 row0 := View {width: Fill height: 96 flow: Right spacing: 3 show_bg: true draw_bg.color: #x00000000 Cell{c0 := Photo{}} Cell{c1 := Photo{}} Cell{c2 := Photo{}}}
@@ -222,7 +227,10 @@ script_mod! {
                 moments_clear_media := ActionButton {text: #(crate::i18n::tr("Clear media")) i18n_text: "Clear media"}
             }
             compose_audience := ActionButton {text: #(crate::i18n::tr("Review Timeline Audience")) i18n_text: "Review Timeline Audience"}
-            moments_publish := RobrixPositiveIconButton {text: #(crate::i18n::tr("Post")) i18n_text: "Post" width: Fill height: 44 spacing: 0 icon_walk: Walk{width: 0 height: 0}}
+            moments_publish := RobrixPositiveIconButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                text: #(crate::i18n::tr("Post")) i18n_text: "Post" width: Fill spacing: 0 icon_walk: Walk{width: 0 height: 0}
+            }
             moments_retry := ActionButton {text: #(crate::i18n::tr("Retry saved post / comment")) i18n_text: "Retry saved post / comment" visible: false}
             moments_discard := ActionButton {text: #(crate::i18n::tr("Discard saved retry")) i18n_text: "Discard saved retry" visible: false}
             retry_hint := Hint {visible: false text: #(crate::i18n::tr("Discarding stops retries. It cannot unsend content already delivered.")) i18n_text: "Discarding stops retries. It cannot unsend content already delivered."}
@@ -262,7 +270,7 @@ script_mod! {
             }
             editor_hint := Hint {visible: false margin: Inset{left: 16 right: 16}}
             View {width: Fill height: 54 flow: Right padding: 8 spacing: 8
-                moments_comment := TextInput {width: Fill height: Fill empty_text: #(crate::i18n::tr("Comment")) i18n_empty_text: "Comment"}
+                moments_comment := RinxInput {width: Fill height: Fill empty_text: #(crate::i18n::tr("Comment")) i18n_empty_text: "Comment"}
                 moments_comment_send := RobrixPositiveIconButton {text: #(crate::i18n::tr("Send")) i18n_text: "Send" width: 60 height: Fill spacing: 0 icon_walk: Walk{width: 0 height: 0}}
             }
         }
@@ -302,7 +310,7 @@ script_mod! {
                 }
             }
             audience_invite_controls := View {width: Fill height: 40 flow: Right spacing: 8
-                audience_user := TextInput {width: Fill height: Fill empty_text: #(crate::i18n::tr("@friend:homeserver")) i18n_empty_text: "@friend:homeserver" autocapitalize: None}
+                audience_user := RinxInput {width: Fill height: Fill empty_text: #(crate::i18n::tr("@friend:homeserver")) i18n_empty_text: "@friend:homeserver" autocapitalize: None}
                 audience_invite := ActionButton {text: #(crate::i18n::tr("Invite")) i18n_text: "Invite" width: 65}
             }
             audience_review := ActionButton {text: #(crate::i18n::tr("Confirm audience for saved retry")) i18n_text: "Confirm audience for saved retry"}

@@ -14,12 +14,9 @@ script_mod! {
     mod.widgets.VIEW_SOURCE_MODAL_BORDER_RADIUS = 6.0
 
     // A small icon button for copying content
-    mod.widgets.CopyButton = RobrixIconButton {
-        width: Fit, height: Fit,
-        padding: 8,
-        spacing: 0
+    mod.widgets.CopyButton = RinxIconButton {
+        width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
         align: Align{x: 0.5, y: 0.5}
-        icon_walk: Walk{width: 14, height: 14, margin: 0}
         draw_icon.svg: (ICON_COPY)
         draw_icon.color: mod.widgets.RINX_MUTED
         draw_bg +: {
@@ -59,21 +56,18 @@ script_mod! {
             flow: Right,
             align: Align{y: 0.5}
 
-            title := Label {
+            title := RinxLabel {
                 width: Fill, height: Fit,
                 draw_text +: {
-                    text_style: TITLE_TEXT {font_size: (16 * mod.widgets.RINX_TEXT_SCALE)},
+                    text_style: TITLE_TEXT {font_size: mod.widgets.RINX_TITLE_SIZE},
                     color: mod.widgets.RINX_INK
                 }
                 text: #(crate::i18n::tr("View Event Source")) i18n_text: "View Event Source"
             }
 
-            close_button := RobrixIconButton {
-                width: Fit, height: Fit,
-                padding: 12,
-                spacing: 0
+            close_button := RinxIconButton {
+                width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
                 align: Align{x: 0.5, y: 0.5}
-                icon_walk: Walk{width: 18, height: 18, margin: 0}
                 draw_icon.svg: (ICON_CLOSE)
                 draw_icon.color: mod.widgets.RINX_MUTED
                 draw_bg +: {
@@ -93,20 +87,20 @@ script_mod! {
             margin: Inset{top: -1, bottom: -1}
             padding: 0
 
-            Label {
+            RinxLabel {
                 width: Fit, height: Fit,
                 draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)},
+                    text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_BODY_SIZE},
                     color: mod.widgets.RINX_MUTED
                 }
                 text: #(crate::i18n::tr("Room ID:")) i18n_text: "Room ID:"
             }
-            room_id_value := Label {
+            room_id_value := RinxLabel {
                 width: Fit, height: Fit,
                 // the top margin is a hack to fix vertical alignment
                 margin: Inset{top: 1, left: 4}
                 draw_text +: {
-                    text_style: theme.font_code {font_size: (10 * mod.widgets.RINX_TEXT_SCALE)},
+                    text_style: theme.font_code {font_size: mod.widgets.RINX_UI_SIZE},
                     color: mod.widgets.RINX_INK
                 }
                 text: #(crate::i18n::tr("<Unknown Room ID>")) i18n_text: "<Unknown Room ID>"
@@ -124,20 +118,20 @@ script_mod! {
             margin: Inset{top: -1, bottom: -1}
             padding: 0
 
-            Label {
+            RinxLabel {
                 width: Fit, height: Fit,
                 draw_text +: {
-                    text_style: REGULAR_TEXT {font_size: (11 * mod.widgets.RINX_TEXT_SCALE)},
+                    text_style: REGULAR_TEXT {font_size: mod.widgets.RINX_BODY_SIZE},
                     color: mod.widgets.RINX_MUTED
                 }
                 text: #(crate::i18n::tr("Event ID:")) i18n_text: "Event ID:"
             }
-            event_id_value := Label {
+            event_id_value := RinxLabel {
                 width: Fit, height: Fit,
                 // the top margin is a hack to fix vertical alignment
                 margin: Inset{top: 1, left: 4}
                 draw_text +: {
-                    text_style: theme.font_code {font_size: (10 * mod.widgets.RINX_TEXT_SCALE)},
+                    text_style: theme.font_code {font_size: mod.widgets.RINX_UI_SIZE},
                     color: mod.widgets.RINX_INK
                 }
                 text: #(crate::i18n::tr("<Unknown Event ID>")) i18n_text: "<Unknown Event ID>"
@@ -159,10 +153,10 @@ script_mod! {
             align: Align{y: 0.5}
             padding: Inset{top: 3, left: 3, right: 6}
 
-            source_label := Label {
+            source_label := RinxLabel {
                 width: Fill, height: Fit,
                 draw_text +: {
-                    text_style: TITLE_TEXT {font_size: (13 * mod.widgets.RINX_TEXT_SCALE)},
+                    text_style: TITLE_TEXT {font_size: mod.widgets.RINX_SECTION_SIZE},
                     color: mod.widgets.RINX_INK
                 }
                 text: #(crate::i18n::tr("Latest event source")) i18n_text: "Latest event source"
@@ -186,7 +180,7 @@ script_mod! {
                     width: Fill,
                     height: Fit { max: FitBound.Abs(1500.0) }
                     word_wrap: true
-                    draw_text +: { text_style +: { font_size: (11 * mod.widgets.RINX_TEXT_SCALE) } }
+                    draw_text +: { text_style +: { font_size: mod.widgets.RINX_BODY_SIZE } }
                 }
                 text: #(crate::i18n::tr("<Unknown Event Source>"))
             }
