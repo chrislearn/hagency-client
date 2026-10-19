@@ -1,5 +1,6 @@
 //! Token-free native commands routed through the existing authenticated service.
 mod configuration;
+mod speech;
 use super::*;
 use crate::owner_host::OwnerHost;
 use salvo::test::{ResponseExt, TestClient};

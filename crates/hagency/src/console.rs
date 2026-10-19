@@ -21,6 +21,7 @@ mod owned_agents;
 mod owned_runtime;
 mod owner_projects;
 mod owner_provider;
+pub mod speech;
 pub mod palpo_import;
 mod project_sides;
 mod resource_configuration;

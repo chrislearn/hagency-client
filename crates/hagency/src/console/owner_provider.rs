@@ -1,6 +1,7 @@
 //! Dedicated owner provider onboarding. Codex owns OAuth tokens in its OS
 //! keyring; this host only exposes a login URL and verified account status.
 pub(crate) mod external;
+pub(super) mod speech;
 use super::{
     Console, body, console, cookie, current, owned_agents::ledger_path, recheck,
     server_login::OwnerOperation,
@@ -321,6 +322,13 @@ struct Process {
 }
 impl Process {
     async fn spawn(paths: &ProviderPaths, executable: &Path) -> Result<Self, ProviderError> {
+        Self::spawn_inner(paths, executable, false).await
+    }
+    async fn spawn_inner(
+        paths: &ProviderPaths,
+        executable: &Path,
+        speech: bool,
+    ) -> Result<Self, ProviderError> {
         selected_reference(&paths.codex_home, paths.shared)?;
         let shared_overrides = if paths.shared {
             hagency_agent_local::codex::sealed_shared_overrides(
@@ -427,6 +435,9 @@ impl Process {
         ] {
             command.arg("--disable").arg(feature);
         }
+        if speech {
+            command.args(["--enable", "realtime_conversation"]);
+        }
         let mut child = command
             .spawn()
             .map_err(|_| failure(503, "codex_provider_unavailable"))?;
@@ -451,7 +462,7 @@ impl Process {
             until: None,
             reference: paths.credential_ref.clone(),
         };
-        p.rpc("initialize",json!({"clientInfo":{"name":"hagency-client","title":"Hagency Client","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":false}})).await?;
+        p.rpc("initialize",json!({"clientInfo":{"name":"hagency-client","title":"Hagency Client","version":env!("CARGO_PKG_VERSION")},"capabilities":{"experimentalApi":speech}})).await?;
         p.write(json!({"method":"initialized"})).await?;
         if paths.shared {
             let c = p.rpc("config/read", json!({"includeLayers":false})).await?;

@@ -47,6 +47,10 @@ subtle.workspace = true
 tracing.workspace = true
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 
+[target.'cfg(any(target_os = "windows", target_os = "macos", all(target_os = "linux", not(target_env = "ohos"))))'.dependencies]
+webrtc = "=0.14.0"
+tokio-rustls = { workspace = true, features = ["ring", "tls12"] }
+
 [dev-dependencies]
 # The offline pins of ADR-182 need the execution crate's diagnostics fault
 # (an unproven stop no real fixture can force); test builds only.
