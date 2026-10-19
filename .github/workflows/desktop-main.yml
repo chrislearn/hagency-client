@@ -46,6 +46,7 @@ jobs:
       - run: cargo check --locked -p rinx --no-default-features --features agent_chat
       - run: python3 tools/wechat-ux/check_i18n.py
       - run: python3 tools/check_theme_literals.py
+      - run: python3 ../../tools/audit_desktop_styles.py
       - run: python3 ../../tools/check-workspace-layout.py
   article-core:
     name: Portable article core
