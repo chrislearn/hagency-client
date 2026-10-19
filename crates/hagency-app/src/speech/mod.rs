@@ -12,6 +12,7 @@ pub enum Provider {
     System,
     WhisperCpp,
     OpenAiCompatible,
+    LocalCodex,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -63,6 +64,7 @@ pub fn native_description() -> &'static str {
 pub fn supported(config: &SpeechConfig) -> bool {
     match config.provider {
         Provider::System => robius_speech::NativeSpeechSession::is_supported(),
+        Provider::LocalCodex => cfg!(any(target_os = "windows", target_os = "macos", target_os = "linux")),
         _ => cfg!(any(target_os = "windows", target_os = "macos", target_os = "linux", target_os = "android", target_os = "ios")),
     }
 }
@@ -79,7 +81,7 @@ impl SpeechConfig {
         if !(10..=120).contains(&self.max_seconds) || self.prompt.len() > 4000 {
             return Err(error("Use a recording limit of 10–120 seconds and a prompt under 4000 bytes."));
         }
-        if self.provider == Provider::System { return Ok(()); }
+        if matches!(self.provider, Provider::System | Provider::LocalCodex) { return Ok(()); }
         let url = matrix_sdk::reqwest::Url::parse(self.endpoint()).map_err(|_| error("Enter a complete speech endpoint URL."))?;
         let local = is_loopback(&url);
         if !url.username().is_empty() || url.password().is_some() || url.query().is_some() || url.fragment().is_some() {
@@ -158,7 +160,21 @@ fn multipart(config: &SpeechConfig, audio: &[u8], boundary: &str) -> Vec<u8> {
 }
 
 pub async fn transcribe(config: SpeechConfig, credential: Option<String>, audio: Vec<u8>) -> Result<String, SpeechError> {
+    transcribe_inner(config, credential, audio, false).await
+}
+
+pub async fn test_service(config: SpeechConfig, credential: Option<String>) -> Result<(), SpeechError> {
+    transcribe_inner(config, credential, wav(&vec![0.0; 16000]), true).await.map(|_| ())
+}
+
+async fn transcribe_inner(config: SpeechConfig, credential: Option<String>, audio: Vec<u8>, probe: bool) -> Result<String, SpeechError> {
     config.validate()?;
+    if config.provider == Provider::LocalCodex {
+        if !supported(&config) { return Err(error("Local Codex speech is available on desktop only.")); }
+        let pcm = audio.get(44..).filter(|pcm| pcm.len() >= 3200).ok_or_else(|| error("No microphone audio was captured. Check the microphone and its permission."))?;
+        let service = crate::hagency::backend::Service::for_current().map_err(|_| error("Sign in to Hagency, then connect your local Codex in Agents → Model & resources."))?;
+        return service.transcribe_speech(pcm, &config.locale, &config.prompt, probe).await.map_err(|code| codex_error(&code));
+    }
     if config.provider == Provider::System {return Err(error("Select a local or compatible speech service for HTTP transcription."));}
     let boundary = format!("hagency-{}", uuid::Uuid::new_v4());
     let body = multipart(&config, &audio, &boundary);
@@ -185,6 +201,24 @@ pub async fn transcribe(config: SpeechConfig, credential: Option<String>, audio:
     let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| error("The speech service did not return a JSON transcript."))?;
     value.get("text").and_then(|text| text.as_str()).filter(|text| text.len() <= 100_000)
         .map(|text| text.trim().to_owned()).ok_or_else(|| error("The speech response has no text field."))
+}
+
+pub(crate) fn codex_error(code: &str) -> SpeechError {
+    error(match code {
+        "speech_codex_local_required" => "Connect your local Codex account in Agents → Model & resources before using Codex speech.",
+        "local_codex_account_not_signed_in" => "Codex is not signed in. Sign in through your local Codex, then check the account again.",
+        "speech_codex_authentication_failed" => "Codex speech authentication failed. Your Codex login may not have access to experimental realtime voice. Your draft has been kept.",
+        "speech_codex_protocol_unsupported" | "codex_protocol_mismatch" => "This Codex version does not support the required experimental speech protocol. Update local Codex and retry.",
+        "speech_codex_no_transcript" => "Codex returned no user speech transcript. Your draft has been kept.",
+        "speech_codex_audio_backpressure" => "Codex speech could not keep up with the microphone. Your transcribed draft has been kept; please retry.",
+        "speech_codex_media_unavailable" => "Could not establish the Codex voice connection. Check your network and retry. Your draft has been kept.",
+        "speech_codex_timeout" | "codex_provider_timeout" => "Codex speech timed out. Your draft has been kept.",
+        "speech_codex_quota" => "Codex speech is busy or its quota has been reached. Your draft has been kept.",
+        "codex_binary_unavailable" => "Codex is not installed or could not be started. Check the local Codex installation.",
+        "local_codex_configuration_unsupported" | "provider_file_credentials_or_config_rejected" => "This Codex configuration cannot be safely used by Hagency. Your existing account has not been changed. Check the configuration or use a separate Codex account.",
+        "matrix_account_changed" | "matrix_account_changing" => "The account changed. The speech result was discarded.",
+        _ => "Codex speech is unavailable. Check the local Codex connection in Agents → Model & resources and experimental voice access. Your draft has been kept.",
+    })
 }
 
 #[derive(Debug)]
@@ -232,7 +266,7 @@ mod tests {
 
     #[test]
     fn provider_preferences_roundtrip_without_embedding_credentials() {
-        for provider in [Provider::System, Provider::WhisperCpp, Provider::OpenAiCompatible] {
+        for provider in [Provider::System, Provider::WhisperCpp, Provider::OpenAiCompatible, Provider::LocalCodex] {
             let mut config = SpeechConfig::default(); config.provider = provider; config.locale = "zh-CN".into();
             let encoded = serde_json::to_value(&config).unwrap();
             assert!(encoded.get("api_key").is_none());

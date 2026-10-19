@@ -1,6 +1,7 @@
 use makepad_widgets::*;
 use crate::speech::{self, Provider, SpeechConfig};
 use std::sync::mpsc::{self, Receiver};
+type ServiceResult = Result<&'static str, String>;
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -27,8 +28,8 @@ script_mod! {
                 i18n_text: "The microphone inserts a transcript into your draft. It never sends the message automatically."
             }
             provider := SpeechSelect {
-                labels: ["System speech", "Local Whisper server", "OpenAI-compatible speech API"]
-                i18n_labels: ["System speech", "Local Whisper server", "OpenAI-compatible speech API"]
+                labels: ["System speech", "Local Whisper server", "OpenAI-compatible speech API", "Local Codex (experimental)"]
+                i18n_labels: ["System speech", "Local Whisper server", "OpenAI-compatible speech API", "Local Codex (experimental)"]
             }
             provider_note := RinxHint {width: Fill flow: Flow.Right{wrap: true}}
         }
@@ -53,7 +54,14 @@ script_mod! {
         }
         service_options := SpeechSection {
             FieldLabel {text: #(crate::i18n::tr("Speech service")) i18n_text: "Speech service"}
-            endpoint := SpeechField {empty_text: "http://127.0.0.1:8080/inference"}
+            endpoint_row := View {width: Fill height: Fit flow: Down
+                endpoint := SpeechField {empty_text: "http://127.0.0.1:8080/inference"}
+            }
+            codex_options := RinxHint {visible: false width: Fill flow: Flow.Right{wrap: true}
+                text: #(crate::i18n::tr("Shares the local Codex account with Agents → Model & resources on this device. Connecting here selects that same account for Agents. Audio is processed by Codex's online voice service; availability depends on your Codex version and account."))
+                i18n_text: "Shares the local Codex account with Agents → Model & resources on this device. Connecting here selects that same account for Agents. Audio is processed by Codex's online voice service; availability depends on your Codex version and account."
+            }
+            connect_codex := RinxButton {visible: false text: #(crate::i18n::tr("Connect local Codex")) i18n_text: "Connect local Codex"}
             model_row := View {width: Fill height: Fit flow: Down spacing: 6
                 FieldLabel {text: #(crate::i18n::tr("Transcription model")) i18n_text: "Transcription model"}
                 model := SpeechField {empty_text: "whisper-1 / gpt-transcribe"}
@@ -68,7 +76,7 @@ script_mod! {
             prompt := SpeechField {
                 empty_text: #(crate::i18n::tr("Names or terminology you expect to dictate")) i18n_empty_text: "Names or terminology you expect to dictate"
             }
-            RinxHint {width: Fill flow: Flow.Right{wrap: true}
+            recording_note := RinxHint {width: Fill flow: Flow.Right{wrap: true}
                 text: #(crate::i18n::tr("Recordings stay in memory. When you stop, a WAV recording is sent only to the selected endpoint. Escape cancels; there is no automatic cloud fallback."))
                 i18n_text: "Recordings stay in memory. When you stop, a WAV recording is sent only to the selected endpoint. Escape cancels; there is no automatic cloud fallback."
             }
@@ -77,8 +85,8 @@ script_mod! {
             FieldLabel {text: #(crate::i18n::tr("Recording limit")) i18n_text: "Recording limit"}
             limit := SpeechSelect {labels: ["30 seconds", "60 seconds", "120 seconds"] i18n_labels: ["30 seconds", "60 seconds", "120 seconds"] selected_item: 1}
             RinxHint {width: Fill flow: Flow.Right{wrap: true}
-                text: #(crate::i18n::tr("Service recordings stop and transcribe at this limit. Native dictation remains streaming until you stop it."))
-                i18n_text: "Service recordings stop and transcribe at this limit. Native dictation remains streaming until you stop it."
+                text: #(crate::i18n::tr("Service recordings stop at this limit. Codex and native dictation update your draft while you speak."))
+                i18n_text: "Service recordings stop at this limit. Codex and native dictation update your draft while you speak."
             }
             View {width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 8
                 save := RinxPrimaryButton {text: #(crate::i18n::tr("Save speech settings")) i18n_text: "Save speech settings"}
@@ -103,8 +111,8 @@ script_mod! {
                 i18n_text: "Windows uses local SAPI; Apple uses Speech; Android uses its installed recognition service. Language packs, permissions and offline support depend on the system. Linux uses a configured speech service."
             }
             RinxHint {width: Fill flow: Flow.Right{wrap: true}
-                text: #(crate::i18n::tr("Codex and Claude Code are separate assistant runtimes. Codex realtime voice is experimental; Claude Code can process text after transcription. Their local sign-in is not an API key for a speech endpoint."))
-                i18n_text: "Codex and Claude Code are separate assistant runtimes. Codex realtime voice is experimental; Claude Code can process text after transcription. Their local sign-in is not an API key for a speech endpoint."
+                text: #(crate::i18n::tr("Local Codex speech uses its own experimental realtime connection. Claude Code can process text after transcription. Runtime sign-in is not an API key for a speech endpoint."))
+                i18n_text: "Local Codex speech uses its own experimental realtime connection. Claude Code can process text after transcription. Runtime sign-in is not an API key for a speech endpoint."
             }
         }
     }
@@ -115,7 +123,7 @@ pub struct SpeechSettings {
     #[deref] view: View,
     #[rust] config: SpeechConfig,
     #[rust] loaded: bool,
-    #[rust] receiver: Option<Receiver<Result<(), String>>>,
+    #[rust] receiver: Option<Receiver<ServiceResult>>,
     #[rust] task: Option<tokio::task::JoinHandle<()>>,
     #[rust] test_epoch: u64,
 }
@@ -148,10 +156,14 @@ impl SpeechSettings {
     fn refresh(&mut self, cx: &mut Cx) {
         let system = self.config.provider == Provider::System;
         let compatible = self.config.provider == Provider::OpenAiCompatible;
+        let codex = self.config.provider == Provider::LocalCodex;
         self.view.view(cx, ids!(service_options)).set_visible(cx, !system);
+        self.view.view(cx, ids!(endpoint_row)).set_visible(cx, !codex);
+        self.view.widget(cx, ids!(codex_options)).set_visible(cx, codex);
+        self.view.button(cx, ids!(connect_codex)).set_visible(cx, codex);
         self.view.view(cx, ids!(model_row)).set_visible(cx, compatible);
         self.view.view(cx, ids!(native_options)).set_visible(cx, system);
-        let index = match self.config.provider {Provider::System => 0, Provider::WhisperCpp => 1, Provider::OpenAiCompatible => 2};
+        let index = match self.config.provider {Provider::System => 0, Provider::WhisperCpp => 1, Provider::OpenAiCompatible => 2, Provider::LocalCodex => 3};
         self.view.drop_down(cx, ids!(provider)).set_selected_item(cx, index);
         let language = match self.config.locale.as_str() {"" => 0, "zh-CN" => 1, "en-US" => 2, _ => 3};
         self.view.drop_down(cx, ids!(language)).set_selected_item(cx, language);
@@ -162,7 +174,11 @@ impl SpeechSettings {
             Provider::System => speech::native_description(),
             Provider::WhisperCpp => "Use a running whisper.cpp server on this device, for example /inference. Its loaded model is selected on the server.",
             Provider::OpenAiCompatible => "Use the full /audio/transcriptions endpoint. OpenAI, compatible third-party providers and local compatible servers are supported.",
+            Provider::LocalCodex => "Experimental Codex dictation. Only your speech transcript is inserted into the draft; messages are never sent automatically.",
         };
+        self.view.label(cx, ids!(recording_note)).set_text(cx, crate::i18n::tr(if codex {
+            "Local Codex connects before recording, then streams audio and updates your draft as you speak. Wait for the listening indicator before speaking. Stopping only finalizes the last words; Escape cancels."
+        } else {"Recordings stay in memory. When you stop, a WAV recording is sent only to the selected endpoint. Escape cancels; there is no automatic cloud fallback."}));
         self.view.label(cx, ids!(provider_note)).set_text(cx, crate::i18n::tr(note));
         self.view.label(cx, ids!(platform)).set_text(cx, crate::i18n::tr(speech::native_description()));
         self.view.redraw(cx);
@@ -182,6 +198,7 @@ impl SpeechSettings {
         if let Some(task) = self.task.take() {task.abort();}
         self.receiver = None;
         self.view.button(cx, ids!(test)).set_enabled(cx, true);
+        self.view.button(cx, ids!(connect_codex)).set_enabled(cx, true);
         self.view.button(cx, ids!(cancel_test)).set_visible(cx, false);
     }
 
@@ -201,14 +218,43 @@ impl SpeechSettings {
         self.test_epoch = crate::account_session::epoch();
         self.receiver = Some(receiver);
         self.view.button(cx, ids!(test)).set_enabled(cx, false);
+        self.view.button(cx, ids!(connect_codex)).set_enabled(cx, false);
         self.view.button(cx, ids!(cancel_test)).set_visible(cx, true);
         self.view.label(cx, ids!(status)).set_text(cx, crate::i18n::tr("Testing the speech endpoint…"));
         self.task = Some(crate::account_session::spawn(async move {
-            let result = speech::transcribe(config, credential, speech::wav(&vec![0.0; 16000])).await.map(|_| ()).map_err(|error| error.to_string());
+            let message = if config.provider == Provider::LocalCodex {
+                "Codex accepted test audio without a voice error. Test dictation to verify recognition accuracy."
+            } else {"The endpoint accepted WAV audio and returned a valid transcript response."};
+            let result = speech::test_service(config, credential).await.map(|()| message).map_err(|error| error.to_string());
             let _ = sender.send(result);
             signal.set();
         }));
         Ok(())
+    }
+
+    fn connect_codex(&mut self, cx: &mut Cx) {
+        if self.config.provider != Provider::LocalCodex {return;}
+        self.cancel_test(cx);
+        let (sender, receiver) = mpsc::channel();
+        let signal = thread::SignalToUI::new();
+        self.test_epoch = crate::account_session::epoch();
+        self.receiver = Some(receiver);
+        self.view.button(cx, ids!(test)).set_enabled(cx, false);
+        self.view.button(cx, ids!(connect_codex)).set_enabled(cx, false);
+        self.view.button(cx, ids!(cancel_test)).set_visible(cx, true);
+        self.view.label(cx, ids!(status)).set_text(cx, crate::i18n::tr("Checking the local Codex account…"));
+        self.task = Some(crate::account_session::spawn(async move {
+            let result = async {
+                let service = crate::hagency::backend::Service::for_current().map_err(|_| speech::error("Sign in to Hagency, then connect your local Codex in Agents → Model & resources.").to_string())?;
+                let value = service.execute(crate::hagency::model::Command::Provider {
+                    action: crate::hagency::model::ProviderAction::UseLocal,
+                }).await.map_err(|code| speech::codex_error(&code).to_string())?;
+                if value["authenticated"] != true || value["shared"] != true {return Err(speech::codex_error("local_codex_account_not_signed_in").to_string());}
+                Ok("Local Codex connected. Agent services on this device share this account. You can now test speech.")
+            }.await;
+            let _ = sender.send(result);
+            signal.set();
+        }));
     }
 }
 
@@ -236,7 +282,7 @@ impl Widget for SpeechSettings {
             self.cancel_test(cx);
             if current_account {
                 self.view.label(cx, ids!(status)).set_text(cx, &match result {
-                    Ok(()) => crate::i18n::tr("The endpoint accepted WAV audio and returned a valid transcript response.").to_owned(),
+                    Ok(message) => crate::i18n::tr(message).to_owned(),
                     Err(error) => error,
                 });
             }
@@ -249,7 +295,7 @@ impl Widget for SpeechSettings {
                 || self.view.check_box(cx, ids!(on_device)).changed(actions).is_some();
             if let Some(index) = self.view.drop_down(cx, ids!(provider)).changed(actions) {
                 self.read_fields(cx);
-                self.config.provider = match index {1 => Provider::WhisperCpp,2 => Provider::OpenAiCompatible,_ => Provider::System};
+                self.config.provider = match index {1 => Provider::WhisperCpp,2 => Provider::OpenAiCompatible,3 => Provider::LocalCodex,_ => Provider::System};
                 self.cancel_test(cx);
                 self.view.text_input(cx, ids!(endpoint)).set_text(cx, self.config.endpoint());
                 self.view.label(cx, ids!(status)).set_text(cx, "");
@@ -284,6 +330,7 @@ impl Widget for SpeechSettings {
                 self.read_fields(cx);
                 if let Err(error) = self.test(cx) {self.view.label(cx, ids!(status)).set_text(cx, &error.to_string());}
             }
+            if self.view.button(cx, ids!(connect_codex)).clicked(actions) {self.connect_codex(cx);}
         }
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {self.view.draw_walk(cx, scope, walk)}
@@ -308,6 +355,31 @@ mod tests {
             let panel = SpeechSettings::script_from_value(vm, value);
             let errors = vm.take_errors(); assert!(errors.is_empty(), "{errors:?}"); panel
         })
+    }
+
+    #[test]
+    fn codex_selection_reuses_agent_configuration_without_http_credentials() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut panel = panel(&mut cx);
+        let mut config = SpeechConfig::default();
+        config.provider = Provider::LocalCodex;
+        config.locale = "zh-CN".into();
+        config.api_endpoint = "invalid HTTP endpoint is irrelevant".into();
+        config.api_key_env = "MISSING_SPEECH_KEY".into();
+        panel.populate(&mut cx, &config);
+        assert_eq!(panel.view.drop_down(&mut cx, ids!(provider)).selected_item(), 3);
+        assert!(!panel.view.view(&mut cx, ids!(endpoint_row)).visible());
+        assert!(!panel.view.view(&mut cx, ids!(model_row)).visible());
+        assert!(panel.view.button(&mut cx, ids!(connect_codex)).visible());
+        assert!(config.validate().is_ok());
+        assert_eq!(config.credential().unwrap(), None);
+        let uid = panel.view.button(&mut cx, ids!(save)).widget_uid();
+        let clicks = cx.capture_actions(|cx| cx.widget_action(uid, ButtonAction::Clicked(KeyModifiers::default())));
+        let saved = cx.capture_actions(|cx| panel.handle_event(cx, &Event::Actions(clicks), &mut Scope::empty()));
+        let saved = saved.iter().find_map(|a| a.downcast_ref::<speech::SettingsSaved>()).unwrap();
+        assert_eq!(saved.0.provider, Provider::LocalCodex);
+        assert_eq!(saved.0.locale, "zh-CN");
+        assert!(panel.task.is_none());
     }
 
     #[test]

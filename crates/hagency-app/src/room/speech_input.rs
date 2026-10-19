@@ -46,6 +46,10 @@ pub(super) struct SpeechInput {
 }
 
 impl SpeechInput {
+    #[cfg(test)]
+    pub(super) fn from_test_events(input: &TextInputRef, receiver: Receiver<NativeSpeechEvent>) -> Self {
+        Self::new(input, Some(receiver), SpeechPhase::Listening)
+    }
     fn new(input: &TextInputRef, receiver: Option<Receiver<NativeSpeechEvent>>, phase: SpeechPhase) -> Self {
         let selection = input.selection();
         Self {
@@ -154,7 +158,7 @@ impl SpeechInput {
         // A backstop for a platform that never sends a terminal event.
         let timeout = match self.phase {
             SpeechPhase::Starting => Some(START_TIMEOUT),
-            SpeechPhase::Finishing => Some(if self.remote.is_some() {Duration::from_secs(135)} else {FINISH_TIMEOUT}),
+            SpeechPhase::Finishing => Some(self.remote.as_ref().map(|remote| remote.finish_timeout()).unwrap_or(FINISH_TIMEOUT)),
             // The user can stay quiet for as long as they like.
             SpeechPhase::Listening => None,
         };

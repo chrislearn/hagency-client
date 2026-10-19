@@ -372,8 +372,9 @@ enum TspReceiveLoopRequest {
 }
 
 pub fn tsp_init(rt_handle: tokio::runtime::Handle) -> anyhow::Result<()> {
-    CryptoProvider::install_default(aws_lc_rs::default_provider())
-        .map_err(|_| anyhow!("BUG: default CryptoProvider was already set."))?;
+    // Other desktop transports may already have selected the process provider.
+    // Installation is one-time; keep that choice if initialization raced us.
+    let _ = CryptoProvider::install_default(aws_lc_rs::default_provider());
 
     // Create a channel to be used between UI thread(s) and the TSP async worker thread.
     // We do this early on in order to allow TSP init routines to submit requests.

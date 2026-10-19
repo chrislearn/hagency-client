@@ -1916,4 +1916,33 @@ mod resize_tests {
         assert!(!bar.view(&mut cx, ids!(composer_resize_handle)).visible());
         assert!(bar.view(&mut cx, ids!(input_bar)).area().rect(&cx).size.y < 150.0);
     }
+
+    #[test]
+    fn streaming_speech_revises_the_draft_without_a_send_action() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let view = fixture(&mut cx, false);
+        let bar = view.room_input_bar(&mut cx, ids!(bar));
+        let input = bar.mentionable_text_input(&mut cx, ids!(mentionable_text_input)).text_input_ref();
+        let (tx, rx) = std::sync::mpsc::channel();
+        bar.borrow_mut().unwrap().speech = Some(SpeechInput::from_test_events(&input, rx));
+        for (text, is_final, expected) in [
+            ("这是", false, "这是"),
+            ("这是草搞", false, "这是草搞"),
+            ("这是草稿。", true, "这是草稿。"),
+            ("不要发送", false, "这是草稿。不要发送"),
+            ("不要发送。", true, "这是草稿。不要发送。"),
+        ] {
+            tx.send(NativeSpeechEvent::Transcript {text: text.into(), is_final}).unwrap();
+            let actions = cx.capture_actions(|cx| {
+                bar.borrow_mut().unwrap().handle_event(cx, &Event::Actions(Vec::new()), &mut Scope::empty());
+            });
+            assert_eq!(input.text(), expected);
+            assert!(!bar.button(&mut cx, ids!(send_message_button)).clicked(&actions));
+            assert!(input.returned(&actions).is_none());
+        }
+        tx.send(NativeSpeechEvent::Stopped).unwrap();
+        bar.borrow_mut().unwrap().handle_event(&mut cx, &Event::Actions(Vec::new()), &mut Scope::empty());
+        assert_eq!(input.text(), "这是草稿。不要发送。");
+        assert!(bar.borrow().unwrap().speech.is_none());
+    }
 }

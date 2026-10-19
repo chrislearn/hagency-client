@@ -470,6 +470,34 @@ impl Service {
         }
         result
     }
+    /// Dictation uses the same selected Codex account as Agent services.
+    pub async fn transcribe_speech(&self, pcm: &[u8], locale: &str, context: &str, probe: bool) -> Result<String, String> {
+        // Bootstrap the owner boundary without launching a possibly unselected
+        // dedicated provider. NativeOwner checks the saved local choice first.
+        self.execute(Command::LoginStatus).await?;
+        self.check()?;
+        let native = self.0.native.lock().await.as_ref().cloned().ok_or("native_owner_unavailable")?;
+        let result = native.transcribe_speech(pcm, locale, context, probe).await.map_err(|error| {
+            // This entry point returns static guard/transport codes only.
+            makepad_widgets::log!("Local Codex dictation request failed: {}", error.code);
+            error.code
+        });
+        self.check()?;
+        result
+    }
+    pub async fn stream_speech(&self, audio: hagency::console::speech::Audio, locale: &str, context: &str,
+        updates: hagency::console::speech::Updates) -> Result<String, String> {
+        self.execute(Command::LoginStatus).await?;
+        self.check()?;
+        let native = self.0.native.lock().await.as_ref().cloned().ok_or("native_owner_unavailable")?;
+        let service = self.clone();
+        let guarded: hagency::console::speech::Updates = std::sync::Arc::new(move |event| {
+            if service.check().is_ok() {updates(event);}
+        });
+        let result = native.stream_speech(audio, locale, context, guarded).await.map_err(|error| error.code);
+        self.check()?;
+        result
+    }
     async fn shutdown(&self) {
         self.0
             .retired
