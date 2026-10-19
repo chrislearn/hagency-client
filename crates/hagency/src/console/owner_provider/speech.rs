@@ -146,6 +146,9 @@ pub(in crate::console) async fn transcribe(
     context: &str,
     probe: bool,
 ) -> Result<String, ProviderError> {
+    if !crate::console::speech::local_codex_supported() {
+        return Err(failure(501, crate::console::speech::CODEX_PLATFORM_UNSUPPORTED));
+    }
     if pcm.len() < 3200 || pcm.len() > 120 * 32000 || pcm.len() % 2 != 0 {
         return Err(failure(400, "invalid_arguments"));
     }
@@ -194,7 +197,7 @@ pub(in crate::console) async fn stream(
     )))]
     {
         let _ = (paths, audio, locale, context, probe, updates);
-        return Err(failure(502, "speech_codex_protocol_unsupported"));
+        return Err(failure(501, crate::console::speech::CODEX_PLATFORM_UNSUPPORTED));
     }
     #[cfg(any(target_os = "windows", target_os = "macos", all(target_os = "linux", not(target_env = "ohos"))))]
     tokio::time::timeout(Duration::from_secs(195), async {

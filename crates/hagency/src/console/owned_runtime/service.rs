@@ -462,6 +462,26 @@ impl OwnedRuntime {
             .err()
             .map(|_| "service_preferences_unavailable");
         let options = options_result.ok().flatten();
+        let model_path = ledger_path(
+            &console
+                .0
+                .server_login
+                .state_directory()
+                .ok_or(RuntimeError::Profile)?,
+            device.origin(),
+            device.issuer(),
+            device.subject(),
+            device.owner_mxid(),
+        )
+        .map_err(|_| RuntimeError::Profile)?;
+        let model_configured = local(Ledger::open_scoped(
+            &model_path,
+            device.owner_mxid(),
+            &profile_id,
+        ))?
+        .agent_model_profile(device.owner_mxid(), agent)
+        .map_err(|_| RuntimeError::Profile)?
+        .is_some();
         let reply = console
             .owner_api_pinned(
                 &pin,
@@ -488,7 +508,7 @@ impl OwnedRuntime {
         Ok(serde_json::json!({"runtime":runtime,"service":{
             "enabled":intent.is_some(),"running":running,"watcherRunning":watcher_running,"warning":options_warning,"phase":health.phase,"lastError":health.last_error,"problems":health.problems,"deviceId":device.device_id(),
             "reservation":options.as_ref().map(|value|value.reservation).or_else(||intent.as_ref().map(|value|value.reservation)),"effort":options.as_ref().map(|value| &value.effort).or_else(||intent.as_ref().map(|value| &value.effort)),
-            "rooms":reply.value["bindings"]},"nativeTools":false,"strictTokenCap":false}))
+            "modelConfigured":model_configured,"rooms":reply.value["bindings"]},"nativeTools":false,"strictTokenCap":false}))
     }
     pub(in crate::console) async fn stop_agent_service(
         &self,

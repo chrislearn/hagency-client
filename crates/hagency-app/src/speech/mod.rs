@@ -52,22 +52,61 @@ pub fn error(message: &'static str) -> SpeechError {
 }
 
 pub fn native_description() -> &'static str {
-    if !robius_speech::NativeSpeechSession::is_supported() {
-        return "Native speech recognition is unavailable here. Use a local or compatible speech service.";
+    native_description_with_capabilities(Capabilities::current())
+}
+
+pub(crate) fn native_description_with_capabilities(capabilities: Capabilities) -> &'static str {
+    if let Some(message) = capabilities.unavailable_message(Provider::System) {
+        return message;
     }
     if cfg!(target_os = "windows") { "Windows SAPI · on-device dictation" }
     else if cfg!(any(target_os = "macos", target_os = "ios")) { "Apple Speech · availability depends on language and device" }
     else if cfg!(target_os = "android") { "Android SpeechRecognizer · availability depends on installed service" }
-    else { "Native speech recognition is unavailable here. Use a local or compatible speech service." }
+    else { SYSTEM_UNSUPPORTED }
 }
 
 pub fn supported(config: &SpeechConfig) -> bool {
-    match config.provider {
-        Provider::System => robius_speech::NativeSpeechSession::is_supported(),
-        Provider::LocalCodex => cfg!(any(target_os = "windows", target_os = "macos", target_os = "linux")),
-        _ => cfg!(any(target_os = "windows", target_os = "macos", target_os = "linux", target_os = "android", target_os = "ios")),
+    Capabilities::current().supports(config.provider)
+}
+
+const PLATFORM_UNSUPPORTED: &str = "Speech input is not supported on this platform. Your draft has been kept.";
+const SYSTEM_UNSUPPORTED: &str = "System speech recognition is not supported on this platform. Choose another service in Settings → Speech.";
+const CODEX_UNSUPPORTED: &str = "Local Codex speech is not supported on this platform. Choose another service in Settings → Speech.";
+const RECORDING_UNSUPPORTED: &str = "Speech recording is not supported on this platform. Choose another service in Settings → Speech.";
+
+#[derive(Clone, Copy)]
+pub(crate) struct Capabilities {system: bool, recording: bool, codex: bool}
+
+impl Capabilities {
+    pub(crate) fn current() -> Self {
+        Self::for_target(std::env::consts::OS, if cfg!(target_env = "ohos") {"ohos"} else {""}, robius_speech::NativeSpeechSession::is_supported())
+    }
+    pub(crate) fn for_target(os: &str, env: &str, native: bool) -> Self {
+        Self {
+            system: native && env != "ohos",
+            // Makepad's OHOS audio_input/use_audio_inputs are currently no-ops.
+            recording: env != "ohos" && matches!(os, "windows" | "macos" | "linux" | "android" | "ios"),
+            codex: hagency::console::speech::local_codex_supported_on(os, env),
+        }
+    }
+    pub(crate) fn supports(self, provider: Provider) -> bool {
+        match provider {Provider::System => self.system, Provider::LocalCodex => self.codex, _ => self.recording}
+    }
+    pub(crate) fn unavailable_message(self, provider: Provider) -> Option<&'static str> {
+        if self.supports(provider) {return None;}
+        Some(if !self.system && !self.recording && !self.codex {PLATFORM_UNSUPPORTED} else {match provider {
+            Provider::System => SYSTEM_UNSUPPORTED, Provider::LocalCodex => CODEX_UNSUPPORTED, _ => RECORDING_UNSUPPORTED,
+        }})
+    }
+    pub(crate) fn ensure(self, provider: Provider) -> Result<(), SpeechError> {
+        match self.unavailable_message(provider) {
+            Some(message) => Err(SpeechError::new(SpeechErrorKind::Unavailable, crate::i18n::tr(message))),
+            None => Ok(()),
+        }
     }
 }
+
+pub(crate) fn ensure_supported(config: &SpeechConfig) -> Result<(), SpeechError> {Capabilities::current().ensure(config.provider)}
 
 impl SpeechConfig {
     pub fn endpoint(&self) -> &str {
@@ -168,9 +207,9 @@ pub async fn test_service(config: SpeechConfig, credential: Option<String>) -> R
 }
 
 async fn transcribe_inner(config: SpeechConfig, credential: Option<String>, audio: Vec<u8>, probe: bool) -> Result<String, SpeechError> {
+    ensure_supported(&config)?;
     config.validate()?;
     if config.provider == Provider::LocalCodex {
-        if !supported(&config) { return Err(error("Local Codex speech is available on desktop only.")); }
         let pcm = audio.get(44..).filter(|pcm| pcm.len() >= 3200).ok_or_else(|| error("No microphone audio was captured. Check the microphone and its permission."))?;
         let service = crate::hagency::backend::Service::for_current().map_err(|_| error("Sign in to Hagency, then connect your local Codex in Agents → Model & resources."))?;
         return service.transcribe_speech(pcm, &config.locale, &config.prompt, probe).await.map_err(|code| codex_error(&code));
@@ -204,6 +243,10 @@ async fn transcribe_inner(config: SpeechConfig, credential: Option<String>, audi
 }
 
 pub(crate) fn codex_error(code: &str) -> SpeechError {
+    if code == hagency::console::speech::CODEX_PLATFORM_UNSUPPORTED {
+        return SpeechError::new(SpeechErrorKind::Unavailable, crate::i18n::tr(
+            Capabilities::current().unavailable_message(Provider::LocalCodex).unwrap_or(CODEX_UNSUPPORTED)));
+    }
     error(match code {
         "speech_codex_local_required" => "Connect your local Codex account in Agents → Model & resources before using Codex speech.",
         "local_codex_account_not_signed_in" => "Codex is not signed in. Sign in through your local Codex, then check the account again.",
@@ -228,6 +271,58 @@ pub struct SettingsSaved(pub SpeechConfig);
 mod tests {
     use super::*;
     use std::{io::{Read, Write}, net::TcpListener, thread};
+
+    #[test]
+    fn capability_matrix_keeps_plain_linux_and_excludes_ohos_capture() {
+        for (os, env, native, expected) in [
+            ("windows", "msvc", true, [true, true, true, true]),
+            ("macos", "", true, [true, true, true, true]),
+            ("linux", "gnu", false, [false, true, true, true]),
+            ("linux", "musl", false, [false, true, true, true]),
+            ("linux", "ohos", false, [false, false, false, false]),
+            ("android", "", true, [true, true, true, false]),
+            ("ios", "", true, [true, true, true, false]),
+            ("unknown", "", false, [false, false, false, false]),
+        ] {
+            let capabilities = Capabilities::for_target(os, env, native);
+            for (provider, supported) in [Provider::System, Provider::WhisperCpp, Provider::OpenAiCompatible, Provider::LocalCodex].into_iter().zip(expected) {
+                assert_eq!(capabilities.supports(provider), supported, "{os}/{env} {provider:?}");
+                assert_eq!(capabilities.unavailable_message(provider).is_none(), supported);
+                match capabilities.ensure(provider) {
+                    Ok(()) => assert!(supported),
+                    Err(error) => {
+                        assert!(!supported);
+                        assert_eq!(error.kind(), SpeechErrorKind::Unavailable);
+                        assert_eq!(error.message(), crate::i18n::tr(capabilities.unavailable_message(provider).unwrap()));
+                    }
+                }
+            }
+        }
+        assert_eq!(Capabilities::current().supports(Provider::LocalCodex), hagency::console::speech::local_codex_supported());
+    }
+
+    #[test]
+    fn unavailable_platforms_do_not_recommend_another_unavailable_service() {
+        for (os, env) in [("linux", "ohos"), ("unknown", "")] {
+            let capabilities = Capabilities::for_target(os, env, false);
+            for provider in [Provider::System, Provider::WhisperCpp, Provider::OpenAiCompatible, Provider::LocalCodex] {
+                assert_eq!(capabilities.unavailable_message(provider), Some(PLATFORM_UNSUPPORTED));
+            }
+            assert_eq!(native_description_with_capabilities(capabilities), PLATFORM_UNSUPPORTED);
+        }
+        assert_eq!(Capabilities::for_target("linux", "gnu", false).unavailable_message(Provider::System), Some(SYSTEM_UNSUPPORTED));
+        assert_eq!(Capabilities::for_target("ios", "", true).unavailable_message(Provider::LocalCodex), Some(CODEX_UNSUPPORTED));
+    }
+
+    #[test]
+    fn codex_platform_and_protocol_failures_have_distinct_guidance() {
+        let platform = codex_error(hagency::console::speech::CODEX_PLATFORM_UNSUPPORTED);
+        let protocol = codex_error("speech_codex_protocol_unsupported");
+        assert_eq!(platform.kind(), SpeechErrorKind::Unavailable);
+        assert_eq!(platform.message(), crate::i18n::tr(Capabilities::current().unavailable_message(Provider::LocalCodex).unwrap_or(CODEX_UNSUPPORTED)));
+        assert_ne!(platform.message(), protocol.message());
+        assert_ne!(protocol.kind(), SpeechErrorKind::Unavailable);
+    }
 
     fn server(status: &str, response: &str) -> (String, thread::JoinHandle<Vec<u8>>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();

@@ -182,6 +182,7 @@ fn pcm(samples: &[f32]) -> Vec<u8> {
 pub struct RemoteSession(Arc<Recording>);
 impl RemoteSession {
     pub fn start(cx: &mut Cx, config: SpeechConfig, callback: Callback) -> Result<Self, SpeechError> {
+        super::ensure_supported(&config)?;
         config.validate()?;
         let credential = config.credential()?;
         if cx.global::<CaptureService>().active.upgrade().is_some_and(|recording|

@@ -154,6 +154,10 @@ impl SpeechSettings {
     }
 
     fn refresh(&mut self, cx: &mut Cx) {
+        self.refresh_with_capabilities(cx, speech::Capabilities::current());
+    }
+
+    fn refresh_with_capabilities(&mut self, cx: &mut Cx, capabilities: speech::Capabilities) {
         let system = self.config.provider == Provider::System;
         let compatible = self.config.provider == Provider::OpenAiCompatible;
         let codex = self.config.provider == Provider::LocalCodex;
@@ -170,17 +174,20 @@ impl SpeechSettings {
         self.view.view(cx, ids!(locale_row)).set_visible(cx, language == 3);
         self.view.check_box(cx, ids!(on_device)).set_active(cx, self.config.prefer_on_device, Animate::No);
         self.view.drop_down(cx, ids!(limit)).set_selected_item(cx, match self.config.max_seconds {0..=30 => 0,31..=60 => 1,_ => 2});
-        let note = match self.config.provider {
+        let note = capabilities.unavailable_message(self.config.provider).unwrap_or(match self.config.provider {
             Provider::System => speech::native_description(),
             Provider::WhisperCpp => "Use a running whisper.cpp server on this device, for example /inference. Its loaded model is selected on the server.",
             Provider::OpenAiCompatible => "Use the full /audio/transcriptions endpoint. OpenAI, compatible third-party providers and local compatible servers are supported.",
             Provider::LocalCodex => "Experimental Codex dictation. Only your speech transcript is inserted into the draft; messages are never sent automatically.",
-        };
+        });
+        let available = capabilities.supports(self.config.provider) && self.task.is_none();
+        self.view.button(cx, ids!(test)).set_enabled(cx, available);
+        self.view.button(cx, ids!(connect_codex)).set_enabled(cx, codex && available);
         self.view.label(cx, ids!(recording_note)).set_text(cx, crate::i18n::tr(if codex {
             "Local Codex connects before recording, then streams audio and updates your draft as you speak. Wait for the listening indicator before speaking. Stopping only finalizes the last words; Escape cancels."
         } else {"Recordings stay in memory. When you stop, a WAV recording is sent only to the selected endpoint. Escape cancels; there is no automatic cloud fallback."}));
         self.view.label(cx, ids!(provider_note)).set_text(cx, crate::i18n::tr(note));
-        self.view.label(cx, ids!(platform)).set_text(cx, crate::i18n::tr(speech::native_description()));
+        self.view.label(cx, ids!(platform)).set_text(cx, crate::i18n::tr(speech::native_description_with_capabilities(capabilities)));
         self.view.redraw(cx);
     }
 
@@ -197,17 +204,23 @@ impl SpeechSettings {
     fn cancel_test(&mut self, cx: &mut Cx) {
         if let Some(task) = self.task.take() {task.abort();}
         self.receiver = None;
-        self.view.button(cx, ids!(test)).set_enabled(cx, true);
-        self.view.button(cx, ids!(connect_codex)).set_enabled(cx, true);
+        let available = speech::supported(&self.config);
+        self.view.button(cx, ids!(test)).set_enabled(cx, available);
+        self.view.button(cx, ids!(connect_codex)).set_enabled(cx, available && self.config.provider == Provider::LocalCodex);
         self.view.button(cx, ids!(cancel_test)).set_visible(cx, false);
     }
 
     fn test(&mut self, cx: &mut Cx) -> Result<(), robius_speech::SpeechError> {
+        self.test_with_capabilities(cx, speech::Capabilities::current())
+    }
+
+    fn test_with_capabilities(&mut self, cx: &mut Cx, capabilities: speech::Capabilities) -> Result<(), robius_speech::SpeechError> {
+        capabilities.ensure(self.config.provider)?;
         self.config.validate()?;
         if self.config.provider == Provider::System {
-            self.view.label(cx, ids!(status)).set_text(cx, crate::i18n::tr(if speech::supported(&self.config) {
+            self.view.label(cx, ids!(status)).set_text(cx, crate::i18n::tr(
                 "Native recognition is available. The selected language and microphone are checked when you start dictation."
-            } else {speech::native_description()}));
+            ));
             return Ok(());
         }
         let credential = self.config.credential()?;
@@ -233,7 +246,17 @@ impl SpeechSettings {
     }
 
     fn connect_codex(&mut self, cx: &mut Cx) {
+        self.connect_codex_with_capabilities(cx, speech::Capabilities::current());
+    }
+
+    fn connect_codex_with_capabilities(&mut self, cx: &mut Cx, capabilities: speech::Capabilities) {
         if self.config.provider != Provider::LocalCodex {return;}
+        if let Err(error) = capabilities.ensure(self.config.provider) {
+            self.cancel_test(cx);
+            self.refresh_with_capabilities(cx, capabilities);
+            self.view.label(cx, ids!(status)).set_text(cx, error.message());
+            return;
+        }
         self.cancel_test(cx);
         let (sender, receiver) = mpsc::channel();
         let signal = thread::SignalToUI::new();
@@ -355,6 +378,42 @@ mod tests {
             let panel = SpeechSettings::script_from_value(vm, value);
             let errors = vm.take_errors(); assert!(errors.is_empty(), "{errors:?}"); panel
         })
+    }
+
+    #[test]
+    fn unsupported_providers_show_one_reason_and_never_start_work() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut panel = panel(&mut cx);
+        for (os, env, native) in [("linux", "ohos", false), ("unknown", "", false), ("android", "", true), ("ios", "", true), ("linux", "gnu", false)] {
+            let capabilities = speech::Capabilities::for_target(os, env, native);
+            for provider in [Provider::System, Provider::WhisperCpp, Provider::OpenAiCompatible, Provider::LocalCodex] {
+                if capabilities.supports(provider) {continue;}
+                let mut config = SpeechConfig::default();
+                config.provider = provider;
+                config.api_endpoint = "invalid URL must not be used".into();
+                config.api_key_env = "HAGENCY_UNSUPPORTED_SPEECH_MUST_NOT_READ_KEY".into();
+                panel.populate(&mut cx, &config);
+                panel.refresh_with_capabilities(&mut cx, capabilities);
+                let message = crate::i18n::tr(capabilities.unavailable_message(provider).unwrap());
+                assert_eq!(panel.view.label(&mut cx, ids!(provider_note)).text(), message);
+                assert!(!panel.view.button(&mut cx, ids!(test)).borrow().unwrap().enabled());
+                assert!(!panel.view.button(&mut cx, ids!(connect_codex)).borrow().unwrap().enabled());
+                let error = panel.test_with_capabilities(&mut cx, capabilities).unwrap_err();
+                assert_eq!(error.kind(), robius_speech::SpeechErrorKind::Unavailable);
+                assert_eq!(error.message(), message);
+                if provider == Provider::LocalCodex {
+                    panel.connect_codex_with_capabilities(&mut cx, capabilities);
+                    assert_eq!(panel.view.label(&mut cx, ids!(status)).text(), message);
+                }
+                assert!(panel.task.is_none());
+                assert!(panel.receiver.is_none());
+                assert_eq!(panel.config, config, "capability checks must preserve saved configuration");
+            }
+        }
+        let mut config = SpeechConfig::default(); config.provider = Provider::WhisperCpp;
+        panel.populate(&mut cx, &config);
+        panel.refresh_with_capabilities(&mut cx, speech::Capabilities::for_target("linux", "gnu", false));
+        assert!(panel.view.button(&mut cx, ids!(test)).borrow().unwrap().enabled());
     }
 
     #[test]

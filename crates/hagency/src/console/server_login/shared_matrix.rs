@@ -2,6 +2,25 @@
 use super::super::native::MatrixTokenSource;
 use super::*;
 use std::sync::Arc;
+
+fn device_name(host: &str, os: &str) -> String {
+    let host = host
+        .trim()
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(96)
+        .collect::<String>();
+    if host.is_empty() {
+        format!("Hagency ({os})")
+    } else {
+        format!("{host} ({os})")
+    }
+}
+
+fn local_device_name() -> String {
+    let host = gethostname::gethostname();
+    device_name(&host.to_string_lossy(), std::env::consts::OS)
+}
 impl ServerLogin {
     pub(in crate::console) async fn authorize_matrix(
         &self,
@@ -72,7 +91,7 @@ impl ServerLogin {
             if identity["mxid"] != expected_owner || identity["issuer"] != server.join("/auth/").unwrap().as_str() || identity["clientId"] != snapshot.client_id || grant["mxid"] != identity["mxid"] || grant["userId"] != identity["userId"] { return Err("matrix_account_mismatch"); }
             let previous = self.binding.lock().await.clone();
             if let Some(previous) = &previous && previous.origin == expected_origin && previous.owner.as_deref() == Some(expected_owner) && previous.subject.as_deref().is_some_and(|s| s != subject) { return Err("matrix_account_mismatch"); }
-            let binding = Binding { origin: expected_origin.into(), client_id: snapshot.client_id.clone(), installation_id: previous.as_ref().filter(|p| p.origin == expected_origin && p.client_id == snapshot.client_id && p.owner.as_deref() == Some(expected_owner) && p.subject.as_deref() == Some(subject)).map(|p| p.installation_id.clone()).unwrap_or(random()?), name: "Hagency".into(), owner: Some(expected_owner.into()), subject: Some(subject.into()) };
+            let binding = Binding { origin: expected_origin.into(), client_id: snapshot.client_id.clone(), installation_id: previous.as_ref().filter(|p| p.origin == expected_origin && p.client_id == snapshot.client_id && p.owner.as_deref() == Some(expected_owner) && p.subject.as_deref() == Some(subject)).map(|p| p.installation_id.clone()).unwrap_or(random()?), name: local_device_name(), owner: Some(expected_owner.into()), subject: Some(subject.into()) };
             let until = deadline(&grant)?.min(deadline(&identity)?);
             tracing::debug!(stage="owner_adoption_device",elapsed_ms=started.elapsed().as_millis() as u64,"Registering execution device");
             let (_, device) = register_device(&client, &server, &token, &binding, user).await?;
@@ -182,6 +201,14 @@ impl ServerLogin {
 mod tests {
     use super::super::super::native::{Command, MatrixAccessToken, NativeError, NativeOwner};
     use super::*;
+    #[test]
+    fn device_names_identify_the_computer_and_fit_server_limits() {
+        assert_eq!(device_name("  CHRIS-PC  ", "windows"), "CHRIS-PC (windows)");
+        assert_eq!(device_name("\n\t", "linux"), "Hagency (linux)");
+        assert_eq!(device_name("Office\nMac", "macos"), "OfficeMac (macos)");
+        assert!(device_name(&"电".repeat(300), "windows").chars().count() <= 128);
+        assert!(!local_device_name().chars().any(char::is_control));
+    }
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     struct Source {
         token: std::sync::Mutex<String>,
@@ -354,6 +381,10 @@ mod tests {
                         }
                         "/hagency/api/v1/sessions/current" => json!({}),
                         "/hagency/api/v1/projects" => json!({"projects":[]}),
+                        "/hagency/api/v1/owned-agents/agent-a" => {
+                            json!({"agent":{"id":"agent-a","ownerUserId":"uid","puppetMxid":"@agent:test","displayName":"Agent","state":"active","generation":1,"executionDeviceId":"device"}})
+                        }
+                        "/hagency/api/v1/owned-agents/agent-a/bindings" => json!({"bindings":[]}),
                         "/_matrix/client/v3/joined_rooms" => json!({"joined_rooms":[]}),
                         _ => json!({"code":"unexpected_request"}),
                     };
@@ -385,6 +416,104 @@ mod tests {
         (origin, requests, task)
     }
     #[tokio::test]
+    async fn missing_local_model_is_reported_before_starting_a_service() {
+        use super::super::super::native::LocalAction;
+        let (origin, requests, task) = fixture("@owner:test", None).await;
+        let root = tempfile::tempdir().unwrap();
+        let source = Arc::new(Source {
+            token: std::sync::Mutex::new("sdk-first".into()),
+            current: Arc::new(AtomicBool::new(true)),
+            error_code: "matrix_account_changed",
+            calls: std::sync::atomic::AtomicUsize::new(0),
+            refreshes: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let native = NativeOwner::open_with_matrix(
+            &root.path().join("state"),
+            &origin,
+            "@owner:test",
+            source,
+        )
+        .await
+        .unwrap();
+        let command = |action, input| Command::Local {
+            agent_id: "agent-a".into(),
+            action,
+            input,
+            binding_id: None,
+            requester: None,
+        };
+        let status = native
+            .execute(command(LocalAction::AgentServiceStatus, None))
+            .await
+            .unwrap();
+        assert_eq!(status["service"]["modelConfigured"], false);
+        assert_eq!(status["service"]["enabled"], false);
+        assert!(
+            !root
+                .path()
+                .join("state")
+                .read_dir()
+                .unwrap()
+                .any(|entry| entry.unwrap().file_name() == "runtime-intents.json")
+        );
+        let error = native
+            .execute(command(LocalAction::StartAgentService, Some(json!({}))))
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "agent_model_required");
+        assert!(requests.lock().unwrap().iter().all(
+            |(path, _)| !path.ends_with("/leases/acquire") && !path.ends_with("/events/start")
+        ));
+        let device = native.test_console().authorized_device().await.unwrap();
+        let path = super::super::super::owned_agents::ledger_path(
+            &root.path().join("state"),
+            device.origin(),
+            device.issuer(),
+            device.subject(),
+            device.owner_mxid(),
+        )
+        .unwrap();
+        let profile_id = super::super::super::owned_agents::profile_identity(
+            device.origin(),
+            device.issuer(),
+            device.subject(),
+            device.owner_mxid(),
+        )
+        .unwrap();
+        let mut ledger =
+            hagency_agent_local::Ledger::open_scoped(&path, device.owner_mxid(), &profile_id)
+                .unwrap();
+        ledger
+            .set_agent_model_profile(
+                device.owner_mxid(),
+                "agent-a",
+                &hagency_agent_local::ModelProfile {
+                    model: "test-model".into(),
+                    credential_ref: "keychain:fixture".into(),
+                    workspace_root: root.path().to_string_lossy().into(),
+                    reasoning_effort: "low".into(),
+                    web_search: true,
+                },
+            )
+            .unwrap();
+        drop(ledger);
+        let status = native
+            .execute(command(LocalAction::AgentServiceStatus, None))
+            .await
+            .unwrap();
+        assert_eq!(
+            status["service"]["modelConfigured"], true,
+            "saving a model must remove the setup requirement without starting it"
+        );
+        assert_eq!(status["service"]["enabled"], false);
+        assert!(
+            !path.with_file_name("runtime-intents.json").exists(),
+            "status reads must never create a service intent"
+        );
+        native.shutdown().await;
+        task.abort();
+    }
+    #[tokio::test]
     async fn shared_runtime_proof_is_bounded_and_expiry_always_forces_fresh_authorization() {
         let (origin, requests, task) = fixture("@owner:test", None).await;
         let root = tempfile::tempdir().unwrap();
@@ -404,6 +533,17 @@ mod tests {
         .await
         .unwrap();
         let login = &native.test_console().0.server_login;
+        assert_eq!(
+            requests
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|(path, _)| path == "/hagency/api/v1/devices")
+                .unwrap()
+                .1["name"],
+            local_device_name(),
+            "device registration must publish the computer name rather than the app name"
+        );
         source.calls.store(0, Ordering::Relaxed);
         for _ in 0..25 {
             login.authorized_device().await.unwrap();

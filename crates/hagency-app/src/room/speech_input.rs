@@ -77,6 +77,7 @@ impl SpeechInput {
         let signal = SignalToUI::new();
         let level = self.latest_level.clone();
         let config = cx.global::<crate::settings::app_preferences::AppPreferencesGlobal>().0.speech.clone();
+        crate::speech::ensure_supported(&config)?;
         config.validate()?;
         log!("Speech input: provider={:?}, locale={:?}", config.provider, config.locale);
         let callback = Arc::new(move |event| {

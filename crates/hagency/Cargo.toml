@@ -16,6 +16,7 @@ default = []
 native-console-browser = []
 
 [dependencies]
+gethostname = "=1.1.0"
 percent-encoding = "=2.3.2"
 hagency-agent-local = { path = "../hagency-agent-local" }
 hagency-core.workspace = true

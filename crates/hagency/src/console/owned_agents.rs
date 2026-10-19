@@ -1006,7 +1006,7 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
                 let profile = ledger
                     .agent_model_profile(&reply.owner, &agent)
                     .map_err(local_error)?
-                    .ok_or_else(|| error(409, "runtime_profile_unavailable"))?;
+                    .ok_or_else(|| error(409, "agent_model_required"))?;
                 let provider = super::owner_provider::external::paths_for_reference(
                     &root,
                     &reply.origin,

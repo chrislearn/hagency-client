@@ -94,6 +94,9 @@ impl NativeOwner {
         probe: bool,
         updates: crate::console::speech::Updates,
     ) -> Result<String, NativeError> {
+        if !crate::console::speech::local_codex_supported() {
+            return Err(failure(501, crate::console::speech::CODEX_PLATFORM_UNSUPPORTED));
+        }
         let identity = self.identity().await?;
         let console = &self.0.host.console;
         let root = console

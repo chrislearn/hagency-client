@@ -1913,5 +1913,19 @@
   "Local Codex connected. Agent services on this device share this account. You can now test speech.": "本地 Codex 已连接，本机 Agent 服务共用此账户。现在可以测试语音。",
   "Codex speech could not keep up with the microphone. Your transcribed draft has been kept; please retry.": "Codex 语音未能跟上麦克风。已保留转写草稿，请重试。",
   "Local Codex connects before recording, then streams audio and updates your draft as you speak. Wait for the listening indicator before speaking. Stopping only finalizes the last words; Escape cancels.": "本地 Codex 先连接，再边录音边上传并更新草稿。请等到显示正在聆听后再说话。停止后仅校正末尾文字；Escape 取消。",
-  "Service recordings stop at this limit. Codex and native dictation update your draft while you speak.": "服务录音到达此时限后停止。Codex 和系统听写会在说话时实时更新草稿。"
+  "Service recordings stop at this limit. Codex and native dictation update your draft while you speak.": "服务录音到达此时限后停止。Codex 和系统听写会在说话时实时更新草稿。",
+  "Speech input is not supported on this platform. Your draft has been kept.": "此平台暂不支持语音输入，已有草稿已保留。",
+  "System speech recognition is not supported on this platform. Choose another service in Settings → Speech.": "此平台不支持系统语音识别，请在“设置 → 语音”中选择其他服务。",
+  "Local Codex speech is not supported on this platform. Choose another service in Settings → Speech.": "此平台不支持本地 Codex 语音，请在“设置 → 语音”中选择其他服务。",
+  "Speech recording is not supported on this platform. Choose another service in Settings → Speech.": "此平台不支持语音服务录音，请在“设置 → 语音”中选择其他服务。",
+  "Switch execution to this device": "将执行切换到此设备",
+  "This device: {device}": "此设备：{device}",
+  "Device name: {name}\nDevice ID: {id}": "设备名称：{name}\n设备编号：{id}",
+  "Configure": "配置",
+  "No model is configured on this device. Open Model & resources, connect an account and save a model before starting.": "此设备尚未配置模型。请打开“模型与资源”，连接账号并保存模型后再启动。",
+  "The saved local model, workspace or account is unavailable. Open Model & resources, reconnect the account and save an available model.": "本机保存的模型、工作目录或账号不可用。请在“模型与资源”中重新连接账号并保存可用模型。",
+  "The connected account changed or expired. Reconnect it in Model & resources and save the model again.": "已连接账号发生变更或授权已过期。请在“模型与资源”中重新连接并保存模型。",
+  "A service is already active for this Agent. Refresh its status before starting again.": "此 Agent 已有正在运行的服务。请先刷新状态，避免重复启动。",
+  "This service has stopped. Refresh its status, check Model & resources and start again.": "此服务已经停止。请刷新状态，检查“模型与资源”后重新启动。",
+  "Model profile saved.": "模型配置已保存。"
 }

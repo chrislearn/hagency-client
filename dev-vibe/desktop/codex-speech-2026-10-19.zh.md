@@ -120,3 +120,13 @@ Codex App 自带 0.163.0-alpha.10.2。所有以下成功结果均使用当前本
 本批既有改动按依赖顺序提交到本地 main：1b2f819c（共享 Codex 启动、Windows 路径与有限授权修复）、eb0b66fc（隔离的 Codex WebRTC 转写引擎及依赖）、01b803c2（客户端连接设置、实时采集及草稿更新，含 TLS provider 共存处理）；验证文档与开发记忆另成一笔。此前“未提交”表述保留为当时记录，以本节状态为准。本轮只做分类提交，不推送。
 
 本次没有修改既有生产代码，也没有新增麦克风采集或在线调用；验证依据仍是上文的合成语音在线报告、引擎215项通过及最新包含侧栏的客户端487项通过。真实麦克风准确率、长录音/弱网实机联调、其他操作系统和发布包仍待验收；OHOS上层能力判断与底层实现条件不一致尚未修正。Codex独立语音模型选择、Claude直接语音和翻译不在已实现功能内。以上限制不因提交而视为完成。
+
+## 2026-10-20 平台支持判断与不支持提示修正
+
+已修复上节记录的 OHOS 判断不一致。console::speech 提供共享的 local_codex_supported_on/current 判断；客户端复用该规则，排除 target_env=ohos，普通 Linux（GNU/musl）仍支持 Codex。NativeOwner/文件转写入口在授权或子进程工作前检查平台，底层不支持分支返回独立 speech_codex_platform_unsupported（501），不再误报协议版本不兼容。
+
+同时核实当前 Makepad 1f3b1de 的 OHOS use_audio_inputs/audio_input_box 是空实现，因此 HTTP 录音服务也不再因 target_os=linux 被误标为可用。现有 Windows/macOS/Linux 的 HTTP 录音、Android/iOS 的 HTTP 录音和各系统原有原生听写检测保持；这不是新增 OHOS 音频实现。
+
+客户端统一以 Capabilities 的检查/消息为入口，设置页说明、测试服务、连接 Codex、原生听写开始、HTTP/Codex 录音开始和转写请求使用同一规则。不可用的测试/连接按钮禁用，执行入口仍有前置守卫；不会先索取 API key、开麦或启动连接。平台完全无可用实现时明确提示“此平台暂不支持语音输入，已有草稿已保留”，不再建议切到同样不可用的服务；仅所选 provider 不支持时指向设置中的其他服务。协议版本不兼容仍保留独立升级提示。新增四条中英文词条。
+
+验证：Windows 宿主完整客户端 lib 491 通过/0失败/2原有忽略（speech-platform-app-tests.log，23.21s）；引擎 lib 216通过/0失败/5原有忽略（speech-platform-engine-tests.log，16.43s）。新增平台矩阵含 Windows、macOS、Linux GNU/musl、OHOS、Android、iOS及未知平台，覆盖禁用按钮/不启动任务/先于凭据与URL检查拒绝/配置保持/平台和版本错误区分。239源文件样式0违规、主题守卫通过，中英1919词条/1475静态调用/0缺失，diff检查通过。构建及日志均在D:/BuildCache/hagency-client，dev.ps1核对metadata输出目录；未录音/调用在线识别/重启GUI。本机只安装Windows及WASM Rust target，未做OHOS目标编译或真机验收。

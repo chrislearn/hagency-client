@@ -1913,5 +1913,19 @@
   "Local Codex connected. Agent services on this device share this account. You can now test speech.": "Local Codex connected. Agent services on this device share this account. You can now test speech.",
   "Codex speech could not keep up with the microphone. Your transcribed draft has been kept; please retry.": "Codex speech could not keep up with the microphone. Your transcribed draft has been kept; please retry.",
   "Local Codex connects before recording, then streams audio and updates your draft as you speak. Wait for the listening indicator before speaking. Stopping only finalizes the last words; Escape cancels.": "Local Codex connects before recording, then streams audio and updates your draft as you speak. Wait for the listening indicator before speaking. Stopping only finalizes the last words; Escape cancels.",
-  "Service recordings stop at this limit. Codex and native dictation update your draft while you speak.": "Service recordings stop at this limit. Codex and native dictation update your draft while you speak."
+  "Service recordings stop at this limit. Codex and native dictation update your draft while you speak.": "Service recordings stop at this limit. Codex and native dictation update your draft while you speak.",
+  "Speech input is not supported on this platform. Your draft has been kept.": "Speech input is not supported on this platform. Your draft has been kept.",
+  "System speech recognition is not supported on this platform. Choose another service in Settings → Speech.": "System speech recognition is not supported on this platform. Choose another service in Settings → Speech.",
+  "Local Codex speech is not supported on this platform. Choose another service in Settings → Speech.": "Local Codex speech is not supported on this platform. Choose another service in Settings → Speech.",
+  "Speech recording is not supported on this platform. Choose another service in Settings → Speech.": "Speech recording is not supported on this platform. Choose another service in Settings → Speech.",
+  "Switch execution to this device": "Switch execution to this device",
+  "This device: {device}": "This device: {device}",
+  "Device name: {name}\nDevice ID: {id}": "Device name: {name}\nDevice ID: {id}",
+  "Configure": "Configure",
+  "No model is configured on this device. Open Model & resources, connect an account and save a model before starting.": "No model is configured on this device. Open Model & resources, connect an account and save a model before starting.",
+  "The saved local model, workspace or account is unavailable. Open Model & resources, reconnect the account and save an available model.": "The saved local model, workspace or account is unavailable. Open Model & resources, reconnect the account and save an available model.",
+  "The connected account changed or expired. Reconnect it in Model & resources and save the model again.": "The connected account changed or expired. Reconnect it in Model & resources and save the model again.",
+  "A service is already active for this Agent. Refresh its status before starting again.": "A service is already active for this Agent. Refresh its status before starting again.",
+  "This service has stopped. Refresh its status, check Model & resources and start again.": "This service has stopped. Refresh its status, check Model & resources and start again.",
+  "Model profile saved.": "Model profile saved."
 }
