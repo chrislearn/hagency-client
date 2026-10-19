@@ -64,6 +64,8 @@ pub(crate) fn executable() -> Result<PathBuf, ProviderError> {
             "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex",
         )];
         if let Some(path) = std::env::var_os("PATH") {
+            #[cfg(windows)]
+            paths.extend(std::env::split_paths(&path).map(|p| p.join("codex.exe")));
             paths.extend(std::env::split_paths(&path).map(|p| p.join("codex")));
         }
         paths
@@ -88,7 +90,11 @@ pub(crate) struct ProviderPaths {
 fn trusted_local_home() -> Result<PathBuf, ProviderError> {
     let home = std::env::var_os("CODEX_HOME")
         .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|p| PathBuf::from(p).join(".codex")))
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .or_else(|| std::env::var_os("USERPROFILE"))
+                .map(|p| PathBuf::from(p).join(".codex"))
+        })
         .ok_or(failure(503, "local_codex_home_unavailable"))?;
     let home = home
         .canonicalize()
@@ -275,10 +281,38 @@ fn rpc_rejection(value: &Value) -> ProviderError {
     };
     failure(502, code)
 }
+// A read may be cancelled by media progress; retain incomplete JSONL bytes.
+async fn read_provider_frame<R: tokio::io::AsyncBufRead + Unpin>(
+    output: &mut R,
+    frame: &mut Vec<u8>,
+) -> Result<Value, ProviderError> {
+    loop {
+        let available = output
+            .fill_buf()
+            .await
+            .map_err(|_| failure(503, "codex_provider_unavailable"))?;
+        if available.is_empty() {
+            return Err(failure(503, "codex_provider_unavailable"));
+        }
+        let end = available.iter().position(|b| *b == b'\n').map(|n| n + 1);
+        let n = end.unwrap_or(available.len());
+        if frame.len() + n > 262144 {
+            return Err(failure(502, "codex_protocol_mismatch"));
+        }
+        frame.extend_from_slice(&available[..n]);
+        output.consume(n);
+        if end.is_some() {
+            let complete = std::mem::take(frame);
+            return serde_json::from_slice(&complete)
+                .map_err(|_| failure(502, "codex_protocol_mismatch"));
+        }
+    }
+}
 struct Process {
     child: Child,
     input: ChildStdin,
     output: BufReader<ChildStdout>,
+    frame_buffer: Vec<u8>,
     next: u64,
     login_id: Option<String>,
     auth_url: Option<String>,
@@ -295,7 +329,15 @@ impl Process {
                 &paths.codex_home,
             )
             .await
-            .map_err(|_| failure(409, "local_codex_configuration_unsupported"))?
+            .map_err(|error| {
+                let (kind, detail) = error.diagnostic();
+                tracing::warn!(
+                    kind,
+                    detail,
+                    "Local Codex configuration inspection rejected"
+                );
+                failure(409, "local_codex_configuration_unsupported")
+            })?
         } else {
             vec![]
         };
@@ -331,11 +373,15 @@ impl Process {
             .env_clear()
             .env("HOME", &paths.home)
             .env("CODEX_HOME", &paths.codex_home)
-            .current_dir(&paths.home)
+            .current_dir(
+                hagency_platform::process_current_directory(&paths.home)
+                    .map_err(|_| failure(503, "provider_directory_unavailable"))?,
+            )
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .kill_on_drop(true);
+        hagency_agent_local::codex::inherit_system_environment(&mut command);
         if paths.shared {
             for value in hagency_agent_local::codex::shared_base_overrides(&paths.home)
                 .map_err(|_| failure(409, "local_codex_configuration_unsupported"))?
@@ -398,6 +444,7 @@ impl Process {
             child,
             input,
             output,
+            frame_buffer: Vec::new(),
             next: 1,
             login_id: None,
             auth_url: None,
@@ -409,7 +456,11 @@ impl Process {
         if paths.shared {
             let c = p.rpc("config/read", json!({"includeLayers":false})).await?;
             hagency_agent_local::codex::verify_shared_configuration(&c["config"], &paths.home)
-                .map_err(|_| failure(409, "local_codex_configuration_unsupported"))?;
+                .map_err(|error| {
+                    let (kind, detail) = error.diagnostic();
+                    tracing::warn!(kind, detail, "Local Codex sealed configuration rejected");
+                    failure(409, "local_codex_configuration_unsupported")
+                })?;
         }
         Ok(p)
     }
@@ -427,28 +478,7 @@ impl Process {
             .map_err(|_| failure(503, "codex_provider_unavailable"))
     }
     async fn frame(&mut self) -> Result<Value, ProviderError> {
-        let mut frame = Vec::new();
-        loop {
-            let available = self
-                .output
-                .fill_buf()
-                .await
-                .map_err(|_| failure(503, "codex_provider_unavailable"))?;
-            if available.is_empty() {
-                return Err(failure(503, "codex_provider_unavailable"));
-            }
-            let end = available.iter().position(|b| *b == b'\n').map(|n| n + 1);
-            let n = end.unwrap_or(available.len());
-            if frame.len() + n > 262144 {
-                return Err(failure(502, "codex_protocol_mismatch"));
-            }
-            frame.extend_from_slice(&available[..n]);
-            self.output.consume(n);
-            if end.is_some() {
-                return serde_json::from_slice(&frame)
-                    .map_err(|_| failure(502, "codex_protocol_mismatch"));
-            }
-        }
+        read_provider_frame(&mut self.output, &mut self.frame_buffer).await
     }
     async fn rpc(&mut self, method: &str, params: Value) -> Result<Value, ProviderError> {
         let id = self.next;
@@ -979,6 +1009,28 @@ async fn dispatch(req: &mut Request, depot: &Depot, res: &mut Response) {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn frame_read_survives_cancelled_partial_line() {
+        use tokio::io::AsyncWriteExt;
+        let (mut sender, receiver) = tokio::io::duplex(128);
+        let mut receiver = tokio::io::BufReader::new(receiver);
+        let mut buffer = Vec::new();
+        sender.write_all(b"{\"result\":").await.unwrap();
+        assert!(
+            tokio::time::timeout(
+                std::time::Duration::from_millis(20),
+                super::read_provider_frame(&mut receiver, &mut buffer)
+            )
+            .await
+            .is_err()
+        );
+        sender.write_all(b"true}\n").await.unwrap();
+        let frame = super::read_provider_frame(&mut receiver, &mut buffer)
+            .await
+            .unwrap();
+        assert_eq!(frame, serde_json::json!({"result":true}));
+        assert!(buffer.is_empty());
+    }
     #[test]
     fn model_catalog_projects_only_bounded_public_fields_and_errors_redact_credentials() {
         let page = json!({"data":[{"id":"m1","model":"real-model","displayName":"Real Model","description":"Catalog entry","isDefault":true,"hidden":false,"defaultReasoningEffort":"medium","supportedReasoningEfforts":[{"reasoningEffort":"medium","description":"Balanced"}],"token":"must-not-escape"}],"nextCursor":null});
@@ -1286,7 +1338,11 @@ for line in sys.stdin:
             std::fs::rename(&executable, &script).unwrap();
             std::fs::write(
                 &executable,
-                format!("@\"{}\" \"{}\" %*\r\n", interpreter.trim(), script.display()),
+                format!(
+                    "@\"{}\" \"{}\" %*\r\n",
+                    interpreter.trim(),
+                    script.display()
+                ),
             )
             .unwrap();
         }

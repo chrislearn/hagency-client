@@ -292,3 +292,74 @@ impl Process {
         }
     }
 }
+pub(super) fn process_current_directory(
+    path: &std::path::Path,
+) -> std::io::Result<std::path::PathBuf> {
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    let input: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
+    if input.len() <= 260 {
+        return Ok(path.to_owned());
+    }
+    let mut output = vec![0u16; 32768];
+    // Both buffers live for the call; the input is NUL-terminated and the output
+    // capacity is supplied in WCHARs. The OS returns the existing 8.3 name.
+    let length = unsafe {
+        windows_sys::Win32::Storage::FileSystem::GetShortPathNameW(
+            input.as_ptr(),
+            output.as_mut_ptr(),
+            output.len() as u32,
+        )
+    } as usize;
+    if length == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    if length >= 260 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Windows process directory is too long",
+        ));
+    }
+    let short = std::path::PathBuf::from(std::ffi::OsString::from_wide(&output[..length]));
+    if short.canonicalize()? != path.canonicalize()? {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Windows process directory identity differs",
+        ));
+    }
+    Ok(short)
+}
+
+#[cfg(test)]
+mod current_directory_tests {
+    use super::*;
+    #[test]
+    fn long_directory_keeps_identity_or_refuses_when_short_names_are_disabled() {
+        use std::os::windows::process::CommandExt;
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        assert_eq!(process_current_directory(&root).unwrap(), root);
+        let mut long = root;
+        while long.as_os_str().encode_wide().count() < 300 {
+            long = long.join("owner_0123456789abcdef0123456789abcdef");
+        }
+        std::fs::create_dir_all(&long).unwrap();
+        match process_current_directory(&long) {
+            Ok(short) => {
+                assert!(short.as_os_str().encode_wide().count() < 260);
+                assert_eq!(short.canonicalize().unwrap(), long.canonicalize().unwrap());
+                let cmd = std::path::PathBuf::from(std::env::var_os("SystemRoot").unwrap())
+                    .join("System32/cmd.exe");
+                assert!(
+                    std::process::Command::new(cmd)
+                        .args(["/c", "exit", "0"])
+                        .current_dir(short)
+                        .creation_flags(CREATE_NO_WINDOW)
+                        .status()
+                        .unwrap()
+                        .success()
+                );
+            }
+            Err(error) => assert_eq!(error.kind(), io::ErrorKind::InvalidInput),
+        }
+    }
+}

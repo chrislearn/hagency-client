@@ -40,6 +40,19 @@ mod windows;
 #[cfg(windows)]
 use windows::Process;
 
+/// CreateProcess has a shorter current-directory limit than Windows file APIs.
+/// Preserve directory identity while using its OS-provided short name if needed.
+pub fn process_current_directory(path: &std::path::Path) -> io::Result<PathBuf> {
+    #[cfg(windows)]
+    {
+        windows::process_current_directory(path)
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(path.to_owned())
+    }
+}
+
 /// Explicit host configuration; no serde constructor and no environment inheritance.
 pub struct Launch {
     pub executable: PathBuf,

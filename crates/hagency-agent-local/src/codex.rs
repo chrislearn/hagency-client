@@ -107,6 +107,18 @@ pub struct Profile {
     pub shared_auth: bool,
     pub web_search: bool,
 }
+/// Windows TLS/account routing needs the OS installation directory even in a
+/// sealed provider child. These are paths, never provider credentials.
+pub fn inherit_system_environment(command: &mut tokio::process::Command) {
+    #[cfg(windows)]
+    for name in ["SystemRoot", "WINDIR"] {
+        if let Some(value) = std::env::var_os(name) {
+            command.env(name, value);
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = command;
+}
 impl Profile {
     pub fn validate(&self) -> Result<()> {
         for path in [&self.executable, &self.home, &self.codex_home, &self.cwd] {
@@ -206,11 +218,12 @@ impl Profile {
             .env_clear()
             .env("HOME", &self.home)
             .env("CODEX_HOME", &self.codex_home)
-            .current_dir(&self.cwd)
+            .current_dir(hagency_platform::process_current_directory(&self.cwd)?)
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .kill_on_drop(true);
+        inherit_system_environment(&mut command);
         // Pinned installed 0.160 feature vocabulary. Read-only alone permits
         // broad reads; no native execution/MCP inheritance is released here.
         for feature in [
@@ -333,27 +346,15 @@ pub async fn sealed_shared_overrides(
     home: &std::path::Path,
     codex_home: &std::path::Path,
 ) -> Result<Vec<String>> {
-    let inspection = home.join("hagency-provider-inspection");
-    if !inspection.exists() {
-        std::fs::create_dir(&inspection)?;
-    }
-    if std::fs::symlink_metadata(&inspection)?
-        .file_type()
-        .is_symlink()
-        || !inspection.is_dir()
-    {
-        return Err(Error::Profile("inspection workspace invalid"));
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&inspection, std::fs::Permissions::from_mode(0o700))?;
-    }
+    // Owner paths include two identity hashes. Keep this leaf short: Windows
+    // CreateProcess rejects a current directory beyond MAX_PATH (OS error 267),
+    // even though Rust can create and access that directory via a verbatim path.
+    let inspection = inspection_workspace(home)?;
     let profile = Profile {
         executable: executable.into(),
         home: home.into(),
         codex_home: codex_home.into(),
-        cwd: inspection.canonicalize()?,
+        cwd: inspection,
         model: "probe".into(),
         effort: "medium".into(),
         shared_auth: true,
@@ -395,6 +396,52 @@ pub async fn sealed_shared_overrides(
     let _ = probe.stop().await;
     result
 }
+fn inspection_workspace(home: &std::path::Path) -> Result<PathBuf> {
+    let inspection = home.join("inspect");
+    if !inspection.exists() {
+        std::fs::create_dir(&inspection)?;
+    }
+    if std::fs::symlink_metadata(&inspection)?
+        .file_type()
+        .is_symlink()
+        || !inspection.is_dir()
+    {
+        return Err(Error::Profile("inspection workspace invalid"));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&inspection, std::fs::Permissions::from_mode(0o700))?;
+    }
+    Ok(inspection.canonicalize()?)
+}
+fn instruction_path_matches(actual: &str, expected: &std::path::Path) -> bool {
+    let Some(expected_text) = expected.to_str() else {
+        return false;
+    };
+    #[cfg(windows)]
+    fn normalize(value: &str) -> std::path::PathBuf {
+        if let Some(unc) = value.strip_prefix(r"\\?\UNC\") {
+            format!(r"\\{unc}").into()
+        } else {
+            value.strip_prefix(r"\\?\").unwrap_or(value).into()
+        }
+    }
+    #[cfg(not(windows))]
+    fn normalize(value: &str) -> std::path::PathBuf {
+        value.into()
+    }
+    // Codex normalizes Windows verbatim prefixes and repeated separators. Permit
+    // only those lexical differences, never a symlink/parent traversal alias.
+    normalize(actual) == normalize(expected_text)
+        && match (
+            std::path::Path::new(actual).canonicalize(),
+            expected.canonicalize(),
+        ) {
+            (Ok(actual), Ok(expected)) => actual == expected,
+            _ => false,
+        }
+}
 pub fn verify_shared_configuration(c: &Value, home: &std::path::Path) -> Result<()> {
     validate_shared_provider(c)?;
     let expected = home.join(SEALED_INSTRUCTIONS_FILE);
@@ -403,7 +450,9 @@ pub fn verify_shared_configuration(c: &Value, home: &std::path::Path) -> Result<
         || metadata.file_type().is_symlink()
         || metadata.len() != SEALED_INSTRUCTIONS.len() as u64
         || std::fs::read(&expected)? != SEALED_INSTRUCTIONS.as_bytes()
-        || c["model_instructions_file"].as_str() != expected.to_str()
+        || !c["model_instructions_file"]
+            .as_str()
+            .is_some_and(|path| instruction_path_matches(path, &expected))
         || c["instructions"] != ""
         || c["notify"].as_array().is_none_or(|v| !v.is_empty())
         || c.get("model_catalog_json").is_some_and(|v| !v.is_null())
@@ -1462,6 +1511,29 @@ fn now() -> i64 {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(windows)]
+    #[test]
+    fn isolated_provider_inherits_only_windows_system_environment() {
+        let mut command = tokio::process::Command::new("codex.exe");
+        command.env_clear();
+        super::inherit_system_environment(&mut command);
+        let names: Vec<_> = command
+            .as_std()
+            .get_envs()
+            .map(|(key, _)| key.to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            names
+                .iter()
+                .all(|name| matches!(name.as_str(), "SystemRoot" | "WINDIR"))
+        );
+        for name in ["SystemRoot", "WINDIR"] {
+            assert_eq!(
+                names.iter().any(|key| key == name),
+                std::env::var_os(name).is_some()
+            );
+        }
+    }
     #[test]
     fn provider_diagnostics_exclude_dynamic_error_bodies() {
         for error in [
@@ -1712,6 +1784,29 @@ mod tests {
             c["features"][feature] = false.into();
         }
         verify_shared_configuration(&c, temp.path()).unwrap();
+        #[cfg(windows)]
+        {
+            let canonical_home = temp.path().canonicalize().unwrap();
+            let mut normalized = c.clone();
+            let canonical_file = canonical_home.join(SEALED_INSTRUCTIONS_FILE);
+            normalized["model_instructions_file"] = canonical_file
+                .to_str()
+                .unwrap()
+                .trim_start_matches(r"\\?\")
+                .replace('\\', r"\\")
+                .into();
+            verify_shared_configuration(&normalized, &canonical_home).unwrap();
+        }
+        std::fs::create_dir(temp.path().join("alias")).unwrap();
+        let traversal = temp
+            .path()
+            .join("alias")
+            .join("..")
+            .join(SEALED_INSTRUCTIONS_FILE);
+        assert!(!instruction_path_matches(
+            traversal.to_str().unwrap(),
+            &temp.path().join(SEALED_INSTRUCTIONS_FILE)
+        ));
         for (pointer, value) in [
             ("/notify", serde_json::json!(["/bin/sh"])),
             (

@@ -97,6 +97,11 @@ pub(super) fn fixture_device(
     )
 }
 impl AuthorizedDevice {
+    #[cfg(test)]
+    pub(super) fn fixture_valid_for(mut self, duration: Duration) -> Self {
+        self.valid_until = Instant::now() + duration;
+        self
+    }
     pub fn origin(&self) -> &str {
         &self.origin
     }
@@ -586,9 +591,26 @@ fn deadline(value: &Value) -> Result<Instant, &'static str> {
         .ok_or("invalid_server_response")?;
     let remaining = until
         .checked_sub(now)
-        .filter(|ms| *ms > 0 && *ms <= 31_000)
+        // A small server/client clock difference can make a fresh 30s proof
+        // appear slightly longer. Tolerate at most 5s skew while always capping
+        // local authority at 30s; expired or unbounded proofs remain rejected.
+        .filter(|ms| *ms > 0 && *ms <= 35_000)
         .ok_or("sign_in_required")?;
-    Ok(Instant::now() + Duration::from_millis(remaining))
+    Ok(Instant::now() + Duration::from_millis(remaining.min(30_000)))
+}
+
+#[cfg(test)]
+#[test]
+fn finite_proof_tolerates_small_clock_skew_without_extending_local_authority() {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis() as u64;
+    let proof_started = Instant::now();
+    let capped = deadline(&json!({"validUntilMs": now + 32_000})).unwrap();
+    assert!(capped <= Instant::now() + Duration::from_secs(30));
+    assert!(capped > proof_started + Duration::from_secs(29));
+    let short = deadline(&json!({"validUntilMs": now + 5_000})).unwrap();
+    assert!(short <= Instant::now() + Duration::from_secs(5));
+    assert!(deadline(&json!({"validUntilMs": now - 1})).is_err());
+    assert!(deadline(&json!({"validUntilMs": now + 60_000})).is_err());
 }
 fn oauth_credentials(tokens: &Value) -> Result<(String, Option<String>, Duration), &'static str> {
     if tokens["token_type"]
@@ -731,7 +753,12 @@ async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
         );
     }
     let renewed = response(renewal_response).await.map_err(renewal_error)?;
-    let mut until = deadline(&renewed).map_err(|_| Error::Unavailable)?;
+    let mut until = deadline(&renewed).map_err(|code| {
+        let clock_ms = SystemTime::now().duration_since(UNIX_EPOCH).ok().map(|d| d.as_millis() as i128);
+        let remaining_ms = renewed["validUntilMs"].as_u64().zip(clock_ms).map(|(until, now)| until as i128 - now);
+        tracing::warn!(stage = "server_renew_deadline", code, ?remaining_ms, "Owner renewal proof rejected");
+        Error::Unavailable
+    })?;
     if until <= Instant::now() + Duration::from_secs(20)
         && let Some(source) = &session.matrix_source
     {
@@ -767,7 +794,10 @@ async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
             );
         }
         let refreshed = self::response(response).await.map_err(renewal_error)?;
-        until = deadline(&refreshed).map_err(|_| Error::Unavailable)?;
+        until = deadline(&refreshed).map_err(|code| {
+            tracing::warn!(stage = "server_refresh_deadline", code, "Owner renewal proof rejected");
+            Error::Unavailable
+        })?;
     }
     let identity = get(
         &client,
@@ -782,7 +812,10 @@ async fn renew(session: &mut RemoteSession) -> Result<(), Error> {
     if !identity_matches(&identity, &session.binding) || identity["userId"] != session.user_id {
         return Err(Error::Unauthorized);
     }
-    let identity_until = deadline(&identity).map_err(|_| Error::Unavailable)?;
+    let identity_until = deadline(&identity).map_err(|code| {
+        tracing::warn!(stage = "server_identity_deadline", code, "Owner renewal proof rejected");
+        Error::Unavailable
+    })?;
     if let Some(source) = &session.matrix_source {
         let after = source.access_token().await.map_err(|error| {
             let code = super::native::sdk_source_failure(error);
