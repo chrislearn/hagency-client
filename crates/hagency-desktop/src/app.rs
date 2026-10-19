@@ -12,6 +12,7 @@ use std::{
     time::Duration,
 };
 use makepad_widgets::*;
+use crate::render_maintenance::RenderMaintenance;
 use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomId}};
 use serde::{Deserialize, Serialize};
 use crate::{
@@ -242,6 +243,7 @@ pub struct App {
     /// The top-level app state, shared across various parts of the app.
     #[rust] app_state: AppState,
     #[rust] lifecycle: AppLifecycle,
+    #[rust] render_maintenance: RenderMaintenance,
     /// The details of a room we're waiting on to be loaded so that we can navigate to it.
     /// This can be either a room we're waiting to join, or one we're waiting to be invited to.
     /// Also includes an optional room ID to be closed once the awaited room has been loaded.
@@ -1203,6 +1205,7 @@ impl AppMain for App {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        self.render_maintenance.handle_event(cx, event);
         crate::theme::system::handle_event(cx, event);
         // Peek at Back instead of `back_pressed()`, which marks it handled: Back
         // is taken only when it closes one of these modals. Otherwise it goes on
