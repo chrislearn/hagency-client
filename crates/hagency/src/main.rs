@@ -3,7 +3,7 @@
 use clap::{Parser, Subcommand};
 use std::{net::SocketAddr, path::PathBuf};
 #[derive(Parser)]
-#[command(version, about = "Hagency user-owned Agent client")]
+#[command(name = "hagency-cli", version, about = "Hagency user-owned Agent client")]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,

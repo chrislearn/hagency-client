@@ -2,7 +2,7 @@
 //!
 //! The service runs as the user who installs it (a macOS LaunchAgent or a
 //! `systemd --user` unit), so it sees that user's coding-agent sign-in and
-//! `PATH`. It runs `hagency start --no-open`; agents never auto-start.
+//! `PATH`. It runs `hagency-cli start --no-open`; agents never auto-start.
 //! The console navigation URL does not grant authorization.
 use std::{
     io::IsTerminal,
@@ -67,7 +67,7 @@ pub async fn announce(state: PathBuf, address: SocketAddr, open: bool) {
                 return;
             }
             println!(
-                "Hagency owner client is ready. Open it with: hagency open --state-dir {}",
+                "Hagency owner client is ready. Open it with: hagency-cli open --state-dir {}",
                 state.display()
             );
             return;

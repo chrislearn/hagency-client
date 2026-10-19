@@ -54,7 +54,7 @@ async fn native_configured_fleet_profile() {
             json!({"profile":"inline_factory_service_checkpoint_v1","idle_ms":10_000});
         config["matrix"]["registration_fingerprint"] = json!(fingerprint);
         config["matrix"]["token_provisioning"] = json!({"profile":"registration_token_home_rooms_enrollment_step_v1","peer_masters":anchors,
-            "home":{"root":homes,"task_client":std::path::PathBuf::from(env!("CARGO_BIN_EXE_hagency")).canonicalize().unwrap(),
+            "home":{"root":homes,"task_client":std::path::PathBuf::from(env!("CARGO_BIN_EXE_hagency-cli")).canonicalize().unwrap(),
                 "projects":[{"project_id":"project_provision","source":source,"mode":"copy"}]}});
         config["approval"] = json!({"origin":f.fake.endpoint,"server_name":registration.server_name,"registration_fingerprint":fingerprint,
             "engagement_id":config["matrix"]["engagement_id"],"registration_generation":1,"transport_generation":1,

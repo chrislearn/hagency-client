@@ -1,0 +1,2463 @@
+//! The top-level application content.
+//!
+//! See `handle_startup()` for the first code that runs on app startup.
+
+#[cfg(feature = "agent_chat")]
+use crate::agent_chat::approval_inbox::{ApprovalInboxAction, ApprovalInboxWidgetRefExt};
+use crate::agent_access::{AgentAccessAction, AgentAccessPanelWidgetRefExt};
+use std::{
+    cell::RefCell,
+    collections::{hash_map::DefaultHasher, HashMap},
+    hash::{Hash, Hasher},
+    time::Duration,
+};
+use makepad_widgets::*;
+use crate::shared::navigation_bar_button::NavigationBarButtonWidgetRefExt;
+use crate::render_maintenance::RenderMaintenance;
+use matrix_sdk::{RoomState, ruma::{OwnedEventId, OwnedRoomId, OwnedUserId, RoomId}};
+use serde::{Deserialize, Serialize};
+use crate::{
+    block_user_modal::{BlockUserModalAction, BlockUserModalWidgetRefExt},
+    avatar_cache::clear_avatar_cache, room_preview_cache::clear_room_preview_cache, home::{
+        account_menu::{AccountMenuAction, AccountMenuWidgetRefExt},
+        event_source_modal::{EventSourceModalAction, EventSourceModalWidgetRefExt}, invite_modal::{InviteModalAction, InviteModalWidgetRefExt}, main_desktop_ui::MainDesktopUiAction, navigation_tab_bar::{NavigationBarAction, SelectedTab}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_context_menu::RoomContextMenuWidgetRefExt, room_screen::{InviteAction, MessageAction, clear_timeline_states, invalidate_single_timeline_state}, rooms_list::{RoomsListAction, RoomsListRef, RoomsListUpdate, clear_all_invited_rooms, enqueue_rooms_list_update}
+    }, join_leave_room_modal::{
+        JoinLeaveModalKind, JoinLeaveRoomModalAction, JoinLeaveRoomModalWidgetRefExt
+    }, login::login_screen::LoginAction, logout::logout_confirm_modal::{LogoutAction, LogoutConfirmModalAction, LogoutConfirmModalWidgetRefExt}, persistence, profile::user_profile_cache::clear_user_profile_cache, room::BasicRoomDetails, settings::app_preferences::{AppPreferences, UiZoom}, shared::{confirmation_modal::{ConfirmationModalContent, ConfirmationModalWidgetRefExt}, context_menu::{ContextMenuClosed, menu_position_margin}, image_viewer::{ImageViewerAction, ImageViewerWidgetRefExt, LoadState}, popup_list::{PopupKind, enqueue_popup_notification}}, sliding_sync::{DirectMessageRoomAction, MatrixRequest, TimelineKind, current_user_id, submit_async_request}, utils::RoomNameId, verification::VerificationAction, verification_modal::{
+        VerificationModalAction,
+        VerificationModalWidgetRefExt,
+    }
+};
+use crate::shared::file_upload_modal::{FileUploadModalWidgetRefExt, FileUploadModalAction};
+use crate::shared::web_browser::{WebBrowserAction, WebBrowserWidgetRefExt};
+use crate::shared::web_browser_window::WebBrowserWindowHostWidgetRefExt;
+#[cfg(feature = "agent_chat")]
+use crate::agent_chat::ops::ui::{AgentOpsAction, AgentOpsPanelWidgetRefExt};
+use crate::moments::ui::{MomentsAction, MomentsPanelWidgetRefExt};
+use crate::octoscript_apps::{MiniAppsAction, MiniAppsPanelWidgetRefExt};
+use crate::miniapps::window::MiniAppsWindowHostWidgetRefExt;
+use crate::settings::theme_studio::{ThemeStudioAction, ThemeStudioWidgetRefExt};
+use crate::article_app::{ArticleAction, ArticlePanelWidgetRefExt};
+use crate::mini_app::{MiniAppAction, MiniAppPanelWidgetRefExt};
+use crate::forwarding::{ForwardAction, ForwardPanelWidgetRefExt};
+use crate::home::sidebar_action_menu::{SidebarMenuAction, SidebarActionMenuWidgetRefExt};
+use crate::home::room_history::{RoomHistoryAction, RoomHistoryPanelWidgetRefExt};
+use crate::home::space_management::{SpaceManagementAction, SpaceManagementPanelWidgetRefExt};
+
+/// The app's content without a window, so an OctoSense host can seat it in its
+/// own pane (`crate::module`). The standalone window's body holds the same widget.
+mod embedded_content {
+    use makepad_widgets::*;
+    script_mod! {
+        use mod.prelude.widgets.*
+        use mod.widgets.*
+
+        mod.widgets.RinxContent = View {
+            width: Fill, height: Fill
+            flow: Overlay
+            overlay_container := View {
+                width: Fill, height: Fill,
+                flow: Overlay,
+
+                home_screen_view := View {
+                    visible: false
+                    home_screen := HomeScreen {}
+                }
+                join_leave_modal := Modal {
+                    content := JoinLeaveRoomModal {}
+                }
+                login_screen_view := View {
+                    visible: true
+                    login_screen := LoginScreen {}
+                }
+
+                image_viewer_modal := Modal {
+                    content := ImageViewer {}
+                }
+                theme_studio_modal := Modal {can_dismiss: false content := ThemeStudio {}}
+                web_browser_modal := Modal {can_dismiss: false content := WebBrowser {}}
+                
+                // The popup that lets the user select users to mention, rooms to link,
+                // or a slash command to run (via kbd triggers like '@', '#', '/').
+                mention_popup := MentionablePopup { }
+
+                // Context menus should be shown in front of other UI elements,
+                // but behind verification modals.
+                new_message_context_menu := NewMessageContextMenu { }
+                room_context_menu := RoomContextMenu { }
+                sidebar_action_menu := SidebarActionMenu {}
+
+                // The account menu popup, anchored at the desktop rail's
+                // bottom-left button. Same self-positioning overlay pattern.
+                account_menu := AccountMenu { }
+
+                // A modal to confirm sending out an invite to a room.
+                invite_confirmation_modal := Modal {
+                    content := PositiveConfirmationModal {
+                        buttons_view +: { accept_button +: {
+                            draw_icon +: { svg: (ICON_INVITE) }
+                            icon_walk: Walk{width: 28, height: Fit, margin: Inset{left: -10, right: 2} }
+                        } }
+                    }
+                }
+
+                // A modal to invite a user to a room.
+                invite_modal := Modal {
+                    content := InviteModal {}
+                }
+
+                // Show the logout confirmation modal.
+                logout_confirm_modal := Modal {
+                    content := LogoutConfirmModal {}
+                }
+
+                // Show the event source modal (View Source for messages).
+                event_source_modal := Modal {
+                    content := EventSourceModal {}
+                }
+
+                // Show incoming verification requests in front of the aforementioned UI elements.
+                verification_modal := Modal {
+                    can_dismiss: false,
+                    content := VerificationModal {}
+                }
+                tsp_verification_modal := Modal {
+                    content := TspVerificationModal {}
+                }
+
+                approval_inbox_modal := Modal {can_dismiss: false content := ApprovalInbox {}}
+                agent_access_modal := Modal {can_dismiss: false content := AgentAccessPanel {}}
+                space_management_modal := Modal {can_dismiss: false content := SpaceManagementPanel {}}
+
+                // A generic modal to confirm any positive action.
+                positive_confirmation_modal := Modal {
+                    content := PositiveConfirmationModal {}
+                }
+
+                // A modal to confirm any deletion/removal action.
+                delete_confirmation_modal := Modal {
+                    content := NegativeConfirmationModal {}
+                }
+
+                // A modal to confirm blocking or unblocking a user.
+                block_user_modal := Modal {
+                    content := BlockUserModal {}
+                }
+
+                // A modal to preview and confirm file uploads.
+                file_upload_modal := Modal {
+                    content := FileUploadModal {}
+                }
+
+                article_app_modal := Modal {can_dismiss: false content := ArticlePanel {}}
+                octoscript_apps_modal := Modal {can_dismiss: false content := MiniAppsPanel {}}
+                // The assistant's read and send requests: answered only here.
+                assistant_sheet_modal := Modal {can_dismiss: false content := AssistantSheet {}}
+                mini_app_modal := Modal {
+                    can_dismiss: false
+                    content := MiniAppPanel {}
+                }
+                forward_modal := Modal {
+                    can_dismiss: false
+                    content := ForwardPanel {}
+                }
+                agent_ops_modal := Modal {can_dismiss: false content := AgentOpsPanel {}}
+                moments_modal := Modal {can_dismiss: false content := MomentsPanel {}}
+                room_history_modal := Modal {
+                    can_dismiss: false
+                    content := RoomHistoryPanel {}
+                }
+
+                PopupList {}
+
+                // Tooltips must be shown in front of all other UI elements,
+                // since they can be shown as a hover atop any other widget.
+                // This tooltip widget handles TooltipActions directly by itself,
+                // so we don't need to call show/hide ourselves.
+                app_tooltip := CalloutTooltip {}
+            }
+        }
+    }
+}
+
+script_mod! {
+    use mod.prelude.widgets.*
+    use mod.widgets.*
+
+    load_all_resources() do #(App::script_component(vm)) {
+        ui: Root {
+            // Not a window itself: builds the separate Moments window on demand.
+            moments_window_host := MomentsWindowHost {}
+            // Likewise the article editor's window.
+            article_window_host := ArticleWindowHost {}
+            web_browser_window_host := WebBrowserWindowHost {}
+            mini_apps_window_host := MiniAppsWindowHost {}
+
+            main_window := Window {
+                window.inner_size: vec2(1280, 800)
+                window.title: "Hagency"
+                pass.clear_color: #FFFFFF00
+                caption_bar +: {
+                    draw_bg.color: mod.widgets.RINX_PAGE
+                    caption_label +: {
+                        flow: Overlay
+                        align: Align{x: 0 y: 0}
+                        caption_icon +: {width: 0 height: 0 margin: 0 opacity: 0.0}
+                        label +: {visible: false}
+                        title := View {
+                            width: Fill height: Fill flow: Right align: Center
+                            RinxBrandLogo {width: 18 height: 18 margin: Inset{right: 6}}
+                            RinxLabel {text: "Hagency" draw_text.color: mod.widgets.RINX_INK}
+                        }
+                        titlebar_sidebar := NavigationBarButton {
+                            visible: false
+                            margin: Inset{left: #(if cfg!(target_os = "macos") {80.0} else {8.0})}
+                            width: 32 height: Fill
+                            tooltip_below: true
+                            tooltip_text: #(crate::i18n::tr("Collapse sidebar"))
+                            draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED}
+                            icon := Icon {
+                                icon_walk: Walk{width: 18 height: 18}
+                                draw_icon +: {svg: ICON_PANEL_LEFT color: mod.widgets.RINX_INK}
+                            }
+                        }
+                    }
+                }
+
+                body +: {
+                    // Only the top part of safe area inset padding is applied here,
+                    // since we don't have any bar or anything on the top.
+                    // The other sides are handled by widgets that might draw in those areas,
+                    // like the NavigationTabBar or room screen content.
+                    padding: Inset{
+                        top: (mod.widgets.SAFE_INSET_PAD_TOP),
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                    }
+                    keyboard_min_shift: 12.0
+
+                    content := RinxContent {}
+                } // end of body
+            }
+        }
+    }
+}
+
+#[cfg(feature = "standalone")]
+app_main!(App);
+
+#[derive(Script)]
+pub struct App {
+    #[live] ui: WidgetRef,
+    /// Hosted inside OctoSense: `ui` is the window-less `RinxContent`, and the host
+    /// owns the window, its geometry and menus.
+    #[rust] embedded: bool,
+    /// Startup has run: a host forwards its own `Startup` after `create_embedded` ran it.
+    #[rust] started: bool,
+    /// Hosted on a desktop host: Moments and the article editor in the host's
+    /// own windows (see `hosted_window`).
+    #[rust] hosted_windows: Vec<(HostedWindow, WidgetRef)>,
+    /// The top-level app state, shared across various parts of the app.
+    #[rust] app_state: AppState,
+    #[rust] lifecycle: AppLifecycle,
+    #[rust] render_maintenance: RenderMaintenance,
+    #[rust] titlebar_sidebar_state: RefCell<Option<TitlebarSidebarState>>,
+    /// The details of a room we're waiting on to be loaded so that we can navigate to it.
+    /// This can be either a room we're waiting to join, or one we're waiting to be invited to.
+    /// Also includes an optional room ID to be closed once the awaited room has been loaded.
+    #[rust] waiting_to_navigate_to_room: Option<(BasicRoomDetails, Option<OwnedRoomId>)>,
+    /// Preserve the exact signup event while its invitation is accepted/synced.
+    #[rust] pending_signup_navigation: Option<(crate::miniapps::palpo::SignupApprovalTarget, std::time::Instant)>,
+}
+
+impl ScriptHook for App {
+    /// After a hot-reload update, refresh the login/home screen visibility.
+    fn on_after_reload(&mut self, vm: &mut ScriptVm) {
+        self.titlebar_sidebar_state.replace(None);
+        vm.with_cx_mut(|cx| {
+            self.update_login_visibility(cx);
+        });
+    }
+
+    /// After initial creation, set the global singletons for app-level shared widgets. (the PopupList and the mention autocomplete popup).
+    fn on_after_new(&mut self, vm: &mut ScriptVm) {
+        vm.with_cx_mut(|cx| {
+            crate::shared::popup_list::set_global_popup_list(cx, &self.ui);
+            crate::shared::mention_popup::set_global_mention_popup(cx, &self.ui);
+        });
+    }
+}
+
+impl MatchEvent for App {
+    fn handle_startup(&mut self, cx: &mut Cx) {
+        if self.started { return; }
+        self.started = true;
+        cx.global::<crate::home::rooms_sidebar::SidebarToggleInTitlebar>().0 =
+            !self.embedded && cfg!(any(target_os = "windows", target_os = "macos", target_os = "linux"));
+        // only init logging/tracing once.
+        //
+        // We silence a few overly noisy SDK logs:
+        // * `matrix_sdk::latest_events` emits a per-room info log whenever it skips computing a `LatestEventValue`.
+        // * the timeline warns about "No avatar changes to update" on every user's display name change.
+        // Note that this can still be overridden by setting RUST_LOG, e.g. `RUST_LOG=matrix_sdk::latest_events=info`
+        let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(
+                "info,matrix_sdk::latest_events=warn,matrix_sdk_ui::timeline::tasks=error",
+            ));
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(filter)
+            .try_init();
+
+        // On iOS (and potentially other devices), there is a very low limit
+        // (albeit a soft limit) on max file descriptors, as little as 256.
+        // We increase that preemptively to avoid running out later due to sqlite ops.
+        #[cfg(unix)]
+        unsafe {
+            let mut rlim = libc::rlimit { rlim_cur: 0, rlim_max: 0 };
+            if libc::getrlimit(libc::RLIMIT_NOFILE, &mut rlim) == 0 && rlim.rlim_cur < 4096 {
+                let new_soft = (4096 as libc::rlim_t).min(rlim.rlim_max);
+                let bumped = libc::rlimit { rlim_cur: new_soft, rlim_max: rlim.rlim_max };
+                libc::setrlimit(libc::RLIMIT_NOFILE, &bumped);
+            }
+        }
+
+        // Initialize the project directory here from the main UI thread
+        // such that background threads/tasks will be able to can access it.
+        let _app_data_dir = crate::app_data_dir();
+        log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
+
+        if !self.embedded {
+            if let Err(e) = persistence::load_window_state(self.ui.window(cx, ids!(main_window)), cx) {
+                error!("Failed to load window state: {}", e);
+            }
+            #[cfg(target_os = "macos")]
+            self.install_macos_menu(cx);
+        }
+
+        self.update_login_visibility(cx);
+
+        log!("App::Startup: starting matrix sdk loop");
+        // The Matrix runtime is process-wide; a reopened hosted instance keeps it.
+        let _tokio_rt_handle = match crate::sliding_sync::start_matrix_tokio() {
+            Ok(handle) => handle,
+            Err(e) => { error!("Failed to start the Matrix runtime: {e}"); return; }
+        };
+
+        #[cfg(feature = "tsp")] {
+            log!("App::Startup: initializing TSP (Trust Spanning Protocol) module.");
+            crate::tsp::tsp_init(_tokio_rt_handle).unwrap();
+        }
+
+        crate::temp_storage::schedule_temp_dir_cleanup();
+    }
+
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        if self.app_state.logged_in && crate::home::home_screen::effective_is_desktop(cx)
+            && self.ui.navigation_bar_button(cx, ids!(titlebar_sidebar)).clicked(actions)
+        {
+            cx.action(crate::home::rooms_sidebar::DesktopRailAction);
+        }
+        for saved in actions.iter().filter_map(|action| action.downcast_ref::<crate::speech::SettingsSaved>()) {
+            if saved.0.validate().is_ok() {
+                self.app_state.app_prefs.speech = saved.0.clone();
+                self.app_state.app_prefs.on_speech_changed(cx);
+                self.persist_runtime_state(cx, "speech settings");
+            }
+        }
+        // A resize emits once on release, avoiding disk writes during pointer movement.
+        for resize in actions.iter().filter_map(|action| action.downcast_ref::<crate::room::room_input_bar::ComposerHeightSaved>()) {
+            self.app_state.app_prefs.composer_height = resize.0;
+            self.app_state.app_prefs.on_composer_height_changed(cx);
+            self.persist_runtime_state(cx, "composer resize");
+        }
+        let invite_confirmation_modal_content = self.ui.confirmation_modal(cx, ids!(invite_confirmation_modal.content));
+        if let Some(_accepted) = invite_confirmation_modal_content.closed(actions) {
+            self.ui.modal(cx, ids!(invite_confirmation_modal)).close(cx);
+        }
+
+        let delete_confirmation_modal_content = self.ui.confirmation_modal(cx, ids!(delete_confirmation_modal.content));
+        if let Some(_accepted) = delete_confirmation_modal_content.closed(actions) {
+            self.ui.modal(cx, ids!(delete_confirmation_modal)).close(cx);
+        }
+
+        let positive_confirmation_modal_content = self.ui.confirmation_modal(cx, ids!(positive_confirmation_modal.content));
+        if let Some(_accepted) = positive_confirmation_modal_content.closed(actions) {
+            self.ui.modal(cx, ids!(positive_confirmation_modal)).close(cx);
+        }
+
+        for action in actions {
+            if let Some(action) = action.downcast_ref::<crate::accounts::AccountAction>() {
+                if !crate::sliding_sync::account_changing() {
+                    self.persist_runtime_state(cx, "account switch");
+                    let target = match action {
+                        crate::accounts::AccountAction::Select(user) => Some(user.clone()),
+                        crate::accounts::AccountAction::Add | crate::accounts::AccountAction::Reauthenticate => None,
+                    };
+                    let already_active = target.as_ref().is_some_and(|user| current_user_id().as_ref() == Some(user));
+                    if !already_active && (if matches!(action,crate::accounts::AccountAction::Reauthenticate) { crate::sliding_sync::request_reauthenticate() } else { crate::sliding_sync::request_account_change(target) }) {
+                        self.app_state.logged_in = false;
+                        self.update_login_visibility(cx);
+                        cx.action(LoginAction::Status { title: crate::i18n::tr("Switching Account").into(), status: crate::i18n::tr("Finishing the previous session…").into() });
+                    }
+                    self.ui.redraw(cx);
+                }
+                continue;
+            }
+            if let Some(action) = action.downcast_ref::<ThemeStudioAction>() {
+                let modal = self.ui.modal(cx, ids!(theme_studio_modal));
+                self.ui
+                    .theme_studio(cx, ids!(theme_studio_modal.content))
+                    .action(cx, modal, action);
+                continue;
+            }
+            if let Some(action) = action.downcast_ref::<WebBrowserAction>() {
+                if !action.allowed() { continue; }
+                let modal = self.ui.modal(cx, ids!(web_browser_modal));
+                if matches!(action, WebBrowserAction::Close) {
+                    self.close_web_browser(cx);
+                    self.close_hosted_window(cx, HostedWindow::WebBrowser, true);
+                } else if !self.embedded && cfg!(any(target_os = "macos", target_os = "windows", all(target_os = "linux", not(target_env = "ohos")))) {
+                    self.ui.web_browser_window_host(cx, ids!(web_browser_window_host)).action(cx, action);
+                } else if let Some(panel) = self.hosted_window(cx, HostedWindow::WebBrowser) {
+                    panel.as_web_browser().action(cx, ModalRef::default(), action);
+                } else {
+                    self.ui.web_browser(cx, ids!(web_browser_modal.content)).action(cx, modal, action);
+                }
+                continue;
+            }
+            if let Some(AppStateAction::RoomLoadedSuccessfully { room_name_id, is_invite: false }) = action.downcast_ref() {
+                self.resume_signup_navigation(cx, room_name_id, current_user_id().as_deref());
+            }
+            // Opening a hidden conversation is explicit on both mobile and desktop.
+            // Mobile selection does not emit the desktop RoomFocused action.
+            if let RoomsListAction::Selected(room) = action.as_widget_action().cast() {
+                if self.pending_signup_navigation.as_ref().is_some_and(|(target, _)| target.room_id != *room.room_id()) {
+                    self.cancel_signup_navigation();
+                }
+                // Mobile selection does not emit `RoomFocused`: this is the room shown now.
+                crate::assistant::set_current_room(Some(room.room_name()));
+                if crate::home::chat_actions::restore(room.room_id()) {
+                    cx.action(crate::home::chat_actions::ChatVisibilityChanged);
+                }
+            }
+            match action.downcast_ref() {
+                Some(LogoutConfirmModalAction::Open) => {
+                    self.ui.logout_confirm_modal(cx, ids!(logout_confirm_modal.content)).reset_state(cx);
+                    self.ui.modal(cx, ids!(logout_confirm_modal)).open(cx);
+                    continue;
+                },
+                Some(LogoutConfirmModalAction::Close { was_internal, .. }) => {
+                    if *was_internal {
+                        self.ui.modal(cx, ids!(logout_confirm_modal)).close(cx);
+                    }
+                    continue;
+                },
+                _ => {}
+            }
+
+            match action.downcast_ref() {
+                Some(LogoutAction::LogoutSuccess) => {
+                    robius_speech::cancel_all();
+                    crate::speech::capture::cancel_all(cx);
+                    self.app_state.logged_in = false;
+                    self.ui.modal(cx, ids!(logout_confirm_modal)).close(cx);
+                    self.update_login_visibility(cx);
+                    self.ui.redraw(cx);
+                    continue;
+                }
+                Some(LogoutAction::ClearAppState { .. }) =>  {
+                    robius_speech::cancel_all();
+                    crate::speech::capture::cancel_all(cx);
+                    self.clear_session_ui(cx);
+                    self.update_login_visibility(cx);
+                    self.ui.redraw(cx);
+                    continue;
+                }
+                _ => {}
+            }
+
+            if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
+                log!("Received LoginAction::LoginSuccess, hiding login view.");
+                self.app_state.logged_in = true;
+                // Restore only previously enabled local Room runtimes after the
+                // SDK has established this account, even when opening Chats.
+                if let Err(code) = crate::hagency::backend::Service::for_current() {
+                    error!("Could not initialize Hagency runtime recovery: {code}");
+                }
+                self.update_login_visibility(cx);
+                self.ui.redraw(cx);
+                if let Some(account) = current_user_id() {
+                    match crate::shared::web_browser_session::ReaderSession::load(&account) {
+                        Ok(session) if !session.tabs.is_empty() => cx.action(WebBrowserAction::Restore { session, account: Some(account) }),
+                        Ok(_) => {},
+                        Err(error) => error!("Could not restore reader tabs: {error}"),
+                    }
+                }
+                continue;
+            }
+
+            // If a login failure occurs mid-session (e.g., an expired/revoked token detected
+            // by `handle_session_changes`), navigate back to the login screen.
+            // When not yet logged in, the login_screen widget handles displaying the failure modal.
+            if let Some(LoginAction::LoginFailure(_)) = action.downcast_ref() {
+                crate::article_app::invalidate_sessions();
+                crate::octoscript_apps::invalidate_sessions();
+                self.close_mini_apps(cx);
+                let modal = self.ui.modal(cx, ids!(article_app_modal));
+                self.ui.article_panel(cx, ids!(article_app_modal.content)).action(cx, modal, &ArticleAction::Close);
+                self.article_window_host(cx).close(cx);
+                if self.app_state.logged_in {
+                    log!("Received LoginAction::LoginFailure while logged in; showing login screen.");
+                    self.clear_session_ui(cx);
+                    self.update_login_visibility(cx);
+                    self.ui.redraw(cx);
+                }
+                // Do NOT continue here — let the action propagate to the LoginScreen widget,
+                // which will open the login_status_modal to show the failure message.
+            }
+
+            #[cfg(feature = "agent_chat")]
+            if let Some(action) = action.downcast_ref::<ApprovalInboxAction>() {
+                let modal = self.ui.modal(cx, ids!(approval_inbox_modal));
+                self.ui.approval_inbox(cx, ids!(approval_inbox_modal.content)).action(cx, modal, action, &self.app_state);
+                if matches!(action, ApprovalInboxAction::Saved) {self.persist_runtime_state(cx, "approval discovery");}
+            }
+            if let Some(found) = action.downcast_ref::<crate::agent_access::discovery::DiscoveredBots>() {
+                let bots = &mut self.app_state.agent_access.bot_settings;
+                if current_user_id().as_ref() == Some(&found.owner) && bots.enabled && bots.is_room_bound(&found.room) && bots.resolved_bot_user_id(Some(&found.owner)).ok().as_ref() == Some(&found.sender) && bots.record_known_bot_user_ids(found.users.clone()) {
+                    crate::agent_access::publish(current_user_id(), &self.app_state.agent_access);
+                    self.persist_runtime_state(cx, "BotFather discovery");
+                    cx.redraw_all();
+                }
+            }
+            if let Some(action) = action.downcast_ref::<AgentAccessAction>() {
+                let modal = self.ui.modal(cx, ids!(agent_access_modal));
+                self.ui.agent_access_panel(cx, ids!(agent_access_modal.content)).action(cx, modal, action, &self.app_state.agent_access);
+                if matches!(action, AgentAccessAction::Changed) {self.persist_runtime_state(cx, "agent access");cx.redraw_all();}
+            }
+            if let Some(action) = action.downcast_ref::<SpaceManagementAction>() {
+                let modal = self.ui.modal(cx, ids!(space_management_modal));
+                self.ui.space_management_panel(cx, ids!(space_management_modal.content)).action(cx, modal, action);
+            }
+            #[cfg(feature = "agent_chat")]
+            if let Some(action) = action.downcast_ref::<AgentOpsAction>() {
+                let modal = self.ui.modal(cx, ids!(agent_ops_modal));
+                self.ui.agent_ops_panel(cx, ids!(agent_ops_modal.content)).action(cx, modal, action);
+            }
+            // Open, share or close a Matrix web mini-app card.
+            // On desktop, Moments opens in its own window; on mobile, in a full-screen modal.
+            if let Some(action) = action.downcast_ref::<MomentsAction>() {
+                let modal = self.ui.modal(cx, ids!(moments_modal));
+                let window_host = self.moments_window_host(cx);
+                if matches!(action, MomentsAction::Close) {
+                    self.ui.moments_panel(cx, ids!(moments_modal.content)).action(cx, Some(&modal), action);
+                    window_host.close(cx);
+                    self.close_hosted_window(cx, HostedWindow::Moments, true);
+                } else if !self.embedded && crate::home::home_screen::effective_is_desktop(cx) {
+                    window_host.action(cx, action);
+                } else if let Some(panel) = self.hosted_window(cx, HostedWindow::Moments) {
+                    use crate::moments::ui::MomentsPanelWidgetRefExt;
+                    panel.as_moments_panel().action(cx, None, action);
+                } else {
+                    self.ui.moments_panel(cx, ids!(moments_modal.content)).action(cx, Some(&modal), action);
+                }
+            }
+            if let Some(action) = action.downcast_ref::<RoomHistoryAction>() {
+                let modal = self.ui.modal(cx, ids!(room_history_modal));
+                self.ui.room_history_panel(cx, ids!(room_history_modal.content)).action(cx, modal, action);
+            }
+            if let Some(action) = action.downcast_ref::<ForwardAction>() {
+                let modal = self.ui.modal(cx, ids!(forward_modal));
+                self.ui.forward_panel(cx, ids!(forward_modal.content)).action(cx, modal, action);
+                continue;
+            }
+            // On desktop, the article editor (and reader) opens in its own window;
+            // on mobile, in a full-screen modal.
+            if let Some(action) = action.downcast_ref::<ArticleAction>() {
+                if let ArticleAction::Read { room, event } = action {
+                    cx.action(WebBrowserAction::ReadArticle { room: room.clone(), event: event.clone() });
+                    continue;
+                }
+                let modal = self.ui.modal(cx, ids!(article_app_modal));
+                let window_host = self.article_window_host(cx);
+                if matches!(action, ArticleAction::Close) {
+                    self.ui.article_panel(cx, ids!(article_app_modal.content)).action(cx, modal, action);
+                    window_host.close(cx);
+                    self.close_hosted_window(cx, HostedWindow::Article, true);
+                } else if !self.embedded && crate::home::home_screen::effective_is_desktop(cx) {
+                    window_host.action(cx, action);
+                } else if let Some(panel) = self.hosted_window(cx, HostedWindow::Article) {
+                    panel.as_article_panel().action(cx, ModalRef::default(), action);
+                } else {
+                    self.ui.article_panel(cx, ids!(article_app_modal.content)).action(cx, modal, action);
+                }
+                continue;
+            }
+            if let Some(action) = action.downcast_ref::<crate::assistant::AssistantAction>() {
+                use crate::assistant::{AssistantAction, sheet::AssistantSheetWidgetRefExt};
+                let modal = self.ui.modal(cx, ids!(assistant_sheet_modal));
+                let sheet = self.ui.assistant_sheet(cx, ids!(assistant_sheet_modal.content));
+                match action {
+                    AssistantAction::ShowPrompt(prompt) => {
+                        sheet.show(cx, prompt);
+                        modal.open(cx);
+                    }
+                    AssistantAction::HidePrompt => {
+                        sheet.hide(cx);
+                        modal.close(cx);
+                    }
+                    AssistantAction::AccountChanged => crate::assistant::account_changed_on_ui(cx),
+                    AssistantAction::GrantsChanged => {}
+                }
+                continue;
+            }
+            if let Some(action) = action.downcast_ref::<MiniAppsAction>() {
+                if let MiniAppsAction::OpenSignupApproval(target) = action {
+                    if current_user_id().as_ref() == Some(&target.account) {
+                        self.waiting_to_navigate_to_room = None;
+                        self.close_mini_apps(cx);
+                        let room = RoomNameId::empty(target.room_id.clone());
+                        if cx.get_global::<RoomsListRef>().get_room_state(&target.room_id) == Some(RoomState::Joined) {
+                            self.pending_signup_navigation = None;
+                            cx.action(NavigationBarAction::GoToHome);
+                            cx.action(RoomHistoryAction::Jump { room, event: target.event_id.clone() });
+                        } else {
+                            self.pending_signup_navigation = Some((target.clone(), std::time::Instant::now()));
+                            self.navigate_to_room(cx, None, &BasicRoomDetails::RoomId(room));
+                        }
+                    }
+                    continue;
+                }
+                if let MiniAppsAction::OpenActionsRoom(target) = action {
+                    if current_user_id().as_ref() == Some(&target.account) {
+                        self.cancel_signup_navigation();
+                        self.close_mini_apps(cx);
+                        cx.action(NavigationBarAction::GoToHome);
+                        let room = cx.get_global::<RoomsListRef>().get_room_name(&target.room_id)
+                            .unwrap_or_else(|| RoomNameId::new(matrix_sdk::RoomDisplayName::Named("My Actions".into()), target.room_id.clone()));
+                        self.navigate_to_room(cx, None, &BasicRoomDetails::RoomId(room));
+                    }
+                    continue;
+                }
+                if let MiniAppsAction::OpenAgentChat(target) = action {
+                    let account = current_user_id();
+                    let state = cx.get_global::<RoomsListRef>().get_room_state(&target.room_id);
+                    if let Err(message) = self.open_agent_chat(cx, target, account.as_deref(), state) {
+                        enqueue_popup_notification(message, PopupKind::Info, None);
+                    }
+                    continue;
+                }
+                let modal = self.ui.modal(cx, ids!(octoscript_apps_modal));
+                if matches!(action, MiniAppsAction::Close) {
+                    self.close_mini_apps(cx);
+                } else if !self.embedded && cfg!(any(target_os = "macos", target_os = "windows", all(target_os = "linux", not(target_env = "ohos")))) {
+                    self.ui.mini_apps_window_host(cx, ids!(mini_apps_window_host)).action(cx, action);
+                } else if let Some(panel) = self.hosted_window(cx, HostedWindow::MiniApps) {
+                    panel.as_mini_apps_panel().action(cx, ModalRef::default(), action);
+                } else {
+                    self.ui.mini_apps_panel(cx, ids!(octoscript_apps_modal.content)).action(cx, modal, action);
+                }
+                continue;
+            }
+            if let Some(action) = action.downcast_ref::<MiniAppAction>() {
+                let modal = self.ui.modal(cx, ids!(mini_app_modal));
+                self.ui.mini_app_panel(cx, ids!(mini_app_modal.content)).action(cx, modal, action);
+                continue;
+            }
+
+            // Handle actions for the file upload modal.
+            if let Some(action) = action.downcast_ref::<FileUploadModalAction>() {
+                let outer_modal = self.ui.modal(cx, ids!(file_upload_modal));
+                self.ui.file_upload_modal(cx, ids!(file_upload_modal.content))
+                    .handle_file_previewer_action(cx, outer_modal, action);
+                continue;
+            }
+
+            // Handle an action requesting to open the new message context menu.
+            if let MessageAction::OpenMessageContextMenu { details, abs_pos } = action.as_widget_action().cast() {
+                self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
+                let new_message_context_menu = self.ui.new_message_context_menu(cx, ids!(new_message_context_menu));
+                let expected_dimensions = new_message_context_menu.show(cx, details);
+                // Use the overlay container's rect (not the window's) to correctly position
+                // the context menu relative to the body area, which excludes the caption bar.
+                let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
+                let margin = menu_position_margin(rect, abs_pos, expected_dimensions);
+                let mut main_content_view = new_message_context_menu.view(cx, ids!(main_content));
+                script_apply_eval!(cx, main_content_view, {
+                    margin: #(margin)
+                });
+                self.ui.redraw(cx);
+                continue;
+            }
+
+            // Handle an action requesting to open the account menu. Unlike the context
+            // menus, `pos` is the desired BOTTOM-left corner of the card (the button sits
+            // low in the rail), so we subtract the card height to grow it upward.
+            if let Some(AccountMenuAction::Open { pos }) = action.downcast_ref::<AccountMenuAction>() {
+                self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
+                let account_menu = self.ui.account_menu(cx, ids!(account_menu));
+                let expected_dimensions = account_menu.show(cx);
+                let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
+                let pos_x = (pos.x - rect.pos.x).min(rect.size.x - expected_dimensions.x).max(0.0);
+                let pos_y = (pos.y - expected_dimensions.y - rect.pos.y)
+                    .min(rect.size.y - expected_dimensions.y)
+                    .max(0.0);
+                let margin = Inset { left: pos_x, top: pos_y, right: 0.0, bottom: 0.0 };
+                let mut main_content_view = account_menu.view(cx, ids!(main_content));
+                script_apply_eval!(cx, main_content_view, {
+                    margin: #(margin)
+                });
+                self.ui.redraw(cx);
+                continue;
+            }
+
+            if let Some(SidebarMenuAction::Open {kind, pos}) = action.downcast_ref() {
+                self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
+                let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
+                self.ui.sidebar_action_menu(cx, ids!(sidebar_action_menu)).show(cx, *kind, *pos, rect);
+                self.ui.redraw(cx);
+                continue;
+            }
+
+            if let Some(SidebarMenuAction::OpenProject {target, pos}) = action.downcast_ref() {
+                self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
+                let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
+                self.ui.sidebar_action_menu(cx, ids!(sidebar_action_menu)).show_project(cx, target.clone(), *pos, rect);
+                self.ui.redraw(cx);
+                continue;
+            }
+
+            if let Some(SidebarMenuAction::InviteProject {target}) = action.downcast_ref() {
+                // Recheck at the receiving boundary: a permission response can
+                // be queued before an account transition, then delivered late.
+                if target.is_current() {
+                    let destination = crate::sliding_sync::get_client()
+                        .and_then(|client| client.get_room(&target.space_id))
+                        .and_then(|room| room.name())
+                        .map(|name| RoomNameId::new(matrix_sdk::RoomDisplayName::Named(name), target.space_id.clone()))
+                        .unwrap_or_else(|| RoomNameId::empty(target.space_id.clone()));
+                    self.ui.invite_modal(cx, ids!(invite_modal.content)).show(cx, destination);
+                    self.ui.modal(cx, ids!(invite_modal)).open(cx);
+                }
+                continue;
+            }
+
+            // Handle an action requesting to open the room context menu.
+            if let RoomsListAction::OpenRoomContextMenu { details, pos } = action.as_widget_action().cast() {
+                self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
+                let room_context_menu = self.ui.room_context_menu(cx, ids!(room_context_menu));
+                let expected_dimensions = room_context_menu.show(cx, details);
+                // Use the overlay container's rect (not the window's) to correctly position
+                // the context menu relative to the body area, which excludes the caption bar.
+                let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
+                let margin = menu_position_margin(rect, pos, expected_dimensions);
+                let mut main_content_view = room_context_menu.view(cx, ids!(main_content));
+                script_apply_eval!(cx, main_content_view, {
+                    margin: #(margin)
+                });
+                self.ui.redraw(cx);
+                continue;
+            }
+
+            if action.downcast_ref::<ContextMenuClosed>().is_some() {
+                continue;
+            }
+
+            // Handle room name changes by updating all cached instances.
+            if let Some(
+                AppStateAction::RoomNameUpdated(new_room_name)
+                | AppStateAction::RoomLoadedSuccessfully { room_name_id: new_room_name, .. }
+            ) = action.downcast_ref() {
+                if let Some(selected_room) = self.app_state.selected_room.as_mut() {
+                    selected_room.update_room_name(new_room_name);
+                }
+                self.app_state.selected_tab.update_space_name(new_room_name);
+                for saved in std::iter::once(&mut self.app_state.saved_dock_state_home)
+                    .chain(self.app_state.saved_dock_state_per_space.values_mut())
+                {
+                    for room in saved.selected_room.iter_mut().chain(saved.room_order.iter_mut()) {
+                        room.update_room_name(new_room_name);
+                    }
+                    // The tab's name is what actually gets rendered when a saved dock
+                    // is loaded, so it has to be updated alongside the `SelectedRoom`.
+                    for (tab_id, room) in saved.open_rooms.iter_mut() {
+                        if room.update_room_name(new_room_name)
+                            && let Some(DockItem::Tab { name, .. }) = saved.dock_items.get_mut(tab_id)
+                        {
+                            *name = room.display_name();
+                        }
+                    }
+                }
+            }
+
+            // Handle actions that instruct us to update the top-level app state.
+            match action.downcast_ref() {
+                Some(AppStateAction::RoomFocused(selected_room)) => {
+                    if crate::home::chat_actions::restore(selected_room.room_id()) {
+                        cx.action(crate::home::chat_actions::ChatVisibilityChanged);
+                    }
+                    self.app_state.selected_room = Some(selected_room.clone());
+                    crate::assistant::set_current_room(Some(selected_room.room_name()));
+                    continue;
+                }
+                Some(AppStateAction::FocusNone) => {
+                    self.app_state.selected_room = None;
+                    crate::assistant::set_current_room(None);
+                    continue;
+                }
+                Some(AppStateAction::UpgradedInviteToJoinedRoom { room_id, is_space }) => {
+                    if let Some(selected_room) = self.app_state.selected_room.as_mut()
+                        && selected_room.upgrade_invite_to_joined(room_id, *is_space)
+                    {
+                        self.ui.redraw(cx);
+                    }
+                    // Make sure that saved docks (for other spaces) get updated too.
+                    for saved in std::iter::once(&mut self.app_state.saved_dock_state_home)
+                        .chain(self.app_state.saved_dock_state_per_space.values_mut())
+                    {
+                        for room in saved.selected_room.iter_mut().chain(saved.room_order.iter_mut()) {
+                            room.upgrade_invite_to_joined(room_id, *is_space);
+                        }
+                        // The tab's kind is what decides which screen gets shown when a saved room is loaded,
+                        // so we have to change that in addition to the selected room itself.
+                        for (tab_id, room) in saved.open_rooms.iter_mut() {
+                            if room.upgrade_invite_to_joined(room_id, *is_space)
+                                && let Some(DockItem::Tab { kind, name, .. }) = saved.dock_items.get_mut(tab_id)
+                            {
+                                *kind = room.dock_kind();
+                                *name = room.display_name();
+                            }
+                        }
+                    }
+                    continue;
+                }
+                Some(AppStateAction::RestoreAppStateFromPersistentState { user_id, app_state }) => {
+                    if !should_restore_app_state(
+                        self.app_state.logged_in,
+                        current_user_id().as_deref(),
+                        user_id,
+                    ) {
+                        continue;
+                    }
+                    // Ignore the `logged_in` state that was stored persistently.
+                    let logged_in_actual = self.app_state.logged_in;
+                    self.app_state = app_state.clone();
+                    self.app_state.agent_access.normalize();
+                    self.app_state.logged_in = logged_in_actual;
+                    // Broadcast the restored preferences first so listeners
+                    // (e.g. the Dock's captured `room_screen` template) are
+                    // refreshed before `LoadDockFromAppState` instantiates
+                    // any tabs from them.
+                    self.app_state.app_prefs.broadcast_all(cx);
+                    cx.action(MainDesktopUiAction::LoadDockFromAppState);
+                    continue;
+                }
+                Some(AppStateAction::NavigateToRoom { room_to_close, destination_room }) => {
+                    self.navigate_to_room(cx, room_to_close.as_ref(), destination_room);
+                    continue;
+                }
+                // If we successfully loaded a room that we were waiting on,
+                // we can now navigate to it and optionally close a previous room.
+                Some(AppStateAction::RoomLoadedSuccessfully { room_name_id, .. }) if
+                    self.waiting_to_navigate_to_room.as_ref()
+                        .is_some_and(|(dr, _)| dr.room_id() == room_name_id.room_id()) =>
+                {
+                    log!("Loaded awaited room {room_name_id:?}, navigating to it now...");
+                    if let Some((dest_room, room_to_close)) = self.waiting_to_navigate_to_room.take() {
+                        self.navigate_to_room(cx, room_to_close.as_ref(), &dest_room);
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+
+            // Handle actions needed to open/close the block user modal.
+            match action.downcast_ref() {
+                Some(BlockUserModalAction::Open(request)) => {
+                    self.ui.block_user_modal(cx, ids!(block_user_modal.content))
+                        .set_info(cx, request.clone());
+                    self.ui.modal(cx, ids!(block_user_modal)).open(cx);
+                    continue;
+                }
+                Some(BlockUserModalAction::Close) => {
+                    self.ui.modal(cx, ids!(block_user_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
+            }
+
+            // Handle actions needed to open/close the join/leave room modal.
+            match action.downcast_ref() {
+                Some(JoinLeaveRoomModalAction::Open { kind, show_tip }) => {
+                    self.ui
+                        .join_leave_room_modal(cx, ids!(join_leave_modal.content))
+                        .set_kind(cx, kind.clone(), *show_tip);
+                    self.ui.modal(cx, ids!(join_leave_modal)).open(cx);
+                    continue;
+                }
+                Some(JoinLeaveRoomModalAction::Close { was_internal, .. }) => {
+                    if *was_internal {
+                        self.ui.modal(cx, ids!(join_leave_modal)).close(cx);
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+
+            // `VerificationAction`s come from a background thread, so they are NOT widget actions.
+            // Therefore, we cannot use `as_widget_action().cast()` to match them.
+            //
+            // Note: other verification actions are handled by the verification modal itself.
+            if let Some(VerificationAction::RequestReceived(state)) = action.downcast_ref() {
+                self.ui.verification_modal(cx, ids!(verification_modal.content))
+                    .initialize_with_data(cx, state.clone());
+                self.ui.modal(cx, ids!(verification_modal)).open(cx);
+                continue;
+            }
+            if let Some(VerificationModalAction::Close) = action.downcast_ref() {
+                self.ui.modal(cx, ids!(verification_modal)).close(cx);
+                continue;
+            }
+            match action.downcast_ref() {
+                Some(ImageViewerAction::Show(LoadState::Loading(_, _))) => {
+                    self.ui.modal(cx, ids!(image_viewer_modal)).open(cx);
+                    continue;
+                }
+                Some(ImageViewerAction::Hide) => {
+                    self.ui.modal(cx, ids!(image_viewer_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
+            }
+            // Handle actions to open/close the TSP verification modal.
+            #[cfg(feature = "tsp")] {
+                use std::ops::Deref;
+                use crate::tsp::{tsp_verification_modal::{TspVerificationModalAction, TspVerificationModalWidgetRefExt}, TspIdentityAction};
+
+                if let Some(TspIdentityAction::ReceivedDidAssociationRequest { details, wallet_db }) = action.downcast_ref() {
+                    self.ui.tsp_verification_modal(cx, ids!(tsp_verification_modal.content))
+                        .initialize_with_details(cx, details.clone(), wallet_db.deref().clone());
+                    self.ui.modal(cx, ids!(tsp_verification_modal)).open(cx);
+                    continue;
+                }
+                if let Some(TspVerificationModalAction::Close) = action.downcast_ref() {
+                    self.ui.modal(cx, ids!(tsp_verification_modal)).close(cx);
+                    continue;
+                }
+            }
+
+            // Handle a request to show the invite confirmation modal.
+            if let Some(InviteAction::ShowInviteConfirmationModal(content_opt)) = action.downcast_ref() {
+                if let Some(content) = content_opt.borrow_mut().take() {
+                    invite_confirmation_modal_content.show(cx, content);
+                    self.ui.modal(cx, ids!(invite_confirmation_modal)).open(cx);
+                }
+                continue;
+            }
+
+            // Handle a request to show the generic positive confirmation modal.
+            if let Some(PositiveConfirmationModalAction::Show(content_opt)) = action.downcast_ref() {
+                if let Some(content) = content_opt.borrow_mut().take() {
+                    positive_confirmation_modal_content.show(cx, content);
+                    self.ui.modal(cx, ids!(positive_confirmation_modal)).open(cx);
+                }
+                continue;
+            }
+
+            // Handle a request to show the delete confirmation modal.
+            if let Some(ConfirmDeleteAction::Show(content_opt)) = action.downcast_ref() {
+                if let Some(content) = content_opt.borrow_mut().take() {
+                    self.ui.confirmation_modal(cx, ids!(delete_confirmation_modal.content)).show(cx, content);
+                    self.ui.modal(cx, ids!(delete_confirmation_modal)).open(cx);
+                }
+                continue;
+            }
+
+            // Handle InviteModalAction to open/close the invite modal.
+            match action.downcast_ref() {
+                Some(InviteModalAction::Open(room_name_id)) => {
+                    self.ui.invite_modal(cx, ids!(invite_modal.content)).show(cx, room_name_id.clone());
+                    self.ui.modal(cx, ids!(invite_modal)).open(cx); 
+                    continue;
+                }
+                Some(InviteModalAction::Close) => {
+                    self.ui.modal(cx, ids!(invite_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
+            }
+
+            // Handle EventSourceModalAction to open/close the event source modal.
+            match action.downcast_ref() {
+                Some(EventSourceModalAction::Open { room_id, event_id, latest_json }) => {
+                    self.ui.event_source_modal(cx, ids!(event_source_modal.content))
+                        .show(cx, room_id.clone(), event_id.clone(), latest_json.clone());
+                    self.ui.modal(cx, ids!(event_source_modal)).open(cx);
+                    continue;
+                }
+                Some(EventSourceModalAction::Close) => {
+                    self.ui.modal(cx, ids!(event_source_modal)).close(cx);
+                    continue;
+                }
+                _ => {}
+            }
+
+            // Handle DirectMessageRoomActions
+            match action.downcast_ref() {
+                Some(DirectMessageRoomAction::FoundExisting { room_name_id, .. }) => {
+                    if crate::home::home_screen::effective_is_desktop(cx) {
+                        cx.action(MainDesktopUiAction::ShowChats);
+                    }
+                    self.navigate_to_room(cx, None, &BasicRoomDetails::RoomId(room_name_id.clone()));
+                }
+                Some(DirectMessageRoomAction::DidNotExist { user_profile }) => {
+                    let user_profile = user_profile.clone();
+                    let body_text = match &user_profile.username {
+                        Some(un) if !un.is_empty() => format!(
+                            "You don't have an existing direct message room with {} ({}).\n\n\
+                            Would you like to create one now?",
+                            un,
+                            user_profile.user_id,
+                        ),
+                        _ => format!(
+                            "You don't have an existing direct message room with {}.\n\n\
+                            Would you like to create one now?",
+                            user_profile.user_id,
+                        ),
+                    };
+                    positive_confirmation_modal_content.show(
+                        cx,
+                        ConfirmationModalContent {
+                            title_text: "Create New Direct Message".into(),
+                            body_text: body_text.into(),
+                            accept_button_text: Some("Create DM".into()),
+                            on_accept_clicked: Some(Box::new(move |_cx| {
+                                submit_async_request(MatrixRequest::OpenOrCreateDirectMessage {
+                                    user_profile,
+                                    allow_create: true,
+                                });
+                                enqueue_popup_notification(
+                                    "Sending request to create DM room...\n\nThe room will be shown once it has been created by the homeserver.".to_string(),
+                                    PopupKind::Info,
+                                    Some(10.0),
+                                );
+                            })),
+                            ..Default::default()
+                        },
+                    );
+                    self.ui.modal(cx, ids!(positive_confirmation_modal)).open(cx);
+                }
+                Some(DirectMessageRoomAction::FailedToCreate { user_profile, error }) => {
+                    enqueue_popup_notification(
+                        format!("Failed to create a new DM room with {}.\n\nError: {error}", user_profile.displayable_name()),
+                        PopupKind::Error,
+                        None,
+                    );
+                }
+                Some(DirectMessageRoomAction::NewlyCreated { room_name_id, .. }) => {
+                    if crate::home::home_screen::effective_is_desktop(cx) {
+                        cx.action(MainDesktopUiAction::ShowChats);
+                    }
+                    self.navigate_to_room(cx, None, &BasicRoomDetails::RoomId(room_name_id.clone()));
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+impl App {
+    fn preserve_reader_session(&self, cx: &mut Cx) {
+        self.ui.web_browser_window_host(cx, ids!(web_browser_window_host)).browser(cx).prepare_shutdown();
+        self.ui.web_browser(cx, ids!(web_browser_modal.content)).prepare_shutdown();
+        if let Some((_, panel)) = self.hosted_windows.iter().find(|(kind, _)| *kind == HostedWindow::WebBrowser) {
+            panel.as_web_browser().prepare_shutdown();
+        }
+    }
+
+    fn close_web_browser(&self, cx: &mut Cx) {
+        self.ui.web_browser_window_host(cx, ids!(web_browser_window_host)).close(cx);
+        let modal = self.ui.modal(cx, ids!(web_browser_modal));
+        self.ui.web_browser(cx, ids!(web_browser_modal.content)).action(cx, modal, &WebBrowserAction::Close);
+    }
+
+    fn close_mini_apps(&mut self, cx: &mut Cx) {
+        self.ui.mini_apps_window_host(cx, ids!(mini_apps_window_host)).close(cx);
+        let modal = self.ui.modal(cx, ids!(octoscript_apps_modal));
+        self.ui.mini_apps_panel(cx, ids!(octoscript_apps_modal.content)).action(cx, modal, &MiniAppsAction::Close);
+        self.close_hosted_window(cx, HostedWindow::MiniApps, true);
+    }
+
+    fn clear_session_ui(&mut self, cx: &mut Cx) {
+        self.lifecycle.last_app_state_save = None;
+        self.pending_signup_navigation = None;
+        self.ui.image_viewer(cx, ids!(image_viewer_modal.content)).reset(cx);
+        for id in [ids!(image_viewer_modal), ids!(file_upload_modal), ids!(invite_modal), ids!(invite_confirmation_modal), ids!(event_source_modal), ids!(positive_confirmation_modal), ids!(delete_confirmation_modal), ids!(block_user_modal), ids!(join_leave_modal), ids!(room_history_modal), ids!(tsp_verification_modal)] {
+            self.ui.modal(cx, id).close(cx);
+        }
+        self.close_web_browser(cx);
+        #[cfg(feature = "agent_chat")]
+        {
+            let modal = self.ui.modal(cx, ids!(approval_inbox_modal));
+            self.ui.approval_inbox(cx, ids!(approval_inbox_modal.content)).action(cx, modal, &ApprovalInboxAction::Close, &self.app_state);
+        }
+        let modal = self.ui.modal(cx, ids!(agent_access_modal));
+        self.ui.agent_access_panel(cx, ids!(agent_access_modal.content)).action(cx, modal, &AgentAccessAction::Close, &self.app_state.agent_access);
+        crate::agent_access::publish(None, &Default::default());
+        let modal = self.ui.modal(cx, ids!(space_management_modal));
+        self.ui.space_management_panel(cx, ids!(space_management_modal.content)).action(cx, modal, &SpaceManagementAction::Close);
+        crate::assistant::set_current_room(None);
+        for window in [HostedWindow::Moments, HostedWindow::Article, HostedWindow::WebBrowser, HostedWindow::MiniApps] {
+            self.close_hosted_window(cx, window, true);
+        }
+        let modal = self.ui.modal(cx, ids!(moments_modal));
+        self.ui.moments_panel(cx, ids!(moments_modal.content)).action(cx, Some(&modal), &MomentsAction::Close);
+        self.moments_window_host(cx).close(cx);
+        #[cfg(feature = "agent_chat")]
+        {
+            crate::agent_chat::reply::clear_session(cx);
+            let modal = self.ui.modal(cx, ids!(agent_ops_modal));
+            self.ui.agent_ops_panel(cx, ids!(agent_ops_modal.content)).action(cx, modal, &AgentOpsAction::Close);
+        }
+        crate::shared::agent_usage::clear_session(cx);
+        self.close_mini_apps(cx);
+        let modal = self.ui.modal(cx, ids!(article_app_modal));
+        self.ui.article_panel(cx, ids!(article_app_modal.content)).action(cx, modal, &ArticleAction::Close);
+        self.article_window_host(cx).close(cx);
+        let modal = self.ui.modal(cx, ids!(mini_app_modal));
+        self.ui.mini_app_panel(cx, ids!(mini_app_modal.content)).action(cx, modal, &MiniAppAction::Close);
+        let modal = self.ui.modal(cx, ids!(forward_modal));
+        self.ui.forward_panel(cx, ids!(forward_modal.content)).action(cx, modal, &ForwardAction::Close);
+        self.ui.modal(cx, ids!(verification_modal)).close(cx);
+        clear_all_app_state(cx);
+        self.waiting_to_navigate_to_room = None;
+        self.app_state.clear_for_session_end();
+        self.app_state.app_prefs.broadcast_all(cx);
+    }
+}
+
+/// Clears all thread-local UI caches (user profiles, invited rooms, and timeline states).
+/// The `cx` parameter ensures that these thread-local caches are cleared on the main UI thread, 
+fn clear_all_app_state(cx: &mut Cx) {
+    clear_user_profile_cache(cx);
+    clear_all_invited_rooms(cx);
+    clear_timeline_states(cx);
+    clear_avatar_cache(cx);
+    clear_room_preview_cache(cx);
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct TitlebarSidebarState {
+    visible: bool,
+    collapsed: bool,
+    theme_revision: u64,
+    language: crate::i18n::Language,
+}
+
+#[derive(Debug)]
+struct AppLifecycle {
+    is_foreground: bool,
+    is_active: bool,
+    last_app_state_save: Option<AppStateSaveFingerprint>,
+    shutdown_started: bool,
+}
+
+impl Default for AppLifecycle {
+    fn default() -> Self {
+        Self {
+            is_foreground: true,
+            is_active: true,
+            last_app_state_save: None,
+            shutdown_started: false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct AppStateSaveFingerprint {
+    user_id: OwnedUserId,
+    hash: u64,
+    len: usize,
+}
+
+impl AppStateSaveFingerprint {
+    fn new(user_id: OwnedUserId, bytes: &[u8]) -> Self {
+        let mut hasher = DefaultHasher::new();
+        bytes.hash(&mut hasher);
+        Self {
+            user_id,
+            hash: hasher.finish(),
+            len: bytes.len(),
+        }
+    }
+}
+
+/// Registers Rinx's widgets inside an existing widget universe: the standalone
+/// app after its theme and base widgets, or an OctoSense host's isolate.
+/// Creates no window and does not replace the host's theme.
+pub fn register_widgets(vm: &mut ScriptVm) {
+    crate::i18n::install(vm);
+    makepad_code_editor::script_mod(vm);
+    crate::shared::script_mod(vm);
+    crate::mini_app::script_mod(vm);
+    crate::article_app::script_mod(vm);
+    crate::octoscript_apps::script_mod(vm);
+    crate::forwarding::script_mod(vm);
+
+    #[cfg(feature = "tsp")]
+    crate::tsp::script_mod(vm);
+    #[cfg(not(feature = "tsp"))]
+    crate::tsp_dummy::script_mod(vm);
+
+    #[cfg(feature = "agent_chat")]
+    crate::agent_chat::script_mod(vm);
+    #[cfg(not(feature = "agent_chat"))]
+    crate::agent_chat_dummy::script_mod(vm);
+
+    crate::assistant::sheet::script_mod(vm);
+    crate::home::account_list::script_mod(vm);
+    crate::settings::script_mod(vm);
+    // External integration forms share the settings input/dropdown styles.
+    crate::agent_access::script_mod(vm);
+    // RoomInputBar depends on these Home widgets; preload them before room::script_mod.
+    crate::home::location_preview::script_mod(vm);
+    crate::home::tombstone_footer::script_mod(vm);
+    crate::home::editing_pane::script_mod(vm);
+    crate::home::upload_progress::script_mod(vm);
+    crate::room::script_mod(vm);
+    crate::join_leave_room_modal::script_mod(vm);
+    crate::block_user_modal::script_mod(vm);
+    crate::verification_modal::script_mod(vm);
+    crate::profile::script_mod(vm);
+    crate::hagency::ui::script_mod(vm);
+    crate::home::script_mod(vm);
+    crate::moments::script_mod(vm);
+    crate::login::script_mod(vm);
+    crate::logout::script_mod(vm);
+    embedded_content::script_mod(vm);
+}
+
+impl AppMain for App {
+    fn script_mod(vm: &mut ScriptVm) -> makepad_widgets::ScriptValue {
+        // Order matters: base widgets first, then app widgets, then app UI.
+        makepad_widgets::theme_mod(vm);
+        script_eval!(vm, {
+            mod.theme = mod.themes.light
+        });
+        crate::theme::init_standalone(vm);
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        crate::apple_fonts::install(vm);
+        makepad_widgets::widgets_mod(vm);
+        makepad_widgets::desktop_style::apply_widgets(vm);
+        register_widgets(vm);
+        self::script_mod(vm)
+    }
+
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        if matches!(event, Event::LiveEdit | Event::ScriptReapply) {
+            self.titlebar_sidebar_state.replace(None);
+        }
+        self.render_maintenance.handle_event(cx, event);
+        crate::speech::capture::handle_event(cx, event);
+        crate::theme::system::handle_event(cx, event);
+        // Peek at Back instead of `back_pressed()`, which marks it handled: Back
+        // is taken only when it closes one of these modals. Otherwise it goes on
+        // to Rinx's views and, at the root of Rinx's navigation, to the host
+        // (OctoSense leaves the app; Android backgrounds it).
+        let back_unhandled = matches!(event, Event::BackPressed { handled } if !handled.get());
+        if (back_unhandled || matches!(event, Event::KeyDown(k) if k.key_code == KeyCode::Escape))
+            && self.ui.modal(cx, ids!(theme_studio_modal)).is_open()
+        {
+            event.back_pressed();
+            let modal = self.ui.modal(cx, ids!(theme_studio_modal));
+            self.ui
+                .theme_studio(cx, ids!(theme_studio_modal.content))
+                .action(cx, modal, &ThemeStudioAction::Close);
+            return;
+        }
+        if back_unhandled || matches!(event, Event::KeyDown(k) if k.key_code == KeyCode::Escape) {
+            // Let a nested destructive-action confirmation consume Back first.
+            if !self.ui.modal(cx, ids!(delete_confirmation_modal)).is_open() && !self.ui.modal(cx, ids!(positive_confirmation_modal)).is_open() {
+                #[cfg(feature = "agent_chat")]
+                {
+                    let modal = self.ui.modal(cx, ids!(approval_inbox_modal));
+                    if modal.is_open() {event.back_pressed(); self.ui.approval_inbox(cx, ids!(approval_inbox_modal.content)).action(cx, modal, &ApprovalInboxAction::Close, &self.app_state); return;}
+                }
+                let modal = self.ui.modal(cx, ids!(agent_access_modal));
+                if modal.is_open() {event.back_pressed(); self.ui.agent_access_panel(cx, ids!(agent_access_modal.content)).action(cx, modal, &AgentAccessAction::Close, &self.app_state.agent_access);return;}
+                let modal = self.ui.modal(cx, ids!(space_management_modal));
+                if modal.is_open() {event.back_pressed(); self.ui.space_management_panel(cx, ids!(space_management_modal.content)).action(cx, modal, &SpaceManagementAction::Close);return;}
+                if self.ui.modal(cx, ids!(web_browser_modal)).is_open() {
+                    event.back_pressed();
+                    self.close_web_browser(cx);
+                    return;
+                }
+            }
+        }
+        // A running mini app owns Back before the room/navigation widgets
+        // behind its modal. Close synchronously so a hosting shell sees that
+        // the navigation event was consumed by Rinx.
+        let mini_modal = self.ui.modal(cx, ids!(octoscript_apps_modal));
+        if mini_modal.is_open() && event.back_pressed() {
+            self.ui.mini_apps_panel(cx, ids!(octoscript_apps_modal.content))
+                .back(cx, mini_modal);
+            return;
+        }
+        if let Event::LiveEdit = event {
+            self.app_state.app_prefs.broadcast_all(cx);
+        }
+
+        // Sync up our UI zoom override with the OS's DPI factor when it changes.
+        if let Event::WindowGeomChange(_) = event {
+            self.app_state.app_prefs.refresh_ui_zoom_override(cx);
+        }
+
+        self.handle_ui_zoom_shortcuts(cx, event);
+        if let Event::MacosMenuCommand(command) = event {
+            self.handle_ui_zoom_menu_command(cx, *command);
+        }
+
+        if self.embedded && !self.hosted_windows.is_empty() {
+            self.handle_closed_hosted_windows(cx);
+        }
+
+        // Forward events to the MatchEvent trait implementation.
+        self.match_event(cx, event);
+        crate::agent_access::publish(current_user_id(), &self.app_state.agent_access);
+        let scope = &mut Scope::with_data(&mut self.app_state);
+        self.ui.handle_event(cx, event, scope);
+        self.sync_titlebar_sidebar(cx);
+        // Window's default caption hit test treats custom controls as draggable.
+        // Override only this button, after Window has handled the query.
+        if let Event::WindowDragQuery(query) = event {
+            let button = self.ui.navigation_bar_button(cx, ids!(titlebar_sidebar));
+            if self.ui.window(cx, ids!(main_window)).window_id() == Some(query.window_id)
+                && button.borrow().is_some_and(|button| button.visible())
+                && button.area().rect(cx).contains(query.abs)
+            {
+                query.response.set(WindowDragQueryResponse::Client);
+            }
+        }
+        // The backend may restore the next account only after every child has
+        // consumed ClearAppState, including hidden settings/room widgets.
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                if let Some(LogoutAction::ClearAppState { on_clear_appstate }) = action.downcast_ref() {
+                    on_clear_appstate.notify_one();
+                }
+            }
+        }
+        crate::theme::packages::after_event(cx, event);
+        if matches!(event, Event::LiveEdit) {
+            crate::i18n::refresh_ui(cx, &self.ui);
+        }
+        self.handle_lifecycle_event(cx, event);
+        // Back that nothing in Rinx took is at the root of its navigation. A
+        // host decides what that means; standalone on Android, Makepad's view
+        // has swallowed the key, so Rinx's Android extension backgrounds the
+        // app as Android does for a root activity.
+        #[cfg(target_os = "android")]
+        if !self.embedded && matches!(event, Event::BackPressed { handled } if !handled.get()) {
+            cx.android_integration("rinx.back", "");
+        }
+
+    }
+}
+
+/// The views that are separate windows on a desktop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HostedWindow {
+    Moments,
+    Article,
+    WebBrowser,
+    MiniApps,
+}
+
+#[cfg(feature = "octosense-module")]
+impl HostedWindow {
+    fn key(self) -> LiveId {
+        match self {
+            Self::Moments => live_id!(moments),
+            Self::Article => live_id!(article),
+            Self::WebBrowser => live_id!(web_browser),
+            Self::MiniApps => live_id!(mini_apps),
+        }
+    }
+}
+
+impl App {
+    /// Hosted by a desktop shell, this view's panel in a host window of its own,
+    /// opening (or focusing) that window. `None` where the host shows apps
+    /// full-screen (a phone shell) or Rinx is not hosted: then the view is a
+    /// full-screen modal, which the host keeps within Rinx's pane.
+    #[allow(unused_variables)]
+    fn hosted_window(&mut self, cx: &mut Cx, window: HostedWindow) -> Option<WidgetRef> {
+        #[cfg(feature = "octosense-module")]
+        {
+            // The host knows whether it has windows (a desktop shell) or shows
+            // apps full-screen (its phone shell), and may switch while we run.
+            if !self.embedded || !crate::module::windows_supported() {
+                return None;
+            }
+            if let Some((_, panel)) = self.hosted_windows.iter().find(|(w, _)| *w == window) {
+                let panel = panel.clone();
+                crate::module::open_window(window.key(), "", panel.clone());
+                return Some(panel);
+            }
+            // The host window has its own title bar, so the panels drop their top inset.
+            let panel = cx.with_vm(|vm| {
+                let template = match window {
+                    HostedWindow::Moments => script_eval!(vm, {
+                        use mod.prelude.widgets.*
+                        use mod.widgets.*
+                        MomentsPanel { padding: Inset{top: 0 bottom: 0} }
+                    }),
+                    HostedWindow::Article => script_eval!(vm, {
+                        use mod.prelude.widgets.*
+                        use mod.widgets.*
+                        ArticlePanel { padding: Inset{top: 0 bottom: 0} }
+                    }),
+                    HostedWindow::MiniApps => script_eval!(vm, {
+                        use mod.prelude.widgets.*
+                        use mod.widgets.*
+                        MiniAppsPanel {}
+                    }),
+                    HostedWindow::WebBrowser => script_eval!(vm, {
+                        use mod.prelude.widgets.*
+                        use mod.widgets.*
+                        WebBrowser { padding: Inset{top: 0 bottom: 0} }
+                    }),
+                };
+                WidgetRef::script_from_value(vm, template)
+            });
+            let title = crate::i18n::tr(match window {
+                HostedWindow::Moments => "Moments",
+                HostedWindow::Article => "Article editor",
+                HostedWindow::WebBrowser => "Website",
+                HostedWindow::MiniApps => "Mini apps",
+            });
+            crate::module::open_window(window.key(), title, panel.clone());
+            self.hosted_windows.push((window, panel.clone()));
+            Some(panel)
+        }
+        #[cfg(not(feature = "octosense-module"))]
+        None
+    }
+
+    /// Ends a hosted view's window: its panel closes (saving any draft), and
+    /// the host window closes too unless the person already closed it.
+    #[allow(unused_variables)]
+    fn close_hosted_window(&mut self, cx: &mut Cx, window: HostedWindow, close_host_window: bool) {
+        let Some(index) = self.hosted_windows.iter().position(|(w, _)| *w == window) else { return };
+        let (_, panel) = self.hosted_windows.remove(index);
+        match window {
+            HostedWindow::Moments => {
+                use crate::moments::ui::MomentsPanelWidgetRefExt;
+                panel.as_moments_panel().action(cx, None, &MomentsAction::Close);
+            }
+            HostedWindow::Article => panel.as_article_panel().action(cx, ModalRef::default(), &ArticleAction::Close),
+            HostedWindow::WebBrowser => panel.as_web_browser().action(cx, ModalRef::default(), &WebBrowserAction::Close),
+            HostedWindow::MiniApps => panel.as_mini_apps_panel().action(cx, ModalRef::default(), &MiniAppsAction::Close),
+        }
+        #[cfg(feature = "octosense-module")]
+        if close_host_window {
+            crate::module::close_window(window.key());
+        }
+    }
+
+    /// Hosted views whose windows the person closed in the host.
+    fn handle_closed_hosted_windows(&mut self, cx: &mut Cx) {
+        #[cfg(feature = "octosense-module")]
+        for key in crate::module::take_closed_windows() {
+            for window in [HostedWindow::Moments, HostedWindow::Article, HostedWindow::WebBrowser, HostedWindow::MiniApps] {
+                if window.key() == key {
+                    self.close_hosted_window(cx, window, false);
+                }
+            }
+        }
+        #[cfg(not(feature = "octosense-module"))]
+        let _ = cx;
+    }
+
+    /// Creates Rinx inside an OctoSense host, around the window-less
+    /// `RinxContent`, and starts it as the standalone app's startup does.
+    pub fn create_embedded(vm: &mut ScriptVm) -> Self {
+        let component = App::script_component(vm);
+        let value = script_eval!(vm, {
+            #(component) { ui: mod.widgets.RinxContent {} }
+        });
+        let mut app = Self::script_from_value(vm, value);
+        app.embedded = true;
+        vm.with_cx_mut(|cx| app.handle_startup(cx));
+        app
+    }
+
+    /// The hosted content widget, which the host seats in its pane.
+    pub fn content(&self) -> WidgetRef {
+        self.ui.clone()
+    }
+
+    /// The module owns this content dynamically, so reapplying its empty
+    /// wrapper alone cannot reach the app's new widget prototypes.
+    pub fn reapply_embedded(&mut self, vm: &mut ScriptVm) {
+        let value = script_eval!(vm, {mod.widgets.RinxContent {}});
+        self.ui
+            .script_apply(vm, &Apply::ScriptReapply, &mut Scope::empty(), value);
+        for (kind, panel) in &mut self.hosted_windows {
+            let value = match kind {
+                HostedWindow::Moments => script_eval!(vm, {mod.widgets.MomentsPanel {}}),
+                HostedWindow::Article => script_eval!(vm, {mod.widgets.ArticlePanel {}}),
+                HostedWindow::WebBrowser => script_eval!(vm, {mod.widgets.WebBrowser {}}),
+                HostedWindow::MiniApps => script_eval!(vm, {mod.widgets.MiniAppsPanel {}}),
+            };
+            panel.script_apply(vm, &Apply::ScriptReapply, &mut Scope::empty(), value);
+        }
+        self.on_after_reload(vm);
+    }
+
+    pub fn draw_embedded(&mut self, cx: &mut Cx2d, view: &mut View, walk: Walk) -> DrawStep {
+        view.draw_walk(cx, &mut Scope::with_data(&mut self.app_state), walk)
+    }
+
+    pub fn set_foreground(&mut self, cx: &mut Cx, foreground: bool) {
+        if self.lifecycle.is_foreground != foreground {
+            self.handle_lifecycle_event(cx, &if foreground { Event::Foreground } else { Event::Background });
+        }
+    }
+
+    /// Saves state when the host closes the module. The Matrix runtime is
+    /// process-wide and stays running for the next instance.
+    pub fn close_embedded(&mut self, cx: &mut Cx) {
+        if self.lifecycle.shutdown_started { return; }
+        self.lifecycle.shutdown_started = true;
+        self.preserve_reader_session(cx);
+        self.close_web_browser(cx);
+        for window in [HostedWindow::Moments, HostedWindow::Article, HostedWindow::WebBrowser, HostedWindow::MiniApps] {
+            self.close_hosted_window(cx, window, true);
+        }
+        self.persist_runtime_state(cx, "module close");
+    }
+
+    fn apply_ui_zoom(&mut self, cx: &mut Cx, new_zoom: UiZoom) {
+        if new_zoom != self.app_state.app_prefs.ui_zoom {
+            self.app_state.app_prefs.ui_zoom = new_zoom;
+            self.app_state.app_prefs.on_ui_zoom_changed(cx);
+        }
+    }
+
+    fn handle_ui_zoom_shortcuts(&mut self, cx: &mut Cx, event: &Event) {
+        let Event::KeyDown(e) = event else { return };
+        if !e.modifiers.is_primary() {
+            return;
+        }
+        let current = self.app_state.app_prefs.ui_zoom;
+        let new_zoom = match e.key_code {
+            KeyCode::Equals | KeyCode::NumpadEquals | KeyCode::NumpadAdd => {
+                current.zoom_in_by(UiZoom::STEP)
+            }
+            KeyCode::Minus | KeyCode::NumpadSubtract => current.zoom_out_by(UiZoom::STEP),
+            KeyCode::Key0 | KeyCode::Numpad0 => UiZoom::reset(),
+            _ => return,
+        };
+        self.apply_ui_zoom(cx, new_zoom);
+    }
+
+    /// Set up the menu bar entries, currently macOS-only.
+    #[cfg(target_os = "macos")]
+    fn install_macos_menu(&self, cx: &mut Cx) {
+        cx.update_macos_menu(MacosMenu::Main {
+            items: vec![
+                MacosMenu::Sub {
+                    name: "Hagency".into(),
+                    items: vec![MacosMenu::Item {
+                        name: "Quit Hagency".into(),
+                        command: live_id!(quit),
+                        key: KeyCode::KeyQ,
+                        shift: false,
+                        enabled: true,
+                    }],
+                },
+                MacosMenu::Sub {
+                    name: "View".into(),
+                    items: vec![
+                        MacosMenu::Item {
+                            name: "Zoom In".into(),
+                            command: live_id!(zoom_in),
+                            key: KeyCode::Equals,
+                            shift: true,
+                            enabled: true,
+                        },
+                        MacosMenu::Item {
+                            name: "Zoom Out".into(),
+                            command: live_id!(zoom_out),
+                            key: KeyCode::Minus,
+                            shift: false,
+                            enabled: true,
+                        },
+                        MacosMenu::Line,
+                        MacosMenu::Item {
+                            name: "Reset Zoom".into(),
+                            command: live_id!(reset_zoom),
+                            key: KeyCode::Key0,
+                            shift: false,
+                            enabled: true,
+                        },
+                    ],
+                },
+            ],
+        });
+    }
+
+    /// Connects `MacosMenuCommand`s to the existing zoom shortcut handlers.
+    fn handle_ui_zoom_menu_command(&mut self, cx: &mut Cx, command: LiveId) {
+        let current = self.app_state.app_prefs.ui_zoom;
+        let new_zoom = if command == live_id!(zoom_in) {
+            current.zoom_in_by(UiZoom::STEP)
+        } else if command == live_id!(zoom_out) {
+            current.zoom_out_by(UiZoom::STEP)
+        } else if command == live_id!(reset_zoom) {
+            UiZoom::reset()
+        } else {
+            return;
+        };
+        self.apply_ui_zoom(cx, new_zoom);
+    }
+
+    fn handle_lifecycle_event(&mut self, cx: &mut Cx, event: &Event) {
+        match event {
+            Event::QuitRequested(e) => {
+                log!("Received quit request: {:?}. Persisting state before allowing quit.", e.reason);
+                self.persist_runtime_state(cx, "quit request");
+            }
+            Event::Pause => {
+                if self.lifecycle.is_active {
+                    log!("App paused; persisting runtime state.");
+                    self.lifecycle.is_active = false;
+                }
+                self.persist_runtime_state(cx, "pause");
+            }
+            Event::Resume => {
+                if !self.lifecycle.is_active {
+                    log!("App resumed.");
+                    self.lifecycle.is_active = true;
+                }
+                crate::sliding_sync::set_sync_service_desired_running(true, "app resume");
+            }
+            Event::Background => {
+                robius_speech::cancel_all();
+                if self.lifecycle.is_foreground {
+                    log!("App entered background; persisting state and stopping Matrix sync.");
+                    self.lifecycle.is_foreground = false;
+                }
+                self.persist_runtime_state(cx, "background");
+                crate::sliding_sync::set_sync_service_desired_running(false, "app background");
+            }
+            Event::WindowCloseRequested(e)
+                if self.ui.window(cx, ids!(main_window)).window_id() == Some(e.window_id) => {
+                    self.preserve_reader_session(cx);
+                    log!("Main window close requested; persisting runtime state.");
+                    self.persist_runtime_state(cx, "main window close request");
+                    // The app only quits once its last window closes,
+                    // so close its secondary windows with the main one.
+                    self.moments_window_host(cx).close(cx);
+                    self.article_window_host(cx).close(cx);
+                    self.close_web_browser(cx);
+                    self.close_mini_apps(cx);
+                }
+            // Not every close goes through a close request first, so also catch the close itself.
+            Event::WindowClosed(e)
+                if self.ui.window(cx, ids!(main_window)).window_id() == Some(e.window_id) => {
+                    self.preserve_reader_session(cx);
+                    self.moments_window_host(cx).close(cx);
+                    self.article_window_host(cx).close(cx);
+                    self.close_web_browser(cx);
+                    self.close_mini_apps(cx);
+                }
+            Event::Foreground => {
+                if !self.lifecycle.is_foreground {
+                    log!("App entered foreground; starting Matrix sync.");
+                    self.lifecycle.is_foreground = true;
+                }
+                crate::sliding_sync::set_sync_service_desired_running(true, "app foreground");
+            }
+            Event::Shutdown => {
+                robius_speech::cancel_all();
+                self.handle_shutdown(cx);
+            }
+            _ => {}
+        }
+    }
+
+    fn moments_window_host(&self, cx: &mut Cx) -> crate::moments::window::MomentsWindowHostRef {
+        use crate::moments::window::MomentsWindowHostWidgetRefExt;
+        self.ui.widget(cx, ids!(moments_window_host)).as_moments_window_host()
+    }
+
+    fn article_window_host(&self, cx: &mut Cx) -> crate::article_app::window::ArticleWindowHostRef {
+        use crate::article_app::window::ArticleWindowHostWidgetRefExt;
+        self.ui.widget(cx, ids!(article_window_host)).as_article_window_host()
+    }
+
+    fn persist_runtime_state(&mut self, cx: &mut Cx, reason: &'static str) {
+        if !self.embedded {
+            let window_ref = self.ui.window(cx, ids!(main_window));
+            if let Err(e) = persistence::save_window_state(window_ref, cx) {
+                error!("Failed to save window state during {reason}. Error: {e}");
+            }
+        }
+
+        let Some(user_id) = current_user_id() else {
+            log!("Skipping app state persistence during {reason}: no logged-in Matrix user.");
+            return;
+        };
+
+        let app_state_json = match persistence::serialize_app_state(&self.app_state) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                error!("Failed to serialize app state during {reason}. Error: {e}");
+                return;
+            }
+        };
+        let fingerprint = AppStateSaveFingerprint::new(user_id.clone(), &app_state_json);
+        if self.lifecycle.last_app_state_save.as_ref() == Some(&fingerprint) {
+            log!("Skipping app state persistence during {reason}: state is unchanged.");
+            return;
+        }
+
+        if let Err(e) = persistence::save_app_state_bytes(&app_state_json, &user_id) {
+            error!("Failed to save app state during {reason}. Error: {e}");
+        } else {
+            self.lifecycle.last_app_state_save = Some(fingerprint);
+        }
+    }
+
+    fn handle_shutdown(&mut self, cx: &mut Cx) {
+        if self.lifecycle.shutdown_started {
+            // log!("Ignoring duplicate shutdown lifecycle event.");
+            return;
+        }
+        self.lifecycle.shutdown_started = true;
+
+        self.persist_runtime_state(cx, "shutdown");
+
+        // Drain the owned Agent subprocesses before the GUI/runtime disappears.
+        // Account transitions use the same barrier before opening another owner.
+        if crate::sliding_sync::block_on_async_with_timeout(
+            Some(Duration::from_secs(15)),
+            crate::hagency::backend::Service::stop_current(),
+        ).is_err() {
+            error!("Hagency owner shutdown timed out; pending execution remains recorded in its ledger.");
+        }
+
+        // Standalone exit: release the assistant and stop only a runtime
+        // Rinx owns (a remote server or OctoSense's kernel keeps running).
+        crate::octos_service::shutdown();
+
+        if let Err(_e) = crate::sliding_sync::stop_sync_service_for_shutdown(Duration::from_secs(3)) {
+            error!("Failed to stop Matrix sync service before shutdown. Error: Timed out.");
+        }
+
+        #[cfg(feature = "tsp")] {
+            let tsp_state = std::mem::take(&mut *crate::tsp::tsp_state_ref().lock().unwrap());
+            let res = crate::sliding_sync::block_on_async_with_timeout(
+                Some(Duration::from_secs(3)),
+                async move {
+                    match tsp_state.close_and_serialize().await {
+                        Ok(saved_state) => match persistence::save_tsp_state_async(saved_state).await {
+                            Ok(_) => { }
+                            Err(e) => error!("Failed to save TSP wallet state. Error: {e}"),
+                        }
+                        Err(e) => error!("Failed to close and serialize TSP wallet state. Error: {e}"),
+                    }
+                },
+            );
+            if let Err(_e) = res {
+                error!("Failed to save TSP wallet state before app shutdown. Error: Timed Out.");
+            }
+        }
+    }
+
+    fn update_login_visibility(&self, cx: &mut Cx) {
+        let show_login = !self.app_state.logged_in;
+        if show_login {
+            self.close_web_browser(cx);
+        }
+        if !show_login {
+            self.ui
+                .modal(cx, ids!(login_screen_view.login_screen.login_status_modal))
+                .close(cx);
+        }
+        self.ui.view(cx, ids!(login_screen_view)).set_visible(cx, show_login);
+        self.ui.view(cx, ids!(home_screen_view)).set_visible(cx, !show_login);
+        self.sync_titlebar_sidebar(cx);
+    }
+
+    fn sync_titlebar_sidebar(&self, cx: &mut Cx) {
+        let visible = !self.embedded && self.app_state.logged_in
+            && crate::home::home_screen::effective_is_desktop(cx);
+        let collapsed = self.app_state.app_prefs.desktop_sidebar_collapsed;
+        let state = TitlebarSidebarState {
+            visible,
+            collapsed,
+            theme_revision: crate::theme::snapshot(cx).revision,
+            language: crate::i18n::language(),
+        };
+        if self.titlebar_sidebar_state.borrow().as_ref() == Some(&state) {
+            return;
+        }
+        self.titlebar_sidebar_state.replace(Some(state));
+        let button = self.ui.navigation_bar_button(cx, ids!(titlebar_sidebar));
+        // Embedded hosts own their caption and have no standalone titlebar button.
+        if button.is_empty() { return; }
+        button.set_selected(cx, !collapsed);
+        if let Some(mut button) = button.borrow_mut() {
+            button.set_visible(cx, visible);
+            button.set_tooltip_text(crate::i18n::tr(if collapsed {"Expand sidebar"} else {"Collapse sidebar"}));
+        }
+        let mut icon = self.ui.icon(cx, ids!(titlebar_sidebar.icon));
+        if collapsed {
+            script_apply_eval!(cx, icon, {
+                draw_icon +: {svg: mod.widgets.ICON_PANEL_LEFT color: mod.widgets.RINX_INK}
+            });
+        } else {
+            script_apply_eval!(cx, icon, {
+                draw_icon +: {svg: mod.widgets.ICON_PANEL_LEFT_OPEN color: mod.widgets.RINX_ACCENT}
+            });
+        }
+    }
+
+    fn cancel_signup_navigation(&mut self) {
+        if let Some((target, _)) = self.pending_signup_navigation.take() {
+            if self.waiting_to_navigate_to_room.as_ref()
+                .is_some_and(|(room, _)| room.room_id() == &target.room_id)
+            {
+                self.waiting_to_navigate_to_room = None;
+            }
+        }
+    }
+
+    fn resume_signup_navigation(&mut self, cx: &mut Cx, room: &RoomNameId, account: Option<&ruma::UserId>) {
+        let Some((target, started)) = self.pending_signup_navigation.as_ref() else { return };
+        if &target.room_id != room.room_id() { return; }
+        let destination = (account == Some(target.account.as_ref()) && started.elapsed() < Duration::from_secs(300))
+            .then(|| target.event_id.clone());
+        // Consume the generic join waiter too: an expired/cancelled signup must
+        // not navigate later through the ordinary room-loaded handler.
+        self.cancel_signup_navigation();
+        if let Some(event) = destination {
+            cx.action(NavigationBarAction::GoToHome);
+            cx.action(RoomHistoryAction::Jump { room: room.clone(), event });
+        }
+    }
+
+    fn open_agent_chat(&mut self, cx: &mut Cx, target: &crate::miniapps::palpo::AgentChatTarget,
+        account: Option<&ruma::UserId>, room_state: Option<RoomState>) -> Result<(), &'static str> {
+        if account != Some(target.account.as_ref()) {
+            return Err("Your account changed. Reopen Palpo from your current account.");
+        }
+        if room_state != Some(RoomState::Joined) {
+            return Err("The project room is still syncing. Refresh My Agents and try again shortly.");
+        }
+        self.cancel_signup_navigation();
+        self.waiting_to_navigate_to_room = None;
+        self.close_mini_apps(cx);
+        cx.action(NavigationBarAction::GoToHome);
+        let room_name_id = cx.get_global_ref::<RoomsListRef>()
+            .and_then(|rooms| rooms.get_room_name(&target.room_id))
+            .unwrap_or_else(|| RoomNameId::empty(target.room_id.clone()));
+        cx.widget_action(self.ui.widget_uid(), RoomsListAction::Selected(SelectedRoom::JoinedRoom {
+            room_name_id,
+        }));
+        enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(target.room_id.clone()));
+        Ok(())
+    }
+
+    /// Navigates to the given `destination_room`, optionally closing the `room_to_close`.
+    fn navigate_to_room(
+        &mut self,
+        cx: &mut Cx,
+        room_to_close: Option<&OwnedRoomId>,
+        destination_room: &BasicRoomDetails,
+    ) {
+        // A closure that closes the given `room_to_close`, if it exists in an open tab.
+        let close_room_closure_opt = room_to_close.map(|to_close| {
+            let tab_id = LiveId::from_str(to_close.as_str());
+            let widget_uid = self.ui.widget_uid();
+            move |cx: &mut Cx| {
+                cx.widget_action(
+                    widget_uid, 
+                    DockAction::TabCloseWasPressed(tab_id),
+                );
+                enqueue_rooms_list_update(RoomsListUpdate::HideRoom { room_id: to_close.clone() });
+            }
+        });
+
+        let destination_room_id = destination_room.room_id();
+        // A successful create/join can precede the room-list UI update. Consult
+        // the SDK too, so an already joined Room does not prompt to join again.
+        let sdk_room = crate::sliding_sync::get_client().and_then(|client| client.get_room(destination_room_id));
+        let room_state = cx.get_global::<RoomsListRef>().get_room_state(destination_room_id)
+            .or_else(|| sdk_room.as_ref().map(|room| room.state()));
+        let new_selected_room = match room_state {
+            Some(RoomState::Joined) if sdk_room.as_ref().is_some_and(|room| room.is_space()) => SelectedRoom::Space {
+                space_name_id: destination_room.room_name_id().clone(),
+            },
+            Some(RoomState::Joined) => SelectedRoom::JoinedRoom {
+                room_name_id: destination_room.room_name_id().clone(),
+            },
+            Some(RoomState::Invited) => SelectedRoom::InvitedRoom {
+                room_name_id: destination_room.room_name_id().clone(),
+            },
+            // If the destination room is not yet loaded, show a join modal.
+            _ => {
+                log!("Destination room {:?} not loaded, showing join modal...", destination_room.room_name_id());
+                self.waiting_to_navigate_to_room = Some((
+                    destination_room.clone(),
+                    room_to_close.cloned(),
+                ));
+                cx.action(JoinLeaveRoomModalAction::Open {
+                    kind: JoinLeaveModalKind::JoinRoom {
+                        details: destination_room.clone(),
+                        is_space: false,
+                    },
+                    show_tip: false,
+                });
+                return;
+            }
+        };
+
+
+        log!("Navigating to destination room {:?}, closing room {:?}",
+            destination_room.room_name_id(),
+            room_to_close,
+        );
+
+        // Management/settings panels can open a room from any top-level tab.
+        if !matches!(self.app_state.selected_tab, SelectedTab::Home | SelectedTab::Space {..}) {
+            cx.action(NavigationBarAction::GoToHome);
+        }
+        cx.widget_action(
+            self.ui.widget_uid(), 
+            RoomsListAction::Selected(new_selected_room),
+        );
+        // Select and scroll to the destination room in the rooms list.
+        enqueue_rooms_list_update(RoomsListUpdate::ScrollToRoom(destination_room_id.clone()));
+
+        // Close a previously/currently-open room if specified.
+        if let Some(closure) = close_room_closure_opt {
+            closure(cx);
+        }
+    }
+
+
+}
+
+/// App-wide state that is stored persistently across multiple app runs
+/// and shared/updated across various parts of the app.
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+pub struct AppState {
+    /// The currently-selected room, which is highlighted (selected) in the RoomsList
+    /// and considered "active" in the main rooms screen.
+    ///
+    /// This isn't persisted because in mobile view mode, the rooms list shows no selection,
+    /// and in desktop view mode, the selected room is obtained from the saved dock state
+    #[serde(skip)]
+    pub selected_room: Option<SelectedRoom>,
+    /// The currently-selected navigation tab: defines which top-level view is shown.
+    ///
+    /// This field is only updated by the `HomeScreen` widget, which has the
+    /// necessary context to be able to determine how it should be modified.
+    ///
+    /// This is not saved to or restored from persistent storage,
+    /// so the `Home` screen and tab are always selected upon app startup.
+    #[serde(skip)]
+    pub selected_tab: SelectedTab,
+    /// The saved "snapshot" of the dock's UI layout/state for the main "all rooms" home view.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    pub saved_dock_state_home: SavedDockState,
+    /// The saved "snapshot" of the dock's UI layout/state for each space,
+    /// keyed by the space ID.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    pub saved_dock_state_per_space: HashMap<OwnedRoomId, SavedDockState>,
+    /// Whether a user is currently logged in to Rinx or not.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    pub logged_in: bool,
+    /// App-wide user preferences/settings.
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    pub app_prefs: AppPreferences,
+    #[serde(default, flatten)]
+    pub agent_access: crate::agent_access::model::AgentAccessSettings,
+    /// Discovery hints are persisted; their validation is never restored.
+    #[cfg(feature = "agent_chat")]
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    pub(crate) approval_markers: crate::agent_chat::approval_state::ApprovalMarkerIndex,
+    #[cfg(feature = "agent_chat")]
+    #[serde(default, deserialize_with = "crate::utils::deserialize_or_default")]
+    pub(crate) approval_markers_by_namespace: HashMap<String, crate::agent_chat::approval_state::ApprovalMarkerIndex>,
+}
+
+impl AppState {
+    fn clear_for_session_end(&mut self) {
+        *self = Self::default();
+    }
+}
+
+#[cfg(test)]
+mod session_state_tests {
+    use super::*;
+
+    #[test]
+    fn session_cleanup_closes_hosted_account_windows() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        // Preference broadcasts need a host window slot, but no native window.
+        let window = WindowHandle::new(&mut cx);
+        window.cancel_initial_create(&mut cx);
+        let mut app = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            register_widgets(vm);
+            App::script_new(vm)
+        });
+        app.embedded = true;
+        app.hosted_windows = vec![
+            (HostedWindow::Moments, WidgetRef::default()),
+            (HostedWindow::Article, WidgetRef::default()),
+            (HostedWindow::WebBrowser, WidgetRef::default()),
+            (HostedWindow::MiniApps, WidgetRef::default()),
+        ];
+        app.app_state.logged_in = true;
+        app.app_state.app_prefs.send_on_enter = false;
+
+        app.clear_session_ui(&mut cx);
+
+        assert!(app.hosted_windows.is_empty());
+        assert!(!app.app_state.logged_in);
+        assert!(app.app_state.app_prefs.send_on_enter);
+    }
+
+    #[test]
+    fn expired_session_clears_state_before_another_account_logs_in() {
+        let mut state = AppState::default();
+        state.logged_in = true;
+        state.app_prefs.send_on_enter = false;
+        state.saved_dock_state_home.room_order.push(SelectedRoom::JoinedRoom {
+            room_name_id: RoomNameId::from((
+                Some(matrix_sdk::RoomDisplayName::Named("Private room".into())),
+                ruma::room_id!("!private:example.org").to_owned(),
+            )),
+        });
+
+        state.clear_for_session_end();
+
+        assert!(!state.logged_in);
+        assert!(state.app_prefs.send_on_enter);
+        assert!(state.saved_dock_state_home.room_order.is_empty());
+    }
+}
+
+fn should_restore_app_state(
+    logged_in: bool,
+    current_user: Option<&matrix_sdk::ruma::UserId>,
+    saved_user: &matrix_sdk::ruma::UserId,
+) -> bool {
+    logged_in && current_user == Some(saved_user)
+}
+
+#[cfg(test)]
+mod restore_owner_tests {
+    use super::*;
+
+    #[test]
+    fn delayed_state_from_previous_account_is_rejected() {
+        let alice = ruma::user_id!("@alice:example.org");
+        let bob = ruma::user_id!("@bob:example.org");
+        assert!(should_restore_app_state(true, Some(alice), alice));
+        assert!(!should_restore_app_state(true, Some(bob), alice));
+        assert!(!should_restore_app_state(false, Some(alice), alice));
+        assert!(!should_restore_app_state(true, None, alice));
+    }
+}
+
+/// A snapshot of the main dock: all state needed to restore the dock tabs/layout.
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+pub struct SavedDockState {
+    /// All items contained in the dock, keyed by their room or space ID.
+    pub dock_items: HashMap<LiveId, DockItem>,
+    /// The rooms that are currently open, keyed by their room or space ID.
+    pub open_rooms: HashMap<LiveId, SelectedRoom>,
+    /// The order in which room/thread tabs were last viewed,
+    /// from oldest at the front to most recent at the end.
+    pub room_order: Vec<SelectedRoom>,
+    /// The selected room tab in this dock when the dock state was saved.
+    pub selected_room: Option<SelectedRoom>,
+}
+
+
+/// Represents a room currently or previously selected by the user.
+///
+/// ## PartialEq/Eq equality comparison behavior
+/// Room/Space names are ignored for the purpose of equality comparison.
+/// Two `SelectedRoom`s are considered equal if their `room_id`s are equal,
+/// unless they are `Thread`s,` in which case their `thread_root_event_id`s
+/// are also compared for equality.
+/// A `Thread` is never considered equal to a non-`Thread`, even if their `room_id`s are equal.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum SelectedRoom {
+    JoinedRoom {
+        room_name_id: RoomNameId,
+    },
+    Thread {
+        room_name_id: RoomNameId,
+        /// The event ID of the root message of this thread,
+        /// which is used to distinguish this thread from the main room timeline.
+        thread_root_event_id: OwnedEventId,
+    },
+    InvitedRoom {
+        room_name_id: RoomNameId,
+    },
+    Space {
+        space_name_id: RoomNameId,
+    },
+}
+
+impl SelectedRoom {
+    pub fn room_id(&self) -> &OwnedRoomId {
+        match self {
+            SelectedRoom::JoinedRoom { room_name_id } => room_name_id.room_id(),
+            SelectedRoom::InvitedRoom { room_name_id } => room_name_id.room_id(),
+            SelectedRoom::Space { space_name_id } => space_name_id.room_id(),
+            SelectedRoom::Thread { room_name_id, .. } => room_name_id.room_id(),
+        }
+    }
+
+    pub fn room_name(&self) -> &RoomNameId {
+        match self {
+            SelectedRoom::JoinedRoom { room_name_id } => room_name_id,
+            SelectedRoom::InvitedRoom { room_name_id } => room_name_id,
+            SelectedRoom::Space { space_name_id } => space_name_id,
+            SelectedRoom::Thread { room_name_id, .. } => room_name_id,
+        }
+    }
+
+    /// Returns the joined variant for the given space/room: `Space` if `is_space`, else `JoinedRoom`.
+    pub fn to_joined(room_name_id: RoomNameId, is_space: bool) -> Self {
+        match is_space {
+            true  => SelectedRoom::Space { space_name_id: room_name_id },
+            false => SelectedRoom::JoinedRoom { room_name_id },
+        }
+    }
+
+    /// Upgrades this room from an invite to a joined room or space
+    /// if its `room_id` matches the given `room_id`.
+    ///
+    /// Returns `true` if the room was an `InvitedRoom` with the same `room_id`
+    /// that was successfully upgraded; otherwise, returns `false`.
+    pub fn upgrade_invite_to_joined(&mut self, room_id: &RoomId, is_space: bool) -> bool {
+        let SelectedRoom::InvitedRoom { room_name_id } = self else { return false };
+        if room_name_id.room_id() != room_id { return false }
+        *self = Self::to_joined(room_name_id.clone(), is_space);
+        true
+    }
+
+    /// Updates this room's name if it refers to the same room (same room ID).
+    ///
+    /// Returns `true` if the name was replaced.
+    pub fn update_room_name(&mut self, new_room_name: &RoomNameId) -> bool {
+        let (SelectedRoom::JoinedRoom { room_name_id }
+            | SelectedRoom::Thread { room_name_id, .. }
+            | SelectedRoom::InvitedRoom { room_name_id }
+            | SelectedRoom::Space { space_name_id: room_name_id }) = self;
+        if room_name_id.room_id() != new_room_name.room_id()
+            || room_name_id.display_name() == new_room_name.display_name()
+        {
+            return false;
+        }
+        *room_name_id = new_room_name.clone();
+        true
+    }
+
+    /// Returns the `LiveId` of the room tab corresponding to this `SelectedRoom`.
+    pub fn tab_id(&self) -> LiveId {
+        match self {
+            SelectedRoom::Thread { room_name_id, thread_root_event_id } => {
+                LiveId::from_str(
+                    &format!("{}##{}", room_name_id.room_id(), thread_root_event_id)
+                )
+            }
+            other => LiveId::from_str(other.room_id().as_str()),
+        }
+    }
+
+    /// Closes & cleans up the UI-side cached state and stops the backend async task
+    /// for this thread timeline (if it is one).
+    ///
+    /// Does nothing for non-thread room kinds (e.g., main room timelines).
+    ///
+    /// This should be called only when the RoomScreen showing this room thread
+    /// has been hidden (e.g., its tab was closed, or the user navigated back on mobile view mode),
+    /// but not when it's still reachable via the mobile nav stack or a saved desktop dock.
+    pub fn close_thread_timeline(&self, cx: &mut Cx) {
+        let SelectedRoom::Thread { room_name_id, thread_root_event_id } = self else { return };
+        let room_id = room_name_id.room_id().clone();
+        // Drop the stale UI cache so reopening rebuilds a fresh timeline instead of reusing
+        // a cache whose backend is about to be freed.
+        invalidate_single_timeline_state(cx, &TimelineKind::Thread {
+            room_id: room_id.clone(),
+            thread_root_event_id: thread_root_event_id.clone(),
+        });
+        submit_async_request(MatrixRequest::CloseThreadTimeline {
+            room_id,
+            thread_root_event_id: thread_root_event_id.clone(),
+        });
+    }
+
+    /// Returns the display name to be shown for this room in the UI.
+    pub fn display_name(&self) -> String {
+        match self {
+            SelectedRoom::JoinedRoom { room_name_id } => room_name_id.to_string(),
+            SelectedRoom::InvitedRoom { room_name_id } => room_name_id.to_string(),
+            SelectedRoom::Space { space_name_id } => format!("[Space] {space_name_id}"),
+            SelectedRoom::Thread { room_name_id, .. } => format!("[Thread] {room_name_id}"),
+        }
+    }
+
+    /// Returns the dock-tab `kind` template id used to render this room.
+    pub fn dock_kind(&self) -> LiveId {
+        match self {
+            SelectedRoom::JoinedRoom { .. } | SelectedRoom::Thread { .. } => id!(room_screen),
+            SelectedRoom::InvitedRoom { .. } => id!(invite_screen),
+            SelectedRoom::Space { .. } => id!(space_lobby_screen),
+        }
+    }
+}
+
+impl PartialEq for SelectedRoom {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (
+                SelectedRoom::Thread {
+                    room_name_id: lhs_room_name_id,
+                    thread_root_event_id: lhs_thread_root_event_id,
+                },
+                SelectedRoom::Thread {
+                    room_name_id: rhs_room_name_id,
+                    thread_root_event_id: rhs_thread_root_event_id,
+                },
+            ) => {
+                lhs_room_name_id.room_id() == rhs_room_name_id.room_id()
+                    && lhs_thread_root_event_id == rhs_thread_root_event_id
+            }
+            (SelectedRoom::Thread { .. }, _) | (_, SelectedRoom::Thread { .. }) => false,
+            _ => self.room_id() == other.room_id(),
+        }
+    }
+}
+impl Eq for SelectedRoom {}
+
+/// Actions sent to the top-level App in order to update / restore its [`AppState`].
+///
+/// These are *NOT* widget actions.
+#[derive(Debug)]
+pub enum AppStateAction {
+    /// The given room was focused (selected).
+    RoomFocused(SelectedRoom),
+    /// Resets the focus to none, meaning that no room is selected.
+    FocusNone,
+    /// The given room or space has successfully been upgraded from being displayed
+    /// as an InviteScreen to a RoomScreen or SpaceLobbyScreen.
+    UpgradedInviteToJoinedRoom {
+        room_id: OwnedRoomId,
+        is_space: bool,
+    },
+    /// The given room or space has a new name.
+    ///
+    /// This triggers an update to every cached copy of that room/space name.
+    RoomNameUpdated(RoomNameId),
+    /// The given app state was loaded from persistent storage
+    /// and is ready to be restored.
+    RestoreAppStateFromPersistentState { user_id: OwnedUserId, app_state: AppState },
+    /// The given room was successfully loaded from the homeserver
+    /// and is now known to our client.
+    ///
+    /// The RoomScreen for this room can now fully display the room's timeline.
+    RoomLoadedSuccessfully {
+        room_name_id: RoomNameId,
+        /// `true` if this room is an invitation, `false` otherwise.
+        is_invite: bool,
+    },
+    /// A request to navigate to a different room, optionally closing a prior/current room.
+    NavigateToRoom {
+        room_to_close: Option<OwnedRoomId>,
+        destination_room: BasicRoomDetails,
+    },
+    None,
+}
+
+/// An action to show the generic top-level positive confirmation modal.
+///
+/// This is NOT a widget action.
+#[derive(Debug)]
+pub enum PositiveConfirmationModalAction {
+    /// Show the confirmation modal with the given content.
+    ///
+    /// The content is wrapped in a `RefCell` to ensure that only one entity handles it
+    /// and that that one entity can take ownership of the content object,
+    /// which avoids having to clone it.
+    Show(RefCell<Option<ConfirmationModalContent>>),
+}
+
+/// An action to show a deletion/removal confirmation modal.
+///
+/// This is NOT a widget action.
+#[derive(Debug)]
+pub enum ConfirmDeleteAction {
+    /// Show the deletion confirmation modal with the given content.
+    ///
+    /// The content is wrapped in a `RefCell` to ensure that only one entity handles it
+    /// and that that one entity can take ownership of the content object,
+    /// which avoids having to clone it.
+    Show(RefCell<Option<ConfirmationModalContent>>),
+}
+
+#[cfg(test)]
+mod back_navigation_tests {
+    use super::*;
+
+    /// Rinx as OctoSense seats it: the window-less `RinxContent`, signed out.
+    fn embedded_app(cx: &mut Cx) -> App {
+        let window = WindowHandle::new(cx);
+        window.cancel_initial_create(cx);
+        cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            register_widgets(vm);
+            let component = App::script_component(vm);
+            let value = script_eval!(vm, {
+                #(component) { ui: mod.widgets.RinxContent {} }
+            });
+            let mut app = App::script_from_value(vm, value);
+            app.embedded = true;
+            app
+        })
+    }
+
+    /// Delivers Back as the host shell does and reports whether Rinx took it.
+    fn back(cx: &mut Cx, app: &mut App) -> bool {
+        let event = Event::BackPressed { handled: std::cell::Cell::new(false) };
+        AppMain::handle_event(app, cx, &event);
+        matches!(event, Event::BackPressed { handled } if handled.get())
+    }
+
+    #[test]
+    fn back_at_the_root_is_left_to_the_host() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut app = embedded_app(&mut cx);
+        assert!(!app.app_state.logged_in);
+        assert!(!back(&mut cx, &mut app), "Back on the sign-in screen must leave Rinx");
+        app.app_state.logged_in = true;
+        assert!(!back(&mut cx, &mut app), "Back on the room list must leave Rinx");
+    }
+
+    #[test]
+    fn back_closes_an_open_rinx_modal() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut app = embedded_app(&mut cx);
+        let modal = app.ui.modal(&mut cx, ids!(space_management_modal));
+        modal.open(&mut cx);
+        assert!(back(&mut cx, &mut app), "Back must close the open modal");
+        assert!(!modal.is_open());
+        assert!(!back(&mut cx, &mut app), "With the modal closed, Back goes to the host");
+    }
+
+    #[test]
+    fn shared_article_is_routed_to_the_tabbed_reader() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut app = embedded_app(&mut cx);
+        let room = ruma::room_id!("!article:example.org").to_owned();
+        let event = ruma::event_id!("$article").to_owned();
+        let actions: ActionsBuf = vec![Box::new(ArticleAction::Read { room: room.clone(), event: event.clone() })];
+        let generated = cx.capture_actions(|cx| app.handle_actions(cx, &actions));
+        assert!(generated.iter().any(|action| matches!(action.downcast_ref::<WebBrowserAction>(),
+            Some(WebBrowserAction::ReadArticle { room: actual_room, event: actual_event }) if actual_room == &room && actual_event == &event)));
+        assert!(!app.ui.modal(&mut cx, ids!(article_app_modal)).is_open());
+    }
+
+    #[test]
+    fn agent_chat_only_opens_a_joined_room_for_the_current_account() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut app = embedded_app(&mut cx);
+        let account = ruma::user_id!("@owner:example.test");
+        let target = crate::miniapps::palpo::AgentChatTarget::from_reply(&serde_json::json!({
+            "v": 1, "requestId": "fleet_a:request_b", "account": account,
+            "roomId": "!project:example.test", "agentMxid": "@fleet_a_agent:example.test",
+        }), account.as_str()).unwrap();
+        for (actor, state) in [
+            (None, Some(RoomState::Joined)),
+            (Some(ruma::user_id!("@other:example.test")), Some(RoomState::Joined)),
+            (Some(account), None), (Some(account), Some(RoomState::Invited)),
+            (Some(account), Some(RoomState::Left)),
+        ] {
+            let actions = cx.capture_actions(|cx| assert!(app.open_agent_chat(cx, &target, actor, state).is_err()));
+            assert!(actions.is_empty(), "refused navigation must not auto-join or select a room");
+        }
+        let actions = cx.capture_actions(|cx| app.open_agent_chat(cx, &target, Some(account), Some(RoomState::Joined)).unwrap());
+        assert!(actions.iter().any(|a| matches!(a.as_widget_action().cast::<RoomsListAction>(),
+            RoomsListAction::Selected(SelectedRoom::JoinedRoom { room_name_id }) if room_name_id.room_id() == &target.room_id)));
+        assert!(app.waiting_to_navigate_to_room.is_none());
+    }
+
+    #[test]
+    fn signup_invitation_preserves_the_event_but_not_a_stale_navigation() {
+        use crate::miniapps::palpo::SignupApprovalTarget;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut app = embedded_app(&mut cx);
+        let account = ruma::user_id!("@admin:example.test");
+        let target = SignupApprovalTarget::from_reply(&serde_json::json!({
+            "v": 1, "requestId": "a".repeat(32), "account": account,
+            "roomId": "!signups:example.test", "eventId": "$original",
+        }), account.as_str()).unwrap();
+        let room = RoomNameId::empty(target.room_id.clone());
+        let unrelated = RoomNameId::empty(ruma::room_id!("!other:example.test").to_owned());
+
+        for (actor, age, should_jump) in [
+            (Some(account), 0, true),
+            (Some(account), 301, false),
+            (Some(ruma::user_id!("@other:example.test")), 0, false),
+            (None, 0, false),
+        ] {
+            app.pending_signup_navigation = Some((target.clone(), std::time::Instant::now() - Duration::from_secs(age)));
+            app.waiting_to_navigate_to_room = Some((BasicRoomDetails::RoomId(room.clone()), None));
+            let generated = cx.capture_actions(|cx| app.resume_signup_navigation(cx, &unrelated, actor));
+            assert!(generated.is_empty());
+            assert!(app.pending_signup_navigation.is_some());
+            let generated = cx.capture_actions(|cx| app.resume_signup_navigation(cx, &room, actor));
+            let jumps: Vec<_> = generated.iter().filter_map(|a| a.downcast_ref::<RoomHistoryAction>()).collect();
+            if should_jump {
+                assert!(matches!(jumps.as_slice(), [RoomHistoryAction::Jump { room: actual, event }]
+                    if actual.room_id() == room.room_id() && event == &target.event_id));
+            } else {
+                assert!(generated.is_empty(), "expired or different-account navigation must be discarded");
+            }
+            assert!(app.pending_signup_navigation.is_none());
+            assert!(app.waiting_to_navigate_to_room.is_none());
+        }
+
+        app.pending_signup_navigation = Some((target, std::time::Instant::now()));
+        app.waiting_to_navigate_to_room = Some((BasicRoomDetails::RoomId(unrelated.clone()), None));
+        app.cancel_signup_navigation();
+        assert_eq!(app.waiting_to_navigate_to_room.as_ref().unwrap().0.room_id(), unrelated.room_id());
+    }
+
+    #[test]
+    fn back_closes_web_reader_before_navigating_the_chat() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut app = embedded_app(&mut cx);
+        let modal = app.ui.modal(&mut cx, ids!(web_browser_modal));
+        let browser = app.ui.web_browser(&mut cx, ids!(web_browser_modal.content));
+        browser.action(&mut cx, modal.clone(), &WebBrowserAction::Open("https://example.org".parse().unwrap()));
+        assert!(modal.is_open());
+        assert!(back(&mut cx, &mut app));
+        assert!(!modal.is_open());
+        assert!(browser.browser_id().is_none());
+        assert!(!back(&mut cx, &mut app));
+    }
+}

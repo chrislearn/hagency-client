@@ -2,7 +2,7 @@
 
 Portable theme data, validation, reference/variant resolution, resolved revision
 payloads, and trusted Makepad/CSS adapters. It has no dependency on an application,
-renderer runtime, filesystem or network. See the [v1 format and integration guide](../hagency-desktop/docs/customer-themes.md).
+renderer runtime, filesystem or network. See the [v1 format and integration guide](../hagency-app/docs/customer-themes.md).
 
 ```sh
 cargo test --locked --manifest-path crates/theme-contract/Cargo.toml

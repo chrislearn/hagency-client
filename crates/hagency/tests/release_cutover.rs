@@ -31,7 +31,7 @@ const ROOT_BUILD_INPUTS: &[&str] = &[
 ];
 
 fn binary() -> PathBuf {
-    env!("CARGO_BIN_EXE_hagency").into()
+    env!("CARGO_BIN_EXE_hagency-cli").into()
 }
 #[path = "release_state/mod.rs"]
 mod release_state;

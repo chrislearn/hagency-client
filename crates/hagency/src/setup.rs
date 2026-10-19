@@ -52,7 +52,7 @@ pub struct Report {
     pub runtime_file: PathBuf,
 }
 
-/// `hagency init`: a new or empty private directory, a fresh operator token
+/// `hagency-cli init`: a new or empty private directory, a fresh operator token
 /// and both databases.
 pub fn init_state(state_dir: &Path) -> Result<(), String> {
     private::directory(state_dir).map_err(|e| format!("state directory: {e}"))?;

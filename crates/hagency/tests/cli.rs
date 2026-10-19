@@ -102,7 +102,10 @@ fn native_owner_rejects_retired_commands_and_options() {
     // parsing. Without its inherited IPC channel it must refuse quietly.
     let out = command().arg("guardian").output().unwrap();
     assert!(!out.status.success());
+    #[cfg(unix)]
     assert!(out.stdout.is_empty() && out.stderr.is_empty());
+    #[cfg(not(unix))]
+    assert!(String::from_utf8_lossy(&out.stderr).contains("unrecognized subcommand"));
     for flag in [
         "--agent-driver",
         "--palpo-transport",
@@ -424,12 +427,20 @@ fn native_owner_open_uses_private_ipc_single_use_ticket_without_pasion_rights() 
 #[test]
 #[cfg(not(unix))]
 fn native_owner_service_install_uninstall_uses_only_per_user_supervisor() {
+    let root = tempfile::tempdir().unwrap();
+    let state = root.path().join("state");
     let out = command()
         .args(["service", "install", "--listen", "127.0.0.1:0"])
+        .arg("--state-dir")
+        .arg(&state)
         .output()
         .unwrap();
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("nonzero loopback"));
+    assert!(
+        !state.exists(),
+        "invalid listeners must not initialize service state"
+    );
 }
 
 #[test]

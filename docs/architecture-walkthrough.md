@@ -1,7 +1,7 @@
 [English](architecture-walkthrough.md) | [中文](architecture-walkthrough.zh-CN.md)
 
 > Historical document: the Fleet/Engagement implementation below is retired. Its setup, login and encrypted-Agent claims do not apply to the current release.
-> Use the [owner-client README](../README.md), [local development](local-development.md) and [Desktop quick start](../../hagency-desktop/docs/hagency-quickstart.md) for current operations.
+> Use the [owner-client README](../README.md), [local development](local-development.md) and [Desktop quick start](../crates/hagency-app/docs/hagency-quickstart.md) for current operations.
 
 # Code walkthrough: from a Palpo request to an agent's reply
 

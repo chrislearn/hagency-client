@@ -7,15 +7,15 @@
 下载 [Hagency Client 0.6.0](https://github.com/hagency-org/hagency-client/releases/latest)，
 支持 Windows、macOS 和 Linux。校验文件及签名限制见发布说明。
 
-原生 Desktop 与本地 Agent 引擎现由本仓库统一维护。所有 Rust package 位于
-`crates/`，桌面程序在 [`crates/hagency-desktop`](crates/hagency-desktop/README.md)，
-Cargo package 和二进制名暂保留 `rinx`，通过本地路径依赖同仓库引擎。
+跨平台原生应用与本地 Agent 引擎由本仓库统一维护。所有 Rust package 位于
+`crates/`，界面应用在 [`crates/hagency-app`](crates/hagency-app/README.md)，
+Cargo 包名为 `hagency-app`，可执行文件为 `hagency`，通过本地路径依赖同仓库引擎。
 原 `hagency-org/hagency-desktop` 仓库仅保留历史源码和安装包。
 
-Windows 使用 `./tools/dev.ps1` 运行桌面程序，或使用
-`./tools/dev.ps1 check --locked -p rinx --lib` 检查。脚本把构建产物、Cargo/npm 缓存
+Windows 使用 `./tools/dev.ps1` 运行应用，或使用
+`./tools/dev.ps1 check --locked -p hagency-app --lib` 检查。脚本把构建产物、Cargo/npm 缓存
 及构建临时文件直接定位到 `D:/BuildCache/hagency-client`，并核对实际输出目录。
-完整结构和命令见[工作区指南](docs/workspace.md)。现有 CLI 的浏览器 Owner 控制台继续保留。
+完整结构和命令见[工作区指南](docs/workspace.md)。浏览器 Owner 控制台通过 `hagency-cli` 继续提供，避免与图形应用的可执行文件重名。
 
 使用自己的本地 Codex，为 Matrix Room 中的 agent 处理请求。你通过 Pasion 用
 **自己的 Matrix 账号**登录；`hagency-server` 创建傀儡账号并记录永久主人。本地客户端
@@ -33,15 +33,15 @@ binding，但不能转让。服务器集成 Appservice 为必装组件；客户�
 Codex 可执行文件及可用的系统凭据 keyring。监听地址必须是非零端口的 loopback。
 
 ```sh
-hagency init --state-dir "$HOME/.local/share/hagency-owned-client"
-hagency start --state-dir "$HOME/.local/share/hagency-owned-client"
+hagency-cli init --state-dir "$HOME/.local/share/hagency-owned-client"
+hagency-cli start --state-dir "$HOME/.local/share/hagency-owned-client"
 ```
 
 `start` 启动本机 OwnerHost，在交互终端中打开控制台；**不会自动启动 agent 或调用
 模型**。浏览器没有打开时，在另一个终端运行：
 
 ```sh
-hagency open --state-dir "$HOME/.local/share/hagency-owned-client"
+hagency-cli open --state-dir "$HOME/.local/share/hagency-owned-client"
 ```
 
 1. 在控制台选择 Hagency 服务，通过 Pasion 官方浏览器授权流程登录个人 Matrix
@@ -75,15 +75,15 @@ AskOwner 请求/工具决策已接入本机审批界面。批准精确绑定原�
 
 ```sh
 # 前台监听，不自动打开浏览器。
-hagency serve --state-dir "$HOME/.local/share/hagency-owned-client" --listen 127.0.0.1:13300
+hagency-cli serve --state-dir "$HOME/.local/share/hagency-owned-client" --listen 127.0.0.1:13300
 # 前台启动，不打开浏览器。
-hagency start --state-dir "$HOME/.local/share/hagency-owned-client" --no-open
+hagency-cli start --state-dir "$HOME/.local/share/hagency-owned-client" --no-open
 # 打印运行中的控制台链接，不打开浏览器。
-hagency open --state-dir "$HOME/.local/share/hagency-owned-client" --no-open
+hagency-cli open --state-dir "$HOME/.local/share/hagency-owned-client" --no-open
 # 安装并启动当前用户的 LaunchAgent 或 systemd --user 服务。
-hagency service install --state-dir "$HOME/.local/share/hagency-owned-client" --no-open
+hagency-cli service install --state-dir "$HOME/.local/share/hagency-owned-client" --no-open
 # 停止并卸载服务，保留状态目录。
-hagency service uninstall
+hagency-cli service uninstall
 ```
 
 同一状态目录只能运行一个 host。安装服务前先停止前台实例。服务以安装者自己的 OS

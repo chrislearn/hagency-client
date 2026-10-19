@@ -573,7 +573,7 @@ async fn native_console_usage_counts_survive_an_unobserved_sibling_source() {
 async fn native_console_assets_refusal_names_field_and_fix() {
     let root = tempfile::tempdir().unwrap();
     let state = root.path().join("state");
-    let binary = env!("CARGO_BIN_EXE_hagency");
+    let binary = env!("CARGO_BIN_EXE_hagency-cli");
     let init = std::process::Command::new(binary)
         .args(["init", "--state-dir"])
         .arg(&state)

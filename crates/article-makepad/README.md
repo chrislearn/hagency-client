@@ -60,7 +60,7 @@ Set `selectable: true` to include custom widgets' text in native selection and
 copy. The host owns image loading and installs `DrawingImages` during drawing.
 There is no Blitz or WebView dependency. Rinx's default build follows this path;
 its HTML/CSS comparison is optional. See
-[native coverage and tests](../hagency-desktop/lab/article-editor/native-markdown.md).
+[native coverage and tests](../hagency-app/lab/article-editor/native-markdown.md).
 
 Math previews use the pinned `makepad-latex-math` parser/layout and bundled
 NewCMMath font, with glyph outlines and fraction/radical rules rasterized into
@@ -94,4 +94,4 @@ Rinx rasterizes it with resvg and grants only PNG pixels to Blitz.
 widget as well. Mermaid parsing/layout comes from pinned `mermaid-rs-renderer`
 0.3.1; the Editor.md grammar adapter preserves its different alias and arrow
 semantics. SVG output becomes inert pixels through the existing resvg path.
-See [diagram coverage, tests and limits](../hagency-desktop/lab/article-editor/native-diagrams.md).
+See [diagram coverage, tests and limits](../hagency-app/lab/article-editor/native-diagrams.md).

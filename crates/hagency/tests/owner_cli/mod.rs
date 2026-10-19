@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 pub fn command() -> Command {
-    let mut c = Command::new(env!("CARGO_BIN_EXE_hagency"));
+    let mut c = Command::new(env!("CARGO_BIN_EXE_hagency-cli"));
     c.env("PATH", "").stdin(Stdio::null());
     c
 }

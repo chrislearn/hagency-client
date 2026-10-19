@@ -150,7 +150,7 @@ async fn native_console_rail_pages_are_shipped_and_served() {
     let state = root.path().join("state");
     let empty_path = root.path().join("empty-path");
     std::fs::create_dir(&empty_path).unwrap();
-    let binary = env!("CARGO_BIN_EXE_hagency");
+    let binary = env!("CARGO_BIN_EXE_hagency-cli");
     let init = Command::new(binary)
         .args(["init", "--state-dir"])
         .arg(&state)

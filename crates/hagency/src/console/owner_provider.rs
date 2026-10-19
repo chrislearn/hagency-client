@@ -1249,7 +1249,11 @@ for line in sys.stdin:
             "@owner:example",
         )
         .unwrap();
-        let executable = directory.join("fake-codex");
+        let executable = directory.join(if cfg!(windows) {
+            "fake-codex.cmd"
+        } else {
+            "fake-codex"
+        });
         std::fs::write(&executable,r#"#!/usr/bin/env python3
 import json,os,sys,pathlib
 home=pathlib.Path(os.environ['HOME']); marker=home/'signed-in'
@@ -1268,6 +1272,24 @@ for line in sys.stdin:
  else:raise Exception('onboarding must not start inference')
  print(json.dumps({'id':rid,'result':result}),flush=True)
 "#).unwrap();
+        #[cfg(windows)]
+        {
+            // Windows does not execute a Python shebang. Keep the same protocol
+            // fixture and launch it with an explicit interpreter through a batch file.
+            let python = std::process::Command::new("python")
+                .args(["-c", "import sys; print(sys.executable)"])
+                .output()
+                .unwrap();
+            assert!(python.status.success());
+            let interpreter = String::from_utf8(python.stdout).unwrap();
+            let script = directory.join("fake-codex.py");
+            std::fs::rename(&executable, &script).unwrap();
+            std::fs::write(
+                &executable,
+                format!("@\"{}\" \"{}\" %*\r\n", interpreter.trim(), script.display()),
+            )
+            .unwrap();
+        }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

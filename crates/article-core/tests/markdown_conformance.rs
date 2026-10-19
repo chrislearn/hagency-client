@@ -53,7 +53,7 @@ fn editor_full_sample_matches_reader_semantics() {
     use article_core::document::Document;
     struct Plain;
     impl Renderer for Plain {}
-    let source = include_str!("../../hagency-desktop/lab/article-editor/render-comparison/source.md");
+    let source = include_str!("../../hagency-app/lab/article-editor/render-comparison/source.md");
     let document = Document::from_markdown("Editor.md", source).unwrap();
     let editor = markdown_render::render_editor(&document, &mut Plain);
     let preview = markdown_render::render(source, &mut Plain);

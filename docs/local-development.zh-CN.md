@@ -2,7 +2,7 @@
 
 # owner client 与服务器本地联调
 
-`hagency-client`、`hagency-server`、可选的 `hagency-desktop` 放在同一父目录，
+`hagency-client`、`hagency-server` 放在同一父目录；跨平台界面位于客户端仓库的 `crates/hagency-app`。
 各自使用仓库指定的 Rust 工具链。owner 控制台构建需要 Node.js 22+ 与 npm；
 本机 HTTP 服务由 Rust 提供。下面客户端命令在本仓库根目录运行。
 
@@ -24,8 +24,8 @@ console_parent="$(mktemp -d "$PWD/.run/owner-console.XXXXXX")"
 node mockup/scripts/build-native-console.mjs --output "$console_parent/assets"
 HAGENCY_CONSOLE_DIR="$console_parent/assets" cargo build --locked -p hagency
 # 仅首次初始化：选择全新的 owner 格式状态目录。
-target/debug/hagency init --state-dir "$PWD/.run/owner-dev-state"
-target/debug/hagency start --state-dir "$PWD/.run/owner-dev-state" \
+target/debug/hagency-cli init --state-dir "$PWD/.run/owner-dev-state"
+target/debug/hagency-cli start --state-dir "$PWD/.run/owner-dev-state" \
   --listen 127.0.0.1:13300 --console-assets "$console_parent/assets"
 ```
 
@@ -33,7 +33,7 @@ assets 输出路径必须尚不存在，运行期间保留资源目录。后续�
 另一个终端获取私人访问链接：
 
 ```sh
-target/debug/hagency open --state-dir "$PWD/.run/owner-dev-state"
+target/debug/hagency-cli open --state-dir "$PWD/.run/owner-dev-state"
 ```
 
 `open` 通过本机 IPC 访问运行中的 host，不需要 listener 参数。访问链接不要写入日志。
@@ -60,7 +60,7 @@ target/debug/hagency open --state-dir "$PWD/.run/owner-dev-state"
 CLI host 使用独立主人 Codex home/keyring，Desktop 还允许显式关联本机已登录的
 Codex 账号；都不向 server 上传模型凭据。见[登录说明](server-login.zh-CN.md)、
 [根指南](../README.zh-CN.md)和
-[Desktop 开发](../../hagency-desktop/docs/local-development.zh-CN.md)。
+[Desktop 开发](../crates/hagency-app/docs/local-development.zh-CN.md)。
 
 新 CLI 状态使用 `hagency-client-owned-v1.json`。旧 Fleet 状态单独保留，不复制
 旧配置/SQLite/token 或修改 marker。未知执行/费用保留恢复 hold。Agent 加密范围

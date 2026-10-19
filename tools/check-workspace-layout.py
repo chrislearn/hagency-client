@@ -19,8 +19,11 @@ def main():
         manifest = Path(package["manifest_path"]).resolve()
         assert manifest.parent.parent == ROOT / "crates", manifest
         assert not (manifest.parent / "Cargo.lock").exists(), manifest
-    desktop = next(p for p in packages if p["name"] == "rinx")
-    engine = next(p for p in desktop["dependencies"] if p["name"] == "hagency")
+    app = next(p for p in packages if p["name"] == "hagency-app")
+    assert Path(app["manifest_path"]).parent == ROOT / "crates/hagency-app"
+    assert app["default_run"] == "hagency"
+    assert [t["name"] for t in app["targets"] if "bin" in t["kind"]] == ["hagency"]
+    engine = next(p for p in app["dependencies"] if p["name"] == "hagency")
     assert engine["source"] is None and Path(engine["path"]).resolve() == ROOT / "crates/hagency"
     files = subprocess.check_output([
         "git", "ls-files", "--cached", "--others", "--exclude-standard", "-z",
@@ -34,7 +37,11 @@ def main():
             assert "workspace" not in data, f"Nested workspace: {name}"
     lock = tomllib.loads((ROOT / "Cargo.lock").read_text())
     assert not any("github.com/chrislearn/hagency-client" in p.get("source", "") for p in lock["package"]), "Duplicate Git engine"
-    print(json.dumps({"packages": len(packages), "desktop_engine": engine["path"],
+    cli = next(p for p in packages if p["name"] == "hagency")
+    assert cli["default_run"] == "hagency-cli"
+    binaries = [t["name"] for p in packages for t in p["targets"] if "bin" in t["kind"]]
+    assert len(binaries) == len(set(binaries)), "Colliding workspace executable names"
+    print(json.dumps({"packages": len(packages), "app_engine": engine["path"],
                       "target_directory": metadata["target_directory"]}))
 
 

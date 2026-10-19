@@ -357,16 +357,18 @@ mod tests {
     #[test]
     fn fresh_format_is_reopenable_and_has_one_process_owner() {
         let temp = temporary();
-        let state = prepare(temp.path()).unwrap();
+        // Let production create the private directory, including its Windows DACL.
+        let path = temp.path().join("state");
+        let state = prepare(&path).unwrap();
         assert_eq!(
             std::fs::read(state.path.join(MARKER)).unwrap(),
             MARKER_BYTES
         );
-        assert!(matches!(prepare(temp.path()), Err(Error::AlreadyRunning)));
+        assert!(matches!(prepare(&path), Err(Error::AlreadyRunning)));
         drop(state);
-        assert!(initialize(temp.path()).is_ok());
-        assert!(!temp.path().join("domain.sqlite3").exists());
-        assert!(!temp.path().join("operator.token").exists());
+        assert!(initialize(&path).is_ok());
+        assert!(!path.join("domain.sqlite3").exists());
+        assert!(!path.join("operator.token").exists());
     }
     fn bundle(root: &Path, legacy: bool) -> PathBuf {
         use sha2::{Digest, Sha256};

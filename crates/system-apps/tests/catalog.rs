@@ -139,7 +139,7 @@ fn materialize_never_overwrites_an_existing_directory() {
 
 #[test]
 fn shipped_catalog_preserves_native_editor_and_omits_palpo() {
-    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../hagency-desktop");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../hagency-app");
     let catalog = pack(&root).unwrap();
     assert!(catalog.apps.iter().any(|app| app.manifest.id == ARTICLE_ID));
     assert!(catalog.apps.iter().all(|app| {

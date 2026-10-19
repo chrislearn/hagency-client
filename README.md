@@ -7,20 +7,21 @@ Canonical repository: [hagency-org/hagency-client](https://github.com/hagency-or
 Download [Hagency Client 0.6.0](https://github.com/hagency-org/hagency-client/releases/latest)
 for Windows, macOS or Linux. See the release notes for checksums and signing limitations.
 
-Hagency Desktop and the local Agent engine are maintained together in this repository.
+The cross-platform Hagency app and the local Agent engine are maintained together in this repository.
 All Rust packages live in `crates/`; the native Rust/Makepad application is
-[`crates/hagency-desktop`](crates/hagency-desktop/README.md), with Cargo package
-and executable name `rinx`. Desktop uses the engine directly through a local path
+[`crates/hagency-app`](crates/hagency-app/README.md), with Cargo package
+`hagency-app` and executable `hagency`. The app uses the engine directly through a local path
 dependency. The former `hagency-org/hagency-desktop` repository preserves historical
 source and releases; new development belongs here.
 
-On Windows, use `./tools/dev.ps1` to run Desktop, or
-`./tools/dev.ps1 check --locked -p rinx --lib` to check it. The wrapper keeps build
+On Windows, use `./tools/dev.ps1` to run the app, or
+`./tools/dev.ps1 check --locked -p hagency-app --lib` to check it. The wrapper keeps build
 outputs, Cargo/npm caches and temporary build files under `D:/BuildCache/hagency-client`
 and verifies Cargo's actual output directory. See the
 [workspace guide](docs/workspace.md) for builds, the CLI and release workflows.
 
-The browser Owner console remains available for the existing CLI workflow below.
+The browser Owner console remains available through `hagency-cli` below. The CLI
+and GUI have distinct executable names and share the local engine library.
 
 Run your own Codex Agents in Matrix Rooms through `hagency-server`. You sign in
 with your personal Matrix account through Pasion. The server creates each Agent's
@@ -42,8 +43,8 @@ Codex executable compatible with the current app-server 0.160 adapter and an
 available OS credential keyring. The listener must be a nonzero loopback address.
 
 ```sh
-hagency init --state-dir "$HOME/.local/share/hagency-owned-client"
-hagency start --state-dir "$HOME/.local/share/hagency-owned-client"
+hagency-cli init --state-dir "$HOME/.local/share/hagency-owned-client"
+hagency-cli start --state-dir "$HOME/.local/share/hagency-owned-client"
 ```
 
 `start` runs the local OwnerHost and opens the console from an interactive terminal.
@@ -51,7 +52,7 @@ It does **not** automatically start Agents or call a model. If the browser did n
 open, run this in another terminal:
 
 ```sh
-hagency open --state-dir "$HOME/.local/share/hagency-owned-client"
+hagency-cli open --state-dir "$HOME/.local/share/hagency-owned-client"
 ```
 
 1. In the console, choose your Hagency server and sign in through Pasion's official
@@ -95,15 +96,15 @@ for the required restricted proxy, reliable crypto sync and interoperability wor
 
 ```sh
 # Foreground listener without opening a browser.
-hagency serve --state-dir "$HOME/.local/share/hagency-owned-client" --listen 127.0.0.1:13300
+hagency-cli serve --state-dir "$HOME/.local/share/hagency-owned-client" --listen 127.0.0.1:13300
 # Foreground start without browser opening.
-hagency start --state-dir "$HOME/.local/share/hagency-owned-client" --no-open
+hagency-cli start --state-dir "$HOME/.local/share/hagency-owned-client" --no-open
 # Print a running console access link without opening it.
-hagency open --state-dir "$HOME/.local/share/hagency-owned-client" --no-open
+hagency-cli open --state-dir "$HOME/.local/share/hagency-owned-client" --no-open
 # Install and start a per-user LaunchAgent or systemd --user service.
-hagency service install --state-dir "$HOME/.local/share/hagency-owned-client" --no-open
+hagency-cli service install --state-dir "$HOME/.local/share/hagency-owned-client" --no-open
 # Stop/remove that service; state is retained.
-hagency service uninstall
+hagency-cli service uninstall
 ```
 
 Run only one host against a state directory. Stop a foreground instance before

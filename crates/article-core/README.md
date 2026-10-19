@@ -33,7 +33,7 @@ an entire document, then virtualize its returned sections. This resolves
 reference links, duplicate heading IDs, TOC markers, footnotes and back-links
 across editor blocks. The configured parser supports CommonMark 0.31.2 and GFM,
 plus the explicit article extensions listed in
-[native Markdown coverage](../hagency-desktop/lab/article-editor/native-markdown.md).
+[native Markdown coverage](../hagency-app/lab/article-editor/native-markdown.md).
 
 Parsing, sanitization, source positions and `render::Renderer` are reexported
 from Makepad’s `makepad-markdown` crate. This crate retains the article document
@@ -47,7 +47,7 @@ loads network resources or runs JavaScript. Original source stays editable;
 legacy block-level HTML methods remain available for compatibility.
 
 The original component extraction is described in
-[ADR 0003](../hagency-desktop/docs/adr/0003-shared-article-components.md).
+[ADR 0003](../hagency-app/docs/adr/0003-shared-article-components.md).
 
 `markdown::inspect(source)` reports features needing source blocks, and
 extensions that remain literal, with one-based source lines. Inspection never rewrites

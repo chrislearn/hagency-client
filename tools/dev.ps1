@@ -17,7 +17,7 @@ try {
     if ($taskMetadata.target_directory.Replace('\','/') -ne $env:CARGO_TARGET_DIR) {
         throw "Unexpected Cargo output directory: $($taskMetadata.target_directory)"
     }
-    if ($CargoArguments.Count -eq 0) { $CargoArguments = @('run','--locked','-p','rinx','--bin','rinx') }
+    if ($CargoArguments.Count -eq 0) { $CargoArguments = @('run','--locked','-p','hagency-app','--bin','hagency') }
     & cargo @CargoArguments
     $taskExit = $LASTEXITCODE
 } finally {

@@ -3,7 +3,7 @@
 # Local owner-client/server development
 
 Keep `hagency-client` and `hagency-server` as sibling checkouts. Desktop now lives
-in `crates/hagency-desktop` in this workspace; see [workspace builds](workspace.md).
+in `crates/hagency-app` in this workspace; see [workspace builds](workspace.md).
 The server selects its own Rust toolchain. The owner console requires Node.js
 22+ and npm; the local HTTP host is Rust. All client commands below run in this repo.
 
@@ -25,8 +25,8 @@ console_parent="$(mktemp -d "$PWD/.run/owner-console.XXXXXX")"
 node mockup/scripts/build-native-console.mjs --output "$console_parent/assets"
 HAGENCY_CONSOLE_DIR="$console_parent/assets" cargo build --locked -p hagency
 # First initialization only: choose a fresh owner-format state directory.
-target/debug/hagency init --state-dir "$PWD/.run/owner-dev-state"
-target/debug/hagency start --state-dir "$PWD/.run/owner-dev-state" \
+target/debug/hagency-cli init --state-dir "$PWD/.run/owner-dev-state"
+target/debug/hagency-cli start --state-dir "$PWD/.run/owner-dev-state" \
   --listen 127.0.0.1:13300 --console-assets "$console_parent/assets"
 ```
 
@@ -34,7 +34,7 @@ The assets output path must not already exist. Keep the assets while this host
 runs. For later starts skip `init`; in another terminal obtain a private access link:
 
 ```sh
-target/debug/hagency open --state-dir "$PWD/.run/owner-dev-state"
+target/debug/hagency-cli open --state-dir "$PWD/.run/owner-dev-state"
 ```
 
 `open` talks to the running host through local IPC; it does not need a listener
@@ -66,7 +66,7 @@ starting a scope. Login/server connection alone does not invoke a model.
 The CLI host uses a separate owner-scoped Codex home/keyring. Desktop can also
 explicitly associate an already signed-in local Codex account. Neither sends model
 credentials to the server. Read [server login](server-login.md), the
-[root guide](../README.md) and [Desktop development](../../hagency-desktop/docs/local-development.md).
+[root guide](../README.md) and [Desktop development](../crates/hagency-app/docs/local-development.md).
 
 Fresh CLI state has `hagency-client-owned-v1.json`. Keep old Fleet state separate;
 do not copy old config/SQLite/tokens or edit markers to bypass initialization.
