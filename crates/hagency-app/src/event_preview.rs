@@ -261,7 +261,11 @@ fn text_preview_of_message(
             htmlize::escape_text(&location.body),
         ),
         MessageType::Notice(notice) => format!("<i>{}</i>",
-            if let Some(formatted_body) = notice.formatted.as_ref() {
+            if let Some(localized)=crate::room::request_notice::presentation(&serde_json::json!({"msgtype":"m.notice","body":notice.body})) {
+                htmlize::escape_text(&localized).into_owned().into()
+            } else if notice.formatted.is_none() && notice.body.starts_with(['⏳','⚠','⏸']) {
+                htmlize::escape_text(crate::i18n::tr(&notice.body))
+            } else if let Some(formatted_body) = notice.formatted.as_ref() {
                 utils::trim_start_html_whitespace(&formatted_body.body).into()
             } else {
                 htmlize::escape_text(notice.body.as_str())

@@ -442,6 +442,106 @@ fn instruction_path_matches(actual: &str, expected: &std::path::Path) -> bool {
             _ => false,
         }
 }
+fn verify_thread_scope(
+    response: &Value,
+    profile: &Profile,
+    prior: Option<&str>,
+    thread: &str,
+) -> Result<()> {
+    if prior.is_some_and(|id| id != thread)
+        || !response["cwd"]
+            .as_str()
+            .is_some_and(|path| instruction_path_matches(path, &profile.cwd))
+        || !response["thread"]["cwd"]
+            .as_str()
+            .is_some_and(|path| instruction_path_matches(path, &profile.cwd))
+        || response["model"] != profile.model
+        || response["approvalPolicy"] != "untrusted"
+        || response["approvalsReviewer"] != "user"
+        || response["sandbox"]["type"] != "readOnly"
+        || response["sandbox"]
+            .get("networkAccess")
+            .is_some_and(|v| v != false)
+    {
+        return Err(Error::Protocol("thread scope or policy differs"));
+    }
+    Ok(())
+}
+fn verify_host_configuration(
+    c: &Value,
+    shared_home: Option<&std::path::Path>,
+    web_search: bool,
+) -> Result<()> {
+    if let Some(home) = shared_home {
+        verify_shared_configuration(c, home)?;
+    }
+    for feature in [
+        "shell_tool",
+        "unified_exec",
+        "code_mode",
+        "hooks",
+        "plugins",
+        "multi_agent",
+        "multi_agent_v2",
+        "skill_search",
+        "skill_mcp_dependency_install",
+        "shell_snapshot",
+        "view_image",
+        "browser_use",
+        "browser_use_external",
+        "browser_use_full_cdp_access",
+        "browser_annotation_api",
+        "computer_use",
+        "in_app_browser",
+        "goals",
+        "image_generation",
+        "apps",
+        "tool_search",
+        "tool_suggest",
+        "web_search_cached",
+        "web_search_request",
+        "memory_tool",
+    ] {
+        if c["features"][feature] != false {
+            return Err(Error::Profile("provider native feature gate differs"));
+        }
+    }
+    if c.get("mcp_servers").is_some_and(|v| {
+        !v.is_null()
+            && v.as_object()
+                .is_none_or(|m| m.values().any(|server| server["enabled"] != false))
+    }) {
+        return Err(Error::Profile("inherited MCP servers are unsupported"));
+    }
+    if c["web_search"] != if web_search { "live" } else { "disabled" }
+        || c["features"]["standalone_web_search"] != web_search
+        || c["features"]["code_mode_host"] != true
+    {
+        return Err(Error::Profile("provider live web search unavailable"));
+    }
+    if c["project_doc_max_bytes"] != 0
+        || c["skills"]["include_instructions"] != false
+        || c["skills"]["bundled"]["enabled"] != false
+        || c["include_apps_instructions"] != false
+        || c["include_environment_context"] != false
+        || c["developer_instructions"].as_str() != Some("")
+        || c.get("model_instructions_file").is_some_and(|v| {
+            !v.is_null()
+                && shared_home.is_none_or(|home| {
+                    !v.as_str().is_some_and(|actual| {
+                        instruction_path_matches(actual, &home.join(SEALED_INSTRUCTIONS_FILE))
+                    })
+                })
+        })
+        || c.get("instructions")
+            .is_some_and(|v| !v.is_null() && v != "")
+    {
+        return Err(Error::Profile(
+            "provider ambient instructions are not disabled",
+        ));
+    }
+    Ok(())
+}
 pub fn verify_shared_configuration(c: &Value, home: &std::path::Path) -> Result<()> {
     validate_shared_provider(c)?;
     let expected = home.join(SEALED_INSTRUCTIONS_FILE);
@@ -877,73 +977,7 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
             .rpc("config/read", value!({"includeLayers":false}))
             .await?;
         let c = &response["config"];
-        if let Some(home) = &self.shared_home {
-            verify_shared_configuration(c, home)?;
-        }
-        for feature in [
-            "shell_tool",
-            "unified_exec",
-            "code_mode",
-            "hooks",
-            "plugins",
-            "multi_agent",
-            "multi_agent_v2",
-            "skill_search",
-            "skill_mcp_dependency_install",
-            "shell_snapshot",
-            "view_image",
-            "browser_use",
-            "browser_use_external",
-            "browser_use_full_cdp_access",
-            "browser_annotation_api",
-            "computer_use",
-            "in_app_browser",
-            "goals",
-            "image_generation",
-            "apps",
-            "tool_search",
-            "tool_suggest",
-            "web_search_cached",
-            "web_search_request",
-            "memory_tool",
-        ] {
-            if c["features"][feature] != false {
-                return Err(Error::Profile("provider native feature gate differs"));
-            }
-        }
-        if c.get("mcp_servers").is_some_and(|v| {
-            !v.is_null()
-                && v.as_object()
-                    .is_none_or(|m| m.values().any(|server| server["enabled"] != false))
-        }) {
-            return Err(Error::Profile("inherited MCP servers are unsupported"));
-        }
-        if c["web_search"] != if self.web_search { "live" } else { "disabled" }
-            || c["features"]["standalone_web_search"] != self.web_search
-            || c["features"]["code_mode_host"] != true
-        {
-            return Err(Error::Profile("provider live web search unavailable"));
-        }
-        if c["project_doc_max_bytes"] != 0
-            || c["skills"]["include_instructions"] != false
-            || c["skills"]["bundled"]["enabled"] != false
-            || c["include_apps_instructions"] != false
-            || c["include_environment_context"] != false
-            || c["developer_instructions"].as_str() != Some("")
-            || c.get("model_instructions_file").is_some_and(|v| {
-                !v.is_null()
-                    && self.shared_home.as_ref().is_none_or(|home| {
-                        v.as_str() != home.join(SEALED_INSTRUCTIONS_FILE).to_str()
-                    })
-            })
-            || c.get("instructions")
-                .is_some_and(|v| !v.is_null() && v != "")
-        {
-            return Err(Error::Profile(
-                "provider ambient instructions are not disabled",
-            ));
-        }
-        Ok(())
+        verify_host_configuration(c, self.shared_home.as_deref(), self.web_search)
     }
     pub async fn open_context(
         &mut self,
@@ -1026,19 +1060,7 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin> Session<R, W> {
         let thread = response["thread"]["id"]
             .as_str()
             .ok_or(Error::Protocol("thread identity missing"))?;
-        if prior.as_deref().is_some_and(|id| id != thread)
-            || response["cwd"].as_str() != profile.cwd.to_str()
-            || response["thread"]["cwd"].as_str() != profile.cwd.to_str()
-            || response["model"] != profile.model
-            || response["approvalPolicy"] != "untrusted"
-            || response["approvalsReviewer"] != "user"
-            || response["sandbox"]["type"] != "readOnly"
-            || response["sandbox"]
-                .get("networkAccess")
-                .is_some_and(|v| v != false)
-        {
-            return Err(Error::Protocol("thread scope or policy differs"));
-        }
+        verify_thread_scope(&response, profile, prior.as_deref(), thread)?;
         if prior.is_none() {
             // Fresh 0.160 threads have no rollout until a turn or metadata update.
             // Materialize before journaling its ID, so an inference-free crash
@@ -1747,6 +1769,45 @@ mod tests {
     }
 
     #[test]
+    fn thread_scope_accepts_normalized_windows_paths_but_keeps_policy_and_scope_fences() {
+        let temp = tempfile::tempdir().unwrap();
+        let cwd = temp.path().canonicalize().unwrap();
+        let profile = Profile {
+            executable: cwd.join("unused"),
+            home: cwd.clone(),
+            codex_home: cwd.clone(),
+            cwd: cwd.clone(),
+            model: "test-model".into(),
+            effort: "low".into(),
+            shared_auth: true,
+            web_search: true,
+        };
+        let path = cwd.to_str().unwrap();
+        #[cfg(windows)]
+        let path = path.trim_start_matches(r"\\?\").replace('\\', r"\\");
+        let response = value!({"thread":{"id":"thread-a","cwd":path},"cwd":path,"model":"test-model","approvalPolicy":"untrusted","approvalsReviewer":"user","sandbox":{"type":"readOnly","networkAccess":false}});
+        verify_thread_scope(&response, &profile, Some("thread-a"), "thread-a").unwrap();
+        assert!(
+            verify_thread_scope(&response, &profile, Some("other-thread"), "thread-a").is_err()
+        );
+        for (pointer, changed) in [
+            ("/cwd", value!("/elsewhere")),
+            ("/thread/cwd", value!("/elsewhere")),
+            ("/model", value!("other")),
+            ("/approvalPolicy", value!("never")),
+            ("/approvalsReviewer", value!("auto")),
+            ("/sandbox/type", value!("dangerFullAccess")),
+            ("/sandbox/networkAccess", value!(true)),
+        ] {
+            let mut altered = response.clone();
+            *altered.pointer_mut(pointer).unwrap() = changed;
+            assert!(
+                verify_thread_scope(&altered, &profile, None, "thread-a").is_err(),
+                "{pointer}"
+            );
+        }
+    }
+    #[test]
     fn shared_configuration_pins_instructions_provider_and_all_native_channels() {
         let temp = tempfile::tempdir().unwrap();
         shared_base_overrides(temp.path()).unwrap();
@@ -1783,7 +1844,10 @@ mod tests {
         ] {
             c["features"][feature] = false.into();
         }
+        c["features"]["standalone_web_search"] = false.into();
+        c["features"]["code_mode_host"] = true.into();
         verify_shared_configuration(&c, temp.path()).unwrap();
+        verify_host_configuration(&c, Some(temp.path()), false).unwrap();
         #[cfg(windows)]
         {
             let canonical_home = temp.path().canonicalize().unwrap();
@@ -1796,6 +1860,7 @@ mod tests {
                 .replace('\\', r"\\")
                 .into();
             verify_shared_configuration(&normalized, &canonical_home).unwrap();
+            verify_host_configuration(&normalized, Some(&canonical_home), false).unwrap();
         }
         std::fs::create_dir(temp.path().join("alias")).unwrap();
         let traversal = temp
@@ -1834,6 +1899,10 @@ mod tests {
             assert!(
                 verify_shared_configuration(&altered, temp.path()).is_err(),
                 "{pointer}"
+            );
+            assert!(
+                verify_host_configuration(&altered, Some(temp.path()), false).is_err(),
+                "startup {pointer}"
             );
         }
         c["model_providers"]["openai"] =

@@ -128,6 +128,11 @@ fn runtime_diagnostic(code: &str) -> String {
     let message = match code {
         "agent_model_required" => "No model is configured on this device. Open Model & resources, connect an account and save a model before starting.",
         "runtime_profile_unavailable" => "The saved local model, workspace or account is unavailable. Open Model & resources, reconnect the account and save an available model.",
+        "codex_provider_configuration_rejected" => "The local provider configuration failed validation. Open Service logs to identify the stage; check the provider version and configuration.",
+        "codex_web_search_unavailable" => "The local provider does not support the selected web search settings. Check its version and Model & resources.",
+        "codex_protocol_mismatch" => "The local provider returned an incompatible protocol response. Check its version and Service logs.",
+        "codex_provider_unavailable" => "The local provider could not start or complete its handshake. Check its installation and Service logs.",
+        "codex_provider_timeout" => "The local provider did not respond in time. Check Service logs and retry.",
         "provider_profile_mismatch" | "provider_authorization_lost" => "The connected account changed or expired. Reconnect it in Model & resources and save the model again.",
         "owner_authorization_required" => "Your account authorization expired. Sign in again to continue.",
         "matrix_authorization_unavailable" | "server_unavailable" => "Cannot verify this account right now. Check the server connection and retry.",
@@ -159,10 +164,36 @@ pub(crate) fn runtime_service_description(runtime: Option<&Result<Value,String>>
     for problem in array(&value["service"],"problems") {
         let mut message=runtime_diagnostic(string(&problem,"error"));
         if let Some(seconds)=problem["retryInSeconds"].as_u64() {message.push_str(&format!(" · {} {seconds}s",crate::i18n::tr("Retry in")));}
+        let base=runtime_diagnostic(string(&problem,"error"));
+        diagnostics.retain(|entry|entry != &base);
         if !diagnostics.contains(&message) {diagnostics.push(message);}
     }
     for message in diagnostics {text.push_str(&format!("\n{message}"));}
     text
+}
+fn remote_presence_label(status:Option<&Result<Value,String>>,agent:&Value)->&'static str {
+    let Some(Ok(value))=status else {return "Device status unknown";};
+    if value["agentId"]==agent["id"] && value["agentGeneration"]==agent["generation"] && value["executionDeviceId"]==agent["executionDeviceId"]
+        && value["deviceGeneration"].is_null() && value["online"]==false {return "Device unavailable · no active device session";}
+    if !configuration_matches(value,agent) {return "Device status unknown";}
+    if value["online"]==true {"Device online · Agent readiness is separate"}
+    else if value["lastSeenAtMs"].is_null() {"No device heartbeat observed"}
+    else {"Device offline · no recent heartbeat"}
+}
+fn service_log_text(value:&Value)->String {
+    let mut lines=Vec::new();
+    for log in array(&value["service"],"logs").iter().rev().take(100) {
+        let at=log["atMs"].as_i64().and_then(chrono::DateTime::<chrono::Utc>::from_timestamp_millis).map(|t|t.format("%Y-%m-%d %H:%M:%S UTC").to_string()).unwrap_or_default();
+        let phase=match string(log,"phase") {"starting"=>"Starting service…","serving"=>"Service running","retrying"=>"Waiting to retry","disconnected"=>"Disconnected","stopped"=>"Stopped",_=>"Status updated"};
+        let mut line=format!("{at} · {}",crate::i18n::tr(phase));
+        let binding=string(log,"bindingId");
+        if !binding.is_empty() {line.push_str(&format!(" · Room {}",binding.chars().take(128).collect::<String>()));}
+        let code=string(log,"error");
+        if !code.is_empty() {line.push_str(&format!("\n{}",runtime_diagnostic(code)));}
+        if let Some(seconds)=log["retryInSeconds"].as_u64() {line.push_str(&format!(" · {} {seconds}s",crate::i18n::tr("Retry in")));}
+        lines.push(line);
+    }
+    if lines.is_empty() {crate::i18n::tr("No Service events recorded in this session yet. Refresh status after starting the service.").to_owned()} else {lines.join("\n\n")}
 }
 fn service_enabled(value:&Value)->bool {
     value["service"]["enabled"] == true || {
@@ -780,6 +811,13 @@ script_mod! {
                         Text {text: #(crate::i18n::tr("Agent service")) i18n_text: "Agent service" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
                         runtime_chat_target := Text {draw_text.color: mod.widgets.RINX_MUTED}
                         runtime_status := Text {}
+                        service_logs_toggle := Action {text: #(crate::i18n::tr("View Service logs")) i18n_text: "View Service logs"}
+                        service_logs_panel := Section {visible: false width: Fill height: Fit flow: Down spacing: 8
+                            Text {text: #(crate::i18n::tr("Recent Service logs")) i18n_text: "Recent Service logs" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
+                            Text {text: #(crate::i18n::tr("Up to 100 events from this service session. Times are UTC. Provider output and credentials are excluded.")) i18n_text: "Up to 100 events from this service session. Times are UTC. Provider output and credentials are excluded."}
+                            service_log_text := Text {}
+                            copy_service_logs := Action {text: #(crate::i18n::tr("Copy logs")) i18n_text: "Copy logs"}
+                        }
                         runtime_start_options := View {width: Fill height: Fit flow: Down spacing: 8
                         Text {text: #(crate::i18n::tr("Estimated token accounting is used by default. Reserve tokens before each request; actual usage may exceed the estimate. Missing usage is recorded as zero and the reservation is released automatically.")) i18n_text: "Estimated token accounting is used by default. Reserve tokens before each request; actual usage may exceed the estimate. Missing usage is recorded as zero and the reservation is released automatically."}
                         start_requirements := Text {draw_text.color: mod.widgets.RINX_MUTED}
@@ -941,6 +979,7 @@ pub struct HagencyPanel {
     #[rust]
     runtime_room_active: bool,
     #[rust] agent_service_state: Value,
+    #[rust] service_logs_open: bool,
     #[rust] runtime_pending_action: Option<bool>,
     #[rust] model_saving: bool,
     #[rust] model_save_message: String,
@@ -1062,13 +1101,18 @@ impl HagencyPanel {
         if self.runtime_list_loading || !self.active || self.page!=Page::Agents || !self.view.view(cx,ids!(agent_list_holder)).visible() {return;}
         let Ok(service)=Service::for_current() else {return;};
         if service.identity()!=self.identity {return;}
-        let agents=self.agents.iter().filter(|a| agent_device_state(a,&self.current_device_id,&self.execution_devices,self.devices_loaded)==AgentDeviceState::Here).map(|a|string(a,"id").to_owned()).collect::<Vec<_>>();
+        let agents=self.agents.iter().filter_map(|a| {
+            let state=agent_device_state(a,&self.current_device_id,&self.execution_devices,self.devices_loaded);
+            matches!(state,AgentDeviceState::Here|AgentDeviceState::Other).then(||(string(a,"id").to_owned(),state==AgentDeviceState::Here))
+        }).collect::<Vec<_>>();
         self.runtime_list_request=nonce(); let request=self.runtime_list_request; let identity=self.identity.clone();
         self.runtime_list_loading=true;self.view.redraw(cx);
         cx.stop_timer(self.runtime_list_timer);
         spawn_async_task(async move {
-            let states=futures::future::join_all(agents.into_iter().map(|agent|{let service=service.clone(); async move {
-                let result=tokio::time::timeout(std::time::Duration::from_secs(15),service.execute(Command::Local {agent_id:agent.clone(),action:LocalAction::AgentServiceStatus,input:None,binding_id:None,requester:None})).await.unwrap_or_else(|_|Err("runtime_status_unavailable".into()));
+            let states=futures::future::join_all(agents.into_iter().map(|(agent,local)|{let service=service.clone(); async move {
+                let command=if local {Command::Local {agent_id:agent.clone(),action:LocalAction::AgentServiceStatus,input:None,binding_id:None,requester:None}} else {Command::AgentConfigurationStatus {agent_id:agent.clone()}};
+                let result=tokio::time::timeout(std::time::Duration::from_secs(15),service.execute(command)).await.unwrap_or_else(|_|Err("runtime_status_unavailable".into()));
+                let result=result.map(|value|if local {value} else {value["configuration"].clone()});
                 (agent,result)
             }})).await;
             Cx::post_action(RuntimeListCompleted {identity,request,states});
@@ -1170,7 +1214,10 @@ impl HagencyPanel {
         });
         if matches!(state, AgentDeviceState::Here | AgentDeviceState::Other | AgentDeviceState::Unavailable) {
             let name = execution_device_name(&self.execution_devices,string(agent,"executionDeviceId"));
-            if !name.is_empty() {return format!("{label} · {name}");}
+            if !name.is_empty() {
+                if state==AgentDeviceState::Other {return format!("{label} · {name} · {}",crate::i18n::tr(remote_presence_label(self.runtime_list.get(string(agent,"id")),agent)));}
+                return format!("{label} · {name}");
+            }
         }
         label.to_owned()
     }
@@ -1490,6 +1537,8 @@ impl HagencyPanel {
             return;
         };
         self.wanted_model=None;
+        self.service_logs_open=false;
+        self.view.view(cx,ids!(service_logs_panel)).set_visible(cx,false);
         self.model_saving=false;
         self.clear_model_save_feedback(cx);
         self.enter_detail(cx,"agent",string(&a,"id"));
@@ -2771,6 +2820,7 @@ impl HagencyPanel {
                 let label=runtime_list_label(Some(&Ok(value.clone())),self.agent(cx).as_deref().unwrap_or(""));
                 self.runtime_list_timer=cx.start_timeout(if label.starts_with("Starting") || label.starts_with("Checking") {2.0} else {10.0});
                 self.agent_service_state=value.clone();
+                self.view.label(cx,ids!(service_log_text)).set_text(cx,&service_log_text(value));
                 if self.input(cx,ids!(reservation)).is_empty() {
                     let reservation=value["service"]["reservation"].as_u64().filter(|n|*n>0).unwrap_or(10000);
                     self.view.text_input(cx,ids!(reservation)).set_text(cx,&reservation.to_string());
@@ -4015,6 +4065,15 @@ impl Widget for HagencyPanel {
             self.render_room_advanced(cx);
             return;
         }
+        if self.view.button(cx,ids!(service_logs_toggle)).clicked(actions) {
+            self.service_logs_open=!self.service_logs_open;
+            self.view.view(cx,ids!(service_logs_panel)).set_visible(cx,self.service_logs_open);
+            self.view.label(cx,ids!(service_log_text)).set_text(cx,&service_log_text(&self.agent_service_state));
+            return;
+        }
+        if self.view.button(cx,ids!(copy_service_logs)).clicked(actions) {
+            cx.copy_to_clipboard(&service_log_text(&self.agent_service_state));return;
+        }
         if self.view.button(cx,ids!(service_advanced_toggle)).clicked(actions) {
             self.service_advanced=!self.service_advanced;self.render_service_advanced(cx);return;
         }
@@ -4240,7 +4299,7 @@ impl Widget for HagencyPanel {
                     let identity_state=crate::i18n::tr(if string(value,"state")=="active" {"Server identity active"} else {"Server identity pending"});
                     let local=match agent_device_state(value,&self.current_device_id,&self.execution_devices,self.devices_loaded) {
                         AgentDeviceState::Here=>runtime_service_description(self.runtime_list.get(string(value,"id")),string(value,"id")),
-                        AgentDeviceState::Other=>crate::i18n::tr("Processing is assigned to another device; this device does not run it.").to_owned(),
+                        AgentDeviceState::Other=>format!("{}\n{}",crate::i18n::tr("Processing is assigned to another device; this device does not run it."),crate::i18n::tr(remote_presence_label(self.runtime_list.get(string(value,"id")),value))),
                         AgentDeviceState::Checking=>crate::i18n::tr("Checking execution device…").to_owned(),
                         _=>crate::i18n::tr("No available execution device. Open Agent settings to assign this device.").to_owned(),
                     };
@@ -4303,6 +4362,9 @@ impl HagencyPanelRef {
         let identity = service.identity();
         if panel.identity != identity {
             panel.model_saving=false;panel.clear_model_save_feedback(cx);
+            panel.service_logs_open=false;panel.agent_service_state=Value::Null;
+            panel.view.view(cx,ids!(service_logs_panel)).set_visible(cx,false);
+            panel.view.label(cx,ids!(service_log_text)).set_text(cx,"");
             panel.clear_members(cx);
             panel.projects.clear();
             panel.rooms.clear();
@@ -4784,6 +4846,29 @@ mod tests {
         assert!(description.contains("provider_authorization_lost"));
         assert!(description.contains("8s"));
         assert!(!runtime_diagnostic("secret /private/provider-stderr token=123").contains("secret"));
+    }
+    #[test]
+    fn remote_device_presence_is_fenced_and_does_not_claim_agent_readiness() {
+        let agent=json!({"id":"a","generation":2,"executionDeviceId":"d"});
+        let mut status=json!({"agentId":"a","agentGeneration":2,"executionDeviceId":"d","deviceGeneration":1,"online":true,"lastSeenAtMs":123});
+        assert_eq!(remote_presence_label(Some(&Ok(status.clone())),&agent),"Device online · Agent readiness is separate");
+        status["online"]=json!(false);
+        assert_eq!(remote_presence_label(Some(&Ok(status.clone())),&agent),"Device offline · no recent heartbeat");
+        status["lastSeenAtMs"]=Value::Null;
+        assert_eq!(remote_presence_label(Some(&Ok(status.clone())),&agent),"No device heartbeat observed");
+        status["deviceGeneration"]=Value::Null;
+        assert_eq!(remote_presence_label(Some(&Ok(status.clone())),&agent),"Device unavailable · no active device session");
+        status["agentGeneration"]=json!(1);
+        assert_eq!(remote_presence_label(Some(&Ok(status)),&agent),"Device status unknown");
+    }
+    #[test]
+    fn service_logs_present_safe_errors_and_retry_does_not_duplicate_summary() {
+        let value=json!({"service":{"logs":[{"atMs":1792443600000i64,"phase":"retrying","error":"codex_web_search_unavailable","bindingId":"b","retryInSeconds":60}]}});
+        let text=service_log_text(&value);
+        assert!(text.contains("2026-10"));assert!(text.contains("UTC"));assert!(text.contains("codex_web_search_unavailable"));
+        assert!(!runtime_diagnostic("codex_provider_configuration_rejected").contains("account changed"));
+        let value=json!({"runtime":{"agentId":"a","lastError":"provider_authorization_lost"},"service":{"problems":[{"error":"provider_authorization_lost","retryInSeconds":8}]}});
+        assert_eq!(runtime_service_description(Some(&Ok(value)),"a").matches("provider_authorization_lost").count(),1);
     }
     #[test]
     fn service_detail_does_not_claim_readiness_and_preserves_action_failure() {

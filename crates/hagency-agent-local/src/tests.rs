@@ -381,7 +381,7 @@ fn local_model_profile_contains_only_a_keychain_reference() {
     let mut profile = ModelProfile {
         model: "codex".into(),
         credential_ref: "raw-secret".into(),
-        workspace_root: "/tmp/task".into(),
+        workspace_root: tmp.path().to_string_lossy().into_owned(),
         reasoning_effort: String::new(),
         web_search: true,
     };
@@ -401,7 +401,7 @@ fn web_search_defaults_on_and_disabled_profile_survives_restart_and_legacy_migra
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("local.db");
     let mut ledger = setup(&path);
-    let mut profile: ModelProfile = serde_json::from_value(serde_json::json!({"model":"codex","credential_ref":"keychain:owner","workspace_root":"/tmp/task","reasoning_effort":"low"})).unwrap();
+    let mut profile: ModelProfile = serde_json::from_value(serde_json::json!({"model":"codex","credential_ref":"keychain:owner","workspace_root":tmp.path().to_string_lossy(),"reasoning_effort":"low"})).unwrap();
     assert!(profile.web_search);
     profile.web_search = false;
     ledger.set_model_profile(OWNER, &scope(), &profile).unwrap();

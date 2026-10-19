@@ -16,6 +16,44 @@ struct ServiceHealth {
     phase: &'static str,
     last_error: Option<&'static str>,
     problems: Vec<serde_json::Value>,
+    logs: Vec<serde_json::Value>,
+}
+fn publish_health(sender: &watch::Sender<ServiceHealth>, mut next: ServiceHealth) {
+    let previous = sender.borrow().clone();
+    next.logs = previous.logs;
+    let at = wall_ms();
+    if next.phase != previous.phase || next.last_error != previous.last_error {
+        next.logs
+            .push(serde_json::json!({"atMs":at,"phase":next.phase,"error":next.last_error}));
+    }
+    for problem in &next.problems {
+        if !previous.problems.iter().any(|old| {
+            old["bindingId"] == problem["bindingId"]
+                && old["error"] == problem["error"]
+                && old["failures"] == problem["failures"]
+        }) {
+            next.logs.push(serde_json::json!({"atMs":at,"phase":"retrying","bindingId":problem["bindingId"],"error":problem["error"],"retryInSeconds":problem["retryInSeconds"]}));
+        }
+    }
+    if next.logs.len() > 100 {
+        next.logs.drain(..next.logs.len() - 100);
+    }
+    sender.send_replace(next);
+}
+fn record_runtime_error(
+    sender: &watch::Sender<ServiceHealth>,
+    phase: &'static str,
+    binding: &str,
+    error: &'static str,
+) {
+    let mut health = sender.borrow().clone();
+    health.logs.push(
+        serde_json::json!({"atMs":wall_ms(),"phase":phase,"bindingId":binding,"error":error}),
+    );
+    if health.logs.len() > 100 {
+        health.logs.drain(..health.logs.len() - 100);
+    }
+    sender.send_replace(health);
 }
 struct RetryState {
     failures: u8,
@@ -315,9 +353,15 @@ impl OwnedRuntime {
         config.recovery_consent_id = None;
         let (cancel, mut receiver) = watch::channel(false);
         let (health, health_receiver) = watch::channel(ServiceHealth {
-            phase: "starting",
             ..Default::default()
         });
+        publish_health(
+            &health,
+            ServiceHealth {
+                phase: "starting",
+                ..Default::default()
+            },
+        );
         let gate = Arc::new(Mutex::new(()));
         let task_gate = gate.clone();
         let manager = self.clone();
@@ -326,6 +370,7 @@ impl OwnedRuntime {
         let agent_id = config.agent_id.clone();
         let task = tokio::spawn(async move {
             let mut attempted = BTreeSet::new();
+            let mut runtime_errors: BTreeMap<String, &'static str> = BTreeMap::new();
             let mut retries: BTreeMap<String, RetryState> = BTreeMap::new();
             let mut takeover_consumed = false;
             let mut discovery_failures = 0u8;
@@ -351,6 +396,10 @@ impl OwnedRuntime {
                         let snapshot = manager.status(&host, &intent.agent_id).await?;
                         for child in snapshot.as_ref().into_iter().flat_map(|status| &status.bindings) {
                             let Some(binding) = child.binding_id.as_ref() else {continue;};
+                            if let Some(error)=child.last_error {
+                                if runtime_errors.get(binding)!=Some(&error) {record_runtime_error(&health,child.phase,binding,error);}
+                                runtime_errors.insert(binding.clone(),error);
+                            } else {runtime_errors.remove(binding);}
                             if !active.contains(binding) {
                                 manager.stop(&host, &intent.agent_id, binding).await?;
                             } else if child.phase == "stopped" && attempted.remove(binding) {
@@ -359,6 +408,7 @@ impl OwnedRuntime {
                                 retries.remove(binding);
                             }
                         }
+                        runtime_errors.retain(|binding,_|active.contains(binding));
                         attempted.retain(|binding| active.contains(binding));
                         retries.retain(|binding,_| active.contains(binding));
                         for binding in active {
@@ -387,17 +437,20 @@ impl OwnedRuntime {
                                 }
                             }
                         }
-                        health.send_replace(ServiceHealth {phase:if retries.is_empty(){"serving"}else{"retrying"},last_error:None,
-                            problems:retries.iter().map(|(binding,retry)|serde_json::json!({"bindingId":binding,"error":retry.error,"retryInSeconds":retry.next.saturating_duration_since(Instant::now()).as_secs()})).collect()});
+                        publish_health(&health,ServiceHealth {phase:if retries.is_empty(){"serving"}else{"retrying"},last_error:None,
+                            problems:retries.iter().map(|(binding,retry)|serde_json::json!({"bindingId":binding,"error":retry.error,"failures":retry.failures,"retryInSeconds":retry.next.saturating_duration_since(Instant::now()).as_secs()})).collect(),..Default::default()});
                         Ok(())
                     } => result
                 };
                 if result.is_err() {
-                    health.send_replace(ServiceHealth {
-                        phase: "disconnected",
-                        last_error: failure_code(&result),
-                        problems: Vec::new(),
-                    });
+                    publish_health(
+                        &health,
+                        ServiceHealth {
+                            phase: "disconnected",
+                            last_error: failure_code(&result),
+                            ..Default::default()
+                        },
+                    );
                 }
                 if matches!(
                     result,
@@ -419,7 +472,7 @@ impl OwnedRuntime {
             }
             let mut final_health = health.borrow().clone();
             final_health.phase = "stopped";
-            health.send_replace(final_health);
+            publish_health(&health, final_health);
             // Account/device revocation also drains children; the journal stays
             // pinned for a later authenticated startup, never a bearer replay.
             let _ = manager
@@ -508,7 +561,7 @@ impl OwnedRuntime {
         Ok(serde_json::json!({"runtime":runtime,"service":{
             "enabled":intent.is_some(),"running":running,"watcherRunning":watcher_running,"warning":options_warning,"phase":health.phase,"lastError":health.last_error,"problems":health.problems,"deviceId":device.device_id(),
             "reservation":options.as_ref().map(|value|value.reservation).or_else(||intent.as_ref().map(|value|value.reservation)),"effort":options.as_ref().map(|value| &value.effort).or_else(||intent.as_ref().map(|value| &value.effort)),
-            "modelConfigured":model_configured,"rooms":reply.value["bindings"]},"nativeTools":false,"strictTokenCap":false}))
+            "logs":health.logs,"modelConfigured":model_configured,"rooms":reply.value["bindings"]},"nativeTools":false,"strictTokenCap":false}))
     }
     pub(in crate::console) async fn stop_agent_service(
         &self,
@@ -690,6 +743,47 @@ mod tests {
                 .intents
                 .is_empty()
         );
+    }
+    #[test]
+    fn service_logs_capture_retries_bound_history_and_use_milliseconds() {
+        let (sender, _receiver) = watch::channel(ServiceHealth::default());
+        for failure in 1..=120 {
+            publish_health(
+                &sender,
+                ServiceHealth {
+                    phase: "retrying",
+                    problems: vec![
+                        serde_json::json!({"bindingId":"b","error":"codex_provider_configuration_rejected","failures":failure,"retryInSeconds":60}),
+                    ],
+                    ..Default::default()
+                },
+            );
+        }
+        let state = sender.borrow().clone();
+        assert_eq!(state.logs.len(), 100);
+        assert!(state.logs[0]["atMs"].as_i64().unwrap() > 1_700_000_000_000);
+        let count = state.logs.len();
+        publish_health(
+            &sender,
+            ServiceHealth {
+                problems: state.problems.clone(),
+                phase: "retrying",
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            sender.borrow().logs.len(),
+            count,
+            "polling must not duplicate events"
+        );
+        publish_health(
+            &sender,
+            ServiceHealth {
+                phase: "serving",
+                ..Default::default()
+            },
+        );
+        assert_eq!(sender.borrow().logs.last().unwrap()["phase"], "serving");
     }
     #[test]
     fn transient_worker_retries_back_off_without_becoming_permanent() {

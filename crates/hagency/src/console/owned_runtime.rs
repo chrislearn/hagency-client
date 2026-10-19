@@ -1265,13 +1265,36 @@ fn provider_failure(stage: &'static str, error: &codex::Error) -> RuntimeError {
     );
     match error {
         codex::Error::Profile("dedicated owner provider login required") => RuntimeError::Provider,
-        codex::Error::Profile(_) | codex::Error::Ledger(_) => RuntimeError::Profile,
+        codex::Error::Profile(
+            "missing executable or directory" | "canonical absolute paths required",
+        ) => RuntimeError::Profile,
+        codex::Error::Profile("provider live web search unavailable") => {
+            RuntimeError::Execution("codex_web_search_unavailable")
+        }
+        codex::Error::Profile(_) => {
+            RuntimeError::Execution("codex_provider_configuration_rejected")
+        }
+        codex::Error::Ledger(_) => RuntimeError::Profile,
         codex::Error::Timeout => RuntimeError::Execution("codex_provider_timeout"),
         codex::Error::Protocol(_) | codex::Error::EventScope { .. } | codex::Error::Json(_) => {
             RuntimeError::Execution("codex_protocol_mismatch")
         }
         _ => RuntimeError::Execution("codex_provider_unavailable"),
     }
+}
+async fn check_provider(session: &mut runtime::Session) -> Result<(), RuntimeError> {
+    session
+        .initialize()
+        .await
+        .map_err(|error| provider_failure("provider_initialize", &error))?;
+    session
+        .verify_host_environment()
+        .await
+        .map_err(|error| provider_failure("provider_environment", &error))?;
+    session
+        .require_local_account()
+        .await
+        .map_err(|error| provider_failure("provider_account", &error))
 }
 /// Consume stable metadata pages without retaining unbounded message/history payloads.
 async fn history_coverage<T: Transport>(
@@ -1481,9 +1504,12 @@ async fn run_host(
     let agent = initial.config.agent_id.clone();
     // Verify the owner's dedicated provider before any acquisition or explicit
     // takeover can disrupt an existing device. This is account/config only.
-    let mut provider = tokio::select! {biased;_=canceled(&mut cancel)=>return Err(RuntimeError::Stopped),p=runtime::spawn(&initial.config.profile,&initial.config.credential_ref)=>p.map_err(|_|RuntimeError::Provider)?};
-    let checked = tokio::select! {biased;_=canceled(&mut cancel)=>Err(RuntimeError::Stopped),r=async {provider.session.initialize().await?;provider.session.verify_host_environment().await?;provider.session.require_local_account().await}=>r.map_err(|_|RuntimeError::Provider)};
-    provider.stop().await.map_err(|_| RuntimeError::Provider)?;
+    let mut provider = tokio::select! {biased;_=canceled(&mut cancel)=>return Err(RuntimeError::Stopped),p=runtime::spawn(&initial.config.profile,&initial.config.credential_ref)=>p.map_err(|error|provider_failure("provider_spawn", &error))?};
+    let checked = tokio::select! {biased;_=canceled(&mut cancel)=>Err(RuntimeError::Stopped),r=async {check_provider(&mut provider.session).await}=>r};
+    provider
+        .stop()
+        .await
+        .map_err(|error| provider_failure("provider_stop", &error))?;
     checked?;
     let mut ledger = local(Ledger::open_scoped(&path, &owner, &profile_id))?;
     let (lease, history_snapshot, pre_covered) = acquire_for_start(
@@ -1529,9 +1555,9 @@ async fn run_host(
             tokio::spawn(async move {
                 let mut work=work;
                 let result=async {
-                    let mut provider=tokio::select! {biased;_=canceled(&mut work.receiver)=>return Err(RuntimeError::Stopped),p=runtime::spawn(&work.config.profile,&work.config.credential_ref)=>p.map_err(|_|RuntimeError::Profile)?};
-                    let checked=tokio::select! {biased;_=canceled(&mut work.receiver)=>Err(RuntimeError::Stopped),r=async {provider.session.initialize().await?;provider.session.verify_host_environment().await?;provider.session.require_local_account().await}=>r.map_err(|_|RuntimeError::Provider)};
-                    provider.stop().await.map_err(|_|RuntimeError::Provider)?;checked?;
+                    let mut provider=tokio::select! {biased;_=canceled(&mut work.receiver)=>return Err(RuntimeError::Stopped),p=runtime::spawn(&work.config.profile,&work.config.credential_ref)=>p.map_err(|error|provider_failure("provider_spawn", &error))?};
+                    let checked=tokio::select! {biased;_=canceled(&mut work.receiver)=>Err(RuntimeError::Stopped),r=async {check_provider(&mut provider.session).await}=>r};
+                    provider.stop().await.map_err(|error|provider_failure("provider_stop", &error))?;checked?;
                     let mut ledger=local(Ledger::open_scoped(&path,&owner,&profile_id))?;
                     let mut ready=RuntimeStatus::new(&work.config.agent_id,if models_allowed{"online_chat_only"}else{"ledger_recovery_required"},if models_allowed{None}else{Some("ledger_recovery_required")}).with_capabilities(&work.config);ready.binding_id=Some(work.config.binding_id.clone());work.status.send_replace(ready);
                     execution_loop_with_gate(&transport,&owner,&mut ledger,&work.config,&reference,&mut work.receiver,&work.status,models_allowed).await
@@ -2307,7 +2333,10 @@ async fn run_turn<T: Transport>(
         }
     };
     if !allow {
-        provider.stop().await.map_err(|_| RuntimeError::Provider)?;
+        provider
+            .stop()
+            .await
+            .map_err(|error| provider_failure("provider_stop", &error))?;
         return if *cancel.borrow() {
             Err(RuntimeError::Stopped)
         } else {
@@ -2350,11 +2379,14 @@ async fn run_turn<T: Transport>(
         Ok(completed)=>Ok(Ok(completed)),
         Err(codex::Error::Ledger(hagency_agent_local::Error::Denied))=>Ok(Err("⏸️ 本次请求未获 Agent 主人的处理授权，未调用模型。")),
         Err(codex::Error::Ledger(hagency_agent_local::Error::Budget))=>Ok(Err("⏸️ 暂停处理：Token 可用额度不足，无法为本次请求预留额度。请联系 Agent 主人调整配额。本次未调用模型。")),
-        Err(codex::Error::Failed)=>{provider.stop().await.map_err(|_|RuntimeError::Provider)?;return Ok(Some(Finish::Failed));},
+        Err(codex::Error::Failed)=>{provider.stop().await.map_err(|error|provider_failure("provider_stop", &error))?;return Ok(Some(Finish::Failed));},
         Err(error)=>Err(provider_failure("agent_turn_result", &error)),
     }};
     // Dropping a running turn first seals its reservation; then kill the child.
-    provider.stop().await.map_err(|_| RuntimeError::Provider)?;
+    provider
+        .stop()
+        .await
+        .map_err(|error| provider_failure("provider_stop", &error))?;
     let completed = match result? {
         Ok(completed) => completed,
         Err(reason) => {
@@ -2547,6 +2579,18 @@ mod tests {
             (
                 super::codex::Error::Protocol("cross-turn event"),
                 "codex_protocol_mismatch",
+            ),
+            (
+                super::codex::Error::Profile("provider live web search unavailable"),
+                "codex_web_search_unavailable",
+            ),
+            (
+                super::codex::Error::Profile("provider native feature gate differs"),
+                "codex_provider_configuration_rejected",
+            ),
+            (
+                super::codex::Error::Profile("dedicated owner provider login required"),
+                "provider_authorization_lost",
             ),
             (super::codex::Error::Unknown, "codex_provider_unavailable"),
             (super::codex::Error::Timeout, "codex_provider_timeout"),

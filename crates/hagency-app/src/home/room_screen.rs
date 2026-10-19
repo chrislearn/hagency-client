@@ -5046,6 +5046,12 @@ fn populate_message_view(
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
 ) -> (WidgetRef, ItemDrawnStatus) {
+    let status_notice=if matches!(&msg_like_content.kind,MsgLikeKind::Message(msg) if matches!(msg.msgtype(),MessageType::Notice(_))) {
+        event_tl_item.latest_json().and_then(|raw| raw.get_field::<serde_json::Value>("content").ok()).flatten()
+            .and_then(|content|crate::room::request_notice::presentation(&content))
+    } else {None};
+    // Status text is viewer-local and must refresh even for cached timeline rows.
+    let item_drawn_status=if status_notice.is_some() {ItemDrawnStatus {content_drawn:false,..item_drawn_status}} else {item_drawn_status};
     let mut new_drawn_status = item_drawn_status;
     let ts_millis = event_tl_item.timestamp();
 
@@ -5215,11 +5221,13 @@ fn populate_message_view(
                         });
                         let mut link_preview_ref =
                             item.link_preview(cx, ids!(content.link_preview_view));
+                        let localized_body=status_notice.as_deref().unwrap_or(body);
+                        let localized_formatted=if status_notice.is_some() {None} else {formatted.as_ref()};
                         let (body, formatted) = present_message_body(
                             #[cfg(feature = "agent_chat")]
                             &mut agent_presentation,
-                            body,
-                            formatted.as_ref(),
+                            localized_body,
+                            localized_formatted,
                         );
                         new_drawn_status.content_drawn = populate_text_message_content(
                             cx,
@@ -5728,7 +5736,7 @@ fn populate_message_view(
             cx,
             &reply,
             timeline_kind,
-            msg_like_content.in_reply_to.as_ref(),
+            if status_notice.is_some() {None} else {msg_like_content.in_reply_to.as_ref()},
             event_tl_item.event_id(),
         );
         let is_thread_summary_fully_drawn = populate_thread_root_summary(
@@ -5825,7 +5833,7 @@ fn populate_message_view(
         let text = match &msg_like_content.kind {
             MsgLikeKind::Message(msg) => match msg.msgtype() {
                 MessageType::Text(text) => Some((&text.body, text.formatted.as_ref())),
-                MessageType::Notice(text) => Some((&text.body, text.formatted.as_ref())),
+                MessageType::Notice(text) if status_notice.is_none() => Some((&text.body, text.formatted.as_ref())),
                 _ => None,
             },
             _ => None,
@@ -5840,7 +5848,7 @@ fn populate_message_view(
             item.widget(cx, ids!(content.message)).set_visible(cx, false);
         } else {
             reply.hide(cx);
-            if text.is_some() { item.widget(cx, ids!(content.message)).set_visible(cx, true); }
+            if text.is_some() || status_notice.is_some() { item.widget(cx, ids!(content.message)).set_visible(cx, true); }
         }
     }
 

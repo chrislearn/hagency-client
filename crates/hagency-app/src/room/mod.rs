@@ -9,6 +9,7 @@ use crate::shared::avatar::AvatarImage;
 use crate::utils::RoomNameId;
 
 pub mod reply_preview;
+pub(crate) mod request_notice;
 pub mod room_input_bar;
 mod speech_input;
 pub mod room_display_filter;
