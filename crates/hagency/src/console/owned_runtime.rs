@@ -1661,7 +1661,6 @@ async fn execution_loop<T: Transport>(
 ) -> Result<(), RuntimeError> {
     execution_loop_with_gate(console, owner, ledger, config, lease, cancel, status, true).await
 }
-#[allow(clippy::too_many_arguments)]
 async fn wait_for_update_fence(
     gate: &crate::update_guard::UpdateGate,
     cancel: &mut watch::Receiver<bool>,
@@ -1683,6 +1682,7 @@ async fn wait_for_update_fence(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execution_loop_with_gate<T: Transport>(
     console: &T,
     owner: &str,
