@@ -10,6 +10,7 @@ use crate::{home::room_screen::TimelineUpdate, shared::attachment_download::medi
 pub struct MediaCacheValue {
     full_file: Option<MediaCacheEntryRef>,
     thumbnail: Option<(MediaCacheEntryRef, MediaThumbnailSettings)>,
+    last_used: u64,
 }
 
 /// An entry in the media cache.
@@ -37,7 +38,8 @@ pub struct MediaCache {
     /// looking up entries by reference (`&OwnedMxcUri`) without cloning the key.
     cache: HashMap<OwnedMxcUri, MediaCacheValue>,
     /// A channel to send updates to a particular timeline when a media request has completed.
-    timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    timeline_update_sender: Option<crate::timeline_updates::Sender>,
+    clock: u64,
 }
 impl Deref for MediaCache {
     type Target = HashMap<OwnedMxcUri, MediaCacheValue>;
@@ -52,28 +54,39 @@ impl DerefMut for MediaCache {
 }
 
 impl MediaCache {
+    #[cfg(feature = "chat-stress")]
+    pub fn seed_stress_image(&mut self, uri: OwnedMxcUri, bytes: Arc<[u8]>) {
+        if !crate::memory_budget::admit_encoded(&bytes) { return; }
+        let entry = Arc::new(Mutex::new(MediaCacheEntry::Loaded(bytes)));
+        let MediaFormat::Thumbnail(settings) = crate::utils::MEDIA_THUMBNAIL_FORMAT.into() else { unreachable!() };
+        self.clock += 1;
+        self.cache.insert(uri, MediaCacheValue {full_file: Some(entry.clone()),
+            thumbnail: Some((entry, settings)), last_used: self.clock});
+        self.trim(None);
+    }
     /// Creates a new media cache that will use the given media format
     /// when fetching media from the server.
     ///
     /// It will also optionally send updates to the given timeline update sender
     /// when a media request has completed.
     pub fn new(
-        timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+        timeline_update_sender: Option<crate::timeline_updates::Sender>,
     ) -> Self {
         Self {
             cache: HashMap::new(),
             timeline_update_sender,
+            clock: 0,
         }
     }
 
-    pub fn timeline_update_sender(&self) -> Option<&crossbeam_channel::Sender<TimelineUpdate>> {
+    pub fn timeline_update_sender(&self) -> Option<&crate::timeline_updates::Sender> {
         self.timeline_update_sender.as_ref()
     }
 
     /// Sets a new timeline update sender for this media cache's timeline.
     pub fn set_timeline_update_sender(
         &mut self,
-        sender: crossbeam_channel::Sender<TimelineUpdate>,
+        sender: crate::timeline_updates::Sender,
     ) {
         self.timeline_update_sender = Some(sender);
     }
@@ -96,9 +109,17 @@ impl MediaCache {
         requested_format: MediaFormat,
     ) -> (MediaCacheEntry, MediaFormat) {
         let mxc_uri = media_source_mxc(source);
+        self.clock = self.clock.saturating_add(1);
+        if let Some(value) = self.cache.get_mut(mxc_uri) {
+            value.last_used = self.clock;
+        }
+        self.trim(Some(mxc_uri));
         let mut post_request_retval = (MediaCacheEntry::Requested, requested_format.clone());
         let entry_ref_to_fetch: MediaCacheEntryRef;
 
+        if !self.cache.contains_key(mxc_uri) && self.cache.len() >= 128 {
+            return post_request_retval;
+        }
         let entry = self.cache.raw_entry_mut().from_key(mxc_uri);
 
         match entry {
@@ -157,10 +178,12 @@ impl MediaCache {
                     MediaFormat::Thumbnail(requested_mts) => MediaCacheValue {
                         full_file: None,
                         thumbnail: Some((Arc::clone(&entry_ref), requested_mts.clone())),
+                        last_used: self.clock,
                     },
                     MediaFormat::File => MediaCacheValue {
                         full_file: Some(Arc::clone(&entry_ref)),
                         thumbnail: None,
+                        last_used: self.clock,
                     },
                 };
                 vacant.insert(mxc_uri.clone(), value);
@@ -204,6 +227,36 @@ impl MediaCache {
         });
     }
 
+    /// Drop old completed media; leave in-flight entries in place to deduplicate requests.
+    /// The current asset is pinned for this draw, including a single oversized asset.
+    pub fn trim(&mut self, pinned: Option<&OwnedMxcUri>) {
+        const MAX_BYTES: usize = 32 * 1024 * 1024;
+        const MAX_ENTRIES: usize = 128;
+        let mut bytes = 0usize;
+        let mut candidates = Vec::new();
+        for (uri, value) in &self.cache {
+            let mut size = 0usize;
+            let mut pending = false;
+            for entry in value.full_file.iter().chain(value.thumbnail.iter().map(|(entry, _)| entry)) {
+                match &*entry.lock().unwrap() {
+                    MediaCacheEntry::Loaded(data) => size = size.saturating_add(data.len()),
+                    MediaCacheEntry::Requested => pending = true,
+                    MediaCacheEntry::Failed(_) => {},
+                }
+            }
+            bytes = bytes.saturating_add(size);
+            if !pending && pinned != Some(uri) { candidates.push((value.last_used, uri.clone(), size)); }
+        }
+        candidates.sort_unstable_by_key(|(used, _, _)| *used);
+        for (_, uri, size) in candidates {
+            if bytes <= MAX_BYTES && self.cache.len() <= MAX_ENTRIES { break }
+            self.cache.remove(&uri);
+            bytes = bytes.saturating_sub(size);
+        }
+    }
+
+    pub fn clear(&mut self) { self.cache.clear(); }
+
 }
 
 /// Converts a Matrix SDK error to a MediaCacheEntry::Failed with appropriate status codes.
@@ -222,9 +275,7 @@ pub(crate) fn error_to_media_cache_entry(error: Error, request: &MediaRequestPar
                 match http_error {
                     HttpError::Reqwest(reqwest_error) => {
                         // Checking if the connection is timeout is not important as Matrix SDK has implemented maximum timeout duration.
-                        if !reqwest_error.is_connect() {
-                            MediaCacheEntry::Failed(StatusCode::INTERNAL_SERVER_ERROR)
-                        } else if reqwest_error.is_status() {
+                        if reqwest_error.is_status() {
                             MediaCacheEntry::Failed(reqwest_error
                                 .status()
                                 .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR))
@@ -236,6 +287,8 @@ pub(crate) fn error_to_media_cache_entry(error: Error, request: &MediaRequestPar
                 }
             }
         }
+        Error::UnknownError(error) if error.is::<crate::media_transport::PreviewLimit>() => MediaCacheEntry::Failed(
+            if matches!(error.downcast_ref(),Some(crate::media_transport::PreviewLimit::TooLarge)) {StatusCode::PAYLOAD_TOO_LARGE} else {StatusCode::SERVICE_UNAVAILABLE}),
         Error::InsufficientData => MediaCacheEntry::Failed(StatusCode::PARTIAL_CONTENT),
         Error::AuthenticationRequired => MediaCacheEntry::Failed(StatusCode::UNAUTHORIZED),
         _ => MediaCacheEntry::Failed(StatusCode::INTERNAL_SERVER_ERROR)
@@ -247,12 +300,14 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
     value_ref: &Mutex<MediaCacheEntry>,
     request: MediaRequestParameters,
     data: matrix_sdk::Result<D>,
-    update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    update_sender: Option<crate::timeline_updates::Sender>,
 ) {
     let new_value = match data {
         Ok(data) => {
             let data = data.into();
-            MediaCacheEntry::Loaded(data)
+            if crate::memory_budget::admit_encoded(&data) {
+                MediaCacheEntry::Loaded(data)
+            } else { MediaCacheEntry::Failed(StatusCode::PAYLOAD_TOO_LARGE) }
         }
         Err(e) => error_to_media_cache_entry(e, &request)
     };
@@ -263,4 +318,35 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
         let _ = sender.send(TimelineUpdate::MediaFetched(request));
     }
     SignalToUI::set_ui_signal();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn uri(n: usize) -> OwnedMxcUri { format!("mxc://example.org/{n}").into() }
+    fn loaded(bytes: usize, used: u64) -> MediaCacheValue {
+        MediaCacheValue { full_file: Some(Arc::new(Mutex::new(MediaCacheEntry::Loaded(vec![0; bytes].into())))),
+            thumbnail: None, last_used: used }
+    }
+    #[test]
+    fn byte_budget_evicts_old_media_and_pins_the_current_asset() {
+        let mut cache = MediaCache::new(None);
+        cache.cache.insert(uri(1), loaded(20 * 1024 * 1024, 1));
+        cache.cache.insert(uri(2), loaded(20 * 1024 * 1024, 2));
+        cache.trim(Some(&uri(2)));
+        assert!(!cache.cache.contains_key(&uri(1)));
+        assert!(cache.cache.contains_key(&uri(2)));
+    }
+    #[test]
+    fn pending_media_stays_deduplicated_and_completed_entries_are_bounded() {
+        let mut cache = MediaCache::new(None);
+        for n in 0..140 { cache.cache.insert(uri(n), loaded(1, n as u64)); }
+        let pending = Arc::new(Mutex::new(MediaCacheEntry::Requested));
+        cache.cache.insert(uri(200), MediaCacheValue { full_file: Some(pending.clone()), thumbnail: None, last_used: 0 });
+        cache.trim(None);
+        assert_eq!(cache.cache.len(), 128);
+        assert!(Arc::ptr_eq(cache.cache[&uri(200)].full_file.as_ref().unwrap(), &pending));
+        let source = MediaSource::Plain(uri(200));
+        assert!(matches!(cache.try_get_media_or_fetch(&source, MediaFormat::File).0, MediaCacheEntry::Requested));
+    }
 }

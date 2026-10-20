@@ -7,7 +7,7 @@ use std::sync::{mpsc::Receiver, Arc};
 use chrono::{DateTime, Local};
 use makepad_widgets::{
     event::TouchUpdateEvent,
-    image_cache::{decode_image_from_data, looks_like_svg, ImageBuffer, ImageError},
+    image_cache::{decode_image_from_data, ImageBuffer, ImageError},
     *,
 };
 use matrix_sdk_ui::timeline::EventTimelineItem;
@@ -17,7 +17,14 @@ use crate::home::room_image_viewer::ImageViewerFetchAction;
 use crate::utils::format_decimal_file_size;
 use thiserror::Error;
 use crate::{
-    shared::{attachment_download::{DownloadableAttachment, save_loaded_attachment, share_loaded_attachment, start_attachment_download, start_attachment_share}, avatar::AvatarWidgetExt, timestamp::TimestampWidgetRefExt},
+    shared::{
+        attachment_download::{
+            DownloadableAttachment, save_loaded_attachment, share_loaded_attachment,
+            start_attachment_download, start_attachment_share,
+        },
+        avatar::AvatarWidgetExt,
+        timestamp::TimestampWidgetRefExt,
+    },
     sliding_sync::TimelineKind,
 };
 
@@ -26,6 +33,8 @@ const SHOW_UI_DURATION: f64 = 3.0;
 
 /// Duration of one 90° rotation spin, in seconds (matches the DSL const).
 const ROTATION_ANIMATION_DURATION_SECS: f64 = 0.2;
+
+type DecodedImage = Result<(ImageBuffer, crate::memory_budget::ImagePermit), ImageError>;
 
 /// Configuration for zoom and pan settings in the image viewer.
 #[derive(Clone, Debug)]
@@ -63,6 +72,8 @@ pub enum ImageViewerError {
     ServerError,
     #[error("This image format isn't supported")]
     UnsupportedFormat,
+    #[error("This image is too large to preview. Save the file to open it.")]
+    TooLarge,
     #[error("Unable to load image")]
     Unknown,
     #[error("Please reconnect your internet to load the image")]
@@ -373,72 +384,106 @@ pub enum ImageViewerAction {
 
 #[derive(Script, ScriptHook, Widget, Animator)]
 struct ImageViewer {
-    #[source] source: ScriptObjectRef,
-    #[deref] view: View,
-    #[rust] drag_state: DragState,
+    #[source]
+    source: ScriptObjectRef,
+    #[deref]
+    view: View,
+    #[rust]
+    drag_state: DragState,
     /// The current rotation angle of the image. Max of 4, each step represents 90 degrees
-    #[rust] rotation_step: i8,
+    #[rust]
+    rotation_step: i8,
     /// A lock to prevent multiple rotation animations from running at the same time
-    #[rust] is_animating_rotation: bool,
-    #[apply_default] animator: Animator,
+    #[rust]
+    is_animating_rotation: bool,
+    #[apply_default]
+    animator: Animator,
     /// Zoom constraints for the image viewer
-    #[rust] config: ImageViewerZoomConfig,
+    #[rust]
+    config: ImageViewerZoomConfig,
     /// Indicates if the mouse cursor is currently hovering over the image.
     /// If true, allows wheel scroll to zoom the image.
-    #[rust] mouse_cursor_hover_over_image: bool,
+    #[rust]
+    mouse_cursor_hover_over_image: bool,
     /// Distance between two touch points for pinch-to-zoom functionality
-    #[rust] previous_pinch_distance: Option<f64>,
+    #[rust]
+    previous_pinch_distance: Option<f64>,
     /// The ID of the background task that is currently running
-    #[rust] background_task_id: u32,
+    #[rust]
+    background_task_id: u32,
     /// The mpsc::Receiver used to receive the result of the background task
-    #[rust] receiver: Option<(u32, Receiver<Result<ImageBuffer, ImageError>>)>,
+    #[rust]
+    receiver: Option<(u32, Receiver<DecodedImage>)>,
+    #[rust]
+    image_permit: Option<crate::memory_budget::ImagePermit>,
     /// Whether the full image file has been loaded
-    #[rust] is_loaded: bool,
+    #[rust]
+    is_loaded: bool,
     /// The size of the image container.
-    #[rust] image_container_size: DVec2,
+    #[rust]
+    image_container_size: DVec2,
     /// Set when a `WindowAction::WindowGeomChange` arrives (resize/rotation),
     /// which gets handled on the next `draw_walk`.
-    #[rust] needs_refit: bool,
+    #[rust]
+    needs_refit: bool,
     /// Used to trigger a NextFrame event to re-fit the image instead of doing it mid-draw.
-    #[rust] refit_next_frame: NextFrame,
+    #[rust]
+    refit_next_frame: NextFrame,
     /// The texture containing the loaded image
-    #[rust] texture: Option<Texture>,
+    #[rust]
+    texture: Option<Texture>,
     /// The event to trigger displaying with the loaded image after peek_walk_turtle of the widget.
-    #[rust] next_frame: NextFrame,
+    #[rust]
+    next_frame: NextFrame,
     /// Whether the UI overlay (buttons + metadata) is currently visible or animating to visible.
-    #[rust] ui_overlay_visible: bool,
+    #[rust]
+    ui_overlay_visible: bool,
     /// Whether the mouse is hovering over the overlay UI (buttons or metadata).
     /// When true, the auto-hide timer should not run.
-    #[rust] mouse_over_overlay_ui: bool,
+    #[rust]
+    mouse_over_overlay_ui: bool,
     /// Whether the hide animation is currently playing. When it finishes,
     /// the overlay views are set to invisible.
-    #[rust] is_hiding_overlay: bool,
+    #[rust]
+    is_hiding_overlay: bool,
     /// Animated slide value for the UI overlay: 0.0 = fully visible, 1.0 = fully hidden.
     /// The animator interpolates this value; `draw_walk` uses it to position the views.
-    #[live] ui_overlay_slide: f32,
+    #[live]
+    ui_overlay_slide: f32,
     /// Timer used to animate-out (hide) the UI overlay after no user mouse/tap activity.
-    #[rust] hide_ui_timer: Timer,
+    #[rust]
+    hide_ui_timer: Timer,
     /// Last known mouse position, used to distinguish actual mouse movement
     /// from the continuous `FingerHoverOver` events that fire every frame.
-    #[rust] last_mouse_pos: DVec2,
-    #[rust] capped_dimension: DVec2,
+    #[rust]
+    last_mouse_pos: DVec2,
+    #[rust]
+    capped_dimension: DVec2,
     /// The image's intrinsic (unrotated) pixel size, kept so we can re-fit the
     /// rotated bounding box at every angle of the spin.
-    #[rust] natural_dimension: DVec2,
+    #[rust]
+    natural_dimension: DVec2,
     /// The currently-displayed rotation angle in degrees (continuous during the
     /// animated spin; settles on a multiple of 90°).
-    #[rust] current_angle: f64,
+    #[rust]
+    current_angle: f64,
     /// Animation endpoints for the in-progress rigid rotation.
-    #[rust] rotation_anim_from: f64,
-    #[rust] rotation_target_angle: f64,
+    #[rust]
+    rotation_anim_from: f64,
+    #[rust]
+    rotation_target_angle: f64,
     /// Wall-clock start of the rotation animation (set on its first frame).
-    #[rust] rotation_anim_start_time: Option<f64>,
+    #[rust]
+    rotation_anim_start_time: Option<f64>,
     /// Drives the per-frame rotation animation.
-    #[rust] rotation_next_frame: NextFrame,
+    #[rust]
+    rotation_next_frame: NextFrame,
     /// Info about how to download the image being shown.
-    #[rust] downloadable: Option<DownloadableAttachment>,
+    #[rust]
+    downloadable: Option<DownloadableAttachment>,
     /// A reference to the image being shown so we can easily save it to storage.
-    #[rust] loaded_bytes: Option<Arc<[u8]>>,
+    #[rust]
+    loaded_bytes: Option<Arc<[u8]>>,
 }
 
 impl Widget for ImageViewer {
@@ -471,11 +516,20 @@ impl Widget for ImageViewer {
                 let on_image = rotated_image.area().rect(cx).contains(he.abs);
                 if on_image != self.mouse_cursor_hover_over_image {
                     self.mouse_cursor_hover_over_image = on_image;
-                    cx.set_cursor(if on_image { MouseCursor::Hand } else { MouseCursor::Default });
+                    cx.set_cursor(if on_image {
+                        MouseCursor::Hand
+                    } else {
+                        MouseCursor::Default
+                    });
                 }
                 // Track whether cursor is over the overlay UI elements.
                 let on_overlay = button_group_rounded_view.area().rect(cx).contains(he.abs)
-                    || self.view.view(cx, ids!(metadata_rounded_view)).area().rect(cx).contains(he.abs);
+                    || self
+                        .view
+                        .view(cx, ids!(metadata_rounded_view))
+                        .area()
+                        .rect(cx)
+                        .contains(he.abs);
                 if on_overlay != self.mouse_over_overlay_ui {
                     self.mouse_over_overlay_ui = on_overlay;
                     if on_overlay {
@@ -496,9 +550,16 @@ impl Widget for ImageViewer {
             Hit::FingerDown(fe) if fe.is_primary_hit() => {
                 let click_pos = fe.abs;
                 let on_image = rotated_image.area().rect(cx).contains(click_pos);
-                let on_buttons = button_group_rounded_view.area().rect(cx).contains(click_pos);
-                let on_metadata = self.view.view(cx, ids!(metadata_rounded_view))
-                    .area().rect(cx).contains(click_pos);
+                let on_buttons = button_group_rounded_view
+                    .area()
+                    .rect(cx)
+                    .contains(click_pos);
+                let on_metadata = self
+                    .view
+                    .view(cx, ids!(metadata_rounded_view))
+                    .area()
+                    .rect(cx)
+                    .contains(click_pos);
                 if on_image {
                     self.drag_state.drag_start = fe.abs;
                     if self.drag_state.pan_offset.is_none() {
@@ -579,12 +640,24 @@ impl Widget for ImageViewer {
             self.handle_pinch_to_zoom(cx, touch_event);
         }
 
-        if let (Event::Signal, Some((_background_task_id, receiver))) = (event, &mut self.receiver) {
+        if let (Event::Signal, Some((_background_task_id, receiver))) = (event, &mut self.receiver)
+        {
             let mut remove_receiver = false;
             match receiver.try_recv() {
-                Ok(Ok(image_buffer)) => {
+                Ok(Ok((image_buffer, permit))) => {
+                    if self.image_permit.take().is_some() {
+                        if let Some(texture) = self.texture.take() {
+                            texture.release(cx);
+                            match texture.get_format(cx) {
+                                TextureFormat::VecBGRAu8_32 { data, .. }
+                                | TextureFormat::VecMipBGRAu8_32 { data, .. } => *data = None,
+                                _ => {}
+                            }
+                        }
+                    }
                     let texture = image_buffer.into_new_texture(cx);
                     self.texture = Some(texture);
+                    self.image_permit = Some(permit);
                     self.next_frame = cx.new_next_frame();
                     remove_receiver = true;
                     cx.action(ImageViewerAction::Show(
@@ -592,7 +665,11 @@ impl Widget for ImageViewer {
                     ));
                 }
                 Ok(Err(error)) => {
+                    remove_receiver = true;
                     let error = match error {
+                        ImageError::DataTooLarge { .. } | ImageError::DimensionsTooLarge { .. } => {
+                            ImageViewerError::TooLarge
+                        }
                         ImageError::JpgDecode(_)
                         | ImageError::PngDecode(_)
                         | ImageError::GifDecode(_)
@@ -606,7 +683,13 @@ impl Widget for ImageViewer {
                     };
                     cx.action(ImageViewerAction::Show(LoadState::Error(error)));
                 }
-                Err(_) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    remove_receiver = true;
+                    cx.action(ImageViewerAction::Show(LoadState::Error(
+                        ImageViewerError::BadData,
+                    )));
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
             }
             if remove_receiver {
                 self.receiver = None;
@@ -622,8 +705,12 @@ impl Widget for ImageViewer {
         // so their stale areas don't consume events.
         if self.is_hiding_overlay && !self.animator.is_track_animating(id!(ui_animator)) {
             self.is_hiding_overlay = false;
-            self.view.view(cx, ids!(button_group_view)).set_visible(cx, false);
-            self.view.view(cx, ids!(metadata_view)).set_visible(cx, false);
+            self.view
+                .view(cx, ids!(button_group_view))
+                .set_visible(cx, false);
+            self.view
+                .view(cx, ids!(metadata_view))
+                .set_visible(cx, false);
             self.view.redraw(cx);
         }
 
@@ -638,7 +725,13 @@ impl Widget for ImageViewer {
         }
 
         if event.back_pressed()
-            || matches!(event, Event::KeyDown(KeyEvent { key_code: KeyCode::Escape, .. }))
+            || matches!(
+                event,
+                Event::KeyDown(KeyEvent {
+                    key_code: KeyCode::Escape,
+                    ..
+                })
+            )
         {
             self.reset(cx);
             cx.action(ImageViewerAction::Hide);
@@ -650,7 +743,7 @@ impl Widget for ImageViewer {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // Handle a changed (or unknown/first) image container size 
+        // Handle a changed (or unknown/first) image container size
         let is_first = self.image_container_size.length() == 0.0;
         if is_first || self.needs_refit {
             self.needs_refit = false;
@@ -670,10 +763,10 @@ impl Widget for ImageViewer {
         let slide = self.ui_overlay_slide as f64;
         let insets = cx.display_context.safe_area_insets;
         let button_top_visible = 20.0_f64.max(insets.top);
-        let button_right        = 20.0_f64.max(insets.right);
-        let meta_top            = 20.0_f64.max(insets.top);
-        let meta_left           = 20.0_f64.max(insets.left);
-        let meta_right          = 20.0_f64.max(insets.right);
+        let button_right = 20.0_f64.max(insets.right);
+        let meta_top = 20.0_f64.max(insets.top);
+        let meta_left = 20.0_f64.max(insets.left);
+        let meta_right = 20.0_f64.max(insets.right);
         let meta_bottom_visible = 20.0_f64.max(insets.bottom);
         let button_top = button_top_visible - (slide * 220.0); // visible → -200
         let meta_bottom = meta_bottom_visible - (slide * 320.0); // visible → -300
@@ -712,7 +805,11 @@ impl MatchEvent for ImageViewer {
         }
 
         let mut was_overlay_button_clicked = false;
-        if self.view.button(cx, ids!(zoom_to_fit_button)).clicked(actions) {
+        if self
+            .view
+            .button(cx, ids!(zoom_to_fit_button))
+            .clicked(actions)
+        {
             was_overlay_button_clicked = true;
             self.reset(cx);
         }
@@ -726,7 +823,11 @@ impl MatchEvent for ImageViewer {
             self.adjust_zoom(cx, self.config.zoom_scale_factor);
         }
 
-        if self.view.button(cx, ids!(rotate_cw_button)).clicked(actions) {
+        if self
+            .view
+            .button(cx, ids!(rotate_cw_button))
+            .clicked(actions)
+        {
             was_overlay_button_clicked = true;
             self.start_rotation(cx, 90.0);
         }
@@ -758,18 +859,28 @@ impl MatchEvent for ImageViewer {
 
         for action in actions.iter() {
             match action.downcast_ref() {
-                Some(ImageViewerFetchAction::Loaded(bytes)) => {
-                    cx.action(ImageViewerAction::Show(LoadState::Loaded(bytes.clone())));
+                Some(ImageViewerFetchAction::Loaded(source, bytes))
+                    if self.is_current_media(source) =>
+                {
+                    self.accept_loaded(cx, bytes);
                 }
-                Some(ImageViewerFetchAction::Failed(error)) => {
-                    cx.action(ImageViewerAction::Show(LoadState::Error(error.clone())));
+                Some(ImageViewerFetchAction::Failed(source, error))
+                    if self.is_current_media(source) =>
+                {
+                    self.show_error(cx, error);
                 }
-                None => {}
+                _ => {}
             }
             if let Some(ImageViewerAction::Show(state)) = action.downcast_ref() {
                 match state {
                     LoadState::Loading(texture, metadata) => {
+                        self.reset(cx);
                         self.texture = texture.clone();
+                        if let Some(texture) = texture {
+                            let image = self.image(cx, ids!(rotated_image));
+                            image.set_texture(cx, Some(texture.clone()));
+                            crate::memory_budget::pin_texture(cx, &image, texture);
+                        }
                         self.next_frame = cx.new_next_frame();
                         if let Some(metadata) = metadata {
                             self.set_metadata(cx, metadata);
@@ -777,13 +888,12 @@ impl MatchEvent for ImageViewer {
                         self.show_loading(cx);
                     }
                     LoadState::Loaded(image_bytes) => {
-                        self.loaded_bytes = Some(image_bytes.clone());
-                        self.show_loaded(cx, image_bytes);
+                        self.accept_loaded(cx, image_bytes);
                     }
                     LoadState::FinishedBackgroundDecoding => {
                         self.is_loaded = true;
                         self.hide_footer(cx);
-                    },
+                    }
                     LoadState::Error(error) => {
                         self.show_error(cx, error);
                     }
@@ -799,8 +909,12 @@ impl ImageViewer {
         if !self.ui_overlay_visible {
             self.ui_overlay_visible = true;
             self.is_hiding_overlay = false;
-            self.view.view(cx, ids!(button_group_view)).set_visible(cx, true);
-            self.view.view(cx, ids!(metadata_view)).set_visible(cx, true);
+            self.view
+                .view(cx, ids!(button_group_view))
+                .set_visible(cx, true);
+            self.view
+                .view(cx, ids!(metadata_view))
+                .set_visible(cx, true);
             self.animator_play(cx, ids!(ui_animator.show));
             self.view.redraw(cx);
         }
@@ -821,8 +935,35 @@ impl ImageViewer {
         self.view.redraw(cx);
     }
 
+    fn is_current_media(&self, source: &matrix_sdk::ruma::MxcUri) -> bool {
+        self.downloadable.as_ref().is_some_and(|active| {
+            crate::shared::attachment_download::media_source_mxc(&active.media_source).as_str()
+                == source.as_str()
+        })
+    }
+
+    fn accept_loaded(&mut self, cx: &mut Cx, bytes: &Arc<[u8]>) {
+        if !crate::memory_budget::admit_encoded(bytes) {
+            self.show_error(cx, &ImageViewerError::TooLarge);
+            return;
+        }
+        self.loaded_bytes = Some(bytes.clone());
+        self.show_loaded(cx, bytes);
+    }
+
     /// Reset state.
     pub fn reset(&mut self, cx: &mut Cx) {
+        if self.image_permit.take().is_some() {
+            if let Some(texture) = self.texture.take() {
+                texture.release(cx);
+                match texture.get_format(cx) {
+                    TextureFormat::VecBGRAu8_32 { data, .. }
+                    | TextureFormat::VecMipBGRAu8_32 { data, .. } => *data = None,
+                    _ => {}
+                }
+            }
+        }
+        self.texture = None;
         self.rotation_step = 0; // Reset to upright (0°)
         self.current_angle = 0.0;
         self.rotation_target_angle = 0.0;
@@ -834,21 +975,26 @@ impl ImageViewer {
         self.receiver = None;
         self.is_loaded = false;
         self.loaded_bytes = None;
+        self.downloadable = None;
         self.image_container_size = DVec2::new();
         self.ui_overlay_visible = true;
         self.mouse_over_overlay_ui = false;
         self.is_hiding_overlay = false;
         cx.stop_timer(self.hide_ui_timer);
         self.hide_ui_timer = Timer::empty();
-        self.view.view(cx, ids!(button_group_view)).set_visible(cx, true);
-        self.view.view(cx, ids!(metadata_view)).set_visible(cx, true);
+        self.view
+            .view(cx, ids!(button_group_view))
+            .set_visible(cx, true);
+        self.view
+            .view(cx, ids!(metadata_view))
+            .set_visible(cx, true);
         // Snap to fully visible (no animation on reset).
         self.animator_cut(cx, ids!(ui_animator.show));
         self.reset_drag_state(cx);
         let rotated_image_ref = self
             .view
             .image(cx, ids!(rotated_image_container.rotated_image));
-        rotated_image_ref.set_texture(cx, None);
+        crate::memory_budget::release_image(cx, &rotated_image_ref);
     }
 
     /// Updates the shader uniforms of the rotated image widget with the current rotation,
@@ -876,38 +1022,58 @@ impl ImageViewer {
         if self.receiver.is_some() {
             return;
         }
-        // SVG is a vector format: load it straight into the image widget (which
-        // renders it natively and stays crisp at any zoom) instead of decoding to
-        // a raster texture on a worker thread.
-        if looks_like_svg(image_bytes) {
-            let rotated_image = self.image(cx, ids!(rotated_image));
-            let load_state = match rotated_image.load_image_from_data(cx, image_bytes) {
-                Ok(()) => {
-                    self.texture = None;
-                    self.next_frame = cx.new_next_frame();
-                    LoadState::FinishedBackgroundDecoding
-                }
-                Err(_) => LoadState::Error(ImageViewerError::BadData),
-            };
-            cx.action(ImageViewerAction::Show(load_state));
-            self.show_overlay_ui(cx, true);
+        if !crate::memory_budget::admit_encoded(image_bytes) {
+            cx.action(ImageViewerAction::Show(LoadState::Error(
+                ImageViewerError::TooLarge,
+            )));
             return;
         }
+        let permit = match crate::memory_budget::reserve_viewer(cx, image_bytes) {
+            Ok(permit) => permit,
+            Err(error) => {
+                let error = if matches!(error, ImageError::UnsupportedFormat) {
+                    ImageViewerError::UnsupportedFormat
+                } else {
+                    ImageViewerError::TooLarge
+                };
+                cx.action(ImageViewerAction::Show(LoadState::Error(error)));
+                return;
+            }
+        };
         if let Some(new_value) = self.background_task_id.checked_add(1) {
             self.background_task_id = new_value;
         }
         let (sender, receiver) = std::sync::mpsc::channel();
         self.receiver = Some((self.background_task_id, receiver));
         let image_bytes2 = Arc::clone(image_bytes);
-        std::thread::spawn(move || {
-            let _ = sender.send(decode_image_from_data(&image_bytes2));
-            SignalToUI::set_ui_signal();
-        });
+        let job = cx.task_pool().submit(
+            makepad_widgets::makepad_platform::thread::Lane::Heavy,
+            move || {
+                let _ = sender.send(
+                    makepad_widgets::makepad_draw::image_cache::with_image_decode_limit(
+                        permit.pixel_limit(),
+                        || decode_image_from_data(&image_bytes2),
+                    )
+                    .map(|image| (image, permit)),
+                );
+                SignalToUI::set_ui_signal();
+            },
+        );
+        match job {
+            Ok(task) => task.detach(),
+            Err(_) => {
+                self.receiver = None;
+                cx.action(ImageViewerAction::Show(LoadState::Error(
+                    ImageViewerError::ServerError,
+                )));
+                return;
+            }
+        }
         self.show_overlay_ui(cx, true);
     }
 
     /// Displays an image in the image viewer widget using the provided texture.
-    /// 
+    ///
     /// `Texture` is an optional `Texture` that can be set to display an image. If `None`, the image is cleared.
     pub fn display_current_image(&mut self, cx: &mut Cx) {
         if self.image_container_size.length() == 0.0 {
@@ -918,16 +1084,25 @@ impl ImageViewer {
         // or the intrinsic SVG size when an SVG has been loaded into the widget.
         let natural = if self.texture.is_some() {
             let texture = self.texture.clone();
+            if let Some(texture) = &texture {
+                crate::memory_budget::pin_texture(cx, &rotated_image, texture);
+            }
             rotated_image.set_texture(cx, texture);
             self.texture
                 .as_ref()
                 .and_then(|t| t.get_format(cx).vec_width_height())
-                .map(|(w, h)| DVec2 { x: w as f64, y: h as f64 })
+                .map(|(w, h)| DVec2 {
+                    x: w as f64,
+                    y: h as f64,
+                })
                 .unwrap_or_default()
         } else {
             rotated_image
                 .size_in_pixels(cx)
-                .map(|(w, h)| DVec2 { x: w as f64, y: h as f64 })
+                .map(|(w, h)| DVec2 {
+                    x: w as f64,
+                    y: h as f64,
+                })
                 .unwrap_or_default()
         };
         if natural.x == 0.0 || natural.y == 0.0 {
@@ -949,9 +1124,11 @@ impl ImageViewer {
         let (ca, sa) = (rad.cos().abs(), rad.sin().abs());
         let bbox_w = w * ca + h * sa;
         let bbox_h = w * sa + h * ca;
-        let fit = (self.image_container_size.x / bbox_w)
-            .min(self.image_container_size.y / bbox_h);
-        self.capped_dimension = DVec2 { x: bbox_w * fit, y: bbox_h * fit };
+        let fit = (self.image_container_size.x / bbox_w).min(self.image_container_size.y / bbox_h);
+        self.capped_dimension = DVec2 {
+            x: bbox_w * fit,
+            y: bbox_h * fit,
+        };
         let zoom = self.drag_state.zoom_level;
         let frame_w = self.capped_dimension.x * zoom;
         let frame_h = self.capped_dimension.y * zoom;
@@ -992,8 +1169,8 @@ impl ImageViewer {
         let start = *self.rotation_anim_start_time.get_or_insert(now);
         let t = ((now - start) / ROTATION_ANIMATION_DURATION_SECS).clamp(0.0, 1.0);
         let eased = t * t * (3.0 - 2.0 * t); // smoothstep
-        self.current_angle =
-            self.rotation_anim_from + (self.rotation_target_angle - self.rotation_anim_from) * eased;
+        self.current_angle = self.rotation_anim_from
+            + (self.rotation_target_angle - self.rotation_anim_from) * eased;
         if t >= 1.0 {
             self.current_angle = self.rotation_target_angle;
             self.is_animating_rotation = false;
@@ -1048,18 +1225,25 @@ impl ImageViewer {
     /// status label is set to "Loading...".
     pub fn show_loading(&mut self, cx: &mut Cx) {
         let footer = self.view.view(cx, ids!(image_layer.footer));
-        footer.view(cx, ids!(image_viewer_loading_spinner_view))
+        footer
+            .view(cx, ids!(image_viewer_loading_spinner_view))
             .set_visible(cx, true);
-        footer.label(cx, ids!(image_viewer_status_label))
+        footer
+            .label(cx, ids!(image_viewer_status_label))
             .set_text(cx, crate::i18n::tr("Loading..."));
-        footer.view(cx, ids!(image_viewer_forbidden_view))
+        footer
+            .view(cx, ids!(image_viewer_forbidden_view))
             .set_visible(cx, false);
         footer.set_visible(cx, true);
         // Snap the overlay to visible immediately on initial open (no animation).
         self.ui_overlay_visible = true;
         self.is_hiding_overlay = false;
-        self.view.view(cx, ids!(button_group_view)).set_visible(cx, true);
-        self.view.view(cx, ids!(metadata_view)).set_visible(cx, true);
+        self.view
+            .view(cx, ids!(button_group_view))
+            .set_visible(cx, true);
+        self.view
+            .view(cx, ids!(metadata_view))
+            .set_visible(cx, true);
         self.animator_cut(cx, ids!(ui_animator.show));
         cx.stop_timer(self.hide_ui_timer);
         self.hide_ui_timer = cx.start_timeout(SHOW_UI_DURATION);
@@ -1074,12 +1258,21 @@ impl ImageViewer {
             return;
         }
         let footer = self.view.view(cx, ids!(image_layer.footer));
-        footer.view(cx, ids!(image_viewer_loading_spinner_view))
+        footer
+            .view(cx, ids!(image_viewer_loading_spinner_view))
             .set_visible(cx, false);
-        footer.view(cx, ids!(image_viewer_forbidden_view))
+        footer
+            .view(cx, ids!(image_viewer_forbidden_view))
             .set_visible(cx, true);
-        footer.label(cx, ids!(image_viewer_status_label))
-            .set_text(cx, &error.to_string());
+        let message = error.to_string();
+        let message = if matches!(error, ImageViewerError::TooLarge) {
+            crate::i18n::tr("This image is too large to preview. Save the file to open it.")
+        } else {
+            &message
+        };
+        footer
+            .label(cx, ids!(image_viewer_status_label))
+            .set_text(cx, message);
         footer.set_visible(cx, true);
     }
 
@@ -1108,18 +1301,22 @@ impl ImageViewer {
 
         self.loaded_bytes = None;
         self.downloadable = metadata.downloadable.clone();
-        self.view.button(cx, ids!(download_button))
+        self.view
+            .button(cx, ids!(download_button))
             .set_visible(cx, self.downloadable.is_some());
 
         if let Some((timeline_kind, event_timeline_item)) = &metadata.avatar_parameter {
-            let (sender, _) = self.view.avatar(cx, ids!(avatar_timestamp_view.avatar)).set_avatar_and_get_username(
-                cx,
-                timeline_kind,
-                event_timeline_item.sender(),
-                Some(event_timeline_item.sender_profile()),
-                event_timeline_item.event_id(),
-                false,
-            );
+            let (sender, _) = self
+                .view
+                .avatar(cx, ids!(avatar_timestamp_view.avatar))
+                .set_avatar_and_get_username(
+                    cx,
+                    timeline_kind,
+                    event_timeline_item.sender(),
+                    Some(event_timeline_item.sender_profile()),
+                    event_timeline_item.event_id(),
+                    false,
+                );
             meta_view
                 .label(cx, ids!(username_label_view.username))
                 .set_text(cx, &sender);
@@ -1130,13 +1327,17 @@ impl ImageViewer {
 impl ImageViewerRef {
     /// Configure zoom and pan settings for the image viewer
     pub fn configure_zoom(&mut self, config: ImageViewerZoomConfig) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.config = config;
     }
 
     /// See [`ImageViewer::show_loaded()`].
     pub fn show_loaded(&mut self, cx: &mut Cx, image_bytes: &Arc<[u8]>) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.show_loaded(cx, image_bytes)
     }
 
@@ -1147,8 +1348,16 @@ impl ImageViewerRef {
         texture: Option<Texture>,
         metadata: &Option<ImageViewerMetaData>,
     ) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
+        inner.reset(cx);
         inner.texture = texture.clone();
+        if let Some(texture) = &texture {
+            let image = inner.image(cx, ids!(rotated_image));
+            image.set_texture(cx, Some(texture.clone()));
+            crate::memory_budget::pin_texture(cx, &image, texture);
+        }
         inner.next_frame = cx.new_next_frame();
         if let Some(metadata) = metadata {
             inner.set_metadata(cx, metadata);
@@ -1158,19 +1367,25 @@ impl ImageViewerRef {
 
     /// See [`ImageViewer::show_error()`].
     pub fn show_error(&mut self, cx: &mut Cx, error: &ImageViewerError) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.show_error(cx, error);
     }
 
     /// See [`ImageViewer::hide_footer()`].
     pub fn hide_footer(&mut self, cx: &mut Cx) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.hide_footer(cx);
     }
 
     /// See [`ImageViewer::reset()`].
     pub fn reset(&mut self, cx: &mut Cx) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.reset(cx);
     }
 }
@@ -1202,4 +1417,35 @@ pub struct ImageViewerMetaData {
     pub image_file_size: u64,
     /// When `Some`, the overlay's download button is shown.
     pub downloadable: Option<DownloadableAttachment>,
+}
+
+#[cfg(test)]
+mod memory_tests {
+    use super::*;
+
+    #[test]
+    fn viewer_reset_rejects_late_results_for_closed_or_replaced_assets() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut viewer = cx.with_vm(|vm| {
+            makepad_widgets::theme_mod(vm);
+            makepad_widgets::widgets_mod(vm);
+            crate::app::register_widgets(vm);
+            let value = script_eval!(vm, {mod.widgets.ImageViewer {}});
+            ImageViewer::script_from_value(vm, value)
+        });
+        let active = matrix_sdk::ruma::mxc_uri!("mxc://example.org/active");
+        let old = matrix_sdk::ruma::mxc_uri!("mxc://example.org/old");
+        viewer.downloadable = Some(DownloadableAttachment {
+            media_source: matrix_sdk::ruma::events::room::MediaSource::Plain(active.to_owned()),
+            filename: "active.png".into(),
+            size: None,
+            kind: crate::shared::attachment_download::DownloadKind::Image,
+        });
+        assert!(viewer.is_current_media(active));
+        assert!(!viewer.is_current_media(old));
+        viewer.loaded_bytes = Some(Arc::from(b"old bytes".as_slice()));
+        viewer.reset(&mut cx);
+        assert!(!viewer.is_current_media(active));
+        assert!(viewer.loaded_bytes.is_none());
+    }
 }

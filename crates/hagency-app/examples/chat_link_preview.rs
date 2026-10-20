@@ -89,10 +89,12 @@ impl App {
     fn groups(&self, cx: &mut Cx, update: bool) {
         use hagency_app::room::{FetchedRoomAvatar, RoomAvatarMember};
         hagency_app::avatar_cache::enqueue_avatar_update(hagency_app::avatar_cache::AvatarUpdate {
+            generation: hagency_app::avatar_cache::generation(),
             mxc_uri: "mxc://example.org/member-photo".into(),
             avatar_data: Ok(std::sync::Arc::from(include_bytes!("../resources/icon_64.png").as_slice())),
         });
         hagency_app::avatar_cache::enqueue_avatar_update(hagency_app::avatar_cache::AvatarUpdate {
+            generation: hagency_app::avatar_cache::generation(),
             mxc_uri: "mxc://example.org/broken-photo".into(),
             avatar_data: Ok(std::sync::Arc::from(b"invalid image".as_slice())),
         });

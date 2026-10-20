@@ -566,14 +566,14 @@ pub struct LinkPreviewCache {
     /// The actual cached data.
     cache: BTreeMap<String, Arc<Mutex<TimestampedCacheEntry>>>,
     /// A channel to send updates to a particular timeline when a link preview request has completed.
-    timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    timeline_update_sender: Option<crate::timeline_updates::Sender>,
 }
 
 impl LinkPreviewCache {
     /// Creates a new link preview cache that will optionally send updates
     /// when a link preview request has completed.
     pub const fn new(
-        timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+        timeline_update_sender: Option<crate::timeline_updates::Sender>,
     ) -> Self {
         Self {
             cache: BTreeMap::new(),
@@ -581,8 +581,24 @@ impl LinkPreviewCache {
         }
     }
 
+    pub fn clear(&mut self) { self.cache.clear(); }
+
+    fn make_room(&mut self) -> bool {
+        self.cleanup_old_entries(Duration::from_secs(CACHE_ENTRY_MAX_AGE_SECS));
+        while self.cache.len() >= MAX_CACHE_ENTRIES_BEFORE_CLEANUP {
+            let oldest = self.cache.iter().filter_map(|(url, value)| {
+                let entry = value.lock().unwrap();
+                (!matches!(entry.entry, LinkPreviewCacheEntry::Requested)).then(|| (url.clone(), entry.timestamp))
+            }).min_by_key(|(_, timestamp)| *timestamp);
+            let Some((url, _)) = oldest else { return false };
+            self.cache.remove(&url);
+        }
+        true
+    }
+
     /// Cache metadata that has already been fetched, without requesting it again.
     pub fn insert(&mut self, url: &Url, data: LinkPreviewData) {
+        if !self.cache.contains_key(url.as_str()) && !self.make_room() { return }
         self.cache.insert(url.to_string(), Arc::new(Mutex::new(TimestampedCacheEntry {
             entry: LinkPreviewCacheEntry::LoadedLinkPreview(data),
             timestamp: Instant::now(),
@@ -592,7 +608,7 @@ impl LinkPreviewCache {
     /// Sets a new timeline update sender, e.g., for when the backend re-created this room's timeline.
     pub fn set_timeline_update_sender(
         &mut self,
-        sender: crossbeam_channel::Sender<TimelineUpdate>,
+        sender: crate::timeline_updates::Sender,
     ) {
         self.timeline_update_sender = Some(sender);
     }
@@ -605,8 +621,11 @@ impl LinkPreviewCache {
         }
 
         if let Some(entry) = self.cache.get(url) {
-            return entry.lock().unwrap().entry.clone();
+            let mut entry = entry.lock().unwrap();
+            entry.timestamp = Instant::now();
+            return entry.entry.clone();
         }
+        if !self.make_room() { return LinkPreviewCacheEntry::Requested }
         let entry_ref = Arc::new(Mutex::new(TimestampedCacheEntry {
             entry: LinkPreviewCacheEntry::Requested,
             timestamp: Instant::now(),
@@ -654,7 +673,7 @@ impl LinkPreviewCache {
 fn insert_into_cache(
     value_ref: Arc<Mutex<TimestampedCacheEntry>>,
     data: Result<LinkPreviewData, UrlPreviewError>,
-    update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    update_sender: Option<crate::timeline_updates::Sender>,
 ) {
     let new_entry = match data {
         Ok(data) => LinkPreviewCacheEntry::LoadedLinkPreview(data),

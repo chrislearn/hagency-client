@@ -966,6 +966,7 @@
   "Too many article revisions to verify safely.": "文章修订记录过多，无法完成核对。",
   "Keep at most 100 article drafts on this device.": "本设备最多保留 100 篇文章草稿。",
   "The image library is full.": "图片素材库已满。",
+  "This image is too large to preview. Save the file to open it.": "图片过大，无法预览。请保存文件后打开。",
   "This image is too large after processing.": "图片处理后仍然过大。",
   "Article library exceeds its storage limit.": "文章库超出存储限制。",
   "Invalid article block": "文章段落数据无效",

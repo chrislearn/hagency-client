@@ -23,7 +23,7 @@ use matrix_sdk::{
 use matrix_sdk::Error;
 use matrix_sdk::event_cache::RedecryptorReport;
 use matrix_sdk_ui::{
-    RoomListService, Timeline, encryption_sync_service, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{AttachmentSource, EventSendState, LatestEventValue, RedactError, RoomExt, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineReadReceiptTracking, TimelineDetails, default_event_filter}
+    RoomListService, Timeline, encryption_sync_service, room_list_service::{RoomListItem, RoomListLoadingState, SyncIndicator, filters}, sync_service::{self, SyncService}, timeline::{AttachmentSource, EventSendState, LatestEventValue, RedactError, RoomExt, TimelineEventItemId, TimelineFocus, TimelineEventFocusThreadMode, TimelineItem, TimelineReadReceiptTracking, TimelineDetails, default_event_filter}
 };
 #[cfg(not(target_os = "ios"))]
 use robius_open::Uri;
@@ -36,6 +36,9 @@ use tokio::{
 use url::Url;
 use std::{borrow::Cow, cmp::{max, min}, future::Future, hash::{BuildHasherDefault, DefaultHasher}, iter::Peekable, ops::{Deref, DerefMut}, path::{Path, PathBuf}, sync::{Arc, LazyLock, Mutex, atomic::{AtomicBool, Ordering}}, time::{Duration, SystemTime}};
 use std::io;
+#[cfg(test)]
+#[path = "sliding_sync/history_tests.rs"]
+mod history_tests;
 use hashbrown::{HashMap, HashSet};
 use crate::{
     app::AppStateAction, app_data_dir, cache_dir, avatar_cache::AvatarUpdate, event_preview::{BeforeText, TextPreview, text_preview_of_raw_timeline_event, text_preview_of_timeline_item}, home::{
@@ -376,7 +379,7 @@ pub type OnMediaFetchedFn = fn(
     &Mutex<MediaCacheEntry>,
     MediaRequestParameters,
     matrix_sdk::Result<Vec<u8>>,
-    Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    Option<crate::timeline_updates::Sender>,
 );
 
 /// Error types for URL preview operations.
@@ -406,7 +409,7 @@ impl std::error::Error for UrlPreviewError {}
 pub type OnLinkPreviewFetchedFn = fn(
     Arc<Mutex<crate::home::link_preview::TimestampedCacheEntry>>,
     Result<LinkPreviewData, UrlPreviewError>,
-    Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    Option<crate::timeline_updates::Sender>,
 );
 
 
@@ -553,7 +556,10 @@ pub enum MatrixRequest {
         /// The maximum number of timeline events to fetch in each pagination batch.
         num_events: u16,
         direction: PaginationDirection,
+        anchor: Option<OwnedEventId>,
     },
+    /// Replace the browsing window using an event context, or return to live messages.
+    FocusTimeline { timeline_kind: TimelineKind, target: Option<OwnedEventId> },
     /// Request to edit the content of an event in the given room's timeline.
     EditMessage {
         timeline_kind: TimelineKind,
@@ -771,7 +777,7 @@ pub enum MatrixRequest {
         media_request: MediaRequestParameters,
         on_fetched: OnMediaFetchedFn,
         destination: MediaCacheEntryRef,
-        update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+        update_sender: Option<crate::timeline_updates::Sender>,
     },
     /// Request to send a message to the given room.
     SendMessage {
@@ -900,7 +906,7 @@ pub enum MatrixRequest {
         url: String,
         on_fetched: OnLinkPreviewFetchedFn,
         destination: Arc<Mutex<crate::home::link_preview::TimestampedCacheEntry>>,
-        update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+        update_sender: Option<crate::timeline_updates::Sender>,
     },
     /// Request to download a media attachment/file.
     ///
@@ -1026,14 +1032,32 @@ async fn matrix_worker_task(
                 });
             }
 
-            MatrixRequest::PaginateTimeline {timeline_kind, num_events, direction} => {
-                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+            MatrixRequest::FocusTimeline { timeline_kind, target } => {
+                focus_timeline(timeline_kind, target);
+            }
+            MatrixRequest::PaginateTimeline {timeline_kind, num_events, direction, anchor} => {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind).await else {
                     log!("Skipping pagination request for unknown {timeline_kind}");
                     continue;
                 };
 
                 // Spawn a new async task that will make the actual pagination request.
                 let _paginate_task = crate::account_session::spawn(async move {
+                    let is_live = {
+                        let mut rooms=ALL_JOINED_ROOMS.lock().unwrap();
+                        get_per_timeline_details(&mut rooms,&timeline_kind).is_some_and(|d|d.is_live)
+                    };
+                    let items=timeline.items().await;
+                    let anchor=anchor.or_else(|| {
+                        if direction==PaginationDirection::Backwards {
+                            items.iter().filter_map(|item|item.as_event()?.event_id().map(ToOwned::to_owned)).next()
+                        } else {items.iter().rev().filter_map(|item|item.as_event()?.event_id().map(ToOwned::to_owned)).next()}
+                    });
+                    if ((is_live && direction==PaginationDirection::Backwards) || items.len()>=384)
+                        && let Some(anchor)=anchor.clone() {
+                        focus_timeline_window(timeline_kind,Some(anchor),true);
+                        return;
+                    }
                     log!("Starting {direction} pagination request for {timeline_kind}...");
                     if sender.send(TimelineUpdate::PaginationRunning(direction)).is_err() {
                         error!("Failed to send pagination status to UI for {timeline_kind}");
@@ -1061,6 +1085,11 @@ async fn matrix_worker_task(
                             SignalToUI::set_ui_signal();
                         }
                         Err(error) => {
+                            if matches!(&error,matrix_sdk_ui::timeline::Error::EventCacheError(matrix_sdk::event_cache::EventCacheError::HistoryWindowFull))
+                                && let Some(anchor)=anchor {
+                                focus_timeline_window(timeline_kind,Some(anchor),true);
+                                return;
+                            }
                             error!("Error sending {direction} pagination request for {timeline_kind}: {error:?}");
                             if sender.send(TimelineUpdate::PaginationError {
                                 error,
@@ -1075,7 +1104,7 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::EditMessage { timeline_kind, timeline_event_item_id, edited_content } => {
-                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind).await else {
                     log!("BUG: {timeline_kind} not found for edit request");
                     continue;
                 };
@@ -1106,7 +1135,7 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::FetchDetailsForEvent { timeline_kind, event_id } => {
-                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind).await else {
                     log!("BUG: {timeline_kind} not found for fetch details for event request");
                     continue;
                 };
@@ -1134,7 +1163,7 @@ async fn matrix_worker_task(
                 thread_root_event_id,
                 timeline_item_index,
             } => {
-                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind).await else {
                     log!("BUG: {timeline_kind} not found for fetch thread summary details request");
                     continue;
                 };
@@ -1162,7 +1191,7 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::SyncRoomMemberList { timeline_kind } => {
-                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind).await else {
                     log!("BUG: {timeline_kind} not found for sync members list request");
                     continue;
                 };
@@ -1194,12 +1223,18 @@ async fn matrix_worker_task(
                     if !newly_pending {
                         continue;
                     }
-                    room_info.main_timeline.timeline.clone()
+                    room_info.room.clone()
                 };
 
                 let _create_thread_timeline_task = crate::account_session::spawn(async move {
+                    let _creation = TIMELINE_CREATION.lock().await;
+                    if !reserve_timeline_slot() {
+                        if let Some(room)=ALL_JOINED_ROOMS.lock().unwrap().get_mut(&room_id) {room.pending_thread_timelines.remove(&thread_root_event_id);}
+                        enqueue_popup_notification("Too many open chat windows. Close one to open this chat.",PopupKind::Error,Some(6.0));
+                        return;
+                    }
                     log!("Creating thread-focused timeline for room {room_id}, thread {thread_root_event_id}...");
-                    let build_result = main_room_timeline.room()
+                    let build_result = main_room_timeline
                         .timeline_builder()
                         .event_filter(robrix_timeline_event_filter)
                         .with_focus(TimelineFocus::Thread {
@@ -1221,7 +1256,10 @@ async fn matrix_worker_task(
                             }
                             log!("Successfully created thread-focused timeline for room {room_id}, thread {thread_root_event_id}.");
                             let thread_timeline = Arc::new(thread_timeline);
-                            let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
+                            let (timeline_update_sender, timeline_update_receiver) = crate::timeline_updates::channel();
+                            let kind=TimelineKind::Thread{room_id:room_id.clone(),thread_root_event_id:thread_root_event_id.clone()};
+                            let previous=room_info.evicted_senders.remove(&kind);
+                            if let Some(previous)=&previous {previous.forward_operations_to(&timeline_update_sender);}
                             let (request_sender, request_receiver) = watch::channel(TimelineRequest {
                                 backwards_paginate: Vec::new(),
                                 is_timeline_open: true,
@@ -1231,6 +1269,7 @@ async fn matrix_worker_task(
                                     thread_timeline.clone(),
                                     timeline_update_sender.clone(),
                                     request_receiver,
+                                    None,
                                     Some(thread_root_event_id.clone()),
                                 )
                             );
@@ -1241,8 +1280,12 @@ async fn matrix_worker_task(
                                     timeline_update_sender,
                                     timeline_singleton_endpoints: Some((
                                         timeline_update_receiver,
-                                        request_sender,
+                                        request_sender.clone(),
                                     )),
+                                    request_sender: request_sender.clone(),
+                                    focus_revision: 0,
+                                    preserve_operations: previous.is_some(),
+                                    is_live: true, window_anchor: None,
                                     timeline_subscriber: TimelineSubscriber::Running(
                                         timeline_subscriber_handler_task,
                                     ),
@@ -1454,7 +1497,7 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::GetRoomMembers { timeline_kind, memberships, local_only } => {
-                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind).await else {
                     log!("BUG: {timeline_kind} not found for get room members request");
                     continue;
                 };
@@ -1510,7 +1553,7 @@ async fn matrix_worker_task(
                     };
                     (
                         room_info.all_timeline_update_senders(),
-                        room_info.main_timeline.timeline.room().successor_room(),
+                        room_info.room.successor_room(),
                     )
                 };
                 spawn_fetch_successor_room_preview(
@@ -1656,7 +1699,7 @@ async fn matrix_worker_task(
             MatrixRequest::GetNumberUnreadMessages { timeline_kind } => {
                 // The SDK only tracks unread counts per room, not per thread.
                 let TimelineKind::MainRoom { .. } = &timeline_kind else { continue };
-                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind).await else {
                     log!("Skipping get number of unread messages request for {timeline_kind}");
                     continue;
                 };
@@ -1680,7 +1723,7 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::SetUnreadFlag { room_id, mark_as_unread } => {
-                let Some(main_timeline) = get_room_timeline(&room_id) else {
+                let Some(main_timeline) = get_room_timeline(&room_id).await else {
                     log!("BUG: skipping set unread flag request for not-yet-known room {room_id}");
                     continue;
                 };
@@ -1700,7 +1743,7 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::MarkRoomAsRead { room_id, receipt_type } => {
-                let Some(main_timeline) = get_room_timeline(&room_id) else {
+                let Some(main_timeline) = get_room_timeline(&room_id).await else {
                     log!("BUG: skipping mark-as-read request for not-yet-known room {room_id}");
                     continue;
                 };
@@ -1742,7 +1785,7 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::SetIsFavorite { room_id, is_favorite } => {
-                let Some(main_timeline) = get_room_timeline(&room_id) else {
+                let Some(main_timeline) = get_room_timeline(&room_id).await else {
                     log!("BUG: skipping set favorite flag request for not-yet-known room {room_id}");
                     continue;
                 };
@@ -1756,7 +1799,7 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::SetIsLowPriority { room_id, is_low_priority } => {
-                let Some(main_timeline) = get_room_timeline(&room_id) else {
+                let Some(main_timeline) = get_room_timeline(&room_id).await else {
                     log!("BUG: skipping set low priority flag request for not-yet-known room {room_id}");
                     continue;
                 };
@@ -1976,8 +2019,8 @@ async fn matrix_worker_task(
                         match all_joined_rooms.get(&room_id) {
                             Some(details) => {
                                 let _ = writeln!(text, "subscriber running: {}, endpoints taken by UI: {}",
-                                    matches!(details.main_timeline.timeline_subscriber, TimelineSubscriber::Running(_)),
-                                    details.main_timeline.timeline_singleton_endpoints.is_none(),
+                                    details.main_timeline.as_ref().is_some_and(|d|matches!(d.timeline_subscriber, TimelineSubscriber::Running(_))),
+                                    details.main_timeline.as_ref().is_some_and(|d|d.timeline_singleton_endpoints.is_none()),
                                 );
                                 let _ = writeln!(text, "typing notices subscribed: {}, pinned events subscribed: {}",
                                     details.typing_notice_subscriber.is_some(),
@@ -2092,7 +2135,7 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::SendTypingNotice { room_id, typing } => {
-                let Some(main_room_timeline) = get_room_timeline(&room_id) else {
+                let Some(main_room_timeline) = get_room_timeline(&room_id).await else {
                     log!("BUG: skipping send typing notice request for not-yet-known room {room_id}");
                     continue;
                 };
@@ -2111,12 +2154,10 @@ async fn matrix_worker_task(
                         continue;
                     };
                     let (main_timeline, receiver) = if subscribe {
-                        if jrd.typing_notice_subscriber.is_some() {
-                            warning!("Note: room {room_id} is already subscribed to typing notices.");
-                            continue;
-                        } else {
-                            let main_timeline = jrd.main_timeline.timeline.clone();
-                            let (drop_guard, receiver) = main_timeline.room().subscribe_to_typing_notifications();
+                        jrd.typing_notice_subscriber.take();
+                        {
+                            let main_timeline = jrd.room.clone();
+                            let (drop_guard, receiver) = main_timeline.subscribe_to_typing_notifications();
                             jrd.typing_notice_subscriber = Some(drop_guard);
                             (main_timeline, receiver)
                         }
@@ -2125,7 +2166,7 @@ async fn matrix_worker_task(
                         continue;
                     };
                     // Here: we don't have an existing subscriber running, so we fall through and start one.
-                    (main_timeline, jrd.main_timeline.timeline_update_sender.clone(), receiver)
+                    (main_timeline, match jrd.main_timeline.as_ref() {Some(d)=>d.timeline_update_sender.clone(),None=>continue}, receiver)
                 };
 
                 let _typing_notices_task = crate::account_session::spawn(async move {
@@ -2134,7 +2175,7 @@ async fn matrix_worker_task(
                         let users = join_all(user_ids.into_iter().map(|user_id| {
                             let tl = main_timeline.clone();
                             async move {
-                                tl.room().get_member_no_sync(&user_id).await
+                                tl.get_member_no_sync(&user_id).await
                                     .ok().flatten()
                                     .and_then(|m| m.display_name().map(|d| d.to_owned()))
                                     .unwrap_or_else(|| user_id.to_string())
@@ -2157,7 +2198,7 @@ async fn matrix_worker_task(
                     continue;
                 }
                 let timeline_kind = TimelineKind::MainRoom { room_id: room_id.clone() };
-                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind).await else {
                     log!("BUG: skipping subscribe to own user read receipts changed request for room {room_id}");
                     continue;
                 };
@@ -2197,7 +2238,7 @@ async fn matrix_worker_task(
                     continue;
                 }
                 let kind = TimelineKind::MainRoom { room_id: room_id.clone() };
-                let Some((main_timeline, sender)) = get_timeline_and_sender(&kind) else {
+                let Some((main_timeline, sender)) = get_timeline_and_sender(&kind).await else {
                     log!("BUG: skipping subscribe to pinned events request for unknown room {room_id}");
                     continue;
                 };
@@ -2278,15 +2319,16 @@ async fn matrix_worker_task(
 
             MatrixRequest::FetchAvatar { mxc_uri, on_fetched } => {
                 let Some(client) = get_client() else { continue };
+                let generation = crate::avatar_cache::generation();
                 crate::account_session::spawn(async move {
                     // log!("Sending fetch avatar request for {mxc_uri:?}...");
                     let media_request = MediaRequestParameters {
                         source: MediaSource::Plain(mxc_uri.clone()),
                         format: AVATAR_THUMBNAIL_FORMAT.into(),
                     };
-                    let res = client.media().get_media_content(&media_request, true).await;
+                    let res = crate::media_transport::fetch(&client, &media_request).await;
                     // log!("Fetched avatar for {mxc_uri:?}, succeeded? {}", res.is_ok());
-                    on_fetched(AvatarUpdate { mxc_uri, avatar_data: res.map(|v| v.into()) });
+                    on_fetched(AvatarUpdate { generation, mxc_uri, avatar_data: res.map(|v| v.into()) });
                 });
             }
 
@@ -2304,7 +2346,7 @@ async fn matrix_worker_task(
                 
                 let _fetch_task = crate::account_session::spawn(async move {
                     // log!("Sending fetch media request for {media_request:?}...");
-                    let res = client.media().get_media_content(&media_request, true).await;
+                    let res = crate::media_transport::fetch(&client, &media_request).await;
                     on_fetched(&destination, media_request, res, update_sender);
                 });
             }
@@ -2318,7 +2360,7 @@ async fn matrix_worker_task(
                 source_event_id,
             } => {
                 use crate::agent_chat::ApprovalVerdictResult;
-                let Some((timeline, _sender)) = get_timeline_and_sender(&timeline_kind) else {
+                let Some((timeline, _sender)) = get_timeline_and_sender(&timeline_kind).await else {
                     claim.complete(crate::agent_chat::approval_state::SendResult::ConfirmedPreSendFailure);
                     log!("BUG: {timeline_kind} not found for send agent-chat approval verdict request");
                     continue;
@@ -2370,7 +2412,7 @@ async fn matrix_worker_task(
                 #[cfg(feature = "tsp")]
                 sign_with_tsp,
             } => {
-                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind).await else {
                     log!("BUG: {timeline_kind} not found for send message request");
                     continue;
                 };
@@ -2469,7 +2511,7 @@ async fn matrix_worker_task(
                 upload,
             } => {
                 let timeline_kind = upload.timeline_kind.clone();
-                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind).await else {
                     log!("BUG: {timeline_kind} not found for send attachment request");
                     enqueue_popup_notification(
                         "Cannot upload file: timeline not available.",
@@ -2691,7 +2733,7 @@ async fn matrix_worker_task(
                 });
             }
             MatrixRequest::ReadReceipt { timeline_kind, event_id, receipt_type } => {
-                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind).await else {
                     log!("BUG: {timeline_kind} not found when sending read receipt, {event_id}");
                     continue;
                 };
@@ -2713,7 +2755,7 @@ async fn matrix_worker_task(
             },
 
             MatrixRequest::GetUserReadReceipt { timeline_kind, user_id } => {
-                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind).await else {
                     error!("BUG: {timeline_kind} not found when getting read receipt of user {user_id}");
                     enqueue_popup_notification(
                         format!("Couldn't look up read receipts in this {}.", timeline_kind.desc()),
@@ -2758,7 +2800,7 @@ async fn matrix_worker_task(
             },
 
             MatrixRequest::GetRoomPowerLevels { timeline_kind } => {
-                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind).await else {
                     log!("BUG: {timeline_kind} not found for room power levels request");
                     continue;
                 };
@@ -2784,7 +2826,7 @@ async fn matrix_worker_task(
             },
 
             MatrixRequest::ToggleReaction { timeline_kind, timeline_event_id, reaction } => {
-                let Some(timeline) = get_timeline(&timeline_kind) else {
+                let Some(timeline) = get_timeline(&timeline_kind).await else {
                     log!("BUG: {timeline_kind} not found for toggle reaction request");
                     continue;
                 };
@@ -2802,7 +2844,7 @@ async fn matrix_worker_task(
             },
 
             MatrixRequest::RedactMessage { timeline_kind, timeline_event_id, reason } => {
-                let Some(timeline) = get_timeline(&timeline_kind) else {
+                let Some(timeline) = get_timeline(&timeline_kind).await else {
                     log!("BUG: {timeline_kind} not found for redact message request");
                     continue;
                 };
@@ -2825,7 +2867,7 @@ async fn matrix_worker_task(
             },
 
             MatrixRequest::RetrySend { timeline_kind, timeline_event_id } => {
-                let Some(timeline) = get_timeline(&timeline_kind) else {
+                let Some(timeline) = get_timeline(&timeline_kind).await else {
                     log!("BUG: {timeline_kind} not found for retry send request");
                     continue;
                 };
@@ -2865,7 +2907,7 @@ async fn matrix_worker_task(
             },
 
             MatrixRequest::PinEvent { timeline_kind, event_id, pin } => {
-                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind) else {
+                let Some((timeline, sender)) = get_timeline_and_sender(&timeline_kind).await else {
                     log!("BUG: {timeline_kind} not found for pin event request");
                     continue;
                 };
@@ -2977,7 +3019,7 @@ async fn matrix_worker_task(
 pub(crate) fn backend_runtime() -> &'static tokio::runtime::Runtime {
     /// The single global Tokio runtime that is used by all async tasks.
     static TOKIO_RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(||
-        tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime")
+        crate::memory_budget::bounded_async_runtime().expect("Failed to create Tokio runtime")
     );
 
     &TOKIO_RUNTIME
@@ -3064,8 +3106,9 @@ pub struct TimelineRequest {
 /// between the timeline UI (`RoomScreen`] and the background worker tasks.
 /// If the relevant room was tombstoned, this also includes info about its successor room.
 pub struct TimelineEndpoints {
-    pub update_sender: crossbeam_channel::Sender<TimelineUpdate>,
-    pub update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
+    pub preserve_operations: bool,
+    pub update_sender: crate::timeline_updates::Sender,
+    pub update_receiver: crate::timeline_updates::Receiver,
     pub request_sender: TimelineRequestSender,
     pub successor_room: Option<SuccessorRoom>,
     pub is_encrypted: bool,
@@ -3088,7 +3131,7 @@ struct PerTimelineDetails {
     /// A shared reference to a room's main timeline or thread's timeline of events.
     timeline: Arc<Timeline>,
     /// A clone-able sender for updates to this timeline.
-    timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
+    timeline_update_sender: crate::timeline_updates::Sender,
     /// A tuple of two separate channel endpoints that can only be taken *once* by the main UI thread:
     /// 1. The single receiver that can receive updates from this timeline.
     ///    * When a new room is joined (or a thread is opened), an unbounded crossbeam channel will be created
@@ -3099,11 +3142,16 @@ struct PerTimelineDetails {
     /// 2. The sender that can send requests to the background timeline subscriber handler,
     ///    e.g., to watch for a specific event to be prepended to the timeline (via back pagination).
     timeline_singleton_endpoints: Option<(
-        crossbeam_channel::Receiver<TimelineUpdate>,
+        crate::timeline_updates::Receiver,
         TimelineRequestSender,
     )>,
     /// The backend subscriber task that handles updates to this timeline and sends them to the UI.
     timeline_subscriber: TimelineSubscriber,
+    request_sender: TimelineRequestSender,
+    focus_revision: u64,
+    preserve_operations: bool,
+    is_live: bool,
+    window_anchor: Option<OwnedEventId>,
 }
 impl PerTimelineDetails {
     /// Starts the background subscriber task for this timeline, if one wasn't already running.
@@ -3117,6 +3165,7 @@ impl PerTimelineDetails {
             self.timeline.clone(),
             self.timeline_update_sender.clone(),
             request_receiver,
+            self.window_anchor.take(),
             // a thread timeline will already have spawned its subscriber task at creation,
             // so we can only reach this point for a main room timeline.
             None,
@@ -3136,7 +3185,9 @@ struct JoinedRoomDetails {
     /// The room ID of this joined room.
     room_id: OwnedRoomId,
     /// Details about the main timeline for this room.
-    main_timeline: PerTimelineDetails,
+    room: Room,
+    main_timeline: Option<PerTimelineDetails>,
+    evicted_senders: HashMap<TimelineKind, crate::timeline_updates::Sender>,
     /// Thread-focused timelines for this room, keyed by thread root event ID.
     thread_timelines: HashMap<OwnedEventId, PerTimelineDetails>,
     /// The set of thread timelines currently being created, to avoid duplicate in-flight work.
@@ -3157,8 +3208,8 @@ impl Drop for JoinedRoomDetails {
 }
 impl JoinedRoomDetails {
     /// Returns the update senders for this room's main timeline and all of its thread timelines.
-    fn all_timeline_update_senders(&self) -> Vec<crossbeam_channel::Sender<TimelineUpdate>> {
-        std::iter::once(&self.main_timeline)
+    fn all_timeline_update_senders(&self) -> Vec<crate::timeline_updates::Sender> {
+        self.main_timeline.iter()
             .chain(self.thread_timelines.values())
             .map(|d| d.timeline_update_sender.clone())
             .collect()
@@ -3197,28 +3248,99 @@ fn get_per_timeline_details<'a>(
 ) -> Option<&'a mut PerTimelineDetails> {
     let room_info = all_joined_rooms.get_mut(kind.room_id())?;
     match kind {
-        TimelineKind::MainRoom { .. } => Some(&mut room_info.main_timeline),
+        TimelineKind::MainRoom { .. } => room_info.main_timeline.as_mut(),
         TimelineKind::Thread { thread_root_event_id, .. } => room_info.thread_timelines.get_mut(thread_root_event_id),
     }
 }
 
 /// Obtains the lock on `ALL_JOINED_ROOMS` and returns the timeline for the given timeline kind.
-fn get_timeline(kind: &TimelineKind) -> Option<Arc<Timeline>> {
+async fn get_timeline(kind: &TimelineKind) -> Option<Arc<Timeline>> {
+    ensure_main_timeline(kind.room_id()).await?;
     get_per_timeline_details(ALL_JOINED_ROOMS.lock().unwrap().deref_mut(), kind)
         .map(|details| details.timeline.clone())
 }
 
 /// Obtains the lock on `ALL_JOINED_ROOMS` and returns the timeline and timeline update sender for the given timeline kind.
-fn get_timeline_and_sender(kind: &TimelineKind) -> Option<(Arc<Timeline>, crossbeam_channel::Sender<TimelineUpdate>)> {
+async fn get_timeline_and_sender(kind: &TimelineKind) -> Option<(Arc<Timeline>, crate::timeline_updates::Sender)> {
+    ensure_main_timeline(kind.room_id()).await?;
     get_per_timeline_details(ALL_JOINED_ROOMS.lock().unwrap().deref_mut(), kind)
         .map(|details| (details.timeline.clone(), details.timeline_update_sender.clone()))
 }
 
 /// Obtains the lock on `ALL_JOINED_ROOMS` and returns the main timeline for the given room.
-fn get_room_timeline(room_id: &RoomId) -> Option<Arc<Timeline>> {
+async fn get_room_timeline(room_id: &RoomId) -> Option<Arc<Timeline>> {
+    ensure_main_timeline(room_id).await?;
     ALL_JOINED_ROOMS.lock().unwrap()
         .get(room_id)
-        .map(|jrd| jrd.main_timeline.timeline.clone())
+        .and_then(|jrd| jrd.main_timeline.as_ref().map(|d|d.timeline.clone()))
+}
+
+static TIMELINE_CREATION: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+const MAX_RETAINED_TIMELINES: usize = 16;
+
+#[derive(Debug)]
+pub struct TimelineCacheEvicted(pub TimelineKind, pub usize);
+
+/// Called with the creation mutex held. Open timelines are never evicted.
+fn reserve_timeline_slot() -> bool {
+    let mut rooms = ALL_JOINED_ROOMS.lock().unwrap();
+    let count: usize = rooms.values().map(|r|usize::from(r.main_timeline.is_some())+r.thread_timelines.len()).sum();
+    if count < MAX_RETAINED_TIMELINES { return true; }
+    let candidate = rooms.values().find_map(|r| {
+        if r.main_timeline.as_ref().is_some_and(|d|!d.request_sender.borrow().is_timeline_open) {
+            return Some(TimelineKind::MainRoom {room_id:r.room_id.clone()});
+        }
+        r.thread_timelines.iter().find(|(_,d)|!d.request_sender.borrow().is_timeline_open)
+            .map(|(root,_)|TimelineKind::Thread {room_id:r.room_id.clone(),thread_root_event_id:root.clone()})
+    });
+    let Some(kind) = candidate else { return false; };
+    let room = rooms.get_mut(kind.room_id()).unwrap();
+    let details = match &kind {
+        TimelineKind::MainRoom{..} => room.main_timeline.take(),
+        TimelineKind::Thread{thread_root_event_id,..} => room.thread_timelines.remove(thread_root_event_id),
+    }.unwrap();
+    details.timeline_update_sender.discard_snapshots();
+    let channel=details.timeline_update_sender.identity();
+    room.evicted_senders.insert(kind.clone(),details.timeline_update_sender.clone());
+    drop(details);
+    Cx::post_action(TimelineCacheEvicted(kind,channel));
+    true
+}
+
+async fn ensure_main_timeline(room_id: &RoomId) -> Option<()> {
+    let _creation = TIMELINE_CREATION.lock().await;
+    let room = {
+        let rooms = ALL_JOINED_ROOMS.lock().unwrap();
+        let room = rooms.get(room_id)?;
+        if room.main_timeline.is_some() { return Some(()); }
+        room.room.clone()
+    };
+    if !reserve_timeline_slot() {
+        enqueue_popup_notification("Too many open chat windows. Close one to open this chat.",PopupKind::Error,Some(6.0));
+        return None;
+    }
+    let client = room.client();
+    let kind = TimelineKind::MainRoom{room_id:room_id.to_owned()};
+    let timeline = match build_focused_timeline(&room,&kind,&None).await {
+        Ok(timeline)=>timeline,
+        Err(error)=>{ enqueue_popup_notification(error,PopupKind::Error,Some(8.0));return None; }
+    };
+    if !crate::matrix_context::is_current(&client) { return None; }
+    let mut rooms = ALL_JOINED_ROOMS.lock().unwrap();
+    let room = rooms.get_mut(room_id)?;
+    let (sender,receiver)=crate::timeline_updates::channel();
+    let previous=room.evicted_senders.remove(&kind);
+    if let Some(previous)=&previous { previous.forward_operations_to(&sender); }
+    let (request_sender,request_receiver)=watch::channel(TimelineRequest{backwards_paginate:Vec::new(),is_timeline_open:false});
+    room.main_timeline=Some(PerTimelineDetails {
+        timeline:Arc::new(timeline),timeline_update_sender:sender,
+        timeline_singleton_endpoints:Some((receiver,request_sender.clone())),
+        timeline_subscriber:TimelineSubscriber::NotStarted{request_receiver},
+        request_sender,focus_revision:0,preserve_operations:previous.is_some(),is_live:true,window_anchor:None,
+    });
+    Cx::post_action(TimelineEndpointsRecreated{room_id:room_id.to_owned()});
+    SignalToUI::set_ui_signal();
+    Some(())
 }
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
@@ -3230,6 +3352,7 @@ pub(crate) fn replace_client(client: Option<Client>) -> Option<Client> {
     crate::article_app::invalidate_sessions();
     crate::octoscript_apps::invalidate_sessions();
     let previous = std::mem::replace(&mut *CLIENT.lock().unwrap(), client);
+    if let Some(client) = get_client() { crate::history_store::start(client); }
     crate::octos_service::sync_account();
     crate::agent_access::publish(None, &Default::default());
     #[cfg(feature = "agent_chat")]
@@ -3387,21 +3510,46 @@ pub fn is_user_blocked(user_id: &UserId) -> bool {
 /// This will only succeed once per room (or once per room thread),
 /// as only a single channel receiver can exist.
 pub fn take_timeline_endpoints(kind: &TimelineKind) -> Option<TimelineEndpoints> {
+    #[cfg(feature = "chat-stress")]
+    if let Some(endpoints) = STRESS_ENDPOINTS.lock().unwrap().remove(kind) { return Some(endpoints); }
     let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
     let jrd = all_joined_rooms.get_mut(kind.room_id())?;
+    if matches!(kind, TimelineKind::MainRoom { .. }) && jrd.main_timeline.is_none() {
+        let room_id = kind.room_id().clone();
+        crate::account_session::spawn(async move { let _ = ensure_main_timeline(&room_id).await; });
+        return None;
+    }
     let details = match kind {
-        TimelineKind::MainRoom { .. } => &mut jrd.main_timeline,
+        TimelineKind::MainRoom { .. } => jrd.main_timeline.as_mut()?,
         TimelineKind::Thread { thread_root_event_id, .. } => jrd.thread_timelines.get_mut(thread_root_event_id)?,
     };
     let (update_receiver, request_sender) = details.timeline_singleton_endpoints.take()?;
     details.ensure_subscriber_started();
     Some(TimelineEndpoints {
+        preserve_operations: details.preserve_operations,
         update_sender: details.timeline_update_sender.clone(),
         update_receiver,
         request_sender,
         successor_room: details.timeline.room().successor_room(),
         is_encrypted: details.timeline.room().encryption_state().is_encrypted(),
     })
+}
+
+#[cfg(feature = "chat-stress")]
+static STRESS_ENDPOINTS: std::sync::LazyLock<Mutex<HashMap<TimelineKind, TimelineEndpoints>>> = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Instrument builds only: connect the production RoomScreen to an isolated SDK
+/// timeline without starting a real account's sync/send worker.
+#[cfg(feature = "chat-stress")]
+pub fn install_stress_endpoints(client: Client, room_id: OwnedRoomId) -> crate::timeline_updates::Sender {
+    *CLIENT.lock().unwrap() = Some(client);
+    let (sender, receiver) = crate::timeline_updates::channel();
+    let (requests, _receiver) = watch::channel(TimelineRequest {backwards_paginate: Vec::new(), is_timeline_open: true});
+    STRESS_ENDPOINTS.lock().unwrap().insert(TimelineKind::MainRoom {room_id}, TimelineEndpoints {
+        preserve_operations: false, update_sender: sender.clone(), update_receiver: receiver,
+        request_sender: requests, successor_room: None, is_encrypted: false,
+    });
+    sender
 }
 
 fn username_to_full_user_id(
@@ -4424,7 +4572,7 @@ async fn update_room(
             }
 
             let mut __timeline_update_senders_opt = None;
-            let mut get_timeline_update_senders = |room_id: &RoomId| -> Vec<crossbeam_channel::Sender<TimelineUpdate>> {
+            let mut get_timeline_update_senders = |room_id: &RoomId| -> Vec<crate::timeline_updates::Sender> {
                 __timeline_update_senders_opt.get_or_insert_with(||
                     ALL_JOINED_ROOMS.lock().unwrap().get(room_id)
                         .map(JoinedRoomDetails::all_timeline_update_senders)
@@ -4557,27 +4705,6 @@ async fn add_new_room(
         RoomState::Joined => { } // Fall through to adding the joined room below.
     }
 
-    let timeline = Arc::new(
-        new_room.room.timeline_builder()
-            .event_filter(robrix_timeline_event_filter)
-            .with_focus(TimelineFocus::Live {
-                // we show threads as separate timelines in their own RoomScreen
-                hide_threaded_events: true,
-            })
-            .track_read_marker_and_receipts(TimelineReadReceiptTracking::AllEvents)
-            .build()
-            .await
-            .map_err(|e| anyhow::anyhow!("BUG: Failed to build timeline for room {}: {e}", new_room.room_id))?,
-    );
-    let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
-
-    // The `timeline_subscriber_handler` async task is spawned lazily when the room/thread is first opened.
-    // All we do here is set up a channel between the UI and backend, for future use.
-    let (request_sender, request_receiver) = watch::channel(TimelineRequest {
-        backwards_paginate: Vec::new(),
-        is_timeline_open: true,
-    });
-
     // We need to add the room to the `ALL_JOINED_ROOMS` list before we can send
     // an `AddJoinedRoom` update to the RoomsList widget, because that widget might
     // immediately issue a `MatrixRequest` that relies on that room being in `ALL_JOINED_ROOMS`.
@@ -4586,12 +4713,9 @@ async fn add_new_room(
         new_room.room_id.clone(),
         JoinedRoomDetails {
             room_id: new_room.room_id.clone(),
-            main_timeline: PerTimelineDetails {
-                timeline,
-                timeline_singleton_endpoints: Some((timeline_update_receiver, request_sender)),
-                timeline_update_sender,
-                timeline_subscriber: TimelineSubscriber::NotStarted { request_receiver },
-            },
+            room: new_room.room.clone(),
+            main_timeline: None,
+            evicted_senders: HashMap::new(),
             thread_timelines: HashMap::new(),
             pending_thread_timelines: HashSet::new(),
             typing_notice_subscriber: None,
@@ -5097,7 +5221,7 @@ fn spawn_fetch_successor_room_preview(
     client: Client,
     successor_room: Option<SuccessorRoom>,
     tombstoned_room_id: OwnedRoomId,
-    timeline_update_senders: Vec<crossbeam_channel::Sender<TimelineUpdate>>,
+    timeline_update_senders: Vec<crate::timeline_updates::Sender>,
 ) {
     crate::account_session::spawn(async move {
         log!("Updating room {tombstoned_room_id} to be tombstoned, {successor_room:?}");
@@ -5139,7 +5263,7 @@ pub(crate) async fn fetch_room_preview_with_avatar(
             source: MediaSource::Plain(avatar_url.clone()),
             format: AVATAR_THUMBNAIL_FORMAT.into(),
         };
-        match client.media().get_media_content(&media_request, true).await {
+        match crate::media_transport::fetch(client, &media_request).await {
             Ok(avatar_content) => {
                 log!("Fetched avatar for room preview {:?} ({})", room_preview.name, room_preview.room_id);
                 FetchedRoomAvatar::Image((avatar_url, avatar_content).into())
@@ -5537,13 +5661,107 @@ const LOG_ROOM_LIST_DIFFS: bool = cfg!(feature = "log_room_list_diffs");
 /// to deliver the resulting diffs before taking the snapshot.
 const LATE_DECRYPTION_REFRESH_DELAY: Duration = Duration::from_millis(250);
 
+async fn build_focused_timeline(room: &Room, kind: &TimelineKind, target: &Option<OwnedEventId>) -> Result<Timeline, String> {
+        let focus = match (&target, kind.thread_root_event_id()) {
+            (Some(event), Some(root)) if event == root => TimelineFocus::Event {
+                target: event.clone(), num_context_events: 50, thread_mode: TimelineEventFocusThreadMode::ForceThread,
+            },
+            (Some(event), _) => TimelineFocus::Event {
+                target: event.clone(), num_context_events: 50,
+                thread_mode: TimelineEventFocusThreadMode::Automatic { hide_threaded_events: true },
+            },
+            (None, Some(root)) => TimelineFocus::Thread { root_event_id: root.clone() },
+            (None, None) => TimelineFocus::Live { hide_threaded_events: true },
+        };
+        let result = room.timeline_builder().event_filter(robrix_timeline_event_filter)
+            .with_focus(focus).track_read_marker_and_receipts(TimelineReadReceiptTracking::AllEvents)
+            .build().await;
+        match result {
+            Ok(timeline) => {
+                // Never change a room's composer into a different thread implicitly.
+                let (items, stream) = timeline.subscribe().await;
+                drop(stream);
+                let valid = target.as_ref().is_none_or(|target| items.iter().any(|item| {
+                    item.as_event().is_some_and(|event| {
+                        event.event_id() == Some(target) && match event.content() {
+                            matrix_sdk_ui::timeline::TimelineItemContent::MsgLike(message) => {
+                                message.thread_root.as_ref() == kind.thread_root_event_id()
+                                    || kind.thread_root_event_id() == Some(target)
+                            }
+                            _ => kind.thread_root_event_id().is_none(),
+                        }
+                    })
+                }));
+                if valid && timeline.is_threaded() == kind.thread_root_event_id().is_some() {
+                    Ok(timeline)
+                } else { Err("The selected event is unavailable in this conversation.".to_owned()) }
+            }
+            Err(error) => Err(error.to_string()),
+        }
+}
+
+/// Build a replacement separately; a failure or cancelled search leaves the current
+/// timeline and its send queue intact. Commit only to the original account and revision.
+fn focus_timeline(kind: TimelineKind, target: Option<OwnedEventId>) {
+    focus_timeline_window(kind, target, false);
+}
+
+fn focus_timeline_window(kind: TimelineKind, target: Option<OwnedEventId>, rebase: bool) {
+    let Some(client) = get_client() else { return };
+    let (previous, revision, old_requests, old_sender) = {
+        let mut rooms = ALL_JOINED_ROOMS.lock().unwrap();
+        let Some(details) = get_per_timeline_details(&mut rooms, &kind) else { return };
+        details.focus_revision = details.focus_revision.wrapping_add(1);
+        (details.timeline.clone(), details.focus_revision,
+            details.request_sender.clone(), details.timeline_update_sender.clone())
+    };
+    crate::account_session::spawn(async move {
+        let room = previous.room().clone();
+        let result = build_focused_timeline(&room, &kind, &target).await;
+        if !crate::matrix_context::is_current(&client) { return }
+        let mut rooms = ALL_JOINED_ROOMS.lock().unwrap();
+        let Some(details) = get_per_timeline_details(&mut rooms, &kind) else { return };
+        if details.focus_revision != revision || !Arc::ptr_eq(&details.timeline, &previous) { return }
+        let request = old_requests.borrow();
+        if !request.is_timeline_open || (!rebase && target.as_ref().is_some_and(|target|
+            !request.backwards_paginate.iter().any(|pending| &pending.target_event_id == target))) {
+            return;
+        }
+        let timeline = match result {
+            Ok(timeline) => timeline,
+            Err(message) => {
+                let _ = old_sender.send(TimelineUpdate::FocusError { target, message });
+                SignalToUI::set_ui_signal();
+                return;
+            }
+        };
+        let (sender, receiver) = crate::timeline_updates::channel();
+        let (request_sender, request_receiver) = watch::channel(TimelineRequest {
+            backwards_paginate: Vec::new(), is_timeline_open: true,
+        });
+        old_sender.forward_operations_to(&sender);
+        let _ = sender.send(TimelineUpdate::FocusChanged { is_live: target.is_none() });
+        // New channels fence late results from the previous browsing window.
+        *details = PerTimelineDetails {
+            timeline: Arc::new(timeline), timeline_update_sender: sender,
+            timeline_singleton_endpoints: Some((receiver, request_sender.clone())),
+            timeline_subscriber: TimelineSubscriber::NotStarted { request_receiver },
+            request_sender, focus_revision: revision, preserve_operations: true,
+            is_live: target.is_none(), window_anchor: if rebase {target.clone()} else {None},
+        };
+        Cx::post_action(TimelineEndpointsRecreated { room_id: kind.room_id().clone() });
+        SignalToUI::set_ui_signal();
+    });
+}
+
 /// A per-timeline async task that listens for timeline updates and sends them to the UI thread.
 ///
 /// One instance of this async task is spawned for each room or thread that is opened by the user.
 async fn timeline_subscriber_handler(
     timeline: Arc<Timeline>,
-    timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
+    timeline_update_sender: crate::timeline_updates::Sender,
     mut request_receiver: watch::Receiver<TimelineRequest>,
+    window_anchor: Option<OwnedEventId>,
     thread_root_event_id: Option<OwnedEventId>,
 ) {
     /// An inner function that searches the given new timeline items for a target event.
@@ -5585,6 +5803,10 @@ async fn timeline_subscriber_handler(
         log!("Timeline for room {room_id}, thread {thread_root_event_id:?} was closed or recreated \
             before its first update; ending this subscriber task.");
         return;
+    }
+    if let Some(target) = window_anchor
+        && let Some(index) = timeline_items.iter().position(|item|item.as_event().is_some_and(|event|event.event_id()==Some(&target))) {
+        let _ = timeline_update_sender.send(TimelineUpdate::WindowAnchor {target,index});
     }
     SignalToUI::set_ui_signal();
 
@@ -5682,25 +5904,12 @@ async fn timeline_subscriber_handler(
                         SignalToUI::set_ui_signal();
                     }
                     else {
-                        log!("Target event not in timeline. Starting backwards pagination \
-                            in room {room_id}, thread {thread_root_event_id:?} to find target event \
-                            {new_target_event_id} starting from index {starting_index}.",
-                        );
-                        // If we didn't find the target event in the current timeline items,
-                        // we need to start loading previous items into the timeline.
-                        submit_async_request(MatrixRequest::PaginateTimeline {
+                        // A known event must not require walking every intervening history page.
+                        submit_async_request(MatrixRequest::FocusTimeline {
                             timeline_kind: if let Some(thread_root_event_id) = thread_root_event_id.clone() {
-                                TimelineKind::Thread {
-                                    room_id: room_id.clone(),
-                                    thread_root_event_id,
-                                }
-                            } else {
-                                TimelineKind::MainRoom {
-                                    room_id: room_id.clone(),
-                                }
-                            },
-                            num_events: 50,
-                            direction: PaginationDirection::Backwards,
+                                TimelineKind::Thread { room_id: room_id.clone(), thread_root_event_id }
+                            } else { TimelineKind::MainRoom { room_id: room_id.clone() } },
+                            target: Some(new_target_event_id),
                         });
                     }
                 }
@@ -5721,7 +5930,9 @@ async fn timeline_subscriber_handler(
             let mut latest_progress_updates = None;
             let mut num_progress_updates = 0;
 
+            let mut changed_events = crate::timeline_changes::Changes::default();
             for diff in batch {
+                changed_events.observe(&timeline_items, &diff, |item: &TimelineItem| item.unique_id().clone());
                 num_updates += 1;
                 match diff {
                     VectorDiff::Append { values } => {
@@ -5856,9 +6067,15 @@ async fn timeline_subscriber_handler(
             let is_progress_only = num_progress_updates == num_updates;
 
             if num_updates > 0 {
-                if !is_progress_only {for event in timeline_items.iter().filter_map(|item|item.as_event()) {crate::agent_access::discovery::ingest(&timeline.room().client(), &room_id, event);}}
-                #[cfg(feature = "agent_chat")]
-                if !is_progress_only {for event in timeline_items.iter().filter_map(|item| item.as_event()) {crate::agent_chat::approval_runtime::ingest(&timeline.room().client(), &room_id, event);}}
+                if !is_progress_only {
+                    for item in changed_events.into_values() {
+                        if let Some(event) = item.as_event() {
+                            crate::agent_access::discovery::ingest(&timeline.room().client(), &room_id, event);
+                            #[cfg(feature = "agent_chat")]
+                            crate::agent_chat::approval_runtime::ingest(&timeline.room().client(), &room_id, event);
+                        }
+                    }
+                }
                 // Handle the case where back pagination inserts items at the beginning of the timeline
                 // (meaning the entire timeline needs to be re-drawn),
                 // but there is a virtual event at index 0 (e.g., a day divider).
@@ -6017,7 +6234,8 @@ async fn room_avatar_member_profiles(room: &Room) -> Vec<RoomAvatarMember> {
 /// Prefer a custom room image; otherwise use member tiles for group chats.
 async fn room_avatar(room: &Room, room_name_id: &RoomNameId) -> FetchedRoomAvatar {
     if let Some(avatar_url) = room.avatar_url() {
-        if let Ok(Some(avatar)) = room.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
+        let request = MediaRequestParameters {source:MediaSource::Plain(avatar_url.clone()),format:AVATAR_THUMBNAIL_FORMAT.into()};
+        if let Ok(avatar) = crate::media_transport::fetch(&room.client(), &request).await {
             return FetchedRoomAvatar::Image((avatar_url, avatar).into());
         }
     }
@@ -6043,7 +6261,7 @@ async fn room_avatar(room: &Room, room_name_id: &RoomNameId) -> FetchedRoomAvata
                 source: MediaSource::Plain(avatar_url.clone()),
                 format: AVATAR_THUMBNAIL_FORMAT.into(),
             };
-            if let Ok(avatar) = room.client().media().get_media_content(&request, true).await {
+            if let Ok(avatar) = crate::media_transport::fetch(&room.client(), &request).await {
                 return FetchedRoomAvatar::Image((avatar_url, avatar).into());
             }
         }

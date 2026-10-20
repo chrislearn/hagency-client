@@ -243,6 +243,8 @@ impl Widget for Avatar {
     }
 
     fn set_text(&mut self, cx: &mut Cx, v: &str) {
+        self.clear_member_images(cx);
+        crate::memory_budget::release_image(cx, &self.image(cx, ids!(img_view.img)));
         self.display_state = AvatarDisplayState::Text;
         self.set_text_label(cx, v);
         self.view(cx, ids!(img_view)).set_visible(cx, false);
@@ -252,6 +254,16 @@ impl Widget for Avatar {
 }
 
 impl Avatar {
+    fn clear_member_images(&mut self, cx: &mut Cx) {
+        if self.member_tiles.is_empty() { return; }
+        self.member_images.clear();
+        self.members.clear();
+        self.member_tiles.clear();
+        if let Some(mut view) = self.view(cx, ids!(members_view)).borrow_mut() {
+            view.children.clear();
+            cx.widget_tree_mark_dirty(view.widget_uid());
+        }
+    }
     fn sync_visibility(&self, cx: &mut Cx) {
         let members = self.display_state == AvatarDisplayState::Members;
         let image = matches!(self.display_state, AvatarDisplayState::Image | AvatarDisplayState::ImageLoading)
@@ -262,6 +274,7 @@ impl Avatar {
     }
 
     fn show_members(&mut self, cx: &mut Cx, members: &[RoomAvatarMember]) {
+        crate::memory_budget::release_image(cx, &self.image(cx, ids!(img_view.img)));
         if members.is_empty() {
             self.show_text(cx, None, None, "?");
             return;
@@ -411,6 +424,7 @@ impl Avatar {
         let img_ref = self.image(cx, ids!(img_view.img));
         let res = image_set_function(cx, img_ref.clone());
         if res.is_ok() {
+            self.clear_member_images(cx);
             // Don't show the avatar image until it's been decoded in full (which is async).
             let has_content = img_ref.has_content();
             self.display_state = if has_content { AvatarDisplayState::Image } else { AvatarDisplayState::ImageLoading };
@@ -680,7 +694,12 @@ where
     D: Into<Arc<[u8]>>,
 {
     fn from((uri, data): (U, D)) -> Self {
-        Self { uri: uri.into(), data: data.into() }
+        let data = data.into();
+        // Room/space/profile previews can retain avatars outside AvatarCache.
+        // They share its process-wide byte ledger; an empty image makes the
+        // existing image-load fallback retain the person's initials.
+        let data = if crate::memory_budget::admit_encoded(&data) { data } else { Arc::from([]) };
+        Self { uri: uri.into(), data }
     }
 }
 impl From<AvatarImage> for AvatarState {

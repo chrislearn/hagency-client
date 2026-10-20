@@ -50,6 +50,7 @@ mod session_auth;
 pub mod module;
 /// Function for loading and saving persistent application/session state.
 pub mod persistence;
+mod history_store;
 /// The settings screen and settings-related content/widgets.
 pub mod settings;
 mod project_links;
@@ -114,11 +115,15 @@ pub mod agent_chat_dummy;
 // Matrix stuff
 pub mod agent_access;
 pub mod sliding_sync;
+mod timeline_changes;
+pub mod timeline_updates;
 mod matrix_context;
 pub mod space_service_sync;
 pub mod avatar_cache;
 pub mod room_preview_cache;
 pub mod media_cache;
+pub mod memory_budget;
+mod media_transport;
 pub mod verification;
 
 pub mod utils;

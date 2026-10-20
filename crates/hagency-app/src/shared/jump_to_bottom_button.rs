@@ -210,14 +210,15 @@ impl JumpToBottomButton {
         cx: &mut Cx,
         portal_list: &PortalListRef,
         actions: &Actions,
-    ) {
+    ) -> bool {
+        let clicked = self.button(cx, ids!(inner_button)).clicked(actions);
         let was_visible = self.visible;
         // Note: here, we could choose to set visibility ONLY IF the portallist was scrolled.
         //       However, we intentionally skip that check, as it's actually more expensive
         //       to check if the portallist has been scrolled than to just directly
         //       query the portallist's `at_end` state and set the visibility accordingly.
 
-        if self.button(cx, ids!(inner_button)).clicked(actions) {
+        if clicked {
             portal_list.smooth_scroll_to_end(
                 cx,
                 SCROLL_TO_BOTTOM_SPEED,
@@ -231,6 +232,7 @@ impl JumpToBottomButton {
         if self.visible != was_visible {
             self.redraw(cx);
         }
+        clicked
     }
 
 }
@@ -256,10 +258,8 @@ impl JumpToBottomButtonRef {
         cx: &mut Cx,
         portal_list: &PortalListRef,
         actions: &Actions,
-    ) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.update_from_actions(cx, portal_list, actions);
-        }
+    ) -> bool {
+        self.borrow_mut().is_some_and(|mut inner| inner.update_from_actions(cx, portal_list, actions))
     }
 }
 

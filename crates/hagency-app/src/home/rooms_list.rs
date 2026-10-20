@@ -47,7 +47,7 @@ use crate::{
 /// Whether to pre-paginate visible rooms at least once in order to
 /// be able to display the latest message in a room's RoomsListEntry,
 /// and to have something to immediately show when a user first opens a room.
-const PREPAGINATE_VISIBLE_ROOMS: bool = true;
+const PREPAGINATE_VISIBLE_ROOMS: bool = false;
 
 /// Lets an already-open room menu follow server-confirmed notification changes.
 #[derive(Clone, Debug)]
@@ -1450,6 +1450,7 @@ impl RoomsList {
                         room.has_been_shown = true;
                         if PREPAGINATE_VISIBLE_ROOMS {
                             submit_async_request(MatrixRequest::PaginateTimeline {
+                    anchor: None,
                                 timeline_kind: TimelineKind::MainRoom {room_id: id.clone()},
                                 num_events: 50, direction: PaginationDirection::Backwards,
                             });
@@ -2055,6 +2056,7 @@ impl Widget for RoomsList {
                             direct_room.has_been_shown = true;
                             if PREPAGINATE_VISIBLE_ROOMS {
                                 submit_async_request(MatrixRequest::PaginateTimeline {
+                    anchor: None,
                                     timeline_kind: TimelineKind::MainRoom {
                                         room_id: direct_room.room_name_id.room_id().clone(),
                                     },
@@ -2094,6 +2096,7 @@ impl Widget for RoomsList {
                             regular_room.has_been_shown = true;
                             if PREPAGINATE_VISIBLE_ROOMS {
                                 submit_async_request(MatrixRequest::PaginateTimeline {
+                    anchor: None,
                                     timeline_kind: TimelineKind::MainRoom {
                                         room_id: regular_room.room_name_id.room_id().clone(),
                                     },

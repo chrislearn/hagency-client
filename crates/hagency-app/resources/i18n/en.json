@@ -966,6 +966,7 @@
   "Too many article revisions to verify safely.": "Too many article revisions to verify safely.",
   "Keep at most 100 article drafts on this device.": "Keep at most 100 article drafts on this device.",
   "The image library is full.": "The image library is full.",
+  "This image is too large to preview. Save the file to open it.": "This image is too large to preview. Save the file to open it.",
   "This image is too large after processing.": "This image is too large after processing.",
   "Article library exceeds its storage limit.": "Article library exceeds its storage limit.",
   "Invalid article block": "Invalid article block",

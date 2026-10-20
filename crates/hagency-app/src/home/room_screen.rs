@@ -1229,6 +1229,7 @@ pub struct RoomScreen {
     /// This lets us ignore a response that arrives after the user gave up on it.
     #[rust] pending_read_receipt_jump: Option<OwnedUserId>,
     #[rust] pending_history_jump: Option<OwnedEventId>,
+    #[rust] pending_restore_scroll: Option<f64>,
     #[rust] history_jump_started: bool,
     /// Fires when a background search for a jumped-to event has gone quiet.
     #[rust] jump_search_timer: Timer,
@@ -1535,7 +1536,7 @@ impl Widget for RoomScreen {
                         // `set_displayed_room()` does nothing if the room_name_id is unchanged, so we clear it first.
                         self.room_name_id = None;
                         let thread_root_event_id = self.timeline_kind.as_ref()
-                            .and_then(|k| k.thread_root_event_id().cloned());
+                            .and_then(|k| k.thread_root_event_id().map(ToOwned::to_owned));
                         self.set_displayed_room(cx, room_name_id, thread_root_event_id);
                         return;
                     }
@@ -1634,11 +1635,27 @@ impl Widget for RoomScreen {
             }
 
             // Handle the jump to bottom button: update its visibility, and handle clicks.
-            self.jump_to_bottom_button(cx, ids!(jump_to_bottom_button)).update_from_actions(
+            let clicked_bottom = self.jump_to_bottom_button(cx, ids!(jump_to_bottom_button)).update_from_actions(
                 cx,
                 &portal_list,
                 actions,
             );
+            if self.tl_state.as_ref().is_some_and(|tl| !tl.is_live) {
+                self.jump_to_bottom_button(cx, ids!(jump_to_bottom_button)).update_visibility(cx, false);
+            }
+            if let Some(tl) = self.tl_state.as_mut() {
+                if !tl.is_live {
+                    if clicked_bottom {
+                        submit_async_request(MatrixRequest::FocusTimeline { timeline_kind: tl.kind.clone(), target: None });
+                    } else if portal_list.reached_end(actions) && !tl.is_paginating && !tl.forwards_paginated {
+                        tl.is_paginating = true;
+                        submit_async_request(MatrixRequest::PaginateTimeline {
+                    anchor: tl.items.iter().skip(portal_list.first_id()).find_map(|item|item.as_event()?.event_id().map(ToOwned::to_owned)),
+                            timeline_kind: tl.kind.clone(), num_events: 50, direction: PaginationDirection::Forwards,
+                        });
+                    }
+                }
+            }
         }
 
         // Currently, a Signal event is only used to tell this widget:
@@ -1650,7 +1667,7 @@ impl Widget for RoomScreen {
                 if rooms_list_ref.is_room_loaded(room_name_id.room_id()) {
                     let room_name_clone = room_name_id.clone();
                     let thread_root_event_id = self.timeline_kind.as_ref()
-                        .and_then(|k| k.thread_root_event_id().cloned());
+                        .and_then(|k| k.thread_root_event_id().map(ToOwned::to_owned));
                     // This room has been loaded now, so we call `set_displayed_room()`.
                     // We first clear the `room_name_id`, otherwise that function will do nothing.
                     self.room_name_id = None;
@@ -1685,7 +1702,7 @@ impl Widget for RoomScreen {
                     // A restored stack view may not have drawn any PortalList items yet.
                     // An absolute position survives its first draw; smooth_scroll_to does not.
                     portal_list.set_tail_range(false);
-                    portal_list.set_first_id_and_scroll(index, 0.0);
+                    portal_list.set_first_id_and_scroll(index, self.pending_restore_scroll.take().unwrap_or(0.0));
                     if loading_pane.is_searching_for(&event_id) {loading_pane.hide(cx);}
                     self.pending_history_jump = None;
                     self.history_jump_started = false;
@@ -2076,6 +2093,7 @@ impl Widget for RoomScreen {
                 log!("Automatically paginating timeline to fill viewport for room {:?}", self.room_name_id);
                 tl_state.is_paginating = true;
                 submit_async_request(MatrixRequest::PaginateTimeline {
+                    anchor: None,
                     timeline_kind: tl_state.kind.clone(),
                     num_events: 50,
                     direction: PaginationDirection::Backwards,
@@ -2187,11 +2205,14 @@ impl RoomScreen {
 
         let mut done_loading = false;
         let mut items_changed = false;
+        let mut send_indices_dirty = false;
         let mut should_continue_backwards_pagination = false;
         let mut typing_users = None;
         let mut jump_to_read_receipt = None;
         let mut num_updates = 0;
-        while let Ok(update) = tl.update_receiver.try_recv() {
+        let update_started = std::time::Instant::now();
+        while num_updates < 64 && update_started.elapsed() < std::time::Duration::from_millis(4) {
+            let Ok(update) = tl.update_receiver.try_recv() else { break };
             num_updates += 1;
             let update = match update {
                 // When an existing timeline is reconnected (new channels/tasks in the backend),
@@ -2211,7 +2232,36 @@ impl RoomScreen {
                 update => update,
             };
             match update {
+                TimelineUpdate::WindowAnchor {target,index} => {
+                    if tl.items.get(index).and_then(|item|item.as_event()).is_some_and(|event|event.event_id()==Some(&target)) {
+                        portal_list.set_tail_range(false);
+                        portal_list.set_first_id_and_scroll(index,0.0);
+                    }
+                }
+                TimelineUpdate::FocusChanged { is_live } => {
+                    tl.is_live = is_live;
+                    tl.fully_paginated = false;
+                    tl.forwards_paginated = false;
+                    tl.is_paginating = false;
+                    tl.pending_reached_start = false;
+                    tl.num_backwards_pagination_rounds_without_progress = 0;
+                    if is_live { tl.items.clear(); }
+                    tl.media_cache.clear();
+                    tl.content_drawn_since_last_update.clear();
+                    tl.profile_drawn_since_last_update.clear();
+                    if !is_live { jump_to_bottom_button.update_visibility(cx, false); }
+                }
+                TimelineUpdate::FocusError { target, message } => {
+                    if target.as_ref().is_none_or(|id| loading_pane.is_searching_for(id)) {
+                        loading_pane.search_failed(cx);
+                        enqueue_popup_notification(message, PopupKind::Error, Some(8.0));
+                    }
+                    tl.is_paginating = false;
+                    should_continue_backwards_pagination = false;
+                    tl.request_sender.send_if_modified(|req| { req.backwards_paginate.clear(); true });
+                }
                 TimelineUpdate::FirstUpdate { initial_items } => {
+                    tl.clear_history_metadata();
                     tl.content_drawn_since_last_update.clear();
                     tl.profile_drawn_since_last_update.clear();
                     // Upon first showing a timeline, assume it's not fully paginated nor currently paginating.
@@ -2224,6 +2274,7 @@ impl RoomScreen {
                     jump_to_bottom_button.update_visibility(cx, true);
 
                     tl.items = initial_items;
+                    send_indices_dirty = true;
                     items_changed = true;
                     done_loading = true;
                 }
@@ -2345,6 +2396,7 @@ impl RoomScreen {
                     }
 
                     if clear_cache {
+                        tl.clear_history_metadata();
                         tl.content_drawn_since_last_update.clear();
                         tl.profile_drawn_since_last_update.clear();
                         let has_more_history = !tl.fully_paginated;
@@ -2354,9 +2406,9 @@ impl RoomScreen {
                         // go ahead and fetch more items proactively so that the user
                         // doesn't have to do some kind of annoying scroll-up gesture again.
                         if has_more_history && portal_list.first_id() <= 2 {
-                            // If we're searching for an older event, we need to keep paginating.
+                            // Event-context requests resolve searches without walking intermediate pages.
                             if loading_pane.is_searching() {
-                                should_continue_backwards_pagination = true;
+                                should_continue_backwards_pagination = false;
                             }
                             // Otherwise, we should only continue if we're actually getting more events.
                             // If we're not, we're going to get rate limited if we keep auto-requesting
@@ -2383,6 +2435,12 @@ impl RoomScreen {
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
                         // log!("process_timeline_updates(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                     }
+                    if !send_indices_dirty && is_append && !clear_cache && changed_indices.start >= tl.items.len() {
+                        (tl.index_of_last_own_sent, tl.index_of_first_own_failed) = own_send_indices_since(
+                            &new_items, tl.kind.thread_root_event_id().is_none(), tl.items.len(),
+                            (tl.index_of_last_own_sent, tl.index_of_first_own_failed),
+                        );
+                    } else { send_indices_dirty = true; }
                     tl.items = new_items;
                     items_changed = true;
                     done_loading = true;
@@ -2421,7 +2479,7 @@ impl RoomScreen {
                         //       we should deduplicate them at some point.
                         if self.pending_history_jump.as_ref() == Some(&target_event_id) {
                             portal_list.set_tail_range(false);
-                            portal_list.set_first_id_and_scroll(index, 0.0);
+                            portal_list.set_first_id_and_scroll(index, self.pending_restore_scroll.take().unwrap_or(0.0));
                             self.pending_history_jump = None;
                             self.history_jump_started = false;
                             cx.widget_action(ui, MessageAction::HighlightMessage(index));
@@ -2457,7 +2515,7 @@ impl RoomScreen {
                         cx.stop_timer(self.jump_search_timer);
                         self.jump_search_timer = Timer::empty();
                     } else {
-                        error!("Unexpected PaginationRunning update in the Forwards direction");
+                        tl.is_paginating = true;
                     }
                 }
                 TimelineUpdate::PaginationError { error, direction } => {
@@ -2503,16 +2561,17 @@ impl RoomScreen {
                                     should_continue_backwards_pagination = true;
                                 }
                             }
-                            // A search keeps paginating wherever the user is scrolled, since a
-                            // round can add no items at all if the timeline filters them all out.
+                            // Known-event jumps use a context request, never a linear history walk.
                             if loading_pane.is_searching() {
-                                should_continue_backwards_pagination = true;
+                                should_continue_backwards_pagination = false;
                                 cx.stop_timer(self.jump_search_timer);
                                 self.jump_search_timer = Timer::empty();
                             }
                         }
                     } else {
-                        error!("Unexpected PaginationIdle update in the Forwards direction");
+                        tl.is_paginating = false;
+                        tl.forwards_paginated = fully_paginated;
+                        done_loading = true;
                     }
                 }
                 TimelineUpdate::EventDetailsFetched {event_id, result } => {
@@ -2529,6 +2588,7 @@ impl RoomScreen {
                     latest_reply_preview_text,
                 } => {
                     tl.pending_thread_summary_fetches.remove(&thread_root_event_id);
+                    if !tl.items.iter().any(|item|item.as_event().is_some_and(|event|event.event_id()==Some(&thread_root_event_id))) {continue;}
                     tl.fetched_thread_summaries.insert(
                         thread_root_event_id.clone(),
                         FetchedThreadSummary {
@@ -2725,7 +2785,10 @@ impl RoomScreen {
             }
         }
 
-        if items_changed {
+        if !tl.update_receiver.is_empty() {
+            SignalToUI::set_ui_signal();
+        }
+        if items_changed && send_indices_dirty {
             (tl.index_of_last_own_sent, tl.index_of_first_own_failed) =
                 own_send_indices(&tl.items, tl.kind.thread_root_event_id().is_none());
         }
@@ -2745,6 +2808,7 @@ impl RoomScreen {
         if should_continue_backwards_pagination {
             tl.is_paginating = true;
             submit_async_request(MatrixRequest::PaginateTimeline {
+                    anchor: None,
                 timeline_kind: tl.kind.clone(),
                 num_events: 50,
                 direction: PaginationDirection::Backwards,
@@ -3060,7 +3124,7 @@ impl RoomScreen {
                     // If this message was already part of a thread, use that thread root.
                     // If not, use the message's event ID as the root for a new thread.
                     let Some(thread_root_event_id) = details.thread_root_event_id.clone()
-                        .or_else(|| details.event_id().cloned())
+                        .or_else(|| details.event_id().map(ToOwned::to_owned))
                     else {
                         enqueue_popup_notification(
                             "Cannot reply in thread to an unsent message.",
@@ -3542,6 +3606,7 @@ impl RoomScreen {
                     return;
                 };
                 let TimelineEndpoints {
+                    preserve_operations: _,
                     update_receiver,
                     update_sender,
                     request_sender,
@@ -3572,6 +3637,8 @@ impl RoomScreen {
                     room_members: None,
                     // We assume timelines being viewed for the first time haven't been fully paginated.
                     fully_paginated: false,
+                    is_live: true,
+                    forwards_paginated: false,
                     is_paginating: false,
                     items: Vector::new(),
                     index_of_last_own_sent: None,
@@ -3635,6 +3702,7 @@ impl RoomScreen {
                 log!("Sending a first-time backwards pagination request for {}", tl_state.kind);
                 tl_state.is_paginating = true;
                 submit_async_request(MatrixRequest::PaginateTimeline {
+                    anchor: None,
                     timeline_kind: tl_state.kind.clone(),
                     num_events: 50,
                     direction: PaginationDirection::Backwards,
@@ -3721,6 +3789,7 @@ impl RoomScreen {
             return;
         }
         let Some(TimelineEndpoints {
+            preserve_operations,
             update_sender,
             update_receiver,
             request_sender,
@@ -3777,21 +3846,11 @@ impl RoomScreen {
         let loading_pane = self.loading_pane(cx, ids!(loading_pane));
         // Also update the loading pane's timeline request sender.
         loading_pane.set_timeline_request_sender(reconnected_sender);
-        // If the loading pane was searching for an older event, the in-progress pagination request
-        // might've been cancelled while the timeline was being re-created. So we restart it here.
-        if loading_pane.is_searching() {
-            if let Some(tl) = self.tl_state.as_mut() {
-                tl.is_paginating = true;
-            }
-            submit_async_request(MatrixRequest::PaginateTimeline {
-                timeline_kind,
-                num_events: 50,
-                direction: PaginationDirection::Backwards,
-            });
-        }
         // The bkgd upload task still holds the old channel endpoints, so let the upload
         // progress view deal with whatever upload it was showing.
-        self.view.room_input_bar(cx, ids!(room_input_bar)).on_timeline_reconnected(cx);
+        if !preserve_operations {
+            self.view.room_input_bar(cx, ids!(room_input_bar)).on_timeline_reconnected(cx);
+        }
         self.redraw(cx);
     }
 
@@ -3807,6 +3866,7 @@ impl RoomScreen {
         // Closing/hiding the room should cancel any pending jump/search.
         self.pending_read_receipt_jump = None;
         self.pending_history_jump = None;
+        self.pending_restore_scroll = None;
         self.history_jump_started = false;
         self.jump_search_timer = Timer::empty();
         // Live approval deadlines are re-tracked when the timeline is shown again.
@@ -3848,11 +3908,17 @@ impl RoomScreen {
         let state = SavedState {
             first_index_and_scroll: Some((portal_list.first_id(), portal_list.scroll_position())),
             was_at_end: portal_list.is_at_end(),
+            history_anchor: if portal_list.is_at_end() {None} else {tl.items.iter().skip(portal_list.first_id()).find_map(|item|item.as_event()?.event_id().map(ToOwned::to_owned)).map(|id|(id,portal_list.scroll_position()))},
             room_input_bar_state: room_input_bar.save_state(),
         };
         tl.saved_state = state;
         // Clear room_members to avoid wasting memory (in case this room is never re-opened).
         tl.room_members = None;
+        // Media bytes are reconstructible from the SDK disk cache. Do not retain
+        // every previously viewed room's image working set alongside its draft.
+        tl.media_cache.clear();
+        tl.link_preview_cache.clear();
+        tl.content_drawn_since_last_update.clear();
         // Store this Timeline's `TimelineUiState` until a RoomScreen shows it again.
         timeline_state_store::put_back(self.widget_uid(), tl);
     }
@@ -3866,7 +3932,13 @@ impl RoomScreen {
             first_index_and_scroll,
             was_at_end,
             room_input_bar_state,
+            history_anchor,
         } = &mut tl_state.saved_state;
+        if tl_state.items.is_empty() && let Some((anchor,scroll))=history_anchor.take() {
+            self.pending_history_jump=Some(anchor);
+            self.pending_restore_scroll=Some(scroll);
+            self.history_jump_started=false;
+        }
 
         // 1. Restore the position of the timeline.
         let portal_list = self.portal_list(cx, ids!(timeline.list));
@@ -4075,6 +4147,22 @@ impl RoomScreen {
         self.redraw(cx);
     }
 
+    #[cfg(feature = "chat-stress")]
+    pub fn stress_seed_media(&mut self, images: &[(OwnedMxcUri, Arc<[u8]>)]) {
+        if let Some(tl) = &mut self.tl_state {
+            for (uri, bytes) in images { tl.media_cache.seed_stress_image(uri.clone(), bytes.clone()); }
+        }
+    }
+
+    #[cfg(feature = "chat-stress")]
+    pub fn stress_snapshot(&self, cx: &Cx) -> serde_json::Value {
+        let list = self.view.child_by_path(ids!(timeline.list)).as_portal_list();
+        let count = list.borrow().map(|list| list.items().len()).unwrap_or(0);
+        serde_json::json!({"items": self.tl_state.as_ref().map(|tl|tl.items.len()),
+            "widgets": count, "visible": list.visible_items(), "first": list.first_id(),
+            "scroll": list.scroll_position(), "area": format!("{:?}", list.area().rect(cx))})
+    }
+
     /// Sends read receipts for the events the user has seen in the timeline.
     ///
     /// This should only be called if a user's direct timeline interaction has finished.
@@ -4212,6 +4300,7 @@ impl RoomScreen {
         log!("Timeline hit first item, sending back pagination request for room {}", tl.kind);
         tl.is_paginating = true;
         submit_async_request(MatrixRequest::PaginateTimeline {
+                    anchor: tl.items.iter().skip(portal_list.first_id()).find_map(|item|item.as_event()?.event_id().map(ToOwned::to_owned)),
             timeline_kind: tl.kind.clone(),
             num_events: 50,
             direction: PaginationDirection::Backwards,
@@ -4344,6 +4433,7 @@ impl RoomScreenRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.view.action_room_board(cx, ids!(actions_board)).show_history(cx);
             inner.view.view(cx, ids!(room_screen_wrapper)).set_visible(cx, true);
+            inner.pending_restore_scroll = None;
             inner.pending_history_jump = Some(event);
             inner.history_jump_started = false;
             inner.redraw(cx);
@@ -4418,6 +4508,10 @@ pub enum RoomScreenTooltipActions {
 /// A message that is sent from a background async task to a room's timeline view
 /// for the purpose of update the Timeline UI contents or metadata.
 pub enum TimelineUpdate {
+    /// The backend installed a new browsing window. Old channel results stay isolated.
+    FocusChanged { is_live: bool },
+    WindowAnchor { target: OwnedEventId, index: usize },
+    FocusError { target: Option<OwnedEventId>, message: String },
     /// The very first update a given room's timeline receives.
     FirstUpdate {
         /// The initial list of timeline items (events) for a room.
@@ -4583,6 +4677,10 @@ pub enum TimelineUpdate {
 }
 
 /// Stores timeline UI state that is not currently owned by a `RoomScreen`.
+pub(crate) fn release_cached_history(kind: &TimelineKind, channel: usize) {
+    timeline_state_store::release_history(kind,channel);
+}
+
 mod timeline_state_store {
     use super::*;
 
@@ -4619,6 +4717,21 @@ mod timeline_state_store {
         /// All timeline states (for timelines that have been shown),
         /// one per room/thread timeline. Only relevant from the main UI thread.
         static TIMELINE_STATES: RefCell<HashMap<TimelineKind, StateEntry>> = RefCell::new(HashMap::new());
+    }
+
+    pub(super) fn release_history(kind: &TimelineKind, channel: usize) {
+        TIMELINE_STATES.with_borrow_mut(|states| {
+            if let Some(StateEntry::Stored(state)) = states.get_mut(kind)
+                && state.update_receiver.identity()==channel {
+                state.items.clear();
+                state.clear_history_metadata();
+                state.media_cache.clear();
+                state.link_preview_cache.clear();
+                state.content_drawn_since_last_update.clear();
+                state.profile_drawn_since_last_update.clear();
+                state.saved_state.first_index_and_scroll = None;
+            }
+        });
     }
 
     /// Attempts to take ownership of the saved UI state for `kind`.
@@ -4769,6 +4882,8 @@ struct TimelineUiState {
     ///
     /// This must be reset to `false` whenever the timeline is fully cleared.
     fully_paginated: bool,
+    is_live: bool,
+    forwards_paginated: bool,
 
     /// Whether a pagination request is currently in flight.
     is_paginating: bool,
@@ -4807,7 +4922,7 @@ struct TimelineUiState {
     /// Here we use a synchronous (non-async) channel because the receiver runs
     /// in a sync context and the sender runs in an async context,
     /// which is okay because a sender on an unbounded channel never needs to block.
-    update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
+    update_receiver: crate::timeline_updates::Receiver,
 
     /// The sender for timeline requests from a RoomScreen showing this room
     /// to the background async task that handles this room's timeline updates.
@@ -4877,6 +4992,11 @@ struct TimelineUiState {
 }
 
 impl TimelineUiState {
+    fn clear_history_metadata(&mut self) {
+        self.fetched_thread_summaries.clear();
+        self.pending_thread_summary_fetches.clear();
+        self.expanded_reply_previews.clear();
+    }
     /// Whether we've given up automatic back pagination.
     ///
     /// This happens after we've done multiple back pagination rounds without getting any new events.
@@ -4905,6 +5025,7 @@ struct SavedState {
     first_index_and_scroll: Option<(usize, f64)>,
     /// Whether the timeline was tracking the end of the list.
     was_at_end: bool,
+    history_anchor: Option<(OwnedEventId,f64)>,
     /// The state of all UI elements in the `RoomInputBar`.
     room_input_bar_state: RoomInputBarState,
 }
@@ -4995,15 +5116,24 @@ fn own_send_indices(
     items: &Vector<Arc<TimelineItem>>,
     is_main_timeline: bool,
 ) -> (Option<usize>, Option<usize>) {
-    let mut first_failed = None;
-    for (index, item) in items.iter().enumerate().rev() {
+    own_send_indices_since(items, is_main_timeline, 0, (None, None))
+}
+
+fn own_send_indices_since(
+    items: &Vector<Arc<TimelineItem>>, is_main_timeline: bool, start: usize,
+    previous: (Option<usize>, Option<usize>),
+) -> (Option<usize>, Option<usize>) {
+    let mut first_failed = previous.1;
+    for (index, item) in items.iter().enumerate().rev().take(items.len().saturating_sub(start)) {
         let Some(event) = item.as_event() else { continue };
         // Anyone who read this has read past everything older, so we can stop here.
         // Local echoes carry no receipts, so a failed send is always found first.
         if !event.read_receipts().is_empty() { return (None, first_failed) }
         if !event.is_own() { continue }
         match event.send_state() {
-            Some(EventSendState::SendingFailed { is_recoverable: false, .. }) => first_failed = Some(index),
+            Some(EventSendState::SendingFailed { is_recoverable: false, .. }) => {
+                if first_failed.is_none_or(|previous| index < previous) { first_failed = Some(index); }
+            },
             None | Some(EventSendState::Sent { .. }) => {
                 let is_message = matches!(event.content(), TimelineItemContent::MsgLike(msg_like)
                     if matches!(msg_like.kind, MsgLikeKind::Message(_) | MsgLikeKind::Sticker(_) | MsgLikeKind::Redacted)
@@ -5014,7 +5144,7 @@ fn own_send_indices(
             _ => { }
         }
     }
-    (None, first_failed)
+    (previous.0, first_failed)
 }
 
 /// Creates, populates, and adds a Message liveview widget to the given `PortalList`

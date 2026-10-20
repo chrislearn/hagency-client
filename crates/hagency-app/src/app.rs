@@ -353,6 +353,9 @@ impl MatchEvent for App {
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        for evicted in actions.iter().filter_map(|action|action.downcast_ref::<crate::sliding_sync::TimelineCacheEvicted>()) {
+            crate::home::room_screen::release_cached_history(&evicted.0,evicted.1);
+        }
         if self.app_state.logged_in && crate::home::home_screen::effective_is_desktop(cx)
             && self.ui.navigation_bar_button(cx, ids!(titlebar_sidebar)).clicked(actions)
         {
@@ -1319,7 +1322,7 @@ impl AppMain for App {
         if matches!(event, Event::LiveEdit | Event::ScriptReapply) {
             self.titlebar_sidebar_state.replace(None);
         }
-        self.render_maintenance.handle_event(cx, event);
+        self.render_maintenance.handle_event_in_context(cx, event, !self.embedded);
         crate::speech::capture::handle_event(cx, event);
         crate::theme::system::handle_event(cx, event);
         // Peek at Back instead of `back_pressed()`, which marks it handled: Back
