@@ -318,19 +318,17 @@ async fn native_console_agent_roster_refuses_foreign_origin() {
             "{name}: {value} serves no agent item"
         );
     }
-    // The document rule keeps its five-name exception: the roster page is a
-    // NON-document, so a cross-site navigation is refused with the origin
-    // word and the page takes no query string at all.
+    // The retired roster page is absent for both cross-site and query requests.
     let cross = TestClient::get(format!("{BASE}/console/agents/"))
         .add_header("host", "127.0.0.1:13300", true)
         .add_header("sec-fetch-site", "cross-site", true)
         .send(&service)
         .await;
-    assert_eq!(cross.status_code, Some(StatusCode::FORBIDDEN));
+    assert_eq!(cross.status_code, Some(StatusCode::NOT_FOUND));
     let queried = get("/console/agents/?anything=1", &cookie)
         .send(&service)
         .await;
-    assert_eq!(queried.status_code, Some(StatusCode::BAD_REQUEST));
+    assert_eq!(queried.status_code, Some(StatusCode::NOT_FOUND));
     // No mutation exists: the router refuses a non-GET outright.
     let post = TestClient::post(format!("{BASE}/console/api/agents"))
         .add_header("host", "127.0.0.1:13300", true)

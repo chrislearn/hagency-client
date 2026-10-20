@@ -36,15 +36,10 @@ mod matrix_diag;
 mod offer_book;
 #[path = "console/origin.rs"]
 mod origin;
-#[path = "owner_cli/mod.rs"]
-mod owner_cli;
 #[path = "console/palpo_import.rs"]
 mod palpo_import;
 #[path = "console/project_sides.rs"]
 mod project_sides;
-#[path = "console/rail.rs"]
-#[cfg(feature = "native-console-browser")]
-mod rail;
 #[path = "console/real_agent.rs"]
 mod real_agent;
 #[path = "console/registration.rs"]
@@ -255,7 +250,7 @@ async fn native_console_authority() {
             .add_header("sec-fetch-site", fetch, true)
             .send(&service)
             .await;
-        assert_eq!(response.status_code, Some(StatusCode::OK));
+        assert_eq!(response.status_code, Some(StatusCode::NOT_FOUND));
     }
     let logout = TestClient::delete(format!("{BASE}/console/session"))
         .add_header("host", "127.0.0.1:13300", true)
@@ -272,115 +267,6 @@ async fn native_console_authority() {
             .status_code,
         Some(StatusCode::UNAUTHORIZED)
     );
-    f.close().await;
-}
-
-#[tokio::test]
-async fn native_console_assets() {
-    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
-    let path = f.root.path().join("assets").canonicalize().unwrap();
-    std::fs::write(path.join("usage/index.html"), b"changed after admission").unwrap();
-    assert!(hagency::console::Console::load(&path).is_err());
-    let mut response = TestClient::get(format!("{BASE}/console/usage/"))
-        .add_header("host", "127.0.0.1:13300", true)
-        .send(&f.service())
-        .await;
-    assert!(
-        response
-            .take_string()
-            .await
-            .unwrap()
-            .contains("retained asset fixture")
-    );
-    // Board #47: the task-graphs document must be SERVED, which needs the page
-    // admitted by `assets.rs` (an unlisted `task-graphs/index.html` makes
-    // `Console::load` fail outright, so a bundle carrying the page would be
-    // refused) at the URL the rail links to.
-    let mut graphs = TestClient::get(format!("{BASE}/console/task-graphs/"))
-        .add_header("host", "127.0.0.1:13300", true)
-        .send(&f.service())
-        .await;
-    assert_eq!(graphs.status_code, Some(StatusCode::OK));
-    assert!(
-        graphs
-            .take_string()
-            .await
-            .unwrap()
-            .contains("task-graphs document fixture")
-    );
-    for path in [
-        "/console/operator.token",
-        "/console/agents/FixtureName",
-        "/console/api/hagency/agents",
-        "/console/_next/static/unknown.js",
-        "/console/usage/?unknown=1",
-    ] {
-        let response = TestClient::get(format!("{BASE}{path}"))
-            .add_header("host", "127.0.0.1:13300", true)
-            .send(&f.service())
-            .await;
-        assert!(response.status_code.unwrap().is_client_error());
-    }
-    #[cfg(unix)]
-    {
-        let alias = f.root.path().canonicalize().unwrap().join("alias");
-        std::os::unix::fs::symlink(&path, &alias).unwrap();
-        assert!(hagency::console::Console::load(&alias).is_err());
-        // Board #84: an ANCESTOR spelled through a relative symlink is a
-        // legitimate path, not a bait — this host's own worktree alias is
-        // `hl -> hl.noindex`. The old component-by-component nofollow walk
-        // refused it and killed the executable suite (`Error: Assets`).
-        // Only the asset directory ITSELF must be a real directory.
-        use std::os::unix::fs::PermissionsExt;
-        let anchor = path.parent().unwrap();
-        let real = anchor.join("real");
-        std::fs::create_dir(&real).unwrap();
-        std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o700)).unwrap();
-        assets(&real.join("bundle"));
-        std::os::unix::fs::symlink("real", anchor.join("aliasdir")).unwrap();
-        let through_alias = anchor.join("aliasdir").join("bundle");
-        assert!(
-            hagency::console::Console::load(&through_alias).is_ok(),
-            "a bundle behind an ancestor symlink must load"
-        );
-        std::fs::remove_file(path.join("usage/index.html")).unwrap();
-        std::os::unix::fs::symlink(path.join("manifest.json"), path.join("usage/index.html"))
-            .unwrap();
-        assert!(hagency::console::Console::load(&path).is_err());
-    }
-    for change in [
-        "size",
-        "hash",
-        "count",
-        "duplicate",
-        "unknown",
-        "manifest_bytes",
-    ] {
-        let dir = f.root.path().join(format!("assets_{change}"));
-        assets(&dir);
-        let dir = dir.canonicalize().unwrap();
-        let manifest = dir.join("manifest.json");
-        let mut value: Value = serde_json::from_slice(&std::fs::read(&manifest).unwrap()).unwrap();
-        match change {
-            "size" => value["assets"][0]["size"] = json!(4 * 1024 * 1024 + 1),
-            "hash" => value["assets"][0]["sha256"] = json!("0".repeat(64)),
-            "count" => value["assets"] = json!(vec![value["assets"][0].clone(); 513]),
-            "duplicate" => value["assets"] = json!(vec![value["assets"][0].clone(); 2]),
-            "unknown" => value["secret"] = json!("not_an_asset_field"),
-            "manifest_bytes" => {}
-            _ => unreachable!(),
-        }
-        let bytes = if change == "manifest_bytes" {
-            vec![b' '; 128 * 1024 + 1]
-        } else {
-            serde_json::to_vec(&value).unwrap()
-        };
-        std::fs::write(manifest, bytes).unwrap();
-        assert!(
-            hagency::console::Console::load(&dir).is_err(),
-            "invalid {change} set was admitted"
-        );
-    }
     f.close().await;
 }
 
@@ -559,92 +445,4 @@ async fn native_console_usage_counts_survive_an_unobserved_sibling_source() {
         "never the Unknown word when usage was measured"
     );
     f.close().await;
-}
-
-/// Board #28: a refusal to start must SAY what is wrong and how to fix it —
-/// a bare `Error: Assets` (exit 1, no field, no fix) is a bug on its own.
-/// `Assets::load` deliberately walks every path component with
-/// `open_dir_nofollow` (the console never resolves a filesystem path at
-/// request time), so a bundle spelled through a symlinked ancestor — this
-/// host's `.../home/hl` -> `hl.noindex`, macOS's `/var` -> `/private/var` —
-/// is refused; the refusal must name `--console-assets` and the fix, and the
-/// same directory reached by its actual host path must still admit.
-#[tokio::test]
-async fn native_console_assets_refusal_names_field_and_fix() {
-    let root = tempfile::tempdir().unwrap();
-    let state = root.path().join("state");
-    let binary = env!("CARGO_BIN_EXE_hagency-cli");
-    let init = std::process::Command::new(binary)
-        .args(["init", "--state-dir"])
-        .arg(&state)
-        .env("PATH", "")
-        .output()
-        .unwrap();
-    assert!(
-        init.status.success(),
-        "{}",
-        String::from_utf8_lossy(&init.stderr)
-    );
-    let bundle = owner_cli::assets(root.path());
-
-    // (a) The refusal: an alias path exits non-zero and names field AND fix.
-    // The child is polled to a deadline — `output()` would block forever if
-    // the refusal ever regressed into an admission.
-    #[cfg(unix)]
-    {
-        let alias = root.path().join("alias");
-        std::os::unix::fs::symlink(&bundle, &alias).unwrap();
-        let mut child = std::process::Command::new(binary)
-            .args(["serve", "--state-dir"])
-            .arg(&state)
-            .args(["--listen", "127.0.0.1:17783", "--console-assets"])
-            .arg(&alias)
-            .env("PATH", "")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        let status = loop {
-            if let Some(status) = child.try_wait().unwrap() {
-                break status;
-            }
-            assert!(
-                std::time::Instant::now() < deadline,
-                "an aliased bundle was admitted instead of refused"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        };
-        assert!(!status.success(), "an aliased bundle must not be admitted");
-        let mut stderr = String::new();
-        if let Some(mut pipe) = child.stderr.take() {
-            use std::io::Read;
-            pipe.read_to_string(&mut stderr).unwrap();
-        }
-        assert!(
-            stderr.contains("Error: Console"),
-            "the assets refusal must ride the named config class, got: {stderr}"
-        );
-        assert!(
-            stderr.contains("--console-assets"),
-            "the refusal must name the field, got: {stderr}"
-        );
-        assert!(
-            stderr.contains("symlink"),
-            "the refusal must name the fix (the alias), got: {stderr}"
-        );
-    }
-
-    // (b) The same bytes by their actual host path are admitted — the
-    // refusal is the alias, not the bundle.
-    let actual = bundle.canonicalize().unwrap();
-    assert!(
-        hagency::owner_host::OwnerHost::open(
-            &state,
-            "127.0.0.1:17783".parse().unwrap(),
-            Some(&actual)
-        )
-        .is_ok(),
-        "the real host path must admit"
-    );
 }

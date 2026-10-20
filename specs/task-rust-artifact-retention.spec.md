@@ -108,7 +108,7 @@ Scenario: A partial receive destination survives an unknown outcome
   Then the partial destination is still present and unmodified, because it is the only evidence that the operation may have run
 
 Scenario: Native logs to stderr and constructs no file sink
-  Test: native_logs_to_stderr_with_no_file_sink
+  Retired-Test: native_logs_to_stderr_with_no_file_sink
   Level: integration
   Test Double: the native service and MCP helper started with a private fresh state directory
   Given a native service and an MCP helper started against a fresh private state directory
@@ -122,3 +122,5 @@ sibling Node contract); the Windows service wrapper's log redirection, deferred 
 M8; the macOS installer's retention sentence, an acceptance item recorded in
 ADR129 and not implemented here; store-resident retention slices and the retention
 tick; terminal parity and full M7/M8 completion.
+
+Desktop-only retirement (2026-10-20): CLI, static document and browser selectors above are retained as historical records, not passing evidence. Shared engine tests remain active.

@@ -141,7 +141,7 @@ Scenario: Incomplete migration capabilities are explicit
   Then Agent execution transport and production API parity remain unavailable
 
 Scenario: A supervisor-less service fixture starts and reports ready
-  Test: native_service_unit_starts_and_reports_ready
+  Retired-Test: native_service_unit_starts_and_reports_ready
   Level: integration
   Test Double: fixture harness spawning the serve binary and polling its routes in an ungated test file
   Given a fresh private state directory and the serve command the systemd unit renders
@@ -150,7 +150,7 @@ Scenario: A supervisor-less service fixture starts and reports ready
   And on the other hosted OSes the same named test asserts the documented not-a-Linux-service refusal never skipping
 
 Scenario: A supervisor-less service fixture stops cleanly inside the budget
-  Test: native_service_unit_stops_cleanly_within_timeout_budget
+  Retired-Test: native_service_unit_stops_cleanly_within_timeout_budget
   Level: integration
   Test Double: fixture harness sending SIGTERM and observing the existing drain sequence
   Given a running serve process with open writer channels on Linux
@@ -161,7 +161,7 @@ Scenario: A supervisor-less service fixture stops cleanly inside the budget
   And on the other hosted OSes the named test asserts the not-a-Linux-service refusal never skipping
 
 Scenario: Pending state survives a service restart
-  Test: native_service_unit_restart_preserves_owner_state
+  Retired-Test: native_service_unit_restart_preserves_owner_state
   Level: integration
   Test Double: fixture harness seeding an outcome-unknown row then restarting the serve binary
   Given a seeded pending or outcome-unknown custody row and a running service on Linux
@@ -171,7 +171,7 @@ Scenario: Pending state survives a service restart
   And on the other hosted OSes the named test asserts the not-a-Linux-service refusal never skipping
 
 Scenario: The rendered launchd agent carries the required keys
-  Test: native_launchd_agent_starts_and_reports_ready
+  Retired-Test: native_launchd_agent_starts_and_reports_ready
   Level: integration
   Test Double: fixture harness rendering the plist template and spawning the serve command it names in an ungated test file
   Given the launchd plist template rendered with explicit install and state placeholders
@@ -181,7 +181,7 @@ Scenario: The rendered launchd agent carries the required keys
   And on the other hosted OSes the same named test asserts the documented not-a-macOS-agent refusal never skipping
 
 Scenario: The launchd stop path drains and exits inside the budget
-  Test: native_launchd_agent_stops_cleanly
+  Retired-Test: native_launchd_agent_stops_cleanly
   Level: integration
   Test Double: fixture harness sending SIGTERM to the serve command under the plist wrapper
   Given a running native service started through the launchd wrapper on macOS
@@ -192,7 +192,7 @@ Scenario: The launchd stop path drains and exits inside the budget
   And on the other hosted OSes the named test asserts the not-a-macOS-agent refusal never skipping
 
 Scenario: The launchd restart preserves pending state
-  Test: native_launchd_restart_preserves_owner_state
+  Retired-Test: native_launchd_restart_preserves_owner_state
   Level: integration
   Test Double: fixture harness seeding an outcome-unknown row then re-running the wrapper
   Given a seeded pending or outcome-unknown custody row and a first run through the wrapper on macOS
@@ -202,7 +202,7 @@ Scenario: The launchd restart preserves pending state
   And on the other hosted OSes the named test asserts the not-a-macOS-agent refusal never skipping
 
 Scenario: The binary reports the workspace version
-  Test: native_binary_version_matches_workspace
+  Retired-Test: native_binary_version_matches_workspace
   Level: integration
   Test Double: the built serve binary run with --version beside the workspace manifest
   Given the workspace version in the root Cargo.toml and a freshly built native binary
@@ -211,7 +211,7 @@ Scenario: The binary reports the workspace version
   And no other version source such as package.json is consulted
 
 Scenario: The release tree contains no Node entry point
-  Test: native_release_entrypoints_scan_finds_no_node
+  Retired-Test: native_release_entrypoints_scan_finds_no_node
   Level: integration
   Test Double: a staged release tree fixture built like the workflow packages it
   Given a staged native release tree containing the binary its units and its checksums
@@ -220,7 +220,7 @@ Scenario: The release tree contains no Node entry point
   And any finding fails the scan never skips
 
 Scenario: The runbook dry-run proves version identity on a temp state directory
-  Test: native_cutover_dryrun_version_identity
+  Retired-Test: native_cutover_dryrun_version_identity
   Level: integration
   Test Double: the built binary run with --version against a fresh temp state directory
   Given a temp state directory initialized by hagency init and the runbook's step 0 precondition
@@ -229,7 +229,7 @@ Scenario: The runbook dry-run proves version identity on a temp state directory
   And a mismatch fails the dry-run before any service start
 
 Scenario: The runbook dry-run gates on ready and proves the stop contract
-  Test: native_cutover_dryrun_ready_gate_and_stop_contract
+  Retired-Test: native_cutover_dryrun_ready_gate_and_stop_contract
   Level: integration
   Test Double: fixture harness starting serve on a temp state directory sending SIGTERM and polling both routes
   Given the runbook's step 3 and step 6 on a temp state directory with the service started
@@ -239,7 +239,7 @@ Scenario: The runbook dry-run gates on ready and proves the stop contract
   And the process exits zero or parks on an unknown close inside the budget without a false success
 
 Scenario: The runbook dry-run preserves pending rows across the stop-start pair
-  Test: native_cutover_dryrun_owned_state_preserved_across_restart
+  Retired-Test: native_cutover_dryrun_owned_state_preserved_across_restart
   Level: integration
   Test Double: fixture harness seeding an outcome-unknown row then performing the runbook's stop and start pair
   Given the runbook's steps 6 and 7 on a temp state directory with a seeded pending or outcome-unknown row
@@ -259,3 +259,5 @@ invariants. An isolated foundation is not a parity release.
 ## Owner executable service cutover (2026-10-07)
 
 The service selectors now run the actual OwnerHost foreground binary with a private owner bundle, graceful TERM and restart without Pasion rights. They retain only the new owner-format marker; historical custody/domain SQLite pending work is not imported or asserted by these executable selectors. Historical domain persistence remains covered by SDK store tests. Current service installation is exercised by `native_owner_service_install_uninstall_uses_only_per_user_supervisor` and `native-owner-client.spec.md`, rather than the retired Fleet service templates.
+
+Desktop-only retirement (2026-10-20): CLI, static document and browser selectors above are retained as historical records, not passing evidence. Shared engine tests remain active.

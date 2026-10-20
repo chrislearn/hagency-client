@@ -1,10 +1,8 @@
 name: Full matrix
-# The expensive lane: Ubuntu, macOS and Windows tests, the console browser
-# tests, the Linux cgroup qualification and a release build. Every PR already
+# The expensive lane: Ubuntu, macOS and Windows tests, Linux cgroup qualification and a release library build. Every PR already
 # gets the fast Ubuntu lane in ci.yml; this one runs
 #   - nightly (and opens/closes a regression issue on the scheduled run),
-#   - on manual dispatch and on `nv*` release tags,
-#   - before a native release build (release-native.yml calls it),
+#   - on manual dispatch and on desktop `v*` release tags,
 #   - on "major" PRs: labelled `full-ci`, or touching the paths in `scope`.
 on:
   schedule:
@@ -12,7 +10,7 @@ on:
   workflow_dispatch:
   workflow_call:
   push:
-    tags: ['nv*']
+    tags: ['v*']
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, labeled]
@@ -47,75 +45,15 @@ jobs:
             else
               files=$(git diff --name-only "$BASE" HEAD)
               echo "$files"
-              # Platform-sensitive code, the console, dependencies, the toolchain
+              # Platform-sensitive code, the desktop engine, dependencies, the toolchain
               # and CI/deploy definitions. Here-strings, not pipes: under
               # pipefail an early grep -q exit can SIGPIPE the producer.
-              if grep -qE '^(crates/hagency-(agent-local|platform|runtime|execution|files|media-store|matrix)/|crates/hagency/src/(console|owner_host|service|main|runner|bootstrap)|mockup/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|\.github/workflows/|deploy/)' <<<"$files"; then
+              if grep -qE '^(crates/hagency-(agent-local|platform|runtime|execution|files|media-store|matrix)/|crates/hagency/src/(console|owner_host|native_owner|runner|bootstrap)|Cargo\.(toml|lock)$|rust-toolchain\.toml$|\.github/workflows/)' <<<"$files"; then
                 run=true
               fi
             fi
           fi
           echo "run=$run" | tee -a "$GITHUB_OUTPUT"
-  console-browser:
-    needs: scope
-    if: needs.scope.outputs.run == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.98.0
-        with:
-          components: clippy
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: native-console-browser
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22.22.0'
-          cache: npm
-          cache-dependency-path: mockup/package-lock.json
-      - run: npm ci --ignore-scripts
-        working-directory: mockup
-      - name: Install the explicit browser test prerequisite
-        working-directory: mockup
-        run: npx --no-install playwright-core install --with-deps chromium
-      - name: Build retained native console assets
-        run: node mockup/scripts/build-native-console.mjs --output "$RUNNER_TEMP/native-console-assets"
-      - name: Qualify actual browser and native executable
-        shell: bash
-        run: |
-          export HAGENCY_NATIVE_CONSOLE_ASSETS="$RUNNER_TEMP/native-console-assets"
-          HAGENCY_BROWSER_NODE="$(command -v node)"
-          HAGENCY_BROWSER_CHROME="$(cd mockup && node -e 'process.stdout.write(require("playwright-core").chromium.executablePath())')"
-          export HAGENCY_BROWSER_NODE HAGENCY_BROWSER_CHROME
-          # Failure-path screenshots only: the browser drivers skip their
-          # routine screenshots when a native executable is under test.
-          export HAGENCY_CONSOLE_SCREENSHOTS="$RUNNER_TEMP/console-screenshots"
-          mkdir -p "$HAGENCY_CONSOLE_SCREENSHOTS"
-          cargo clippy --locked -p hagency --all-targets --features native-console-browser -- -D warnings
-          # OwnerHost replaces the historical Fleet browser product qualification.
-          # Legacy SDK route tests remain in the full workspace suite.
-          cargo test --locked -p hagency --features native-console-browser --test console native_console_rail_pages_are_shipped_and_served -- --nocapture
-          # Stub UI tests run only on this disposable hosted runner. Ubuntu's
-          # AppArmor policy blocks the downloaded Chromium's namespace sandbox.
-          # Keep this launcher separate from the product/native browser inputs.
-          cat > "$RUNNER_TEMP/hagency-ci-chromium" <<'SH'
-          #!/usr/bin/env bash
-          exec "$HAGENCY_BROWSER_CHROME" --no-sandbox "$@"
-          SH
-          chmod +x "$RUNNER_TEMP/hagency-ci-chromium"
-          export CHROME="$RUNNER_TEMP/hagency-ci-chromium"
-          node mockup/scripts/check-owner-console.mjs
-          node mockup/scripts/check-owner-login.mjs
-          node mockup/scripts/check-owner-account-menu.mjs
-          node mockup/scripts/check-owner-projects.mjs
-      - name: Keep console failure screenshots
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: console-failure-screenshots
-          path: ${{ runner.temp }}/console-screenshots
-          if-no-files-found: ignore
   native:
     needs: scope
     if: needs.scope.outputs.run == 'true'
@@ -206,17 +144,10 @@ jobs:
           python3 -B tools/native/test-qualify-linux-cgroup.py
           cargo build --locked -p hagency-platform --bins
           sudo --preserve-env=GITHUB_ACTIONS,RUNNER_ENVIRONMENT,RUNNER_OS,RUNNER_ARCH /usr/bin/python3 -B tools/native/qualify-linux-cgroup.py --probe "$PWD/target/debug/hagency-cgroup-probe" --uid "$(id -u)" --gid "$(id -g)"
-      - run: cargo build --release --locked -p hagency --bin hagency-cli
-      - uses: actions/upload-artifact@v4
-        with:
-          name: hagency-foundation-${{ matrix.os }}
-          path: |
-            target/release/hagency-cli
-            target/release/hagency-cli.exe
-          if-no-files-found: error
+      - run: cargo build --release --locked -p hagency --lib
   regression-issue:
     name: Reconcile nightly regression issue
-    needs: [console-browser, native]
+    needs: [native]
     if: always() && github.event_name == 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 10

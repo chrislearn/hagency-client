@@ -5,7 +5,6 @@ use hagency_metering::{Framework, observation::UsageObservation};
 use hagency_store::*;
 use salvo::prelude::*;
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use std::{
     net::SocketAddr,
     path::Path,
@@ -23,55 +22,7 @@ pub fn now() -> u64 {
         .unwrap()
         .as_millis() as u64
 }
-pub fn assets(path: &Path) {
-    private::directory(path).unwrap();
-    std::fs::create_dir(path.join("usage")).unwrap();
-    std::fs::create_dir(path.join("engagements")).unwrap();
-    let bytes = b"<!doctype html><html><body>retained asset fixture</body></html>";
-    private::write_new(&path.join("usage/index.html"), bytes).unwrap();
-    let engagement_bytes = b"<!doctype html><html><body>engagements document fixture</body></html>";
-    private::write_new(&path.join("engagements/index.html"), engagement_bytes).unwrap();
-    /* Board #92: the two documents the tasks page itself links to. The fixture
-     * carries them for the same reason production does — the page's own rail
-     * and "Project board" link fetch them, and a document absent here would
-     * make a served-document assertion pass for the wrong reason. */
-    std::fs::create_dir(path.join("tasks")).unwrap();
-    let tasks_bytes = b"<!doctype html><html><body>tasks document fixture</body></html>";
-    private::write_new(&path.join("tasks/index.html"), tasks_bytes).unwrap();
-    std::fs::create_dir(path.join("project-board")).unwrap();
-    let board_bytes = b"<!doctype html><html><body>project-board document fixture</body></html>";
-    private::write_new(&path.join("project-board/index.html"), board_bytes).unwrap();
-    /* Board #47: the task-graphs document, staged the same way the production
-     * build does, so `/console/task-graphs/` is served by the fixture too. */
-    std::fs::create_dir(path.join("task-graphs")).unwrap();
-    let graphs_bytes = b"<!doctype html><html><body>task-graphs document fixture</body></html>";
-    private::write_new(&path.join("task-graphs/index.html"), graphs_bytes).unwrap();
-    /* The production build (build-native-console.mjs) always exports the
-     * front-door document; the fixture mirrors it so /console/ serves. */
-    let root_bytes = b"<!doctype html><html><body>front door fixture</body></html>";
-    private::write_new(&path.join("index.html"), root_bytes).unwrap();
-    let mut assets = Vec::new();
-    let entries: [(&str, &[u8]); 6] = [
-        ("usage/index.html", bytes),
-        ("engagements/index.html", engagement_bytes),
-        ("index.html", root_bytes),
-        ("task-graphs/index.html", graphs_bytes),
-        ("tasks/index.html", tasks_bytes),
-        ("project-board/index.html", board_bytes),
-    ];
-    for (path, bytes) in entries {
-        let digest: String = Sha256::digest(bytes)
-            .iter()
-            .map(|b| format!("{b:02x}"))
-            .collect();
-        assets.push(json!({"path":path,"size":bytes.len(),"sha256":digest,"mime":"text/html; charset=utf-8"}));
-    }
-    private::write_new(
-        &path.join("manifest.json"),
-        json!({"version":1,"assets":assets}).to_string().as_bytes(),
-    )
-    .unwrap();
-}
+
 pub fn native_resource(preset: &str) -> hagency_core::project::Resource {
     serde_json::from_value(json!({"presetId":preset,"seatId":"private_resource_account","framework":"codex","model":"gpt-5.6-sol","reasoning":"medium","ceiling":{"tokens":5000,"period":"monthly"}})).unwrap()
 }
@@ -194,19 +145,10 @@ pub struct Fixture {
     pub root: tempfile::TempDir,
 }
 impl Fixture {
-    pub fn new(address: SocketAddr, built: Option<&Path>) -> Self {
+    pub fn new(address: SocketAddr, _built: Option<&Path>) -> Self {
         let root = tempfile::tempdir().unwrap();
-        let asset_dir = root.path().join("assets");
-        if built.is_none() {
-            assets(&asset_dir);
-        }
-        // macOS's temporary-directory spelling may traverse the /var alias.
-        // Select its actual host path; production correctly refuses that alias.
-        let actual_assets = built.unwrap_or(&asset_dir).canonicalize().unwrap();
         let state = root.path().join("state");
-        // #47: production serves graphs from `<state>/task_graphs.json`; the
-        // fixture mirrors that so the routes reach a real document home.
-        let console = Console::load_with_state(&actual_assets, Some(&state)).unwrap();
+        let console = Console::for_sdk_with_state(Some(&state)).unwrap();
         let custody = Store::start(Repository::open(&state).unwrap(), 16).unwrap();
         let (db, engagement) = seed(&state);
         let domain = DomainStore::start(db, 16).unwrap();

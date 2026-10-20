@@ -6,7 +6,6 @@ mod agents;
 mod alerts;
 mod approval_bindings;
 mod approvals;
-mod assets;
 mod authority;
 pub mod client;
 pub mod device_execution;
@@ -44,8 +43,6 @@ use tokio::sync::Semaphore;
 
 #[derive(Debug, Clone, Copy, thiserror::Error)]
 pub enum Error {
-    #[error("native console assets are invalid or exceed their bounds")]
-    Assets,
     #[error("native console request is invalid")]
     Invalid,
     #[error("native console access is required or expired")]
@@ -66,7 +63,6 @@ pub enum Error {
 pub use server_login::AuthorizedDevice;
 
 struct Inner {
-    assets: assets::Assets,
     authority: Authority,
     requests: Arc<Semaphore>,
     /// Operator task graphs (#47): the TS `task_graphs.json` document on the
@@ -78,32 +74,13 @@ struct Inner {
     owned_runtime: owned_runtime::OwnedRuntime,
     owner_provider: owner_provider::OwnerProvider,
 }
-/// Clones retain the same finite authority and original immutable asset proofs.
+/// Clones share the same finite in-process authority and engine state.
 #[derive(Clone)]
 pub struct Console(Arc<Inner>);
 impl Console {
-    /// Synchronous startup only; no filesystem access occurs in HTTP handlers.
-    pub fn load(path: &Path) -> Result<Self, Error> {
-        Self::load_with_state(path, None)
-    }
-    /// `load` plus the operator state directory (#47): the document home the
-    /// graph routes persist to (`<state>/task_graphs.json`). Production passes
-    /// the same `state_dir` `serve` opens; tests pass `None` for the legacy
-    /// asset-only shape.
-    pub fn load_with_state(path: &Path, state_dir: Option<&Path>) -> Result<Self, Error> {
-        Self::with_assets(assets::Assets::load(path)?, state_dir)
-    }
-    /// ADR-189: the console compiled into this binary, when it carries one.
-    pub fn embedded_with_state(state_dir: Option<&Path>) -> Result<Self, Error> {
-        Self::with_assets(assets::Assets::embedded()?, state_dir)
-    }
-    /// Whether this binary carries the console build (a release build).
-    pub fn embedded_available() -> bool {
-        assets::embedded_available()
-    }
-    fn with_assets(assets: assets::Assets, state_dir: Option<&Path>) -> Result<Self, Error> {
+    /// In-process SDK facade. It neither loads pages nor starts a listener.
+    pub fn for_sdk_with_state(state_dir: Option<&Path>) -> Result<Self, Error> {
         let console = Self(Arc::new(Inner {
-            assets,
             server_login: server_login::ServerLogin::new(state_dir)?,
             owned_runtime: owned_runtime::OwnedRuntime::default(),
             owner_provider: owner_provider::OwnerProvider::default(),
@@ -122,19 +99,8 @@ impl Console {
         }
         Ok(console)
     }
-    /// Owner host startup never opens legacy graphs or persisted console grants.
-    pub fn load_owner_with_state(path: &Path, state: &Path) -> Result<Self, Error> {
-        Self::with_owner_assets(assets::Assets::load_owner(path)?, state)
-    }
-    pub fn embedded_owner_with_state(state: &Path) -> Result<Self, Error> {
-        Self::with_owner_assets(assets::Assets::embedded_owner()?, state)
-    }
     pub(crate) fn native_with_state(state: &Path) -> Result<Self, Error> {
-        Self::with_owner_assets(assets::Assets::native(), state)
-    }
-    fn with_owner_assets(assets: assets::Assets, state: &Path) -> Result<Self, Error> {
         let console = Self(Arc::new(Inner {
-            assets,
             authority: Authority::new(),
             requests: Arc::new(Semaphore::new(8)),
             graphs: None,
@@ -211,11 +177,6 @@ pub(crate) fn router() -> Router {
                 .push(tasks::router())
                 .push(tasks::extra_router()),
         )
-        // Board #92: Express serves HEAD from a GET route, so the retained
-        // server answers a HEAD on every document; the console's own `<Link>`
-        // prefetch sends one. Salvo's `MethodFilter(GET)` does not fold HEAD
-        // onto GET, so a bare `.get(asset)` answered 405 — register it.
-        .push(Router::with_path("{**asset}").get(asset).head(asset))
 }
 pub(crate) fn owner_router() -> Router {
     Router::with_path("console")
@@ -230,7 +191,6 @@ pub(crate) fn owner_router() -> Router {
                 .push(owner_projects::router())
                 .push(server_login::matrix_creation_router()),
         )
-        .push(Router::with_path("{**asset}").get(asset).head(asset))
 }
 pub(crate) fn operator_router() -> Router {
     Router::new().push(Router::with_path("console/access").post(issue))
@@ -247,9 +207,7 @@ fn console(depot: &Depot) -> Result<&Console, Error> {
 }
 fn failed(res: &mut Response, error: Error) {
     let (status, code) = match error {
-        Error::Assets | Error::Unavailable => {
-            (StatusCode::SERVICE_UNAVAILABLE, "console_unavailable")
-        }
+        Error::Unavailable => (StatusCode::SERVICE_UNAVAILABLE, "console_unavailable"),
         Error::Invalid => (StatusCode::BAD_REQUEST, "invalid_console_request"),
         Error::Unauthorized => (StatusCode::UNAUTHORIZED, "console_access_required"),
         Error::Forbidden => (StatusCode::FORBIDDEN, "resource_publication_scope_required"),
@@ -504,75 +462,5 @@ async fn logout(req: &mut Request, depot: &mut Depot, res: &mut Response) {
             res.render(Json(serde_json::json!({"ok":true})));
         }
         Err(error) => failed(res, error),
-    }
-}
-#[handler]
-async fn asset(req: &mut Request, depot: &mut Depot, res: &mut Response) {
-    let Ok(c) = console(depot) else {
-        failed(res, Error::Unavailable);
-        return;
-    };
-    let path = req.uri().path();
-    // Only document navigation may start outside this origin. Assets never grant data authority.
-    let resource_document = matches!(path, "/console/resources" | "/console/resources/");
-    let editor_document = matches!(path, "/console/resources/new" | "/console/resources/new/");
-    // The alerts document takes no selection: it lists every open alert.
-    let alerts_document = matches!(path, "/console/alerts" | "/console/alerts/");
-    // The engagements document takes NO query: it is a paginated triage list
-    // whose selection happens in-page, not a per-entity view like usage.
-    let engagements_document = matches!(path, "/console/engagements" | "/console/engagements/");
-    // OAuth returns through another origin. These public owner documents carry
-    // no session data; their API requests still require same-origin authority.
-    let owner_document = matches!(
-        path,
-        "/console"
-            | "/console/"
-            | "/console/login"
-            | "/console/login/"
-            | "/console/agents-owned"
-            | "/console/agents-owned/"
-    );
-    let document = owner_document
-        || editor_document
-        || resource_document
-        || alerts_document
-        || engagements_document
-        || matches!(path, "/console/usage" | "/console/usage/");
-    if !document
-        && req
-            .headers()
-            .get("sec-fetch-site")
-            .is_some_and(|v| v != "same-origin" && v != "none")
-    {
-        refusal(res, StatusCode::FORBIDDEN, "console_origin_required");
-        return;
-    }
-    if (!document && req.uri().query().is_some())
-        || (document
-            && if editor_document {
-                resource_configuration::selection_query(req).is_err()
-            } else if resource_document {
-                resources::selection_query(req).is_err()
-            } else if owner_document || alerts_document || engagements_document {
-                // No selection parameter: the whole query string must be empty.
-                req.uri().query().is_some()
-            } else {
-                usage::selection_query(req).is_err()
-            })
-    {
-        failed(res, Error::Invalid);
-        return;
-    }
-    match c.0.assets.get(path) {
-        Some(value) => {
-            res.headers_mut()
-                .insert("content-type", value.mime.parse().expect("validated MIME"));
-            if res.write_body(value.bytes.clone()).is_err() {
-                res.status_code(StatusCode::INTERNAL_SERVER_ERROR);
-            }
-        }
-        None => {
-            res.status_code(StatusCode::NOT_FOUND);
-        }
     }
 }

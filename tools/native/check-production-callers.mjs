@@ -2,9 +2,8 @@
 // ADR-146 (a): a spec `Production caller:` line must resolve in the production
 // call graph — tests (`#[cfg(test)]` items, `#[test]` fns, */tests/*,
 // tests.rs), tests/fixtures/**, and the probe/fixture binaries stripped.
-// Roots are the product binaries and services only: the `hagency` bin
-// (hagency/src/main.rs), its Salvo handler registrations, the workers and
-// sweeps it spawns, and the MCP stdio entry (mcp/stdio.rs via main.rs).
+// Roots are application main functions and the desktop engine adapter's public
+// entry points. In-process handlers and the workers they call remain graph edges.
 // `Production caller: owed (Gn)` is a tracked gap: the Gn must name a row in
 // ADR-146's gap table; an unknown id fails. Exit 1 lists absent callers and
 // unknown gap ids.
@@ -570,17 +569,28 @@ export function taintChain(reach, def) {
   return chain;
 }
 
+function productRoots(graph, files) {
+  const roots = [];
+  const desktopMain = 'crates/hagency-app/src/main.rs';
+  // The checker self-tests use a minimal single-crate main fixture.
+  const mains = files.includes(desktopMain) ? [desktopMain] : ['crates/hagency/src/main.rs'];
+  for (const file of mains.filter(file => files.includes(file))) {
+    for (const def of graph.fileFns.get(file) || []) roots.push({file, name: def.name, impls: def.impls});
+  }
+  const adapter = 'crates/hagency-app/src/hagency/backend.rs';
+  for (const def of graph.fileFns.get(adapter) || []) {
+    if (['for_current', 'execute', 'stream_speech', 'stop_current'].includes(def.name)) {
+      roots.push({file: adapter, name: def.name, impls: def.impls});
+    }
+  }
+  return roots;
+}
+
 export function checkProductionCallers({ root = repoRoot, read, files: givenFiles, specs: selectedSpecs } = {}) {
   const readFn = read || ((rel) => readFileSync(path.join(root, rel), 'utf8'));
   const files = givenFiles || listRustFilesAt(root);
   const graph = buildGraph(files, readFn);
-  // Roots: main plus every fn defined in main.rs (clap subcommand handlers and
-  // the serve paths are all selected from main's match).
-  const main = 'crates/hagency/src/main.rs';
-  const roots = [];
-  if (files.includes(main)) {
-    for (const def of graph.fileFns.get(main) || []) roots.push({ file: main, name: def.name });
-  }
+  const roots = productRoots(graph, files);
   const reach = resolveReachable(graph, roots);
 
   const specsDir = path.join(root, 'specs');
@@ -642,8 +652,7 @@ function listRustFilesAt(root) {
 export function explain(full) {
   const files = listRustFiles();
   const graph = buildGraph(files, (rel) => readFileSync(path.join(repoRoot, rel), 'utf8'));
-  const main = 'crates/hagency/src/main.rs';
-  const roots = files.includes(main) ? (graph.fileFns.get(main) || []).map((d) => ({ file: main, name: d.name })) : [];
+  const roots = productRoots(graph, files);
   const reach = resolveReachable(graph, roots);
   const r = resolvePath(graph, files, full);
   if (!r.def) return { target: full, resolved: false, reason: r.reason };

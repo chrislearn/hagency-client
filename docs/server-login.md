@@ -2,10 +2,9 @@
 
 # Personal server login
 
-Build and run the current [owner client](local-development.md). `hagency start`
-opens its local console; `hagency open --state-dir <same-state>` obtains access
-through the running host's private IPC. Local console access is separate from
-server authentication.
+Run the [native desktop application](../crates/hagency-app/README.md). Sign in
+through its login page and Pasion browser authorization. The local OAuth callback
+is not a management server; no separate CLI or Web console is required.
 
 Select a saved account/server or enter the Hagency server origin. Use
 `http://127.0.0.1:8088` for loopback development; remote or named servers require

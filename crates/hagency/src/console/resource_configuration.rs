@@ -6,7 +6,7 @@ use super::{
 };
 use crate::resources::domain;
 use hagency_core::{
-    project::{Resource, identifier},
+    project::Resource,
     qualification::{self, ConfigurationChoice, Tier},
 };
 use hagency_store::{CeilingChange, ProfileChange};
@@ -21,18 +21,7 @@ pub(super) fn router() -> Router {
             .patch(edit),
     )
 }
-pub(super) fn selection_query(req: &Request) -> Result<(), Error> {
-    query(req, &["resource_id", "source_resource_id"], 192)?;
-    let resource = req.query::<String>("resource_id");
-    let source = req.query::<String>("source_resource_id");
-    if resource.is_some() && source.is_some() {
-        return Err(Error::Invalid);
-    }
-    if let Some(id) = resource.or(source) {
-        identifier(&id, 128).map_err(|_| Error::Invalid)?;
-    }
-    Ok(())
-}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Observation {

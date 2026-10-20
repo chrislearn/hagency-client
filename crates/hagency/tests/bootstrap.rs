@@ -4,8 +4,6 @@
 mod accounts;
 #[path = "bootstrap/fixture.rs"]
 mod fixture;
-#[path = "owner_cli/mod.rs"]
-mod owner;
 #[path = "bootstrap/scope.rs"]
 mod scope;
 #[allow(dead_code)]
@@ -54,7 +52,7 @@ async fn native_configured_fleet_profile() {
             json!({"profile":"inline_factory_service_checkpoint_v1","idle_ms":10_000});
         config["matrix"]["registration_fingerprint"] = json!(fingerprint);
         config["matrix"]["token_provisioning"] = json!({"profile":"registration_token_home_rooms_enrollment_step_v1","peer_masters":anchors,
-            "home":{"root":homes,"task_client":std::path::PathBuf::from(env!("CARGO_BIN_EXE_hagency-cli")).canonicalize().unwrap(),
+            "home":{"root":homes,"task_client":std::path::PathBuf::from(env!("CARGO_BIN_EXE_hagency-sdk-mcp-test-peer")).canonicalize().unwrap(),
                 "projects":[{"project_id":"project_provision","source":source,"mode":"copy"}]}});
         config["approval"] = json!({"origin":f.fake.endpoint,"server_name":registration.server_name,"registration_fingerprint":fingerprint,
             "engagement_id":config["matrix"]["engagement_id"],"registration_generation":1,"transport_generation":1,
@@ -145,76 +143,4 @@ async fn native_configured_fleet_profile() {
         assert_eq!(std::fs::read_dir(homes).unwrap().count(), 0);
         f.fake.close().await;
     }
-}
-
-#[test]
-fn native_owner_bootstrap_refuses_old_driver_and_matrix_secret_files() {
-    let root = tempfile::tempdir().unwrap();
-    let bundle = owner::assets(root.path());
-    for name in [
-        "agent-driver.json",
-        "development-driver.json",
-        "matrix.access_token",
-        "matrix.appservice_token",
-        "approval.access_token",
-    ] {
-        let state = root.path().join(name.replace('.', "_"));
-        let out = owner::command()
-            .args(["init", "--state-dir"])
-            .arg(&state)
-            .output()
-            .unwrap();
-        assert!(out.status.success());
-        std::fs::write(state.join(name), b"never import old settings or secrets").unwrap();
-        let out = owner::command()
-            .args(["serve", "--state-dir"])
-            .arg(&state)
-            .arg("--console-assets")
-            .arg(&bundle)
-            .output()
-            .unwrap();
-        assert!(!out.status.success());
-        assert_eq!(
-            std::fs::read(state.join(name)).unwrap(),
-            b"never import old settings or secrets"
-        );
-        assert!(!state.join("domain.sqlite3").exists());
-    }
-}
-#[test]
-fn native_owner_bootstrap_no_anonymous_provider_model_tool_or_approval_access() {
-    let root = tempfile::tempdir().unwrap();
-    let bundle = owner::assets(root.path());
-    let run = owner::launch(&root.path().join("state"), &bundle, true);
-    for path in [
-        "/console/api/owner-provider",
-        "/console/api/owned-agents/agt_test/runtime/start",
-        "/console/api/owned-agents/agt_test/runtime/approvals/nonce/decision",
-        "/console/api/matrix-creations",
-    ] {
-        let response = owner::request(run.address, "POST", path, "{}", None);
-        assert_eq!(owner::status(&response), 401, "{path}");
-    }
-}
-#[test]
-fn native_owner_bootstrap_restart_does_not_restore_owner_session() {
-    let root = tempfile::tempdir().unwrap();
-    let bundle = owner::assets(root.path());
-    let state = root.path().join("state");
-    let mut first = owner::launch(&state, &bundle, true);
-    first.child.kill().unwrap();
-    first.child.wait().unwrap();
-    drop(first);
-    let second = owner::launch(&state, &bundle, true);
-    assert_eq!(
-        owner::status(&owner::request(
-            second.address,
-            "GET",
-            "/console/api/owned-agents",
-            "",
-            None
-        )),
-        401
-    );
-    assert!(!state.join("console-logins.json").exists());
 }

@@ -145,7 +145,7 @@ Scenario: Managed owned authority stays current after waiting
   Then original association checks fence stale work at actual admission boundaries
 
 Scenario: Offline account commands preserve native ownership
-  Test: native_owner_rejects_retired_commands_and_options
+  Retired-Test: native_owner_rejects_retired_commands_and_options
   Level: integration
   Test Double: actual isolated files SQLite native processes and original handles
   Given actual native executable initialization and private temporary state
@@ -177,7 +177,7 @@ Browser enrollment effective provider auth qualification login API-key enrollmen
 external-home adoption credential rotation full M7 and production migration.
 
 Scenario: Inspection subcommands render the operator routes verbatim
-  Test: native_owner_rejects_retired_commands_and_options
+  Retired-Test: native_owner_rejects_retired_commands_and_options
   Level: integration
   Test Double: actual native executable served routes and private temporary state
   Given a running native service with one seeded resource and the alerts engagements and resources operator routes
@@ -185,7 +185,7 @@ Scenario: Inspection subcommands render the operator routes verbatim
   Then the passthrough equals the route body byte for byte except the alerts read clock and every table column is a route key with no derived figure
 
 Scenario: Inspection refusals exit distinctly and are named
-  Test: native_owner_rejects_retired_commands_and_options
+  Retired-Test: native_owner_rejects_retired_commands_and_options
   Level: integration
   Test Double: actual native executable a dead port a foreign credential directory fixed 404 and 503 responders and limits forwarded to the route
   Given the inspection subcommands facing unreachable refused invalid unavailable and missing-route conditions with limits zero and one hundred one forwarded to the route itself
@@ -199,3 +199,5 @@ The historical account/operator/guardian CLI is retired. Its positive CLI scenar
 ## Owner bootstrap product replacement (2026-10-07)
 
 The `Retired-Test` selectors above depended on removed client-side Fleet/provisioning/encrypted approval-bot production switches. They are no longer executable product requirements. New `native-owner-client.spec.md` binds actual bootstrap secret/config refusal, anonymous provider/model/tool denial, fresh Pasion authorization after restart and independent Room runtimes. It does not claim encrypted private approval, factory or delegated-task behavior. Direct SDK configuration tests remain bound by `native-bootstrap-sdk.spec.md`, and all other SDK Test/Filter bindings remain active.
+
+Desktop-only retirement (2026-10-20): CLI, static document and browser selectors above are retained as historical records, not passing evidence. Shared engine tests remain active.

@@ -157,50 +157,6 @@ async fn native_console_engagements_read() {
     f.close().await;
 }
 
-/// The document route rule: `/console/engagements/` serves the staged
-/// document, takes NO query (the page is a paginated list; selection is
-/// in-page), and unknown paths under the console stay refused.
-#[tokio::test]
-async fn native_console_engagements_document() {
-    let f = Fixture::new("127.0.0.1:13300".parse().unwrap(), None);
-    let service = f.service();
-    let mut response = TestClient::get(format!("{BASE}/console/engagements/"))
-        .add_header("host", "127.0.0.1:13300", true)
-        .send(&service)
-        .await;
-    assert_eq!(response.status_code, Some(StatusCode::OK));
-    assert!(
-        response
-            .take_string()
-            .await
-            .unwrap()
-            .contains("engagements document fixture")
-    );
-    // The no-query rule: any query on the engagements document is refused.
-    for path in [
-        "/console/engagements/?engagement_id=x",
-        "/console/engagements/?anything=1",
-    ] {
-        let response = TestClient::get(format!("{BASE}{path}"))
-            .add_header("host", "127.0.0.1:13300", true)
-            .send(&service)
-            .await;
-        assert_eq!(
-            response.status_code,
-            Some(StatusCode::BAD_REQUEST),
-            "{path}"
-        );
-    }
-    // Non-document assets never relax the origin rule.
-    let response = TestClient::get(format!("{BASE}/console/_next/static/x.js"))
-        .add_header("host", "127.0.0.1:13300", true)
-        .add_header("sec-fetch-site", "cross-site", true)
-        .send(&service)
-        .await;
-    assert_eq!(response.status_code, Some(StatusCode::FORBIDDEN));
-    f.close().await;
-}
-
 // ---- G10 refusal half: the operator's console verdict route ----
 
 /// Read one engagement's row directly from the fixture's store, plus the

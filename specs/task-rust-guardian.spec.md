@@ -51,7 +51,7 @@ Scenario: Supervised native startup and cancellation preserve scope
   And repeated cancellation retains the same observed report
 
 Scenario: Actual native CLI exit has bounded terminal evidence
-  Test: native_owner_rejects_retired_commands_and_options
+  Retired-Test: native_owner_rejects_retired_commands_and_options
   Level: integration
   Test Double: actual native CLI executable through owned guardian or Job Object
   Given a native CLI version command with empty PATH and Unicode cwd
@@ -84,3 +84,5 @@ effective sandbox policy and connection to canonical dispatch remain required.
 ## Owner-client entry point cutover (2026-10-07)
 
 The historical account/operator/guardian CLI is retired. Its positive CLI scenarios are superseded by actual binary rejection coverage above. The remaining SDK selectors continue to exercise their library contracts; they do not describe the production OwnerHost. See `native-owner-client.spec.md` for current executable release qualification.
+
+Desktop-only retirement (2026-10-20): CLI, static document and browser selectors above are retained as historical records, not passing evidence. Shared engine tests remain active.

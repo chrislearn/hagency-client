@@ -438,7 +438,7 @@ impl Service {
             let mut native = self.0.native.lock().await;
             self.check()?;
             if native.is_none() {
-                let owner = NativeOwner::open_with_matrix(
+                let owner = ::hagency::native_owner::open_with_matrix(
                     &self.0.state, &self.0.origin, &self.0.owner,
                     Arc::new(SdkTokens(Arc::downgrade(&self.0))),
                 ).await.map_err(|e| {

@@ -2,17 +2,16 @@
 
 Hagency and the Agent engine share one Cargo workspace and one reviewed
 `Cargo.lock`. The desktop package is the default member; use explicit packages
-for headless builds and tests.
+for engine library checks and tests.
 
 | Location | Purpose |
 | --- | --- |
 | `crates/hagency-app` | Native Makepad application, resources, mini apps, packaging and desktop tools |
-| `crates/hagency` and other `crates/hagency-*` packages | Local Agent engine and CLI |
+| `crates/hagency` and other `crates/hagency-*` packages | Shared local Agent engine libraries |
 | `crates/article-*`, `crates/miniapp-*`, `crates/system-apps`, `crates/theme-contract` | Shared editor, mini app and theme libraries and package tool |
 | `crates/octosense-app-contract`, `crates/robius-file-picker` | Reviewed local third-party sources with their original notices |
 | `tools/native` | Engine verification and development scripts |
 | `tests/fixtures` | Shared engine test vectors |
-| `mockup` | Existing browser Owner console and historical prototype |
 | `dev-vibe/desktop` | Imported desktop collaboration records and release assessment |
 
 ## Build and test
@@ -38,19 +37,18 @@ On macOS and Linux, install the native dependencies listed in the
 `cargo run --locked -p hagency-app --bin hagency`. The workspace macOS runner creates a
 development app bundle only for `hagency`; engine tools and test binaries run directly.
 
-Headless engine examples use explicit selection:
+Engine library examples use explicit selection:
 
 ```sh
-cargo build --locked -p hagency --bin hagency-cli
+cargo check --locked -p hagency --lib
 cargo test --locked -p hagency-runtime -p hagency-agent-local
 python3 tools/check-workspace-layout.py
 ```
 
-The CLI's browser assets are still built with
-`node mockup/scripts/build-native-console.mjs --output <new-directory-on-build-disk>`.
-Set npm cache and temporary staging directories to the build disk before running
-it on Windows/WSL. Set `HAGENCY_CONSOLE_DIR` for an embedded-console CLI build;
-Desktop needs no browser console assets.
+The desktop invokes `native_owner::NativeOwner` in process. Its loopback OAuth
+callback listener remains on an ephemeral port and exposes no management pages
+or APIs. The shared code under `crates/hagency/src/console/` remains engine logic;
+its name does not imply a running Web console. No Node page build is required.
 
 ## App packaging
 
@@ -62,8 +60,8 @@ under that same build directory. They do not assume a crate-local `target/`.
 Desktop CI, platform builds and installers are in
 `.github/workflows/app-{main,builds,release}.yml`. Engine CI continues to select
 the engine packages explicitly, so Linux's headless checks do not require Makepad.
-The existing CLI `nv*` artifact workflow remains separate from Desktop's `v*`
-installer workflow. Desktop and the engine workspace are currently 0.6.0.
+The desktop `v*` installer workflow is the sole product release path.
+Desktop and the engine workspace are currently 0.6.0.
 To publish, run `app-release.yml` on `main` with `publish=true`, or push the
 matching `v0.6.0` tag. All five platform jobs must test and build successfully;
 only then does the workflow verify seven installers and their checksums and publish
@@ -88,26 +86,12 @@ the source does not rebuild or relabel those binaries. Update Cloud's stable
 download URLs when a release with the new names is published.
 
 The frontend lives in `crates/hagency-app` (Rust package `hagency-app`, library
-`hagency_app`, executable `hagency`). The engine package remains `hagency`, and
-its separate browser-console executable is `hagency-cli`. Existing app storage
-paths, published bundle identifiers, legacy URL schemes and embedded mini-app
-protocol IDs remain compatible; they are not platform display names. Use
-`HAGENCY_APP_DATA_DIR` for new isolated app runs; the older data-dir environment
+`hagency_app`, executable `hagency`). The engine package remains `hagency`, used as a library. Existing app storage
+paths, published bundle identifiers, legacy URL schemes and mini-app protocol IDs
+remain compatible. Use `HAGENCY_APP_DATA_DIR` for isolated app runs; older data-dir
 variables remain aliases.
-Existing installations of the optional CLI user service should be reinstalled
-using `hagency-cli service install` so its executable path points to the renamed CLI.
 
-The redundant `install/install-native.sh` wrapper has been removed. Install the
-optional CLI service directly with `hagency-cli service install`, selecting
-`--state-dir` and `--no-open` as needed. The binary generates its per-user
-supervisor configuration itself.
-Desktop installers use `app-release.yml` and do not use this CLI service.
-
-The local Web server and browser console remain supported for the headless CLI.
-They serve the login, project and owned-Agent pages from `mockup/` on loopback
-(`127.0.0.1:13300` by default); Node is only needed to build their static bundle.
-The desktop app calls `native_owner::NativeOwner` in process and needs neither
-the browser pages nor a running CLI Web listener. Its small loopback OAuth
-callback listener still receives login redirects; it serves no console pages.
-Both interfaces share engine
-logic under `crates/hagency/src/console/`, so that module is also used by desktop.
+The former CLI Web console, `mockup/` prototype, static bundle build, user service
+installer, CLI artifact release and Pages workflow have been removed. Existing
+external user-service installations are not changed by source cleanup; stop and
+remove an old user service with its OS supervisor before deleting its old binary.

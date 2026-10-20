@@ -1,10 +1,11 @@
+> 当前产品仅保留[原生桌面端](../crates/hagency-app/README.zh-CN.md)。下文旧 CLI 控制台步骤已退役；登录入口在桌面应用内，本机 OAuth 回调继续保留。
+
 [English](server-login.md) | [中文](server-login.zh-CN.md)
 
 # 个人服务器登录
 
-按[开发指南](local-development.zh-CN.md)构建运行当前 owner client。`hagency start`
-打开本机控制台；`hagency open --state-dir <同一状态目录>` 通过运行中 host 的私人
-IPC 获取访问链接。本机控制台访问与 server 认证是两个步骤。
+运行[原生桌面应用](../crates/hagency-app/README.zh-CN.md)，在登录页通过 Pasion 完成授权。
+本机 OAuth 回调只接收登录跳转，不提供管理服务器；无需单独的 CLI 或 Web 控制台。
 
 选择保存的账号/服务器或输入 Hagency server origin。本机开发使用
 `http://127.0.0.1:8088`，远程或命名域名需要可信 HTTPS。不追加 `/login`、

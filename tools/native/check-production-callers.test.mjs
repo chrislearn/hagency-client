@@ -117,6 +117,23 @@ function makeFixture({ rust, specs, adr }) {
 
 const MAIN = 'crates/hagency/src/main.rs';
 
+test('desktop adapter reaches the engine without a CLI and does not root unused helpers', () => {
+  const fixture = makeFixture({
+    rust: {
+      'crates/hagency-app/src/main.rs': 'fn main() {}\n',
+      'crates/hagency-app/src/hagency/backend.rs': 'impl Service {\n pub fn execute(&self) { hagency::native_owner::open_with_matrix(); }\n fn unused(&self) { hagency::native_owner::retired(); }\n}\n',
+      'crates/hagency/src/native_owner.rs': 'pub fn open_with_matrix() {}\npub fn retired() {}\n',
+    },
+    specs: '  Production caller: hagency::native_owner::open_with_matrix\n  Production caller: hagency::native_owner::retired\n',
+    adr: '',
+  });
+  const {result, ok} = checkProductionCallers(fixture);
+  assert.equal(ok, false);
+  assert.equal(result.wired, 1);
+  assert.equal(result.missing.length, 1);
+  assert.match(result.missing[0].caller, /::retired$/);
+});
+
 test('native_production_callers_current_worktree: new sources count and deleted or ignored sources do not', () => {
   const { root } = makeFixture({
     rust: {

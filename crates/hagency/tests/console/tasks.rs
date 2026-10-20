@@ -489,17 +489,5 @@ async fn native_console_tasks_routes_answer_head_like_the_retained_get() {
         );
     }
 
-    // The documents the tasks page itself links to, fetched the way a browser
-    // prefetches them.
-    for path in ["/console/tasks/", "/console/project-board/"] {
-        let document = get(path, &cookie).send(&service).await;
-        assert_eq!(document.status_code, Some(StatusCode::OK), "GET {path}");
-        let headed = head(path, &cookie).send(&service).await;
-        assert_eq!(
-            headed.status_code,
-            Some(StatusCode::OK),
-            "HEAD {path} must answer as a document, not 405"
-        );
-    }
     f.close().await;
 }

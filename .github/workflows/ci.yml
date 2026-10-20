@@ -1,8 +1,7 @@
 name: CI
 # The fast lane for every PR and every push to main: one Ubuntu runner with
 # the formatting, lint, spec-binding and production-caller gates and the
-# workspace tests. The macOS/Windows matrix, the console browser tests and the
-# release build live in rust.yml (nightly, releases and major PRs).
+# workspace tests. The macOS/Windows matrix, the release library build live in rust.yml (nightly, releases and major PRs).
 on:
   push:
     branches: [main]

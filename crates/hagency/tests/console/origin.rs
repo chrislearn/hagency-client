@@ -161,19 +161,6 @@ async fn native_console_origin_matches_retained_vectors() {
         let _ = raw.add_header("sec-fetch-site", "same-origin", true);
         let _ = raw.add_header("cookie", cookie.clone(), true);
         let res = service.handle(raw).await;
-        // The empty segment list is the ONE row the native composition answers
-        // with a document instead of a refusal: `/console/` is the new front
-        // door (parity #1). The retained proxy had no route at `/api/hagency/`
-        // and refused; native serves the root document there, so the row
-        // asserts that document (a named divergence, per this section's rule).
-        if joined.is_empty() {
-            assert_eq!(
-                res.status_code,
-                Some(StatusCode::OK),
-                "the front door must serve the empty segment list"
-            );
-            continue;
-        }
         if row["expected"]["canonical"].is_array() {
             assert_ne!(
                 res.status_code,
@@ -184,6 +171,7 @@ async fn native_console_origin_matches_retained_vectors() {
             assert!(
                 [
                     StatusCode::NOT_FOUND,
+                    StatusCode::METHOD_NOT_ALLOWED,
                     StatusCode::FORBIDDEN,
                     StatusCode::BAD_REQUEST
                 ]

@@ -59,35 +59,3 @@ async fn native_palpo_service_cancel_custody() {
     drop(other_lane);
     f.fake.close().await;
 }
-
-#[path = "owner_cli/mod.rs"]
-mod owner;
-#[test]
-fn native_owner_palpo_client_is_not_a_fleet_publisher_or_appservice() {
-    let root = tempfile::tempdir().unwrap();
-    let bundle = owner::assets(root.path());
-    for name in [
-        "palpo-transport.json",
-        "palpo.machine_token",
-        "matrix.appservice_token",
-    ] {
-        let state = root.path().join(name.replace('.', "_"));
-        hagency_store::private::directory(&state).unwrap();
-        std::fs::write(state.join(name), b"legacy never import").unwrap();
-        let out = owner::command()
-            .args(["serve", "--state-dir"])
-            .arg(&state)
-            .arg("--console-assets")
-            .arg(&bundle)
-            .output()
-            .unwrap();
-        assert!(!out.status.success());
-        assert!(!state.join("hagency-client-owned-v1.json").exists());
-    }
-    let out = owner::command()
-        .args(["serve", "--palpo-transport"])
-        .output()
-        .unwrap();
-    assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("--palpo-transport"));
-}

@@ -1,6 +1,16 @@
 //! Native owner management reuses the authenticated client service in process.
 pub use crate::console::native::*;
 
+/// Desktop entry point preserving the original Matrix authorization boundary.
+pub async fn open_with_matrix(
+    state: &std::path::Path,
+    origin: &str,
+    owner: &str,
+    source: std::sync::Arc<dyn MatrixTokenSource>,
+) -> Result<NativeOwner, NativeError> {
+    crate::console::native::NativeOwner::open_with_matrix(state, origin, owner, source).await
+}
+
 /// Private process-custody entry. The guardian validates its inherited handles;
 /// this does not launch a provider or accept owner commands from argv.
 pub fn run_guardian_if_requested() -> Option<std::io::Result<()>> {

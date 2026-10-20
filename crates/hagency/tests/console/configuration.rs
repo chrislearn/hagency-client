@@ -173,7 +173,7 @@ async fn native_console_resource_configuration_observations() {
                 .send(&service)
                 .await
                 .status_code,
-            Some(StatusCode::BAD_REQUEST)
+            Some(StatusCode::NOT_FOUND)
         );
     }
     let lock = rusqlite::Connection::open(f.root.path().join("state/domain.sqlite3")).unwrap();

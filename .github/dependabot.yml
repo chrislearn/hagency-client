@@ -12,19 +12,6 @@ updates:
     commit-message:
       prefix: "chore(deps)"
 
-  # The console's build-time dependencies.
-  - package-ecosystem: npm
-    directory: /mockup
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    groups:
-      safe-updates:
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
-    commit-message:
-      prefix: "chore(deps)"
-
   - package-ecosystem: github-actions
     directory: /
     schedule:

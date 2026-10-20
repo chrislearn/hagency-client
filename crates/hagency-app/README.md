@@ -95,8 +95,8 @@ python3 tools/wechat-ux/check_i18n.py
 ```
 
 The Cargo package is `hagency-app`, the executable is `hagency`, and the application
-presents itself as Hagency on every platform. The engine's separate console executable
-is `hagency-cli`. Default features use the standalone native application. The retired
+presents itself as Hagency on every platform. The engine is a shared library;
+the former CLI and Web console have been removed. Default features use the standalone native application. The retired
 `agent_chat` instrumentation is not needed to enable current Project/Agent management.
 Mobile packaging requires platform signing and device validation.
 

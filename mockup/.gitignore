@@ -1,7 +1,0 @@
-node_modules/
-.next/
-.next-*/
-out/
-
-# static export for GitHub Pages
-out/

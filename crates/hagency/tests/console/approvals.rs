@@ -138,16 +138,13 @@ async fn native_console_approval_refuses_foreign_origin() {
     assert_eq!(response.status_code, Some(StatusCode::FORBIDDEN));
     let value = response.take_json::<Value>().await.unwrap();
     assert_eq!(value["code"], "console_origin_required");
-    // The /console/approvals page is a NON-document: a cross-site fetch is
-    // refused with the origin word before any asset is served.
-    let mut response = TestClient::get(format!("{BASE}/console/approvals"))
+    // The retired page has no route, including for cross-site requests.
+    let response = TestClient::get(format!("{BASE}/console/approvals"))
         .add_header("host", "127.0.0.1:13300", true)
         .add_header("sec-fetch-site", "cross-site", true)
         .send(&service)
         .await;
-    assert_eq!(response.status_code, Some(StatusCode::FORBIDDEN));
-    let value = response.take_json::<Value>().await.unwrap();
-    assert_eq!(value["code"], "console_origin_required");
+    assert_eq!(response.status_code, Some(StatusCode::NOT_FOUND));
     // The foreign-host refusal serves no approval row byte.
     let mut response = get("/console/api/approvals/oa_decided", &cookie)
         .add_header("host", "evil.test", true)

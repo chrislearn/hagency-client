@@ -706,7 +706,6 @@ impl NativeOwner {
             .map_err(|_| failure(503, "native_state_unavailable"))? =
             Some((origin.clone(), owner.into()));
         let ticket = host
-            .console
             .owner_access_ticket()
             .map_err(|_| failure(503, "native_state_unavailable"))?;
         let service = salvo::Service::new(host.clone().router());
@@ -1213,6 +1212,57 @@ async fn callback(req: &mut Request, depot: &Depot, res: &mut Response) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn native_desktop_listener_exposes_only_oauth_callback() {
+        let root = tempfile::tempdir().unwrap();
+        let owner = NativeOwner::open_inner(
+            &root.path().join("state"),
+            "http://127.0.0.1:9",
+            "@owner:example.test",
+            false,
+        )
+        .await
+        .unwrap();
+        let client = reqwest::Client::new();
+        for path in [
+            "/",
+            "/console/",
+            "/console/login/",
+            "/console/projects/",
+            "/console/agents-owned/",
+            "/console/api/owned-agents",
+            "/console/api/owner-provider",
+            "/health",
+            "/ready",
+        ] {
+            let response = client
+                .get(format!("http://{}{path}", owner.0.address))
+                .send()
+                .await
+                .unwrap();
+            // Salvo returns 405 for a matched prefix without an endpoint and
+            // 404 for an unmatched path. Neither is a management route.
+            assert!(
+                matches!(response.status().as_u16(), 404 | 405),
+                "unexpected public endpoint: {path} ({})",
+                response.status()
+            );
+        }
+        let response = client
+            .get(format!(
+                "http://{}/console/server-login/callback",
+                owner.0.address
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert!(
+            matches!(response.status().as_u16(), 400 | 401 | 403),
+            "an unauthenticated callback must be refused by the callback handler"
+        );
+        owner.shutdown().await;
+    }
     #[test]
     fn external_provider_commands_allow_only_fixed_runtime_routes_and_local_actions() {
         for runtime in ["claude", "octos"] {

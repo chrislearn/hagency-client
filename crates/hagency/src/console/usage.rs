@@ -36,13 +36,7 @@ pub(super) fn query(req: &Request, allowed: &[&str], limit: usize) -> Result<(),
     }
     Ok(())
 }
-pub(super) fn selection_query(req: &Request) -> Result<(), Error> {
-    query(req, &["engagement_id"], 160)?;
-    if let Some(value) = req.query::<String>("engagement_id") {
-        identifier(&value, 128).map_err(|_| Error::Invalid)?;
-    }
-    Ok(())
-}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Label {

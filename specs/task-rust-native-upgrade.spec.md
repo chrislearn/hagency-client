@@ -53,7 +53,7 @@ workflow — is recorded in this spec and in ADR-134's note.
 ## Acceptance Criteria
 
 Scenario: The documented upgrade procedure continues live state
-  Test: native_upgrade_procedure_continues_state
+  Retired-Test: native_upgrade_procedure_continues_state
   Level: integration
   Test Double: two local builds of the same tree at workspace versions N and N+1, installed by the documented procedure over one state dir
   Given version N installed with live state — a current owner marker and owner ledger with an unknown provider charge and held quota
@@ -62,7 +62,7 @@ Scenario: The documented upgrade procedure continues live state
   And the readiness word returns
 
 Scenario: The procedure's rollback step restores the previous version on the same state
-  Test: native_upgrade_rollback_restores_previous
+  Retired-Test: native_upgrade_rollback_restores_previous
   Level: integration
   Test Double: the same two-version fixture after the upgrade scenario
   Given version N+1 running on the upgraded state
@@ -71,7 +71,7 @@ Scenario: The procedure's rollback step restores the previous version on the sam
   And the recorded rows from before the upgrade are still readable
 
 Scenario: Shared template changes participate in the real artifact's build inputs
-  Test: native_upgrade_shared_templates_are_build_inputs
+  Retired-Test: native_upgrade_shared_templates_are_build_inputs
   Level: unit
   Given the exact root inputs used by the N+1 copy and fingerprint helpers
   When any of the four original shared templates changes in an isolated fixture
@@ -97,3 +97,5 @@ procedure, not merely the report.
 The release workflow's enablement (operator), real tagged artifacts, the
 two-host cutover drill (ADR-135's production exercise, operator), and the
 retained JS deployment's upgrade path.
+
+Desktop-only retirement (2026-10-20): CLI, static document and browser selectors above are retained as historical records, not passing evidence. Shared engine tests remain active.

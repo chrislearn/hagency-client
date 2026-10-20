@@ -213,18 +213,17 @@ async fn native_console_project_side_refuses_foreign_origin() {
             "{name}: {value} serves no side item"
         );
     }
-    // The non-document rule: cross-site navigation refused, any query on
-    // the page path refused.
+    // The retired page is absent for both cross-site and query requests.
     let cross = TestClient::get(format!("{BASE}/console/project-sides/"))
         .add_header("host", "127.0.0.1:13300", true)
         .add_header("sec-fetch-site", "cross-site", true)
         .send(&service)
         .await;
-    assert_eq!(cross.status_code, Some(StatusCode::FORBIDDEN));
+    assert_eq!(cross.status_code, Some(StatusCode::NOT_FOUND));
     let queried = get("/console/project-sides/?anything=1", &cookie)
         .send(&service)
         .await;
-    assert_eq!(queried.status_code, Some(StatusCode::BAD_REQUEST));
+    assert_eq!(queried.status_code, Some(StatusCode::NOT_FOUND));
     // A mutation now exists (the registration route, G11): the boundary must
     // refuse every forged-header POST with the same words the GET loop asserts,
     // before any store work — the guarantee "this surface cannot be mutated

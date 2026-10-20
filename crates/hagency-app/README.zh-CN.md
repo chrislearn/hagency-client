@@ -84,7 +84,7 @@ cargo test --locked --lib
 ```
 
 仓库固定 Rust 1.98.0，Cargo 包名为 `hagency-app`、可执行文件为 `hagency`，应用显示为 Hagency。
-引擎的独立命令行入口为 `hagency-cli`。
+引擎作为桌面共用库保留，原独立 CLI 和 Web 控制台已移除。
 默认 standalone 构建已包含原生管理，不需要开启旧 `agent_chat` 仪器功能。
 移动打包需要签名及实机验证。
 

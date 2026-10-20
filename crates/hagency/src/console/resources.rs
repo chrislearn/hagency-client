@@ -17,13 +17,7 @@ pub(super) fn router() -> Router {
         .push(Router::with_path("resources/{id}/budget").get(budget))
         .push(Router::with_path("resources/{id}/publication").post(publication))
 }
-pub(super) fn selection_query(req: &Request) -> Result<(), Error> {
-    query(req, &["resource_id"], 160)?;
-    if let Some(id) = req.query::<String>("resource_id") {
-        identifier(&id, 128).map_err(|_| Error::Invalid)?;
-    }
-    Ok(())
-}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct ResourceRow {

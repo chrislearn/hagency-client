@@ -18,7 +18,6 @@ mod resources;
 mod runner;
 mod runtime;
 pub mod server_admission;
-pub mod service;
 pub mod setup;
 pub mod task_client;
 mod usage;

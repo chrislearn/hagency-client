@@ -31,9 +31,7 @@ async fn native_console_roster_shows_an_ingress_provisioned_agent() {
             16,
         )
         .unwrap();
-        let asset_dir = f.base.root.path().join("assets");
-        assets(&asset_dir);
-        let console = Console::load(&asset_dir.canonicalize().unwrap()).unwrap();
+        let console = Console::for_sdk_with_state(None).unwrap();
         let app = App::new(
             custody.clone(),
             TOKEN.as_bytes(),

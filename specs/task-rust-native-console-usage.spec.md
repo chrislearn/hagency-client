@@ -113,7 +113,7 @@ Scenario: Browser authority has finite isolated scope
   Then only the original current session reads the fixed console facade
 
 Scenario: Assets retain verified original file evidence
-  Test: native_console_assets
+  Retired-Test: native_console_assets
   Level: integration
   Test Double: real private temporary manifest and file mutations
   Given bounded nofollow manifest assets
@@ -156,7 +156,7 @@ Scenario: The console engagements read requires a browser session
   Then it is refused exactly as the usage console reads are, the default read publishes every wire key including requestedTokens, and paging at limit one through the opaque id cursor serves two content pages then an empty page with a null cursor while the astral name agrees on both bounds
 
 Scenario: The console engagements document serves with a no-query rule
-  Test: native_console_engagements_document
+  Retired-Test: native_console_engagements_document
   Given the staged engagements document in the loader allowlist and key mapping
   When the document is fetched and then with any query parameter
   Then the document body serves without a query and any query is refused as an invalid console request while non-document assets keep the origin rule
@@ -172,3 +172,5 @@ Scenario: The native origin hoops match the executed retained proxy rules
 ## Owner-only browser qualification (2026-10-07)
 
 The retired browser selectors above exercised removed Fleet/operator pages, resources/accounts/project-sides/task workflows or binary startup with old domain SQLite. They are removed product tests, not retained SDK qualification. Independent SDK HTTP/library selectors in this mixed spec remain active. Current browser qualification is the actual OwnerHost `native_console_rail_pages_are_shipped_and_served` plus `mockup/scripts/check-owner-console.mjs` in the enabled CI browser lane; it covers owner navigation, local ticket exchange, provider/runtime DTOs, explicit Estimated and restricted-files opt-in, exact request/tool approvals and absence of automatic inference. It does not claim old Fleet pages, encrypted delivery or paid model completion.
+
+Desktop-only retirement (2026-10-20): CLI, static document and browser selectors above are retained as historical records, not passing evidence. Shared engine tests remain active.
