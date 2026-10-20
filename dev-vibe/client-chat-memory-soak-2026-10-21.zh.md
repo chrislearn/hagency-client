@@ -1,6 +1,6 @@
 # 客户端聊天内存预算与原生滚动长测（2026-10-21）
 
-状态：实现、复核及最终原生长测完成；用户随后授权将全部客户端改动提交并推送远端 main，正在完成发布前集成检查。
+状态：实现、复核及最终原生长测完成；用户随后授权发布全部改动。客户端代码提交 `6e7a84d9`，已合并最新 main `c70b95ed`，集成提交 `fa2014a1`；全部代码与报告随本次发布批次推送至 `origin/main`。
 
 最终生产源码在 Windows 原生 D3D11 / Release 下完成 **1800 秒**连续滚动：**38,250 次定时滚动输入、306 次 SDK 上下文替换**，覆盖百万与千万逻辑历史，每次验证消息时间顺序。预算和预设增长率检查全部通过。修复了 WidgetTree 脱离节点泄漏、图片解码/编码预算缺口及查看器迟到结果保留；未将全进程 RSS 或驱动 VRAM 声称为绝对硬限。
 
@@ -103,3 +103,17 @@
 这些限制约束聊天自动加载及应用拥有的相关工作集。它们不是操作系统 RSS/Private Bytes 或整个 GPU 驱动 VRAM 的绝对硬上限；字体 atlas、swapchain、驱动、SDK state/crypto、其他业务模块均独立占用内存。
 
 旧 SDK media cache 条目在读出 Vec 后才校验大小；普通 SDK retention 有自身限制，历史 ignore-retention 的本地上传可能更大。显式“保存文件/下载”仍使用既有附件传输，不在自动预览的 8 MiB 限额内，尚未认证任意大小文件下载全程恒定内存。公网真实账号、多个客户端/宿主、音视频及各种恶意压缩数据的完整跨平台压力没有在本次运行中覆盖。不能据此次测试声称全客户端所有子系统都已具备单一 RSS 硬限。
+
+
+## 2026-10-21 main 发布集成复核
+
+用户最新的“push all changes to remote main branch”覆盖此前客户端暂不提交/推送限制。包含现有全部客户端代码及 dev-vibe 调研报告；Makepad 仍遵守此前独立 fork 分支约束，不修改 fork/main 或原仓库主分支。SDK 固定提交已存在于远端，无新改动。
+
+- 全部 82 条 Makepad patch 固定 `chrislearn/makepad` 的 `77c8039bc0910f7099bfe4c6f6106a74ae783528`。完整 metadata 确认 47 个非 registry Makepad 包只有同一 Git 来源；另外两项既有 registry Android/JNI 绑定保持原来源。无本机 path 依赖，无 vendor。
+- 对比 Git 下载 checkout 与长测使用的真实 fork：8,750 个跟踪文件内容一致（仅归一化 CRLF/LF）；原生长测记录的 11 个非 manifest 关键源码 SHA256 仍完全匹配。两项 manifest 因固定依赖来源而变化。没有声称对合并后的标题栏更新重新执行完整 30 分钟原生长测。
+- 合并 latest main 标题栏更新；锁文件冲突保留 stats_alloc 和 tempfile。新合入的 tempfile 改用已有 workspace 版本。压测脚本通过 metadata 定位实际 renderer，语法及路径解析均验证通过。
+- `publish-integrated-tests.log`：应用 543 通过/0失败/2忽略；history 8通过/0失败/2压力忽略；updater 4通过/0失败。
+- `publish-integrated-clippy.log`：三包 all-targets、完整功能、no-deps 严格 `-D warnings` 通过。
+- `publish-integrated-no-default.log`：应用 no-default-features + agent_chat 检查通过。
+- 合并后 i18n 2050条目、1533调用/0缺失；diff whitespace 通过。样式审计257文件发现1项现有 main 违例：`updates/titlebar.rs:24` 硬编码字号11，与 `c70b95ed` 完全一致，本次未修改这项标题栏样式；此前255文件/0问题为合并前证据。
+- `publish-resolved-metadata.json` / `publish-source-identity.json` 保存依赖与源码一致性证据；所有构建和日志仍在 `D:/BuildCache/hagency-client`。
