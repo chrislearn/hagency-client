@@ -21,7 +21,6 @@ pub(super) struct Worker {
     snapshot: Arc<Mutex<Snapshot>>,
     preferences: Arc<Mutex<Preferences>>,
     commands: mpsc::Sender<Command>,
-    notified: std::cell::Cell<bool>,
 }
 fn now() -> u64 {
     SystemTime::now()
@@ -174,7 +173,6 @@ impl Worker {
             snapshot,
             preferences,
             commands,
-            notified: std::cell::Cell::new(false),
         })
     }
     pub(super) fn root(&self) -> &Path {
@@ -237,15 +235,6 @@ impl Worker {
     }
     pub(super) fn publish(&self, cx: &mut Cx) {
         let snapshot = self.snapshot.lock().unwrap().clone();
-        if snapshot.phase == Phase::Ready && !self.notified.replace(true) {
-            crate::shared::popup_list::enqueue_popup_notification(
-                crate::i18n::tr(
-                    "An update is ready. Open Software Updates to restart and install.",
-                ),
-                crate::shared::popup_list::PopupKind::Success,
-                Some(8.0),
-            );
-        }
         cx.global::<UpdateState>().0 = snapshot;
     }
 }

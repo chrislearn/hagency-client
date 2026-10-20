@@ -520,6 +520,31 @@ mod layout_tests {
         cx2d.end_pass(&pass);
     }
 
+    #[cfg(any(target_os = "macos", all(target_os = "linux", not(target_env = "ohos"))))]
+    #[test]
+    fn desktop_updates_settings_offer_download_and_manual_check_without_install_controls() {
+        use crate::updates::{Phase, Snapshot, UpdateState};
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut screen = screen(&mut cx);
+        screen.set_selected_category(&mut cx, SettingsCategory::About);
+        cx.global::<UpdateState>().0 = Snapshot {
+            enabled: true, phase: Phase::Available, version: "0.7.0".into(), ..Default::default()
+        };
+        for width in [1100.0, 375.0] {
+            draw(&mut cx, &mut screen, width);
+            let updates = screen.view.view(&cx, ids!(about_settings.updates));
+            assert!(!updates.is_empty());
+            let download = screen.view.button(&cx, ids!(about_settings.updates.download));
+            assert!(download.visible());
+            let rect = download.area().rect(&cx);
+            assert!(rect.size.x > 0.0 && rect.pos.x + rect.size.x <= width + 0.1);
+            assert!(screen.view.button(&cx, ids!(about_settings.updates.check)).visible());
+            assert!(!screen.view.button(&cx, ids!(about_settings.updates.install)).visible());
+            assert!(screen.view.check_box(&cx, ids!(about_settings.updates.auto_check)).visible());
+            assert!(!screen.view.check_box(&cx, ids!(about_settings.updates.auto_download)).visible());
+        }
+    }
+
     #[cfg(target_os = "windows")]
     #[test]
     fn updates_settings_show_ready_and_deferred_installation_in_narrow_windows() {

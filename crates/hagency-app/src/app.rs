@@ -219,6 +219,11 @@ script_mod! {
                                 draw_icon +: {svg: ICON_PANEL_LEFT color: mod.widgets.RINX_INK}
                             }
                         }
+                        View {
+                            width: Fill height: Fill align: Align{x: 1.0 y: 0.5}
+                            padding: Inset{right: 12}
+                            titlebar_update := UpdateNotice {}
+                        }
                     }
                 }
 
@@ -1434,12 +1439,19 @@ impl AppMain for App {
         self.ui.handle_event(cx, event, scope);
         self.sync_titlebar_sidebar(cx);
         // Window's default caption hit test treats custom controls as draggable.
-        // Override only this button, after Window has handled the query.
+        // Override interactive caption controls after Window has handled the query.
         if let Event::WindowDragQuery(query) = event {
             let button = self.ui.navigation_bar_button(cx, ids!(titlebar_sidebar));
             if self.ui.window(cx, ids!(main_window)).window_id() == Some(query.window_id)
                 && button.borrow().is_some_and(|button| button.visible())
                 && button.area().rect(cx).contains(query.abs)
+            {
+                query.response.set(WindowDragQueryResponse::Client);
+            }
+            let update = self.ui.button(cx, ids!(titlebar_update.trigger));
+            if self.ui.window(cx, ids!(main_window)).window_id() == Some(query.window_id)
+                && crate::updates::titlebar_notice_visible(&cx.global::<crate::updates::UpdateState>().0)
+                && update.area().rect(cx).contains(query.abs)
             {
                 query.response.set(WindowDragQueryResponse::Client);
             }
@@ -1913,6 +1925,18 @@ impl App {
     }
 
     fn sync_titlebar_sidebar(&self, cx: &mut Cx) {
+        if !self.embedded {
+            if cx.global::<crate::updates::UpdateState>().0.preview {
+                self.ui.window(cx, ids!(main_window)).set_title(cx, "Hagency — Update Preview");
+            }
+            let update_visible = crate::updates::titlebar_notice_visible(
+                &cx.global::<crate::updates::UpdateState>().0,
+            );
+            let caption_width = self.ui.view(cx, ids!(caption_label)).area().rect(cx).size.x;
+            // Leave room for the update pill and native window controls at narrow widths.
+            self.ui.view(cx, ids!(caption_label.title)).set_visible(cx,
+                !update_visible || caption_width >= 480.0);
+        }
         let visible = !self.embedded && self.app_state.logged_in
             && crate::home::home_screen::effective_is_desktop(cx);
         let collapsed = self.app_state.app_prefs.desktop_sidebar_collapsed;

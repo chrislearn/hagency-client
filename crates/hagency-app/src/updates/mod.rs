@@ -1,4 +1,4 @@
-//! Native Windows update UI and lifecycle. Hosted modules never self-update.
+//! Native update notifications and the Windows installation lifecycle.
 use makepad_widgets::*;
 
 #[cfg(target_os = "windows")]
@@ -6,11 +6,21 @@ static EXIT_FENCE: std::sync::Mutex<Option<hagency::update_guard::InstallGuard>>
     std::sync::Mutex::new(None);
 
 mod ui;
-pub use ui::script_mod;
+mod titlebar;
+pub(crate) use titlebar::titlebar_notice_visible;
+pub fn script_mod(vm: &mut ScriptVm) {
+    ui::script_mod(vm);
+    titlebar::script_mod(vm);
+}
 #[cfg(target_os = "windows")]
 mod windows;
 #[cfg(target_os = "windows")]
 mod worker;
+#[cfg(any(
+    target_os = "macos",
+    all(target_os = "linux", not(target_env = "ohos"))
+))]
+mod desktop;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Phase {
@@ -31,6 +41,8 @@ pub enum Phase {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Snapshot {
     pub enabled: bool,
+    /// Explicit, isolated development preview; never authorizes update actions.
+    pub preview: bool,
     pub auto_check: bool,
     pub auto_download: bool,
     pub phase: Phase,
@@ -43,23 +55,33 @@ impl Default for Snapshot {
     fn default() -> Self {
         Self {
             enabled: false,
+            preview: false,
             auto_check: true,
             auto_download: true,
             phase: Phase::Disabled,
             version: String::new(),
             notes: String::new(),
             progress: 0,
-            error: "Updates are available in official Windows installers.",
+            error: "Updates are available in official desktop installers.",
         }
     }
 }
 impl Snapshot {
     pub fn status(&self) -> &'static str {
+        if self.preview {
+            return "Update reminder preview. Downloads and installation are disabled.";
+        }
         match self.phase {
             Phase::Disabled | Phase::Failed => self.error,
             Phase::Idle => "Check for a new version of Hagency.",
             Phase::Current => "Hagency is up to date.",
             Phase::Checking => "Checking for updates…",
+            Phase::Available if cfg!(target_os = "macos") => {
+                "A new version is available. Download the DMG and replace Hagency when you are ready."
+            }
+            Phase::Available if cfg!(target_os = "linux") => {
+                "A new version is available. Open the download page to install it manually."
+            }
             Phase::Available => "A new version is available.",
             Phase::Downloading => "Downloading update…",
             Phase::Ready => "Update downloaded. Restart when you are ready.",
@@ -91,7 +113,16 @@ pub struct Integration {
     exit_requested: bool,
     #[cfg(target_os = "windows")]
     worker: Option<worker::Worker>,
-    #[cfg(target_os = "windows")]
+    #[cfg(any(
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    ))]
+    desktop_worker: Option<desktop::Worker>,
+    #[cfg(any(
+        target_os = "windows",
+        target_os = "macos",
+        all(target_os = "linux", not(target_env = "ohos"))
+    ))]
     timer: Timer,
     #[cfg(target_os = "windows")]
     install_guard: Option<hagency::update_guard::InstallGuard>,
@@ -109,6 +140,21 @@ impl Integration {
         }
         if !self.initialized {
             self.initialized = true;
+            #[cfg(debug_assertions)]
+            if std::env::var("HAGENCY_PREVIEW_UPDATE").as_deref() == Ok("1")
+                && std::env::var_os("HAGENCY_APP_DATA_DIR").is_some_and(|path| !path.is_empty())
+            {
+                cx.global::<UpdateState>().0 = Snapshot {
+                    enabled: true,
+                    preview: true,
+                    phase: Phase::Available,
+                    version: crate::i18n::tr("Preview version").to_owned(),
+                    auto_check: false,
+                    auto_download: false,
+                    ..Default::default()
+                };
+                return false;
+            }
             #[cfg(target_os = "windows")]
             if !cfg!(test) && cfg!(feature = "standalone") && cfg!(packaging_build) {
                 match worker::Worker::start() {
@@ -121,6 +167,40 @@ impl Integration {
                             "Update signing is not configured for this build."
                     }
                 }
+            }
+            #[cfg(any(
+                target_os = "macos",
+                all(target_os = "linux", not(target_env = "ohos"))
+            ))]
+            if !cfg!(test) && cfg!(feature = "standalone") {
+                match desktop::Worker::start() {
+                    Ok(worker) => {
+                        self.desktop_worker = Some(worker);
+                        self.timer = cx.start_interval(1.0);
+                    }
+                    Err(_) => {
+                        cx.global::<UpdateState>().0.error =
+                            "Update checks are unavailable in this build."
+                    }
+                }
+            }
+        }
+        #[cfg(any(
+            target_os = "macos",
+            all(target_os = "linux", not(target_env = "ohos"))
+        ))]
+        if let Some(worker) = &self.desktop_worker {
+            if let Event::Actions(actions) = event {
+                for action in actions {
+                    if let Some(action) = action.downcast_ref::<UpdateAction>() {
+                        worker.action(*action);
+                    }
+                }
+            }
+            if self.timer.is_event(event).is_some()
+                || matches!(event, Event::Signal | Event::Actions(_))
+            {
+                worker.publish(cx);
             }
         }
         #[cfg(target_os = "windows")]
@@ -263,4 +343,12 @@ pub fn run_helper_if_requested() -> Option<anyhow::Result<()>> {
 #[cfg(target_os = "windows")]
 pub fn commit_after_shutdown() {
     windows::commit_after_shutdown();
+}
+
+fn download_label() -> &'static str {
+    if cfg!(target_os = "linux") {
+        "Open Download Page"
+    } else {
+        "Download Update"
+    }
 }

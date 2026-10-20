@@ -13,7 +13,7 @@ script_mod! {
         version := RinxLabel { width: Fill height: Fit flow: Flow.Right{wrap: true} }
         View {
             width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 8
-            download := RobrixIconButton { text: #(crate::i18n::tr("Download Update")) i18n_text: "Download Update" }
+            download := RobrixIconButton { text: #(crate::i18n::tr(super::download_label())) i18n_text: #(super::download_label()) }
             install := RobrixIconButton { text: #(crate::i18n::tr("Restart and Install")) i18n_text: "Restart and Install" }
             later := RobrixIconButton { text: #(crate::i18n::tr("Install Later")) i18n_text: "Install Later" }
             check := RinxGhostButton { text: #(crate::i18n::tr("Check for Updates")) i18n_text: "Check for Updates" }
@@ -56,6 +56,10 @@ impl Widget for UpdateSettings {
                 self.notes_open = !self.notes_open;
                 self.rendered = None;
             }
+            if cx.global::<UpdateState>().0.preview {
+                self.view.handle_event(cx, event, scope);
+                return;
+            }
             for (id, action) in [
                 (id!(check), UpdateAction::Check),
                 (id!(download), UpdateAction::Download),
@@ -89,7 +93,14 @@ impl Widget for UpdateSettings {
             return self.view.draw_walk(cx, scope, walk);
         }
         self.rendered = Some((state.clone(), language));
-        self.view.set_visible(cx, cfg!(target_os = "windows"));
+        self.view.set_visible(
+            cx,
+            cfg!(any(
+                target_os = "windows",
+                target_os = "macos",
+                all(target_os = "linux", not(target_env = "ohos"))
+            )),
+        );
         let status = if state.phase == Phase::Downloading {
             format!("{} {}%", crate::i18n::tr(state.status()), state.progress)
         } else {
@@ -112,7 +123,12 @@ impl Widget for UpdateSettings {
         ] {
             let control = self.view.check_box(cx, &[id]);
             control.set_active(cx, active, Animate::No);
-            control.set_visible(cx, state.enabled);
+            control.set_visible(
+                cx,
+                state.enabled
+                    && !state.preview
+                    && (id != id!(auto_download) || cfg!(target_os = "windows")),
+            );
         }
         self.view.button(cx, ids!(check)).set_visible(
             cx,
@@ -125,6 +141,9 @@ impl Widget for UpdateSettings {
         self.view
             .button(cx, ids!(download))
             .set_visible(cx, state.enabled && state.phase == Phase::Available);
+        for id in [id!(check), id!(download), id!(install), id!(later)] {
+            self.view.button(cx, &[id]).set_enabled(cx, !state.preview);
+        }
         self.view
             .button(cx, ids!(install))
             .set_visible(cx, state.enabled && state.phase == Phase::Ready);
