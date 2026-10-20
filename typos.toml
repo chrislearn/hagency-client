@@ -23,6 +23,7 @@ WRONLY = "WRONLY"
 O_WRONLY = "O_WRONLY"
 NIN_SELECT = "NIN_SELECT"
 NIN_KEYSELECT = "NIN_KEYSELECT"
+StrCpy = "StrCpy" # NSIS instruction in the pinned installer template.
 msg_controllen = "msg_controllen"
 CapInh = "CapInh"
 PNGs = "PNGs"

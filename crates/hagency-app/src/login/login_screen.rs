@@ -314,6 +314,25 @@ script_mod! {
                             }
                         }
                     }
+                    login_updates_button := RinxGhostButton {
+                        visible: #(cfg!(target_os = "windows"))
+                        text: #(crate::i18n::tr("Software Updates")) i18n_text: "Software Updates"
+                    }
+                }
+
+                // Update details use a separate overlay so they never displace sign-in.
+                login_updates_modal := Modal {
+                    content := SmallModal {
+                        width: Fill{max: 520}
+                        spacing: 12
+                        View {
+                            width: Fill height: Fit align: Align{x: 1.0}
+                            close_updates := RinxGhostButton {
+                                text: #(crate::i18n::tr("Close")) i18n_text: "Close"
+                            }
+                        }
+                        login_updates := UpdateSettings {}
+                    }
                 }
 
                 // The modal that pops up to display login status messages,
@@ -515,6 +534,12 @@ impl LoginScreen {
 
 impl MatchEvent for LoginScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        if self.view.button(cx, ids!(login_updates_button)).clicked(actions) {
+            self.view.modal(cx, ids!(login_updates_modal)).open(cx);
+        }
+        if self.view.button(cx, ids!(close_updates)).clicked(actions) {
+            self.view.modal(cx, ids!(login_updates_modal)).close(cx);
+        }
         let mut language_changed = false;
         for (path, language) in [(ids!(login_language_en), crate::i18n::Language::English), (ids!(login_language_zh), crate::i18n::Language::Chinese)] {
             if self.view.button(cx, path).clicked(actions) {
@@ -751,6 +776,100 @@ fn browser_login_allowed(sso: bool, oauth: bool, browser_registration: bool, reg
 #[cfg(test)]
 mod browser_login_tests {
     use super::browser_login_allowed;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn updates_settings_are_accessible_before_login_and_survive_reapply() {
+        use super::*;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let (mut screen, value) = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            vm.bx.captured_errors = Some(Vec::new());
+            let value = script_eval!(vm, {mod.widgets.LoginScreen {}});
+            let screen = LoginScreen::script_from_value(vm, value);
+            assert!(vm.take_errors().is_empty());
+            (screen, value)
+        });
+        let button = screen.view.button(&cx, ids!(login_updates_button));
+        let actions = cx.capture_actions(|cx| cx.widget_action(button.widget_uid(), ButtonAction::Clicked(KeyModifiers::default())));
+        screen.handle_actions(&mut cx, &actions);
+        assert!(screen.view.modal(&cx, ids!(login_updates_modal)).is_open());
+        cx.with_vm(|vm| screen.script_apply(vm, &Apply::ScriptReapply, &mut Scope::empty(), value));
+        assert!(screen.view.modal(&cx, ids!(login_updates_modal)).is_open());
+        let close = screen.view.button(&cx, ids!(close_updates));
+        let actions = cx.capture_actions(|cx| cx.widget_action(close.widget_uid(), ButtonAction::Clicked(KeyModifiers::default())));
+        screen.handle_actions(&mut cx, &actions);
+        assert!(!screen.view.modal(&cx, ids!(login_updates_modal)).is_open());
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn updates_settings_modal_keeps_sign_in_in_place_and_bounds_long_release_notes() {
+        use super::*;
+        use crate::updates::{Phase, Snapshot, UpdateState};
+        use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+
+        fn draw(cx: &mut Cx, screen: &mut LoginScreen, width: f64) {
+            cx.redraw_all();
+            let pass = DrawPass::new(cx);
+            pass.set_size(cx, dvec2(width, 760.0));
+            let mut list = DrawList2d::new(cx);
+            let overlay = Overlay {draw_list: DrawList::new(cx)};
+            let event = DrawEvent::default();
+            let mut draw = CxDraw::new(cx, &event);
+            let mut cx2d = Cx2d::new(&mut draw);
+            cx2d.begin_pass(&pass, None);
+            list.begin_always(&mut cx2d);
+            overlay.begin(&mut cx2d);
+            cx2d.begin_root_turtle(dvec2(width, 760.0), Layout::flow_overlay());
+            screen.draw_walk_all(&mut cx2d, &mut Scope::empty(), Walk {
+                width: Size::Fixed(width), height: Size::Fixed(760.0), ..Walk::default()
+            });
+            overlay.end(&mut cx2d);
+            cx2d.end_pass_sized_turtle();
+            list.end(&mut cx2d);
+            cx2d.end_pass(&pass);
+        }
+
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut screen = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            vm.bx.captured_errors = Some(Vec::new());
+            let value = script_eval!(vm, {mod.widgets.LoginScreen {}});
+            let screen = LoginScreen::script_from_value(vm, value);
+            assert!(vm.take_errors().is_empty());
+            screen
+        });
+        cx.global::<UpdateState>().0 = Snapshot {
+            enabled: true, phase: Phase::Ready, version: "0.7.0".into(),
+            notes: "A long release note that wraps across several lines.\n".repeat(200),
+            ..Default::default()
+        };
+        for width in [1280.0, 375.0] {
+            let modal = screen.view.modal(&cx, ids!(login_updates_modal));
+            modal.close(&mut cx);
+            draw(&mut cx, &mut screen, width);
+            let form = screen.view.view(&cx, ids!(server_step)).area().rect(&cx);
+            modal.open(&mut cx);
+            draw(&mut cx, &mut screen, width);
+            assert_eq!(screen.view.view(&cx, ids!(server_step)).area().rect(&cx), form);
+            let install = screen.view.button(&cx, ids!(login_updates.install)).area().rect(&cx);
+            assert!(install.size.x > 0.0 && install.pos.x >= 0.0 && install.pos.x + install.size.x <= width);
+            assert!(!screen.view.view(&cx, ids!(notes_panel)).visible());
+            let notes = screen.view.button(&cx, ids!(release_notes));
+            let actions = cx.capture_actions(|cx| cx.widget_action(notes.widget_uid(), ButtonAction::Clicked(KeyModifiers::default())));
+            screen.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::empty());
+            draw(&mut cx, &mut screen, width);
+            let panel = screen.view.view(&cx, ids!(notes_panel));
+            assert!(panel.visible());
+            assert!(panel.area().rect(&cx).size.y <= 160.1);
+            assert_eq!(screen.view.view(&cx, ids!(server_step)).area().rect(&cx), form);
+            let actions = cx.capture_actions(|cx| cx.widget_action(notes.widget_uid(), ButtonAction::Clicked(KeyModifiers::default())));
+            screen.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::empty());
+        }
+    }
 
     #[test]
     fn oauth_registration_button_follows_server_capability() {

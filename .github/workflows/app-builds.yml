@@ -122,6 +122,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Use D drive for Windows build outputs and caches
+        shell: pwsh
+        run: |
+          $root = 'D:/BuildCache/hagency-client'
+          $paths = @{CARGO_HOME="$root/cargo"; CARGO_TARGET_DIR="$root/target"; TEMP="$root/tmp"; TMP="$root/tmp"}
+          foreach ($entry in $paths.GetEnumerator()) {
+            New-Item -ItemType Directory -Force -Path $entry.Value | Out-Null
+            "$($entry.Key)=$($entry.Value)" >> $env:GITHUB_ENV
+          }
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -130,11 +140,28 @@ jobs:
         with:
           key: windows-build-${{ hashFiles('Cargo.lock') }}
 
+      - name: Test Windows update verification and file locking
+        run: cargo test --locked -p hagency-updater
+
+      - name: Test native Windows update controls
+        run: cargo test --locked -p hagency-app --lib updates_settings
+
       - name: Build
         env:
           RUSTFLAGS: "-D warnings"
         run: |
           cargo build --locked -p hagency-app --profile fast
+
+      - name: Verify signed installer handoff and restart with real NSIS
+        shell: pwsh
+        run: |
+          $root = 'D:/BuildCache/hagency-client/updater-tools'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $archive = "$root/nsis-3.09.zip"
+          Invoke-WebRequest 'https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.9/nsis-3.09.zip' -OutFile $archive
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne 'F5DC52EEF1F3884230520199BAC6F36B82D643D86B003CE51BD24B05C6BA7C91') { throw 'NSIS checksum mismatch' }
+          Expand-Archive -LiteralPath $archive -DestinationPath "$root/nsis" -Force
+          ../../tools/test-windows-updater.ps1 -NsisPath "$root/nsis/nsis-3.09/makensis.exe" -Toolchain stable
 
   # ═══════════════════════════════════════════════════════════════════════════════════════
   # CROSS-PLATFORM MOBILE BUILDS

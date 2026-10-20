@@ -1661,6 +1661,27 @@ async fn execution_loop<T: Transport>(
 ) -> Result<(), RuntimeError> {
     execution_loop_with_gate(console, owner, ledger, config, lease, cancel, status, true).await
 }
+async fn wait_for_update_fence(
+    gate: &crate::update_guard::UpdateGate,
+    cancel: &mut watch::Receiver<bool>,
+) -> Result<crate::update_guard::TaskGuard, RuntimeError> {
+    loop {
+        if *cancel.borrow() {
+            return Err(RuntimeError::Stopped);
+        }
+        if let Some(task) = gate.enter_task() {
+            return Ok(task);
+        }
+        // Failed installation preparation releases the fence. Keep an idle
+        // service alive so it can resume without another explicit owner Start.
+        tokio::select! {
+            biased;
+            _ = canceled(cancel) => return Err(RuntimeError::Stopped),
+            _ = tokio::time::sleep(Duration::from_millis(100)) => {}
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn execution_loop_with_gate<T: Transport>(
     console: &T,
@@ -1754,6 +1775,10 @@ async fn execution_loop_with_gate<T: Transport>(
             tokio::select! {biased;_=canceled(cancel)=>return Err(RuntimeError::Stopped),_=tokio::time::sleep(Duration::from_millis(250))=>{}}
             continue;
         }
+        // Cover polling and acknowledgement too: an update must not retire a
+        // just-claimed dispatch in the gap before provider work starts. The
+        // idle sleep below releases this guard so resident Agents can update.
+        let update_task = wait_for_update_fence(&crate::update_guard::PROCESS, cancel).await?;
         let events = match operation(
             console,
             cancel,
@@ -1767,6 +1792,7 @@ async fn execution_loop_with_gate<T: Transport>(
         {
             Ok(Response::Events(events)) => events,
             Err(RuntimeError::Transport) => {
+                drop(update_task);
                 tokio::select! {biased; _=canceled(cancel)=>return Err(RuntimeError::Stopped), _=tokio::time::sleep(Duration::from_secs(1))=>{}}
                 continue;
             }
@@ -2021,6 +2047,7 @@ async fn execution_loop_with_gate<T: Transport>(
             ready.binding_id = Some(config.binding_id.clone());
             status.send_replace(ready);
         }
+        drop(update_task);
         tokio::select! {biased; _=canceled(cancel)=>return Err(RuntimeError::Stopped),_=tokio::time::sleep(Duration::from_secs(1))=>{}}
     }
 }
@@ -2573,6 +2600,43 @@ async fn send_reply<T: Transport>(
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn update_fence_resumes_idle_workers_when_preparation_is_canceled() {
+        let gate = crate::update_guard::UpdateGate::default();
+        let installation = gate.try_install().unwrap();
+        let (_cancel, mut receiver) = watch::channel(false);
+        let worker_gate = gate.clone();
+        let waiting =
+            tokio::spawn(async move { wait_for_update_fence(&worker_gate, &mut receiver).await });
+        tokio::time::sleep(Duration::from_millis(20)).await;
+        assert!(!waiting.is_finished());
+        drop(installation);
+        let task = tokio::time::timeout(Duration::from_secs(1), waiting)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(gate.try_install().is_none());
+        drop(task);
+        assert!(gate.try_install().is_some());
+    }
+
+    #[tokio::test]
+    async fn update_fence_still_allows_normal_owner_shutdown() {
+        let gate = crate::update_guard::UpdateGate::default();
+        let _installation = gate.try_install().unwrap();
+        let (cancel, mut receiver) = watch::channel(false);
+        let waiting =
+            tokio::spawn(async move { wait_for_update_fence(&gate, &mut receiver).await });
+        tokio::task::yield_now().await;
+        cancel.send_replace(true);
+        let result = tokio::time::timeout(Duration::from_secs(1), waiting)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(result, Err(RuntimeError::Stopped)));
+    }
+
     #[test]
     fn provider_failure_preserves_execution_category_in_runtime_status() {
         for (error, code) in [

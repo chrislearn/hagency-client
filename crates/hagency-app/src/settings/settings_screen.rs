@@ -520,6 +520,32 @@ mod layout_tests {
         cx2d.end_pass(&pass);
     }
 
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn updates_settings_show_ready_and_deferred_installation_in_narrow_windows() {
+        use crate::updates::{Phase, Snapshot, UpdateState};
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut screen = screen(&mut cx);
+        screen.set_selected_category(&mut cx, SettingsCategory::About);
+        cx.global::<UpdateState>().0 = Snapshot {
+            enabled: true, phase: Phase::Ready, version: "0.7.0".into(),
+            notes: "A verified update with release notes.".into(), ..Default::default()
+        };
+        for width in [1100.0, 375.0] {
+            draw(&mut cx, &mut screen, width);
+            let button = screen.view.button(&cx, ids!(about_settings.updates.install));
+            assert!(button.visible());
+            let rect = button.area().rect(&cx);
+            assert!(rect.size.x > 0.0 && rect.pos.x + rect.size.x <= width + 0.1);
+            assert!(!screen.view.button(&cx, ids!(about_settings.updates.later)).visible());
+        }
+        cx.global::<UpdateState>().0.phase = Phase::Waiting;
+        draw(&mut cx, &mut screen, 375.0);
+        assert!(!screen.view.button(&cx, ids!(about_settings.updates.install)).visible());
+        assert!(screen.view.button(&cx, ids!(about_settings.updates.later)).visible());
+        assert!(screen.view.label(&cx, ids!(about_settings.updates.status)).text().contains("Agent tasks"));
+    }
+
     #[test]
     fn tray_settings_open_general_and_fit_narrow_windows() {
         let mut cx = Cx::new(Box::new(|_, _| {}));

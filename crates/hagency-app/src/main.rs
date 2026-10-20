@@ -11,6 +11,11 @@
 
 #[cfg(feature = "standalone")]
 fn main() {
+    #[cfg(target_os = "windows")]
+    if let Some(result) = hagency_app::updates::run_helper_if_requested() {
+        if result.is_err() { std::process::exit(1); }
+        return;
+    }
     if let Some(result)=hagency::native_owner::run_guardian_if_requested() {
         if result.is_err(){std::process::exit(1);}return;
     }
@@ -20,7 +25,9 @@ fn main() {
         Ok(None) => return,
         Err(error) => { eprintln!("Could not initialize Hagency: {error}"); return; }
     };
-    hagency_app::app::app_main()
+    hagency_app::app::app_main();
+    #[cfg(target_os = "windows")]
+    hagency_app::updates::commit_after_shutdown();
 }
 
 /// Without `standalone`, Rinx is a library for a host such as OctoSense.

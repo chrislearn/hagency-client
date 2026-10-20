@@ -189,6 +189,9 @@ impl MatrixTokenSource for SdkTokens {
 }
 
 static CURRENT: LazyLock<Mutex<Option<Service>>> = LazyLock::new(|| Mutex::new(None));
+// An update must join an account transition that already took CURRENT, rather
+// than mistake its empty slot for a completed owner shutdown.
+static STOP_CURRENT: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 struct Inner {
     origin: String,
     owner: String,
@@ -202,6 +205,8 @@ struct Inner {
 pub struct Service(Arc<Inner>);
 impl Service {
     pub fn for_current() -> Result<Self, String> {
+        let _update_task = ::hagency::update_guard::PROCESS.enter_task()
+            .ok_or("update_in_progress")?;
         if crate::logout::logout_state_machine::is_logout_in_progress() {
             return Err("matrix_account_changing".into());
         }
@@ -225,10 +230,13 @@ impl Service {
             return Ok(service.clone());
         }
         if let Some(old) = current.take() {
+            let retirement = ::hagency::update_guard::PROCESS.enter_task()
+                .ok_or("update_in_progress")?;
             old.0
                 .retired
                 .store(true, std::sync::atomic::Ordering::Release);
             crate::sliding_sync::backend_runtime().spawn(async move {
+                let _retirement = retirement;
                 old.shutdown().await;
             });
         }
@@ -426,6 +434,8 @@ impl Service {
         result
     }
     pub async fn execute(&self, command: Command) -> Result<Value, String> {
+        let _update_task = ::hagency::update_guard::PROCESS.enter_task()
+            .ok_or("update_in_progress")?;
         self.check()?;
         if matches!(command, Command::BeginLogin) {
             return Err("matrix_oauth_sign_in_required".into());
@@ -509,6 +519,7 @@ impl Service {
     /// Account transitions must call this before clearing SDK/UI state. It
     /// revokes owner authority and drains runtime/provider work before return.
     pub async fn stop_current() {
+        let _stopping = STOP_CURRENT.lock().await;
         let service = CURRENT.lock().ok().and_then(|mut current| current.take());
         if let Some(service) = service {
             service
