@@ -2035,5 +2035,17 @@
   "The update was canceled or could not be installed. Check for updates to try again.": "更新已取消或未能安装，请检查更新后重试。",
   "An update is ready. Open Software Updates to restart and install.": "更新已就绪，请打开软件更新以重启并安装。",
   "Update preferences could not be read. Check for updates or save your preferences again.": "无法读取更新设置，可手动检查更新或重新保存设置。",
-  "Release Notes": "版本说明"
+  "Release Notes": "版本说明",
+  "Update Hagency": "更新 Hagency",
+  "Current version:": "当前版本：",
+  "New version:": "新版本：",
+  "Updates are available in official desktop installers.": "更新适用于官方桌面安装包。",
+  "A new version is available. Download the DMG and replace Hagency when you are ready.": "有新版本可用。下载 DMG，并在准备好后替换 Hagency。",
+  "Update checks are unavailable in this build.": "此构建暂不支持检查更新。",
+  "Could not open the update download. Please try again.": "无法打开更新下载，请重试。",
+  "Not now": "暂不更新",
+  "Preview version": "预览版本",
+  "Update reminder preview. Downloads and installation are disabled.": "更新提醒预览。下载和安装操作已禁用。",
+  "Open Download Page": "打开下载页",
+  "A new version is available. Open the download page to install it manually.": "有新版本可用。请打开下载页，手动下载并安装。"
 }

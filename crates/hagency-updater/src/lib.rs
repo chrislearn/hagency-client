@@ -1,4 +1,5 @@
-//! Signed Windows NSIS updates. No installer runs from the download worker.
+//! Signed Windows NSIS updates and desktop release notifications.
+pub mod releases;
 use anyhow::{Context, Result, bail, ensure};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use minisign_verify::{PublicKey, Signature};
