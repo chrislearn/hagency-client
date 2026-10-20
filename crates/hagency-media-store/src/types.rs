@@ -232,7 +232,7 @@ pub(crate) struct Permit(pub(crate) Arc<Pool>);
 impl Permit {
     pub(crate) fn acquire(pool: &Arc<Pool>) -> Result<Self, Error> {
         pool.held
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
                 (n < pool.limit).then_some(n + 1)
             })
             .map_err(|_| Error::Capacity)?;

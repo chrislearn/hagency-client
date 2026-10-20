@@ -16,3 +16,8 @@
 - Cargo metadata 确认实际 target_directory=D:/BuildCache/hagency-client/target；Cargo/cache/tmp 均使用该任务 D 盘目录。现有 Cargo duplicate/unused patch 提示保留。未修改 Cargo.lock、schema 或用户配置；没有重启用户正在运行的桌面应用、实际屏幕验收、提交或推送。
 
 2026-10-20 后续：用户明确要求将 Server 与 Client 两轮改动分别提交并推送远端 main。提交前 fetch 确认与 origin/main 无分叉；typos 和 diff 检查再次通过。推送后的 CI 以本次提交的 GitHub Actions 为准，状态记录保存在 D:/BuildCache/hagency-client/about-links-push-ci-*，不为追加 CI 记录重复触发完整构建。
+
+- 首次提交 eca89bbd 已推送 main。远端 Spelling 成功，应用质量检查完成 Clippy/库测试等执行步骤进入缓存收尾；跨平台构建中 Linux x64/ARM64、macOS Intel/ARM64 成功，Windows 失败于 Rust 1.99.1 将 Atomic::fetch_update 标记弃用，在 -D warnings 下阻断。不是 About 代码的编译错误。
+- 补充修复 hagency-files、hagency-media、hagency-media-store 三处调用为等价 try_update；保留原内存序、闭包和错误传播，未降低 lint、切换工具链或增加 allow。独立 Rust 1.98.0 编译探针确认新名称兼容现行最低版本。
+- 三包 Rust 1.98.0 all-targets 严格 Clippy、fmt、typos、diff 通过。文件容量/失败释放回归 1 项、媒体集成 5 项、存储容量相关 3 项共 9 项通过。库测试另外观察到文件库 6 项、媒体库 2 项通过；存储库 19 项通过、1 项平台夹具失败。
+- 本机完整文件集成测试的 Windows reparse 夹具，以及存储库的平台夹具，都因创建符号链接缺少 Windows 权限（OS 1314）失败；未修改这些断言或添加跳过，不能记为完整本地测试通过。原始失败和针对性成功日志均保存在上述 D 盘目录，完整远端验证以补充修复提交为准。

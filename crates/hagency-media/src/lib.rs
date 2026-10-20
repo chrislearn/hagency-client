@@ -124,7 +124,7 @@ impl Codec {
         }
         self.pool
             .held
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
                 (n < self.pool.limits.max_results).then_some(n + 1)
             })
             .map_err(|_| Error::Capacity)?;

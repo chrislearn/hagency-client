@@ -128,7 +128,7 @@ impl Workspace {
     ) -> Result<Snapshot, Error> {
         self.root
             .live
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
                 (n < self.root.limits.max_snapshots).then_some(n + 1)
             })
             .map_err(|_| Error::Capacity)?;
