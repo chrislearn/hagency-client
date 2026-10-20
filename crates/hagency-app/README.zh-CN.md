@@ -1,5 +1,7 @@
 # Hagency
 
+[官网](https://hagency.org/) · [问题反馈](docs/support.md) · [数据与隐私](docs/privacy.zh-CN.md)
+
 原生程序现位于 hagency-client 的统一工作区中，通过 `../hagency` 使用同仓库引擎。
 依赖由仓库根 Cargo.lock 锁定，构建说明见[工作区指南](../../docs/workspace.md)。
 Windows 使用仓库根 `tools/dev.ps1`，将构建产物及缓存放到 D:/BuildCache/hagency-client。

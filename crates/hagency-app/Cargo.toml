@@ -3,9 +3,9 @@ default-run = "hagency"
 name = "hagency-app"
 authors = ["OctoSense Contributors", "Kevin Boos <kevinaboos@gmail.com>", "Robius Project Maintainers"]
 description = "Hagency: Matrix Project workspaces and locally managed AI Agents."
-documentation = "https://github.com/hagency-org/hagency-client/tree/main/crates/hagency-app#readme"
+documentation = "https://github.com/hagency-org/hagency-client/blob/main/crates/hagency-app/docs/hagency-quickstart.md"
 edition = "2024" ## mostly just to allow let-chains
-homepage = "https://github.com/hagency-org/hagency-client"
+homepage = "https://hagency.org/"
 keywords = ["matrix", "chat", "client", "robius", "makepad"]
 license = "Apache-2.0"
 readme = "README.md"
@@ -274,20 +274,18 @@ authors = [
     "Project Robius <contact@robius.rs>",
     "Kevin Boos <kevinaboos@gmail.com>",
 ]
-publisher = "Upstream Labs"
+publisher = "Hagency contributors"
 license_file = "LICENSE"
 copyright = "Copyright 2023-2026, Project Robius"
-homepage = "https://github.com/hagency-org/hagency-client"
+homepage = "https://hagency.org/"
 ### Note: there is an 80-character max for the one-line summary.
 description = "Matrix Project workspaces and locally managed AI Agents"
 ### Note: there is an 80-character max for each line of the `long_description`.
 long_description = """
-Rinx is a native Matrix messenger derived from Robrix, written in Rust
-using the Makepad UI framework (https://github.com/makepad/makepad)
-and the Project Robius app dev framework and platform abstractions
-(https://github.com/project-robius).
-Rinx runs on all major desktop and mobile platforms:
-macOS, Windows, Linux, Android, and iOS.
+Hagency is a native desktop application for Projects, Matrix chat and AI Agents.
+Sign in to a Hagency server through Pasion and manage local Agent execution.
+The application supports Windows, macOS and Linux, with a Rust/Makepad UI
+derived from Robrix and the Project Robius platform libraries.
 """
 icons = [
     "./resources/icon.icns",

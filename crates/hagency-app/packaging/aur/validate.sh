@@ -23,7 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RENDER="$SCRIPT_DIR/render-pkgbuild.sh"
 
 tag=''
-repo='upstreamlabs/Hagency'
+repo='hagency-org/hagency-client'
 arches='x86_64 aarch64'
 with_binfmt=0
 keep=0
@@ -172,7 +172,7 @@ echo "--- namcap PKGBUILD ---"
 namcap PKGBUILD | tee namcap-pkgbuild.txt || true
 
 echo "--- makepkg ---"
-sudo -u builder env PACKAGER="Hagency contributors <https://github.com/upstreamlabs/Hagency>" \
+sudo -u builder env PACKAGER="Hagency contributors <https://hagency.org/>" \
     makepkg --force --noconfirm --nodeps
 
 pkg="$(ls ./*.pkg.tar.zst)"

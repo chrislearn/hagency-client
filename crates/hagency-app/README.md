@@ -1,5 +1,7 @@
 # Hagency
 
+[Website](https://hagency.org/) · [Support](docs/support.md) · [Data and privacy](docs/privacy.md)
+
 Client 0.6.0 is available from [Hagency Client Releases](https://github.com/hagency-org/hagency-client/releases/latest). The [release assessment](../../dev-vibe/desktop/release-0.5.0/assessment.zh.md) records outstanding upstream dependency security work; see the [0.6.0 release notes](https://github.com/hagency-org/hagency-client/releases/tag/v0.6.0) for current limitations.
 
 English | [简体中文](README.zh-CN.md)

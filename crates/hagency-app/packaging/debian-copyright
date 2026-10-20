@@ -1,6 +1,6 @@
-Upstream-Name: Rinx
-Upstream-Contact: https://github.com/upstreamlabs/Rinx/issues
-Source: https://github.com/upstreamlabs/Rinx
+Upstream-Name: Hagency
+Upstream-Contact: https://github.com/hagency-org/hagency-desktop/issues
+Source: https://github.com/hagency-org/hagency-client
 Comment: The Files: paths below are the paths of the files as installed, not paths
  in the upstream source tree, so this file deliberately does not claim conformance
  to the machine-readable copyright-format spec.

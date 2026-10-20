@@ -55,7 +55,7 @@ fn main() {
             // (CompanyName/LegalCopyright are empty by default), and the
             // ProductName/FileDescription fall back to the lowercase crate
             // name "rinx" instead of the product name.
-            res.set("CompanyName", "Upstream Labs");
+            res.set("CompanyName", "Hagency contributors");
             res.set("ProductName", "Hagency");
             res.set("FileDescription", "Hagency - Projects, chat and AI Agents");
             res.set("LegalCopyright", "Copyright - 2023-2026 Project Robius");
@@ -159,10 +159,10 @@ fn read_matrix_sdk_info() -> (String, String, String) {
         };
         (short_rev, url)
     } else if !version.is_empty() {
-        // Registry/path/other sources: fall back to the crates.io URL.
+        // Registry/path/other sources: open the resolved version's API documentation.
         (
             String::new(),
-            format!("https://crates.io/crates/matrix-sdk/{version}"),
+            format!("https://docs.rs/matrix-sdk/{version}/matrix_sdk/"),
         )
     } else {
         (String::new(), String::new())

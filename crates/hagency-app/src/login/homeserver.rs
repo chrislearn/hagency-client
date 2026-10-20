@@ -186,7 +186,7 @@ where
                 redirect_uris: vec![Url::parse("http://127.0.0.1/")?],
             }],
             Localized::new(
-                Url::parse("https://github.com/hagency-org/hagency-client")?,
+                Url::parse(crate::project_links::HOMEPAGE_URL)?,
                 None,
             ),
         )

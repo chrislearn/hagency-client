@@ -5,10 +5,7 @@
 use makepad_widgets::*;
 use crate::{app::PositiveConfirmationModalAction, shared::{confirmation_modal::ConfirmationModalContent, popup_list::{enqueue_popup_notification, PopupKind}}, sliding_sync::{MatrixRequest, submit_async_request}, utils::open_url};
 
-const HOMEPAGE_URL: &str = "https://github.com/hagency-org/hagency-client";
-const PRIVACY_POLICY_URL: &str = "https://github.com/hagency-org/hagency-client/blob/main/docs/privacy.md";
-const SOURCE_URL: &str = "https://github.com/hagency-org/hagency-client";
-const NEW_ISSUE_URL: &str = "https://github.com/hagency-org/hagency-client/issues/new";
+use crate::project_links::{GUIDE_URL, HOMEPAGE_URL, LICENSE_URL, NEW_ISSUE_URL, NOTICES_URL, PRIVACY_POLICY_URL, RELEASES_URL, SOURCE_URL};
 
 const ROBRIX_VERSION: &str = env!("CARGO_PKG_VERSION");
 const RINX_GIT_COMMIT_HASH: &str = env!("RINX_GIT_COMMIT_HASH");
@@ -101,12 +98,30 @@ script_mod! {
             text: #(crate::i18n::tr("Privacy & Legal")) i18n_text: "Privacy & Legal"
         }
 
-        privacy_policy_button := RobrixIconButton {
-            height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
-            margin: Inset{left: 5, top: 5, bottom: 5}
-            draw_icon.svg: (ICON_EXTERNAL_LINK)
-            icon_walk: Walk{width: 16, height: 16}
-            text: #(crate::i18n::tr("View Privacy Policy")) i18n_text: "View Privacy Policy"
+        View {
+            width: Fill height: Fit flow: Flow.Right{wrap: true}
+            align: Align{y: 0.5} spacing: 10 wrap_spacing: 2
+            privacy_policy_button := RobrixIconButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                margin: Inset{left: 5, top: 5, bottom: 5}
+                draw_icon.svg: (ICON_EXTERNAL_LINK)
+                icon_walk: Walk{width: 16, height: 16}
+                text: #(crate::i18n::tr("View Privacy Policy")) i18n_text: "View Privacy Policy"
+            }
+            license_button := RobrixIconButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                margin: Inset{left: 5, top: 5, bottom: 5}
+                draw_icon.svg: (ICON_EXTERNAL_LINK)
+                icon_walk: Walk{width: 16, height: 16}
+                text: #(crate::i18n::tr("View License")) i18n_text: "View License"
+            }
+            notices_button := RobrixIconButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                margin: Inset{left: 5, top: 5, bottom: 5}
+                draw_icon.svg: (ICON_EXTERNAL_LINK)
+                icon_walk: Walk{width: 16, height: 16}
+                text: #(crate::i18n::tr("Credits & Notices")) i18n_text: "Credits & Notices"
+            }
         }
 
 
@@ -135,6 +150,21 @@ script_mod! {
                 draw_icon.svg: (ICON_EXTERNAL_LINK)
                 icon_walk: Walk{width: 16, height: 16}
                 text: #(crate::i18n::tr("Source Code (GitHub)")) i18n_text: "Source Code (GitHub)"
+            }
+
+            guide_button := RobrixIconButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                margin: Inset{left: 5, top: 5, bottom: 5}
+                draw_icon.svg: (ICON_EXTERNAL_LINK)
+                icon_walk: Walk{width: 16, height: 16}
+                text: #(crate::i18n::tr("User Guide")) i18n_text: "User Guide"
+            }
+            releases_button := RobrixIconButton {
+                height: RINX_BUTTON_HEIGHT padding: Inset{left: 12 right: 12 top: 0 bottom: 0}
+                margin: Inset{left: 5, top: 5, bottom: 5}
+                draw_icon.svg: (ICON_EXTERNAL_LINK)
+                icon_walk: Walk{width: 16, height: 16}
+                text: #(crate::i18n::tr("Downloads & Releases")) i18n_text: "Downloads & Releases"
             }
 
             issues_button := RobrixNegativeIconButton {
@@ -241,6 +271,18 @@ impl AboutSettings {
 
         if self.view.button(cx, ids!(privacy_policy_button)).clicked(actions) {
             open_url(PRIVACY_POLICY_URL);
+        }
+        if self.view.button(cx, ids!(license_button)).clicked(actions) {
+            open_url(LICENSE_URL);
+        }
+        if self.view.button(cx, ids!(notices_button)).clicked(actions) {
+            open_url(NOTICES_URL);
+        }
+        if self.view.button(cx, ids!(guide_button)).clicked(actions) {
+            open_url(GUIDE_URL);
+        }
+        if self.view.button(cx, ids!(releases_button)).clicked(actions) {
+            open_url(RELEASES_URL);
         }
         if self.view.button(cx, ids!(homepage_button)).clicked(actions) {
             open_url(HOMEPAGE_URL);

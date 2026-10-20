@@ -5,55 +5,34 @@
   <project_license>Apache-2.0</project_license>
 
   <name>Hagency</name>
-  <summary>Powerful Matrix chat with dockable tabs for many rooms at once</summary>
+  <summary>Projects, Matrix chat and locally managed AI Agents</summary>
 
   <description>
     <p>
-      Hagency is a native Matrix messenger derived from Robrix, written in Rust.
-      It brings some cool new features to the world of Matrix, like our signature
-      "dockable tabs" layout that lets you view and interact with multiple rooms or threads
-      simultaneously. This works just like your favorite multi-tab IDE or web browser,
-      letting you keep tabs on as many conversations as you want.
+      Hagency is a native desktop application for Windows, macOS and Linux.
+      It combines Project workspaces, Matrix chat and locally executed AI Agents.
+      Sign in to a Hagency server through its Pasion browser authorization.
     </p>
     <p>
-      Hagency stays sleek and smooth even under heavy usage. We designed it to be fast and light
-      (but also feature-rich), thanks to the Makepad UI toolkit and the Robius app dev framework,
-      which we've also written from scratch
-      It's fully native on every platform: no Electron, no underlying web engine,
-      no JavaScript, and no cruft.
-      Scrolling through many rooms at once with millions of messages each is no problem.
-      Native sliding sync logs you in quickly, and your rooms list fully syncs without a long wait.
-      We also went to great lengths to ensure that Hagency's room timeline view is
-      consistent and predictable; it won't unexpectedly jump around while loading messages,
-      images, or other room content. We've always found this to be annoying in other chat apps.
+      Create or connect Project Spaces and discussion Rooms, configure your own
+      Agents and local model resources, and manage scoped execution and approvals.
+      Account switching keeps each account's local data and runtime separate.
     </p>
     <p>
-      Hagency runs on all other major platforms too: Android, iOS, macOS, and Windows,
-      where you can get the same flexible UI and powerful featureset, even on mobile.
+      The Rust/Makepad interface is derived from Robrix and uses Project Robius
+      platform libraries. Their copyright and license notices are retained.
     </p>
     <p>
-      Matrix is an open protocol for secure, decentralized chat and other communication,
-      built with privacy at its core. Instead of trusting one company with all of your
-      messages, you create an account on a homeserver of your choice, run by a community,
-      an employer, a government, or even yourself, and talk to anyone on any other homeserver
-      across the world. It's basically like email, but fully encrypted and real-time.
-      No ads, no analytics, no data brokers.
+      Your server and configured model providers apply their own data policies.
+      Human Matrix chat supports encryption; encrypted-Room Agent execution is
+      currently deferred. Review the data and privacy documentation before use.
     </p>
-    <p>Hagency supports nearly all the main Matrix client features you'd expect:</p>
+    <p>The application includes:</p>
     <ul>
-      <li>End-to-end encryption (E2EE) + verification for secure chat across public, private, and DM rooms</li>
-      <li>Fast login and room updates via native sliding sync</li>
-      <li>Room timelines with rich text, images, files, location sharing, and link previews</li>
-      <li>Standard rich text, plus extras like formatted tables and details/summary blocks</li>
-      <li>Full support for inline replies, threads/threaded replies, and reactions</li>
-      <li>Robust Spaces support: a dedicated multi-room dock view for each space! (and you can explore and join rooms and sub-spaces, as usual)</li>
-      <li>Upload, download, and share files and media (images/videos)</li>
-      <li>Edit any message you sent without losing your current draft</li>
-      <li>Instantly mention (and filter through) users and rooms</li>
-      <li>Join or leave rooms by link, alias, or room ID</li>
-      <li>Send and respond to invites, including full support for knocking on rooms</li>
-      <li>Login via SSO or username and password</li>
-      <li>Offline mode with a persistent local event cache</li>
+      <li>Projects, Room membership and access controls</li>
+      <li>Agent identity, execution devices, model resources and usage limits</li>
+      <li>Matrix conversations, threads, reactions, files and encrypted human chat</li>
+      <li>Scoped mini apps, an article editor and saved-account switching</li>
     </ul>
     <p>
       Hagency is free and open source. Contributions, bug reports, and feature requests are more than welcome.
@@ -63,16 +42,17 @@
   <launchable type="desktop-id">hagency.desktop</launchable>
   <pkgname>hagency-app</pkgname>
 
-  <developer id="io.github.upstreamlabs">
-    <name translate="no">Upstream Labs</name>
+  <developer id="org.hagency">
+    <name translate="no">Hagency contributors</name>
   </developer>
-  <developer_name translate="no">Upstream Labs</developer_name>
+  <developer_name translate="no">Hagency contributors</developer_name>
 
-  <url type="homepage">https://github.com/hagency-org/hagency-client</url>
-  <url type="bugtracker">https://github.com/hagency-org/hagency-client/issues</url>
+  <url type="homepage">https://hagency.org/</url>
+  <url type="bugtracker">https://github.com/hagency-org/hagency-desktop/issues</url>
   <url type="vcs-browser">https://github.com/hagency-org/hagency-client</url>
   <url type="contribute">https://github.com/hagency-org/hagency-client</url>
-  <url type="contact">https://github.com/hagency-org/hagency-client/issues</url>
+  <url type="contact">https://github.com/hagency-org/hagency-desktop/issues</url>
+  <url type="help">https://github.com/hagency-org/hagency-client/blob/main/crates/hagency-app/docs/hagency-quickstart.md</url>
 
   <categories>
     <category>Network</category>

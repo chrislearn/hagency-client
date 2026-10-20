@@ -50,6 +50,7 @@ pub mod module;
 pub mod persistence;
 /// The settings screen and settings-related content/widgets.
 pub mod settings;
+mod project_links;
 /// Adapter to shared Makepad/OctoSense appearance and reloadable controls.
 pub mod theme;
 

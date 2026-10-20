@@ -1988,5 +1988,9 @@
   "Sign in to check your approval rooms.": "Sign in to check your approval rooms.",
   "Some rooms could not be checked. Refresh to try again; unchecked rooms may contain approvals.": "Some rooms could not be checked. Refresh to try again; unchecked rooms may contain approvals.",
   "No verified approval room was found for this project. This does not indicate an agent startup error.": "No verified approval room was found for this project. This does not indicate an agent startup error.",
-  "Your joined rooms do not currently include a verified approval room. This does not indicate an agent startup error.": "Your joined rooms do not currently include a verified approval room. This does not indicate an agent startup error."
+  "Your joined rooms do not currently include a verified approval room. This does not indicate an agent startup error.": "Your joined rooms do not currently include a verified approval room. This does not indicate an agent startup error.",
+  "View License": "View License",
+  "Credits & Notices": "Credits & Notices",
+  "User Guide": "User Guide",
+  "Downloads & Releases": "Downloads & Releases"
 }

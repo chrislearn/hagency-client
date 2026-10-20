@@ -1988,5 +1988,9 @@
   "Sign in to check your approval rooms.": "登录后可检查你的审批房间。",
   "Some rooms could not be checked. Refresh to try again; unchecked rooms may contain approvals.": "部分房间未能完成检查，请刷新重试；未检查的房间中可能有审批请求。",
   "No verified approval room was found for this project. This does not indicate an agent startup error.": "未找到此项目的有效审批房间。这并不表示智能体启动失败。",
-  "Your joined rooms do not currently include a verified approval room. This does not indicate an agent startup error.": "你已加入的房间中暂时没有有效审批房间。这并不表示智能体启动失败。"
+  "Your joined rooms do not currently include a verified approval room. This does not indicate an agent startup error.": "你已加入的房间中暂时没有有效审批房间。这并不表示智能体启动失败。",
+  "View License": "查看许可证",
+  "Credits & Notices": "致谢与版权声明",
+  "User Guide": "使用指南",
+  "Downloads & Releases": "下载与版本发布"
 }
