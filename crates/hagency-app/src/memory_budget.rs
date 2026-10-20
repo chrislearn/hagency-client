@@ -77,7 +77,7 @@ impl ImagePermit {
 
     fn reserve(bytes: usize) -> Result<Self, ImageError> {
         IMAGE_WORKING
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |held| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |held| {
                 held.checked_add(bytes)
                     .filter(|total| *total <= IMAGE_WORKING_BYTES)
             })

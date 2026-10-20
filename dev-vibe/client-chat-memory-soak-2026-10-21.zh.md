@@ -128,3 +128,10 @@
 本地真实NSIS复跑还暴露了测试夹具错误：旧程序是文本占位文件，模拟占用拒绝后恢复旧版时会触发Windows兼容性弹窗。现已改为实际编译的旧版PE探针，并检查旧/新启动标记、取消/篡改时不启动、安装前不改写等条件；最终install/cancel/tamper/busy四种场景全部通过。证据 `ci-updater-handoff-fixed.log`，隔离目录 `D:/BuildCache/hagency-client/updater-handoff/93c49955-6caa-4ead-adb1-e21c34351a48`。不改变产品更新助手现有安装失败后恢复旧版的行为。
 
 本次修复推main后核对新提交远端CI，终态证据保存在 `D:/BuildCache/hagency-client/ci-style-fix-remote-final.json`；不能用之前提交的CI替代新提交验证。
+
+
+### Rust 1.99 兼容复核
+
+`a05d0652` 的 App CI 已完整成功：远端macOS应用547通过/2忽略，样式257文件/0问题，主题、i18n、布局守卫均通过。Linux/macOS各两架构构建也通过。Windows构建使用Rust1.99.1，把 `memory_budget.rs` 的 `fetch_update` 弃用警告在 `-D warnings` 下升级为错误。
+
+将其改为项目已采用、Rust1.98也支持的 `try_update`，保留同一闭包、原子内存序和预算边界，不降低CI工具链或关闭警告。Rust1.98预算5项单测及严格all-targets Clippy通过；另用已安装的Rust1.99.0执行完整应用fast配置的 `-D warnings` 检查通过，日志 `ci-rust199-strict-check.log`。此API名称变更使memory_budget源码SHA变化，前文长测SHA一致性检查是该兼容修复之前的记录；没有将历史长测冒记为最终兼容修复后重跑。新head的远端CI终态仍保存于 `ci-style-fix-remote-final.json`。
