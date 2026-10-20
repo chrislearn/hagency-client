@@ -34,6 +34,18 @@ fn main() {
     $probe = Join-Path $testRoot 'new-version.exe'
     & rustc $probeSource -o $probe
     if ($LASTEXITCODE -ne 0) { throw 'Could not compile restart probe' }
+    # A refused installer restarts the existing executable. Use a real PE here:
+    # a text placeholder makes CreateProcess show an unsupported-application dialog.
+    $oldProbeSource = Join-Path $testRoot 'old_probe.rs'
+    @'
+fn main() {
+    let path = std::path::PathBuf::from(std::env::var_os("HAGENCY_UPDATE_TEST_MARKER").expect("fixture marker"));
+    std::fs::write(path.with_extension("old"), "old version started").unwrap();
+}
+'@ | Set-Content -LiteralPath $oldProbeSource -Encoding utf8
+    $oldProbe = Join-Path $testRoot 'old-version.exe'
+    & rustc $oldProbeSource -o $oldProbe
+    if ($LASTEXITCODE -ne 0) { throw 'Could not compile old-version restart probe' }
     $installer = Join-Path $testRoot 'fixture-installer.exe'
     $recipe = Join-Path $testRoot 'fixture.nsi'
     $app = $metadata.packages | Where-Object name -eq 'hagency-app'
@@ -81,11 +93,12 @@ SectionEnd
         $installDir = Join-Path $data 'Installed Application'
         New-Item -ItemType Directory -Path $installDir | Out-Null
         $target = Join-Path $installDir 'hagency.exe'
-        Set-Content -LiteralPath $target -Value 'old executable fixture'
+        Copy-Item -LiteralPath $oldProbe -Destination $target
         $old = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
         $releaseParent = Join-Path $data 'release-parent'
         $env:HAGENCY_APP_DATA_DIR = $data
         $env:HAGENCY_UPDATE_TEST_MARKER = Join-Path $data 'restarted'
+        $oldMarker = [System.IO.Path]::ChangeExtension($env:HAGENCY_UPDATE_TEST_MARKER, 'old')
         $parentScript = Join-Path $data 'parent.ps1'
         $quotedParent = $releaseParent.Replace("'", "''")
         "while (-not (Test-Path -LiteralPath '$quotedParent')) { Start-Sleep -Milliseconds 100 }" | Set-Content -LiteralPath $parentScript
@@ -103,7 +116,7 @@ SectionEnd
                 }
                 if ($scenario -ne 'tamper' -and -not (Test-Path -LiteralPath (Join-Path $helperDir 'ready'))) { throw 'Helper did not acknowledge readiness' }
                 if ((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash -ne $old) { throw 'Installer ran before parent exit' }
-                if (Test-Path -LiteralPath $env:HAGENCY_UPDATE_TEST_MARKER) { throw 'Restarted before parent exit' }
+                if ((Test-Path -LiteralPath $env:HAGENCY_UPDATE_TEST_MARKER) -or (Test-Path -LiteralPath $oldMarker)) { throw 'Restarted before parent exit' }
                 if ($scenario -in @('install', 'busy')) { Set-Content -LiteralPath (Join-Path $helperDir 'committed') -Value 'committed' }
                 Set-Content -LiteralPath $releaseParent -Value 'exit'
                 if (-not $parent.WaitForExit(10000)) { throw 'Fixture parent did not exit' }
@@ -117,6 +130,14 @@ SectionEnd
                 } else {
                     if ($helper.ExitCode -eq 0) { throw 'Invalid or canceled update was accepted' }
                     if ((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash -ne $old) { throw 'Canceled update changed the installation' }
+                    if (Test-Path -LiteralPath $env:HAGENCY_UPDATE_TEST_MARKER) { throw 'Refused update started the new version' }
+                    if ($scenario -eq 'busy') {
+                        $deadline = [DateTime]::UtcNow.AddSeconds(10)
+                        while (-not (Test-Path -LiteralPath $oldMarker) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 100 }
+                        if (-not (Test-Path -LiteralPath $oldMarker)) { throw 'Refused installer did not restore the old version' }
+                    } elseif (Test-Path -LiteralPath $oldMarker) {
+                        throw 'Uncommitted update restarted the application'
+                    }
                 }
                 $results += [pscustomobject]@{ scenario = $scenario; passed = $true; helperExit = $helper.ExitCode }
             } finally {

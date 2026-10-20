@@ -117,3 +117,14 @@
 - `publish-integrated-no-default.log`：应用 no-default-features + agent_chat 检查通过。
 - 合并后 i18n 2050条目、1533调用/0缺失；diff whitespace 通过。样式审计257文件发现1项现有 main 违例：`updates/titlebar.rs:24` 硬编码字号11，与 `c70b95ed` 完全一致，本次未修改这项标题栏样式；此前255文件/0问题为合并前证据。
 - `publish-resolved-metadata.json` / `publish-source-identity.json` 保存依赖与源码一致性证据；所有构建和日志仍在 `D:/BuildCache/hagency-client`。
+
+
+### 后续 CI 修复
+
+上一节的标题栏字号基线问题已按用户要求修复：移除 `UpdateNotice` 的硬编码 11pt，让它继承共享 `RinxButton` 的 `RINX_UI_SIZE`，随主题字号比例变化。257文件样式审计/主题字面量检查通过，标题栏4项现有测试和严格三包all-targets Clippy通过。
+
+核对远端旧main `c70b95ed`：App CI的失败正是这处样式问题；Build CI的Windows步骤未能从当前工作目录找到相对路径的更新器测试脚本，已改为从 `GITHUB_WORKSPACE` 定位绝对路径。
+
+本地真实NSIS复跑还暴露了测试夹具错误：旧程序是文本占位文件，模拟占用拒绝后恢复旧版时会触发Windows兼容性弹窗。现已改为实际编译的旧版PE探针，并检查旧/新启动标记、取消/篡改时不启动、安装前不改写等条件；最终install/cancel/tamper/busy四种场景全部通过。证据 `ci-updater-handoff-fixed.log`，隔离目录 `D:/BuildCache/hagency-client/updater-handoff/93c49955-6caa-4ead-adb1-e21c34351a48`。不改变产品更新助手现有安装失败后恢复旧版的行为。
+
+本次修复推main后核对新提交远端CI，终态证据保存在 `D:/BuildCache/hagency-client/ci-style-fix-remote-final.json`；不能用之前提交的CI替代新提交验证。

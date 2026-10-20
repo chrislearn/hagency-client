@@ -161,7 +161,7 @@ jobs:
           Invoke-WebRequest 'https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.9/nsis-3.09.zip' -OutFile $archive
           if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne 'F5DC52EEF1F3884230520199BAC6F36B82D643D86B003CE51BD24B05C6BA7C91') { throw 'NSIS checksum mismatch' }
           Expand-Archive -LiteralPath $archive -DestinationPath "$root/nsis" -Force
-          ../../tools/test-windows-updater.ps1 -NsisPath "$root/nsis/nsis-3.09/makensis.exe" -Toolchain stable
+          & (Join-Path $env:GITHUB_WORKSPACE 'tools/test-windows-updater.ps1') -NsisPath "$root/nsis/nsis-3.09/makensis.exe" -Toolchain stable
 
   # ═══════════════════════════════════════════════════════════════════════════════════════
   # CROSS-PLATFORM MOBILE BUILDS

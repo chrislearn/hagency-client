@@ -21,7 +21,6 @@ script_mod! {
             draw_text +: {
                 color: RINX_WARNING_FG color_hover: RINX_WARNING_FG
                 color_down: RINX_WARNING_FG color_focus: RINX_WARNING_FG
-                text_style.font_size: 11
             }
         }
         panel: RoundedView {
