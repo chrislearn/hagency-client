@@ -2034,5 +2034,6 @@
   "Could not download or verify the update. Check for updates to retry.": "Could not download or verify the update. Check for updates to retry.",
   "The update was canceled or could not be installed. Check for updates to try again.": "The update was canceled or could not be installed. Check for updates to try again.",
   "An update is ready. Open Software Updates to restart and install.": "An update is ready. Open Software Updates to restart and install.",
-  "Update preferences could not be read. Check for updates or save your preferences again.": "Update preferences could not be read. Check for updates or save your preferences again."
+  "Update preferences could not be read. Check for updates or save your preferences again.": "Update preferences could not be read. Check for updates or save your preferences again.",
+  "Release Notes": "Release Notes"
 }

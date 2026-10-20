@@ -9,17 +9,21 @@ script_mod! {
     mod.widgets.UpdateSettings = #(UpdateSettings::register_widget(vm)) {
         width: Fill height: Fit flow: Down spacing: 8
         SubsectionLabel { text: #(crate::i18n::tr("Software Updates")) i18n_text: "Software Updates" }
-        status := RinxLabel { width: Fill height: Fit }
-        version := RinxLabel { width: Fill height: Fit }
-        notes := RinxLabel { width: Fill height: Fit }
-        auto_check := ToggleFlat { width: Fill height: Fit label_walk +: {width: Fill height: Fit} text: #(crate::i18n::tr("Automatically check for updates")) i18n_text: "Automatically check for updates" }
-        auto_download := ToggleFlat { width: Fill height: Fit label_walk +: {width: Fill height: Fit} text: #(crate::i18n::tr("Download updates in the background")) i18n_text: "Download updates in the background" }
+        status := RinxLabel { width: Fill height: Fit flow: Flow.Right{wrap: true} }
+        version := RinxLabel { width: Fill height: Fit flow: Flow.Right{wrap: true} }
         View {
             width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 8
-            check := RobrixIconButton { text: #(crate::i18n::tr("Check for Updates")) i18n_text: "Check for Updates" }
             download := RobrixIconButton { text: #(crate::i18n::tr("Download Update")) i18n_text: "Download Update" }
             install := RobrixIconButton { text: #(crate::i18n::tr("Restart and Install")) i18n_text: "Restart and Install" }
             later := RobrixIconButton { text: #(crate::i18n::tr("Install Later")) i18n_text: "Install Later" }
+            check := RinxGhostButton { text: #(crate::i18n::tr("Check for Updates")) i18n_text: "Check for Updates" }
+        }
+        auto_check := ToggleFlat { width: Fill height: Fit label_walk +: {width: Fill height: Fit} text: #(crate::i18n::tr("Automatically check for updates")) i18n_text: "Automatically check for updates" }
+        auto_download := ToggleFlat { width: Fill height: Fit label_walk +: {width: Fill height: Fit} text: #(crate::i18n::tr("Download updates in the background")) i18n_text: "Download updates in the background" }
+        release_notes := RinxGhostButton { text: #(crate::i18n::tr("Release Notes")) i18n_text: "Release Notes" }
+        notes_panel := ScrollYView {
+            visible: false width: Fill height: Fit{max: FitBound.Abs(160.0)}
+            notes := RinxLabel { width: Fill height: Fit flow: Flow.Right{wrap: true} }
         }
     }
 }
@@ -30,6 +34,8 @@ pub struct UpdateSettings {
     view: View,
     #[rust]
     rendered: Option<(Snapshot, Language)>,
+    #[rust]
+    notes_open: bool,
 }
 impl ScriptHook for UpdateSettings {
     fn on_after_apply(
@@ -46,6 +52,10 @@ impl ScriptHook for UpdateSettings {
 impl Widget for UpdateSettings {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
+            if self.view.button(cx, ids!(release_notes)).clicked(actions) {
+                self.notes_open = !self.notes_open;
+                self.rendered = None;
+            }
             for (id, action) in [
                 (id!(check), UpdateAction::Check),
                 (id!(download), UpdateAction::Download),
@@ -90,6 +100,12 @@ impl Widget for UpdateSettings {
             .label(cx, ids!(version))
             .set_text(cx, &state.version);
         self.view.label(cx, ids!(notes)).set_text(cx, &state.notes);
+        self.view
+            .button(cx, ids!(release_notes))
+            .set_visible(cx, !state.notes.is_empty());
+        self.view
+            .view(cx, ids!(notes_panel))
+            .set_visible(cx, self.notes_open && !state.notes.is_empty());
         for (id, active) in [
             (id!(auto_check), state.auto_check),
             (id!(auto_download), state.auto_download),

@@ -19,3 +19,7 @@
 computer-use 在独立 D 盘目录确认中文登录页“软件更新”入口、已下载状态、两个本机开关和安装按钮显示正常；正常 Alt+F4 退出后测试 GUI 二进制摘要保持不变，未产生重启标记，证明普通退出不自动安装。未通过 UI 点击执行安装；实际安装由上述隔离 NSIS 夹具执行。测试进程已关闭，未登录或操作真实账号。全部编译/缓存/夹具在 D:/BuildCache/hagency-client，cargo metadata 已核对。
 
 其他检查：2036 翻译项/1525 调用/0 缺失，248 源文件样式零违规，主题、29 包工作区、5 项打包资产测试、33 项 Node 检查器测试、生产调用图、actionlint、typos 和 diff 检查通过。GitHub 只查询了仓库级 variable 名称，列表未显示更新公钥；未检查组织级变量，没有读取 secret 值或配置生产签名。
+
+用户指出登录页更新内容混乱后，在同一分支调整：入口移至登录表单底部，完整 UpdateSettings 放入独立 Modal，避免展开时把登录表单挤下去。版本说明默认折叠，展开后独立滚动且高度最多 160；状态、版本和主要下载/安装按钮置于开关和说明前，检查更新改为次要按钮。About 共用同样的排列和折叠说明。保留 Modal 原生 reapply 状态，删除冗余 updates_open；可按 Escape、关闭按钮或遮罩关闭。
+
+本次验证应用库 508 passed/0 failed/2 原忽略，新增 1280/375 宽度、长说明限高和登录表单位置不变的布局回归，原重应用/打开关闭与 About 安装等待测试通过。应用 all-targets 严格 Clippy、2037 翻译项/1527 调用/0 缺失、样式、主题、typos、diff 检查通过。Computer Use 在原隔离测试资料中确认中文入口、独立弹窗、折叠/展开说明和 Escape 关闭，再正常退出测试进程，未点击安装或登录。对应日志均在 D:/BuildCache/hagency-client/updater-login-redesign-*。远端旧 head 的 Windows Full matrix 在此前记录的 Unix-only 测试辅助枚举/函数与 unused import 上失败，未声称完整 CI 通过。

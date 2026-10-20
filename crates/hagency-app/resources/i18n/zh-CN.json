@@ -2034,5 +2034,6 @@
   "Could not download or verify the update. Check for updates to retry.": "无法下载或验证更新，请检查更新后重试。",
   "The update was canceled or could not be installed. Check for updates to try again.": "更新已取消或未能安装，请检查更新后重试。",
   "An update is ready. Open Software Updates to restart and install.": "更新已就绪，请打开软件更新以重启并安装。",
-  "Update preferences could not be read. Check for updates or save your preferences again.": "无法读取更新设置，可手动检查更新或重新保存设置。"
+  "Update preferences could not be read. Check for updates or save your preferences again.": "无法读取更新设置，可手动检查更新或重新保存设置。",
+  "Release Notes": "版本说明"
 }
