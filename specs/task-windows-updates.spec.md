@@ -46,6 +46,7 @@ installation preparation.
 - crates/hagency/src/console/native/speech.rs
 - crates/hagency/src/console/owned_runtime.rs
 - Cargo.lock
+- typos.toml
 - .github/workflows/app-*.yml
 - tools/test-windows-updater.ps1
 - knowledge/requirements/req-windows-updates.md

@@ -12,6 +12,8 @@
 
 第一版沿用 cargo-packager 0.10.1 的签名格式和安装包，独立封装流式下载、暂存和退出交接；没有直接使用会调用 process::exit 的安装 API。整个应用与资源、Octos 运行时一起更新。
 
+Windows 使用随源码固定的 0.10.1 NSIS 模板，将上游被动安装时的强制结束同名进程改为中止安装。其他配置目录中的 Hagency 实例和 Agent 任务会继续运行；需要退出这些实例后再重试更新。安装与卸载均不会通过模板结束其他实例。
+
 ## 首次发布配置
 
 需要管理员配置以下仓库项，PR 不上传或更改生产密钥：
@@ -32,6 +34,6 @@ Windows 打包后，流水线签名 `hagency-windows-amd64.exe`，生成并签�
 
 ## 验证入口
 
-常规验证为 `cargo test --locked -p hagency-updater`、`cargo test --locked -p hagency --lib update_guard` 和应用库测试。Windows 的 `tools/test-windows-updater.ps1 -NsisPath <makensis.exe>` 生成临时密钥、真实 NSIS 安装器和重启探针，验证原进程退出前不安装、含空格路径安装后重启、未提交退出标记时取消、损坏包拒绝。该工具只写入 D:/BuildCache 下的独立夹具，不安装到用户真实应用目录，不写卸载注册表，不打开真实账号数据。
+常规验证为 `cargo test --locked -p hagency-updater`、`cargo test --locked -p hagency --lib update_guard` 和应用库测试。Windows 的 `tools/test-windows-updater.ps1 -NsisPath <makensis.exe>` 生成临时密钥、真实 NSIS 安装器和重启探针，验证原进程退出前不安装、含空格路径安装后重启、未提交退出标记时取消、损坏包拒绝。夹具还抽取生产模板的进程检查宏，通过确定性的忙碌结果验证中止安装分支。该工具只写入 D:/BuildCache 下的独立夹具，不安装到用户真实应用目录，不写卸载注册表，不打开真实账号数据。
 
 Windows App Build CI 运行签名与锁定测试、原生布局测试和真实 NSIS 交接夹具；其他平台继续编译并保持现有应用行为。CI 的 NSIS 测试工具下载固定 3.09 版本并核对 SHA256。

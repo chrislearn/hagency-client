@@ -12,6 +12,7 @@ $previousKey = $env:HAGENCY_UPDATER_PUBLIC_KEY
 $previousData = $env:HAGENCY_APP_DATA_DIR
 $previousMarker = $env:HAGENCY_UPDATE_TEST_MARKER
 $previousToolchain = $env:RUSTUP_TOOLCHAIN
+$previousBusy = $env:HAGENCY_UPDATE_TEST_BUSY
 $env:RUSTUP_TOOLCHAIN = $Toolchain
 $testRoot = Join-Path $OutputRoot ([guid]::NewGuid().ToString())
 New-Item -ItemType Directory -Force -Path $testRoot | Out-Null
@@ -35,13 +36,25 @@ fn main() {
     if ($LASTEXITCODE -ne 0) { throw 'Could not compile restart probe' }
     $installer = Join-Path $testRoot 'fixture-installer.exe'
     $recipe = Join-Path $testRoot 'fixture.nsi'
+    $app = $metadata.packages | Where-Object name -eq 'hagency-app'
+    $template = Join-Path (Split-Path $app.manifest_path -Parent) $app.metadata.packager.nsis.template
+    $templateText = Get-Content -LiteralPath $template -Raw
+    $processMacro = [regex]::Match($templateText, '(?s)!macro CheckIfAppIsRunning\b.*?!macroend').Value
+    if (-not $processMacro -or $processMacro.Contains('KillProcess')) { throw 'Installer must refuse other instances without terminating them' }
+    # Exercise the exact production refusal macro with a deterministic process
+    # probe. No plugin or real user process is needed for the busy branch.
+    $processMacro = $processMacro.Replace('nsis_tauri_utils::FindProcess "${MAINBINARYNAME}.exe"', 'ReadEnvStr $R0 "HAGENCY_UPDATE_TEST_BUSY"' + "`n  Push `$R0")
+    $processMacro = $processMacro.Replace('$(appRunning)', 'Another Hagency instance is running')
     @"
 Unicode true
+!include LogicLib.nsh
 Name "Hagency offline update fixture"
 OutFile "$installer"
 RequestExecutionLevel user
 SilentInstall silent
+$processMacro
 Section
+!insertmacro CheckIfAppIsRunning
 SetOutPath `$INSTDIR
 File /oname=hagency.exe "$probe"
 SectionEnd
@@ -56,7 +69,8 @@ SectionEnd
     if ($LASTEXITCODE -ne 0) { throw 'Could not build update helper' }
     $binary = Join-Path $env:CARGO_TARGET_DIR 'debug/hagency.exe'
     $results = @()
-    foreach ($scenario in @('install', 'cancel', 'tamper')) {
+    foreach ($scenario in @('install', 'cancel', 'tamper', 'busy')) {
+        $env:HAGENCY_UPDATE_TEST_BUSY = if ($scenario -eq 'busy') { '0' } else { '1' }
         $data = Join-Path $testRoot $scenario
         Copy-Item -LiteralPath $fixture -Destination $data -Recurse
         $updates = Join-Path $data 'updates'
@@ -90,7 +104,7 @@ SectionEnd
                 if ($scenario -ne 'tamper' -and -not (Test-Path -LiteralPath (Join-Path $helperDir 'ready'))) { throw 'Helper did not acknowledge readiness' }
                 if ((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash -ne $old) { throw 'Installer ran before parent exit' }
                 if (Test-Path -LiteralPath $env:HAGENCY_UPDATE_TEST_MARKER) { throw 'Restarted before parent exit' }
-                if ($scenario -eq 'install') { Set-Content -LiteralPath (Join-Path $helperDir 'committed') -Value 'committed' }
+                if ($scenario -in @('install', 'busy')) { Set-Content -LiteralPath (Join-Path $helperDir 'committed') -Value 'committed' }
                 Set-Content -LiteralPath $releaseParent -Value 'exit'
                 if (-not $parent.WaitForExit(10000)) { throw 'Fixture parent did not exit' }
                 if (-not $helper.WaitForExit(30000)) { throw 'Fixture helper did not finish' }
@@ -121,5 +135,6 @@ SectionEnd
     $env:HAGENCY_APP_DATA_DIR = $previousData
     $env:HAGENCY_UPDATE_TEST_MARKER = $previousMarker
     $env:RUSTUP_TOOLCHAIN = $previousToolchain
+    $env:HAGENCY_UPDATE_TEST_BUSY = $previousBusy
     Pop-Location
 }

@@ -391,6 +391,7 @@ application_folder_position = { x = 760, y = 250 }
 
 ## Configuration for `cargo packager`'s generation of a Windows `.exe` setup installer.
 [package.metadata.packager.nsis]
+template = "./packaging/windows/installer.nsi"
 installer_icon = "./resources/icon.ico"
 ## See this: <https://nsis.sourceforge.io/Docs/Chapter4.html#varconstant>
 appdata_paths = [
