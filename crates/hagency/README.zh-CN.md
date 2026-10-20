@@ -2,9 +2,13 @@
 
 # owner 客户端可执行程序
 
-此 crate 构建 `hagency`。生产入口为 `owner_host::OwnerHost`，使用个人 Pasion 授权，
+此 crate 构建 `hagency-cli`。生产入口为 `owner_host::OwnerHost`，使用个人 Pasion 授权，
 由主人明确启动本地 Codex。[根目录 quickstart](../../README.zh-CN.md)说明构建、登录和
 策略配置步骤。
+
+可选的用户级后台服务直接使用 `hagency-cli service install` 安装。原
+`install/install-native.sh` 包装脚本已移除；原生应用安装包由
+`crates/hagency-app` 的打包流程独立维护。
 
 | 命令 | 实际行为与参数 |
 | --- | --- |

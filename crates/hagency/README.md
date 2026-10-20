@@ -2,9 +2,13 @@
 
 # The owner-client executable
 
-This crate builds `hagency`. Its production entry point is `owner_host::OwnerHost`,
+This crate builds `hagency-cli`. Its production entry point is `owner_host::OwnerHost`,
 with personal Pasion authorization and explicitly started, local Codex runtimes.
 Read the [root quickstart](../../README.md) for build, login and policy steps.
+
+Install its optional per-user service directly with `hagency-cli service install`.
+The former `install/install-native.sh` wrapper has been removed. Native app
+installers are maintained separately under `crates/hagency-app`.
 
 | Command | Actual behavior and flags |
 | --- | --- |

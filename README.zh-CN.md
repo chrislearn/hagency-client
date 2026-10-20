@@ -16,6 +16,8 @@ Windows 使用 `./tools/dev.ps1` 运行应用，或使用
 `./tools/dev.ps1 check --locked -p hagency-app --lib` 检查。脚本把构建产物、Cargo/npm 缓存
 及构建临时文件直接定位到 `D:/BuildCache/hagency-client`，并核对实际输出目录。
 完整结构和命令见[工作区指南](docs/workspace.md)。浏览器 Owner 控制台通过 `hagency-cli` 继续提供，避免与图形应用的可执行文件重名。
+原生应用不依赖另行启动的 CLI Web 服务或浏览器页面。可选的无界面用户服务直接通过
+`hagency-cli service install` 安装；重复的 `install/install-native.sh` 包装脚本已移除。
 
 使用自己的本地 Codex，为 Matrix Room 中的 agent 处理请求。你通过 Pasion 用
 **自己的 Matrix 账号**登录；`hagency-server` 创建傀儡账号并记录永久主人。本地客户端

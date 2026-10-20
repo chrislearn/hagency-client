@@ -96,3 +96,18 @@ protocol IDs remain compatible; they are not platform display names. Use
 variables remain aliases.
 Existing installations of the optional CLI user service should be reinstalled
 using `hagency-cli service install` so its executable path points to the renamed CLI.
+
+The redundant `install/install-native.sh` wrapper has been removed. Install the
+optional CLI service directly with `hagency-cli service install`, selecting
+`--state-dir` and `--no-open` as needed. The binary generates its per-user
+supervisor configuration itself.
+Desktop installers use `app-release.yml` and do not use this CLI service.
+
+The local Web server and browser console remain supported for the headless CLI.
+They serve the login, project and owned-Agent pages from `mockup/` on loopback
+(`127.0.0.1:13300` by default); Node is only needed to build their static bundle.
+The desktop app calls `native_owner::NativeOwner` in process and needs neither
+the browser pages nor a running CLI Web listener. Its small loopback OAuth
+callback listener still receives login redirects; it serves no console pages.
+Both interfaces share engine
+logic under `crates/hagency/src/console/`, so that module is also used by desktop.

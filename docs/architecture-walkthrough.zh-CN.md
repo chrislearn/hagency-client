@@ -3,6 +3,8 @@
 > 历史文档：下文记录已移除的 Fleet/Engagement 架构，不作为当前部署、登录或加密 Agent 支持说明。
 > 当前操作见[owner client README](../README.zh-CN.md)、[本地开发](local-development.zh-CN.md)与[Desktop 使用指南](../crates/hagency-app/docs/hagency-quickstart.zh-CN.md)。
 
+> 下文提及的历史 `install/install-native.sh` 已移除；可选用户服务使用 `hagency-cli service install`。
+
 # 代码导读：从 Palpo 申请到 agent 回复
 
 本导读面向要修改 `native/` 下原生 Rust 服务的开发者。它沿着[使用指南](user-guide/README.zh-CN.md)背后的代码路径走一遍：
@@ -46,7 +48,7 @@
 | --- | --- |
 | [native/](../native/) | 各 Rust crate（第 4 节）、测试数据和 spec 绑定检查脚本。工作区清单是仓库根目录的 [Cargo.toml](../Cargo.toml)。 |
 | [mockup/](../mockup/) | 控制台的 Next.js 源码。Node 只是构建工具；发布构建把其静态导出内嵌进二进制（第 13 节）。 |
-| [deploy/](../deploy/)、[install/install-native.sh](../install/install-native.sh) | `hagency serve` 的系统 unit 与 launchd plist，以及渲染它们的安装脚本。`hagency service install` 自己写入用户级 unit（[service.rs](../crates/hagency/src/service.rs)），两者都不需要。 |
+| [deploy/](../deploy/)、`install/install-native.sh` | `hagency serve` 的系统 unit 与 launchd plist，以及渲染它们的安装脚本。`hagency service install` 自己写入用户级 unit（[service.rs](../crates/hagency/src/service.rs)），两者都不需要。 |
 | [specs/](../specs/)、[knowledge/](../knowledge/) | 与测试绑定的任务契约，以及背后的 ADR 和需求 |
 | [docs/](.) | 产品文档：本导读、[使用指南](user-guide/README.zh-CN.md)、运维 [guides/](guides/) 和 [history/](history/README.md)（TypeScript 时代的历史架构文档和指南）。`docs/` 下除 `user-guide/`、`guides/`、`history/` 和本导读之外的所有内容都是内部工作笔记，不是产品文档。例外有两个：许可说明 [LICENSING.md](LICENSING.md)，以及 `hagency-store` 编译进去的 agent 工作区模板（`workspace-*-template.md`）。 |
 
@@ -81,7 +83,7 @@
 | 有 `--palpo-transport`、没有 `--agent-driver` | **导入的车队**（ADR-187） | 车队服务。导入车队后由 `palpo::Live::with_fleet_service` 启动（第 7 节） |
 | 有 `--agent-driver`（有无 `--palpo-transport` 均可） | **协调者安装** | `agent-driver.json`：协调者的驱动、审批泵和工厂（`fleet::Service::new`） |
 
-[deploy/](../deploy/) 中的 unit 带有 `__AGENT_DRIVER__` 占位符（plist 中是 `<!--__AGENT_DRIVER_ARG__-->`）。[install-native.sh](../install/install-native.sh) 按 `--mode` 填写它：默认的 `fleet` 填空，unit 运行 `serve --palpo-transport`；`coordinator` 填 `--agent-driver`，且安装脚本只在 `--config-dir` 中有 `agent-driver.json` 时才接受。车队模式下，除非 `--config-dir` 已提供 `fleet-runtime.json`，安装脚本会运行 `hagency setup`。
+[deploy/](../deploy/) 中的 unit 带有 `__AGENT_DRIVER__` 占位符（plist 中是 `<!--__AGENT_DRIVER_ARG__-->`）。`install-native.sh` 按 `--mode` 填写它：默认的 `fleet` 填空，unit 运行 `serve --palpo-transport`；`coordinator` 填 `--agent-driver`，且安装脚本只在 `--config-dir` 中有 `agent-driver.json` 时才接受。车队模式下，除非 `--config-dir` 已提供 `fleet-runtime.json`，安装脚本会运行 `hagency setup`。
 
 `hagency start` 是不需要选择参数的导入车队模式。它调用与 `serve --palpo-transport` 相同的 `serve` 函数，只多一件事：[service.rs](../crates/hagency/src/service.rs) 中的 `announce` 最多等待 60 秒让服务响应，再通过 `console::client::access` 向它申请控制台链接。在交互式终端上，它输出链接并打开它（macOS 用 `open`，Linux 用 `xdg-open`），除非传入 `--no-open`。stdout 不是终端时（例如在用户级服务中），它只在日志中写 `hagency console-access` 命令，因此链接不会进入日志文件。
 

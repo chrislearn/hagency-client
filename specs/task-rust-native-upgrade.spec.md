@@ -41,7 +41,7 @@ workflow — is recorded in this spec and in ADR-134's note.
 ### Allowed Changes
 - tools/native/ (the two-version build and install harness)
 - crates/hagency/tests/
-- install/install-native.sh and current per-user deploy templates
+- Current per-user service implementation and deploy reference templates
 - specs/task-rust-native-upgrade.spec.md
 - knowledge/decisions/adr-134-native-versioned-release.md
 - docs/progress.md

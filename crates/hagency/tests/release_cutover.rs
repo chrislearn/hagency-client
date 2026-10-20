@@ -603,24 +603,9 @@ fn node_reference_findings(name: &str, text: &str) -> Vec<String> {
 #[test]
 fn native_package_entrypoints_reference_no_node() {
     let repo = workspace_root();
-    let installer = fs::read_to_string(repo.join("install/install-native.sh")).unwrap();
-    assert!(installer.contains("service install"));
-    for retired in [
-        "--palpo-transport",
-        "--mode",
-        " setup ",
-        "fleet-runtime.json",
-        "operator.token",
-    ] {
-        assert!(
-            !installer.contains(retired),
-            "retired installer option: {retired}"
-        );
-    }
     let files: Vec<_> = [
         "deploy/io.hagency.native.plist",
         "deploy/hagency-native.service",
-        "install/install-native.sh",
     ]
     .into_iter()
     .map(|name| {
@@ -848,19 +833,15 @@ fn native_upgrade_rollback_restores_previous() {
 }
 
 #[test]
-fn native_installer_delegates_current_service_and_refuses_legacy_state() {
+fn native_service_install_refuses_legacy_state_before_supervisor() {
     let root = tempfile::tempdir().unwrap();
-    let install = root.path().join("install path");
-    fs::create_dir(&install).unwrap();
-    fs::copy(binary(), install.join("hagency")).unwrap();
-    let installer = workspace_root().join("install/install-native.sh");
     let state = root.path().join("legacy state");
     hagency_store::private::directory(&state).unwrap();
     fs::write(state.join("domain.sqlite3"), b"legacy never imported").unwrap();
-    let out = Command::new("sh")
-        .arg(&installer)
-        .arg("--install-dir")
-        .arg(&install)
+    // Exercise the production CLI directly. Invalid state must be refused
+    // before it can register or start any service for the current OS user.
+    let out = Command::new(binary())
+        .args(["service", "install"])
         .arg("--state-dir")
         .arg(&state)
         .arg("--no-open")
@@ -873,44 +854,4 @@ fn native_installer_delegates_current_service_and_refuses_legacy_state() {
     );
     assert!(!state.join("hagency-client-owned-v1.json").exists());
     assert!(!state.join("operator.token").exists());
-    // Test the actual wrapper's argv and error propagation without installing
-    // a real user's service. Binary-side service generation has separate tests.
-    let capture = root.path().join("argv");
-    fs::write(
-        install.join("hagency"),
-        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$HAGENCY_TEST_CAPTURE\"\nexit 23\n",
-    )
-    .unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(install.join("hagency"), fs::Permissions::from_mode(0o700)).unwrap();
-    }
-    let out = Command::new("sh")
-        .arg(&installer)
-        .arg("--install-dir")
-        .arg(&install)
-        .arg("--state-dir")
-        .arg(&state)
-        .args(["--listen", "127.0.0.1:14001", "--no-open"])
-        .env("HAGENCY_TEST_CAPTURE", &capture)
-        .output()
-        .unwrap();
-    assert_eq!(out.status.code(), Some(23));
-    assert_eq!(
-        fs::read_to_string(&capture).unwrap(),
-        format!(
-            "service\ninstall\n--state-dir\n{}\n--listen\n127.0.0.1:14001\n--no-open\n",
-            state.display()
-        )
-    );
-    let before = fs::read(&capture).unwrap();
-    let out = Command::new("sh")
-        .arg(installer)
-        .args(["--mode", "fleet"])
-        .env("HAGENCY_TEST_CAPTURE", &capture)
-        .output()
-        .unwrap();
-    assert_eq!(out.status.code(), Some(2));
-    assert_eq!(fs::read(capture).unwrap(), before);
 }

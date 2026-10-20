@@ -50,7 +50,7 @@ jobs:
               # Platform-sensitive code, the console, dependencies, the toolchain
               # and CI/deploy definitions. Here-strings, not pipes: under
               # pipefail an early grep -q exit can SIGPIPE the producer.
-              if grep -qE '^(crates/hagency-(agent-local|platform|runtime|execution|files|media-store|matrix)/|crates/hagency/src/(console|owner_host|service|main|runner|bootstrap)|mockup/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|\.github/workflows/|deploy/|install/)' <<<"$files"; then
+              if grep -qE '^(crates/hagency-(agent-local|platform|runtime|execution|files|media-store|matrix)/|crates/hagency/src/(console|owner_host|service|main|runner|bootstrap)|mockup/|Cargo\.(toml|lock)$|rust-toolchain\.toml$|\.github/workflows/|deploy/)' <<<"$files"; then
                 run=true
               fi
             fi

@@ -3,6 +3,8 @@
 > Historical document: the Fleet/Engagement implementation below is retired. Its setup, login and encrypted-Agent claims do not apply to the current release.
 > Use the [owner-client README](../README.md), [local development](local-development.md) and [Desktop quick start](../crates/hagency-app/docs/hagency-quickstart.md) for current operations.
 
+> The historical `install/install-native.sh` described below has been removed; use `hagency-cli service install`.
+
 # Code walkthrough: from a Palpo request to an agent's reply
 
 This walkthrough is for developers who will change the native Rust service in `native/`. It follows the code paths behind the [user guide](user-guide/README.md):
@@ -46,7 +48,7 @@ Each step names the file and function to open; search for the function name. ADR
 | --- | --- |
 | [native/](../native/) | The Rust crates (section 4), test fixtures and the spec-binding check scripts. The workspace manifest is [Cargo.toml](../Cargo.toml) at the repository root. |
 | [mockup/](../mockup/) | The console's Next.js source. Node is a build-time tool; a release build embeds the static export in the binary (section 13). |
-| [deploy/](../deploy/), [install/install-native.sh](../install/install-native.sh) | The system unit and launchd plist for `hagency serve`, and the installer that renders them. `hagency service install` writes its own per-user units ([service.rs](../crates/hagency/src/service.rs)) and needs neither. |
+| [deploy/](../deploy/), `install/install-native.sh` | The system unit and launchd plist for `hagency serve`, and the installer that renders them. `hagency service install` writes its own per-user units ([service.rs](../crates/hagency/src/service.rs)) and needs neither. |
 | [specs/](../specs/), [knowledge/](../knowledge/) | Task contracts bound to tests, and the ADRs and requirements behind them |
 | [docs/](.) | Product documentation: this walkthrough, the [user guide](user-guide/README.md), operator [guides/](guides/) and [history/](history/README.md) (historical TypeScript-era architecture and guides). Everything under `docs/` other than `user-guide/`, `guides/`, `history/` and this walkthrough is internal working notes, not product documentation. There are two exceptions: [LICENSING.md](LICENSING.md), the licensing statement, and the agent workspace templates (`workspace-*-template.md`) that `hagency-store` compiles in. |
 
@@ -81,7 +83,7 @@ Open [crates/hagency/src/main.rs](../crates/hagency/src/main.rs). The `Command` 
 | `--palpo-transport` without `--agent-driver` | **Imported fleet** (ADR-187) | The fleet service, started by `palpo::Live::with_fleet_service` once a fleet is imported (section 7) |
 | `--agent-driver` (with or without `--palpo-transport`) | **Coordinator install** | `agent-driver.json`: the coordinator's driver, its approval pump and its factory (`fleet::Service::new`) |
 
-The units in [deploy/](../deploy/) carry an `__AGENT_DRIVER__` placeholder (`<!--__AGENT_DRIVER_ARG__-->` in the plist). [install-native.sh](../install/install-native.sh) fills it by `--mode`: empty for `fleet`, the default, so the unit runs `serve --palpo-transport`; `--agent-driver` for `coordinator`, which the installer accepts only with an `agent-driver.json` in `--config-dir`. In fleet mode the installer runs `hagency setup` unless `--config-dir` supplied a `fleet-runtime.json`.
+The units in [deploy/](../deploy/) carry an `__AGENT_DRIVER__` placeholder (`<!--__AGENT_DRIVER_ARG__-->` in the plist). `install-native.sh` fills it by `--mode`: empty for `fleet`, the default, so the unit runs `serve --palpo-transport`; `--agent-driver` for `coordinator`, which the installer accepts only with an `agent-driver.json` in `--config-dir`. In fleet mode the installer runs `hagency setup` unless `--config-dir` supplied a `fleet-runtime.json`.
 
 `hagency start` is the imported-fleet mode with no flags to choose. It calls the same `serve` function as `serve --palpo-transport`, with one addition: `announce` in [service.rs](../crates/hagency/src/service.rs) waits up to 60 s for the service to answer, then asks it for a console link through `console::client::access`. On an interactive terminal it prints the link and opens it (`open` on macOS, `xdg-open` on Linux) unless `--no-open`. When stdout is not a terminal, as under the per-user service, it logs only the `hagency console-access` command, so the link never reaches a log file.
 

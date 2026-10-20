@@ -12,18 +12,20 @@ the packaged native runtime must not invoke Node.js or hide an embedded
 JavaScript runtime. Today that property is proven by manually reading the
 two unit templates; this slice makes it a **bound test** — a scan over the
 native packaging surface as it actually exists: the two deploy unit
-templates by path, plus the native installer wrapper that delegates to the binary's current per-user `service install` implementation. ADR-134 (versioned release) governs the packaged artifact
+templates by path. Service installation uses the binary's own per-user
+`hagency-cli service install` command; the redundant shell wrapper is removed.
+ADR-134 (versioned release) governs the packaged artifact
 set; ADR-134's already-bound staged-tree scan
 (`native_release_entrypoints_scan_finds_no_node`,
 `tests/release_cutover.rs:295`) covers the staged release tree — a
-different surface; this spec binds the **templates-and-wrapper** surface, so
+different surface; this spec binds the **reference-template** surface, so
 the two selectors are distinct checks, not the same one twice.
 
 ## Constraints
 
 ### Must
 - Scan the two native unit templates by path: `deploy/io.hagency.native.plist` (launchd) and `deploy/hagency-native.service` (systemd) — exactly the files `deploy/` carries for the native deployment.
-- Scan the actual installer wrapper and assert delegation to `service install`; separately execute it with an isolated argv-capture binary, preserve its error status, and prove rejected legacy arguments cannot reach the binary. Real binary service-format checks reject legacy state before any system service registration.
+- Execute the real CLI's `service install` command against isolated legacy state and prove it rejects that state before any system service registration, without changing the legacy bytes or creating owner credentials.
 - Assert none of the scanned invocation lines (ProgramArguments / ExecStart / Exec words) references `node`, `npm`, `npx`, `__NODE_BIN__` or a `.js`/`.mjs` script path.
 - Run as a bound test in the native test suite — not a manual reading, not a CI-only grep outside the gate.
 
@@ -50,24 +52,23 @@ the two selectors are distinct checks, not the same one twice.
 Scenario: The packaged native entrypoints reference no Node runtime
   Test: native_package_entrypoints_reference_no_node
   Level: integration
-  Test Double: the two deploy unit templates as shipped, plus the actual delegating installer wrapper
-  Given the native packaging surface — deploy/io.hagency.native.plist and deploy/hagency-native.service, and the actual service-install wrapper
+  Test Double: the two deploy reference unit templates
+  Given deploy/io.hagency.native.plist and deploy/hagency-native.service
   When the scan runs over their invocation lines
   Then none references node, npm, npx or a Node script path
   And the assertion is a bound test whose failure names the offending file and line
 
 ## Decisions
 
-**Single unit generator.** The current binary writes escaped per-user systemd/LaunchAgent units. The installer delegates to it instead of duplicating unit rendering or accepting legacy Fleet configuration. The reference templates remain scanner inputs. Binary-generated unit escaping is covered by the current service tests.
+**Single unit generator.** The current binary writes escaped per-user systemd/LaunchAgent units. The removed shell wrapper duplicated this command and still expected the old executable name. The reference templates remain scanner and release-fixture inputs. Binary-generated unit escaping and supervisor arguments remain covered by the current service tests.
 
-Scenario: Installer preserves refusal and passes current arguments exactly
-  Test: native_installer_delegates_current_service_and_refuses_legacy_state
+Scenario: Service installation rejects legacy state before supervisor registration
+  Test: native_service_install_refuses_legacy_state_before_supervisor
   Level: integration
-  Given a private legacy state and the real current binary, then a private argv-capture executable
-  When the actual shell installer is invoked
+  Given private legacy state in a path containing spaces and the real current binary
+  When service install is invoked directly with that state directory and no-open
   Then legacy bytes are unchanged without a new format marker or operator token
-  And current service install argv are preserved including spaces and its failure exit code
-  And retired arguments are rejected before delegation
+  And the command fails before registering or starting a supervisor service
 
 ## Out of Scope
 

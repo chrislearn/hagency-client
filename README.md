@@ -22,6 +22,9 @@ and verifies Cargo's actual output directory. See the
 
 The browser Owner console remains available through `hagency-cli` below. The CLI
 and GUI have distinct executable names and share the local engine library.
+The GUI does not need a separate CLI Web listener or browser assets. Install the
+optional headless user service directly with `hagency-cli service install`;
+the redundant `install/install-native.sh` wrapper has been removed.
 
 Run your own Codex Agents in Matrix Rooms through `hagency-server`. You sign in
 with your personal Matrix account through Pasion. The server creates each Agent's
