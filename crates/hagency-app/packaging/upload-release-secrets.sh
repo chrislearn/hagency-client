@@ -66,9 +66,9 @@ set_file_b64() {
     echo "  ok  set  $name (base64 of $file)"
 }
 
-echo "-- Desktop updater signing (Linux, Windows) --"
-set_file CARGO_PACKAGER_SIGNING_KEY      "${CARGO_PACKAGER_SIGNING_KEY_FILE:-}"
-set_str  CARGO_PACKAGER_SIGNING_PASSWORD "${CARGO_PACKAGER_SIGNING_PASSWORD:-}"
+echo "-- Windows update signing --"
+set_file CARGO_PACKAGER_SIGN_PRIVATE_KEY "${CARGO_PACKAGER_SIGN_PRIVATE_KEY_FILE:-}"
+set_str CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD "${CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD:-}"
 
 echo "-- macOS signing + notarization --"
 set_file_b64 APPLE_CERTIFICATE          "${APPLE_CERTIFICATE_FILE:-}"

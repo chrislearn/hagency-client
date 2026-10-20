@@ -44,6 +44,8 @@ jobs:
       - run: python3 tools/test_package_octos.py
       - run: python3 tools/test_package_app.py
       - run: python3 tools/test_release_assets.py
+      - run: cargo test --locked -p hagency-updater
+      - run: cargo clippy --locked -p hagency-updater --all-targets -- -D warnings
       - run: python3 tools/check-release-icons.py
       - run: cargo test --locked -p hagency-app --features agent_chat,octosense-module --lib
       - run: cargo build --locked -p hagency-app --features agent_chat

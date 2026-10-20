@@ -6,6 +6,7 @@
 use crate::agent_chat::approval_inbox::{ApprovalInboxAction, ApprovalInboxWidgetRefExt};
 use crate::agent_access::AgentAccessAction;
 use crate::desktop_integration::DesktopIntegration;
+use crate::updates::Integration as UpdateIntegration;
 use std::{
     cell::RefCell,
     collections::{hash_map::DefaultHasher, HashMap},
@@ -260,6 +261,7 @@ pub struct App {
     #[rust] lifecycle: AppLifecycle,
     #[rust] render_maintenance: RenderMaintenance,
     #[rust] desktop_integration: DesktopIntegration,
+    #[rust] updates: UpdateIntegration,
     #[rust] titlebar_sidebar_state: RefCell<Option<TitlebarSidebarState>>,
     /// The details of a room we're waiting on to be loaded so that we can navigate to it.
     /// This can be either a room we're waiting to join, or one we're waiting to be invited to.
@@ -1399,6 +1401,22 @@ impl AppMain for App {
                 }
                 None => {}
             }
+            if self.updates.handle_event(cx, event) {
+                self.preserve_reader_session(cx);
+                #[cfg(target_os = "windows")]
+                if self.save_state_for_update(cx).is_ok() {
+                    self.updates.confirm_exit();
+                    self.close_web_browser(cx);
+                    self.close_mini_apps(cx);
+                    cx.quit();
+                } else { self.updates.cancel_preparation(); }
+            }
+            #[cfg(target_os = "windows")]
+            if self.updates.prepare_if_idle() {
+                self.preserve_reader_session(cx);
+                if self.save_state_for_update(cx).is_ok() { self.updates.begin_shutdown(); }
+                else { self.updates.cancel_preparation(); }
+            }
         }
         if !self.embedded {
             let button = self.ui.desktop_button(cx, ids!(main_window.windows_buttons.close));
@@ -1818,6 +1836,16 @@ impl App {
         } else {
             self.lifecycle.last_app_state_save = Some(fingerprint);
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    fn save_state_for_update(&mut self, cx: &mut Cx) -> anyhow::Result<()> {
+        persistence::save_window_state(self.ui.window(cx, ids!(main_window)), cx)?;
+        if let Some(user) = current_user_id() {
+            let bytes = persistence::serialize_app_state(&self.app_state)?;
+            persistence::save_app_state_bytes(&bytes, &user)?;
+        }
+        Ok(())
     }
 
     fn handle_shutdown(&mut self, cx: &mut Cx) {

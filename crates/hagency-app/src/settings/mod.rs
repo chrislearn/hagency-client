@@ -11,6 +11,7 @@ pub mod appearance;
 pub mod theme_studio;
 
 pub fn script_mod(vm: &mut ScriptVm) {
+    crate::updates::script_mod(vm);
     theme_studio::script_mod(vm);
     appearance::script_mod(vm);
     account_settings::script_mod(vm);

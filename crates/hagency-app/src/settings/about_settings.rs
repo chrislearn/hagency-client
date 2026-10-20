@@ -94,6 +94,8 @@ script_mod! {
         }
 
 
+        updates := UpdateSettings {}
+
         SubsectionLabel {
             text: #(crate::i18n::tr("Privacy & Legal")) i18n_text: "Privacy & Legal"
         }

@@ -94,6 +94,9 @@ impl NativeOwner {
         probe: bool,
         updates: crate::console::speech::Updates,
     ) -> Result<String, NativeError> {
+        let _update_task = crate::update_guard::PROCESS
+            .enter_task()
+            .ok_or_else(|| failure(409, "update_in_progress"))?;
         if !crate::console::speech::local_codex_supported() {
             return Err(failure(
                 501,

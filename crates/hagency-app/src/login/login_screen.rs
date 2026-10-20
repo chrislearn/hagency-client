@@ -83,6 +83,12 @@ script_mod! {
                         login_language_zh := RinxGhostButton {text: "简体中文"}
                     }
 
+                    login_updates_button := RinxGhostButton {
+                        visible: #(cfg!(target_os = "windows"))
+                        text: #(crate::i18n::tr("Software Updates")) i18n_text: "Software Updates"
+                    }
+                    login_updates := UpdateSettings { visible: false width: Fill{max: 420} }
+
                     saved_accounts := mod.widgets.AccountList {
                         width: Fill{max: 320}, show_add: false
                     }
@@ -344,14 +350,16 @@ pub struct LoginScreen {
     #[rust] recent_servers_dirty: bool,
     #[rust] recent_server_selected: String,
     #[rust] recent_server_prompt: String,
+    #[rust] updates_open: bool,
 
 }
 
 
 impl ScriptHook for LoginScreen {
-    fn on_after_apply(&mut self, _vm: &mut ScriptVm, _apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
+    fn on_after_apply(&mut self, vm: &mut ScriptVm, _apply: &Apply, _scope: &mut Scope, _value: ScriptValue) {
         // Rebaking the theme can reset DropDown labels without changing saved accounts.
         self.recent_servers_dirty = true;
+        self.view.widget(vm.cx_mut(), ids!(login_updates)).set_visible(vm.cx_mut(), self.updates_open);
     }
 }
 
@@ -515,6 +523,10 @@ impl LoginScreen {
 
 impl MatchEvent for LoginScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        if self.view.button(cx, ids!(login_updates_button)).clicked(actions) {
+            self.updates_open = !self.updates_open;
+            self.view.widget(cx, ids!(login_updates)).set_visible(cx, self.updates_open);
+        }
         let mut language_changed = false;
         for (path, language) in [(ids!(login_language_en), crate::i18n::Language::English), (ids!(login_language_zh), crate::i18n::Language::Chinese)] {
             if self.view.button(cx, path).clicked(actions) {
@@ -751,6 +763,31 @@ fn browser_login_allowed(sso: bool, oauth: bool, browser_registration: bool, reg
 #[cfg(test)]
 mod browser_login_tests {
     use super::browser_login_allowed;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn updates_settings_are_accessible_before_login_and_survive_reapply() {
+        use super::*;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let (mut screen, value) = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            vm.bx.captured_errors = Some(Vec::new());
+            let value = script_eval!(vm, {mod.widgets.LoginScreen {}});
+            let screen = LoginScreen::script_from_value(vm, value);
+            assert!(vm.take_errors().is_empty());
+            (screen, value)
+        });
+        let button = screen.view.button(&cx, ids!(login_updates_button));
+        let actions = cx.capture_actions(|cx| cx.widget_action(button.widget_uid(), ButtonAction::Clicked(KeyModifiers::default())));
+        screen.handle_actions(&mut cx, &actions);
+        assert!(screen.updates_open);
+        assert!(screen.view.widget(&cx, ids!(login_updates)).visible());
+        cx.with_vm(|vm| screen.script_apply(vm, &Apply::ScriptReapply, &mut Scope::empty(), value));
+        assert!(screen.view.widget(&cx, ids!(login_updates)).visible());
+        screen.handle_actions(&mut cx, &actions);
+        assert!(!screen.view.widget(&cx, ids!(login_updates)).visible());
+    }
 
     #[test]
     fn oauth_registration_button_follows_server_capability() {

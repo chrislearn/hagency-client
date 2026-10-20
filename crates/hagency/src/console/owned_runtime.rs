@@ -1754,6 +1754,12 @@ async fn execution_loop_with_gate<T: Transport>(
             tokio::select! {biased;_=canceled(cancel)=>return Err(RuntimeError::Stopped),_=tokio::time::sleep(Duration::from_millis(250))=>{}}
             continue;
         }
+        // Cover polling and acknowledgement too: an update must not retire a
+        // just-claimed dispatch in the gap before provider work starts. The
+        // idle sleep below releases this guard so resident Agents can update.
+        let update_task = crate::update_guard::PROCESS
+            .enter_task()
+            .ok_or(RuntimeError::Stopped)?;
         let events = match operation(
             console,
             cancel,
@@ -1767,6 +1773,7 @@ async fn execution_loop_with_gate<T: Transport>(
         {
             Ok(Response::Events(events)) => events,
             Err(RuntimeError::Transport) => {
+                drop(update_task);
                 tokio::select! {biased; _=canceled(cancel)=>return Err(RuntimeError::Stopped), _=tokio::time::sleep(Duration::from_secs(1))=>{}}
                 continue;
             }
@@ -2021,6 +2028,7 @@ async fn execution_loop_with_gate<T: Transport>(
             ready.binding_id = Some(config.binding_id.clone());
             status.send_replace(ready);
         }
+        drop(update_task);
         tokio::select! {biased; _=canceled(cancel)=>return Err(RuntimeError::Stopped),_=tokio::time::sleep(Duration::from_secs(1))=>{}}
     }
 }

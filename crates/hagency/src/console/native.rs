@@ -915,6 +915,9 @@ impl NativeOwner {
     /// assigned device. Each request re-enters the normal start controller; no
     /// lease, tool permission or unknown model execution is replayed here.
     pub async fn restore_runtime_intents(&self) -> Result<Value, NativeError> {
+        let _update_task = crate::update_guard::PROCESS
+            .enter_task()
+            .ok_or_else(|| failure(409, "update_in_progress"))?;
         let intents = {
             let _guard = self.0.calls.lock().await;
             self.sync_matrix().await?;
@@ -961,6 +964,9 @@ impl NativeOwner {
         Ok(json!({"recoveries":results}))
     }
     pub async fn execute(&self, command: Command) -> Result<Value, NativeError> {
+        let _update_task = crate::update_guard::PROCESS
+            .enter_task()
+            .ok_or_else(|| failure(409, "update_in_progress"))?;
         if configuration::is_wrapper(&command) {
             return configuration::remote(self, command).await;
         }
