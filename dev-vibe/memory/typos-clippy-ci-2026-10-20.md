@@ -10,3 +10,4 @@
 - 本地通过：同款桌面/核心严格 Clippy（all-targets/-D warnings）和独立便携核心命令；完整库测试 559 passed/0 failed/2 原 ignored（桌面501、article-core21、theme7、miniapp-core30），便携核心含集成/文档的完整测试也通过；33 项 Node 自测；241 文件样式 0 违规；主题守卫；i18n 1990 项/1498 调用/0 缺失；引擎原格式命令；actionlint 与 diff --check。
 - Typos 不仅全仓扫描通过，还以 D 盘临时文本实测：故意拼错时返回 2，纠正后返回 0。未将错误样例写进仓库。Cargo metadata 验证 target_directory 仍在 D:/BuildCache/hagency-client/target；未运行 Docker、实际登录或模型调用。
 - 原始日志位于 D:/BuildCache/hagency-client/lint-ci-*.log；远端结果以本次 main 提交的 Spelling/App CI 为准，避免为补写验证记录重复触发构建。
+- a643c442 的远端 Spelling 首轮通过；便携核心 Clippy 暴露 Windows rustfix 将 Unix-only 使用的 path 自动改名为 _path，但 Unix 断言仍用原名。修复为在原有 cfg(unix) 权限检查块内计算路径，保留权限断言、不增加跳过。复查该提交的新增下划线变量仅此一处。后续提交重新核对 Linux/macOS 新门禁。
