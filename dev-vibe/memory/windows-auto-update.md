@@ -6,9 +6,11 @@
 
 发布沿用 cargo-packager 0.10.1/NSIS，清单与包均使用其 Minisign 格式签名，Client 内置公钥；streaming 校验、大小限制、版本固定 URL、禁降级/预发布、安装前复验、持有文件锁。登录页和 About 均可操作；仅官方 Windows 独立打包启用自动网络检查，开发/未配置 key/嵌入不启用。没有上传生产密钥或发布版本。
 
-正式发布需 vars.HAGENCY_UPDATER_PUBLIC_KEY、secrets.CARGO_PACKAGER_SIGN_PRIVATE_KEY 和可选密码 CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD。详细配置、边界和验证入口见 ../windows-auto-update-2026-10-20.zh.md。测试与 PR 最终状态后续追加。
+正式发布需 vars.HAGENCY_UPDATER_PUBLIC_KEY、secrets.CARGO_PACKAGER_SIGN_PRIVATE_KEY 和可选密码 CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD。详细配置、边界和验证入口见 ../windows-auto-update-2026-10-20.zh.md。PR：https://github.com/hagency-org/hagency-client/pull/3，目标 main，已推送并附加到当前聊天；远端 CI 仍在运行，未合并或发布。
 
-本地最终验证：应用库 507 passed/0 failed/2 原 ignored，更新库 8 passed，任务/安装互斥 2 passed，owned_runtime 51 passed，native 接口 5 passed。应用+更新库 all-targets 严格 Clippy 与引擎生产 lib 严格 Clippy 通过；Windows 引擎全 all-targets 严格 Clippy 仍被既有 Unix-only 测试辅助函数 unused/dead_code 阻断，未增加 allow、删除断言或跳过测试。完整跨平台约束由 PR CI 继续验证。
+本地最终验证：应用库 507 passed/0 failed/2 原 ignored，更新库 8 passed，任务/安装互斥 2 passed，owned_runtime 53 passed，native 接口 5 passed。应用+更新库 all-targets 严格 Clippy 与引擎生产 lib 严格 Clippy 通过；Windows 引擎全 all-targets 严格 Clippy 仍被既有 Unix-only 测试辅助函数 unused/dead_code 阻断，未增加 allow、删除断言或跳过测试。完整跨平台约束由 PR CI 继续验证。
+
+补充恢复回归：安装准备阶段的互斥关闭轮询准入时，空闲 worker 会等待而不是结束服务；准备失败释放互斥后可继续接收请求。正常 owner 关闭仍可取消该等待。两个独立 gate/Tokio watch 场景已通过，受影响的 owned_runtime 全套 53 项通过。
 
 真实 NSIS 夹具 install/cancel/tamper/busy 四场景全部通过：原父进程未退出不安装，正常提交后在含空格路径安装并启动新探针，缺少正常退出提交、包损坏或进程忙碌均不修改安装。结果在 D:/BuildCache/hagency-client/updater-handoff/ed83cb0c-26d9-46db-a597-22f6aeb77df1/results.json；busy 场景抽取生产模板的真实宏，用确定性结果替代 FindProcess。未测试真实 UAC 交互或正式安装包覆盖用户旧版。
 

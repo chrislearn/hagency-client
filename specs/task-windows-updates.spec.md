@@ -64,6 +64,14 @@ Scenario: Existing Agent work postpones installation and blocks racing new work
   Then installation stays deferred until both task guards finish
   And an installation guard prevents new task admission until released
 
+Scenario: Canceling preparation resumes idle services and owner shutdown can interrupt the wait
+  Test: update_fence_
+  Level: unit
+  Test Double: real isolated gate and Tokio cancellation watch
+  Given an exclusive installation fence and an idle worker
+  When preparation releases the fence or owner shutdown cancels the worker
+  Then the worker resumes admission or exits normally without starting new work under the fence
+
 ## Verification
 
 Run the portable hagency-updater signature, size, storage and preferences tests;
