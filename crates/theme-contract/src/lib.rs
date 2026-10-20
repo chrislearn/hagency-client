@@ -331,7 +331,7 @@ pub fn rgb(token: &Token) -> Result<[f64; 3], String> {
         || v.get("colorSpace").and_then(Value::as_str) != Some("srgb")
         || v.keys()
             .any(|k| !["colorSpace", "components", "alpha"].contains(&k.as_str()))
-        || v.get("alpha").map_or(false, |a| a.as_f64() != Some(1.))
+        || v.get("alpha").is_some_and(|a| a.as_f64() != Some(1.))
     {
         return Err("Interface colors must be opaque sRGB".into());
     }

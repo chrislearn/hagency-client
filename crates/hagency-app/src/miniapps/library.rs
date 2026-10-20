@@ -10,7 +10,7 @@ use std::collections::HashMap;
 pub enum LibraryAction {
     Back,
     Developer,
-    Launch(VerifiedBundle, Option<String>, String),
+    Launch(Box<VerifiedBundle>, Option<String>, String),
     Article,
 }
 #[derive(Default, PartialEq)]
@@ -243,7 +243,7 @@ impl MiniAppLibrary {
                     .collect()
             })
             .unwrap_or_default();
-        joined.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+        joined.sort_by_key(|a| a.0.to_lowercase());
         let mut labels = vec!["No conversation access".into()];
         for (name, id) in joined {
             labels.push(name);
@@ -767,7 +767,7 @@ mod tests {
                 ]
             };
             for path in paths {
-                let rect = panel.view.widget(&mut cx, path).area().rect(&cx);
+                let rect = panel.view.widget(&cx, path).area().rect(&cx);
                 assert!(
                     rect.size.x > 0.0
                         && rect.pos.x >= 0.0

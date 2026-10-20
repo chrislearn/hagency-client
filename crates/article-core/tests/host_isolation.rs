@@ -128,7 +128,7 @@ fn existing_schema_and_host_publication_metadata_roundtrip() {
     assert_eq!(saved.schema, 2);
     assert_eq!(saved.publications, vec![publication]);
     assert_eq!(saved.outbox[0]["transaction"], "keep-this-id");
-    let path = host.root.join("mini-apps").join(blake3::hash(b"local:writer").to_hex().as_str())
+    let _path = host.root.join("mini-apps").join(blake3::hash(b"local:writer").to_hex().as_str())
         .join("org.octosense.article-editor/library-v2.json");
     #[cfg(unix)] {
         use std::os::unix::fs::PermissionsExt;

@@ -305,18 +305,18 @@ mod tests {
             }
             ui
         });
-        assert_eq!(ui.label(&mut cx, ids!(heading)).text(), "Chats");
+        assert_eq!(ui.label(&cx, ids!(heading)).text(), "Chats");
         refresh_ui_in_language(&mut cx, &ui, Language::Chinese);
-        assert_eq!(ui.label(&mut cx, ids!(heading)).text(), "聊天");
-        assert_eq!(ui.label(&mut cx, ids!(data)).text(), "Chats");
+        assert_eq!(ui.label(&cx, ids!(heading)).text(), "聊天");
+        assert_eq!(ui.label(&cx, ids!(data)).text(), "Chats");
         assert_eq!(
-            ui.text_input(&mut cx, ids!(input)).text(),
+            ui.text_input(&cx, ids!(input)).text(),
             "Chats {count} 中文"
         );
         refresh_ui_in_language(&mut cx, &ui, Language::English);
-        assert_eq!(ui.label(&mut cx, ids!(heading)).text(), "Chats");
+        assert_eq!(ui.label(&cx, ids!(heading)).text(), "Chats");
         assert_eq!(
-            ui.text_input(&mut cx, ids!(input)).text(),
+            ui.text_input(&cx, ids!(input)).text(),
             "Chats {count} 中文"
         );
     }

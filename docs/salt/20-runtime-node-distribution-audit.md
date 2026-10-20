@@ -344,7 +344,7 @@ output should explain it as an artifact source path, not a separate runtime sema
    - Stop writing new `local` route identity except as explicit dev compatibility.
 
 3. **Install/update reconcile contract**
-   - Introduce install metadata and a dry-runable reconcile planner.
+   - Introduce install metadata and a dry-runnable reconcile planner.
    - Make install, update, and autodeploy call the same reconcile phases or fail closed.
    - Add install-path tests for full checkout and standalone package.
 

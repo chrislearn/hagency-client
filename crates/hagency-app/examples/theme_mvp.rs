@@ -359,7 +359,7 @@ impl AppMain for App {
             } else {
                 self.requests += 1;
             }
-            splash_host_respond(cx, request.heap_key, request.req_id, Ok("{}".into()));
+            splash_host_respond(cx, request.heap_key, request.req_id, Ok("{}"));
         }
     }
 }

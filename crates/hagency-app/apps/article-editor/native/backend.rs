@@ -372,7 +372,7 @@ async fn replacements(
             if value["sender"].as_str() == Some(owner.as_str())
                 && value["content"]["m.relates_to"]["event_id"].as_str() == Some(root.as_str())
                 && value["content"]["m.relates_to"]["rel_type"].as_str() == Some("m.replace")
-                && !result.iter().any(|(existing, _)| existing == &id)
+                && !result.iter().any(|(existing, _)| existing == id)
             {
                 result.push((id.to_owned(), value));
             }
@@ -956,7 +956,7 @@ mod tests {
     fn images_in_source_blocks_are_sent_to_rinx_readers_and_other_clients() {
         let id = "b".repeat(64);
         let mut doc = Document::from_markdown("A", "hello").unwrap();
-        doc.blocks.push(Block::new(BlockKind::Markdown, &format!("![one](asset:{id})\n![two](asset:{id})")));
+        doc.blocks.push(Block::new(BlockKind::Markdown, format!("![one](asset:{id})\n![two](asset:{id})")));
         let mut assets = BTreeMap::new();
         // Readers reject the article while the grid's image is not uploaded.
         assert!(ArticleContent::parse(&wire_content(&doc, 1, &assets, None, None, false).unwrap()).is_err());
@@ -972,8 +972,7 @@ mod tests {
     }
     #[test]
     fn hostile_article_and_local_paths_rejected() {
-        let mut doc = Document::default();
-        doc.title = "Bad".into();
+        let mut doc = Document { title: "Bad".into(), ..Default::default() };
         let mut b = Block::new(BlockKind::Image, "");
         b.asset = Some("../../secret".into());
         doc.blocks.push(b);

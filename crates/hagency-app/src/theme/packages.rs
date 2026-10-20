@@ -176,7 +176,7 @@ pub fn apply(cx: &mut Cx, preferences: Preferences) -> Result<(), String> {
             .clone()
     });
     atomic_write(
-        &crate::app_data_dir(),
+        crate::app_data_dir(),
         "theme-rollback.json",
         &serde_json::to_vec(&Stored {
             current: known_good,
@@ -185,7 +185,7 @@ pub fn apply(cx: &mut Cx, preferences: Preferences) -> Result<(), String> {
         .unwrap(),
     )?;
     save(
-        &crate::app_data_dir(),
+        crate::app_data_dir(),
         &Stored {
             current: preferences.clone(),
             previous: Some(old.clone()),

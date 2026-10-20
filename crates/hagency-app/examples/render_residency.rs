@@ -122,7 +122,7 @@ impl AppMain for App {
                 ),
             );
             self.ui.redraw(cx);
-            if self.ticks % 60 == 0 {
+            if self.ticks.is_multiple_of(60) {
                 let budget = &cx.draw_lists.1.allocations;
                 log!(
                     "residency tick={} submitted={} completed={} bytes={} records={} refusals={}",

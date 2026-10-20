@@ -872,11 +872,10 @@ impl Widget for HtmlOrPlaintext {
             Event::MouseUp(e) if e.button.is_primary() => {
                 self.mouse_selection = None;
             }
-            Event::KeyFocusLost(e) => {
-                if self.with_flow(cx, |flow, _| flow.area() == e.prev).unwrap_or(false) {
+            Event::KeyFocusLost(e)
+                if self.with_flow(cx, |flow, _| flow.area() == e.prev).unwrap_or(false) => {
                     self.mouse_selection = None;
                 }
-            }
             _ => {}
         }
     }

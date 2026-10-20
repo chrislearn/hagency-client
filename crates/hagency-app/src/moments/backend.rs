@@ -529,11 +529,9 @@ impl Service {
         request.preset = Some(create_room::v3::RoomPreset::PrivateChat);
         request.creation_content=Some(Raw::new(&if moments {json!({"type":ROOM_TYPE,"rs.robius.robrix.operation":operation})}
             else {json!({"rs.robius.robrix.file_transfer":true,"rs.robius.robrix.operation":operation})})?.cast_unchecked());
-        request.initial_state=vec![
-            json!({"type":"m.room.encryption","state_key":"","content":{"algorithm":"m.megolm.v1.aes-sha2"}}),
+        request.initial_state=[json!({"type":"m.room.encryption","state_key":"","content":{"algorithm":"m.megolm.v1.aes-sha2"}}),
             json!({"type":"m.room.history_visibility","state_key":"","content":{"history_visibility":"joined"}}),
-            json!({"type":"m.room.join_rules","state_key":"","content":{"join_rule":"invite"}}),
-        ].iter().map(|v|Raw::new(v).map(Raw::cast_unchecked)).collect::<Result<_,_>>()?;
+            json!({"type":"m.room.join_rules","state_key":"","content":{"join_rule":"invite"}})].iter().map(|v|Raw::new(v).map(Raw::cast_unchecked)).collect::<Result<_,_>>()?;
         // No "users" entry for the owner: the server's default already gives the creator
         // full power, and room version 12 (matrix.org's default) rejects listing a creator.
         request.power_level_content_override=Some(Raw::new(&json!({"users_default":0,

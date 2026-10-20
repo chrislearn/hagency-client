@@ -483,17 +483,17 @@ mod tests {
         inbox.owner = Some(matrix_sdk::ruma::user_id!("@owner:example.org").to_owned());
         inbox.summary = Some((5, 0));
         inbox.sync_status(&mut cx);
-        assert!(inbox.view.view(&mut cx, ids!(empty_state)).visible());
-        assert_eq!(inbox.view.label(&mut cx, ids!(empty_title)).text(), "No approval rooms found");
-        assert!(inbox.view.label(&mut cx, ids!(empty_description)).text().contains("does not indicate an agent startup error"));
+        assert!(inbox.view.view(&cx, ids!(empty_state)).visible());
+        assert_eq!(inbox.view.label(&cx, ids!(empty_title)).text(), "No approval rooms found");
+        assert!(inbox.view.label(&cx, ids!(empty_description)).text().contains("does not indicate an agent startup error"));
         inbox.summary = Some((5, 2));
         inbox.sync_status(&mut cx);
-        assert_eq!(inbox.view.label(&mut cx, ids!(empty_title)).text(), "No verified approval rooms available");
-        assert!(inbox.view.label(&mut cx, ids!(empty_description)).text().contains("unchecked rooms may contain approvals"));
+        assert_eq!(inbox.view.label(&cx, ids!(empty_title)).text(), "No verified approval rooms available");
+        assert!(inbox.view.label(&cx, ids!(empty_description)).text().contains("unchecked rooms may contain approvals"));
         inbox.loading = true;
         inbox.sync_status(&mut cx);
-        assert!(!inbox.view.view(&mut cx, ids!(empty_state)).visible());
-        assert_eq!(inbox.view.button(&mut cx, ids!(refresh)).text(), "Checking approval rooms…");
+        assert!(!inbox.view.view(&cx, ids!(empty_state)).visible());
+        assert_eq!(inbox.view.button(&cx, ids!(refresh)).text(), "Checking approval rooms…");
         inbox.loading = false;
         inbox.summary = Some((5, 0));
         inbox.sync_status(&mut cx);
@@ -516,7 +516,7 @@ mod tests {
             list.end(&mut cx2d);
             cx2d.end_pass(&pass);
         }
-        let help = inbox.view.label(&mut cx, ids!(empty_help)).area().rect(&cx);
+        let help = inbox.view.label(&cx, ids!(empty_help)).area().rect(&cx);
         assert!(help.size.y > 30.0, "long empty-state guidance must wrap on narrow pages: {help:?}");
         assert!(help.pos.x + help.size.x <= 310.0);
         let cancelled = Arc::new(AtomicBool::new(false));

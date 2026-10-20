@@ -605,7 +605,7 @@ impl Widget for MobileHub {
                         let loaded = group.avatar.update_from_cache(cx).is_some_and(|image| {
                             avatar.show_image(cx, None, |cx, img| utils::load_avatar_image(&img, cx, image)).is_ok()
                         });
-                        if !loaded { avatar.show_text(cx, None, None, &group.name.display()); }
+                        if !loaded { avatar.show_text(cx, None, None, group.name.display()); }
                         widget.draw_all(cx, scope);
                     }
                     continue;
@@ -649,7 +649,7 @@ mod new_chat_tests {
         assert!(hub.adding_friend);
         assert!(!hub.groups_open);
         assert!(hub.query.is_empty());
-        assert_eq!(hub.view.text_input(&mut cx, ids!(search)).text(), "");
+        assert_eq!(hub.view.text_input(&cx, ids!(search)).text(), "");
         assert_ne!(hub.request, request, "Opening search invalidates old requests without sending a search or message");
     }
 }

@@ -362,7 +362,7 @@ mod tests {
     #[test]
     fn provider_preferences_roundtrip_without_embedding_credentials() {
         for provider in [Provider::System, Provider::WhisperCpp, Provider::OpenAiCompatible, Provider::LocalCodex] {
-            let mut config = SpeechConfig::default(); config.provider = provider; config.locale = "zh-CN".into();
+            let config = SpeechConfig { provider, locale: "zh-CN".into(), ..Default::default() };
             let encoded = serde_json::to_value(&config).unwrap();
             assert!(encoded.get("api_key").is_none());
             assert_eq!(serde_json::from_value::<SpeechConfig>(encoded).unwrap(), config);
@@ -373,7 +373,7 @@ mod tests {
 
     #[test]
     fn endpoints_reject_plaintext_remote_credentials_and_false_local_hosts() {
-        let mut config = SpeechConfig::default(); config.provider = Provider::WhisperCpp;
+        let mut config = SpeechConfig { provider: Provider::WhisperCpp, ..Default::default() };
         for url in ["http://localhost.evil/inference", "http://192.168.1.5/inference", "https://example.com/inference", "http://user:password@localhost/inference", "http://localhost/inference?key=secret"] {
             config.whisper_endpoint = url.into(); assert!(config.validate().is_err(), "{url}");
         }
@@ -392,7 +392,7 @@ mod tests {
         assert_eq!(&audio[..4], b"RIFF"); assert_eq!(&audio[8..12], b"WAVE");
         assert_eq!(u32::from_le_bytes(audio[24..28].try_into().unwrap()), 16000);
         assert_eq!(audio.len(), 50);
-        let mut config = SpeechConfig::default(); config.provider = Provider::OpenAiCompatible; config.locale = "zh-CN".into();
+        let mut config = SpeechConfig { provider: Provider::OpenAiCompatible, locale: "zh-CN".into(), ..Default::default() };
         let legacy = String::from_utf8_lossy(&multipart(&config, &audio, "boundary")).into_owned();
         assert!(legacy.contains("name=\"language\"\r\n\r\nzh\r\n"));
         config.model = "gpt-transcribe".into();
@@ -406,8 +406,7 @@ mod tests {
         let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
         for provider in [Provider::WhisperCpp, Provider::OpenAiCompatible] {
             let (endpoint, server) = server("200 OK", r#"{"text":"你好，Hagency"}"#);
-            let mut config = SpeechConfig::default(); config.provider = provider; config.locale = "zh-CN".into();
-            config.whisper_endpoint = endpoint.clone(); config.api_endpoint = endpoint;
+            let config = SpeechConfig { provider, locale: "zh-CN".into(), whisper_endpoint: endpoint.clone(), api_endpoint: endpoint, ..Default::default() };
             let result = runtime.block_on(transcribe(config, Some("test-credential".into()), wav(&vec![0.0;16000]))).unwrap();
             assert_eq!(result, "你好，Hagency");
             let request = server.join().unwrap();
@@ -423,7 +422,7 @@ mod tests {
     fn provider_errors_do_not_surface_raw_responses_or_credentials() {
         let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
         let (endpoint, server) = server("401 Unauthorized", "private-provider-response credential=secret");
-        let mut config = SpeechConfig::default(); config.provider = Provider::OpenAiCompatible; config.api_endpoint = endpoint;
+        let config = SpeechConfig { provider: Provider::OpenAiCompatible, api_endpoint: endpoint, ..Default::default() };
         let failure = runtime.block_on(transcribe(config, None, wav(&[0.0;1600]))).unwrap_err().to_string();
         server.join().unwrap();
         assert!(failure.contains("authentication")); assert!(!failure.contains("private-provider")); assert!(!failure.contains("secret"));

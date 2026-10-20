@@ -312,8 +312,8 @@ impl Block {
     }
 }
 fn push_mark(marks: &mut Vec<Mark>, mark: Mark) {
-    if let Some(last) = marks.last_mut() {
-        if last.end == mark.start
+    if let Some(last) = marks.last_mut()
+        && last.end == mark.start
             && last.bold == mark.bold
             && last.italic == mark.italic
             && last.link == mark.link
@@ -321,7 +321,6 @@ fn push_mark(marks: &mut Vec<Mark>, mark: Mark) {
             last.end = mark.end;
             return;
         }
-    }
     marks.push(mark);
 }
 pub fn validate_link(value: &str) -> Result<(), String> {
@@ -445,11 +444,10 @@ impl Document {
         if self.asset_ids().len() > MAX_IMAGES || self.resource_bindings.iter().any(|(url,id)|url.len()>4096 || !valid_id(id)) {
             return Err("Use at most 128 images per article.".into());
         }
-        if let Some(c) = &self.cover {
-            if !valid_id(&c.asset) || c.focal_x > 1000 || c.focal_y > 1000 {
+        if let Some(c) = &self.cover
+            && (!valid_id(&c.asset) || c.focal_x > 1000 || c.focal_y > 1000) {
                 return Err("Invalid cover crop".into());
             }
-        }
         Ok(())
     }
     pub fn ready(&self) -> Result<(), String> {
@@ -568,7 +566,7 @@ impl Document {
                 Event::Start(Tag::Emphasis)=>italic+=1,Event::End(TagEnd::Emphasis)=>italic-=1,
                 Event::Start(Tag::Link{dest_url,..})=>{validate_link(&dest_url)?;link=Some(dest_url.to_string());},Event::End(TagEnd::Link)=>link=None,
                 Event::Start(Tag::Image{dest_url,..})=>{
-                    if let Some(b)=block.take() {if !b.text.is_empty(){doc.blocks.push(b)}}
+                    if let Some(b)=block.take()&& !b.text.is_empty(){doc.blocks.push(b)}
                     let id=dest_url.strip_prefix("asset:").filter(|v|valid_id(v)).ok_or("Insert images using the image picker.")?;
                     let mut b=Block::new(BlockKind::Image,""); b.asset=Some(id.into());block=Some(b);
                 },
@@ -593,9 +591,8 @@ impl Document {
         Ok(doc)
     }
     pub fn markdown(&self) -> String {
-        if let Some(source) = &self.imported_source {
-            if source.blocks_hash == self.blocks_hash() { return source.text.clone(); }
-        }
+        if let Some(source) = &self.imported_source
+            && source.blocks_hash == self.blocks_hash() { return source.text.clone(); }
         self.markdown_with_block_lines().0
     }
 
@@ -772,8 +769,7 @@ mod tests {
     }
     #[test]
     fn literal_markdown_punctuation_is_not_reinterpreted() {
-        let mut doc = Document::default();
-        doc.title = "Literal".into();
+        let mut doc = Document { title: "Literal".into(), ..Default::default() };
         doc.blocks[0].text = "# title\n- literal\n1. literal\n> literal\n`plain` & literal".into();
         let roundtrip = Document::from_markdown(&doc.title, &doc.markdown()).unwrap();
         assert_eq!(roundtrip.blocks[0].kind, BlockKind::Paragraph);
@@ -785,8 +781,7 @@ mod tests {
     }
     #[test]
     fn quote_lines_and_literal_entities_roundtrip_without_loss() {
-        let mut doc = Document::default();
-        doc.title = "A".into();
+        let mut doc = Document { title: "A".into(), ..Default::default() };
         doc.blocks[0] = Block::new(BlockKind::Quote, "第一行\n第二行 &lt;literal&gt;");
         let next = Document::from_markdown(&doc.title, &doc.markdown()).unwrap();
         assert_eq!(next.blocks[0].text, doc.blocks[0].text);

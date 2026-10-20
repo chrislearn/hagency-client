@@ -183,7 +183,7 @@ fn install_standalone(service: Arc<dyn OctosAppService>, mode: StandaloneMode) {
     let previous = {
         let mut st = state();
         st.mode = Some(mode);
-        std::mem::replace(&mut st.service, Some(service))
+        st.service.replace(service)
     };
     // Replacing a provider revokes the old one's requests first.
     if let Some(previous) = previous {

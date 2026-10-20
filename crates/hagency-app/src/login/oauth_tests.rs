@@ -206,7 +206,7 @@ async fn sdk_oauth_registration_uses_create_prompt_and_completes_login() {
     }).await.unwrap();
     assert_eq!(client.user_id().unwrap().as_str(), "@fixture:localhost");
     assert!(client.oauth().full_session().is_some());
-    let requests = fixture.requests.lock().unwrap();
+    let requests = fixture.requests.lock().unwrap().clone();
     assert!(requests.iter().any(|(route, _)| route.contains("/auth/register ")));
     assert!(requests.iter().any(|(route, _)| route.contains("/auth/token ")));
     assert!(requests.iter().any(|(route, _)| route.contains("/whoami ")));
@@ -398,7 +398,7 @@ async fn sdk_oauth_dcr_pkce_callback_whoami_refresh_and_session_roundtrip() {
     }).await.unwrap_err();
     assert_eq!(late.code, "matrix_account_changed", "a refresh may finish but its old identity cannot be adopted");
     assert_eq!(checks.load(Ordering::Acquire), 2);
-    let requests = fixture.requests.lock().unwrap();
+    let requests = fixture.requests.lock().unwrap().clone();
     assert!(
         requests
             .iter()
@@ -412,7 +412,6 @@ async fn sdk_oauth_dcr_pkce_callback_whoami_refresh_and_session_roundtrip() {
             .iter()
             .any(|(p, _)| p.contains("/auth/revoke") || p.contains("oauth2/revoke"))
     );
-    drop(requests);
     // A removed account cannot be recreated by a late refresh callback.
     {
         let _guard = crate::persistence::SESSION_IO.lock().unwrap();
@@ -551,7 +550,7 @@ async fn oauth_reauthentication_mismatch_revokes_only_new_grant_and_retains_prev
         assert_eq!(recovered.access_token().as_deref(), Some("oauth-access"));
         assert_eq!(recovered.device_id(), initial.device_id());
     }
-    let requests = fixture.requests.lock().unwrap();
+    let requests = fixture.requests.lock().unwrap().clone();
     let revoked: Vec<_> = requests
         .iter()
         .filter(|(p, _)| p.contains("/auth/revoke "))
@@ -566,7 +565,6 @@ async fn oauth_reauthentication_mismatch_revokes_only_new_grant_and_retains_prev
             .count(),
         1
     );
-    drop(requests);
     // Even a successful OAuth callback can arrive after account retirement.
     let stale_epoch = crate::account_session::epoch().wrapping_add(1);
     let result = crate::sliding_sync::finish_oauth_login(

@@ -559,16 +559,16 @@ mod render_tests {
             );
             menu.project_buttons(&mut cx, true);
             menu.project = Some(target.clone());
-            assert!(menu.view.button(&mut cx, &[id]).visible());
+            assert!(menu.view.button(&cx, &[id]).visible());
             assert!(
                 !menu
                     .view
-                    .button(&mut cx, ids!(project_invite))
+                    .button(&cx, ids!(project_invite))
                     .borrow()
                     .unwrap()
                     .enabled()
             );
-            let uid = menu.view.button(&mut cx, &[id]).widget_uid();
+            let uid = menu.view.button(&cx, &[id]).widget_uid();
             let actions = cx.capture_actions(|cx| {
                 cx.widget_action(uid, ButtonAction::Clicked(KeyModifiers::default()));
                 cx.action(ProjectPermission {
@@ -610,7 +610,7 @@ mod render_tests {
             id!(project_space),
         ] {
             assert!(
-                !menu.view.button(&mut cx, &[id]).visible(),
+                !menu.view.button(&cx, &[id]).visible(),
                 "Normal create menu cannot leak old Project actions"
             );
         }
@@ -669,7 +669,7 @@ mod render_tests {
             scene.end(&mut cx2d);
             cx2d.end_pass(&pass);
         }
-        let card = menu.view.view(&mut cx, ids!(main_content)).area().rect(&cx);
+        let card = menu.view.view(&cx, ids!(main_content)).area().rect(&cx);
         assert!(
             (card.pos.x - anchor.x).abs() < 1.0 && (card.pos.y - anchor.y).abs() < 1.0,
             "Card is anchored below its row: {card:?}"

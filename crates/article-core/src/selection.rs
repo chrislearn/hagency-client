@@ -134,10 +134,9 @@ mod tests {
 
     #[test]
     fn select_all_includes_offscreen_blocks_and_empty_lines() {
-        let mut doc = Document::default();
-        doc.blocks = (0..100)
+        let mut doc = Document { blocks: (0..100)
             .map(|i| Block::new(BlockKind::Paragraph, format!("段落 {i}")))
-            .collect();
+            .collect(), ..Default::default() };
         let all = BodySelection::all(&doc).unwrap();
         assert!(all.text(&doc).ends_with("段落 99"));
         assert_eq!(all.text(&doc).split("\n\n").count(), 100);

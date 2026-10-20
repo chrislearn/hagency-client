@@ -3,16 +3,58 @@ extend-ignore-identifiers-re = [
     # *sigh* this just isn't worth the cost of fixing
     "AttributeID.*Supress.*",
 ]
+extend-ignore-re = [
+    # Commit hashes and encoded Matrix/crypto fixture identifiers are not prose.
+    '[0-9a-fA-F]{7,64}',
+    '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}',
+    '"[A-Za-z0-9+/_=-]{40,}"',
+    '[$!][A-Za-z0-9_-]{20,}(?::[A-Za-z0-9.-]+)?',
+    # Verbatim operator quote and intentional misspelling examples.
+    '"executre migration in a clean worktree"',
+    '`(?:codeing|integrat)`',
+    '"Hel"', # Deliberately incomplete streaming fragment in a test.
+]
 
 [default.extend-identifiers]
 # *sigh* this just isn't worth the cost of fixing
 AttributeIDSupressMenu = "AttributeIDSupressMenu"
+# POSIX/kernel names and API identifiers must retain their spelling.
+WRONLY = "WRONLY"
+O_WRONLY = "O_WRONLY"
+msg_controllen = "msg_controllen"
+CapInh = "CapInh"
+PNGs = "PNGs"
+UPDATEs = "UPDATEs"
+INSERTs = "INSERTs"
+CHECKs = "CHECKs"
+JOINed = "JOINed"
+OTKs = "OTKs"
+# Upstream Octoscript layout property and fixture widget name.
+fith = "fith"
+rto = "rto"
 
 [default.extend-words]
 # Don't correct the surname "Teh"
 teh = "teh"
 Hashi = "Hashi"
 consts = "consts"
+inh = "inh" # setpriv --inh-caps
+mis = "mis" # Valid prefix in existing hyphenated technical terms.
+unparseable = "unparseable"
+unstalled = "unstalled" # Intentional contrast with a stalled test spawn.
+noice = "noice" # Project/agent name in design history.
+Aas = "Aas" # Cited author's surname.
 
 [files]
-extend-exclude = ["**/*.js", "**/*.css", "**/*.html", "examples/*/static/**/*.*"]
+ignore-hidden = false
+ignore-global = false
+ignore-parent = false
+extend-exclude = [
+    ".git/**",
+    "**/*.js", "**/*.css", "**/*.html", "examples/*/static/**/*.*",
+    # Preserve verbatim third-party notices and upstream Markdown conformance data.
+    "**/LICENSE*", "**/NOTICE*", "**/licenses/**",
+    "crates/article-core/tests/fixtures/gfm-spec.txt",
+    "crates/article-core/tests/fixtures/gfm-0.29.json",
+    "crates/article-core/tests/fixtures/commonmark-0.31.2.json",
+]

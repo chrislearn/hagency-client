@@ -65,9 +65,9 @@ mod tests {
             let screen = WelcomeScreen::script_from_value(vm, value);
             assert!(vm.take_errors().is_empty()); screen
         });
-        assert_eq!(screen.view.label(&mut cx, ids!(title)).text(), crate::i18n::tr("Your Hagency chats"));
+        assert_eq!(screen.view.label(&cx, ids!(title)).text(), crate::i18n::tr("Your Hagency chats"));
         for (button, contacts) in [(id!(new_chat), true), (id!(explore), false)] {
-            let uid = screen.view.button(&mut cx, &[button]).widget_uid();
+            let uid = screen.view.button(&cx, &[button]).widget_uid();
             let actions = cx.capture_actions(|cx| cx.widget_action(uid, ButtonAction::Clicked(KeyModifiers::default())));
             let emitted = cx.capture_actions(|cx| screen.handle_event(cx, &Event::Actions(actions), &mut Scope::empty()));
             assert!(emitted.iter().any(|a| match a.downcast_ref::<NavigationBarAction>() {

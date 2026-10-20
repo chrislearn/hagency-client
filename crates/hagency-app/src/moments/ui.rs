@@ -835,7 +835,7 @@ impl MomentsPanel {
     ) {
         use matrix_sdk::media::MediaFormat;
         if !asset.mimetype.starts_with("image/") {
-            widget.show_text(cx, &crate::i18n::format("Video · {0}", &[("0", (asset.name).to_string())]));
+            widget.show_text(cx, crate::i18n::format("Video · {0}", &[("0", (asset.name).to_string())]));
             return;
         }
         let source = ruma::events::room::MediaSource::Encrypted(Box::new(asset.file.clone()));

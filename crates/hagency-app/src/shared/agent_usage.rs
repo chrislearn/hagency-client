@@ -301,18 +301,18 @@ mod tests {
         widget.present = true;
         widget.identity = "account-a|room|event-a".into();
         widget.render(&mut cx);
-        assert!(!widget.view.label(&mut cx, ids!(details)).visible());
+        assert!(!widget.view.label(&cx, ids!(details)).visible());
         widget.toggle(&mut cx);
-        assert!(widget.view.label(&mut cx, ids!(details)).visible());
+        assert!(widget.view.label(&cx, ids!(details)).visible());
         widget.identity = "account-b|room|event-a".into();
         widget.render(&mut cx);
-        assert!(!widget.view.label(&mut cx, ids!(details)).visible());
+        assert!(!widget.view.label(&cx, ids!(details)).visible());
         widget.identity = "account-a|room|event-a".into();
         widget.render(&mut cx);
-        assert!(widget.view.label(&mut cx, ids!(details)).visible());
+        assert!(widget.view.label(&cx, ids!(details)).visible());
         clear_session(&mut cx);
         widget.render(&mut cx);
-        assert!(!widget.view.label(&mut cx, ids!(details)).visible());
+        assert!(!widget.view.label(&cx, ids!(details)).visible());
     }
     #[test]
     fn name_row_toggle_and_footer_share_expansion_without_empty_footer() {
@@ -338,8 +338,8 @@ mod tests {
         header.toggle(&mut cx);
         footer.render(&mut cx);
         assert!(footer.view.visible());
-        assert!(footer.view.label(&mut cx, ids!(details)).visible());
-        assert!(!header.view.label(&mut cx, ids!(details)).visible());
+        assert!(footer.view.label(&cx, ids!(details)).visible());
+        assert!(!header.view.label(&cx, ids!(details)).visible());
         header.toggle(&mut cx);
         footer.render(&mut cx);
         assert!(!footer.view.visible());

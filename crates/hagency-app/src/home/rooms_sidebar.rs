@@ -510,11 +510,11 @@ mod layout_tests {
             assert!(!consumer.is_empty());
             assert_eq!(*consumer_uid.get_or_insert(consumer.widget_uid()), consumer.widget_uid());
             assert_eq!(sidebar.view.active_variant(), Some(if desktop {id!(Desktop)} else {id!(Mobile)}));
-            let list = sidebar.view.rooms_list(&mut cx, ids!(rooms_list));
+            let list = sidebar.view.rooms_list(&cx, ids!(rooms_list));
             assert_eq!(list.widget_uid(), consumer.widget_uid());
             assert_eq!(cx.global::<crate::home::rooms_list::RoomsListRef>().widget_uid(), consumer.widget_uid());
-            assert_eq!(!sidebar.view.navigation_bar_button(&mut cx, ids!(open_projects)).is_empty(), desktop);
-            assert_eq!(!sidebar.view.navigation_bar_button(&mut cx, ids!(open_agents)).is_empty(), desktop);
+            assert_eq!(!sidebar.view.navigation_bar_button(&cx, ids!(open_projects)).is_empty(), desktop);
+            assert_eq!(!sidebar.view.navigation_bar_button(&cx, ids!(open_agents)).is_empty(), desktop);
         }
     }
     #[test]
@@ -542,7 +542,7 @@ mod layout_tests {
         assert_eq!(active.len(), 1);
         let sidebar_rect = active[0].area().rect(&cx);
         assert!((sidebar_rect.size.x - 200.0).abs() < 1.0, "Sidebar has fixed width: {sidebar_rect:?}");
-        let nav = sidebar.view.view(&mut cx, ids!(primary_navigation)).area().rect(&cx);
+        let nav = sidebar.view.view(&cx, ids!(primary_navigation)).area().rect(&cx);
         for button in [id!(open_projects),id!(open_agents),id!(open_chats),id!(open_contacts),id!(open_miniapps)] {
             let rect = sidebar.view.widget(&cx, &[button]).area().rect(&cx);
             assert!(rect.size.y > 0.0 && rect.pos.y >= nav.pos.y - 1.0 && rect.pos.y + rect.size.y <= nav.pos.y + nav.size.y + 1.0, "Primary entry visible initially: {button:?} {rect:?} within {nav:?}");
@@ -554,7 +554,7 @@ mod layout_tests {
             let mut found = Vec::new(); collect_sidebars(children, &mut found);
             assert_eq!(found.len(), 1);
             let sidebar = found[0].borrow::<RoomsSideBar>().unwrap();
-            let uid = sidebar.view.navigation_bar_button(&mut cx, &[button]).widget_uid();
+            let uid = sidebar.view.navigation_bar_button(&cx, &[button]).widget_uid();
             assert_ne!(uid, WidgetUid(0)); drop(sidebar);
             let clicks = cx.capture_actions(|cx| cx.widget_action(uid, crate::shared::navigation_bar_button::NavigationBarButtonAction::Clicked));
             let navigation = cx.capture_actions(|cx| home.handle_event(cx, &Event::Actions(clicks), &mut Scope::with_data(&mut state)));
@@ -568,14 +568,14 @@ mod layout_tests {
         assert_eq!(found.len(), 1);
         let sidebar = found[0].borrow::<RoomsSideBar>().unwrap();
         for button in [id!(open_projects),id!(open_agents),id!(open_contacts),id!(open_chats),id!(open_miniapps),id!(more)] {
-            assert!(!sidebar.view.navigation_bar_button(&mut cx, &[button]).is_empty());
+            assert!(!sidebar.view.navigation_bar_button(&cx, &[button]).is_empty());
         }
         drop(sidebar);
         draw_sized(&mut cx, &mut home, &mut state, 1280.0, 500.0);
         let mut children = Vec::new(); home.children(&mut |_, child| children.push(child));
         let mut found = Vec::new(); collect_sidebars(children, &mut found);
         let sidebar = found[0].borrow::<RoomsSideBar>().unwrap();
-        let chats = home.view(&mut cx, ids!(project_chats)).area().rect(&cx);
+        let chats = home.view(&cx, ids!(project_chats)).area().rect(&cx);
         assert!(chats.size.y >= 40.0, "Navigation preserves a usable chat tree: {chats:?}");
         let account = sidebar.view.widget(&cx, ids!(account)).area().rect(&cx);
         assert!(account.size.y > 0.0 && account.pos.y + account.size.y <= 500.0, "Account stays within sidebar: {account:?}");
@@ -592,8 +592,8 @@ mod layout_tests {
             assert!(vm.take_errors().is_empty()); bar
         });
         for (name, user) in [("Alice", "@alice:hagency.local"), ("A very long display name that must remain a single line", "@verylongmatrixaccountidentity:very-long-hagency-server.example.org")] {
-            std::ops::DerefMut::deref_mut(&mut bar).label(&mut cx, ids!(name)).set_text(&mut cx, name);
-            std::ops::DerefMut::deref_mut(&mut bar).label(&mut cx, ids!(user)).set_text(&mut cx, user);
+            std::ops::DerefMut::deref_mut(&mut bar).label(&cx, ids!(name)).set_text(&mut cx, name);
+            std::ops::DerefMut::deref_mut(&mut bar).label(&cx, ids!(user)).set_text(&mut cx, user);
             draw_sized(&mut cx, std::ops::DerefMut::deref_mut(&mut bar), &mut AppState::default(), 260.0, 86.0);
             let button = std::ops::Deref::deref(&bar).widget(&cx, ids!(account)).area().rect(&cx);
             for id in [id!(name), id!(user)] {
@@ -623,9 +623,9 @@ mod layout_tests {
             let mut found = Vec::new(); collect_sidebars(children, &mut found);
             let sidebar = found[0].borrow::<RoomsSideBar>().unwrap();
             let tree_before = home.widget(&cx, ids!(project_chats)).area().rect(&cx);
-            assert!(sidebar.view.navigation_bar_button(&mut cx, ids!(new_project)).is_empty());
-            assert!(sidebar.view.navigation_bar_button(&mut cx, ids!(new_chat)).is_empty());
-            let uid = sidebar.view.button(&mut cx, &[dots]).widget_uid();
+            assert!(sidebar.view.navigation_bar_button(&cx, ids!(new_project)).is_empty());
+            assert!(sidebar.view.navigation_bar_button(&cx, ids!(new_chat)).is_empty());
+            let uid = sidebar.view.button(&cx, &[dots]).widget_uid();
             drop(sidebar);
             let clicks = cx.capture_actions(|cx| cx.widget_action(uid, ButtonAction::Clicked(KeyModifiers::default())));
             let opened = cx.capture_actions(|cx| home.handle_event(cx, &Event::Actions(clicks), &mut Scope::with_data(&mut state)));
@@ -634,7 +634,7 @@ mod layout_tests {
             assert_eq!(actual, kind);
             menu.show(&mut cx, kind, pos, Rect {pos: dvec2(0.0, 0.0), size: dvec2(1280.0, 760.0)});
             draw(&mut cx, &mut menu, &mut state, 1280.0);
-            let item_uid = menu.button(&mut cx, &[item]).widget_uid();
+            let item_uid = menu.button(&cx, &[item]).widget_uid();
             let clicks = cx.capture_actions(|cx| cx.widget_action(item_uid, ButtonAction::Clicked(KeyModifiers::default())));
             let emitted = cx.capture_actions(|cx| menu.handle_event(cx, &Event::Actions(clicks), &mut Scope::with_data(&mut state)));
             assert!(emitted.iter().any(|a| match kind {
@@ -676,7 +676,7 @@ mod layout_tests {
                 let rect = menu.widget(&cx, &[id]).area().rect(&cx);
                 assert!(rect.size.y > 0.0 && rect.pos.y >= 0.0 && rect.pos.y + rect.size.y <= 500.0, "All More tools fit in viewport: {id:?} {rect:?}");
             }
-            let uid = menu.button(&mut cx, &[button]).widget_uid();
+            let uid = menu.button(&cx, &[button]).widget_uid();
             let clicks = cx.capture_actions(|cx| cx.widget_action(uid, ButtonAction::Clicked(KeyModifiers::default())));
             let emitted = cx.capture_actions(|cx| menu.handle_event(cx, &Event::Actions(clicks), &mut Scope::empty()));
             assert!(emitted.iter().any(|a| {
@@ -714,10 +714,10 @@ mod layout_tests {
         collect_widgets::<crate::home::project_tree::ProjectTree>(children, &mut trees);
         assert_eq!(trees.len(), 1);
         let tree_uid = trees[0].widget_uid();
-        let context = home.view(&mut cx, ids!(workspace_context)).area().rect(&cx);
+        let context = home.view(&cx, ids!(workspace_context)).area().rect(&cx);
         assert_eq!(context.pos.x, 200.0); assert_eq!(context.size.x, 240.0);
-        assert_eq!(home.label(&mut cx, ids!(context_title)).text(), crate::i18n::tr("Projects"));
-        assert!(!home.view(&mut cx, ids!(context_search)).borrow().unwrap().visible);
+        assert_eq!(home.label(&cx, ids!(context_title)).text(), crate::i18n::tr("Projects"));
+        assert!(!home.view(&cx, ids!(context_search)).borrow().unwrap().visible);
         let room = crate::app::SelectedRoom::JoinedRoom {room_name_id: crate::utils::RoomNameId::new(matrix_sdk::RoomDisplayName::Named("Project discussion".into()), "!discussion:hagency.local".try_into().unwrap())};
         let actions = cx.capture_actions(|cx| cx.action(crate::home::rooms_list::RoomsListAction::Selected(room)));
         home.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::with_data(&mut state));
@@ -730,17 +730,17 @@ mod layout_tests {
             });
             home.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::with_data(&mut state));
             draw(&mut cx, &mut home, &mut state, 1280.0);
-            assert_eq!(home.view(&mut cx, ids!(workspace_context)).borrow().unwrap().visible, visible);
+            assert_eq!(home.view(&cx, ids!(workspace_context)).borrow().unwrap().visible, visible);
             let mut pages = Vec::new(); let mut children = Vec::new(); home.children(&mut |_, child| children.push(child)); collect_widgets::<PageFlip>(children, &mut pages);
             assert_eq!(pages[0].area().rect(&cx).pos.x, if visible {440.0} else {200.0});
-            if visible {assert_eq!(home.view(&mut cx, ids!(context_search)).borrow().unwrap().visible, chats);}
+            if visible {assert_eq!(home.view(&cx, ids!(context_search)).borrow().unwrap().visible, chats);}
             assert_eq!(cx.global::<crate::home::rooms_list::RoomsListRef>().widget_uid(), consumer);
             assert_eq!(home.widget(&cx, ids!(project_tree)).widget_uid(), tree_uid);
         }
         let actions = cx.capture_actions(|cx| cx.action(NavigationBarAction::GoToTab(SelectedTab::Contacts)));
         home.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::with_data(&mut state));
         draw(&mut cx, &mut home, &mut state, 1280.0);
-        assert!(!home.view(&mut cx, ids!(workspace_context)).borrow().unwrap().visible);
+        assert!(!home.view(&cx, ids!(workspace_context)).borrow().unwrap().visible);
     }
 
     #[test]
@@ -761,38 +761,38 @@ mod layout_tests {
             let mut children = Vec::new(); home.children(&mut |_, child| children.push(child));
             let mut sidebars = Vec::new(); collect_sidebars(children, &mut sidebars);
             let sidebar = sidebars[0].borrow::<RoomsSideBar>().unwrap();
-            let uid = sidebar.view.navigation_bar_button(&mut cx, ids!(toggle_sidebar)).widget_uid();
+            let uid = sidebar.view.navigation_bar_button(&cx, ids!(toggle_sidebar)).widget_uid();
             drop(sidebar);
             let clicks = cx.capture_actions(|cx| cx.widget_action(uid, crate::shared::navigation_bar_button::NavigationBarButtonAction::Clicked));
             let actions = cx.capture_actions(|cx| home.handle_event(cx, &Event::Actions(clicks), &mut Scope::with_data(&mut state)));
             home.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::with_data(&mut state));
             assert_eq!(state.app_prefs.desktop_sidebar_collapsed, collapsed);
             draw(&mut cx, &mut home, &mut state, 1280.0);
-            let rail = home.view(&mut cx, ids!(persistent_sidebar_frame)).area().rect(&cx);
+            let rail = home.view(&cx, ids!(persistent_sidebar_frame)).area().rect(&cx);
             assert_eq!(rail.size.x, if collapsed {64.0} else {200.0});
-            assert_eq!(home.view(&mut cx, ids!(workspace_context)).area().rect(&cx).pos.x, rail.size.x);
+            assert_eq!(home.view(&cx, ids!(workspace_context)).area().rect(&cx).pos.x, rail.size.x);
             let mut children = Vec::new(); home.children(&mut |_, child| children.push(child));
             let mut sidebars = Vec::new(); collect_sidebars(children, &mut sidebars);
             let sidebar = sidebars[0].borrow::<RoomsSideBar>().unwrap();
             for id in [id!(open_projects),id!(open_agents),id!(open_chats),id!(open_contacts),id!(open_miniapps),id!(more),id!(open_settings)] {
-                let button = sidebar.view.navigation_bar_button(&mut cx, &[id]);
+                let button = sidebar.view.navigation_bar_button(&cx, &[id]);
                 let rect = button.area().rect(&cx);
-                let icon = button.icon(&mut cx, ids!(nav_icon)).area().rect(&cx);
+                let icon = button.icon(&cx, ids!(nav_icon)).area().rect(&cx);
                 assert!(icon.size.x > 0.0 && icon.size.y > 0.0 && icon.pos.x >= rect.pos.x && icon.pos.x + icon.size.x <= rect.pos.x + rect.size.x + 0.1, "{id:?} {icon:?} {rect:?}");
-                assert_eq!(button.label(&mut cx, ids!(label)).visible(), !collapsed);
+                assert_eq!(button.label(&cx, ids!(label)).visible(), !collapsed);
             }
             for (action, navigation) in [(id!(projects_actions), id!(open_projects)), (id!(agents_actions), id!(open_agents)), (id!(chats_actions), id!(open_chats))] {
-                let button = sidebar.view.button(&mut cx, &[action]);
+                let button = sidebar.view.button(&cx, &[action]);
                 assert_eq!(button.visible(), !collapsed);
                 if !collapsed {
                     let rect = button.area().rect(&cx);
-                    let row = sidebar.view.navigation_bar_button(&mut cx, &[navigation]).area().rect(&cx);
+                    let row = sidebar.view.navigation_bar_button(&cx, &[navigation]).area().rect(&cx);
                     assert_eq!(rect.size, dvec2(32.0, 32.0));
                     assert_eq!(rect.pos.y + rect.size.y * 0.5, row.pos.y + row.size.y * 0.5, "overflow must share the navigation row center");
                     assert!(button.text().is_empty(), "overflow uses an icon, not a font glyph");
                 }
             }
-            let avatar = sidebar.view.avatar(&mut cx, ids!(account.avatar)).area().rect(&cx);
+            let avatar = sidebar.view.avatar(&cx, ids!(account.avatar)).area().rect(&cx);
             let account = sidebar.view.widget(&cx, ids!(account)).area().rect(&cx);
             assert!(avatar.size.x > 0.0 && avatar.pos.x >= account.pos.x && avatar.pos.x + avatar.size.x <= account.pos.x + account.size.x + 0.1, "{avatar:?} {account:?}");
             assert_eq!(cx.global::<crate::home::rooms_list::RoomsListRef>().widget_uid(), consumer);
@@ -818,10 +818,10 @@ mod layout_tests {
         for (width, context, remaining) in [(800.0, true, 460.0), (375.0, false, 215.0)] {
             draw(&mut cx, &mut home, &mut state, width);
             draw(&mut cx, &mut home, &mut state, width);
-            let rail = home.view(&mut cx, ids!(persistent_sidebar_frame)).area().rect(&cx);
+            let rail = home.view(&cx, ids!(persistent_sidebar_frame)).area().rect(&cx);
             assert_eq!(rail.size.x, 160.0);
-            assert_eq!(home.view(&mut cx, ids!(workspace_context)).borrow().unwrap().visible, context);
-            if context {assert_eq!(home.view(&mut cx, ids!(workspace_context)).area().rect(&cx).size.x, 180.0);}
+            assert_eq!(home.view(&cx, ids!(workspace_context)).borrow().unwrap().visible, context);
+            if context {assert_eq!(home.view(&cx, ids!(workspace_context)).area().rect(&cx).size.x, 180.0);}
             let mut pages = Vec::new(); let mut children = Vec::new(); home.children(&mut |_, child| children.push(child)); collect_widgets::<PageFlip>(children, &mut pages);
             let page = pages[0].area().rect(&cx);
             assert_eq!(page.size.x, remaining);

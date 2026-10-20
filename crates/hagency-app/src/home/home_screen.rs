@@ -1266,16 +1266,16 @@ mod responsive_layout_tests {
         for (width, collapsed) in [(1280.0, false), (860.0, false), (1280.0, true), (1280.0, false)] {
             state.app_prefs.desktop_sidebar_collapsed = collapsed;
             draw_pane(&mut cx, &mut home, &mut state, width);
-            let nav = home.view.view(&mut cx, ids!(persistent_sidebar_frame)).area().rect(&cx);
-            let context = home.view.view(&mut cx, ids!(workspace_context)).area().rect(&cx);
+            let nav = home.view.view(&cx, ids!(persistent_sidebar_frame)).area().rect(&cx);
+            let context = home.view.view(&cx, ids!(workspace_context)).area().rect(&cx);
             assert_eq!(nav.size.x, if collapsed {64.0} else {260.0});
             assert_eq!(context.pos.x, nav.pos.x + nav.size.x);
             assert!(width - context.pos.x - context.size.x >= 320.0);
             if width == 1280.0 {assert_eq!(context.size.x, 340.0);}
-            let nav_handle = home.view.sidebar_resize_handle(&mut cx, ids!(navigation_resize));
+            let nav_handle = home.view.sidebar_resize_handle(&cx, ids!(navigation_resize));
             assert_eq!(nav_handle.visible(), !collapsed);
             if !collapsed {let handle = nav_handle.area().rect(&cx); assert_eq!(handle.pos.x + handle.size.x, nav.pos.x + nav.size.x);}
-            let handle = home.view.sidebar_resize_handle(&mut cx, ids!(context_resize)).area().rect(&cx);
+            let handle = home.view.sidebar_resize_handle(&cx, ids!(context_resize)).area().rect(&cx);
             assert_eq!(handle.pos.x + handle.size.x, context.pos.x + context.size.x);
             assert_eq!(handle.size.x, 6.0);
             assert_eq!(state.app_prefs.sidebar_widths.navigation, Some(260.0));
@@ -1291,7 +1291,7 @@ mod responsive_layout_tests {
             assert_layout(&mut cx, &home, desktop);
             assert_eq!(cx.display_context.screen_size, dvec2(1440.0, 900.0));
             if !desktop {
-                let nav = home.view.view(&mut cx, ids!(mobile_navigation)).area().rect(&cx);
+                let nav = home.view.view(&cx, ids!(mobile_navigation)).area().rect(&cx);
                 assert!(nav.size.x > 0.0 && nav.pos.x + nav.size.x <= width + 0.5,
                     "Mobile navigation must fit the Rinx pane: {nav:?}");
             }

@@ -16,7 +16,7 @@ pub enum Command {
 }
 pub enum Outcome {
     Updated,
-    Opened(VerifiedBundle),
+    Opened(Box<VerifiedBundle>),
 }
 pub struct Reply {
     pub job: u64,
@@ -58,7 +58,7 @@ impl Worker {
                         Ok(Outcome::Updated)
                     }
                     Command::Install(consent) => client.install(&consent).map(|_| Outcome::Updated),
-                    Command::Open(consent) => client.open(&consent).map(Outcome::Opened),
+                    Command::Open(consent) => client.open(&consent).map(Box::new).map(Outcome::Opened),
                     Command::Remove(id) => client.remove(&id).map(|_| Outcome::Updated),
                     Command::Record(id) => client.record_open(&id).map(|_| Outcome::Updated),
                 };

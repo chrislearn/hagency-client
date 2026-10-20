@@ -464,7 +464,7 @@ impl LoginScreen {
         let display_server = display_server.strip_suffix('/').unwrap_or(display_server);
         self.view.label(cx, ids!(selected_server)).set_text(cx, display_server);
         self.view.view(cx, ids!(provider_list_container)).set_visible(cx, has_sso && has_providers);
-        let height = (methods.providers.len().min(4).max(1) * 48) as f64;
+        let height = (methods.providers.len().clamp(1, 4) * 48) as f64;
         let mut list = self.view.portal_list(cx, ids!(provider_list));
         script_apply_eval!(cx, list, {height: #(height)});
         self.view.button(cx, ids!(browser_login_button)).set_visible(cx, has_sso && !has_providers);
@@ -772,10 +772,10 @@ mod browser_login_tests {
                 oauth_aware_preferred: true, browser_registration,
                 providers: Vec::new(),
             });
-            assert_eq!(screen.view.button(&mut cx, ids!(register_option_button)).visible(), browser_registration);
-            assert!(screen.view.button(&mut cx, ids!(browser_login_button)).visible());
-            assert!(!screen.view.view(&mut cx, ids!(registration_form)).visible());
-            assert!(!screen.view.view(&mut cx, ids!(password_form)).visible());
+            assert_eq!(screen.view.button(&cx, ids!(register_option_button)).visible(), browser_registration);
+            assert!(screen.view.button(&cx, ids!(browser_login_button)).visible());
+            assert!(!screen.view.view(&cx, ids!(registration_form)).visible());
+            assert!(!screen.view.view(&cx, ids!(password_form)).visible());
         }
     }
 
@@ -793,40 +793,40 @@ mod browser_login_tests {
         let servers=vec!["https://hagency.local".to_owned()];
         screen.sync_recent_servers(&mut cx,servers.clone());
         screen.recent_server_selected=servers[0].clone();
-        screen.view.text_input(&mut cx,ids!(homeserver_input)).set_text(&mut cx,"https://hagency.local");
+        screen.view.text_input(&cx,ids!(homeserver_input)).set_text(&mut cx,"https://hagency.local");
         for apply in [Apply::Rebake,Apply::ScriptReapply,Apply::Rebake] {
             cx.with_vm(|vm|screen.script_apply(vm,&apply,&mut Scope::empty(),value));
             assert!(screen.recent_servers_dirty);
             let prompt=crate::i18n::text_for(crate::i18n::Language::Chinese,"Recent servers").to_owned();
             screen.sync_recent_servers_with_prompt(&mut cx,servers.clone(),prompt.clone());
-            let dropdown=screen.view.drop_down(&mut cx,ids!(recent_servers));
+            let dropdown=screen.view.drop_down(&cx,ids!(recent_servers));
             assert_eq!(dropdown.selected_label(),"https://hagency.local");
             assert!(!screen.recent_servers_dirty);
-            assert!(!screen.view.view(&mut cx, ids!(manual_server_row)).visible());
+            assert!(!screen.view.view(&cx, ids!(manual_server_row)).visible());
             dropdown.set_selected_item(&mut cx,0);assert_eq!(dropdown.selected_label(),prompt);
             dropdown.set_selected_item(&mut cx,1);
             screen.view.set_visible(&mut cx,false);screen.view.set_visible(&mut cx,true);
             screen.sync_recent_servers(&mut cx,servers.clone());
-            assert_eq!(screen.view.text_input(&mut cx,ids!(homeserver_input)).text(),"https://hagency.local");
+            assert_eq!(screen.view.text_input(&cx,ids!(homeserver_input)).text(),"https://hagency.local");
             {let pass=DrawPass::new(&mut cx);pass.set_size(&mut cx,dvec2(980.0,760.0));let mut list=DrawList2d::new(&mut cx);let overlay=Overlay{draw_list:DrawList::new(&mut cx)};let e=DrawEvent::default();let mut draw=CxDraw::new(&mut cx,&e);let mut cx2d=Cx2d::new(&mut draw);cx2d.begin_pass(&pass,None);list.begin_always(&mut cx2d);overlay.begin(&mut cx2d);cx2d.begin_root_turtle(dvec2(980.0,760.0),Layout::flow_overlay());screen.view.draw_walk_all(&mut cx2d,&mut Scope::empty(),Walk::fixed(980.0,760.0));overlay.end(&mut cx2d);cx2d.end_pass_sized_turtle();list.end(&mut cx2d);cx2d.end_pass(&pass);}
-            let dropdown_rect = screen.view.drop_down(&mut cx,ids!(recent_servers)).area().rect(&cx);
+            let dropdown_rect = screen.view.drop_down(&cx,ids!(recent_servers)).area().rect(&cx);
             assert_eq!(dropdown_rect.size, dvec2(292.0, 36.0));
         }
-        let dropdown = screen.view.drop_down(&mut cx, ids!(recent_servers));
+        let dropdown = screen.view.drop_down(&cx, ids!(recent_servers));
         let actions = cx.capture_actions(|cx| {
             cx.widget_action(dropdown.widget_uid(), DropDownAction::Select(0));
         });
         screen.handle_actions(&mut cx, &actions);
         screen.sync_recent_servers(&mut cx, servers.clone());
-        assert!(screen.view.view(&mut cx, ids!(manual_server_row)).visible());
+        assert!(screen.view.view(&cx, ids!(manual_server_row)).visible());
         assert!(screen.recent_server_selected.is_empty());
-        assert!(screen.view.text_input(&mut cx, ids!(homeserver_input)).text().is_empty());
+        assert!(screen.view.text_input(&cx, ids!(homeserver_input)).text().is_empty());
         let actions = cx.capture_actions(|cx| {
             cx.widget_action(dropdown.widget_uid(), DropDownAction::Select(1));
         });
         screen.handle_actions(&mut cx, &actions);
         screen.sync_recent_servers(&mut cx, servers);
-        assert!(!screen.view.view(&mut cx, ids!(manual_server_row)).visible());
+        assert!(!screen.view.view(&cx, ids!(manual_server_row)).visible());
         assert_eq!(screen.recent_server_selected, "https://hagency.local");
     }
 

@@ -143,7 +143,7 @@ pub fn init_standalone(vm: &mut ScriptVm) {
     }
     let family = platform_family(vm);
     system::start();
-    let stored = vm.with_cx_mut(|cx| packages::load(cx, &crate::app_data_dir(), family));
+    let stored = vm.with_cx_mut(|cx| packages::load(cx, crate::app_data_dir(), family));
     let selection = stored.current.selection;
     if desktop_style::current(vm).is_none() {
         let sheet = vm.with_cx_mut(|cx| packages::stylesheet(cx, &stored.current, family))

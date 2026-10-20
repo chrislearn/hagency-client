@@ -49,7 +49,7 @@ Sending becomes uncertain after owner loss and requires exact authenticated insp
 
 ## Alternatives Considered
 
-Acknowledging delivery directly from a claim or requeueing every expired claim could repeat a private notice. Timeout and transaction-ID stability are insufficient evidence for a NotSent transition.
+Acknowledging delivery directly from a claim or requeuing every expired claim could repeat a private notice. Timeout and transaction-ID stability are insufficient evidence for a NotSent transition.
 
 ## A notice for a task with no intent (2026-09-21)
 

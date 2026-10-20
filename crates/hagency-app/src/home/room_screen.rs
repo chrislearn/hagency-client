@@ -7814,7 +7814,7 @@ mod desktop_information_columns_tests {
                 let message = Message::script_from_value(vm, value);
                 assert!(vm.take_errors().is_empty());message
             });
-            message.view.html_or_plaintext(&mut cx, ids!(message)).show_plaintext(&mut cx, "A short message");
+            message.view.html_or_plaintext(&cx, ids!(message)).show_plaintext(&mut cx, "A short message");
             cx.redraw_all();let pass = DrawPass::new(&mut cx);pass.set_size(&mut cx, dvec2(1400.0,900.0));
             let mut list = DrawList2d::new(&mut cx);let event = DrawEvent::default();
             {
@@ -7824,8 +7824,8 @@ mod desktop_information_columns_tests {
                 message.view.draw_walk_all(&mut cx2d,&mut Scope::empty(),Walk {width:Size::Fixed(1400.0),height:Size::Fit {min:None,max:None},..Walk::default()});
                 cx2d.end_pass_sized_turtle();list.end(&mut cx2d);cx2d.end_pass(&pass);
             }
-            let footer = message.view.view(&mut cx,ids!(delivery_status)).area().rect(&cx);
-            let text = message.view.widget(&mut cx,ids!(message)).area().rect(&cx);
+            let footer = message.view.view(&cx,ids!(delivery_status)).area().rect(&cx);
+            let text = message.view.widget(&cx,ids!(message)).area().rect(&cx);
             assert!(footer.size.x > 1200.0,"delivery row must use timeline width: {footer:?}");
             assert!(text.size.x > 0.0 && text.size.x <= 800.0,"text must keep a readable width: {text:?}");
             right_edges.push(footer.pos.x + footer.size.x);
@@ -7867,12 +7867,12 @@ mod desktop_information_columns_tests {
         screen.room_name_id=Some(RoomNameId::empty(room.clone()));
         screen.timeline_kind=Some(TimelineKind::Thread {room_id:room.clone(),thread_root_event_id:matrix_sdk::ruma::event_id!("$root:server").to_owned()});
         screen.update_desktop_chat_header(&mut cx);
-        assert!(screen.view.navigation_bar_button(&mut cx,ids!(desktop_thread_back)).visible());
+        assert!(screen.view.navigation_bar_button(&cx,ids!(desktop_thread_back)).visible());
         screen.timeline_kind=Some(TimelineKind::MainRoom {room_id:room});
         screen.update_desktop_chat_header(&mut cx);
-        assert!(!screen.view.navigation_bar_button(&mut cx,ids!(desktop_thread_back)).visible());
+        assert!(!screen.view.navigation_bar_button(&cx,ids!(desktop_thread_back)).visible());
         screen.room_name_id=None;screen.update_desktop_chat_header(&mut cx);
-        assert!(!screen.view.navigation_bar_button(&mut cx,ids!(desktop_thread_back)).visible());
+        assert!(!screen.view.navigation_bar_button(&cx,ids!(desktop_thread_back)).visible());
     }
     #[test]
     fn saved_information_width_restores_and_drag_release_outside_card_still_saves() {
@@ -7882,13 +7882,13 @@ mod desktop_information_columns_tests {
         cx.global::<crate::settings::app_preferences::AppPreferencesGlobal>().0.sidebar_widths.information = Some(420.0);
         for width in [1000.0, 600.0, 1000.0] {
             draw(&mut cx, &mut screen, width);
-            let panel = screen.view.view(&mut cx, ids!(desktop_chat_info_panel)).area().rect(&cx);
-            let center = screen.view.view(&mut cx, ids!(chat_center)).area().rect(&cx);
+            let panel = screen.view.view(&cx, ids!(desktop_chat_info_panel)).area().rect(&cx);
+            let center = screen.view.view(&cx, ids!(chat_center)).area().rect(&cx);
             assert_eq!(panel.size.x, if width == 600.0 {280.0} else {420.0});
             assert!(center.size.x >= 320.0);
             assert_eq!(cx.global::<crate::settings::app_preferences::AppPreferencesGlobal>().0.sidebar_widths.information, Some(420.0));
         }
-        let handle = screen.view.sidebar_resize_handle(&mut cx, ids!(information_resize));
+        let handle = screen.view.sidebar_resize_handle(&cx, ids!(information_resize));
         let rect = handle.area().rect(&cx);
         let start = rect.pos + rect.size * 0.5;
         cx.fingers.first_mouse_button = Some((MouseButton::PRIMARY, WindowId(0,0)));
@@ -7913,32 +7913,32 @@ mod desktop_information_columns_tests {
         let room_b = matrix_sdk::ruma::room_id!("!b:server").to_owned();
         screen.room_name_id = Some(RoomNameId::empty(room_a.clone()));
         draw(&mut cx, &mut screen, 840.0);
-        assert_eq!(screen.view.mobile_chat_info(&mut cx, ids!(desktop_chat_info)).displayed_room_id(), Some(room_a));
-        assert!(screen.view.mobile_chat_info(&mut cx, ids!(compact_chat_info)).displayed_room_id().is_none(), "hidden pane must not issue a second members request");
-        let center = screen.view.view(&mut cx, ids!(chat_center)).area().rect(&cx);
-        let info = screen.view.view(&mut cx, ids!(desktop_chat_info_panel)).area().rect(&cx);
-        let input = screen.view.room_input_bar(&mut cx, ids!(room_input_bar)).area().rect(&cx);
+        assert_eq!(screen.view.mobile_chat_info(&cx, ids!(desktop_chat_info)).displayed_room_id(), Some(room_a));
+        assert!(screen.view.mobile_chat_info(&cx, ids!(compact_chat_info)).displayed_room_id().is_none(), "hidden pane must not issue a second members request");
+        let center = screen.view.view(&cx, ids!(chat_center)).area().rect(&cx);
+        let info = screen.view.view(&cx, ids!(desktop_chat_info_panel)).area().rect(&cx);
+        let input = screen.view.room_input_bar(&cx, ids!(room_input_bar)).area().rect(&cx);
         assert!(center.size.x >= 320.0, "{center:?}");
         assert_eq!(info.size.x, 280.0);
         assert!(center.pos.x + center.size.x <= info.pos.x + 0.1, "{center:?} {info:?}");
         assert!(input.size.x > 0.0 && input.size.y > 0.0, "{input:?}");
         assert!(input.pos.x >= center.pos.x && input.pos.x + input.size.x <= info.pos.x + 0.1);
         draw(&mut cx, &mut screen, 600.0);
-        assert_eq!(screen.view.view(&mut cx, ids!(chat_center)).area().rect(&cx).size.x, 320.0);
+        assert_eq!(screen.view.view(&cx, ids!(chat_center)).area().rect(&cx).size.x, 320.0);
         draw(&mut cx, &mut screen, 500.0);
-        assert!(!screen.view.view(&mut cx, ids!(desktop_chat_info_panel)).visible());
-        assert!(!screen.view.view(&mut cx, ids!(compact_chat_info_panel)).visible());
-        let center = screen.view.view(&mut cx, ids!(chat_center)).area().rect(&cx);
+        assert!(!screen.view.view(&cx, ids!(desktop_chat_info_panel)).visible());
+        assert!(!screen.view.view(&cx, ids!(compact_chat_info_panel)).visible());
+        let center = screen.view.view(&cx, ids!(chat_center)).area().rect(&cx);
         assert_eq!(center.size.x, 500.0);
         screen.room_name_id = Some(RoomNameId::empty(room_b.clone()));
         screen.chat_info_requested = true;
         draw(&mut cx, &mut screen, 500.0);
-        assert_eq!(screen.view.mobile_chat_info(&mut cx, ids!(compact_chat_info)).displayed_room_id(), Some(room_b));
-        assert!(screen.view.view(&mut cx, ids!(compact_chat_info_panel)).visible());
-        assert_eq!(screen.view.view(&mut cx, ids!(chat_center)).area().rect(&cx).size.x, 500.0);
+        assert_eq!(screen.view.mobile_chat_info(&cx, ids!(compact_chat_info)).displayed_room_id(), Some(room_b));
+        assert!(screen.view.view(&cx, ids!(compact_chat_info_panel)).visible());
+        assert_eq!(screen.view.view(&cx, ids!(chat_center)).area().rect(&cx).size.x, 500.0);
         screen.chat_info_requested = false;
         draw(&mut cx, &mut screen, 840.0);
-        assert_eq!(screen.view.view(&mut cx, ids!(chat_center)).area().rect(&cx).size.x, 840.0);
+        assert_eq!(screen.view.view(&cx, ids!(chat_center)).area().rect(&cx).size.x, 840.0);
     }
     #[test]
     fn sidebar_toggle_opens_and_closes_only_the_current_room_information_pane() {
@@ -7946,18 +7946,18 @@ mod desktop_information_columns_tests {
         screen.room_name_id=Some(RoomNameId::empty(matrix_sdk::ruma::room_id!("!current:server").to_owned()));
         draw(&mut cx,&mut screen,500.0);
         assert!(!screen.chat_info_requested);
-        assert!(screen.view.widget(&mut cx,ids!(invite_my_agent_button)).is_empty(), "Agent invitations belong in Members, not the chat header");
-        let button=screen.view.navigation_bar_button(&mut cx,ids!(desktop_chat_info_button));
+        assert!(screen.view.widget(&cx,ids!(invite_my_agent_button)).is_empty(), "Agent invitations belong in Members, not the chat header");
+        let button=screen.view.navigation_bar_button(&cx,ids!(desktop_chat_info_button));
         assert!(button.borrow().is_some());
-        let search=screen.view.navigation_bar_button(&mut cx,ids!(desktop_history_search)).area().rect(&cx);
-        let media=screen.view.navigation_bar_button(&mut cx,ids!(desktop_history_media)).area().rect(&cx);
+        let search=screen.view.navigation_bar_button(&cx,ids!(desktop_history_search)).area().rect(&cx);
+        let media=screen.view.navigation_bar_button(&cx,ids!(desktop_history_media)).area().rect(&cx);
         let toggle=button.area().rect(&cx);
         assert!(search.size.x>0.0 && search.pos.x+search.size.x<=media.pos.x);
         assert!(media.size.x>0.0 && media.pos.x+media.size.x<=toggle.pos.x);
-        assert!(!screen.view.view(&mut cx,ids!(desktop_chat_info.summary_details)).visible());
-        assert!(!screen.view.view(&mut cx,ids!(compact_chat_info.summary_details)).visible());
+        assert!(!screen.view.view(&cx,ids!(desktop_chat_info.summary_details)).visible());
+        assert!(!screen.view.view(&cx,ids!(compact_chat_info.summary_details)).visible());
         for (id,filter) in [(ids!(desktop_history_search),super::super::room_history::HistoryFilter::Messages),(ids!(desktop_history_media),super::super::room_history::HistoryFilter::Media)] {
-            let history=screen.view.navigation_bar_button(&mut cx,id);
+            let history=screen.view.navigation_bar_button(&cx,id);
             let actions=cx.capture_actions(|cx|cx.widget_action(history.widget_uid(),crate::shared::navigation_bar_button::NavigationBarButtonAction::Clicked));
             let output=cx.capture_actions(|cx|screen.handle_desktop_chat_info(cx,&Event::Actions(actions)));
             assert!(output.iter().any(|action| matches!(action.downcast_ref::<super::super::room_history::RoomHistoryAction>(),Some(super::super::room_history::RoomHistoryAction::Open {room,filter:actual}) if room.room_id()==screen.room_name_id.as_ref().unwrap().room_id() && *actual==filter)));
@@ -7966,12 +7966,12 @@ mod desktop_information_columns_tests {
         let actions=cx.capture_actions(|cx|cx.widget_action(button.widget_uid(),crate::shared::navigation_bar_button::NavigationBarButtonAction::Clicked));
         screen.handle_desktop_chat_info(&mut cx,&Event::Actions(actions));
         assert!(screen.chat_info_requested);
-        assert!(screen.view.view(&mut cx,ids!(compact_chat_info_panel)).visible());
-        assert!(!screen.view.view(&mut cx,ids!(desktop_chat_info_panel)).visible());
+        assert!(screen.view.view(&cx,ids!(compact_chat_info_panel)).visible());
+        assert!(!screen.view.view(&cx,ids!(desktop_chat_info_panel)).visible());
         let actions=cx.capture_actions(|cx|cx.widget_action(button.widget_uid(),crate::shared::navigation_bar_button::NavigationBarButtonAction::Clicked));
         screen.handle_desktop_chat_info(&mut cx,&Event::Actions(actions));
         assert!(!screen.chat_info_requested);
-        assert!(!screen.view.view(&mut cx,ids!(compact_chat_info_panel)).visible());
+        assert!(!screen.view.view(&cx,ids!(compact_chat_info_panel)).visible());
     }
     #[test]
     fn first_narrow_room_selection_does_not_open_compact() {
@@ -7983,20 +7983,20 @@ mod desktop_information_columns_tests {
         screen.chat_info_inline = true;
         draw(&mut cx, &mut screen, 500.0);
         assert!(!screen.chat_info_requested);
-        assert!(!screen.view.view(&mut cx, ids!(compact_chat_info_panel)).visible());
-        assert_eq!(screen.view.view(&mut cx, ids!(chat_center)).area().rect(&cx).size.x, 500.0);
+        assert!(!screen.view.view(&cx, ids!(compact_chat_info_panel)).visible());
+        assert_eq!(screen.view.view(&cx, ids!(chat_center)).area().rect(&cx).size.x, 500.0);
         screen.set_desktop_chat_info_visible(&mut cx, true);
         draw(&mut cx, &mut screen, 500.0);
-        assert!(screen.view.view(&mut cx, ids!(compact_chat_info_panel)).visible());
+        assert!(screen.view.view(&cx, ids!(compact_chat_info_panel)).visible());
         screen.chat_info_requested = true;
         screen.chat_info_inline = true;
         screen.room_name_id = Some(RoomNameId::empty(matrix_sdk::ruma::room_id!("!next:server").to_owned()));
         draw(&mut cx, &mut screen, 500.0);
-        assert!(!screen.view.view(&mut cx, ids!(compact_chat_info_panel)).visible());
+        assert!(!screen.view.view(&cx, ids!(compact_chat_info_panel)).visible());
         screen.chat_info_requested = true;
         screen.chat_info_inline = true;
         draw(&mut cx, &mut screen, 840.0);
-        assert!(screen.view.view(&mut cx, ids!(desktop_chat_info_panel)).visible());
+        assert!(screen.view.view(&cx, ids!(desktop_chat_info_panel)).visible());
     }
 
 }

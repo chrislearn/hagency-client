@@ -190,8 +190,8 @@ export function extractCalls(body) {
   while ((m = xre.exec(body))) {
     if (!SKIP_WORDS.has(m[1])) calls.add(`?.${m[1]}`);
   }
-  const bre = /(?:^|[^.:\w])([a-z_][A-Za-z0-9_]*)\s*\(/g;
-  while ((m = bre.exec(body))) {
+  const bareCallPattern = /(?:^|[^.:\w])([a-z_][A-Za-z0-9_]*)\s*\(/g;
+  while ((m = bareCallPattern.exec(body))) {
     const name = m[1];
     if (!SKIP_WORDS.has(name)) calls.add(name);
   }

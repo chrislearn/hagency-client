@@ -98,10 +98,9 @@ pub fn append_makepad(theme: &mut String, tokens: &Tokens) -> Result<(), String>
             "mod.theme.{key} = mod.theme.{key} * {spacing:?}\n"
         ));
     }
-    match tokens["typography.family"].value.as_str() {
-        Some("mono")=>theme.push_str("mod.theme.font_regular = mod.theme.font_code {}\nmod.theme.font_bold = mod.theme.font_code {}\nmod.theme.font_label = mod.theme.font_code {}\nmod.theme.font_italic = mod.theme.font_code {}\nmod.theme.font_bold_italic = mod.theme.font_code {}\n"),
-        // System deliberately keeps the platform provider's Chinese fallback.
-        _=>{}
+    // System deliberately keeps the platform provider's Chinese fallback.
+    if let Some("mono") = tokens["typography.family"].value.as_str() {
+        theme.push_str("mod.theme.font_regular = mod.theme.font_code {}\nmod.theme.font_bold = mod.theme.font_code {}\nmod.theme.font_label = mod.theme.font_code {}\nmod.theme.font_italic = mod.theme.font_code {}\nmod.theme.font_bold_italic = mod.theme.font_code {}\n");
     }
     theme.push_str(&format!(
         "mod.theme.octo_typography_family = {:?}\n",

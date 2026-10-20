@@ -174,7 +174,7 @@ $$
 | Median | $\tilde{x}$ |
 | Population Mean | $\mu , \overline{x} , \langle x \rangle$ |
 | Standard Deviation | $\sigma$ |
-| Varience | $\sigma^2$ |
+| Variance | $\sigma^2$ |
 
 $$
 P(A)

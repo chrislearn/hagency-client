@@ -3704,18 +3704,15 @@ async fn start_matrix_client_login_and_sync(rt: Handle) {
 
         // Track all async tasks so we can nicely clean them up with abort+await.
         // Generally anything that holds a reference to `Client` should be here.
-        let mut subscriber_task_handles: Vec<JoinHandle<()>> = Vec::new();
-
-        // Listen for changes to our verification status and incoming verification requests.
-        subscriber_task_handles.push(add_verification_event_handlers_and_sync_client(client.clone()));
-
-        // Listen for updates to the blocked user list.
-        subscriber_task_handles.push(handle_blocked_user_list_subscriber(client.clone()));
-        subscriber_task_handles.push(crate::account_session::spawn(crate::moments::dm_sharing::dm_sharing_loop()));
-        subscriber_task_handles.push(handle_room_notification_subscriber(client.clone()));
-
-        // Listen for session changes, e.g., when the access token becomes invalid.
-        subscriber_task_handles.push(handle_session_changes(client.clone()));
+        let mut subscriber_task_handles: Vec<JoinHandle<()>> = vec![
+            // Verification status and incoming verification requests.
+            add_verification_event_handlers_and_sync_client(client.clone()),
+            // Blocked users, DM sharing, notifications and session changes.
+            handle_blocked_user_list_subscriber(client.clone()),
+            crate::account_session::spawn(crate::moments::dm_sharing::dm_sharing_loop()),
+            handle_room_notification_subscriber(client.clone()),
+            handle_session_changes(client.clone()),
+        ];
 
         Cx::post_action(LoginAction::Status {
             title: "Connecting".into(),
@@ -4718,7 +4715,7 @@ fn handle_load_app_state(user_id: OwnedUserId) {
         match load_app_state(&user_id).await {
             Ok(Some(app_state)) => {
                 log!("Loaded app state from persistent storage. Restoring now...");
-                Cx::post_action(AppStateAction::RestoreAppStateFromPersistentState { user_id, app_state });
+                Cx::post_action(AppStateAction::RestoreAppStateFromPersistentState { user_id, app_state: Box::new(app_state) });
             }
             Ok(None) => {
                 // No saved file (fresh install) or file was unreadable; nothing to restore.

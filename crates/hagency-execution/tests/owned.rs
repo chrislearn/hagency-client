@@ -708,7 +708,7 @@ async fn native_owned_dispatch_deadline_stops_and_fences() {
 /// observation after wait(), not by assuming the no-child ordering); the late
 /// child — a REAL probe — is reaped through the custody handoff or the
 /// process-group Drop backstop, never orphaned; the guardian's own 5s Prepare
-/// watch is the third layer and may fire or be pre-empted, both acceptable.
+/// watch is the third layer and may fire or be preempted, both acceptable.
 #[tokio::test]
 async fn native_owned_dispatch_spawn_outliving_budget_is_fenced() {
     let f = Fixture::new();

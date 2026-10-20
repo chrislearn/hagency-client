@@ -499,8 +499,7 @@ mod composer_height_tests {
     use super::*;
     #[test]
     fn composer_preference_roundtrips_and_rejects_extreme_or_legacy_values() {
-        let mut prefs = AppPreferences::default();
-        prefs.composer_height = Some(240.0);
+        let prefs = AppPreferences { composer_height: Some(240.0), ..Default::default() };
         let encoded = serde_json::to_value(&prefs).unwrap();
         let restored: AppPreferences = serde_json::from_value(encoded.clone()).unwrap();
         assert_eq!(restored, prefs);

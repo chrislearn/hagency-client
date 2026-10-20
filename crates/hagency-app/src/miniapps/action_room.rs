@@ -271,7 +271,7 @@ mod tests {
         board.present(&mut cx);
         assert!(!board.active);
         assert!(board.view.visible());
-        assert!(!board.view.widget(&mut cx, ids!(panel)).visible());
+        assert!(!board.view.widget(&cx, ids!(panel)).visible());
         let lease = super::super::AUTHORITY.issue(InstanceId { app: APP_ID.into(), account:"@owner:example.test".into(), room:None, generation:1 },
             ["palpo.actions.room.get".into()].into(), Default::default(), Instant::now() + Duration::from_secs(60));
         board.lease = Some(lease.clone());

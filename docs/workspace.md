@@ -60,6 +60,12 @@ under that same build directory. They do not assume a crate-local `target/`.
 Desktop CI, platform builds and installers are in
 `.github/workflows/app-{main,builds,release}.yml`. Engine CI continues to select
 the engine packages explicitly, so Linux's headless checks do not require Makepad.
+Both engine and desktop CI enforce Clippy with `-D warnings`. Desktop, mini app
+core, portable editor and theme targets include tests and examples; their Clippy
+commands use `--no-deps` to lint the selected packages rather than inherited UI
+dependencies. `.github/workflows/typos.yml` checks spelling on pushes and pull
+requests, including documentation-only changes, using the pinned version and
+repository `typos.toml`. Run `typos --config typos.toml` locally with that version.
 The desktop `v*` installer workflow is the sole product release path.
 Desktop and the engine workspace are currently 0.6.0.
 To publish, run `app-release.yml` on `main` with `publish=true`, or push the

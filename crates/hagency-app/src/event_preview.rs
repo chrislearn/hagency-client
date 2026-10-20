@@ -13,25 +13,6 @@ use matrix_sdk_ui::timeline::{self, AnyOtherStateEventContentChange, EncryptedMe
 
 use crate::utils;
 
-#[cfg(test)]
-mod usage_preview_tests {
-    use super::*;
-    #[test]
-    fn thread_and_room_previews_hide_only_verified_success_suffix() {
-        let body="<Answer>\n\n✅ 本轮处理已结束 · 已运行 3 秒\n本次用量 50 Token（输入 30 / 输出 20；缓存输入 10，推理输出 5）· 工具请求 2 次，已返回 1 次";
-        let message=MessageType::text_plain(body);
-        let sender=matrix_sdk::ruma::user_id!("@_hagency_agt_01abc:test");
-        let preview=text_preview_of_message(&message,sender,"Agent").format_with("Agent",true);
-        assert!(preview.contains("&lt;Answer&gt;"));assert!(!preview.contains("Token"));
-        let human=text_preview_of_message(&message,matrix_sdk::ruma::user_id!("@alice:test"),"Alice").format_with("Alice",true);
-        assert!(human.contains("Token"));
-        let raw=Raw::<AnySyncTimelineEvent>::from_json(serde_json::value::to_raw_value(&serde_json::json!({"event_id":"$reply:test","sender":sender,"type":"m.room.message","origin_server_ts":123,"content":{"msgtype":"m.text","body":body}})).unwrap());
-        assert!(!text_preview_of_raw_timeline_event(&raw,"Agent").unwrap().format_with("Agent",true).contains("Token"));
-        // Presentation does not change the SDK message used for copy/forward.
-        assert_eq!(message.body(),body);
-    }
-}
-
 /// What should be displayed before the text preview of an event.
 pub enum BeforeText {
     /// Nothing should be displayed before the text preview.
@@ -724,4 +705,23 @@ pub fn text_preview_of_room_membership_change(
         }
     };
     TextPreview::from((text, BeforeText::UsernameWithoutColon))
+}
+
+#[cfg(test)]
+mod usage_preview_tests {
+    use super::*;
+    #[test]
+    fn thread_and_room_previews_hide_only_verified_success_suffix() {
+        let body="<Answer>\n\n✅ 本轮处理已结束 · 已运行 3 秒\n本次用量 50 Token（输入 30 / 输出 20；缓存输入 10，推理输出 5）· 工具请求 2 次，已返回 1 次";
+        let message=MessageType::text_plain(body);
+        let sender=matrix_sdk::ruma::user_id!("@_hagency_agt_01abc:test");
+        let preview=text_preview_of_message(&message,sender,"Agent").format_with("Agent",true);
+        assert!(preview.contains("&lt;Answer&gt;"));assert!(!preview.contains("Token"));
+        let human=text_preview_of_message(&message,matrix_sdk::ruma::user_id!("@alice:test"),"Alice").format_with("Alice",true);
+        assert!(human.contains("Token"));
+        let raw=Raw::<AnySyncTimelineEvent>::from_json(serde_json::value::to_raw_value(&serde_json::json!({"event_id":"$reply:test","sender":sender,"type":"m.room.message","origin_server_ts":123,"content":{"msgtype":"m.text","body":body}})).unwrap());
+        assert!(!text_preview_of_raw_timeline_event(&raw,"Agent").unwrap().format_with("Agent",true).contains("Token"));
+        // Presentation does not change the SDK message used for copy/forward.
+        assert_eq!(message.body(),body);
+    }
 }

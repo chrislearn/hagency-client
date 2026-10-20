@@ -32,8 +32,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.98.0
+          components: clippy
       - uses: Swatinem/rust-cache@v2
       - run: brew install cmake
+      - name: Clippy desktop, mini app core, tests and examples
+        run: cargo clippy --no-deps --locked -p hagency-app -p rinx-miniapp-core --features hagency-app/agent_chat,hagency-app/octosense-module --all-targets -- -D warnings
       - run: cargo test --locked --manifest-path ../miniapp-core/Cargo.toml
       - run: cargo test --locked --manifest-path ../miniapp-catalog/Cargo.toml
       - run: cargo test --locked --manifest-path ../system-apps/Cargo.toml
@@ -57,8 +60,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.98.0
+          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates/article-core
+      - name: Clippy portable editor and theme contracts
+        run: cargo clippy --no-deps --locked -p article-core -p octosense-theme-contract --all-targets -- -D warnings
       - run: cargo test --locked --manifest-path ../article-core/Cargo.toml
       - run: cargo test --locked --manifest-path ../theme-contract/Cargo.toml

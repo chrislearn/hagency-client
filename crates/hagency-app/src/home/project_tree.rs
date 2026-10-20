@@ -870,10 +870,10 @@ mod tests {
             assert!(vm.take_errors().is_empty());
             tree
         });
-        let list = tree.view.portal_list(&mut cx, ids!(list));
+        let list = tree.view.portal_list(&cx, ids!(list));
         let row = list.item(&mut cx, 0, id!(Row));
-        let more = row.button(&mut cx, ids!(more));
-        let navigation = row.navigation_bar_button(&mut cx, ids!(row));
+        let more = row.button(&cx, ids!(more));
+        let navigation = row.navigation_bar_button(&cx, ids!(row));
         assert!(more.borrow().is_some());
         assert_ne!(more.widget_uid(), navigation.widget_uid());
         let actions = cx.capture_actions(|cx| {
@@ -902,7 +902,7 @@ mod tests {
         cx2d.end_pass(&pass);
         drop(cx2d);
         drop(draw);
-        let surface = row.view(&mut cx, ids!(row_surface)).area().rect(&cx);
+        let surface = row.view(&cx, ids!(row_surface)).area().rect(&cx);
         let rect = more.area().rect(&cx);
         assert_eq!(rect.size, dvec2(32.0, 32.0));
         assert_eq!(rect.pos.y + rect.size.y * 0.5, surface.pos.y + surface.size.y * 0.5);
@@ -919,13 +919,13 @@ mod tests {
             let value = script_eval!(vm, {mod.widgets.ProjectTree {}});
             ProjectTree::script_from_value(vm, value)
         });
-        let list = tree.view.portal_list(&mut cx, ids!(list));
+        let list = tree.view.portal_list(&cx, ids!(list));
         let row = list.item(&mut cx, 0, id!(Row));
-        let disclosure = row.navigation_bar_button(&mut cx, ids!(disclosure));
-        let navigation = row.navigation_bar_button(&mut cx, ids!(row));
+        let disclosure = row.navigation_bar_button(&cx, ids!(disclosure));
+        let navigation = row.navigation_bar_button(&cx, ids!(row));
         assert!(disclosure.borrow().is_some());
         assert_ne!(disclosure.widget_uid(), navigation.widget_uid());
-        assert!(navigation.view(&mut cx, ids!(disclosure)).is_empty(), "disclosure must be a sibling, outside the primary button hit area");
+        assert!(navigation.view(&cx, ids!(disclosure)).is_empty(), "disclosure must be a sibling, outside the primary button hit area");
         for (uid, expected_open, expected_details) in [
             (disclosure.widget_uid(), true, false),
             (navigation.widget_uid(), true, true),

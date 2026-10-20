@@ -51,7 +51,7 @@ impl RenderMaintenance {
                 collect_completed(&mut cx.draw_lists.1.allocations, completed);
                 if self.timer.is_event(event).is_some() {
                     self.timer_ticks += 1;
-                    if (self.timer_ticks == 4 || self.timer_ticks % 40 == 0)
+                    if (self.timer_ticks == 4 || self.timer_ticks.is_multiple_of(40))
                         && std::env::var_os("HAGENCY_RENDER_TRACE").is_some()
                     {
                         let budget = &cx.draw_lists.1.allocations;

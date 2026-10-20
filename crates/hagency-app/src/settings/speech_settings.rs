@@ -388,51 +388,44 @@ mod tests {
             let capabilities = speech::Capabilities::for_target(os, env, native);
             for provider in [Provider::System, Provider::WhisperCpp, Provider::OpenAiCompatible, Provider::LocalCodex] {
                 if capabilities.supports(provider) {continue;}
-                let mut config = SpeechConfig::default();
-                config.provider = provider;
-                config.api_endpoint = "invalid URL must not be used".into();
-                config.api_key_env = "HAGENCY_UNSUPPORTED_SPEECH_MUST_NOT_READ_KEY".into();
+                let config = SpeechConfig { provider, api_endpoint: "invalid URL must not be used".into(), api_key_env: "HAGENCY_UNSUPPORTED_SPEECH_MUST_NOT_READ_KEY".into(), ..Default::default() };
                 panel.populate(&mut cx, &config);
                 panel.refresh_with_capabilities(&mut cx, capabilities);
                 let message = crate::i18n::tr(capabilities.unavailable_message(provider).unwrap());
-                assert_eq!(panel.view.label(&mut cx, ids!(provider_note)).text(), message);
-                assert!(!panel.view.button(&mut cx, ids!(test)).borrow().unwrap().enabled());
-                assert!(!panel.view.button(&mut cx, ids!(connect_codex)).borrow().unwrap().enabled());
+                assert_eq!(panel.view.label(&cx, ids!(provider_note)).text(), message);
+                assert!(!panel.view.button(&cx, ids!(test)).borrow().unwrap().enabled());
+                assert!(!panel.view.button(&cx, ids!(connect_codex)).borrow().unwrap().enabled());
                 let error = panel.test_with_capabilities(&mut cx, capabilities).unwrap_err();
                 assert_eq!(error.kind(), robius_speech::SpeechErrorKind::Unavailable);
                 assert_eq!(error.message(), message);
                 if provider == Provider::LocalCodex {
                     panel.connect_codex_with_capabilities(&mut cx, capabilities);
-                    assert_eq!(panel.view.label(&mut cx, ids!(status)).text(), message);
+                    assert_eq!(panel.view.label(&cx, ids!(status)).text(), message);
                 }
                 assert!(panel.task.is_none());
                 assert!(panel.receiver.is_none());
                 assert_eq!(panel.config, config, "capability checks must preserve saved configuration");
             }
         }
-        let mut config = SpeechConfig::default(); config.provider = Provider::WhisperCpp;
+        let config = SpeechConfig { provider: Provider::WhisperCpp, ..Default::default() };
         panel.populate(&mut cx, &config);
         panel.refresh_with_capabilities(&mut cx, speech::Capabilities::for_target("linux", "gnu", false));
-        assert!(panel.view.button(&mut cx, ids!(test)).borrow().unwrap().enabled());
+        assert!(panel.view.button(&cx, ids!(test)).borrow().unwrap().enabled());
     }
 
     #[test]
     fn codex_selection_reuses_agent_configuration_without_http_credentials() {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         let mut panel = panel(&mut cx);
-        let mut config = SpeechConfig::default();
-        config.provider = Provider::LocalCodex;
-        config.locale = "zh-CN".into();
-        config.api_endpoint = "invalid HTTP endpoint is irrelevant".into();
-        config.api_key_env = "MISSING_SPEECH_KEY".into();
+        let config = SpeechConfig { provider: Provider::LocalCodex, locale: "zh-CN".into(), api_endpoint: "invalid HTTP endpoint is irrelevant".into(), api_key_env: "MISSING_SPEECH_KEY".into(), ..Default::default() };
         panel.populate(&mut cx, &config);
-        assert_eq!(panel.view.drop_down(&mut cx, ids!(provider)).selected_item(), 3);
-        assert!(!panel.view.view(&mut cx, ids!(endpoint_row)).visible());
-        assert!(!panel.view.view(&mut cx, ids!(model_row)).visible());
-        assert!(panel.view.button(&mut cx, ids!(connect_codex)).visible());
+        assert_eq!(panel.view.drop_down(&cx, ids!(provider)).selected_item(), 3);
+        assert!(!panel.view.view(&cx, ids!(endpoint_row)).visible());
+        assert!(!panel.view.view(&cx, ids!(model_row)).visible());
+        assert!(panel.view.button(&cx, ids!(connect_codex)).visible());
         assert!(config.validate().is_ok());
         assert_eq!(config.credential().unwrap(), None);
-        let uid = panel.view.button(&mut cx, ids!(save)).widget_uid();
+        let uid = panel.view.button(&cx, ids!(save)).widget_uid();
         let clicks = cx.capture_actions(|cx| cx.widget_action(uid, ButtonAction::Clicked(KeyModifiers::default())));
         let saved = cx.capture_actions(|cx| panel.handle_event(cx, &Event::Actions(clicks), &mut Scope::empty()));
         let saved = saved.iter().find_map(|a| a.downcast_ref::<speech::SettingsSaved>()).unwrap();
@@ -445,12 +438,12 @@ mod tests {
     fn speech_form_saves_selected_provider_and_language_without_a_microphone() {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         let mut panel = panel(&mut cx);
-        let mut config = SpeechConfig::default(); config.provider = Provider::WhisperCpp; config.locale = "zh-CN".into();
+        let config = SpeechConfig { provider: Provider::WhisperCpp, locale: "zh-CN".into(), ..Default::default() };
         panel.populate(&mut cx, &config);
-        assert!(panel.view.view(&mut cx, ids!(service_options)).visible());
-        assert!(!panel.view.view(&mut cx, ids!(model_row)).visible());
-        panel.view.text_input(&mut cx, ids!(endpoint)).set_text(&mut cx, "http://127.0.0.1:9988/inference");
-        let uid = panel.view.button(&mut cx, ids!(save)).widget_uid();
+        assert!(panel.view.view(&cx, ids!(service_options)).visible());
+        assert!(!panel.view.view(&cx, ids!(model_row)).visible());
+        panel.view.text_input(&cx, ids!(endpoint)).set_text(&mut cx, "http://127.0.0.1:9988/inference");
+        let uid = panel.view.button(&cx, ids!(save)).widget_uid();
         let clicks = cx.capture_actions(|cx| cx.widget_action(uid, ButtonAction::Clicked(KeyModifiers::default())));
         let saved = cx.capture_actions(|cx| panel.handle_event(cx, &Event::Actions(clicks), &mut Scope::empty()));
         let saved = saved.iter().find_map(|action| action.downcast_ref::<speech::SettingsSaved>()).unwrap();
@@ -477,7 +470,7 @@ mod tests {
             cx2d.end_pass_sized_turtle(); overlay.end(&mut cx2d); list.end(&mut cx2d); cx2d.end_pass(&pass);
         };
         draw_panel(&mut panel, &mut cx, &mut list);
-        let checkbox = panel.view.check_box(&mut cx, ids!(on_device));
+        let checkbox = panel.view.check_box(&cx, ids!(on_device));
         let rect = checkbox.area().rect(&cx);
         let point = rect.pos + dvec2(8.0, rect.size.y * 0.5);
         let down = || Event::MouseDown(MouseDownEvent {abs: point, button: MouseButton::PRIMARY,
@@ -485,7 +478,7 @@ mod tests {
         let underlying = cx.capture_actions(|cx| panel.handle_event(cx, &down(), &mut Scope::empty()));
         assert_eq!(checkbox.changed(&underlying), Some(false), "the point must hit the underlying checkbox when the popup is closed");
         panel.populate(&mut cx, &SpeechConfig::default());
-        panel.view.drop_down(&mut cx, ids!(language)).borrow_mut().unwrap().set_active(&mut cx);
+        panel.view.drop_down(&cx, ids!(language)).borrow_mut().unwrap().set_active(&mut cx);
         draw_panel(&mut panel, &mut cx, &mut list);
         let actions = cx.capture_actions(|cx| panel.handle_event(cx, &down(), &mut Scope::empty()));
         assert!(checkbox.changed(&actions).is_none(), "a popup click must not toggle the underlying preference");
@@ -496,7 +489,7 @@ mod tests {
     fn speech_controls_fit_phone_and_desktop_content_widths() {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         let mut panel = panel(&mut cx);
-        let mut config = SpeechConfig::default(); config.provider = Provider::OpenAiCompatible;
+        let config = SpeechConfig { provider: Provider::OpenAiCompatible, ..Default::default() };
         panel.populate(&mut cx, &config);
         for width in [287.0, 760.0] {
             cx.redraw_all();

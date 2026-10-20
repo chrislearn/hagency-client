@@ -844,7 +844,7 @@ impl MatchEvent for App {
                     }
                     // Ignore the `logged_in` state that was stored persistently.
                     let logged_in_actual = self.app_state.logged_in;
-                    self.app_state = app_state.clone();
+                    self.app_state = app_state.as_ref().clone();
                     self.app_state.agent_access.normalize();
                     self.app_state.logged_in = logged_in_actual;
                     // Broadcast the restored preferences first so listeners
@@ -2092,8 +2092,7 @@ mod session_state_tests {
 
     #[test]
     fn expired_session_clears_state_before_another_account_logs_in() {
-        let mut state = AppState::default();
-        state.logged_in = true;
+        let mut state = AppState { logged_in: true, ..Default::default() };
         state.app_prefs.send_on_enter = false;
         state.saved_dock_state_home.room_order.push(SelectedRoom::JoinedRoom {
             room_name_id: RoomNameId::from((
@@ -2330,7 +2329,7 @@ pub enum AppStateAction {
     RoomNameUpdated(RoomNameId),
     /// The given app state was loaded from persistent storage
     /// and is ready to be restored.
-    RestoreAppStateFromPersistentState { user_id: OwnedUserId, app_state: AppState },
+    RestoreAppStateFromPersistentState { user_id: OwnedUserId, app_state: Box<AppState> },
     /// The given room was successfully loaded from the homeserver
     /// and is now known to our client.
     ///
@@ -2416,7 +2415,7 @@ mod back_navigation_tests {
     fn back_closes_an_open_rinx_modal() {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         let mut app = embedded_app(&mut cx);
-        let modal = app.ui.modal(&mut cx, ids!(space_management_modal));
+        let modal = app.ui.modal(&cx, ids!(space_management_modal));
         modal.open(&mut cx);
         assert!(back(&mut cx, &mut app), "Back must close the open modal");
         assert!(!modal.is_open());
@@ -2439,7 +2438,7 @@ mod back_navigation_tests {
             let bounds = Rect {pos: dvec2(left, 0.0), size: dvec2(width - left, 760.0)};
             cx.global::<crate::shared::workspace_pages::WorkspacePageBounds>().0 = Some(bounds);
             for page in pages {
-                let modal = host.modal(&mut cx, &[page]);
+                let modal = host.modal(&cx, &[page]);
                 assert!(!modal.is_empty(), "page must use the shared host: {page:?}");
                 modal.open(&mut cx);
                 cx.redraw_all();
@@ -2496,7 +2495,7 @@ mod back_navigation_tests {
         let generated = cx.capture_actions(|cx| app.handle_actions(cx, &actions));
         assert!(generated.iter().any(|action| matches!(action.downcast_ref::<WebBrowserAction>(),
             Some(WebBrowserAction::ReadArticle { room: actual_room, event: actual_event }) if actual_room == &room && actual_event == &event)));
-        assert!(!app.ui.modal(&mut cx, ids!(article_app_modal)).is_open());
+        assert!(!app.ui.modal(&cx, ids!(article_app_modal)).is_open());
     }
 
     #[test]
@@ -2569,8 +2568,8 @@ mod back_navigation_tests {
     fn back_closes_web_reader_before_navigating_the_chat() {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         let mut app = embedded_app(&mut cx);
-        let modal = app.ui.modal(&mut cx, ids!(web_browser_modal));
-        let browser = app.ui.web_browser(&mut cx, ids!(web_browser_modal.content));
+        let modal = app.ui.modal(&cx, ids!(web_browser_modal));
+        let browser = app.ui.web_browser(&cx, ids!(web_browser_modal.content));
         browser.action(&mut cx, modal.clone(), &WebBrowserAction::Open("https://example.org".parse().unwrap()));
         assert!(modal.is_open());
         assert!(back(&mut cx, &mut app));

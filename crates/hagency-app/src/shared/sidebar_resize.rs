@@ -151,8 +151,7 @@ mod tests {
 
     #[test]
     fn widths_restore_independently_and_reject_corrupt_values() {
-        let mut prefs = AppPreferences::default();
-        prefs.sidebar_widths = SidebarWidths {navigation: Some(260.0), context: Some(350.0), information: Some(390.0)};
+        let prefs = AppPreferences { sidebar_widths: SidebarWidths {navigation: Some(260.0), context: Some(350.0), information: Some(390.0)}, ..Default::default() };
         let encoded = serde_json::to_value(&prefs).unwrap();
         assert_eq!(serde_json::from_value::<AppPreferences>(encoded.clone()).unwrap(), prefs);
         let mut legacy = encoded.clone(); legacy.as_object_mut().unwrap().remove("sidebar_widths");

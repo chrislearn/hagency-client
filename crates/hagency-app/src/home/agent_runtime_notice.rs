@@ -150,7 +150,7 @@ mod tests {
         });
         let text="Running in all connected Rooms on this device. New Rooms are included automatically; configured budgets and policy permissions still apply.";
         notice.view.set_visible(&mut cx,true);
-        notice.view.label(&mut cx,ids!(status)).set_text(&mut cx,text);
+        notice.view.label(&cx,ids!(status)).set_text(&mut cx,text);
         for width in [360.0,560.0,900.0] {
             let mut geometry=Vec::new();
             for loading in [false,true,false] {
@@ -163,9 +163,9 @@ mod tests {
                 notice.draw_walk_all(&mut cx2d,&mut Scope::empty(),Walk {width:Size::Fixed(width),height:Size::fit(),..Walk::default()});
                 cx2d.end_pass_sized_turtle();list.end(&mut cx2d);cx2d.end_pass(&pass);
                 drop(cx2d);drop(draw);
-                assert_eq!(notice.view.label(&mut cx,ids!(status)).text(),text);
-                assert_eq!(notice.view.widget(&mut cx,ids!(loading_status)).visible(),loading);
-                geometry.push((notice.view.area().rect(&cx),notice.view.label(&mut cx,ids!(status)).area().rect(&cx),notice.view.button(&mut cx,ids!(open)).area().rect(&cx)));
+                assert_eq!(notice.view.label(&cx,ids!(status)).text(),text);
+                assert_eq!(notice.view.widget(&cx,ids!(loading_status)).visible(),loading);
+                geometry.push((notice.view.area().rect(&cx),notice.view.label(&cx,ids!(status)).area().rect(&cx),notice.view.button(&cx,ids!(open)).area().rect(&cx)));
             }
             assert!(geometry[0].0.size.y>0.0);
             assert_eq!(geometry[0],geometry[1],"polling must not resize the notice or move Open Service at width {width}");

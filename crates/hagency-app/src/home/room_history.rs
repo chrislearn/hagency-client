@@ -256,19 +256,16 @@ impl HistoryIndex {
     }
 }
 
+type HistoryPageResult = Result<
+    (Vec<TimelineEvent>, BTreeMap<OwnedUserId, String>, Option<String>, bool),
+    String,
+>;
+
 #[derive(Debug)]
 struct HistoryPage {
     owner: OwnedUserId,
     request: u64,
-    result: Result<
-        (
-            Vec<TimelineEvent>,
-            BTreeMap<OwnedUserId, String>,
-            Option<String>,
-            bool,
-        ),
-        String,
-    >,
+    result: HistoryPageResult,
     last: bool,
 }
 

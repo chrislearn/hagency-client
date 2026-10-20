@@ -17,7 +17,7 @@ pub fn prepare_image(bytes: &[u8], name: &str) -> Result<(Asset, Vec<u8>), Strin
         return Err("Choose a JPEG or PNG image up to 12 MB.".into());
     }
     let format =
-        image::guess_format(&bytes).map_err(|_| "Choose a JPEG or PNG image up to 12 MB.")?;
+        image::guess_format(bytes).map_err(|_| "Choose a JPEG or PNG image up to 12 MB.")?;
     if !matches!(format, image::ImageFormat::Jpeg | image::ImageFormat::Png) {
         return Err("Choose a JPEG or PNG image up to 12 MB.".into());
     }

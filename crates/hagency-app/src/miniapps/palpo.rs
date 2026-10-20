@@ -395,6 +395,37 @@ pub async fn request(
     .await
 }
 
+/// Accept only a routing identifier, never data or executable card content.
+pub fn valid_action(id: &str) -> bool {
+    id.strip_prefix("action_").is_some_and(|hex| {
+        hex.len() == 32
+            && hex
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    })
+}
+pub fn route(url: &str) -> Option<String> {
+    if let Some(id) = url.strip_prefix("rinx://palpo/action/") {
+        return valid_action(id).then(|| id.to_owned());
+    }
+    let link = Url::parse(url).ok()?;
+    let home = crate::sliding_sync::get_client()?.homeserver();
+    action_link(&link, &home)
+}
+fn action_link(link: &Url, home: &Url) -> Option<String> {
+    if link.scheme() != "https"
+        || link.origin() != home.origin()
+        || !link.username().is_empty()
+        || link.password().is_some()
+        || link.query().is_some()
+        || link.fragment().is_some()
+    {
+        return None;
+    }
+    let id = link.path().strip_prefix("/_palpo/miniapp/action/")?;
+    valid_action(id).then(|| id.to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -515,35 +546,4 @@ mod tests {
         }
         assert!(!valid_action("action_../../secret"));
     }
-}
-
-/// Accept only a routing identifier, never data or executable card content.
-pub fn valid_action(id: &str) -> bool {
-    id.strip_prefix("action_").is_some_and(|hex| {
-        hex.len() == 32
-            && hex
-                .bytes()
-                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-    })
-}
-pub fn route(url: &str) -> Option<String> {
-    if let Some(id) = url.strip_prefix("rinx://palpo/action/") {
-        return valid_action(id).then(|| id.to_owned());
-    }
-    let link = Url::parse(url).ok()?;
-    let home = crate::sliding_sync::get_client()?.homeserver();
-    action_link(&link, &home)
-}
-fn action_link(link: &Url, home: &Url) -> Option<String> {
-    if link.scheme() != "https"
-        || link.origin() != home.origin()
-        || !link.username().is_empty()
-        || link.password().is_some()
-        || link.query().is_some()
-        || link.fragment().is_some()
-    {
-        return None;
-    }
-    let id = link.path().strip_prefix("/_palpo/miniapp/action/")?;
-    valid_action(id).then(|| id.to_owned())
 }

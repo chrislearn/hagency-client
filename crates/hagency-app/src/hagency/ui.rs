@@ -1193,7 +1193,7 @@ impl HagencyPanel {
             else {crate::i18n::tr("Execution device offline. Cached settings are read-only.")};
         let freshness = if self.configuration_status["cached"] == true {crate::i18n::tr("Cached observation")} else {crate::i18n::tr("Current observation")};
         let timestamp = |field:&str| self.configuration_status[field].as_i64()
-            .and_then(|ms|chrono::DateTime::<chrono::Utc>::from_timestamp_millis(ms))
+            .and_then(chrono::DateTime::<chrono::Utc>::from_timestamp_millis)
             .map(|at|at.with_timezone(&chrono::Local).format("%Y-%m-%d %H:%M:%S %:z").to_string())
             .unwrap_or_else(||crate::i18n::tr("Not observed yet").into());
         let text=crate::i18n::format("{device} · {state}\n{freshness}: {observed} · Last heartbeat: {heartbeat}", &[
@@ -4066,7 +4066,7 @@ impl Widget for HagencyPanel {
             return;
         }
         if self.view.button(cx,ids!(service_logs_toggle)).clicked(actions) {
-            self.service_logs_open=!self.service_logs_open;
+            self.service_logs_open = !self.service_logs_open;
             self.view.view(cx,ids!(service_logs_panel)).set_visible(cx,self.service_logs_open);
             self.view.label(cx,ids!(service_log_text)).set_text(cx,&service_log_text(&self.agent_service_state));
             return;
@@ -4075,10 +4075,10 @@ impl Widget for HagencyPanel {
             cx.copy_to_clipboard(&service_log_text(&self.agent_service_state));return;
         }
         if self.view.button(cx,ids!(service_advanced_toggle)).clicked(actions) {
-            self.service_advanced=!self.service_advanced;self.render_service_advanced(cx);return;
+            self.service_advanced = !self.service_advanced;self.render_service_advanced(cx);return;
         }
         if self.view.button(cx,ids!(advanced_toggle)).clicked(actions) {
-            self.model_advanced=!self.model_advanced;self.render_model_advanced(cx);return;
+            self.model_advanced = !self.model_advanced;self.render_model_advanced(cx);return;
         }
         if self.view.drop_down(cx,ids!(runtime_kind)).selected(actions).is_some() {
             if self.busy || self.runtime_room_active {return;}
@@ -4320,7 +4320,7 @@ impl Widget for HagencyPanel {
                 let here=self.page==Page::Agents && agent_device_state(value,&self.current_device_id,&self.execution_devices,self.devices_loaded)==AgentDeviceState::Here;
                 control.set_visible(cx,here);
                 let status=self.runtime_list.get(string(value,"id")).and_then(|r|r.as_ref().ok());
-                let enabled=status.is_some_and(|v|service_enabled(v));
+                let enabled=status.is_some_and(service_enabled);
                 control.set_enabled(cx,here && status.is_some() && !self.busy && (enabled || string(value,"state")=="active"));
                 control.set_text(cx,crate::i18n::tr(if self.busy && self.list_service_pending_agent==string(value,"id") {"Working…"} else if enabled {"Stop"} else if status.is_some_and(service_needs_model) {"Configure"} else {"Start"}));
                 let mut control=control;
@@ -4526,14 +4526,14 @@ mod tests {
         let mut panel=cx.with_vm(|vm| {makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);let value=script_eval!(vm,{mod.widgets.HagencyPanel {}});HagencyPanel::script_from_value(vm,value)});
         panel.policy=json!({"modelLoaded":true,"modelProfile":{"model":"probe","credential_ref":"keychain:probe","workspace_root":"/work"}});
         panel.render_policy(&mut cx);
-        assert!(panel.view.check_box(&mut cx,ids!(web_search)).active(&mut cx));
-        panel.view.check_box(&mut cx,ids!(web_search)).set_active(&mut cx,false,Animate::No);
+        assert!(panel.view.check_box(&cx,ids!(web_search)).active(&cx));
+        panel.view.check_box(&cx,ids!(web_search)).set_active(&mut cx,false,Animate::No);
         let saved=panel.model_save_input(&mut cx,&json!({"model":"probe"}),"low");
         assert_eq!(saved["profile"]["web_search"],false);
-        panel.view.check_box(&mut cx,ids!(web_search)).set_active(&mut cx,true,Animate::No);
+        panel.view.check_box(&cx,ids!(web_search)).set_active(&mut cx,true,Animate::No);
         panel.policy["modelProfile"]=saved["profile"].clone();
         panel.render_policy(&mut cx);
-        assert!(!panel.view.check_box(&mut cx,ids!(web_search)).active(&mut cx));
+        assert!(!panel.view.check_box(&cx,ids!(web_search)).active(&cx));
     }
     #[test]
     fn remote_configuration_retry_window_ends_after_confirmed_save_or_validation_failure() {
@@ -4595,7 +4595,7 @@ mod tests {
         let mut cx=Cx::new(Box::new(|_,_|{}));
         let mut panel=cx.with_vm(|vm| {makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);let value=script_eval!(vm,{mod.widgets.HagencyPanel {}});HagencyPanel::script_from_value(vm,value)});
         panel.agents=vec![json!({"id":"a","generation":3,"executionDeviceId":"A","state":"active"})];
-        panel.labels(&mut cx,ids!(agents),"Select",&panel.agents,"id");panel.view.drop_down(&mut cx,ids!(agents)).set_selected_item(&mut cx,1);
+        panel.labels(&mut cx,ids!(agents),"Select",&panel.agents,"id");panel.view.drop_down(&cx,ids!(agents)).set_selected_item(&mut cx,1);
         panel.execution_agent_record=panel.agents[0].clone();panel.current_device_id="B".into();panel.devices_loaded=true;
         panel.execution_devices=vec![json!({"id":"A","name":"Execution workstation","revoked":false}),json!({"id":"B","revoked":false})];
         panel.section(&mut cx,ids!(model_section));
@@ -4605,27 +4605,27 @@ mod tests {
         let env=json!({"providers":[{"runtime":"octos","installed":true,"version":"1.2.3","versionSupported":true,"state":"ready","authenticated":true,"accountVerified":false,"credentialRef":reference,"shared":true,"models":[{"model":"A-only","credentialRef":reference,"displayName":"A profile","isDefault":true,"defaultReasoningEffort":"none","supportedReasoningEfforts":[{"reasoningEffort":"none"}]}]}],"configuration":{"agentId":"a","policy":{"revision":1,"policy":{"budget":{"limit":"Unlimited","period":"Lifetime"},"requests":"Allow","high_risk":"Deny"}},"usage":{"spent":2,"held":0},"modelProfile":{"model":"A-only","credential_ref":reference,"workspace_root":"/A/workspace","reasoning_effort":"none"}}});
         panel.apply(&mut cx,Target::ExecutionEnvironment,&env);panel.sync_navigation(&mut cx);
         assert_eq!(panel.provider_models.len(),1);assert_eq!(panel.provider_models[0]["model"],"A-only");assert_eq!(panel.selected_credential(&mut cx),reference);
-        assert_eq!(panel.view.text_input(&mut cx,ids!(workspace)).text(),"/A/workspace");
-        assert!(panel.view.label(&mut cx,ids!(workspace_label)).text().contains("Execution workstation"));
-        assert!(panel.view.label(&mut cx,ids!(configuration_notice)).text().contains("Cached observation"));
-        assert!(panel.view.label(&mut cx,ids!(provider_status)).text().contains("1.2.3"));
+        assert_eq!(panel.view.text_input(&cx,ids!(workspace)).text(),"/A/workspace");
+        assert!(panel.view.label(&cx,ids!(workspace_label)).text().contains("Execution workstation"));
+        assert!(panel.view.label(&cx,ids!(configuration_notice)).text().contains("Cached observation"));
+        assert!(panel.view.label(&cx,ids!(provider_status)).text().contains("1.2.3"));
         for id in [ids!(save_model),ids!(save_policy),ids!(prepare_workspace),ids!(use_local_provider),ids!(runtime_tab)] {
-            assert!(!panel.view.button(&mut cx,id).borrow().unwrap().enabled());
+            assert!(!panel.view.button(&cx,id).borrow().unwrap().enabled());
         }
-        for id in [ids!(provider_login),ids!(provider_logout),ids!(disconnect_provider),ids!(reset_policy)] {assert!(!panel.view.button(&mut cx,id).visible());}
+        for id in [ids!(provider_login),ids!(provider_logout),ids!(disconnect_provider),ids!(reset_policy)] {assert!(!panel.view.button(&cx,id).visible());}
         panel.configuration_status["online"]=true.into();panel.configuration_status["cached"]=false.into();panel.sync_navigation(&mut cx);
-        assert!(panel.view.button(&mut cx,ids!(save_model)).borrow().unwrap().enabled());
-        assert!(panel.view.button(&mut cx,ids!(save_policy)).borrow().unwrap().enabled());
+        assert!(panel.view.button(&cx,ids!(save_model)).borrow().unwrap().enabled());
+        assert!(panel.view.button(&cx,ids!(save_policy)).borrow().unwrap().enabled());
         let mut status=panel.configuration_status.clone();status["deviceGeneration"]=2.into();status["online"]=false.into();status["environment"]=Value::Null;
         panel.apply(&mut cx,Target::ConfigurationStatus,&json!({"configuration":status}));
         assert!(panel.provider_models.is_empty(),"a different execution device generation cannot display the old catalog");
-        assert!(panel.policy.is_null());assert_eq!(panel.view.text_input(&mut cx,ids!(workspace)).text(),"");
+        assert!(panel.policy.is_null());assert_eq!(panel.view.text_input(&cx,ids!(workspace)).text(),"");
         panel.clear_configuration(&mut cx);panel.sync_navigation(&mut cx);
         assert!(panel.provider_models.is_empty());assert!(panel.credential_ref.is_empty());assert!(panel.policy.is_null());
-        assert!(!panel.view.button(&mut cx,ids!(save_model)).borrow().unwrap().enabled());
+        assert!(!panel.view.button(&cx,ids!(save_model)).borrow().unwrap().enabled());
         panel.finish_configuration_intent(None,&Err("unsupported_hagency_capabilities".into()));panel.sync_navigation(&mut cx);
-        assert!(panel.view.label(&mut cx,ids!(configuration_notice)).text().contains("does not support execution device configuration"));
-        assert!(!panel.view.label(&mut cx,ids!(configuration_notice)).text().contains("Checking execution device environment"));
+        assert!(panel.view.label(&cx,ids!(configuration_notice)).text().contains("does not support execution device configuration"));
+        assert!(!panel.view.label(&cx,ids!(configuration_notice)).text().contains("Checking execution device environment"));
     }
     #[test]
     fn external_runtime_resources_restore_kind_and_exact_octos_profile() {
@@ -4638,16 +4638,16 @@ mod tests {
         for (kind, index, reference) in [("claude",1,"claude-managed:shared-home:saved"), ("octos",2,"octos-managed:shared-home:saved:review")] {
             panel.policy=json!({"modelLoaded":true,"modelProfile":{"model":"same","credential_ref":reference,"reasoning_effort":"none"}});
             panel.render_policy(&mut cx);
-            assert_eq!(panel.view.drop_down(&mut cx,ids!(runtime_kind)).selected_item(),index);
+            assert_eq!(panel.view.drop_down(&cx,ids!(runtime_kind)).selected_item(),index);
             panel.apply(&mut cx,Target::ProviderModels,&json!({"runtime":kind,"authenticated":true,"shared":true,"credentialRef":"provider-level-reference","models":[
                 {"model":"same","displayName":"Coding","credentialRef":"other-reference","isDefault":true,"defaultReasoningEffort":"none","supportedReasoningEfforts":[{"reasoningEffort":"none"}]},
                 {"model":"same","displayName":"Review","credentialRef":reference,"defaultReasoningEffort":"none","supportedReasoningEfforts":[{"reasoningEffort":"none"}]}
             ]}));
-            assert_eq!(panel.view.drop_down(&mut cx,ids!(model)).selected_item(),2);
+            assert_eq!(panel.view.drop_down(&cx,ids!(model)).selected_item(),2);
             assert_eq!(panel.selected_credential(&mut cx),reference);
             assert_eq!(panel.runtime_efforts,vec!["none"]);
-            assert!(!panel.view.button(&mut cx,ids!(provider_login)).visible());
-            assert!(!panel.view.button(&mut cx,ids!(provider_logout)).visible());
+            assert!(!panel.view.button(&cx,ids!(provider_login)).visible());
+            assert!(!panel.view.button(&cx,ids!(provider_logout)).visible());
         }
     }
     #[test]
@@ -4657,7 +4657,7 @@ mod tests {
         panel.agents=vec![json!({"id":"a","executionDeviceId":"device-here","state":"active","generation":1})];
         local_device_fixture(&mut panel,"a");
         panel.labels(&mut cx,ids!(agents),"Select my Agent",&panel.agents,"id");
-        panel.view.drop_down(&mut cx,ids!(agents)).set_selected_item(&mut cx,1);
+        panel.view.drop_down(&cx,ids!(agents)).set_selected_item(&mut cx,1);
         panel.bindings=vec![json!({"id":"b1","roomId":"!one:s"}),json!({"id":"b2","roomId":"!two:s"})];
         panel.labels(&mut cx,ids!(bindings),"Select a Room binding",&panel.bindings,"id");
         panel.select_policy_room(&mut cx,1);
@@ -4666,19 +4666,19 @@ mod tests {
         let data=json!({"approvals":[row("one","b1","!one:s"),row("two","b2","!two:s"),row("wrong-room","b1","!two:s")]});
         panel.apply_approvals(&mut cx,&data);
         assert_eq!(panel.approvals.len(),1);assert_eq!(panel.approvals[0]["proposalId"],"one");
-        panel.view.drop_down(&mut cx,ids!(approvals)).set_selected_item(&mut cx,1);
+        panel.view.drop_down(&cx,ids!(approvals)).set_selected_item(&mut cx,1);
         panel.apply_approvals(&mut cx,&data);
-        assert_eq!(panel.view.drop_down(&mut cx,ids!(approvals)).selected_item(),1);
-        panel.sync_navigation(&mut cx);assert!(panel.view.button(&mut cx,ids!(approve)).borrow().unwrap().enabled());
+        assert_eq!(panel.view.drop_down(&cx,ids!(approvals)).selected_item(),1);
+        panel.sync_navigation(&mut cx);assert!(panel.view.button(&cx,ids!(approve)).borrow().unwrap().enabled());
         panel.approval_blocked.insert("one".into());panel.sync_navigation(&mut cx);
-        assert!(!panel.view.button(&mut cx,ids!(approve)).borrow().unwrap().enabled());
+        assert!(!panel.view.button(&cx,ids!(approve)).borrow().unwrap().enabled());
         panel.approval_blocked.clear();panel.approval_checked=false;panel.sync_navigation(&mut cx);
-        assert!(!panel.view.button(&mut cx,ids!(approve)).borrow().unwrap().enabled());
+        assert!(!panel.view.button(&cx,ids!(approve)).borrow().unwrap().enabled());
         panel.approval_checked=true;panel.approvals[0]["proposal"]["expires"]=json!(0);panel.sync_navigation(&mut cx);
-        assert!(!panel.view.button(&mut cx,ids!(approve)).borrow().unwrap().enabled());
+        assert!(!panel.view.button(&cx,ids!(approve)).borrow().unwrap().enabled());
         panel.active=true;panel.page=Page::Agents;
-        panel.view.view(&mut cx,ids!(agent_detail)).set_visible(&mut cx,true);
-        panel.view.view(&mut cx,ids!(runtime_section)).set_visible(&mut cx,true);
+        panel.view.view(&cx,ids!(agent_detail)).set_visible(&mut cx,true);
+        panel.view.view(&cx,ids!(runtime_section)).set_visible(&mut cx,true);
         panel.identity="owner-session".into();panel.approval_poll=Some(12);
         let mut late=ApprovalsCompleted {identity:panel.identity.clone(),request:12,agent:agent.clone(),binding:"b1".into(),room:"!one:s".into(),result:Ok(data.clone())};
         assert!(panel.accepts_approval_poll(&mut cx,&late));
@@ -4688,9 +4688,9 @@ mod tests {
         panel.apply_approvals(&mut cx,&data);assert_eq!(panel.approvals.len(),1);assert_eq!(panel.approvals[0]["proposalId"],"two");
         panel.active=false;
         panel.apply(&mut cx,Target::ApprovalDecision,&json!({"decided":true}));
-        assert_eq!(panel.view.label(&mut cx,ids!(approval_feedback)).text(),crate::i18n::tr("Decision submitted. Execution is not yet confirmed. Check the Room reply and runtime status."));
+        assert_eq!(panel.view.label(&cx,ids!(approval_feedback)).text(),crate::i18n::tr("Decision submitted. Execution is not yet confirmed. Check the Room reply and runtime status."));
         panel.apply(&mut cx,Target::ApprovalDecision,&Value::Null);
-        assert_eq!(panel.view.label(&mut cx,ids!(approval_feedback)).text(),crate::i18n::tr("Decision delivery is unconfirmed. Refresh status; do not resubmit this request."));
+        assert_eq!(panel.view.label(&cx,ids!(approval_feedback)).text(),crate::i18n::tr("Decision delivery is unconfirmed. Refresh status; do not resubmit this request."));
     }
 
     use super::*;
@@ -4714,21 +4714,21 @@ mod tests {
             cx2d.begin_pass(&pass,None);dl.begin_always(&mut cx2d);overlay.begin(&mut cx2d);cx2d.begin_root_turtle(dvec2(980.0,height),Layout::flow_overlay());
             panel.draw_walk_all(&mut cx2d,&mut Scope::empty(),Walk::fixed(980.0,height));
             overlay.end(&mut cx2d);cx2d.end_pass_sized_turtle();dl.end(&mut cx2d);cx2d.end_pass(&pass);}
-            let list=panel.view.portal_list(&mut cx,if page==Page::Projects {ids!(project_list)} else {ids!(agent_list)});
+            let list=panel.view.portal_list(&cx,if page==Page::Projects {ids!(project_list)} else {ids!(agent_list)});
             let rect=list.area().rect(&cx);
             assert!(rect.size.y>height-120.0,"list should fill the body: {rect:?}, height {height}");
             assert!(rect.pos.y+rect.size.y<=height-15.0,"list stays within panel padding: {rect:?}");
             let second=list.item(&mut cx,1,id!(Card)).area().rect(&cx);assert!(second.size.y>0.0 && second.pos.y+second.size.y<height,"second card is fully visible: {second:?}");
             if page==Page::Agents {
-                let row=list.item(&mut cx,0,id!(Card));let device=row.view(&mut cx,ids!(device_badge)).area().rect(&cx);let runtime=row.view(&mut cx,ids!(runtime_badge)).area().rect(&cx);
+                let row=list.item(&mut cx,0,id!(Card));let device=row.view(&cx,ids!(device_badge)).area().rect(&cx);let runtime=row.view(&cx,ids!(runtime_badge)).area().rect(&cx);
                 assert!((device.pos.y-runtime.pos.y).abs()<1.0);assert!(device.size.y<=28.0 && runtime.size.y<=28.0);assert!(runtime.pos.x>=device.pos.x+device.size.x);
             }
         }}
-        panel.set_page(&mut cx,Page::Projects);panel.view.view(&mut cx,ids!(project_detail)).set_visible(&mut cx,true);panel.project_section(&mut cx,ids!(members_section));panel.members=vec![json!({"name":"Alice","userId":"@alice:server","membership":"join"})];
+        panel.set_page(&mut cx,Page::Projects);panel.view.view(&cx,ids!(project_detail)).set_visible(&mut cx,true);panel.project_section(&mut cx,ids!(members_section));panel.members=vec![json!({"name":"Alice","userId":"@alice:server","membership":"join"})];
         let height=760.0;{cx.redraw_all();let pass=DrawPass::new(&mut cx);pass.set_size(&mut cx,dvec2(980.0,height));let mut dl=DrawList2d::new(&mut cx);let overlay=Overlay{draw_list:DrawList::new(&mut cx)};let event=DrawEvent::default();let mut draw=CxDraw::new(&mut cx,&event);let mut cx2d=Cx2d::new(&mut draw);
         cx2d.begin_pass(&pass,None);dl.begin_always(&mut cx2d);overlay.begin(&mut cx2d);cx2d.begin_root_turtle(dvec2(980.0,height),Layout::flow_overlay());panel.draw_walk_all(&mut cx2d,&mut Scope::empty(),Walk::fixed(980.0,height));overlay.end(&mut cx2d);cx2d.end_pass_sized_turtle();dl.end(&mut cx2d);cx2d.end_pass(&pass);}
-        let members=panel.view.portal_list(&mut cx,ids!(members_list)).area().rect(&cx);assert!(members.size.y>300.0,"members use remaining space: {members:?}");assert!(members.pos.y+members.size.y<=height,"members stay in panel: {members:?}");
-        panel.display_blocked=true;panel.sync_navigation(&mut cx);assert!(!panel.view.view(&mut cx,ids!(details_scroll)).visible());panel.list_page(&mut cx);panel.sync_navigation(&mut cx);assert!(!panel.view.view(&mut cx,ids!(lists_pane)).visible(),"account authorization failure hides the new common list pane too");
+        let members=panel.view.portal_list(&cx,ids!(members_list)).area().rect(&cx);assert!(members.size.y>300.0,"members use remaining space: {members:?}");assert!(members.pos.y+members.size.y<=height,"members stay in panel: {members:?}");
+        panel.display_blocked=true;panel.sync_navigation(&mut cx);assert!(!panel.view.view(&cx,ids!(details_scroll)).visible());panel.list_page(&mut cx);panel.sync_navigation(&mut cx);assert!(!panel.view.view(&cx,ids!(lists_pane)).visible(),"account authorization failure hides the new common list pane too");
     }
     #[test]
     fn lease_wait_is_explicit_in_list_room_and_dm_shared_summary() {
@@ -4745,11 +4745,11 @@ mod tests {
         }
         let mut cx=Cx::new(Box::new(|_,_|{}));let mut panel=cx.with_vm(|vm|{makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);vm.bx.captured_errors=Some(Vec::new());let v=script_eval!(vm,{mod.widgets.HagencyPanel {}});let p=HagencyPanel::script_from_value(vm,v);assert!(vm.take_errors().is_empty());p});
         panel.identity="owner".into();panel.agents=vec![json!({"id":"a","displayName":"First"}),json!({"id":"b","displayName":"Second"})];panel.labels(&mut cx,ids!(agents),"Select",&panel.agents,"id");panel.set_page(&mut cx,Page::Agents);panel.agent_detail(&mut cx,0);local_device_fixture(&mut panel,"a");panel.section(&mut cx,ids!(model_section));
-        let top=draw_small(&mut cx,&mut panel);panel.view.view(&mut cx,ids!(details_scroll)).set_scroll_pos(&mut cx,dvec2(0.0,100.0));let scrolled=draw_small(&mut cx,&mut panel);assert!(scrolled<top-50.0,"real detail scrolling must move content: {top}, {scrolled}");
+        let top=draw_small(&mut cx,&mut panel);panel.view.view(&cx,ids!(details_scroll)).set_scroll_pos(&mut cx,dvec2(0.0,100.0));let scrolled=draw_small(&mut cx,&mut panel);assert!(scrolled<top-50.0,"real detail scrolling must move content: {top}, {scrolled}");
         panel.enter_detail(&mut cx,"agent","a");assert!((draw_small(&mut cx,&mut panel)-scrolled).abs()<1.0,"same detail preserves scrolling");
         panel.agent_detail(&mut cx,1);local_device_fixture(&mut panel,"b");panel.section(&mut cx,ids!(model_section));assert!((draw_small(&mut cx,&mut panel)-top).abs()<1.0,"cross-Agent entry resets to top");
-        panel.view.view(&mut cx,ids!(details_scroll)).set_scroll_pos(&mut cx,dvec2(0.0,100.0));draw_small(&mut cx,&mut panel);panel.enter_detail(&mut cx,"project","same-id");assert!((draw_small(&mut cx,&mut panel)-top).abs()<1.0,"cross-Project target resets too");
-        panel.view.view(&mut cx,ids!(details_scroll)).set_scroll_pos(&mut cx,dvec2(0.0,100.0));draw_small(&mut cx,&mut panel);panel.reset_detail_scroll(&mut cx);assert!((draw_small(&mut cx,&mut panel)-top).abs()<1.0,"explicit Run/new-form entry resets");
+        panel.view.view(&cx,ids!(details_scroll)).set_scroll_pos(&mut cx,dvec2(0.0,100.0));draw_small(&mut cx,&mut panel);panel.enter_detail(&mut cx,"project","same-id");assert!((draw_small(&mut cx,&mut panel)-top).abs()<1.0,"cross-Project target resets too");
+        panel.view.view(&cx,ids!(details_scroll)).set_scroll_pos(&mut cx,dvec2(0.0,100.0));draw_small(&mut cx,&mut panel);panel.reset_detail_scroll(&mut cx);assert!((draw_small(&mut cx,&mut panel)-top).abs()<1.0,"explicit Run/new-form entry resets");
     }
     #[test]
     fn local_runtime_badge_does_not_confuse_server_identity_with_processing() {
@@ -4771,33 +4771,33 @@ mod tests {
         let mut cx=Cx::new(Box::new(|_,_|{}));
         let mut panel=cx.with_vm(|vm|{makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);let value=script_eval!(vm,{mod.widgets.HagencyPanel {}});HagencyPanel::script_from_value(vm,value)});
         panel.agents=vec![json!({"id":"a","generation":1,"executionDeviceId":"device-here"})];
-        panel.labels(&mut cx,ids!(agents),"Select",&panel.agents,"id");panel.view.drop_down(&mut cx,ids!(agents)).set_selected_item(&mut cx,1);
+        panel.labels(&mut cx,ids!(agents),"Select",&panel.agents,"id");panel.view.drop_down(&cx,ids!(agents)).set_selected_item(&mut cx,1);
         local_device_fixture(&mut panel,"a");
         panel.section(&mut cx,ids!(model_section));
         let saved=json!({"agentId":"a","policy":{"revision":1},"modelProfile":{"model":"m","credential_ref":"keychain:test","workspace_root":"/workspace","reasoning_effort":"low"}});
         panel.policy=json!({"agentId":"a","scope":"agent","modelLoaded":true,"modelProfile":saved["modelProfile"]});
         panel.provider_models=vec![json!({"model":"m","credentialRef":"keychain:test"})];
-        panel.labels(&mut cx,ids!(model),"Select",&panel.provider_models,"model");panel.view.drop_down(&mut cx,ids!(model)).set_selected_item(&mut cx,1);
+        panel.labels(&mut cx,ids!(model),"Select",&panel.provider_models,"model");panel.view.drop_down(&cx,ids!(model)).set_selected_item(&mut cx,1);
         panel.credential_ref="keychain:test".into();panel.provider_authenticated=true;panel.runtime_efforts=vec!["low".into()];
         panel.model_saving=true;panel.set_busy(&mut cx,true);panel.sync_navigation(&mut cx);
-        assert_eq!(panel.view.button(&mut cx,ids!(save_model)).text(),crate::i18n::tr("Saving…"));
-        assert!(panel.view.widget(&mut cx,ids!(model_save_spinner)).visible());
-        assert!(!panel.view.button(&mut cx,ids!(save_model)).borrow().unwrap().enabled());
-        assert!(panel.view.button(&mut cx,ids!(save_model)).borrow().unwrap().disabled(&cx));
+        assert_eq!(panel.view.button(&cx,ids!(save_model)).text(),crate::i18n::tr("Saving…"));
+        assert!(panel.view.widget(&cx,ids!(model_save_spinner)).visible());
+        assert!(!panel.view.button(&cx,ids!(save_model)).borrow().unwrap().enabled());
+        assert!(panel.view.button(&cx,ids!(save_model)).borrow().unwrap().disabled(&cx));
         for id in [ids!(setup_tab),ids!(model_tab),ids!(policy_tab),ids!(runtime_tab)] {
-            assert!(panel.view.button(&mut cx,id).borrow().unwrap().enabled());
-            assert!(!panel.view.button(&mut cx,id).borrow().unwrap().disabled(&cx),"save must not fade the tabs");
+            assert!(panel.view.button(&cx,id).borrow().unwrap().enabled());
+            assert!(!panel.view.button(&cx,id).borrow().unwrap().disabled(&cx),"save must not fade the tabs");
         }
         panel.set_busy(&mut cx,false);panel.apply(&mut cx,Target::ModelSaved,&saved);
         assert!(!panel.model_saving);assert!(!panel.busy,"confirmed save must not start a second catalog loading cycle");
-        assert!(!panel.view.widget(&mut cx,ids!(model_save_spinner)).visible());
-        assert_eq!(panel.view.label(&mut cx,ids!(model_save_feedback)).text(),crate::i18n::tr("Model profile saved."));
+        assert!(!panel.view.widget(&cx,ids!(model_save_spinner)).visible());
+        assert_eq!(panel.view.label(&cx,ids!(model_save_feedback)).text(),crate::i18n::tr("Model profile saved."));
         assert!(!panel.model_save_failed);
-        assert!(panel.view.button(&mut cx,ids!(save_model)).borrow().unwrap().enabled());
+        assert!(panel.view.button(&cx,ids!(save_model)).borrow().unwrap().enabled());
         panel.model_saving=true;panel.finish_model_save(&mut cx,Err("invalid_model_profile"));
-        assert!(panel.model_save_failed);assert!(!panel.view.widget(&mut cx,ids!(model_save_spinner)).visible());
-        assert!(panel.view.label(&mut cx,ids!(model_save_feedback)).text().contains("model profile or workspace"));
-        panel.clear_model_save_feedback(&mut cx);assert!(!panel.view.widget(&mut cx,ids!(model_save_feedback)).visible());
+        assert!(panel.model_save_failed);assert!(!panel.view.widget(&cx,ids!(model_save_spinner)).visible());
+        assert!(panel.view.label(&cx,ids!(model_save_feedback)).text().contains("model profile or workspace"));
+        panel.clear_model_save_feedback(&mut cx);assert!(!panel.view.widget(&cx,ids!(model_save_feedback)).visible());
     }
     #[test]
     fn unconfigured_agent_card_opens_model_setup_without_starting_service() {
@@ -4808,10 +4808,10 @@ mod tests {
         local_device_fixture(&mut panel,"agent-a");
         panel.set_page(&mut cx,Page::Agents);panel.list_page(&mut cx);panel.sync_navigation(&mut cx);
         panel.runtime_list.insert("agent-a".into(),Ok(json!({"service":{"enabled":false,"modelConfigured":false},"runtime":null})));
-        let list=panel.view.portal_list(&mut cx,ids!(agent_list));
+        let list=panel.view.portal_list(&cx,ids!(agent_list));
         let row=list.item(&mut cx,0,id!(Card));
         panel.agent_card_targets.insert(row.widget_uid(),"agent-a".into());
-        let button=row.button(&mut cx,ids!(service_control));
+        let button=row.button(&cx,ids!(service_control));
         let actions=cx.capture_actions(|cx|{cx.group_widget_actions(list.widget_uid(),row.widget_uid(),|cx|cx.widget_action(button.widget_uid(),ButtonAction::Clicked(KeyModifiers::default())));});
         assert!(panel.open_card(&mut cx,&actions));
         assert_eq!(panel.agent(&mut cx).as_deref(),Some("agent-a"));
@@ -4821,7 +4821,7 @@ mod tests {
         panel.apply(&mut cx,Target::Bindings,&json!({"bindings":[]}));
         panel.sync_navigation(&mut cx);
         assert!(panel.wanted_model.is_none());
-        assert!(panel.view.view(&mut cx,ids!(model_section)).visible(),"async detail/device loading must not reset the model setup destination");
+        assert!(panel.view.view(&cx,ids!(model_section)).visible(),"async detail/device loading must not reset the model setup destination");
         assert!(panel.list_service_pending_agent.is_empty());
         assert!(!panel.runtime_room_active);
     }
@@ -4876,19 +4876,19 @@ mod tests {
         let mut panel=cx.with_vm(|vm|{makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);let value=script_eval!(vm,{mod.widgets.HagencyPanel {}});HagencyPanel::script_from_value(vm,value)});
         panel.agents=vec![json!({"id":"a"})];
         panel.labels(&mut cx,ids!(agents),"Select",&panel.agents,"id");
-        panel.view.drop_down(&mut cx,ids!(agents)).set_selected_item(&mut cx,1);
+        panel.view.drop_down(&cx,ids!(agents)).set_selected_item(&mut cx,1);
         local_device_fixture(&mut panel,"a");
         let checking=json!({"service":{"enabled":true,"watcherRunning":true},"runtime":{"agentId":"a","phase":"checking_provider"}});
         panel.apply(&mut cx,Target::Runtime,&checking);
-        assert_eq!(panel.view.label(&mut cx,ids!(runtime_status)).text(),runtime_service_description(Some(&Ok(checking.clone())),"a"));
+        assert_eq!(panel.view.label(&cx,ids!(runtime_status)).text(),runtime_service_description(Some(&Ok(checking.clone())),"a"));
         panel.runtime_pending_action=Some(true);panel.busy=true;panel.sync_navigation(&mut cx);
-        assert_eq!(panel.view.button(&mut cx,ids!(service_toggle)).text(),"Starting…");
-        assert!(!panel.view.button(&mut cx,ids!(service_toggle)).borrow().unwrap().enabled());
+        assert_eq!(panel.view.button(&cx,ids!(service_toggle)).text(),"Starting…");
+        assert!(!panel.view.button(&cx,ids!(service_toggle)).borrow().unwrap().enabled());
         panel.runtime_pending_action=Some(false);panel.sync_navigation(&mut cx);
-        assert_eq!(panel.view.button(&mut cx,ids!(service_toggle)).text(),"Stopping…");
+        assert_eq!(panel.view.button(&cx,ids!(service_toggle)).text(),"Stopping…");
         panel.runtime_pending_action=None;panel.runtime_action_error=runtime_diagnostic("agent_lease_busy");
         panel.apply(&mut cx,Target::Runtime,&checking);
-        assert!(panel.view.label(&mut cx,ids!(runtime_status)).text().contains("agent_lease_busy"),"polling must retain the failed action diagnostic");
+        assert!(panel.view.label(&cx,ids!(runtime_status)).text().contains("agent_lease_busy"),"polling must retain the failed action diagnostic");
     }
     #[test]
     fn agent_service_can_run_without_a_selected_room_and_stop_drains_legacy_children() {
@@ -4902,21 +4902,21 @@ mod tests {
         let mut panel=cx.with_vm(|vm|{makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);let value=script_eval!(vm,{mod.widgets.HagencyPanel {}});HagencyPanel::script_from_value(vm,value)});
         panel.agents=vec![json!({"id":"a"})];
         panel.labels(&mut cx,ids!(agents),"Select",&panel.agents,"id");
-        panel.view.drop_down(&mut cx,ids!(agents)).set_selected_item(&mut cx,1);
+        panel.view.drop_down(&cx,ids!(agents)).set_selected_item(&mut cx,1);
         local_device_fixture(&mut panel,"a");
         panel.sync_navigation(&mut cx);
-        assert!(!panel.view.button(&mut cx,ids!(service_toggle)).borrow().unwrap().enabled(),"unknown service state cannot be toggled");
+        assert!(!panel.view.button(&cx,ids!(service_toggle)).borrow().unwrap().enabled(),"unknown service state cannot be toggled");
         panel.apply(&mut cx,Target::Runtime,&json!({"runtime":null,"service":{"enabled":false}}));
         panel.sync_navigation(&mut cx);
-        assert_eq!(panel.view.button(&mut cx,ids!(service_toggle)).text(),crate::i18n::tr("Start responding"));
+        assert_eq!(panel.view.button(&cx,ids!(service_toggle)).text(),crate::i18n::tr("Start responding"));
         panel.apply(&mut cx,Target::Runtime,&json!({"runtime":null,"service":{"enabled":true,"rooms":[]}}));
         panel.sync_navigation(&mut cx);
-        assert_eq!(panel.view.button(&mut cx,ids!(service_toggle)).text(),crate::i18n::tr("Stop responding"));
-        assert!(panel.view.button(&mut cx,ids!(service_toggle)).borrow().unwrap().enabled(),"an enabled service remains stoppable without Codex resources or active Rooms");
-        assert!(!panel.view.view(&mut cx,ids!(runtime_start_options)).visible());
+        assert_eq!(panel.view.button(&cx,ids!(service_toggle)).text(),crate::i18n::tr("Stop responding"));
+        assert!(panel.view.button(&cx,ids!(service_toggle)).borrow().unwrap().enabled(),"an enabled service remains stoppable without Codex resources or active Rooms");
+        assert!(!panel.view.view(&cx,ids!(runtime_start_options)).visible());
         panel.busy=true;
         panel.sync_navigation(&mut cx);
-        assert!(!panel.view.button(&mut cx,ids!(service_toggle)).borrow().unwrap().enabled(),"in-flight operation cannot be toggled twice");
+        assert!(!panel.view.button(&cx,ids!(service_toggle)).borrow().unwrap().enabled(),"in-flight operation cannot be toggled twice");
     }
     #[test]
     fn token_amount_is_hidden_for_unset_and_unlimited_without_changing_policy() {
@@ -4924,16 +4924,16 @@ mod tests {
         for limit in [json!("Unset"),json!("Unlimited"),json!({"Tokens":70})] {
             panel.policy=json!({"policies":[{"policy":{"budget":{"limit":limit,"period":"Lifetime"},"requests":"Allow","high_risk":"Deny"}}]});
             panel.render_policy(&mut cx);
-            assert_eq!(panel.view.view(&mut cx,ids!(token_amount_holder)).visible(),limit.is_object());
-            assert_eq!(panel.view.view(&mut cx,ids!(period_holder)).visible(),limit.is_object());
-            assert_eq!(panel.view.drop_down(&mut cx,ids!(limit_mode)).selected_item(),usize::from(limit.is_object()));
+            assert_eq!(panel.view.view(&cx,ids!(token_amount_holder)).visible(),limit.is_object());
+            assert_eq!(panel.view.view(&cx,ids!(period_holder)).visible(),limit.is_object());
+            assert_eq!(panel.view.drop_down(&cx,ids!(limit_mode)).selected_item(),usize::from(limit.is_object()));
             assert_eq!(panel.policy["policies"][0]["policy"]["budget"]["limit"],limit);
         }
     }
     #[test]
     fn agent_run_link_selects_only_its_exact_binding_without_starting() {
         let mut cx=Cx::new(Box::new(|_,_| {}));let mut panel=cx.with_vm(|vm|{makepad_widgets::script_mod(vm);vm.bx.captured_errors=Some(Vec::new());crate::app::register_widgets(vm);let v=script_eval!(vm,{mod.widgets.HagencyPanel{}});let p=HagencyPanel::script_from_value(vm,v);assert!(vm.take_errors().is_empty());p});
-        panel.agents=vec![json!({"id":"a"})];panel.labels(&mut cx,ids!(agents),"Select my Agent",&panel.agents,"id");panel.view.drop_down(&mut cx,ids!(agents)).set_selected_item(&mut cx,1);
+        panel.agents=vec![json!({"id":"a"})];panel.labels(&mut cx,ids!(agents),"Select my Agent",&panel.agents,"id");panel.view.drop_down(&cx,ids!(agents)).set_selected_item(&mut cx,1);
         let bindings=json!({"bindings":[{"id":"other","roomId":"!other:s","state":"active"},{"id":"direct","roomId":"!direct:s","scopeKind":"owner_direct","state":"active"}]});
         // Default selection must not depend on the order returned by the server.
         panel.apply(&mut cx,Target::Bindings,&bindings);
@@ -4942,8 +4942,8 @@ mod tests {
         panel.wanted_run=Some(("a".into(),"other".into()));
         panel.apply(&mut cx,Target::Bindings,&bindings);
         assert_eq!(panel.binding(&mut cx).as_deref(),Some("other"));
-        assert!(panel.view.view(&mut cx,ids!(runtime_section)).visible());
-        assert!(!panel.view.view(&mut cx,ids!(room_advanced_content)).visible());
+        assert!(panel.view.view(&cx,ids!(runtime_section)).visible());
+        assert!(!panel.view.view(&cx,ids!(room_advanced_content)).visible());
         // Expanding management options is presentation only; it must keep the selected target.
         panel.room_advanced=true; panel.render_room_advanced(&mut cx);
         assert_eq!(panel.binding(&mut cx).as_deref(),Some("other"));
@@ -4982,33 +4982,33 @@ mod tests {
         panel.labels(&mut cx, ids!(agents), "Select", &panel.agents, "id");
         panel.labels(&mut cx, ids!(bindings), "Select", &panel.bindings, "roomId");
         panel.labels(&mut cx, ids!(policy_binding), "Select", &panel.bindings, "roomId");
-        panel.view.drop_down(&mut cx, ids!(agents)).set_selected_item(&mut cx, 1);
+        panel.view.drop_down(&cx, ids!(agents)).set_selected_item(&mut cx, 1);
         local_device_fixture(&mut panel, "agent-a");
         panel.section(&mut cx, ids!(policy_section));
-        panel.view.drop_down(&mut cx, ids!(policy_layer)).set_selected_item(&mut cx, 1);
+        panel.view.drop_down(&cx, ids!(policy_layer)).set_selected_item(&mut cx, 1);
         panel.policy = json!({"agentId":"agent-a","bindingId":"direct","requester":"@alice:server","policies":[],"usage":[{"spent":12,"held":7}]});
         panel.approvals.push(json!({"proposalId":"old-room"}));
         panel.select_policy_room(&mut cx, 2);
         assert!(panel.approvals.is_empty(),"changing Room must discard another Room approval selection");
         panel.sync_navigation(&mut cx);
         assert_eq!(panel.binding(&mut cx).as_deref(), Some("project-room"));
-        assert_eq!(panel.view.drop_down(&mut cx, ids!(policy_binding)).selected_item(), 2);
+        assert_eq!(panel.view.drop_down(&cx, ids!(policy_binding)).selected_item(), 2);
         assert!(panel.policy.is_null(), "another Room cannot reuse the old policy or expense display");
-        assert!(!panel.view.button(&mut cx, ids!(save_policy)).borrow().unwrap().enabled());
-        assert!(panel.view.view(&mut cx, ids!(policy_room_holder)).visible());
-        assert!(!panel.view.view(&mut cx, ids!(room_controls)).visible(), "budgets must not expose Run's pause/leave card");
-        assert!(!panel.view.view(&mut cx, ids!(requester_holder)).visible());
-        assert_eq!(panel.view.label(&mut cx, ids!(policy_target)).text(), "!project:server");
-        panel.view.text_input(&mut cx, ids!(requester)).set_text(&mut cx, "@alice:server");
-        panel.view.drop_down(&mut cx, ids!(policy_layer)).set_selected_item(&mut cx, 2);
+        assert!(!panel.view.button(&cx, ids!(save_policy)).borrow().unwrap().enabled());
+        assert!(panel.view.view(&cx, ids!(policy_room_holder)).visible());
+        assert!(!panel.view.view(&cx, ids!(room_controls)).visible(), "budgets must not expose Run's pause/leave card");
+        assert!(!panel.view.view(&cx, ids!(requester_holder)).visible());
+        assert_eq!(panel.view.label(&cx, ids!(policy_target)).text(), "!project:server");
+        panel.view.text_input(&cx, ids!(requester)).set_text(&mut cx, "@alice:server");
+        panel.view.drop_down(&cx, ids!(policy_layer)).set_selected_item(&mut cx, 2);
         panel.sync_navigation(&mut cx);
-        assert!(panel.view.view(&mut cx, ids!(requester_holder)).visible());
-        assert_eq!(panel.view.label(&mut cx, ids!(policy_target)).text(), "!project:server · @alice:server");
-        panel.view.drop_down(&mut cx, ids!(policy_layer)).set_selected_item(&mut cx, 0);
+        assert!(panel.view.view(&cx, ids!(requester_holder)).visible());
+        assert_eq!(panel.view.label(&cx, ids!(policy_target)).text(), "!project:server · @alice:server");
+        panel.view.drop_down(&cx, ids!(policy_layer)).set_selected_item(&mut cx, 0);
         panel.sync_navigation(&mut cx);
-        assert!(!panel.view.view(&mut cx, ids!(policy_room_holder)).visible());
-        assert!(!panel.view.view(&mut cx, ids!(requester_holder)).visible());
-        assert!(panel.view.label(&mut cx, ids!(policy_target)).text().contains("all Rooms"));
+        assert!(!panel.view.view(&cx, ids!(policy_room_holder)).visible());
+        assert!(!panel.view.view(&cx, ids!(requester_holder)).visible());
+        assert!(panel.view.label(&cx, ids!(policy_target)).text().contains("all Rooms"));
         assert_eq!(panel.binding(&mut cx).as_deref(), Some("project-room"), "global layer must not replace Room selection");
     }
     #[test]
@@ -5032,15 +5032,15 @@ mod tests {
         panel.labels(&mut cx, ids!(bindings), "Select", &panel.bindings, "roomId");
         panel
             .view
-            .drop_down(&mut cx, ids!(agents))
+            .drop_down(&cx, ids!(agents))
             .set_selected_item(&mut cx, 1);
         panel
             .view
-            .drop_down(&mut cx, ids!(bindings))
+            .drop_down(&cx, ids!(bindings))
             .set_selected_item(&mut cx, 1);
         panel
             .view
-            .text_input(&mut cx, ids!(requester))
+            .text_input(&cx, ids!(requester))
             .set_text(&mut cx, "@alice:server");
         local_device_fixture(&mut panel, "agent-a");
         panel.policy = json!({"agentId":"agent-a", "bindingId":"binding-a", "requester":"@alice:server",
@@ -5049,35 +5049,35 @@ mod tests {
             "usage":[{"spent":50,"held":20},{"spent":30,"held":10}]});
         panel
             .view
-            .drop_down(&mut cx, ids!(policy_layer))
+            .drop_down(&cx, ids!(policy_layer))
             .set_selected_item(&mut cx, 0);
         panel.render_policy(&mut cx);
         assert_eq!(panel.input(&mut cx, ids!(token_limit)), "900");
         panel
             .view
-            .drop_down(&mut cx, ids!(policy_layer))
+            .drop_down(&cx, ids!(policy_layer))
             .set_selected_item(&mut cx, 1);
         panel.render_policy(&mut cx);
         assert_eq!(panel.input(&mut cx, ids!(token_limit)), "200");
         assert_eq!(
             panel
                 .view
-                .drop_down(&mut cx, ids!(requests))
+                .drop_down(&cx, ids!(requests))
                 .selected_item(),
             2
         );
         panel.section(&mut cx, ids!(model_section));
-        assert!(panel.view.view(&mut cx, ids!(model_section)).visible());
-        assert!(!panel.view.view(&mut cx, ids!(policy_section)).visible());
+        assert!(panel.view.view(&cx, ids!(model_section)).visible());
+        assert!(!panel.view.view(&cx, ids!(policy_section)).visible());
         panel
             .view
-            .drop_down(&mut cx, ids!(bindings))
+            .drop_down(&cx, ids!(bindings))
             .set_selected_item(&mut cx, 2);
         panel.sync_navigation(&mut cx);
         assert!(
             !panel
                 .view
-                .button(&mut cx, ids!(save_model))
+                .button(&cx, ids!(save_model))
                 .borrow()
                 .unwrap()
                 .enabled()
@@ -5085,7 +5085,7 @@ mod tests {
         assert!(
             !panel
                 .view
-                .button(&mut cx, ids!(reset_policy))
+                .button(&cx, ids!(reset_policy))
                 .borrow()
                 .unwrap()
                 .enabled()
@@ -5097,17 +5097,17 @@ mod tests {
         );
         panel.section(&mut cx, ids!(runtime_section));
         panel.sync_navigation(&mut cx);
-        assert!(!panel.view.widget(&mut cx, ids!(leave_confirm)).visible());
-        assert!(!panel.view.view(&mut cx, ids!(room_service_actions)).visible());
-        assert!(!panel.view.view(&mut cx, ids!(retirement_section)).visible());
+        assert!(!panel.view.widget(&cx, ids!(leave_confirm)).visible());
+        assert!(!panel.view.view(&cx, ids!(room_service_actions)).visible());
+        assert!(!panel.view.view(&cx, ids!(retirement_section)).visible());
         assert_eq!(panel.binding(&mut cx).as_deref(), Some("binding-b"));
         panel.section(&mut cx, ids!(setup_section));
         panel.sync_navigation(&mut cx);
-        assert!(panel.view.view(&mut cx, ids!(retirement_section)).visible());
-        assert!(panel.view.widget(&mut cx, ids!(leave_confirm)).visible());
+        assert!(panel.view.view(&cx, ids!(retirement_section)).visible());
+        assert!(panel.view.widget(&cx, ids!(leave_confirm)).visible());
         panel
             .view
-            .drop_down(&mut cx, ids!(agents))
+            .drop_down(&cx, ids!(agents))
             .set_selected_item(&mut cx, 2);
         panel.save_policy(&mut cx);
         assert!(
@@ -5129,26 +5129,26 @@ mod tests {
         panel.labels(&mut cx, ids!(agents), "Select", &panel.agents, "id");
         panel
             .view
-            .drop_down(&mut cx, ids!(agents))
+            .drop_down(&cx, ids!(agents))
             .set_selected_item(&mut cx, 1);
         local_device_fixture(&mut panel, "agent-a");
         panel.section(&mut cx, ids!(policy_section));
         panel
             .view
-            .drop_down(&mut cx, ids!(policy_layer))
+            .drop_down(&cx, ids!(policy_layer))
             .set_selected_item(&mut cx, 0);
         panel.apply(&mut cx, Target::Policy, &json!({"agentId":"agent-a","policy":{"revision":9,"policy":{"budget":{"limit":{"Tokens":700},"period":"Lifetime"},"requests":"Allow","high_risk":"Deny"}},"usage":{"spent":123,"held":20}}));
         panel.sync_navigation(&mut cx);
         assert!(
             panel
                 .view
-                .button(&mut cx, ids!(save_policy))
+                .button(&cx, ids!(save_policy))
                 .borrow()
                 .unwrap()
                 .enabled()
         );
-        assert!(!panel.view.view(&mut cx, ids!(room_controls)).visible());
-        assert!(!panel.view.view(&mut cx, ids!(requester_holder)).visible());
+        assert!(!panel.view.view(&cx, ids!(room_controls)).visible());
+        assert!(!panel.view.view(&cx, ids!(requester_holder)).visible());
         assert_eq!(panel.input(&mut cx, ids!(token_limit)), "700");
         assert!(editor_matches(&panel.policy, "agent-a", None, "", 0));
         assert!(!editor_matches(&panel.policy, "agent-b", None, "", 0));
@@ -5162,7 +5162,7 @@ mod tests {
         panel.section(&mut cx, ids!(model_section));
         panel
             .view
-            .drop_down(&mut cx, ids!(policy_layer))
+            .drop_down(&cx, ids!(policy_layer))
             .set_selected_item(&mut cx, 1);
         local_device_fixture(&mut panel, "agent-a");
         panel.apply(&mut cx,Target::Policy,&json!({"agentId":"agent-a","policy":{"revision":9,"policy":{"budget":{"limit":"Unlimited","period":"Lifetime"},"requests":"Allow","high_risk":"Deny"}},"usage":{"spent":123,"held":20},"modelProfile":{"model":"test-model","workspace_root":"/owned/workspace","credential_ref":"keychain:owned"}}));
@@ -5171,19 +5171,19 @@ mod tests {
         assert!(
             panel
                 .view
-                .button(&mut cx, ids!(save_model))
+                .button(&cx, ids!(save_model))
                 .borrow()
                 .unwrap()
                 .enabled()
         );
-        assert!(!panel.view.view(&mut cx, ids!(room_controls)).visible());
+        assert!(!panel.view.view(&cx, ids!(room_controls)).visible());
         assert_eq!(panel.policy["modelProfile"]["model"], "test-model");
         panel.policy["agentId"] = "another-agent".into();
         panel.sync_navigation(&mut cx);
         assert!(
             !panel
                 .view
-                .button(&mut cx, ids!(save_model))
+                .button(&cx, ids!(save_model))
                 .borrow()
                 .unwrap()
                 .enabled()
@@ -5194,16 +5194,16 @@ mod tests {
         panel.labels(&mut cx, ids!(projects), "Select", &panel.projects, "id");
         panel
             .view
-            .drop_down(&mut cx, ids!(projects))
+            .drop_down(&cx, ids!(projects))
             .set_selected_item(&mut cx, 1);
         panel.apply(&mut cx,Target::ScopeState,&json!({"projectId":"project-a","roomId":null,"revision":1,"canManagePolicy":false,"servicePaused":false,"creationPolicy":{"defaultAllow":true,"allow":[],"deny":[]}}));
-        assert!(!panel.view.view(&mut cx, ids!(permission_editor)).visible());
+        assert!(!panel.view.view(&cx, ids!(permission_editor)).visible());
         panel.apply(&mut cx,Target::ScopeState,&json!({"projectId":"project-a","roomId":null,"revision":1,"canManagePolicy":true,"servicePaused":true,"creationPolicy":{"defaultAllow":false,"allow":["@alice:server"],"deny":[]}}));
-        assert!(panel.view.view(&mut cx, ids!(permission_editor)).visible());
+        assert!(panel.view.view(&cx, ids!(permission_editor)).visible());
         assert_eq!(
             panel
                 .view
-                .drop_down(&mut cx, ids!(creation_mode))
+                .drop_down(&cx, ids!(creation_mode))
                 .selected_item(),
             1
         );
@@ -5231,7 +5231,7 @@ mod tests {
         assert!(
             !panel
                 .view
-                .button(&mut cx, ids!(create_agent))
+                .button(&cx, ids!(create_agent))
                 .borrow()
                 .unwrap()
                 .enabled()
@@ -5244,11 +5244,11 @@ mod tests {
         assert!(!agent_command_details(&global).contains("Project:"));
         panel.apply(&mut cx, Target::AgentJournal, &original);
         panel.sync_navigation(&mut cx);
-        assert!(panel.view.view(&mut cx, ids!(agent_recovery)).visible());
+        assert!(panel.view.view(&cx, ids!(agent_recovery)).visible());
         assert!(
             panel
                 .view
-                .button(&mut cx, ids!(create_agent))
+                .button(&cx, ids!(create_agent))
                 .borrow()
                 .unwrap()
                 .enabled(),
@@ -5257,7 +5257,7 @@ mod tests {
         assert!(
             panel
                 .view
-                .button(&mut cx, ids!(bind_agent))
+                .button(&cx, ids!(bind_agent))
                 .borrow()
                 .unwrap()
                 .enabled()
@@ -5268,11 +5268,11 @@ mod tests {
         );
         panel.apply(&mut cx, Target::AgentJournal, &json!({"commands":[]}));
         panel.sync_navigation(&mut cx);
-        assert!(!panel.view.view(&mut cx, ids!(agent_recovery)).visible());
+        assert!(!panel.view.view(&cx, ids!(agent_recovery)).visible());
         assert!(
             panel
                 .view
-                .button(&mut cx, ids!(create_agent))
+                .button(&cx, ids!(create_agent))
                 .borrow()
                 .unwrap()
                 .enabled()
@@ -5292,38 +5292,38 @@ mod tests {
         });
         panel.agents = vec![json!({"id":"agent-a"}),json!({"id":"agent-b"})];
         panel.labels(&mut cx,ids!(agents),"Select",&panel.agents,"id");
-        panel.view.drop_down(&mut cx,ids!(agents)).set_selected_item(&mut cx,1);
+        panel.view.drop_down(&cx,ids!(agents)).set_selected_item(&mut cx,1);
         panel.apply(&mut cx,Target::AgentDetails,&json!({"agent":{"id":"agent-a","executionDeviceId":"device-other","state":"active","generation":1}}));
         panel.apply(&mut cx,Target::Devices,&json!({"currentDeviceId":"device-here","devices":[{"id":"device-here","name":"Laptop","revoked":false},{"id":"device-other","name":"Desktop","revoked":false},{"id":"revoked","name":"Old","revoked":true}]}));
         panel.sync_navigation(&mut cx);
         assert_eq!(panel.execution_devices.len(),3, "revoked metadata must remain available for device badges");
-        assert!(panel.view.view(&mut cx, ids!(execution_badge)).label(&mut cx, ids!(device_label)).text().contains("Desktop"));
-        assert!(panel.view.label(&mut cx,ids!(execution_device_details)).text().contains("device-other"));
-        assert!(panel.view.label(&mut cx,ids!(assignment_destination)).text().contains("Laptop"));
-        assert!(panel.view.button(&mut cx, ids!(policy_tab)).borrow().unwrap().enabled(), "remote Agent policy is accessible without moving assignment");
-        assert!(panel.view.button(&mut cx, ids!(model_tab)).borrow().unwrap().enabled());
-        assert!(!panel.view.button(&mut cx, ids!(runtime_tab)).borrow().unwrap().enabled());
-        assert!(!panel.view.button(&mut cx, ids!(assign_current_device)).borrow().unwrap().enabled(), "moving execution requires explicit confirmation");
-        panel.view.check_box(&mut cx, ids!(assignment_confirm)).set_active(&mut cx, true, Animate::No);
+        assert!(panel.view.view(&cx, ids!(execution_badge)).label(&cx, ids!(device_label)).text().contains("Desktop"));
+        assert!(panel.view.label(&cx,ids!(execution_device_details)).text().contains("device-other"));
+        assert!(panel.view.label(&cx,ids!(assignment_destination)).text().contains("Laptop"));
+        assert!(panel.view.button(&cx, ids!(policy_tab)).borrow().unwrap().enabled(), "remote Agent policy is accessible without moving assignment");
+        assert!(panel.view.button(&cx, ids!(model_tab)).borrow().unwrap().enabled());
+        assert!(!panel.view.button(&cx, ids!(runtime_tab)).borrow().unwrap().enabled());
+        assert!(!panel.view.button(&cx, ids!(assign_current_device)).borrow().unwrap().enabled(), "moving execution requires explicit confirmation");
+        panel.view.check_box(&cx, ids!(assignment_confirm)).set_active(&mut cx, true, Animate::No);
         panel.sync_navigation(&mut cx);
-        assert!(panel.view.button(&mut cx, ids!(assign_current_device)).borrow().unwrap().enabled());
+        assert!(panel.view.button(&cx, ids!(assign_current_device)).borrow().unwrap().enabled());
         for state in ["retiring", "retired"] {
             panel.execution_agent_record["state"] = state.into();
             panel.sync_navigation(&mut cx);
-            assert!(!panel.view.button(&mut cx, ids!(assign_current_device)).visible(), "{state} Agent cannot move execution");
-            assert!(!panel.view.button(&mut cx, ids!(assign_current_device)).borrow().unwrap().enabled());
-            assert!(!panel.view.check_box(&mut cx, ids!(assignment_confirm)).visible());
+            assert!(!panel.view.button(&cx, ids!(assign_current_device)).visible(), "{state} Agent cannot move execution");
+            assert!(!panel.view.button(&cx, ids!(assign_current_device)).borrow().unwrap().enabled());
+            assert!(!panel.view.check_box(&cx, ids!(assignment_confirm)).visible());
         }
         panel.execution_agent_record["state"] = "active".into();
         panel.execution_agent_record["generation"] = 0.into();
         panel.sync_navigation(&mut cx);
-        assert!(!panel.view.button(&mut cx, ids!(assign_current_device)).visible(), "unconfirmed generation cannot assign");
+        assert!(!panel.view.button(&cx, ids!(assign_current_device)).visible(), "unconfirmed generation cannot assign");
         panel.execution_agent_record["generation"] = 1.into();
         for state in ["creating", "active", "suspended"] {
             panel.execution_agent_record["state"] = state.into();
             panel.sync_navigation(&mut cx);
-            assert!(panel.view.button(&mut cx, ids!(assign_current_device)).visible());
-            assert!(panel.view.button(&mut cx, ids!(assign_current_device)).borrow().unwrap().enabled());
+            assert!(panel.view.button(&cx, ids!(assign_current_device)).visible());
+            assert!(panel.view.button(&cx, ids!(assign_current_device)).borrow().unwrap().enabled());
         }
 
         panel.policy = json!({"agentId":"agent-a","scope":"agent","modelLoaded":true});
@@ -5334,32 +5334,32 @@ mod tests {
         panel.apply(&mut cx, Target::AgentAssigned, &json!({"agent":{"id":"agent-a","executionDeviceId":"device-here","state":"active","generation":2}}));
         assert_eq!(panel.agents[0]["executionDeviceId"], "device-here");
         panel.sync_navigation(&mut cx);
-        assert!(panel.view.view(&mut cx,ids!(execution_badge)).label(&mut cx,ids!(device_label)).text().contains("Laptop"));
+        assert!(panel.view.view(&cx,ids!(execution_badge)).label(&cx,ids!(device_label)).text().contains("Laptop"));
         assert!(panel.policy.is_null(), "moving execution must not reuse or copy former resource policy");
         assert!(!panel.runtime_resources_checked);
-        assert!(!panel.view.check_box(&mut cx, ids!(assignment_confirm)).active(&cx));
+        assert!(!panel.view.check_box(&cx, ids!(assignment_confirm)).active(&cx));
 
-        assert!(!panel.view.button(&mut cx,ids!(service_toggle)).borrow().unwrap().enabled());
+        assert!(!panel.view.button(&cx,ids!(service_toggle)).borrow().unwrap().enabled());
         panel.apply(&mut cx,Target::AgentDetails,&json!({"agent":{"id":"agent-a","executionDeviceId":"device-here","state":"active","generation":2}}));
         panel.sync_navigation(&mut cx);
-        assert!(!panel.view.button(&mut cx,ids!(service_toggle)).borrow().unwrap().enabled(),"assignment alone does not prove Codex and Room readiness");
-        assert!(panel.view.label(&mut cx,ids!(start_requirements)).text().contains("Model & resources"));
-        panel.view.drop_down(&mut cx,ids!(agents)).set_selected_item(&mut cx,2);
+        assert!(!panel.view.button(&cx,ids!(service_toggle)).borrow().unwrap().enabled(),"assignment alone does not prove Codex and Room readiness");
+        assert!(panel.view.label(&cx,ids!(start_requirements)).text().contains("Model & resources"));
+        panel.view.drop_down(&cx,ids!(agents)).set_selected_item(&mut cx,2);
         panel.sync_navigation(&mut cx);
-        assert!(!panel.view.button(&mut cx,ids!(service_toggle)).borrow().unwrap().enabled());
+        assert!(!panel.view.button(&cx,ids!(service_toggle)).borrow().unwrap().enabled());
         panel.apply(&mut cx,Target::AgentDetails,&json!({"agent":{"id":"agent-a","executionDeviceId":"device-here","state":"active","generation":3}}));
         assert_eq!(panel.execution_agent_record["generation"],2,"late Agent response for another Agent cannot overwrite current target");
         panel.bindings = vec![json!({"id":"direct","roomId":"!private:server","scopeKind":"owner_direct","projectId":null,"state":"suspended"}),json!({"id":"project-room","roomId":"!project:server","scopeKind":"project","projectId":"project-a","state":"active"})];
         panel.labels(&mut cx,ids!(bindings),"Select",&panel.bindings,"roomId");
-        panel.view.drop_down(&mut cx,ids!(bindings)).set_selected_item(&mut cx,1);
+        panel.view.drop_down(&cx,ids!(bindings)).set_selected_item(&mut cx,1);
         panel.sync_navigation(&mut cx);
-        assert!(!panel.view.button(&mut cx,ids!(room_roster_check)).visible());
-        assert!(!panel.view.button(&mut cx,ids!(room_roster_check)).borrow().unwrap().enabled());
-        assert!(panel.view.label(&mut cx,ids!(room_roster)).text().contains("private chat"));
-        assert!(panel.view.button(&mut cx,ids!(resume_binding)).borrow().unwrap().enabled(),"private binding resumes by binding ID, without a synthetic Project");
-        panel.view.drop_down(&mut cx,ids!(bindings)).set_selected_item(&mut cx,2);
+        assert!(!panel.view.button(&cx,ids!(room_roster_check)).visible());
+        assert!(!panel.view.button(&cx,ids!(room_roster_check)).borrow().unwrap().enabled());
+        assert!(panel.view.label(&cx,ids!(room_roster)).text().contains("private chat"));
+        assert!(panel.view.button(&cx,ids!(resume_binding)).borrow().unwrap().enabled(),"private binding resumes by binding ID, without a synthetic Project");
+        panel.view.drop_down(&cx,ids!(bindings)).set_selected_item(&mut cx,2);
         panel.sync_navigation(&mut cx);
-        assert!(panel.view.button(&mut cx,ids!(room_roster_check)).visible());
+        assert!(panel.view.button(&cx,ids!(room_roster_check)).visible());
 
     }
     #[test]
@@ -5371,22 +5371,22 @@ mod tests {
             json!({"id":"room-a","scopeKind":"project","projectId":"project","state":"active","threadAutoReply":false}),
             json!({"id":"room-b","scopeKind":"project","projectId":"project","state":"active","threadAutoReply":true})];
         panel.labels(&mut cx,ids!(bindings),"Select",&panel.bindings,"id");
-        panel.view.drop_down(&mut cx,ids!(bindings)).set_selected_item(&mut cx,1);
+        panel.view.drop_down(&cx,ids!(bindings)).set_selected_item(&mut cx,1);
         panel.sync_navigation(&mut cx);
-        assert!(!panel.view.view(&mut cx,ids!(reply_policy)).visible());
-        panel.view.drop_down(&mut cx,ids!(bindings)).set_selected_item(&mut cx,2);
+        assert!(!panel.view.view(&cx,ids!(reply_policy)).visible());
+        panel.view.drop_down(&cx,ids!(bindings)).set_selected_item(&mut cx,2);
         panel.sync_navigation(&mut cx);
-        assert!(panel.view.view(&mut cx,ids!(reply_policy)).visible());
-        assert!(panel.view.label(&mut cx,ids!(reply_policy_status)).text().contains("Every message"));
+        assert!(panel.view.view(&cx,ids!(reply_policy)).visible());
+        assert!(panel.view.label(&cx,ids!(reply_policy_status)).text().contains("Every message"));
         panel.apply(&mut cx,Target::ReplyPolicyChanged,&json!({"binding":{"id":"room-a","scopeKind":"project","projectId":"project","state":"active","threadAutoReply":true}}));
         panel.sync_navigation(&mut cx);
-        assert_eq!(panel.view.drop_down(&mut cx,ids!(bindings)).selected_item(),2);
-        assert!(panel.view.label(&mut cx,ids!(reply_policy_status)).text().contains("Everyone"));
+        assert_eq!(panel.view.drop_down(&cx,ids!(bindings)).selected_item(),2);
+        assert!(panel.view.label(&cx,ids!(reply_policy_status)).text().contains("Everyone"));
         panel.apply(&mut cx,Target::ReplyPolicyChanged,&json!({"binding":{"id":"room-b","scopeKind":"project","projectId":"project","state":"active","threadAutoReply":false}}));
         panel.sync_navigation(&mut cx);
-        assert!(panel.view.label(&mut cx,ids!(reply_policy_status)).text().contains("Everyone"),"another Room response cannot change this Room's behavior");
+        assert!(panel.view.label(&cx,ids!(reply_policy_status)).text().contains("Everyone"),"another Room response cannot change this Room's behavior");
         panel.busy=true;panel.sync_navigation(&mut cx);
-        assert!(!panel.view.button(&mut cx,ids!(reply_policy_toggle)).borrow().unwrap().enabled());
+        assert!(!panel.view.button(&cx,ids!(reply_policy_toggle)).borrow().unwrap().enabled());
     }
 
     #[test]
@@ -5395,14 +5395,14 @@ mod tests {
         let mut panel=cx.with_vm(|vm|{makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);let value=script_eval!(vm,{mod.widgets.HagencyPanel {}});HagencyPanel::script_from_value(vm,value)});
         panel.agents=vec![json!({"id":"agent-a"}),json!({"id":"agent-b"})];
         panel.labels(&mut cx,ids!(agents),"Select",&panel.agents,"id");
-        panel.view.drop_down(&mut cx,ids!(agents)).set_selected_item(&mut cx,1);
+        panel.view.drop_down(&cx,ids!(agents)).set_selected_item(&mut cx,1);
         panel.agent_command=Some((json!({"displayName":"Created"}),"original-create-key".into()));
         panel.apply(&mut cx,Target::AgentCreated,&json!({"creation":{"agent":{"id":"agent-a"}}}));
         assert!(panel.agent_command.is_none(),"confirmed Agent creation is retained independently of contact setup");
         assert_eq!(panel.wanted_agent.as_deref(),Some("agent-a"));
         assert_eq!(panel.direct_agent,"agent-a");
         panel.apply(&mut cx,Target::OwnerDirectCreated,&json!({"ownerDirect":{"state":"pending","phase":"unknown","roomId":"!private:server"}}));
-        assert!(!panel.view.button(&mut cx,ids!(open_owner_direct)).borrow().unwrap().enabled());
+        assert!(!panel.view.button(&cx,ids!(open_owner_direct)).borrow().unwrap().enabled());
         assert_eq!(panel.wanted_agent.as_deref(),Some("agent-a"));
         panel.apply(&mut cx,Target::OwnerDirect,&json!({"ownerDirect":{"state":"pending","phase":"agent_provisioning","lastError":null}}));
         assert_eq!(panel.direct_retry.as_ref().map(|(_,agent,n)|(agent.as_str(),*n)),Some(("agent-a",1)));
@@ -5414,10 +5414,10 @@ mod tests {
         panel.apply(&mut cx,Target::OwnerDirect,&json!({"ownerDirect":{"state":"pending","phase":"server_joining","lastError":null}}));
         assert!(panel.direct_retry.is_none(),"automatic retries are finite");
         panel.apply(&mut cx,Target::OwnerDirect,&json!({"ownerDirect":{"state":"active","phase":"complete","roomId":"!private:server","bindingId":"direct-binding"}}));
-        assert!(panel.view.button(&mut cx,ids!(open_owner_direct)).borrow().unwrap().enabled());
-        panel.view.drop_down(&mut cx,ids!(agents)).set_selected_item(&mut cx,2);
+        assert!(panel.view.button(&cx,ids!(open_owner_direct)).borrow().unwrap().enabled());
+        panel.view.drop_down(&cx,ids!(agents)).set_selected_item(&mut cx,2);
         panel.render_owner_direct(&mut cx);
-        assert!(!panel.view.button(&mut cx,ids!(open_owner_direct)).borrow().unwrap().enabled());
+        assert!(!panel.view.button(&cx,ids!(open_owner_direct)).borrow().unwrap().enabled());
     }
     #[test]
     fn entering_run_reads_saved_resources_without_reauth_and_uses_their_actual_model_choices() {
@@ -5431,14 +5431,14 @@ mod tests {
         });
         panel.page = Page::Agents; panel.agents = vec![json!({"id":"exact-agent"})];
         panel.labels(&mut cx, ids!(agents), "Select my Agent", &panel.agents.clone(), "id");
-        panel.view.drop_down(&mut cx, ids!(agents)).set_selected_item(&mut cx, 1);
+        panel.view.drop_down(&cx, ids!(agents)).set_selected_item(&mut cx, 1);
         panel.section(&mut cx, ids!(runtime_section));
         local_device_fixture(&mut panel, "exact-agent");
         panel.load_runtime_resources(&mut cx);
         panel.sync_navigation(&mut cx);
         assert!(panel.runtime_resources_loading); assert!(!panel.runtime_resources_checked);
-        assert!(panel.view.label(&mut cx, ids!(start_requirements)).text().contains("Checking"));
-        assert!(!panel.view.button(&mut cx, ids!(service_toggle)).borrow().unwrap().enabled());
+        assert!(panel.view.label(&cx, ids!(start_requirements)).text().contains("Checking"));
+        assert!(!panel.view.button(&cx, ids!(service_toggle)).borrow().unwrap().enabled());
         let saved = json!({"model":"existing-model","workspace_root":"/existing-owner-workspace","credential_ref":"existing-owner-reference"});
         panel.apply(&mut cx, Target::Policy, &json!({"agentId":"exact-agent","policy":{"revision":1},"usage":{"spent":0,"held":0},"modelProfile":saved}));
         assert!(panel.runtime_resources_loading, "saved profile alone is not proof that Codex is connected");
@@ -5446,9 +5446,9 @@ mod tests {
         assert!(panel.runtime_resources_checked); assert!(!panel.runtime_resources_loading);
         assert!(panel.provider_authenticated); assert_eq!(panel.policy["modelProfile"], saved, "read initialization never overwrites the saved profile");
         assert_eq!(panel.runtime_efforts, vec!["low","medium"]);
-        assert_eq!(panel.view.drop_down(&mut cx, ids!(effort)).selected_item(), 0);
-        assert!(!panel.view.button(&mut cx, ids!(provider_login)).visible());
-        assert!(!panel.view.button(&mut cx, ids!(provider_logout)).visible());
+        assert_eq!(panel.view.drop_down(&cx, ids!(effort)).selected_item(), 0);
+        assert!(!panel.view.button(&cx, ids!(provider_login)).visible());
+        assert!(!panel.view.button(&cx, ids!(provider_logout)).visible());
         assert!(!panel.busy, "registration tests contain no SDK account or executable model request");
     }
     #[tokio::test]
@@ -5522,9 +5522,9 @@ mod tests {
             assert!(vm.take_errors().is_empty()); panel
         });
         panel.page = Page::Agents;
-        panel.view.view(&mut cx, ids!(agents_page)).set_visible(&mut cx, true);
-        panel.view.view(&mut cx, ids!(agent_detail)).set_visible(&mut cx, true);
-        panel.view.view(&mut cx, ids!(agent_list_holder)).set_visible(&mut cx, false);
+        panel.view.view(&cx, ids!(agents_page)).set_visible(&mut cx, true);
+        panel.view.view(&cx, ids!(agent_detail)).set_visible(&mut cx, true);
+        panel.view.view(&cx, ids!(agent_list_holder)).set_visible(&mut cx, false);
         panel.section(&mut cx, ids!(model_section));
         let mut positions = Vec::new();
         for message in ["", "Loading…", ""] {
@@ -5536,9 +5536,9 @@ mod tests {
             panel.draw_walk_all(&mut cx2d, &mut Scope::empty(), Walk {width: Size::Fixed(980.0), height: Size::Fixed(860.0), ..Walk::default()});
             overlay.end(&mut cx2d); cx2d.end_pass_sized_turtle(); list.end(&mut cx2d); cx2d.end_pass(&pass);
             drop(cx2d); drop(draw);
-            assert!(!panel.view.view(&mut cx, ids!(status_holder)).visible());
-            assert_eq!(panel.view.widget(&mut cx, ids!(loading_status)).visible(), message == "Loading…");
-            positions.push(panel.view.view(&mut cx, ids!(projects_page)).area().rect(&cx).pos.y);
+            assert!(!panel.view.view(&cx, ids!(status_holder)).visible());
+            assert_eq!(panel.view.widget(&cx, ids!(loading_status)).visible(), message == "Loading…");
+            positions.push(panel.view.view(&cx, ids!(projects_page)).area().rect(&cx).pos.y);
         }
         assert_eq!(positions[0], positions[2]);
         assert_eq!(positions[1], positions[0], "loading in the title row must not move the tabs");
@@ -5577,9 +5577,9 @@ mod tests {
         panel.apply(&mut cx, Target::Agents, &json!({"agents":[], "projects":[]}));
         assert!(agent_empty_message(panel.agents_loaded, panel.agents_loading).starts_with("No Agents yet"));
         panel.create_room = true; panel.creation_source(&mut cx);
-        assert_eq!(panel.view.text_input(&mut cx, ids!(creation_name)).empty_text(), "Room name");
+        assert_eq!(panel.view.text_input(&cx, ids!(creation_name)).empty_text(), "Room name");
         panel.create_room = false; panel.creation_source(&mut cx);
-        assert_eq!(panel.view.text_input(&mut cx, ids!(creation_name)).empty_text(), "Project name");
+        assert_eq!(panel.view.text_input(&cx, ids!(creation_name)).empty_text(), "Project name");
     }
     #[test]
     fn agent_resources_draw_without_recovery_or_setup_and_model_choices_are_real() {
@@ -5587,44 +5587,44 @@ mod tests {
         let mut cx=Cx::new(Box::new(|_,_|{}));
         let mut panel=cx.with_vm(|vm| {makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);vm.bx.captured_errors=Some(Vec::new());let value=script_eval!(vm,{mod.widgets.HagencyPanel {}});let panel=HagencyPanel::script_from_value(vm,value);assert!(vm.take_errors().is_empty());panel});
         panel.page=Page::Agents;
-        panel.view.view(&mut cx,ids!(agents_page)).set_visible(&mut cx,true);
-        panel.view.view(&mut cx,ids!(agent_detail)).set_visible(&mut cx,true);
-        panel.view.view(&mut cx,ids!(agent_list_holder)).set_visible(&mut cx,false);
+        panel.view.view(&cx,ids!(agents_page)).set_visible(&mut cx,true);
+        panel.view.view(&cx,ids!(agent_detail)).set_visible(&mut cx,true);
+        panel.view.view(&cx,ids!(agent_list_holder)).set_visible(&mut cx,false);
         panel.agent_pending_commands=vec![json!({"id":"original","state":"unknown"})];
         panel.agents = vec![json!({"id":"agent-a"})];
         panel.labels(&mut cx, ids!(agents), "Select", &panel.agents, "id");
-        panel.view.drop_down(&mut cx, ids!(agents)).set_selected_item(&mut cx, 1);
+        panel.view.drop_down(&cx, ids!(agents)).set_selected_item(&mut cx, 1);
         local_device_fixture(&mut panel, "agent-a");
         panel.section(&mut cx,ids!(model_section));
         panel.policy=json!({"agentId":"a","scope":"agent","modelLoaded":true,"modelProfile":{"model":"catalog-b","reasoning_effort":"medium"}});
         panel.apply(&mut cx,Target::ProviderModels,&json!({"authenticated":true,"credentialRef":"safe-reference","models":[{"model":"catalog-a","displayName":"First","isDefault":true,"defaultReasoningEffort":"low","supportedReasoningEfforts":[{"reasoningEffort":"low"}]},{"model":"catalog-b","displayName":"Second","description":"Real catalog description","defaultReasoningEffort":"high","supportedReasoningEfforts":[{"reasoningEffort":"medium"},{"reasoningEffort":"high"}]}]}));
-        assert_eq!(panel.view.drop_down(&mut cx,ids!(model)).selected_item(),2,"saved exact model takes priority over provider default");
+        assert_eq!(panel.view.drop_down(&cx,ids!(model)).selected_item(),2,"saved exact model takes priority over provider default");
         assert_eq!(panel.runtime_efforts,vec!["medium","high"]);
-        assert_eq!(panel.view.drop_down(&mut cx,ids!(effort)).selected_item(),0,"saved reasoning effort takes priority over the model default");
-        assert!(!panel.view.button(&mut cx,ids!(provider_login)).visible());
-        assert!(panel.view.button(&mut cx,ids!(provider_logout)).visible());
+        assert_eq!(panel.view.drop_down(&cx,ids!(effort)).selected_item(),0,"saved reasoning effort takes priority over the model default");
+        assert!(!panel.view.button(&cx,ids!(provider_login)).visible());
+        assert!(panel.view.button(&cx,ids!(provider_logout)).visible());
         {
         cx.redraw_all();let pass=DrawPass::new(&mut cx);pass.set_size(&mut cx,dvec2(980.0,900.0));let mut list=DrawList2d::new(&mut cx);let overlay=Overlay {draw_list:DrawList::new(&mut cx)};let event=DrawEvent::default();let mut draw=CxDraw::new(&mut cx,&event);let mut cx2d=Cx2d::new(&mut draw);
         cx2d.begin_pass(&pass,None);list.begin_always(&mut cx2d);overlay.begin(&mut cx2d);cx2d.begin_root_turtle(dvec2(980.0,900.0),Layout::flow_overlay());
         panel.draw_walk_all(&mut cx2d,&mut Scope::empty(),Walk {width:Size::Fixed(980.0),height:Size::Fixed(860.0),..Walk::default()});
         overlay.end(&mut cx2d);cx2d.end_pass_sized_turtle();list.end(&mut cx2d);cx2d.end_pass(&pass);
         }
-        assert!(!panel.view.view(&mut cx,ids!(agent_recovery)).visible());
-        assert!(!panel.view.view(&mut cx,ids!(setup_section)).visible());
-        assert!(panel.view.view(&mut cx,ids!(model_section)).area().rect(&cx).size.y>0.0);
-        assert!(!panel.view.view(&mut cx,ids!(advanced_settings)).visible(),"workspace is hidden by default");
-        assert!(panel.view.drop_down(&mut cx,ids!(effort)).area().rect(&cx).size.y>0.0,"model reasoning settings are visible on the Codex page");
+        assert!(!panel.view.view(&cx,ids!(agent_recovery)).visible());
+        assert!(!panel.view.view(&cx,ids!(setup_section)).visible());
+        assert!(panel.view.view(&cx,ids!(model_section)).area().rect(&cx).size.y>0.0);
+        assert!(!panel.view.view(&cx,ids!(advanced_settings)).visible(),"workspace is hidden by default");
+        assert!(panel.view.drop_down(&cx,ids!(effort)).area().rect(&cx).size.y>0.0,"model reasoning settings are visible on the Codex page");
         panel.model_advanced=true;panel.render_model_advanced(&mut cx);
-        assert!(panel.view.view(&mut cx,ids!(advanced_settings)).visible());
+        assert!(panel.view.view(&cx,ids!(advanced_settings)).visible());
         panel.model_advanced=false;panel.render_model_advanced(&mut cx);
         panel.apply(&mut cx,Target::Provider,&json!({"authenticated":true,"state":"ready","shared":true,"credentialSource":"local_codex"}));
-        assert!(!panel.view.button(&mut cx,ids!(provider_logout)).visible());
-        assert!(!panel.view.button(&mut cx,ids!(provider_login)).visible());
-        assert!(panel.view.button(&mut cx,ids!(disconnect_provider)).visible());
-        assert!(!panel.view.button(&mut cx,ids!(use_local_provider)).visible());
+        assert!(!panel.view.button(&cx,ids!(provider_logout)).visible());
+        assert!(!panel.view.button(&cx,ids!(provider_login)).visible());
+        assert!(panel.view.button(&cx,ids!(disconnect_provider)).visible());
+        assert!(!panel.view.button(&cx,ids!(use_local_provider)).visible());
         panel.apply(&mut cx,Target::Provider,&json!({"authenticated":false,"state":"signed_out"}));
-        assert!(panel.view.button(&mut cx,ids!(provider_login)).visible());
-        assert!(!panel.view.button(&mut cx,ids!(provider_logout)).visible());
+        assert!(panel.view.button(&cx,ids!(provider_login)).visible());
+        assert!(!panel.view.button(&cx,ids!(provider_logout)).visible());
         assert!(runtime_summary(&json!({"agentId":"a","phase":"unknown"}),"a",None).contains("not confirmed"));
         assert!(runtime_summary(&json!({"agentId":"a","phase":"ledger_recovery_required","lastError":"ledger_recovery_required"}),"a",None).contains("complete ledger"));
         assert_eq!(runtime_summary(&Value::Null,"a",None),"Not running on this device.");
@@ -5635,10 +5635,10 @@ mod tests {
     fn completed_space_creation_opens_fresh_room_form_but_unknown_keeps_original_intent() {
         let mut cx=Cx::new(Box::new(|_,_|{}));let mut panel=cx.with_vm(|vm|{makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);let value=script_eval!(vm,{mod.widgets.HagencyPanel {}});HagencyPanel::script_from_value(vm,value)});
         panel.creation=Some(json!({"phase":"complete","commandId":"completed-space","spaceId":"!space:server"}));panel.pending_input=Some(json!({"kind":"space","name":"Old Project","commandId":"completed-space"}));
-        panel.view.text_input(&mut cx,ids!(creation_name)).set_text(&mut cx,"Old Project");panel.view.label(&mut cx,ids!(creation_result)).set_text(&mut cx,"complete · !space:server");panel.view.button(&mut cx,ids!(create_project_room)).set_enabled(&mut cx,false);
-        assert!(panel.begin_creation_form(&mut cx,true));assert!(panel.create_room);assert!(panel.creation.is_none());assert!(panel.pending_input.is_none());assert!(panel.input(&mut cx,ids!(creation_name)).is_empty());assert!(panel.view.label(&mut cx,ids!(creation_result)).text().is_empty());assert!(panel.view.button(&mut cx,ids!(create_project_room)).borrow().unwrap().enabled());
+        panel.view.text_input(&cx,ids!(creation_name)).set_text(&mut cx,"Old Project");panel.view.label(&cx,ids!(creation_result)).set_text(&mut cx,"complete · !space:server");panel.view.button(&cx,ids!(create_project_room)).set_enabled(&mut cx,false);
+        assert!(panel.begin_creation_form(&mut cx,true));assert!(panel.create_room);assert!(panel.creation.is_none());assert!(panel.pending_input.is_none());assert!(panel.input(&mut cx,ids!(creation_name)).is_empty());assert!(panel.view.label(&cx,ids!(creation_result)).text().is_empty());assert!(panel.view.button(&cx,ids!(create_project_room)).borrow().unwrap().enabled());
         let original=json!({"kind":"room","commandId":"original-room","name":"Original","projectId":"project-a","spaceId":"!space:server"});panel.pending_input=Some(original.clone());panel.creation=Some(json!({"phase":"unknown","commandId":"original-room"}));
-        assert!(!panel.begin_creation_form(&mut cx,false));assert_eq!(panel.pending_input.as_ref(),Some(&original));assert_eq!(panel.creation.as_ref().unwrap()["commandId"],"original-room");assert!(panel.view.view(&mut cx,ids!(recovery)).visible());
+        assert!(!panel.begin_creation_form(&mut cx,false));assert_eq!(panel.pending_input.as_ref(),Some(&original));assert_eq!(panel.creation.as_ref().unwrap()["commandId"],"original-room");assert!(panel.view.view(&cx,ids!(recovery)).visible());
         panel.creation=Some(json!({"phase":"complete","commandId":"original-room"}));assert!(panel.begin_creation_form(&mut cx,false));assert!(!panel.create_room);assert!(panel.pending_input.is_none());
     }
     #[test]
@@ -5735,28 +5735,28 @@ mod tests {
         panel.labels(&mut cx, ids!(projects), "Select", &panel.projects, "id");
         panel
             .view
-            .drop_down(&mut cx, ids!(projects))
+            .drop_down(&cx, ids!(projects))
             .set_selected_item(&mut cx, 1);
         panel
             .view
-            .view(&mut cx, ids!(project_form))
+            .view(&cx, ids!(project_form))
             .set_visible(&mut cx, true);
         panel.apply(&mut cx, Target::RoomAdopted, &Value::Null);
-        assert!(!panel.view.view(&mut cx, ids!(project_form)).visible());
+        assert!(!panel.view.view(&cx, ids!(project_form)).visible());
         assert_eq!(panel.wanted_project.as_deref(), Some("project-original"));
         panel
             .view
-            .view(&mut cx, ids!(agent_create))
+            .view(&cx, ids!(agent_create))
             .set_visible(&mut cx, true);
         panel.agent_command = Some((json!({"displayName":"A"}), "same-id".into()));
         panel.apply(&mut cx, Target::Changed, &Value::Null);
-        assert!(panel.view.view(&mut cx, ids!(agent_create)).visible());
+        assert!(panel.view.view(&cx, ids!(agent_create)).visible());
         assert_eq!(
             panel.agent_command.as_ref().map(|v| v.1.as_str()),
             Some("same-id")
         );
         panel.apply(&mut cx, Target::AgentCreated, &Value::Null);
-        assert!(!panel.view.view(&mut cx, ids!(agent_create)).visible());
+        assert!(!panel.view.view(&cx, ids!(agent_create)).visible());
         assert!(panel.agent_command.is_none());
     }
     #[test]
@@ -5792,12 +5792,12 @@ mod tests {
             panel.set_page(&mut cx, page);
             panel.list_page(&mut cx);
             panel.sync_navigation(&mut cx);
-            assert!(!panel.view.button(&mut cx, ids!(back)).visible());
-            assert!(panel.view.button(&mut cx, ids!(close)).borrow().is_none());
-            assert!(panel.view.button(&mut cx, ids!(new_item)).visible());
-            assert!(panel.view.button(&mut cx, ids!(refresh)).visible());
+            assert!(!panel.view.button(&cx, ids!(back)).visible());
+            assert!(panel.view.button(&cx, ids!(close)).borrow().is_none());
+            assert!(panel.view.button(&cx, ids!(new_item)).visible());
+            assert!(panel.view.button(&cx, ids!(refresh)).visible());
             let list = panel.view.portal_list(
-                &mut cx,
+                &cx,
                 if page == Page::Projects {
                     ids!(project_list)
                 } else {
@@ -5806,7 +5806,7 @@ mod tests {
             );
             let row = list.item(&mut cx, 1, id!(Card));
             assert!(!row.is_empty());
-            let button = row.button(&mut cx, ids!(open));
+            let button = row.button(&cx, ids!(open));
             assert!(
                 button.borrow().is_some(),
                 "registered card must contain a real Button"
@@ -5821,10 +5821,10 @@ mod tests {
             });
             assert!(panel.open_card(&mut cx, &actions));
             panel.sync_navigation(&mut cx);
-            assert!(panel.view.button(&mut cx, ids!(back)).visible());
-            assert!(panel.view.button(&mut cx, ids!(close)).borrow().is_none());
-            assert!(!panel.view.button(&mut cx, ids!(new_item)).visible());
-            assert!(!panel.view.button(&mut cx, ids!(refresh)).visible());
+            assert!(panel.view.button(&cx, ids!(back)).visible());
+            assert!(panel.view.button(&cx, ids!(close)).borrow().is_none());
+            assert!(!panel.view.button(&cx, ids!(new_item)).visible());
+            assert!(!panel.view.button(&cx, ids!(refresh)).visible());
             let (selection, detail, list_id) = if page == Page::Projects {
                 (
                     ids!(projects),
@@ -5834,19 +5834,19 @@ mod tests {
             } else {
                 (ids!(agents), ids!(agent_detail), ids!(agent_list_holder))
             };
-            assert_eq!(panel.view.drop_down(&mut cx, selection).selected_item(), 2);
-            assert!(panel.view.view(&mut cx, detail).visible());
-            assert!(!panel.view.view(&mut cx, list_id).visible());
-            let back = panel.view.button(&mut cx, ids!(back));
+            assert_eq!(panel.view.drop_down(&cx, selection).selected_item(), 2);
+            assert!(panel.view.view(&cx, detail).visible());
+            assert!(!panel.view.view(&cx, list_id).visible());
+            let back = panel.view.button(&cx, ids!(back));
             let actions = cx.capture_actions(|cx| {
                 cx.widget_action(back.widget_uid(), ButtonAction::Clicked(KeyModifiers::default()));
             });
             assert!(panel.back_to_list(&mut cx, &actions));
             panel.sync_navigation(&mut cx);
-            assert!(!panel.view.button(&mut cx, ids!(back)).visible());
-            assert!(panel.view.view(&mut cx, list_id).visible());
-            assert!(!panel.view.view(&mut cx, detail).visible());
-            assert!(panel.view.button(&mut cx, ids!(close)).borrow().is_none());
+            assert!(!panel.view.button(&cx, ids!(back)).visible());
+            assert!(panel.view.view(&cx, list_id).visible());
+            assert!(!panel.view.view(&cx, detail).visible());
+            assert!(panel.view.button(&cx, ids!(close)).borrow().is_none());
         }
     }
     #[test]
@@ -5867,7 +5867,7 @@ mod tests {
         assert!(
             panel
                 .view
-                .button(&mut cx, ids!(invite_member))
+                .button(&cx, ids!(invite_member))
                 .borrow()
                 .unwrap()
                 .enabled()
@@ -5883,7 +5883,7 @@ mod tests {
         assert!(
             !panel
                 .view
-                .button(&mut cx, ids!(invite_member))
+                .button(&cx, ids!(invite_member))
                 .borrow()
                 .unwrap()
                 .enabled()
@@ -5913,21 +5913,21 @@ mod tests {
         panel.labels(&mut cx, ids!(projects), "Select", &panel.projects, "id");
         panel
             .view
-            .drop_down(&mut cx, ids!(projects))
+            .drop_down(&cx, ids!(projects))
             .set_selected_item(&mut cx, 1);
         panel.wanted_project_section = Some(("project-a".into(), ProjectDetailSection::Rooms));
         panel.project_detail(&mut cx, 0);
-        assert!(panel.view.view(&mut cx, ids!(rooms_section)).visible(), "requested tab is visible during loading too");
-        assert!(!panel.view.view(&mut cx, ids!(overview_section)).visible());
+        assert!(panel.view.view(&cx, ids!(rooms_section)).visible(), "requested tab is visible during loading too");
+        assert!(!panel.view.view(&cx, ids!(overview_section)).visible());
         panel.apply(&mut cx, Target::Rooms, &json!({"rooms":[]}));
-        assert!(panel.view.view(&mut cx, ids!(rooms_section)).visible());
-        assert!(!panel.view.view(&mut cx, ids!(overview_section)).visible());
+        assert!(panel.view.view(&cx, ids!(rooms_section)).visible());
+        assert!(!panel.view.view(&cx, ids!(overview_section)).visible());
         assert!(panel.wanted_project_section.is_none());
         panel.project_section(&mut cx, ids!(overview_section));
         panel.wanted_project_section = Some(("project-b".into(), ProjectDetailSection::Members));
         panel.apply(&mut cx, Target::Rooms, &json!({"rooms":[]}));
-        assert!(panel.view.view(&mut cx, ids!(overview_section)).visible());
-        assert!(!panel.view.view(&mut cx, ids!(members_section)).visible());
+        assert!(panel.view.view(&cx, ids!(overview_section)).visible());
+        assert!(!panel.view.view(&cx, ids!(members_section)).visible());
         assert!(
             panel.members_room.is_none(),
             "another project's response cannot start a members request"
@@ -5949,7 +5949,7 @@ mod tests {
         assert_eq!(
             panel
                 .view
-                .drop_down(&mut cx, ids!(projects))
+                .drop_down(&cx, ids!(projects))
                 .selected_item(),
             1
         );
@@ -5964,13 +5964,13 @@ mod tests {
                 ids!(rooms_section),
                 ids!(members_section),
             ] {
-                assert_eq!(panel.view.view(&mut cx, id).visible(), id == selected);
+                assert_eq!(panel.view.view(&cx, id).visible(), id == selected);
             }
-            assert!(panel.view.view(&mut cx, ids!(project_detail)).visible());
+            assert!(panel.view.view(&cx, ids!(project_detail)).visible());
             assert!(
                 !panel
                     .view
-                    .view(&mut cx, ids!(project_list_holder))
+                    .view(&cx, ids!(project_list_holder))
                     .visible()
             );
         }

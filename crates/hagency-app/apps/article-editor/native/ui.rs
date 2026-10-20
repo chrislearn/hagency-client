@@ -1674,9 +1674,9 @@ impl ArticlePanel {
         let mut images=(*self.preview_images).clone();
         for id in self.doc.asset_ids() {
             let key=format!("asset:{id}");
-            if !images.contains_key(&key) {
+            if let std::collections::btree_map::Entry::Vacant(e) = images.entry(key) {
                 let bytes=self.reader_assets.get(&id).cloned().or_else(||self.grant.as_ref().and_then(|g|storage::asset_bytes(crate::app_data_dir(),g,&id).ok()));
-                if let Some(image)=bytes.and_then(|b|article_makepad::content::prepare_image(&b).ok()) { images.insert(key,image); }
+                if let Some(image)=bytes.and_then(|b|article_makepad::content::prepare_image(&b).ok()) { e.insert(image); }
             }
         }
         for (url,id) in &self.doc.resource_bindings {
@@ -4239,7 +4239,7 @@ mod tests {
         panel.history.checkpoint(&panel.doc);
         panel.doc.title = "Unsaved title".into();
         panel.show(&mut cx, Page::Write);
-        let input = panel.text_input(&mut cx, ids!(write_source));
+        let input = panel.text_input(&cx, ids!(write_source));
         input.set_text(&mut cx, "# Edited source\n\nStill unsaved");
         input.set_selection(&mut cx, makepad_widgets::text::selection::Selection {
             anchor: makepad_widgets::text::selection::Cursor {index: 2, prefer_next_row: false},
@@ -4248,7 +4248,7 @@ mod tests {
         let uid = input.widget_uid();
         let selected = input.selection();
         let doc_before = serde_json::to_value(&panel.doc).unwrap();
-        let list = panel.portal_list(&mut cx, ids!(article_blocks));
+        let list = panel.portal_list(&cx, ids!(article_blocks));
         list.set_first_id_and_scroll(3, -21.);
         for selection in [Selection {appearance: Appearance::Dark, accent: Accent::Teal},
             Selection {appearance: Appearance::Dark, accent: Accent::Violet}, Selection::default()] {
@@ -4260,7 +4260,7 @@ mod tests {
             assert!(panel.restore_after_theme);
             panel.restore_page_ui(&mut cx);
             assert!(matches!(panel.page, Page::Write));
-            assert_eq!(panel.text_input(&mut cx, ids!(write_source)).widget_uid(),uid);
+            assert_eq!(panel.text_input(&cx, ids!(write_source)).widget_uid(),uid);
             assert_eq!(input.text(), "# Edited source\n\nStill unsaved");
             assert_eq!(input.selection().anchor.index, selected.anchor.index);
             assert_eq!(input.selection().cursor.index, selected.cursor.index);

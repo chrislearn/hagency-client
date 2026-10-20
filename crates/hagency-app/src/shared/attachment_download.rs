@@ -198,26 +198,6 @@ pub fn start_markdown_preview(info: DownloadableAttachment, update_sender: Timel
     });
 }
 
-#[cfg(test)]
-mod markdown_tests {
-    use super::*;
-
-    #[test]
-    fn recognizes_markdown_filenames_and_mime_without_matching_other_attachments() {
-        for name in ["notes.md", "NOTES.MD", "notes.Markdown"] { assert!(is_markdown_attachment(name, None)); }
-        assert!(is_markdown_attachment("notes", Some("text/markdown; charset=utf-8")));
-        assert!(is_markdown_attachment("notes.txt", Some("text/x-markdown")));
-        for name in ["md", "notes.md.exe", "image.png", "notes.txt"] { assert!(!is_markdown_attachment(name, None)); }
-    }
-
-    #[test]
-    fn accepts_utf8_bom_and_rejects_binary_or_oversize_documents() {
-        assert_eq!(&*markdown_source("\u{feff}# 文档".as_bytes().to_vec()).unwrap(), "# 文档");
-        assert!(markdown_source(vec![0xff, 0xfe]).is_err());
-        assert!(markdown_source(vec![b'a'; article_core::document::MAX_BODY + 1]).is_err());
-    }
-}
-
 /// Fetches the attachment via the media cache and then calls `on_downloaded`.
 fn download_media(
     info: DownloadableAttachment,
@@ -415,5 +395,25 @@ fn finish_download_indicator(
                 SignalToUI::set_ui_signal();
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod markdown_tests {
+    use super::*;
+
+    #[test]
+    fn recognizes_markdown_filenames_and_mime_without_matching_other_attachments() {
+        for name in ["notes.md", "NOTES.MD", "notes.Markdown"] { assert!(is_markdown_attachment(name, None)); }
+        assert!(is_markdown_attachment("notes", Some("text/markdown; charset=utf-8")));
+        assert!(is_markdown_attachment("notes.txt", Some("text/x-markdown")));
+        for name in ["md", "notes.md.exe", "image.png", "notes.txt"] { assert!(!is_markdown_attachment(name, None)); }
+    }
+
+    #[test]
+    fn accepts_utf8_bom_and_rejects_binary_or_oversize_documents() {
+        assert_eq!(&*markdown_source("\u{feff}# 文档".as_bytes().to_vec()).unwrap(), "# 文档");
+        assert!(markdown_source(vec![0xff, 0xfe]).is_err());
+        assert!(markdown_source(vec![b'a'; article_core::document::MAX_BODY + 1]).is_err());
     }
 }

@@ -14,6 +14,7 @@ use std::{
 };
 use serde_json::Value;
 app_main!(App);
+type PendingResponse = (usize, u64, mpsc::Receiver<Result<Value, String>>);
 
 script_mod! {
     use mod.prelude.widgets.*
@@ -41,7 +42,7 @@ struct App {
     #[rust]
     lease: Option<Lease>,
     #[rust]
-    pending: Vec<(usize, u64, mpsc::Receiver<Result<Value, String>>)>,
+    pending: Vec<PendingResponse>,
     #[rust]
     calls: usize,
     #[rust]

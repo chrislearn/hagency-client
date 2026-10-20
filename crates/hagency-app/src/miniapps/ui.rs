@@ -990,7 +990,7 @@ impl Widget for MiniAppsPanel {
                             self.return_to_hub = true;
                             self.reviewed_room = room.clone().unwrap_or_default();
                             self.view.text_input(cx, ids!(import_form.room)).set_text(cx, &self.reviewed_room);
-                            let result = Package::load_verified(bundle.clone(), &crate::app_data_dir().join("miniapps/imports"))
+                            let result = Package::load_verified(bundle.as_ref().clone(), &crate::app_data_dir().join("miniapps/imports"))
                                 .and_then(|package| { self.package = Some(package); self.run(cx) });
                             if let Err(error) = result {
                                 self.show_hub(cx);

@@ -3,7 +3,7 @@
 Rust abstractions for native file picker dialogs, including dedicated image and video pickers on mobile.
 
 ## Platform behavior:
-* macOS, Linux, Windows: desktop platforms are effectively a thin wrapper aroun [`rfd`](https://crates.io/crates/rfd).
+* macOS, Linux, Windows: desktop platforms are effectively a thin wrapper around [`rfd`](https://crates.io/crates/rfd).
 * Android: file pickers use the system document picker (via `ACTION_OPEN_DOCUMENT`/`ACTION_CREATE_DOCUMENT`)
    * Android media picking uses the system photo picker when available, falling back to the above doc picker.
    * On Android 10 and up, it can save directly to "Downloads" via `MediaStore.Downloads`.

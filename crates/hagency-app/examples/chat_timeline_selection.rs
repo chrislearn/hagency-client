@@ -57,8 +57,8 @@ impl MatchEvent for App {
             list.set_item_range(&mut cx, 0, 30);
             while let Some(index) = list.next_visible_item(&mut cx) {
                 let row = list.item(&mut cx, index, id!(Fixture));
-                row.label(&mut cx, ids!(row_id)).set_text(&mut cx, &format!("Row {index}"));
-                let body = row.html_or_plaintext(&mut cx, ids!(body));
+                row.label(&cx, ids!(row_id)).set_text(&mut cx, &format!("Row {index}"));
+                let body = row.html_or_plaintext(&cx, ids!(body));
                 if index % 2 == 0 {
                     body.show_plaintext(&mut cx, "Alpha 中文 👩‍💻 selectable text.\nSecond line continues selection.\nThird line ends here.");
                 } else {

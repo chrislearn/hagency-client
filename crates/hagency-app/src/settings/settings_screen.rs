@@ -521,18 +521,18 @@ mod layout_tests {
     fn external_bots_stay_inside_settings_navigation_and_back_returns_to_agent_services() {
         let mut cx=Cx::new(Box::new(|_,_|{}));
         let mut screen=screen(&mut cx);
-        let mut state=AppState::default();state.selected_tab=SelectedTab::Settings;
+        let mut state = AppState { selected_tab: SelectedTab::Settings, ..Default::default() };
         screen.set_selected_category(&mut cx,SettingsCategory::Agents);
         let actions=cx.capture_actions(|cx|cx.action(AgentAccessAction::Open));
         screen.handle_event(&mut cx,&Event::Actions(actions),&mut Scope::with_data(&mut state));
         assert!(screen.external_bots_open);
-        assert_eq!(screen.view.label(&mut cx,ids!(settings_header_title)).text(),"External bots and AppServices");
-        assert_eq!(screen.view.label(&mut cx,ids!(linked_bots_heading)).text(),"Linked external bots");
-        assert!(screen.view.label(&mut cx,ids!(external_bots_intro)).text().contains("main sidebar"));
-        let input=screen.view.text_input(&mut cx,ids!(external_bots.agent_id));input.set_text(&mut cx,"@external:example.org");
+        assert_eq!(screen.view.label(&cx,ids!(settings_header_title)).text(),"External bots and AppServices");
+        assert_eq!(screen.view.label(&cx,ids!(linked_bots_heading)).text(),"Linked external bots");
+        assert!(screen.view.label(&cx,ids!(external_bots_intro)).text().contains("main sidebar"));
+        let input=screen.view.text_input(&cx,ids!(external_bots.agent_id));input.set_text(&mut cx,"@external:example.org");
         for width in [1100.0,375.0] {
             draw(&mut cx,&mut screen,width);
-            let nav=screen.view.view(&mut cx,ids!(settings_navigation)).area().rect(&cx);
+            let nav=screen.view.view(&cx,ids!(settings_navigation)).area().rect(&cx);
             let panel=screen.view.widget(&cx,ids!(external_bots)).area().rect(&cx);
             assert!(nav.size.x>=64.0);assert!(panel.pos.x>=nav.pos.x+nav.size.x);
             assert!(panel.pos.x+panel.size.x<=width+1.0);
@@ -542,7 +542,7 @@ mod layout_tests {
         let actions=cx.capture_actions(|cx|cx.action(AgentAccessAction::Close));
         screen.handle_event(&mut cx,&Event::Actions(actions),&mut Scope::with_data(&mut state));
         assert!(!screen.external_bots_open);assert_eq!(state.selected_tab,SelectedTab::Settings);
-        assert_eq!(screen.view.label(&mut cx,ids!(settings_header_title)).text(),"Agent services");
+        assert_eq!(screen.view.label(&cx,ids!(settings_header_title)).text(),"Agent services");
         let actions=cx.capture_actions(|cx|cx.action(AgentAccessAction::Open));
         screen.handle_event(&mut cx,&Event::Actions(actions),&mut Scope::with_data(&mut state));
         assert!(screen.external_bots_open);
@@ -557,11 +557,11 @@ mod layout_tests {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         let mut screen = screen(&mut cx);
         let mut state = AppState::default();
-        let input = screen.view.text_input(&mut cx, ids!(display_name_input));
+        let input = screen.view.text_input(&cx, ids!(display_name_input));
         assert!(!input.is_empty());
         input.set_text(&mut cx, "Unsaved display name");
         let input_uid = input.widget_uid();
-        let thumbnail = screen.view.text_input(&mut cx, ids!(interface_settings.thumb_custom_input));
+        let thumbnail = screen.view.text_input(&cx, ids!(interface_settings.thumb_custom_input));
         assert!(!thumbnail.is_empty());
         thumbnail.set_text(&mut cx, "425");
         let thumbnail_uid = thumbnail.widget_uid();
@@ -575,20 +575,20 @@ mod layout_tests {
             (SettingsCategory::About, id!(category_about_button), "About"),
             (SettingsCategory::Account, id!(category_account_button), "Account"),
         ] {
-            let uid = screen.view.navigation_bar_button(&mut cx, &[button]).widget_uid();
+            let uid = screen.view.navigation_bar_button(&cx, &[button]).widget_uid();
             let actions = cx.capture_actions(|cx| cx.widget_action(uid,
                 crate::shared::navigation_bar_button::NavigationBarButtonAction::Clicked));
             screen.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::with_data(&mut state));
             assert_eq!(screen.selected_category, category);
-            assert_eq!(screen.view.label(&mut cx, ids!(settings_header_title)).text(), crate::i18n::tr(heading));
+            assert_eq!(screen.view.label(&cx, ids!(settings_header_title)).text(), crate::i18n::tr(heading));
             for id in [id!(category_account_button), id!(category_general_button), id!(category_interface_button), id!(category_messages_button), id!(category_agents_button), id!(category_speech_button), id!(category_privacy_button), id!(category_about_button)] {
-                let item = screen.view.navigation_bar_button(&mut cx, &[id]);
+                let item = screen.view.navigation_bar_button(&cx, &[id]);
                 assert_eq!(item.borrow().unwrap().animator_in_state(&cx, ids!(active.on)), id == button);
             }
             screen.handle_event(&mut cx, &Event::ScriptReapply, &mut Scope::with_data(&mut state));
-            assert_eq!(screen.view.text_input(&mut cx, ids!(display_name_input)).widget_uid(), input_uid);
+            assert_eq!(screen.view.text_input(&cx, ids!(display_name_input)).widget_uid(), input_uid);
             assert_eq!(input.text(), "Unsaved display name");
-            assert_eq!(screen.view.text_input(&mut cx, ids!(interface_settings.thumb_custom_input)).widget_uid(), thumbnail_uid);
+            assert_eq!(screen.view.text_input(&cx, ids!(interface_settings.thumb_custom_input)).widget_uid(), thumbnail_uid);
             assert_eq!(thumbnail.text(), "425");
         }
     }
@@ -607,7 +607,7 @@ mod layout_tests {
             (id!(agents_settings), id!(agent_access)),
         ];
         for (group, control) in groups {
-            let panel = screen.view.app_settings(&mut cx, &[group]);
+            let panel = screen.view.app_settings(&cx, &[group]);
             for (_, other) in groups {
                 assert_eq!(!panel.widget(&cx, &[other]).is_empty(), other == control,
                     "each control must belong to exactly one category");
@@ -615,12 +615,12 @@ mod layout_tests {
             panel.populate(&mut cx, &state.app_prefs);
         }
         screen.set_selected_category(&mut cx, SettingsCategory::General);
-        let toggle = screen.view.check_box(&mut cx, ids!(general_settings.send_on_cmd_enter_toggle));
+        let toggle = screen.view.check_box(&cx, ids!(general_settings.send_on_cmd_enter_toggle));
         let actions = cx.capture_actions(|cx| cx.widget_action(toggle.widget_uid(), CheckBoxAction::Change(true)));
         screen.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::with_data(&mut state));
         assert!(!state.app_prefs.send_on_enter);
         screen.set_selected_category(&mut cx, SettingsCategory::Interface);
-        let plus = screen.view.button(&mut cx, ids!(interface_settings.ui_zoom_plus_button));
+        let plus = screen.view.button(&cx, ids!(interface_settings.ui_zoom_plus_button));
         let actions = cx.capture_actions(|cx| cx.widget_action(plus.widget_uid(), ButtonAction::Clicked(KeyModifiers::default())));
         screen.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::with_data(&mut state));
         assert_eq!(state.app_prefs.ui_zoom, original.ui_zoom.zoom_in_by(crate::settings::app_preferences::UiZoom::BUTTON_STEP));
@@ -635,16 +635,16 @@ mod layout_tests {
         screen.set_selected_category(&mut cx, SettingsCategory::Speech);
         for (width, gutter) in [(1100.0, 24.0), (375.0, 12.0)] {
             draw(&mut cx, &mut screen, width);
-            let detail = screen.view.view(&mut cx, ids!(settings_detail)).area().rect(&cx);
-            let page = screen.view.view(&mut cx, ids!(speech_settings_page)).area().rect(&cx);
+            let detail = screen.view.view(&cx, ids!(settings_detail)).area().rect(&cx);
+            let page = screen.view.view(&cx, ids!(speech_settings_page)).area().rect(&cx);
             let content = screen.view.widget(&cx, ids!(speech_settings)).area().rect(&cx);
             assert!((page.pos.x - detail.pos.x).abs() < 0.1);
             assert!((page.pos.x + page.size.x - detail.pos.x - detail.size.x).abs() < 0.1,
                 "the scroll track must use the panel's outer edge");
             assert!((content.pos.x - page.pos.x - gutter).abs() < 0.1,
                 "content keeps its readable inset independently of the scrollbar");
-            let menu = screen.view.view(&mut cx, ids!(settings_navigation)).area().rect(&cx);
-            let list = screen.view.view(&mut cx, ids!(settings_category_menu)).area().rect(&cx);
+            let menu = screen.view.view(&cx, ids!(settings_navigation)).area().rect(&cx);
+            let list = screen.view.view(&cx, ids!(settings_category_menu)).area().rect(&cx);
             assert!((list.pos.x + list.size.x - menu.pos.x - menu.size.x).abs() < 0.1);
         }
     }
@@ -657,19 +657,19 @@ mod layout_tests {
             screen.set_selected_category(&mut cx, category);
             for (width, menu_width, labels) in [(1100.0, 184.0, true), (375.0, 64.0, false), (720.0, 184.0, true)] {
                 draw(&mut cx, &mut screen, width);
-                let menu = screen.view.view(&mut cx, ids!(settings_navigation)).area().rect(&cx);
-                let detail = screen.view.view(&mut cx, ids!(settings_detail)).area().rect(&cx);
+                let menu = screen.view.view(&cx, ids!(settings_navigation)).area().rect(&cx);
+                let detail = screen.view.view(&cx, ids!(settings_detail)).area().rect(&cx);
                 assert_eq!(menu.size.x, menu_width);
                 assert_eq!(detail.pos.x, menu_width + 1.0);
                 assert!(detail.size.x > 0.0 && detail.pos.x + detail.size.x <= width + 0.1);
                 let mut last_y = 0.0;
                 for id in [id!(category_account_button), id!(category_general_button), id!(category_interface_button), id!(category_messages_button), id!(category_agents_button), id!(category_speech_button), id!(category_privacy_button), id!(category_about_button)] {
-                    let item = screen.view.navigation_bar_button(&mut cx, &[id]);
+                    let item = screen.view.navigation_bar_button(&cx, &[id]);
                     let rect = item.area().rect(&cx);
-                    let icon = item.icon(&mut cx, ids!(icon)).area().rect(&cx);
+                    let icon = item.icon(&cx, ids!(icon)).area().rect(&cx);
                     assert!(rect.pos.y >= last_y && rect.size.y == 40.0);
                     assert!(icon.size.x > 0.0 && icon.pos.x >= menu.pos.x && icon.pos.x + icon.size.x <= menu.pos.x + menu.size.x);
-                    assert_eq!(item.label(&mut cx, ids!(label)).visible(), labels);
+                    assert_eq!(item.label(&cx, ids!(label)).visible(), labels);
                     last_y = rect.pos.y + rect.size.y;
                 }
             }

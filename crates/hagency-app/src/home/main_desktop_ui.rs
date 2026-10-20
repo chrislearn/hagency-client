@@ -1480,7 +1480,7 @@ mod persistent_navigation_tests {
         for close in [true, false] {
             let actions = cx.capture_actions(|cx| if close {cx.action(HagencyAction::Close)} else {cx.action(MainDesktopUiAction::ShowChats)});
             ui.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::with_data(&mut state));
-            let dock = ui.view.dock(&mut cx, ids!(dock));
+            let dock = ui.view.dock(&cx, ids!(dock));
             assert!(!dock.item(id!(chats_welcome_tab)).is_empty());
             assert!(!dock.item(id!(home_tab)).is_empty());
             assert!(ui.most_recently_selected_room.is_none());

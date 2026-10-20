@@ -102,11 +102,10 @@ impl Lease {
         if !self.services.contains(service) {
             return Err(format!("Mini app was not granted {service}"));
         }
-        if let Some(room) = room {
-            if !self.rooms.contains(room) {
+        if let Some(room) = room
+            && !self.rooms.contains(room) {
                 return Err("Mini app was not granted access to this room".into());
             }
-        }
         Ok(())
     }
     pub fn permits_room(&self, room: &str) -> bool {

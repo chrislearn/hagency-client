@@ -688,7 +688,7 @@ impl Widget for MobileChatInfo {
                 if let Some(loaded) = action.downcast_ref::<MemberOwnershipLoaded>() {
                     if self.pin_is_current() && self.ownership_response_matches(loaded) {
                         match &loaded.result {
-                            Ok((owners,incomplete)) => {self.member_owners=owners.clone();self.ownership_unavailable=*incomplete;},
+                            Ok((owners,incomplete)) => {self.member_owners=owners.clone();self.ownership_unavailable = *incomplete;},
                             Err(_) => {self.member_owners.clear();self.ownership_unavailable=true;},
                         }
                         if let Some(data)=self.data.as_mut() {self.indented_members=group_members(&mut data.members,&self.member_owners);}
@@ -998,19 +998,19 @@ mod information_target_tests {
         info.data=Some(ChatInfoData {room:RoomNameId::empty(OwnedRoomId::try_from("!r:s").unwrap()),topic:String::new(),members,mode:None});
         info.indented_members=indented;
         info.select_tab(&mut cx,InfoTab::Members);draw_information(&mut info,&mut cx);
-        let list=info.view.portal_list(&mut cx,ids!(list));
-        let parent=list.item(&mut cx,0,id!(Member)).avatar(&mut cx,ids!(avatar)).area().rect(&cx);
-        let child=list.item(&mut cx,1,id!(Member)).avatar(&mut cx,ids!(avatar)).area().rect(&cx);
+        let list=info.view.portal_list(&cx,ids!(list));
+        let parent=list.item(&mut cx,0,id!(Member)).avatar(&cx,ids!(avatar)).area().rect(&cx);
+        let child=list.item(&mut cx,1,id!(Member)).avatar(&cx,ids!(avatar)).area().rect(&cx);
         assert_eq!(parent.size,dvec2(32.0,32.0));assert_eq!(child.size,parent.size);
         assert_eq!(child.pos.x-parent.pos.x,20.0);
         assert_eq!(child.pos.y-parent.pos.y,48.0,"Agent sits closer to its owner");
-        let next_owner=list.item(&mut cx,2,id!(Member)).avatar(&mut cx,ids!(avatar)).area().rect(&cx);
+        let next_owner=list.item(&mut cx,2,id!(Member)).avatar(&cx,ids!(avatar)).area().rect(&cx);
         assert_eq!(next_owner.pos.y-child.pos.y,56.0,"keep the gap before the next owner");
         for index in [0,1] {
             let widget=list.item(&mut cx,index,id!(Member));
-            let name=widget.label(&mut cx,ids!(name)).area().rect(&cx);
-            let user_id=widget.label(&mut cx,ids!(user_id)).area().rect(&cx);
-            let avatar=widget.avatar(&mut cx,ids!(avatar)).area().rect(&cx);
+            let name=widget.label(&cx,ids!(name)).area().rect(&cx);
+            let user_id=widget.label(&cx,ids!(user_id)).area().rect(&cx);
+            let avatar=widget.avatar(&cx,ids!(avatar)).area().rect(&cx);
             assert!((name.pos.x-(avatar.pos.x+avatar.size.x)-8.0).abs()<0.1,"avatar and text use a compact 8px gap");
             let gap=user_id.pos.y-(name.pos.y+name.size.y);
             assert!((gap-2.0).abs()<0.1,"name and Matrix ID stay together: {gap}");
@@ -1135,44 +1135,44 @@ mod information_target_tests {
         info.room=Some(room.clone());info.data=Some(ChatInfoData{room,topic:"A topic".into(),members:vec![],mode:None});
         info.agent_command=Some(("exact-original-input".into(),"original-key".into()));
         draw_information(&mut info,&mut cx);
-        assert_eq!(info.view.label(&mut cx,ids!(summary_name)).text(),"Room A");
-        assert!(!info.view.modal(&mut cx,ids!(agent_picker_modal)).is_open());
-        assert!(!info.view.view(&mut cx,ids!(member_controls)).visible());
-        assert!(!info.view.navigation_bar_button(&mut cx,ids!(history_search)).is_empty());
-        let summary=info.view.view(&mut cx,ids!(summary)).area().rect(&cx);
+        assert_eq!(info.view.label(&cx,ids!(summary_name)).text(),"Room A");
+        assert!(!info.view.modal(&cx,ids!(agent_picker_modal)).is_open());
+        assert!(!info.view.view(&cx,ids!(member_controls)).visible());
+        assert!(!info.view.navigation_bar_button(&cx,ids!(history_search)).is_empty());
+        let summary=info.view.view(&cx,ids!(summary)).area().rect(&cx);
         info.select_tab(&mut cx,InfoTab::Members);draw_information(&mut info,&mut cx);
-        let controls=info.view.view(&mut cx,ids!(member_controls)).area().rect(&cx);
+        let controls=info.view.view(&cx,ids!(member_controls)).area().rect(&cx);
         assert!(controls.pos.y>=summary.pos.y+summary.size.y-1.0,"picker follows fixed summary");
-        let members_list = info.view.portal_list(&mut cx, ids!(list)).area().rect(&cx);
+        let members_list = info.view.portal_list(&cx, ids!(list)).area().rect(&cx);
         info.agent_picker_open = true;
-        info.view.modal(&mut cx, ids!(agent_picker_modal)).open(&mut cx);
+        info.view.modal(&cx, ids!(agent_picker_modal)).open(&mut cx);
         draw_information(&mut info, &mut cx);
-        assert!(info.view.modal(&mut cx, ids!(agent_picker_modal)).is_open());
-        assert_eq!(info.view.portal_list(&mut cx, ids!(list)).area().rect(&cx), members_list,
+        assert!(info.view.modal(&cx, ids!(agent_picker_modal)).is_open());
+        assert_eq!(info.view.portal_list(&cx, ids!(list)).area().rect(&cx), members_list,
             "opening the overlay must not move or shrink the members list");
-        let dialog = info.view.view(&mut cx, ids!(agent_picker_modal.content)).area().rect(&cx);
+        let dialog = info.view.view(&cx, ids!(agent_picker_modal.content)).area().rect(&cx);
         assert!(dialog.size.x > 200.0 && dialog.size.x <= 400.0);
         assert!(dialog.pos.y > controls.pos.y, "dialog is centered in the window");
-        let invite=info.view.button(&mut cx,ids!(invite_people)).area().rect(&cx);
-        let agent=info.view.button(&mut cx,ids!(invite_my_agent)).area().rect(&cx);
+        let invite=info.view.button(&cx,ids!(invite_people)).area().rect(&cx);
+        let agent=info.view.button(&cx,ids!(invite_my_agent)).area().rect(&cx);
         assert!((invite.pos.y-agent.pos.y).abs()<1.0,"member actions share a compact row");
         assert!(invite.size.y<=32.1 && agent.size.y<=32.1);
         assert!(invite.pos.x+invite.size.x<=agent.pos.x && agent.pos.x+agent.size.x<=280.0);
-        assert!(info.view.portal_list(&mut cx,ids!(list)).area().rect(&cx).size.y>200.0,"invitation controls must leave space for members");
+        assert!(info.view.portal_list(&cx,ids!(list)).area().rect(&cx).size.y>200.0,"invitation controls must leave space for members");
         info.choosing_notifications=true;info.select_tab(&mut cx,InfoTab::Overview);draw_information(&mut info,&mut cx);
         assert!(!info.choosing_notifications);
-        assert!(!info.view.modal(&mut cx,ids!(agent_picker_modal)).is_open());
+        assert!(!info.view.modal(&cx,ids!(agent_picker_modal)).is_open());
         assert_eq!(info.agent_command,Some(("exact-original-input".into(),"original-key".into())),"tab navigation doesn't duplicate or discard invitation key");
-        assert_eq!(info.view.view(&mut cx,ids!(summary)).area().rect(&cx),summary);
+        assert_eq!(info.view.view(&cx,ids!(summary)).area().rect(&cx),summary);
         cx.with_vm(|vm|assert!(vm.take_errors().is_empty()));
         info.services_open=true;draw_information(&mut info,&mut cx);
-        assert!(info.view.view(&mut cx,ids!(services_panel)).visible());
-        assert!(!info.view.view(&mut cx,ids!(information_list)).visible());
-        assert_eq!(info.view.button(&mut cx,ids!(services_back)).text(),crate::i18n::tr("Back"));
+        assert!(info.view.view(&cx,ids!(services_panel)).visible());
+        assert!(!info.view.view(&cx,ids!(information_list)).visible());
+        assert_eq!(info.view.button(&cx,ids!(services_back)).text(),crate::i18n::tr("Back"));
         info.select_tab(&mut cx,InfoTab::Members);draw_information(&mut info,&mut cx);
         assert!(!info.services_open);
-        assert!(!info.view.view(&mut cx,ids!(services_panel)).visible());
-        assert!(info.view.view(&mut cx,ids!(information_list)).visible());
+        assert!(!info.view.view(&cx,ids!(services_panel)).visible());
+        assert!(info.view.view(&cx,ids!(information_list)).visible());
         info.clear();assert_eq!(info.tab,InfoTab::Overview);assert!(info.agent_command.is_none());
     }
     #[test]

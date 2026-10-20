@@ -1884,19 +1884,19 @@ mod resize_tests {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         let mut view = fixture(&mut cx, false);
         cx.global::<AppPreferencesGlobal>().0.composer_height = Some(360.0);
-        let bar = view.room_input_bar(&mut cx, ids!(bar));
-        let input = bar.mentionable_text_input(&mut cx, ids!(mentionable_text_input)).text_input_ref();
+        let bar = view.room_input_bar(&cx, ids!(bar));
+        let input = bar.mentionable_text_input(&cx, ids!(mentionable_text_input)).text_input_ref();
         input.set_text(&mut cx, "Draft stays intact\nwhen resizing");
         for height in [800.0, 300.0, 800.0] {
             draw(&mut cx, &mut view, height);
             draw(&mut cx, &mut view, height);
-            let card = bar.view(&mut cx, ids!(input_bar)).area().rect(&cx);
-            let timeline = view.view(&mut cx, ids!(timeline)).area().rect(&cx);
+            let card = bar.view(&cx, ids!(input_bar)).area().rect(&cx);
+            let timeline = view.view(&cx, ids!(timeline)).area().rect(&cx);
             let text = input.area().rect(&cx);
-            let send = bar.button(&mut cx, ids!(send_message_button)).area().rect(&cx);
+            let send = bar.button(&cx, ids!(send_message_button)).area().rect(&cx);
             assert!(card.size.y >= 88.0 && card.size.y <= 360.0, "{card:?}");
             assert!(timeline.size.y >= 150.0, "height={height} timeline={timeline:?} bar={:?} card={card:?}", bar.area().rect(&cx));
-            let handle = bar.view(&mut cx, ids!(composer_resize_handle)).area().rect(&cx);
+            let handle = bar.view(&cx, ids!(composer_resize_handle)).area().rect(&cx);
             assert!(handle.size.y > 0.0 && (handle.pos.y - card.pos.y).abs() < 1.0, "handle={handle:?} card={card:?}");
             assert!(text.size.y >= 32.0 && text.pos.y >= card.pos.y && text.pos.y + text.size.y <= card.pos.y + card.size.y + 0.1, "{text:?} {card:?}");
             assert!(send.pos.y + send.size.y <= card.pos.y + card.size.y + 0.1);
@@ -1912,17 +1912,17 @@ mod resize_tests {
         let mut view = fixture(&mut cx, true);
         cx.global::<AppPreferencesGlobal>().0.composer_height = Some(600.0);
         draw(&mut cx, &mut view, 700.0);
-        let bar = view.room_input_bar(&mut cx, ids!(bar));
-        assert!(!bar.view(&mut cx, ids!(composer_resize_handle)).visible());
-        assert!(bar.view(&mut cx, ids!(input_bar)).area().rect(&cx).size.y < 150.0);
+        let bar = view.room_input_bar(&cx, ids!(bar));
+        assert!(!bar.view(&cx, ids!(composer_resize_handle)).visible());
+        assert!(bar.view(&cx, ids!(input_bar)).area().rect(&cx).size.y < 150.0);
     }
 
     #[test]
     fn streaming_speech_revises_the_draft_without_a_send_action() {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         let view = fixture(&mut cx, false);
-        let bar = view.room_input_bar(&mut cx, ids!(bar));
-        let input = bar.mentionable_text_input(&mut cx, ids!(mentionable_text_input)).text_input_ref();
+        let bar = view.room_input_bar(&cx, ids!(bar));
+        let input = bar.mentionable_text_input(&cx, ids!(mentionable_text_input)).text_input_ref();
         let (tx, rx) = std::sync::mpsc::channel();
         bar.borrow_mut().unwrap().speech = Some(SpeechInput::from_test_events(&input, rx));
         for (text, is_final, expected) in [
@@ -1937,7 +1937,7 @@ mod resize_tests {
                 bar.borrow_mut().unwrap().handle_event(cx, &Event::Actions(Vec::new()), &mut Scope::empty());
             });
             assert_eq!(input.text(), expected);
-            assert!(!bar.button(&mut cx, ids!(send_message_button)).clicked(&actions));
+            assert!(!bar.button(&cx, ids!(send_message_button)).clicked(&actions));
             assert!(input.returned(&actions).is_none());
         }
         tx.send(NativeSpeechEvent::Stopped).unwrap();
