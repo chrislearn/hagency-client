@@ -5,6 +5,7 @@
 #[cfg(feature = "agent_chat")]
 use crate::agent_chat::approval_inbox::{ApprovalInboxAction, ApprovalInboxWidgetRefExt};
 use crate::agent_access::AgentAccessAction;
+use crate::desktop_integration::DesktopIntegration;
 use std::{
     cell::RefCell,
     collections::{hash_map::DefaultHasher, HashMap},
@@ -258,6 +259,7 @@ pub struct App {
     #[rust] app_state: AppState,
     #[rust] lifecycle: AppLifecycle,
     #[rust] render_maintenance: RenderMaintenance,
+    #[rust] desktop_integration: DesktopIntegration,
     #[rust] titlebar_sidebar_state: RefCell<Option<TitlebarSidebarState>>,
     /// The details of a room we're waiting on to be loaded so that we can navigate to it.
     /// This can be either a room we're waiting to join, or one we're waiting to be invited to.
@@ -1379,6 +1381,33 @@ impl AppMain for App {
 
         // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
+        if !self.embedded {
+            let window = self.ui.window(cx, ids!(main_window)).window_id();
+            match self.desktop_integration.handle_event(cx, event, window) {
+                Some(crate::desktop_integration::TrayAction::Settings) => {
+                    if self.app_state.logged_in {
+                        cx.action(NavigationBarAction::OpenSettings);
+                        cx.action(crate::desktop_integration::OpenDesktopSettings);
+                    }
+                    self.ui.redraw(cx);
+                }
+                Some(crate::desktop_integration::TrayAction::Show) => self.ui.redraw(cx),
+                Some(crate::desktop_integration::TrayAction::Quit) => {
+                    self.preserve_reader_session(cx);
+                    self.persist_runtime_state(cx, "tray quit");
+                    cx.quit();
+                }
+                None => {}
+            }
+        }
+        if !self.embedded {
+            let button = self.ui.desktop_button(cx, ids!(main_window.windows_buttons.close));
+            if self.desktop_integration.intercept_caption_close(cx, event, button) {
+                self.preserve_reader_session(cx);
+                self.persist_runtime_state(cx, "caption close to tray");
+                return;
+            }
+        }
         crate::agent_access::publish(current_user_id(), &self.app_state.agent_access);
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
@@ -1713,6 +1742,10 @@ impl App {
                     self.preserve_reader_session(cx);
                     log!("Main window close requested; persisting runtime state.");
                     self.persist_runtime_state(cx, "main window close request");
+                    if !self.embedded && self.desktop_integration.hide_on_close(cx) {
+                        e.accept_close.set(false);
+                        return;
+                    }
                     // The app only quits once its last window closes,
                     // so close its secondary windows with the main one.
                     self.moments_window_host(cx).close(cx);

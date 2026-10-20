@@ -166,6 +166,18 @@ Agent Unlimited does not bypass finite Room/member limits or explicit request de
 
 ## Other retained pages
 
+### Windows startup and system tray
+
+**Settings → General → Startup and system tray** controls sign-in startup,
+starting hidden, minimizing to the tray, and keeping the app running after closing
+its main window. Sign-in startup and starting hidden are off by default; the two
+tray behaviors are on. Changes are saved for this device across accounts.
+Click the Hagency tray icon to restore the window, or right-click for **Settings**
+and **Quit Hagency**. Launching the same profile again restores its existing window.
+If the icon is in Windows' hidden-icons area, expand that area or pin the icon.
+The settings page also links to Windows Startup apps, where Windows may separately
+disable startup. Tray support currently applies to the standalone Windows app.
+
 **Chats** includes search, attachments, Room information, members and invitations.
 **Contacts** opens ordinary conversations. **Mini apps** keeps non-Palpo built-ins,
 App Hub, local import, permission review and scoped execution. **More** opens

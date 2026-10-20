@@ -14,6 +14,12 @@ fn main() {
     if let Some(result)=hagency::native_owner::run_guardian_if_requested() {
         if result.is_err(){std::process::exit(1);}return;
     }
+    #[cfg(target_os = "windows")]
+    let _instance = match hagency_app::desktop_integration::acquire_instance() {
+        Ok(Some(instance)) => instance,
+        Ok(None) => return,
+        Err(error) => { eprintln!("Could not initialize Hagency: {error}"); return; }
+    };
     hagency_app::app::app_main()
 }
 

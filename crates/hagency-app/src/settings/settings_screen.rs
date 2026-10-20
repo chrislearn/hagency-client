@@ -238,6 +238,9 @@ impl Widget for SettingsScreen {
                 cx.action(SettingsPageChanged);
             }
             for action in actions {
+                if action.downcast_ref::<crate::desktop_integration::OpenDesktopSettings>().is_some() {
+                    self.set_selected_category(cx, SettingsCategory::General);
+                }
                 if let Some(action) = action.downcast_ref::<AgentAccessAction>() {
                     match action {
                         AgentAccessAction::Open if scope.data.get::<AppState>().is_some_and(|a| a.selected_tab == SelectedTab::Settings) => {
@@ -515,6 +518,32 @@ mod layout_tests {
         cx2d.end_pass_sized_turtle();
         list.end(&mut cx2d);
         cx2d.end_pass(&pass);
+    }
+
+    #[test]
+    fn tray_settings_open_general_and_fit_narrow_windows() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut screen = screen(&mut cx);
+        let mut state = AppState { selected_tab: SelectedTab::Settings, ..Default::default() };
+        cx.global::<crate::desktop_integration::DesktopSettings>().enabled = true;
+        let actions = cx.capture_actions(|cx| cx.action(crate::desktop_integration::OpenDesktopSettings));
+        screen.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::with_data(&mut state));
+        assert_eq!(screen.selected_category, SettingsCategory::General);
+        for width in [1100.0, 375.0] {
+            draw(&mut cx, &mut screen, width);
+            let detail = screen.view.view(&cx, ids!(settings_detail)).area().rect(&cx);
+            let card = screen.view.view(&cx, ids!(general_settings.desktop_settings));
+            assert!(card.visible());
+            for id in [id!(autostart_toggle), id!(start_hidden_toggle), id!(minimize_to_tray_toggle), id!(close_to_tray_toggle)] {
+                let control = screen.view.check_box(&cx, &[id!(general_settings), id]);
+                let rect = control.area().rect(&cx);
+                assert!(rect.size.x > 0.0 && rect.size.y > 0.0);
+                assert!(rect.pos.x >= detail.pos.x && rect.pos.x + rect.size.x <= width + 0.1);
+            }
+        }
+        cx.global::<crate::desktop_integration::DesktopSettings>().enabled = false;
+        draw(&mut cx, &mut screen, 1100.0);
+        assert!(!screen.view.view(&cx, ids!(general_settings.desktop_settings)).visible());
     }
 
     #[test]

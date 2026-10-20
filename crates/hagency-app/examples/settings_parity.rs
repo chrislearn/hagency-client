@@ -4,6 +4,7 @@ use hagency_app::{app::AppState, room::room_input_bar::RoomInputBarWidgetRefExt,
     settings::theme_studio::{ThemeStudioAction, ThemeStudioWidgetRefExt},
     miniapps::{MiniAppsAction, window::MiniAppsWindowHostWidgetRefExt}};
 use matrix_sdk::ruma::{events::room::message::RoomMessageEventContent, room_id};
+use hagency_app::desktop_integration::{DesktopIntegration, OpenDesktopSettings, TrayAction};
 app_main!(App);
 script_mod! {
     use mod.prelude.widgets.*
@@ -35,6 +36,7 @@ script_mod! {
 struct App {
     #[live] ui: WidgetRef,
     #[rust] state: AppState,
+    #[rust] desktop: DesktopIntegration,
 }
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
@@ -109,6 +111,18 @@ impl AppMain for App {
             }
         }
         self.match_event(cx,event);
+        let window = self.ui.window(cx, ids!(main_window)).window_id();
+        match self.desktop.handle_event(cx, event, window) {
+            Some(TrayAction::Quit) => cx.quit(),
+            Some(TrayAction::Settings) => cx.action(OpenDesktopSettings),
+            Some(TrayAction::Show) => self.ui.redraw(cx),
+            None => {}
+        }
+        if let Event::WindowCloseRequested(request) = event
+            && Some(request.window_id) == window && self.desktop.hide_on_close(cx)
+        { request.accept_close.set(false); }
+        let button = self.ui.desktop_button(cx, ids!(main_window.windows_buttons.close));
+        if self.desktop.intercept_caption_close(cx, event, button) { return; }
         self.ui.handle_event(cx,event,&mut Scope::with_data(&mut self.state));
         hagency_app::theme::packages::after_event(cx,event);
         if matches!(event, Event::LiveEdit) { hagency_app::i18n::refresh_ui(cx, &self.ui); }

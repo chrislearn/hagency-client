@@ -111,10 +111,37 @@ script_mod! {
     let SettingsPreferenceCard = RinxCard {
         width: Fill height: Fit flow: Down padding: 16 spacing: 10
     }
+    let DesktopToggle = ToggleFlat {
+        width: Fill height: Fit
+        label_walk +: {width: Fill height: Fit}
+        flow: Flow.Right{wrap: true}
+    }
     mod.widgets.AppSettings = #(AppSettings::register_widget(vm)) {
         width: Fill height: Fit flow: Down spacing: 16
     }
     mod.widgets.GeneralSettings = mod.widgets.AppSettings {
+        desktop_settings := SettingsPreferenceCard {
+            visible: false
+            PreferenceHeading {text: #(crate::i18n::tr("Startup and system tray")) i18n_text: "Startup and system tray"}
+            autostart_toggle := DesktopToggle {
+                text: #(crate::i18n::tr("Start Hagency when I sign in to Windows")) i18n_text: "Start Hagency when I sign in to Windows"
+            }
+            start_hidden_toggle := DesktopToggle {
+                text: #(crate::i18n::tr("Start hidden in the system tray")) i18n_text: "Start hidden in the system tray"
+            }
+            minimize_to_tray_toggle := DesktopToggle {
+                text: #(crate::i18n::tr("Minimize to the system tray")) i18n_text: "Minimize to the system tray"
+            }
+            close_to_tray_toggle := DesktopToggle {
+                text: #(crate::i18n::tr("Keep running in the system tray when I close the window")) i18n_text: "Keep running in the system tray when I close the window"
+            }
+            mod.widgets.SettingsSectionDescription {
+                body: #(crate::i18n::tr("<ul><li>Click the tray icon to restore Hagency. Right-click it for settings or to quit.</li><li>Tray preferences apply to this device and all accounts. Windows may place the icon under hidden icons.</li><li>Windows can also disable startup in its Startup apps settings.</li></ul>")) i18n_body: "<ul><li>Click the tray icon to restore Hagency. Right-click it for settings or to quit.</li><li>Tray preferences apply to this device and all accounts. Windows may place the icon under hidden icons.</li><li>Windows can also disable startup in its Startup apps settings.</li></ul>"
+            }
+            windows_startup_settings := RobrixNeutralIconButton {
+                text: #(crate::i18n::tr("Open Windows startup settings")) i18n_text: "Open Windows startup settings"
+            }
+        }
         SettingsPreferenceCard {
             View {
                 width: Fill height: Fit flow: Flow.Right{wrap: true} align: Align{y: 0.5} spacing: 12
@@ -385,6 +412,7 @@ script_mod! {
 #[derive(Script, Widget)]
 pub struct AppSettings {
     #[deref] view: View,
+    #[rust] desktop_settings_loaded: bool,
 }
 
 impl ScriptHook for AppSettings {
@@ -414,6 +442,7 @@ impl ScriptHook for AppSettings {
 
 impl Widget for AppSettings {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if matches!(event, Event::Foreground) { self.populate_desktop_settings(cx); }
         if let Event::Actions(actions) = event {
             self.handle_actions(cx, actions, scope);
         }
@@ -421,13 +450,70 @@ impl Widget for AppSettings {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let desktop_enabled = cx.global::<crate::desktop_integration::DesktopSettings>().enabled;
+        if desktop_enabled && !self.desktop_settings_loaded { self.populate_desktop_settings(cx); }
+        self.view.view(cx, ids!(desktop_settings)).set_visible(cx, desktop_enabled);
         self.view.drop_down(cx, ids!(language_dropdown)).set_selected_item(cx, crate::i18n::language().index());
         self.view.draw_walk(cx, scope, walk)
     }
 }
 
 impl AppSettings {
+    fn populate_desktop_settings(&mut self, cx: &mut Cx) {
+        use crate::desktop_integration::{self, DesktopSettings};
+        if !cx.global::<DesktopSettings>().enabled || self.view.widget(cx, ids!(desktop_settings)).is_empty() { return; }
+        self.desktop_settings_loaded = true;
+        let prefs = cx.global::<DesktopSettings>().preferences;
+        for (id, active) in [
+            (id!(start_hidden_toggle), prefs.start_hidden),
+            (id!(minimize_to_tray_toggle), prefs.minimize_to_tray),
+            (id!(close_to_tray_toggle), prefs.close_to_tray),
+        ] {
+            self.view.check_box(cx, &[id]).set_active(cx, active, Animate::No);
+        }
+        match desktop_integration::autostart_enabled() {
+            Ok(enabled) => self.view.check_box(cx, ids!(autostart_toggle)).set_active(cx, enabled, Animate::No),
+            Err(error) => enqueue_popup_notification(
+                crate::i18n::format("Could not read startup settings: {error}", &[("error", error.to_string())]),
+                PopupKind::Error, Some(5.0)),
+        }
+    }
+
+    fn handle_desktop_settings(&mut self, cx: &mut Cx, actions: &Actions) {
+        use crate::desktop_integration::{self, DesktopSettings};
+        if !cx.global::<DesktopSettings>().enabled || self.view.widget(cx, ids!(desktop_settings)).is_empty() { return; }
+        if self.view.button(cx, ids!(windows_startup_settings)).clicked(actions) {
+            cx.open_url("ms-settings:startupapps", OpenUrlInPlace::No);
+        }
+        if let Some(enabled) = self.view.check_box(cx, ids!(autostart_toggle)).changed(actions) {
+            if let Err(error) = desktop_integration::set_autostart(enabled) {
+                enqueue_popup_notification(
+                    crate::i18n::format("Could not update startup settings: {error}", &[("error", error.to_string())]),
+                    PopupKind::Error, Some(5.0));
+            }
+            self.populate_desktop_settings(cx);
+        }
+        let mut preferences = cx.global::<DesktopSettings>().preferences;
+        let previous = preferences;
+        for (id, field) in [
+            (id!(start_hidden_toggle), &mut preferences.start_hidden),
+            (id!(minimize_to_tray_toggle), &mut preferences.minimize_to_tray),
+            (id!(close_to_tray_toggle), &mut preferences.close_to_tray),
+        ] {
+            if let Some(enabled) = self.view.check_box(cx, &[id]).changed(actions) { *field = enabled; }
+        }
+        if preferences != previous {
+            if let Err(error) = desktop_integration::save_preferences(cx, preferences) {
+                enqueue_popup_notification(
+                    crate::i18n::format("Could not save tray settings: {error}", &[("error", error.to_string())]),
+                    PopupKind::Error, Some(5.0));
+            }
+            self.populate_desktop_settings(cx);
+        }
+    }
+
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
+        self.handle_desktop_settings(cx, actions);
         if let Some(index) = self.view.drop_down(cx, ids!(language_dropdown)).changed(actions) {
             if let Err(error) = crate::i18n::set_language(cx, crate::i18n::Language::from_index(index)) {
                 enqueue_popup_notification(crate::i18n::format("Could not save language: {error}", &[("error", error.to_string())]), PopupKind::Error, Some(5.0));
@@ -674,6 +760,7 @@ impl AppSettings {
     /// by the codegen apply chain.
     pub fn populate(&mut self, cx: &mut Cx, prefs: &AppPreferences) {
         Self::populate_safe(cx, &self.view, prefs);
+        self.populate_desktop_settings(cx);
 
         // The animator setup below uses `set_active(Animate::No)` →
         // `animator_cut` → `cx.with_vm`, which would panic from

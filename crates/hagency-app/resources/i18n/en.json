@@ -1992,5 +1992,18 @@
   "View License": "View License",
   "Credits & Notices": "Credits & Notices",
   "User Guide": "User Guide",
-  "Downloads & Releases": "Downloads & Releases"
+  "Downloads & Releases": "Downloads & Releases",
+  "Startup and system tray": "Startup and system tray",
+  "Start Hagency when I sign in to Windows": "Start Hagency when I sign in to Windows",
+  "Start hidden in the system tray": "Start hidden in the system tray",
+  "Minimize to the system tray": "Minimize to the system tray",
+  "Keep running in the system tray when I close the window": "Keep running in the system tray when I close the window",
+  "<ul><li>Click the tray icon to restore Hagency. Right-click it for settings or to quit.</li><li>Tray preferences apply to this device and all accounts. Windows may place the icon under hidden icons.</li><li>Windows can also disable startup in its Startup apps settings.</li></ul>": "<ul><li>Click the tray icon to restore Hagency. Right-click it for settings or to quit.</li><li>Tray preferences apply to this device and all accounts. Windows may place the icon under hidden icons.</li><li>Windows can also disable startup in its Startup apps settings.</li></ul>",
+  "Open Windows startup settings": "Open Windows startup settings",
+  "Show main window": "Show main window",
+  "Quit Hagency": "Quit Hagency",
+  "The system tray is unavailable. Hagency will keep its normal window controls.": "The system tray is unavailable. Hagency will keep its normal window controls.",
+  "Could not read startup settings: {error}": "Could not read startup settings: {error}",
+  "Could not update startup settings: {error}": "Could not update startup settings: {error}",
+  "Could not save tray settings: {error}": "Could not save tray settings: {error}"
 }

@@ -21,6 +21,8 @@ AttributeIDSupressMenu = "AttributeIDSupressMenu"
 # POSIX/kernel names and API identifiers must retain their spelling.
 WRONLY = "WRONLY"
 O_WRONLY = "O_WRONLY"
+NIN_SELECT = "NIN_SELECT"
+NIN_KEYSELECT = "NIN_KEYSELECT"
 msg_controllen = "msg_controllen"
 CapInh = "CapInh"
 PNGs = "PNGs"
