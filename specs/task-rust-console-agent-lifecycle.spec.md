@@ -2,8 +2,12 @@ spec: task
 name: "Serve implemented agent lifecycle commands behind one finite lifecycle scope"
 inherits: project
 satisfies: [REQ-RUST-MIGRATION-EXECUTION]
-tags: [active, rust, console, agents, lifecycle, browser]
+tags: [active, rust, console, agents, lifecycle]
 ---
+
+> Desktop-only scope (2026-10-20): CLI and Web page behavior below is historical.
+> Shared engine selectors remain active unless explicitly marked Retired-Test.
+> See [the desktop contract](native-owner-client.spec.md) for current product entry points.
 
 ## Intent
 
@@ -33,24 +37,17 @@ together. The roster renders only controls with a real durable effect.
 - Do not widen an existing scope or fold lifecycle into configure (D-SCOPE rejected it); do not change the two existing scopes, their flags' `conflicts_with`, or any existing mutation route.
 - Do not change `one_live_session` (`003:19`), the `dispatch_stops` DDL, `fence_dispatch`'s uncertain-vs-determinate split, `approval_verdict_receipts`, or the close path.
 - Do not touch `browser_boundary`/`authenticate`/`common_authority`/`same_origin`, the five-document exception, the 8-permit semaphore, session rules, or `assets.rs:157`'s required key.
-- Do not gate any scenario by OS or feature in the binding set (the browser scenario rides the `native-console-browser` lane as ever — present in `--all-features --list`, executing only when enabled).
+- Do not gate any scenario by OS or feature in the binding set (the former browser selector is retired).
 
 ## Boundaries
 
 ### Allowed Changes
 - crates/hagency/src/main.rs
 - crates/hagency/src/console.rs # the lifecycle router + operator issuer wiring and the scope error map — the scope cannot route or refuse without them
-- crates/hagency/src/console/client.rs # lifecycle_access() issues the operator CLI ticket — the flag has no issuer without it
 - crates/hagency/src/console/authority.rs
 - crates/hagency/src/console/agents.rs
 - crates/hagency-store/src/domain_worker.rs
 - crates/hagency-store/src/domain/conversation_lifecycle.rs
-- mockup/app/agents/page.jsx
-- mockup/components/NativeAgents.jsx # the lifecycle controls rendered from served permissions — the page has no controls without it
-- mockup/components/Data.jsx # the agents load path and permissions slice — the controls cannot read manageLifecycle without it
-- mockup/lib/native-api.js # stopAgent + the exact-key validator — the implemented control has no client without it
-- mockup/scripts/native-console-browser.mjs # the lifecycle browser lane over the roster walk — the browser scenario has no driver without it
-- mockup/lib/i18n.js
 - crates/hagency/tests/console/agents.rs
 - crates/hagency/tests/console.rs
 - crates/hagency/tests/cli.rs
@@ -115,14 +112,7 @@ Scenario: Preset-apply refuses until its durable transition exists
 
 Scenario: The roster page renders lifecycle controls only from served permissions
   Retired-Test: native_console_agent_lifecycle_browser
-  Level: integration
-  Test Double: real Chromium over a fresh native fixture with the built roster page, receiving no operator token; browser-lane
-  Given the native-console-browser feature whose selector appears in cargo test --list under --all-features exactly as native_console_browser is bound by the usage console spec
-  When the roster renders under a read-only session and under an agent-lifecycle session
-  Then the read-only roster shows no enabled lifecycle control
-  And the scoped roster shows stop enabled from the served permissions boolean
-  And start and preset controls remain absent
-  And no external request leaves the page
+
 
 ## Decisions
 
@@ -142,11 +132,8 @@ success until a complete durable retire/reprovision transition is designed.
 management flags, and the CLI selector asserts each combination is refused
 before any ticket issues — a declaration is not a test.
 
-**The browser lane is the roster walk's own driver.**
-`native_console_agent_lifecycle_browser` rides
-`mockup/scripts/native-console-browser.mjs` (now licensed in Allowed Changes),
-adding a lifecycle lane that mints no ticket and asserts only the implemented
-stop control appears when `permissions.manageLifecycle` is true.
+**Retired browser driver.** The former lifecycle browser scenario and its driver
+were removed with the Web product.
 
 **Stop's widening to `retire`'s session cascade is a later slice.** The route
 fences only the resolved dispatch — the one the named engagement resolves —
@@ -177,4 +164,4 @@ console page.
 
 ## Owner-only browser qualification (2026-10-07)
 
-The retired browser selectors above exercised removed Fleet/operator pages, resources/accounts/project-sides/task workflows or binary startup with old domain SQLite. They are removed product tests, not retained SDK qualification. Independent SDK HTTP/library selectors in this mixed spec remain active. Current browser qualification is the actual OwnerHost `native_console_rail_pages_are_shipped_and_served` plus `mockup/scripts/check-owner-console.mjs` in the enabled CI browser lane; it covers owner navigation, local ticket exchange, provider/runtime DTOs, explicit Estimated and restricted-files opt-in, exact request/tool approvals and absence of automatic inference. It does not claim old Fleet pages, encrypted delivery or paid model completion.
+The former browser qualification and Web console have been retired. Independent SDK HTTP/library selectors in this mixed contract remain active. Current desktop and OAuth qualification is defined in `native-owner-client.spec.md`; historical browser selectors are not passing evidence.

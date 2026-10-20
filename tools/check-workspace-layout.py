@@ -37,9 +37,9 @@ def main():
             assert "workspace" not in data, f"Nested workspace: {name}"
     lock = tomllib.loads((ROOT / "Cargo.lock").read_text())
     assert not any("github.com/chrislearn/hagency-client" in p.get("source", "") for p in lock["package"]), "Duplicate Git engine"
-    cli = next(p for p in packages if p["name"] == "hagency")
-    assert cli["default_run"] is None
-    assert not any(t["name"] == "hagency-cli" for t in cli["targets"])
+    engine_crate = next(p for p in packages if p["name"] == "hagency")
+    assert engine_crate["default_run"] is None
+    assert not any(t["name"] == "hagency-cli" for t in engine_crate["targets"])
     binaries = [t["name"] for p in packages for t in p["targets"] if "bin" in t["kind"]]
     assert len(binaries) == len(set(binaries)), "Colliding workspace executable names"
     print(json.dumps({"packages": len(packages), "app_engine": engine["path"],

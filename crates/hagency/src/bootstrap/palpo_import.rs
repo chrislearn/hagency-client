@@ -205,8 +205,8 @@ pub(crate) fn homeserver(homeserver: &str) -> Result<String, Error> {
     Ok(origin.as_str().trim_end_matches('/').to_owned())
 }
 
-/// The three private files `serve --palpo-transport` reads; one writer for the
-/// CLI and the console import.
+/// Write the three private transport configuration files through one shared
+/// SDK import path.
 pub(crate) fn write(
     state: &Path,
     registration: &Registration,

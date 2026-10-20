@@ -5,6 +5,10 @@ satisfies: [REQ-RUST-MIGRATION-EXECUTION]
 tags: [active, rust, accounts, readiness, migration-028]
 ---
 
+> Desktop-only scope (2026-10-20): CLI and Web page behavior below is historical.
+> Shared engine selectors remain active unless explicitly marked Retired-Test.
+> See [the desktop contract](native-owner-client.spec.md) for current product entry points.
+
 ## Intent
 
 Bind MA-S1 (ADR-114's amendment) under the decided D-ADR114: the provider
@@ -40,7 +44,6 @@ store half only: the console DTO field is MA-S3b's and stays out.
 - crates/hagency-store/src/lib.rs
 - crates/hagency-store/src/migrations/028-account-login-readiness.sql
 - crates/hagency-store/tests/accounts.rs
-- crates/hagency/src/bootstrap/accounts.rs
 - crates/hagency/src/main.rs
 - tools/native/account-vectors.mjs
 - crates/hagency-store/tests/fixtures/account-identity.json
@@ -50,7 +53,6 @@ store half only: the console DTO field is MA-S3b's and stays out.
 
 ### Forbidden
 - Live providers, real credentials, deployed state.
-- mockup/** (the DTO field is MA-S3b's); crates/hagency/src/console/**; any retained product file.
 
 ## Acceptance Criteria
 
@@ -103,30 +105,15 @@ Scenario: Native readiness agrees with the retained verdict
 
 Scenario: The CLI login route drives the production path
   Retired-Test: native_account_login_route_records_ready
-  Level: integration
-  Test Double: actual isolated files and SQLite, the fake login binary (hagency-login-probe)
-  Given a prepared managed account and the fake provider login binary
-  When the CLI account login --id route runs
-  Then begin_account_login allocates the attempt, prepare_login/apply_codex_environment set the retained namespace, and settle_account_login records observed — account_readiness reads ready
-  Production caller: hagency::bootstrap::accounts::run
+
 
 Scenario: A refused login through the production route never reads ready
   Retired-Test: native_account_login_route_refused_never_ready
-  Level: integration
-  Test Double: actual isolated files and SQLite, the fake login binary refusing
-  Given a prepared managed account whose provider login the binary refuses
-  When the CLI account login --id route runs
-  Then settle_account_login records refused — account_readiness reads unknown, never ready
-  Production caller: hagency::bootstrap::accounts::run
+
 
 Scenario: An unclassifiable login through the production route never reads ready
   Retired-Test: native_account_login_route_unclassified_never_ready
-  Level: integration
-  Test Double: actual isolated files and SQLite, the fake login binary exiting an unclassified status
-  Given a prepared managed account whose provider login the binary neither succeeds nor refuses
-  When the CLI account login --id route runs
-  Then the fail-closed arm records uncertain in the observation row — account_readiness reads unknown, never ready
-  Production caller: hagency::bootstrap::accounts::run
+
 
 ## Decisions
 

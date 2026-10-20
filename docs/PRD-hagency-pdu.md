@@ -1,3 +1,6 @@
+> Historical record: CLI and browser-console instructions below are retired.
+> The current client is the native desktop application; see the repository README.
+
 # PRD — Hagency as a digital-labour resource plane
 
 Version: 0.3

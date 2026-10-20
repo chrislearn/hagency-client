@@ -5,6 +5,10 @@ satisfies: [REQ-RUST-MIGRATION-EXECUTION]
 tags: [active, rust, console, accounts, managed-accounts]
 ---
 
+> Desktop-only scope (2026-10-20): CLI and Web page behavior below is historical.
+> Shared engine selectors remain active unless explicitly marked Retired-Test.
+> See [the desktop contract](native-owner-client.spec.md) for current product entry points.
+
 ## Intent
 
 Bind MA-S3a of the account-surface design v3: list, prepare (reserve+
@@ -35,7 +39,7 @@ main.rs, which was the gap.
 - Do not serve `namespace_identity`, `identity_tuple`, `seat_id`, `preset_id` or any identity-triple component through any key — no readiness inference, no login, no auth-file read, no legacy import.
 - Do not add a `ConsoleAccount` CLI subcommand; the offline `account` verb stays the CLI surface.
 - Do not change `ManagedAccount`'s `!Clone`/`!Deserialize`, `AccountEnrollmentAccess` as `AccountEnrollmentCommand`'s only constructor, `materialize_account`'s one-shot ordering, the `resource_accounts` immutability triggers, the console boundary machinery (five-document exception, hoops, semaphore, session rules, the required asset key), or the existing two flags' `conflicts_with`.
-- Do not gate any scenario by OS or feature in the binding set (the browser scenario rides the native-console-browser lane as ever).
+- Do not gate any scenario by OS or feature in the binding set (the former browser selector is retired).
 
 ## Boundaries
 
@@ -45,19 +49,12 @@ main.rs, which was the gap.
 - crates/hagency/src/console/accounts.rs
 - crates/hagency/src/console.rs
 - crates/hagency/src/console/authority.rs
-- crates/hagency/src/console/client.rs
 - crates/hagency/src/console/assets.rs
 - crates/hagency/src/main.rs
 - crates/hagency/tests/console/accounts.rs
 - crates/hagency/tests/console.rs
 - crates/hagency/tests/console/browser.rs
 - crates/hagency/tests/cli.rs
-- mockup/lib/native-api.js
-- mockup/lib/i18n.js
-- mockup/components/NativeAccounts.jsx
-- mockup/app/accounts/page.jsx
-- mockup/scripts/build-native-console.mjs
-- mockup/scripts/native-console-accounts-browser.mjs
 - specs/task-rust-console-accounts.spec.md
 - knowledge/decisions/adr-108-native-console-resource-publication.md
 - knowledge/decisions/adr-111-native-console-resource-configuration.md
@@ -101,12 +98,7 @@ Scenario: An interrupted or slow preparation stays inspectable and unknown
 
 Scenario: The accounts page renders under the native browser boundary
   Retired-Test: native_console_accounts_browser
-  Level: integration
-  Test Double: real Chromium over a fresh native fixture, receiving no operator token
-  Given the native console fixture and the built accounts page
-  When the browser opens /console/accounts
-  Then the list reaches data-native-state ready with no external request
-  And no credential namespace tuple seat or volume value appears in the DOM or in local or session storage
+
 
 ## Out of Scope
 
@@ -115,4 +107,4 @@ command-binding follow-up for reserve and retire, and every other console page.
 
 ## Owner-only browser qualification (2026-10-07)
 
-The retired browser selectors above exercised removed Fleet/operator pages, resources/accounts/project-sides/task workflows or binary startup with old domain SQLite. They are removed product tests, not retained SDK qualification. Independent SDK HTTP/library selectors in this mixed spec remain active. Current browser qualification is the actual OwnerHost `native_console_rail_pages_are_shipped_and_served` plus `mockup/scripts/check-owner-console.mjs` in the enabled CI browser lane; it covers owner navigation, local ticket exchange, provider/runtime DTOs, explicit Estimated and restricted-files opt-in, exact request/tool approvals and absence of automatic inference. It does not claim old Fleet pages, encrypted delivery or paid model completion.
+The former browser qualification and Web console have been retired. Independent SDK HTTP/library selectors in this mixed contract remain active. Current desktop and OAuth qualification is defined in `native-owner-client.spec.md`; historical browser selectors are not passing evidence.

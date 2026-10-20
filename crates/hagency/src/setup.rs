@@ -1,4 +1,4 @@
-//! `hagency setup`: prepare a state directory for an imported Palpo fleet
+//! SDK preparation of a state directory for an imported Palpo fleet
 //! (ADR-187) without hand-writing `fleet-runtime.json`.
 //!
 //! It initializes the state directory when it is new, finds the Codex
@@ -52,7 +52,7 @@ pub struct Report {
     pub runtime_file: PathBuf,
 }
 
-/// `hagency-cli init`: a new or empty private directory, a fresh operator token
+/// Initialize a new or empty private directory with a fresh operator token
 /// and both databases.
 pub fn init_state(state_dir: &Path) -> Result<(), String> {
     private::directory(state_dir).map_err(|e| format!("state directory: {e}"))?;

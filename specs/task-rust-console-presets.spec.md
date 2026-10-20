@@ -5,6 +5,10 @@ satisfies: [REQ-RUST-MIGRATION-EXECUTION]
 tags: [active, rust, console, resources, catalogue]
 ---
 
+> Desktop-only scope (2026-10-20): CLI and Web page behavior below is historical.
+> Shared engine selectors remain active unless explicitly marked Retired-Test.
+> See [the desktop contract](native-owner-client.spec.md) for current product entry points.
+
 ## Intent
 
 Bind the presets-and-catalogue design v2 (G5, as a section of the existing
@@ -36,10 +40,6 @@ ADR-111's.
 - crates/hagency-store/tests/catalog_publication.rs
 - crates/hagency/src/console/resources.rs
 - crates/hagency/tests/console/resources.rs
-- mockup/components/NativeResources.jsx
-- mockup/lib/native-api.js
-- mockup/lib/i18n.js # nr.fillable/nr.families/nr.overTier in both dictionaries — the new columns render bare keys without them
-- mockup/scripts/native-console-resources-browser.mjs # the catalogue assertions in the resources browser walk — the browser scenario has no driver without it
 - specs/task-rust-console-presets.spec.md
 - knowledge/decisions/adr-108-native-console-resource-publication.md
 - docs/native-engine.md

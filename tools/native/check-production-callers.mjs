@@ -352,7 +352,7 @@ export function typeHints(sig, body, impls, structFields) {
 }
 
 // crate::module[::Type]::fn -> the single definition it names, or null.
-// hagency::bootstrap::accounts::run -> crates/hagency/src/bootstrap/accounts.rs
+// hagency::native_owner::open_with_matrix -> crates/hagency/src/native_owner.rs
 // hagency_store::domain::approve -> crates/hagency-store/src/domain.rs
 // A Type segment (capitalised) is consumed as an impl filter, not a path part.
 export function resolvePath(graph, files, full) {

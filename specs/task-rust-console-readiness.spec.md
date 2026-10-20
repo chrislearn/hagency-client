@@ -2,8 +2,12 @@ spec: task
 name: "Serve the console readiness and version strip from the existing boundaries"
 inherits: project
 satisfies: [REQ-RUST-MIGRATION-EXECUTION]
-tags: [active, rust, console, readiness, version]
+tags: [retired, rust, console, readiness, version]
 ---
+
+> Desktop-only scope (2026-10-20): CLI and Web page behavior below is historical.
+> Shared engine selectors remain active unless explicitly marked Retired-Test.
+> See [the desktop contract](native-owner-client.spec.md) for current product entry points.
 
 ## Intent
 
@@ -37,16 +41,6 @@ stays frozen.
 strip's en/zh words (the console renders every visible word through t()),
 and mockup/app/resources/new/page.jsx mounts the strip at the fifth native
 page's own PageHead sites — the one page-file exception to Forbidden. -->
-- mockup/components/NativeStatusStrip.jsx
-- mockup/components/PageHead.jsx
-- mockup/components/NativeUsage.jsx
-- mockup/components/NativeResources.jsx
-- mockup/components/NativeAlerts.jsx
-- mockup/components/NativeEngagements.jsx
-- mockup/lib/native-api.js
-- mockup/lib/i18n.js
-- mockup/app/resources/new/page.jsx
-- mockup/scripts/build-native-console.mjs
 - crates/hagency/tests/console/status_strip.rs
 - crates/hagency/tests/console.rs
 - specs/task-rust-console-readiness.spec.md
@@ -61,28 +55,15 @@ page's own PageHead sites — the one page-file exception to Forbidden. -->
 
 Scenario: The strip renders not-ready on a 503 component
   Retired-Test: native_console_status_strip_503_renders_not_ready
-  Level: integration
-  Test Double: the console fixture with a closed domain writer driving /ready to 503; browser-lane
-  Given the native-console-browser feature whose selector appears in cargo test --list under --all-features exactly as native_console_browser is bound by the usage console spec and a console page rendered while /ready answers 503 with a failing component
-  When the strip renders
-  Then it shows not ready with the failing component's name and state word and never the word ready
+
 
 Scenario: The strip renders unknown when /ready is unreachable
   Retired-Test: native_console_status_strip_unreachable_renders_unknown
-  Level: integration
-  Test Double: the console fixture with the readiness route unreachable; browser-lane
-  Given the native-console-browser feature whose selector appears in cargo test --list under --all-features exactly as native_console_browser is bound by the usage console spec and a console page whose readiness fetch fails at the network level
-  When the strip renders
-  Then it shows unknown with no component list and never ready
+
 
 Scenario: The built assets carry the workspace version after a rebuild
   Retired-Test: native_console_status_strip_version_matches_workspace
-  Level: integration
-  Test Double: the real asset bundle located through HAGENCY_NATIVE_CONSOLE_ASSETS; never the synthetic console fixture
-  Given console assets built by build-native-console.mjs with the staged constants appended to lib/native-api.js
-  When the bundled HAGENCY_NATIVE_VERSION value is compared with the workspace [workspace.package] version
-  Then the values are equal and the assertion is on the value never a chunk hash or size
-  And a missing bundle or a missing constant fails the test never skips
+
 
 ## Out of Scope
 
@@ -90,4 +71,4 @@ Restart and stop controls (the service wrapper's slice), any Rust change, the
 retained console's pages, and the readiness payload itself (frozen by
 ADR-096's amendments).
 
-Owner browser cutover: retired readiness/version-strip assertions required the removed usage widget/global build marker. The current owner bundle contains no such widget/marker. Binary version still has actual release verification; SDK readiness HTTP tests remain active. New product browser evidence is the actual OwnerRail binary qualification and explicit owner UI Chrome contract in `native-owner-client.spec.md`.
+The former browser status strip and its release evidence are retired. Current desktop/OAuth qualification is defined in `native-owner-client.spec.md`.

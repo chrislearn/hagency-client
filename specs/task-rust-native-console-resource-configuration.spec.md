@@ -2,8 +2,12 @@ spec: task
 name: "Create and edit additional native resource configurations"
 inherits: project
 satisfies: [REQ-RUST-MIGRATION-EXECUTION]
-tags: [active, rust, console, resources, browser]
+tags: [active, rust, console, resources]
 ---
+
+> Desktop-only scope (2026-10-20): CLI and Web page behavior below is historical.
+> Shared engine selectors remain active unless explicitly marked Retired-Test.
+> See [the desktop contract](native-owner-client.spec.md) for current product entry points.
 
 ## Intent
 
@@ -50,7 +54,6 @@ private account association. No schema dependency or live configuration changes.
 - ./crates/hagency-store/tests/resource_configuration.rs
 - ./crates/hagency/src/console.rs
 - ./crates/hagency/src/console/authority.rs
-- ./crates/hagency/src/console/client.rs
 - ./crates/hagency/src/console/resources.rs
 - ./crates/hagency/src/console/resource_configuration.rs
 - ./crates/hagency/src/console/assets.rs
@@ -60,15 +63,6 @@ private account association. No schema dependency or live configuration changes.
 - ./crates/hagency/tests/console/browser.rs
 - ./crates/hagency/tests/console/configuration.rs
 - ./crates/hagency/tests/console/resources.rs
-- ./mockup/app/resources/new/page.jsx
-- ./mockup/components/NativeResources.jsx
-- ./mockup/components/Data.jsx
-- ./mockup/components/Rail.jsx
-- ./mockup/lib/native-api.js
-- ./mockup/lib/i18n.js
-- ./mockup/scripts/build-native-console.mjs
-- ./mockup/scripts/native-console-resource-configuration-browser.mjs
-- ./mockup/scripts/native-console-resources-browser.mjs
 - ./tests/dashboard-native-resource-configuration.test.js
 - ./tests/dashboard-native-resources.test.js
 
@@ -116,26 +110,17 @@ Scenario: Editor observations expose only bounded native facts
 
 Scenario: Retained wizard creates and edits in both languages
   Retired-Test: native_console_resource_configuration_browser
-  Level: integration
-  Test Double: actual Chromium native Salvo and retained static wizard
-  Given English and Chinese configuration sessions
-  When users create edit navigate refresh and encounter real conflicts unknown replies or Busy logout
-  Then drafts revisions current state and explicit outcomes remain truthful without automatic mutation retry
+
 
 Scenario: Configuration works through the native executable
   Retired-Test: native_console_resource_configuration_executable
-  Level: integration
-  Test Double: actual native executable with private state and empty runtime PATH
-  Given retained wizard assets and explicit operator-issued configuration access
-  When the browser creates edits and the native executable restarts
-  Then actual resource state persists without a deployed Node server or live provider
+
 
 ## Decisions
 
-The existing mandatory native-console-browser CI lane executes the complete
-console test target and feature-enabled Clippy. Local agent-spec feature adaptation
-must record source hash and actual argv and disclose adapted lifecycle execution.
-An all-feature inventory lists tests only; it is never execution evidence.
+The shared engine CI executes the SDK tests and strict Clippy. The former browser
+lane is retired. A compiled test inventory lists selectors only; it is never
+execution evidence.
 
 ## Out of Scope
 
@@ -144,4 +129,4 @@ persistence rate-cap enforcement runtime settings live providers and full M7.
 
 ## Owner-only browser qualification (2026-10-07)
 
-The retired browser selectors above exercised removed Fleet/operator pages, resources/accounts/project-sides/task workflows or binary startup with old domain SQLite. They are removed product tests, not retained SDK qualification. Independent SDK HTTP/library selectors in this mixed spec remain active. Current browser qualification is the actual OwnerHost `native_console_rail_pages_are_shipped_and_served` plus `mockup/scripts/check-owner-console.mjs` in the enabled CI browser lane; it covers owner navigation, local ticket exchange, provider/runtime DTOs, explicit Estimated and restricted-files opt-in, exact request/tool approvals and absence of automatic inference. It does not claim old Fleet pages, encrypted delivery or paid model completion.
+The former browser qualification and Web console have been retired. Independent SDK HTTP/library selectors in this mixed contract remain active. Current desktop and OAuth qualification is defined in `native-owner-client.spec.md`; historical browser selectors are not passing evidence.

@@ -1,3 +1,6 @@
+> Historical record: CLI and browser-console instructions below are retired.
+> The current client is the native desktop application; see the repository README.
+
 # 02 Runtime And Transports
 
 Date: 2026-05-02

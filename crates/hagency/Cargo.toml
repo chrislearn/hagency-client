@@ -25,7 +25,6 @@ hagency-files.workspace = true
 hagency-media.workspace = true
 hagency-media-store.workspace = true
 cap-std.workspace = true
-cap-fs-ext.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -36,23 +35,21 @@ http-body-util.workspace = true
 reqwest = { workspace = true, features = ["rustls-tls-webpki-roots", "rustls-tls-native-roots", "json"] }
 thiserror.workspace = true
 salvo = { workspace = true, features = ["server", "server-handle", "http1", "test"] }
-clap = { workspace = true, features = ["derive"] }
 getrandom.workspace = true
 base64.workspace = true
 subtle.workspace = true
 tracing.workspace = true
-tracing-subscriber = { workspace = true, features = ["env-filter", "fmt"] }
 
 [target.'cfg(any(target_os = "windows", target_os = "macos", all(target_os = "linux", not(target_env = "ohos"))))'.dependencies]
 webrtc = "=0.14.0"
 tokio-rustls = { workspace = true, features = ["ring", "tls12"] }
 
 [dev-dependencies]
+clap = { workspace = true, features = ["derive"] }
+tracing-subscriber = { workspace = true, features = ["fmt"] }
 # The offline pins of ADR-182 need the execution crate's diagnostics fault
 # (an unproven stop no real fixture can force); test builds only.
 hagency-execution = { workspace = true, features = ["test-diagnostics"] }
-matrix-sdk-base = { workspace = true, features = ["e2e-encryption"] }
-matrix-sdk-sqlite = { workspace = true, features = ["state-store", "bundled"] }
 matrix-sdk-store-encryption.workspace = true
 matrix-sdk-crypto.workspace = true
 ruma = { workspace = true, features = ["client-api-c", "events"] }

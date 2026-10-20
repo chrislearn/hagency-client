@@ -2,8 +2,12 @@ spec: task
 name: "Manage native resource catalog visibility in the retained console"
 inherits: project
 satisfies: [REQ-RUST-MIGRATION-EXECUTION]
-tags: [active, rust, console, resources, browser]
+tags: [active, rust, console, resources]
 ---
+
+> Desktop-only scope (2026-10-20): CLI and Web page behavior below is historical.
+> Shared engine selectors remain active unless explicitly marked Retired-Test.
+> See [the desktop contract](native-owner-client.spec.md) for current product entry points.
 
 ## Intent
 
@@ -15,11 +19,8 @@ missing native fields and discovery contracts remain explicit follow-up work.
 
 ## Decisions
 
-Ordinary Cargo tests are independent of browser tooling. The existing mandatory
-native-console-browser feature lane must actually execute both new browser
-selectors; missing assets or Node or Chromium is a failure when enabled.
-Local lifecycle feature adaptation must disclose its source hash and actual argv;
-listing gated tests never counts as their execution.
+The former Web product and browser CI lane are retired. Shared SDK tests
+remain active. Listing tests never counts as execution evidence.
 
 ## Constraints
 
@@ -62,7 +63,6 @@ listing gated tests never counts as their execution.
 - crates/hagency-store/tests/resource_publication.rs
 - crates/hagency/src/console.rs
 - crates/hagency/src/console/authority.rs
-- crates/hagency/src/console/client.rs
 - crates/hagency/src/console/resources.rs
 - crates/hagency/src/console/assets.rs
 - crates/hagency/src/console/usage.rs
@@ -71,16 +71,6 @@ listing gated tests never counts as their execution.
 - crates/hagency/tests/console/fixture.rs
 - crates/hagency/tests/console/browser.rs
 - crates/hagency/tests/console/resources.rs
-- mockup/app/resources/page.jsx
-- mockup/components/NativeResources.jsx
-- mockup/components/NativeUsage.jsx
-- mockup/components/ResourceAgents.jsx
-- mockup/components/Data.jsx
-- mockup/components/Rail.jsx
-- mockup/lib/native-api.js
-- mockup/lib/i18n.js
-- mockup/scripts/build-native-console.mjs
-- mockup/scripts/native-console-resources-browser.mjs
 - tests/dashboard-native-resources.test.js
 
 ## Acceptance Criteria
@@ -119,19 +109,11 @@ Scenario: Resource observations preserve native meanings
 
 Scenario: Retained resource controls work in both languages
   Retired-Test: native_console_resources_browser
-  Level: integration
-  Test Double: actual Chromium and native Salvo with new runtime resource creation
-  Given the retained static resource page and finite native management access with a measured and an unmeasured resource
-  When users select publish withdraw refresh and observe conflict unknown or Busy logout
-  Then current state preferences and explicit action outcomes remain truthful in both languages and the headroom cells render figures for the measured resource and the explicit unknown word never zero for the unmeasured one
+
 
 Scenario: Resource management runs without deployed Node
   Retired-Test: native_console_resources_executable
-  Level: integration
-  Test Double: actual native executable and private temporary state with empty runtime PATH
-  Given the retained native resource assets
-  When the native access command and resource catalog action run
-  Then the claimed workflow uses native HTTP without a Next server
+
 
 ## Out of Scope
 
@@ -141,4 +123,4 @@ writes remote Palpo delivery production packaging and complete M7 parity.
 
 ## Owner-only browser qualification (2026-10-07)
 
-The retired browser selectors above exercised removed Fleet/operator pages, resources/accounts/project-sides/task workflows or binary startup with old domain SQLite. They are removed product tests, not retained SDK qualification. Independent SDK HTTP/library selectors in this mixed spec remain active. Current browser qualification is the actual OwnerHost `native_console_rail_pages_are_shipped_and_served` plus `mockup/scripts/check-owner-console.mjs` in the enabled CI browser lane; it covers owner navigation, local ticket exchange, provider/runtime DTOs, explicit Estimated and restricted-files opt-in, exact request/tool approvals and absence of automatic inference. It does not claim old Fleet pages, encrypted delivery or paid model completion.
+The former browser qualification and Web console have been retired. Independent SDK HTTP/library selectors in this mixed contract remain active. Current desktop and OAuth qualification is defined in `native-owner-client.spec.md`; historical browser selectors are not passing evidence.

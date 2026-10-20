@@ -5,6 +5,10 @@ satisfies: [REQ-RUST-MIGRATION-EXECUTION]
 tags: [active, rust, console, approvals, read-only]
 ---
 
+> Desktop-only scope (2026-10-20): CLI and Web page behavior below is historical.
+> Shared engine selectors remain active unless explicitly marked Retired-Test.
+> See [the desktop contract](native-owner-client.spec.md) for current product entry points.
+
 ## Intent
 
 Bind PC-C2a and PC-C2b of the private-card plan v5: first a bounded, `SELECT`-named
@@ -44,11 +48,6 @@ refusal for a nonexistent route asserts nothing.
 - crates/hagency/src/console/assets.rs
 - crates/hagency/tests/console/approvals.rs
 - crates/hagency/tests/console.rs
-- mockup/lib/native-api.js
-- mockup/components/NativeApprovals.jsx
-- mockup/app/approvals/page.jsx
-- mockup/scripts/build-native-console.mjs
-- mockup/lib/i18n.js
   # (beyond v5's ownership list: the page renders its words through t(), as every
   #  other Native* page does, so the new strings need the shared dictionary)
 - specs/task-rust-console-approvals.spec.md

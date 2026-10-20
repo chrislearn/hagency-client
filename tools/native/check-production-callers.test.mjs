@@ -166,10 +166,10 @@ test('native_production_callers_current_worktree: new sources count and deleted 
 test('native_production_callers_wired: a full-path caller reached by an unambiguous chain is wired', () => {
   const { root, read, files } = makeFixture({
     rust: {
-      [MAIN]: 'fn main() { run(); }\nfn run() { bootstrap::accounts::run(); }\n',
-      'crates/hagency/src/bootstrap/accounts.rs': 'pub fn run() { helper(); }\nfn helper() {}\n',
+      [MAIN]: 'fn main() { run(); }\nfn run() { native_owner::open_with_matrix(); }\n',
+      'crates/hagency/src/native_owner.rs': 'pub fn open_with_matrix() { helper(); }\nfn helper() {}\n',
     },
-    specs: '  Production caller: hagency::bootstrap::accounts::run\n',
+    specs: '  Production caller: hagency::native_owner::open_with_matrix\n',
     adr: '| `x` | gap G1 |\n',
   });
   const { result, ok } = checkProductionCallers({ root, read, files });

@@ -7,7 +7,6 @@ mod alerts;
 mod approval_bindings;
 mod approvals;
 mod authority;
-pub mod client;
 pub mod device_execution;
 mod engagements;
 mod exec_policy;

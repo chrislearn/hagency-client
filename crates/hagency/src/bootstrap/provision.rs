@@ -29,18 +29,14 @@ mod tests;
 const DOCUMENT_LIMIT: u64 = 64 * 1024;
 const RESPONSE_LIMIT: u64 = 1024 * 1024;
 
-#[derive(clap::Subcommand)]
 pub enum Command {
     /// Adopt an external Matrix account, owner DM and optional project inbox.
     Existing {
         /// Non-secret provisioning description.
-        #[arg(long)]
         file: PathBuf,
         /// Private token for the owner/observer that can read all authority rooms.
-        #[arg(long)]
         observer_token: PathBuf,
         /// Private token for the agent account being adopted.
-        #[arg(long)]
         agent_token: PathBuf,
     },
 }

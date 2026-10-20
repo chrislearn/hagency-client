@@ -5,6 +5,10 @@ satisfies: [REQ-RUST-MIGRATION-EXECUTION]
 tags: [active, rust, console, accounts, readiness, dto]
 ---
 
+> Desktop-only scope (2026-10-20): CLI and Web page behavior below is historical.
+> Shared engine selectors remain active unless explicitly marked Retired-Test.
+> See [the desktop contract](native-owner-client.spec.md) for current product entry points.
+
 ## Intent
 
 Bind MA-S3b: add the readiness field to the console account surface's DTO —
@@ -37,11 +41,6 @@ login, and what it deliberately never shows.
 - crates/hagency/src/console/accounts.rs
 - crates/hagency/src/console.rs
 - crates/hagency/src/console/assets.rs
-- mockup/components/NativeAccounts.jsx
-- mockup/lib/native-api.js
-- mockup/lib/i18n.js
-- mockup/app/accounts/page.jsx
-- mockup/scripts/build-native-console.mjs
 - crates/hagency/tests/console/accounts.rs
 - crates/hagency/tests/console.rs
 - crates/hagency/tests/console/browser.rs
@@ -50,7 +49,7 @@ login, and what it deliberately never shows.
 
 ### Forbidden
 - Live providers, live probes, credentials in tree, deployed state.
-- crates/hagency-store/** (MA-S1 owns the fact); any login-driving code path; crates/hagency/src/bootstrap/accounts.rs; crates/hagency/src/main.rs.
+- crates/hagency-store/** (MA-S1 owns the fact); any login-driving code path.
 
 ## Acceptance Criteria
 

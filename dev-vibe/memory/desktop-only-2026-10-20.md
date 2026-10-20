@@ -15,3 +15,6 @@
 - 桌面完整库测试：501 passed/0 failed/2 原 ignored；当前引擎 lib + console 严格 Clippy 通过；针对页面删除后权限/API/选择参数的 6 项实际业务测试全部通过。重复核对 Node 33 项自测和真实桌面调用图通过。
 - 本地桌面 bin build 因既有运行中的 target/debug/hagency.exe 被 Windows 锁定而拒绝删除，未终止该用户进程，也不将本地最终二进制构建记为成功；桌面跨平台构建以远端 CI 为准。
 - 工作区另外出现 rust-toolchain.toml 删除和 rustfmt.toml/typos.toml 新增，已询问归属，默认保留并排除在本次提交之外。格式核对显式使用原有默认配置及 Rust 1.98.0。上一轮 ci-fix memory 的未提交更新也排除。
+- 用户随后明确确认工具链/格式配置改动属于其他工作，应保留并排除；代码清理已于 b390d51ef2b60e73f7bb9104d3081bef4d06de71 推送 main。桌面 bin cargo check 通过；本地空目录删除被自动工具策略拦截，不影响 Git 删除结果。
+- 远端 b390d51e：App CI 39350428360 success（桌面 504 passed/0 failed/2 原 ignored；build、no-default-features check、主题/i18n/样式/工作区等全部通过）；App Build CI 39350428369 success（Windows、Ubuntu x86_64/ARM64、macOS x86_64/ARM64 五目标）。主 CI 39350428329 的格式、全目标 Clippy、规格绑定、Node 自测和生产调用图已通过，全套测试仍在运行。
+- 最终主 CI 39350428329 success：所有 206 个成功测试汇总合计 2022 passed/0 failed（174 ignored，未新增忽略策略）；规格绑定 count=1128/missing=[]，真实桌面生产调用 wired=1/missing=[]。b390d51e 的三套自动工作流全部成功。完整日志保存在 D:/BuildCache/hagency-client/desktop-only-remote-{main,app}-ci.log；本地验证后的 memory 追加未混入用户已排除的其他工作。

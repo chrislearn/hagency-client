@@ -1,3 +1,6 @@
+> Historical record: CLI and browser-console instructions below are retired.
+> The current client is the native desktop application; see the repository README.
+
 # Repository audit knowledge
 
 - **Live two-agent private DMs, 2026-09-17:** After explicit rate-limit recovery,

@@ -1,3 +1,6 @@
+> Historical record: CLI and browser-console instructions below are retired.
+> The current client is the native desktop application; see the repository README.
+
 ## 2026-09-12 — Read-only inspection subcommands (brief 22)
 
 - Three `hagency` subcommands — `alerts`, `engagements`, `resources` —

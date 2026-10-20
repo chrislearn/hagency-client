@@ -4842,7 +4842,6 @@ name = "hagency"
 version = "0.6.0"
 dependencies = [
  "base64 0.22.1",
- "cap-fs-ext",
  "cap-std",
  "clap",
  "gethostname",
@@ -4862,9 +4861,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
- "matrix-sdk-base",
  "matrix-sdk-crypto",
- "matrix-sdk-sqlite",
  "matrix-sdk-store-encryption",
  "percent-encoding",
  "reqwest 0.12.28",
@@ -10483,7 +10480,6 @@ dependencies = [
 name = "rinx-miniapp-core"
 version = "0.1.0"
 dependencies = [
- "serde",
  "serde_json",
 ]
 

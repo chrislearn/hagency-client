@@ -2,7 +2,7 @@
 //! observation of the host's credential namespaces plus the three mutations
 //! under one finite scope. ADR-114's opacity is unchanged — no readiness, no
 //! login, no auth-file read — so the wire item is `AccountRow`, never
-//! `AccountChoice`: the CLI's DTO carries `authentication`/`quota`, which
+//! `AccountChoice`: the internal SDK DTO carries `authentication`/`quota`, which
 //! would read as a readiness answer today ("unknown"/null) and would break
 //! the exact-key validator when MA-S3b lands. Reads stay scope-free like
 //! every other pure read; only the mutations consult the authority, and the

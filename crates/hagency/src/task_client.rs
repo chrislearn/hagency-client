@@ -188,7 +188,6 @@ fn context_digest(value: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-#[derive(clap::Subcommand)]
 pub enum Command {
     /// Read the task assigned to this runner.
     Get,
@@ -196,15 +195,12 @@ pub enum Command {
     Start,
     Heartbeat,
     Wait {
-        #[arg(long)]
         reason: String,
-        #[arg(long)]
         until: String,
     },
     Resume,
     Done,
     Comment {
-        #[arg(long)]
         text: String,
     },
 }

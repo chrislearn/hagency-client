@@ -280,7 +280,7 @@ impl Live {
     pub(super) async fn start(&self, prepared: Prepared) -> Result<(), Failure> {
         self.replace(prepared).await
     }
-    /// The console import: validate the owner download exactly like the CLI,
+    /// The engine import: validate the owner download through the shared SDK rules,
     /// save it through the running store, then connect.
     pub(crate) async fn import(
         &self,

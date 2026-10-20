@@ -2,8 +2,12 @@ spec: task
 name: "Serve the native project-side observation behind bounded browser authority"
 inherits: project
 satisfies: [REQ-RUST-MIGRATION-EXECUTION]
-tags: [active, rust, console, project-sides, browser]
+tags: [active, rust, console, project-sides]
 ---
+
+> Desktop-only scope (2026-10-20): CLI and Web page behavior below is historical.
+> Shared engine selectors remain active unless explicitly marked Retired-Test.
+> See [the desktop contract](native-owner-client.spec.md) for current product entry points.
 
 ## Intent
 
@@ -11,11 +15,7 @@ Bind the project-side read-only observation (ADR-132): a
 `/console/api/project-sides` projection over the fleet registrations and their
 projects that omits credentials in every byte, and the `/console/project-sides/`
 page that renders it. One spec per page family, per the house pattern. The store
-list read is owned here and lands first (the slice is two commits). Browser
-selectors follow the same gated lane the usage console spec's Decisions block
-records: compiled only under the default-off `native-console-browser` feature,
-listed by `cargo test --list` under `--all-features` exactly as
-`native_console_browser` is bound there, executed only in the enabled lane.
+list read is owned here and lands first (the slice is two commits). Browser selectors are retired; the shared SDK selectors remain active.
 
 ## Constraints
 
@@ -47,13 +47,6 @@ listed by `cargo test --list` under `--all-features` exactly as
 - crates/hagency/tests/console.rs
 - crates/hagency/tests/console/browser.rs
 - crates/hagency/Cargo.toml
-- mockup/app/project-sides/page.jsx
-- mockup/components/NativeProjectSides.jsx
-- mockup/lib/native-api.js
-- mockup/components/Data.jsx # the load path must route /console/project-sides/ to fetchProjectSides — without it the page never fetches
-- mockup/lib/i18n.js # np.* strings in both dictionaries — without them the page renders bare keys
-- mockup/scripts/native-console-browser.mjs # the sides lane and full-walk visit — without them the browser scenario has no driver
-- mockup/scripts/build-native-console.mjs
 - specs/task-rust-console-project-sides.spec.md
 - knowledge/decisions/adr-132-native-project-side-observation.md
 - docs/native-engine.md
@@ -61,7 +54,6 @@ listed by `cargo test --list` under `--all-features` exactly as
 
 ### Forbidden
 - Live services, credentials, deployed Node runtime and Matrix server changes.
-- mockup/app/api/hagency/[...path]/route.js; mockup/app/projects/page.jsx; lib/project-side-store.js.
 
 ## Acceptance Criteria
 
@@ -81,9 +73,7 @@ Scenario: A foreign origin cannot read the project sides
 
 Scenario: The project-sides page renders under the native browser boundary
   Retired-Test: native_console_project_side_browser
-  Given the native console fixture and the built project-sides page with the native-console-browser feature whose selectors appear in cargo test --list under --all-features exactly as native_console_browser is bound by the usage console spec
-  When real Chromium opens /console/project-sides without any operator token
-  Then the list reaches data-native-state ready with no external request and no credential value on screen
+
 
 ## Out of Scope
 
@@ -92,4 +82,4 @@ retained-file edit), the retained side card, and every other console page.
 
 ## Owner-only browser qualification (2026-10-07)
 
-The retired browser selectors above exercised removed Fleet/operator pages, resources/accounts/project-sides/task workflows or binary startup with old domain SQLite. They are removed product tests, not retained SDK qualification. Independent SDK HTTP/library selectors in this mixed spec remain active. Current browser qualification is the actual OwnerHost `native_console_rail_pages_are_shipped_and_served` plus `mockup/scripts/check-owner-console.mjs` in the enabled CI browser lane; it covers owner navigation, local ticket exchange, provider/runtime DTOs, explicit Estimated and restricted-files opt-in, exact request/tool approvals and absence of automatic inference. It does not claim old Fleet pages, encrypted delivery or paid model completion.
+The former browser qualification and Web console have been retired. Independent SDK HTTP/library selectors in this mixed contract remain active. Current desktop and OAuth qualification is defined in `native-owner-client.spec.md`; historical browser selectors are not passing evidence.

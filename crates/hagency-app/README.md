@@ -84,7 +84,8 @@ costs; restore the same owner's complete ledger when the recovery gate requires 
 
 Desktop is part of the [`hagency-client`](https://github.com/hagency-org/hagency-client)
 workspace. Its owner engine is the local `../hagency` crate, and the repository
-root Cargo.lock records all dependency pins. The workspace pins Rust 1.98.0.
+root Cargo.lock records all dependency pins. The workspace requires Rust 1.98 or newer;
+engine CI selects Rust 1.98.0 explicitly.
 Install CMake and the platform's native build dependencies, then run:
 
 ```sh

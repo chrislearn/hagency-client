@@ -1,10 +1,10 @@
-//! `hagency rotate` — mint a replacement for a locally-held credential.
+//! SDK operation to mint a replacement for a locally-held credential.
 //!
 //! Parity source of truth: the audit's row 26 (`docs/parity/operator-cli-ops-2026-09-24.md:83`).
 //! TS rotates the operator token by editing `API_TOKEN` in `.env` and
 //! restarting; the audit records that Rust has none and that "losing the token
 //! means a new state directory and re-registering everything". The token is
-//! minted locally (`main.rs:220-224`), so this is a purely local act — no
+//! minted locally, so this is a purely local act — no
 //! homeserver, no rebuild.
 //!
 //! What is NOT here, on purpose. Row 27 (Matrix/appservice/Palpo credentials)
@@ -21,7 +21,6 @@
 use hagency_store::{Error, private};
 use std::path::Path;
 
-#[derive(clap::Subcommand)]
 pub enum Command {
     /// Mint a new operator token over the existing one.
     ///

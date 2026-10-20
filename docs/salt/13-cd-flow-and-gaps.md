@@ -1,3 +1,6 @@
+> Historical record: CLI and browser-console instructions below are retired.
+> The current client is the native desktop application; see the repository README.
+
 # 13 CD Flow And Gaps
 
 Date: 2026-05-04

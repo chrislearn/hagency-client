@@ -5,6 +5,10 @@ satisfies: [REQ-RUST-MIGRATION-EXECUTION]
 tags: [active, rust, accounts, retirement, logout, audit]
 ---
 
+> Desktop-only scope (2026-10-20): CLI and Web page behavior below is historical.
+> Shared engine selectors remain active unless explicitly marked Retired-Test.
+> See [the desktop contract](native-owner-client.spec.md) for current product entry points.
+
 ## Intent
 
 Bind MA-S4 (ADR-114's amendment) under D-ADR114 observe: retiring an account
@@ -39,14 +43,12 @@ or reads a credential.
 - crates/hagency-store/src/lib.rs
 - crates/hagency-store/tests/accounts.rs
 - crates/hagency-store/tests/
-- crates/hagency/src/bootstrap/accounts.rs (the offline CLI retire path: the stores retire_account now takes the host-observed logout outcome, so this arm threads it)
 - specs/task-rust-account-retirement.spec.md
 - knowledge/decisions/adr-114-native-managed-account-binding.md
 - docs/progress.md
 
 ### Forbidden
 - Live providers, live credentials, deployed state.
-- mockup/**; crates/hagency/src/console/** (MA-S3a's retire route is unchanged); the migration chain beyond 029; any login-driving code path (MA-S1's).
 
 ## Acceptance Criteria
 

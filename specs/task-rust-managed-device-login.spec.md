@@ -31,7 +31,6 @@ necessary to select the provider's fixed headless option.
 ## Boundaries
 
 ### Allowed Changes
-- crates/hagency/src/bootstrap/accounts.rs
 - crates/hagency/tests/login.rs
 - crates/hagency/tests/fixtures/login_probe.rs
 - docs/design/two-agent-qualification-runbook.md

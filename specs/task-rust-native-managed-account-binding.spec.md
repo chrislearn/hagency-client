@@ -77,7 +77,6 @@ Schema23 is reserved. Part B browser enrollment waits for this qualified API.
 - ./crates/hagency/src/bootstrap.rs
 - ./crates/hagency/src/bootstrap/config.rs
 - ./crates/hagency/src/bootstrap/driver.rs
-- ./crates/hagency/src/bootstrap/accounts.rs
 - ./crates/hagency/src/main.rs
 - ./crates/hagency/tests/cli.rs
 - ./crates/hagency/tests/bootstrap.rs

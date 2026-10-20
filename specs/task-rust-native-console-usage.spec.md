@@ -2,8 +2,12 @@ spec: task
 name: "Serve retained usage components through bounded native browser authority"
 inherits: project
 satisfies: [REQ-RUST-MIGRATION-EXECUTION]
-tags: [active, rust, console, usage, browser]
+tags: [active, rust, console, usage]
 ---
+
+> Desktop-only scope (2026-10-20): CLI and Web page behavior below is historical.
+> Shared engine selectors remain active unless explicitly marked Retired-Test.
+> See [the desktop contract](native-owner-client.spec.md) for current product entry points.
 
 ## Intent
 
@@ -16,12 +20,9 @@ the thirty-first inventory path to list all feature-gated tests without executin
 
 ## Decisions
 
-Browser selectors are compiled only with the explicit default-off
-`native-console-browser` feature. Their bound command is
-`cargo test --locked -p hagency --features native-console-browser --test console -- --nocapture`.
-Missing assets, Node or Chromium fail in that enabled lane. Ordinary Cargo runs
-do not execute those scenarios and are not evidence of their acceptance. Strict
-lifecycle must use the same enabled feature and inspect each actual test count.
+The former Web product and browser CI lane are retired. Shared engine selectors
+remain active. Compiled inventories list tests; execution evidence comes from
+the engine and desktop test steps in CI.
 
 ## Constraints
 
@@ -58,20 +59,9 @@ lifecycle must use the same enabled feature and inspect each actual test count.
 - crates/hagency/src/console/assets.rs
 - crates/hagency/src/console/authority.rs
 - crates/hagency/src/console/usage.rs
-- crates/hagency/src/console/client.rs
 - crates/hagency/tests/console.rs
 - crates/hagency/tests/console/fixture.rs
 - crates/hagency/tests/console/browser.rs
-- mockup/next.config.mjs
-- mockup/package.json
-- mockup/components/Data.jsx
-- mockup/components/Rail.jsx
-- mockup/components/NativeUsage.jsx
-- mockup/app/usage/page.jsx
-- mockup/lib/native-api.js
-- mockup/lib/i18n.js
-- mockup/scripts/build-native-console.mjs
-- mockup/scripts/native-console-browser.mjs
 - tests/dashboard-native-usage.test.js
 - knowledge/decisions/adr-107-native-console-usage.md
 - specs/task-rust-native-console-usage.spec.md
@@ -114,11 +104,7 @@ Scenario: Browser authority has finite isolated scope
 
 Scenario: Assets retain verified original file evidence
   Retired-Test: native_console_assets
-  Level: integration
-  Test Double: real private temporary manifest and file mutations
-  Given bounded nofollow manifest assets
-  When files links hashes lengths or HTTP paths are changed
-  Then startup refuses invalid sets and admitted bytes remain the verified originals
+
 
 Scenario: Native usage remains truthful and bounded
   Test: native_console_usage
@@ -130,19 +116,11 @@ Scenario: Native usage remains truthful and bounded
 
 Scenario: Retained browser works against native service
   Retired-Test: native_console_browser
-  Level: integration
-  Test Double: actual Chromium and Salvo with fresh writers and built retained components
-  Given the native static usage build and a runtime engagement absent from that build
-  When English and Chinese users exchange access select usage reload refresh and encounter missing state
-  Then preferences truthful evidence query selection visible refresh state and privacy survive in the actual browser
+
 
 Scenario: Native executable serves without deployed Node
   Retired-Test: native_console_executable
-  Level: integration
-  Test Double: actual native binary with private fresh state and no Node on PATH
-  Given validated retained browser assets
-  When the installed native executable serves and the local access command runs
-  Then native HTTP serves the claimed console workflow without a Next server
+
 
 ## Out of Scope
 
@@ -157,9 +135,7 @@ Scenario: The console engagements read requires a browser session
 
 Scenario: The console engagements document serves with a no-query rule
   Retired-Test: native_console_engagements_document
-  Given the staged engagements document in the loader allowlist and key mapping
-  When the document is fetched and then with any query parameter
-  Then the document body serves without a query and any query is refused as an invalid console request while non-document assets keep the origin rule
+
 
 Scenario: The native origin hoops match the executed retained proxy rules
   Test: native_console_origin_matches_retained_vectors
@@ -171,6 +147,6 @@ Scenario: The native origin hoops match the executed retained proxy rules
 
 ## Owner-only browser qualification (2026-10-07)
 
-The retired browser selectors above exercised removed Fleet/operator pages, resources/accounts/project-sides/task workflows or binary startup with old domain SQLite. They are removed product tests, not retained SDK qualification. Independent SDK HTTP/library selectors in this mixed spec remain active. Current browser qualification is the actual OwnerHost `native_console_rail_pages_are_shipped_and_served` plus `mockup/scripts/check-owner-console.mjs` in the enabled CI browser lane; it covers owner navigation, local ticket exchange, provider/runtime DTOs, explicit Estimated and restricted-files opt-in, exact request/tool approvals and absence of automatic inference. It does not claim old Fleet pages, encrypted delivery or paid model completion.
+The former browser qualification and Web console have been retired. Independent SDK HTTP/library selectors in this mixed contract remain active. Current desktop and OAuth qualification is defined in `native-owner-client.spec.md`; historical browser selectors are not passing evidence.
 
 Desktop-only retirement (2026-10-20): CLI, static document and browser selectors above are retained as historical records, not passing evidence. Shared engine tests remain active.

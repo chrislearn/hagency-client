@@ -1,8 +1,7 @@
 //! Task #13: the project-side appservice registration ISSUE route — the
 //! retained `POST /api/project-sides/:id/registration-file`
-//! (`backend-v2.js:10031-10168`) on the native console API, plus the CLI
-//! runner that shares it. One store method (`DomainRepository::
-//! issue_side_registration`) serves both; this file adds no second
+//! (`backend-v2.js:10031-10168`) on the shared engine API. One store method
+//! (`DomainRepository::issue_side_registration`) implements it; this file adds no second
 //! generation path, no guard of its own beyond the console's.
 //!
 //! WHAT THE CALLER GETS, matching the TS response key for key: the YAML
@@ -25,10 +24,9 @@
 use super::engagements::check_lifecycle;
 use super::{Error, body, failed, recheck, usage::query};
 use crate::{refusal, resources::domain};
-use hagency_store::{DomainRepository, IssueSideRegistrationRequest, Repository, private};
+use hagency_store::IssueSideRegistrationRequest;
 use salvo::prelude::*;
 use serde::Deserialize;
-use std::path::Path;
 
 pub(super) fn router() -> Router {
     Router::with_path("project-sides/{side}/registration-file").post(issue)
@@ -130,31 +128,4 @@ async fn issue(req: &mut Request, depot: &mut Depot, res: &mut Response) {
         }
         Err(error) => store_failure(res, error),
     }
-}
-
-/// The CLI arm of the same operation: `hagency side-registration --side
-/// <server> --url <url>` — offline, like `registration register`, against
-/// the same store method the route serves. Prints the route's body (no
-/// tokens; the YAML and the token file are already on disk). Requires an
-/// initialized private state, never manufactures one.
-pub fn run_cli(
-    state: &Path,
-    request: IssueSideRegistrationRequest,
-) -> Result<(), hagency_store::Error> {
-    private::read_secret(&state.join("operator.token"))?;
-    let _custody = Repository::open(state)?;
-    let mut domain = DomainRepository::open(state)?;
-    let issued = domain.issue_side_registration(&request, now_ms()?)?;
-    let mut value = serde_json::to_value(&issued).expect("plain JSON fields");
-    value["ok"] = serde_json::Value::Bool(true);
-    println!("{value}");
-    Ok(())
-}
-
-fn now_ms() -> Result<u64, hagency_store::Error> {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()
-        .and_then(|d| u64::try_from(d.as_millis()).ok())
-        .ok_or(hagency_store::Error::Unavailable)
 }

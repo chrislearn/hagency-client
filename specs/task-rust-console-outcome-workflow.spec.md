@@ -5,6 +5,10 @@ satisfies: [REQ-RUST-MIGRATION-EXECUTION, REQ-LOCAL-THREE-RUNNER-QUALIFICATION]
 tags: [active, rust, console, recovery]
 ---
 
+> Desktop-only scope (2026-10-20): CLI and Web page behavior below is historical.
+> Shared engine selectors remain active unless explicitly marked Retired-Test.
+> See [the desktop contract](native-owner-client.spec.md) for current product entry points.
+
 ## Intent
 
 Expose the existing ADR165 inspection and three explicit operator actions in the
@@ -32,12 +36,6 @@ native console, with bounded discovery of stopped dispatches per engagement.
 - crates/hagency-store/src/domain_worker.rs
 - crates/hagency/src/console/agents.rs
 - crates/hagency/tests/console/**
-- mockup/components/NativeAgents.jsx
-- mockup/components/NativeStoppedWork.jsx
-- mockup/lib/native-api.js
-- mockup/lib/native-recovery.js
-- mockup/lib/i18n.js
-- mockup/scripts/native-console-browser.mjs
 - tests/dashboard-native-recovery.test.js
 - specs/task-rust-console-outcome-workflow.spec.md
 - specs/task-console-outcome-protocol.spec.md
@@ -59,11 +57,8 @@ Scenario: Stopped-work discovery remains private and bounded
 
 Scenario: Lifecycle operators can review and resolve through the native browser
   Retired-Test: native_console_agent_lifecycle_browser
-  Given the actual static console and local native service fixture
-  When a lifecycle operator reviews stopped work and chooses an action
-  Then the native API commits the chosen outcome and the browser renders its receipt
-  And read-only sessions expose no recovery controls
+
 
 ## Owner-only browser qualification (2026-10-07)
 
-The retired browser selectors above exercised removed Fleet/operator pages, resources/accounts/project-sides/task workflows or binary startup with old domain SQLite. They are removed product tests, not retained SDK qualification. Independent SDK HTTP/library selectors in this mixed spec remain active. Current browser qualification is the actual OwnerHost `native_console_rail_pages_are_shipped_and_served` plus `mockup/scripts/check-owner-console.mjs` in the enabled CI browser lane; it covers owner navigation, local ticket exchange, provider/runtime DTOs, explicit Estimated and restricted-files opt-in, exact request/tool approvals and absence of automatic inference. It does not claim old Fleet pages, encrypted delivery or paid model completion.
+The former browser qualification and Web console have been retired. Independent SDK HTTP/library selectors in this mixed contract remain active. Current desktop and OAuth qualification is defined in `native-owner-client.spec.md`; historical browser selectors are not passing evidence.

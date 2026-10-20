@@ -5,7 +5,7 @@
 //!
 //! The operator downloads the configuration in Palpo (My Hagency access →
 //! Download Hagency configuration) and picks it here. The route validates it
-//! with the CLI importer's own rules, saves the fleet registration, the
+//! with the shared import validator, saves the fleet registration, the
 //! transport files and the project side's credential, then starts the Palpo
 //! transport without a restart. The answer carries the fleet's public facts
 //! only: no App Service or machine token ever leaves the state directory.

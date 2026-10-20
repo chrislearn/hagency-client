@@ -1,3 +1,6 @@
+> Historical record: CLI and browser-console instructions below are retired.
+> The current client is the native desktop application; see the repository README.
+
 # Operator-operations parity audit: TS Hagency vs the Rust `hagency` binary
 
 The Rust binary is well behind TS for work done outside the browser. Out of 42 operator operations, 7 are ported, 3 were changed on purpose (with a cited decision), 15 are partial, 10 are missing and 7 can only be done by hand-editing files. Project-side onboarding is the worst area: you set it up by placing secrets and JSON by hand, and nothing issues or checks an appservice registration.

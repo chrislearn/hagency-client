@@ -2,8 +2,12 @@ spec: task
 name: "Serve the native agent roster behind bounded browser authority"
 inherits: project
 satisfies: [REQ-RUST-MIGRATION-EXECUTION]
-tags: [active, rust, console, agents, browser]
+tags: [active, rust, console, agents]
 ---
+
+> Desktop-only scope (2026-10-20): CLI and Web page behavior below is historical.
+> Shared engine selectors remain active unless explicitly marked Retired-Test.
+> See [the desktop contract](native-owner-client.spec.md) for current product entry points.
 
 ## Intent
 
@@ -11,11 +15,7 @@ Bind the agent-roster read-only observation (ADR-126): a `/console/api/agents`
 projection of the engagement rows that omits every private field the retained
 `GET /api/agents` response spreads, and the `/console/agents/` page that renders
 it. One spec per page family, per the house pattern (the usage and engagements
-reads live in the usage spec; the alerts page in the ceiling-alert spec). Browser
-selectors follow the same gated lane that spec's Decisions block records:
-compiled only under the default-off `native-console-browser` feature, listed by
-`cargo test --list` under `--all-features` exactly as `native_console_browser`
-is bound there, executed only in the enabled lane.
+reads live in the usage spec; the alerts page in the ceiling-alert spec). Browser selectors are retired; the shared SDK selectors remain active.
 
 ## Constraints
 
@@ -54,10 +54,6 @@ is bound there, executed only in the enabled lane.
 - crates/hagency/tests/console.rs
 - crates/hagency/tests/console/browser.rs
 - crates/hagency/Cargo.toml
-- mockup/app/agents/page.jsx
-- mockup/components/NativeAgents.jsx
-- mockup/lib/native-api.js
-- mockup/scripts/build-native-console.mjs
 - specs/task-rust-console-agents.spec.md
 - knowledge/decisions/adr-126-native-agent-roster.md
 - docs/native-engine.md
@@ -65,7 +61,6 @@ is bound there, executed only in the enabled lane.
 
 ### Forbidden
 - Live services, credentials, deployed Node runtime and Matrix server changes.
-- mockup/app/api/hagency/[...path]/route.js (the allowlist stays).
 
 ## Acceptance Criteria
 
@@ -85,9 +80,7 @@ Scenario: A foreign origin cannot read the agent roster
 
 Scenario: The agent roster page renders under the native browser boundary
   Retired-Test: native_console_agent_roster_browser
-  Given the native console fixture and the built agent page with the native-console-browser feature whose selectors appear in cargo test --list under --all-features exactly as native_console_browser is bound by the usage console spec
-  When real Chromium opens /console/agents without any operator token
-  Then the roster reaches data-native-state ready with no external request and no credential value on screen
+
 
 Scenario: The roster shows an agent whose engagement was minted by the production ingress
   Test: native_console_roster_shows_an_ingress_provisioned_agent
@@ -104,4 +97,4 @@ every other console page.
 
 ## Owner-only browser qualification (2026-10-07)
 
-The retired browser selectors above exercised removed Fleet/operator pages, resources/accounts/project-sides/task workflows or binary startup with old domain SQLite. They are removed product tests, not retained SDK qualification. Independent SDK HTTP/library selectors in this mixed spec remain active. Current browser qualification is the actual OwnerHost `native_console_rail_pages_are_shipped_and_served` plus `mockup/scripts/check-owner-console.mjs` in the enabled CI browser lane; it covers owner navigation, local ticket exchange, provider/runtime DTOs, explicit Estimated and restricted-files opt-in, exact request/tool approvals and absence of automatic inference. It does not claim old Fleet pages, encrypted delivery or paid model completion.
+The former browser qualification and Web console have been retired. Independent SDK HTTP/library selectors in this mixed contract remain active. Current desktop and OAuth qualification is defined in `native-owner-client.spec.md`; historical browser selectors are not passing evidence.

@@ -1,9 +1,6 @@
 //! Operator account/fleet mutations on the running service's own store owner
-//! (task #28). These are the trusted-local writers the offline CLI verbs
-//! (`bootstrap::accounts`, `bootstrap::registration`) performed by opening the
-//! state directory a second time — which forced the service to be stopped.
-//! Now the running service performs them through its `DomainStore`, so the
-//! operator commands work while the service runs.
+//! (task #28). These trusted-local operations share the running engine
+//! DomainStore owner rather than opening a second state writer.
 //!
 //! The `authorize` hoop (loopback + operator bearer token) already gates every
 //! route mounted here; these handlers add only the store's own contract and
@@ -175,7 +172,7 @@ async fn retire(req: &mut Request, depot: &mut Depot, res: &mut Response) {
     }
 }
 
-/// Allocate a login attempt and hand back the launch environment the CLI must
+/// Allocate a login attempt and hand back the launch environment the caller must
 /// spawn the provider child under — the service owns the binding, so only it
 /// can resolve the retained HOME/CODEX_HOME. The attempt carries no secret.
 #[handler]

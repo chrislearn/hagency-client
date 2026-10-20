@@ -1,5 +1,4 @@
 //! Explicit one-attempt development startup; no production scheduler or file tool.
-pub mod accounts;
 mod approval;
 mod config;
 mod driver;
@@ -14,7 +13,6 @@ pub mod palpo_import;
 mod palpo_work;
 pub mod probe;
 pub mod provision;
-pub mod registration;
 pub(crate) mod workspace;
 use approval::Pump;
 use hagency_matrix::{CancellationToken, Collector};
