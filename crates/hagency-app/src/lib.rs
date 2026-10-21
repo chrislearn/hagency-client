@@ -92,6 +92,8 @@ pub mod moments;
 pub mod i18n;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod apple_fonts;
+#[cfg(target_os = "windows")]
+mod windows_fonts;
 /// Generating text previews of timeline events/messages.
 mod event_preview;
 pub mod room;

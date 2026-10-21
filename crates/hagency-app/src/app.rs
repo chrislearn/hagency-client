@@ -689,10 +689,13 @@ impl MatchEvent for App {
             }
 
             // Handle an action requesting to open the new message context menu.
-            if let MessageAction::OpenMessageContextMenu { details, abs_pos } = action.as_widget_action().cast() {
+            if let MessageAction::OpenMessageContextMenu { details, abs_pos, show_reaction_input } = action.as_widget_action().cast() {
                 self.ui.callout_tooltip(cx, ids!(app_tooltip)).hide(cx);
                 let new_message_context_menu = self.ui.new_message_context_menu(cx, ids!(new_message_context_menu));
                 let expected_dimensions = new_message_context_menu.show(cx, details);
+                if show_reaction_input {
+                    new_message_context_menu.reveal_reaction_input(cx);
+                }
                 // Use the overlay container's rect (not the window's) to correctly position
                 // the context menu relative to the body area, which excludes the caption bar.
                 let rect = self.ui.view(cx, ids!(overlay_container)).area().rect(cx);
@@ -1317,6 +1320,8 @@ impl AppMain for App {
         crate::theme::init_standalone(vm);
         #[cfg(any(target_os = "macos", target_os = "ios"))]
         crate::apple_fonts::install(vm);
+        #[cfg(target_os = "windows")]
+        crate::windows_fonts::install(vm);
         makepad_widgets::widgets_mod(vm);
         makepad_widgets::desktop_style::apply_widgets(vm);
         register_widgets(vm);
