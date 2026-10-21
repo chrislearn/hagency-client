@@ -68,3 +68,8 @@
 首次发布后的真实 macOS ARM Clippy 暴露 `TimelineUpdate::SendFailedBeforeBeingQueued` 比其他枚举成员大超过 200 字节；Windows 的布局差异使本地未触发同一 lint。上传预览共享编码数据后，另一个成员变小，显露了这一差异。将发送失败正文改为 `Box<RoomMessageEventContent>`，减少通知队列中每个枚举项的内联大小；四个发送失败入口均更新。新增跨上下文替换转交失败消息的回归，验证中文/emoji 正文保留。未关闭检查或修改 CI 策略。
 
 该补丁本地应用测试 556 passed / 0 failed / 2 既有 ignored，history 8 / 0 / 2；严格 all-targets Clippy、无默认 agent_chat、Rust 1.99 fast `-D warnings` 均通过，日志为 `review4-{tests,clippy,no-default,rust199-check}.log`。最终补丁的独立 1,800 秒原生复测输出目录为 `D:/BuildCache/hagency-client/chat-soak-20261021-review4`；实际完成时长、预设门槛判定及源码/二进制校验，以该目录 `completion.json`、`summary.json`、`hashes-final.json` 为准。上文 review3 的数值与 SHA 属于此枚举布局补丁之前的完成记录，不冒作最终补丁的哈希。最终 main 的四条真实 CI 结果仍以 `review3-remote-ci-final.json` 中精确 head_sha 为准，失败的旧发布记录保留在 `review3-ci-history.jsonl` 和 `review3-ci-macos-native-failed.log`。
+
+
+## SDK 15 项后续闭环
+
+上文 618 passed / 15 filtered 是当时版本的历史记录。本轮进一步发现“11 项仅是策略差异”的判断过于宽泛，修复预算内历史过早删除、线程误清、重载绕过预算、排序元数据增长及裁剪边界等问题；原 15 项全部重新纳入两个策略的未过滤 library 全集。逐项判断、保留的断言、测试环境修正和新增策略回归见 [SDK 15 项逐项报告](sdk-filtered-tests-review-2026-10-21.zh.md)。最新固定版本以 workspace 和 lockfile 为准；旧长测哈希不冒作新版本哈希。
