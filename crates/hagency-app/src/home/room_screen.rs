@@ -7733,11 +7733,8 @@ impl Widget for Message {
         // Finally, handle any hits on the rest of the message body itself.
         let message_view_area = self.view.area();
         let body_hit = handle_hover_hit(self, cx, event, message_view_area, claim_before, self.is_context_menu_open);
-        match body_hit {
-            Hit::FingerDown(_) => {
-                cx.set_key_focus(message_view_area);
-            }
-            _ => { }
+        if let Hit::FingerDown(_) = body_hit {
+            cx.set_key_focus(message_view_area);
         }
 
         // Report hover changes to the RoomScreen, which owns the floating
@@ -8425,7 +8422,7 @@ mod hover_action_bar_tests {
             cx2d.begin_pass(&pass, None);
             list.begin_always(&mut cx2d);
             cx2d.begin_root_turtle(dvec2(1400.0, 900.0), Layout::flow_overlay());
-            message.draw_walk(&mut cx2d, &mut Scope::empty(), Walk {
+            message.draw_walk_all(&mut cx2d, &mut Scope::empty(), Walk {
                 width: Size::Fixed(1400.0),
                 height: Size::Fit {min: None, max: None},
                 ..Walk::default()
