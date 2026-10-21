@@ -654,6 +654,21 @@ impl NewMessageContextMenu {
         expected_menu_size(num_visible_buttons, num_visible_dividers)
     }
 
+    /// Reveals the inline reaction input immediately, skipping the
+    /// "Add Reaction" intermediate button (used by the hover action bar's
+    /// react button). Call after `show()`. No-op if reactions aren't allowed.
+    pub fn reveal_reaction_input(&mut self, cx: &mut Cx) {
+        let can_react = self.details.as_ref()
+            .is_some_and(|d| d.abilities.contains(MessageAbilities::CanReact));
+        if !can_react {
+            return;
+        }
+        self.view.button(cx, ids!(react_button)).set_visible(cx, false);
+        self.view.view(cx, ids!(reaction_input_view)).set_visible(cx, true);
+        self.focus_after_draw = true;
+        self.redraw(cx);
+    }
+
     fn close(&mut self, cx: &mut Cx) {
         self.visible = false;
         self.details = None;
@@ -677,5 +692,12 @@ impl NewMessageContextMenuRef {
     pub fn show(&self, cx: &mut Cx, details: MessageDetails) -> DVec2 {
         let Some(mut inner) = self.borrow_mut() else { return DVec2::default()};
         inner.show(cx, details)
+    }
+
+    /// See [`NewMessageContextMenu::reveal_reaction_input()`].
+    pub fn reveal_reaction_input(&self, cx: &mut Cx) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.reveal_reaction_input(cx);
+        }
     }
 }

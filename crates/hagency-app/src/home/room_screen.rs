@@ -1001,6 +1001,55 @@ script_mod! {
             // The top space should be displayed as an overlay at the top of the timeline.
             top_space := mod.widgets.TopSpace { }
 
+            // The floating hover action bar for the message under the pointer
+            // (desktop only). An overlay living in the RoomScreen — not inside
+            // the message items — because PortalList items are draw-cached and
+            // cannot toggle their own children at runtime. Positioned at the
+            // hovered message's top-right corner via `bar_inner`'s margin.
+            message_action_bar := View {
+                visible: false
+                width: Fill, height: Fill
+                flow: Overlay
+                align: Align{x: 0.0, y: 0.0}
+
+                bar_inner := RoundedView {
+                    // Fixed size: 3 icon buttons (28px) + 2px spacing + 2px padding.
+                    // Positioned top-left-aligned via a runtime margin, the same
+                    // pattern the message context menu uses.
+                    width: 92, height: 32
+                    flow: Right, spacing: 2
+                    padding: 2
+                    align: Align{x: 0.0, y: 0.0}
+
+                    show_bg: true
+                    draw_bg +: {
+                        color: mod.widgets.RINX_SURFACE
+                        border_radius: mod.widgets.RINX_CONTROL_RADIUS
+                        border_size: 1.0
+                        border_color: mod.widgets.RINX_BORDER
+                    }
+
+                    hover_reply_button := NavigationBarButton {
+                        tooltip_below: true
+                        width: 28 height: 28 padding: 6
+                        tooltip_text: #(crate::i18n::tr("Reply"))
+                        icon := Icon {icon_walk: Walk{width: 16 height: 16} draw_icon +: {svg: (ICON_REPLY) color: mod.widgets.RINX_INK}}
+                    }
+                    hover_react_button := NavigationBarButton {
+                        tooltip_below: true
+                        width: 28 height: 28 padding: 6
+                        tooltip_text: #(crate::i18n::tr("Add Reaction"))
+                        icon := Icon {icon_walk: Walk{width: 16 height: 16} draw_icon +: {svg: (ICON_ADD_REACTION) color: mod.widgets.RINX_INK}}
+                    }
+                    hover_more_button := NavigationBarButton {
+                        tooltip_below: true
+                        width: 28 height: 28 padding: 6
+                        tooltip_text: #(crate::i18n::tr("More"))
+                        icon := Icon {icon_walk: Walk{width: 16 height: 16} draw_icon +: {svg: (ICON_MORE_HORIZ) color: mod.widgets.RINX_INK}}
+                    }
+                }
+            }
+
             // The user profile sliding pane should be displayed on top of other "static" subviews
             // (on top of all other views that are always visible).
             user_profile_sliding_pane := mod.widgets.UserProfileSlidingPane { }
@@ -1013,26 +1062,6 @@ script_mod! {
             // which is controlled by actions from the RoomInputBar.
             room_input_popup_menu := RoomInputPopupMenu { }
 
-
-
-            /*
-             * TODO: add the action bar back in as a series of floating buttons.
-             *
-            message_action_bar_popup := PopupNotification {
-                align: Align{x: 0.0, y: 0.0}
-                content: {
-                    height: Fit,
-                    width: Fit,
-                    show_bg: false,
-                    align: Align{
-                        x: 0.5,
-                        y: 0.5
-                    }
-
-                    message_action_bar := MessageActionBar {}
-                }
-            }
-            */
                 }
                 desktop_chat_info_panel := SolidView {visible: false width: 280 height: Fill flow: Overlay draw_bg.color: mod.widgets.RINX_DIVIDER
                     View {width: Fill height: Fill flow: Right
@@ -1230,6 +1259,14 @@ pub struct RoomScreen {
     #[rust] pending_read_receipt_jump: Option<OwnedUserId>,
     #[rust] pending_history_jump: Option<OwnedEventId>,
     #[rust] pending_restore_scroll: Option<f64>,
+    /// The message that the floating hover action bar overlay is shown for.
+    #[rust] action_bar_message: Option<MessageDetails>,
+    /// The hovered message's rect in absolute window coordinates, captured
+    /// when it reported the hover. Stale once the timeline scrolls.
+    #[rust] action_bar_message_rect: Rect,
+    /// Whether a context menu opened from the hover action bar is showing.
+    /// While open, the bar freezes (no pointer-tracking hides).
+    #[rust] action_bar_menu_open: bool,
     #[rust] history_jump_started: bool,
     /// Fires when a background search for a jumped-to event has gone quiet.
     #[rust] jump_search_timer: Timer,
@@ -1286,6 +1323,14 @@ impl Widget for RoomScreen {
         // Skip event handling if this RoomScreen is uninitialized (a background dock tab after dock restore).
         if self.tl_state.is_none() && self.room_name_id.is_none() {
             return;
+        }
+        // Hover action bar overlay bookkeeping: hide it once the pointer has
+        // left both the message and the bar, and when the timeline scrolls or
+        // the window is left (the recorded message rect goes stale).
+        match event {
+            Event::MouseMove(e) => self.update_message_action_bar_on_pointer(cx, e.abs),
+            Event::Scroll(_) | Event::MouseLeave(_) => self.hide_message_action_bar(cx),
+            _ => {}
         }
         for id in [id!(information_resize), id!(compact_information_resize)] {
             if self.view.sidebar_resize_handle(cx, &[id]).route_pointer_event(cx, event, _scope) {return;}
@@ -3069,6 +3114,59 @@ impl RoomScreen {
     }
 
     /// Handles any [`MessageAction`]s received by this RoomScreen.
+    /// Shows the floating hover action bar for the given message, positioning
+    /// it at the message's top-right corner. Both `rect` and the overlay's own
+    /// rect are in absolute window coordinates, so no conversion is needed.
+    fn show_message_action_bar(&mut self, cx: &mut Cx, details: &MessageDetails, rect: Rect) {
+        // A context menu opened from the bar freezes it in place.
+        if self.action_bar_menu_open || !super::home_screen::effective_is_desktop(cx) {
+            return;
+        }
+        self.action_bar_message = Some(details.clone());
+        self.action_bar_message_rect = rect;
+        // The bar wrapper is a Fill overlay inside `chat_center`, so its rect
+        // equals chat_center's — which, unlike the wrapper's, is valid even
+        // before the bar's first visible frame.
+        let wrapper_rect = self.view.view(cx, ids!(chat_center)).area().rect(cx);
+        let mut inner = self.view.view(cx, ids!(message_action_bar.bar_inner));
+        // The bar is 92x32 (fixed in the DSL); place its right edge 8px inside
+        // the message's right edge and its top 2px below the message's top.
+        let margin = Inset {
+            top: (rect.pos.y - wrapper_rect.pos.y + 2.0).max(0.0),
+            left: (rect.pos.x + rect.size.x - wrapper_rect.pos.x - 92.0 - 8.0).max(0.0),
+            right: 0.0,
+            bottom: 0.0,
+        };
+        script_apply_eval!(cx, inner, {
+            margin: #(margin)
+        });
+        self.view.view(cx, ids!(message_action_bar)).set_visible(cx, true);
+        self.redraw(cx);
+    }
+
+    /// Hides the floating hover action bar, if it is shown.
+    fn hide_message_action_bar(&mut self, cx: &mut Cx) {
+        if self.action_bar_message.is_none() {
+            return;
+        }
+        self.action_bar_message = None;
+        self.view.view(cx, ids!(message_action_bar)).set_visible(cx, false);
+        self.redraw(cx);
+    }
+
+    /// Hides the hover action bar once the pointer has left both the hovered
+    /// message's rect and the bar itself (so moving onto the bar keeps it).
+    fn update_message_action_bar_on_pointer(&mut self, cx: &mut Cx, abs: DVec2) {
+        if self.action_bar_message.is_none() || self.action_bar_menu_open {
+            return;
+        }
+        let over_bar = self.view.view(cx, ids!(message_action_bar.bar_inner)).area().rect(cx).contains(abs);
+        let over_message = self.action_bar_message_rect.contains(abs);
+        if !over_bar && !over_message {
+            self.hide_message_action_bar(cx);
+        }
+    }
+
     fn handle_message_actions(
         &mut self,
         cx: &mut Cx,
@@ -3077,8 +3175,57 @@ impl RoomScreen {
         loading_pane: &LoadingPaneRef,
     ) {
         let room_screen_widget_uid = self.widget_uid();
+        // The hover action bar overlay's buttons (the bar lives in this
+        // RoomScreen, so its button clicks arrive as NavigationBarButtonActions).
+        let (bar_reply_uid, bar_react_uid, bar_more_uid) = if self.action_bar_message.is_some() {
+            (
+                self.view.widget(cx, ids!(message_action_bar.bar_inner.hover_reply_button)).widget_uid(),
+                self.view.widget(cx, ids!(message_action_bar.bar_inner.hover_react_button)).widget_uid(),
+                self.view.widget(cx, ids!(message_action_bar.bar_inner.hover_more_button)).widget_uid(),
+            )
+        } else {
+            (WidgetUid(0), WidgetUid(0), WidgetUid(0))
+        };
         for action in actions {
+            // A context menu opened from the bar (or elsewhere) closing unfreezes the bar.
+            if action.downcast_ref::<ContextMenuClosed>().is_some() {
+                self.action_bar_menu_open = false;
+            }
+            if let Some(details) = self.action_bar_message.as_ref().cloned() {
+                let bar_clicked = |uid: WidgetUid| matches!(
+                    action.as_widget_action().widget_uid_eq(uid).cast(),
+                    crate::shared::navigation_bar_button::NavigationBarButtonAction::Clicked
+                );
+                if bar_clicked(bar_reply_uid) {
+                    // Same chain as the context menu's reply button.
+                    cx.widget_action(room_screen_widget_uid, MessageAction::Reply(details));
+                    self.hide_message_action_bar(cx);
+                    continue;
+                }
+                if bar_clicked(bar_react_uid) || bar_clicked(bar_more_uid) {
+                    // Same chain as right-clicking the message; React opens the
+                    // menu with its inline reaction input already revealed.
+                    let bar_rect = self.view.view(cx, ids!(message_action_bar.bar_inner)).area().rect(cx);
+                    let abs_pos = dvec2(bar_rect.pos.x, bar_rect.pos.y + bar_rect.size.y);
+                    self.action_bar_menu_open = true;
+                    cx.widget_action(
+                        room_screen_widget_uid,
+                        MessageAction::OpenMessageContextMenu {
+                            details,
+                            abs_pos,
+                            show_reaction_input: bar_clicked(bar_react_uid),
+                        },
+                    );
+                    continue;
+                }
+            }
             match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast_ref() {
+                MessageAction::MessageHovered { details, rect } => {
+                    self.show_message_action_bar(cx, details, *rect);
+                }
+                // Pointer tracking in `handle_event` hides the bar once the
+                // pointer has left both the message and the bar.
+                MessageAction::MessageUnhovered => { }
                 #[cfg(feature = "agent_chat")]
                 MessageAction::AgentChatApprovalDecision { details, action } => {
                     self.handle_agent_chat_approval_decision(cx, details, action);
@@ -7316,6 +7463,9 @@ pub enum MessageAction {
         /// The absolute position where we should show the context menu,
         /// in which the (0,0) origin coordinate is the top left corner of the app window.
         abs_pos: DVec2,
+        /// Whether the menu should immediately show its inline reaction input
+        /// (used by the hover action bar's react button).
+        show_reaction_input: bool,
     },
     /// The user requested opening the message action bar
     ActionBarOpen {
@@ -7326,6 +7476,15 @@ pub enum MessageAction {
     },
     /// The user requested closing the message action bar
     ActionBarClose,
+    /// The pointer started hovering a message (desktop hover action bar).
+    /// `rect` is the message item's rect in absolute window coordinates;
+    /// the RoomScreen positions its floating action bar overlay there.
+    MessageHovered {
+        details: MessageDetails,
+        rect: Rect,
+    },
+    /// The pointer left the message most recently reported as hovered.
+    MessageUnhovered,
     #[default]
     None,
 }
@@ -7357,6 +7516,9 @@ pub struct Message {
     details: Option<MessageDetails>,
     /// `True` while a context menu that we opened is being shown.
     #[rust] is_context_menu_open: bool,
+    /// Whether we last reported this message as hovered to the RoomScreen
+    /// (which owns the floating hover action bar overlay).
+    #[rust] hover_action_reported: bool,
     /// Set on file/image/audio/video messages so the download button knows
     /// what to save when the user clicks it. `None` for plain text messages,
     /// which hide the download button entirely.
@@ -7417,7 +7579,7 @@ impl Widget for Message {
             mde.handled.set(self.view.area());
             let details = d.clone();
             self.animator_play(cx, ids!(bg_hover.on));
-            self.open_context_menu(cx, room_screen_widget_uid, details, mde.abs);
+            self.open_context_menu(cx, room_screen_widget_uid, details, mde.abs, false);
         }
         else if let Event::LongPress(lpe) = event
             // the long press must've been claimed by us or a descendant on touch-down,
@@ -7430,7 +7592,7 @@ impl Widget for Message {
             {
                 let details = d.clone();
                 self.animator_play(cx, ids!(bg_hover.on));
-                self.open_context_menu(cx, room_screen_widget_uid, details, lpe.abs);
+                self.open_context_menu(cx, room_screen_widget_uid, details, lpe.abs, false);
             }
         }
 
@@ -7537,13 +7699,19 @@ impl Widget for Message {
             Hit::FingerDown(_) => {
                 cx.set_key_focus(message_view_area);
             }
-            Hit::FingerHoverIn(..) => {
-                // TODO: here, show the "action bar" buttons upon hover-in
-            }
-            Hit::FingerHoverOut(_fho) => {
-                // TODO: here, hide the "action bar" buttons upon hover-out
-            }
             _ => { }
+        }
+
+        // Report hover changes to the RoomScreen, which owns the floating
+        // action bar overlay (PortalList items are draw-cached, so the bar
+        // cannot live inside the item). Keyed off the highlight animator —
+        // the hover signal that reliably reaches list items — evaluated
+        // after `handle_hover_hit` has processed this event's hit. Child
+        // widgets (e.g. the selectable text) may claim the hover before this
+        // area's hit is computed, so hit variants alone are unreliable.
+        if !self.is_context_menu_open {
+            let hovered = self.animator_in_state(cx, ids!(bg_hover.on));
+            self.report_action_bar_hover(cx, hovered);
         }
 
         // All of our claim sites have run by now, so a press claimed since our
@@ -7660,7 +7828,7 @@ impl Widget for Message {
                 if details.abilities.intersects(MessageAbilities::CanRetrySend | MessageAbilities::CanCancelSend) {
                     let details = details.clone();
                     self.animator_play(cx, ids!(bg_hover.on));
-                    self.open_context_menu(cx, room_screen_widget_uid, details, abs_pos);
+                    self.open_context_menu(cx, room_screen_widget_uid, details, abs_pos, false);
                 }
             }
         }
@@ -7750,7 +7918,29 @@ impl Message {
             ))
     }
 
-    fn open_context_menu(&mut self, cx: &mut Cx, room_screen_widget_uid: WidgetUid, mut details: MessageDetails, abs_pos: DVec2) {
+    /// Reports to the RoomScreen (via a widget action) whether the pointer is
+    /// hovering this message, so it can position its floating action bar
+    /// overlay. Desktop only; no-op repeats are filtered by a state flag.
+    fn report_action_bar_hover(&mut self, cx: &mut Cx, hovered: bool) {
+        let hovered = hovered && super::home_screen::effective_is_desktop(cx);
+        if self.hover_action_reported == hovered {
+            return;
+        }
+        self.hover_action_reported = hovered;
+        let Some(details) = self.details.as_ref() else { return };
+        let room_screen_widget_uid = details.room_screen_widget_uid;
+        if hovered {
+            let rect = self.view.area().rect(cx);
+            cx.widget_action(
+                room_screen_widget_uid,
+                MessageAction::MessageHovered { details: details.clone(), rect },
+            );
+        } else {
+            cx.widget_action(room_screen_widget_uid, MessageAction::MessageUnhovered);
+        }
+    }
+
+    fn open_context_menu(&mut self, cx: &mut Cx, room_screen_widget_uid: WidgetUid, mut details: MessageDetails, abs_pos: DVec2, show_reaction_input: bool) {
         let body = self.view.html_or_plaintext(cx, ids!(content.message));
         let caption = self.view.html_or_plaintext(cx, ids!(content.message.caption_view.caption));
         let selected = body.selected_text(cx);
@@ -7762,6 +7952,7 @@ impl Message {
             MessageAction::OpenMessageContextMenu {
                 details,
                 abs_pos,
+                show_reaction_input,
             },
         );
     }
@@ -7808,6 +7999,7 @@ impl Message {
             self.view.html_or_plaintext(cx, ids!(content.message)).clear_selection(cx);
             self.view.html_or_plaintext(cx, ids!(content.message.caption_view.caption)).clear_selection(cx);
             self.animator_cut(cx, ids!(bg_hover.off));
+            self.report_action_bar_hover(cx, false);
         }
 
         self.details = Some(details);
@@ -8145,4 +8337,250 @@ mod desktop_information_columns_tests {
         assert!(screen.view.view(&cx, ids!(desktop_chat_info_panel)).visible());
     }
 
+}
+
+#[cfg(test)]
+mod hover_action_bar_tests {
+    use super::*;
+    use makepad_widgets::event::{ScrollEvent, ScrollPhase};
+    use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+
+    fn message_details(uid: WidgetUid) -> MessageDetails {
+        MessageDetails {
+            item_id: 0,
+            timeline_event_id: TimelineEventItemId::EventId(matrix_sdk::ruma::event_id!("$hover:server").to_owned()),
+            related_event_id: None,
+            thread_root_event_id: None,
+            room_screen_widget_uid: uid,
+            abilities: MessageAbilities::empty(),
+            should_be_highlighted: false,
+            selected_text: None,
+        }
+    }
+
+    fn message() -> (Cx, Message) {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut message = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            vm.bx.captured_errors = Some(Vec::new());
+            let value = script_eval!(vm, {mod.widgets.Message {}});
+            let message = Message::script_from_value(vm, value);
+            assert!(vm.take_errors().is_empty());
+            message
+        });
+        let uid = message.widget_uid();
+        message.details = Some(message_details(uid));
+        (cx, message)
+    }
+
+    fn draw_message(cx: &mut Cx, message: &mut Message) {
+        message.view.html_or_plaintext(cx, ids!(message)).show_plaintext(cx, "A short message");
+        cx.redraw_all();
+        let pass = DrawPass::new(cx);
+        pass.set_size(cx, dvec2(1400.0, 900.0));
+        let mut list = DrawList2d::new(cx);
+        let event = DrawEvent::default();
+        {
+            let mut draw = CxDraw::new(cx, &event);
+            let mut cx2d = Cx2d::new(&mut draw);
+            cx2d.begin_pass(&pass, None);
+            list.begin_always(&mut cx2d);
+            cx2d.begin_root_turtle(dvec2(1400.0, 900.0), Layout::flow_overlay());
+            message.draw_walk(&mut cx2d, &mut Scope::empty(), Walk {
+                width: Size::Fixed(1400.0),
+                height: Size::Fit {min: None, max: None},
+                ..Walk::default()
+            });
+            cx2d.end_pass_sized_turtle();
+            list.end(&mut cx2d);
+            cx2d.end_pass(&pass);
+        }
+    }
+
+    fn screen() -> (Cx, RoomScreen) {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let screen = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            vm.bx.captured_errors = Some(Vec::new());
+            let value = script_eval!(vm, {mod.widgets.RoomScreen {}});
+            let screen = RoomScreen::script_from_value(vm, value);
+            assert!(vm.take_errors().is_empty());
+            screen
+        });
+        (cx, screen)
+    }
+
+    fn draw_screen(cx: &mut Cx, screen: &mut RoomScreen) {
+        cx.redraw_all();
+        let pass = DrawPass::new(cx);
+        pass.set_size(cx, dvec2(1280.0, 900.0));
+        let mut list = DrawList2d::new(cx);
+        let overlay = Overlay {draw_list: DrawList::new(cx)};
+        let event = DrawEvent::default();
+        {
+            let mut draw = CxDraw::new(cx, &event);
+            let mut cx2d = Cx2d::new(&mut draw);
+            cx2d.begin_pass(&pass, None);
+            list.begin_always(&mut cx2d);
+            overlay.begin(&mut cx2d);
+            cx2d.begin_root_turtle(dvec2(1280.0, 900.0), Layout::flow_overlay());
+            screen.view.draw_walk_all(&mut cx2d, &mut Scope::with_data(&mut crate::app::AppState::default()),
+                Walk {width: Size::Fixed(1280.0), height: Size::Fixed(760.0), ..Walk::default()});
+            overlay.end(&mut cx2d);
+            cx2d.end_pass_sized_turtle();
+            list.end(&mut cx2d);
+            cx2d.end_pass(&pass);
+        }
+    }
+
+    fn mouse_move(abs: DVec2) -> Event {
+        Event::MouseMove(MouseMoveEvent {
+            abs,
+            lock_delta: DVec2::default(),
+            window_id: WindowId(0, 0),
+            modifiers: KeyModifiers::default(),
+            handled: std::cell::Cell::new(Area::Empty),
+            time: 1.0,
+        })
+    }
+
+    #[test]
+    fn message_reports_hover_to_room_screen_with_its_rect() {
+        let (mut cx, mut message) = message();
+        draw_message(&mut cx, &mut message);
+        let room_screen_uid = message.details.as_ref().unwrap().room_screen_widget_uid;
+
+        // A MouseMove over the message drives the highlight animator via the
+        // hit path; the message then reports the hover to its RoomScreen.
+        let inside = message.view.area().rect(&cx).pos + dvec2(100.0, 5.0);
+        let actions = cx.capture_actions(|cx| message.handle_event(cx, &mouse_move(inside), &mut Scope::empty()));
+        let reported = actions.iter().find_map(|a| match a.as_widget_action().widget_uid_eq(room_screen_uid).cast_ref() {
+            MessageAction::MessageHovered { details, rect } => Some((details.item_id, *rect)),
+            _ => None,
+        });
+        let Some((item_id, rect)) = reported else {
+            panic!("hovering a message must report MessageHovered to the RoomScreen");
+        };
+        assert_eq!(item_id, 0);
+        assert_eq!(rect, message.view.area().rect(&cx), "reported rect must be the message's absolute rect");
+
+        // Leaving the message reports the unhover.
+        let actions = cx.capture_actions(|cx| message.handle_event(cx, &mouse_move(dvec2(3000.0, 3000.0)), &mut Scope::empty()));
+        assert!(actions.iter().any(|a| matches!(
+            a.as_widget_action().widget_uid_eq(room_screen_uid).cast_ref(),
+            MessageAction::MessageUnhovered
+        )), "leaving a message must report MessageUnhovered");
+    }
+
+    #[test]
+    fn hovered_message_positions_overlay_bar_and_pointer_tracking_hides_it() {
+        let (mut cx, mut screen) = screen();
+        screen.room_name_id = Some(RoomNameId::empty(matrix_sdk::ruma::room_id!("!hover:server").to_owned()));
+        draw_screen(&mut cx, &mut screen);
+        let bar = screen.view.view(&cx, ids!(message_action_bar));
+        assert!(!bar.visible());
+
+        // A message hovering report shows the overlay at the message's top-right corner.
+        let center = screen.view.view(&cx, ids!(chat_center)).area().rect(&cx);
+        let msg_rect = Rect { pos: center.pos + dvec2(100.0, 120.0), size: dvec2(400.0, 50.0) };
+        let details = message_details(screen.widget_uid());
+        let actions = cx.capture_actions(|cx| cx.widget_action(
+            screen.widget_uid(),
+            MessageAction::MessageHovered { details, rect: msg_rect },
+        ));
+        screen.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::empty());
+        assert!(bar.visible(), "the overlay bar must show for a hovered message");
+        assert_eq!(screen.action_bar_message.as_ref().map(|d| d.item_id), Some(0));
+        draw_screen(&mut cx, &mut screen);
+        let bar_rect = screen.view.view(&cx, ids!(message_action_bar.bar_inner)).area().rect(&cx);
+        assert!(bar_rect.size.x > 0.0 && bar_rect.size.y > 0.0, "bar must be laid out: {bar_rect:?}");
+        assert!((bar_rect.pos.x + bar_rect.size.x - (msg_rect.pos.x + msg_rect.size.x - 8.0)).abs() < 1.0,
+            "bar's right edge sits 8px inside the message's right edge: {bar_rect:?} vs {msg_rect:?}");
+        assert!((bar_rect.pos.y - (msg_rect.pos.y + 2.0)).abs() < 1.0,
+            "bar's top sits 2px below the message's top edge: {bar_rect:?} vs {msg_rect:?}");
+
+        // Moving onto the bar keeps it; leaving both rects hides it.
+        screen.handle_event(&mut cx, &mouse_move(bar_rect.pos + bar_rect.size * 0.5), &mut Scope::empty());
+        assert!(bar.visible(), "moving onto the bar must keep it visible");
+        screen.handle_event(&mut cx, &mouse_move(center.pos + dvec2(600.0, 600.0)), &mut Scope::empty());
+        assert!(!bar.visible(), "leaving both the message and the bar hides the bar");
+        assert!(screen.action_bar_message.is_none());
+
+        // Scrolling hides the bar, since the recorded message rect went stale.
+        let actions = cx.capture_actions(|cx| cx.widget_action(
+            screen.widget_uid(),
+            MessageAction::MessageHovered { details: message_details(screen.widget_uid()), rect: msg_rect },
+        ));
+        screen.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::empty());
+        assert!(bar.visible());
+        screen.handle_event(&mut cx, &Event::Scroll(ScrollEvent {
+            window_id: WindowId(0, 0),
+            scroll: dvec2(0.0, -100.0),
+            abs: center.pos + dvec2(100.0, 100.0),
+            modifiers: KeyModifiers::default(),
+            handled_x: std::cell::Cell::new(false),
+            handled_y: std::cell::Cell::new(false),
+            is_mouse: true,
+            time: 1.0,
+            phase: ScrollPhase::None,
+        }), &mut Scope::empty());
+        assert!(!bar.visible(), "scrolling the timeline hides the bar");
+    }
+
+    #[test]
+    fn action_bar_buttons_reuse_the_context_menu_action_chain() {
+        let (mut cx, mut screen) = screen();
+        screen.room_name_id = Some(RoomNameId::empty(matrix_sdk::ruma::room_id!("!hover:server").to_owned()));
+        draw_screen(&mut cx, &mut screen);
+        let center = screen.view.view(&cx, ids!(chat_center)).area().rect(&cx);
+        let msg_rect = Rect { pos: center.pos + dvec2(100.0, 120.0), size: dvec2(400.0, 50.0) };
+        let actions = cx.capture_actions(|cx| cx.widget_action(
+            screen.widget_uid(),
+            MessageAction::MessageHovered { details: message_details(screen.widget_uid()), rect: msg_rect },
+        ));
+        screen.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::empty());
+        draw_screen(&mut cx, &mut screen);
+        assert!(screen.view.view(&cx, ids!(message_action_bar)).visible());
+
+        // More and React both open the regular message context menu; React asks
+        // it to reveal its inline reaction input immediately.
+        for (button, expect_reaction_input) in [
+            (ids!(message_action_bar.bar_inner.hover_more_button), false),
+            (ids!(message_action_bar.bar_inner.hover_react_button), true),
+        ] {
+            let button_uid = screen.view.widget(&cx, button).widget_uid();
+            let actions = cx.capture_actions(|cx| cx.widget_action(
+                button_uid,
+                crate::shared::navigation_bar_button::NavigationBarButtonAction::Clicked,
+            ));
+            let out = cx.capture_actions(|cx| screen.handle_event(cx, &Event::Actions(actions), &mut Scope::empty()));
+            let show_reaction_input = out.iter().find_map(|a| match a.as_widget_action().widget_uid_eq(screen.widget_uid()).cast_ref() {
+                MessageAction::OpenMessageContextMenu { details, show_reaction_input, .. } => {
+                    assert_eq!(details.item_id, 0);
+                    Some(*show_reaction_input)
+                }
+                _ => None,
+            });
+            assert_eq!(show_reaction_input, Some(expect_reaction_input),
+                "the bar button must open the same context menu as a right-click");
+            assert!(screen.action_bar_menu_open);
+            screen.action_bar_menu_open = false;
+        }
+
+        // Reply re-enters the RoomScreen's own action chain, like the context
+        // menu's reply button.
+        let reply_uid = screen.view.widget(&cx, ids!(message_action_bar.bar_inner.hover_reply_button)).widget_uid();
+        let actions = cx.capture_actions(|cx| cx.widget_action(
+            reply_uid,
+            crate::shared::navigation_bar_button::NavigationBarButtonAction::Clicked,
+        ));
+        let out = cx.capture_actions(|cx| screen.handle_event(cx, &Event::Actions(actions), &mut Scope::empty()));
+        assert!(out.iter().any(|a| matches!(
+            a.as_widget_action().widget_uid_eq(screen.widget_uid()).cast_ref(),
+            MessageAction::Reply(details) if details.item_id == 0
+        )));
+        assert!(!screen.view.view(&cx, ids!(message_action_bar)).visible(), "replying hides the bar");
+    }
 }
