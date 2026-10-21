@@ -55,7 +55,8 @@ mod tests {
     use super::*;
     #[test]
     fn native_octos_task_tools_profile() {
-        let tools = TaskTools::new("/bin/hagency".into(), "task_1".into()).unwrap();
+        let executable = std::env::current_exe().unwrap();
+        let tools = TaskTools::new(executable.clone(), "task_1".into()).unwrap();
         assert!(tools.tools().contains(&"complete_task_with_reply"));
         assert!(!tools.tools().contains(&"send_file"));
         // Every name is a valid Octos host tool name under the app.
@@ -64,7 +65,7 @@ mod tests {
                 "{APP}.{tool}"
             )));
         }
-        let tools = TaskTools::new("/bin/hagency".into(), "task_1".into()).unwrap();
+        let tools = TaskTools::new(executable, "task_1".into()).unwrap();
         let prompt = tools.prompt("hello");
         assert!(prompt.contains("task_1"));
         assert!(prompt.contains("hagency_complete_task_with_reply"));

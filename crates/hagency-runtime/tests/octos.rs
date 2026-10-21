@@ -209,32 +209,39 @@ fn native_octos_requests_and_launch_arguments_are_bounded() {
         ),
         Err(Error::Capacity)
     ));
+    let root = std::env::temp_dir();
+    let workspace_path = root.join("work space");
+    let instance_path = root.join("octos-state");
+    let config_path = instance_path.join("config.json");
+    let workspace = workspace_path.to_str().unwrap();
+    let instance = instance_path.to_str().unwrap();
+    let config = config_path.to_str().unwrap();
     assert_eq!(
-        serve_arguments(
-            "/work/space",
-            "/state/octos/agent",
-            "/state/octos/agent/config.json"
-        )
-        .unwrap(),
+        serve_arguments(workspace, instance, config).unwrap(),
         [
             "serve",
             "--stdio",
             "--cwd",
-            "/work/space",
+            workspace,
             "--no-network",
             "--instance-data-dir",
-            "/state/octos/agent",
+            instance,
             "--config",
-            "/state/octos/agent/config.json"
+            config
         ]
     );
+    let invalid_nul = format!("{workspace}\0");
     for (workspace, instance, config) in [
-        ("work", "/state", "/state/c.json"),
-        ("/work", "state", "/state/c.json"),
-        ("/work", "/state", "c.json"),
-        ("/work\0", "/state", "/state/c.json"),
+        ("work", instance, config),
+        (workspace, "state", config),
+        (workspace, instance, "c.json"),
+        (invalid_nul.as_str(), instance, config),
     ] {
         assert!(serve_arguments(workspace, instance, config).is_err());
+    }
+    #[cfg(windows)]
+    for relative in ["D:relative", "\\root-relative", "/root-relative"] {
+        assert!(serve_arguments(relative, instance, config).is_err());
     }
     // Hagency's own settings, as Octos reads them: no hooks, no MCP servers,
     // sessions out of the project.

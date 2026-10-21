@@ -20,6 +20,7 @@ pub struct Limits {
     pub event_wait_ms: u64,
     pub lifetime_ms: u64,
 }
+
 impl Default for Limits {
     fn default() -> Self {
         Self {
@@ -285,6 +286,34 @@ impl<R, W, E> Wire<R, W, E> {
     }
 }
 impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> Wire<R, W, E> {
+    /// Finish a ready ordinary write before decoding more peer frames. If the
+    /// writer is blocked, keep pumping the bounded input path as before.
+    async fn try_write(&mut self) -> Result<bool, Error> {
+        let frame = self.writing.as_mut().ok_or(Error::State)?;
+        let streams = self.streams.as_mut().ok_or(Error::Closed)?;
+        let result = tokio::select! {
+            biased;
+            result = async {
+                if frame.offset < frame.bytes.len() {
+                    let n = streams.stdin.write(&frame.bytes[frame.offset..]).await
+                        .map_err(|_| Error::Io("stdin write"))?;
+                    if n == 0 { return Err(Error::Io("stdin write zero")); }
+                    frame.offset = frame.offset.checked_add(n)
+                        .filter(|&n| n <= frame.bytes.len()).ok_or(Error::Io("stdin write"))?;
+                } else {
+                    streams.stdin.flush().await.map_err(|_| Error::Io("stdin flush"))?;
+                    frame.flushed = true;
+                }
+                Ok::<_, Error>(())
+            } => Some(result),
+            _ = std::future::ready(()) => None,
+        };
+        match result {
+            Some(result) => result.map(|()| true),
+            None => Ok(false),
+        }
+    }
+
     pub async fn send(&mut self, bytes: Vec<u8>, until: Instant) -> Result<WriteProgress, Error> {
         let until = until.min(Instant::now() + Duration::from_millis(self.limits.write_timeout_ms));
         self.check(until)?;
@@ -332,6 +361,13 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> Wire<R, 
         mut control: std::pin::Pin<&mut F>,
     ) -> Result<Option<F::Output>, Error> {
         self.check(until)?;
+        // Approval writes still use their frame/control barrier. The ordinary
+        // handshake must not starve behind an already readable burst merely
+        // because stdout won the biased select before stdin could flush.
+        if write && !barrier && self.try_write().await? {
+            self.check(until)?;
+            return Ok(None);
+        }
         if self.start < self.end {
             self.parse()?;
             return Ok(None);
@@ -468,5 +504,60 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> Wire<R, 
             }
             self.step(until, true, true).await?;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn burst() -> Vec<u8> {
+        let mut input = Vec::new();
+        for index in 0..MAX_QUEUED + 8 {
+            let frame =
+                serde_json::json!({"jsonrpc":"2.0","id":format!("peer-{index}"),"result":{}});
+            input.extend(serde_json::to_vec(&frame).unwrap());
+            input.push(b'\n');
+        }
+        input
+    }
+
+    #[tokio::test]
+    async fn ordinary_write_completes_before_a_ready_peer_burst_fills_the_queue() {
+        let input = burst();
+        let mut wire = Wire::new(
+            input.as_slice(),
+            tokio::io::sink(),
+            tokio::io::empty(),
+            Limits::default(),
+        )
+        .unwrap();
+        wire.send(b"request\n".to_vec(), wire.event_deadline())
+            .await
+            .unwrap();
+        for index in 0..MAX_QUEUED + 8 {
+            let received = wire.next(wire.event_deadline()).await.unwrap();
+            assert!(
+                matches!(received.message, Frame::Response { id, .. } if id == format!("peer-{index}"))
+            );
+        }
+        assert!(wire.queue.is_empty());
+    }
+
+    #[tokio::test]
+    async fn blocked_ordinary_write_still_enforces_the_peer_queue_budget() {
+        let input = burst();
+        let (writer, _unread_peer) = tokio::io::duplex(1);
+        let mut wire = Wire::new(
+            input.as_slice(),
+            writer,
+            tokio::io::empty(),
+            Limits::default(),
+        )
+        .unwrap();
+        assert!(matches!(
+            wire.send(vec![b'x'; 128], wire.event_deadline()).await,
+            Err(Error::Capacity)
+        ));
     }
 }

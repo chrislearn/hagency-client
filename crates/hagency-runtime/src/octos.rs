@@ -472,6 +472,9 @@ pub const CONFIG: &[u8] =
 /// The one file Octos writes into a writable workspace that has none: its
 /// workspace policy, kept out of Git by the host.
 pub const WORKSPACE_POLICY: &str = ".octos-workspace.toml";
+pub(crate) fn absolute_path(path: &str) -> bool {
+    std::path::Path::new(path).is_absolute() && path.len() <= 1024 && !path.contains('\0')
+}
 /// The argv after the executable: one private stdio server bound to the
 /// dispatch's workspace, network denied, runtime state in its own directory
 /// and Hagency's own settings file.
@@ -482,7 +485,7 @@ pub fn serve_arguments(
 ) -> Result<Vec<String>, Error> {
     if [workspace, instance_dir, config]
         .iter()
-        .any(|path| !path.starts_with('/') || path.len() > 1024 || path.contains('\0'))
+        .any(|path| !absolute_path(path))
     {
         return Err(Error::Input);
     }

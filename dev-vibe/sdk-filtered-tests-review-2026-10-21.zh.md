@@ -81,3 +81,19 @@ SDK fork 新增独立 workflow `Hagency SDK history regression`，只在独立�
 固定最终 SDK `28a91dc5f519a1d5f0f828df532faf5e88947da7` 后，本地应用 556 passed / 0 failed / 2 既有 ignored，history 8 / 0 / 2；应用/history all-targets 严格 Clippy、无默认 agent_chat、Rust 1.99 fast `-D warnings` 均通过。日志 `sdk15-client-{tests,clippy,no-default,rust199}.log`。样式、主题、i18n 和 workspace layout 审计通过。
 
 新固定版本构建的历史验证程序另行重开既有 10,000,000 条加密索引库，原分页/顺序/搜索以及新增后撤回断言全部通过，Debug 全程 10.15 秒。日志 `sdk15-ten-million-reopen.log`，可执行程序及 SHA256 见 `sdk15-history-binary.json`。这是显式调用独立的忽略压测用例，不属于 SDK library 全集；未重新生成整座数据库，未清空 OS 文件缓存，不能当作冷读性能对比。
+
+
+## 最终远端工作区 CI 发现的追加问题
+
+首次客户端 main 集成 `1d2ce8e4` 的 SDK 两平台 CI、应用 CI、Spelling 和全部桌面构建均通过，但工作区 `CI` 的 `native_octos_owned_background_work_runs_until_octos_is_idle` 在 `start_turn` 返回 `Capacity`。失败记录 `sdk15-client-core-ci-failed.log` 保留；这不是 SDK 那 15 项重新失败。
+
+根因是本地运行时的普通 stdio 请求写出过程中，偏向 stdout 的调度会先读取并解码连续可读的帧，再尝试写出/flush。正常后台任务通知突发超过 16 帧时，可能在发送结束前耗尽队列，结果随管道分包和调度变化。新回归用 24 个立即可读的完整帧稳定复现，修复前失败；同型 Claude 传输也独立复现，记录 `sdk15-wire-burst-before.log`、`sdk15-claude-wire-before.log`。
+
+普通写出现在先尝试一次立即就绪的写/flush，写端阻塞时仍处理有界输入；保留 16 帧、2 MiB 队列上限和原截止时间。每个协议分别新增两项回归：正常突发完整有序交付；写端阻塞时仍因原队列限额拒绝。审批的 prepared write 继续走原 read/control barrier，没有复用普通写出优先路径。
+
+Windows 完整回归还暴露了已有的 POSIX 路径假设：Octos session/open 和 serve 参数只接受 `/` 开头，拒绝正常 Windows 绝对工作目录。两者现在共用本机绝对路径检查，保留 1024 字节与 NUL 拒绝；codec 用本机临时根路径验证，不放宽相对、驱动器相对和 Windows 根相对路径。task-tools 的正例改用真实测试程序绝对路径，负例的相对路径拒绝断言保留。
+
+运行时 17 个目标共 139 passed / 0 failed / 0 ignored / 0 filtered，包含原 owned background、审批控制、拒绝、取消、超时和写入字节边界用例；严格 all-targets Clippy 与格式检查通过。原始日志为 `sdk15-runtime-full.log`、`sdk15-runtime-clippy.log`、`sdk15-runtime-fmt.log`。SDK 固定版本和 645/631 项无过滤结果保持不变。追加修复后重新检查客户端集成、规范绑定和最终 main 的四条 CI，最终准确 HEAD 与 run URL 仍以 `sdk15-final-verification.json` 为准。
+
+
+本机 Windows 的额外规范库存检查列出 1118 条绑定，但有 14 条引用对应的平台限定测试未注册（13 个不同 selector，均有 Unix 或 Linux/macOS 编译条件）；因此不把本机该检查记为通过，也没有删除绑定或扩大过滤。生产调用检查通过。该规范库存检查属于既有 Ubuntu 工作区 CI，首次 `1d2ce8e4` 已通过；追加修复后的最终 Ubuntu CI 再次负责实际验收。SDK library 两策略和运行时 139 项的零过滤结果与此平台库存检查分别记录。

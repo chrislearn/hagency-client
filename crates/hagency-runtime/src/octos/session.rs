@@ -516,7 +516,7 @@ impl<R: AsyncRead + Unpin, W: AsyncWrite + Unpin, E: AsyncRead + Unpin> SessionD
         cwd: &str,
         permissions: Permissions,
     ) -> Result<(), Error> {
-        if !super::session_key(session_id, profile_id) || !cwd.starts_with('/') {
+        if !super::session_key(session_id, profile_id) || !super::absolute_path(cwd) {
             return Err(Error::Protocol(super::Error::Input));
         }
         let mode = match permissions {
