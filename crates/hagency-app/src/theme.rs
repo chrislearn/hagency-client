@@ -376,6 +376,12 @@ pub fn script_mod(vm: &mut ScriptVm) {
         mod.widgets.RINX_SCROLLBAR = #(mix(s.page, s.ink, 0.35))
         mod.widgets.RINX_SCROLLBAR_HOVER = #(mix(s.page, s.ink, 0.50))
         mod.widgets.RINX_SCROLLBAR_DRAG = #(mix(s.page, s.ink, 0.65))
+        // Surface elevation ramp: recessed rail → panel → lifted content.
+        // Dark mode lifts with ink, light mode recesses with ink / lifts to white.
+        mod.widgets.RINX_RAIL_BG = #(if dark { mix(s.page, vec4(0., 0., 0., 1.), 0.17) } else { mix(s.page, s.ink, 0.045) })
+        mod.widgets.RINX_PANEL_BG = #(if dark { mix(s.page, s.ink, 0.02) } else { s.page })
+        mod.widgets.RINX_CONTENT_BG = #(if dark { mix(s.page, s.ink, 0.055) } else { mix(s.page, vec4(1., 1., 1., 1.), 0.7) })
+        mod.widgets.RINX_DIVIDER = #(mix(s.page, s.ink, if dark { 0.10 } else { 0.09 }))
         mod.widgets.RINX_TEXT_SELECTION_BG = #(text_selection_bg)
         mod.widgets.RINX_ACCENT_HOVER = #(accent_hover)
         mod.widgets.RINX_ACCENT_DOWN = #(accent_down)

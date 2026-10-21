@@ -21,7 +21,7 @@ script_mod! {
             align: Align{x: 0.5, y: 1.0},
             flow: Overlay,
             inner_button := RinxIconButton {
-                width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
+                width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16 margin: Inset{top: 2}}
                 align: Align{x: 0.5, y: 0.5},
                 margin: Inset{bottom: 8},
                 draw_icon +: {

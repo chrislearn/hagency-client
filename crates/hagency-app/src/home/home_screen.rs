@@ -163,13 +163,14 @@ script_mod! {
                     width: 200 height: Fill flow: Overlay
                     persistent_sidebar := mod.widgets.RoomsSideBar {width: Fill height: Fill}
                     View {width: Fill height: Fill flow: Right align: Align{x: 1.0}
+                        View {width: 1 height: Fill show_bg: true draw_bg.color: mod.widgets.RINX_DIVIDER}
                         navigation_resize := SidebarResizeHandle {}
                     }
                 }
 
                 workspace_context := SolidView {
                     width: 240 height: Fill flow: Overlay
-                    draw_bg.color: mod.widgets.RINX_SURFACE
+                    draw_bg.color: mod.widgets.RINX_PANEL_BG
                     View {width: Fill height: Fill flow: Down spacing: 8
                     padding: Inset{left: 10 right: 10 top: 16 bottom: 12}
                     context_title := RinxLabel {width: Fill height: Fit padding: 0 text: #(crate::i18n::tr("Projects")) draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_bold {font_size: mod.widgets.RINX_HEADING_SIZE}}}
@@ -181,6 +182,7 @@ script_mod! {
                     }
                     }
                     View {width: Fill height: Fill flow: Right align: Align{x: 1.0}
+                        View {width: 1 height: Fill show_bg: true draw_bg.color: mod.widgets.RINX_DIVIDER}
                         context_resize := SidebarResizeHandle {}
                     }
                 }

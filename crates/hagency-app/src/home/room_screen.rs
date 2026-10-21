@@ -929,7 +929,7 @@ script_mod! {
             width: Fill, height: 52
             flow: Down
             show_bg: true
-            draw_bg.color: (COLOR_PRIMARY)
+            draw_bg.color: mod.widgets.RINX_CONTENT_BG
 
             View {
                 width: Fill, height: Fill
@@ -974,7 +974,7 @@ script_mod! {
 
         room_screen_wrapper := View {width: Fill height: Fill flow: Overlay
             room_columns := View {width: Fill height: Fill flow: Right
-                chat_center := SolidView {width: Fill height: Fill flow: Overlay draw_bg.color: (COLOR_PRIMARY_DARKER)
+                chat_center := SolidView {width: Fill height: Fill flow: Overlay draw_bg.color: mod.widgets.RINX_CONTENT_BG
             restore_status_view := RestoreStatusView {}
 
             // This used to be a KeyboardView wrapper, but now the on-screen keyboard shift
@@ -1034,7 +1034,7 @@ script_mod! {
             }
             */
                 }
-                desktop_chat_info_panel := SolidView {visible: false width: 280 height: Fill flow: Overlay draw_bg.color: mod.widgets.RINX_BORDER
+                desktop_chat_info_panel := SolidView {visible: false width: 280 height: Fill flow: Overlay draw_bg.color: mod.widgets.RINX_DIVIDER
                     View {width: Fill height: Fill flow: Right
                     View {width: 1 height: Fill}
                     desktop_chat_info_card := View {width: Fill height: Fill desktop_chat_info := MobileChatInfo {summary.summary_details.visible: false}}
@@ -1043,7 +1043,7 @@ script_mod! {
                 }
             }
             compact_chat_info_panel := View {visible: false width: Fill height: Fill flow: Right align: Align{x: 1.0}
-                compact_chat_info_card := SolidView {width: 280 height: Fill flow: Overlay draw_bg.color: mod.widgets.RINX_SURFACE
+                compact_chat_info_card := SolidView {width: 280 height: Fill flow: Overlay draw_bg.color: mod.widgets.RINX_PANEL_BG
                     View {width: Fill height: Fill compact_chat_info := MobileChatInfo {summary.summary_details.visible: false}}
                     compact_information_resize := SidebarResizeHandle {}
                 }

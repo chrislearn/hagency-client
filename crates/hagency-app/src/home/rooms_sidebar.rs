@@ -56,7 +56,7 @@ script_mod! {
             flow: Down, spacing: 5
             width: Fill, height: Fill
 
-            draw_bg.color: (RBX_BG_SURFACE)
+            draw_bg.color: mod.widgets.RINX_RAIL_BG
 
             sidebar_heading := View {width: Fill height: 56 flow: Right align: Align{y: 0.5} margin: Inset{left: 10 right: 10}
                 sidebar_brand := View {

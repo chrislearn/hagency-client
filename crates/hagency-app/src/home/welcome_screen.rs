@@ -11,7 +11,7 @@ script_mod! {
         padding: 40
         spacing: 20
         show_bg: true
-        draw_bg.color: (COLOR_PRIMARY)
+        draw_bg.color: mod.widgets.RINX_CONTENT_BG
         title := RinxLabel {
             width: Fill height: Fit
             text: #(crate::i18n::tr("Your Hagency chats")) i18n_text: "Your Hagency chats"
