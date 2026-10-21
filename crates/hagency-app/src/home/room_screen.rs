@@ -998,6 +998,23 @@ script_mod! {
             // Note: here, we're within a View that has an Overlay flow,
             // so the order that we define the below views determines which one is on top.
 
+            // Skeleton message rows shown while the timeline's first
+            // pagination is in flight and no event has arrived yet (the
+            // message area would otherwise be blank). Plain views: pointer
+            // events fall through to the timeline below.
+            timeline_skeleton := View {
+                visible: false
+                width: Fill, height: Fill
+                flow: Down
+                spacing: 6
+                padding: Inset{top: 14, left: 4, right: 4}
+
+                skeleton_msg_1 := mod.widgets.SkeletonListEntry {}
+                skeleton_msg_2 := mod.widgets.SkeletonListEntry {}
+                skeleton_msg_3 := mod.widgets.SkeletonListEntry {num_lines: 1}
+                skeleton_msg_4 := mod.widgets.SkeletonListEntry {}
+            }
+
             // The top space should be displayed as an overlay at the top of the timeline.
             top_space := mod.widgets.TopSpace { }
 
@@ -1896,8 +1913,15 @@ impl Widget for RoomScreen {
         if self.tl_state.is_none() {
             // Tl_state may not be ready after dock loading.
             // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
+            self.update_timeline_skeleton_visibility(cx);
             return DrawStep::done();
         }
+
+        // While the timeline's first pagination is in flight and nothing has
+        // arrived yet, show skeleton message rows instead of a blank area.
+        // RestoreStatusView (room restore spinner) is unaffected: it takes
+        // over the whole draw earlier, before `is_loaded` is set.
+        self.update_timeline_skeleton_visibility(cx);
 
 
         let room_screen_widget_uid = self.widget_uid();
@@ -3114,6 +3138,20 @@ impl RoomScreen {
     }
 
     /// Handles any [`MessageAction`]s received by this RoomScreen.
+    /// Whether the timeline skeleton should be shown: the timeline's first
+    /// pagination is in flight and no event has arrived yet.
+    fn should_show_timeline_skeleton(&self) -> bool {
+        self.tl_state.as_ref().is_some_and(|tl|
+            tl.is_paginating && !tl.items.iter().any(|item| item.as_event().is_some()))
+    }
+
+    /// Shows or hides the timeline skeleton overlay to match
+    /// [`Self::should_show_timeline_skeleton()`].
+    fn update_timeline_skeleton_visibility(&mut self, cx: &mut Cx) {
+        let show = self.should_show_timeline_skeleton();
+        self.view.view(cx, ids!(timeline_skeleton)).set_visible(cx, show);
+    }
+
     /// Shows the floating hover action bar for the given message, positioning
     /// it at the message's top-right corner. Both `rect` and the overlay's own
     /// rect are in absolute window coordinates, so no conversion is needed.
@@ -8582,5 +8620,93 @@ mod hover_action_bar_tests {
             MessageAction::Reply(details) if details.item_id == 0
         )));
         assert!(!screen.view.view(&cx, ids!(message_action_bar)).visible(), "replying hides the bar");
+    }
+}
+
+#[cfg(test)]
+mod skeleton_tests {
+    use super::*;
+
+    fn screen() -> (Cx, RoomScreen) {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let screen = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            vm.bx.captured_errors = Some(Vec::new());
+            let value = script_eval!(vm, {mod.widgets.RoomScreen {}});
+            let screen = RoomScreen::script_from_value(vm, value);
+            assert!(vm.take_errors().is_empty());
+            screen
+        });
+        (cx, screen)
+    }
+
+    /// A minimal timeline state as it looks right after a room was opened
+    /// (`is_paginating` starts false; the initial pagination sets it).
+    fn empty_tl_state(room_id: OwnedRoomId) -> TimelineUiState {
+        let (update_sender, update_receiver) = crate::timeline_updates::channel();
+        let (request_sender, _) = tokio::sync::watch::channel(crate::sliding_sync::TimelineRequest {
+            backwards_paginate: Vec::new(),
+            is_timeline_open: true,
+        });
+        TimelineUiState {
+            kind: TimelineKind::MainRoom { room_id },
+            user_power: UserPowerLevels::all(),
+            is_encrypted: false,
+            room_members: None,
+            fully_paginated: false,
+            is_live: true,
+            forwards_paginated: false,
+            is_paginating: false,
+            items: Vector::new(),
+            index_of_last_own_sent: None,
+            index_of_first_own_failed: None,
+            content_drawn_since_last_update: RangeSet::new(),
+            profile_drawn_since_last_update: RangeSet::new(),
+            update_receiver,
+            request_sender,
+            media_cache: MediaCache::new(Some(update_sender.clone())),
+            link_preview_cache: LinkPreviewCache::new(Some(update_sender)),
+            fetched_thread_summaries: HashMap::new(),
+            pending_thread_summary_fetches: HashSet::new(),
+            saved_state: SavedState::default(),
+            message_highlight_animation_state: MessageHighlightAnimationState::default(),
+            pending_reached_start: false,
+            num_backwards_pagination_rounds_without_progress: 0,
+            last_sent_read_receipt: None,
+            last_sent_fully_read: None,
+            tombstone_info: None,
+            pending_downloads: SmallVec::new(),
+            expanded_reply_previews: HashSet::new(),
+            #[cfg(feature = "agent_chat")]
+            agent_chat_approvals: ApprovalUiState::default(),
+            #[cfg(feature = "agent_chat")]
+            agent_chat_expiry_timer: Timer::empty(),
+            #[cfg(feature = "agent_chat")]
+            agent_chat_expiry_deadline_millis: None,
+        }
+    }
+
+    #[test]
+    fn timeline_skeleton_shows_during_initial_load_and_hides_afterwards() {
+        let (mut cx, mut screen) = screen();
+        let room_id = matrix_sdk::ruma::room_id!("!skel:server").to_owned();
+        screen.room_name_id = Some(RoomNameId::empty(room_id.clone()));
+        let skeleton = screen.view.view(&cx, ids!(timeline_skeleton));
+
+        // No timeline state yet: no skeleton.
+        screen.update_timeline_skeleton_visibility(&mut cx);
+        assert!(!skeleton.visible());
+
+        // First pagination in flight, no event arrived yet: skeleton shows.
+        screen.tl_state = Some(empty_tl_state(room_id));
+        screen.tl_state.as_mut().unwrap().is_paginating = true;
+        screen.update_timeline_skeleton_visibility(&mut cx);
+        assert!(skeleton.visible(), "skeleton shows while the initial load is in flight");
+
+        // Pagination completed (e.g. an empty room): skeleton disappears.
+        screen.tl_state.as_mut().unwrap().is_paginating = false;
+        screen.update_timeline_skeleton_visibility(&mut cx);
+        assert!(!skeleton.visible(), "skeleton hides once the initial load completes");
     }
 }

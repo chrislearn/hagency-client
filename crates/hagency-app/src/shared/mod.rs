@@ -31,6 +31,7 @@ pub mod bouncing_dots;
 pub mod unread_badge;
 pub mod verification_badge;
 pub mod restore_status_view;
+pub mod skeleton;
 pub mod design_tokens;
 pub mod image_viewer;
 pub mod mobile_details;
@@ -70,6 +71,7 @@ pub fn script_mod(vm: &mut ScriptVm) {
     mention_popup::script_mod(vm);
     mentionable_text_input::script_mod(vm);
     restore_status_view::script_mod(vm);
+    skeleton::script_mod(vm);
     confirmation_modal::script_mod(vm);
     image_viewer::script_mod(vm);
     progress_bar::script_mod(vm);

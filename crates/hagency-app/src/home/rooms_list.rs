@@ -154,6 +154,7 @@ script_mod! {
             rooms_list_entry := RoomsListEntry {}
             mobile_rooms_list_entry := MobileRoomsListEntry {}
             empty := View {}
+            skeleton_entry := mod.widgets.SkeletonListEntry {}
             status_label := mod.widgets.RoomsListStatusLabel {}
             bottom_filler := View {
                 width: Fill,
@@ -559,6 +560,10 @@ pub struct RoomsList {
 
     /// The latest status message that should be displayed in the bottom status label.
     #[rust] status: String,
+    /// Whether the initial room list load is still in flight (the homeserver
+    /// reported `NotLoaded` and hasn't reported `Loaded` yet). While this is
+    /// set and no rooms have been received, skeleton entries are shown.
+    #[rust] is_loading_room_list: bool,
 
     /// The currently-selected room.
     #[rust] current_active_room: Option<SelectedRoom>,
@@ -597,6 +602,10 @@ macro_rules! should_display_room {
     };
 }
 
+
+/// The number of skeleton entries shown in the rooms list during the
+/// initial room list load.
+const SKELETON_ENTRY_COUNT: usize = 6;
 
 impl RoomsList {
     /// Returns whether the homeserver has finished syncing all of the rooms
@@ -1071,6 +1080,7 @@ impl RoomsList {
                     self.update_status();
                 }
                 RoomsListUpdate::ClearRooms => {
+                    self.is_loading_room_list = false;
                     self.all_joined_rooms.clear();
                     self.displayed_direct_rooms.clear();
                     self.displayed_direct_rooms_unread_mentions = 0;
@@ -1085,9 +1095,11 @@ impl RoomsList {
                     self.update_status();
                 }
                 RoomsListUpdate::NotLoaded => {
+                    self.is_loading_room_list = true;
                     self.status = crate::i18n::tr("Loading rooms (waiting for homeserver)...").to_string();
                 }
                 RoomsListUpdate::LoadedRooms { max_rooms } => {
+                    self.is_loading_room_list = false;
                     self.max_known_rooms = max_rooms;
                 },
                 RoomsListUpdate::Tags { room_id, new_tags } => {
@@ -1257,6 +1269,19 @@ impl RoomsList {
         }
     }
 
+    /// The number of skeleton placeholder entries to show in the rooms list
+    /// while the initial load is in flight and no rooms have arrived yet.
+    fn skeleton_entry_count(&self) -> usize {
+        let no_rooms = self.displayed_invited_rooms.is_empty()
+            && self.displayed_direct_rooms.is_empty()
+            && self.displayed_regular_rooms.is_empty();
+        if self.is_loading_room_list && no_rooms {
+            SKELETON_ENTRY_COUNT
+        } else {
+            0
+        }
+    }
+
     /// Updates the status message to show how many rooms have been loaded
     /// or how many rooms match the current room filter keywords.
     ///
@@ -1423,8 +1448,9 @@ impl RoomsList {
 
     fn draw_mobile(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let rooms = self.mobile_room_order();
+        let skeleton_count = self.skeleton_entry_count();
         let show_status = rooms.is_empty();
-        let total = rooms.len() + usize::from(show_status);
+        let total = rooms.len() + skeleton_count + usize::from(show_status);
         while let Some(item) = self.view.draw_walk(cx, scope, walk).step() {
             let Some(mut list) = item.borrow_mut::<PortalList>() else { continue };
             if list.first_id() >= total {
@@ -1433,7 +1459,10 @@ impl RoomsList {
             list.set_item_range(cx, 0, total);
             while let Some(index) = list.next_visible_item(cx) {
                 let Some(id) = rooms.get(index) else {
-                    if show_status && index == rooms.len() {
+                    if index < rooms.len() + skeleton_count {
+                        // Skeleton placeholder entries while the initial load is in flight.
+                        list.item(cx, index, id!(skeleton_entry)).draw_all(cx, &mut Scope::empty());
+                    } else if show_status && index == rooms.len() + skeleton_count {
                         let item = list.item(cx, index, id!(status_label));
                         item.label(cx, ids!(label)).set_text(cx, &self.status);
                         item.draw_all(cx, &mut Scope::empty());
@@ -1968,7 +1997,10 @@ impl Widget for RoomsList {
         // calculate the indexes in the PortalList where the headers and rooms should be drawn.
         self.recalculate_indexes();
 
-        let status_label_id = self.regular_rooms_indexes.after_rooms_index;
+        // Skeleton placeholder entries sit directly above the status label
+        // while the initial room list load is in flight.
+        let skeleton_count = self.skeleton_entry_count();
+        let status_label_id = self.regular_rooms_indexes.after_rooms_index + skeleton_count;
         // Add one for the status label
         let total_count = status_label_id + 1;
 
@@ -2114,6 +2146,12 @@ impl Widget for RoomsList {
                     } else {
                         list.item(cx, portal_list_index, id!(empty)).draw_all(cx, &mut scope);
                     }
+                }
+                // Skeleton placeholder entries, present only while the
+                // initial room list load is in flight (`skeleton_count` is
+                // zero afterwards, making this range empty).
+                else if portal_list_index < status_label_id {
+                    list.item(cx, portal_list_index, id!(skeleton_entry)).draw_all(cx, &mut scope);
                 }
                 // Draw the status label as the bottom entry.
                 else if portal_list_index == status_label_id {
@@ -2286,4 +2324,41 @@ struct RoomCategoryIndexes {
     first_room_index: usize,
     /// The index after the last room in this category, which is where the next category should start.
     after_rooms_index: usize,
+}
+
+
+#[cfg(test)]
+mod skeleton_tests {
+    use super::*;
+
+    fn rooms_list() -> (Cx, RoomsList) {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let list = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            vm.bx.captured_errors = Some(Vec::new());
+            let value = script_eval!(vm, {mod.widgets.RoomsList {}});
+            let list = RoomsList::script_from_value(vm, value);
+            assert!(vm.take_errors().is_empty());
+            list
+        });
+        (cx, list)
+    }
+
+    #[test]
+    fn skeleton_entries_show_only_while_initially_loading_with_no_rooms() {
+        let (_cx, mut list) = rooms_list();
+        // Before any loading state arrives, no skeleton.
+        assert_eq!(list.skeleton_entry_count(), 0);
+        // Initial load in flight, no rooms received yet: skeleton entries show.
+        list.is_loading_room_list = true;
+        assert_eq!(list.skeleton_entry_count(), SKELETON_ENTRY_COUNT);
+        // The first room arriving ends the skeleton window.
+        list.displayed_regular_rooms.push("!room:example.org".try_into().unwrap());
+        assert_eq!(list.skeleton_entry_count(), 0);
+        // Load completed with zero rooms: the status text shows, no skeleton.
+        list.displayed_regular_rooms.clear();
+        list.is_loading_room_list = false;
+        assert_eq!(list.skeleton_entry_count(), 0);
+    }
 }
