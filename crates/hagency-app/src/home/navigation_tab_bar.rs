@@ -201,14 +201,14 @@ script_mod! {
     }
 
     mod.widgets.HomeButton = mod.widgets.NavigationTabButton {
-        tooltip_text: "All Rooms"
+        tooltip_text: #(crate::i18n::tr("All Rooms"))
         icon +: {
             draw_icon +: { svg: (ICON_HOME) }
         }
     }
 
     mod.widgets.AddRoomButton = mod.widgets.NavigationTabButton {
-        tooltip_text: "Add/Join Room"
+        tooltip_text: #(crate::i18n::tr("Add/Join Room"))
         icon +: {
             icon_walk: Walk{width: 20 height: 20}
             draw_icon +: { svg: (ICON_ADD) }
@@ -220,7 +220,7 @@ script_mod! {
     // avatar, and this keeps the rail's icon language consistent with Home / "+".
     // The top avatar keeps opening Settings directly.
     mod.widgets.AccountSwitcherButton = mod.widgets.NavigationTabButton {
-        tooltip_text: "Account"
+        tooltip_text: #(crate::i18n::tr("Account"))
         icon +: {
             draw_icon +: { svg: (mod.widgets.ICON_PEOPLE) }
         }
@@ -230,7 +230,7 @@ script_mod! {
     // hover animation. Its toggling is independent of navigation selection,
     // so the parent never calls `set_selected` on it.
     mod.widgets.ToggleSpacesBarButton = mod.widgets.NavigationTabButton {
-        tooltip_text: "Toggle Spaces"
+        tooltip_text: #(crate::i18n::tr("Toggle Spaces"))
         icon +: {
             draw_icon +: { svg: (ICON_SQUARES) }
         }
@@ -284,11 +284,11 @@ script_mod! {
                 icon.draw_icon.svg: ICON_PEOPLE
             }
             moments_button := mod.widgets.NavigationTabButton {
-                tooltip_text: "Moments"
+                tooltip_text: #(crate::i18n::tr("Moments"))
                 icon.draw_icon.svg: ICON_GLOBE
             }
             octoscript_apps_button := mod.widgets.NavigationTabButton {
-                tooltip_text: "Mini apps"
+                tooltip_text: #(crate::i18n::tr("Mini apps"))
                 icon.draw_icon.svg: ICON_SQUARES
             }
             article_editor_button := mod.widgets.NavigationTabButton {

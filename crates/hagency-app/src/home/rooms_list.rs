@@ -1085,7 +1085,7 @@ impl RoomsList {
                     self.update_status();
                 }
                 RoomsListUpdate::NotLoaded => {
-                    self.status = "Loading rooms (waiting for homeserver)...".to_string();
+                    self.status = crate::i18n::tr("Loading rooms (waiting for homeserver)...").to_string();
                 }
                 RoomsListUpdate::LoadedRooms { max_rooms } => {
                     self.max_known_rooms = max_rooms;

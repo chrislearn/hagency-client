@@ -92,8 +92,14 @@ script_mod! {
 /// The error shown when a jumped-to event can't be found.
 /// `noun` is what the search covered, i.e. "room" or "thread".
 fn jump_target_not_found_msg(noun: &str) -> String {
-    format!("Couldn't find that event in this {noun}'s history.\n\n\
-        It may have been deleted, or the homeserver may not be able to return it.")
+    let key = if noun == "thread" {
+        "Couldn't find that event in this thread's history.\n\n\
+        It may have been deleted, or the homeserver may not be able to return it."
+    } else {
+        "Couldn't find that event in this room's history.\n\n\
+        It may have been deleted, or the homeserver may not be able to return it."
+    };
+    crate::i18n::tr(key).to_string()
 }
 
 
@@ -292,17 +298,20 @@ impl LoadingPane {
     fn populate(&mut self, cx: &mut Cx) {
         let ui_text = match &self.state {
             LoadingPaneState::BackwardsPaginateUntilEvent { description, events_paginated, .. } => Some((
-                "Searching older messages...",
-                format!(
-                    "Looking for {description}...\n\n\
-                    Fetched {events_paginated} messages so far...",
+                crate::i18n::tr("Searching older messages..."),
+                crate::i18n::format(
+                    "Looking for {description}...\n\nFetched {count} messages so far...",
+                    &[
+                        ("description", description.clone()),
+                        ("count", events_paginated.to_string()),
+                    ],
                 ),
-                "Cancel",
+                crate::i18n::tr("Cancel"),
             )),
             LoadingPaneState::Error(error_message) => Some((
-                "Error loading content",
+                crate::i18n::tr("Error loading content"),
                 error_message.clone(),
-                "Okay",
+                crate::i18n::tr("Okay"),
             )),
             LoadingPaneState::None => None,
         };

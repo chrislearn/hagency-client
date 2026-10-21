@@ -401,9 +401,9 @@ fn navigate_agent_chat(cx: &mut Cx, room: matrix_sdk::ruma::OwnedRoomId, owner_d
     });
 }
 fn agent_empty_message(loaded: bool, loading: bool) -> &'static str {
-    if loading { "Loading your Agents…" }
-    else if !loaded { "Your Agent list could not be loaded. Refresh to retry." }
-    else { "No Agents yet. Create an Agent, then configure this device and add it to Rooms." }
+    if loading { crate::i18n::tr("Loading your Agents…") }
+    else if !loaded { crate::i18n::tr("Your Agent list could not be loaded. Refresh to retry.") }
+    else { crate::i18n::tr("No Agents yet. Create an Agent, then configure this device and add it to Rooms.") }
 }
 fn user_error(error: &str) -> &str {
     if let Some(message) = provider_error_message(error) { return message; }
@@ -4268,7 +4268,7 @@ impl Widget for HagencyPanel {
                         row.label(cx, ids!(empty_message)).set_text(
                             cx,
                             if self.page == Page::Projects {
-                                "No Projects yet. Create a Project to start a shared workspace."
+                                crate::i18n::tr("No Projects yet. Create a Project to start a shared workspace.")
                             } else {
                                 agent_empty_message(self.agents_loaded, self.agents_loading)
                             },

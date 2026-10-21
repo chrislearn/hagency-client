@@ -205,68 +205,67 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                 let accept_button_text: &str;
                 match kind {
                     JoinLeaveModalKind::AcceptInvite(invite) => {
-                        title = "Accepting this invite...".into();
-                        description = format!(
-                            "Accepting an invitation to join \"{}\".\n\n\
-                            Waiting for confirmation from the homeserver...",
-                            invite.room_name_id(),
+                        title = crate::i18n::tr("Accepting this invite...").into();
+                        description = crate::i18n::format(
+                            "Accepting an invitation to join \"{room}\".\n\nWaiting for confirmation from the homeserver...",
+                            &[("room", invite.room_name_id().to_string())],
                         );
-                        accept_button_text = "Joining...";
+                        accept_button_text = crate::i18n::tr("Joining...");
                         submit_async_request(MatrixRequest::JoinRoom {
                             room_id: invite.room_id().clone(),
                         });
                         set_invite_state(cx, invite.room_id(), InviteState::WaitingForJoinResult);
                     }
                     JoinLeaveModalKind::RejectInvite(invite) => {
-                        title = "Rejecting this invite...".into();
-                        description = format!(
-                            "Rejecting an invitation to join \"{}\".\n\n\
-                            Waiting for confirmation from the homeserver...",
-                            invite.room_name_id(),
+                        title = crate::i18n::tr("Rejecting this invite...").into();
+                        description = crate::i18n::format(
+                            "Rejecting an invitation to join \"{room}\".\n\nWaiting for confirmation from the homeserver...",
+                            &[("room", invite.room_name_id().to_string())],
                         );
-                        accept_button_text = "Rejecting...";
+                        accept_button_text = crate::i18n::tr("Rejecting...");
                         submit_async_request(MatrixRequest::LeaveRoom {
                             room_id: invite.room_id().clone(),
                         });
                         set_invite_state(cx, invite.room_id(), InviteState::WaitingForLeaveResult);
                     }
                     JoinLeaveModalKind::JoinRoom { details, is_space } => {
-                        title = format!("Joining this {}...", if *is_space { "space" } else { "room" }).into();
-                        description = format!(
-                            "Joining \"{}\".\n\n\
-                            Waiting for confirmation from the homeserver...",
-                            details.room_name_id(),
+                        title = if *is_space {
+                            crate::i18n::tr("Joining this space...")
+                        } else {
+                            crate::i18n::tr("Joining this room...")
+                        }.into();
+                        description = crate::i18n::format(
+                            "Joining \"{room}\".\n\nWaiting for confirmation from the homeserver...",
+                            &[("room", details.room_name_id().to_string())],
                         );
-                        accept_button_text = "Joining...";
+                        accept_button_text = crate::i18n::tr("Joining...");
                         submit_async_request(MatrixRequest::JoinRoom {
                             room_id: details.room_id().clone(),
                         });
                     }
                     JoinLeaveModalKind::LeaveRoom(room) => {
-                        title = "Leaving this room...".into();
-                        description = format!(
-                            "Leaving \"{}\".\n\n\
-                            Waiting for confirmation from the homeserver...",
-                            room.room_name_id(),
+                        title = crate::i18n::tr("Leaving this room...").into();
+                        description = crate::i18n::format(
+                            "Leaving \"{room}\".\n\nWaiting for confirmation from the homeserver...",
+                            &[("room", room.room_name_id().to_string())],
                         );
-                        accept_button_text = "Leaving...";
+                        accept_button_text = crate::i18n::tr("Leaving...");
                         submit_async_request(MatrixRequest::LeaveRoom {
                             room_id: room.room_id().clone(),
                         });
                     }
                     JoinLeaveModalKind::LeaveSpace { details, space_request_sender } => {
-                        title = "Leaving this space...".into();
-                        description = format!(
-                            "Leaving \"{}\".\n\n\
-                            Waiting for confirmation from the homeserver...",
-                            details.room_name_id(),
+                        title = crate::i18n::tr("Leaving this space...").into();
+                        description = crate::i18n::format(
+                            "Leaving \"{room}\".\n\nWaiting for confirmation from the homeserver...",
+                            &[("room", details.room_name_id().to_string())],
                         );
-                        accept_button_text = "Leaving...";
+                        accept_button_text = crate::i18n::tr("Leaving...");
                         if space_request_sender.send(
                             SpaceRequest::LeaveSpace { space_name_id: details.room_name_id().clone() }
                         ).is_err() {
                             enqueue_popup_notification(
-                                "Failed to send leave space request.\n\nPlease restart Rinx.",
+                                crate::i18n::tr("Failed to send leave space request.\n\nPlease restart Rinx."),
                                 PopupKind::Error,
                                 None,
                             );
@@ -289,15 +288,15 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
         for action in actions {
             match action.downcast_ref() {
                 Some(JoinRoomResultAction::Joined { room_id }) if room_id == kind.room_id() => {
-                    self.view.label(cx, ids!(title)).set_text(cx, "Joined room!");
-                    self.view.label(cx, ids!(body)).set_text(cx, &format!(
-                        "Successfully joined \"{}\".",
-                        kind.room_name(),
+                    self.view.label(cx, ids!(title)).set_text(cx, crate::i18n::tr("Joined room!"));
+                    self.view.label(cx, ids!(body)).set_text(cx, &crate::i18n::format(
+                        "Successfully joined \"{room}\".",
+                        &[("room", kind.room_name().to_string())],
                     ));
                     new_final_success = Some(true);
                 }
                 Some(JoinRoomResultAction::Failed { room_id, error }) if room_id == kind.room_id() => {
-                    self.view.label(cx, ids!(title)).set_text(cx, "Error joining room!");
+                    self.view.label(cx, ids!(title)).set_text(cx, crate::i18n::tr("Error joining room!"));
                     let was_invite = matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_));
                     let msg = utils::stringify_join_leave_error(error, kind.room_name(), true, was_invite);
                     self.view.label(cx, ids!(body)).set_text(cx, &msg);
@@ -311,16 +310,16 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     let title: &str;
                     let description: String;
                     if matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_)) {
-                        title = "Rejected invite!";
-                        description = format!(
-                            "Successfully rejected invite to \"{}\".",
-                            kind.room_name(),
+                        title = crate::i18n::tr("Rejected invite!");
+                        description = crate::i18n::format(
+                            "Successfully rejected invite to \"{room}\".",
+                            &[("room", kind.room_name().to_string())],
                         );
                     } else {
-                        title = "Left room!";
-                        description = format!(
-                            "Successfully left \"{}\".",
-                            kind.room_name(),
+                        title = crate::i18n::tr("Left room!");
+                        description = crate::i18n::format(
+                            "Successfully left \"{room}\".",
+                            &[("room", kind.room_name().to_string())],
                         );
                     }
                     self.view.label(cx, ids!(title)).set_text(cx, title);
@@ -331,10 +330,10 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     let title: &str;
                     let description: String;
                     if matches!(kind, JoinLeaveModalKind::AcceptInvite(_) | JoinLeaveModalKind::RejectInvite(_)) {
-                        title = "Error rejecting invite!";
+                        title = crate::i18n::tr("Error rejecting invite!");
                         description = utils::stringify_join_leave_error(error, kind.room_name(), false, true);
                     } else {
-                        title = "Error leaving room!";
+                        title = crate::i18n::tr("Error leaving room!");
                         description = utils::stringify_join_leave_error(error, kind.room_name(), false, false);
                     }
 
@@ -351,12 +350,15 @@ impl WidgetMatchEvent for JoinLeaveRoomModal {
                     let description: String;
                     match result {
                         Ok(()) => {
-                            title = "Left space!";
-                            description = format!("Successfully left \"{space_name_id}\".");
+                            title = crate::i18n::tr("Left space!");
+                            description = crate::i18n::format(
+                                "Successfully left space \"{0}\".",
+                                &[("0", space_name_id.to_string())],
+                            );
                             new_final_success = Some(true);
                         }
                         Err(e) => {
-                            title = "Error leaving space!";
+                            title = crate::i18n::tr("Error leaving space!");
                             description = crate::i18n::format("Failed to leave space \"{space_name_id}\".\n\nError: {e}", &[("space_name_id", (space_name_id).to_string()), ("e", (e).to_string())]);
                             new_final_success = Some(false);
                         }
@@ -403,55 +405,55 @@ impl JoinLeaveRoomModal {
 
         match &kind {
             JoinLeaveModalKind::AcceptInvite(invite) => {
-                title = "Accept this invite?";
-                description = format!(
-                    "Are you sure you want to accept this invite to join \"{}\"?",
-                    invite.room_name_id(),
+                title = crate::i18n::tr("Accept this invite?");
+                description = crate::i18n::format(
+                    "Are you sure you want to accept this invite to join \"{room}\"?",
+                    &[("room", invite.room_name_id().to_string())],
                 );
                 tip_button = crate::i18n::tr("Join");
             }
             JoinLeaveModalKind::RejectInvite(invite) => {
-                title = "Reject this invite?";
-                description = format!(
-                    "Are you sure you want to reject this invite to join \"{}\"?\n\n\
+                title = crate::i18n::tr("Reject this invite?");
+                description = crate::i18n::format(
+                    "Are you sure you want to reject this invite to join \"{room}\"?\n\n\
                     If this is a private room, you won't be able to join this room \
                     without being re-invited to it.",
-                    invite.room_name_id()
+                    &[("room", invite.room_name_id().to_string())],
                 );
-                tip_button = "Reject";
+                tip_button = crate::i18n::tr("Reject");
             }
             JoinLeaveModalKind::JoinRoom { details, is_space } => {
                 title = if *is_space {
-                    "Join this space?"
+                    crate::i18n::tr("Join this space?")
                 } else {
-                    "Join this room?"
+                    crate::i18n::tr("Join this room?")
                 };
-                description = format!(
-                    "Are you sure you want to join \"{}\"?",
-                    details.room_name_id()
+                description = crate::i18n::format(
+                    "Are you sure you want to join \"{room}\"?",
+                    &[("room", details.room_name_id().to_string())],
                 );
                 tip_button = crate::i18n::tr("Join");
             }
             JoinLeaveModalKind::LeaveRoom(room) => {
-                title = "Leave this room?";
-                description = format!(
-                    "Are you sure you want to leave \"{}\"?\n\n\
+                title = crate::i18n::tr("Leave this room?");
+                description = crate::i18n::format(
+                    "Are you sure you want to leave \"{room}\"?\n\n\
                     If this is a private room, you won't be able to join this room \
                     without being re-invited to it.",
-                    room.room_name_id()
+                    &[("room", room.room_name_id().to_string())],
                 );
-                tip_button = "Leave";
+                tip_button = crate::i18n::tr("Leave");
             }
             JoinLeaveModalKind::LeaveSpace { details, .. } => {
-                title = "Leave this space?";
-                description = format!(
-                    "Are you sure you want to leave \"{}\"?\n\n\
+                title = crate::i18n::tr("Leave this space?");
+                description = crate::i18n::format(
+                    "Are you sure you want to leave \"{room}\"?\n\n\
                     If you leave this space, you will also leave any joined rooms within this space.\n\n\
                     If this is a private space, you won't be able to join this space \
                     without being re-invited to it.",
-                    details.room_name_id()
+                    &[("room", details.room_name_id().to_string())],
                 );
-                tip_button = "Leave";
+                tip_button = crate::i18n::tr("Leave");
             }
         }
 
@@ -459,8 +461,9 @@ impl JoinLeaveRoomModal {
         self.view.label(cx, ids!(body)).set_text(cx, &description);
         if show_tip {
             self.view.view(cx, ids!(tip_view)).set_visible(cx, true);
-            self.view.label(cx, ids!(tip)).set_text(cx, &format!(
-                "Tip: hold Shift when clicking the \"{tip_button}\" button to bypass this prompt.",
+            self.view.label(cx, ids!(tip)).set_text(cx, &crate::i18n::format(
+                "Tip: hold Shift when clicking the \"{button}\" button to bypass this prompt.",
+                &[("button", tip_button.to_string())],
             ));
         } else {
             self.view.view(cx, ids!(tip_view)).set_visible(cx, false);

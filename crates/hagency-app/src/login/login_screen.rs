@@ -126,7 +126,7 @@ script_mod! {
                                 homeserver_input := RobrixTextInput {
                                     width: Fill, height: Fit
                                     padding: 10
-                                    empty_text: #(crate::i18n::tr("Hagency server address"))
+                                    empty_text: #(crate::i18n::tr("Hagency server address")) i18n_empty_text: "Hagency server address"
                                     autocapitalize: None
                                     autocorrect: Disabled
                                     content_type: Url

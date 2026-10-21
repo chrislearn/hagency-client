@@ -127,7 +127,7 @@ script_mod! {
                 show: AnimatorState{
                     redraw: true
                     from: { all: Forward { duration: (mod.widgets.SPACES_BAR_ANIMATION_DURATION_SECS) } }
-                    apply: { height: (NAVIGATION_TAB_BAR_SIZE),  draw_bg: { shadow_color: #x00000055 } }
+                    apply: { height: (NAVIGATION_TAB_BAR_SIZE),  draw_bg: { shadow_color: (RBX_SHADOW_NAV) } }
                 }
                 hide: AnimatorState{
                     redraw: true

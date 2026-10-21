@@ -54,7 +54,7 @@ script_mod! {
                 width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
                 draw_icon.svg: ICON_ARROW_BACK
             }
-            RinxPageTitle {width: Fill text: "Mini apps"}
+            RinxPageTitle {width: Fill text: #(crate::i18n::tr("Mini apps")) i18n_text: "Mini apps"}
         }
         library := MiniAppLibrary {visible: false}
         catalog := View {width: Fill height: Fill flow: Down spacing: 12

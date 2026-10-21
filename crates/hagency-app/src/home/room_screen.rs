@@ -965,7 +965,7 @@ script_mod! {
                 }
                 desktop_chat_info_button := RinxRoomInfoToggleButton {}
             }
-            LineH { draw_bg.color: #x00000014 }
+            LineH { draw_bg.color: mod.widgets.RINX_BORDER }
         }
 
         agent_runtime_notice := mod.widgets.AgentRuntimeNotice {}
