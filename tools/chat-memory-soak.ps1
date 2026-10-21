@@ -38,7 +38,7 @@ try {
         $rendererSources += Join-Path (Split-Path $package[0].manifest_path -Parent) $renderer[1]
     }
     $manifest = [ordered]@{ binary = $binary; sha256 = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash; seconds = $Seconds; sources = @{} }
-    foreach($source in @('Cargo.toml','Cargo.lock','crates/hagency-app/examples/chat_memory_soak.rs','crates/hagency-app/src/memory_budget.rs','crates/hagency-app/src/media_transport.rs','crates/hagency-app/src/render_maintenance.rs','crates/hagency-app/src/shared/image_viewer.rs','crates/hagency-app/src/home/room_image_viewer.rs','crates/hagency-app/src/avatar_cache.rs','crates/hagency-app/src/media_cache.rs','crates/hagency-app/src/sliding_sync.rs') + $rendererSources) {
+    foreach($source in @('Cargo.toml','Cargo.lock','crates/hagency-app/examples/chat_memory_soak.rs','crates/hagency-app/src/memory_budget.rs','crates/hagency-app/src/media_transport.rs','crates/hagency-app/src/render_maintenance.rs','crates/hagency-app/src/shared/image_viewer.rs','crates/hagency-app/src/shared/file_upload_modal.rs','crates/hagency-app/src/home/room_image_viewer.rs','crates/hagency-app/src/avatar_cache.rs','crates/hagency-app/src/media_cache.rs','crates/hagency-app/src/sliding_sync.rs','crates/hagency-app/src/timeline_updates.rs','crates/hagency-app/src/home/room_screen.rs') + $rendererSources) {
         $manifest.sources[$source] = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
     }
     $manifest | ConvertTo-Json -Depth 4 | Set-Content "$taskOutput/manifest.json"

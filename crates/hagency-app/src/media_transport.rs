@@ -35,6 +35,20 @@ pub async fn fetch(
     client: &Client,
     request: &MediaRequestParameters,
 ) -> matrix_sdk::Result<Vec<u8>> {
+    fetch_with_timeout(client, request, Duration::from_secs(30)).await
+}
+
+async fn fetch_with_timeout(
+    client: &Client,
+    request: &MediaRequestParameters,
+    timeout: Duration,
+) -> matrix_sdk::Result<Vec<u8>> {
+    tokio::time::timeout(timeout, fetch_inner(client, request))
+        .await
+        .map_err(|error| Error::UnknownError(Box::new(error)))?
+}
+
+async fn fetch_inner(client: &Client, request: &MediaRequestParameters) -> matrix_sdk::Result<Vec<u8>> {
     let _request = REQUESTS
         .try_acquire()
         .map_err(|_| Error::UnknownError(Box::new(PreviewLimit::Busy)))?;

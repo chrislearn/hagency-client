@@ -3760,7 +3760,7 @@ impl RoomScreen {
 
         // Tell the background subscriber that this timeline is now open (if it was previously closed).
         if let Some(tl) = self.tl_state.as_ref() {
-            tl.request_sender.send_if_modified(|req| !std::mem::replace(&mut req.is_timeline_open, true));
+            crate::sliding_sync::update_timeline_visibility(&tl.kind, &tl.update_receiver, &tl.request_sender, true);
         }
 
         let list = self.portal_list(cx, ids!(list));
@@ -3834,7 +3834,7 @@ impl RoomScreen {
         }
         // If `tl_state` was Some here, it means the timeline is being shown (it's visible),
         // so inform the subscribers of that status.
-        tl.request_sender.send_if_modified(|req| !std::mem::replace(&mut req.is_timeline_open, true));
+        crate::sliding_sync::update_timeline_visibility(&tl.kind, &tl.update_receiver, &tl.request_sender, true);
         let reconnected_sender = tl.request_sender.clone();
         let timeline_kind = tl.kind.clone();
         // Re-subscribe to things needed for this main room timeline to be properly updated
@@ -3878,7 +3878,7 @@ impl RoomScreen {
 
         // Tell the background subscriber that this timeline is now closed.
         if let Some(tl) = self.tl_state.as_ref() {
-            tl.request_sender.send_if_modified(|req| std::mem::replace(&mut req.is_timeline_open, false));
+            crate::sliding_sync::update_timeline_visibility(&tl.kind, &tl.update_receiver, &tl.request_sender, false);
         }
 
         self.save_state();
@@ -4145,6 +4145,11 @@ impl RoomScreen {
         self.all_rooms_loaded = false;
         self.view.restore_status_view(cx, ids!(restore_status_view)).set_visible(cx, false);
         self.redraw(cx);
+    }
+
+    #[cfg(feature = "chat-stress")]
+    pub fn stress_reconnect(&mut self, cx: &mut Cx) {
+        self.reconnect_timeline_endpoints(cx, false);
     }
 
     #[cfg(feature = "chat-stress")]
@@ -4721,8 +4726,10 @@ mod timeline_state_store {
 
     pub(super) fn release_history(kind: &TimelineKind, channel: usize) {
         TIMELINE_STATES.with_borrow_mut(|states| {
+            // A focus may be evicted before UI reconnects. Clear the older
+            // parked history too, while preserving any newer replacement.
             if let Some(StateEntry::Stored(state)) = states.get_mut(kind)
-                && state.update_receiver.identity()==channel {
+                && state.update_receiver.identity()<=channel {
                 state.items.clear();
                 state.clear_history_metadata();
                 state.media_cache.clear();

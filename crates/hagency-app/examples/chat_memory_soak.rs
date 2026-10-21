@@ -24,6 +24,7 @@ use hagency_app::{
     memory_budget,
 };
 use hagency_app::shared::image_viewer::ImageViewerWidgetRefExt;
+use hagency_app::shared::file_upload_modal::FileUploadModalWidgetRefExt;
 use serde_json::{json, Value};
 
 #[cfg(not(feature = "heap-profile"))]
@@ -45,6 +46,7 @@ script_mod! {
                 status := Label {width: Fill height: 28 text: "Loading isolated SDK fixture"}
                 room := RoomScreen {width: Fill height: Fill}
                 viewer := Modal {content := ImageViewer {width: Fill height: Fill}}
+                upload := Modal {content := FileUploadModal {width: Fill height: Fill}}
             }
         }}
     }
@@ -74,6 +76,8 @@ struct App {
     snapshots: Option<Receiver<Snapshot>>,
     #[rust]
     updates: Option<hagency_app::timeline_updates::Sender>,
+    #[rust]
+    oldest_operation: Option<hagency_app::timeline_updates::Sender>,
     #[rust]
     output: Option<std::fs::File>,
     #[rust]
@@ -150,20 +154,25 @@ impl AppMain for App {
             }
             if let Ok((client, items, target)) = self.snapshots.as_ref().unwrap().try_recv() {
                 let room_id = ruma::room_id!("!room:example.org").to_owned();
-                if self.updates.is_none() {
-                    self.updates = Some(sliding_sync::install_stress_endpoints(
-                        client,
-                        room_id.clone(),
-                    ));
+                let first = self.updates.is_none();
+                self.updates = Some(sliding_sync::install_stress_endpoints(
+                    client, room_id.clone(), self.updates.as_ref(),
+                ));
+                if first {
+                    self.oldest_operation = self.updates.clone();
                     self.ui.room_screen(cx, ids!(room)).set_displayed_room(
                         cx,
-                        &RoomNameId::new(
-                            matrix_sdk::RoomDisplayName::Named("Isolated history soak".into()),
-                            room_id,
-                        ),
+                        &RoomNameId::new(matrix_sdk::RoomDisplayName::Named("Isolated history soak".into()), room_id),
                         None,
                     );
+                } else {
+                    self.ui.room_screen(cx, ids!(room)).borrow_mut().unwrap().stress_reconnect(cx);
                 }
+                // Keep the first window's producer alive for the whole run,
+                // reproducing a slow transfer across every endpoint replacement.
+                self.oldest_operation.as_ref().unwrap().send(
+                    TimelineUpdate::AttachmentDownloadReset("mxc://example.org/long-transfer".into()),
+                ).unwrap();
                 let images = items
                     .iter()
                     .filter_map(|item| item.as_event()?.event_id())
@@ -217,6 +226,14 @@ impl AppMain for App {
                 if self.ticks % 250 == 25 {
                     self.ui.image_viewer(cx, ids!(viewer.content)).reset(cx);
                     self.ui.modal(cx, ids!(viewer)).close(cx);
+                }
+                if self.ticks % 250 == 60 {
+                    self.ui.file_upload_modal(cx, ids!(upload.content)).stress_image_preview(cx, self.png.clone());
+                    self.ui.modal(cx, ids!(upload)).open(cx);
+                }
+                if self.ticks % 250 == 75 {
+                    self.ui.file_upload_modal(cx, ids!(upload.content)).stress_image_preview(cx, None);
+                    self.ui.modal(cx, ids!(upload)).close(cx);
                 }
                 if self.ticks.is_multiple_of(750) {
                     self.ui.window(cx, ids!(main_window)).resize(

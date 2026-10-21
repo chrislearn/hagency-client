@@ -156,13 +156,8 @@ pub fn collect_images(cx: &mut Cx) {
         return;
     }
     let mut budget = std::mem::take(cx.get_global::<ImageBudget>());
+    refresh_textures(cx, &mut budget);
     for image in &mut budget.images {
-        if image.texture.is_none() && cx.has_global::<ImageCache>() {
-            image.texture = match cx.get_global::<ImageCache>().map.get(&image.key) {
-                Some(ImageCacheEntry::Loaded(texture)) => Some(texture.clone()),
-                _ => None,
-            };
-        }
         image.owners.retain_mut(|owner| {
             owner.widget.upgrade().is_some_and(|widget| {
                 let image_ref = widget.as_image();
@@ -204,6 +199,17 @@ pub fn collect_images(cx: &mut Cx) {
     *cx.get_global::<ImageBudget>() = budget;
 }
 
+fn refresh_textures(cx: &mut Cx, budget: &mut ImageBudget) {
+    for image in &mut budget.images {
+        if image.texture.is_none() && cx.has_global::<ImageCache>() {
+            image.texture = match cx.get_global::<ImageCache>().map.get(&image.key) {
+                Some(ImageCacheEntry::Loaded(texture)) => Some(texture.clone()),
+                _ => None,
+            };
+        }
+    }
+}
+
 pub fn release_image(cx: &mut Cx, image: &ImageRef) {
     if cx.has_global::<ImageBudget>() {
         cx.get_global::<ImageBudget>().detach(image);
@@ -218,18 +224,17 @@ pub fn image_budget_bytes(cx: &mut Cx) -> usize {
 
 /// Keep a viewer's clone pinned when it takes over a thumbnail texture.
 pub fn pin_texture(cx: &mut Cx, image: &ImageRef, texture: &Texture) {
-    if cx.has_global::<ImageBudget>() {
-        let budget = cx.get_global::<ImageBudget>();
-        let index = budget
-            .images
-            .iter()
-            .position(|entry| entry.texture.as_ref() == Some(texture));
-        budget.detach(image);
-        if let Some(index) = index {
-            let entry = &mut budget.images[index];
-            entry.owners.push(ImageOwner::new(image));
-        }
+    if !cx.has_global::<ImageBudget>() { return; }
+    let mut budget = std::mem::take(cx.get_global::<ImageBudget>());
+    // Completion can reach the widget before the periodic collector sees it.
+    // Discover the decoded texture before registering the viewer's ownership.
+    refresh_textures(cx, &mut budget);
+    let index = budget.images.iter().position(|entry| entry.texture.as_ref() == Some(texture));
+    budget.detach(image);
+    if let Some(index) = index {
+        budget.images[index].owners.push(ImageOwner::new(image));
     }
+    *cx.get_global::<ImageBudget>() = budget;
 }
 
 pub fn load_image(
@@ -620,6 +625,37 @@ mod tests {
         collect_images(&mut cx);
         assert!(cx.get_global::<ImageBudget>().images.is_empty());
     }
+    #[test]
+    fn viewer_pins_just_completed_thumbnail_before_periodic_collection() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let image = cx.with_vm(|vm| {
+            makepad_widgets::theme_mod(vm);
+            makepad_widgets::widgets_mod(vm);
+            let value = script_eval!(vm, {mod.widgets.Image {}});
+            WidgetRef::new_with_inner(Box::new(Image::script_from_value(vm, value))).as_image()
+        });
+        let key = PathBuf::from("just-completed.png");
+        let texture = Texture::new_with_format(&mut cx, TextureFormat::VecBGRAu8_32 {
+            width: 1, height: 1, data: Some(vec![0xff112233]), updated: TextureUpdated::Full,
+        });
+        let mut cache = ImageCache::new();
+        cache.map.insert(key.clone(), ImageCacheEntry::Loaded(texture.clone()));
+        cx.set_global(cache);
+        cx.set_global(ImageBudget {
+            images: vec![ImageLease {key: key.clone(), _permit: ImagePermit::reserve(24).unwrap(), owners: vec![], texture: None}],
+            ..Default::default()
+        });
+        image.set_texture(&mut cx, Some(texture.clone()));
+        pin_texture(&mut cx, &image, &texture);
+        collect_images(&mut cx);
+        assert_eq!(cx.get_global::<ImageBudget>().images.len(), 1, "visible viewer keeps the thumbnail charged");
+        assert!(cx.get_global::<ImageCache>().map.contains_key(&key));
+        release_image(&mut cx, &image);
+        collect_images(&mut cx);
+        assert!(cx.get_global::<ImageBudget>().images.is_empty());
+        assert!(!cx.get_global::<ImageCache>().map.contains_key(&key));
+    }
+
     #[test]
     fn encoded_budget_counts_live_clones_and_deduplicates() {
         let mut ledger = EncodedLedger::default();

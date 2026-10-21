@@ -45,7 +45,11 @@ impl Server {
                 let request = String::from_utf8_lossy(&bytes).into_owned();
                 let path = request.split_whitespace().nth(1).unwrap_or("").to_owned();
                 paths.lock().unwrap().push(request);
-                if path.contains("/oversized") {
+                if path.contains("/slow-body") {
+                    let _ = write!(socket, "HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\n");
+                    std::thread::sleep(Duration::from_millis(500));
+                    let _ = socket.write_all(b"preview");
+                } else if path.contains("/oversized") {
                     let _ = write!(
                         socket,
                         "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -194,4 +198,21 @@ async fn bounded_transport_preserves_authentication_cache_and_attachment_integri
             .any(|request| request.contains("/_matrix/media/r0/download/example.org/legacy")),
         "legacy requests: {requests:?}"
     );
+}
+
+
+#[tokio::test]
+async fn preview_deadline_covers_queue_and_body_and_releases_permits() {
+    let server = Server::new(Vec::new());
+    let client = server.client(MatrixVersion::V1_11).await;
+    let gate = FETCHES.acquire_many(4).await.unwrap();
+    // More attempts than the request budget catches permits leaked on timeout.
+    for _ in 0..160 {
+        let error = fetch_with_timeout(&client, &request("queued"), Duration::from_millis(1)).await.unwrap_err();
+        assert!(matches!(error, Error::UnknownError(ref error) if error.is::<tokio::time::error::Elapsed>()));
+    }
+    drop(gate);
+    let error = fetch_with_timeout(&client, &request("slow-body"), Duration::from_millis(100)).await.unwrap_err();
+    assert!(matches!(error, Error::UnknownError(ref error) if error.is::<tokio::time::error::Elapsed>()));
+    assert_eq!(fetch(&client, &request("recovered")).await.unwrap(), b"preview");
 }

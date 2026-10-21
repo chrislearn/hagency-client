@@ -4,7 +4,6 @@
 
 use makepad_code_editor::code_view::CodeViewWidgetExt;
 use makepad_widgets::*;
-use makepad_widgets::image_cache::{ImageBuffer, decode_image_from_data};
 use ruma::OwnedEventId;
 use std::{io::Read, sync::{Arc, Mutex, atomic::{AtomicU64, Ordering}}};
 use crate::{
@@ -15,6 +14,7 @@ use crate::{
 };
 
 const TEXT_PREVIEW_MAX_BYTES: u64 = 128 * 1024;
+static IMAGE_PREVIEW_READS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
 
 /// File size above which the upload confirmation modal shows a warning.
 pub const LARGE_ATTACHMENT_WARNING_THRESHOLD_BYTES: u64 = 10 * 1000 * 1000;
@@ -339,8 +339,8 @@ pub enum FilePreview {
     None,
     /// The preview is still being built on a background thread.
     Loading,
-    /// A fully decoded image, uploaded to a GPU texture by the UI thread when shown.
-    Image(ImageBuffer),
+    /// Bounded encoded data; the shared image budget admits async decoding/upload.
+    Image(Arc<[u8]>),
     /// A bounded UTF-8 text excerpt for text-like files.
     Text(TextPreview),
 }
@@ -619,13 +619,17 @@ impl FileUploadModal {
     }
 
     fn show_preview(&mut self, cx: &mut Cx, preview: FilePreview) {
+        let image = self.image(cx, ids!(image_preview));
+        crate::memory_budget::release_image(cx, &image);
         self.preview_truncated = false;
         self.preview_page = match preview {
             FilePreview::Loading => id!(loading_page),
-            FilePreview::Image(buffer) => {
-                let texture = buffer.into_new_texture(cx);
-                self.image(cx, ids!(image_preview)).set_texture(cx, Some(texture));
-                id!(image_page)
+            FilePreview::Image(data) => {
+                let key = std::path::PathBuf::from(format!("upload-preview-{}", self.preview_id.unwrap_or_default()));
+                match crate::memory_budget::load_image(&image, cx, &key, data) {
+                    Ok(()) => id!(image_page),
+                    Err(_) => id!(no_preview_page),
+                }
             }
             FilePreview::Text(tp) if tp.is_code => {
                 self.code_view(cx, ids!(code_preview)).set_text(cx, &tp.content);
@@ -650,7 +654,8 @@ impl FileUploadModal {
         self.preview_id = None;
         self.is_text_preview = false;
         self.preview_truncated = false;
-        self.image(cx, ids!(image_preview)).set_texture(cx, None);
+        let image = self.image(cx, ids!(image_preview));
+        crate::memory_budget::release_image(cx, &image);
         self.code_view(cx, ids!(code_preview)).set_text(cx, "");
         self.code_view(cx, ids!(plain_preview)).set_text(cx, "");
         // Back to the loading page so a reopen can't flash stale content.
@@ -660,6 +665,18 @@ impl FileUploadModal {
 }
 
 impl FileUploadModalRef {
+    #[cfg(feature = "chat-stress")]
+    pub fn stress_image_preview(&self, cx: &mut Cx, data: Option<Arc<[u8]>>) {
+        if let Some(mut inner) = self.borrow_mut() {
+            if let Some(data) = data {
+                inner.preview_id = Some(next_file_preview_id());
+                inner.show_preview(cx, FilePreview::Image(data));
+            } else {
+                inner.reset(cx);
+            }
+        }
+    }
+
     pub fn handle_file_previewer_action(&self, cx: &mut Cx, outer_modal: ModalRef, action: &FileUploadModalAction) {
         match action {
             FileUploadModalAction::Show { epoch, upload, preview_id } => {
@@ -671,7 +688,7 @@ impl FileUploadModalRef {
             }
             FileUploadModalAction::PreviewReady { epoch, preview_id, preview } => {
                 if *epoch != crate::account_session::epoch() { return; }
-                // Take from the payload so the decoded image isn't cloned.
+                // Consume this attempt's payload only once.
                 if let Some(preview) = preview.take() {
                     if let Some(mut inner) = self.borrow_mut() {
                         inner.set_preview(cx, *preview_id, preview);
@@ -819,25 +836,26 @@ impl PreviewSource {
     pub fn build(self) -> FilePreview {
         let path = self.source.path();
         if crate::image_utils::is_displayable_image(&self.mime_type) {
-            match std::fs::read(path) {
-                Ok(data) => match decode_image_from_data(&data) {
-                    Ok(buffer) => return FilePreview::Image(buffer),
-                    Err(e) => {
-                        makepad_widgets::warning!("Unable to decode image preview for {path:?}: {e:?}");
-                        return FilePreview::None;
-                    }
-                },
-                Err(e) => {
-                    makepad_widgets::warning!("Unable to read image preview for {path:?}: {e}");
-                    return FilePreview::None;
-                }
-            }
+            return read_image_preview(path, self.file_size).map(FilePreview::Image).unwrap_or_default();
         }
         match read_text_preview(path, &self.mime_type, self.file_size, self.is_mime_guaranteed) {
             Some(text_preview) => FilePreview::Text(text_preview),
             None => FilePreview::None,
         }
     }
+}
+
+fn read_image_preview(path: &std::path::Path, file_size: u64) -> Option<Arc<[u8]>> {
+    let _read = IMAGE_PREVIEW_READS.try_acquire().ok()?;
+    let limit = crate::memory_budget::IMAGE_FILE_BYTES;
+    if file_size > limit as u64 { return None; }
+    let file = std::fs::File::open(path).ok()?;
+    let mut data = Vec::new();
+    // The file may grow after metadata was read; never use an unbounded read.
+    file.take(limit as u64 + 1).read_to_end(&mut data).ok()?;
+    crate::memory_budget::image_cost(&data, path).ok()?;
+    let data: Arc<[u8]> = data.into();
+    crate::memory_budget::admit_encoded(&data).then_some(data)
 }
 
 /// Reads a subset of the text file (max 128KB) and returns it as a string.
@@ -874,5 +892,39 @@ fn bytes_to_string_excerpt(bytes: &[u8], was_capped: bool) -> Option<String> {
             std::str::from_utf8(&bytes[..e.valid_up_to()]).ok().map(ToString::to_string)
         }
         Err(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod image_preview_budget_tests {
+    use super::*;
+
+    fn png() -> Vec<u8> {
+        let mut output = std::io::Cursor::new(Vec::new());
+        ::image::DynamicImage::new_rgba8(1, 1).write_to(&mut output, ::image::ImageFormat::Png).unwrap();
+        output.into_inner()
+    }
+
+    #[test]
+    fn growing_and_oversized_local_images_do_not_bypass_the_preview_limit() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        file.as_file().set_len(crate::memory_budget::IMAGE_FILE_BYTES as u64 + 1).unwrap();
+        assert!(read_image_preview(file.path(), 0).is_none(), "actual bytes must be capped even with stale metadata");
+        assert!(read_image_preview(file.path(), crate::memory_budget::IMAGE_FILE_BYTES as u64 + 1).is_none());
+    }
+
+    #[test]
+    fn local_preview_rejects_pixel_bombs_and_clones_only_encoded_bytes() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mut data = png();
+        std::fs::write(file.path(), &data).unwrap();
+        let preview = FilePreview::Image(read_image_preview(file.path(), 0).unwrap());
+        let FilePreview::Image(copy) = preview.clone() else { panic!("image preview"); };
+        let FilePreview::Image(original) = preview else { panic!("image preview"); };
+        assert!(Arc::ptr_eq(&copy, &original), "actions must share encoded data, never clone decoded pixels");
+        data[16..20].copy_from_slice(&100_000u32.to_be_bytes());
+        data[20..24].copy_from_slice(&100_000u32.to_be_bytes());
+        std::fs::write(file.path(), data).unwrap();
+        assert!(read_image_preview(file.path(), 0).is_none());
     }
 }

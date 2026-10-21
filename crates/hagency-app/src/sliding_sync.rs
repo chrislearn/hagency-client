@@ -1210,39 +1210,51 @@ async fn matrix_worker_task(
             }
 
             MatrixRequest::CreateThreadTimeline { room_id, thread_root_event_id } => {
-                let main_room_timeline = {
-                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
-                        error!("BUG: room info not found for create thread timeline request, room {room_id}");
-                        continue;
-                    };
-                    if room_info.thread_timelines.contains_key(&thread_root_event_id) {
-                        continue;
-                    }
-                    let newly_pending = room_info.pending_thread_timelines.insert(thread_root_event_id.clone());
-                    if !newly_pending {
-                        continue;
-                    }
-                    room_info.room.clone()
+                // Register the abort handle under the same lock used by close
+                // and completion, including a close immediately after spawn.
+                let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                let pending_count = all_joined_rooms.values().map(|room|room.pending_thread_timelines.len()).sum::<usize>();
+                let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
+                    error!("BUG: room info not found for create thread timeline request, room {room_id}");
+                    continue;
                 };
+                if room_info.thread_timelines.contains_key(&thread_root_event_id) {
+                    continue;
+                }
+                if room_info.pending_thread_timelines.contains_key(&thread_root_event_id) {
+                    continue;
+                }
+                if pending_count >= MAX_RETAINED_TIMELINES {
+                    enqueue_popup_notification("Too many pending chat windows. Close one to open this chat.",PopupKind::Error,Some(6.0));
+                    continue;
+                }
+                let main_room_timeline = room_info.room.clone();
+                let pending_key = thread_root_event_id.clone();
 
-                let _create_thread_timeline_task = crate::account_session::spawn(async move {
-                    let _creation = TIMELINE_CREATION.lock().await;
+                let create_thread_timeline_task = crate::account_session::spawn(async move {
+                    let Ok(_creation) = tokio::time::timeout(Duration::from_secs(30), TIMELINE_CREATION.lock()).await else {
+                        if finish_pending_thread_build(&room_id, &thread_root_event_id) {
+                            enqueue_popup_notification("Timed out waiting to create the thread timeline. Please retry.",PopupKind::Error,Some(6.0));
+                        }
+                        return;
+                    };
                     if !reserve_timeline_slot() {
-                        if let Some(room)=ALL_JOINED_ROOMS.lock().unwrap().get_mut(&room_id) {room.pending_thread_timelines.remove(&thread_root_event_id);}
+                        finish_pending_thread_build(&room_id, &thread_root_event_id);
                         enqueue_popup_notification("Too many open chat windows. Close one to open this chat.",PopupKind::Error,Some(6.0));
                         return;
                     }
                     log!("Creating thread-focused timeline for room {room_id}, thread {thread_root_event_id}...");
-                    let build_result = main_room_timeline
+                    let build_result = tokio::time::timeout(Duration::from_secs(30), main_room_timeline
                         .timeline_builder()
                         .event_filter(robrix_timeline_event_filter)
                         .with_focus(TimelineFocus::Thread {
                             root_event_id: thread_root_event_id.clone(),
                         })
                         .track_read_marker_and_receipts(TimelineReadReceiptTracking::AllEvents)
-                        .build()
-                        .await;
+                        .build())
+                        .await
+                        .map_err(|_| "Timed out creating the thread timeline".to_owned())
+                        .and_then(|result|result.map_err(|error|error.to_string()));
 
                     match build_result {
                         Ok(thread_timeline) => {
@@ -1250,16 +1262,17 @@ async fn matrix_worker_task(
                             let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                                 return;
                             };
-                            if !room_info.pending_thread_timelines.remove(&thread_root_event_id) {
+                            if !room_info.pending_thread_timelines.get(&thread_root_event_id).is_some_and(PendingTimelineBuild::is_current) {
                                 log!("Thread-focused timeline for room {room_id}, thread {thread_root_event_id} was closed during creation; discarding it.");
                                 return;
                             }
+                            room_info.pending_thread_timelines.remove(&thread_root_event_id).unwrap().finish();
                             log!("Successfully created thread-focused timeline for room {room_id}, thread {thread_root_event_id}.");
                             let thread_timeline = Arc::new(thread_timeline);
                             let (timeline_update_sender, timeline_update_receiver) = crate::timeline_updates::channel();
                             let kind=TimelineKind::Thread{room_id:room_id.clone(),thread_root_event_id:thread_root_event_id.clone()};
                             let previous=room_info.evicted_senders.remove(&kind);
-                            if let Some(previous)=&previous {previous.forward_operations_to(&timeline_update_sender);}
+                            if let Some(previous)=&previous {previous.sender.forward_operations_to(&timeline_update_sender);}
                             let (request_sender, request_receiver) = watch::channel(TimelineRequest {
                                 backwards_paginate: Vec::new(),
                                 is_timeline_open: true,
@@ -1284,6 +1297,7 @@ async fn matrix_worker_task(
                                     )),
                                     request_sender: request_sender.clone(),
                                     focus_revision: 0,
+                                    focus_task: None,
                                     preserve_operations: previous.is_some(),
                                     is_live: true, window_anchor: None,
                                     timeline_subscriber: TimelineSubscriber::Running(
@@ -1296,12 +1310,7 @@ async fn matrix_worker_task(
                         }
                         Err(error) => {
                             error!("Failed to create thread-focused timeline for room {room_id}, thread {thread_root_event_id}: {error}");
-                            let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
-                            if let Some(room_info) = all_joined_rooms.get_mut(&room_id) {
-                                room_info
-                                    .pending_thread_timelines
-                                    .remove(&thread_root_event_id);
-                            }
+                            if !finish_pending_thread_build(&room_id, &thread_root_event_id) { return; }
                             enqueue_popup_notification(
                                 format!("Failed to create thread-focused timeline. Please retry opening the thread again later.\n\nError: {error}"),
                                 PopupKind::Error,
@@ -1310,6 +1319,7 @@ async fn matrix_worker_task(
                         }
                     }
                 });
+                room_info.pending_thread_timelines.insert(pending_key, PendingTimelineBuild(Some(create_thread_timeline_task.abort_handle())));
             }
 
             MatrixRequest::CloseThreadTimeline { room_id, thread_root_event_id } => {
@@ -1317,8 +1327,8 @@ async fn matrix_worker_task(
                 let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                     continue;
                 };
-                // Remove it from the pending set to handle the rare case where we showed the
-                // thread timeline but then quickly hid it before its backend task could finish being set up.
+                // Cancel a pending build when the window closes, including while it waits
+                // for the creation lock or a slow network request.
                 room_info.pending_thread_timelines.remove(&thread_root_event_id);
                 // Remove and drop the entry (see [`PerTimelineDetails::drop()`] to abort its async task.
                 if room_info.thread_timelines.remove(&thread_root_event_id).is_some() {
@@ -3149,6 +3159,7 @@ struct PerTimelineDetails {
     timeline_subscriber: TimelineSubscriber,
     request_sender: TimelineRequestSender,
     focus_revision: u64,
+    focus_task: Option<tokio::task::AbortHandle>,
     preserve_operations: bool,
     is_live: bool,
     window_anchor: Option<OwnedEventId>,
@@ -3175,10 +3186,40 @@ impl PerTimelineDetails {
 }
 impl Drop for PerTimelineDetails {
     fn drop(&mut self) {
+        if let Some(task) = self.focus_task.take() { task.abort(); }
         if let TimelineSubscriber::Running(task) = &self.timeline_subscriber {
             task.abort();
         }
     }
+}
+
+#[derive(Debug)]
+struct PendingTimelineBuild(Option<tokio::task::AbortHandle>);
+impl PendingTimelineBuild {
+    fn is_current(&self) -> bool {
+        self.0.as_ref().is_some_and(|handle|handle.id() == tokio::task::id())
+    }
+    fn finish(mut self) { self.0.take(); }
+}
+impl Drop for PendingTimelineBuild {
+    fn drop(&mut self) {
+        if let Some(task) = self.0.take() { task.abort(); }
+    }
+}
+
+fn finish_pending_thread_build(room: &RoomId, root: &EventId) -> bool {
+    let mut rooms = ALL_JOINED_ROOMS.lock().unwrap();
+    let Some(room) = rooms.get_mut(room) else { return false; };
+    if !room.pending_thread_timelines.get(root).is_some_and(PendingTimelineBuild::is_current) { return false; }
+    room.pending_thread_timelines.remove(root).unwrap().finish();
+    true
+}
+
+struct EvictedTimeline {
+    sender: crate::timeline_updates::Sender,
+    // A focus commit may publish an endpoint before the UI takes it. Keep
+    // that receiver alive until its queued transfers reach the next window.
+    _receiver: Option<crate::timeline_updates::Receiver>,
 }
 
 struct JoinedRoomDetails {
@@ -3187,11 +3228,11 @@ struct JoinedRoomDetails {
     /// Details about the main timeline for this room.
     room: Room,
     main_timeline: Option<PerTimelineDetails>,
-    evicted_senders: HashMap<TimelineKind, crate::timeline_updates::Sender>,
+    evicted_senders: HashMap<TimelineKind, EvictedTimeline>,
     /// Thread-focused timelines for this room, keyed by thread root event ID.
     thread_timelines: HashMap<OwnedEventId, PerTimelineDetails>,
     /// The set of thread timelines currently being created, to avoid duplicate in-flight work.
-    pending_thread_timelines: HashSet<OwnedEventId>,
+    pending_thread_timelines: HashMap<OwnedEventId, PendingTimelineBuild>,
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
     /// A drop guard for the event handler that represents a subscription to pinned events for this room.
@@ -3281,6 +3322,41 @@ const MAX_RETAINED_TIMELINES: usize = 16;
 #[derive(Debug)]
 pub struct TimelineCacheEvicted(pub TimelineKind, pub usize);
 
+fn update_endpoint_visibility(
+    receiver: &crate::timeline_updates::Receiver,
+    requests: &TimelineRequestSender,
+    current: Option<(&crate::timeline_updates::Sender, &TimelineRequestSender)>,
+    open: bool,
+) -> bool {
+    let matched = current.is_some_and(|(sender, current_requests)| {
+        if !receiver.shares_route(sender) { return false; }
+        current_requests.send_if_modified(|request| std::mem::replace(&mut request.is_timeline_open, open) != open);
+        true
+    });
+    requests.send_if_modified(|request| std::mem::replace(&mut request.is_timeline_open, open) != open);
+    matched
+}
+
+/// Serialize UI visibility with a focus commit. The UI can still own the old
+/// endpoints when a replacement is published; close must reach the new window.
+pub(crate) fn update_timeline_visibility(
+    kind: &TimelineKind,
+    receiver: &crate::timeline_updates::Receiver,
+    requests: &TimelineRequestSender,
+    open: bool,
+) {
+    let mut rooms = ALL_JOINED_ROOMS.lock().unwrap();
+    let current = get_per_timeline_details(&mut rooms, kind);
+    let matched = update_endpoint_visibility(receiver, requests,
+        current.as_ref().map(|details| (&details.timeline_update_sender, &details.request_sender)), open);
+    if matched && !open && let Some(details) = current {
+        // Abort cannot preempt a poll blocked on this mutex. Invalidate its
+        // commit even if the UI closes and reopens before that poll resumes.
+        details.focus_revision = details.focus_revision.wrapping_add(1);
+        if let Some(task) = details.focus_task.take() { task.abort(); }
+    }
+}
+
 /// Called with the creation mutex held. Open timelines are never evicted.
 fn reserve_timeline_slot() -> bool {
     let mut rooms = ALL_JOINED_ROOMS.lock().unwrap();
@@ -3295,20 +3371,23 @@ fn reserve_timeline_slot() -> bool {
     });
     let Some(kind) = candidate else { return false; };
     let room = rooms.get_mut(kind.room_id()).unwrap();
-    let details = match &kind {
+    let mut details = match &kind {
         TimelineKind::MainRoom{..} => room.main_timeline.take(),
         TimelineKind::Thread{thread_root_event_id,..} => room.thread_timelines.remove(thread_root_event_id),
     }.unwrap();
     details.timeline_update_sender.discard_snapshots();
     let channel=details.timeline_update_sender.identity();
-    room.evicted_senders.insert(kind.clone(),details.timeline_update_sender.clone());
+    room.evicted_senders.insert(kind.clone(), EvictedTimeline {
+        sender: details.timeline_update_sender.clone(),
+        _receiver: details.timeline_singleton_endpoints.take().map(|(receiver, _)|receiver),
+    });
     drop(details);
     Cx::post_action(TimelineCacheEvicted(kind,channel));
     true
 }
 
 async fn ensure_main_timeline(room_id: &RoomId) -> Option<()> {
-    let _creation = TIMELINE_CREATION.lock().await;
+    let _creation = tokio::time::timeout(Duration::from_secs(30), TIMELINE_CREATION.lock()).await.ok()?;
     let room = {
         let rooms = ALL_JOINED_ROOMS.lock().unwrap();
         let room = rooms.get(room_id)?;
@@ -3321,22 +3400,23 @@ async fn ensure_main_timeline(room_id: &RoomId) -> Option<()> {
     }
     let client = room.client();
     let kind = TimelineKind::MainRoom{room_id:room_id.to_owned()};
-    let timeline = match build_focused_timeline(&room,&kind,&None).await {
-        Ok(timeline)=>timeline,
-        Err(error)=>{ enqueue_popup_notification(error,PopupKind::Error,Some(8.0));return None; }
+    let timeline = match tokio::time::timeout(Duration::from_secs(30), build_focused_timeline(&room,&kind,&None)).await {
+        Ok(Ok(timeline))=>timeline,
+        Ok(Err(error))=>{ enqueue_popup_notification(error,PopupKind::Error,Some(8.0));return None; }
+        Err(_)=>{ enqueue_popup_notification("Timed out creating the chat timeline. Please retry.",PopupKind::Error,Some(8.0));return None; }
     };
     if !crate::matrix_context::is_current(&client) { return None; }
     let mut rooms = ALL_JOINED_ROOMS.lock().unwrap();
     let room = rooms.get_mut(room_id)?;
     let (sender,receiver)=crate::timeline_updates::channel();
     let previous=room.evicted_senders.remove(&kind);
-    if let Some(previous)=&previous { previous.forward_operations_to(&sender); }
+    if let Some(previous)=&previous { previous.sender.forward_operations_to(&sender); }
     let (request_sender,request_receiver)=watch::channel(TimelineRequest{backwards_paginate:Vec::new(),is_timeline_open:false});
     room.main_timeline=Some(PerTimelineDetails {
         timeline:Arc::new(timeline),timeline_update_sender:sender,
         timeline_singleton_endpoints:Some((receiver,request_sender.clone())),
         timeline_subscriber:TimelineSubscriber::NotStarted{request_receiver},
-        request_sender,focus_revision:0,preserve_operations:previous.is_some(),is_live:true,window_anchor:None,
+        request_sender,focus_revision:0,focus_task:None,preserve_operations:previous.is_some(),is_live:true,window_anchor:None,
     });
     Cx::post_action(TimelineEndpointsRecreated{room_id:room_id.to_owned()});
     SignalToUI::set_ui_signal();
@@ -3541,12 +3621,13 @@ static STRESS_ENDPOINTS: std::sync::LazyLock<Mutex<HashMap<TimelineKind, Timelin
 /// Instrument builds only: connect the production RoomScreen to an isolated SDK
 /// timeline without starting a real account's sync/send worker.
 #[cfg(feature = "chat-stress")]
-pub fn install_stress_endpoints(client: Client, room_id: OwnedRoomId) -> crate::timeline_updates::Sender {
+pub fn install_stress_endpoints(client: Client, room_id: OwnedRoomId, previous: Option<&crate::timeline_updates::Sender>) -> crate::timeline_updates::Sender {
     *CLIENT.lock().unwrap() = Some(client);
     let (sender, receiver) = crate::timeline_updates::channel();
     let (requests, _receiver) = watch::channel(TimelineRequest {backwards_paginate: Vec::new(), is_timeline_open: true});
+    if let Some(previous) = previous { previous.forward_operations_to(&sender); }
     STRESS_ENDPOINTS.lock().unwrap().insert(TimelineKind::MainRoom {room_id}, TimelineEndpoints {
-        preserve_operations: false, update_sender: sender.clone(), update_receiver: receiver,
+        preserve_operations: previous.is_some(), update_sender: sender.clone(), update_receiver: receiver,
         request_sender: requests, successor_room: None, is_encrypted: false,
     });
     sender
@@ -4717,7 +4798,7 @@ async fn add_new_room(
             main_timeline: None,
             evicted_senders: HashMap::new(),
             thread_timelines: HashMap::new(),
-            pending_thread_timelines: HashSet::new(),
+            pending_thread_timelines: HashMap::new(),
             typing_notice_subscriber: None,
             pinned_events_subscriber: None,
         },
@@ -5706,18 +5787,41 @@ fn focus_timeline(kind: TimelineKind, target: Option<OwnedEventId>) {
     focus_timeline_window(kind, target, false);
 }
 
+async fn build_in_timeline_window<F: std::future::Future>(
+    mut requests: watch::Receiver<TimelineRequest>,
+    build: F,
+    timeout: std::time::Duration,
+) -> Option<Result<F::Output, tokio::time::error::Elapsed>> {
+    tokio::select! {
+        result = tokio::time::timeout(timeout, build) => Some(result),
+        () = async {
+            loop {
+                if !requests.borrow_and_update().is_timeline_open { return; }
+                if requests.changed().await.is_err() { return; }
+            }
+        } => None,
+    }
+}
+
 fn focus_timeline_window(kind: TimelineKind, target: Option<OwnedEventId>, rebase: bool) {
     let Some(client) = get_client() else { return };
-    let (previous, revision, old_requests, old_sender) = {
-        let mut rooms = ALL_JOINED_ROOMS.lock().unwrap();
-        let Some(details) = get_per_timeline_details(&mut rooms, &kind) else { return };
-        details.focus_revision = details.focus_revision.wrapping_add(1);
-        (details.timeline.clone(), details.focus_revision,
-            details.request_sender.clone(), details.timeline_update_sender.clone())
-    };
-    crate::account_session::spawn(async move {
+    // Install the abort handle under the same room lock used by the commit.
+    // Revision fences reject stale results; cancellation also releases their work.
+    let mut rooms = ALL_JOINED_ROOMS.lock().unwrap();
+    let Some(details) = get_per_timeline_details(&mut rooms, &kind) else { return };
+    if let Some(task) = details.focus_task.take() { task.abort(); }
+    details.focus_revision = details.focus_revision.wrapping_add(1);
+    let (previous, revision, old_requests, old_sender) = (
+        details.timeline.clone(), details.focus_revision,
+        details.request_sender.clone(), details.timeline_update_sender.clone(),
+    );
+    let task = crate::account_session::spawn(async move {
         let room = previous.room().clone();
-        let result = build_focused_timeline(&room, &kind, &target).await;
+        let Some(result) = build_in_timeline_window(
+            old_requests.subscribe(), build_focused_timeline(&room, &kind, &target),
+            std::time::Duration::from_secs(30),
+        ).await else { return; };
+        let result = result.unwrap_or_else(|error| Err(error.to_string()));
         if !crate::matrix_context::is_current(&client) { return }
         let mut rooms = ALL_JOINED_ROOMS.lock().unwrap();
         let Some(details) = get_per_timeline_details(&mut rooms, &kind) else { return };
@@ -5742,16 +5846,18 @@ fn focus_timeline_window(kind: TimelineKind, target: Option<OwnedEventId>, rebas
         old_sender.forward_operations_to(&sender);
         let _ = sender.send(TimelineUpdate::FocusChanged { is_live: target.is_none() });
         // New channels fence late results from the previous browsing window.
+        details.focus_task = None;
         *details = PerTimelineDetails {
             timeline: Arc::new(timeline), timeline_update_sender: sender,
             timeline_singleton_endpoints: Some((receiver, request_sender.clone())),
             timeline_subscriber: TimelineSubscriber::NotStarted { request_receiver },
-            request_sender, focus_revision: revision, preserve_operations: true,
+            request_sender, focus_revision: revision, focus_task: None, preserve_operations: true,
             is_live: target.is_none(), window_anchor: if rebase {target.clone()} else {None},
         };
         Cx::post_action(TimelineEndpointsRecreated { room_id: kind.room_id().clone() });
         SignalToUI::set_ui_signal();
     });
+    details.focus_task = Some(task.abort_handle());
 }
 
 /// A per-timeline async task that listens for timeline updates and sends them to the UI thread.
@@ -6668,4 +6774,76 @@ async fn change_account_ui() -> Result<()> {
     Cx::post_action(crate::home::navigation_tab_bar::NavigationBarAction::CloseSettings);
     Cx::post_action(LoginAction::AccountPickerReady);
     Ok(())
+}
+
+
+#[cfg(test)]
+mod focus_lifetime_tests {
+    use super::*;
+    #[test]
+    fn eviction_before_ui_reconnect_preserves_queued_transfer_results() {
+        let (ui_sender, ui_receiver) = crate::timeline_updates::channel();
+        let (sender, receiver) = crate::timeline_updates::channel();
+        ui_sender.forward_operations_to(&sender);
+        let transfer = ui_sender.clone();
+        let parked = EvictedTimeline {sender, _receiver: Some(receiver)};
+        transfer.send(TimelineUpdate::AttachmentDownloadReset("mxc://example.org/queued".into())).unwrap();
+        let (next, receiver) = crate::timeline_updates::channel();
+        let evicted = parked.sender.identity();
+        assert!(ui_receiver.identity() < evicted, "eviction must also clear the UI which has not reconnected yet");
+        assert!(receiver.identity() > evicted, "a delayed eviction must preserve a newer UI window");
+        parked.sender.forward_operations_to(&next);
+        drop(parked);
+        transfer.send(TimelineUpdate::AttachmentDownloadReset("mxc://example.org/late".into())).unwrap();
+        assert!(matches!(receiver.try_recv(), Ok(TimelineUpdate::AttachmentDownloadReset(uri)) if uri.as_str().ends_with("/queued")));
+        assert!(matches!(receiver.try_recv(), Ok(TimelineUpdate::AttachmentDownloadReset(uri)) if uri.as_str().ends_with("/late")));
+    }
+    #[test]
+    fn closing_old_ui_endpoints_closes_the_replacement_but_not_another_session() {
+        let (old, receiver) = crate::timeline_updates::channel();
+        let (next, _next_receiver) = crate::timeline_updates::channel();
+        old.forward_operations_to(&next);
+        let (old_requests, _) = watch::channel(TimelineRequest { backwards_paginate: Vec::new(), is_timeline_open: true });
+        let (new_requests, _) = watch::channel(TimelineRequest { backwards_paginate: Vec::new(), is_timeline_open: true });
+        assert!(update_endpoint_visibility(&receiver, &old_requests, Some((&next, &new_requests)), false));
+        assert!(!new_requests.borrow().is_timeline_open, "close arriving before UI reconnect must reach the replacement");
+        assert!(!old_requests.borrow().is_timeline_open);
+        let (another_session, _receiver) = crate::timeline_updates::channel();
+        new_requests.send_modify(|request| request.is_timeline_open = true);
+        assert!(!update_endpoint_visibility(&receiver, &old_requests, Some((&another_session, &new_requests)), false));
+        assert!(new_requests.borrow().is_timeline_open, "old UI must not close a new account's channel");
+    }
+    #[tokio::test]
+    async fn dropping_pending_thread_build_aborts_it_and_finish_disarms_abort() {
+        let held = Arc::new(());
+        let weak = Arc::downgrade(&held);
+        let task = tokio::spawn(async move { let _held = held; std::future::pending::<()>().await });
+        drop(PendingTimelineBuild(Some(task.abort_handle())));
+        assert!(task.await.unwrap_err().is_cancelled());
+        assert!(weak.upgrade().is_none());
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(async move { receiver.await.unwrap() });
+        PendingTimelineBuild(Some(task.abort_handle())).finish();
+        sender.send(()).unwrap();
+        task.await.unwrap();
+    }
+    #[tokio::test]
+    async fn closing_or_timing_out_a_focus_build_releases_its_resources() {
+        let (requests, receiver) = watch::channel(TimelineRequest { backwards_paginate: Vec::new(), is_timeline_open: true });
+        let held = Arc::new(());
+        let weak = Arc::downgrade(&held);
+        let build = async move { let _held = held; std::future::pending::<()>().await };
+        let task = tokio::spawn(build_in_timeline_window(receiver, build, std::time::Duration::from_secs(5)));
+        requests.send_modify(|request| request.is_timeline_open = false);
+        assert!(task.await.unwrap().is_none());
+        assert!(weak.upgrade().is_none());
+        let held = Arc::new(());
+        let weak = Arc::downgrade(&held);
+        let build = async move { let _held = held; std::future::pending::<()>().await };
+        // Keep the watch sender alive to exercise the deadline, not disconnection.
+        let (requests, receiver) = watch::channel(TimelineRequest { backwards_paginate: Vec::new(), is_timeline_open: true });
+        assert!(matches!(build_in_timeline_window(receiver, build, std::time::Duration::from_millis(1)).await, Some(Err(_))));
+        assert!(weak.upgrade().is_none());
+        drop(requests);
+    }
 }
