@@ -483,7 +483,7 @@ impl AppSettings {
         use crate::desktop_integration::{self, DesktopSettings};
         if !cx.global::<DesktopSettings>().enabled || self.view.widget(cx, ids!(desktop_settings)).is_empty() { return; }
         if self.view.button(cx, ids!(windows_startup_settings)).clicked(actions) {
-            cx.open_url("ms-settings:startupapps", OpenUrlInPlace::No);
+            crate::utils::open_url("ms-settings:startupapps");
         }
         if let Some(enabled) = self.view.check_box(cx, ids!(autostart_toggle)).changed(actions) {
             if let Err(error) = desktop_integration::set_autostart(enabled) {
