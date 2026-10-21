@@ -29,7 +29,7 @@ script_mod! {
     mod.widgets.MobileChatInfo = #(MobileChatInfo::register_widget(vm)) {
         ..mod.widgets.SolidView
         width: Fill height: Fill flow: Down
-        draw_bg.color: mod.widgets.MOBILE_BG
+        draw_bg.color: mod.widgets.RINX_PANEL_BG
         summary := View {width: Fill height: Fit flow: Down padding: 16 spacing: 8
             summary_details := View {width: Fill height: Fit flow: Down spacing: 8
                 summary_name := RinxLabel {width: Fill height: Fit max_lines: 2 text_overflow: Ellipsis

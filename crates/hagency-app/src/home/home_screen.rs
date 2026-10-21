@@ -209,9 +209,9 @@ script_mod! {
                         mod.widgets.MainDesktopUI {}
                     }
 
-                    contacts_page := MobileHub {kind: 0}
-                    discover_page := MobileHub {kind: 1}
-                    me_page := MobileHub {kind: 2}
+                    contacts_page := MobileHub {kind: 0 draw_bg.color: mod.widgets.RINX_CONTENT_BG}
+                    discover_page := MobileHub {kind: 1 draw_bg.color: mod.widgets.RINX_CONTENT_BG}
+                    me_page := MobileHub {kind: 2 draw_bg.color: mod.widgets.RINX_CONTENT_BG}
 
                     settings_page := RoundedView {
                         width: Fill, height: Fill

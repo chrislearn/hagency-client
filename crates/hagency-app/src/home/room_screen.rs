@@ -2026,6 +2026,15 @@ impl Widget for RoomScreen {
                                     | timeline::AnyOtherStateEventContentChange::SpaceChild(_)
                                     | timeline::AnyOtherStateEventContentChange::SpaceParent(_)
                                     | timeline::AnyOtherStateEventContentChange::_Custom { .. }
+                                ) || (
+                                    // A back-pagination chunk seam can deliver the
+                                    // m.room.create event twice; keep only the first.
+                                    matches!(other.content(), timeline::AnyOtherStateEventContentChange::RoomCreate(_))
+                                    && tl_items.iter().take(tl_idx).any(|earlier| matches!(
+                                        earlier.as_event().map(|event| event.content()),
+                                        Some(TimelineItemContent::OtherState(earlier_state))
+                                            if matches!(earlier_state.content(), timeline::AnyOtherStateEventContentChange::RoomCreate(_))
+                                    ))
                                 );
                                 if should_hide {
                                     (list.item(cx, item_id, id!(Empty)), ItemDrawnStatus::both_drawn())

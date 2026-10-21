@@ -460,50 +460,64 @@ pub fn text_preview_of_other_state(
 ) -> TextPreview {
     let text = match other_state.content() {
         AnyOtherStateEventContentChange::RoomAvatar(_) => {
-            String::from("set this room's avatar picture.")
+            crate::i18n::tr("set this room's avatar picture.").to_string()
         }
         AnyOtherStateEventContentChange::RoomCanonicalAlias(StateEventContentChange::Original { content, .. }) => {
-            format!("set the main address of this room to {}.",
-                content.alias.as_ref().map(|a| a.as_str()).unwrap_or("none")
+            crate::i18n::format(
+                "set the main address of this room to {alias}.",
+                &[("alias", content.alias.as_ref().map(|a| a.as_str()).unwrap_or_else(|| crate::i18n::tr("none")).to_string())],
             )
         }
         AnyOtherStateEventContentChange::RoomCreate(StateEventContentChange::Original { content, .. }) => {
-            format!("created this room (v{}).", content.room_version.as_str())
+            crate::i18n::format(
+                "created this room (v{version}).",
+                &[("version", content.room_version.as_str().to_string())],
+            )
         }
         AnyOtherStateEventContentChange::RoomEncryption(_) => {
-            String::from("enabled encryption in this room.")
+            crate::i18n::tr("enabled encryption in this room.").to_string()
         }
         AnyOtherStateEventContentChange::RoomGuestAccess(StateEventContentChange::Original { content, .. }) => {
             match &content.guest_access {
-                GuestAccess::CanJoin => String::from("has allowed guests to join this room."),
-                GuestAccess::Forbidden => String::from("has forbidden guests from joining this room."),
-                custom => format!("has set custom guest access rules for this room: {}", custom.as_str()),
+                GuestAccess::CanJoin => crate::i18n::tr("has allowed guests to join this room.").to_string(),
+                GuestAccess::Forbidden => crate::i18n::tr("has forbidden guests from joining this room.").to_string(),
+                custom => crate::i18n::format(
+                    "has set custom guest access rules for this room: {rules}",
+                    &[("rules", custom.as_str().to_string())],
+                ),
             }
         }
         AnyOtherStateEventContentChange::RoomHistoryVisibility(StateEventContentChange::Original { content, .. }) => {
-            format!("set this room's history to be visible by {}",
-                match &content.history_visibility {
-                    HistoryVisibility::Invited => "invited users, since they were invited.",
-                    HistoryVisibility::Joined => "joined users, since they joined.",
-                    HistoryVisibility::Shared => "joined users, for all of time.",
-                    HistoryVisibility::WorldReadable => "anyone for all time.",
-                    custom => custom.as_str(),
-                },
-            )
+            match &content.history_visibility {
+                HistoryVisibility::Invited => crate::i18n::tr("set this room's history to be visible by invited users, since they were invited.").to_string(),
+                HistoryVisibility::Joined => crate::i18n::tr("set this room's history to be visible by joined users, since they joined.").to_string(),
+                HistoryVisibility::Shared => crate::i18n::tr("set this room's history to be visible by joined users, for all of time.").to_string(),
+                HistoryVisibility::WorldReadable => crate::i18n::tr("set this room's history to be visible by anyone for all time.").to_string(),
+                custom => crate::i18n::format(
+                    "set this room's history to be visible by {visibility}",
+                    &[("visibility", custom.as_str().to_string())],
+                ),
+            }
         }
         AnyOtherStateEventContentChange::RoomJoinRules(StateEventContentChange::Original { content, .. }) => {
             match &content.join_rule {
-                JoinRule::Public => String::from("set this room to be joinable by anyone."),
-                JoinRule::Knock => String::from("set this room to be joinable by invite only or by request."),
-                JoinRule::Private => String::from("set this room to be private."),
-                JoinRule::Restricted(_) => String::from("set this room to be joinable by invite only or with restrictions."),
-                JoinRule::KnockRestricted(_) => String::from("set this room to be joinable by invite only or requestable with restrictions."),
-                JoinRule::Invite  => String::from("set this room to be joinable by invite only."),
-                custom => format!("set custom join rules for this room: {}", custom.as_str()),
+                JoinRule::Public => crate::i18n::tr("set this room to be joinable by anyone.").to_string(),
+                JoinRule::Knock => crate::i18n::tr("set this room to be joinable by invite only or by request.").to_string(),
+                JoinRule::Private => crate::i18n::tr("set this room to be private.").to_string(),
+                JoinRule::Restricted(_) => crate::i18n::tr("set this room to be joinable by invite only or with restrictions.").to_string(),
+                JoinRule::KnockRestricted(_) => crate::i18n::tr("set this room to be joinable by invite only or requestable with restrictions.").to_string(),
+                JoinRule::Invite  => crate::i18n::tr("set this room to be joinable by invite only.").to_string(),
+                custom => crate::i18n::format(
+                    "set custom join rules for this room: {rules}",
+                    &[("rules", custom.as_str().to_string())],
+                ),
             }
         }
         AnyOtherStateEventContentChange::RoomPinnedEvents(StateEventContentChange::Original { content, .. }) => {
-            format!("pinned {} events in this room.", content.pinned.len())
+            crate::i18n::format(
+                "pinned {count} events in this room.",
+                &[("count", content.pinned.len().to_string())],
+            )
         }
         AnyOtherStateEventContentChange::RoomName(StateEventContentChange::Original { content, .. }) => {
             let name = if format_as_html {
@@ -511,13 +525,16 @@ pub fn text_preview_of_other_state(
             } else {
                 Cow::Borrowed(content.name.as_str())
             };
-            format!("changed this room's name to \"{name}\".")
+            crate::i18n::format(
+                "changed this room's name to \"{name}\".",
+                &[("name", name.to_string())],
+            )
         }
         AnyOtherStateEventContentChange::RoomPowerLevels(_) => {
-            String::from("set the power levels for this room.")
+            crate::i18n::tr("set the power levels for this room.").to_string()
         }
         AnyOtherStateEventContentChange::RoomServerAcl(_) => {
-            String::from("set the server access control list for this room.")
+            crate::i18n::tr("set the server access control list for this room.").to_string()
         }
         AnyOtherStateEventContentChange::RoomThirdPartyInvite(StateEventContentChange::Original { content, .. }) => {
             let invitee = if format_as_html {
@@ -525,10 +542,16 @@ pub fn text_preview_of_other_state(
             } else {
                 Cow::Borrowed(content.display_name.as_str())
             };
-            format!("invited {invitee} to this room.")
+            crate::i18n::format(
+                "invited {user} to this room.",
+                &[("user", invitee.to_string())],
+            )
         }
         AnyOtherStateEventContentChange::RoomTombstone(StateEventContentChange::Original { content, .. }) => {
-            format!("closed this room and upgraded it to {}", content.replacement_room.matrix_to_uri())
+            crate::i18n::format(
+                "closed this room and upgraded it to {room}.",
+                &[("room", content.replacement_room.matrix_to_uri().to_string())],
+            )
         }
         AnyOtherStateEventContentChange::RoomTopic(StateEventContentChange::Original { content, .. }) => {
             let topic = if format_as_html {
@@ -536,7 +559,10 @@ pub fn text_preview_of_other_state(
             } else {
                 Cow::Borrowed(content.topic.as_str())
             };
-            format!("changed this room's topic to \"{topic}\".")
+            crate::i18n::format(
+                "changed this room's topic to \"{topic}\".",
+                &[("topic", topic.to_string())],
+            )
         }
         AnyOtherStateEventContentChange::SpaceParent(_) => {
             let state_key  = if format_as_html {
@@ -544,7 +570,10 @@ pub fn text_preview_of_other_state(
             } else {
                 Cow::Borrowed(other_state.state_key())
             };
-            format!("set this room's parent space to \"{state_key}\".")
+            crate::i18n::format(
+                "set this room's parent space to \"{space}\".",
+                &[("space", state_key.to_string())],
+            )
         }
         AnyOtherStateEventContentChange::SpaceChild(_) => {
             let state_key  = if format_as_html {
@@ -552,12 +581,16 @@ pub fn text_preview_of_other_state(
             } else {
                 Cow::Borrowed(other_state.state_key())
             };
-            format!("added a new child to this space: \"{state_key}\".")
+            crate::i18n::format(
+                "added a new child to this space: \"{child}\".",
+                &[("child", state_key.to_string())],
+            )
         }
         other => {
             let event_type = other.event_type().to_string();
-            format!("changed this room's {} state.",
-                if format_as_html { htmlize::escape_text(event_type) } else { event_type.into() },
+            crate::i18n::format(
+                "changed this room's {event_type} state.",
+                &[("event_type", if format_as_html { htmlize::escape_text(event_type).to_string() } else { event_type })],
             )
         }
     };
@@ -577,9 +610,15 @@ pub fn text_preview_of_member_profile_change(
         let old_un = if format_as_html { htmlize::escape_text(old) } else { old.into() };
         if let Some(new) = name_change.new.as_ref() {
             let new_un = if format_as_html { htmlize::escape_text(new) } else { new.into() };
-            format!("{old_un} changed their display name to \"{new_un}\"")
+            crate::i18n::format(
+                "{old} changed their display name to \"{new}\"",
+                &[("old", old_un.to_string()), ("new", new_un.to_string())],
+            )
         } else {
-            format!("{old_un} removed their display name")
+            crate::i18n::format(
+                "{old} removed their display name",
+                &[("old", old_un.to_string())],
+            )
         }
     } else {
         String::new()
@@ -591,9 +630,12 @@ pub fn text_preview_of_member_profile_change(
             } else {
                 username.into()
             };
-            format!("{un} changed their profile picture")
+            crate::i18n::format(
+                "{user} changed their profile picture",
+                &[("user", un.to_string())],
+            )
         } else {
-            String::from(" and changed their profile picture")
+            crate::i18n::tr(" and changed their profile picture").to_string()
         }
     } else {
         String::new()
@@ -603,13 +645,16 @@ pub fn text_preview_of_member_profile_change(
         // When a profile change is redacted, both these fields are cleared,
         // so just fall back to a generic message.
         return TextPreview::from((
-            String::from("changed their profile."),
+            crate::i18n::tr("changed their profile.").to_string(),
             BeforeText::UsernameWithoutColon,
         ));
     }
 
     TextPreview::from((
-        format!("{}{}.", name_text, avatar_text),
+        crate::i18n::format(
+            "{name}{avatar}.",
+            &[("name", name_text), ("avatar", avatar_text)],
+        ),
         BeforeText::Nothing,
     ))
 }
@@ -639,39 +684,42 @@ pub fn text_preview_of_room_membership_change(
         StateEventContentChange::Redacted(content) => (&content.membership, None, None),
     };
     let end = match reason.map(|r| r.trim().trim_end_matches('.')).filter(|r| !r.is_empty()) {
-        Some(r) if format_as_html => format!(": {}.", htmlize::escape_text(r)),
-        Some(r) => format!(": {r}."),
-        None => String::from("."),
+        Some(r) if format_as_html => crate::i18n::format(
+            ": {reason}.",
+            &[("reason", htmlize::escape_text(r).to_string())],
+        ),
+        Some(r) => crate::i18n::format(": {reason}.", &[("reason", r.to_string())]),
+        None => crate::i18n::tr(".").to_string(),
     };
     let text = match change.change() {
         Some(MembershipChange::Joined) =>
-            String::from("joined this room."),
+            crate::i18n::tr("joined this room.").to_string(),
         Some(MembershipChange::Left) =>
-            format!("left this room{end}"),
+            crate::i18n::format("left this room{end}", &[("end", end.clone())]),
         Some(MembershipChange::Banned) =>
-            format!("banned {change_user_id} from this room{end}"),
+            crate::i18n::format("banned {user} from this room{end}", &[("user", change_user_id.to_string()), ("end", end.clone())]),
         Some(MembershipChange::Unbanned) =>
-            format!("unbanned {change_user_id} from this room."),
+            crate::i18n::format("unbanned {user} from this room.", &[("user", change_user_id.to_string())]),
         Some(MembershipChange::Kicked) =>
-            format!("kicked {change_user_id} from this room{end}"),
+            crate::i18n::format("kicked {user} from this room{end}", &[("user", change_user_id.to_string()), ("end", end.clone())]),
         Some(MembershipChange::Invited) =>
-            format!("invited {change_user_id} to this room."),
+            crate::i18n::format("invited {user} to this room.", &[("user", change_user_id.to_string())]),
         Some(MembershipChange::KickedAndBanned) =>
-            format!("kicked and banned {change_user_id} from this room{end}"),
+            crate::i18n::format("kicked and banned {user} from this room{end}", &[("user", change_user_id.to_string()), ("end", end.clone())]),
         Some(MembershipChange::InvitationAccepted) =>
-            String::from("accepted an invitation to this room."),
+            crate::i18n::tr("accepted an invitation to this room.").to_string(),
         Some(MembershipChange::InvitationRejected) =>
-            format!("rejected an invitation to this room{end}"),
+            crate::i18n::format("rejected an invitation to this room{end}", &[("end", end.clone())]),
         Some(MembershipChange::InvitationRevoked) =>
-            format!("revoked {change_user_id}'s invitation to this room{end}"),
+            crate::i18n::format("revoked {user}'s invitation to this room{end}", &[("user", change_user_id.to_string()), ("end", end.clone())]),
         Some(MembershipChange::Knocked) =>
-            format!("requested to join this room{end}"),
+            crate::i18n::format("requested to join this room{end}", &[("end", end.clone())]),
         Some(MembershipChange::KnockAccepted) =>
-            format!("accepted {change_user_id}'s request to join this room."),
+            crate::i18n::format("accepted {user}'s request to join this room.", &[("user", change_user_id.to_string())]),
         Some(MembershipChange::KnockRetracted) =>
-            String::from("retracted their request to join this room."),
+            crate::i18n::tr("retracted their request to join this room.").to_string(),
         Some(MembershipChange::KnockDenied) =>
-            format!("denied {change_user_id}'s request to join this room{end}"),
+            crate::i18n::format("denied {user}'s request to join this room{end}", &[("user", change_user_id.to_string()), ("end", end.clone())]),
         // Anything else will be reported by ruma as one of the variants below,
         // so we treat them all the same and just check the new membership state.
         None
@@ -679,28 +727,31 @@ pub fn text_preview_of_room_membership_change(
         | Some(MembershipChange::None)
         | Some(MembershipChange::Error) => match membership {
             MembershipState::Invite =>
-                format!("invited {change_user_id} to this room."),
+                crate::i18n::format("invited {user} to this room.", &[("user", change_user_id.to_string())]),
             MembershipState::Knock =>
-                format!("requested to join this room{end}"),
+                crate::i18n::format("requested to join this room{end}", &[("end", end.clone())]),
             MembershipState::Ban =>
-                format!("banned {change_user_id} from this room{end}"),
+                crate::i18n::format("banned {user} from this room{end}", &[("user", change_user_id.to_string()), ("end", end.clone())]),
             MembershipState::Leave if sender == change.user_id() =>
-                format!("left this room{end}"),
+                crate::i18n::format("left this room{end}", &[("end", end.clone())]),
             MembershipState::Leave =>
-                format!("removed {change_user_id} from this room{end}"),
+                crate::i18n::format("removed {user} from this room{end}", &[("user", change_user_id.to_string()), ("end", end.clone())]),
             // A join re-send is a no-op; the timeline hides it, so this string
             // only shows up in text-preview contexts.
             MembershipState::Join if prev_membership == Some(&MembershipState::Join) =>
-                String::from("made no changes to their membership."),
+                crate::i18n::tr("made no changes to their membership.").to_string(),
             MembershipState::Join =>
-                String::from("joined this room."),
+                crate::i18n::tr("joined this room.").to_string(),
             custom => {
                 let custom = if format_as_html {
                     htmlize::escape_text(custom.as_str())
                 } else {
                     custom.as_str().into()
                 };
-                format!("set {change_user_id}'s membership to \"{custom}\".")
+                crate::i18n::format(
+                    "set {user}'s membership to \"{membership}\".",
+                    &[("user", change_user_id.to_string()), ("membership", custom.to_string())],
+                )
             }
         }
     };

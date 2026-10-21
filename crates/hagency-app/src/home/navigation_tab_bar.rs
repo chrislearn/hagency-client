@@ -943,7 +943,13 @@ impl Widget for HagencyAccountBar {
         let profile = get_own_profile(cx);
         let account = current_user_id();
         let mxid = account.as_ref().map(|id| id.as_str()).unwrap_or("");
-        let name = profile.as_ref().map(|p| p.displayable_name()).unwrap_or(mxid);
+        // When no display name is set, `displayable_name` falls back to the full
+        // user ID, duplicating the second line. Show the localpart instead.
+        let name = profile
+            .as_ref()
+            .map(|p| p.displayable_name())
+            .filter(|n| !n.is_empty() && *n != mxid)
+            .unwrap_or_else(|| account.as_ref().map(|id| id.localpart()).unwrap_or(""));
         if let Some(mut button) = self.view.navigation_bar_button(cx, ids!(account)).borrow_mut() {
             button.set_tooltip_text(if collapsed {format!("{name}\n{mxid}")} else {String::new()});
         }
