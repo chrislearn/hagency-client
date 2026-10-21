@@ -1381,6 +1381,7 @@ impl AppMain for App {
         }
 
         self.handle_ui_zoom_shortcuts(cx, event);
+        self.handle_navigation_shortcuts(cx, event);
         if let Event::MacosMenuCommand(command) = event {
             self.handle_ui_zoom_menu_command(cx, *command);
         }
@@ -1678,6 +1679,21 @@ impl App {
             _ => return,
         };
         self.apply_ui_zoom(cx, new_zoom);
+    }
+
+    /// Desktop navigation shortcuts: Ctrl/Cmd+W closes the current chat tab,
+    /// Ctrl/Cmd+F focuses the chat filter. Both are dispatched as actions;
+    /// widgets that can't act on them (logged out, mobile layout) ignore them.
+    fn handle_navigation_shortcuts(&mut self, cx: &mut Cx, event: &Event) {
+        let Event::KeyDown(e) = event else { return };
+        if !e.modifiers.is_primary() {
+            return;
+        }
+        match e.key_code {
+            KeyCode::KeyW => cx.action(MainDesktopUiAction::CloseCurrentTab),
+            KeyCode::KeyF => cx.action(crate::home::home_screen::FocusChatFilterAction),
+            _ => {}
+        }
     }
 
     /// Set up the menu bar entries, currently macOS-only.

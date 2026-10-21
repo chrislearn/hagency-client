@@ -266,6 +266,25 @@ impl MainDesktopUI {
         }
     }
 
+    /// Closes the current room tab, if any, selecting the next most recent one.
+    ///
+    /// Returns whether a tab was actually closed. The permanent home tab is
+    /// never closed: it is not in `open_rooms`, and selecting it clears
+    /// `most_recently_selected_room`. Single-pane mode has no tab bar, so
+    /// there is no "current tab" to close.
+    fn close_current_tab(&mut self, cx: &mut Cx) -> bool {
+        if !self.tabbed_chats {
+            return false;
+        }
+        let Some(room) = self.most_recently_selected_room.clone() else { return false };
+        let tab_id = room.tab_id();
+        if !self.open_rooms.contains_key(&tab_id) {
+            return false;
+        }
+        self.close_tab(cx, tab_id);
+        true
+    }
+
     /// Closes a tab in the dock and selects the next most recently viewed tab.
     fn close_tab(&mut self, cx: &mut Cx, tab_id: LiveId) {
         let dock = self.view.dock(cx, ids!(dock));
@@ -709,6 +728,13 @@ impl WidgetMatchEvent for MainDesktopUI {
                 on_close_all.notify_one();
                 continue;
             }
+            if matches!(action.downcast_ref(), Some(MainDesktopUiAction::CloseCurrentTab)) {
+                if self.close_current_tab(cx) {
+                    self.redraw(cx);
+                    should_save_dock_action = true;
+                }
+                continue;
+            }
 
             // An invited space's InviteScreen should be shown in the main home dock.
             // We switch to that dock directly, here, instead of handling it as a `GoToHome` action,
@@ -887,6 +913,8 @@ pub enum MainDesktopUiAction {
     ShowChats,
     /// Load the room panel state from the AppState to the dock.
     LoadDockFromAppState,
+    /// Close the current room tab (Ctrl/Cmd+W); see [`MainDesktopUI::close_current_tab()`].
+    CloseCurrentTab,
     /// Close all tabs; see [`MainDesktopUI::close_all_tabs()`]
     CloseAllTabs {
         on_close_all: Arc<Notify>,
@@ -1485,6 +1513,55 @@ mod persistent_navigation_tests {
             assert!(!dock.item(id!(home_tab)).is_empty());
             assert!(ui.most_recently_selected_room.is_none());
         }
+    }
+
+    #[test]
+    fn close_current_tab_selects_the_next_recent_room_and_spares_the_home_tab() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut ui = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm); crate::app::register_widgets(vm);
+            vm.bx.captured_errors = Some(Vec::new());
+            let value = script_eval!(vm, {mod.widgets.MainDesktopUI {}});
+            let ui = MainDesktopUI::script_from_value(vm, value);
+            assert!(vm.take_errors().is_empty()); ui
+        });
+        let mut state = AppState::default();
+        let press_close = |ui: &mut MainDesktopUI, cx: &mut Cx, state: &mut AppState| {
+            let actions = cx.capture_actions(|cx| cx.action(MainDesktopUiAction::CloseCurrentTab));
+            ui.handle_event(cx, &Event::Actions(actions), &mut Scope::with_data(state));
+        };
+
+        // Nothing open: a harmless no-op.
+        press_close(&mut ui, &mut cx, &mut state);
+        assert!(ui.open_rooms.is_empty() && ui.most_recently_selected_room.is_none());
+
+        let a = room("alpha"); let b = room("beta");
+        ui.open_rooms.extend([(a.tab_id(), a.clone()), (b.tab_id(), b.clone())]);
+        ui.room_order = vec![a.clone(), b.clone()];
+        ui.most_recently_selected_room = Some(b.clone());
+
+        // Single-pane mode has no tab bar, so there is no current tab to close.
+        press_close(&mut ui, &mut cx, &mut state);
+        assert_eq!(ui.open_rooms.len(), 2, "single-pane mode keeps every chat");
+        assert_eq!(ui.most_recently_selected_room, Some(b.clone()));
+
+        // Closing the current tab falls back to the next most recent room.
+        ui.tabbed_chats = true;
+        press_close(&mut ui, &mut cx, &mut state);
+        assert!(!ui.open_rooms.contains_key(&b.tab_id()));
+        assert_eq!(ui.room_order, vec![a.clone()]);
+        assert_eq!(ui.most_recently_selected_room, Some(a.clone()));
+
+        // Closing the last room tab falls back to the permanent home tab.
+        press_close(&mut ui, &mut cx, &mut state);
+        assert!(ui.open_rooms.is_empty());
+        assert!(ui.most_recently_selected_room.is_none());
+        let dock = ui.view.dock(&cx, ids!(dock));
+        assert!(!dock.item(id!(home_tab)).is_empty(), "the permanent home tab is never closed");
+
+        // With the home tab current, another close is a harmless no-op.
+        press_close(&mut ui, &mut cx, &mut state);
+        assert!(!dock.item(id!(home_tab)).is_empty());
     }
 
 }

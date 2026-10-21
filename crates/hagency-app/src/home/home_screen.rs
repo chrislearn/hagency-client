@@ -437,6 +437,11 @@ pub struct MainViewIsDesktop(Option<bool>);
 #[derive(Debug)]
 pub struct MainViewVariantChangedAction;
 
+/// Focuses the chat filter input, switching to the Chats workspace first when
+/// needed. Ignored in narrow/mobile layouts, which have no chat filter pane.
+#[derive(Debug)]
+pub struct FocusChatFilterAction;
+
 /// Returns whether the UI is currently showing the wide "desktop" layout.
 pub fn effective_is_desktop(cx: &mut Cx) -> bool {
     cx.global::<MainViewIsDesktop>().0
@@ -474,6 +479,10 @@ pub struct HomeScreen {
 
     /// The last effective AdaptiveView mode we observed. `Some(true)` means desktop mode.
     #[rust] last_effective_is_desktop: Option<bool>,
+
+    /// Set by [`FocusChatFilterAction`]; consumed in `draw_walk()` once the
+    /// chat filter pane's visibility for this frame is known.
+    #[rust] pending_chat_filter_focus: bool,
 }
 
 impl ScriptHook for HomeScreen {
@@ -512,6 +521,20 @@ impl Widget for HomeScreen {
                 if !input.is_empty() {
                     input.set_key_focus(cx);
                 }
+            }
+
+            // Ctrl/Cmd+F: reveal the chats filter and focus it on the next draw,
+            // once this frame's pane visibility has been applied.
+            if effective_is_desktop(cx)
+                && actions.iter().any(|a| a.downcast_ref::<FocusChatFilterAction>().is_some())
+            {
+                let app_state = scope.data.get_mut::<AppState>().unwrap();
+                *cx.global::<DesktopWorkspace>() = DesktopWorkspace::Chats;
+                if app_state.selected_tab != SelectedTab::Home {
+                    self.switch_to_tab(cx, app_state, SelectedTab::Home);
+                }
+                self.pending_chat_filter_focus = true;
+                self.view.redraw(cx);
             }
 
             let app_state = scope.data.get_mut::<AppState>().unwrap();
@@ -827,6 +850,24 @@ impl Widget for HomeScreen {
         }
 
         let step = self.view.draw_walk(cx, scope, walk);
+        // The filter input's area is fresh only after its pane was drawn above;
+        // a lazily-created page may need one more frame, so keep the request
+        // pending until the area is live. Narrow layouts have no filter pane.
+        if self.pending_chat_filter_focus {
+            if !desktop {
+                self.pending_chat_filter_focus = false;
+            } else if self.view.view(cx, ids!(workspace_context)).visible()
+                && self.view.view(cx, ids!(context_search)).visible()
+            {
+                let input = self.view.text_input(cx, ids!(room_filter_input_bar.input));
+                if !input.area().is_empty() {
+                    if let Some(mut inner) = input.borrow_mut() {
+                        inner.take_key_focus(cx);
+                    }
+                    self.pending_chat_filter_focus = false;
+                }
+            }
+        }
         if step.is_done() {
             // AdaptiveView can replace its child during this draw. Select the
             // new child's page as well, so a resize schedules the correct next frame.
@@ -1313,5 +1354,41 @@ mod responsive_layout_tests {
             draw_pane(&mut cx, &mut home, &mut state, 375.0);
             assert_layout(&mut cx, &home, desktop);
         }
+    }
+
+    #[test]
+    fn focus_chat_filter_action_focuses_the_search_input_only_on_desktop() {
+        let (mut cx, mut home, mut state) = home();
+        state.selected_tab = SelectedTab::Home;
+        let filter_input = |home: &HomeScreen, cx: &Cx|
+            home.view.text_input(cx, ids!(room_filter_input_bar.input)).area();
+
+        // Narrow layout: no chat filter pane, so the action is a no-op.
+        draw_pane(&mut cx, &mut home, &mut state, 375.0);
+        assert!(!effective_is_desktop(&mut cx));
+        let actions = cx.capture_actions(|cx| cx.action(FocusChatFilterAction));
+        home.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::with_data(&mut state));
+        draw_pane(&mut cx, &mut home, &mut state, 375.0);
+        assert!(!cx.has_key_focus(filter_input(&home, &cx)));
+        assert!(!home.pending_chat_filter_focus, "a dropped request must not linger");
+
+        // Desktop layout: the Chats workspace is revealed and the input focused,
+        // even when the request started from the Projects workspace.
+        draw_pane(&mut cx, &mut home, &mut state, 1280.0);
+        assert!(effective_is_desktop(&mut cx));
+        *cx.global::<DesktopWorkspace>() = DesktopWorkspace::Projects;
+        let actions = cx.capture_actions(|cx| cx.action(FocusChatFilterAction));
+        home.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::with_data(&mut state));
+        // The chats page is created lazily, so the focus lands on a later frame.
+        draw_pane(&mut cx, &mut home, &mut state, 1280.0);
+        draw_pane(&mut cx, &mut home, &mut state, 1280.0);
+        // Key focus is applied on the next event cycle (`next_key_focus`);
+        // a trigger forces that cycle to run in this headless context.
+        cx.send_trigger(Area::Empty, Trigger::default());
+        cx.handle_triggers();
+        assert_eq!(*cx.global::<DesktopWorkspace>(), DesktopWorkspace::Chats);
+        assert!(home.view.view(&cx, ids!(context_search)).visible());
+        assert!(cx.has_key_focus(filter_input(&home, &cx)),
+            "pending={} focus={:?}", home.pending_chat_filter_focus, cx.key_focus());
     }
 }
