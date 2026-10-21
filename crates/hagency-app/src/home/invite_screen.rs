@@ -156,7 +156,7 @@ script_mod! {
 
             cancel_button := RobrixNegativeIconButton {
                 align: Align{x: 0.5, y: 0.5}
-                padding: 15,
+                padding: Inset{left: 15, right: 15},
                 draw_icon.svg: (ICON_FORBIDDEN)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                 text: #(crate::i18n::tr("Reject Invite")) i18n_text: "Reject Invite"
@@ -164,7 +164,7 @@ script_mod! {
 
             accept_button := RobrixPositiveIconButton {
                 align: Align{x: 0.5, y: 0.5}
-                padding: 15,
+                padding: Inset{left: 15, right: 15},
                 draw_icon.svg: (ICON_CHECKMARK)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                 text: #(crate::i18n::tr("Join Room")) i18n_text: "Join Room"
@@ -176,7 +176,7 @@ script_mod! {
             visible: false,
             align: Align{x: 0.5, y: 0.5}
             margin: Inset{top: 25}
-            padding: 15,
+            padding: Inset{left: 15, right: 15},
             draw_icon.svg: (ICON_FORBIDDEN)
             icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
             text: #(crate::i18n::tr("Reject & Block Sender")) i18n_text: "Reject & Block Sender"

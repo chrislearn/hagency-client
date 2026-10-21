@@ -28,7 +28,7 @@ script_mod! {
             cancel_button := RobrixNeutralIconButton {
                 width: Fit{min: FitBound.Abs(120.0)},
                 align: Align{x: 0.5, y: 0.5}
-                padding: 15,
+                padding: Inset{left: 15, right: 15},
                 draw_icon.svg: (ICON_CLOSE)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                 text: #(crate::i18n::tr("Cancel")) i18n_text: "Cancel"
@@ -38,7 +38,7 @@ script_mod! {
                 // Grows past 120 for the longer "Reject & Block" label.
                 width: Fit{min: FitBound.Abs(120)},
                 align: Align{x: 0.5, y: 0.5}
-                padding: 15,
+                padding: Inset{left: 15, right: 15},
                 draw_icon.svg: (ICON_FORBIDDEN)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                 text: #(crate::i18n::tr("Block")) i18n_text: "Block"
@@ -48,7 +48,7 @@ script_mod! {
                 visible: false,
                 width: Fit{min: FitBound.Abs(120)},
                 align: Align{x: 0.5, y: 0.5}
-                padding: 15,
+                padding: Inset{left: 15, right: 15},
                 draw_icon.svg: (ICON_CHECKMARK)
                 icon_walk: Walk{width: 16, height: 16, margin: Inset{left: -2, right: -1} }
                 text: #(crate::i18n::tr("Unblock")) i18n_text: "Unblock"
