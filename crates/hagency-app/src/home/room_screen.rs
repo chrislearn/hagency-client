@@ -4656,7 +4656,7 @@ pub enum TimelineUpdate {
     /// A message failed before it even reached the send queue,
     /// so we should restore/redisplay it in the room input bar.
     SendFailedBeforeBeingQueued {
-        message: RoomMessageEventContent,
+        message: Box<RoomMessageEventContent>,
         replied_to: Option<Reply>,
     },
     /// An error occurred during a specific file-upload attempt.

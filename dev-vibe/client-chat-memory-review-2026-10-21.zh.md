@@ -31,9 +31,9 @@
 
 真实千万条消息持久索引已用最终 SDK 固定版本的当前代码重新验证：数据库重开约 0.001 秒；20 页、10,000 个稀疏匹配的顺序/分页验证通过，含广词和不存在后缀的查询总耗时约 0.986 秒；在千万条消息索引深度新增 1,000 条并查询，再逐条撤回，可搜索消息数恢复为 10,000,000。Debug 验证全程 6.09 秒，最终文件 24,883,884,032 字节。日志 `review3-ten-million-reopen.log`；这是已存在数据库的复核，未重新生成整座千万条消息库，未清 OS 文件缓存，也未把 Debug 时延与早前 Release 时延作同配置对比。
 
-## 最终长测与远端 CI
+## 发布前长测与远端 CI
 
-最终原生运行 `D:/BuildCache/hagency-client/chat-soak-20261021-review3`，请求 1,800 秒，实际 1,803.235 秒，exit 0；307 个采样点，记录至少 38,375 次计时驱动、307 次 SDK 上下文替换，覆盖百万和千万逻辑历史两阶段。每次上下文同时更换 UI 端点，最旧操作发送者存活整个运行；周期打开/关闭查看器和上传预览，并缩放窗口。源码在构建后全程冻结，终态 16 个源码与二进制 SHA256 全匹配，进程确认退出，stderr 为空。二进制 SHA256：`26FF32994A16447D650D44AEF77A34FD72A5225631ACD4255DE6CD1EDBA5340D`。
+首轮完成的原生运行 `D:/BuildCache/hagency-client/chat-soak-20261021-review3`，请求 1,800 秒，实际 1,803.235 秒，exit 0；307 个采样点，记录至少 38,375 次计时驱动、307 次 SDK 上下文替换，覆盖百万和千万逻辑历史两阶段。每次上下文同时更换 UI 端点，最旧操作发送者存活整个运行；周期打开/关闭查看器和上传预览，并缩放窗口。源码在构建后全程冻结，终态 16 个源码与二进制 SHA256 全匹配，进程确认退出，stderr 为空。二进制 SHA256：`26FF32994A16447D650D44AEF77A34FD72A5225631ACD4255DE6CD1EDBA5340D`。
 
 本机使用 Rust 1.98.0 release、`chat-stress` 与 stats_alloc，实际 Windows D3D11；硬件清单含 GTX 1060 6GB，详细环境见 `environment.json`。1.99 编译兼容性另有严格检查，未将其当成另一轮原生长测。指标按原预设门槛验收，没有完成后放宽门槛：
 
@@ -63,3 +63,8 @@
 原生长测采用实际 RoomScreen、真实 SDK 时间线与 Windows D3D11，loopback 服务提供百万/千万**逻辑历史位置**，不是在公网账号灌入千万条消息。压测夹具这次增加了每个上下文更换 UI 端点、整个运行保留最旧操作发送者，覆盖本轮修复的生命周期路径。持久数据库千万条实存验证另行记录，二者不混为一项端到端证明。
 
 限额覆盖已声明的时间线工作窗口、媒体准入、独占渲染上下文纹理/instances/recordings/VM 等组件；不是全进程 RSS 或显卡驱动内存的绝对硬上限。SDK state/crypto、完整文件下载、旧媒体缓存先读出再校验大小，以及按房间保存的草稿/操作状态等，仍有各自的存活规则。没有把有限场景长测等同于所有账号规模和所有网络故障的穷尽证明。
+## 远端 macOS 复核修复与最终重测
+
+首次发布后的真实 macOS ARM Clippy 暴露 `TimelineUpdate::SendFailedBeforeBeingQueued` 比其他枚举成员大超过 200 字节；Windows 的布局差异使本地未触发同一 lint。上传预览共享编码数据后，另一个成员变小，显露了这一差异。将发送失败正文改为 `Box<RoomMessageEventContent>`，减少通知队列中每个枚举项的内联大小；四个发送失败入口均更新。新增跨上下文替换转交失败消息的回归，验证中文/emoji 正文保留。未关闭检查或修改 CI 策略。
+
+该补丁本地应用测试 556 passed / 0 failed / 2 既有 ignored，history 8 / 0 / 2；严格 all-targets Clippy、无默认 agent_chat、Rust 1.99 fast `-D warnings` 均通过，日志为 `review4-{tests,clippy,no-default,rust199-check}.log`。最终补丁的独立 1,800 秒原生复测输出目录为 `D:/BuildCache/hagency-client/chat-soak-20261021-review4`；实际完成时长、预设门槛判定及源码/二进制校验，以该目录 `completion.json`、`summary.json`、`hashes-final.json` 为准。上文 review3 的数值与 SHA 属于此枚举布局补丁之前的完成记录，不冒作最终补丁的哈希。最终 main 的四条真实 CI 结果仍以 `review3-remote-ci-final.json` 中精确 head_sha 为准，失败的旧发布记录保留在 `review3-ci-history.jsonl` 和 `review3-ci-macos-native-failed.log`。

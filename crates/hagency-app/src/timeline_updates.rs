@@ -225,6 +225,21 @@ impl Receiver {
 mod tests {
     use super::*;
     use imbl::Vector;
+    #[test]
+    fn unsent_message_payload_survives_context_replacement() {
+        let (old, _old_receiver) = channel();
+        old.send(TimelineUpdate::SendFailedBeforeBeingQueued {
+            message: Box::new(ruma::events::room::message::RoomMessageEventContent::text_plain("unsent 中文 👩‍💻")),
+            replied_to: None,
+        }).unwrap();
+        let (next, receiver) = channel();
+        old.forward_operations_to(&next);
+        let TimelineUpdate::SendFailedBeforeBeingQueued {message, replied_to} = receiver.try_recv().unwrap() else {
+            panic!("unsent content must follow its operation route");
+        };
+        assert!(replied_to.is_none());
+        assert!(matches!(message.msgtype, ruma::events::room::message::MessageType::Text(text) if text.body == "unsent 中文 👩‍💻"));
+    }
     fn snapshot(append: bool) -> TimelineUpdate {
         TimelineUpdate::NewItems {
             new_items: Vector::new(),
