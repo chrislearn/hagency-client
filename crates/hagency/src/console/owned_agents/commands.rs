@@ -148,6 +148,11 @@ fn operation(record: &Record) -> Result<OwnerOperation, OwnerError> {
         key(&input.idempotency_key)?;
         Ok(OwnerOperation::Create {
             name: input.display_name,
+            visibility: record
+                .input
+                .get("visibility")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
             command: input.idempotency_key,
         })
     } else {

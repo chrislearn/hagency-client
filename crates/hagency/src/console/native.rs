@@ -236,6 +236,11 @@ pub enum Command {
         room_id: Option<String>,
     },
     Agents,
+    DiscoverAgents,
+    SetAgentVisibility {
+        agent_id: String,
+        visibility: String,
+    },
     Bindings {
         agent_id: String,
     },
@@ -495,6 +500,18 @@ fn request(command: Command) -> Result<(&'static str, String, Option<Value>), Na
             ("POST", format!("{root}/matrix-creations/{id}/resume"))
         }
         Command::Agents => ("GET", format!("{root}/owned-agents")),
+        Command::DiscoverAgents => ("GET", format!("{root}/owned-agents/discover")),
+        Command::SetAgentVisibility {
+            agent_id,
+            visibility,
+        } => {
+            key(&agent_id)?;
+            if !matches!(visibility.as_str(), "public" | "private") {
+                return Err(failure(400, "invalid_arguments"));
+            }
+            body = Some(json!({"visibility":visibility}));
+            ("PUT", format!("{root}/owned-agents/{agent_id}/visibility"))
+        }
         Command::CreateAgent { input } => {
             body = Some(input);
             ("POST", format!("{root}/owned-agents"))
@@ -1313,6 +1330,31 @@ mod tests {
                 .is_err()
             );
         }
+    }
+    #[test]
+    fn agent_audience_commands_keep_catalog_read_only_and_validate_changes() {
+        let (method, path, body) = request(Command::DiscoverAgents).unwrap();
+        assert_eq!(
+            (method, path.as_str(), body),
+            ("GET", "/console/api/owned-agents/discover", None)
+        );
+        for visibility in ["private", "public"] {
+            let (method, path, body) = request(Command::SetAgentVisibility {
+                agent_id: "a".into(),
+                visibility: visibility.into(),
+            })
+            .unwrap();
+            assert_eq!(method, "PUT");
+            assert_eq!(path, "/console/api/owned-agents/a/visibility");
+            assert_eq!(body, Some(serde_json::json!({"visibility":visibility})));
+        }
+        assert!(
+            request(Command::SetAgentVisibility {
+                agent_id: "a".into(),
+                visibility: "team".into()
+            })
+            .is_err()
+        );
     }
     #[test]
     fn reply_policy_command_uses_exact_binding_and_boolean_body() {

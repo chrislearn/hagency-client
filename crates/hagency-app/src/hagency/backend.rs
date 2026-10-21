@@ -8,13 +8,18 @@ use std::{
     sync::{Arc, LazyLock, Mutex, Weak},
 };
 
+/// Shared Room candidates require an explicit public audience from the server.
+pub(crate) fn can_add_to_shared_room(agent: &Value) -> bool {
+    agent["state"] == "active" && agent["visibility"] == "public"
+}
+
 /// A UI waiting deadline may detach only these reads. The request itself must
 /// keep running: even a first read bootstraps owner authorization and a device.
 /// Never extend this list to actions that create, resume, save or run anything.
 pub(super) fn management_read(command: &Command) -> bool {
     matches!(command,
         Command::Projects | Command::ProjectRooms {..} | Command::SpaceCandidates {..}
-        | Command::RoomRoster {..} | Command::Agents | Command::Bindings {..}
+        | Command::RoomRoster {..} | Command::Agents | Command::DiscoverAgents | Command::Bindings {..}
         | Command::Devices | Command::AgentDetails {..} | Command::AgentConfigurationStatus {..}
         | Command::AgentOwnerDirectStatus {..} | Command::ScopeServiceState {..}
         | Command::LoginStatus | Command::AgentCommands | Command::Creations | Command::Creation {..}
@@ -388,6 +393,7 @@ impl Service {
         if room.state() != matrix_sdk::RoomState::Joined { return Err("room_join_required".into()); }
         let result = tokio::time::timeout(std::time::Duration::from_secs(20), async {
             let roster = self.execute(Command::Agents).await?;
+            let candidates: Vec<Value> = roster["agents"].as_array().ok_or("room_discovery_unavailable")?.iter().filter(|agent|can_add_to_shared_room(agent)).cloned().collect();
             let projects = self.execute(Command::Projects).await?;
             let projects = projects["projects"].as_array().ok_or("room_discovery_unavailable")?;
             if projects.len() > 128 { return Err("room_discovery_incomplete".into()); }
@@ -396,7 +402,7 @@ impl Service {
                 let rooms = self.execute(Command::ProjectRooms {project_id:id.into()}).await?;
                 if rooms["rooms"].as_array().is_some_and(|rooms| rooms.iter().any(|room| room["roomId"] == room_id && room["active"] == true)) {
                     self.check()?;
-                    return Ok(serde_json::json!({"roomId":room_id,"projectId":id,"agents":roster["agents"]}));
+                    return Ok(serde_json::json!({"roomId":room_id,"projectId":id,"agents":candidates}));
                 }
             }
             Err("room_project_registration_required".into())
@@ -421,6 +427,7 @@ impl Service {
                 let Some(id) = agent["id"].as_str() else {continue;};
                 let bindings = self.execute(Command::Bindings {agent_id:id.into()}).await?;
                 let Some(binding) = bindings["bindings"].as_array().and_then(|rows| rows.iter().find(|b|b["roomId"] == room_id && matches!(b["state"].as_str(),Some("active"|"pending"|"suspended")))) else {continue;};
+                if binding["scopeKind"] != "owner_direct" && !can_add_to_shared_room(agent) {continue;}
                 let Some(binding_id) = binding["id"].as_str() else {continue;};
                 let here = agent["executionDeviceId"].as_str().is_some_and(|device| devices["currentDeviceId"].as_str() == Some(device));
                 let runtime = if here {
@@ -534,6 +541,14 @@ impl Service {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shared_room_picker_excludes_private_unknown_and_inactive_agents() {
+        use serde_json::json;
+        for agent in [json!({}),json!({"state":"active"}),json!({"state":"active","visibility":"private"}),json!({"state":"suspended","visibility":"public"}),json!({"state":"retired","visibility":"public"})] {
+            assert!(!can_add_to_shared_room(&agent));
+        }
+        assert!(can_add_to_shared_room(&json!({"state":"active","visibility":"public"})));
+    }
     #[test]
     fn startup_recovery_diagnostic_never_logs_provider_or_source_text() {
         assert_eq!(recovery_error_code("runtime_profile_unavailable"),"runtime_profile_unavailable");

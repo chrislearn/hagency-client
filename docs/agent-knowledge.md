@@ -5212,3 +5212,15 @@ Desktop CI repair is verified on main 6e81c157 (2026-10-12): all five desktop ta
 - A caption-owned popover needs its own pass-sized root turtle after begin_overlay_reuse; a draw-list alone still inherits the caption’s clip. The offscreen layout fixture now draws inside a clipped36px caption and checks the popup’s clipped rectangle. macOS native click qualification is recorded in progress.
 
 - Native qualification refinement: use the actual trigger button’s area for WindowDragQuery exclusion. Anchor the popup on the caption parent’s inner_rect, not the child’s area before its parent completes deferred right alignment. The clipped36px caption fixture asserts the complete popup remains visible and shares the trigger’s right edge. Final native Mac screenshot confirms this placement and removal of the login footer. The isolated review bundle has a distinct org.hagency.desktop.update-preview identity; directly executing its Contents/MacOS/hagency with the two preview variables starts without the observed LaunchServices resource-read stall.
+
+
+## 2026-10-21: Agent ownership and service audience
+
+- The native owner Agent DTO and UI now carry visibility independently from creator and lifecycle. New allocations default private; Mine and audience badges appear on cards/details. Creating/setting public enables project Room bindings; private remains creator-direct-only. Public discovery uses a separate safe catalog, with account-change cache clearing, explicit loading/error/empty states and isMine. Unknown audience cannot enable shared Room UI. Server owns enforcement; update the paired Server before exercising new Client commands.
+- Paired Server migration keeps old non-left project services public and old owner-direct-only identities private. Switching private requires all shared departures completed. Binding admission and runtime/delivery gates refuse private project service; catalog and Room roster never expose others' private Agents. Existing own-agent APIs remain owner scoped. No production migration/deployment occurred in this task.
+
+
+## 2026-10-21: Audience review corrections
+
+- Missing audience from an older Server is unknown, never evidence of private scope. Native ServerAgent carries optional audience; badge/controls and web rendering do not claim privacy or enable publication/binding on missing values. Retiring/retired identities cannot edit audience in either UI. Both new-Agent entry paths call begin_agent_creation, which resets private rather than retaining the previous public choice.
+- Room chat-info has a separate Add Agent picker. It now shares can_add_to_shared_room with the registered-room service: explicit public plus active is required in candidate loading and again before command submission. Unknown/private entries are excluded; private owner-direct services remain visible. The public catalog proxy uses an allowlisted DTO, rejects non-public rows and excludes device/private-room/credential extras. Tags wrap at compact widths; the layout regression covers600/980px.

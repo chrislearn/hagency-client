@@ -77,9 +77,27 @@ async fn api(req: &Request, depot: &Depot, op: OwnerOperation) -> Result<OwnerRe
         .owner_api(cookie(req).map_err(|_| error(401, "sign_in_required"))?, op)
         .await
 }
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum AgentVisibility {
+    Public,
+    #[default]
+    Private,
+}
+impl AgentVisibility {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Public => "public",
+            Self::Private => "private",
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Create {
+    #[serde(default)]
+    visibility: AgentVisibility,
     display_name: String,
     idempotency_key: String,
 }
@@ -241,6 +259,8 @@ fn required_nullable_device<'de, D: serde::Deserializer<'de>>(
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct ServerAgent {
+    #[serde(default)]
+    visibility: Option<AgentVisibility>,
     #[serde(deserialize_with = "required_nullable_device")]
     pub execution_device_id: Option<String>,
     owner_direct_room_id: Option<String>,
@@ -250,6 +270,17 @@ pub(super) struct ServerAgent {
     display_name: String,
     pub state: String,
     pub generation: i64,
+}
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PublicAgent {
+    id: String,
+    puppet_mxid: String,
+    display_name: String,
+    owner_mxid: String,
+    visibility: AgentVisibility,
+    state: String,
+    is_mine: bool,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -280,6 +311,18 @@ struct OwnerDirect {
 fn public(value: &Value, kind: &str) -> Result<Value, OwnerError> {
     let invalid = || error(502, "invalid_server_response");
     match kind {
+        "public-agents" => {
+            let agents: Vec<PublicAgent> =
+                serde_json::from_value(value["agents"].clone()).map_err(|_| invalid())?;
+            if agents.len() > 256
+                || agents
+                    .iter()
+                    .any(|agent| !matches!(agent.visibility, AgentVisibility::Public))
+            {
+                return Err(invalid());
+            }
+            Ok(json!({"agents":agents}))
+        }
         "devices" => {
             let devices: Vec<ServerDevice> =
                 serde_json::from_value(value["devices"].clone()).map_err(|_| invalid())?;
@@ -647,6 +690,14 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
         .filter(|s| !s.is_empty())
         .collect();
     let method = req.method().clone();
+    if parts.as_slice() == ["discover"] && method == Method::GET {
+        if req.uri().query().is_some() {
+            return Err(error(400, "invalid_arguments"));
+        }
+        let reply = api(req, depot, OwnerOperation::DiscoverAgents).await?;
+        recheck(depot).map_err(|_| error(401, "sign_in_required"))?;
+        return public(&reply.value, "public-agents");
+    }
     if parts.as_slice() == ["devices"] {
         if method != Method::GET || req.uri().query().is_some() {
             return Err(error(400, "invalid_arguments"));
@@ -735,6 +786,32 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
     } else {
         key(parts[0])?;
         let agent = parts[0].to_owned();
+        if parts.len() == 2 && parts[1] == "visibility" && method == Method::PUT {
+            if req.uri().query().is_some() {
+                return Err(error(400, "invalid_arguments"));
+            }
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Audience {
+                visibility: AgentVisibility,
+            }
+            let input: Audience = parse(req).await?;
+            let reply = api(
+                req,
+                depot,
+                OwnerOperation::SetAgentVisibility {
+                    agent: agent.clone(),
+                    visibility: input.visibility.as_str().into(),
+                },
+            )
+            .await?;
+            recheck(depot).map_err(|_| error(401, "sign_in_required"))?;
+            let value = public(&reply.value, "agent")?;
+            if value["agent"]["id"] != agent {
+                return Err(error(502, "invalid_server_response"));
+            }
+            return Ok(value);
+        }
         if parts.len() == 3
             && parts[1] == "owner-direct"
             && parts[2] == "ensure"
@@ -1683,6 +1760,22 @@ mod profile_tests {
 #[cfg(test)]
 mod execution_projection_tests {
     use super::*;
+    #[test]
+    fn public_catalog_filters_private_fields_and_refuses_non_public_rows() {
+        let mut agent = json!({"id":"a","puppetMxid":"@a:test","displayName":"Shared","ownerMxid":"@owner:test","visibility":"public","state":"active","isMine":false,"executionDeviceId":"secret-device","ownerDirectRoomId":"secret-room","token":"secret-token"});
+        let safe = public(&json!({"agents":[agent.clone()]}), "public-agents").unwrap();
+        assert_eq!(safe["agents"][0]["visibility"], "public");
+        assert!(!safe.to_string().contains("secret"));
+        agent["visibility"] = "private".into();
+        assert!(public(&json!({"agents":[agent.clone()]}), "public-agents").is_err());
+        agent.as_object_mut().unwrap().remove("visibility");
+        assert!(public(&json!({"agents":[agent]}), "public-agents").is_err());
+        let legacy=public(&json!({"agent":{"id":"a","ownerUserId":"o","puppetMxid":"@a:test","displayName":"Legacy","state":"active","generation":1,"executionDeviceId":null}}),"agent").unwrap();
+        assert!(
+            legacy["agent"]["visibility"].is_null(),
+            "missing server audience must never claim private"
+        );
+    }
     #[test]
     fn global_creation_has_no_room_and_device_projections_never_expose_tokens() {
         let agent = json!({"id":"a","ownerUserId":"o","puppetMxid":"@a:test","displayName":"Agent","state":"creating","generation":1,"executionDeviceId":"d","token":"secret"});

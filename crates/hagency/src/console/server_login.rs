@@ -1510,6 +1510,11 @@ pub(super) enum OwnerOperation {
         command: String,
     },
     Agents,
+    DiscoverAgents,
+    SetAgentVisibility {
+        agent: String,
+        visibility: String,
+    },
     Devices,
     Agent {
         agent: String,
@@ -1581,6 +1586,7 @@ pub(super) enum OwnerOperation {
     },
     Create {
         name: String,
+        visibility: Option<String>,
         command: String,
     },
     Bind {
@@ -1682,6 +1688,21 @@ impl OwnerOperation {
                 (Method::GET, format!("commands/{operation}/{command}"), None)
             }
             Self::Agents => (Method::GET, "agents".into(), None),
+            Self::DiscoverAgents => (Method::GET, "agents/discover".into(), None),
+            Self::SetAgentVisibility { agent, visibility } => {
+                operation_id(&agent)?;
+                if !matches!(visibility.as_str(), "public" | "private") {
+                    return Err(OwnerError {
+                        status: 400,
+                        code: "invalid_arguments".into(),
+                    });
+                }
+                (
+                    Method::PUT,
+                    format!("agents/{agent}/visibility"),
+                    Some(json!({"visibility":visibility})),
+                )
+            }
             Self::Projects => (Method::GET, "projects".into(), None),
             Self::ScopeState { project, room } => (
                 Method::GET,
@@ -1791,12 +1812,23 @@ impl OwnerOperation {
             | Self::PauseBinding { .. }
             | Self::ResumeBinding { .. }
             | Self::LeaveBinding { .. } => unreachable!("binding operation handled before match"),
-            Self::Create { name, command } => {
+            Self::Create {
+                name,
+                command,
+                visibility,
+            } => {
                 operation_id(&command)?;
                 (
                     Method::POST,
                     "agents".into(),
-                    Some(json!({"displayName":name,"idempotencyKey":command})),
+                    Some({
+                        let mut input = json!({"displayName":name,"idempotencyKey":command});
+                        // Original journal entries omit audience; preserve their exact replay digest.
+                        if let Some(visibility) = visibility {
+                            input["visibility"] = visibility.into();
+                        }
+                        input
+                    }),
                 )
             }
             Self::Bind {

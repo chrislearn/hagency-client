@@ -44,6 +44,8 @@ enum Target {
     Spaces,
     Agents,
     Bindings,
+    PublicAgents,
+    VisibilityChanged,
     BindingChanged,
     ReplyPolicyChanged,
     RoomRoster,
@@ -400,6 +402,13 @@ fn navigate_agent_chat(cx: &mut Cx, room: matrix_sdk::ruma::OwnedRoomId, owner_d
         destination_room: crate::room::BasicRoomDetails::RoomId(name),
     });
 }
+fn audience_label(agent: &Value) -> &'static str {
+    match agent["visibility"].as_str() {
+        Some("public") => "Public service",
+        Some("private") => "Private · owner chat only",
+        _ => "Service audience unavailable. Update the server and refresh.",
+    }
+}
 fn agent_empty_message(loaded: bool, loading: bool) -> &'static str {
     if loading { crate::i18n::tr("Loading your Agents…") }
     else if !loaded { crate::i18n::tr("Your Agent list could not be loaded. Refresh to retry.") }
@@ -431,6 +440,8 @@ fn user_error(error: &str) -> &str {
             "An original Agent request needs confirmation. Refresh Agents and resume that original request."
         }
         "management_request_unavailable" => "This management read is still waiting. You can refresh to retry; any late response from this view will be ignored.",
+        "private_agent_owner_direct_only" => "Private Agents can only chat with you. Publish this Agent before adding a shared Room.",
+        "leave_shared_rooms_before_private" => "Leave every shared Room before switching to private. Your private chat remains available.",
         "members_unavailable" => "Could not load members. Check your connection and retry.",
         "forbidden" | "creation_not_allowed" | "project_forbidden" => {
             "You do not have permission for this action in this Project."
@@ -537,7 +548,9 @@ script_mod! {
             draw_bg +: {color: mod.widgets.RINX_SURFACE border_color: mod.widgets.RINX_BORDER border_size: 1 border_radius: 8}
             View {width: Fill height: Fit flow: Down spacing: 6
                 title := Text {draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
-                badge_row := View {width: Fill height: Fit flow: Right spacing: 6
+                badge_row := View {width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 6
+                    ownership_badge := DeviceBadge {visible: false}
+                    audience_badge := DeviceBadge {visible: false}
                     device_badge := DeviceBadge {visible: false}
                     runtime_badge := DeviceBadge {visible: false}
                 }
@@ -575,6 +588,13 @@ script_mod! {
                     agent_pending_details := Text {}
                     resume_agent_command := Action {text: #(crate::i18n::tr("Resume original Agent request")) i18n_text: "Resume original Agent request"}
                 }
+            public_catalog := View {visible: false width: Fill height: Fit flow: Down spacing: 4
+                discover_agents := Action {text: #(crate::i18n::tr("Browse public Agents")) i18n_text: "Browse public Agents"}
+                public_catalog_content := View {visible: false width: Fill height: Fit flow: Down spacing: 6
+                    public_agent_holder := View {visible: false width: Fill height: Fit public_agent_selection := Select {labels: [#(crate::i18n::tr("Select a public Agent"))]}}
+                    public_agent_details := Text {text: #(crate::i18n::tr("Discover services shared by other users. Private Agents are visible only to their owner.")) i18n_text: "Discover services shared by other users. Private Agents are visible only to their owner." draw_text.color: mod.widgets.RINX_MUTED}
+                }
+            }
             project_list_holder := View {width: Fill height: Fill project_list := Cards {}}
             agent_list_holder := View {visible: false width: Fill height: Fill agent_list := Cards {}}
         }
@@ -672,6 +692,11 @@ script_mod! {
                     }
                     agent_name_holder := View {width: Fill height: Fit flow: Down spacing: 4 Text {text: #(crate::i18n::tr("Agent name")) i18n_text: "Agent name"}
  agent_name := Input {empty_text: #(crate::i18n::tr("Agent display name")) i18n_empty_text: "Agent display name"}}
+                    creation_audience := View {width: Fill height: Fit flow: Down spacing: 6
+                        Text {text: #(crate::i18n::tr("Service audience")) i18n_text: "Service audience"}
+                        new_agent_visibility := Select {labels: [#(crate::i18n::tr("Private · owner chat only")) #(crate::i18n::tr("Public service"))] i18n_labels: ["Private · owner chat only" "Public service"]}
+                        Text {text: #(crate::i18n::tr("Private Agents can only chat with you. Public Agents can serve members in shared Rooms.")) i18n_text: "Private Agents can only chat with you. Public Agents can serve members in shared Rooms." draw_text.color: mod.widgets.RINX_MUTED}
+                    }
                     create_agent := Primary {text: #(crate::i18n::tr("Create Agent")) i18n_text: "Create Agent"}
                     bind_agent := Primary {text: #(crate::i18n::tr("Bind selected existing Agent to Room")) i18n_text: "Bind selected existing Agent to Room"}
                 }
@@ -693,6 +718,16 @@ script_mod! {
                     setup_section := View {width: Fill height: Fit flow: Down spacing: 10
                     identity_section := Section {width: Fill height: Fit flow: Down spacing: 8
                         Text {text: #(crate::i18n::tr("Identity")) i18n_text: "Identity" draw_text.text_style: theme.font_bold{font_size: mod.widgets.RINX_TITLE_SIZE}}
+                        View {width: Fill height: Fit spacing: 6
+                            owner_badge := DeviceBadge {device_label +: {text: #(crate::i18n::tr("Mine")) i18n_text: "Mine"}}
+                            detail_audience_badge := DeviceBadge {}
+                        }
+                        Text {text: #(crate::i18n::tr("Service audience")) i18n_text: "Service audience"}
+                        audience_editor := View {width: Fill height: Fit flow: Down spacing: 6
+                            agent_visibility := Select {labels: [#(crate::i18n::tr("Private · owner chat only")) #(crate::i18n::tr("Public service"))] i18n_labels: ["Private · owner chat only" "Public service"]}
+                            save_agent_visibility := Action {text: #(crate::i18n::tr("Save service audience")) i18n_text: "Save service audience"}
+                        }
+                        Text {text: #(crate::i18n::tr("Leave every shared Room before switching to private. Your private chat remains available.")) i18n_text: "Leave every shared Room before switching to private. Your private chat remains available." draw_text.color: mod.widgets.RINX_MUTED}
                         agent_details := Text {max_lines: 3 text_overflow: Ellipsis draw_text +: {color: mod.widgets.RINX_MUTED text_style: theme.font_regular{font_size: mod.widgets.RINX_BODY_SIZE}}}
                         Text {text: #(crate::i18n::tr("Execution device")) i18n_text: "Execution device"}
                         execution_badge := DeviceBadge {}
@@ -986,6 +1021,7 @@ pub struct HagencyPanel {
     #[rust] model_save_failed: bool,
     #[rust] runtime_action_error: String,
     #[rust] service_row_targets: ServiceRowTargets,
+    #[rust] public_agents: Vec<Value>,
     #[rust] agent_card_targets: AgentCardTargets,
     #[rust] list_service_pending_agent: String,
     #[rust]
@@ -1532,6 +1568,14 @@ impl HagencyPanel {
             },
         );
     }
+    fn begin_agent_creation(&self, cx: &mut Cx) {
+        self.view.drop_down(cx, ids!(new_agent_visibility)).set_selected_item(cx,0);
+        self.view.view(cx, ids!(agent_name_holder)).set_visible(cx,true);
+        self.view.button(cx, ids!(create_agent)).set_visible(cx,true);
+        self.view.button(cx, ids!(bind_agent)).set_visible(cx,false);
+        self.view.view(cx, ids!(agent_list_holder)).set_visible(cx,false);
+        self.view.view(cx, ids!(agent_create)).set_visible(cx,true);
+    }
     fn agent_detail(&mut self, cx: &mut Cx, index: usize) {
         let Some(a) = self.agents.get(index).cloned() else {
             return;
@@ -1604,6 +1648,8 @@ impl HagencyPanel {
             .set_text(cx, crate::i18n::tr("Select a Room and refresh its runtime status."));
         self.view.label(cx, ids!(room_roster)).set_text(cx, "");
         self.bindings.clear();
+        self.view.drop_down(cx, ids!(agent_visibility)).set_selected_item(cx, usize::from(a["visibility"] == "public"));
+        self.view.view(cx, ids!(detail_audience_badge)).label(cx, ids!(device_label)).set_text(cx, crate::i18n::tr(audience_label(&a)));
         self.view.label(cx, ids!(agent_details)).set_text(
             cx,
             &format!(
@@ -1721,6 +1767,14 @@ impl HagencyPanel {
     }
     fn sync_navigation(&self, cx: &mut Cx) {
         self.render_owner_direct(cx);
+        let agent = self.selected(cx, ids!(agents), &self.agents);
+        let editable = agent.as_ref().is_some_and(|a| matches!(a["visibility"].as_str(),Some("public" | "private")) && matches!(a["state"].as_str(),Some("creating" | "active" | "suspended")));
+        let public = editable && agent.as_ref().is_some_and(|a|a["visibility"] == "public");
+        self.view.button(cx, ids!(another_binding)).set_enabled(cx, public && !self.busy);
+        self.view.view(cx, ids!(audience_editor)).set_visible(cx, editable);
+        let requested = if self.view.drop_down(cx, ids!(agent_visibility)).selected_item() == 1 {"public"} else {"private"};
+        self.view.button(cx, ids!(save_agent_visibility)).set_enabled(cx, editable && !self.busy && agent.as_ref().is_some_and(|a|a["visibility"] != requested));
+        self.view.view(cx, ids!(creation_audience)).set_visible(cx, self.view.button(cx, ids!(create_agent)).visible());
         let selected_project_room = self.selected(cx, ids!(rooms), &self.rooms).is_some();
         for id in [ids!(room_members), ids!(open_room), ids!(room_permissions)] {self.view.button(cx, id).set_visible(cx, selected_project_room);}
         self.view.label(cx, ids!(room_details)).set_visible(cx, selected_project_room);
@@ -1900,6 +1954,7 @@ impl HagencyPanel {
         self.view.view(cx,ids!(lists_pane)).set_visible(cx,!detail && !self.display_blocked);
         self.view.view(cx,ids!(details_scroll)).set_visible(cx,detail && !self.display_blocked);
         self.view.view(cx,ids!(project_list_holder)).set_visible(cx,!detail && self.page==Page::Projects);
+        self.view.view(cx,ids!(public_catalog)).set_visible(cx,!detail && self.page==Page::Agents);
         self.view.view(cx,ids!(agent_list_holder)).set_visible(cx,!detail && self.page==Page::Agents);
         let members=self.page==Page::Projects && detail && self.view.view(cx,ids!(members_section)).visible();
         for id in [ids!(projects_page),ids!(project_detail),ids!(members_section)] {
@@ -2478,11 +2533,30 @@ impl HagencyPanel {
                     }
                 }
             }
+            Target::PublicAgents => {
+                self.public_agents = array(value, "agents");
+                self.labels(cx, ids!(public_agent_selection), "Select a public Agent", &self.public_agents, "id");
+                self.view.view(cx, ids!(public_agent_holder)).set_visible(cx, !self.public_agents.is_empty());
+                self.view.label(cx, ids!(public_agent_details)).set_text(cx, crate::i18n::tr(if self.public_agents.is_empty() {"No public Agent services are available."} else {"Select a public Agent to see its creator and Matrix identity."}));
+            }
+            Target::VisibilityChanged => {
+                let record = &value["agent"];
+                if self.agent(cx).as_deref() != record["id"].as_str() { return; }
+                if self.execution_agent_record["id"] == record["id"] { self.execution_agent_record = record.clone(); }
+                if let Some(existing) = self.agents.iter_mut().find(|a|a["id"] == record["id"]) { *existing = record.clone(); }
+                self.view.view(cx, ids!(detail_audience_badge)).label(cx, ids!(device_label)).set_text(cx, crate::i18n::tr(audience_label(record)));
+                self.status(cx, "Service audience saved.");
+                self.public_agents.clear();
+                self.view.view(cx, ids!(public_agent_holder)).set_visible(cx, false);
+                self.view.label(cx, ids!(public_agent_details)).set_text(cx, crate::i18n::tr("Refresh public services to see the latest audience changes."));
+            }
             Target::AgentAssigned | Target::AgentDetails => {
                 let Some(agent) = self.agent(cx) else {return;};
                 let record = &value["agent"];
                 if string(record, "id") != agent || record["generation"].as_i64().is_none() {return;}
                 self.execution_agent_record = record.clone();
+                self.view.drop_down(cx, ids!(agent_visibility)).set_selected_item(cx, usize::from(record["visibility"] == "public"));
+                self.view.view(cx, ids!(detail_audience_badge)).label(cx, ids!(device_label)).set_text(cx, crate::i18n::tr(audience_label(record)));
                 if let Some(existing) = self.agents.iter_mut().find(|a|string(a,"id") == agent) {*existing = record.clone();}
                 if matches!(target, Target::AgentAssigned) {
                     self.runtime_list_errors.remove(&agent);
@@ -2630,8 +2704,9 @@ impl HagencyPanel {
                     .iter()
                     .map(|a| {
                         format!(
-                            "{} · {} · {}",
+                            "{} · {} · {} · {}",
                             string(a, "displayName"),
+                            crate::i18n::tr(if a["isMine"] == true {"Mine"} else {"Public service"}),
                             string(a, "puppetMxid"),
                             string(a, "ownerMxid")
                         )
@@ -3228,6 +3303,7 @@ impl Widget for HagencyPanel {
                         }
                     }
                     Err(error) => {
+                        if matches!(done.target,Target::PublicAgents) {self.view.label(cx,ids!(public_agent_details)).set_text(cx,crate::i18n::tr("This action could not be completed. Refresh and retry."));}
                         if matches!(done.target,Target::ModelSaved) {self.finish_model_save(cx,Err(error));}
                         if done.configuration_fence.is_some() {self.sync_navigation(cx);}
                         if matches!(done.target,Target::ApprovalDecision) {
@@ -3341,19 +3417,7 @@ impl Widget for HagencyPanel {
                     .set_selected_item(cx, 0);
                 self.creation_source(cx);
             } else {
-                self.view
-                    .view(cx, ids!(agent_list_holder))
-                    .set_visible(cx, false);
-                self.view.view(cx, ids!(agent_create)).set_visible(cx, true);
-                self.view
-                    .view(cx, ids!(agent_name_holder))
-                    .set_visible(cx, true);
-                self.view
-                    .button(cx, ids!(create_agent))
-                    .set_visible(cx, true);
-                self.view
-                    .button(cx, ids!(bind_agent))
-                    .set_visible(cx, false);
+                self.begin_agent_creation(cx);
             }
             return;
         }
@@ -3550,7 +3614,34 @@ impl Widget for HagencyPanel {
                 return;
             }
         }
+        if self.view.button(cx, ids!(discover_agents)).clicked(actions) {
+            self.view.view(cx, ids!(public_catalog_content)).set_visible(cx, true);
+            self.public_agents.clear();
+            self.view.view(cx, ids!(public_agent_holder)).set_visible(cx, false);
+            self.view.label(cx, ids!(public_agent_details)).set_text(cx, crate::i18n::tr("Loading public Agent services…"));
+            self.run(cx, Target::PublicAgents, Command::DiscoverAgents);
+            return;
+        }
+        if self.view.drop_down(cx, ids!(public_agent_selection)).selected(actions).is_some() {
+            if let Some(agent) = self.selected(cx, ids!(public_agent_selection), &self.public_agents) {
+                let mine = if agent["isMine"] == true { crate::i18n::tr("Mine") } else { crate::i18n::tr("Public service") };
+                self.view.label(cx, ids!(public_agent_details)).set_text(cx, &format!("{} · {}\n{}\n{}", string(&agent,"displayName"), mine, string(&agent,"ownerMxid"), string(&agent,"puppetMxid")));
+            }
+            return;
+        }
+        if self.view.button(cx, ids!(save_agent_visibility)).clicked(actions) {
+            if let Some(agent_id) = self.agent(cx) {
+                if !self.selected(cx, ids!(agents), &self.agents).is_some_and(|a|matches!(a["visibility"].as_str(),Some("public" | "private")) && matches!(a["state"].as_str(),Some("creating" | "active" | "suspended"))) {return;}
+                let visibility = if self.view.drop_down(cx, ids!(agent_visibility)).selected_item() == 1 { "public" } else { "private" };
+                self.run(cx, Target::VisibilityChanged, Command::SetAgentVisibility {agent_id, visibility: visibility.into()});
+            }
+            return;
+        }
         if self.view.button(cx, ids!(another_binding)).clicked(actions) {
+            if !self.selected(cx, ids!(agents), &self.agents).is_some_and(|a|a["visibility"] == "public") {
+                self.status(cx, "Private Agents can only chat with you. Publish this Agent before adding a shared Room.");
+                return;
+            }
             self.view
                 .view(cx, ids!(agent_detail))
                 .set_visible(cx, false);
@@ -3762,7 +3853,7 @@ impl Widget for HagencyPanel {
             } else {
                 let name = self.input(cx, ids!(agent_name));
                 if name.is_empty() { self.status(cx,"Enter the Agent name."); return; }
-                json!({"displayName":name})
+                json!({"displayName":name,"visibility":if self.view.drop_down(cx, ids!(new_agent_visibility)).selected_item() == 1 {"public"} else {"private"}})
             };
             if self
                 .agent_command
@@ -4305,6 +4396,11 @@ impl Widget for HagencyPanel {
                     };
                     format!("{identity_state} · {}\n{local}", string(value,"puppetMxid"))
                 };
+                for (id, label) in [(ids!(ownership_badge), "Mine"), (ids!(audience_badge), audience_label(value))] {
+                    let badge = row.view(cx, id);
+                    badge.set_visible(cx, self.page == Page::Agents);
+                    badge.label(cx, ids!(device_label)).set_text(cx, crate::i18n::tr(label));
+                }
                 row.view(cx, ids!(device_badge)).set_visible(cx, self.page == Page::Agents);
                 if self.page == Page::Agents {
                     let badge = row.widget(cx, ids!(device_badge));
@@ -4370,6 +4466,10 @@ impl HagencyPanelRef {
             panel.rooms.clear();
             panel.agent_rooms.clear();
             panel.spaces.clear();
+            panel.public_agents.clear();
+            panel.view.view(cx,ids!(public_catalog_content)).set_visible(cx,false);
+            panel.view.view(cx,ids!(public_agent_holder)).set_visible(cx,false);
+            panel.view.label(cx,ids!(public_agent_details)).set_text(cx, "");
             panel.agents.clear(); panel.runtime_list.clear();panel.runtime_list_errors.clear();panel.runtime_list_loading=false;panel.runtime_list_request=nonce();
             panel.devices_loaded = false; panel.current_device_id.clear(); panel.execution_devices.clear(); panel.execution_agent_record = Value::Null;
             panel.agents_loaded = false;
@@ -4487,26 +4587,7 @@ impl HagencyPanelRef {
                 panel.set_page(cx, Page::Agents);
                 if let HagencyAction::AgentRun {agent_id,binding_id}=action {panel.wanted_agent=Some(agent_id.clone()); panel.wanted_run=Some((agent_id.clone(),binding_id.clone()));}
                 if matches!(action, HagencyAction::NewAgent { .. }) {
-                    panel
-                        .view
-                        .view(cx, ids!(agent_name_holder))
-                        .set_visible(cx, true);
-                    panel
-                        .view
-                        .button(cx, ids!(create_agent))
-                        .set_visible(cx, true);
-                    panel
-                        .view
-                        .button(cx, ids!(bind_agent))
-                        .set_visible(cx, false);
-                    panel
-                        .view
-                        .view(cx, ids!(agent_list_holder))
-                        .set_visible(cx, false);
-                    panel
-                        .view
-                        .view(cx, ids!(agent_create))
-                        .set_visible(cx, true);
+                    panel.begin_agent_creation(cx);
                 }
                 if let HagencyAction::NewAgent { project_id } = action {
                     panel.wanted_project = project_id.clone();
@@ -4520,6 +4601,37 @@ impl HagencyPanelRef {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn private_audience_disables_shared_rooms_and_public_catalog_keeps_owner_marker() {
+        let mut cx=Cx::new(Box::new(|_,_|{}));
+        let mut panel=cx.with_vm(|vm| {makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);let value=script_eval!(vm,{mod.widgets.HagencyPanel {}});HagencyPanel::script_from_value(vm,value)});
+        assert_eq!(panel.view.drop_down(&cx,ids!(new_agent_visibility)).selected_item(),0);
+        panel.agents=vec![json!({"id":"mine","visibility":"private","state":"active"})];
+        panel.labels(&mut cx,ids!(agents),"Select my Agent",&panel.agents,"id");
+        panel.view.drop_down(&cx,ids!(agents)).set_selected_item(&mut cx,1);
+        panel.sync_navigation(&mut cx);
+        assert!(!panel.view.button(&cx,ids!(another_binding)).borrow().unwrap().enabled());
+        panel.apply(&mut cx,Target::VisibilityChanged,&json!({"agent":{"id":"mine","visibility":"public","state":"active"}}));
+        panel.sync_navigation(&mut cx);
+        assert!(panel.view.button(&cx,ids!(another_binding)).borrow().unwrap().enabled());
+        panel.apply(&mut cx,Target::PublicAgents,&json!({"agents":[{"id":"other","displayName":"Shared","visibility":"public","isMine":false}]}));
+        assert_eq!(panel.public_agents.len(),1);
+        assert_eq!(panel.public_agents[0]["isMine"],false);
+        panel.apply(&mut cx,Target::VisibilityChanged,&json!({"agent":{"id":"mine","visibility":"private","state":"active"}}));
+        panel.sync_navigation(&mut cx);
+        assert!(panel.public_agents.is_empty());
+        assert!(!panel.view.view(&cx,ids!(public_agent_holder)).visible());
+        assert!(!panel.view.button(&cx,ids!(another_binding)).borrow().unwrap().enabled());
+        assert_eq!(audience_label(&json!({})),"Service audience unavailable. Update the server and refresh.");
+        panel.agents[0].as_object_mut().unwrap().remove("visibility");
+        panel.sync_navigation(&mut cx);
+        assert!(!panel.view.view(&cx,ids!(audience_editor)).visible());
+        assert!(!panel.view.button(&cx,ids!(save_agent_visibility)).borrow().unwrap().enabled());
+        panel.view.drop_down(&cx,ids!(new_agent_visibility)).set_selected_item(&mut cx,1);
+        panel.begin_agent_creation(&mut cx);
+        assert_eq!(panel.view.drop_down(&cx,ids!(new_agent_visibility)).selected_item(),0);
+    }
+
     #[test]
     fn web_search_default_toggle_save_and_reload_use_the_agent_profile() {
         let mut cx=Cx::new(Box::new(|_,_|{}));
@@ -4706,24 +4818,32 @@ mod tests {
         let mut cx=Cx::new(Box::new(|_,_|{}));
         let mut panel=cx.with_vm(|vm|{makepad_widgets::script_mod(vm);crate::app::register_widgets(vm);vm.bx.captured_errors=Some(Vec::new());let v=script_eval!(vm,{mod.widgets.HagencyPanel {}});let p=HagencyPanel::script_from_value(vm,v);assert!(vm.take_errors().is_empty());p});
         panel.projects=vec![json!({"id":"p1","name":"First project"}),json!({"id":"p2","name":"Second project"})];
-        panel.agents=vec![json!({"id":"a1","displayName":"First agent","generation":1,"state":"active","executionDeviceId":"here","puppetMxid":"@agent1:server"}),json!({"id":"a2","displayName":"Second agent","generation":1,"state":"active","executionDeviceId":"here","puppetMxid":"@agent2:server"})];
+        panel.agents=vec![json!({"id":"a1","displayName":"First agent","generation":1,"state":"active","executionDeviceId":"here","puppetMxid":"@agent1:server","visibility":"private"}),json!({"id":"a2","displayName":"Second agent","generation":1,"state":"active","executionDeviceId":"here","puppetMxid":"@agent2:server","visibility":"public"})];
         panel.devices_loaded=true;panel.current_device_id="here".into();panel.execution_devices=vec![json!({"id":"here","revoked":false})];
-        for page in [Page::Projects,Page::Agents] {for height in [760.0,500.0] {
+        for width in [600.0,980.0] {for page in [Page::Projects,Page::Agents] {for height in [760.0,500.0] {
             panel.set_page(&mut cx,page);panel.list_page(&mut cx);
-            {cx.redraw_all();let pass=DrawPass::new(&mut cx);pass.set_size(&mut cx,dvec2(980.0,height));let mut dl=DrawList2d::new(&mut cx);let overlay=Overlay{draw_list:DrawList::new(&mut cx)};let event=DrawEvent::default();let mut draw=CxDraw::new(&mut cx,&event);let mut cx2d=Cx2d::new(&mut draw);
-            cx2d.begin_pass(&pass,None);dl.begin_always(&mut cx2d);overlay.begin(&mut cx2d);cx2d.begin_root_turtle(dvec2(980.0,height),Layout::flow_overlay());
-            panel.draw_walk_all(&mut cx2d,&mut Scope::empty(),Walk::fixed(980.0,height));
+            {cx.redraw_all();let pass=DrawPass::new(&mut cx);pass.set_size(&mut cx,dvec2(width,height));let mut dl=DrawList2d::new(&mut cx);let overlay=Overlay{draw_list:DrawList::new(&mut cx)};let event=DrawEvent::default();let mut draw=CxDraw::new(&mut cx,&event);let mut cx2d=Cx2d::new(&mut draw);
+            cx2d.begin_pass(&pass,None);dl.begin_always(&mut cx2d);overlay.begin(&mut cx2d);cx2d.begin_root_turtle(dvec2(width,height),Layout::flow_overlay());
+            panel.draw_walk_all(&mut cx2d,&mut Scope::empty(),Walk::fixed(width,height));
             overlay.end(&mut cx2d);cx2d.end_pass_sized_turtle();dl.end(&mut cx2d);cx2d.end_pass(&pass);}
             let list=panel.view.portal_list(&cx,if page==Page::Projects {ids!(project_list)} else {ids!(agent_list)});
             let rect=list.area().rect(&cx);
-            assert!(rect.size.y>height-120.0,"list should fill the body: {rect:?}, height {height}");
+            let catalog_height=if page==Page::Agents {panel.view.view(&cx,ids!(public_catalog)).area().rect(&cx).size.y+10.0} else {0.0};
+            assert!(rect.size.y>height-120.0-catalog_height,"list should fill the body below discovery: {rect:?}, height {height}");
             assert!(rect.pos.y+rect.size.y<=height-15.0,"list stays within panel padding: {rect:?}");
             let second=list.item(&mut cx,1,id!(Card)).area().rect(&cx);assert!(second.size.y>0.0 && second.pos.y+second.size.y<height,"second card is fully visible: {second:?}");
             if page==Page::Agents {
                 let row=list.item(&mut cx,0,id!(Card));let device=row.view(&cx,ids!(device_badge)).area().rect(&cx);let runtime=row.view(&cx,ids!(runtime_badge)).area().rect(&cx);
-                assert!((device.pos.y-runtime.pos.y).abs()<1.0);assert!(device.size.y<=28.0 && runtime.size.y<=28.0);assert!(runtime.pos.x>=device.pos.x+device.size.x);
+                if width==980.0 {assert!((device.pos.y-runtime.pos.y).abs()<1.0);assert!(runtime.pos.x>=device.pos.x+device.size.x);}
+                assert!(device.size.y<=28.0 && runtime.size.y<=28.0);
+                let badges=row.view(&cx,ids!(badge_row)).area().rect(&cx);
+                for id in [ids!(ownership_badge),ids!(audience_badge),ids!(device_badge),ids!(runtime_badge)] {
+                    let badge=row.view(&cx,id).area().rect(&cx);
+                    assert!(badge.size.x>0.0 && badge.size.y>0.0);
+                    assert!(badge.pos.x>=badges.pos.x-1.0 && badge.pos.x+badge.size.x<=badges.pos.x+badges.size.x+1.0,"badge overflows at {width}px: {badge:?} in {badges:?}");
+                }
             }
-        }}
+        }}}
         panel.set_page(&mut cx,Page::Projects);panel.view.view(&cx,ids!(project_detail)).set_visible(&mut cx,true);panel.project_section(&mut cx,ids!(members_section));panel.members=vec![json!({"name":"Alice","userId":"@alice:server","membership":"join"})];
         let height=760.0;{cx.redraw_all();let pass=DrawPass::new(&mut cx);pass.set_size(&mut cx,dvec2(980.0,height));let mut dl=DrawList2d::new(&mut cx);let overlay=Overlay{draw_list:DrawList::new(&mut cx)};let event=DrawEvent::default();let mut draw=CxDraw::new(&mut cx,&event);let mut cx2d=Cx2d::new(&mut draw);
         cx2d.begin_pass(&pass,None);dl.begin_always(&mut cx2d);overlay.begin(&mut cx2d);cx2d.begin_root_turtle(dvec2(980.0,height),Layout::flow_overlay());panel.draw_walk_all(&mut cx2d,&mut Scope::empty(),Walk::fixed(980.0,height));overlay.end(&mut cx2d);cx2d.end_pass_sized_turtle();dl.end(&mut cx2d);cx2d.end_pass(&pass);}

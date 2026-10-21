@@ -557,7 +557,7 @@ impl MobileChatInfo {
         let service = match crate::hagency::backend::Service::for_current() {Ok(service)=>service,Err(_)=>return};
         let command = if binding {
             let Some(index) = self.view.drop_down(cx,ids!(my_agents)).selected_item().checked_sub(1) else {return;};
-            let Some(agent) = self.agents.get(index).and_then(|a| a["id"].as_str()) else {return;};
+            let Some(agent) = self.agents.get(index).filter(|a|crate::hagency::backend::can_add_to_shared_room(a)).and_then(|a| a["id"].as_str()) else {return;};
             if self.agent_project.is_empty() {return;}
             let fingerprint = serde_json::to_string(&(agent,&self.agent_project,room.room_id())).unwrap_or_default();
             if self.agent_command.as_ref().is_none_or(|(old,_)|old != &fingerprint) {self.agent_command=Some((fingerprint,uuid::Uuid::new_v4().to_string()));}
@@ -665,16 +665,17 @@ impl Widget for MobileChatInfo {
                             }
                             Ok(value)=> {
                                 self.agent_project=value["projectId"].as_str().unwrap_or("").into();
-                                self.agents=value["agents"].as_array().map(|rows|rows.iter().filter(|a|a["state"] == "active").cloned().collect()).unwrap_or_default();
-                                let labels=std::iter::once("Choose my Agent".to_owned()).chain(self.agents.iter().map(|a|a["displayName"].as_str().filter(|name|!name.is_empty()).unwrap_or("Agent").to_owned())).collect();
+                                self.agents=value["agents"].as_array().map(|rows|rows.iter().filter(|a|crate::hagency::backend::can_add_to_shared_room(a)).cloned().collect()).unwrap_or_default();
+                                let labels=std::iter::once("Choose my Agent".to_owned()).chain(self.agents.iter().map(|a|format!("{} · {} · {}",a["displayName"].as_str().filter(|name|!name.is_empty()).unwrap_or("Agent"),crate::i18n::tr("Mine"),crate::i18n::tr("Public service")))).collect();
                                 self.view.drop_down(cx,ids!(my_agents)).set_labels(cx,labels);
                                 self.view.drop_down(cx,ids!(my_agents)).set_selected_item(cx,0);
-                                self.view.label(cx,ids!(agent_status)).set_text(cx,if self.agents.is_empty() {"No active Agents owned by you are available."} else {"Choose an Agent you own to bind to this Room."});
+                                self.view.label(cx,ids!(agent_status)).set_text(cx,if self.agents.is_empty() {"No public Agents owned by you are available. Publish an Agent in its settings first."} else {"Choose a public Agent you own to bind to this Room."});
                             }
                             Err(error)=> {
                                 self.view.label(cx,ids!(agent_status)).set_text(cx,match error.as_str() {
                                     "room_project_registration_required"=>"This Room must first be connected to a Project. No Room was registered automatically.",
                                     "room_join_required"=>"Join this Room before adding an Agent.",
+                                    "private_agent_owner_direct_only"=>"This Agent is private. Publish it in its settings before adding it to a shared Room.",
                                     "agent_command_recovery_required"=>"An original binding request needs confirmation. Resume it in Agents.",
                                     _ if loaded.binding=>"Could not confirm the binding. Retry the same request, or resume its saved request in Agents.",
                                     _=>"Could not verify this Room and your Agents. Retry when connected.",
