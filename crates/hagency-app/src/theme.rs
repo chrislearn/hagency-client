@@ -372,7 +372,11 @@ pub fn script_mod(vm: &mut ScriptVm) {
         mod.widgets.RINX_BORDER = #(s.border)
         mod.widgets.RINX_HOVER = #(s.hover)
         mod.widgets.RINX_PRESSED = #(s.pressed)
+        mod.widgets.RINX_CAPTION_HOVER = #(mix(s.page, s.ink, 0.12))
+        mod.widgets.RINX_CAPTION_PRESSED = #(mix(s.page, s.ink, 0.20))
         mod.widgets.RINX_SELECTED = #(s.selected)
+        // Primary navigation needs a stronger fill than contextual list rows.
+        mod.widgets.RINX_NAV_SELECTED = #(mix(s.selected, s.accent, 0.30))
         mod.widgets.RINX_SCROLLBAR = #(mix(s.page, s.ink, 0.35))
         mod.widgets.RINX_SCROLLBAR_HOVER = #(mix(s.page, s.ink, 0.50))
         mod.widgets.RINX_SCROLLBAR_DRAG = #(mix(s.page, s.ink, 0.65))
@@ -470,6 +474,18 @@ mod controls {
         mod.widgets.ScrollBarTabs.draw_bg.border_radius = uniform(2.5)
         mod.widgets.ScrollBarTabs.draw_bg.color_hover = uniform(RINX_SCROLLBAR_HOVER)
         mod.widgets.ScrollBarTabs.draw_bg.color_drag = uniform(RINX_SCROLLBAR_DRAG)
+        // All native windows share these prototypes, including windows opened later.
+        mod.widgets.Window.caption_bar.windows_buttons.min.draw_bg.color = uniform(RINX_INK)
+        mod.widgets.Window.caption_bar.windows_buttons.min.draw_bg.color_hover = uniform(RINX_INK)
+        mod.widgets.Window.caption_bar.windows_buttons.min.draw_bg.color_down = uniform(RINX_INK)
+        mod.widgets.Window.caption_bar.windows_buttons.min.draw_bg.bg_color_hover = uniform(RINX_CAPTION_HOVER)
+        mod.widgets.Window.caption_bar.windows_buttons.min.draw_bg.bg_color_down = uniform(RINX_CAPTION_PRESSED)
+        mod.widgets.Window.caption_bar.windows_buttons.max.draw_bg.color = uniform(RINX_INK)
+        mod.widgets.Window.caption_bar.windows_buttons.max.draw_bg.color_hover = uniform(RINX_INK)
+        mod.widgets.Window.caption_bar.windows_buttons.max.draw_bg.color_down = uniform(RINX_INK)
+        mod.widgets.Window.caption_bar.windows_buttons.max.draw_bg.bg_color_hover = uniform(RINX_CAPTION_HOVER)
+        mod.widgets.Window.caption_bar.windows_buttons.max.draw_bg.bg_color_down = uniform(RINX_CAPTION_PRESSED)
+        mod.widgets.Window.caption_bar.windows_buttons.close.draw_bg.color = uniform(RINX_INK)
         mod.widgets.RinxLabel = Label {draw_text +: {color: RINX_INK text_style: theme.font_regular{font_size: RINX_BODY_SIZE}}}
         mod.widgets.RinxPageTitle = mod.widgets.RinxLabel {draw_text.text_style: theme.font_bold{font_size: RINX_TITLE_SIZE}}
         mod.widgets.RinxHint = mod.widgets.RinxLabel {draw_text +: {color: RINX_MUTED text_style.font_size: RINX_META_SIZE}}
