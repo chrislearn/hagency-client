@@ -1,5 +1,5 @@
-//! Mobile navigation surfaces. Profiles and contacts come from the active Matrix
-//! account; the presentation never substitutes fixture data for server results.
+//! Shared desktop and mobile navigation surfaces. Profiles and contacts come from
+//! the active Matrix account; the presentation never substitutes fixture data.
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::{api::client::profile::{AvatarUrl, DisplayName}, OwnedUserId, UserId};
@@ -100,126 +100,140 @@ script_mod! {
 
     mod.widgets.MobileHub = #(MobileHub::register_widget(vm)) {
         ..mod.widgets.SolidView
-        width: Fill height: Fill flow: Down show_bg: true draw_bg.color: mod.widgets.MOBILE_BG
-        title_bar := mod.widgets.MobileTitle {}
-        pages := PageFlip {
-            width: Fill height: Fill lazy_init: true active_page: @contacts
-            contacts := View {
-                width: Fill height: Fill flow: Down
-                search_area := SolidView {
-                    width: Fill height: 48 padding: Inset{left: 10 right: 10 bottom: 10}
-                    draw_bg.color: mod.widgets.MOBILE_BG
-                    search := RobrixTextInput {
-                        width: Fill height: mod.widgets.RINX_CONTROL_HEIGHT padding: Inset{left: 12 right: 12 top: 8 bottom: 8}
-                        empty_text: #(crate::i18n::tr("Search")) i18n_empty_text: "Search" autocapitalize: None
-                        draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}
-                        draw_bg +: {
-                            color: mod.widgets.RINX_FIELD color_hover: mod.widgets.RINX_FIELD color_focus: mod.widgets.RINX_FIELD
-                            color_empty: mod.widgets.RINX_FIELD border_color: mod.widgets.RINX_BORDER border_color_focus: mod.widgets.RINX_ACCENT border_size: 1 border_radius: mod.widgets.RINX_CONTROL_RADIUS
-                        }
-                    }
-                }
-                shortcuts := mod.widgets.MobileSection {
-                    new_friends := mod.widgets.MobileRow {
-                        title.text: #(crate::i18n::tr("New Friends")) title.i18n_text: "New Friends"
-                        icon +: {draw_icon +: {svg: ICON_ADD_USER color: mod.widgets.RINX_WARNING_FG}}
-                    }
-                }
-                status := RinxLabel {
-                    width: Fill height: Fit padding: 16
-                    draw_text +: {color: mod.widgets.MOBILE_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
-                    text: #(crate::i18n::tr("Loading contacts…")) i18n_text: "Loading contacts…"
-                }
-                list := PortalList {
-                    width: Fill height: Fill
-                    Filler := SolidView {width: Fill height: 100 draw_bg.color: mod.widgets.RINX_SURFACE}
-                    Contact := View {
-                        width: Fill height: Fit flow: Down
-                        section := SolidView {
-                            width: Fill height: 28 padding: Inset{left: 16} align: Align{y: 0.5}
-                            draw_bg.color: mod.widgets.MOBILE_BG
-                            letter := RinxLabel {draw_text +: {color: mod.widgets.MOBILE_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}}
-                        }
-                        row := NavigationBarButton {
-                            width: Fill height: 60 flow: Right spacing: 14 padding: Inset{left: 16 right: 16}
-                            align: Align{y: 0.5}
+        width: Fill height: Fill flow: Right show_bg: true draw_bg.color: mod.widgets.MOBILE_BG
+        master_pane := View {
+            width: Fill height: Fill flow: Down
+            title_bar := mod.widgets.MobileTitle {}
+            pages := PageFlip {
+                width: Fill height: Fill lazy_init: true active_page: @contacts
+                contacts := View {
+                    width: Fill height: Fill flow: Down
+                    search_area := SolidView {
+                        width: Fill height: 48 padding: Inset{left: 10 right: 10 bottom: 10}
+                        draw_bg.color: mod.widgets.MOBILE_BG
+                        search := RobrixTextInput {
+                            width: Fill height: mod.widgets.RINX_CONTROL_HEIGHT padding: Inset{left: 12 right: 12 top: 8 bottom: 8}
+                            empty_text: #(crate::i18n::tr("Search")) i18n_empty_text: "Search" autocapitalize: None
+                            draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_UI_SIZE}}
                             draw_bg +: {
-                                color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED border_radius: 0
-                            }
-                            avatar := mod.widgets.MobileAvatar {width: 40 height: 40}
-                            name := RinxLabel {
-                                width: Fill max_lines: 1 text_overflow: Ellipsis
-                                draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
+                                color: mod.widgets.RINX_FIELD color_hover: mod.widgets.RINX_FIELD color_focus: mod.widgets.RINX_FIELD
+                                color_empty: mod.widgets.RINX_FIELD border_color: mod.widgets.RINX_BORDER border_color_focus: mod.widgets.RINX_ACCENT border_size: 1 border_radius: mod.widgets.RINX_CONTROL_RADIUS
                             }
                         }
-                        mod.widgets.MobileDivider {margin: Inset{left: 70}}
+                    }
+                    shortcuts := mod.widgets.MobileSection {
+                        new_friends := mod.widgets.MobileRow {
+                            title.text: #(crate::i18n::tr("New Friends")) title.i18n_text: "New Friends"
+                            icon +: {draw_icon +: {svg: ICON_ADD_USER color: mod.widgets.RINX_WARNING_FG}}
+                        }
+                    }
+                    status := RinxLabel {
+                        width: Fill height: Fit padding: 16
+                        draw_text +: {color: mod.widgets.MOBILE_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
+                        text: #(crate::i18n::tr("Loading contacts…")) i18n_text: "Loading contacts…"
+                    }
+                    list := PortalList {
+                        width: Fill height: Fill
+                        Filler := SolidView {width: Fill height: 100 draw_bg.color: mod.widgets.RINX_SURFACE}
+                        Contact := View {
+                            width: Fill height: Fit flow: Down
+                            section := SolidView {
+                                width: Fill height: 28 padding: Inset{left: 16} align: Align{y: 0.5}
+                                draw_bg.color: mod.widgets.MOBILE_BG
+                                letter := RinxLabel {draw_text +: {color: mod.widgets.MOBILE_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}}
+                            }
+                            row := NavigationBarButton {
+                                width: Fill height: 60 flow: Right spacing: 14 padding: Inset{left: 16 right: 16}
+                                align: Align{y: 0.5}
+                                draw_bg +: {
+                                    color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED border_radius: 0
+                                }
+                                avatar := mod.widgets.MobileAvatar {width: 40 height: 40}
+                                name := RinxLabel {
+                                    width: Fill max_lines: 1 text_overflow: Ellipsis
+                                    draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
+                                }
+                            }
+                            mod.widgets.MobileDivider {margin: Inset{left: 70}}
+                        }
                     }
                 }
-            }
-            discover := ScrollYView {
-                width: Fill height: Fill flow: Down spacing: 8
-                mod.widgets.MobileSection {
-                    discover_mini_apps := mod.widgets.MobileRow {title.text: "Mini apps" icon.draw_icon.svg: ICON_SQUARES}
-                    mod.widgets.MobileDivider {}
-                    discover_article := mod.widgets.MobileRow {title.text: #(crate::i18n::tr("Article editor")) title.i18n_text: "Article editor" icon.draw_icon.svg: ICON_FILE}
-                    mod.widgets.MobileDivider {}
-                    discover_moments := mod.widgets.MobileRow {title.text: #(crate::i18n::tr("Moments")) title.i18n_text: "Moments" icon.draw_icon.svg: ICON_GLOBE}
-                    mod.widgets.MobileDivider {}
-                    explore := mod.widgets.MobileRow {title.text: #(crate::i18n::tr("Explore Groups & Spaces")) title.i18n_text: "Explore Groups & Spaces" icon.draw_icon.svg: ICON_GLOBE}
+                discover := ScrollYView {
+                    width: Fill height: Fill flow: Down spacing: 8
+                    mod.widgets.MobileSection {
+                        discover_mini_apps := mod.widgets.MobileRow {title.text: "Mini apps" icon.draw_icon.svg: ICON_SQUARES}
+                        mod.widgets.MobileDivider {}
+                        discover_article := mod.widgets.MobileRow {title.text: #(crate::i18n::tr("Article editor")) title.i18n_text: "Article editor" icon.draw_icon.svg: ICON_FILE}
+                        mod.widgets.MobileDivider {}
+                        discover_moments := mod.widgets.MobileRow {title.text: #(crate::i18n::tr("Moments")) title.i18n_text: "Moments" icon.draw_icon.svg: ICON_GLOBE}
+                        mod.widgets.MobileDivider {}
+                        explore := mod.widgets.MobileRow {title.text: #(crate::i18n::tr("Explore Groups & Spaces")) title.i18n_text: "Explore Groups & Spaces" icon.draw_icon.svg: ICON_GLOBE}
+                    }
                 }
-            }
-            joined_groups := View {
-                width: Fill height: Fill flow: Down
-                group_status := RinxLabel {
-                    width: Fill height: Fit padding: 16
-                    draw_text +: {color: mod.widgets.MOBILE_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
+                joined_groups := View {
+                    width: Fill height: Fill flow: Down
+                    group_status := RinxLabel {
+                        width: Fill height: Fit padding: 16
+                        draw_text +: {color: mod.widgets.MOBILE_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
+                    }
+                    group_list := PortalList {
+                        width: Fill height: Fill
+                        Filler := View {width: Fill height: 100}
+                        Group := mod.widgets.MobileSection {
+                            group_row := NavigationBarButton {
+                                width: Fill height: 72 flow: Right spacing: 14 padding: Inset{left: 16 right: 16}
+                                align: Align{y: 0.5}
+                                draw_bg +: {color_hover: mod.widgets.RINX_BORDER border_radius: 0}
+                                avatar := mod.widgets.MobileAvatar {width: 48 height: 48}
+                                name := RinxLabel {
+                                    width: Fill max_lines: 1 text_overflow: Ellipsis
+                                    draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
+                                }
+                            }
+                            mod.widgets.MobileDivider {margin: Inset{left: 78}}
+                        }
+                    }
                 }
-                group_list := PortalList {
-                    width: Fill height: Fill
-                    Filler := View {width: Fill height: 100}
-                    Group := mod.widgets.MobileSection {
-                        group_row := NavigationBarButton {
-                            width: Fill height: 72 flow: Right spacing: 14 padding: Inset{left: 16 right: 16}
+                account := ScrollYView {
+                    width: Fill height: Fill flow: Down spacing: 8
+                    mod.widgets.MobileSection {
+                        own_profile := NavigationBarButton {
+                            width: Fill height: 128 flow: Right spacing: 20 padding: Inset{left: 24 right: 20}
                             align: Align{y: 0.5}
-                            draw_bg +: {color_hover: mod.widgets.RINX_BORDER border_radius: 0}
-                            avatar := mod.widgets.MobileAvatar {width: 48 height: 48}
-                            name := RinxLabel {
-                                width: Fill max_lines: 1 text_overflow: Ellipsis
-                                draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
+                            avatar := mod.widgets.MobileAvatar {width: 64 height: 64}
+                            View {
+                                width: Fill height: Fit flow: Down spacing: 12
+                                name := RinxLabel {
+                                    width: Fill max_lines: 1 text_overflow: Ellipsis
+                                    draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_bold {font_size: mod.widgets.RINX_TITLE_SIZE}}
+                                }
+                                user_id := RinxLabel {
+                                    width: Fill max_lines: 1 text_overflow: Ellipsis
+                                    draw_text +: {color: mod.widgets.MOBILE_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
+                                }
                             }
+                            Icon {icon_walk: Walk{width: 8 height: 13} draw_icon +: {color: mod.widgets.RINX_DISABLED svg: ICON_CHEVRON_RIGHT}}
                         }
-                        mod.widgets.MobileDivider {margin: Inset{left: 78}}
+                    }
+                    mod.widgets.MobileSection {
+                        my_posts := mod.widgets.MobileRow {title.text: #(crate::i18n::tr("My Posts")) title.i18n_text: "My Posts" icon.draw_icon.svg: ICON_GLOBE}
+                        mod.widgets.MobileDivider {}
+                        settings := mod.widgets.MobileRow {title.text: #(crate::i18n::tr("Settings")) title.i18n_text: "Settings" icon.draw_icon.svg: ICON_SETTINGS}
                     }
                 }
             }
-            account := ScrollYView {
-                width: Fill height: Fill flow: Down spacing: 8
-                mod.widgets.MobileSection {
-                    own_profile := NavigationBarButton {
-                        width: Fill height: 128 flow: Right spacing: 20 padding: Inset{left: 24 right: 20}
-                        align: Align{y: 0.5}
-                        avatar := mod.widgets.MobileAvatar {width: 64 height: 64}
-                        View {
-                            width: Fill height: Fit flow: Down spacing: 12
-                            name := RinxLabel {
-                                width: Fill max_lines: 1 text_overflow: Ellipsis
-                                draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_bold {font_size: mod.widgets.RINX_TITLE_SIZE}}
-                            }
-                            user_id := RinxLabel {
-                                width: Fill max_lines: 1 text_overflow: Ellipsis
-                                draw_text +: {color: mod.widgets.MOBILE_MUTED text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
-                            }
-                        }
-                        Icon {icon_walk: Walk{width: 8 height: 13} draw_icon +: {color: mod.widgets.RINX_DISABLED svg: ICON_CHEVRON_RIGHT}}
-                    }
-                }
-                mod.widgets.MobileSection {
-                    my_posts := mod.widgets.MobileRow {title.text: #(crate::i18n::tr("My Posts")) title.i18n_text: "My Posts" icon.draw_icon.svg: ICON_GLOBE}
-                    mod.widgets.MobileDivider {}
-                    settings := mod.widgets.MobileRow {title.text: #(crate::i18n::tr("Settings")) title.i18n_text: "Settings" icon.draw_icon.svg: ICON_SETTINGS}
-                }
+        }
+        detail_divider := SolidView {
+            width: 1 height: Fill visible: false draw_bg.color: mod.widgets.RINX_DIVIDER
+        }
+        detail_pane := View {
+            width: Fill height: Fill flow: Down visible: false
+            detail_title_bar := mod.widgets.MobileTitle {
+                visible: false
+                title.text: #(crate::i18n::tr("Contact Info")) title.i18n_text: "Contact Info"
             }
             profile := ScrollYView {
+                visible: false
                 width: Fill height: Fill flow: Down
                 contact_card := DetailContactCard {}
                 DetailGap {}
@@ -490,11 +504,13 @@ impl Widget for MobileHub {
             for (index, widget) in list.items_with_actions(actions) {
                 if !list.was_scrolling() && widget.navigation_bar_button(cx, ids!(row)).clicked(actions) {
                     self.selected_profile = self.visible_contacts.get(index).and_then(|i| self.contacts.get(*i)).cloned();
-                    cx.action(MobileNavigationAction::DetailVisibility(true));
+                    let mobile_detail = self.selected_profile.is_some() && !super::home_screen::effective_is_desktop(cx);
+                    cx.action(MobileNavigationAction::DetailVisibility(mobile_detail));
                     self.view.redraw(cx);
                 }
             }
-            if self.view.button(cx, ids!(title_bar.controls.left)).clicked(actions) {
+            if self.view.button(cx, ids!(title_bar.controls.left)).clicked(actions)
+                || self.view.button(cx, ids!(detail_title_bar.controls.left)).clicked(actions) {
                 self.back(cx);
             }
             if self.view.navigation_bar_button(cx,ids!(discover_mini_apps)).clicked(actions){cx.action(crate::octoscript_apps::MiniAppsAction::Open);}
@@ -560,20 +576,30 @@ impl Widget for MobileHub {
             self.view.label(cx, ids!(discover_moments.title)).set_text(cx, &if invites == 0 {crate::i18n::tr("Moments").into()} else {crate::i18n::format("Moments · {invites} invitation{0}", &[("invites", (invites).to_string()), ("0", (crate::i18n::plural_suffix(invites)).to_string())])});
         }
         let profile_open = self.selected_profile.is_some();
-        let (page, title) = if profile_open { (id!(profile), crate::i18n::tr("Contact Info")) } else if self.groups_open {
+        let split = self.kind == 0 && super::home_screen::effective_is_desktop(cx);
+        let mut master = self.view.view(cx, ids!(master_pane));
+        master.set_visible(cx, split || !profile_open);
+        script_apply_eval!(cx, master, {width: #(if split {Size::Fixed(300.0)} else {Size::fill()})});
+        self.view.view(cx, ids!(detail_divider)).set_visible(cx, split);
+        self.view.view(cx, ids!(detail_pane)).set_visible(cx, split || profile_open);
+        self.view.view(cx, ids!(detail_title_bar)).set_visible(cx, profile_open);
+        self.view.button(cx, ids!(detail_title_bar.controls.left)).set_visible(cx, !split);
+        self.view.view(cx, ids!(profile)).set_visible(cx, profile_open);
+        let (page, title) = if self.groups_open {
             (id!(joined_groups), crate::i18n::tr("Group Chats"))
         } else if self.adding_friend {
             (id!(contacts), crate::i18n::tr("New Friends"))
         } else {
             match self.kind { 1 => (id!(discover), crate::i18n::tr("Discover")), 2 => (id!(account), crate::i18n::tr("Me")), _ => (id!(contacts), crate::i18n::tr("Contacts")) }
         };
-        let active = self.view.child_by_path(ids!(pages)).as_page_flip().set_active_page(cx, page);
+        self.view.page_flip(cx, ids!(pages)).set_active_page(cx, page);
         self.view.label(cx, ids!(title_bar.title)).set_text(cx, title);
-        self.view.button(cx, ids!(title_bar.controls.left)).set_visible(cx, profile_open || self.adding_friend || self.groups_open);
+        self.view.button(cx, ids!(title_bar.controls.left)).set_visible(cx, self.adding_friend || self.groups_open);
         self.view.view(cx, ids!(shortcuts)).set_visible(cx, !self.adding_friend);
-        self.view.button(cx, ids!(title_bar.controls.right)).set_visible(cx, self.kind == 0 && !profile_open && !self.groups_open && !self.adding_friend);
-        if let (Some(widget), Some(profile)) = (active.as_ref(), self.selected_profile.as_ref()) {
-            Self::populate_profile(cx, widget, profile);
+        self.view.button(cx, ids!(title_bar.controls.right)).set_visible(cx, self.kind == 0 && !self.groups_open && !self.adding_friend);
+        if let Some(profile) = self.selected_profile.as_ref() {
+            let widget = self.view.widget(cx, ids!(profile));
+            Self::populate_profile(cx, &widget, profile);
             widget.label(cx, ids!(contact_card.user_id)).set_text(cx, &crate::i18n::format("Matrix ID: {0}", &[("0", (profile.user_id).to_string())]));
             widget.label(cx, ids!(contact_block.title)).set_text(cx, if crate::sliding_sync::is_user_blocked(&profile.user_id) { crate::i18n::tr("Unblock") } else { crate::i18n::tr("Block") });
         } else if self.kind == 2 {
@@ -621,6 +647,8 @@ impl Widget for MobileHub {
                     let previous = index.checked_sub(1).and_then(|i| self.visible_contacts.get(i)).map(|i| self.contacts[*i].first_letter().to_uppercase());
                     widget.view(cx, ids!(section)).set_visible(cx, previous.as_ref() != Some(&letter));
                     widget.label(cx, ids!(letter)).set_text(cx, &letter);
+                    widget.navigation_bar_button(cx, ids!(row)).set_selected(cx,
+                        self.selected_profile.as_ref().is_some_and(|selected| selected.user_id == profile.user_id));
                     Self::populate_profile(cx, &widget, profile);
                     widget.draw_all(cx, scope);
                 }
@@ -633,6 +661,117 @@ impl Widget for MobileHub {
 #[cfg(test)]
 mod new_chat_tests {
     use super::*;
+    use makepad_widgets::makepad_draw::cx_draw::CxDraw;
+
+    fn hub(cx: &mut Cx) -> MobileHub {
+        cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            vm.bx.captured_errors = Some(Vec::new());
+            let value = script_eval!(vm, {mod.widgets.MobileHub {kind: 0}});
+            let hub = MobileHub::script_from_value(vm, value);
+            assert!(vm.take_errors().is_empty());
+            hub
+        })
+    }
+
+    fn draw(cx: &mut Cx, widget: &mut impl Widget, width: f64) {
+        cx.redraw_all();
+        let pass = DrawPass::new(cx);
+        pass.set_size(cx, dvec2(width, 760.0));
+        let mut list = DrawList2d::new(cx);
+        let overlay = Overlay {draw_list: DrawList::new(cx)};
+        let event = DrawEvent::default();
+        let mut draw = CxDraw::new(cx, &event);
+        let mut cx2d = Cx2d::new(&mut draw);
+        cx2d.begin_pass(&pass, None);
+        list.begin_always(&mut cx2d);
+        overlay.begin(&mut cx2d);
+        cx2d.begin_root_turtle(dvec2(width, 760.0), Layout::flow_overlay());
+        widget.draw_walk_all(&mut cx2d, &mut Scope::with_data(&mut crate::app::AppState::default()),
+            Walk {width: Size::Fixed(width), height: Size::Fixed(760.0), ..Walk::default()});
+        cx2d.end_pass_sized_turtle();
+        overlay.end(&mut cx2d);
+        list.end(&mut cx2d);
+        cx2d.end_pass(&pass);
+    }
+
+    fn profiles() -> Vec<UserProfile> {
+        ["alice", "bob"].into_iter().map(|name| UserProfile {
+            user_id: UserId::parse(format!("@{name}:example.org")).unwrap(),
+            username: Some(name.into()), avatar_state: AvatarState::Unknown,
+        }).collect()
+    }
+
+    fn click_contact(cx: &mut Cx, hub: &mut MobileHub, index: usize) {
+        let list = hub.view.portal_list(cx, ids!(list));
+        let item = list.item(cx, index, id!(Contact));
+        let row = item.navigation_bar_button(cx, ids!(row));
+        let actions = cx.capture_actions(|cx| cx.group_widget_actions(list.widget_uid(), item.widget_uid(), |cx| {
+            cx.widget_action(row.widget_uid(), crate::shared::navigation_bar_button::NavigationBarButtonAction::Clicked);
+        }));
+        hub.handle_event(cx, &Event::Actions(actions), &mut Scope::empty());
+    }
+
+    #[test]
+    fn desktop_contact_click_keeps_list_and_updates_right_detail() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut hub = hub(&mut cx);
+        hub.contacts = profiles();
+        draw(&mut cx, &mut hub, 900.0);
+        assert!(hub.view.view(&cx, ids!(master_pane)).visible());
+        assert!(hub.view.view(&cx, ids!(detail_pane)).visible());
+        assert!(!hub.view.view(&cx, ids!(profile)).visible());
+        for index in [0, 1, 0] {
+            click_contact(&mut cx, &mut hub, index);
+            draw(&mut cx, &mut hub, 900.0);
+            let master = hub.view.view(&cx, ids!(master_pane)).area().rect(&cx);
+            let detail = hub.view.view(&cx, ids!(profile)).area().rect(&cx);
+            assert!((master.size.x - 300.0).abs() < 1.0, "{master:?}");
+            assert!(detail.pos.x >= master.pos.x + master.size.x && detail.size.x > 590.0, "{detail:?}");
+            assert!(hub.view.view(&cx, ids!(master_pane)).visible());
+            assert_eq!(hub.selected_profile.as_ref().unwrap().user_id, hub.contacts[index].user_id);
+            assert_eq!(hub.view.label(&cx, ids!(profile.contact_card.name)).text(), hub.contacts[index].displayable_name());
+            assert_eq!(hub.visible_contacts, vec![0, 1]);
+        }
+        hub.query = "bob".into();
+        draw(&mut cx, &mut hub, 900.0);
+        click_contact(&mut cx, &mut hub, 0);
+        draw(&mut cx, &mut hub, 900.0);
+        assert_eq!(hub.selected_profile.as_ref().unwrap().user_id, hub.contacts[1].user_id);
+        assert_eq!(hub.query, "bob");
+        hub.clear_account_state(&mut cx);
+        draw(&mut cx, &mut hub, 900.0);
+        assert!(!hub.view.view(&cx, ids!(profile)).visible());
+    }
+
+    #[test]
+    fn mobile_contact_detail_uses_full_width_and_back_restores_list() {
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let mut hub = hub(&mut cx);
+        let mut home = cx.with_vm(|vm| {
+            let value = script_eval!(vm, {mod.widgets.HomeScreen {}});
+            super::super::home_screen::HomeScreen::script_from_value(vm, value)
+        });
+        draw(&mut cx, &mut home, 375.0);
+        assert!(!super::super::home_screen::effective_is_desktop(&mut cx));
+        hub.contacts = profiles();
+        draw(&mut cx, &mut hub, 375.0);
+        click_contact(&mut cx, &mut hub, 0);
+        draw(&mut cx, &mut hub, 375.0);
+        assert!(!hub.view.view(&cx, ids!(master_pane)).visible());
+        let detail = hub.view.view(&cx, ids!(profile)).area().rect(&cx);
+        assert!((detail.size.x - 375.0).abs() < 1.0, "{detail:?}");
+        let back = hub.view.button(&cx, ids!(detail_title_bar.controls.left));
+        assert!(back.visible());
+        let actions = cx.capture_actions(|cx| cx.widget_action(back.widget_uid(), ButtonAction::Clicked(KeyModifiers::default())));
+        hub.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::empty());
+        draw(&mut cx, &mut hub, 375.0);
+        assert!(hub.selected_profile.is_none());
+        assert!(hub.view.view(&cx, ids!(master_pane)).visible());
+        assert!(!hub.view.view(&cx, ids!(detail_pane)).visible());
+    }
+
     #[test]
     fn new_chat_opens_existing_contact_search_without_sending() {
         let mut cx = Cx::new(Box::new(|_, _| {}));
