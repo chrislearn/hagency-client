@@ -10,11 +10,12 @@ pub(crate) enum NamespaceKind {
 pub(crate) fn kernel_release(release: &[u8]) -> io::Result<()> {
     let text = std::str::from_utf8(release).map_err(|_| namespace_refused())?;
     let mut parts = text.split('.');
-    let supported = parts.next() == Some("6")
-        && matches!(parts.next(), Some("8" | "12" | "14" | "17"))
-        && parts
-            .next()
-            .is_some_and(|v| !v.is_empty() && v.as_bytes()[0].is_ascii_digit());
+    let supported = matches!(
+        (parts.next(), parts.next()),
+        (Some("6"), Some("8" | "12" | "14" | "17")) | (Some("7"), Some("0"))
+    ) && parts
+        .next()
+        .is_some_and(|v| !v.is_empty() && v.as_bytes()[0].is_ascii_digit());
     if supported && text.len() <= 128 {
         Ok(())
     } else {
@@ -31,7 +32,7 @@ pub(crate) fn namespace_identity(
     inode: u64,
     namespace_type: i32,
 ) -> io::Result<()> {
-    // Linux v6.8/v6.12/v6.14/v6.17 identities; see the pinned source in ADR048.
+    // Linux v6.8/v6.12/v6.14/v6.17/v7.0 identities; see pinned source in ADR048.
     // Dynamic namespace allocation starts at 0xF0000000 and cannot alias these.
     let (expected_inode, expected_type) = match kind {
         NamespaceKind::User => (0xEFFF_FFFD, 0x1000_0000),
@@ -184,11 +185,14 @@ mod tests {
             "6.12.23",
             "6.14.0-1014-azure",
             "6.17.0-1022-azure",
+            "7.0.0",
+            "7.0.0-1017-azure",
         ] {
             kernel_release(release.as_bytes()).unwrap();
         }
         for release in [
-            "6.8", "6.8.x", "6.1.0", "6.13.0", "6.15.0", "6.16.0", "6.18.0", "7.0.0", "6.080.0",
+            "6.8", "6.8.x", "6.1.0", "6.13.0", "6.15.0", "6.16.0", "6.18.0", "7.0", "7.0.x",
+            "7.1.0", "7.00.0", "8.0.0", "6.080.0",
         ] {
             assert!(kernel_release(release.as_bytes()).is_err());
         }
