@@ -92,8 +92,8 @@ Scenario: A peer resolution cannot abandon an unacknowledged submitted frame
 
 Scenario: Cancellation keeps unacknowledged submission uncertain
   Test: native_codex_prepared_submission_cancel_preserves_unknown_transmission
-  Given a submitted original frame and no completion acknowledgement
-  When its owning send future is cancelled
+  Given a submitted original frame whose peer resolution has been read without a completion acknowledgement
+  When its owning send future is cancelled after that actual read
   Then original bytes and pending-submission evidence survive with zero acknowledged bytes and no claim of zero transmission or successful write
 
 Scenario: Resolution before any submission retains the original quiet path

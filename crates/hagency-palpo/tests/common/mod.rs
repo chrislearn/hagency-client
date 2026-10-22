@@ -1,5 +1,5 @@
 use hagency_core::custody::Lane;
-use hagency_palpo::{Adapter, CancellationToken, HostConfig, Limits};
+use hagency_palpo::{Adapter, CancellationToken, Error, HostConfig, Limits, Step};
 use hagency_store::{
     Repository, Store,
     outbound::{Command, DeliveryView, RegistrationIdentity, Reply, StartedWork},
@@ -30,6 +30,19 @@ use tokio_rustls::{
 
 pub const FLEET: &str = "hf_0123456789abcdef0123456789abcdef";
 pub const TOKEN: &str = "synthetic-machine-token-DO-NOT-USE";
+/// Fixed labels and result categories only; never endpoint, payload or token.
+pub async fn observed_step(
+    stage: &'static str,
+    future: impl std::future::Future<Output = Result<Step, Error>>,
+) -> Result<Step, Error> {
+    let started = std::time::Instant::now();
+    let result = future.await;
+    eprintln!(
+        "offline-http stage={stage} elapsed_ms={} result={result:?}",
+        started.elapsed().as_millis()
+    );
+    result
+}
 pub fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -244,7 +257,12 @@ impl Fake {
     pub async fn next(&mut self) -> Request {
         timeout(Duration::from_secs(3), self.requests.recv())
             .await
-            .unwrap()
+            .unwrap_or_else(|_| {
+                panic!(
+                    "offline HTTP fixture request wait elapsed; admitted={}",
+                    self.requests()
+                )
+            })
             .unwrap()
     }
     /// Total admitted requests, counted once per request when the fixture

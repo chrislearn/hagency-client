@@ -160,7 +160,11 @@ async fn native_codex_prepared_submission_retains_original_frame_until_receipt()
             wake.wake();
         }
     };
-    let (result, ()) = tokio::join!(f.driver.send_prepared_or_event(&mut f.frame), peer);
+    let (result, ()) = tokio::time::timeout(Duration::from_secs(1), async {
+        tokio::join!(f.driver.send_prepared_or_event(&mut f.frame), peer)
+    })
+    .await
+    .expect("the peer rendezvous must finish within the original write bound");
     let Controlled::Control(receipt) = result.unwrap() else {
         panic!("a peer read/resolution is not the original pending write receipt");
     };
@@ -193,13 +197,20 @@ async fn native_codex_prepared_submission_cancel_preserves_unknown_transmission(
         f.read.notified().await;
         // Deliberately withhold the actual write completion.
     };
-    let (result, ()) = tokio::join!(
-        tokio::time::timeout(
-            Duration::from_millis(50),
-            f.driver.send_prepared_or_event(&mut f.frame)
-        ),
-        peer
-    );
+    let result = {
+        let mut sending = Box::pin(f.driver.send_prepared_or_event(&mut f.frame));
+        // Reach the actual peer read before starting the cancellation window.
+        // An early driver error cancels this peer waiter instead of leaving
+        // join! blocked on a notification from an already closed driver.
+        tokio::select! {
+            result = &mut sending => match result {
+                Err(error) => panic!("write ended before the peer rendezvous: {error:?}"),
+                Ok(_) => panic!("no completion may precede the peer rendezvous"),
+            },
+            () = peer => {},
+        }
+        tokio::time::timeout(Duration::from_millis(50), sending).await
+    };
     assert!(
         result.is_err(),
         "no receipt or event may abandon a submitted frame"

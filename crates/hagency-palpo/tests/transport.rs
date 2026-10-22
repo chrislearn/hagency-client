@@ -93,7 +93,9 @@ async fn native_outbound_http_authority_tls_and_redaction() {
         .await
         .unwrap();
     let cancel = CancellationToken::new();
-    let error = untrusted.poll_once(Lane::Work, &cancel).await.unwrap_err();
+    let error = observed_step("tls-untrusted", untrusted.poll_once(Lane::Work, &cancel))
+        .await
+        .unwrap_err();
     assert_eq!(error, Error::Transport);
     assert!(!format!("{error:?} {error}").contains(TOKEN));
     fake.quiesced(fake.requests()).await;
@@ -101,7 +103,8 @@ async fn native_outbound_http_authority_tls_and_redaction() {
         .with_root_pem(include_bytes!("fixtures/ca.pem"))
         .unwrap();
     let adapter = Adapter::attach(trusted, store.clone()).await.unwrap();
-    let (result, _) = tokio::join!(adapter.poll_once(Lane::Work, &cancel), async {
+    let polling = observed_step("tls-trusted", adapter.poll_once(Lane::Work, &cancel));
+    let (result, _) = tokio::join!(polling, async {
         let request = fake.next().await;
         assert_eq!(request.method, "GET");
         assert_eq!(request.headers["authorization"], format!("Bearer {TOKEN}"));
@@ -135,7 +138,7 @@ async fn native_outbound_http_authority_tls_and_redaction() {
     // production header budget is 5 s where this fixture allows 300 ms. What
     // must hold: the poll fails with a transport refusal, and the peer never
     // receives a request.
-    match mismatch.poll_once(Lane::Work, &cancel).await {
+    match observed_step("tls-hostname", mismatch.poll_once(Lane::Work, &cancel)).await {
         Err(Error::Transport | Error::Timeout) => {}
         other => panic!("mismatched hostname must be refused, got {other:?}"),
     }
@@ -154,7 +157,8 @@ async fn native_outbound_http_authority_redirect_and_status() {
         .await
         .unwrap();
     let cancel = CancellationToken::new();
-    let (result, _) = tokio::join!(adapter.poll_once(Lane::Work, &cancel), async {
+    let polling = observed_step("redirect", adapter.poll_once(Lane::Work, &cancel));
+    let (result, _) = tokio::join!(polling, async {
         fake.next().await.raw(
             format!(
                 "HTTP/1.1 307 Redirect\r\nLocation: {}?token={TOKEN}\r\nContent-Length: 0\r\n\r\n",
@@ -166,7 +170,8 @@ async fn native_outbound_http_authority_redirect_and_status() {
     assert_eq!(result, Err(Error::Redirect));
     destination.quiesced(destination.requests()).await;
     for status in [204, 400, 401, 403, 409, 429, 500, 503] {
-        let (result, _) = tokio::join!(adapter.poll_once(Lane::Work, &cancel), async {
+        let polling = observed_step("http-status", adapter.poll_once(Lane::Work, &cancel));
+        let (result, _) = tokio::join!(polling, async {
             fake.next()
                 .await
                 .json(status, json!({"error":TOKEN,"code":"opaque"}));
@@ -459,7 +464,8 @@ async fn native_outbound_http_custody_cancellation_stale_lease_and_rotation() {
         .unwrap();
     let cancel = CancellationToken::new();
     let original = delivery("tx-cancel", Lane::Matrix, 31, "lease-before-cancel");
-    let (result, _) = tokio::join!(adapter.poll_once(Lane::Matrix, &cancel), async {
+    let polling = observed_step("ack-cancel", adapter.poll_once(Lane::Matrix, &cancel));
+    let (result, _) = tokio::join!(polling, async {
         fake.next().await.json(200, original.clone());
         let ack = fake.next().await;
         assert_eq!(
@@ -473,7 +479,8 @@ async fn native_outbound_http_custody_cancellation_stale_lease_and_rotation() {
     });
     assert_eq!(result, Err(Error::Cancelled));
     let cancel = CancellationToken::new();
-    let (result, _) = tokio::join!(adapter.poll_once(Lane::Matrix, &cancel), async {
+    let polling = observed_step("ack-reclaim", adapter.poll_once(Lane::Matrix, &cancel));
+    let (result, _) = tokio::join!(polling, async {
         let ack = fake.next().await;
         assert!(ack.target.ends_with("/ack"));
         ack.json(
@@ -484,7 +491,8 @@ async fn native_outbound_http_custody_cancellation_stale_lease_and_rotation() {
     assert_eq!(result, Ok(Step::Reclaim));
     let mut replacement = original.clone();
     replacement["delivery"]["token"] = json!("lease-replaced");
-    let (result, _) = tokio::join!(adapter.poll_once(Lane::Matrix, &cancel), async {
+    let polling = observed_step("ack-replaced", adapter.poll_once(Lane::Matrix, &cancel));
+    let (result, _) = tokio::join!(polling, async {
         fake.next().await.json(200, replacement);
         let ack = fake.next().await;
         assert_eq!(ack.value()["token"], "lease-replaced");
