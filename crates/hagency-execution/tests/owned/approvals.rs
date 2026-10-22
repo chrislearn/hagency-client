@@ -141,9 +141,14 @@ async fn native_owned_approval_resume() {
         assert_eq!(
             report.protocol,
             Protocol::Completed,
-            "{:?} {:?}; {}",
+            "choice={choice:?} failure={:?} runtime={:?}; responses={} accepted={} continued={} state={} probe_error={:?}; {}",
             report.failure,
             report.runtime_observation(),
+            responses(&f).len(),
+            f.count("SELECT COUNT(*) FROM approval_responses WHERE write_accepted=1"),
+            f.work.join("owned-dispatch.approval-continued").is_file(),
+            f.state(),
+            fs::read_to_string(f.work.join("owned-dispatch.approval-probe-error")).ok(),
             cancellation_trace(&f)
         );
         marker(&f, "approval-continued").await;

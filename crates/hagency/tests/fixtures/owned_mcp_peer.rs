@@ -29,6 +29,14 @@ const COORDINATION: [&str; 8] = [
 fn invalid() -> io::Error {
     io::Error::other("offline MCP fixture refused or incomplete")
 }
+// Fixed stage names only: never record capabilities, tool arguments or bodies.
+fn trace(stage: &str) -> io::Result<()> {
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("owned-mcp.trace")?;
+    writeln!(file, "{stage}")
+}
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ContextReference {
@@ -139,6 +147,7 @@ fn tool(
         json!({"name":name,"arguments":args}),
     )?;
     if result["isError"] != false {
+        trace("tool-refused")?;
         return Err(invalid());
     }
     Ok(result["structuredContent"]["task"].clone())
@@ -271,7 +280,9 @@ fn helper(
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
+    trace("helper-spawning")?;
     let mut child = Helper(command.spawn()?);
+    trace("helper-spawned")?;
     // The earliest fact this fixture can publish about the helper: it exists and
     // its stdio is retained. Written BEFORE any MCP exchange, so an absent
     // `ack`/`readback`/`receipt` can be attributed to the helper rather than to a
@@ -287,6 +298,7 @@ fn helper(
         "initialize",
         json!({"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"owned-offline-peer","version":"1"}}),
     )?;
+    trace("helper-initialized")?;
     send(
         &mut output,
         json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
@@ -315,7 +327,9 @@ fn helper(
     } else {
         std::env::var("HAGENCY_TASK_ID").map_err(|_| invalid())?
     };
+    trace("get-task-requesting")?;
     let before = tool(&mut input, &mut output, 1, "get_task", json!({"id":task}))?;
+    trace("get-task-replied")?;
     if before["id"] != task || before["status"] != "in_progress" {
         return Err(invalid());
     }
@@ -567,6 +581,7 @@ fn helper(
     }
     let done = mode == "done";
     let after = if mode == "finish" || fleet_finish {
+        trace("completion-requesting")?;
         let response = rpc(
             &mut input,
             &mut output,
@@ -575,6 +590,7 @@ fn helper(
             json!({"name":"complete_task_with_reply","arguments":{"id":task,"call_id":"owned_finish",
                 "body":if fleet_finish {format!("Verified factory task {task}")} else {"Verified **native MCP final result**".into()}}}),
         )?;
+        trace("completion-replied")?;
         if response["isError"] != false {
             return Err(invalid());
         }
@@ -589,6 +605,7 @@ fn helper(
         completion
     } else {
         let updated = if done {
+            trace("done-requesting")?;
             tool(
                 &mut input,
                 &mut output,
@@ -740,6 +757,7 @@ fn fake() -> io::Result<()> {
         json!({"id":thread["id"],"result":{"thread":{"id":"owned-thread","cwd":params["cwd"],"status":{"type":"idle"},"turns":[]},"cwd":params["cwd"],"model":params["model"],"modelProvider":"offline","approvalPolicy":"on-request","approvalsReviewer":"user","sandbox":{"type":"workspaceWrite"}}}),
     )?;
     let turn = request(&mut input, "turn/start", &mut log)?;
+    trace("turn-start-read")?;
     if turn["params"]["threadId"] != "owned-thread"
         || turn["params"]["sandboxPolicy"]["networkAccess"] != false
     {
@@ -749,6 +767,7 @@ fn fake() -> io::Result<()> {
         &mut output,
         json!({"id":turn["id"],"result":{"turn":{"id":"owned-turn","status":"inProgress","items":[]}}}),
     )?;
+    trace("turn-start-replied")?;
     if Path::new("owned-mcp.fail-notification").is_file() {
         // Board #94: an unknown METHOD is now tolerated (logged and ignored), so
         // this fixture can no longer force its failed attempt that way. It uses a

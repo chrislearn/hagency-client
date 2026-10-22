@@ -104,6 +104,19 @@ pub(super) fn timeout_read(duration: Duration) -> io::Result<String> {
         .map_err(|_| io::ErrorKind::TimedOut.into())
 }
 pub(super) fn run(mode: &str, reader: &mut impl BufRead, marker: &Path) -> io::Result<bool> {
+    let result = run_inner(mode, reader, marker);
+    if let Err(error) = &result
+        && let Err(diagnostic) = fs::write(
+            marker.with_extension("approval-probe-error"),
+            format!("kind={:?} os={:?}", error.kind(), error.raw_os_error()),
+        )
+    {
+        eprintln!("approval diagnostic write failed: {:?}", diagnostic.kind());
+    }
+    result
+}
+
+fn run_inner(mode: &str, reader: &mut impl BufRead, marker: &Path) -> io::Result<bool> {
     if mode == "owned-approval-mcp" {
         return mcp(reader, marker, false);
     }

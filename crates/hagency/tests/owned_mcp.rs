@@ -189,6 +189,20 @@ impl Fixture {
     fn count(&self, query: &str) -> u64 {
         self.sql().query_row(query, [], |r| r.get(0)).unwrap()
     }
+    fn evidence(&self, report: &hagency_execution::Report) -> String {
+        let trace = fs::read_to_string(self.work.join("owned-mcp.trace"))
+            .unwrap_or_else(|error| format!("trace unavailable: {:?}", error.kind()));
+        format!(
+            "protocol={:?} failure={:?} startup={:?} runtime={:?} cleanup={:?} parent_started={} helper_spawned={} trace={trace:?}",
+            report.protocol,
+            report.failure,
+            report.startup_error(),
+            report.runtime_observation(),
+            report.cleanup,
+            self.work.join("owned-mcp.requests").is_file(),
+            self.work.join("owned-mcp.spawned").is_file(),
+        )
+    }
 }
 
 #[tokio::test]
@@ -319,7 +333,12 @@ async fn roundtrip(done: bool, retained: bool) {
             report.cleanup
         );
     }
-    assert_eq!(task.execution_epoch, initial_epoch + u64::from(done));
+    assert_eq!(
+        task.execution_epoch,
+        initial_epoch + u64::from(done),
+        "{}",
+        f.evidence(&report)
+    );
     assert_eq!(report.canonical_status, Some(task.status));
     assert_eq!(f.count("SELECT COUNT(*) FROM final_replies"), 0);
     // ADR-181: the attempt's phases were kept with it, in visit order, with
@@ -722,7 +741,7 @@ async fn native_owned_mcp_real_finish() {
             .unwrap(),
     )
     .unwrap();
-    assert_eq!(task.status, TaskState::Done);
+    assert_eq!(task.status, TaskState::Done, "{}", f.evidence(&report));
     assert_eq!(task.execution_epoch, 1);
     assert_eq!(report.canonical_status, Some(TaskState::Done));
     assert_eq!(f.count("SELECT COUNT(*) FROM owned_task_completions"), 1);
