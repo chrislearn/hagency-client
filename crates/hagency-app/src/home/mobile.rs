@@ -2,6 +2,7 @@
 //! the active Matrix account; the presentation never substitutes fixture data.
 
 use makepad_widgets::*;
+use std::collections::HashSet;
 use matrix_sdk::ruma::{api::client::profile::{AvatarUrl, DisplayName}, OwnedUserId, UserId};
 
 use crate::{
@@ -10,6 +11,7 @@ use crate::{
     home::rooms_list::RoomsListAction,
     logout::logout_confirm_modal::LogoutAction,
     profile::user_profile::UserProfile,
+    profile::agent_details::AgentProfileDetailsWidgetExt,
     shared::{avatar::{AvatarState, AvatarWidgetRefExt}, navigation_bar_button::{NavigationBarButtonWidgetExt, NavigationBarButtonWidgetRefExt}},
     sliding_sync::{current_user_id, get_client, spawn_async_task, submit_async_request, MatrixRequest},
     utils,
@@ -48,10 +50,10 @@ script_mod! {
     mod.widgets.MobileTitle = SolidView {
         width: Fill height: 48
         flow: Overlay
+        align: Align{x: 0.5 y: 0.5}
         draw_bg.color: mod.widgets.MOBILE_BG
         title := RinxLabel {
-            width: Fill height: Fill
-            align: Align{x: 0.5 y: 0.5}
+            width: Fit height: Fit padding: 0
             draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_bold {font_size: mod.widgets.RINX_HEADING_SIZE}}
         }
         controls := View {
@@ -65,7 +67,7 @@ script_mod! {
             View {width: Fill height: 1}
             right := RinxIconButton {
                 width: RINX_ICON_BUTTON_SIZE height: RINX_ICON_BUTTON_SIZE padding: 0 spacing: 0 icon_walk: Walk{width: 16 height: 16}
-                visible: false draw_bg +: {color: #x00000000 color_hover: mod.widgets.RINX_HOVER color_down: mod.widgets.RINX_PRESSED}
+                visible: false align: Align{x: 0.5 y: 0.5} draw_bg +: {color: #x00000000 color_hover: mod.widgets.RINX_HOVER color_down: mod.widgets.RINX_PRESSED}
                 draw_icon +: {svg: ICON_ADD color: mod.widgets.MOBILE_INK}
             }
         }
@@ -153,6 +155,15 @@ script_mod! {
                                     width: Fill max_lines: 1 text_overflow: Ellipsis
                                     draw_text +: {color: mod.widgets.MOBILE_INK text_style: theme.font_regular {font_size: mod.widgets.RINX_BODY_SIZE}}
                                 }
+                                agent_badge := RoundedView {
+                                    visible: false width: Fit height: 20 padding: Inset{left: 6 right: 6}
+                                    align: Align{x: 0.5 y: 0.5}
+                                    draw_bg +: {color: mod.widgets.RBX_ACCENT_SOFT border_radius: 4}
+                                    RinxLabel {
+                                        padding: 0 text: #(crate::i18n::tr("Agent")) i18n_text: "Agent"
+                                        draw_text +: {color: mod.widgets.RBX_ACCENT text_style: theme.font_bold{font_size: mod.widgets.RINX_META_SIZE}}
+                                    }
+                                }
                             }
                             mod.widgets.MobileDivider {margin: Inset{left: 70}}
                         }
@@ -237,6 +248,7 @@ script_mod! {
                 width: Fill height: Fill flow: Down
                 contact_card := DetailContactCard {}
                 DetailGap {}
+                agent_details := AgentProfileDetails {}
                 DetailSection {
                     contact_moments := DetailRow {title.text: #(crate::i18n::tr("Moments")) title.i18n_text: "Moments"}
                     contact_copy := DetailRow {title.text: #(crate::i18n::tr("Copy Profile Link")) title.i18n_text: "Copy Profile Link"}
@@ -255,6 +267,15 @@ struct ContactsLoaded {
     owner: OwnedUserId,
     request: u64,
     result: Result<Vec<UserProfile>, String>,
+}
+
+#[derive(Debug)]
+struct ContactAgentsLoaded {
+    owner: OwnedUserId,
+    origin: String,
+    epoch: u64,
+    request: u64,
+    agents: std::collections::HashSet<OwnedUserId>,
 }
 
 #[derive(Clone, Debug)]
@@ -284,6 +305,7 @@ pub struct MobileHub {
     #[live] kind: u32,
     #[rust] owner: Option<OwnedUserId>,
     #[rust] contacts: Vec<UserProfile>,
+    #[rust] contact_agents: HashSet<OwnedUserId>,
     #[rust] visible_contacts: Vec<usize>,
     #[rust] selected_profile: Option<UserProfile>,
     #[rust] adding_friend: bool,
@@ -305,6 +327,7 @@ impl MobileHub {
             self.adding_friend = true;
             self.query.clear();
             self.contacts.clear();
+            self.contact_agents.clear();
             self.status = crate::i18n::tr("Search by Matrix ID or name, then press Enter.").into();
             self.view.text_input(cx, ids!(search)).set_text(cx, "");
         }
@@ -316,6 +339,7 @@ impl MobileHub {
     fn clear_account_state(&mut self, cx: &mut Cx) {
         self.owner = None;
         self.contacts.clear();
+        self.contact_agents.clear();
         self.visible_contacts.clear();
         self.selected_profile = None;
         self.adding_friend = false;
@@ -367,6 +391,19 @@ impl MobileHub {
         self.request = Self::next_request();
         let request = self.request;
         let query = self.query.clone();
+        self.contact_agents.clear();
+        let badge_owner = owner.clone();
+        let origin = client.homeserver().to_string();
+        let epoch = crate::account_session::epoch();
+        spawn_async_task(async move {
+            let viewer = badge_owner.clone();
+            let read = tokio::spawn(async move {crate::profile::agent_details::visible_agent_ids(&viewer).await});
+            let agents = match tokio::time::timeout(std::time::Duration::from_secs(25), read).await {
+                Ok(Ok(Ok(ids))) => ids,
+                _ => std::collections::HashSet::new(),
+            };
+            Cx::post_action(ContactAgentsLoaded {owner: badge_owner, origin, epoch, request, agents});
+        });
         self.status = crate::i18n::tr("Loading contacts…").into();
         self.view.redraw(cx);
         spawn_async_task(async move {
@@ -454,6 +491,15 @@ impl Widget for MobileHub {
         self.view.handle_event(cx, event, scope);
         if let Event::Actions(actions) = event {
             for action in actions {
+                if let Some(loaded) = action.downcast_ref::<ContactAgentsLoaded>() {
+                    if loaded.request == self.request && loaded.epoch == crate::account_session::epoch()
+                        && Some(&loaded.owner) == current_user_id().as_ref()
+                        && get_client().is_some_and(|client| client.homeserver().as_str() == loaded.origin)
+                        && !crate::sliding_sync::account_changing() {
+                        self.contact_agents = loaded.agents.clone();
+                        self.view.redraw(cx);
+                    }
+                }
                 if let Some(loaded) = action.downcast_ref::<GroupsLoaded>() {
                     if Some(&loaded.owner) == current_user_id().as_ref() && loaded.request == self.group_request {
                         self.groups = loaded.groups.clone();
@@ -521,7 +567,8 @@ impl Widget for MobileHub {
             if self.view.navigation_bar_button(cx, ids!(my_posts)).clicked(actions) {
                 cx.action(crate::moments::ui::MomentsAction::Open {author: current_user_id()});
             }
-            if self.view.navigation_bar_button(cx, ids!(contact_moments)).clicked(actions) {
+            if self.view.agent_profile_details(cx, ids!(agent_details)).allows_moments()
+                && self.view.navigation_bar_button(cx, ids!(contact_moments)).clicked(actions) {
                 if let Some(profile) = &self.selected_profile {
                     cx.action(crate::moments::ui::MomentsAction::Open {author: Some(profile.user_id.clone())});
                 }
@@ -576,6 +623,10 @@ impl Widget for MobileHub {
             self.view.label(cx, ids!(discover_moments.title)).set_text(cx, &if invites == 0 {crate::i18n::tr("Moments").into()} else {crate::i18n::format("Moments · {invites} invitation{0}", &[("invites", (invites).to_string()), ("0", (crate::i18n::plural_suffix(invites)).to_string())])});
         }
         let profile_open = self.selected_profile.is_some();
+        let agent_details = self.view.agent_profile_details(cx, ids!(agent_details));
+        agent_details.set_user(cx,
+            self.selected_profile.as_ref().map(|profile| profile.user_id.as_ref()));
+        self.view.navigation_bar_button(cx, ids!(contact_moments)).set_visible(cx, agent_details.allows_moments());
         let split = self.kind == 0 && super::home_screen::effective_is_desktop(cx);
         let mut master = self.view.view(cx, ids!(master_pane));
         master.set_visible(cx, split || !profile_open);
@@ -647,6 +698,7 @@ impl Widget for MobileHub {
                     let previous = index.checked_sub(1).and_then(|i| self.visible_contacts.get(i)).map(|i| self.contacts[*i].first_letter().to_uppercase());
                     widget.view(cx, ids!(section)).set_visible(cx, previous.as_ref() != Some(&letter));
                     widget.label(cx, ids!(letter)).set_text(cx, &letter);
+                    widget.view(cx, ids!(agent_badge)).set_visible(cx, self.contact_agents.contains(&profile.user_id));
                     widget.navigation_bar_button(cx, ids!(row)).set_selected(cx,
                         self.selected_profile.as_ref().is_some_and(|selected| selected.user_id == profile.user_id));
                     Self::populate_profile(cx, &widget, profile);
@@ -718,7 +770,17 @@ mod new_chat_tests {
         let mut cx = Cx::new(Box::new(|_, _| {}));
         let mut hub = hub(&mut cx);
         hub.contacts = profiles();
+        hub.contact_agents.insert(hub.contacts[0].user_id.clone());
         draw(&mut cx, &mut hub, 900.0);
+        let title = hub.view.label(&cx, ids!(title_bar.title)).area().rect(&cx);
+        let add = hub.view.button(&cx, ids!(title_bar.controls.right)).area().rect(&cx);
+        assert!(title.size.y > 0.0 && title.size.y < 25.0, "Title uses its text height: {title:?}");
+        assert!((title.pos.y + title.size.y * 0.5 - add.pos.y - add.size.y * 0.5).abs() < 1.0,
+            "Title and add button share a center: {title:?} {add:?}");
+        for index in [0, 1] {
+            let row = hub.view.portal_list(&cx, ids!(list)).item(&mut cx, index, id!(Contact));
+            assert_eq!(row.view(&cx, ids!(agent_badge)).visible(), index == 0);
+        }
         assert!(hub.view.view(&cx, ids!(master_pane)).visible());
         assert!(hub.view.view(&cx, ids!(detail_pane)).visible());
         assert!(!hub.view.view(&cx, ids!(profile)).visible());
@@ -736,6 +798,8 @@ mod new_chat_tests {
         }
         hub.query = "bob".into();
         draw(&mut cx, &mut hub, 900.0);
+        let recycled = hub.view.portal_list(&cx, ids!(list)).item(&mut cx, 0, id!(Contact));
+        assert!(!recycled.view(&cx, ids!(agent_badge)).visible(), "Recycled ordinary rows lose the Agent badge");
         click_contact(&mut cx, &mut hub, 0);
         draw(&mut cx, &mut hub, 900.0);
         assert_eq!(hub.selected_profile.as_ref().unwrap().user_id, hub.contacts[1].user_id);

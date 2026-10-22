@@ -2180,5 +2180,12 @@
   "Shutdown is still pending. Installation was postponed; waiting for the original cleanup.": "停机尚未完成，已推迟安装；正在等待原清理操作结束。",
   "The assistant cannot confirm shutdown. Restart Hagency before updating.": "无法确认助手已停机。请重启 Hagency 后再更新。",
   "Your account changed during preparation. Installation was postponed.": "准备期间账号发生变化，已推迟安装。",
-  "Could not start the update installer. Please restart Hagency to try again.": "无法启动更新安装程序。请重启 Hagency 后重试。"
+  "Could not start the update installer. Please restart Hagency to try again.": "无法启动更新安装程序。请重启 Hagency 后重试。",
+  "Account type": "账号类型",
+  "Agent owner": "Agent 所属用户",
+  "Visibility": "可见性",
+  "My Agent": "我的 Agent",
+  "Private": "私有",
+  "Checking Agent information…": "正在查询 Agent 信息…",
+  "Could not load Agent details.": "无法加载 Agent 详情。"
 }

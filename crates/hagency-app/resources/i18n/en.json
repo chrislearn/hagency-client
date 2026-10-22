@@ -2180,5 +2180,12 @@
   "Shutdown is still pending. Installation was postponed; waiting for the original cleanup.": "Shutdown is still pending. Installation was postponed; waiting for the original cleanup.",
   "The assistant cannot confirm shutdown. Restart Hagency before updating.": "The assistant cannot confirm shutdown. Restart Hagency before updating.",
   "Your account changed during preparation. Installation was postponed.": "Your account changed during preparation. Installation was postponed.",
-  "Could not start the update installer. Please restart Hagency to try again.": "Could not start the update installer. Please restart Hagency to try again."
+  "Could not start the update installer. Please restart Hagency to try again.": "Could not start the update installer. Please restart Hagency to try again.",
+  "Account type": "Account type",
+  "Agent owner": "Agent owner",
+  "Visibility": "Visibility",
+  "My Agent": "My Agent",
+  "Private": "Private",
+  "Checking Agent information…": "Checking Agent information…",
+  "Could not load Agent details.": "Could not load Agent details."
 }
