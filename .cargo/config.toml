@@ -25,4 +25,4 @@ MAKEPAD_APP_ICON_512 = { value = "crates/hagency-app/resources/icon_512.png", re
 MAKEPAD_APP_ICON_1024 = { value = "crates/hagency-app/resources/icon_1024.png", relative = true, force = true }
 MAKEPAD_APP_ICON_ICO = { value = "crates/hagency-app/resources/icon.ico", relative = true, force = true }
 ## The minimum version supported for speech-to-text and other native features.
-MACOSX_DEPLOYMENT_TARGET = "11.0"
+MACOSX_DEPLOYMENT_TARGET = "12.0"

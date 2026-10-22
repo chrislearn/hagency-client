@@ -36,11 +36,12 @@ pub enum StandaloneMode {
 struct State {
     /// `Some` once the deployment is fixed; hosted is fixed for the process.
     hosted: bool,
+    cleanup_unconfirmed: bool,
     service: Option<Arc<dyn OctosAppService>>,
     mode: Option<StandaloneMode>,
 }
 
-static STATE: Mutex<State> = Mutex::new(State { hosted: false, service: None, mode: None });
+static STATE: Mutex<State> = Mutex::new(State { hosted: false, cleanup_unconfirmed: false, service: None, mode: None });
 
 fn state() -> std::sync::MutexGuard<'static, State> {
     STATE.lock().unwrap_or_else(|e| e.into_inner())
@@ -69,6 +70,7 @@ pub fn is_hosted() -> bool {
 /// The current service, building the standalone one from its saved mode on
 /// first use. `Err` says why there is no assistant.
 pub fn service() -> Result<Arc<dyn OctosAppService>, String> {
+    let _admission = hagency::update_guard::PROCESS.enter_task().ok_or("update_in_progress")?;
     let (hosted, current, mode) = {
         let st = state();
         (st.hosted, st.service.clone(), st.mode.clone())
@@ -161,10 +163,24 @@ pub fn release() {
 
 /// Standalone Rinx is exiting: release, and stop only a runtime Rinx owns.
 pub fn shutdown() {
-    let service = state().service.take();
+    let service = {
+        let mut st = state();
+        st.cleanup_unconfirmed |= st.service.is_some();
+        st.service.take()
+    };
     if let Some(service) = service {
         service.shutdown();
     }
+}
+
+/// The pinned assistant API returns no completion receipt. Never interpret its
+/// unit-returning shutdown (or an empty slot after it) as proof of termination.
+#[cfg(all(target_os = "macos", feature = "macos-sparkle"))]
+pub(crate) fn ready_for_update() -> hagency::shutdown::Result {
+    let st = state();
+    if st.service.is_some() || st.cleanup_unconfirmed {
+        Err(hagency::shutdown::Error::Assistant)
+    } else { Ok(()) }
 }
 
 /// Turn the standalone assistant off (stopping an owned runtime).
@@ -183,6 +199,7 @@ fn install_standalone(service: Arc<dyn OctosAppService>, mode: StandaloneMode) {
     let previous = {
         let mut st = state();
         st.mode = Some(mode);
+        st.cleanup_unconfirmed |= st.service.is_some();
         st.service.replace(service)
     };
     // Replacing a provider revokes the old one's requests first.
@@ -234,6 +251,7 @@ fn standalone_root(profile: &str) -> String {
 /// Use Rinx's own local runtime.
 #[cfg(feature = "octos-local")]
 pub fn use_local() -> Result<(), String> {
+    let _admission = hagency::update_guard::PROCESS.enter_task().ok_or("update_in_progress")?;
     if is_hosted() {
         return Err("OctoSense manages the assistant here".into());
     }
@@ -248,6 +266,7 @@ pub fn use_local() -> Result<(), String> {
 /// reads the new profile.
 #[cfg(feature = "octos-local")]
 pub fn configure_local_provider(family: &str, model: &str, base_url: &str, key: &str) -> Result<(), String> {
+    let _admission = hagency::update_guard::PROCESS.enter_task().ok_or("update_in_progress")?;
     if is_hosted() {
         return Err("OctoSense manages the assistant here".into());
     }
@@ -279,6 +298,7 @@ pub fn write_local_provider(family: &str, model: &str, base_url: &str, key: &str
 /// Use an explicit remote octos server. The token stays in memory.
 #[cfg(feature = "octos-remote")]
 pub fn use_remote(url: &str, profile: &str, token: &str) -> Result<(), String> {
+    let _admission = hagency::update_guard::PROCESS.enter_task().ok_or("update_in_progress")?;
     use octosense_app_peers::broker::{Broker, BrokerConfig};
     use octosense_app_peers::connectors::WsConnector;
     if is_hosted() {

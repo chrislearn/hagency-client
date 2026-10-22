@@ -471,6 +471,14 @@ impl ServerLogin {
     pub(super) async fn flush_native_revocations(&self) {
         self.flush_revocations().await;
     }
+    pub(super) async fn persist_revocations_for_update(&self) -> crate::shutdown::Result {
+        let pending = self.revocations.lock().await;
+        if pending.is_empty() {
+            return Ok(());
+        }
+        self.save_revocations(&pending)
+            .map_err(|_| crate::shutdown::Error::Revocation)
+    }
     pub(super) async fn sign_out(&self, cookie: &str) {
         let mut sessions = self.sessions.lock().await;
         if let Some(session) = sessions.get_mut(&session_key(cookie)) {

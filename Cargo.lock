@@ -4936,6 +4936,7 @@ dependencies = [
  "blake3",
  "blurhash",
  "bytesize",
+ "cc",
  "chrono",
  "clap",
  "crossbeam-channel",

@@ -278,6 +278,37 @@ pub enum Command {
         action: ProviderAction,
     },
 }
+impl Command {
+    /// Pure inspection and exact existing approvals only; never launch, recover,
+    /// reconfigure, log in or create work while waiting for an update.
+    pub fn continues_running_task(&self) -> bool {
+        matches!(
+            self,
+            Self::Projects
+                | Self::ProjectRooms { .. }
+                | Self::Agents
+                | Self::Bindings { .. }
+                | Self::AgentDetails { .. }
+                | Self::Devices
+                | Self::AgentOwnerDirectStatus { .. }
+                | Self::Local {
+                    action: LocalAction::Approvals
+                        | LocalAction::Runtime
+                        | LocalAction::AgentServiceStatus
+                        | LocalAction::AgentModel
+                        | LocalAction::AgentPolicy
+                        | LocalAction::Policy
+                        | LocalAction::Model,
+                    input: None,
+                    ..
+                }
+                | Self::Local {
+                    action: LocalAction::Decision { .. },
+                    ..
+                }
+        )
+    }
+}
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 pub struct Identity {
     pub origin: String,
@@ -669,6 +700,7 @@ struct Inner {
     configuration_tasks: StdMutex<Vec<tokio::task::JoinHandle<()>>>,
     callback_task: StdMutex<Option<tokio::task::JoinHandle<()>>>,
     matrix_source: StdMutex<Option<Arc<dyn MatrixTokenSource>>>,
+    shutdown: std::sync::OnceLock<crate::shutdown::Task>,
 }
 impl Drop for Inner {
     fn drop(&mut self) {
@@ -761,6 +793,7 @@ impl NativeOwner {
             configuration_tasks: StdMutex::new(Vec::new()),
             callback_task: StdMutex::new(None),
             matrix_source: StdMutex::new(None),
+            shutdown: std::sync::OnceLock::new(),
         }));
         let router = Router::new()
             .hoop(Callback(Arc::downgrade(&native.0)))
@@ -903,30 +936,52 @@ impl NativeOwner {
         }
     }
     pub async fn shutdown(&self) {
+        let _ = self.shutdown_checked().await;
+    }
+    pub async fn shutdown_checked(&self) -> crate::shutdown::Result {
+        self.0
+            .shutdown
+            .get_or_init(|| {
+                self.retire();
+                let owner = self.clone();
+                crate::shutdown::Task::start(async move { owner.finish_shutdown().await })
+            })
+            .wait()
+            .await
+    }
+    async fn finish_shutdown(&self) -> crate::shutdown::Result {
         // Fence capabilities synchronously before any awaited cleanup, including
         // a late OAuth exchange or an in-flight runtime/provider launch.
         self.retire();
-        let tasks = self
-            .0
-            .configuration_tasks
-            .lock()
-            .map(|mut tasks| std::mem::take(&mut *tasks))
-            .unwrap_or_default();
+        let (tasks, mut result) = match self.0.configuration_tasks.lock() {
+            Ok(mut tasks) => (std::mem::take(&mut *tasks), Ok(())),
+            Err(_) => (Vec::new(), Err(crate::shutdown::Error::Worker)),
+        };
         for task in tasks {
-            if tokio::task::try_id() != Some(task.id()) {
-                let _ = task.await;
+            if tokio::task::try_id() != Some(task.id())
+                && task.await.is_err_and(|error| !error.is_cancelled())
+            {
+                result = Err(crate::shutdown::Error::Worker);
             }
         }
-        self.0.host.console.0.authority.revoke_all().ok();
+        if self.0.host.console.0.authority.revoke_all().is_err() {
+            result = Err(crate::shutdown::Error::Revocation);
+        }
         let login = &self.0.host.console.0.server_login;
         login.revoke_native_all().await;
-        self.0.host.console.stop_owned_runtimes().await;
-        self.0.host.console.stop_owner_provider().await;
+        let stopped = self.0.host.console.stop_for_update().await;
         login.flush_native_revocations().await;
         self.retire();
-        if let Some(task) = self.0.callback_task.lock().unwrap().take() {
+        let task = self.0.callback_task.lock().unwrap().take();
+        if let Some(task) = task {
             task.abort();
+            if task.await.is_err_and(|error| !error.is_cancelled()) {
+                result = Err(crate::shutdown::Error::Worker);
+            }
         }
+        result
+            .and(stopped)
+            .and(login.persist_revocations_for_update().await)
     }
     /// Recover only explicitly enabled bindings from this exact owner's current
     /// assigned device. Each request re-enters the normal start controller; no
@@ -981,9 +1036,12 @@ impl NativeOwner {
         Ok(json!({"recoveries":results}))
     }
     pub async fn execute(&self, command: Command) -> Result<Value, NativeError> {
-        let _update_task = crate::update_guard::PROCESS
-            .enter_task()
-            .ok_or_else(|| failure(409, "update_in_progress"))?;
+        let _update_task = if command.continues_running_task() {
+            crate::update_guard::PROCESS.continue_task()
+        } else {
+            crate::update_guard::PROCESS.enter_task()
+        }
+        .ok_or_else(|| failure(409, "update_in_progress"))?;
         if configuration::is_wrapper(&command) {
             return configuration::remote(self, command).await;
         }
@@ -1471,6 +1529,97 @@ mod tests {
         .unwrap();
         assert!(path.starts_with("/console/api/owned-agents/agt_1/local-policy?"));
         assert!(!path.contains("&url="));
+    }
+    #[test]
+    fn update_wait_allows_exact_approvals_and_inspection_but_no_new_execution() {
+        let local = |action, input| Command::Local {
+            agent_id: "agent-a".into(),
+            action,
+            input,
+            binding_id: None,
+            requester: None,
+        };
+        for command in [
+            local(LocalAction::Approvals, None),
+            local(
+                LocalAction::Decision {
+                    approval_id: "original".into(),
+                },
+                None,
+            ),
+            local(LocalAction::Runtime, None),
+            Command::Agents,
+        ] {
+            assert!(command.continues_running_task());
+        }
+        for command in [
+            local(LocalAction::Approvals, Some(json!({}))),
+            local(LocalAction::RuntimeStart, None),
+            local(LocalAction::SaveAgentModel, None),
+            local(LocalAction::StartAgentService, None),
+            Command::BeginLogin,
+            Command::EnsureAgentOwnerDirect {
+                agent_id: "agent-a".into(),
+            },
+            Command::Provider {
+                action: ProviderAction::Models,
+            },
+        ] {
+            assert!(!command.continues_running_task());
+        }
+    }
+    #[tokio::test]
+    async fn shutdown_from_configuration_task_joins_the_aborted_initiator_without_deadlock() {
+        let root = tempfile::tempdir().unwrap();
+        let owner = NativeOwner::open(
+            &root.path().join("state"),
+            "https://example.test/",
+            "@owner:example.test",
+        )
+        .await
+        .unwrap();
+        let (begin, ready) = tokio::sync::oneshot::channel();
+        let initiator = owner.clone();
+        let task = tokio::spawn(async move {
+            ready.await.unwrap();
+            let _ = initiator.shutdown_checked().await;
+        });
+        let abort = task.abort_handle();
+        owner.0.configuration_tasks.lock().unwrap().push(task);
+        begin.send(()).unwrap();
+        // Wait until the configuration task has initiated the retained cleanup.
+        while owner.0.shutdown.get().is_none() {
+            tokio::task::yield_now().await;
+        }
+        tokio::time::timeout(Duration::from_secs(5), owner.shutdown_checked())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(abort.is_finished());
+    }
+    #[tokio::test]
+    async fn shutdown_worker_panic_remains_a_failure_on_repeated_shutdown() {
+        let root = tempfile::tempdir().unwrap();
+        let owner = NativeOwner::open(
+            &root.path().join("state"),
+            "https://example.test/",
+            "@owner:example.test",
+        )
+        .await
+        .unwrap();
+        let task = tokio::spawn(async { panic!("configuration worker panic") });
+        while !task.is_finished() {
+            tokio::task::yield_now().await;
+        }
+        owner.0.configuration_tasks.lock().unwrap().push(task);
+        assert_eq!(
+            owner.shutdown_checked().await,
+            Err(crate::shutdown::Error::Worker)
+        );
+        assert_eq!(
+            owner.shutdown_checked().await,
+            Err(crate::shutdown::Error::Worker)
+        );
     }
     #[tokio::test]
     async fn native_host_needs_no_web_assets_and_restart_never_restores_remote_authority() {

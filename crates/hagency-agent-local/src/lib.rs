@@ -4,6 +4,7 @@
 //! a retry which can charge again requires a fresh call ID under the original requester.
 pub mod codex;
 pub mod inbox;
+pub mod process_cleanup;
 #[cfg(unix)]
 pub mod room_files;
 pub mod runtime;

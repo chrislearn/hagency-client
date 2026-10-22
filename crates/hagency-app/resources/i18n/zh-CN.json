@@ -2174,5 +2174,11 @@
   "Service audience unavailable. Update the server and refresh.": "无法确认服务范围。请升级服务器后刷新。",
   "No public Agents owned by you are available. Publish an Agent in its settings first.": "暂无你创建的公开 Agent。请先在 Agent 设置中发布服务。",
   "Choose a public Agent you own to bind to this Room.": "选择你创建的公开 Agent，添加到此房间。",
-  "This Agent is private. Publish it in its settings before adding it to a shared Room.": "此 Agent 为私有服务。请先在设置中发布服务，再添加到共享房间。"
+  "This Agent is private. Publish it in its settings before adding it to a shared Room.": "此 Agent 为私有服务。请先在设置中发布服务，再添加到共享房间。",
+  "Agent cleanup is unconfirmed. Installation has been postponed.": "尚未确认 Agent 清理完成，已推迟安装。",
+  "Shutdown could not be confirmed. Installation was postponed.": "无法确认停机完成，已推迟安装。",
+  "Shutdown is still pending. Installation was postponed; waiting for the original cleanup.": "停机尚未完成，已推迟安装；正在等待原清理操作结束。",
+  "The assistant cannot confirm shutdown. Restart Hagency before updating.": "无法确认助手已停机。请重启 Hagency 后再更新。",
+  "Your account changed during preparation. Installation was postponed.": "准备期间账号发生变化，已推迟安装。",
+  "Could not start the update installer. Please restart Hagency to try again.": "无法启动更新安装程序。请重启 Hagency 后重试。"
 }

@@ -18,7 +18,7 @@ use std::{
 };
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::{Child, ChildStdin, ChildStdout},
+    process::{ChildStdin, ChildStdout},
     sync::Mutex,
 };
 
@@ -310,7 +310,7 @@ async fn read_provider_frame<R: tokio::io::AsyncBufRead + Unpin>(
     }
 }
 struct Process {
-    child: Child,
+    child: hagency_agent_local::process_cleanup::RetainedChild,
     input: ChildStdin,
     output: BufReader<ChildStdout>,
     frame_buffer: Vec<u8>,
@@ -438,9 +438,11 @@ impl Process {
         if speech {
             command.args(["--enable", "realtime_conversation"]);
         }
-        let mut child = command
-            .spawn()
-            .map_err(|_| failure(503, "codex_provider_unavailable"))?;
+        let mut child = hagency_agent_local::process_cleanup::RetainedChild::from(
+            command
+                .spawn()
+                .map_err(|_| failure(503, "codex_provider_unavailable"))?,
+        );
         let input = child
             .stdin
             .take()
@@ -653,6 +655,8 @@ struct Entry {
 #[derive(Default, Clone)]
 pub(super) struct OwnerProvider {
     entries: Arc<Mutex<BTreeMap<String, Arc<Entry>>>>,
+    stopping: Arc<Mutex<()>>,
+    shutdown_fault: Arc<std::sync::atomic::AtomicBool>,
 }
 #[derive(Clone)]
 pub(super) enum Operation {
@@ -712,7 +716,10 @@ impl OwnerProvider {
             if let Some(entry) = self.entries.lock().await.remove(&paths.credential_ref) {
                 let mut p = entry.process.lock().await;
                 let _ = p.cancel().await;
-                let _ = p.child.kill().await;
+                if p.child.kill().await.is_err() {
+                    self.shutdown_fault
+                        .store(true, std::sync::atomic::Ordering::Release);
+                }
             }
             device
                 .bearer()
@@ -728,7 +735,10 @@ impl OwnerProvider {
                 };
                 let mut p = Process::spawn(&candidate, &executable()?).await?;
                 let checked = p.status(&candidate).await;
-                let _ = p.child.kill().await;
+                if p.child.kill().await.is_err() {
+                    self.shutdown_fault
+                        .store(true, std::sync::atomic::Ordering::Release);
+                }
                 let checked = checked?;
                 if !checked.authenticated {
                     return Err(failure(409, "local_codex_account_not_signed_in"));
@@ -847,7 +857,10 @@ impl OwnerProvider {
             } else {
                 let mut process = Process::spawn(&paths, &executable()?).await?;
                 if device.bearer().is_err() {
-                    let _ = process.child.kill().await;
+                    if process.child.kill().await.is_err() {
+                        self.shutdown_fault
+                            .store(true, std::sync::atomic::Ordering::Release);
+                    }
                     return Err(failure(401, "owner_authorization_required"));
                 }
                 let entry = Arc::new(Entry {
@@ -897,7 +910,10 @@ impl OwnerProvider {
             return Err(failure(401, "owner_authorization_required"));
         }
         if result.is_err() {
-            let _ = process.child.kill().await;
+            if process.child.kill().await.is_err() {
+                self.shutdown_fault
+                    .store(true, std::sync::atomic::Ordering::Release);
+            }
             drop(process);
             let mut entries = self.entries.lock().await;
             if entries
@@ -920,16 +936,46 @@ impl OwnerProvider {
         if let Ok(runtime) = tokio::runtime::Handle::try_current() {
             let manager = self.clone();
             runtime.spawn(async move {
-                manager.stop_all().await;
+                for entry in manager.entries.lock().await.values() {
+                    if let Ok(mut process) = entry.process.try_lock() {
+                        let _ = process.child.start_kill();
+                    }
+                }
             });
         }
     }
     pub async fn stop_all(&self) {
-        let entries = std::mem::take(&mut *self.entries.lock().await);
-        for entry in entries.values() {
+        let _ = self.stop_all_checked().await;
+    }
+    pub(super) async fn stop_all_checked(&self) -> crate::shutdown::Result {
+        let _stopping = self.stopping.lock().await;
+        let mut entries = self.entries.lock().await;
+        let keys: Vec<_> = entries.keys().cloned().collect();
+        for key in keys {
+            let entry = entries.get(&key).unwrap().clone();
             let mut process = entry.process.lock().await;
             let _ = process.cancel().await;
-            let _ = process.child.kill().await;
+            if process
+                .child
+                .try_wait()
+                .map_err(|_| crate::shutdown::Error::Provider)?
+                .is_none()
+            {
+                process
+                    .child
+                    .kill()
+                    .await
+                    .map_err(|_| crate::shutdown::Error::Provider)?;
+            }
+            entries.remove(&key);
+        }
+        if self
+            .shutdown_fault
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            Err(crate::shutdown::Error::Provider)
+        } else {
+            Ok(())
         }
     }
 }

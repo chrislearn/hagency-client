@@ -197,6 +197,7 @@ static CURRENT: LazyLock<Mutex<Option<Service>>> = LazyLock::new(|| Mutex::new(N
 // An update must join an account transition that already took CURRENT, rather
 // than mistake its empty slot for a completed owner shutdown.
 static STOP_CURRENT: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+static RETIREMENTS: LazyLock<Mutex<::hagency::shutdown::Registry>> = LazyLock::new(|| Mutex::new(::hagency::shutdown::Registry::default()));
 struct Inner {
     origin: String,
     owner: String,
@@ -205,13 +206,12 @@ struct Inner {
     native: tokio::sync::Mutex<Option<NativeOwner>>,
     retired: std::sync::atomic::AtomicBool,
     matrix_checked: tokio::sync::Mutex<Option<std::time::Instant>>,
+    shutdown: std::sync::OnceLock<::hagency::shutdown::Task>,
 }
 #[derive(Clone)]
 pub struct Service(Arc<Inner>);
 impl Service {
     pub fn for_current() -> Result<Self, String> {
-        let _update_task = ::hagency::update_guard::PROCESS.enter_task()
-            .ok_or("update_in_progress")?;
         if crate::logout::logout_state_machine::is_logout_in_progress() {
             return Err("matrix_account_changing".into());
         }
@@ -234,9 +234,13 @@ impl Service {
         {
             return Ok(service.clone());
         }
-        if let Some(old) = current.take() {
-            let retirement = ::hagency::update_guard::PROCESS.enter_task()
+        // Looking up an existing pinned owner is read-only (also used by the
+        // approval UI). Creation/retirement still requires fresh work admission.
+        let _update_task = ::hagency::update_guard::PROCESS.enter_task().ok_or("update_in_progress")?;
+        if current.is_some() {
+            let retirement = ::hagency::update_guard::PROCESS.continue_task()
                 .ok_or("update_in_progress")?;
+            let old = current.take().unwrap();
             old.0
                 .retired
                 .store(true, std::sync::atomic::Ordering::Release);
@@ -261,6 +265,7 @@ impl Service {
             native: tokio::sync::Mutex::new(None),
             retired: std::sync::atomic::AtomicBool::new(false),
             matrix_checked: tokio::sync::Mutex::new(None),
+            shutdown: std::sync::OnceLock::new(),
         }));
         *current = Some(service.clone());
         let startup = service.clone();
@@ -441,8 +446,9 @@ impl Service {
         result
     }
     pub async fn execute(&self, command: Command) -> Result<Value, String> {
-        let _update_task = ::hagency::update_guard::PROCESS.enter_task()
-            .ok_or("update_in_progress")?;
+        let continuation = command.continues_running_task();
+        let _update_task = if continuation { ::hagency::update_guard::PROCESS.continue_task() }
+            else { ::hagency::update_guard::PROCESS.enter_task() }.ok_or("update_in_progress")?;
         self.check()?;
         if matches!(command, Command::BeginLogin) {
             return Err("matrix_oauth_sign_in_required".into());
@@ -455,6 +461,8 @@ impl Service {
             let mut native = self.0.native.lock().await;
             self.check()?;
             if native.is_none() {
+                // A continuation must never bootstrap a new owner behind a fence.
+                let _bootstrap = ::hagency::update_guard::PROCESS.enter_task().ok_or("update_in_progress")?;
                 let owner = ::hagency::native_owner::open_with_matrix(
                     &self.0.state, &self.0.origin, &self.0.owner,
                     Arc::new(SdkTokens(Arc::downgrade(&self.0))),
@@ -463,6 +471,8 @@ impl Service {
                     makepad_widgets::warning!("Native owner initialization failed: {code}");
                     e.code
                 })?;
+                // Preserve even a partially initialized owner's cleanup receipt.
+                *native = Some(owner.clone());
                 if let Err(error) = self.check() {
                     owner.shutdown().await;
                     return Err(error);
@@ -516,25 +526,38 @@ impl Service {
         result
     }
     async fn shutdown(&self) {
-        self.0
-            .retired
-            .store(true, std::sync::atomic::Ordering::Release);
-        if let Some(native) = self.0.native.lock().await.take() {
-            native.shutdown().await;
-        }
+        let _ = self.begin_shutdown().wait().await;
+    }
+    fn begin_shutdown(&self) -> ::hagency::shutdown::Task {
+        self.0.shutdown.get_or_init(|| {
+            self.0.retired.store(true, std::sync::atomic::Ordering::Release);
+            let service = self.clone();
+            let task = ::hagency::shutdown::Task::start(async move {
+                let native = service.0.native.lock().await.as_ref().cloned();
+                if let Some(native) = native { native.shutdown_checked().await } else { Ok(()) }
+            });
+            RETIREMENTS.lock().expect("retirement registry poisoned").track(task.clone());
+            task
+        }).clone()
     }
     /// Account transitions must call this before clearing SDK/UI state. It
     /// revokes owner authority and drains runtime/provider work before return.
     pub async fn stop_current() {
+        let _ = Self::stop_current_checked().await;
+    }
+    pub async fn stop_current_checked() -> ::hagency::shutdown::Result {
         let _stopping = STOP_CURRENT.lock().await;
-        let service = CURRENT.lock().ok().and_then(|mut current| current.take());
+        let service = CURRENT.lock().map_err(|_| ::hagency::shutdown::Error::Worker)?.take();
         if let Some(service) = service {
-            service
-                .0
-                .retired
-                .store(true, std::sync::atomic::Ordering::Release);
-            service.shutdown().await;
+            service.begin_shutdown();
         }
+        let operations = {
+            let mut retained = RETIREMENTS.lock().map_err(|_| ::hagency::shutdown::Error::Worker)?;
+            retained.outstanding()
+        };
+        let mut result = Ok(());
+        for operation in operations { result = result.and(operation.wait().await); }
+        result
     }
 }
 

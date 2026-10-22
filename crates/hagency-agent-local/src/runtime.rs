@@ -3,6 +3,7 @@
 use crate::codex::{
     self, ApprovalQueue, BudgetMode, Completed, Error, Profile, Result, TurnStatus,
 };
+use crate::process_cleanup::RetainedChild;
 use crate::{Ledger, Reservation, Scope, ToolPolicy, ToolProposal, Usage};
 use hagency_runtime::{claude, octos};
 use serde_json::{Value, json};
@@ -10,7 +11,7 @@ use std::{
     path::Path,
     time::{Duration, Instant},
 };
-use tokio::process::{Child, ChildStdin, ChildStdout};
+use tokio::process::{ChildStdin, ChildStdout};
 
 type Claude = hagency_runtime::owned::OwnedClaudeSession;
 type Octos = hagency_runtime::owned::OwnedOctosSession;
@@ -158,7 +159,7 @@ pub fn validate(profile: &Profile, reference: &str) -> Result<()> {
 
 pub struct Process {
     pub session: Session,
-    child: Option<Child>,
+    child: Option<RetainedChild>,
 }
 impl Process {
     pub async fn stop(&mut self) -> Result<()> {

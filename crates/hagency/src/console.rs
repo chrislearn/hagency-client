@@ -119,6 +119,16 @@ impl Console {
     pub(crate) async fn stop_owner_provider(&self) {
         self.0.owner_provider.stop_all().await;
     }
+    pub(super) async fn stop_for_update(&self) -> crate::shutdown::Result {
+        let agents = self.0.owned_runtime.stop_all_checked().await;
+        let provider = self.0.owner_provider.stop_all_checked().await;
+        let children = if hagency_agent_local::process_cleanup::finish_all().await {
+            Ok(())
+        } else {
+            Err(crate::shutdown::Error::Provider)
+        };
+        agents.and(provider).and(children)
+    }
     pub(super) fn graphs(&self) -> Option<&graphs::GraphStore> {
         self.0.graphs.as_ref()
     }

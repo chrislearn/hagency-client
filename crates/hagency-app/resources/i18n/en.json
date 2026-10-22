@@ -2174,5 +2174,11 @@
   "Service audience unavailable. Update the server and refresh.": "Service audience unavailable. Update the server and refresh.",
   "No public Agents owned by you are available. Publish an Agent in its settings first.": "No public Agents owned by you are available. Publish an Agent in its settings first.",
   "Choose a public Agent you own to bind to this Room.": "Choose a public Agent you own to bind to this Room.",
-  "This Agent is private. Publish it in its settings before adding it to a shared Room.": "This Agent is private. Publish it in its settings before adding it to a shared Room."
+  "This Agent is private. Publish it in its settings before adding it to a shared Room.": "This Agent is private. Publish it in its settings before adding it to a shared Room.",
+  "Agent cleanup is unconfirmed. Installation has been postponed.": "Agent cleanup is unconfirmed. Installation has been postponed.",
+  "Shutdown could not be confirmed. Installation was postponed.": "Shutdown could not be confirmed. Installation was postponed.",
+  "Shutdown is still pending. Installation was postponed; waiting for the original cleanup.": "Shutdown is still pending. Installation was postponed; waiting for the original cleanup.",
+  "The assistant cannot confirm shutdown. Restart Hagency before updating.": "The assistant cannot confirm shutdown. Restart Hagency before updating.",
+  "Your account changed during preparation. Installation was postponed.": "Your account changed during preparation. Installation was postponed.",
+  "Could not start the update installer. Please restart Hagency to try again.": "Could not start the update installer. Please restart Hagency to try again."
 }

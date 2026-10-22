@@ -194,7 +194,7 @@ impl Widget for UpdateNotice {
             };
             self.panel.label(cx, ids!(status)).set_text(cx, &status);
             let primary = self.panel.button(cx, ids!(primary));
-            primary.set_visible(cx, primary_action(state.phase).is_some());
+            primary.set_visible(cx, primary_action(state.phase).is_some() && !state.restart_required);
             primary.set_enabled(cx, !state.preview);
             primary.set_text(
                 cx,

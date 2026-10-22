@@ -189,6 +189,8 @@ hagency-updater = { path = "../hagency-updater" }
 
 
 [features]
+# Opt-in, isolated debug-only Sparkle experiment. Never enables production updates.
+macos-sparkle = ["dep:cc"]
 # Isolated local accounts exist only in instrument builds.
 palpo-instrument = []
 chat-stress = ["dep:stats_alloc"]
@@ -251,6 +253,7 @@ name = "article_comparison_native"
 required-features = ["html_preview"]
 
 [build-dependencies]
+cc = { version = "1", optional = true }
 rinx-system-apps = { path = "../system-apps" }
 serde_json = "1"
 toml = "1"
@@ -384,7 +387,7 @@ section = "utils"
 "./NOTICE" = "/usr/share/licenses/hagency-app/NOTICE"
 
 [package.metadata.packager.macos]
-minimum_system_version = "11.0"
+minimum_system_version = "12.0"
 frameworks = []
 info_plist_path = "./packaging/macos/Info.plist"
 entitlements = "./packaging/macos/Entitlements.plist"

@@ -1,5 +1,6 @@
 //! Direct historical SDK config validation, plus actual OwnerHost bootstrap gates.
 //! No historical executable/CLI/Fleet runner is constructed by these tests.
+#[cfg(unix)]
 #[path = "bootstrap/accounts.rs"]
 mod accounts;
 #[path = "bootstrap/fixture.rs"]
