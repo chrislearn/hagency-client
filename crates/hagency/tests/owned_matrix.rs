@@ -336,53 +336,53 @@ async fn native_matrix_owned_private_plaintext_refused() {
     fake.close().await;
 }
 
-/// Board #86: the #12 invite poll must never starve the agent's own refresh.
-///
-/// The first live run parked the invite poller in flight on the SDK's single
-/// `busy` permit; the driver's own refresh then came back `Busy`, so the agent
-/// stopped ingesting room events and a mention was never answered. This drives
-/// the PRODUCTION path on ONE collector: the poll's sync is held in flight by
-/// the peer, the driver's exact refresh call (`driver.rs` `run()`:
-/// `collector.collect`) runs while it is parked, and the mention that refresh
-/// and intake carry is still ingested — with the poll still parked.
-///
-/// TS does not contend here (`bridge-matrix.js:7894-8131`): its poll is a
-/// stateless `fetch` sync holding no client lock, which is why the fix drops
-/// the permit from the invite reads rather than serializing them.
+/// Board #86: invite polling must not hold the SDK's single busy permit.
+/// Park an actual invite sync until the SAME collector's refresh/intake has
+/// reached its own HTTP peer. That is the permit-admission boundary: restoring
+/// the old permit makes either operation refuse Busy before this request.
+/// Release the poll there, before unrelated SDK persistence can spend its
+/// original HTTP deadline, and still require both clean polls and the actual
+/// admitted mention. No response/request/SDK bound is changed.
 #[tokio::test]
 async fn native_invite_poll_does_not_starve_the_agent_refresh() {
+    async fn park(
+        fake: &mut common::Fake,
+        poll: &mut (impl std::future::Future<Output = Result<(), &'static str>> + Unpin),
+    ) -> tokio::sync::oneshot::Sender<()> {
+        let request = tokio::select! {
+            biased;
+            request = fake.next() => request,
+            result = poll => panic!("the invite poll settled before its sync request: {result:?}"),
+        };
+        assert!(
+            request
+                .target
+                .starts_with("/_matrix/client/v3/sync?timeout=0&filter="),
+            "the invite path reads rooms.invite from its own sync: {}",
+            request.target
+        );
+        let (release, parked) = tokio::sync::oneshot::channel();
+        let invited =
+            serde_json::to_vec(&json!({"next_batch":"poll","rooms":{"invite":{}}})).unwrap();
+        request.hold(
+            vec![(Duration::ZERO, common::response(200, &invited))],
+            0,
+            parked,
+        );
+        release
+    }
+
     let (w, mut fake) = Workflow::ready(false).await;
     let cancel = CancellationToken::new();
-
-    // (1) The poll's own stateless sync, PARKED: the peer observes the request
-    // and withholds the response, so the poll is suspended mid-flight exactly
-    // as it was live — the state that used to hold the SDK permit.
     let mut poll = Box::pin(poll_round(&w.collector, &w.f.store, &cancel));
-    let request = tokio::select! {
-        biased;
-        request = fake.next() => request,
-        _ = poll.as_mut() => panic!("the invite poll settled before its sync request"),
-    };
-    assert!(
-        request
-            .target
-            .starts_with("/_matrix/client/v3/sync?timeout=0&filter="),
-        "the invite path reads rooms.invite from its own sync: {}",
-        request.target
-    );
-    let (release, parked) = tokio::sync::oneshot::channel();
-    let invited = serde_json::to_vec(&json!({"next_batch":"poll","rooms":{"invite":{}}})).unwrap();
-    request.hold(
-        vec![(Duration::ZERO, common::response(200, &invited))],
-        0,
-        parked,
-    );
-
-    // (2) The agent's OWN refresh on the SAME collector while the poll is
-    // parked. Before the fix this returned `Error::Busy` and the driver
-    // logged "Matrix refresh refused"; the mention below never woke.
+    let release = park(&mut fake, &mut poll).await;
     let (refreshed, ()) = common::scripted(w.collector.collect(&cancel), async {
-        fake.next().await.json(200, common::who());
+        let request = fake.next().await;
+        assert_eq!(request.target, "/_matrix/client/v3/account/whoami");
+        // Only an admitted refresh can reach this peer while the poll is
+        // still parked. No other path releases it or fabricates admission.
+        release.send(()).unwrap();
+        request.json(200, common::who());
         fake.next().await.json(200, common::sync("refresh"));
         fake.next().await.json(200, room(false));
     })
@@ -393,12 +393,18 @@ async fn native_invite_poll_does_not_starve_the_agent_refresh() {
             .rooms,
         1
     );
+    poll.await
+        .expect("the admitted refresh releases a clean invite poll");
 
-    // (3) The mention is ingested on the same collector with the poll STILL
-    // parked: the live symptom was that this never woke.
     let plan = HostIntakePlan::new(vec!["root".into()]).unwrap();
+    let mut poll = Box::pin(poll_round(&w.collector, &w.f.store, &cancel));
+    let release = park(&mut fake, &mut poll).await;
     let (admitted, ()) = common::scripted(w.collector.intake(plan, &cancel), async {
-        fake.next().await.json(200, common::who());
+        let request = fake.next().await;
+        assert_eq!(request.target, "/_matrix/client/v3/account/whoami");
+        // Independently prove intake's admission under a parked poll too.
+        release.send(()).unwrap();
+        request.json(200, common::who());
         fake.next().await.json(200, sync(event()));
         fake.next().await.json(200, room(false));
     })
@@ -410,13 +416,11 @@ async fn native_invite_poll_does_not_starve_the_agent_refresh() {
         1,
         "the mention woke the agent"
     );
+    poll.await
+        .expect("the admitted intake releases a clean invite poll");
     let inbox = w.f.store.inbox("root".into(), 0, 10, None).await.unwrap();
     assert_eq!(inbox.len(), 1);
     assert_eq!(inbox[0].message.body, INPUT);
-
-    // (4) Releasing the parked poll completes it cleanly — no refusal.
-    release.send(()).unwrap();
-    poll.await.unwrap();
     fake.no_request().await;
     w.close().await;
     fake.close().await;
