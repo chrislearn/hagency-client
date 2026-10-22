@@ -32,7 +32,7 @@ script_mod! {
     let DesktopNavButton = NavigationBarButton {
         width: Fill height: 40 flow: Right spacing: 10
         align: Align{x: 0 y: 0.5} padding: Inset{left: 12 right: 8}
-        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_SELECTED border_radius: 5}
+        draw_bg +: {color_hover: mod.widgets.RINX_HOVER color_active: mod.widgets.RINX_NAV_SELECTED border_radius: 5}
         nav_icon := Icon {icon_walk: Walk{width: 18 height: 18} draw_icon.color: mod.widgets.RINX_INK}
         label := RinxLabel {width: Fill max_lines: 1 text_overflow: Ellipsis
             draw_text +: {color: mod.widgets.RINX_INK text_style: theme.font_regular{font_size: mod.widgets.RINX_UI_SIZE}}

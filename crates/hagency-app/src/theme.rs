@@ -375,6 +375,8 @@ pub fn script_mod(vm: &mut ScriptVm) {
         mod.widgets.RINX_CAPTION_HOVER = #(mix(s.page, s.ink, 0.12))
         mod.widgets.RINX_CAPTION_PRESSED = #(mix(s.page, s.ink, 0.20))
         mod.widgets.RINX_SELECTED = #(s.selected)
+        // Primary navigation needs a stronger fill than contextual list rows.
+        mod.widgets.RINX_NAV_SELECTED = #(mix(s.selected, s.accent, 0.30))
         mod.widgets.RINX_SCROLLBAR = #(mix(s.page, s.ink, 0.35))
         mod.widgets.RINX_SCROLLBAR_HOVER = #(mix(s.page, s.ink, 0.50))
         mod.widgets.RINX_SCROLLBAR_DRAG = #(mix(s.page, s.ink, 0.65))
