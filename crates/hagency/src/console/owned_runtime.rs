@@ -3227,12 +3227,61 @@ mod tests {
         LostStart,
         ExistingStart,
         ReplyRetry,
+        #[cfg(unix)]
         CancelModel,
+        #[cfg(unix)]
         RevokedModel,
+        #[cfg(unix)]
         IdleOtherRoom,
         CrossEpochReply,
         AcceptedOnly,
+        #[cfg(unix)]
         LiveTurn,
+    }
+    impl Mode {
+        fn starts_model(self) -> bool {
+            #[cfg(unix)]
+            {
+                matches!(
+                    self,
+                    Self::CancelModel | Self::RevokedModel | Self::LiveTurn
+                )
+            }
+            #[cfg(not(unix))]
+            {
+                false
+            }
+        }
+        fn is_live_turn(self) -> bool {
+            #[cfg(unix)]
+            {
+                matches!(self, Self::LiveTurn)
+            }
+            #[cfg(not(unix))]
+            {
+                false
+            }
+        }
+        fn is_revoked_model(self) -> bool {
+            #[cfg(unix)]
+            {
+                matches!(self, Self::RevokedModel)
+            }
+            #[cfg(not(unix))]
+            {
+                false
+            }
+        }
+        fn is_idle_other_room(self) -> bool {
+            #[cfg(unix)]
+            {
+                matches!(self, Self::IdleOtherRoom)
+            }
+            #[cfg(not(unix))]
+            {
+                false
+            }
+        }
     }
     struct Fake {
         path: PathBuf,
@@ -3243,7 +3292,7 @@ mod tests {
     impl Fake {
         fn offered(&self) -> inbox::Dispatch {
             let mut dispatch = event();
-            if matches!(self.mode, Mode::LiveTurn) {
+            if self.mode.is_live_turn() {
                 dispatch.body = "This is an isolated Hagency updater qualification. Do not use tools. Reply exactly UPDATE_TASK_DONE.".into();
             }
             dispatch
@@ -3276,14 +3325,14 @@ mod tests {
                 Op::Poll { binding_id, .. } => {
                     assert_eq!(
                         binding_id,
-                        if matches!(self.mode, Mode::IdleOtherRoom) {
+                        if self.mode.is_idle_other_room() {
                             "binding-b"
                         } else {
                             "binding-a"
                         }
                     );
                     calls.push("poll");
-                    if matches!(self.mode, Mode::IdleOtherRoom) {
+                    if self.mode.is_idle_other_room() {
                         return Ok(Response::Events(vec![]));
                     }
                     if matches!(self.mode, Mode::ReplyRetry | Mode::CrossEpochReply) {
@@ -3323,10 +3372,7 @@ mod tests {
                     dispatch.state = "running".into();
                     Ok(Response::Started(ExecutionStart {
                         dispatch: wire(&dispatch),
-                        newly_started: matches!(
-                            self.mode,
-                            Mode::CancelModel | Mode::RevokedModel | Mode::LiveTurn
-                        ),
+                        newly_started: self.mode.starts_model(),
                     }))
                 }
                 Op::Processing {
@@ -3334,10 +3380,7 @@ mod tests {
                     dispatch_id,
                     execution_id,
                 } => {
-                    assert!(matches!(
-                        self.mode,
-                        Mode::CancelModel | Mode::RevokedModel | Mode::LiveTurn
-                    ));
+                    assert!(self.mode.starts_model());
                     assert_eq!(lease.agent_id, "agent-a");
                     assert_eq!(lease.epoch, 1);
                     assert_eq!(dispatch_id, "dispatch-a");
@@ -3356,7 +3399,7 @@ mod tests {
                     ..
                 } => {
                     calls.push("authorize");
-                    if matches!(self.mode, Mode::RevokedModel)
+                    if self.mode.is_revoked_model()
                         && calls.iter().filter(|c| **c == "authorize").count() > 1
                     {
                         return Err(RuntimeError::Authorization);
@@ -3380,7 +3423,7 @@ mod tests {
                         State::Unknown
                     );
                     calls.push("unknown");
-                    if !matches!(self.mode, Mode::RevokedModel) {
+                    if !self.mode.is_revoked_model() {
                         self.stop.send_replace(true);
                     }
                     Ok(Response::Finished)
@@ -3391,7 +3434,7 @@ mod tests {
                     body,
                     ..
                 } => {
-                    if matches!(self.mode, Mode::LiveTurn) {
+                    if self.mode.is_live_turn() {
                         assert!(body.contains("UPDATE_TASK_DONE"), "{body}");
                     } else {
                         assert_eq!(body, "original response");
@@ -3401,7 +3444,8 @@ mod tests {
                     assert_eq!(record.reply.as_deref(), Some(body.as_str()));
                     let label = if recovering { "reconcile" } else { "reply" };
                     calls.push(label);
-                    if !matches!(self.mode, Mode::AcceptedOnly | Mode::LiveTurn)
+                    if !matches!(self.mode, Mode::AcceptedOnly)
+                        && !self.mode.is_live_turn()
                         && calls.iter().filter(|c| **c == label).count() == 1
                     {
                         return Err(RuntimeError::Transport);
