@@ -59,6 +59,7 @@ Scenario: Preparation and failed materialization cannot manufacture another writ
   Test Double: actual original Started receipt occupied destinations and unique writer grants
   Test: native_receive_workspace_once
   Given original current authority and generated occupied or mismatched destinations
+  And any blocking writer-lock fixture is established before synchronous preparation starts the original write deadline
   When preparation materialization errors caller loss and a repeated attempt occur
   Then preparation creates nothing and an attempted owner never rearms or modifies an existing entry
   And the actual original destination remains retained across error and worker unwind

@@ -372,14 +372,24 @@ async fn native_receive_workspace_once() {
     );
     #[cfg(windows)]
     assert!(fs::rename(&path, f.work.join("cannot-move-held")).is_err());
-    let mut lost = owner(&f, &binding, 5, b"never created").await;
-    let absent = f.work.join(lost.relative_path());
     let lock = f.sql();
+    let lost_write = grant(&f, 5, b"never created").await;
     lock.execute_batch("BEGIN IMMEDIATE").unwrap();
+    // Preparation is synchronous and has no filesystem effect. Start its
+    // original 4 s write clock after acquiring the test's blocking lock;
+    // lock acquisition itself is not part of materialization's scenario.
+    let mut lost = binding
+        .prepare_receive(&f.cap, lost_write, deadline())
+        .unwrap();
+    let absent = f.work.join(lost.relative_path());
     {
         let mut effect = pin!(lost.materialize(b"never created"));
         std::future::poll_fn(|cx| {
-            assert!(effect.as_mut().poll(cx).is_pending());
+            let outcome = effect.as_mut().poll(cx);
+            assert!(
+                outcome.is_pending(),
+                "the current-authority writer must remain blocked before caller loss: {outcome:?}"
+            );
             Poll::Ready(())
         })
         .await;

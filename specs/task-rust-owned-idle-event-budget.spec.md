@@ -62,8 +62,8 @@ Scenario: Quiet turns remain bounded by cancellation and the operation deadline
 Scenario: Pending RPC timeout retains its original diagnostic cause
   Test: native_owned_runtime_failure_observation
   Given an actual runner that never replies to initialize
-  When the original response deadline expires
-  Then the response remains unknown and the original timeout and pending request count are retained
+  When the original operation deadline expires after the ordinary response limit but before the startup acknowledgement bound
+  Then the response remains unknown and the original cancellation cause and pending request count are retained
 
 ## Out of Scope
 
