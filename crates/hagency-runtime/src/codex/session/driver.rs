@@ -57,6 +57,11 @@ pub struct SessionDriver<R, W, E> {
 }
 
 impl<R, W, E> SessionDriver<R, W, E> {
+    #[cfg(windows)]
+    pub(crate) fn with_write_submission_observer(mut self, observer: fn(&W) -> bool) -> Self {
+        self.wire.observe_write_submission(observer);
+        self
+    }
     pub fn new(
         stdout: R,
         stdin: W,

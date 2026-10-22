@@ -44,6 +44,13 @@ impl Fixture {
         Self::family("codex").await
     }
     async fn family(family: &str) -> Self {
+        static REPORTED: std::sync::Once = std::sync::Once::new();
+        REPORTED.call_once(|| {
+            eprintln!(
+                "offline native fixture available_parallelism={:?}",
+                std::thread::available_parallelism()
+            );
+        });
         let root = tempfile::tempdir().unwrap();
         let work = root.path().join("固定 工作目录");
         hagency_store::private::directory(&work).unwrap();

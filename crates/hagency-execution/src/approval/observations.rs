@@ -169,11 +169,11 @@ impl Drive<'_> {
                                     | hagency_runtime::codex::transport::Error::Closed
                             )
                         });
-                        let accepted = termination
+                        let possibly_transmitted = termination
                             .and_then(|t| t.unconfirmed_write.as_ref())
-                            .map_or(0, |write| write.accepted_bytes);
-                        let transmitted =
-                            accepted > 0 || callbacks.entries.values().any(|e| e.write.is_some());
+                            .is_some_and(|write| !write.is_definitely_untransmitted());
+                        let transmitted = possibly_transmitted
+                            || callbacks.entries.values().any(|e| e.write.is_some());
                         if transmitted {
                             Err(Failure::SettlementUnknown)
                         } else if host_side {
