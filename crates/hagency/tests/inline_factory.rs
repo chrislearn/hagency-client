@@ -184,7 +184,7 @@ async fn native_configured_fleet_recurring_driver() {
 }
 use serde_json::json;
 
-#[cfg(any(target_os = "linux", target_os = "macos", windows))]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 async fn queue_service_task(f: &Fixture, n: u32) {
     let task = format!("service_task_{n}");
     f.base
