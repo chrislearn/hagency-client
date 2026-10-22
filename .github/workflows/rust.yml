@@ -138,7 +138,9 @@ jobs:
         # try_wait state when tools/list fails. Diagnostic only, never a retry.
         run: cargo test --locked -p hagency --test mcp_coordination --no-fail-fast -- --test-threads=8 --nocapture
       - name: Qualify Linux cgroup recovery on a disposable hosted VM
-        if: runner.os == 'Linux'
+        # Independently qualify the host even if an unrelated engine test fails.
+        # The original failed step remains fatal, as with Windows media custody.
+        if: ${{ !cancelled() && runner.os == 'Linux' }}
         shell: bash
         run: |
           python3 -B tools/native/test-qualify-linux-cgroup.py

@@ -1561,15 +1561,18 @@ async fn native_owned_approval_turn_end_midwrite_uncertain() {
         .unwrap()
         .unwrap();
     choose(&domain, notice.request_id).await;
-    // The probe exits on its own schedule (silent 1.2 s, turn end, exit
-    // unread); wait for its handshake marker before claiming the report.
+    // The probe announces its exit path before emitting the terminal note:
+    // once the host reads the note it may immediately kill the probe. This
+    // handshake alone is not the verdict; the report below must still prove
+    // actual transmitted, unresolved custody and SettlementUnknown.
     let midwrite = work.join("owned-dispatch.approval-midwrite-exit");
     let end = tokio::time::Instant::now() + harness_wait();
     while !midwrite.exists() {
         assert!(
             tokio::time::Instant::now() < end,
-            "probe never reached its midwrite exit; probe markers present: {}",
-            markers_present(&work)
+            "probe never reached its midwrite exit; probe markers present: {}; trace: {}",
+            markers_present(&work),
+            crate::approval::diagnostics::dispatch_trace(&cap.dispatch_id)
         );
         tokio::time::sleep(Duration::from_millis(5)).await;
     }

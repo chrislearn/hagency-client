@@ -228,11 +228,15 @@ pub(super) fn run(mode: &str, reader: &mut impl BufRead, marker: &Path) -> io::R
         // write is accepted and recorded before the turn end arrives: the
         // clean control arm, asserted as such by the scenario.
         std::thread::sleep(Duration::from_millis(1200));
+        // The terminal note authorizes the host to stop this process. Publish
+        // the fixture handshake first: cleanup can otherwise kill us between
+        // the stdout flush and the marker write. The test still requires the
+        // actual report to prove transmission uncertainty after the note.
+        announce(marker, "approval-midwrite-exit")?;
         note(
             "turn/completed",
             json!({ "threadId": "owned-thread", "turn": { "id": "owned-turn", "status": "completed", "items": [] } }),
         )?;
-        announce(marker, "approval-midwrite-exit")?;
         return Ok(false);
     }
     if mode == "owned-approval-gate-resolve" {
