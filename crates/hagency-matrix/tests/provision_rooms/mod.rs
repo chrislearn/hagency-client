@@ -1471,8 +1471,16 @@ async fn native_provisioning_inline_home() {
                 && content.contains(&admitted_id(&f))
                 && content.contains("native DomainStore")
         );
+        let document = workdir.join("docs").join(file);
         assert_eq!(
-            std::fs::read(workdir.join("docs").join(file)).unwrap(),
+            std::fs::read(&document).unwrap_or_else(|error| {
+                panic!(
+                    "read {document:?}: {error}; docs entries: {:?}",
+                    std::fs::read_dir(workdir.join("docs")).map(|entries| entries
+                        .map(|e| e.map(|e| e.file_name()))
+                        .collect::<Vec<_>>())
+                )
+            }),
             content.as_bytes()
         );
         assert!(path.join("supervisor").join(file).exists());

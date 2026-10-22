@@ -203,7 +203,13 @@ async fn native_worktree_two_threads_distinct_worktrees() {
         .unwrap();
     let mut op_a = Operation::start(domain.clone(), cap_a, host(env()), limits()).unwrap();
     let report_a = op_a.wait().await.unwrap();
-    assert_eq!(report_a.protocol, Protocol::Completed);
+    assert_eq!(
+        report_a.protocol,
+        Protocol::Completed,
+        "{:?} {:?}",
+        report_a.failure,
+        report_a.runtime_observation()
+    );
 
     // Thread B: distinct worktree, same agent.
     domain

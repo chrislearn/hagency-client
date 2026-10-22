@@ -195,7 +195,24 @@ async fn native_owned_approval_barriers() {
     assert!((1..=2).contains(&before));
     assert_eq!(f.state(), "parked");
     choose(&f, &third.request_id, ApprovalChoice::Once).await;
-    let report = op.wait().await.unwrap();
+    let report = {
+        let wait = op.wait();
+        tokio::pin!(wait);
+        let mut released = 0;
+        loop {
+            tokio::select! {
+                result = &mut wait => break result.unwrap(),
+                _ = tokio::time::sleep(Duration::from_millis(5)) => {
+                    let accepted = f.count("SELECT COUNT(*) FROM approval_responses WHERE write_accepted=1");
+                    assert!(accepted <= 3, "extra accepted response");
+                    while released < accepted {
+                        released += 1;
+                        fs::write(f.work.join(format!("owned-dispatch.approval-accepted-{released}")), b"actual store receipt").unwrap();
+                    }
+                }
+            }
+        }
+    };
     assert_eq!(
         report.protocol,
         Protocol::Completed,

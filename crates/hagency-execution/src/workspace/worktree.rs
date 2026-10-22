@@ -429,6 +429,10 @@ impl WorktreeManager {
         // name a worktree. Use the same alias-refusing projection as runners;
         // comparisons and returned custody keep their canonical paths.
         let target = tool_path(&resolved.path)?;
+        // Git accepts an existing empty destination. Establish private custody
+        // before it writes checkout bytes; never reseal an existing worktree.
+        hagency_store::private::create_directory_new(&resolved.path)
+            .map_err(|e| err(format!("create private worktree: {e}")))?;
         if branch_exists {
             git(
                 &repository_path,

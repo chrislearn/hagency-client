@@ -1073,7 +1073,7 @@ async fn native_owned_approval_receipt_before_resolution() {
     let work = work.canonicalize().unwrap();
     let (domain, cap) = fixture(root.path(), "receipt-before-resolution");
     let gate = Arc::new(crate::approval::Gate::default());
-    let mut configured = host(&work, Fault::ReceiptGate, "owned-approval");
+    let mut configured = host(&work, Fault::ReceiptGate, "owned-approval-receipt-order");
     configured.approval_gate = Some(gate.clone());
     let mut op = Operation::start(
         domain.clone(),
@@ -1110,6 +1110,22 @@ async fn native_owned_approval_receipt_before_resolution() {
             tokio::time::Instant::now() < end,
             "probe never recorded the written frame; probe markers present: {}",
             markers_present(&work)
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    std::fs::write(
+        work.join("owned-dispatch.receipt-resolution-release"),
+        b"release",
+    )
+    .unwrap();
+    let end = tokio::time::Instant::now() + harness_wait();
+    while !work
+        .join("owned-dispatch.receipt-resolution-emitted")
+        .exists()
+    {
+        assert!(
+            tokio::time::Instant::now() < end,
+            "probe did not resolve inside the actual receipt gate"
         );
         tokio::time::sleep(Duration::from_millis(5)).await;
     }

@@ -363,14 +363,20 @@ mod current_directory_tests {
                 assert_eq!(short.canonicalize().unwrap(), long.canonicalize().unwrap());
                 let cmd = std::path::PathBuf::from(std::env::var_os("SystemRoot").unwrap())
                     .join("System32/cmd.exe");
-                assert!(
-                    std::process::Command::new(cmd)
-                        .args(["/d", "/c", "exit", "0"])
-                        .current_dir(short)
-                        .creation_flags(CREATE_NO_WINDOW)
-                        .status()
-                        .unwrap()
-                        .success()
+                let output = std::process::Command::new(cmd)
+                    .raw_arg("/d /u /c cd")
+                    .current_dir(&short)
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .output()
+                    .unwrap();
+                assert!(output.status.success(), "cwd={short:?}; {output:?}");
+                let (chunks, remainder) = output.stdout.as_chunks::<2>();
+                assert!(remainder.is_empty(), "{output:?}");
+                let cwd: Vec<u16> = chunks.iter().copied().map(u16::from_le_bytes).collect();
+                let cwd = String::from_utf16(&cwd).unwrap();
+                assert_eq!(
+                    std::path::Path::new(cwd.trim()).canonicalize().unwrap(),
+                    long.canonicalize().unwrap()
                 );
             }
             Err(error) => assert_eq!(error.kind(), io::ErrorKind::InvalidInput),

@@ -335,10 +335,15 @@ async fn roundtrip(done: bool, retained: bool) {
         .collect::<Result<_, _>>()
         .unwrap();
     let phases: Vec<&str> = events.iter().map(|e| e.1.as_str()).collect();
-    assert!(
-        phases.starts_with(&["spawn_started", "spawn_done", "initialized", "turn_started"]),
-        "{phases:?}"
-    );
+    let required: &[&str] = if done {
+        // The real Done advances the epoch and can fence the original worker
+        // before turn/start's response is observed. Its strict Done/fence/no
+        // settlement assertions below still require that actual invalidation.
+        &["spawn_started", "spawn_done", "initialized"]
+    } else {
+        &["spawn_started", "spawn_done", "initialized", "turn_started"]
+    };
+    assert!(phases.starts_with(required), "{phases:?}");
     assert!(
         events
             .iter()

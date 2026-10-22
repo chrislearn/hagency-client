@@ -85,6 +85,11 @@ fn two_concurrent_threads_get_distinct_worktrees() {
         .ensure(spec(&repo, &worktrees, "agent", "$thread-b"))
         .unwrap();
     assert_ne!(a.path, b.path);
+    for path in [&a.path, &b.path] {
+        let directory =
+            cap_std::fs::Dir::open_ambient_dir(path, cap_std::ambient_authority()).unwrap();
+        hagency_store::private::check_handle(&directory.into_std_file()).unwrap();
+    }
     assert_ne!(a.branch, b.branch);
     let again = manager
         .ensure(spec(&repo, &worktrees, "agent", "$thread-a"))

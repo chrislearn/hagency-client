@@ -330,7 +330,19 @@ pub(super) fn run(mode: &str, reader: &mut impl BufRead, marker: &Path) -> io::R
         if mode == "owned-approval-barriers" && index == 0 {
             callback("approval-3")?;
         }
+        if mode == "owned-approval-barriers" {
+            // A peer can consume overlapped pipe bytes before the host sees
+            // their write completion. This positive barrier fixture resolves
+            // only after the test observes the original accepted store row.
+            await_release(marker, &format!("approval-accepted-{}", index + 1))?;
+        }
+        if mode == "owned-approval-receipt-order" {
+            await_release(marker, "receipt-resolution-release")?;
+        }
         resolved(id)?;
+        if mode == "owned-approval-receipt-order" {
+            announce(marker, "receipt-resolution-emitted")?;
+        }
         if mode == "owned-approval-reuse" && index == 0 {
             callback("approval-2")?;
         }

@@ -403,7 +403,15 @@ async fn native_retained_task_context_refusals() {
     let f = Fixture::new(true).await;
     assert!(RetainedTaskContext::new(f.root.path().join("missing"), &"a".repeat(64)).is_err());
     assert!(!f.root.path().join("missing").exists());
-    assert!(RetainedTaskContext::new(f.contexts.join("../contexts"), &"a".repeat(64)).is_err());
+    // PathBuf::push normalizes parent segments on verbatim Windows paths.
+    // Preserve the actual noncanonical input rather than testing its already
+    // canonical replacement, which correctly names the original directory.
+    let mut alias = f.contexts.as_os_str().to_os_string();
+    alias.push(std::path::MAIN_SEPARATOR_STR);
+    alias.push("..");
+    alias.push(std::path::MAIN_SEPARATOR_STR);
+    alias.push("contexts");
+    assert!(RetainedTaskContext::new(alias.into(), &"a".repeat(64)).is_err());
     assert!(RetainedTaskContext::new(f.contexts.clone(), &"A".repeat(64)).is_err());
     private::write_new(&f.path(), b"foreign").unwrap();
     assert!(RetainedTaskContext::new(f.contexts.clone(), &"a".repeat(64)).is_err());
