@@ -3,6 +3,7 @@
 use crate::codex::{
     self, ApprovalQueue, BudgetMode, Completed, Error, Profile, Result, TurnStatus,
 };
+use crate::process_cleanup::RetainedChild;
 use crate::{Ledger, Reservation, Scope, ToolPolicy, ToolProposal, Usage};
 use hagency_runtime::{claude, octos};
 use serde_json::{Value, json};
@@ -11,7 +12,6 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::process::{ChildStdin, ChildStdout};
-use crate::process_cleanup::RetainedChild;
 
 type Claude = hagency_runtime::owned::OwnedClaudeSession;
 type Octos = hagency_runtime::owned::OwnedOctosSession;

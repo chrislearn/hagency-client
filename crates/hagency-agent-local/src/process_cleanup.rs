@@ -59,7 +59,10 @@ impl Drop for RetainedChild {
 /// Call after admission is fenced and every original worker/owner is joined.
 /// Failures remain retained, including loss of the original monitor's receipt.
 pub async fn finish_all() -> bool {
-    let receipts = RETIRED.lock().map(|receipts| receipts.clone()).map_err(|_| ());
+    let receipts = RETIRED
+        .lock()
+        .map(|receipts| receipts.clone())
+        .map_err(|_| ());
     let Ok(receipts) = receipts else {
         return false;
     };

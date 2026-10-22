@@ -971,10 +971,15 @@ async fn confirm(
 async fn tick(native: &NativeOwner) -> Result<(), NativeError> {
     tick_with_admission(native, &crate::update_guard::PROCESS).await
 }
-async fn tick_with_admission(native: &NativeOwner, admission: &crate::update_guard::UpdateGate) -> Result<(), NativeError> {
+async fn tick_with_admission(
+    native: &NativeOwner,
+    admission: &crate::update_guard::UpdateGate,
+) -> Result<(), NativeError> {
     // This worker calls execute_locked directly: its entire claim/apply/receipt
     // cycle needs admission, not only commands entering NativeOwner::execute.
-    let _update_task = admission.enter_task().ok_or_else(|| failure(409, "update_in_progress"))?;
+    let _update_task = admission
+        .enter_task()
+        .ok_or_else(|| failure(409, "update_in_progress"))?;
     let _guard = native.0.calls.lock().await;
     let pin = self::pin(native).await?;
     let path = journal(native, &pin)?;
@@ -1113,14 +1118,23 @@ mod tests {
     #[tokio::test]
     async fn update_fence_refuses_background_configuration_before_authorization_or_claim() {
         let root = tempfile::tempdir().unwrap();
-        let owner = NativeOwner::open(&root.path().join("state"), "https://example.test/", "@owner:example.test").await.unwrap();
+        let owner = NativeOwner::open(
+            &root.path().join("state"),
+            "https://example.test/",
+            "@owner:example.test",
+        )
+        .await
+        .unwrap();
         let admission = crate::update_guard::UpdateGate::default();
         let pending = admission.begin_update().unwrap();
         let error = tick_with_admission(&owner, &admission).await.unwrap_err();
         assert_eq!(error.code, "update_in_progress");
         drop(pending);
         let error = tick_with_admission(&owner, &admission).await.unwrap_err();
-        assert_ne!(error.code, "update_in_progress", "canceling the wait restores normal admission");
+        assert_ne!(
+            error.code, "update_in_progress",
+            "canceling the wait restores normal admission"
+        );
         owner.shutdown_checked().await.unwrap();
     }
     #[test]

@@ -555,7 +555,8 @@ impl OwnedRuntime {
         mut config: StartConfig,
     ) -> Result<RuntimeStatus, RuntimeError> {
         // Resident service discovery also enters here without a Native command.
-        let _update_task = crate::update_guard::PROCESS.enter_task()
+        let _update_task = crate::update_guard::PROCESS
+            .enter_task()
             .ok_or(RuntimeError::Execution("update_in_progress"))?;
         match config.mode {
             BudgetMode::Strict => return Err(RuntimeError::StrictUnavailable),
@@ -727,7 +728,8 @@ impl OwnedRuntime {
         if let Some(entry) = entries.get_mut(&key) {
             entry.cancel.send_replace(true);
             if (&mut entry.task).await.is_err() {
-                self.shutdown_fault.store(true, std::sync::atomic::Ordering::Release);
+                self.shutdown_fault
+                    .store(true, std::sync::atomic::Ordering::Release);
             }
             entries.remove(&key);
         }
@@ -757,7 +759,9 @@ impl OwnedRuntime {
             )
             .await;
             let failure = failure_code(&result);
-            if failure == Some("agent_shutdown_unconfirmed") { shutdown_fault.store(true, std::sync::atomic::Ordering::Release); }
+            if failure == Some("agent_shutdown_unconfirmed") {
+                shutdown_fault.store(true, std::sync::atomic::Ordering::Release);
+            }
             sender.send_replace(RuntimeStatus::new(&agent, "stopped", failure));
         });
         entries.insert(
@@ -997,8 +1001,12 @@ impl OwnedRuntime {
         } else if let Ok(runtime) = tokio::runtime::Handle::try_current() {
             let manager = self.clone();
             runtime.spawn(async move {
-                for entry in manager.services.lock().await.values() { entry.cancel_now(); }
-                for entry in manager.entries.lock().await.values() { entry.cancel.send_replace(true); }
+                for entry in manager.services.lock().await.values() {
+                    entry.cancel_now();
+                }
+                for entry in manager.entries.lock().await.values() {
+                    entry.cancel.send_replace(true);
+                }
             });
         }
         // retire revokes the shared device atomic before invoking this. If a
@@ -1041,7 +1049,9 @@ impl OwnedRuntime {
                 .any(|e| same(&e.device) && !e.task.is_finished())
     }
     pub(super) async fn stop_profile(&self, device: &AuthorizedDevice) -> Result<(), RuntimeError> {
-        self.drain_services(Some(&DevicePin::from(device))).await.map_err(|_| RuntimeError::Execution("agent_shutdown_unconfirmed"))?;
+        self.drain_services(Some(&DevicePin::from(device)))
+            .await
+            .map_err(|_| RuntimeError::Execution("agent_shutdown_unconfirmed"))?;
         let pin = DevicePin::from(device);
         let mut joins = self.joins.lock().await;
         let mut entries = self.entries_for(device).await?;
@@ -1064,8 +1074,13 @@ impl OwnedRuntime {
             entry.cancel.send_replace(true);
         }
         drop(entries);
-        for entry in removed { joins.push(entry.task); }
-        joins.finish().await.map_err(|_| RuntimeError::Execution("agent_shutdown_unconfirmed"))
+        for entry in removed {
+            joins.push(entry.task);
+        }
+        joins
+            .finish()
+            .await
+            .map_err(|_| RuntimeError::Execution("agent_shutdown_unconfirmed"))
     }
     pub async fn stop_all(&self) {
         let _ = self.stop_all_checked().await;
@@ -1082,7 +1097,14 @@ impl OwnedRuntime {
         }
         let workers = joins.finish().await;
         services.and(workers)?;
-        if self.shutdown_fault.load(std::sync::atomic::Ordering::Acquire) { Err(crate::shutdown::Error::Agent) } else { Ok(()) }
+        if self
+            .shutdown_fault
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            Err(crate::shutdown::Error::Agent)
+        } else {
+            Ok(())
+        }
     }
 }
 async fn canceled(receiver: &mut watch::Receiver<bool>) {
@@ -1649,7 +1671,11 @@ where
             // have their accepted work receive a terminal status.
             commands.close();
             finish_queued_starts(&mut commands);
-            return if join_failed { Err(RuntimeError::Execution("agent_shutdown_unconfirmed")) } else { Ok(()) };
+            return if join_failed {
+                Err(RuntimeError::Execution("agent_shutdown_unconfirmed"))
+            } else {
+                Ok(())
+            };
         }
         tokio::select! {biased;
             _=canceled(cancel)=>break,
@@ -1668,7 +1694,11 @@ where
     }
     commands.close();
     finish_queued_starts(&mut commands);
-    if join_failed { Err(RuntimeError::Execution("agent_shutdown_unconfirmed")) } else { Err(RuntimeError::Stopped) }
+    if join_failed {
+        Err(RuntimeError::Execution("agent_shutdown_unconfirmed"))
+    } else {
+        Err(RuntimeError::Stopped)
+    }
 }
 fn finish_queued_starts(commands: &mut mpsc::UnboundedReceiver<BindingWork>) {
     while let Ok(work) = commands.try_recv() {
@@ -1724,14 +1754,31 @@ async fn execution_loop_with_gate<T: Transport>(
     status: &watch::Sender<RuntimeStatus>,
     models_allowed: bool,
 ) -> Result<(), RuntimeError> {
-    execution_loop_admitted(console, owner, ledger, config, lease, cancel, status, models_allowed, &crate::update_guard::PROCESS).await
+    execution_loop_admitted(
+        console,
+        owner,
+        ledger,
+        config,
+        lease,
+        cancel,
+        status,
+        models_allowed,
+        &crate::update_guard::PROCESS,
+    )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
 async fn execution_loop_admitted<T: Transport>(
-    console: &T, owner: &str, ledger: &mut Ledger, config: &StartConfig,
-    lease: &LeaseRef, cancel: &mut watch::Receiver<bool>, status: &watch::Sender<RuntimeStatus>,
-    models_allowed: bool, admission: &crate::update_guard::UpdateGate,
+    console: &T,
+    owner: &str,
+    ledger: &mut Ledger,
+    config: &StartConfig,
+    lease: &LeaseRef,
+    cancel: &mut watch::Receiver<bool>,
+    status: &watch::Sender<RuntimeStatus>,
+    models_allowed: bool,
+    admission: &crate::update_guard::UpdateGate,
 ) -> Result<(), RuntimeError> {
     let mut reported = BTreeSet::new();
     let mut reply_cursor = String::new();
@@ -2085,7 +2132,9 @@ async fn execution_loop_admitted<T: Transport>(
                 .with_capabilities(config);
             ready.binding_id = Some(config.binding_id.clone());
             status.send_replace(ready);
-            if turn_error == Some("agent_shutdown_unconfirmed") { return Err(RuntimeError::Execution("agent_shutdown_unconfirmed")); }
+            if turn_error == Some("agent_shutdown_unconfirmed") {
+                return Err(RuntimeError::Execution("agent_shutdown_unconfirmed"));
+            }
         }
         drop(update_task);
         tokio::select! {biased; _=canceled(cancel)=>return Err(RuntimeError::Stopped),_=tokio::time::sleep(Duration::from_secs(1))=>{}}
@@ -2482,7 +2531,9 @@ async fn run_turn<T: Transport>(
     ))?;
     Ok(None)
     }.await;
-    if !stopped { stop_provider(&mut provider).await?; }
+    if !stopped {
+        stop_provider(&mut provider).await?;
+    }
     outcome
 }
 
@@ -3272,7 +3323,10 @@ mod tests {
                     dispatch.state = "running".into();
                     Ok(Response::Started(ExecutionStart {
                         dispatch: wire(&dispatch),
-                        newly_started: matches!(self.mode, Mode::CancelModel | Mode::RevokedModel | Mode::LiveTurn),
+                        newly_started: matches!(
+                            self.mode,
+                            Mode::CancelModel | Mode::RevokedModel | Mode::LiveTurn
+                        ),
                     }))
                 }
                 Op::Processing {
@@ -3280,7 +3334,10 @@ mod tests {
                     dispatch_id,
                     execution_id,
                 } => {
-                    assert!(matches!(self.mode, Mode::CancelModel | Mode::RevokedModel | Mode::LiveTurn));
+                    assert!(matches!(
+                        self.mode,
+                        Mode::CancelModel | Mode::RevokedModel | Mode::LiveTurn
+                    ));
                     assert_eq!(lease.agent_id, "agent-a");
                     assert_eq!(lease.epoch, 1);
                     assert_eq!(dispatch_id, "dispatch-a");
@@ -3334,8 +3391,11 @@ mod tests {
                     body,
                     ..
                 } => {
-                    if matches!(self.mode, Mode::LiveTurn) { assert!(body.contains("UPDATE_TASK_DONE"), "{body}"); }
-                    else { assert_eq!(body, "original response"); }
+                    if matches!(self.mode, Mode::LiveTurn) {
+                        assert!(body.contains("UPDATE_TASK_DONE"), "{body}");
+                    } else {
+                        assert_eq!(body, "original response");
+                    }
                     let record = ledger.inbox_record(OWNER, &dispatch_id).unwrap();
                     assert_eq!(record.state, State::ReplyReady);
                     assert_eq!(record.reply.as_deref(), Some(body.as_str()));
@@ -3993,54 +4053,127 @@ mod tests {
         let base = root.path().canonicalize().unwrap();
         for dir in ["home", "workspace"] {
             std::fs::create_dir(base.join(dir)).unwrap();
-            std::fs::set_permissions(base.join(dir), std::fs::Permissions::from_mode(0o700)).unwrap();
+            std::fs::set_permissions(base.join(dir), std::fs::Permissions::from_mode(0o700))
+                .unwrap();
         }
         let mut config = config(&base.join("workspace"));
-        config.profile.executable = PathBuf::from(std::env::var("HAGENCY_LIVE_CODEX").expect("explicit Codex path")).canonicalize().unwrap();
+        config.profile.executable =
+            PathBuf::from(std::env::var("HAGENCY_LIVE_CODEX").expect("explicit Codex path"))
+                .canonicalize()
+                .unwrap();
         config.profile.home = base.join("home");
-        config.profile.codex_home = PathBuf::from(std::env::var("HAGENCY_LIVE_CODEX_HOME").expect("provider-owned login directory")).canonicalize().unwrap();
+        config.profile.codex_home = PathBuf::from(
+            std::env::var("HAGENCY_LIVE_CODEX_HOME").expect("provider-owned login directory"),
+        )
+        .canonicalize()
+        .unwrap();
         config.profile.shared_auth = true;
-        config.profile.model = std::env::var("HAGENCY_LIVE_MODEL").expect("explicit available model");
+        config.profile.model =
+            std::env::var("HAGENCY_LIVE_MODEL").expect("explicit available model");
         config.profile.web_search = false;
         config.mode = BudgetMode::Estimated { reservation: 16000 };
         let path = base.join("ledger");
         let mut ledger = setup(&path, &config.profile.cwd);
-        ledger.set_model_profile(OWNER, &event().scope(), &hagency_agent_local::ModelProfile {
-            model: config.profile.model.clone(), workspace_root: config.profile.cwd.to_string_lossy().into(),
-            reasoning_effort: config.profile.effort.clone(), web_search: false, credential_ref: config.credential_ref.clone(),
-        }).unwrap();
+        ledger
+            .set_model_profile(
+                OWNER,
+                &event().scope(),
+                &hagency_agent_local::ModelProfile {
+                    model: config.profile.model.clone(),
+                    workspace_root: config.profile.cwd.to_string_lossy().into(),
+                    reasoning_effort: config.profile.effort.clone(),
+                    web_search: false,
+                    credential_ref: config.credential_ref.clone(),
+                },
+            )
+            .unwrap();
         let (stop, mut receiver) = watch::channel(false);
-        let (status, mut observing) = watch::channel(RuntimeStatus::new("agent-a", "starting", None));
-        let wire = Arc::new(Fake { path: path.clone(), mode: Mode::LiveTurn, calls: StdMutex::new(vec![]), stop: stop.clone() });
+        let (status, mut observing) =
+            watch::channel(RuntimeStatus::new("agent-a", "starting", None));
+        let wire = Arc::new(Fake {
+            path: path.clone(),
+            mode: Mode::LiveTurn,
+            calls: StdMutex::new(vec![]),
+            stop: stop.clone(),
+        });
         let admission = crate::update_guard::UpdateGate::default();
         let gate = admission.clone();
         let transport = wire.clone();
         let worker = tokio::spawn(async move {
-            execution_loop_admitted(&transport, OWNER, &mut ledger, &config, &lease(), &mut receiver, &status, true, &gate).await
+            execution_loop_admitted(
+                &transport,
+                OWNER,
+                &mut ledger,
+                &config,
+                &lease(),
+                &mut receiver,
+                &status,
+                true,
+                &gate,
+            )
+            .await
         });
         tokio::time::timeout(Duration::from_secs(45), async {
-            while observing.borrow().phase != "executing_chat_only" { observing.changed().await.unwrap(); }
-        }).await.expect("actual task entered provider execution");
+            while observing.borrow().phase != "executing_chat_only" {
+                observing.changed().await.unwrap();
+            }
+        })
+        .await
+        .expect("actual task entered provider execution");
         let mut pending = admission.begin_update().unwrap();
         assert!(pending.try_install().is_none());
         assert!(admission.enter_task().is_none());
-        assert!(!*stop.borrow(), "updating must not cancel the original turn");
+        assert!(
+            !*stop.borrow(),
+            "updating must not cancel the original turn"
+        );
         let installation = tokio::time::timeout(Duration::from_secs(120), async {
             loop {
-                if let Some(guard) = pending.try_install() { break guard; }
-                assert!(!worker.is_finished(), "original worker failed before completing its turn: {:?}", observing.borrow().last_error);
+                if let Some(guard) = pending.try_install() {
+                    break guard;
+                }
+                assert!(
+                    !worker.is_finished(),
+                    "original worker failed before completing its turn: {:?}",
+                    observing.borrow().last_error
+                );
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
-        }).await.expect("original model turn and reply finish naturally");
+        })
+        .await
+        .expect("original model turn and reply finish naturally");
         let finished = Ledger::open(&path, OWNER).unwrap();
-        assert_eq!(finished.inbox_record(OWNER, "dispatch-a").unwrap().state, State::Replied);
+        assert_eq!(
+            finished.inbox_record(OWNER, "dispatch-a").unwrap().state,
+            State::Replied
+        );
         assert!(finished.outstanding_calls(OWNER).unwrap().is_empty());
-        assert_eq!(wire.calls.lock().unwrap().iter().filter(|call| **call == "poll").count(), 1);
+        assert_eq!(
+            wire.calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|call| **call == "poll")
+                .count(),
+            1
+        );
         tokio::time::sleep(Duration::from_millis(1200)).await;
-        assert_eq!(wire.calls.lock().unwrap().iter().filter(|call| **call == "poll").count(), 1, "no new claim after the original reply");
+        assert_eq!(
+            wire.calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|call| **call == "poll")
+                .count(),
+            1,
+            "no new claim after the original reply"
+        );
         stop.send_replace(true); // installer preparation may now stop the idle worker
         assert!(matches!(worker.await.unwrap(), Err(RuntimeError::Stopped)));
-        assert!(hagency_agent_local::process_cleanup::finish_all().await, "all original provider children must be reaped");
+        assert!(
+            hagency_agent_local::process_cleanup::finish_all().await,
+            "all original provider children must be reaped"
+        );
         assert!(admission.enter_task().is_none());
         drop(installation);
     }

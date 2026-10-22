@@ -403,7 +403,8 @@ async fn host_round(
                             .count()
                             >= baseline_polls + 2
                 } else if unknown {
-                    s.events.len() == 2 && s.events[1]["state"] == "replied"
+                    s.events.len() == 2
+                        && s.events[1]["state"] == "replied"
                         && Ledger::open_scoped(&local_path, OWNER, &device_profile)
                             .unwrap()
                             .inbox_record(OWNER, "dispatch-b")

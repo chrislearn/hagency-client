@@ -322,7 +322,8 @@ impl OwnedRuntime {
         if let Some(entry) = services.get_mut(&key) {
             entry.cancel.send_replace(true);
             if (&mut entry.task).await.is_err() {
-                self.shutdown_fault.store(true, std::sync::atomic::Ordering::Release);
+                self.shutdown_fault
+                    .store(true, std::sync::atomic::Ordering::Release);
             }
             services.remove(&key);
         }
@@ -588,8 +589,14 @@ impl OwnedRuntime {
         if let Some(entry) = &entry {
             entry.cancel.send_replace(true);
         }
-        let gate = entry.map(|entry| { service_joins.push(entry.task); entry.gate });
-        let _gate = match &gate { Some(gate) => Some(gate.lock().await), None => None };
+        let gate = entry.map(|entry| {
+            service_joins.push(entry.task);
+            entry.gate
+        });
+        let _gate = match &gate {
+            Some(gate) => Some(gate.lock().await),
+            None => None,
+        };
         let (path, profile_id) = intent_location(console, &device)?;
         let preferences = async {
             let options_path = path.with_file_name("agent-service-options.json");
@@ -659,7 +666,10 @@ impl OwnedRuntime {
         let stop_result = self.cancel_agent_entry(console, &pin, agent).await;
         drop(_gate);
         drop(services);
-        service_joins.finish().await.map_err(|_| RuntimeError::Execution("agent_shutdown_unconfirmed"))?;
+        service_joins
+            .finish()
+            .await
+            .map_err(|_| RuntimeError::Execution("agent_shutdown_unconfirmed"))?;
         consent_result?;
         stop_result?;
         Ok(preferences
@@ -689,8 +699,13 @@ impl OwnedRuntime {
             entry.cancel.send_replace(true);
         }
         drop(entries);
-        if let Some(entry) = entry { joins.push(entry.task); }
-        joins.finish().await.map_err(|_| RuntimeError::Execution("agent_shutdown_unconfirmed"))
+        if let Some(entry) = entry {
+            joins.push(entry.task);
+        }
+        joins
+            .finish()
+            .await
+            .map_err(|_| RuntimeError::Execution("agent_shutdown_unconfirmed"))
     }
     pub(super) async fn drain_services(&self, pin: Option<&DevicePin>) -> crate::shutdown::Result {
         let mut joins = self.service_joins.lock().await;
