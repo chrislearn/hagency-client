@@ -20,6 +20,7 @@ independently; that original Windows failure is preserved pending requalificatio
 - Keep the existing operation and RPC/write limits and their finite validation unchanged.
 - Bound unsolicited event waits by the existing original operation duration; original lifetime and host cancellation still cut them off without renewal.
 - Keep pending RPC deadlines, write deadlines, partial frame bounds, authority checks and actual process cleanup enforced.
+- Observe post-budget child liveness through actual heartbeat growth within the existing response budget, not one fixed scheduler sampling gap; retain cancellation and post-stop quiescence checks.
 - Reproduce the premature timeout with an actual quiet owned child before changing production mapping; use no synthetic protocol keepalive.
 - Preserve hosted original failures and native skips and qualify the unchanged real file-service executable workflow separately.
 - Give the native CI job finite room for the observed near25-minute full check plus subsequent diagnostic and release work; never hide failed steps.
