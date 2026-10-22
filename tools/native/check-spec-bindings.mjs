@@ -5,9 +5,27 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 // A spec carrying one of these tags binds selectors that are compiled on that
 // platform only. It is deferred elsewhere, and the hosted job on its own platform
-// still resolves every selector. Every other spec must resolve everywhere,
-// including the many that use plain `linux` or `windows` as a topic tag.
+// still resolves every selector. Unscoped bindings must resolve everywhere,
+// including specs that use plain `linux` or `windows` as a topic tag.
 const PLATFORM_TAGS = { 'only-macos': 'darwin', 'only-linux': 'linux', 'only-windows': 'win32' };
+const TEST_PLATFORMS = { macos: 'darwin', linux: 'linux', windows: 'win32' };
+
+// Mixed-platform specs keep their portable scenarios checked everywhere. A
+// Test-Platforms declaration applies only to the immediately following binding.
+function testPlatforms(lines, file) {
+  const scopes = new Map();
+  for (const [index, line] of lines.entries()) {
+    if (!/^\s*Test-Platforms\b/.test(line)) continue;
+    const match = line.match(/^\s*Test-Platforms:\s*\[([^\]]*)\]\s*$/);
+    const platforms = match?.[1].split(',').map(value => value.trim()) ?? [];
+    if (!platforms.length || platforms.some(value => !Object.hasOwn(TEST_PLATFORMS, value)) || new Set(platforms).size !== platforms.length
+      || !/^\s*(?:Test|Filter):\s*\S/.test(lines[index + 1] ?? '')) {
+      throw new Error(`Invalid Test-Platforms binding in ${file}:${index + 1}`);
+    }
+    scopes.set(index + 1, platforms);
+  }
+  return scopes;
+}
 
 export function checkSpecBindings(inventory, { runtime = 'rust', directory = path.join(root, 'specs'), platform = process.platform } = {}) {
   if (!['node', 'rust'].includes(runtime)) throw new Error('Unknown spec runtime');
@@ -16,6 +34,7 @@ export function checkSpecBindings(inventory, { runtime = 'rust', directory = pat
   const missing = [];
   let count = 0;
   const deferred = [];
+  const platformDeferred = [];
   const superseded = [];
   const retired = [];
   for (const file of readdirSync(directory).filter((name) => name.endsWith('.spec.md'))) {
@@ -38,15 +57,21 @@ export function checkSpecBindings(inventory, { runtime = 'rust', directory = pat
     const scoped = tags.filter((tag) => Object.hasOwn(PLATFORM_TAGS, tag));
     if (scoped.length && !scoped.some((tag) => PLATFORM_TAGS[tag] === platform)) { deferred.push(file); continue; }
     const lines = content.split('\n');
+    const platforms = testPlatforms(lines, file);
     for (const [index, line] of lines.entries()) {
       const retiredSelector = line.match(/^\s*Retired-Test:\s*(\S.*?)\s*$/)?.[1];
       if (retiredSelector) retired.push({ file, line: index + 1, selector: retiredSelector });
 
       const selector = line.match(/^\s*(?:Test|Filter):\s*(\S.*?)\s*$/)?.[1];
       if (!selector) continue;
+      const scope = platforms.get(index);
+      if (scope && !scope.some(value => TEST_PLATFORMS[value] === platform)) {
+        platformDeferred.push({ file, line: index + 1, selector, platforms: scope });
+        continue;
+      }
       count += 1;
       if (!names.some((name) => name.includes(selector))) missing.push({ file, line: index + 1, selector });
     }
   }
-  return { count, missing, runtime, deferred, superseded, retired };
+  return { count, missing, runtime, deferred, platformDeferred, superseded, retired };
 }

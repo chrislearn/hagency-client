@@ -66,6 +66,7 @@ original provision left.
 ## Scenarios
 
 Scenario: A restart brings back the agents the factory completed, and shows the one it cannot
+  Test-Platforms: [linux, macos]
   Test: native_configured_fleet_reattaches_after_restart
   Production caller: hagency::bootstrap::fleet::Service::reattach_known_agents
   Given a fleet whose inline factory completed one agent that ran one task, then a clean stop

@@ -57,6 +57,7 @@ the owner has joined.
 ## Scenarios
 
 Scenario: The owner joins after the first attempt's whole budget and the agent still finishes
+  Test-Platforms: [linux, macos]
   Test: native_provisioning_waits_for_the_owner_without_a_deadline
   Production caller: hagency::bootstrap::fleet::Service::reconcile_awaiting_owners
   Given a provision whose owner joins the DM only after the SDK budget has passed

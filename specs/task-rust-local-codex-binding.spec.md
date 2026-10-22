@@ -57,12 +57,14 @@ without importing it into a fresh managed namespace or asserting readiness.
 ## Acceptance Criteria
 
 Scenario: Local provider directories remain original and credentials stay opaque
+  Test-Platforms: [linux, macos]
   Test: native_local_codex_binding
   Given explicitly selected existing provider directories
   When a binding is used changed or replaced
   Then only the retained current directories are admitted without reading auth files
 
 Scenario: Local dispatch cannot use another resource or a managed account
+  Test-Platforms: [linux, macos]
   Test: native_local_codex_host
   Given actual native guardian pipes and a store-minted dispatch
   When the host selects matching foreign or managed resources
@@ -75,6 +77,7 @@ Scenario: Host selection excludes foreign resource attempts before leasing
   Then foreign resource work remains queued without an attempt
 
 Scenario: Private startup configuration explicitly selects the local provider
+  Test-Platforms: [linux, macos]
   Test: native_bootstrap_local_codex
   Given the existing bootstrap with an explicit local provider profile
   When startup validates local managed or factory combinations

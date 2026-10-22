@@ -162,6 +162,7 @@ Scenario: The over-budget notice is queued once for the dispatch's thread
   Then one pending task notice of kind over_budget exists in that thread with fixed words around the elapsed time, the second queue finds the first, the driver's notice delivery can claim it, and a dispatch with no verified thread queues nothing
 
 Scenario: The idle re-qualification records and never stops
+  Test-Platforms: [linux, macos]
   Test: native_idle_qualification_failure_is_recorded_not_fatal
   Production caller: hagency_matrix::provisioning::factory::TokenProvisioningHost::finish_factory
   Given a warm child whose local check fails while idle
