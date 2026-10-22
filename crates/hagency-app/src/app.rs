@@ -1445,6 +1445,7 @@ impl AppMain for App {
             if self.desktop_integration.intercept_caption_close(cx, event, button) {
                 self.preserve_reader_session(cx);
                 self.persist_runtime_state(cx, "caption close to tray");
+                self.close_secondary_windows(cx);
                 return;
             }
         }
@@ -1808,25 +1809,16 @@ impl App {
                     self.preserve_reader_session(cx);
                     log!("Main window close requested; persisting runtime state.");
                     self.persist_runtime_state(cx, "main window close request");
+                    self.close_secondary_windows(cx);
                     if !self.embedded && self.desktop_integration.hide_on_close(cx) {
                         e.accept_close.set(false);
-                        return;
                     }
-                    // The app only quits once its last window closes,
-                    // so close its secondary windows with the main one.
-                    self.moments_window_host(cx).close(cx);
-                    self.article_window_host(cx).close(cx);
-                    self.close_web_browser(cx);
-                    self.close_mini_apps(cx);
                 }
             // Not every close goes through a close request first, so also catch the close itself.
             Event::WindowClosed(e)
                 if self.ui.window(cx, ids!(main_window)).window_id() == Some(e.window_id) => {
                     self.preserve_reader_session(cx);
-                    self.moments_window_host(cx).close(cx);
-                    self.article_window_host(cx).close(cx);
-                    self.close_web_browser(cx);
-                    self.close_mini_apps(cx);
+                    self.close_secondary_windows(cx);
                 }
             Event::Foreground => {
                 if !self.lifecycle.is_foreground {
@@ -1841,6 +1833,14 @@ impl App {
             }
             _ => {}
         }
+    }
+
+    /// Secondary windows belong to the main window, including when it closes to the tray.
+    fn close_secondary_windows(&mut self, cx: &mut Cx) {
+        self.moments_window_host(cx).close(cx);
+        self.article_window_host(cx).close(cx);
+        self.close_web_browser(cx);
+        self.close_mini_apps(cx);
     }
 
     fn moments_window_host(&self, cx: &mut Cx) -> crate::moments::window::MomentsWindowHostRef {
@@ -2500,6 +2500,57 @@ pub enum ConfirmDeleteAction {
 #[cfg(test)]
 mod back_navigation_tests {
     use super::*;
+
+    #[test]
+    fn main_window_close_stops_mini_app_input() {
+        for requested in [true, false] {
+            let mut cx = Cx::new(Box::new(|_, _| {}));
+            let mut app = cx.with_vm(|vm| {
+                makepad_widgets::script_mod(vm);
+                register_widgets(vm);
+                let component = App::script_component(vm);
+                let value = script_eval!(vm, {
+                    use mod.prelude.widgets.*
+                    use mod.widgets.*
+                    #(component) { ui: Root {
+                        mini_apps_window_host := MiniAppsWindowHost {}
+                        main_window := Window {}
+                    } }
+                });
+                App::script_from_value(vm, value)
+            });
+            // No native shell or disk persistence is needed for this lifecycle check.
+            app.embedded = true;
+            let host = app.ui.mini_apps_window_host(&cx, ids!(mini_apps_window_host));
+            host.action(&mut cx, &MiniAppsAction::Open);
+            let panel = host.panel(&mut cx);
+            let button = panel.button(&cx, ids!(catalog.footer.actions.browse_hub));
+            let library = panel.widget(&cx, ids!(library));
+            assert!(!button.is_empty());
+            assert!(!library.is_empty());
+            let actions = cx.capture_actions(|cx| {
+                cx.widget_action(button.widget_uid(), ButtonAction::Clicked(KeyModifiers::default()));
+            });
+            panel.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::empty());
+            assert!(library.visible(), "open panels must handle catalog input");
+            host.action(&mut cx, &MiniAppsAction::Open);
+            assert!(!library.visible());
+            let window_id = app.ui.window(&cx, ids!(main_window)).window_id().unwrap();
+            let event = if requested {
+                Event::WindowCloseRequested(WindowCloseRequestedEvent {
+                    window_id, accept_close: std::rc::Rc::new(std::cell::Cell::new(true)),
+                })
+            } else {
+                Event::WindowClosed(WindowClosedEvent { window_id })
+            };
+            app.handle_lifecycle_event(&mut cx, &event);
+            let actions = cx.capture_actions(|cx| {
+                cx.widget_action(button.widget_uid(), ButtonAction::Clicked(KeyModifiers::default()));
+            });
+            panel.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::empty());
+            assert!(!library.visible(), "closed panels must ignore pending input");
+        }
+    }
 
     /// Rinx as OctoSense seats it: the window-less `RinxContent`, signed out.
     fn embedded_app(cx: &mut Cx) -> App {

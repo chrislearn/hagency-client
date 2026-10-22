@@ -1163,6 +1163,33 @@ impl MiniAppsPanelRef {
 mod tests {
     use super::*;
 
+    #[test]
+    fn desktop_window_opens_panel_and_routes_catalog_buttons() {
+        use super::super::window::MiniAppsWindowHostWidgetRefExt;
+        let mut cx = Cx::new(Box::new(|_, _| {}));
+        let root = cx.with_vm(|vm| {
+            makepad_widgets::script_mod(vm);
+            crate::app::register_widgets(vm);
+            let value = vm.eval(script! {
+                use mod.prelude.widgets.*
+                use mod.widgets.*
+                Root { miniapps := MiniAppsWindowHost {} }
+            });
+            WidgetRef::script_from_value(vm, value)
+        });
+        let host = root.mini_apps_window_host(&cx, ids!(miniapps));
+        host.action(&mut cx, &MiniAppsAction::Open);
+        let panel = host.panel(&mut cx);
+        assert!(panel.borrow().expect("panel exists").open, "panel must be open");
+        let button = panel.borrow().unwrap().view.button(&cx, ids!(catalog.footer.actions.browse_hub));
+        assert!(!button.is_empty(), "catalog button exists");
+        let actions = cx.capture_actions(|cx| {
+            cx.widget_action(button.widget_uid(), ButtonAction::Clicked(KeyModifiers::default()));
+        });
+        root.handle_event(&mut cx, &Event::Actions(actions), &mut Scope::empty());
+        assert!(panel.borrow().unwrap().showing_hub, "catalog button must open the Hub");
+    }
+
     fn tempfile_path_for_room_test() -> std::path::PathBuf {
         std::env::temp_dir().join(format!("rinx-import-room-test-{}", std::process::id()))
     }
