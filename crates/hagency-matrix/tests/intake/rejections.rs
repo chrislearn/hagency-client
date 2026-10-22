@@ -667,10 +667,17 @@ async fn archived_terminal_source() {
     assert_eq!(owner.cursor().await.unwrap().as_deref(), Some("overflow"));
     // Push the original non-target source out of the hot journal, then change
     // its content to mention the worker. Protected oldest history still wins.
-    owner
+    let started = std::time::Instant::now();
+    let rollover = owner
         .intake_start(sync("rollover", vec![]), targets.clone())
-        .await
-        .unwrap();
+        .await;
+    assert_eq!(
+        rollover,
+        Ok(()),
+        "terminal-source rollover returned after {:?}; SDK budget {:?}",
+        started.elapsed(),
+        c.inner.config.limits.sdk
+    );
     let batch = owner.batch().await.unwrap().unwrap();
     owner.intake_finish(batch.digest).await.unwrap();
     owner
