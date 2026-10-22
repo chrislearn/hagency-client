@@ -2180,5 +2180,9 @@
   "Shutdown is still pending. Installation was postponed; waiting for the original cleanup.": "Shutdown is still pending. Installation was postponed; waiting for the original cleanup.",
   "The assistant cannot confirm shutdown. Restart Hagency before updating.": "The assistant cannot confirm shutdown. Restart Hagency before updating.",
   "Your account changed during preparation. Installation was postponed.": "Your account changed during preparation. Installation was postponed.",
-  "Could not start the update installer. Please restart Hagency to try again.": "Could not start the update installer. Please restart Hagency to try again."
+  "Could not start the update installer. Please restart Hagency to try again.": "Could not start the update installer. Please restart Hagency to try again.",
+  "Canceling update…": "Canceling update…",
+  "The update was canceled after shutdown started. Restart Hagency before updating.": "The update was canceled after shutdown started. Restart Hagency before updating.",
+  "Cancel Update": "Cancel Update",
+  "Could not initialize updates. Please restart Hagency to try again.": "Could not initialize updates. Please restart Hagency to try again."
 }

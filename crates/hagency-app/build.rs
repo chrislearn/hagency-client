@@ -89,6 +89,13 @@ fn build_sparkle_bridge() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
         return;
     }
+    for key in ["HAGENCY_SPARKLE_PUBLIC_KEY", "HAGENCY_SPARKLE_TEAM_ID"] {
+        println!("cargo:rerun-if-env-changed={key}");
+        println!(
+            "cargo:rustc-env={key}={}",
+            std::env::var(key).unwrap_or_default()
+        );
+    }
     println!("cargo:rerun-if-env-changed=HAGENCY_SPARKLE_SDK");
     println!("cargo:rerun-if-changed=native/macos/sparkle_bridge.m");
     println!("cargo:rerun-if-changed=native/macos/sparkle_bridge.h");
@@ -112,7 +119,12 @@ fn build_sparkle_bridge() {
     println!("cargo:rustc-link-lib=framework=Sparkle");
     println!("cargo:rustc-link-lib=framework=Foundation");
     println!("cargo:rustc-link-lib=framework=AppKit");
-    println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
+    println!("cargo:rustc-link-lib=framework=Security");
+    // The pinned Robius packaging hook adds this path with install_name_tool.
+    // Emitting it here too makes that hook fail with a duplicate LC_RPATH.
+    if std::env::var_os("CARGO_PACKAGER_FORMAT").is_none() {
+        println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
+    }
 }
 
 /// Returns Rinx's own current git commit info as a commit hash and a permalink.

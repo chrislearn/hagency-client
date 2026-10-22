@@ -190,7 +190,7 @@ hagency-updater = { path = "../hagency-updater" }
 
 [features]
 # Opt-in, isolated debug-only Sparkle experiment. Never enables production updates.
-macos-sparkle = ["dep:cc"]
+macos-sparkle = ["dep:cc", "dep:base64"]
 # Isolated local accounts exist only in instrument builds.
 palpo-instrument = []
 chat-stress = ["dep:stats_alloc"]

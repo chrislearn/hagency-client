@@ -1,17 +1,19 @@
 # macOS Sparkle prototype (issue #4)
 
-This contains the native prototype and Agent lifecycle slices of [issue #4](https://github.com/hagency-org/hagency-client/issues/4).
+This contains the native prototype, Agent lifecycle and product-preference slices of [issue #4](https://github.com/hagency-org/hagency-client/issues/4).
 It exercises the real Hagency application, Makepad/AppKit event loop, a custom
 Sparkle user driver, a real downloaded DMG, application replacement and relaunch.
-It does not enable production automatic updates.
+Stable release CI now requires the signed Sparkle configuration described below.
+No production release has been executed or qualified; the remaining acceptance
+matrix is still tracked in issue #4.
 
-## Isolation and limits
+## Prototype isolation and limits
 
 - Requires macOS 12+, a macOS GUI session, Cargo/Rust, Command Line Tools and Python 3.9+.
 - Optional `macos-sparkle` feature. Ordinary builds/tests require no Sparkle SDK.
 - SDK fixed to Sparkle 2.10.0, SHA256
   `c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c`.
-- Initialization requires a debug binary, Bundle ID
+- Prototype initialization requires a debug binary, Bundle ID
   `org.hagency.desktop.sparkle-prototype`, a marked private harness root and the
   exact installed executable path. Release builds refuse this prototype identity.
 - A per-run profile under `~/Library/Application Support/HagencySparklePrototype/`
@@ -287,3 +289,214 @@ binary, before launching the app. Stripping now happens once in a temporary data
 volume staging directory, each bundle is independently copied/signed, and candidate
 staging is removed only after its exact DMG signature verifies. These failures
 remain in their original reports/logs, separately from subsequent passes.
+
+
+## Product configuration and preferences, 2026-10-22
+
+The optional feature now recognizes a deliberately enabled product bundle as well
+as the isolated prototype. The product path requires a packaged release executable,
+`org.hagency.desktop`, a valid Apple Developer ID signature, the compiled signing
+team and Sparkle public key, the stable Cargo bundle version, and the exact HTTPS
+feed for the executable architecture. Running an Intel executable under Rosetta
+therefore selects the amd64 feed. Debug/development/embedded/guardian identities
+cannot activate product installation. An invalid enabled product configuration
+leaves the updater disabled with an error; it does not fall back to a second
+GitHub update worker. The prototype retains its original marked-root checks.
+
+Before the updater starts, the old `updates/macos/preferences.json` auto_check is
+imported once into Sparkle's host defaults. A completion marker prevents reading
+the JSON again. An existing Sparkle choice takes precedence even before that
+marker exists. Subsequent UI changes use Sparkle's own persisted property and
+schedule; there is no second 30-second GitHub polling loop. Auto-download is not
+migrated or exposed, and both unattended-update Info.plist options remain false.
+See [Sparkle settings semantics](https://sparkle-project.org/documentation/customization/).
+Unreadable historical settings during a required first import refuse updater
+initialization and leave migration incomplete; they are not silently reset.
+
+The native driver assigns a cycle to automatic and manual checks, reports release
+notes as text (external notes are accepted only as bounded UTF-8 plain text or
+Markdown), and exposes the SDK's actual check availability. Previously staged
+updates are skipped rather than adopted without admission. Canceling a waiting
+update preserves the found candidate. Canceling a download waits for native
+dismissal before releasing admission; canceling during extraction defers Skip
+until Ready. Starting cleanup remains irreversible within that process, so late
+completion after a timeout/cancel cannot install or recreate the owner. Ordinary
+exit and preparation still use the same retained Agent/Matrix barrier.
+
+### Prepare a signed candidate
+
+Python 3.11+ is required for candidate preparation (the native prototype harness
+continues to support Python 3.9+). First fetch the fixed SDK using the existing
+`sdk` command. With the normal Apple signing/notarization variables provisioned,
+set these public build inputs and run the existing build script:
+
+```sh
+export HAGENCY_SPARKLE_SDK="$PWD/.run/sparkle-sdk"  # absolute extracted SDK path
+export HAGENCY_SPARKLE_PUBLIC_KEY="your Sparkle Ed25519 public key"
+export HAGENCY_MACOS_SPARKLE=1
+cd crates/hagency-app
+bash packaging/build-macos-dmg.sh
+```
+
+The script derives HAGENCY_SPARKLE_TEAM_ID from APPLE_TEAM_ID and backs up both
+manifest and plist before modification. `prepare-macos-sparkle.py` adds the feature
+to the temporary default list (the pinned Robius hook builds the workspace without
+feature arguments), embeds the fixed framework/license, stamps the correct
+architecture feed and disables unattended installation. The script signs the
+Sparkle nested code from inside out without app entitlements, then signs the app,
+requires app notarization/stapling/Gatekeeper before embedding it, and requires
+DMG notarization/stapling/Gatekeeper. Its exit traps restore both source files,
+including a failed packager or a later disk-image step.
+
+All stable macOS version sources now use the Cargo x.y.z value: committed plist,
+release workflow stamping and the signed script agree. A timestamp or Actions run
+number can no longer override the build version.
+
+The same candidate path is wired into stable release CI when the configured
+Apple/Sparkle signing inputs are present. Published stable releases refuse missing
+configuration or an unsigned macOS fallback. Manual unsigned build-only runs and
+prereleases retain their existing notification path. Prereleases use the numeric
+base version for CFBundleVersion and are never offered through the stable feed.
+
+`macos-update.py sign` inspects the actual app mounted read-only from the final,
+stapled DMG, verifies its bundle settings, executable architecture, Apple team,
+framework signature and offline tickets, then invokes the fixed Sparkle signer
+with an explicit private file. No Keychain fallback is allowed. It signs both the
+final DMG and a receipt binding its actual version/architecture/hash to the exact
+feed bytes. The portable release verifier independently checks both signatures
+with the configured Ed25519 public key, the immutable tag URLs and all24 expected
+assets (the original seven installers, their checksum files, Windows sidecars,
+and both macOS feeds/signature/receipt sets). Unexpected files are refused before
+upload. The release is assembled as a draft, downloaded back and compared before
+publication/latest changes. After publication, anonymous latest feed redirects,
+Content-Type, cache bytes and immutable DMG bytes are checked; a failed public
+check leaves the job failed and does not assert successful qualification.
+
+The actual Developer ID/notarization/public GitHub-feed execution, complete
+bundled runtime, authenticated Matrix-account recovery, standalone-assistant stop
+receipt, Intel/Rosetta and macOS12 hardware acceptance remain unqualified. No
+production-update availability claim is made. Nothing in this development run
+provisioned secrets, accessed the production signing Keychain or published a tag
+or release. See [the release qualification runbook](macos-update-release.md).
+
+Additional native scenarios:
+
+```sh
+python3 crates/hagency-app/tools/sparkle-prototype.py run --scenario preferences
+python3 crates/hagency-app/tools/sparkle-prototype.py run --scenario download-cancel
+```
+
+The preference scenario uses a unique SUDefaultsDomain, signed-out profile and
+ordinary AppKit exits. It proves first import, changed preferences over relaunch,
+ignoring malformed old JSON after migration, and precedence of a pre-existing
+Sparkle choice before a marker. It installs no update. The download-cancel
+scenario throttles a real loopback DMG response, cancels through the same Rust/UI
+action, requires native dismissal/admission release, and checks that the original
+binary/process remain and a new update check is possible. These scenarios remain
+separate from full successful installation and from live Agent qualification.
+
+Candidate/DMG staging is now on the data volume under
+`.run/sparkle-product-artifacts/<scenario-root>/`, recorded in artifact-root.txt.
+Only the installed test application runs under Home, avoiding the earlier TCC
+resource issue. Stopped fixture bundles moved after validation have their location
+recorded in artifacts-moved.txt; logs/events/reports remain in the private Home
+root. These paths are ignored runtime artifacts, not release inputs.
+
+
+### Final product/publishing source qualification
+
+- Feature-enabled application with octosense-module: **574 passed, 0 failed,
+  2 existing ignored**; strict all-targets app/miniapp Clippy passes. Ordinary
+  app check with HAGENCY_SPARKLE_SDK unset passes.
+- Three candidate configuration tests and seven portable/signature tests pass
+  with no skips on this native host, including actual pinned Sparkle signatures
+  over archive and JSON bytes verified independently by OpenSSL. These offline
+  fixtures do not establish Developer ID or notarization.
+- Native preference scenario `preferences-w0tqw4jq`: five distinct application
+  PIDs, one-time import, explicit choice persistence, ignoring damaged old JSON,
+  pre-existing Sparkle choice precedence, and an **actual automatically scheduled
+  loopback check reaching Current**. No installation or DMG request is performed.
+- Final native DMG success `success-ni0lg1u5`: **PID28863→29034**, source executable
+  SHA256 `0e34c20811331f3c1e0ede0d02aa07ffcc6252385685d1654f301ea5895370e0`,
+  target `49e9ad3bb690fa5972c260583bb6bf0e1e13d39c7ab72da7e5d4a13047fd2d1d`.
+  New resources, unchanged profile sentinel, native preparation and a new-process
+  Current check all pass. Signing remains ad-hoc app + disposable Ed25519 DMG.
+- Final native download cancellation `download-cancel-zwicfv15`, wrong signature
+  `bad-signature-9wmsgom2` and busy/AppKit-quit cancellation `busy-cancel-hlstvn84`
+  pass separately. Their stopped installed bundles are retained on the data volume
+  at the paths in artifacts-moved.txt, with reports/events remaining under Home.
+- i18n:2186 keys/1682 sites/missing0. YAML and all42 workflow shell blocks parse;
+  Bash signing/config-upload scripts pass syntax checking. Actual release job
+  execution and public redirect/CDN checks are not represented by those tests.
+
+Logs: `/tmp/hagency-sparkle-product-qualified-tests.log`,
+`/tmp/hagency-sparkle-product-qualified-clippy.log`,
+`/tmp/hagency-sparkle-product-default-check.log`,
+`/tmp/hagency-sparkle-product-automatic-build.log`,
+`/tmp/hagency-sparkle-product-native-preferences-auto-fixed.log`, and
+`/tmp/hagency-sparkle-product-qualified-{success,download-cancel,bad-signature,busy-cancel}.log`.
+
+Preserved failures: `download-cancel-ooqg8z1m` and `download-cancel-2q20cpec`
+failed codesigning an independent test executable before app launch. The system
+volume was low on free space; no more specific signing cause is asserted. Moving
+candidate/DMG staging to the data volume avoids those failed runs and the final
+independent scenarios above pass. `preferences-4ztc43cz` successfully performed
+an automatic HTTP check but timed out waiting for Current: unlike manual checks,
+background no-update checks do not invoke the user-driver not-found UI callback.
+The native update-cycle completion delegate now handles that result; the fresh
+five-launch automatic-check scenario above passes. None of these original
+failures is relabeled as a pass.
+
+
+### Signal-wake refinement and latest native evidence
+
+Native events now wake Makepad through a static SignalToUI callback; that callback
+never borrows Rust UI objects. Product idle/check/download states do not retain
+an updater poll timer. A short timer is used only while draining tasks or awaiting
+retained preparation, and ordinary prototype file-command runs also use it.
+State changes redraw the existing controls. The isolated `signal` scenario turns
+off the prototype idle timer and requires an actual automatic HTTP check and
+Current event, rather than inferring delivery from a poll.
+
+All six fresh scenarios pass after this refinement:
+
+- signal-f1n0pid3: no updater idle timer, actual signal-driven check reaches Current.
+- preferences-nwqxwxnz: five launches with one-time/persisted/pre-existing choices
+  and an actual automatic check; no download.
+- download-cancel-q6xjn0g2: real throttled DMG canceled, admission released after
+  native dismissal, original executable/process retained and a new check works.
+- success-c_dxxger: actual replacement/relaunch **PID77517→77662**, SHA256
+  `1db977cc8b0c6762494080d358709e087cd64ea20eb0b971b5cee7a41046722e`
+  → `084506516261dfb492ea0fcb156baeed07344ee2cc25df8a79d50f2c3bd7ef4e`,
+  new resources, preserved profile and new-process Current check.
+- bad-signature-r9i1jf5d: actual signature rejection, original process/binary retained.
+- busy-cancel-civ76045: waiting cancellation and real AppKit quit remain guarded.
+
+Source validation:574passed/0failed/2existing ignored at
+`/tmp/hagency-sparkle-product-ready-tests.log`, strict all-targets Clippy at
+`/tmp/hagency-sparkle-product-ready-clippy.log`, and ordinary no-SDK check at
+`/tmp/hagency-sparkle-product-ready-default.log`. Focused update22 and strict
+review Clippy after the redraw refinement are logged under
+`/tmp/hagency-sparkle-product-review-{update-tests,clippy}.log`.
+Native logs: `/tmp/hagency-sparkle-product-ready-{signal,preferences,download-cancel,success,bad-signature,busy-cancel}.log`.
+The stopped installed bundles were moved to their recorded data-volume artifact
+paths. None of these ad-hoc fixtures qualifies a production signature or login.
+
+The first signal-c43u5u3x run exited before Makepad: Objective-C boxed a C logical
+expression as JSON integer1 while Rust correctly expected a boolean. Casting to
+BOOL fixes that bridge schema. The harness now reports early process exit rather
+than waiting for a generic startup timeout; the original failure/report remains.
+
+The pinned Robius0.4.1 packaging hook itself adds the executable Frameworks
+LC_RPATH with install_name_tool. Feature builds therefore emit that rpath directly
+only outside CARGO_PACKAGER_FORMAT; duplicating it would fail the real packaging
+hook. The actual packaging-mode build-script receipt contains Sparkle linking and
+packaging_build, with no duplicate rpath directive
+(`/tmp/hagency-sparkle-product-packaging-rpath-check.log`).
+
+An actual ad-hoc signed DMG was separately rejected by the Apple identity
+requirement before mount, Sparkle signing or feed creation
+(`/tmp/hagency-sparkle-product-reject-adhoc.log`). Publication/candidate/packaging
+Python suites21passed/0failed/0skipped with the pinned SDK
+(`/tmp/hagency-sparkle-product-publishing-tests.log`). This is a negative signing
+gate check, not a successful Developer ID/notarization qualification.

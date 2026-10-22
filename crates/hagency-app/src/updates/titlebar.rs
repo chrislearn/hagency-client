@@ -49,6 +49,7 @@ pub(crate) fn titlebar_notice_visible(state: &Snapshot) -> bool {
                 | Phase::Verifying
                 | Phase::Waiting
                 | Phase::Preparing
+                | Phase::Canceling
                 | Phase::Failed
         )
 }
@@ -138,7 +139,7 @@ impl Widget for UpdateNotice {
                     cx.action(action);
                 }
             } else if self.open && self.panel.button(cx, ids!(later)).clicked(actions) {
-                if state.phase == Phase::Waiting {
+                if state.phase == Phase::Waiting || super::sparkle_active() {
                     cx.action(UpdateAction::Later);
                 }
                 self.close(cx);
@@ -194,8 +195,14 @@ impl Widget for UpdateNotice {
             };
             self.panel.label(cx, ids!(status)).set_text(cx, &status);
             let primary = self.panel.button(cx, ids!(primary));
-            primary.set_visible(cx, primary_action(state.phase).is_some() && !state.restart_required);
-            primary.set_enabled(cx, !state.preview);
+            primary.set_visible(
+                cx,
+                primary_action(state.phase).is_some() && !state.restart_required,
+            );
+            primary.set_enabled(
+                cx,
+                !state.preview && (state.phase != Phase::Failed || state.can_check),
+            );
             primary.set_text(
                 cx,
                 crate::i18n::tr(match state.phase {
@@ -204,12 +211,22 @@ impl Widget for UpdateNotice {
                     _ => super::download_label(),
                 }),
             );
+            self.panel.button(cx, ids!(later)).set_text(
+                cx,
+                crate::i18n::tr(
+                    if super::sparkle_active() && state.phase != Phase::Available {
+                        "Cancel Update"
+                    } else {
+                        "Not now"
+                    },
+                ),
+            );
             self.panel.button(cx, ids!(later)).set_visible(
                 cx,
                 matches!(
                     state.phase,
                     Phase::Available | Phase::Downloading | Phase::Ready | Phase::Waiting
-                ),
+                ) || (super::sparkle_active() && state.phase == Phase::Verifying),
             );
             let window = cx.current_pass_size();
             let width = (window.x - 16.0).clamp(0.0, 304.0);
