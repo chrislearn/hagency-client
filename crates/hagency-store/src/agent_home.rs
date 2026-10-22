@@ -670,12 +670,12 @@ fn create(creation: Creation) -> Result<Arc<ManagedAgentHome>, Error> {
     );
     private::write_new(&workdir.join("docs/projects.md"), projects.as_bytes())?;
     link(
-        Path::new("../CLAUDE.md"),
+        &Path::new("..").join("CLAUDE.md"),
         &workdir.join("docs/CLAUDE.md"),
         false,
     )?;
     link(
-        Path::new("../AGENTS.md"),
+        &Path::new("..").join("AGENTS.md"),
         &workdir.join("docs/AGENTS.md"),
         false,
     )?;

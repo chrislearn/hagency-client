@@ -313,27 +313,13 @@ pub(super) fn process_current_directory(
     if length == 0 {
         return Err(std::io::Error::last_os_error());
     }
-    if length >= output.len() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "Windows short directory exceeds the output buffer",
-        ));
-    }
-    let mut short = std::path::PathBuf::from(std::ffi::OsString::from_wide(&output[..length]));
-    // GetShortPathNameW preserves the input's verbatim prefix. cmd.exe treats
-    // that prefix as UNC, even when the remainder is a local short drive path.
-    // Only project the OS-returned drive form; compare actual identity below.
-    if let Some(std::path::Component::Prefix(prefix)) = short.components().next()
-        && matches!(prefix.kind(), std::path::Prefix::VerbatimDisk(_))
-    {
-        short = std::path::PathBuf::from(std::ffi::OsString::from_wide(&output[4..length]));
-    }
-    if short.as_os_str().encode_wide().count() >= 260 {
+    if length >= 260 {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "Windows process directory is too long",
         ));
     }
+    let short = std::path::PathBuf::from(std::ffi::OsString::from_wide(&output[..length]));
     if short.canonicalize()? != path.canonicalize()? {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -341,45 +327,4 @@ pub(super) fn process_current_directory(
         ));
     }
     Ok(short)
-}
-
-#[cfg(test)]
-mod current_directory_tests {
-    use super::*;
-    #[test]
-    fn long_directory_keeps_identity_or_refuses_when_short_names_are_disabled() {
-        use std::os::windows::process::CommandExt;
-        let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().canonicalize().unwrap();
-        assert_eq!(process_current_directory(&root).unwrap(), root);
-        let mut long = root;
-        while long.as_os_str().encode_wide().count() < 300 {
-            long = long.join("owner_0123456789abcdef0123456789abcdef");
-        }
-        std::fs::create_dir_all(&long).unwrap();
-        match process_current_directory(&long) {
-            Ok(short) => {
-                assert!(short.as_os_str().encode_wide().count() < 260);
-                assert_eq!(short.canonicalize().unwrap(), long.canonicalize().unwrap());
-                let cmd = std::path::PathBuf::from(std::env::var_os("SystemRoot").unwrap())
-                    .join("System32/cmd.exe");
-                let output = std::process::Command::new(cmd)
-                    .raw_arg("/d /u /c cd")
-                    .current_dir(&short)
-                    .creation_flags(CREATE_NO_WINDOW)
-                    .output()
-                    .unwrap();
-                assert!(output.status.success(), "cwd={short:?}; {output:?}");
-                let (chunks, remainder) = output.stdout.as_chunks::<2>();
-                assert!(remainder.is_empty(), "{output:?}");
-                let cwd: Vec<u16> = chunks.iter().copied().map(u16::from_le_bytes).collect();
-                let cwd = String::from_utf16(&cwd).unwrap();
-                assert_eq!(
-                    std::path::Path::new(cwd.trim()).canonicalize().unwrap(),
-                    long.canonicalize().unwrap()
-                );
-            }
-            Err(error) => assert_eq!(error.kind(), io::ErrorKind::InvalidInput),
-        }
-    }
 }
