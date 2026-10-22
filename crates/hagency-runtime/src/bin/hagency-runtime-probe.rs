@@ -482,6 +482,32 @@ fn main() -> io::Result<()> {
         return hagency_platform::run_guardian();
     }
     match args.as_slice() {
+        [command, mode] if command == "worktree-bootstrap" => {
+            // Real bootstrap subprocess on every host; no /bin/sh dependency
+            // or platform-specific shell quoting in the worktree fixtures.
+            match mode.to_str() {
+                Some("fail") => std::process::exit(17),
+                Some("dirty-fail") => {
+                    fs::write("partial", b"partial")?;
+                    std::process::exit(17);
+                }
+                Some("success") => Ok(()),
+                Some("environment") => fs::write(
+                    "bootstrap-env",
+                    if std::env::var_os("API_TOKEN").is_some() {
+                        b"leaked".as_slice()
+                    } else {
+                        b"clean".as_slice()
+                    },
+                ),
+                Some("output") => fs::write("bootstrap-output", b"ready"),
+                Some("sleep") => {
+                    std::thread::sleep(Duration::from_secs(1));
+                    Ok(())
+                }
+                _ => Err(io::ErrorKind::InvalidInput.into()),
+            }
+        }
         [command] if command == "app-server" => {
             // Fixed host installation entrypoint for offline dispatch fixtures.
             // The environment is explicitly supplied by that test host only.

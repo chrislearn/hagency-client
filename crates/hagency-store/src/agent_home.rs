@@ -764,19 +764,9 @@ fn copy(
         let relative = path.join(entry.file_name());
         let kind = entry.file_type()?;
         if kind.is_dir() {
-            let builder = cap_std::fs::DirBuilder::new();
-            #[cfg(unix)]
-            let builder = {
-                use cap_std::fs::DirBuilderExt;
-                let mut builder = builder;
-                builder.mode(0o700);
-                builder
-            };
             // Create private, rather than trying fchmod on cap-std's Linux
             // O_PATH handle (EBADF) after briefly creating a public directory.
-            target.create_dir_with(&relative, &builder)?;
-            let file = target.open_dir(&relative)?.into_std_file();
-            private::check_handle(&file)?;
+            private::create_directory_relative(target, &relative)?;
             copy(source, target, &relative, depth + 1, budget)?;
         } else if kind.is_file() {
             let mut input = source.open(&relative)?;
@@ -802,6 +792,16 @@ fn copy(
             {
                 use cap_std::fs::OpenOptionsExt;
                 options.mode(0o600);
+            }
+            #[cfg(windows)]
+            {
+                use cap_std::fs::OpenOptionsExt;
+                use windows_sys::Win32::{
+                    Foundation::{GENERIC_READ, GENERIC_WRITE},
+                    Storage::FileSystem::{WRITE_DAC, WRITE_OWNER},
+                };
+                // Only this create_new handle can assign the private owner/ACL.
+                options.access_mode(GENERIC_READ | GENERIC_WRITE | WRITE_DAC | WRITE_OWNER);
             }
             let mut output = target.open_with(&relative, &options)?.into_std();
             private::seal_created_file_handle(&output)?;
@@ -906,9 +906,10 @@ fn checkpoint(deadline: Instant, cancel: &AtomicBool) -> Result<(), Error> {
     Ok(())
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::os::unix::fs::MetadataExt;
     #[cfg(target_os = "linux")]
     use std::os::unix::fs::PermissionsExt;
@@ -958,9 +959,16 @@ mod tests {
             let directory = target.open_dir(path).unwrap();
             let held = directory.try_clone().unwrap().into_std_file();
             private::check_handle(&held).unwrap();
+            #[cfg(unix)]
             assert_eq!(held.metadata().unwrap().mode() & 0o777, 0o700);
             private::sync_directory(&directory).unwrap();
         }
+        assert!(private::create_directory_relative(&target, Path::new("nested")).is_err());
+        assert_eq!(
+            target.read("nested/deeper/文件.md").unwrap(),
+            b"original nested bytes",
+            "an existing copied directory must never be resealed or replaced"
+        );
         assert_eq!(budget.entries, ENTRIES - 3);
         assert_eq!(budget.bytes, TOTAL_BYTES - b"original nested bytes".len());
     }

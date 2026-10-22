@@ -267,7 +267,60 @@ async fn native_retained_task_context_refusals() {
     assert!(f.domain.owned_dispatch_scope(f.cap.clone()).await.is_err());
     assert!(!f.path().exists());
     f.close().await;
-    for fault in ["forged", "partial", "bytes", "replacement", "root"] {
+    #[cfg(windows)]
+    for replace_file in [false, true] {
+        let f = Fixture::new(true).await;
+        let context = f.context();
+        let (deadline, cancel) = guard();
+        if replace_file {
+            context
+                .bind(
+                    f.domain.clone(),
+                    f.cap.clone(),
+                    f.scope.clone(),
+                    deadline,
+                    cancel.clone(),
+                )
+                .await
+                .unwrap();
+        }
+        let source = if replace_file {
+            f.path()
+        } else {
+            f.contexts.clone()
+        };
+        let error = fs::rename(&source, f.root.path().join("held-original")).unwrap_err();
+        assert_eq!(
+            error.raw_os_error(),
+            Some(32),
+            "original custody denies namespace replacement"
+        );
+        assert!(source.exists());
+        // The mutation never happened: the original scope remains usable, not
+        // poisoned as if a replacement had succeeded.
+        context
+            .bind(
+                f.domain.clone(),
+                f.cap.clone(),
+                f.scope.clone(),
+                deadline,
+                cancel,
+            )
+            .await
+            .unwrap();
+        let record: Value = serde_json::from_slice(&fs::read(f.path()).unwrap()).unwrap();
+        assert_eq!(record["scope"], f.scope.fingerprint());
+        f.close().await;
+    }
+    for fault in [
+        "forged",
+        "partial",
+        "bytes",
+        #[cfg(unix)]
+        "replacement",
+        #[cfg(unix)]
+        "root",
+    ] {
         let f = Fixture::new(true).await;
         let context = f.context();
         let (deadline, cancel) = guard();

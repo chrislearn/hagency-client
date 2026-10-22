@@ -116,12 +116,17 @@ fn realpath(path: &Path) -> Result<PathBuf, WorktreeError> {
         .map_err(|e| err(format!("canonicalize {}: {e}", path.display())))
 }
 
+fn tool_path(path: &Path) -> Result<String, WorktreeError> {
+    super::ordinary_launch_path(path)
+        .ok_or_else(|| err("path cannot be represented without changing its identity"))
+}
+
 /// Run `git <args>` in `cwd`, returning trimmed stdout. A non-zero exit is an
 /// error carrying stderr (execFileSync parity).
 fn git(cwd: &Path, args: &[&str]) -> Result<String, WorktreeError> {
     let out = Command::new("git")
         .args(args)
-        .current_dir(cwd)
+        .current_dir(tool_path(cwd)?)
         .output()
         .map_err(|e| err(format!("git spawn failed: {e}")))?;
     if !out.status.success() {
@@ -139,7 +144,7 @@ fn git(cwd: &Path, args: &[&str]) -> Result<String, WorktreeError> {
 fn git_succeeds(cwd: &Path, args: &[&str]) -> Result<bool, WorktreeError> {
     let out = Command::new("git")
         .args(args)
-        .current_dir(cwd)
+        .current_dir(tool_path(cwd)?)
         .output()
         .map_err(|e| err(format!("git spawn failed: {e}")))?;
     Ok(out.status.success())
@@ -308,7 +313,7 @@ fn ensure_bootstrap(spec: &WorktreeSpec, worktree_path: &Path) -> Result<(), Wor
     write_bootstrap_state(&state_path, BootstrapStatus::Running, &bootstrap_digest)?;
     let run = Command::new(executable)
         .args(&bootstrap[1..])
-        .current_dir(worktree_path)
+        .current_dir(tool_path(worktree_path)?)
         .env_clear()
         .envs(bootstrap_env())
         .output()
@@ -420,27 +425,19 @@ impl WorktreeManager {
             &repository_path,
             &["show-ref", "--verify", "--quiet", &branch_ref],
         )?;
+        // Git for Windows parses the verbatim prefix as //?/C:/, which cannot
+        // name a worktree. Use the same alias-refusing projection as runners;
+        // comparisons and returned custody keep their canonical paths.
+        let target = tool_path(&resolved.path)?;
         if branch_exists {
             git(
                 &repository_path,
-                &[
-                    "worktree",
-                    "add",
-                    resolved.path.to_str().unwrap_or_default(),
-                    &resolved.branch,
-                ],
+                &["worktree", "add", &target, &resolved.branch],
             )?;
         } else {
             git(
                 &repository_path,
-                &[
-                    "worktree",
-                    "add",
-                    "-b",
-                    &resolved.branch,
-                    resolved.path.to_str().unwrap_or_default(),
-                    "HEAD",
-                ],
+                &["worktree", "add", "-b", &resolved.branch, &target, "HEAD"],
             )?;
         }
         ensure_bootstrap(&spec, &resolved.path)?;
@@ -467,7 +464,8 @@ impl WorktreeManager {
         if force {
             args.push("--force");
         }
-        args.push(actual.to_str().unwrap_or_default());
+        let target = tool_path(&actual)?;
+        args.push(&target);
         git(&repository_path, &args)?;
         Ok(WorktreeInfo {
             path: actual,

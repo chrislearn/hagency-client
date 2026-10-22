@@ -233,11 +233,21 @@ pub(super) fn check_handle(file: &File, sqlite_journal: bool) -> Result<(), Erro
 }
 
 pub(super) fn seal_created_file_handle(file: &File) -> Result<(), Error> {
-    fn candidate(file: &File) -> Result<(), Error> {
+    seal_created_handle(file, false)
+}
+
+pub(super) fn seal_created_directory_handle(file: &File) -> Result<(), Error> {
+    seal_created_handle(file, true)
+}
+
+fn seal_created_handle(file: &File, directory: bool) -> Result<(), Error> {
+    fn candidate(file: &File, directory: bool) -> Result<(), Error> {
         let meta = file.metadata()?;
-        if !meta.is_file()
-            || meta.len() != 0
-            || meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        if (if directory {
+            !meta.is_dir()
+        } else {
+            !meta.is_file() || meta.len() != 0
+        }) || meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
         {
             return Err(Error::Private);
         }
@@ -247,14 +257,15 @@ pub(super) fn seal_created_file_handle(file: &File) -> Result<(), Error> {
         if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) } == 0 {
             return Err(std::io::Error::last_os_error().into());
         }
-        if info.nNumberOfLinks != 1 {
+        if !directory && info.nNumberOfLinks != 1 {
             return Err(Error::Private);
         }
         Ok(())
     }
-    candidate(file)?;
+    candidate(file, directory)?;
     let sid = current_sid()?;
-    let sddl: Vec<u16> = format!("O:{sid}D:P(A;;FA;;;{sid})\0")
+    let inheritance = if directory { "OICI" } else { "" };
+    let sddl: Vec<u16> = format!("O:{sid}D:P(A;{inheritance};FA;;;{sid})\0")
         .encode_utf16()
         .collect();
     // SAFETY: the borrowed File remains live and was created with WRITE_OWNER
@@ -299,7 +310,7 @@ pub(super) fn seal_created_file_handle(file: &File) -> Result<(), Error> {
             return Err(std::io::Error::from_raw_os_error(result as i32).into());
         }
     }
-    candidate(file)?;
+    candidate(file, directory)?;
     check_handle(file, false)
 }
 

@@ -54,7 +54,6 @@ Scenario: Real copied factory homes and retained context permit Linux dispatch
   Then the real helper sees the correct distinct tasks with original authority preserved
 
 Scenario: Nested copied directories are private and their original entries sync
-  Test-Platforms: [linux, macos]
   Test: native_agent_home_nested_copy_private
   Test: native_provisioning_inline_home
   Test: native_provisioning_inline_appservice

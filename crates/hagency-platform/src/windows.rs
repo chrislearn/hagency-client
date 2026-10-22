@@ -313,13 +313,27 @@ pub(super) fn process_current_directory(
     if length == 0 {
         return Err(std::io::Error::last_os_error());
     }
-    if length >= 260 {
+    if length >= output.len() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "Windows short directory exceeds the output buffer",
+        ));
+    }
+    let mut short = std::path::PathBuf::from(std::ffi::OsString::from_wide(&output[..length]));
+    // GetShortPathNameW preserves the input's verbatim prefix. cmd.exe treats
+    // that prefix as UNC, even when the remainder is a local short drive path.
+    // Only project the OS-returned drive form; compare actual identity below.
+    if let Some(std::path::Component::Prefix(prefix)) = short.components().next()
+        && matches!(prefix.kind(), std::path::Prefix::VerbatimDisk(_))
+    {
+        short = std::path::PathBuf::from(std::ffi::OsString::from_wide(&output[4..length]));
+    }
+    if short.as_os_str().encode_wide().count() >= 260 {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "Windows process directory is too long",
         ));
     }
-    let short = std::path::PathBuf::from(std::ffi::OsString::from_wide(&output[..length]));
     if short.canonicalize()? != path.canonicalize()? {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -351,7 +365,7 @@ mod current_directory_tests {
                     .join("System32/cmd.exe");
                 assert!(
                     std::process::Command::new(cmd)
-                        .args(["/c", "exit", "0"])
+                        .args(["/d", "/c", "exit", "0"])
                         .current_dir(short)
                         .creation_flags(CREATE_NO_WINDOW)
                         .status()
