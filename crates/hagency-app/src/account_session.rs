@@ -4,7 +4,7 @@ use std::{
     future::Future,
     sync::{
         LazyLock, Mutex,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
 };
 use tokio::{
@@ -13,6 +13,7 @@ use tokio::{
 };
 
 static EPOCH: AtomicU64 = AtomicU64::new(0);
+static UPDATE_FROZEN: AtomicBool = AtomicBool::new(false);
 static TASKS: LazyLock<Mutex<Tasks>> = LazyLock::new(|| {
     Mutex::new(Tasks {
         open: true,
@@ -84,7 +85,15 @@ pub(crate) async fn close() {
     }
 }
 pub(crate) fn open() {
-    TASKS.lock().unwrap().open = true;
+    TASKS.lock().unwrap().open = !UPDATE_FROZEN.load(Ordering::Acquire);
+}
+
+/// Install preparation owns this process from now on. Drain account jobs after
+/// the Agent and sync barriers, and prevent a foreground/login event reopening it.
+#[cfg(all(target_os = "macos", feature = "macos-sparkle"))]
+pub(crate) async fn close_for_update() {
+    UPDATE_FROZEN.store(true, Ordering::Release);
+    close().await;
 }
 
 #[cfg(test)]

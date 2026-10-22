@@ -142,7 +142,7 @@ impl Widget for UpdateSettings {
             .button(cx, ids!(download))
             .set_visible(cx, state.enabled && state.phase == Phase::Available);
         for id in [id!(check), id!(download), id!(install), id!(later)] {
-            self.view.button(cx, &[id]).set_enabled(cx, !state.preview);
+            self.view.button(cx, &[id]).set_enabled(cx, !state.preview && !state.restart_required);
         }
         self.view
             .button(cx, ids!(install))

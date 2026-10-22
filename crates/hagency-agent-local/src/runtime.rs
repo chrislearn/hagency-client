@@ -10,7 +10,8 @@ use std::{
     path::Path,
     time::{Duration, Instant},
 };
-use tokio::process::{Child, ChildStdin, ChildStdout};
+use tokio::process::{ChildStdin, ChildStdout};
+use crate::process_cleanup::RetainedChild;
 
 type Claude = hagency_runtime::owned::OwnedClaudeSession;
 type Octos = hagency_runtime::owned::OwnedOctosSession;
@@ -158,7 +159,7 @@ pub fn validate(profile: &Profile, reference: &str) -> Result<()> {
 
 pub struct Process {
     pub session: Session,
-    child: Option<Child>,
+    child: Option<RetainedChild>,
 }
 impl Process {
     pub async fn stop(&mut self) -> Result<()> {

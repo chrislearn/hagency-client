@@ -3471,6 +3471,7 @@ async fn own_display_name(client: &Client) -> Option<String> {
 
 /// The singleton sync service.
 static SYNC_SERVICE: Mutex<Option<Arc<SyncService>>> = Mutex::new(None);
+static SYNC_SERVICE_UPDATE_STOP: AtomicBool = AtomicBool::new(false);
 static SYNC_SERVICE_DESIRED_RUNNING: AtomicBool = AtomicBool::new(true);
 static SYNC_SERVICE_ASSUMED_RUNNING: AtomicBool = AtomicBool::new(false);
 static SYNC_SERVICE_LIFECYCLE_LOCK: LazyLock<tokio::sync::Mutex<()>> =
@@ -3506,6 +3507,7 @@ pub fn sync_service_desired_running() -> bool {
 }
 
 pub fn set_sync_service_desired_running(running: bool, reason: &'static str) {
+    let running = running && !SYNC_SERVICE_UPDATE_STOP.load(Ordering::Acquire);
     let previous = SYNC_SERVICE_DESIRED_RUNNING.swap(running, Ordering::AcqRel);
     if previous == running && SYNC_SERVICE_ASSUMED_RUNNING.load(Ordering::Acquire) == running {
         log!(
@@ -3521,7 +3523,8 @@ pub fn set_sync_service_desired_running(running: bool, reason: &'static str) {
 async fn apply_sync_service_desired_state(reason: &'static str) {
     let _guard = SYNC_SERVICE_LIFECYCLE_LOCK.lock().await;
     loop {
-        let desired = SYNC_SERVICE_DESIRED_RUNNING.load(Ordering::Acquire);
+        let desired = SYNC_SERVICE_DESIRED_RUNNING.load(Ordering::Acquire)
+            && !SYNC_SERVICE_UPDATE_STOP.load(Ordering::Acquire);
         if SYNC_SERVICE_ASSUMED_RUNNING.load(Ordering::Acquire) == desired {
             break;
         }
@@ -3540,6 +3543,25 @@ async fn apply_sync_service_desired_state(reason: &'static str) {
         }
         SYNC_SERVICE_ASSUMED_RUNNING.store(desired, Ordering::Release);
     }
+}
+
+/// Permanent for this process: foreground lifecycle events cannot restart sync.
+#[cfg(all(target_os = "macos", feature = "macos-sparkle"))]
+pub(crate) async fn stop_sync_service_for_update() -> hagency::shutdown::Result {
+    SYNC_SERVICE_UPDATE_STOP.store(true, Ordering::Release);
+    SYNC_SERVICE_DESIRED_RUNNING.store(false, Ordering::Release);
+    let _guard = SYNC_SERVICE_LIFECYCLE_LOCK.lock().await;
+    if let Some(service) = get_sync_service() {
+        service.stop().await;
+        // In the pinned SDK these terminal states follow joining both sync
+        // workers. An aborted/panicked supervisor can return while still marked
+        // Running/Offline; a unit return value alone is not a stop receipt.
+        if !matches!(service.state().get(), sync_service::State::Idle | sync_service::State::Terminated | sync_service::State::Error(_)) {
+            return Err(hagency::shutdown::Error::Matrix);
+        }
+    }
+    SYNC_SERVICE_ASSUMED_RUNNING.store(false, Ordering::Release);
+    Ok(())
 }
 
 pub fn stop_sync_service_for_shutdown(timeout: Duration) -> Result<(), Elapsed> {

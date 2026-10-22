@@ -404,6 +404,10 @@ async fn host_round(
                             >= baseline_polls + 2
                 } else if unknown {
                     s.events.len() == 2 && s.events[1]["state"] == "replied"
+                        && Ledger::open_scoped(&local_path, OWNER, &device_profile)
+                            .unwrap()
+                            .inbox_record(OWNER, "dispatch-b")
+                            .is_ok_and(|record| record.state == State::Replied)
                 } else {
                     s.events.first().is_some_and(|d| d["state"] == "replied")
                         && Ledger::open_scoped(&local_path, OWNER, &device_profile)

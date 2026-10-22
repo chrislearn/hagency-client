@@ -1,4 +1,6 @@
 fn main() {
+    #[cfg(feature = "macos-sparkle")]
+    build_sparkle_bridge();
     println!("cargo:rerun-if-changed=system-apps.json");
     println!("cargo:rerun-if-changed=apps");
     let root = std::path::PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap());
@@ -80,6 +82,37 @@ fn main() {
     println!("cargo:rerun-if-env-changed=TESTFLIGHT_BUILD_NUMBER");
     let testflight_build = std::env::var("TESTFLIGHT_BUILD_NUMBER").unwrap_or_default();
     println!("cargo:rustc-env=TESTFLIGHT_BUILD_NUMBER={testflight_build}");
+}
+
+#[cfg(feature = "macos-sparkle")]
+fn build_sparkle_bridge() {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("macos") {
+        return;
+    }
+    println!("cargo:rerun-if-env-changed=HAGENCY_SPARKLE_SDK");
+    println!("cargo:rerun-if-changed=native/macos/sparkle_bridge.m");
+    println!("cargo:rerun-if-changed=native/macos/sparkle_bridge.h");
+    let sdk = std::path::PathBuf::from(
+        std::env::var_os("HAGENCY_SPARKLE_SDK")
+            .expect("macos-sparkle requires the pinned SDK; see tools/sparkle-prototype.py sdk"),
+    );
+    assert!(
+        sdk.is_absolute() && sdk.join("Sparkle.framework/Headers/Sparkle.h").is_file(),
+        "HAGENCY_SPARKLE_SDK must point to the extracted Sparkle SDK"
+    );
+    cc::Build::new()
+        .file("native/macos/sparkle_bridge.m")
+        .flag("-fobjc-arc")
+        .flag("-fblocks")
+        .flag("-mmacosx-version-min=12.0")
+        .flag(format!("-F{}", sdk.display()))
+        .warnings_into_errors(true)
+        .compile("hagency_sparkle_bridge");
+    println!("cargo:rustc-link-search=framework={}", sdk.display());
+    println!("cargo:rustc-link-lib=framework=Sparkle");
+    println!("cargo:rustc-link-lib=framework=Foundation");
+    println!("cargo:rustc-link-lib=framework=AppKit");
+    println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks");
 }
 
 /// Returns Rinx's own current git commit info as a commit hash and a permalink.

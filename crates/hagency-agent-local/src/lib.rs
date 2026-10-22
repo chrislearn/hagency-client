@@ -7,6 +7,7 @@ pub mod inbox;
 #[cfg(unix)]
 pub mod room_files;
 pub mod runtime;
+pub mod process_cleanup;
 
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};

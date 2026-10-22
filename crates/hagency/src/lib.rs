@@ -19,6 +19,7 @@ pub mod server_admission;
 pub mod setup;
 pub mod task_client;
 pub mod update_guard;
+pub mod shutdown;
 mod usage;
 use salvo::prelude::*;
 use sha2::{Digest, Sha256};

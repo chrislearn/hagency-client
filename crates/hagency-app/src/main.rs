@@ -19,6 +19,12 @@ fn main() {
     if let Some(result)=hagency::native_owner::run_guardian_if_requested() {
         if result.is_err(){std::process::exit(1);}return;
     }
+    #[cfg(all(target_os = "macos", feature = "macos-sparkle"))]
+    // SAFETY: main thread, before app_main starts any application workers.
+    if let Err(error) = unsafe { hagency_app::updates::sparkle::configure_prototype() } {
+        eprintln!("Refusing Sparkle prototype: {error:#}");
+        std::process::exit(1);
+    }
     #[cfg(target_os = "windows")]
     let _instance = match hagency_app::desktop_integration::acquire_instance() {
         Ok(Some(instance)) => instance,

@@ -319,6 +319,13 @@ impl OwnedRuntime {
         {
             return Err(RuntimeError::AlreadyActive);
         }
+        if let Some(entry) = services.get_mut(&key) {
+            entry.cancel.send_replace(true);
+            if (&mut entry.task).await.is_err() {
+                self.shutdown_fault.store(true, std::sync::atomic::Ordering::Release);
+            }
+            services.remove(&key);
+        }
         let intent = RuntimeIntent {
             agent_id: config.agent_id.clone(),
             binding_id: ALL_ROOMS.into(),
@@ -571,6 +578,7 @@ impl OwnedRuntime {
         let device = console.authorized_device().await.map_err(device_error)?;
         device.bearer().map_err(|_| RuntimeError::Authorization)?;
         let pin = DevicePin::from(&device);
+        let mut service_joins = self.service_joins.lock().await;
         let mut services = self.services.lock().await;
         let key = identity(&device, agent);
         if services.get(&key).is_some_and(|entry| entry.pin != pin) {
@@ -580,10 +588,8 @@ impl OwnedRuntime {
         if let Some(entry) = &entry {
             entry.cancel.send_replace(true);
         }
-        let _gate = match &entry {
-            Some(entry) => Some(entry.gate.lock().await),
-            None => None,
-        };
+        let gate = entry.map(|entry| { service_joins.push(entry.task); entry.gate });
+        let _gate = match &gate { Some(gate) => Some(gate.lock().await), None => None };
         let (path, profile_id) = intent_location(console, &device)?;
         let preferences = async {
             let options_path = path.with_file_name("agent-service-options.json");
@@ -652,10 +658,8 @@ impl OwnedRuntime {
         let consent_result = remove_agent_intents(&path, &profile_id, agent);
         let stop_result = self.cancel_agent_entry(console, &pin, agent).await;
         drop(_gate);
-        if let Some(entry) = entry {
-            let _ = entry.task.await;
-        }
         drop(services);
+        service_joins.finish().await.map_err(|_| RuntimeError::Execution("agent_shutdown_unconfirmed"))?;
         consent_result?;
         stop_result?;
         Ok(preferences
@@ -672,6 +676,7 @@ impl OwnedRuntime {
         if &DevicePin::from(&device) != pin {
             return Err(RuntimeError::Authorization);
         }
+        let mut joins = self.joins.lock().await;
         let mut entries = self.entries.lock().await;
         if entries
             .get(&identity(&device, agent))
@@ -684,12 +689,11 @@ impl OwnedRuntime {
             entry.cancel.send_replace(true);
         }
         drop(entries);
-        if let Some(entry) = entry {
-            let _ = entry.task.await;
-        }
-        Ok(())
+        if let Some(entry) = entry { joins.push(entry.task); }
+        joins.finish().await.map_err(|_| RuntimeError::Execution("agent_shutdown_unconfirmed"))
     }
-    pub(super) async fn drain_services(&self, pin: Option<&DevicePin>) {
+    pub(super) async fn drain_services(&self, pin: Option<&DevicePin>) -> crate::shutdown::Result {
+        let mut joins = self.service_joins.lock().await;
         let mut services = self.services.lock().await;
         let keys: Vec<_> = services
             .iter()
@@ -705,8 +709,9 @@ impl OwnedRuntime {
         }
         drop(services);
         for entry in removed {
-            let _ = entry.task.await;
+            joins.push(entry.task);
         }
+        joins.finish().await
     }
 }
 #[cfg(test)]

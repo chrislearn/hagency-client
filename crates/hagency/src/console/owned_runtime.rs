@@ -452,6 +452,9 @@ fn lock_agent(path: &std::path::Path, agent: &str) -> Result<AgentLock, RuntimeE
 pub(super) struct OwnedRuntime {
     entries: Arc<Mutex<BTreeMap<String, Entry>>>,
     services: Arc<Mutex<BTreeMap<String, service::ServiceEntry>>>,
+    joins: Arc<Mutex<crate::shutdown::Joins>>,
+    service_joins: Arc<Mutex<crate::shutdown::Joins>>,
+    shutdown_fault: Arc<std::sync::atomic::AtomicBool>,
 }
 fn identity(device: &AuthorizedDevice, agent: &str) -> String {
     serde_json::to_string(&(
@@ -551,6 +554,9 @@ impl OwnedRuntime {
         _cookie: &str,
         mut config: StartConfig,
     ) -> Result<RuntimeStatus, RuntimeError> {
+        // Resident service discovery also enters here without a Native command.
+        let _update_task = crate::update_guard::PROCESS.enter_task()
+            .ok_or(RuntimeError::Execution("update_in_progress"))?;
         match config.mode {
             BudgetMode::Strict => return Err(RuntimeError::StrictUnavailable),
             BudgetMode::Estimated { reservation: 0 } => {
@@ -718,6 +724,13 @@ impl OwnedRuntime {
             entry.bindings.insert(id, handle);
             return Ok(status);
         }
+        if let Some(entry) = entries.get_mut(&key) {
+            entry.cancel.send_replace(true);
+            if (&mut entry.task).await.is_err() {
+                self.shutdown_fault.store(true, std::sync::atomic::Ordering::Release);
+            }
+            entries.remove(&key);
+        }
         let process_lock = lock_agent(&path, &config.agent_id)?;
         save_intent(&console, &device, &config)?;
         let agent = config.agent_id.clone();
@@ -729,6 +742,7 @@ impl OwnedRuntime {
             watch::channel(RuntimeStatus::new(&agent, "checking_provider", None));
         let cancellation = cancel.clone();
         let device_pin = DevicePin::from(&device);
+        let shutdown_fault = self.shutdown_fault.clone();
         let task = tokio::spawn(async move {
             let _process_lock = process_lock;
             let result = run_host(
@@ -743,6 +757,7 @@ impl OwnedRuntime {
             )
             .await;
             let failure = failure_code(&result);
+            if failure == Some("agent_shutdown_unconfirmed") { shutdown_fault.store(true, std::sync::atomic::Ordering::Release); }
             sender.send_replace(RuntimeStatus::new(&agent, "stopped", failure));
         });
         entries.insert(
@@ -982,7 +997,8 @@ impl OwnedRuntime {
         } else if let Ok(runtime) = tokio::runtime::Handle::try_current() {
             let manager = self.clone();
             runtime.spawn(async move {
-                manager.stop_all().await;
+                for entry in manager.services.lock().await.values() { entry.cancel_now(); }
+                for entry in manager.entries.lock().await.values() { entry.cancel.send_replace(true); }
             });
         }
         // retire revokes the shared device atomic before invoking this. If a
@@ -1025,8 +1041,9 @@ impl OwnedRuntime {
                 .any(|e| same(&e.device) && !e.task.is_finished())
     }
     pub(super) async fn stop_profile(&self, device: &AuthorizedDevice) -> Result<(), RuntimeError> {
-        self.drain_services(Some(&DevicePin::from(device))).await;
+        self.drain_services(Some(&DevicePin::from(device))).await.map_err(|_| RuntimeError::Execution("agent_shutdown_unconfirmed"))?;
         let pin = DevicePin::from(device);
+        let mut joins = self.joins.lock().await;
         let mut entries = self.entries_for(device).await?;
         let keys: Vec<_> = entries
             .iter()
@@ -1047,20 +1064,25 @@ impl OwnedRuntime {
             entry.cancel.send_replace(true);
         }
         drop(entries);
-        for entry in removed {
-            let _ = entry.task.await;
-        }
-        Ok(())
+        for entry in removed { joins.push(entry.task); }
+        joins.finish().await.map_err(|_| RuntimeError::Execution("agent_shutdown_unconfirmed"))
     }
     pub async fn stop_all(&self) {
-        self.drain_services(None).await;
+        let _ = self.stop_all_checked().await;
+    }
+    pub(super) async fn stop_all_checked(&self) -> crate::shutdown::Result {
+        let services = self.drain_services(None).await;
+        let mut joins = self.joins.lock().await;
         let entries = std::mem::take(&mut *self.entries.lock().await);
         for entry in entries.values() {
             entry.cancel.send_replace(true);
         }
         for (_, entry) in entries {
-            let _ = entry.task.await;
+            joins.push(entry.task);
         }
+        let workers = joins.finish().await;
+        services.and(workers)?;
+        if self.shutdown_fault.load(std::sync::atomic::Ordering::Acquire) { Err(crate::shutdown::Error::Agent) } else { Ok(()) }
     }
 }
 async fn canceled(receiver: &mut watch::Receiver<bool>) {
@@ -1296,6 +1318,12 @@ async fn check_provider(session: &mut runtime::Session) -> Result<(), RuntimeErr
         .await
         .map_err(|error| provider_failure("provider_account", &error))
 }
+async fn stop_provider(provider: &mut runtime::Process) -> Result<(), RuntimeError> {
+    provider.stop().await.map_err(|error| {
+        provider_failure("provider_stop", &error);
+        RuntimeError::Execution("agent_shutdown_unconfirmed")
+    })
+}
 /// Consume stable metadata pages without retaining unbounded message/history payloads.
 async fn history_coverage<T: Transport>(
     transport: &T,
@@ -1489,6 +1517,7 @@ async fn run_host(
     stop: watch::Sender<bool>,
     status: watch::Sender<RuntimeStatus>,
 ) -> Result<(), RuntimeError> {
+    let startup = wait_for_update_fence(&crate::update_guard::PROCESS, &mut cancel).await?;
     let profile_id = profile_identity(
         device.origin(),
         device.issuer(),
@@ -1506,10 +1535,7 @@ async fn run_host(
     // takeover can disrupt an existing device. This is account/config only.
     let mut provider = tokio::select! {biased;_=canceled(&mut cancel)=>return Err(RuntimeError::Stopped),p=runtime::spawn(&initial.config.profile,&initial.config.credential_ref)=>p.map_err(|error|provider_failure("provider_spawn", &error))?};
     let checked = tokio::select! {biased;_=canceled(&mut cancel)=>Err(RuntimeError::Stopped),r=async {check_provider(&mut provider.session).await}=>r};
-    provider
-        .stop()
-        .await
-        .map_err(|error| provider_failure("provider_stop", &error))?;
+    stop_provider(&mut provider).await?;
     checked?;
     let mut ledger = local(Ledger::open_scoped(&path, &owner, &profile_id))?;
     let (lease, history_snapshot, pre_covered) = acquire_for_start(
@@ -1533,6 +1559,7 @@ async fn run_host(
         return Err(RuntimeError::Authorization);
     }
     let reference = lease.reference();
+    drop(startup);
     let heartbeat_failed = Arc::new(std::sync::atomic::AtomicU8::new(0));
     let monitor = tokio::spawn(heartbeat(
         console.clone(),
@@ -1555,13 +1582,16 @@ async fn run_host(
             tokio::spawn(async move {
                 let mut work=work;
                 let result=async {
+                    let startup = wait_for_update_fence(&crate::update_guard::PROCESS, &mut work.receiver).await?;
                     let mut provider=tokio::select! {biased;_=canceled(&mut work.receiver)=>return Err(RuntimeError::Stopped),p=runtime::spawn(&work.config.profile,&work.config.credential_ref)=>p.map_err(|error|provider_failure("provider_spawn", &error))?};
                     let checked=tokio::select! {biased;_=canceled(&mut work.receiver)=>Err(RuntimeError::Stopped),r=async {check_provider(&mut provider.session).await}=>r};
-                    provider.stop().await.map_err(|error|provider_failure("provider_stop", &error))?;checked?;
+                    stop_provider(&mut provider).await?;checked?;
+                    drop(startup);
                     let mut ledger=local(Ledger::open_scoped(&path,&owner,&profile_id))?;
                     let mut ready=RuntimeStatus::new(&work.config.agent_id,if models_allowed{"online_chat_only"}else{"ledger_recovery_required"},if models_allowed{None}else{Some("ledger_recovery_required")}).with_capabilities(&work.config);ready.binding_id=Some(work.config.binding_id.clone());work.status.send_replace(ready);
                     execution_loop_with_gate(&transport,&owner,&mut ledger,&work.config,&reference,&mut work.receiver,&work.status,models_allowed).await
                 }.await;
+                if failure_code(&result) == Some("agent_shutdown_unconfirmed") { transport.console.0.owned_runtime.shutdown_fault.store(true, std::sync::atomic::Ordering::Release); }
                 let mut final_status=RuntimeStatus::new(&work.config.agent_id,"stopped",failure_code(&result)).with_capabilities(&work.config);
                 final_status.binding_id=Some(work.config.binding_id.clone());work.status.send_replace(final_status);
             })
@@ -1587,6 +1617,7 @@ async fn supervise_bindings<F>(
 where
     F: FnMut(BindingWork) -> tokio::task::JoinHandle<()>,
 {
+    let mut join_failed = false;
     let mut workers: BTreeMap<String, (watch::Sender<bool>, tokio::task::JoinHandle<()>)> =
         BTreeMap::new();
     let id = initial.config.binding_id.clone();
@@ -1603,7 +1634,7 @@ where
             .collect();
         for id in finished {
             if let Some((_, task)) = workers.remove(&id) {
-                let _ = task.await;
+                join_failed |= task.await.is_err();
             }
         }
         if workers.is_empty() {
@@ -1618,12 +1649,12 @@ where
             // have their accepted work receive a terminal status.
             commands.close();
             finish_queued_starts(&mut commands);
-            return Ok(());
+            return if join_failed { Err(RuntimeError::Execution("agent_shutdown_unconfirmed")) } else { Ok(()) };
         }
         tokio::select! {biased;
             _=canceled(cancel)=>break,
             work=commands.recv()=>{let Some(work)=work else {break;};let id=work.config.binding_id.clone();
-                if let Some((old_stop,old))=workers.remove(&id) {old_stop.send_replace(true);let _=old.await;}
+                if let Some((old_stop,old))=workers.remove(&id) {old_stop.send_replace(true);join_failed |= old.await.is_err();}
                 let stop=work.cancel.clone();workers.insert(id,(stop,spawn(work)));
             },
             _=tokio::time::sleep(Duration::from_millis(100))=>{}
@@ -1633,11 +1664,11 @@ where
         stop.send_replace(true);
     }
     for (_, (_, task)) in workers {
-        let _ = task.await;
+        join_failed |= task.await.is_err();
     }
     commands.close();
     finish_queued_starts(&mut commands);
-    Err(RuntimeError::Stopped)
+    if join_failed { Err(RuntimeError::Execution("agent_shutdown_unconfirmed")) } else { Err(RuntimeError::Stopped) }
 }
 fn finish_queued_starts(commands: &mut mpsc::UnboundedReceiver<BindingWork>) {
     while let Ok(work) = commands.try_recv() {
@@ -1693,6 +1724,15 @@ async fn execution_loop_with_gate<T: Transport>(
     status: &watch::Sender<RuntimeStatus>,
     models_allowed: bool,
 ) -> Result<(), RuntimeError> {
+    execution_loop_admitted(console, owner, ledger, config, lease, cancel, status, models_allowed, &crate::update_guard::PROCESS).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn execution_loop_admitted<T: Transport>(
+    console: &T, owner: &str, ledger: &mut Ledger, config: &StartConfig,
+    lease: &LeaseRef, cancel: &mut watch::Receiver<bool>, status: &watch::Sender<RuntimeStatus>,
+    models_allowed: bool, admission: &crate::update_guard::UpdateGate,
+) -> Result<(), RuntimeError> {
     let mut reported = BTreeSet::new();
     let mut reply_cursor = String::new();
     let mut finish_cursors = [String::new(), String::new(), String::new()];
@@ -1700,6 +1740,9 @@ async fn execution_loop_with_gate<T: Transport>(
         if *cancel.borrow() {
             return Err(RuntimeError::Stopped);
         }
+        // Admission covers recovery replies and outcome reports as well as new
+        // claims. Existing turns retain this guard until their reply is saved.
+        let update_task = wait_for_update_fence(admission, cancel).await?;
         // Original durable output survives restart; never regenerate it.
         for record in local(ledger.inbox_for_binding_after(
             owner,
@@ -1775,10 +1818,6 @@ async fn execution_loop_with_gate<T: Transport>(
             tokio::select! {biased;_=canceled(cancel)=>return Err(RuntimeError::Stopped),_=tokio::time::sleep(Duration::from_millis(250))=>{}}
             continue;
         }
-        // Cover polling and acknowledgement too: an update must not retire a
-        // just-claimed dispatch in the gap before provider work starts. The
-        // idle sleep below releases this guard so resident Agents can update.
-        let update_task = wait_for_update_fence(&crate::update_guard::PROCESS, cancel).await?;
         let events = match operation(
             console,
             cancel,
@@ -2046,6 +2085,7 @@ async fn execution_loop_with_gate<T: Transport>(
                 .with_capabilities(config);
             ready.binding_id = Some(config.binding_id.clone());
             status.send_replace(ready);
+            if turn_error == Some("agent_shutdown_unconfirmed") { return Err(RuntimeError::Execution("agent_shutdown_unconfirmed")); }
         }
         drop(update_task);
         tokio::select! {biased; _=canceled(cancel)=>return Err(RuntimeError::Stopped),_=tokio::time::sleep(Duration::from_secs(1))=>{}}
@@ -2299,6 +2339,8 @@ async fn run_turn<T: Transport>(
         None
     };
     let mut provider = tokio::select! {biased; _=canceled(cancel)=>return Err(RuntimeError::Stopped), p=runtime::spawn_for_scope(&profile,&config.credential_ref,ledger,&scope)=>p.map_err(|error|provider_failure("provider_spawn", &error))?};
+    let mut stopped = false;
+    let outcome = async {
     let (queue, mut receiver) = codex::approval_queue(1).map_err(|_| RuntimeError::Profile)?;
     let host = transport.approval_host();
     if config.host_files {
@@ -2360,10 +2402,7 @@ async fn run_turn<T: Transport>(
         }
     };
     if !allow {
-        provider
-            .stop()
-            .await
-            .map_err(|error| provider_failure("provider_stop", &error))?;
+        stop_provider(&mut provider).await?; stopped = true;
         return if *cancel.borrow() {
             Err(RuntimeError::Stopped)
         } else {
@@ -2406,14 +2445,11 @@ async fn run_turn<T: Transport>(
         Ok(completed)=>Ok(Ok(completed)),
         Err(codex::Error::Ledger(hagency_agent_local::Error::Denied))=>Ok(Err("⏸️ 本次请求未获 Agent 主人的处理授权，未调用模型。")),
         Err(codex::Error::Ledger(hagency_agent_local::Error::Budget))=>Ok(Err("⏸️ 暂停处理：Token 可用额度不足，无法为本次请求预留额度。请联系 Agent 主人调整配额。本次未调用模型。")),
-        Err(codex::Error::Failed)=>{provider.stop().await.map_err(|error|provider_failure("provider_stop", &error))?;return Ok(Some(Finish::Failed));},
+        Err(codex::Error::Failed)=>{stop_provider(&mut provider).await?; stopped = true;return Ok(Some(Finish::Failed));},
         Err(error)=>Err(provider_failure("agent_turn_result", &error)),
     }};
     // Dropping a running turn first seals its reservation; then kill the child.
-    provider
-        .stop()
-        .await
-        .map_err(|error| provider_failure("provider_stop", &error))?;
+    stop_provider(&mut provider).await?; stopped = true;
     let completed = match result? {
         Ok(completed) => completed,
         Err(reason) => {
@@ -2445,6 +2481,9 @@ async fn run_turn<T: Transport>(
         &body,
     ))?;
     Ok(None)
+    }.await;
+    if !stopped { stop_provider(&mut provider).await?; }
+    outcome
 }
 
 fn completion_body(completed: &codex::Completed) -> String {
@@ -3142,12 +3181,22 @@ mod tests {
         IdleOtherRoom,
         CrossEpochReply,
         AcceptedOnly,
+        LiveTurn,
     }
     struct Fake {
         path: PathBuf,
         mode: Mode,
         calls: StdMutex<Vec<&'static str>>,
         stop: watch::Sender<bool>,
+    }
+    impl Fake {
+        fn offered(&self) -> inbox::Dispatch {
+            let mut dispatch = event();
+            if matches!(self.mode, Mode::LiveTurn) {
+                dispatch.body = "This is an isolated Hagency updater qualification. Do not use tools. Reply exactly UPDATE_TASK_DONE.".into();
+            }
+            dispatch
+        }
     }
     impl Transport for Fake {
         async fn execute(&self, op: Op) -> Result<Response, RuntimeError> {
@@ -3196,7 +3245,7 @@ mod tests {
                     if calls.iter().filter(|c| **c == "poll").count() > 1 {
                         return Ok(Response::Events(vec![]));
                     }
-                    Ok(Response::Events(vec![wire(&event())]))
+                    Ok(Response::Events(vec![wire(&self.offered())]))
                 }
                 Op::Ack { dispatch_id, .. } => {
                     assert_eq!(
@@ -3218,12 +3267,12 @@ mod tests {
                     if matches!(self.mode, Mode::LostStart) {
                         return Err(RuntimeError::Transport);
                     }
-                    let mut dispatch = event();
+                    let mut dispatch = self.offered();
                     dispatch.execution_id = Some(execution_id);
                     dispatch.state = "running".into();
                     Ok(Response::Started(ExecutionStart {
                         dispatch: wire(&dispatch),
-                        newly_started: matches!(self.mode, Mode::CancelModel | Mode::RevokedModel),
+                        newly_started: matches!(self.mode, Mode::CancelModel | Mode::RevokedModel | Mode::LiveTurn),
                     }))
                 }
                 Op::Processing {
@@ -3231,7 +3280,7 @@ mod tests {
                     dispatch_id,
                     execution_id,
                 } => {
-                    assert!(matches!(self.mode, Mode::CancelModel | Mode::RevokedModel));
+                    assert!(matches!(self.mode, Mode::CancelModel | Mode::RevokedModel | Mode::LiveTurn));
                     assert_eq!(lease.agent_id, "agent-a");
                     assert_eq!(lease.epoch, 1);
                     assert_eq!(dispatch_id, "dispatch-a");
@@ -3255,7 +3304,7 @@ mod tests {
                     {
                         return Err(RuntimeError::Authorization);
                     }
-                    let mut active = event();
+                    let mut active = self.offered();
                     assert_eq!(dispatch_id, active.id);
                     active.state = "running".into();
                     active.execution_id = Some(execution_id);
@@ -3285,13 +3334,14 @@ mod tests {
                     body,
                     ..
                 } => {
-                    assert_eq!(body, "original response");
+                    if matches!(self.mode, Mode::LiveTurn) { assert!(body.contains("UPDATE_TASK_DONE"), "{body}"); }
+                    else { assert_eq!(body, "original response"); }
                     let record = ledger.inbox_record(OWNER, &dispatch_id).unwrap();
                     assert_eq!(record.state, State::ReplyReady);
-                    assert_eq!(record.reply.as_deref(), Some("original response"));
+                    assert_eq!(record.reply.as_deref(), Some(body.as_str()));
                     let label = if recovering { "reconcile" } else { "reply" };
                     calls.push(label);
-                    if !matches!(self.mode, Mode::AcceptedOnly)
+                    if !matches!(self.mode, Mode::AcceptedOnly | Mode::LiveTurn)
                         && calls.iter().filter(|c| **c == label).count() == 1
                     {
                         return Err(RuntimeError::Transport);
@@ -3934,6 +3984,67 @@ mod tests {
         assert_eq!(calls, vec!["reply", "poll", "reply", "poll"]);
         assert_eq!(state, State::Replied);
     }
+    #[cfg(unix)]
+    #[tokio::test]
+    #[ignore = "explicit live Codex qualification; requires provider-owned local login"]
+    async fn live_codex_update_waits_for_original_turn_and_reply_before_shutdown() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let base = root.path().canonicalize().unwrap();
+        for dir in ["home", "workspace"] {
+            std::fs::create_dir(base.join(dir)).unwrap();
+            std::fs::set_permissions(base.join(dir), std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let mut config = config(&base.join("workspace"));
+        config.profile.executable = PathBuf::from(std::env::var("HAGENCY_LIVE_CODEX").expect("explicit Codex path")).canonicalize().unwrap();
+        config.profile.home = base.join("home");
+        config.profile.codex_home = PathBuf::from(std::env::var("HAGENCY_LIVE_CODEX_HOME").expect("provider-owned login directory")).canonicalize().unwrap();
+        config.profile.shared_auth = true;
+        config.profile.model = std::env::var("HAGENCY_LIVE_MODEL").expect("explicit available model");
+        config.profile.web_search = false;
+        config.mode = BudgetMode::Estimated { reservation: 16000 };
+        let path = base.join("ledger");
+        let mut ledger = setup(&path, &config.profile.cwd);
+        ledger.set_model_profile(OWNER, &event().scope(), &hagency_agent_local::ModelProfile {
+            model: config.profile.model.clone(), workspace_root: config.profile.cwd.to_string_lossy().into(),
+            reasoning_effort: config.profile.effort.clone(), web_search: false, credential_ref: config.credential_ref.clone(),
+        }).unwrap();
+        let (stop, mut receiver) = watch::channel(false);
+        let (status, mut observing) = watch::channel(RuntimeStatus::new("agent-a", "starting", None));
+        let wire = Arc::new(Fake { path: path.clone(), mode: Mode::LiveTurn, calls: StdMutex::new(vec![]), stop: stop.clone() });
+        let admission = crate::update_guard::UpdateGate::default();
+        let gate = admission.clone();
+        let transport = wire.clone();
+        let worker = tokio::spawn(async move {
+            execution_loop_admitted(&transport, OWNER, &mut ledger, &config, &lease(), &mut receiver, &status, true, &gate).await
+        });
+        tokio::time::timeout(Duration::from_secs(45), async {
+            while observing.borrow().phase != "executing_chat_only" { observing.changed().await.unwrap(); }
+        }).await.expect("actual task entered provider execution");
+        let mut pending = admission.begin_update().unwrap();
+        assert!(pending.try_install().is_none());
+        assert!(admission.enter_task().is_none());
+        assert!(!*stop.borrow(), "updating must not cancel the original turn");
+        let installation = tokio::time::timeout(Duration::from_secs(120), async {
+            loop {
+                if let Some(guard) = pending.try_install() { break guard; }
+                assert!(!worker.is_finished(), "original worker failed before completing its turn: {:?}", observing.borrow().last_error);
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }).await.expect("original model turn and reply finish naturally");
+        let finished = Ledger::open(&path, OWNER).unwrap();
+        assert_eq!(finished.inbox_record(OWNER, "dispatch-a").unwrap().state, State::Replied);
+        assert!(finished.outstanding_calls(OWNER).unwrap().is_empty());
+        assert_eq!(wire.calls.lock().unwrap().iter().filter(|call| **call == "poll").count(), 1);
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+        assert_eq!(wire.calls.lock().unwrap().iter().filter(|call| **call == "poll").count(), 1, "no new claim after the original reply");
+        stop.send_replace(true); // installer preparation may now stop the idle worker
+        assert!(matches!(worker.await.unwrap(), Err(RuntimeError::Stopped)));
+        assert!(hagency_agent_local::process_cleanup::finish_all().await, "all original provider children must be reaped");
+        assert!(admission.enter_task().is_none());
+        drop(installation);
+    }
+
     #[cfg(unix)]
     fn install_long_turn_provider(script: &std::path::Path, marker: &std::path::Path) {
         use std::os::unix::fs::PermissionsExt;

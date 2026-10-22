@@ -276,7 +276,7 @@ impl Profile {
         if let Some(path) = std::env::var_os("PATH") {
             command.env("PATH", path);
         }
-        let mut child = command.spawn()?;
+        let mut child = crate::process_cleanup::RetainedChild::from(command.spawn()?);
         let stdout = child
             .stdout
             .take()
@@ -393,7 +393,7 @@ pub async fn sealed_shared_overrides(
         Ok(overrides)
     }
     .await;
-    let _ = probe.stop().await;
+    probe.stop().await?;
     result
 }
 fn inspection_workspace(home: &std::path::Path) -> Result<PathBuf> {
@@ -630,7 +630,7 @@ fn validate_shared_provider(c: &Value) -> Result<()> {
 }
 pub struct Process {
     pub session: Session<tokio::process::ChildStdout, tokio::process::ChildStdin>,
-    pub(crate) child: tokio::process::Child,
+    pub(crate) child: crate::process_cleanup::RetainedChild,
 }
 impl Process {
     pub async fn stop(&mut self) -> Result<()> {

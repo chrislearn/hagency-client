@@ -1312,6 +1312,8 @@ pub fn register_widgets(vm: &mut ScriptVm) {
 
 impl AppMain for App {
     fn script_mod(vm: &mut ScriptVm) -> makepad_widgets::ScriptValue {
+        #[cfg(all(target_os = "macos", feature = "macos-sparkle"))]
+        crate::updates::sparkle::configure_resources(vm);
         // Order matters: base widgets first, then app widgets, then app UI.
         makepad_widgets::theme_mod(vm);
         script_eval!(vm, {
@@ -1430,6 +1432,12 @@ impl AppMain for App {
                 self.preserve_reader_session(cx);
                 if self.save_state_for_update(cx).is_ok() { self.updates.begin_shutdown(); }
                 else { self.updates.cancel_preparation(); }
+            }
+            #[cfg(all(target_os = "macos", feature = "macos-sparkle"))]
+            if self.updates.sparkle_needs_preparation() {
+                self.preserve_reader_session(cx);
+                let prepared = self.save_state_for_update(cx).is_ok();
+                self.updates.sparkle_prepared(prepared);
             }
         }
         if !self.embedded {
@@ -1765,6 +1773,8 @@ impl App {
     fn handle_lifecycle_event(&mut self, cx: &mut Cx, event: &Event) {
         match event {
             Event::QuitRequested(e) => {
+                #[cfg(all(target_os = "macos", feature = "macos-sparkle"))]
+                if self.updates.sparkle_blocks_quit() { e.handle(); return; }
                 log!("Received quit request: {:?}. Persisting state before allowing quit.", e.reason);
                 self.persist_runtime_state(cx, "quit request");
             }
@@ -1793,6 +1803,8 @@ impl App {
             }
             Event::WindowCloseRequested(e)
                 if self.ui.window(cx, ids!(main_window)).window_id() == Some(e.window_id) => {
+                    #[cfg(all(target_os = "macos", feature = "macos-sparkle"))]
+                    if self.updates.sparkle_blocks_quit() { e.accept_close.set(false); return; }
                     self.preserve_reader_session(cx);
                     log!("Main window close requested; persisting runtime state.");
                     self.persist_runtime_state(cx, "main window close request");
@@ -1874,7 +1886,7 @@ impl App {
         }
     }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", all(target_os = "macos", feature = "macos-sparkle")))]
     fn save_state_for_update(&mut self, cx: &mut Cx) -> anyhow::Result<()> {
         persistence::save_window_state(self.ui.window(cx, ids!(main_window)), cx)?;
         if let Some(user) = current_user_id() {
@@ -1947,6 +1959,9 @@ impl App {
 
     fn sync_titlebar_sidebar(&self, cx: &mut Cx) {
         if !self.embedded {
+            if self.updates.sparkle_prototype_active() {
+                self.ui.window(cx, ids!(main_window)).set_title(cx, "Hagency — Sparkle Prototype");
+            }
             if cx.global::<crate::updates::UpdateState>().0.preview {
                 self.ui.window(cx, ids!(main_window)).set_title(cx, "Hagency — Update Preview");
             }
