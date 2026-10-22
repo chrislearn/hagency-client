@@ -868,6 +868,15 @@ fn main() -> io::Result<()> {
         }
     });
     let result = fake();
+    if let Err(error) = &result
+        && let Err(diagnostic) = trace(&format!(
+            "probe-error kind={:?} os={:?}",
+            error.kind(),
+            error.raw_os_error()
+        ))
+    {
+        eprintln!("MCP diagnostic write failed: {:?}", diagnostic.kind());
+    }
     let _ = release.send(());
     let _ = watchdog.join();
     result.map_err(|_| invalid())

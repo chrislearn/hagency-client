@@ -106,6 +106,7 @@ pub(super) fn timeout_read(duration: Duration) -> io::Result<String> {
 pub(super) fn run(mode: &str, reader: &mut impl BufRead, marker: &Path) -> io::Result<bool> {
     let result = run_inner(mode, reader, marker);
     if let Err(error) = &result
+        && marker.with_extension("approval-diagnostics").is_file()
         && let Err(diagnostic) = fs::write(
             marker.with_extension("approval-probe-error"),
             format!("kind={:?} os={:?}", error.kind(), error.raw_os_error()),
