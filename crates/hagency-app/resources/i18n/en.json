@@ -2184,5 +2184,12 @@
   "Canceling update…": "Canceling update…",
   "The update was canceled after shutdown started. Restart Hagency before updating.": "The update was canceled after shutdown started. Restart Hagency before updating.",
   "Cancel Update": "Cancel Update",
-  "Could not initialize updates. Please restart Hagency to try again.": "Could not initialize updates. Please restart Hagency to try again."
+  "Could not initialize updates. Please restart Hagency to try again.": "Could not initialize updates. Please restart Hagency to try again.",
+  "Account type": "Account type",
+  "Agent owner": "Agent owner",
+  "Visibility": "Visibility",
+  "My Agent": "My Agent",
+  "Private": "Private",
+  "Checking Agent information…": "Checking Agent information…",
+  "Could not load Agent details.": "Could not load Agent details."
 }

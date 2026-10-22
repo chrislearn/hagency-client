@@ -2184,5 +2184,12 @@
   "Canceling update…": "正在取消更新…",
   "The update was canceled after shutdown started. Restart Hagency before updating.": "停机开始后已取消更新。请重启 Hagency 后再更新。",
   "Cancel Update": "取消更新",
-  "Could not initialize updates. Please restart Hagency to try again.": "无法初始化更新。请重启 Hagency 后重试。"
+  "Could not initialize updates. Please restart Hagency to try again.": "无法初始化更新。请重启 Hagency 后重试。",
+  "Account type": "账号类型",
+  "Agent owner": "Agent 所属用户",
+  "Visibility": "可见性",
+  "My Agent": "我的 Agent",
+  "Private": "私有",
+  "Checking Agent information…": "正在查询 Agent 信息…",
+  "Could not load Agent details.": "无法加载 Agent 详情。"
 }
