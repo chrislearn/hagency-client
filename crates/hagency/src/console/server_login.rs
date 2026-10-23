@@ -1997,7 +1997,13 @@ impl ServerLogin {
             .await
             .map_err(|_| OwnerError::new(503, "server_unavailable"))?
         {
-            if raw.len() + chunk.len() > if is_board { 1024 * 1024 } else { 128 * 1024 } {
+            if raw.len() + chunk.len()
+                > if is_board {
+                    4 * 1024 * 1024
+                } else {
+                    128 * 1024
+                }
+            {
                 return Err(OwnerError::new(502, "invalid_server_response"));
             }
             raw.extend_from_slice(&chunk);

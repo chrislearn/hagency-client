@@ -65,7 +65,7 @@ mod preview {
                 let lanes:Vec<_>=STATES.iter().enumerate().map(|(index,state)|{
                     let count=if index==0 {3}else if index==1{2}else{1};
                     let tasks:Vec<_>=(0..count).map(|offset|json!({"id":format!("task_{index}_{offset}"),"projectId":"preview","number":index*3+offset+1,"title":if offset==0{titles[index]}else if offset==1{"Long titles wrap naturally and keep the card readable across different window sizes"}else{"Explore keyboard and menu alternatives"},"description":"A shared workspace for people and Agents.\n\nKeep each task focused, show clear ownership, and preserve drafts when another member edits the same task.\n\n验收：布局清晰，中文正常显示；变更后可以恢复草稿。","state":state,"rank":(offset+1)*1024,"priority":if index==2{"urgent"}else if index==1{"high"}else{"normal"},"assigneeMxid":if offset==2{None}else{Some("@alice:example.test")},"labels":if index==0{vec!["design","desktop"]}else{vec!["P0"]},"dueDate":"2026-11-01","version":1,"createdBy":"@alice:example.test","createdAt":1,"updatedAt":1,"archivedAt":null})).collect();
-                    json!({"state":state,"total":tasks.len(),"tasks":tasks,"nextCursor":null,"sequence":8})
+                    json!({"state":state,"title":(["To do","In progress","Blocked","In review","Done"][index]),"wipLimit":null,"isDone":*state=="done","taskCount":tasks.len(),"total":tasks.len(),"tasks":tasks,"nextCursor":null,"sequence":8})
                 }).collect();
                 let snapshot:Snapshot=serde_json::from_value(json!({"projectId":"preview","sequence":8,"capability":CAPABILITY,"members":["@alice:example.test","@bob:example.test"],"lanes":lanes})).unwrap();
                 let selected = if std::env::args().any(|a| a == "--detail") {

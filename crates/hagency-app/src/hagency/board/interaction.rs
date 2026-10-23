@@ -70,7 +70,7 @@ impl Widget for ProjectBoard {
                 0.0
             };
             if step != 0.0 {
-                let visible: Vec<_> = (0..5)
+                let visible: Vec<_> = (0..self.column_count())
                     .filter(|i| self.view.view(cx, column_path(*i)).visible())
                     .collect();
                 let actual = visible
@@ -85,7 +85,7 @@ impl Widget for ProjectBoard {
                     .view(cx, ids!(board_scroll))
                     .set_scroll_pos(cx, dvec2(self.scroll_x, 0.0));
             }
-            for index in 0..5 {
+            for index in 0..self.column_count() {
                 let column = self.view.view(cx, column_path(index));
                 let list = column.portal_list(cx, ids!(cards));
                 let rect = list.area().rect(cx);
@@ -114,6 +114,7 @@ impl Widget for ProjectBoard {
         let Event::Actions(actions) = event else {
             return;
         };
+        self.handle_extensions(cx, actions);
         for action in actions {
             if let Some(done) = action.downcast_ref::<Completed>() {
                 self.apply_read(cx, done);
@@ -126,7 +127,10 @@ impl Widget for ProjectBoard {
                     match action.cast::<CardAction>() {
                         CardAction::Open => self.select(cx, &task),
                         CardAction::Start(abs)
-                            if self.pending.is_none() && !self.dirty && !self.query.archived =>
+                            if self.pending.is_none()
+                                && !self.dirty
+                                && self.columns_draft.is_none()
+                                && !self.query.archived =>
                         {
                             self.drag = Some(Drag {
                                 task,
@@ -150,7 +154,7 @@ impl Widget for ProjectBoard {
                             if let Some(drag) = self.drag.take()
                                 && drag.moved
                             {
-                                if let Some(index) = (0..5).find(|i| {
+                                if let Some(index) = (0..self.column_count()).find(|i| {
                                     self.view
                                         .view(cx, column_path(*i))
                                         .area()
@@ -174,7 +178,7 @@ impl Widget for ProjectBoard {
                                         self.move_task(
                                             cx,
                                             drag.task,
-                                            STATES[index],
+                                            &self.column_state(index),
                                             Position::Between,
                                             before,
                                             after,
@@ -183,7 +187,7 @@ impl Widget for ProjectBoard {
                                         self.move_task(
                                             cx,
                                             drag.task,
-                                            STATES[index],
+                                            &self.column_state(index),
                                             Position::Append,
                                             None,
                                             None,
@@ -235,10 +239,12 @@ impl Widget for ProjectBoard {
             .is_some()
             && self.creating
         {
+            self.draft_state =
+                self.column_state(self.view.drop_down(cx, ids!(new_status)).selected_item());
             self.dirty = true;
             self.discard_armed = false;
         }
-        for index in 0..5 {
+        for index in 0..self.column_count() {
             if self
                 .view
                 .view(cx, column_path(index))
@@ -250,6 +256,7 @@ impl Widget for ProjectBoard {
                     self.view
                         .drop_down(cx, ids!(new_status))
                         .set_selected_item(cx, index);
+                    self.draft_state = self.column_state(index);
                 }
             }
         }
@@ -314,8 +321,13 @@ impl Widget for ProjectBoard {
                         .drop_down(cx, ids!(filter_state))
                         .selected_item()
                         .checked_sub(1)
-                        .and_then(|i| STATES.get(i))
-                        .map(|s| (*s).into()),
+                        .and_then(|i| {
+                            self.snapshot
+                                .as_ref()?
+                                .lanes
+                                .get(i)
+                                .map(|l| l.state.clone())
+                        }),
                     query: if search.trim().is_empty() {
                         None
                     } else {
@@ -381,12 +393,7 @@ impl Widget for ProjectBoard {
                         input: Create {
                             idempotency_key: uuid::Uuid::new_v4().to_string(),
                             fields,
-                            state: STATES[self
-                                .view
-                                .drop_down(cx, ids!(new_status))
-                                .selected_item()
-                                .min(4)]
-                            .into(),
+                            state: self.draft_state.clone(),
                         },
                     },
                 );
@@ -413,17 +420,14 @@ impl Widget for ProjectBoard {
                     tr("Save or close your current draft before opening another task."),
                 );
             } else if let Some(task) = self.selected.clone() {
-                let state = STATES[self
-                    .view
-                    .drop_down(cx, ids!(move_state))
-                    .selected_item()
-                    .min(4)];
+                let state =
+                    self.column_state(self.view.drop_down(cx, ids!(move_state)).selected_item());
                 let position = if self.view.button(cx, ids!(move_top)).clicked(actions) {
                     Position::Prepend
                 } else {
                     Position::Append
                 };
-                self.move_task(cx, task, state, position, None, None);
+                self.move_task(cx, task, &state, position, None, None);
             }
         }
         if self.view.button(cx, ids!(archive)).clicked(actions)
@@ -546,34 +550,43 @@ impl Widget for ProjectBoard {
             Size::Fixed(340.0)
         };
         script_apply_eval!(cx,panel,{width:#(size)});
-        for (index, state) in STATES.iter().enumerate() {
+        self.prepare_extension_draw(cx);
+        for index in 0..12 {
+            let lane = self.snapshot.as_ref().and_then(|s| s.lanes.get(index));
+            let state = lane.map(|l| l.state.as_str()).unwrap_or("");
             let column = self.view.view(cx, column_path(index));
             column.set_visible(
                 cx,
                 self.query
                     .state
                     .as_ref()
-                    .is_none_or(|filter| filter == *state),
+                    .is_none_or(|filter| filter == state)
+                    && lane.is_some(),
             );
-            column
-                .label(cx, ids!(heading))
-                .set_text(cx, state_label(state));
+            column.label(cx, ids!(heading)).set_text(
+                cx,
+                &lane.map(|l| column_title(&l.title)).unwrap_or_default(),
+            );
             let mut marker = column.view(cx, ids!(marker));
-            match index {
-                1 => {
-                    script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_ACCENT}});
-                }
-                2 => {
-                    script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_WARNING_FG}});
-                }
-                3 => {
-                    script_apply_eval!(cx,marker,{draw_bg +: {color:#9675bf}});
-                }
-                4 => {
-                    script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_SUCCESS_FG}});
-                }
-                _ => {
-                    script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_MUTED}});
+            if lane.is_some_and(|l| l.is_done) {
+                script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_SUCCESS_FG}});
+            } else {
+                match state {
+                    "in_progress" => {
+                        script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_ACCENT}});
+                    }
+                    "blocked" => {
+                        script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_WARNING_FG}});
+                    }
+                    "in_review" => {
+                        script_apply_eval!(cx,marker,{draw_bg +: {color:#9675bf}});
+                    }
+                    "todo" => {
+                        script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_MUTED}});
+                    }
+                    _ => {
+                        script_apply_eval!(cx,marker,{draw_bg +: {color:mod.widgets.RINX_ACCENT}});
+                    }
                 }
             }
 
@@ -588,9 +601,21 @@ impl Widget for ProjectBoard {
             column.label(cx, ids!(count)).set_text(
                 cx,
                 &lane
-                    .map(|l| l.total.to_string())
+                    .map(|l| {
+                        l.wip_limit.map_or_else(
+                            || l.total.to_string(),
+                            |limit| format!("{}/{}", l.task_count, limit),
+                        )
+                    })
                     .unwrap_or_else(|| "—".into()),
             );
+            let full = lane.is_some_and(|l| l.wip_limit.is_some_and(|limit| l.task_count >= limit));
+            let mut count = column.label(cx, ids!(count));
+            if full {
+                script_apply_eval!(cx,count,{draw_text.color:mod.widgets.RINX_WARNING_FG});
+            } else {
+                script_apply_eval!(cx,count,{draw_text.color:mod.widgets.RINX_MUTED});
+            }
             let mut column = column;
             let highlighted = self
                 .drag
@@ -599,7 +624,10 @@ impl Widget for ProjectBoard {
             script_apply_eval!(cx,column,{draw_bg +: {border_size:#(if highlighted{2.0}else{0.0}) border_color:mod.widgets.RINX_ACCENT}});
         }
         while let Some(step) = self.view.draw_walk(cx, scope, walk).step() {
-            let index = (0..5).find(|i| {
+            if self.draw_extension_list(cx, scope, &step) {
+                continue;
+            }
+            let index = (0..self.column_count()).find(|i| {
                 step.widget_uid()
                     == self
                         .view
@@ -629,10 +657,21 @@ impl Widget for ProjectBoard {
                     card.label(cx, ids!(title)).set_text(cx, &task.title);
                     card.label(cx, ids!(priority))
                         .set_text(cx, priority_label(&task.priority));
-                    card.label(cx, ids!(tags))
-                        .set_text(cx, &task.labels.join(" · "));
-                    card.label(cx, ids!(tags))
-                        .set_visible(cx, !task.labels.is_empty());
+                    let mut tags = task.labels.clone();
+                    if task.checklist_total > 0 {
+                        tags.push(format!(
+                            "☑ {}/{}",
+                            task.checklist_done, task.checklist_total
+                        ));
+                    }
+                    if task.subtask_total > 0 {
+                        tags.push(format!("↳ {}/{}", task.subtask_done, task.subtask_total));
+                    }
+                    if let Some(n) = task.parent_number {
+                        tags.push(format!("↳ #{}", n));
+                    }
+                    card.label(cx, ids!(tags)).set_text(cx, &tags.join(" · "));
+                    card.label(cx, ids!(tags)).set_visible(cx, !tags.is_empty());
                     card.label(cx, ids!(assignee)).set_text(
                         cx,
                         task.assignee_mxid
@@ -644,7 +683,7 @@ impl Widget for ProjectBoard {
                         .set_text(cx, task.due_date.as_deref().unwrap_or(""));
                     let overdue = task.due_date.as_deref().is_some_and(|date| {
                         date < chrono::Utc::now().format("%Y-%m-%d").to_string().as_str()
-                    }) && task.state != "done"
+                    }) && !lane.is_some_and(|l| l.is_done)
                         && task.archived_at.is_none();
                     let mut due = card.label(cx, ids!(due));
                     if overdue {
@@ -706,7 +745,7 @@ impl ProjectBoard {
             && let Some(cursor) = snapshot.lanes[index].next_cursor.clone()
         {
             let mut query = self.query.clone();
-            query.state = Some(STATES[index].into());
+            query.state = Some(snapshot.lanes[index].state.clone());
             query.sequence = Some(snapshot.sequence);
             query.cursor = Some(cursor);
             self.read(cx, Read::Page(index), BoardAction::Page { query });

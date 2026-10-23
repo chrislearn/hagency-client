@@ -9,6 +9,14 @@ impl ProjectBoard {
         self.view.redraw(cx);
     }
     pub(super) fn clear_content(&mut self, cx: &mut Cx) {
+        self.columns_draft = None;
+        self.draft_checklist.clear();
+        self.draft_parent = None;
+        self.subtasks.clear();
+        self.parent_task = None;
+        self.view
+            .view(cx, ids!(column_settings))
+            .set_visible(cx, false);
         self.snapshot = None;
         self.detail_loaded = false;
         self.selected = None;
@@ -149,7 +157,7 @@ impl ProjectBoard {
         self.sync_controls(cx);
     }
     pub(super) fn reset_viewports(&mut self, cx: &mut Cx) {
-        for index in 0..5 {
+        for index in 0..12 {
             self.view
                 .view(cx, column_path(index))
                 .portal_list(cx, ids!(cards))
@@ -247,6 +255,8 @@ impl ProjectBoard {
                 .filter(|s| !s.is_empty())
                 .map(str::to_owned)
                 .collect(),
+            parent_id: self.draft_parent.clone(),
+            checklist: self.draft_checklist.clone(),
             due_date: if due.trim().is_empty() {
                 None
             } else {
@@ -255,6 +265,12 @@ impl ProjectBoard {
         }
     }
     pub(super) fn fill_editor(&mut self, cx: &mut Cx, fields: Fields) {
+        self.view
+            .text_input(cx, ids!(checklist_new))
+            .set_text(cx, "");
+        self.draft_checklist = fields.checklist.clone();
+        self.draft_parent = fields.parent_id.clone();
+        self.checklist_rows.clear();
         self.view
             .text_input(cx, ids!(title))
             .set_text(cx, &fields.title);
@@ -288,7 +304,7 @@ impl ProjectBoard {
         self.sync_controls(cx);
     }
     pub(super) fn select(&mut self, cx: &mut Cx, task: &BoardTask) {
-        if self.pending.is_some() || self.dirty {
+        if self.pending.is_some() || self.dirty || self.columns_draft.is_some() {
             self.notice(
                 cx,
                 tr("Save or close your current draft before opening another task."),
@@ -297,6 +313,11 @@ impl ProjectBoard {
         }
         self.creating = false;
         self.detail_loaded = false;
+        self.subtasks.clear();
+        self.parent_task = None;
+        self.view
+            .view(cx, ids!(editor_scroll))
+            .set_scroll_pos(cx, dvec2(0.0, 0.0));
         self.fill_editor(cx, task.fields());
         self.selected = Some(task.clone());
         self.view.view(cx, ids!(inspector)).set_visible(cx, true);
@@ -316,23 +337,35 @@ impl ProjectBoard {
         );
     }
     pub(super) fn new_task(&mut self, cx: &mut Cx) {
-        if self.pending.is_some() || self.dirty {
+        if self.pending.is_some() || self.dirty || self.columns_draft.is_some() {
             self.notice(
                 cx,
                 tr("Save or close your current draft before opening another task."),
             );
             return;
         }
+        self.subtasks.clear();
+        self.parent_task = None;
+        self.view
+            .view(cx, ids!(editor_scroll))
+            .set_scroll_pos(cx, dvec2(0.0, 0.0));
         self.creating = true;
         let state = self
             .query
             .state
             .as_deref()
-            .and_then(|s| STATES.iter().position(|v| *v == s))
+            .and_then(|s| {
+                self.snapshot
+                    .as_ref()?
+                    .lanes
+                    .iter()
+                    .position(|l| l.state == s)
+            })
             .unwrap_or(0);
         self.view
             .drop_down(cx, ids!(new_status))
             .set_selected_item(cx, state);
+        self.draft_state = self.column_state(state);
         self.selected = None;
         self.comments.clear();
         self.activity.clear();
@@ -401,6 +434,7 @@ impl ProjectBoard {
         );
     }
     pub(super) fn sync_controls(&mut self, cx: &mut Cx) {
+        self.sync_extension_controls(cx);
         self.view
             .view(cx, ids!(create_status))
             .set_visible(cx, self.creating);
@@ -462,9 +496,10 @@ impl ProjectBoard {
         self.view
             .widget(cx, ids!(save))
             .set_disabled(cx, !(editing && (self.creating || self.dirty)));
-        self.view
-            .button(cx, ids!(new_task))
-            .set_enabled(cx, self.snapshot.is_some() && !writing && !self.failed);
+        self.view.button(cx, ids!(new_task)).set_enabled(
+            cx,
+            self.snapshot.is_some() && !writing && !self.failed && self.columns_draft.is_none(),
+        );
         self.view
             .button(cx, ids!(refresh))
             .set_enabled(cx, !self.loading);
@@ -618,9 +653,9 @@ impl ProjectBoard {
                         Ok(snapshot)
                             if snapshot.project_id == self.project
                                 && snapshot.capability == CAPABILITY
-                                && snapshot.lanes.len() == 5
-                                && snapshot.lanes.iter().enumerate().all(|(i, l)| {
-                                    l.state == STATES[i]
+                                && (2..=12).contains(&snapshot.lanes.len())
+                                && snapshot.lanes.iter().all(|l| {
+                                    valid_state(&l.state)
                                         && l.tasks.len() <= 100
                                         && l.tasks.iter().all(|t| {
                                             t.project_id == self.project && t.state == l.state
@@ -641,6 +676,7 @@ impl ProjectBoard {
                             self.snapshot = Some(snapshot);
                             self.failed = false;
                             self.sync_members(cx, members);
+                            self.sync_column_labels(cx);
                             if let Some(task) = refresh_detail {
                                 self.read(
                                     cx,
@@ -673,7 +709,8 @@ impl ProjectBoard {
                                 serde_json::from_value::<Vec<BoardTask>>(value["tasks"].clone())
                                 && tasks.len() <= 100
                                 && tasks.iter().all(|t| {
-                                    t.project_id == self.project && t.state == STATES[*index]
+                                    t.project_id == self.project
+                                        && t.state == snapshot.lanes[*index].state
                                 })
                             {
                                 let lane = &mut snapshot.lanes[*index];
@@ -695,6 +732,42 @@ impl ProjectBoard {
                             && task.project_id == self.project
                             && task.id == *id
                         {
+                            let related =
+                                serde_json::from_value::<Vec<BoardTask>>(value["subtasks"].clone())
+                                    .ok()
+                                    .filter(|children| {
+                                        children.len() <= 100
+                                            && children.iter().all(|child| {
+                                                child.project_id == self.project
+                                                    && child.parent_id.as_deref()
+                                                        == Some(id.as_str())
+                                            })
+                                    });
+                            let parent = if value["parent"].is_null() {
+                                Some(None)
+                            } else {
+                                serde_json::from_value::<BoardTask>(value["parent"].clone())
+                                    .ok()
+                                    .map(Some)
+                            };
+                            let (Some(children), Some(parent)) = (related, parent) else {
+                                self.detail_loaded = false;
+                                self.notice(cx, error_message("invalid_server_response"));
+                                self.sync_controls(cx);
+                                return;
+                            };
+                            if parent.as_ref().map(|p| p.id.as_str()) != task.parent_id.as_deref()
+                                || parent
+                                    .as_ref()
+                                    .is_some_and(|p| p.project_id != self.project)
+                            {
+                                self.detail_loaded = false;
+                                self.notice(cx, error_message("invalid_server_response"));
+                                self.sync_controls(cx);
+                                return;
+                            }
+                            self.subtasks = children;
+                            self.parent_task = parent;
                             self.detail_loaded = true;
                             self.selected = Some(task.clone());
                             if !self.dirty && !self.conflict {
@@ -710,7 +783,12 @@ impl ProjectBoard {
                             );
                             self.view.drop_down(cx, ids!(move_state)).set_selected_item(
                                 cx,
-                                STATES.iter().position(|s| *s == task.state).unwrap_or(0),
+                                self.snapshot
+                                    .as_ref()
+                                    .and_then(|s| {
+                                        s.lanes.iter().position(|l| l.state == task.state)
+                                    })
+                                    .unwrap_or(0),
                             );
                             self.detail_history(cx, id);
                         }
@@ -824,6 +902,8 @@ impl ProjectBoard {
         self.saving = false;
         match &done.result {
             Ok(value) => {
+                let was_columns =
+                    matches!(self.pending, Some(BoardAction::ConfigureColumns { .. }));
                 let was_comment = matches!(self.pending, Some(BoardAction::Comment { .. }));
                 self.epoch = nonce();
                 self.reads.clear();
@@ -850,11 +930,25 @@ impl ProjectBoard {
                     }
                     self.detail_history(cx, &task.id);
                 }
+                if was_columns {
+                    self.columns_draft = None;
+                    self.view
+                        .view(cx, ids!(column_settings))
+                        .set_visible(cx, false);
+                    self.query.state = None;
+                    self.reset_viewports(cx);
+                }
                 self.notice(cx, tr("Changes saved"));
                 self.load(cx);
             }
             Err(code) => {
-                self.notice(cx, error_message(code));
+                if matches!(self.pending, Some(BoardAction::ConfigureColumns { .. })) {
+                    self.view
+                        .label(cx, ids!(columns_notice))
+                        .set_text(cx, error_message(code));
+                } else {
+                    self.notice(cx, error_message(code));
+                }
                 if !uncertain(code) {
                     self.pending = None;
                 }

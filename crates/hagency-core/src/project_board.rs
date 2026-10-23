@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 pub const STATES: [&str; 5] = ["todo", "in_progress", "blocked", "in_review", "done"];
 pub const PRIORITIES: [&str; 4] = ["low", "normal", "high", "urgent"];
-pub const CAPABILITY: &str = "project-board-v1";
+pub const CAPABILITY: &str = "project-board-v2";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -24,6 +24,10 @@ pub struct Fields {
     pub labels: Vec<String>,
     #[serde(default)]
     pub due_date: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub checklist: Vec<ChecklistItem>,
 }
 impl Default for Fields {
     fn default() -> Self {
@@ -34,6 +38,8 @@ impl Default for Fields {
             assignee_mxid: None,
             labels: Vec::new(),
             due_date: None,
+            parent_id: None,
+            checklist: Vec::new(),
         }
     }
 }
@@ -42,6 +48,24 @@ fn normal() -> String {
 }
 impl Fields {
     pub fn validate(&mut self) -> Result<()> {
+        if let Some(parent) = &self.parent_id {
+            key(parent)?;
+        }
+        if self.checklist.len() > 100 {
+            return Err(InvalidInput("invalid_board_checklist"));
+        }
+        let mut ids = std::collections::BTreeSet::new();
+        for item in &mut self.checklist {
+            key(&item.id)?;
+            item.title = item.title.trim().into();
+            if item.title.is_empty()
+                || item.title.chars().count() > 160
+                || item.title.chars().any(char::is_control)
+                || !ids.insert(item.id.clone())
+            {
+                return Err(InvalidInput("invalid_board_checklist"));
+            }
+        }
         self.title = self.title.trim().into();
         if self.title.is_empty()
             || self.title.chars().count() > 240
@@ -171,10 +195,7 @@ pub struct Query {
 }
 impl Query {
     pub fn validate(&self) -> Result<()> {
-        if self
-            .state
-            .as_ref()
-            .is_some_and(|s| !STATES.contains(&s.as_str()))
+        if self.state.as_ref().is_some_and(|s| !valid_state(s))
             || self.query.as_ref().is_some_and(|s| s.chars().count() > 120)
             || self.assignee.as_ref().is_some_and(|s| s.len() > 255)
             || self.label.as_ref().is_some_and(|s| s.chars().count() > 32)
@@ -190,6 +211,75 @@ impl Query {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ChecklistItem {
+    pub id: String,
+    pub title: String,
+    pub checked: bool,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ColumnDefinition {
+    pub id: String,
+    pub title: String,
+    pub wip_limit: Option<i64>,
+    pub is_done: bool,
+}
+pub fn default_columns() -> Vec<ColumnDefinition> {
+    STATES
+        .into_iter()
+        .zip(["To do", "In progress", "Blocked", "In review", "Done"])
+        .map(|(id, title)| ColumnDefinition {
+            id: id.into(),
+            title: title.into(),
+            wip_limit: None,
+            is_done: id == "done",
+        })
+        .collect()
+}
+pub fn valid_state(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ConfigureColumns {
+    pub idempotency_key: String,
+    pub expected_sequence: i64,
+    pub columns: Vec<ColumnDefinition>,
+}
+impl ConfigureColumns {
+    pub fn validate(&mut self) -> Result<()> {
+        key(&self.idempotency_key)?;
+        if self.expected_sequence < 0
+            || !(2..=12).contains(&self.columns.len())
+            || !self.columns.iter().any(|c| c.is_done)
+        {
+            return Err(InvalidInput("invalid_board_columns"));
+        }
+        let mut ids = std::collections::BTreeSet::new();
+        let mut titles = std::collections::BTreeSet::new();
+        for column in &mut self.columns {
+            column.title = column.title.trim().into();
+            if !valid_state(&column.id)
+                || !ids.insert(column.id.clone())
+                || column.title.is_empty()
+                || column.title.chars().count() > 48
+                || column.title.chars().any(char::is_control)
+                || !titles.insert(column.title.to_lowercase())
+                || column.wip_limit.is_some_and(|n| !(1..=10000).contains(&n))
+            {
+                return Err(InvalidInput("invalid_board_columns"));
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum BoardAction {
@@ -199,6 +289,7 @@ pub enum BoardAction {
     Changes { after: i64 },
     Comments { task: String, after: i64 },
     Activity { task: String, after: i64 },
+    ConfigureColumns { input: ConfigureColumns },
     Create { input: Create },
     Update { task: String, input: Update },
     Move { task: String, input: Move },
@@ -234,6 +325,20 @@ pub struct BoardTask {
     pub assignee_mxid: Option<String>,
     pub labels: Vec<String>,
     pub due_date: Option<String>,
+    #[serde(default)]
+    pub parent_id: Option<String>,
+    #[serde(default)]
+    pub parent_number: Option<i64>,
+    #[serde(default)]
+    pub checklist: Vec<ChecklistItem>,
+    #[serde(default)]
+    pub checklist_total: i64,
+    #[serde(default)]
+    pub checklist_done: i64,
+    #[serde(default)]
+    pub subtask_total: i64,
+    #[serde(default)]
+    pub subtask_done: i64,
     pub version: i64,
     pub created_by: String,
     pub created_at: i64,
@@ -249,6 +354,8 @@ impl BoardTask {
             assignee_mxid: self.assignee_mxid.clone(),
             labels: self.labels.clone(),
             due_date: self.due_date.clone(),
+            parent_id: self.parent_id.clone(),
+            checklist: self.checklist.clone(),
         }
     }
 }
@@ -256,6 +363,10 @@ impl BoardTask {
 #[serde(rename_all = "camelCase")]
 pub struct Lane {
     pub state: String,
+    pub title: String,
+    pub wip_limit: Option<i64>,
+    pub is_done: bool,
+    pub task_count: i64,
     pub total: i64,
     pub tasks: Vec<BoardTask>,
     pub next_cursor: Option<String>,

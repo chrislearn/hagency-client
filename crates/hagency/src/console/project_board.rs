@@ -96,6 +96,11 @@ pub(super) fn request(
                 None,
             )
         }
+        BoardAction::ConfigureColumns { input } => (
+            Method::PATCH,
+            format!("{root}/board/columns"),
+            Some(serde_json::to_value(input).map_err(|_| invalid())?),
+        ),
         BoardAction::Create { input } => (
             Method::POST,
             format!("{root}/tasks"),

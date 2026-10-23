@@ -121,7 +121,7 @@ async fn call(req: &mut Request, depot: &Depot) -> Result<Value, OwnerError> {
     let operation = match (req.method().clone(), parts.as_slice()) {
         (Method::POST, [project, "board-command"]) => {
             key(project)?;
-            let bytes = body(req, 65536)
+            let bytes = body(req, 131072)
                 .await
                 .map_err(|_| error(400, "invalid_board_payload"))?;
             let action = serde_json::from_slice::<hagency_core::project_board::BoardAction>(&bytes)

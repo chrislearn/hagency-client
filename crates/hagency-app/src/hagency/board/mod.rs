@@ -12,6 +12,8 @@ use connection::BoardConnection;
 mod view;
 mod controller;
 mod interaction;
+mod extensions;
+use extensions::column_title;
 pub use view::script_mod;
 
 #[derive(Clone, Debug, Default)]
@@ -207,6 +209,26 @@ pub struct ProjectBoard {
     failed: bool,
     #[rust]
     discard_armed: bool,
+    #[rust]
+    columns_draft: Option<Vec<ColumnDefinition>>,
+    #[rust]
+    columns_sequence: i64,
+    #[rust]
+    column_edit: usize,
+    #[rust]
+    draft_checklist: Vec<ChecklistItem>,
+    #[rust]
+    draft_parent: Option<String>,
+    #[rust]
+    draft_state: String,
+    #[rust]
+    parent_task: Option<BoardTask>,
+    #[rust]
+    subtasks: Vec<BoardTask>,
+    #[rust]
+    checklist_rows: HashMap<usize, WidgetRef>,
+    #[rust]
+    subtask_rows: HashMap<usize, WidgetRef>,
 }
 fn nonce() -> u64 {
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -215,16 +237,6 @@ fn nonce() -> u64 {
 }
 fn tr(key: &str) -> &str {
     crate::i18n::tr(key)
-}
-fn state_label(state: &str) -> &str {
-    tr(match state {
-        "todo" => "To do",
-        "in_progress" => "In progress",
-        "blocked" => "Blocked",
-        "in_review" => "In review",
-        "done" => "Done",
-        _ => "Unknown",
-    })
 }
 fn priority_label(priority: &str) -> &str {
     tr(match priority {
@@ -267,6 +279,21 @@ fn error_message(code: &str) -> &str {
         | "invalid_device_authorization" => {
             "Project access has expired. Sign in again or check your membership."
         }
+        "invalid_board_columns" => {
+            "Use 2–12 unique column names, at least one completed column, and a WIP limit between 1 and 10000."
+        }
+        "board_wip_limit_reached" => {
+            "This column has reached its WIP limit. Finish or move a task before adding another."
+        }
+        "board_column_not_empty" => {
+            "Move all tasks, including archived tasks, before deleting this column."
+        }
+        "invalid_board_parent" => {
+            "Choose an active parent in this Project. Subtasks support one level and up to 100 children."
+        }
+        "invalid_board_checklist" => {
+            "Use up to 100 checklist items, with 1–160 characters per item."
+        }
         "invalid_board_fields"
         | "invalid_board_date"
         | "invalid_board_labels"
@@ -294,7 +321,12 @@ fn denied(code: &str) -> bool {
 fn uncertain(code: &str) -> bool {
     !matches!(
         code,
-        "board_unsupported"
+        "invalid_board_columns"
+            | "board_wip_limit_reached"
+            | "board_column_not_empty"
+            | "invalid_board_parent"
+            | "invalid_board_checklist"
+            | "board_unsupported"
             | "invalid_board_fields"
             | "invalid_board_date"
             | "invalid_board_labels"
@@ -321,7 +353,14 @@ fn column_path(index: usize) -> &'static [LiveId] {
         1 => ids!(in_progress),
         2 => ids!(blocked),
         3 => ids!(in_review),
-        _ => ids!(done),
+        4 => ids!(done),
+        5 => ids!(custom_0),
+        6 => ids!(custom_1),
+        7 => ids!(custom_2),
+        8 => ids!(custom_3),
+        9 => ids!(custom_4),
+        10 => ids!(custom_5),
+        _ => ids!(custom_6),
     }
 }
 impl ProjectBoardRef {

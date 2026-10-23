@@ -173,6 +173,8 @@ mod interactive {
                         priority:if lane==2 {"urgent"} else if lane==1 {"high"} else {"normal"}.into(),
                         assignee_mxid:Some(if offset%2==0 {"@alice:example.test"} else {"@bob:example.test"}.into()),
                         labels:vec![if lane==0 {"design"} else {"P0"}.into()],
+                        parent_id:None,
+                        checklist:Vec::new(),
                         due_date:Some(if offset%2==0 {"2026-10-22"} else {"2026-11-01"}.into()),
                     },
                 }}}).await?;

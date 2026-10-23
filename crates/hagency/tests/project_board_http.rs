@@ -136,6 +136,195 @@ async fn native_project_board_two_owners_share_durable_tasks_and_revocation() {
             .unwrap()["task"],
         updated["task"]
     );
+    let snapshot = alice
+        .execute(command(BoardAction::Snapshot {
+            query: Query::default(),
+        }))
+        .await
+        .unwrap();
+    let snapshot: Snapshot = serde_json::from_value(snapshot).unwrap();
+    let mut columns: Vec<_> = snapshot
+        .lanes
+        .iter()
+        .map(|l| ColumnDefinition {
+            id: l.state.clone(),
+            title: l.title.clone(),
+            wip_limit: l.wip_limit,
+            is_done: l.is_done,
+        })
+        .collect();
+    let custom = format!("verify_{intent_prefix}");
+    columns.push(ColumnDefinition {
+        id: custom.clone(),
+        title: format!("Verify {intent_prefix}"),
+        wip_limit: Some(1),
+        is_done: false,
+    });
+    alice
+        .execute(command(BoardAction::ConfigureColumns {
+            input: ConfigureColumns {
+                idempotency_key: format!("{intent_prefix}-columns"),
+                expected_sequence: snapshot.sequence,
+                columns: columns.clone(),
+            },
+        }))
+        .await
+        .unwrap();
+    let child_fields = Fields {
+        title: "Native child with checklist".into(),
+        parent_id: Some(id.clone()),
+        checklist: vec![ChecklistItem {
+            id: "native-item".into(),
+            title: "Persist across owners".into(),
+            checked: true,
+        }],
+        ..Default::default()
+    };
+    let child = bob
+        .execute(command(BoardAction::Create {
+            input: Create {
+                idempotency_key: format!("{intent_prefix}-child"),
+                state: custom.clone(),
+                fields: child_fields.clone(),
+            },
+        }))
+        .await
+        .unwrap();
+    let child_id = child["task"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(
+        alice
+            .execute(command(BoardAction::Detail { task: id.clone() }))
+            .await
+            .unwrap()["subtasks"][0]["id"],
+        child_id
+    );
+    assert_eq!(
+        alice
+            .execute(command(BoardAction::Detail {
+                task: child_id.clone()
+            }))
+            .await
+            .unwrap()["task"]["checklistDone"],
+        1
+    );
+    assert_eq!(
+        alice
+            .execute(command(BoardAction::Create {
+                input: Create {
+                    idempotency_key: format!("{intent_prefix}-full"),
+                    state: custom,
+                    fields: Fields {
+                        title: "Must be refused".into(),
+                        ..Default::default()
+                    }
+                }
+            }))
+            .await
+            .unwrap_err()
+            .code,
+        "board_wip_limit_reached"
+    );
+    let mut changed = child_fields.clone();
+    changed.checklist[0].checked = false;
+    alice
+        .execute(command(BoardAction::Update {
+            task: child_id.clone(),
+            input: Update {
+                idempotency_key: format!("{intent_prefix}-checklist"),
+                expected_version: 1,
+                fields: changed.clone(),
+            },
+        }))
+        .await
+        .unwrap();
+    assert_eq!(
+        bob.execute(command(BoardAction::Detail {
+            task: child_id.clone()
+        }))
+        .await
+        .unwrap()["task"]["checklistDone"],
+        0
+    );
+    assert_eq!(
+        bob.execute(command(BoardAction::ConfigureColumns {
+            input: ConfigureColumns {
+                idempotency_key: format!("{intent_prefix}-stale-columns"),
+                expected_sequence: snapshot.sequence,
+                columns
+            }
+        }))
+        .await
+        .unwrap_err()
+        .code,
+        "board_snapshot_changed"
+    );
+    bob.execute(command(BoardAction::Move {
+        task: child_id.clone(),
+        input: Move {
+            idempotency_key: format!("{intent_prefix}-child-done"),
+            expected_version: 2,
+            state: "done".into(),
+            expected_sequence: None,
+            before: None,
+            after: None,
+            position: Position::Append,
+        },
+    }))
+    .await
+    .unwrap();
+    assert_eq!(
+        alice
+            .execute(command(BoardAction::Detail { task: id.clone() }))
+            .await
+            .unwrap()["task"]["subtaskDone"],
+        1
+    );
+    alice
+        .execute(command(BoardAction::Archive {
+            task: id.clone(),
+            input: Versioned {
+                idempotency_key: format!("{intent_prefix}-archive-parent"),
+                expected_version: 2,
+            },
+        }))
+        .await
+        .unwrap();
+    changed.title = "Child remains independently editable".into();
+    bob.execute(command(BoardAction::Update {
+        task: child_id,
+        input: Update {
+            idempotency_key: format!("{intent_prefix}-independent"),
+            expected_version: 3,
+            fields: changed,
+        },
+    }))
+    .await
+    .unwrap();
+    // Exercise the actual body limit with a maximum-size multilingual checklist.
+    let large = Fields {
+        title: "Bounded multilingual checklist".into(),
+        description: "x".repeat(32768),
+        checklist: (0..100)
+            .map(|i| ChecklistItem {
+                id: format!("item_{i}"),
+                title: "验".repeat(160),
+                checked: i % 2 == 0,
+            })
+            .collect(),
+        ..Default::default()
+    };
+    let large = alice
+        .execute(command(BoardAction::Create {
+            input: Create {
+                idempotency_key: format!("{intent_prefix}-large"),
+                state: "todo".into(),
+                fields: large,
+            },
+        }))
+        .await
+        .unwrap();
+    assert_eq!(large["task"]["checklistTotal"], 100);
+    assert_eq!(large["task"]["checklistDone"], 50);
     reqwest::Client::new()
         .post(format!("{origin}fixture/bob/leave"))
         .send()

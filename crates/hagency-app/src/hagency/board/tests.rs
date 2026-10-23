@@ -33,6 +33,10 @@ fn populate(board: &mut ProjectBoard) {
             .iter()
             .map(|state| ::hagency::project_board::Lane {
                 state: (*state).into(),
+                title: (*state).into(),
+                wip_limit: None,
+                is_done: *state == "done",
+                task_count: 1,
                 total: 1,
                 tasks: vec![task(&format!("task_{state}"), state)],
                 next_cursor: None,
@@ -408,4 +412,102 @@ fn kanban_older_history_pages_cannot_replace_the_latest_page() {
     };
     board.apply_read(&mut cx, &current);
     assert_eq!(board.comments[0]["body"], "current page");
+}
+
+#[test]
+fn kanban_dynamic_columns_and_nested_item_drafts_survive_conflicts() {
+    let (mut cx, mut board) = panel();
+    populate(&mut board);
+    let mut lane = board.snapshot.as_ref().unwrap().lanes[0].clone();
+    lane.state = "verification".into();
+    lane.title = "验收".into();
+    lane.tasks = vec![task("task_custom", "verification")];
+    lane.wip_limit = Some(1);
+    lane.task_count = 1;
+    board.snapshot.as_mut().unwrap().lanes.insert(0, lane);
+    board.sync_column_labels(&mut cx);
+    assert_eq!(board.column_state(0), "verification");
+    let mut fields = task("child", "todo").fields();
+    fields.parent_id = Some("parent".into());
+    fields.checklist = vec![ChecklistItem {
+        id: "one".into(),
+        title: "Verify persistence".into(),
+        checked: true,
+    }];
+    board.selected = Some(task("child", "todo"));
+    board.detail_loaded = true;
+    board.fill_editor(&mut cx, fields.clone());
+    board.dirty = true;
+    board
+        .view
+        .view(&cx, ids!(inspector))
+        .set_visible(&mut cx, true);
+    draw(&mut cx, &mut board, 1440.0, 900.0);
+    let wire = board.fields(&mut cx);
+    assert_eq!(wire.parent_id, fields.parent_id);
+    assert_eq!(wire.checklist, fields.checklist);
+    board.pending = Some(BoardAction::Update {
+        task: "child".into(),
+        input: Update {
+            idempotency_key: "checklist-original".into(),
+            expected_version: 1,
+            fields: wire,
+        },
+    });
+    board.save_request = 33;
+    board.apply_saved(
+        &mut cx,
+        &Saved {
+            identity: board.identity.clone(),
+            project: board.project.clone(),
+            epoch: board.epoch,
+            request: 33,
+            result: Err("board_version_conflict".into()),
+        },
+    );
+    assert_eq!(board.draft_checklist, fields.checklist);
+    assert_eq!(board.draft_parent, fields.parent_id);
+    assert!(board.dirty && board.conflict);
+    assert!(!uncertain("board_wip_limit_reached"));
+}
+
+#[test]
+fn kanban_new_task_keeps_its_column_id_when_columns_are_reordered() {
+    let (mut cx, mut board) = panel();
+    populate(&mut board);
+    board.new_task(&mut cx);
+    assert_eq!(board.draft_state, "todo");
+    board.snapshot.as_mut().unwrap().lanes.swap(0, 1);
+    board.sync_column_labels(&mut cx);
+    assert_eq!(board.draft_state, "todo");
+    assert_eq!(
+        board.view.drop_down(&cx, ids!(new_status)).selected_item(),
+        1
+    );
+}
+
+#[test]
+fn kanban_malformed_child_payload_cannot_become_an_empty_success() {
+    let (mut cx, mut board) = panel();
+    populate(&mut board);
+    let selected = task("parent", "todo");
+    board.selected = Some(selected.clone());
+    board.detail_request = 7;
+    board.reads.insert(7);
+    board.fill_editor(&mut cx, selected.fields());
+    let raw = serde_json::json!({"task":{"id":"parent","projectId":"p1","number":1,"title":"Must not replace editor","state":"todo","rank":1024,"priority":"normal","labels":[],"version":2,"createdBy":"@alice:test","createdAt":1,"updatedAt":2},"parent":null,"subtasks":"invalid"});
+    board.apply_read(
+        &mut cx,
+        &Completed {
+            identity: "account".into(),
+            project: "p1".into(),
+            epoch: 1,
+            request: 7,
+            kind: Read::Detail("parent".into()),
+            detail_generation: 7,
+            result: Ok(raw),
+        },
+    );
+    assert!(!board.detail_loaded);
+    assert_eq!(board.fields(&mut cx).title, selected.title);
 }

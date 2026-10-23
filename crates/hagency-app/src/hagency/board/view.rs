@@ -67,6 +67,7 @@ makepad_widgets::script_mod! {
             apply_filters := Action {text: #(crate::i18n::tr("Filter")) i18n_text: "Filter"}
             clear_filters := Action {visible:false text:#(crate::i18n::tr("Clear filters")) i18n_text:"Clear filters"}
             refresh := Action {text: #(crate::i18n::tr("Refresh")) i18n_text: "Refresh"}
+            manage_columns := Action {text:#(crate::i18n::tr("Columns & WIP")) i18n_text:"Columns & WIP"}
             new_task := RinxPrimaryButton {height: 34 text: #(crate::i18n::tr("New task")) i18n_text: "New task"}
         }
         View {width: Fill height: Fit flow: Flow.Right{wrap: true} spacing: 14 align: Align{y: 0.5}
@@ -77,6 +78,27 @@ makepad_widgets::script_mod! {
         }
         notice := Text {visible: false draw_text.color: mod.widgets.RINX_MUTED}
         retry := Action {visible: false text: #(crate::i18n::tr("Retry original save")) i18n_text: "Retry original save"}
+        column_settings := RoundedView {visible:false width:Fill height:Fit padding:14 flow:Down spacing:10
+            draw_bg +: {color:mod.widgets.RINX_SURFACE border_radius:10.0 border_size:1.0 border_color:mod.widgets.RINX_BORDER}
+            View {width:Fill height:Fit align:Align{y:0.5} spacing:10
+                Text {width:Fill text:#(crate::i18n::tr("Columns & WIP")) i18n_text:"Columns & WIP" draw_text.text_style:theme.font_bold{font_size:mod.widgets.RINX_BODY_SIZE}}
+                save_columns := RinxPrimaryButton {height:34 text:#(crate::i18n::tr("Save columns")) i18n_text:"Save columns"}
+                cancel_columns := Action {text:#(crate::i18n::tr("Cancel")) i18n_text:"Cancel"}
+            }
+            View {width:Fill height:Fit flow:Flow.Right{wrap:true} align:Align{y:0.5} spacing:10
+                edit_column := Select {width:160}
+                column_name := Input {width:200 empty_text:#(crate::i18n::tr("Column name")) i18n_empty_text:"Column name"}
+                column_wip := Input {width:115 empty_text:#(crate::i18n::tr("WIP · no limit")) i18n_empty_text:"WIP · no limit"}
+                column_done := RinxCheckBox {text:#(crate::i18n::tr("Completed column")) i18n_text:"Completed column"}
+                column_left := Action {text:"←"}
+                column_right := Action {text:"→"}
+                add_column := Action {text:#(crate::i18n::tr("Add column")) i18n_text:"Add column"}
+                remove_column := Action {text:#(crate::i18n::tr("Delete column")) i18n_text:"Delete column"}
+            }
+            Small {text:#(crate::i18n::tr("WIP counts all active tasks. Delete only empty columns, including archived tasks. Changes apply when saved.")) i18n_text:"WIP counts all active tasks. Delete only empty columns, including archived tasks. Changes apply when saved."}
+            rebase_columns := Action {visible:false text:#(crate::i18n::tr("Use latest board revision")) i18n_text:"Use latest board revision"}
+            columns_notice := Small {}
+        }
         workspace := View {width: Fill height: Fill spacing: 14
             board_scroll := ScrollXView {width: Fill height: Fill flow: Right spacing: 12
                 todo := Column {}
@@ -84,6 +106,14 @@ makepad_widgets::script_mod! {
                 blocked := Column {}
                 in_review := Column {}
                 done := Column {}
+                custom_0 := Column {visible:false}
+                custom_1 := Column {visible:false}
+                custom_2 := Column {visible:false}
+                custom_3 := Column {visible:false}
+                custom_4 := Column {visible:false}
+                custom_5 := Column {visible:false}
+                custom_6 := Column {visible:false}
+
             }
             inspector := RoundedView {visible: false width: 340 height: Fill padding: 16 flow: Down spacing: 10
                 draw_bg +: {color: mod.widgets.RINX_SURFACE border_radius: 10.0 border_size: 1.0 border_color: mod.widgets.RINX_BORDER}
@@ -100,6 +130,42 @@ makepad_widgets::script_mod! {
                     create_status := View {visible:false width:Fill height:Fit flow:Down spacing:5
                         Text {text:#(crate::i18n::tr("Status")) i18n_text:"Status"}
                         new_status := Select {labels:[#(crate::i18n::tr("To do")) #(crate::i18n::tr("In progress")) #(crate::i18n::tr("Blocked")) #(crate::i18n::tr("In review")) #(crate::i18n::tr("Done"))]}
+                    }
+                    parent_link := View {visible:false width:Fill height:Fit spacing:6
+                        open_parent := Action {width:Fill}
+                        unlink_parent := Action {text:#(crate::i18n::tr("Unlink")) i18n_text:"Unlink"}
+                    }
+                    checklist_section := View {width:Fill height:Fit flow:Down spacing:8
+                        View {width:Fill height:Fit align:Align{y:0.5}
+                            Text {width:Fill text:#(crate::i18n::tr("Checklist")) i18n_text:"Checklist" draw_text.text_style:theme.font_bold{font_size:mod.widgets.RINX_BODY_SIZE}}
+                            checklist_progress := Small {width:Fit}
+                        }
+                        checklist_items := PortalList {width:Fill height:1 capture_overload:false
+                            Item := View {width:Fill height:46 spacing:4 align:Align{y:0.5}
+                                checked := RinxCheckBox {width:25 text:""}
+                                item_title := Input {width:Fill height:34}
+                                item_up := RinxGhostButton {width:24 height:28 padding:0 text:"↑"}
+                                item_remove := RinxGhostButton {width:24 height:28 padding:0 text:"×"}
+                            }
+                        }
+                        View {width:Fill height:Fit spacing:6
+                            checklist_new := Input {width:Fill empty_text:#(crate::i18n::tr("Add a checklist item…")) i18n_empty_text:"Add a checklist item…"}
+                            checklist_add := Action {text:"+"}
+                        }
+                        Small {text:#(crate::i18n::tr("Checklist changes sync when you save the task.")) i18n_text:"Checklist changes sync when you save the task."}
+                    }
+                    subtasks_section := View {visible:false width:Fill height:Fit flow:Down spacing:8
+                        View {width:Fill height:Fit align:Align{y:0.5}
+                            Text {width:Fill text:#(crate::i18n::tr("Subtasks")) i18n_text:"Subtasks" draw_text.text_style:theme.font_bold{font_size:mod.widgets.RINX_BODY_SIZE}}
+                            subtask_progress := Small {width:Fit}
+                        }
+                        subtask_items := PortalList {width:Fill height:1 capture_overload:false
+                            Item := View {width:Fill height:62 padding:6 flow:Down spacing:3
+                                open_child := RinxGhostButton {width:Fill height:30 padding:0}
+                                child_status := Small {max_lines:1 text_overflow:Ellipsis}
+                            }
+                        }
+                        add_subtask := Action {width:Fill text:#(crate::i18n::tr("Add subtask")) i18n_text:"Add subtask"}
                     }
                     Text {text: #(crate::i18n::tr("Description")) i18n_text: "Description"}
                     description := Input {height: 130 is_multiline: true empty_text: #(crate::i18n::tr("Add context and acceptance criteria…")) i18n_empty_text: "Add context and acceptance criteria…"}
