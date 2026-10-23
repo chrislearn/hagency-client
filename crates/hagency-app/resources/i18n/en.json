@@ -2328,5 +2328,7 @@
   "Choose an active parent in this Project. Subtasks support one level and up to 100 children.": "Choose an active parent in this Project. Subtasks support one level and up to 100 children.",
   "Use up to 100 checklist items, with 1–160 characters per item.": "Use up to 100 checklist items, with 1–160 characters per item.",
   "Use latest board revision": "Use latest board revision",
-  "Review your column changes, then save again.": "Review your column changes, then save again."
+  "Review your column changes, then save again.": "Review your column changes, then save again.",
+  "Write in Markdown…": "Write in Markdown…",
+  "Nothing to preview yet.": "Nothing to preview yet."
 }

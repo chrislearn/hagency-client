@@ -1,5 +1,5 @@
 use makepad_widgets::*;
-use super::{KanbanCard, ProjectBoard};
+use super::{KanbanCard, ProjectBoard, markdown::BoardMarkdown};
 
 makepad_widgets::script_mod! {
     use mod.prelude.widgets.*
@@ -9,6 +9,35 @@ makepad_widgets::script_mod! {
     let Input = RobrixTextInput {width: Fill height: 36 margin: 0 padding: Inset{left: 10 right: 10 top: 8 bottom: 8}}
     let Select = RobrixSettingsDropDown {width: Fill height: 36 margin: 0}
     let Action = RinxButton {height: 34 padding: Inset{left: 12 right: 12 top: 0 bottom: 0}}
+    mod.widgets.BoardMarkdown = #(BoardMarkdown::register_widget(vm)) {
+        width:Fill height:Fit flow:Down
+        body := RinxHtml {width:Fill height:Fit padding:0}
+    }
+    let Format = RinxGhostButton {width:26 height:28 padding:0}
+    let Composer = RoundedView {width:Fill height:Fit flow:Down spacing:8 padding:10
+        draw_bg +: {color:mod.widgets.RINX_SURFACE border_color:mod.widgets.RINX_BORDER border_size:1.0 border_radius:8.0}
+        View {width:Fill height:28 spacing:4 align:Align{y:0.5}
+            edit := RinxGhostButton {height:28 text:#(crate::i18n::tr("Edit")) i18n_text:"Edit"}
+            preview := RinxGhostButton {height:28 text:#(crate::i18n::tr("Preview")) i18n_text:"Preview"}
+            View {width:Fill height:1}
+            Small {width:Fit text:"Markdown"}
+        }
+        tools := View {width:Fill height:Fit flow:Flow.Right{wrap:true} spacing:2
+            bold := Format {text:"B" draw_text.text_style:theme.font_bold{font_size:mod.widgets.RINX_BODY_SIZE}}
+            italic := Format {text:"I" draw_text.text_style:theme.font_italic{font_size:mod.widgets.RINX_BODY_SIZE}}
+            heading := Format {text:"H2"}
+            bullet := Format {text:"•"}
+            ordered := Format {text:"1."}
+            quote := Format {text:">"}
+            code := Format {text:"`"}
+            block := Format {text:"</>"}
+            link := Format {text:"↗"}
+        }
+        source_wrap := View {width:Fill height:Fit
+            source := Input {height:160 is_multiline:true empty_text:#(crate::i18n::tr("Write in Markdown…")) i18n_empty_text:"Write in Markdown…"}
+        }
+        rendered := mod.widgets.BoardMarkdown {visible:false width:Fill height:Fit padding:2}
+    }
     mod.widgets.KanbanCard = #(KanbanCard::register_widget(vm)) {
         width: Fill height: Fit margin: Inset{bottom: 8} padding: 12 flow: Down spacing: 9
         show_bg: true cursor: MouseCursor.Hand
@@ -124,7 +153,7 @@ makepad_widgets::script_mod! {
                     close_detail := Action {text: #(crate::i18n::tr("Close")) i18n_text: "Close"}
                 }
                 reload_latest := Action {visible: false width: Fill text: #(crate::i18n::tr("Discard draft and load latest")) i18n_text: "Discard draft and load latest"}
-                editor_scroll := ScrollYView {width: Fill height: Fill flow: Down spacing: 10
+                editor_scroll := ScrollYView {width: Fill height: Fill flow: Down spacing: 10 padding:Inset{right:12}
                     detail_notice := Small {}
                     Text {text: #(crate::i18n::tr("Title")) i18n_text: "Title"}
                     title := Input {empty_text: #(crate::i18n::tr("What needs to be done?")) i18n_empty_text: "What needs to be done?"}
@@ -169,7 +198,7 @@ makepad_widgets::script_mod! {
                         add_subtask := Action {width:Fill text:#(crate::i18n::tr("Add subtask")) i18n_text:"Add subtask"}
                     }
                     Text {text: #(crate::i18n::tr("Description")) i18n_text: "Description"}
-                    description := Input {height: 130 is_multiline: true empty_text: #(crate::i18n::tr("Add context and acceptance criteria…")) i18n_empty_text: "Add context and acceptance criteria…"}
+                    description_editor := Composer {}
                     View {width: Fill height: Fit flow: Down spacing: 5
                         Text {text: #(crate::i18n::tr("Priority")) i18n_text: "Priority"}
                         priority := Select {labels: [#(crate::i18n::tr("Low")) #(crate::i18n::tr("Normal")) #(crate::i18n::tr("High")) #(crate::i18n::tr("Urgent"))]}
@@ -191,10 +220,10 @@ makepad_widgets::script_mod! {
                         archive := Action {width: Fill text: #(crate::i18n::tr("Archive task")) i18n_text: "Archive task"}
                         Hr {width: Fill height: 1}
                         Text {text: #(crate::i18n::tr("Comments")) i18n_text: "Comments"}
-                        comments := Text {}
+                        comments := mod.widgets.BoardMarkdown {width:Fill height:Fit padding:0}
                         more_comments := Action {visible: false text: #(crate::i18n::tr("Load more comments")) i18n_text: "Load more comments"}
                         first_comments := Action {visible:false text:#(crate::i18n::tr("Back to first comments")) i18n_text:"Back to first comments"}
-                        comment := Input {height: 76 is_multiline: true empty_text: #(crate::i18n::tr("Write a comment…")) i18n_empty_text: "Write a comment…"}
+                        comment_editor := Composer {source_wrap +: {source +: {height:120}}}
                         add_comment := Action {text: #(crate::i18n::tr("Add comment")) i18n_text: "Add comment"}
                         Text {text: #(crate::i18n::tr("Activity")) i18n_text: "Activity"}
                         activity := Small {}

@@ -13,6 +13,7 @@ mod view;
 mod controller;
 mod interaction;
 mod drag;
+mod markdown;
 mod extensions;
 use extensions::column_title;
 pub use view::script_mod;
@@ -242,6 +243,10 @@ pub struct ProjectBoard {
     #[rust]
     draft_checklist: Vec<ChecklistItem>,
     #[rust]
+    description_preview: bool,
+    #[rust]
+    comment_preview: bool,
+    #[rust]
     draft_parent: Option<String>,
     #[rust]
     draft_state: String,
@@ -431,7 +436,7 @@ impl ProjectBoardRef {
                     .set_text(cx, tr("Visible to current Project members."));
                 board
                     .view
-                    .label(cx, ids!(comments))
+                    .widget(cx, ids!(comments))
                     .set_text(cx, tr("No comments yet"));
                 board
                     .view

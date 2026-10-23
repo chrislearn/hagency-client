@@ -2328,5 +2328,7 @@
   "Choose an active parent in this Project. Subtasks support one level and up to 100 children.": "请选择本项目未归档的父任务。支持一层子任务，每个父任务最多 100 个。",
   "Use up to 100 checklist items, with 1–160 characters per item.": "清单最多 100 项，每项内容为 1–160 个字符。",
   "Use latest board revision": "采用最新看板版本",
-  "Review your column changes, then save again.": "请核对列设置，再次保存。"
+  "Review your column changes, then save again.": "请核对列设置，再次保存。",
+  "Write in Markdown…": "使用 Markdown 编写…",
+  "Nothing to preview yet.": "还没有可预览的内容。"
 }

@@ -31,15 +31,15 @@ impl ProjectBoard {
         self.drag = None;
         self.landing = None;
         for id in [
-            ids!(title),
-            ids!(description),
+            ids!(title).as_slice(),
+            ids!(description_editor.source),
             ids!(labels),
             ids!(due_date),
-            ids!(comment),
+            ids!(comment_editor.source),
         ] {
             self.view.text_input(cx, id).set_text(cx, "");
         }
-        self.view.label(cx, ids!(comments)).set_text(cx, "");
+        self.view.widget(cx, ids!(comments)).set_text(cx, "");
         self.view.label(cx, ids!(activity)).set_text(cx, "");
         self.view.view(cx, ids!(inspector)).set_visible(cx, false);
         self.view.redraw(cx);
@@ -238,7 +238,10 @@ impl ProjectBoard {
         let assignee = self.view.drop_down(cx, ids!(assignee)).selected_item();
         Fields {
             title: self.view.text_input(cx, ids!(title)).text(),
-            description: self.view.text_input(cx, ids!(description)).text(),
+            description: self
+                .view
+                .text_input(cx, ids!(description_editor.source))
+                .text(),
             priority: PRIORITIES[self
                 .view
                 .drop_down(cx, ids!(priority))
@@ -277,7 +280,7 @@ impl ProjectBoard {
             .text_input(cx, ids!(title))
             .set_text(cx, &fields.title);
         self.view
-            .text_input(cx, ids!(description))
+            .text_input(cx, ids!(description_editor.source))
             .set_text(cx, &fields.description);
         self.view
             .text_input(cx, ids!(labels))
@@ -303,6 +306,9 @@ impl ProjectBoard {
         self.dirty = false;
         self.conflict = false;
         self.discard_armed = false;
+        self.description_preview = !self.creating && !fields.description.is_empty();
+        self.comment_preview = false;
+        self.sync_markdown_views(cx);
         self.sync_controls(cx);
     }
     pub(super) fn select(&mut self, cx: &mut Cx, task: &BoardTask) {
@@ -482,9 +488,9 @@ impl ProjectBoard {
             && !self.conflict
             && !archived;
         for id in [
-            ids!(title),
+            ids!(title).as_slice(),
             ids!(new_status),
-            ids!(description),
+            ids!(description_editor.source),
             ids!(priority),
             ids!(assignee),
             ids!(labels),
@@ -521,7 +527,7 @@ impl ProjectBoard {
         self.view
             .view(cx, ids!(existing_actions))
             .set_visible(cx, !self.creating && self.selected.is_some());
-        for id in [ids!(move_state), ids!(comment)] {
+        for id in [ids!(move_state).as_slice(), ids!(comment_editor.source)] {
             self.view
                 .widget(cx, id)
                 .set_disabled(cx, writing || self.conflict || archived);
@@ -584,6 +590,11 @@ impl ProjectBoard {
                 ""
             }),
         );
+        self.sync_markdown_controls(
+            cx,
+            editing,
+            !writing && !self.conflict && !archived && self.detail_loaded,
+        );
         self.view.redraw(cx);
     }
     pub(super) fn detail_history(&mut self, cx: &mut Cx, id: &str) {
@@ -592,7 +603,7 @@ impl ProjectBoard {
         self.comments_after = 0;
         self.activity_after = 0;
         self.view
-            .label(cx, ids!(comments))
+            .widget(cx, ids!(comments))
             .set_text(cx, tr("Loading…"));
         self.view.label(cx, ids!(activity)).set_text(cx, "");
         self.read(
@@ -635,7 +646,7 @@ impl ProjectBoard {
         }
         match &done.result {
             Err(code) => {
-                self.offline = true;
+                self.offline = uncertain(code);
                 self.retry_delay = (self.retry_delay.max(5.0) * 2.0).min(60.0);
                 self.notice(cx, error_message(code));
                 if denied(code) || code == "board_unsupported" {
@@ -823,15 +834,17 @@ impl ProjectBoard {
                         let text = if comments {
                             rows.iter()
                                 .map(|v| {
+                                    let author = markdown::escape_html(member_label(
+                                        v["author"].as_str().unwrap_or(""),
+                                    ));
+                                    let time = timestamp(&v["createdAt"]);
                                     format!(
-                                        "{} · {}\n{}",
-                                        member_label(v["author"].as_str().unwrap_or("")),
-                                        timestamp(&v["createdAt"]),
-                                        v["body"].as_str().unwrap_or("")
+                                        "<p><strong>{author}</strong> · {time}</p>{}<hr/>",
+                                        markdown::render_markdown(v["body"].as_str().unwrap_or(""))
                                     )
                                 })
                                 .collect::<Vec<_>>()
-                                .join("\n\n")
+                                .join("")
                         } else {
                             rows.iter()
                                 .map(|v| {
@@ -854,7 +867,7 @@ impl ProjectBoard {
                                 .join("\n")
                         };
                         self.view
-                            .label(
+                            .widget(
                                 cx,
                                 if comments {
                                     ids!(comments)
@@ -931,7 +944,11 @@ impl ProjectBoard {
                     if !was_comment {
                         self.fill_editor(cx, task.fields());
                     } else {
-                        self.view.text_input(cx, ids!(comment)).set_text(cx, "");
+                        self.view
+                            .text_input(cx, ids!(comment_editor.source))
+                            .set_text(cx, "");
+                        self.comment_preview = false;
+                        self.sync_markdown_views(cx);
                     }
                     self.detail_history(cx, &task.id);
                 }

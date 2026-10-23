@@ -1313,6 +1313,12 @@ pub fn register_widgets(vm: &mut ScriptVm) {
 
 impl AppMain for App {
     fn script_mod(vm: &mut ScriptVm) -> makepad_widgets::ScriptValue {
+        // Local native acceptance bundles may stage the same assets outside the
+        // source checkout. This does not change account storage or service identity.
+        #[cfg(debug_assertions)]
+        if let Ok(path) = std::env::var("HAGENCY_APP_RESOURCE_DIR") {
+            vm.cx_mut().package_root = Some(path);
+        }
         #[cfg(all(target_os = "macos", feature = "macos-sparkle"))]
         crate::updates::sparkle::configure_resources(vm);
         // Order matters: base widgets first, then app widgets, then app UI.

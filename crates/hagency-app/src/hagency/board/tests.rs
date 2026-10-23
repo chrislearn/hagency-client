@@ -635,3 +635,113 @@ fn kanban_drop_waits_for_ack_and_animates_to_the_authoritative_slot() {
     board.clear_content(&mut cx);
     assert!(board.drag.is_none() && board.landing.is_none());
 }
+
+#[test]
+fn kanban_markdown_toolbar_preserves_source_selection_and_read_only_state() {
+    let (mut cx, mut board) = panel();
+    populate(&mut board);
+    board.creating = true;
+    board
+        .view
+        .view(&cx, ids!(inspector))
+        .set_visible(&mut cx, true);
+    board.fill_editor(
+        &mut cx,
+        Fields {
+            description: "重点".into(),
+            ..Default::default()
+        },
+    );
+    let input = board.view.text_input(&cx, ids!(description_editor.source));
+    let mut selection = input.selection();
+    selection.anchor.index = 0;
+    selection.cursor.index = 6;
+    input.set_selection(&mut cx, selection);
+    let click = |cx: &mut Cx, board: &ProjectBoard, path: &[LiveId]| {
+        let uid = board.view.button(cx, path).widget_uid();
+        cx.capture_actions(|cx| {
+            cx.widget_action(uid, ButtonAction::Clicked(KeyModifiers::default()))
+        })
+    };
+    let actions = click(&mut cx, &board, ids!(description_editor.tools.bold));
+    board.handle_markdown(&mut cx, &actions);
+    assert_eq!(input.text(), "**重点**");
+    assert_eq!(input.selection().anchor.index, 2);
+    assert_eq!(input.selection().cursor.index, 8);
+    assert!(board.dirty);
+    let actions = click(&mut cx, &board, ids!(description_editor.preview));
+    board.handle_markdown(&mut cx, &actions);
+    draw(&mut cx, &mut board, 1100.0, 760.0);
+    assert!(board.description_preview);
+    assert!(
+        !board
+            .view
+            .view(&cx, ids!(description_editor.source_wrap))
+            .visible()
+    );
+    assert!(
+        !board
+            .view
+            .view(&cx, ids!(description_editor.tools))
+            .visible()
+    );
+    assert_eq!(board.fields(&mut cx).description, "**重点**");
+    assert!(
+        board
+            .view
+            .widget(&cx, ids!(description_editor.rendered))
+            .text()
+            .contains("<strong>重点</strong>")
+    );
+    let editor = board
+        .view
+        .view(&cx, ids!(description_editor))
+        .area()
+        .rect(&cx);
+    let preview = board
+        .view
+        .widget(&cx, ids!(description_editor.rendered))
+        .area()
+        .rect(&cx);
+    assert!(
+        preview.size.y > 0.0
+            && preview.pos.x + preview.size.x <= editor.pos.x + editor.size.x + 1.0
+    );
+    board.conflict = true;
+    board.sync_controls(&mut cx);
+    let actions = click(&mut cx, &board, ids!(description_editor.tools.italic));
+    board.handle_markdown(&mut cx, &actions);
+    assert_eq!(
+        input.text(),
+        "**重点**",
+        "conflict disables formatting just like typing"
+    );
+}
+
+#[test]
+fn kanban_unsupported_server_is_not_mislabeled_offline() {
+    let (mut cx, mut board) = panel();
+    populate(&mut board);
+    board.reads.insert(21);
+    board.apply_read(
+        &mut cx,
+        &Completed {
+            identity: "account".into(),
+            project: "p1".into(),
+            epoch: 1,
+            request: 21,
+            kind: Read::Snapshot,
+            detail_generation: 0,
+            result: Err("board_unsupported".into()),
+        },
+    );
+    assert!(board.failed && board.snapshot.is_none());
+    assert!(!board.offline);
+    assert!(
+        !board
+            .view
+            .label(&cx, ids!(sync_status))
+            .text()
+            .contains("Offline")
+    );
+}

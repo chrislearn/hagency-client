@@ -119,6 +119,7 @@ impl Widget for ProjectBoard {
             return;
         };
         self.handle_extensions(cx, actions);
+        self.handle_markdown(cx, actions);
         for action in actions {
             if let Some(done) = action.downcast_ref::<Completed>() {
                 self.apply_read(cx, done);
@@ -237,7 +238,12 @@ impl Widget for ProjectBoard {
                 }
             }
         }
-        for id in [ids!(title), ids!(description), ids!(labels), ids!(due_date)] {
+        for id in [
+            ids!(title).as_slice(),
+            ids!(description_editor.source),
+            ids!(labels),
+            ids!(due_date),
+        ] {
             if self.view.text_input(cx, id).changed(actions).is_some() {
                 self.dirty = true;
                 self.discard_armed = false;
@@ -478,7 +484,7 @@ impl Widget for ProjectBoard {
         if self.view.button(cx, ids!(add_comment)).clicked(actions)
             && let Some(task) = &self.selected
         {
-            let body = self.view.text_input(cx, ids!(comment)).text();
+            let body = self.view.text_input(cx, ids!(comment_editor.source)).text();
             if !body.trim().is_empty() && body.len() <= 8192 {
                 self.write(
                     cx,
